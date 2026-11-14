@@ -5,9 +5,11 @@ import { diffText } from '@lo/diff';
 import { getCM, Vim } from '@replit/codemirror-vim';
 import { afterEach, beforeAll, describe, expect, type Mock, test, vi } from 'vitest';
 
-import { findScope, isKeySource } from '../commands/index.ts';
+import { findScope, isKeySource, KEY_EVENT } from '../commands/index.ts';
 import type {
   BoxFrame,
+  ComposeOptions,
+  Composer,
   ComposerEvents,
   DiffEvents,
   DiffFile,
@@ -23,6 +25,7 @@ import type {
 import { Aligner } from './aligner.ts';
 import { createComposer } from './composer.ts';
 import { editsText } from './keys.ts';
+import { focusedMode } from './mode.ts';
 import { swapping } from './lines.ts';
 import { createDiffView } from './view.ts';
 
@@ -580,6 +583,67 @@ describe('targets', () => {
     expect(shown.keyState().mode).toBe('normal');
   });
 
+  test('lines selected across files are the cursor’s line, with each file’s lines across', () => {
+    const shown = open();
+    shown.reveal(onLine('a', 'new', 40));
+    const after = vimIn('After');
+    // To document line 45, file b's line 2, past b's header.
+    after.keys('V', '4', '5', 'G');
+    expect(shown.keyState().target).toMatchObject({
+      kind: 'line',
+      at: { file: 'b', side: 'new', line: 2 },
+      across: [
+        { file: 'a', side: 'new', from: 40, to: 41 },
+        { file: 'b', side: 'new', from: 1, to: 2 },
+      ],
+    });
+    // Up from a line to the header of its own file: its lines alone.
+    after.keys('<Esc>', 'V', '4', '3', 'G');
+    expect(shown.keyState().target).toEqual({
+      kind: 'line',
+      at: { file: 'b', side: 'new', from: 1, to: 2 },
+    });
+  });
+
+  test('inline, lines selected on one side take the other side’s between them, as they show', () => {
+    const shown = open(events(), { layout: 'inline' });
+    shown.reveal(onLine('a', 'new', 36));
+    const changes = vimIn('Changes');
+    const row = changes.text.slice(0, changes.cursor).split('\n').length;
+    // Down past the line deleted after new line 36, to new line 37.
+    changes.keys('V', ...String(row + 2).split(''), 'G');
+    expect(shown.keyState().target).toEqual({
+      kind: 'line',
+      at: { file: 'a', side: 'new', from: 36, to: 37 },
+      across: [
+        { file: 'a', side: 'new', from: 36, to: 36 },
+        { file: 'a', side: 'old', from: 35, to: 35 },
+        { file: 'a', side: 'new', from: 37, to: 37 },
+      ],
+    });
+  });
+
+  test('a count takes that many lines from the cursor’s as they show, as v does', () => {
+    const shown = open(events(), { layout: 'inline' });
+    shown.reveal(onLine('a', 'old', 35));
+    const changes = vimIn('Changes');
+    const row = changes.text.slice(0, changes.cursor).split('\n').length;
+    changes.keys('3');
+    const counted = shown.keyState().target;
+    expect(counted).toMatchObject({
+      at: { file: 'a', side: 'old', line: 35 },
+      across: [
+        { file: 'a', side: 'old', from: 35, to: 35 },
+        { file: 'a', side: 'new', from: 37, to: 38 },
+      ],
+    });
+    shown.clearPending();
+    changes.keys('V', ...String(row + 2).split(''), 'G');
+    const across = 'across' in counted ? counted.across : undefined;
+    expect(across).toHaveLength(2);
+    expect(shown.keyState().target).toMatchObject({ across });
+  });
+
   test('a right-click on a thread is its menu', () => {
     const on = events();
     const shown = open(on);
@@ -880,6 +944,78 @@ describe('comment boxes', () => {
     expect(box.text).toBe('Gone');
   });
 
+  test('a box opened as it was, as the view is drawn anew, keeps its mode, caret and undo history, where it is', () => {
+    const box = open().compose(at('a', 'new', 10), '', composerEvents());
+    box.insert('one\ntwo\nthree');
+    vimIn('Comment').keys('<Esc>', 'g', 'g');
+    const again = drawnAnew(box, { focus: true });
+    const comment = vimIn('Comment');
+    expect(comment.mode).toBe('normal');
+    expect(comment.cursor).toBe(0);
+    expect(parent!.contains(document.activeElement)).toBe(true);
+    // Vim's keys, not text typed.
+    comment.keys('d', 'd');
+    expect(again.text).toBe('two\nthree');
+    comment.keys('u');
+    expect(again.text).toBe('one\ntwo\nthree');
+    comment.keys('u');
+    expect(again.text).toBe('');
+  });
+
+  test('a box opened as it was comes back in visual line or insert mode, or previewing, as it was', () => {
+    const box = open().compose(at('a', 'new', 10), 'one\ntwo\nthree', composerEvents());
+    vimIn('Comment').keys('<Esc>', '2', 'G', 'V');
+    const lines = drawnAnew(box, { focus: true });
+    expect(vimIn('Comment').mode).toBe('visual');
+    // The whole line, as `V` selected it.
+    vimIn('Comment').keys('d');
+    expect(lines.text).toBe('one\nthree');
+    // Insert mode after the `t` of `three`, where `d` left the cursor.
+    vimIn('Comment').keys('0', 'l', 'i');
+    const inserting = drawnAnew(lines, { focus: false });
+    const comment = vimIn('Comment');
+    expect([comment.mode, comment.cursor]).toEqual(['insert', 5]);
+    inserting.preview(true);
+    const previewing = drawnAnew(inserting, { focus: false });
+    expect(previewing.previewing).toBe(true);
+    expect(parent!.querySelector<HTMLElement>('.lo-diffcomposer__preview')!.hidden).toBe(false);
+    // Back in insert mode where it was.
+    previewing.preview(false);
+    expect([vimIn('Comment').mode, vimIn('Comment').cursor]).toEqual(['insert', 5]);
+  });
+
+  test('a box opened as it was goes under its file’s header where the file is drawn closed, not while its lines are coming', () => {
+    const shown = open();
+    shown.setCollapsed('a', true);
+    const kept = { text: 'Kept', editor: undefined };
+    const shownLine = 'A comment box goes under a line of a file that is shown.';
+    expect(() => shown.compose(at('a', 'new', 10), 'Kept', composerEvents())).toThrow(shownLine);
+    const box = shown.compose(at('a', 'new', 10), 'Kept', composerEvents(), undefined, {
+      kept,
+      focus: false,
+    });
+    expect(box.text).toBe('Kept');
+    const scope = findScope(vimIn('Comment').content);
+    expect(isKeySource(scope.source) && scope.source.keyState().target).toEqual({
+      kind: 'header',
+      file: 'a',
+      side: 'new',
+    });
+    // Drawn anew, with no file's diff in yet: it waits for the line.
+    shown.destroy();
+    parent!.remove();
+    parent = document.createElement('div');
+    document.body.append(parent);
+    view = createDiffView(
+      parent,
+      { files, layout: 'split', vimKeys: motions, nonce: 'n' },
+      events(),
+    );
+    expect(() =>
+      view!.compose(at('a', 'new', 10), 'Kept', composerEvents(), undefined, { kept }),
+    ).toThrow(shownLine);
+  });
+
   test('a box outside any view tells the caller of Esc Esc, and goes on close()', () => {
     parent = document.createElement('div');
     document.body.append(parent);
@@ -901,6 +1037,20 @@ describe('comment boxes', () => {
   });
 });
 
+/**
+ * The view drawn anew, as the window draws a diff again, with `box` open in it again on line 10 of
+ * `a`'s newer side as it was, with `options`.
+ */
+function drawnAnew(box: Composer, options: ComposeOptions): Composer {
+  const kept = box.keep();
+  view?.destroy();
+  parent?.remove();
+  return open().compose(at('a', 'new', 10), kept.text, composerEvents(), undefined, {
+    ...options,
+    kept,
+  });
+}
+
 /** A box's events, with those a frame hears. */
 function boxEvents() {
   return {
@@ -917,6 +1067,11 @@ function carrying(type: string, file: File): Event {
   const event = new Event(type, { bubbles: true, cancelable: true });
   const dataTransfer = { types: ['Files'], items: [{ kind: 'file' }], files: [file] };
   return Object.assign(event, { dataTransfer });
+}
+
+/** Compose options naming a box `name`. */
+function named(name: string) {
+  return { name };
 }
 
 describe('threads', () => {
@@ -1097,6 +1252,78 @@ describe('threads', () => {
     sizes.resize(content, 120);
     await nextFrame();
     expect(card.classList).toContain('is-held');
+  });
+
+  test('boxes named apart are boxes of their own: one in a thread goes right after it', () => {
+    const shown = open();
+    const both = [thread('one', at('a', 'new', 4)), thread('two', at('a', 'new', 4))];
+    shown.setThreads(both, plain().render);
+    const line = shown.compose(
+      at('a', 'new', 4),
+      'On the line',
+      composerEvents(),
+      undefined,
+      named('line'),
+    );
+    const reply = shown.compose(
+      { thread: 'one' },
+      'A reply',
+      composerEvents(),
+      undefined,
+      named('reply'),
+    );
+    const edit = shown.compose(
+      { thread: 'one' },
+      'An edit',
+      composerEvents(),
+      undefined,
+      named('edit'),
+    );
+    // The same name is the same box.
+    expect(shown.compose({ thread: 'one' }, '', composerEvents(), undefined, named('reply'))).toBe(
+      reply,
+    );
+    const block = parent!.querySelector('.lo-diffthread')!;
+    const order = [...block.children].map((each) =>
+      each instanceof HTMLElement && each.dataset.threadId !== undefined
+        ? each.dataset.threadId
+        : (each.querySelector('.cm-content')?.textContent ?? ''),
+    );
+    expect(order).toEqual(['one', 'A reply', 'An edit', 'two', 'On the line']);
+    for (const box of [reply, edit, line]) box.dismiss();
+    expect(parent!.querySelector('.lo-diffcomposer')).toBeNull();
+  });
+
+  test('what comes under a thread the reader wrote to comes at once, until it comes or the claim goes', async () => {
+    const sizes = observers();
+    const shown = open();
+    const { render } = plain();
+    shown.setThreads([thread('one', at('a', 'new', 4))], render);
+    onScreen(['line 4'], ['one']);
+    const card = parent!.querySelector<HTMLElement>('[data-thread-id="one"]')!;
+    const content = card.querySelector('.lo-diffthread__host')!;
+    sizes.resize(content, 90);
+    // Resolved, as the reader asked: it collapses at once, its line kept.
+    shown.claimThread('one');
+    const resolved = thread('one', at('a', 'new', 4), false, 2);
+    shown.setThreads([resolved], render);
+    sizes.resize(content, 36);
+    await nextFrame();
+    expect(card.style.height).toBe('36px');
+    expect(card.classList).not.toContain('is-held');
+    // Once it's come, what comes next waits, as any change does.
+    shown.setThreads([resolved, thread('late', at('a', 'new', 4))], render);
+    expect(drawnThreads()).toEqual(['one']);
+    // A claim let go, as when the write changed nothing, leaves the line as it was.
+    shown.setThreads([resolved], render);
+    const letGo = shown.claimThread('one');
+    letGo();
+    shown.setThreads([thread('one', at('a', 'new', 4), false, 3)], render);
+    sizes.resize(content, 50);
+    await nextFrame();
+    expect(card.classList).toContain('is-held');
+    // A thread the view doesn't have claims nothing.
+    expect(() => shown.claimThread('none')()).not.toThrow();
   });
 
   test("a file's threads go under its header, in the newer column, whether or not its lines show", () => {
@@ -1292,6 +1519,82 @@ describe('threads', () => {
     expect(box.text).toBe('ent as it is');
   });
 
+  test(']t lands on each thread drawn, of a line or a file, and keys act on the one it landed on', () => {
+    const shown = open();
+    const landed: string[] = [];
+    const render: RenderThread = (host, first) => {
+      if (first.focused === true) landed.push(first.id);
+      return {
+        update(next) {
+          if (next.focused === true) landed.push(next.id);
+        },
+        destroy() {},
+      };
+    };
+    shown.setThreads(
+      [
+        thread('one', at('a', 'new', 4)),
+        thread('two', at('a', 'new', 4)),
+        onFile('on b', 'b'),
+        onFile('also on b', 'b'),
+      ],
+      render,
+    );
+    expect(shown.threadsDrawn(at('a', 'new', 4))).toEqual(['one', 'two']);
+    expect(shown.threadsDrawn({ file: 'b' })).toEqual(['on b', 'also on b']);
+    shown.reveal(onLine('a', 'new', 1));
+    shown.jump('thread', 1);
+    expect(shown.keyState().target).toMatchObject({ kind: 'line', thread: 'one' });
+    // The next on the same line: the cursor stays.
+    shown.jump('thread', 1);
+    expect(shown.probe.cursor()?.at).toMatchObject(onLine('a', 'new', 4));
+    expect(shown.keyState().target).toMatchObject({ kind: 'line', thread: 'two' });
+    shown.jump('thread', 1);
+    expect(shown.keyState().target).toEqual({
+      kind: 'header',
+      file: 'b',
+      side: 'new',
+      thread: 'on b',
+    });
+    shown.jump('thread', 1);
+    expect(shown.keyState().target).toMatchObject({ kind: 'header', thread: 'also on b' });
+    shown.jump('thread', -2);
+    expect(shown.keyState().target).toMatchObject({ kind: 'line', thread: 'two' });
+    // Its card says the keyboard is on it.
+    expect(landed).toEqual(['one', 'two', 'on b', 'also on b', 'two']);
+  });
+
+  test('a thread ]t landed on that’s no longer drawn there is no key’s to act on', () => {
+    const shown = open();
+    shown.setThreads(
+      [thread('one', at('a', 'new', 4)), thread('two', at('a', 'new', 4))],
+      plain().render,
+    );
+    shown.reveal(onLine('a', 'new', 1));
+    shown.jump('thread', 2);
+    expect(shown.keyState().target).toMatchObject({ kind: 'line', thread: 'two' });
+    // It went, as when it was deleted: the line's only thread is what keys act on.
+    shown.setThreads([thread('one', at('a', 'new', 4))], plain().render);
+    expect(shown.probe.cursor()?.at).toMatchObject(onLine('a', 'new', 4));
+    expect(shown.keyState().target).toMatchObject({ kind: 'line', thread: 'one' });
+    // Back beside another, it's not the one landed on until ]t lands on it again.
+    shown.setThreads(
+      [thread('one', at('a', 'new', 4)), thread('three', at('a', 'new', 4))],
+      plain().render,
+    );
+    expect(shown.keyState().target).not.toHaveProperty('thread');
+  });
+
+  test('a thread waiting to come under a line on screen isn’t drawn there for a key to act on', () => {
+    const shown = open();
+    const screen = onScreen(['line 4']);
+    shown.setThreads([thread('here', at('a', 'new', 4))], plain().render);
+    expect(shown.threadsDrawn(at('a', 'new', 4))).toEqual([]);
+    screen.lines.clear();
+    scroller().dispatchEvent(new Event('scroll'));
+    expect(shown.threadsDrawn(at('a', 'new', 4))).toEqual(['here']);
+  });
+
   test("]t stops at a file's threads, on its header", () => {
     const shown = open();
     shown.setThreads([onFile('on b', 'b'), thread('line', at('b', 'new', 6))], plain().render);
@@ -1302,31 +1605,97 @@ describe('threads', () => {
     expect(shown.probe.cursor()?.at).toMatchObject(onLine('b', 'new', 6));
   });
 
-  test('in a diff that scrolls a little, what no scroll takes off screen changes on input', async () => {
+  test('what waits or is held on screen changes on the reader’s next input, though a scroll could take it off', async () => {
     const sizes = observers();
     const shown = open();
     const { render } = plain();
     shown.setThreads([thread('one', at('a', 'new', 4))], render);
-    const screen = onScreen(['line 4'], ['one'], 300);
-    Object.defineProperty(scroller(), 'scrollHeight', { configurable: true, value: 750 });
+    onScreen(['line 4'], ['one']);
+    Object.defineProperty(scroller(), 'scrollHeight', { configurable: true, value: 2000 });
     const card = parent!.querySelector<HTMLElement>('[data-thread-id="one"]')!;
     const content = card.querySelector('.lo-diffthread__host')!;
     sizes.resize(content, 40);
     sizes.resize(content, 90);
     expect(card.classList).toContain('is-held');
+    // Threads that come after the reader has seen the line, as GitHub's answer comes late.
     shown.setThreads([thread('one', at('a', 'new', 4)), thread('two', at('a', 'new', 4))], render);
     expect(drawnThreads()).toEqual(['one']);
     press(scroller(), 'j');
     await new Promise((resolve) => setTimeout(resolve));
+    expect(card.style.height).toBe('90px');
     expect(card.classList).not.toContain('is-held');
     expect(drawnThreads()).toEqual(['one', 'two']);
-    // Where a scroll can take it off screen, it waits for that.
-    Object.defineProperty(scroller(), 'scrollHeight', { configurable: true, value: 2000 });
-    screen.threads.add('two');
-    shown.setThreads([thread('one', at('a', 'new', 4))], render);
-    press(scroller(), 'j');
+  });
+
+  test('a key the registry takes is the reader’s next input too, as the listener tells the view of it', async () => {
+    const shown = open();
+    onScreen(['line 4']);
+    shown.setThreads([thread('here', at('a', 'new', 4))], plain().render);
+    expect(drawnThreads()).toEqual([]);
+    // As `listen` sends it before the registry runs the key, which goes no further.
+    vimIn('After').content.dispatchEvent(new Event(KEY_EVENT, { bubbles: true }));
     await new Promise((resolve) => setTimeout(resolve));
-    expect(drawnThreads()).toEqual(['one', 'two']);
+    expect(drawnThreads()).toEqual(['here']);
+  });
+
+  test.each([
+    ['side by side', 'split', 'After'],
+    ['inline', 'inline', 'Changes'],
+  ] as const)(
+    ']t counts the threads waiting on screen, which come as it’s pressed, %s',
+    (_, layout, label) => {
+      const shown = open(events(), { layout });
+      shown.reveal(onLine('a', 'new', 1));
+      onScreen(['line 1', 'line 4']);
+      shown.setThreads(
+        [thread('here', at('a', 'new', 4)), thread('further', at('a', 'new', 24))],
+        plain().render,
+      );
+      expect(drawnThreads()).toEqual(['further']);
+      vimIn(label).keys(']', 't');
+      expect(shown.probe.cursor()?.at).toMatchObject(onLine('a', 'new', 4));
+      expect(shown.keyState().target).toMatchObject({ kind: 'line', thread: 'here' });
+      expect(drawnThreads()).toEqual(['here', 'further']);
+    },
+  );
+
+  test('a reply that comes once its box closed on screen takes the room the box left', async () => {
+    const sizes = observers();
+    const shown = open();
+    const { render } = plain();
+    shown.setThreads([thread('one', at('a', 'new', 4))], render);
+    onScreen(['line 4'], ['one']);
+    // The box, the room it leaves and the thread are on screen, each 80 px tall as first drawn.
+    vi.spyOn(Element.prototype, 'getClientRects').mockImplementation(function (this: Element) {
+      return boxOrThread(this) ? oneRect(new DOMRect(0, 100, 400, 80)) : noRects();
+    });
+    vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (
+      this: Element,
+    ) {
+      if (this.classList.contains('lo-diffview')) return new DOMRect(0, 0, 800, 600);
+      return boxOrThread(this) ? new DOMRect(0, 100, 400, 80) : new DOMRect();
+    });
+    const card = parent!.querySelector<HTMLElement>('[data-thread-id="one"]')!;
+    const content = card.querySelector('.lo-diffthread__host')!;
+    sizes.resize(content, 40);
+    const box = shown.compose({ thread: 'one' }, 'A reply', composerEvents());
+    shown.focus();
+    // Closed as GitHub answered, before the reply is in the thread.
+    box.close();
+    const room = parent!.querySelector<HTMLElement>('.lo-diffcomposer-room')!;
+    expect(room.style.height).toBe('80px');
+    shown.setThreads([thread('one', at('a', 'new', 4), true, 2)], render);
+    sizes.resize(content, 90);
+    await nextFrame();
+    expect(card.style.height).toBe('90px');
+    expect(card.classList).not.toContain('is-held');
+    expect(room.style.height).toBe('30px');
+    // More than the room has left waits for the reader's next input.
+    shown.setThreads([thread('one', at('a', 'new', 4), true, 3)], render);
+    sizes.resize(content, 150);
+    await nextFrame();
+    expect(card.style.height).toBe('90px');
+    expect(card.classList).toContain('is-held');
   });
 });
 
@@ -1461,6 +1830,42 @@ describe('keys', () => {
     expect(shown.keyState()).toMatchObject({ mode: 'visual', pending: false });
     shown.clearPending();
     expect(shown.keyState().mode).toBe('visual');
+  });
+
+  test('keyState says the count Vim holds when that’s all it holds', () => {
+    const shown = open();
+    shown.reveal(onLine('a', 'new', 10));
+    const after = vimIn('After');
+    expect(shown.keyState().count).toBeUndefined();
+    after.keys('1', '2');
+    expect(shown.keyState()).toMatchObject({ pending: true, count: 12 });
+    after.keys('y');
+    expect(shown.keyState()).toMatchObject({ pending: true, count: undefined });
+    shown.clearPending();
+    expect(shown.keyState().count).toBeUndefined();
+  });
+
+  test('the status bar hears Vim’s mode while the view has focus, and nothing after', async () => {
+    const shown = open();
+    shown.reveal(onLine('a', 'new', 10));
+    shown.focus();
+    const after = vimIn('After');
+    after.content.focus();
+    await Promise.resolve();
+    expect(focusedMode()).toBe('NORMAL');
+    after.keys('V');
+    await Promise.resolve();
+    expect(focusedMode()).toBe('V-LINE');
+    after.keys('v');
+    await Promise.resolve();
+    expect(focusedMode()).toBe('VISUAL');
+    after.keys('<Esc>');
+    await Promise.resolve();
+    expect(focusedMode()).toBe('NORMAL');
+    after.content.blur();
+    await vi.waitFor(() => {
+      expect(focusedMode()).toBeUndefined();
+    });
   });
 
   test('passKeys hands keys to Vim, as if typed', () => {
@@ -2159,6 +2564,29 @@ describe('overview marks', () => {
     expect(noted('After')).toEqual([]);
     expect(markers('After')).toEqual(['ball first', 'rail', 'rail last']);
     expect(shown.closeNote()).toBe(false);
+  });
+
+  test('a note’s text is the caller’s to draw, in place of its plain text, until it closes', () => {
+    const shown = open();
+    const takenDown = vi.fn<() => void>();
+    const draw = vi.fn<(into: HTMLElement) => () => void>((into) => {
+      const words = document.createElement('p');
+      const stress = document.createElement('em');
+      stress.textContent = 'refused';
+      words.append('A query is ', stress);
+      into.append(words);
+      return takenDown;
+    });
+    const mark = overview('new', 4, 6, 'one', 'A query is refused');
+    if (mark.kind === 'overview') mark.note.draw = draw;
+    shown.setMarks([mark]);
+    shown.openNote(at('a', 'new', 4));
+    expect(draw).toHaveBeenCalledTimes(1);
+    const text = parent!.querySelector('.cm-content[aria-label="After"] .lo-ovnote__text')!;
+    expect(text.innerHTML).toBe('<p>A query is <em>refused</em></p>');
+    expect(takenDown).not.toHaveBeenCalled();
+    shown.closeNote();
+    expect(takenDown).toHaveBeenCalledTimes(1);
   });
 
   test('Esc in the diff closes the note opened last, once Vim is waiting on nothing', () => {

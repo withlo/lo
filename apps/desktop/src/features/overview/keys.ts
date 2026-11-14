@@ -1,8 +1,8 @@
 // The overview feature's keys: copying a prompt for a coding agent, anywhere in a pull request's
-// tab, and installing the overview skill, which has none. In the overview's own view, the
-// `overview` scope: moving between its blocks and within one, following a block to its code, the
-// code beside it, and scrolling; and, on a block's menu, loading a newer overview or reading it
-// again, which have none.
+// tab; installing the overview skill, which has none; and, in Settings, copying the command that
+// installs it from a terminal. In the overview's own view, the `overview` scope: moving between its
+// blocks and within one, following a block to its code, the code beside it, and scrolling; and, on
+// a block's menu, loading a newer overview or reading it again, which have none.
 
 import { defineCommands, type When } from '@lo/ui/commands';
 
@@ -143,6 +143,16 @@ export default defineCommands(
       group: 'Tabs and window',
       keys: [],
       bar: { menu: 'App', order: 20 },
+    },
+    /**
+     * Copies the command that installs the overview skill from a terminal, which Settings shows in
+     * its Command line section, by the version of the checker Lo's own skill runs.
+     */
+    copyInstallCommand: {
+      label: 'Copy the overview skill’s install command',
+      group: 'Copy and open',
+      keys: ['y c'],
+      when: { scope: 'settings' },
     },
   },
   { scopes: ['overview'] },

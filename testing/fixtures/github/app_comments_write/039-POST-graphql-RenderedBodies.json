@@ -1,0 +1,47 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "https://api.github.com/graphql",
+    "operation": "RenderedBodies",
+    "variables": {
+      "owner": "rozed-dev",
+      "name": "e2e",
+      "number": 94,
+      "description": false,
+      "ids": [
+        "PRRC_kwDOVleUfc8AAAABEGstXg"
+      ]
+    },
+    "query_sha256": "285b3a71ef24563ae33870f157b845fcb0e9fc71ff54b6235fa3b18c95041504"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "x-ratelimit-limit": "5000",
+      "x-ratelimit-remaining": "4962",
+      "x-ratelimit-reset": "1794621242",
+      "x-ratelimit-resource": "graphql",
+      "x-ratelimit-used": "38"
+    },
+    "body": {
+      "data": {
+        "rateLimit": {
+          "cost": 1,
+          "limit": 5000,
+          "remaining": 4962,
+          "used": 38,
+          "resetAt": "2026-11-14T01:54:02Z"
+        },
+        "repository": {},
+        "nodes": [
+          {
+            "__typename": "PullRequestReviewComment",
+            "id": "PRRC_kwDOVleUfc8AAAABEGstXg",
+            "bodyHTML": "<p dir=\"auto\">Does the first wait need a cap?</p>"
+          }
+        ]
+      }
+    }
+  }
+}

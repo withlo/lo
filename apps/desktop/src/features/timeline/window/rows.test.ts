@@ -184,7 +184,7 @@ describe('rowsOf', () => {
     ]);
   });
 
-  it('makes cards of comments and submitted reviews, with the revision a review was on', () => {
+  it('makes cards of comments, saying what GitHub lets you change, and submitted reviews, with the revision a review was on', () => {
     const rows = rowsAfter(
       [
         {
@@ -197,7 +197,7 @@ describe('rowsOf', () => {
             url: 'https://github.com/rozed-dev/e2e/pull/23#issuecomment-1',
             hidden: 'outdated',
             viewerCanUpdate: true,
-            viewerCanDelete: true,
+            viewerCanDelete: false,
           },
         },
         {
@@ -238,6 +238,8 @@ describe('rowsOf', () => {
         byAuthor: true,
         hidden: 'outdated',
         author: { login: 'mona', type: 'User' },
+        canUpdate: true,
+        canDelete: false,
       }),
       expect.objectContaining({
         kind: 'review',

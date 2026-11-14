@@ -22,21 +22,21 @@
     "headers": {
       "content-type": "application/json; charset=utf-8",
       "x-ratelimit-limit": "5000",
-      "x-ratelimit-remaining": "4961",
-      "x-ratelimit-reset": "1794605193",
+      "x-ratelimit-remaining": "4968",
+      "x-ratelimit-reset": "1794621242",
       "x-ratelimit-resource": "graphql",
-      "x-ratelimit-used": "39"
+      "x-ratelimit-used": "32"
     },
     "body": {
       "data": {
         "addPullRequestReview": {
           "pullRequestReview": {
-            "id": "PRR_kwDOVleUfc8AAAABX47hOw",
+            "id": "PRR_kwDOVleUfc8AAAABX66xPg",
             "state": "PENDING",
             "comments": {
               "nodes": [
                 {
-                  "id": "PRRC_kwDOVleUfc8AAAABEFGpGg"
+                  "id": "PRRC_kwDOVleUfc8AAAABEGstXg"
                 }
               ]
             }

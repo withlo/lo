@@ -15,6 +15,7 @@ export type {
   DiffLayout,
   DiffNote,
   DiffView,
+  DrawNote,
   ExcerptEvents,
   ExcerptInit,
   ExcerptView,
@@ -26,6 +27,7 @@ export type {
   Fold,
   HeaderTarget,
   JumpTo,
+  KeptBox,
   KeySource,
   LineTarget,
   LinesMark,
@@ -60,4 +62,5 @@ export { createComposer } from './composer.ts';
 export { createExcerptView } from './excerpt.ts';
 export { createFileView } from './file.ts';
 export { createDiffView } from './view.ts';
+export { focusedMode, onFocusedMode, type ModeName } from './mode.ts';
 export { codeTypeface } from './typeface.ts';

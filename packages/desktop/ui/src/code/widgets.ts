@@ -7,7 +7,7 @@
 import { WidgetType } from '@codemirror/view';
 
 import { COMMENT_PATH, threadWords } from '../counts.ts';
-import type { FileHeader } from './api.ts';
+import type { DrawNote, FileHeader } from './api.ts';
 import type { ThreadHost } from './threads.ts';
 
 /** How each viewed mark is drawn: a ring, a filled ball, or an amber ring with a dot. */
@@ -26,13 +26,14 @@ export interface HeaderInfo {
 
 /**
  * What goes under a file's header on one side: the threads on the file, each in the element the
- * caller draws it in, and a comment box on the file being written, last. Like a line's threads,
- * they're elements that outlive the block, and move into whichever block draws them last.
+ * caller draws it in, with the boxes written in each after it, and the comment boxes on the file
+ * being written, last. Like a line's threads, they're elements that outlive the block, and move
+ * into whichever block draws them last.
  */
 export interface UnderHeader {
   readonly threads: readonly ThreadHost[];
-  readonly box: BoxHost | undefined;
-  /** Changes when the threads and the box must be drawn again, to move them into another editor. */
+  readonly boxes: readonly BoxHost[];
+  /** Changes when the threads and the boxes must be drawn again, to move them into another editor. */
   readonly drawing: number;
   /** Has the caller draw a thread the first time it's drawn. */
   readonly draw: (thread: ThreadHost) => void;
@@ -40,7 +41,7 @@ export interface UnderHeader {
 
 /**
  * A file's header, the same on both sides, with a note under it on why a file with no lines isn't
- * shown, and under that the threads and comment box on the file, on the side they're on. Both are
+ * shown, and under that the threads and comment boxes on the file, on the side they're on. Both are
  * part of the header's block, not blocks after it: CodeMirror's decoration cursor can lose a block
  * that sits after another at the same place when a chunk of decorations ends between them, and
  * then draws it where it shouldn't, above the lines it draws.
@@ -81,11 +82,7 @@ export class HeaderWidget extends WidgetType {
     if (this.under) {
       // As under a line: the space around the cards is padding, which the editor measures.
       const threads = element('div', 'lo-diffthread');
-      for (const thread of this.under.threads) {
-        this.under.draw(thread);
-        threads.append(thread.dom);
-      }
-      this.under.box?.attach(threads);
+      drawUnder(threads, this.under.threads, this.under.boxes, this.under.draw);
       block.append(threads);
     }
     return block;
@@ -132,26 +129,26 @@ export class HeaderWidget extends WidgetType {
     let height = this.note === undefined ? 38 : 66;
     const { under } = this;
     if (under) {
-      const parts = under.threads.length + (under.box ? 1 : 0);
+      const parts = under.threads.length + under.boxes.length;
       height += BLOCK_PADDING + Math.max(0, parts - 1) * BLOCK_GAP;
       for (const thread of under.threads) height += thread.estimate;
-      if (under.box) height += under.box.dom.offsetHeight || 120;
+      height += boxesHeight(under.boxes);
     }
     return height;
   }
 
-  /** The header's own events are the editor's; the threads and the box under it handle theirs. */
+  /** The header's own events are the editor's; the threads and the boxes under it handle theirs. */
   override ignoreEvent(event: Event): boolean {
     const { target } = event;
     return target instanceof Element && target.closest('.lo-diffthread') !== null;
   }
 }
 
-/** Whether two headers draw the same threads and box under them. */
+/** Whether two headers draw the same threads and boxes under them. */
 function sameUnder(a: UnderHeader | undefined, b: UnderHeader | undefined): boolean {
   if (!a || !b) return a === b;
   return (
-    a.box === b.box &&
+    sameBoxes(a.boxes, b.boxes) &&
     a.drawing === b.drawing &&
     a.threads.length === b.threads.length &&
     a.threads.every((thread, index) => thread === b.threads[index])
@@ -217,12 +214,49 @@ export class MovedLabelWidget extends WidgetType {
   }
 }
 
-/** What a thread widget needs from the comment box it holds. */
+/** What a thread widget needs from a comment box it holds. */
 export interface BoxHost {
   /** The box's element, which moves into each widget that draws it. */
   readonly dom: HTMLElement;
+  /**
+   * The thread it's written in, as a reply's box is, by its id: it's drawn right after that
+   * thread. Nothing for a box on the line or the file, which is drawn after every thread there.
+   */
+  readonly thread?: string | undefined;
   /** Puts the box in `parent`, keeping its focus. */
   attach(parent: HTMLElement): void;
+}
+
+/**
+ * Puts `threads` in `parent`, each drawn the first time it is, and `boxes`: those written in a
+ * thread right after it, and the rest last.
+ */
+function drawUnder(
+  parent: HTMLElement,
+  threads: readonly ThreadHost[],
+  boxes: readonly BoxHost[],
+  draw: (thread: ThreadHost) => void,
+): void {
+  const ids = new Set(threads.map((thread) => thread.id));
+  for (const thread of threads) {
+    draw(thread);
+    parent.append(thread.dom);
+    for (const box of boxes) if (box.thread === thread.id) box.attach(parent);
+  }
+  for (const box of boxes) {
+    if (box.thread === undefined || !ids.has(box.thread)) box.attach(parent);
+  }
+}
+
+/** How tall `boxes` are, or about as tall before they're drawn. */
+function boxesHeight(boxes: readonly BoxHost[]): number {
+  let height = 0;
+  for (const box of boxes) height += box.dom.offsetHeight || 120;
+  return height;
+}
+
+function sameBoxes(a: readonly BoxHost[], b: readonly BoxHost[]): boolean {
+  return a.length === b.length && a.every((box, index) => box === b[index]);
 }
 
 /** The average width of a character of the notes' face, in pixels. */
@@ -297,29 +331,35 @@ export interface NoteDraw {
   /** The overview's block that explains the lines, which "Read it in the overview" names. */
   readonly block: string;
   readonly label: string;
+  /** Its text, plain, which sizes it before it's drawn, and which it shows unless `draw` draws it. */
   readonly text: string;
+  /** What draws its text in its place, the caller's way. */
+  readonly draw?: DrawNote | undefined;
   /** Whether it links back to the overview. */
   readonly link: boolean;
 }
 
+/** What takes down the text a caller drew in a note, by the element it drew it in. */
+const drawnNotes = new WeakMap<Element, () => void>();
+
 /** The attribute on a note's link that names the overview's block it shows. */
 export const NOTE_BLOCK_ATTRIBUTE = 'data-note-block';
 
-/** The room a block of threads, notes and a box takes around them, and between each. */
+/** The room a block of threads, notes and boxes takes around them, and between each. */
 const BLOCK_PADDING = 16;
 const BLOCK_GAP = 8;
 
 /**
  * What goes under a line: the notes of the overview markers that end there, the review threads
- * there, each in the element the caller draws it in (`threads.ts`), and the comment box being
- * written there, if there is one, last. One block a line, for the same reason as a header's note.
- * Threads and the box are elements that outlive the block, and move into whichever block draws
- * them last.
+ * there, each in the element the caller draws it in (`threads.ts`), with the boxes written in each
+ * after it, and the comment boxes being written on the line, last. One block a line, for the same
+ * reason as a header's note. Threads and boxes are elements that outlive the block, and move into
+ * whichever block draws them last.
  */
 export class ThreadWidget extends WidgetType {
   readonly id: string;
   readonly threads: readonly ThreadHost[];
-  readonly box: BoxHost | undefined;
+  readonly boxes: readonly BoxHost[];
   readonly drawing: number;
   readonly sizes: ThreadSizes;
   readonly notes: readonly NoteDraw[];
@@ -327,7 +367,7 @@ export class ThreadWidget extends WidgetType {
 
   /**
    * `draw` has the caller draw a thread the first time it's drawn. `drawing` changes when the
-   * threads and the box must be drawn again, to move them into another editor; `sizes` are the
+   * threads and the boxes must be drawn again, to move them into another editor; `sizes` are the
    * editor's.
    */
   constructor(
@@ -335,7 +375,7 @@ export class ThreadWidget extends WidgetType {
     threads: readonly ThreadHost[],
     sizes: ThreadSizes,
     draw: (thread: ThreadHost) => void,
-    box?: BoxHost,
+    boxes: readonly BoxHost[] = [],
     drawing = 0,
     notes: readonly NoteDraw[] = [],
   ) {
@@ -344,7 +384,7 @@ export class ThreadWidget extends WidgetType {
     this.threads = threads;
     this.sizes = sizes;
     this.#draw = draw;
-    this.box = box;
+    this.boxes = boxes;
     this.drawing = drawing;
     this.notes = notes;
   }
@@ -354,7 +394,7 @@ export class ThreadWidget extends WidgetType {
       other.id === this.id &&
       other.threads.length === this.threads.length &&
       other.threads.every((thread, index) => thread === this.threads[index]) &&
-      other.box === this.box &&
+      sameBoxes(other.boxes, this.boxes) &&
       other.drawing === this.drawing &&
       other.sizes === this.sizes &&
       other.notes.length === this.notes.length &&
@@ -375,22 +415,22 @@ export class ThreadWidget extends WidgetType {
       block.append(drawn);
       this.sizes.observe(drawn.querySelector('.lo-ovnote__text')!);
     }
-    for (const thread of this.threads) {
-      this.#draw(thread);
-      block.append(thread.dom);
-    }
-    this.box?.attach(block);
+    drawUnder(block, this.threads, this.boxes, this.#draw);
     return block;
   }
 
   override destroy(dom: HTMLElement): void {
     this.sizes.unobserve(dom);
-    for (const text of dom.querySelectorAll('.lo-ovnote__text')) this.sizes.unobserve(text);
+    for (const text of dom.querySelectorAll('.lo-ovnote__text')) {
+      this.sizes.unobserve(text);
+      drawnNotes.get(text)?.();
+      drawnNotes.delete(text);
+    }
   }
 
   /** Whether it holds notes alone, whose size as drawn is kept for drawing them again. */
   get #notesOnly(): boolean {
-    return this.threads.length === 0 && !this.box;
+    return this.threads.length === 0 && this.boxes.length === 0;
   }
 
   /** The notes' size as drawn, for drawing them again. */
@@ -402,23 +442,22 @@ export class ThreadWidget extends WidgetType {
   /**
    * Notes alone, as tall as they were last drawn in its editor at this width, if they were. Else
    * its notes' lines of 21 pixels, at the characters the editor's notes wrap at, between a label
-   * and a foot, its threads as tall as each was drawn, or about as tall, and the box as it is.
+   * and a foot, its threads as tall as each was drawn, or about as tall, and the boxes as they are.
    */
   override get estimatedHeight(): number {
     const drawn = this.#notesOnly ? this.sizes.drawn(this.#key) : undefined;
     if (drawn !== undefined) return drawn;
     let height = BLOCK_PADDING;
-    const parts = this.notes.length + this.threads.length + (this.box ? 1 : 0);
+    const parts = this.notes.length + this.threads.length + this.boxes.length;
     height += Math.max(0, parts - 1) * BLOCK_GAP;
     for (const note of this.notes) {
       height += 70 + Math.max(1, Math.ceil(note.text.length / this.sizes.charsPerLine)) * 21;
     }
     for (const thread of this.threads) height += thread.estimate;
-    if (this.box) height += this.box.dom.offsetHeight || 120;
-    return height;
+    return height + boxesHeight(this.boxes);
   }
 
-  /** The threads and the box handle their own events. */
+  /** The threads and the boxes handle their own events. */
   override ignoreEvent(): boolean {
     return true;
   }
@@ -436,8 +475,8 @@ function sameNote(a: NoteDraw, b: NoteDraw | undefined): boolean {
 }
 
 /**
- * An overview marker's note: its label, its text, and a foot with the way back to the overview,
- * all plain text.
+ * An overview marker's note: its label, its text, as the caller draws it or else plain, and a foot
+ * with the way back to the overview.
  */
 function noteElement(note: NoteDraw): HTMLElement {
   const box = element('div', 'lo-ovnote');
@@ -453,7 +492,10 @@ function noteElement(note: NoteDraw): HTMLElement {
     foot.append(link);
   }
   foot.append(element('span', '', 'Esc closes it'));
-  box.append(label, element('div', 'lo-ovnote__text', note.text), foot);
+  const text = element('div', 'lo-ovnote__text');
+  if (note.draw) drawnNotes.set(text, note.draw(text));
+  else text.textContent = note.text;
+  box.append(label, text, foot);
   return box;
 }
 

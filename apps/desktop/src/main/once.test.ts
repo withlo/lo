@@ -6,7 +6,7 @@ import { connect, createServer as createNetServer, type Socket } from 'node:net'
 import { classifyNetworkError, type FetchInit } from '@lo/github';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { authorities, hopsOf, onceFetch, writesOnce } from './once.ts';
+import { authorities, onceFetch, routeOf, writesOnce } from './once.ts';
 import { AUTHORITY, LOCALHOST } from './test/tls.ts';
 
 /** What reached a test server: each request, with its body. */
@@ -105,37 +105,30 @@ async function httpProxy(
   return { port: await listening(server), asked };
 }
 
-/** A SOCKS proxy, of version 4 or 5, that connects without asking who's asking. */
+/** A SOCKS5 proxy that connects without asking who's asking, by the name it's given. */
 async function socksProxy(): Promise<{ port: number; asked: string[] }> {
   const asked: string[] = [];
   const server = createNetServer((client) => {
     let held = Buffer.alloc(0);
-    const ahead = (host: string, port: number, reply: Buffer) => {
+    client.on('data', (chunk: Buffer) => {
+      held = Buffer.concat([held, chunk]);
+      if (held.length === 3) {
+        client.write(Buffer.from([5, 0]));
+        held = Buffer.alloc(0);
+        return;
+      }
+      const length = held[4] ?? 0;
+      if (held[3] !== 3 || held.length < 5 + length + 2) return;
       client.removeAllListeners('data');
+      const host = held.subarray(5, 5 + length).toString();
+      const port = held.readUInt16BE(5 + length);
       asked.push(`${host}:${port}`);
       const onward = connect(port, host === 'localhost' ? '127.0.0.1' : host, () => {
-        client.write(reply);
+        client.write(Buffer.from([5, 0, 0, 1, 0, 0, 0, 0, 0, 0]));
         onward.pipe(client).pipe(onward);
       });
       onward.on('error', () => client.destroy());
       client.on('error', () => onward.destroy());
-    };
-    client.on('data', (chunk: Buffer) => {
-      held = Buffer.concat([held, chunk]);
-      if (held[0] === 4 && held.length >= 9 && held.indexOf(0, 8) >= 0) {
-        const port = held.readUInt16BE(2);
-        ahead([...held.subarray(4, 8)].join('.'), port, Buffer.from([0, 0x5a, 0, 0, 0, 0, 0, 0]));
-      } else if (held[0] === 5 && held.length === 3) {
-        client.write(Buffer.from([5, 0]));
-        held = Buffer.alloc(0);
-      } else if (held[0] === 5 && held[3] === 3 && held.length >= 5 + (held[4] ?? 0) + 2) {
-        const length = held[4] ?? 0;
-        ahead(
-          held.subarray(5, 5 + length).toString(),
-          held.readUInt16BE(5 + length),
-          Buffer.from([5, 0, 0, 1, 0, 0, 0, 0, 0, 0]),
-        );
-      }
     });
   });
   return { port: await listening(server), asked };
@@ -187,7 +180,6 @@ describe('a write', () => {
           host: new URL(origin).host,
           authorization: 'token t',
           'content-length': '21',
-          connection: 'close',
         }) as unknown,
       }),
     ]);
@@ -226,37 +218,51 @@ describe('a write', () => {
     expect(arrivals).toHaveLength(2);
   });
 
-  it('goes through a SOCKS proxy: by name for SOCKS5, at its address for SOCKS4', async () => {
+  it('goes through a SOCKS5 proxy, which finds GitHub by name', async () => {
     const { origin, arrivals } = await serving(undefined, true);
-    const { port } = new URL(origin);
     const socks = await socksProxy();
 
     await writes(`SOCKS5 127.0.0.1:${socks.port}`)(`${origin}/graphql`, comment());
-    await writes(`SOCKS 127.0.0.1:${socks.port}`)(`${origin}/graphql`, comment());
 
-    expect(socks.asked).toEqual([`localhost:${port}`, `127.0.0.1:${port}`]);
-    expect(arrivals).toHaveLength(2);
-  });
-
-  it('takes the next way when a proxy is down, before anything went', async () => {
-    const { origin, arrivals } = await serving();
-    const down = await closedPort();
-
-    const answer = await writes(`PROXY 127.0.0.1:${down}; DIRECT`)(`${origin}/x`, comment());
-
-    expect(answer.status).toBe(200);
+    expect(socks.asked).toEqual([new URL(origin).host]);
     expect(arrivals).toHaveLength(1);
   });
 
-  it('fails as never sent when no way goes through', async () => {
-    const { origin, arrivals } = await serving();
-    const refusing = await httpProxy({ refuse: 502 });
+  it('stops when its proxy fails, and never goes another way, even when DIRECT comes next', async () => {
+    const { origin, arrivals } = await serving(undefined, true);
     const asking = await httpProxy({ refuse: 407 });
+    const refusing = await httpProxy({ refuse: 502 });
+    const down = await closedPort();
+    const fail = async (proxy: string) => {
+      const error = await thrown(writes(`${proxy}; DIRECT`)(`${origin}/x`, comment()));
+      return [classifyNetworkError(error), error instanceof Error ? error.message : error];
+    };
+
+    expect(await fail(`PROXY 127.0.0.1:${asking.port}`)).toEqual([
+      'refused',
+      `The proxy 127.0.0.1:${asking.port} asks Lo to sign in, which Lo can't do, so nothing was sent to GitHub.`,
+    ]);
+    expect(await fail(`PROXY 127.0.0.1:${refusing.port}`)).toEqual([
+      'tunnel',
+      `The proxy 127.0.0.1:${refusing.port} didn't connect Lo to GitHub (it answered 502), so nothing was sent.`,
+    ]);
+    expect(await fail(`PROXY 127.0.0.1:${down}`)).toEqual([
+      'offline',
+      `Lo couldn't reach the proxy 127.0.0.1:${down} (ECONNREFUSED), so nothing was sent to GitHub.`,
+    ]);
+    expect(arrivals).toEqual([]);
+    expect([asking.asked, refusing.asked]).toEqual([
+      [new URL(origin).host],
+      [new URL(origin).host],
+    ]);
+  });
+
+  it('through a proxy Lo cant take fails as never sent', async () => {
+    const { origin, arrivals } = await serving();
     const fail = (proxy: string) => thrown(writes(proxy)(`${origin}/x`, comment()));
 
-    expect(classifyNetworkError(await fail(`PROXY 127.0.0.1:${refusing.port}`))).toBe('tunnel');
-    expect(classifyNetworkError(await fail(`PROXY 127.0.0.1:${asking.port}`))).toBe('refused');
-    expect(classifyNetworkError(await fail(`QUIC 127.0.0.1:${asking.port}`))).toBe('refused');
+    expect(classifyNetworkError(await fail('SOCKS 127.0.0.1:1080; DIRECT'))).toBe('refused');
+    expect(classifyNetworkError(await fail('QUIC 127.0.0.1:443'))).toBe('refused');
     expect(classifyNetworkError(await fail(''))).toBe('refused');
     expect(arrivals).toEqual([]);
   });
@@ -295,20 +301,23 @@ describe('a write', () => {
   });
 });
 
-describe('the ways to the server', () => {
-  it('are the ones Chromium names, in its order, but those a write cant take', () => {
-    const ipv6 = '[::1]';
-    expect(
-      hopsOf(`PROXY proxy:3128; HTTPS secure.proxy:443;SOCKS s:1080; SOCKS5 ${ipv6}:1081; DIRECT`),
-    ).toEqual([
-      { kind: 'http', host: 'proxy', port: 3128 },
-      { kind: 'https', host: 'secure.proxy', port: 443 },
-      { kind: 'socks4', host: 's', port: 1080 },
-      { kind: 'socks5', host: '::1', port: 1081 },
-      { kind: 'direct' },
-    ]);
-    expect(hopsOf('QUIC proxy:443; PROXY nowhere; PROXY a:0; ')).toEqual([]);
+it('a write takes the first way Chromium names, and only one it can take', () => {
+  const ipv6 = '[::1]';
+  expect(routeOf('DIRECT')).toEqual({ kind: 'direct' });
+  expect(routeOf('PROXY proxy:80; DIRECT')).toEqual({
+    kind: 'proxy',
+    uri: 'http://proxy/',
+    shown: 'proxy:80',
   });
+  expect(routeOf('HTTPS secure.proxy:443').kind).toBe('proxy');
+  expect(routeOf(`SOCKS5 ${ipv6}:1081`)).toEqual({
+    kind: 'proxy',
+    uri: `socks5://${ipv6}:1081`,
+    shown: `${ipv6}:1081`,
+  });
+  for (const answer of ['SOCKS s:1080', 'SOCKS4 s:1080', 'QUIC proxy:443', 'PROXY nowhere', '']) {
+    expect(routeOf(answer).kind).toBe('unsupported');
+  }
 });
 
 it('writes go the way that sends them once, and reads the usual way', async () => {

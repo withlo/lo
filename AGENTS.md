@@ -399,12 +399,23 @@ repositories, which account opens a repository, and the pull requests opened lat
   cookie. Electron's `net.fetch` isn't used: it fails a redirect GitHub's client asks to see, and
   the client follows redirects itself, only to where the token may go.
 - Every write (a request the client marks `once`: each but a `GET` or a GraphQL query, and each form
-  posted to GitHub's website) is sent at most once, over Node's HTTP client on a connection of its
-  own (`src/main/once.ts`), never through Chromium, which sends a request again by itself when the
-  kept-alive connection it reused drops before the answer. It goes through the proxy Chromium names
-  for the address (`session.resolveProxy`: direct, HTTP, HTTPS, SOCKS4 or SOCKS5), and trusts the
-  system's certificate authorities and Node's own. A write whose connection drops fails as an answer
-  lost, so it may have posted.
+  posted to GitHub's website) is sent at most once, over undici, Node's HTTP stack, on one HTTP/1.1
+  connection of its own (`src/main/once.ts`), never through Chromium, which sends a request again by
+  itself when the kept-alive connection it reused drops before the answer. It takes the first way
+  Chromium names for the address (`session.resolveProxy`): direct, or an HTTP, HTTPS or SOCKS5
+  proxy. A proxy that fails, or one of another kind, stops the write, which never goes another way.
+  It trusts what Node's `--use-system-ca` does: Node's bundled roots, the system's that Node reads,
+  and `NODE_EXTRA_CA_CERTS`. A write whose connection drops after it went fails as an answer lost,
+  so it may have posted.
+- Each account's requests go one at a time through its poller's queue. One whose answer hasn't begun
+  within 15 s (GitHub gives up on a request after 10 s), or hasn't all come within 30 s, is given up
+  as an answer lost, so the queue goes on: a read is tried again later, and a write may have been
+  done, so it's never sent again by itself. An upload has a limit of its own. The one exception to
+  the queue is the read of whether an account can write to a repository, which attachments ask first
+  (`comments.attachable`): it's read with the account's client, outside the queue, with the same
+  limits, so nothing waits on it. A view's first read of its review threads goes ahead of polls and
+  of the tab's other reads while it's on screen, as an opening tab's overview reads do, since the
+  diff's first draw waits on it.
 - Each account's poller keeps what it read in the database, read back only by the build of Lo that
   wrote it (a hash of main's output folder), talking to the same GitHub.
 - The window gets each account's summary (its login and name, how it signed in, whether it's signed
@@ -768,6 +779,17 @@ The `timeline` feature shows a pull request's GitHub timeline as the third of it
   back to the list. A row is a `row` target, the keys' from the scope and a right-click's from the
   row clicked: its menu, and the palette for the row the keyboard is on, offer what its buttons do,
   each listed only for rows that have it.
+- What main sends while the timeline is on screen waits for the reader's next key, click or scroll
+  (`window/holding.ts`, `window/store.ts`), except what their own write changed, which the comments
+  feature tells it of (`onCommentWritten`) and which shows as it comes, for a minute at most. As it
+  goes on screen, what the reader is at keeps its place (`window/place.ts`): the box at the end
+  while they write in it or the list is at its end, or else the keyboard's row while it's on screen,
+  or else the first row on screen. When the keyboard's row goes, as a comment deleted, the keyboard
+  moves to its neighbour, with nothing scrolled.
+- The box at the end comments on the pull request itself, and your comments there have Edit and
+  Delete (`i`, `dd`), drawn through the comments feature's `PullCommentBox`, `PullCommentEdit` and
+  `PullCommentNote`. `window/yours.ts` says which row a key acts on, and refuses the rest in Lo's
+  words.
 
 ### Posts
 
@@ -799,7 +821,13 @@ or a file's header, `C` to post right away, `s` for a suggestion, and `c` on a f
   once as the box closes or the window goes, by account, pull request and place, until GitHub takes
   it. Drafts saved before Lo started, or before the window was loaded again, reopen, unfocused, once
   their view's diff draws their line. A push moves a draft to the newer revision when its file
-  didn't change.
+  didn't change. A box open in the diff when the diff is drawn again stays in its box (`kept`, with
+  its editor as `Composer.keep()` gave it): the diff drawn anew opens it as it was, whatever the
+  overview did meanwhile, on its line; else under its file's header in that diff, as for a file
+  closed as viewed, still on the line; else under its block if the overview has it; else nowhere,
+  and the status bar says it was kept (`keptAway`) until its line or block takes it (`placeKept`).
+  `kept` lasts until that diff has placed it or couldn't. Focus comes back only to a box that had
+  it, with no key, click or wheel since and focus where the redraw left it.
 - `comments.send` plans each write with `@lo/review`'s `YourReview` and sends it with the poller's
   `sendReview`, one write to a pull request at a time, each planned from your pending review as read
   after the last one's answer. The box's text is held, read-only, while it's sent. A refusal keeps
@@ -810,6 +838,102 @@ or a file's header, `C` to post right away, `s` for a suggestion, and `c` on a f
   the box closes; not found, or not read, the box says so. While the read can't be made, as offline,
   it stays checking and main tries again. Text changed since it was sent stays as the draft. Nothing
   is sent again by itself, and nothing is sent while GitHub can't be reached.
+- Files dropped on a box, pasted into it or picked with "Attach" (`⌘⇧A`), ten on their way into a
+  box at a time, are attached (`window/uploads.ts`): each goes in at the cursor at once as a
+  placeholder, the background process checks it and takes its metadata out (`comments.prepare`) from
+  the bytes of the window's own `File`, and `comments.upload` hands those bytes to main, which never
+  reads a path the window names. Main checks the kind, size and first bytes again, and that the
+  account can write to the repository, then uploads through the poller's `upload`, one at a time for
+  each account, saying how far it has gone on `comments.uploads`; `comments.cancelUpload` gives one
+  up. The placeholder becomes the file's Markdown, or goes when it's refused, fails or is cancelled;
+  one the reader took out meanwhile leaves its row offering "Insert". When GitHub answers Not Found
+  though the account can write, main reads gh's token for that login (`accounts.github`'s `ghToken`)
+  for that upload alone, never keeping or logging it, and sends it once more. Once a view's diff is
+  drawn, `comments.attachable` says whether its account can write to the repository, read with the
+  account's client outside its poller's queue, so no read waits on it. Where it can't, or GitHub
+  takes no uploads with Lo's sign-in and gh has none, the view's boxes take no file, and an image's
+  `https` address pasted or dropped goes in as an image; a file dropped before main said goes in,
+  and out again before it's sent. Nothing is uploaded again by itself. A placeholder's address holds
+  a token made for its upload (`lo-upload:` and 16 hex digits), so only one Lo wrote counts as one.
+  A comment, or a review's summary, isn't sent while a file is on its way into it, nor while its
+  text holds a placeholder whose upload isn't under way, as after a restart; the box names the file,
+  and the reader takes the placeholder out. A box's uploads are given up as its draft goes, and a
+  summary's files go once the review is submitted.
+
+### Acting on review threads
+
+On a thread in the diff, `r` replies, `x` resolves or unresolves it, `i` edits your newest comment
+and `dd` deletes it, as do the card's buttons and its right-click menu (`window/acts.ts`). A key
+acts on the thread `]t` landed on, or the only one the view has drawn on the cursor's line or under
+the file's header (`threadsDrawn`), never one placed there that hasn't come on screen yet. `]t`
+stops at each drawn thread, so one of several on a line, or on a file, can be picked. The threads
+panel's `x` resolves the thread the keyboard is on, through the same function.
+
+- A reply's box and an edit's are comment boxes, kept by their thread (`reply` and `edit` places),
+  and drawn right after the thread's card. The code view keeps a box for each place and name, so a
+  reply's box and a new comment's on the same line both stay open.
+- An edit's draft keeps the text it started from (`base`, in `comments_drafts`), GitHub's as the
+  card showed it when `i` started it (`comments.editing`), through a restart. `comments.edit` reads
+  the comment afresh (`reviewComment`) and saves only if GitHub's text is still that one
+  (`beforeEdit`); otherwise the box keeps the text and offers to discard it.
+- `comments.resolve` and `comments.remove` go in their turn among the pull request's writes, like a
+  comment. A delete reads the comment afresh first, and goes only if it's as the question showed it
+  (its text, whether it's pending, whether it's its thread's only comment). Lo changes only your own
+  comments.
+- A write whose answer is lost is never sent again by itself: main reads the comment or the threads
+  10 s or more after it was sent, and `comments.acts` says how it stands meanwhile, which the card
+  shows, with "Try again" once Lo found it didn't go or can't tell.
+- A thread the reader acts on is claimed in the diff (`claimThread`), so what their write changes
+  there comes at once and keeps their line in place, as what comes under a sent box's line does.
+
+### Writing on the pull request itself
+
+The comment box at the end of the timeline comments on the pull request itself, and `i` and `dd` on
+your comment there edit and delete it (`window/conversation.ts`, `window/TimelineBox.tsx`).
+
+- The box is the comment box's editor (`createComposer`), in the same frame, taking files as the
+  diff's boxes do, kept with the drafts as the `conversation` place: one a pull request, which
+  restores after a restart with how sending it stands. `comments.send` posts it at once, in its turn
+  among the pull request's writes, with the poller's `addConversationComment`
+  (`main/conversation.ts`). Its answer lost, main reads the timeline afresh 10 s or more after, and
+  looks for your comment with its text made since, by GitHub's clock.
+- The draft is the one an overview's code block writes on the pull request too. It opens under that
+  block while the overview has it (`opensUnderBlock`), and otherwise in this box (`isPullsOwn`),
+  checked again as the overview changes. A draft the box shows stays in it while it's open, whatever
+  the overview does, so nothing moves and focus stays. One in no box waits while Lo reads or checks
+  the overview, which the box says. A draft the box lets go while it's still open, as the timeline
+  goes, opens where it opens now (`leftTimeline`), though its block was drawn first. While it's
+  under the block, the box says so, and `c` or its "Write it here" brings the draft into the box
+  (`bringToTimeline`).
+- An edit of your comment there is an `edit` place with no thread, drawn in the comment's card. It,
+  and a delete, read the comment afresh from a full read of the timeline (`readPullComment`); one
+  the read may have left out among older events settles nothing. A delete's question is the diff's
+  dialog, and only the comment's text has to be as it showed.
+
+### Submitting a review
+
+The `review` feature submits your review of the pull request on screen: `⌘⏎` anywhere in its tab but
+a comment box, a dialog, the palette or a menu, or the status bar's "3 pending · ⌘⏎", opens the
+submit dialog (`tab.dialogs`). The palette says the count too, "Submit review · 3 pending": a
+command's handler may say something after its label (`detail`).
+
+- The dialog asks main what it shows as it opens (`review.dialog`): your pending review and its
+  comments, the revision on screen, and whether you opened the pull request, in which case only
+  Comment is offered. `window/model.ts` words the verdicts, the refusals and the notes, as plain
+  functions tested alone, and plans the review with `@lo/review`'s `YourReview`, so what can't go
+  says so before anything is sent. A banner says once when your pending review sits on another
+  revision than the one on screen.
+- The summary box is the comment box's editor (`createComposer`). Main keeps its text with the
+  comments' drafts (`comments.drafts`, as a `summary` place), saved as it's typed. Files are
+  attached to it as to any comment box, through the comments' `window/shared.ts`.
+- `review.submit` sends in its turn among the comments' writes to the pull request
+  (`comments.reviews`' `inTurn`), with the poller's `sendReview`. The summary is marked sent, with
+  when, as a comment's draft is. When GitHub's answer is lost, nothing more is sent until a fresh
+  read of your reviews (`YourReviews`), made 10 s or more after the send, says whether it was
+  submitted, by GitHub's clock, even after a restart; when GitHub refuses that read, only "Submit
+  anyway" sends. Once it's submitted, the summary goes, a toast names the verdict, and the threads
+  and the timeline read again. A tab acting as nobody or showing a run of layers can't submit, nor
+  can one offline, or while GitHub asked Lo to hold off.
 
 ### Images from GitHub
 
@@ -874,9 +998,13 @@ builds and packs the checker, and publishes that version with npm's trusted publ
 no token and signs provenance. The skill runs the checker by that exact version, so CI's `overview`
 job fails a pull request whose package differs from npm's copy of its version, its manifest's
 `devDependencies`, `nx` and build scripts aside (the scripts an install runs count).
-`scripts/overview-npm.sh` packs the package the same way for both. Every bumped version is
-published: one that isn't above every release npm has, as when bumps merged close together publish
-out of order, goes out under the `previous` tag, so `latest` only moves forward.
+`scripts/overview-npm.sh` packs the package the same way for both. The workflow's runs go one at a
+time, in the order they started, so every bumped version is published, and bumps merged close
+together publish in order. A version that isn't above every release npm has, as when a failed run is
+re-run after a newer bump has published, or a prerelease, goes out under the `previous` tag, so
+`latest` only moves forward. A version can't carry build metadata (`1.2.3+build`) or a leading v
+(`v1.2.3`): npm drops it when it publishes, so the version on npm wouldn't be the one the skill
+runs, and CI's `overview` job and the workflow both refuse it.
 
 Only main can publish. The publish job runs in the `npm` environment, and npm's trusted publisher
 for the package names that environment, so a branch's edited copy of the workflow can't publish as

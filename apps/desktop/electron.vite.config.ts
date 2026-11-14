@@ -1,6 +1,6 @@
 import { fileURLToPath } from 'node:url';
 
-import { readdirSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join, posix } from 'node:path';
 
@@ -8,6 +8,34 @@ import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import { defineConfig } from 'electron-vite';
 import type { Plugin } from 'vite';
+import { z } from 'zod';
+
+/**
+ * The overview checker Lo builds in, as `@withlo/overview@<version>`: the skill Lo installs runs the
+ * checker by that exact version, and Settings shows the command that installs the same skill from a
+ * terminal. The package doesn't export its manifest, and exporting it would change the package,
+ * which takes a release, so the manifest is found above the module the package does export.
+ * vitest.config.ts defines it for the tests too.
+ */
+export const OVERVIEW_CHECKER = ((): string => {
+  const name = '@withlo/overview';
+  let folder = dirname(createRequire(import.meta.url).resolve(`${name}/install`));
+  while (!existsSync(join(folder, 'package.json'))) {
+    if (dirname(folder) === folder) throw new Error(`${name}'s package.json is missing.`);
+    folder = dirname(folder);
+  }
+  const path = join(folder, 'package.json');
+  const manifest = z
+    .object({ name: z.string().optional(), version: z.string().optional() })
+    .parse(JSON.parse(readFileSync(path, 'utf8')));
+  // A manifest nested in the package, such as one that marks a folder's module type, isn't the
+  // package's own: its version would be the wrong one to pin, so the build stops.
+  if (manifest.name !== name) {
+    throw new Error(`${path} isn't ${name}'s manifest: it names ${manifest.name ?? 'no package'}.`);
+  }
+  if (manifest.version === undefined) throw new Error(`${path} has no version.`);
+  return `${name}@${manifest.version}`;
+})();
 
 /** The fonts' licenses, shipped beside the window's files as the SIL Open Font License asks. */
 function fontLicenses(): Plugin {
@@ -99,6 +127,7 @@ export default defineConfig({
   renderer: {
     root: 'src/window',
     plugins: [react(), tailwindcss(), fontLicenses()],
+    define: { LO_OVERVIEW_CHECKER: JSON.stringify(OVERVIEW_CHECKER) },
     build: {
       outDir: 'dist/window',
       rolldownOptions: {

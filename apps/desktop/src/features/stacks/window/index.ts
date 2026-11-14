@@ -1,10 +1,10 @@
 // The stacks feature in the window: the stack's tree, at the top of a pull request's tab's left
-// panel; `]s` and `[s`, which walk it; `-` from the file tree, which goes up to it, and its keys;
-// runs of layers chosen there and shown as one diff, with the bar over the middle that says so and
-// goes back; `gS`, which makes the chain the pull request on screen is in a GitHub stack once the
-// reader confirms what will change, with the dialog that asks and says how it goes; and the banner
-// that offers where the layer on screen's diff starts, once its stack says so after the diff was
-// drawn.
+// panel; `]s` and `[s`, which walk it; `-` from the file tree, which goes up to it, and its keys,
+// `+` among them, which goes back down; runs of layers chosen there and shown as one diff, with the
+// bar over the middle that says so and goes back; `gS`, which makes the chain the pull request on
+// screen is in a GitHub stack once the reader confirms what will change, with the dialog that asks
+// and says how it goes; and the banner that offers where the layer on screen's diff starts, once its
+// stack says so after the diff was drawn.
 
 import { handlers } from '@lo/ui/commands';
 import { createElement } from 'react';
@@ -28,6 +28,7 @@ import {
   choose,
   convertible,
   convertTarget,
+  goDown,
   goUp,
   moveFocus,
   onLayer,
@@ -50,6 +51,7 @@ export default {
     nextLayer: walking(1),
     previousLayer: walking(-1),
     focus: { run: goUp, enabled: inPull },
+    files: goDown,
     down: { run: () => moveFocus(1), enabled: inPull },
     up: { run: () => moveFocus(-1), enabled: inPull },
     show: { run: showTarget, enabled: onLayer },

@@ -1,8 +1,9 @@
 // What the diff shares with other features' window code: the slot over the diff, where what it
 // compares is said; showing the diff, and a place in it or the file whole; how many files it shows; one file of it beside
 // another view; the lines another feature explains, which the diff marks; the review threads
-// another feature places under its lines, and the comment boxes it opens there; and diffing texts
-// another feature has, as the diff's own files are diffed.
+// another feature places under its lines, showing one of them, and the comment boxes it opens
+// there; diffing texts another feature has, as the diff's own files are diffed; and the code
+// other features draw in views of their own, whose lines the diff's keys read as its own.
 
 import type {
   BoxFrame,
@@ -22,11 +23,16 @@ import type { DiffState } from '../contract.ts';
 import { FILES_PER_JOB, type FileResult } from '../jobs.ts';
 import { Beside } from './Beside.tsx';
 import { changed, explainWith, type Explainer } from './explained.ts';
+import { addCodeElsewhere, type CodeElsewhere } from './elsewhere.ts';
 import { diffJobs } from './main.ts';
-import { showPlace as showCode } from './places.ts';
+import { showPlace as showCode, showThread as showThreadAt, type ShowWhen } from './places.ts';
 import { drawnFor, keysDiff, loaderOf, onDrawn, useSnapshot } from './tabs.ts';
 import { changed as changedThreads, type DrawnDiff, threadWith, type Threader } from './threads.ts';
 import { DIFF_VIEW } from './whole.ts';
+
+export type { ShowWhen } from './places.ts';
+
+export type { CodeElsewhere } from './elsewhere.ts';
 
 export type { ExplainedLines, Explainer } from './explained.ts';
 export type { DiffThreads, DrawnDiff, ThreadCounts, ThreadedFile, Threader } from './threads.ts';
@@ -148,6 +154,15 @@ export function setThreader(threader: Threader): () => void {
   return threadWith(threader);
 }
 
+/**
+ * Gives the diff's keys that read lines the code another feature draws in code views of its own,
+ * such as an overview's code blocks: `yy` there copies its lines, with a count or the lines `v`
+ * selected, as it copies the diff's. Returns a function that takes it back.
+ */
+export function setCodeElsewhere(source: CodeElsewhere): () => void {
+  return addCodeElsewhere(source);
+}
+
 /** Says tab `tab`'s review threads changed, so a diff drawn asks for them again. */
 export function threadsChanged(tab: string): void {
   changedThreads(tab);
@@ -163,7 +178,8 @@ export interface WritingDiff {
    * Opens a comment box with `draft` in it, under a line, the last line of a span, a thread, or a
    * file's header, with `frame` drawn around its editor, and focuses it unless `focus` is false. A
    * box already open there is the one it gives. It throws for a line the diff doesn't draw, as in
-   * a file kept out.
+   * a file kept out. A box opened as it was before the diff was drawn anew (`kept`) goes under its
+   * file's header where the file is drawn without its lines, as one closed as viewed is.
    */
   compose(
     at: Place | Span | { thread: string } | OnFile,
@@ -176,6 +192,21 @@ export interface WritingDiff {
   toTop(id: string): boolean;
   /** Hands keys to the diff's Vim, in Vim's notation, as a key Lo took but had no use for. */
   vim(keys: readonly string[]): void;
+  /** Opens or collapses review thread `id`, as the reader asked. Says whether the diff has it. */
+  openThread(id: string, open: boolean): boolean;
+  /**
+   * The review threads drawn under a line, or under a file's header, by their ids: none while those
+   * placed there wait to come (the code view's `threadsDrawn`).
+   */
+  threadsDrawn(at: Place | OnFile): readonly string[];
+  /**
+   * The reader acted on review thread `id` by a write that will change it: what next comes under
+   * its line is their doing, until the function returned is called (the code view's
+   * `claimThread`).
+   */
+  claimThread(id: string): () => void;
+  /** Whether focus is in it. */
+  hasFocus(): boolean;
 }
 
 /**
@@ -194,6 +225,10 @@ export function writingDiff(tab: string, keys = false): WritingDiff | undefined 
     compose: (at, draft, on, frame, options) => view.compose(at, draft, on, frame, options),
     toTop: (id) => drawn.toTop(id),
     vim: (typed) => view.passKeys(typed),
+    openThread: (id, open) => view.openThread(id, open),
+    threadsDrawn: (at) => view.threadsDrawn(at),
+    claimThread: (id) => view.claimThread(id),
+    hasFocus: () => drawn.hasFocus(),
   };
 }
 
@@ -203,6 +238,19 @@ export function writingDiff(tab: string, keys = false): WritingDiff | undefined 
  */
 export function onDiffDrawn(listener: (tab: string) => void): () => void {
   return onDrawn(listener);
+}
+
+/**
+ * Shows review thread `thread` in pull request's tab `tab`'s diff, as the threads panel does: opens
+ * it and puts its line at the top of the screen, a jump `⌃o` comes back from. Focus stays where it
+ * is. `when` says when: `now`, in the diff on screen, saying whether it has the thread; `drawn`,
+ * once the diff is drawn anew, as when another comparison that shows it is coming; or `both`, now
+ * and again if the diff is drawn anew, as when a comparison that was coming is called off. A diff
+ * not on screen comes on screen and shows it once it's drawn with it. What waits is dropped once
+ * the reader does anything else.
+ */
+export function showThread(tab: string, thread: string, when: ShowWhen = 'now'): boolean {
+  return showThreadAt(tab, thread, when);
 }
 
 /**

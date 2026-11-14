@@ -39,7 +39,7 @@ export interface CommentBoxNote {
   actions?: readonly BannerAction[] | undefined;
 }
 
-/** One file in the box, uploading or uploaded. */
+/** One file in the box, uploading or uploaded. Its row is as tall in each. */
 export interface CommentBoxUpload {
   key: string;
   name: string;
@@ -52,6 +52,11 @@ export interface CommentBoxUpload {
   progress?: number | undefined;
   uploaded?: boolean | undefined;
   onCancel?: (() => void) | undefined;
+  /**
+   * For a file uploaded whose placeholder went from the text meanwhile, so it isn't in the comment:
+   * "Insert" puts it at the cursor.
+   */
+  onInsert?: (() => void) | undefined;
 }
 
 /** The editor's Vim mode, as its chip names it. */
@@ -214,13 +219,26 @@ function FileIcon() {
 
 function Upload({ each }: { each: CommentBoxUpload }) {
   return (
-    <li className="flex items-center gap-8 text-small">
+    // As tall as its buttons, so it doesn't change height as it lands.
+    <li className="flex h-control-h-sm items-center gap-8 text-small">
       <FileIcon />
       <span className="flex min-w-0 flex-1 items-baseline gap-6">
         <span className="truncate">{each.name}</span>
         <span className="lo-num flex-none text-fg-muted">{each.size}</span>
       </span>
-      {each.uploaded === true ? (
+      {each.uploaded === true && each.onInsert !== undefined ? (
+        <>
+          <span className="text-fg-muted">Not in the comment</span>
+          <Button
+            variant="ghost"
+            size="sm"
+            aria-label={`Insert ${each.name} at the cursor`}
+            onClick={each.onInsert}
+          >
+            Insert
+          </Button>
+        </>
+      ) : each.uploaded === true ? (
         <span className="inline-flex items-center gap-4 text-success">
           <svg className="lo-i lo-i--xs" viewBox="0 0 16 16" aria-hidden="true">
             <path d="M3.5 8.5 6.5 11.5 12.5 4.5" />

@@ -141,9 +141,32 @@ export async function importFromGh(
 export function rereadFromGh(
   options: ImportOptions & { log: (message: string) => void },
 ): (login: string) => Promise<Token | undefined> {
+  return tokenFromGh(options, 'again');
+}
+
+/**
+ * What reads gh's token for an account for one upload, when GitHub took no upload with Lo's own:
+ * read afresh each time, checked with GitHub to be the account's, and handed to that upload alone,
+ * never kept. Nothing when gh has nothing for the account, as {@link rereadFromGh} answers; it
+ * throws when gh or GitHub couldn't be asked.
+ */
+export function ghTokenForUpload(
+  options: ImportOptions & { log: (message: string) => void },
+): (login: string) => Promise<Token | undefined> {
+  return tokenFromGh(options, 'for an upload');
+}
+
+/**
+ * gh's token for an account, read `why` ("again", "for an upload"), as {@link rereadFromGh} and
+ * {@link ghTokenForUpload} read it. What's logged never holds the token.
+ */
+function tokenFromGh(
+  options: ImportOptions & { log: (message: string) => void },
+  why: string,
+): (login: string) => Promise<Token | undefined> {
   const { gh, log } = options;
   const tell = (login: string, message: string) =>
-    log(`reading ${login}'s token from gh again: ${message}`);
+    log(`reading ${login}'s token from gh ${why}: ${message}`);
   return async (login) => {
     const found = await gh.find();
     if (found.kind === 'missing') {
@@ -155,7 +178,7 @@ export function rereadFromGh(
     try {
       listed = await gh.accounts(found.program);
       if (!listed.some((account) => sameLogin(account.login, login))) {
-        tell(login, `gh isn't signed in to ${login} any more.`);
+        tell(login, `gh isn't signed in to ${login}${why === 'again' ? ' any more' : ''}.`);
         return undefined;
       }
       token = await gh.token(found.program, login);

@@ -1,36 +1,91 @@
 // @vitest-environment jsdom
-// The comment boxes of a view's diff: opened from `c`, `C` and `s`, refused where GitHub takes no
-// comment, restored from main's drafts, saved as they're typed in, and closed once what they sent
-// is on GitHub.
+// The comment boxes of a view's diff and its overview's code blocks: opened from `c`, `C` and `s`,
+// refused where GitHub takes no comment, restored from main's drafts where they were written, saved
+// as they're typed in, closed once what they sent is on GitHub, and held while a file attached to
+// them is on its way in.
 
-import type { BoxFrame, Composer, ComposerEvents, ComposeOptions } from '@lo/ui/code';
-import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
+import type {
+  BoxFrame,
+  Composer,
+  ComposerEvents,
+  ComposeOptions,
+  OnFile,
+  Place,
+  Span,
+} from '@lo/ui/code';
+import { commandsOf, defineCommands, type LineTarget, listen, Registry } from '@lo/ui/commands';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from 'vitest';
 
 import { notice } from '../../../window/commands/notices.tsx';
 import { installBridge } from '../../../window/test/bridge.ts';
 import type { DrawnDiff, WritingDiff } from '../../diff/window/shared.ts';
+import type * as OverviewShared from '../../overview/window/shared.ts';
+import {
+  blockKey,
+  type CommentOnHead,
+  type DrawnBlock,
+  type WritingBlock,
+} from '../../overview/window/shared.ts';
 import type * as TabShared from '../../tab/window/shared.ts';
 import type { PullTab, PullView } from '../../tab/window/shared.ts';
-import type { Commentable, DraftPlaceRow, DraftRow, SendOutcome } from '../contract.ts';
+import type {
+  ActOutcome,
+  ActRow,
+  Commentable,
+  DraftHomeRow,
+  DraftPlaceRow,
+  DraftRow,
+  SendOutcome,
+  ThreadRow,
+  UploadOutcome,
+} from '../contract.ts';
+import type { PrepareInput, Prepared } from '../jobs.ts';
+import * as acts from './acts.ts';
 import {
   act,
   canWrite,
   comment,
+  commentOnBlock,
   frameWith,
   keepBoxesOf,
+  keptAway,
   offering,
   restore,
   SAVE_AFTER,
   send,
+  reopenAll,
   takeDrafts,
+  takenDown,
   takeOffer,
+  replying,
+  timelineBox,
+  timelineBoxes,
   type Box,
 } from './boxes.ts';
 import { landed } from './landed.ts';
+import type * as Main from './main.ts';
+import * as threads from './threads.ts';
 import { NEW_SIDE_ONLY, NO_LINES, NOT_IN_DIFF } from './writing.ts';
 
 const HEAD = 'a'.repeat(40);
+const OLDER = 'b'.repeat(40);
 let VIEW = 'v0';
+
+// The background process prepares each file attached as it is.
+vi.mock('./main.ts', async (original) => ({
+  ...(await original<typeof Main>()),
+  commentsJobs: () => ({
+    prepare: ({ name, bytes }: PrepareInput): Promise<Prepared> =>
+      Promise.resolve({
+        kind: 'prepared',
+        name,
+        bytes: new Uint8Array(bytes ?? []),
+        size: '8 bytes',
+        metadata: { kind: 'image', removed: { location: false, other: false, embedded: false } },
+        paidPlan: false,
+      }),
+  }),
+}));
 
 const said = vi.hoisted(() => ({ pull: undefined as unknown, run: undefined as unknown }));
 vi.mock('../../tab/window/shared.ts', async (original) => ({
@@ -44,7 +99,13 @@ interface Drawn {
   at: unknown;
   on: ComposerEvents;
   options: ComposeOptions | undefined;
-  composer: Composer & { text: string; held: boolean; closed?: 'close' | 'dismiss' };
+  composer: Composer & {
+    text: string;
+    held: boolean;
+    /** How many times it was focused. */
+    focused: number;
+    closed?: 'close' | 'dismiss';
+  };
 }
 
 const diff = vi.hoisted(() => ({
@@ -55,13 +116,73 @@ const diff = vi.hoisted(() => ({
 vi.mock('../../diff/window/shared.ts', () => ({
   writingDiff: (_view: string, keys = false) => (keys && !diff.keys ? undefined : diff.current),
   showDiff: (view: string) => diff.shown.push(view),
+  diffStateOf: () => undefined,
 }));
 
-/** A diff that draws boxes, as the code view does, but for lines it doesn't draw yet. */
-function fakeDiff(missing: (at: unknown) => boolean = () => false) {
+const overview = vi.hoisted(() => ({
+  /** The blocks drawn, by their keys. */
+  blocks: new Map<string, unknown>(),
+  /** Whether the tab's overview has each block, by its key, drawn or not; else, whether it's drawn. */
+  has: new Map<string, boolean | 'unknown'>(),
+  /** What `c` on a block names: the block and its lines. */
+  found: undefined as unknown,
+  /** Where the lines are at the head on screen. */
+  onHead: undefined as unknown,
+}));
+vi.mock('../../overview/window/shared.ts', async (original) => ({
+  ...(await original<typeof OverviewShared>()),
+  blockLines: () => overview.found,
+  commentOnHead: () => Promise.resolve(overview.onHead),
+  writingBlock: (_tab: string, key: string) => overview.blocks.get(key),
+  blockInOverview: (_tab: string, key: string) => overview.has.get(key) ?? overview.blocks.has(key),
+  revisionName: (_tab: string, commit: string) => (commit === HEAD ? 'r2' : 'r1'),
+}));
+
+/** A box drawn in a fake diff or block, which says how it was focused and closed. */
+function composerOf(draft: string, on: ComposerEvents): Drawn['composer'] {
+  const composer = {
+    text: draft,
+    mode: 'insert' as const,
+    previewing: false,
+    focused: 0,
+    focus() {
+      composer.focused += 1;
+    },
+    insert: vi.fn<(text: string) => void>(),
+    replace(from: number, to: number, text: string) {
+      composer.text = composer.text.slice(0, from) + text + composer.text.slice(to);
+      on.change(composer.text);
+    },
+    preview: vi.fn<(on: boolean) => void>(),
+    held: false,
+    hold(held: boolean) {
+      composer.held = held;
+    },
+    close() {
+      composer.closed = 'close';
+    },
+    dismiss() {
+      composer.closed = 'dismiss';
+    },
+    keep: () => ({ text: composer.text, editor: 'as it was' }),
+  } as Drawn['composer'];
+  return composer;
+}
+
+/**
+ * A diff that draws boxes, as the code view does, but for lines it doesn't draw yet. Its file is
+ * `since` a commit other than the base, where it has no older side to comment on.
+ */
+function fakeDiff(missing: (at: unknown) => boolean = () => false, since = false) {
   const drawn: Drawn[] = [];
+  /** The threads claimed, and those of them let go since. */
+  const claimed: string[] = [];
+  const released: string[] = [];
+  const toggled: string[] = [];
+  /** The threads drawn under each line or header, by `where`. */
+  const onScreen = new Map<string, string[]>();
   const vim = vi.fn<(keys: readonly string[]) => void>();
-  const shown: DrawnDiff = {
+  const shown: { -readonly [K in keyof DrawnDiff]: DrawnDiff[K] } = {
     at: HEAD,
     comparison: null,
     compareFrom: null,
@@ -71,7 +192,7 @@ function fakeDiff(missing: (at: unknown) => boolean = () => false) {
         key: 'src/backoff.ts',
         path: 'src/backoff.ts',
         old: 'src/backoff.ts',
-        since: false,
+        since,
       },
     ],
   };
@@ -81,40 +202,131 @@ function fakeDiff(missing: (at: unknown) => boolean = () => false) {
       Array.from({ length: span.to - span.from + 1 }, (_, at) => `line ${span.from + at}`),
     compose(at, draft, on, frame?: BoxFrame, options?: ComposeOptions) {
       if (missing(at)) throw new Error('A comment box goes under a line of a file that is shown.');
+      // A box named otherwise than one open there is a box of its own.
       const open = drawn.find(
-        (each) => JSON.stringify(each.at) === JSON.stringify(at) && !each.composer.closed,
+        (each) =>
+          JSON.stringify(each.at) === JSON.stringify(at) &&
+          each.options?.name === options?.name &&
+          !each.composer.closed,
       );
       if (open) return open.composer;
-      const composer = {
-        text: draft,
-        mode: 'insert' as const,
-        previewing: false,
-        focus: vi.fn<() => void>(),
-        insert: vi.fn<(text: string) => void>(),
-        replace(from: number, to: number, text: string) {
-          composer.text = composer.text.slice(0, from) + text + composer.text.slice(to);
-          on.change(composer.text);
-        },
-        preview: vi.fn<(on: boolean) => void>(),
-        held: false,
-        hold(held: boolean) {
-          composer.held = held;
-        },
-        close() {
-          composer.closed = 'close';
-        },
-        dismiss() {
-          composer.closed = 'dismiss';
-        },
-      } as Drawn['composer'];
+      const composer = composerOf(draft, on);
       drawn.push({ at, on, options, composer });
       return composer;
     },
     toTop: () => true,
     vim,
+    openThread: (id) => {
+      toggled.push(id);
+      return true;
+    },
+    claimThread: (id) => {
+      claimed.push(id);
+      return () => released.push(id);
+    },
+    threadsDrawn: (at) => onScreen.get(where(at)) ?? [],
+    hasFocus: () => false,
   };
   diff.current = writing;
-  return { drawn, writing, vim };
+  return { drawn, writing, vim, claimed, released, toggled, onScreen, shown };
+}
+
+/** A line or header, as a key. */
+function where(at: Place | OnFile): string {
+  return 'line' in at ? `${at.file}:${at.side}:${at.line}` : at.file;
+}
+
+const PATH = 'src/backoff.ts';
+
+/**
+ * A code block of the overview at `OLDER`, on `src/backoff.ts`'s lines 3 to 9, that draws boxes as
+ * an excerpt does: one under a line, which `c` there again gives.
+ */
+function fakeBlock() {
+  const drawn: Drawn[] = [];
+  const block: DrawnBlock = {
+    tab: VIEW,
+    key: blockKey(OLDER, PATH, 3, 9),
+    block: 'b0',
+    file: 'x0',
+    path: PATH,
+    commit: OLDER,
+    from: null,
+    lines: { start: 3, end: 9 },
+    named: { start: 3, end: 9 },
+  };
+  const writing: WritingBlock = {
+    block,
+    compose(at, draft, on, _frame, options) {
+      const open = drawn.find(
+        (each) =>
+          sideOf(each.at) === at.side && lineOf(each.at) === lineOf(at) && !each.composer.closed,
+      );
+      if (open) {
+        if (options?.focus !== false) open.composer.focus();
+        return open.composer;
+      }
+      const composer = composerOf(draft, on);
+      drawn.push({ at, on, options, composer });
+      return composer;
+    },
+  };
+  overview.blocks.set(block.key, writing);
+  return { drawn, writing, block };
+}
+
+/** The side of a box's line or span. */
+function sideOf(at: unknown): unknown {
+  return typeof at === 'object' && at !== null && 'side' in at ? at.side : undefined;
+}
+
+/** The line a box on `at`, a line or a span, goes under: its last. */
+function lineOf(at: unknown): number | undefined {
+  if (typeof at !== 'object' || at === null) return undefined;
+  if ('line' in at && typeof at.line === 'number') return at.line;
+  return 'to' in at && typeof at.to === 'number' ? at.to : undefined;
+}
+
+/**
+ * `c` on the fake block's line `line`, or lines `from` to `to`, on `side`, which are at `onHead` at
+ * the head.
+ */
+async function onBlock(
+  writing: WritingBlock,
+  lines: { from: number; to: number; side?: 'old' | 'new' },
+  onHead: CommentOnHead,
+  how: 'review' | 'now' = 'review',
+): Promise<void> {
+  const { from, to, side = 'new' } = lines;
+  const at: Place | Span =
+    from === to ? { file: 'x0', side, line: to } : { file: 'x0', side, from, to };
+  overview.found = { writing, at };
+  overview.onHead = onHead;
+  const target: LineTarget = { kind: 'line', at };
+  await commentOnBlock(tab(), target, how);
+}
+
+/** The home of a draft written from the fake block's lines `from` to `to`. */
+function blockHome(
+  from: number,
+  to = from,
+  why: DraftHomeRow['why'] = null,
+  side: 'old' | 'new' = 'new',
+): DraftHomeRow {
+  return {
+    commit: OLDER,
+    path: PATH,
+    block: { start: 3, end: 9 },
+    at: { side, from, to },
+    why,
+    head: HEAD,
+  };
+}
+
+/** A box the reader shut with `Esc Esc`, keeping its text, or not. */
+function shut(drawn: Drawn, keep: boolean): void {
+  drawn.composer.closed = 'close';
+  drawn.on.close(keep);
 }
 
 const answers: Record<string, (input: unknown) => unknown> = {};
@@ -153,8 +365,33 @@ function onLines(start: number | null, end: number): DraftPlaceRow {
   };
 }
 
+/** A comment on line `end` of `src/backoff.ts`'s older side, at `HEAD`. */
+function onOldLine(end: number): DraftPlaceRow {
+  return {
+    kind: 'thread',
+    commit: HEAD,
+    path: 'src/backoff.ts',
+    lines: { start: null, end: { side: 'LEFT', number: end } },
+  };
+}
+
+/** A comment on `src/backoff.ts` as a whole, at `HEAD`. */
+function onTheFile(): DraftPlaceRow {
+  return { kind: 'thread', commit: HEAD, path: 'src/backoff.ts', lines: null };
+}
+
 function row(place: DraftPlaceRow, text: string, changes: Partial<DraftRow> = {}): DraftRow {
-  return { place, text, savedAt: 0, restored: false, sending: null, sent: null, ...changes };
+  return {
+    place,
+    text,
+    savedAt: 0,
+    restored: false,
+    sending: null,
+    sent: null,
+    base: null,
+    home: null,
+    ...changes,
+  };
 }
 
 /** The requests to `channel` made so far. */
@@ -166,6 +403,25 @@ let views = 0;
 
 /** Each box as it's drawn: the frame it'd get is where its state is read. */
 const boxesSeen: Box[] = [];
+/** How many times Lo's command on `e` ran, from the window's key listener. */
+let commanded = 0;
+let stopKeys: () => void = () => {};
+
+// The window's key listener, as it starts before anything else listens for keys: a key one of Lo's
+// commands takes goes no further than its `keydown`.
+beforeAll(() => {
+  const keys = defineCommands('test', { act: { label: 'Act', group: 'Act', keys: ['e'] } });
+  const handler = {
+    run() {
+      commanded += 1;
+    },
+  };
+  const commands = commandsOf(keys).map((command) => ({ ...command, handler }));
+  stopKeys = listen(window, new Registry({ system: 'mac', commands }));
+});
+
+afterAll(() => stopKeys());
+
 frameWith((box) => {
   boxesSeen.push(box);
   return undefined;
@@ -180,6 +436,8 @@ beforeEach(() => {
   answers['comments.commentable'] = () => IN_DIFF;
   answers['comments.draft'] = () => undefined;
   answers['comments.discard'] = () => undefined;
+  overview.blocks.clear();
+  overview.has.clear();
 });
 
 afterEach(() => {
@@ -283,7 +541,9 @@ describe('drafts', () => {
     vi.advanceTimersByTime(SAVE_AFTER - 1);
     expect(asked('comments.draft')).toEqual([]);
     vi.advanceTimersByTime(1);
-    expect(asked('comments.draft')).toEqual([{ id: VIEW, place: onLines(null, 5), text: 'Hello' }]);
+    expect(asked('comments.draft')).toEqual([
+      { id: VIEW, place: onLines(null, 5), text: 'Hello', home: null },
+    ]);
     on.change('Hello there');
     on.close(true);
     expect(asked('comments.draft')).toHaveLength(2);
@@ -295,7 +555,9 @@ describe('drafts', () => {
     const { drawn } = fakeDiff();
     await comment(tab(), { kind: 'line', at: { file: 'f0', side: 'new', line: 5 } }, 'review');
     drawn[0]!.on.close(false);
-    expect(asked('comments.draft')).toEqual([{ id: VIEW, place: onLines(null, 5), text: '' }]);
+    expect(asked('comments.draft')).toEqual([
+      { id: VIEW, place: onLines(null, 5), text: '', home: null },
+    ]);
   });
 
   test('a draft restored as Lo started reopens unfocused once its line is drawn', async () => {
@@ -410,6 +672,536 @@ async function opened() {
   return { ...fake, box: boxIn(fake.drawn[0]!) };
 }
 
+describe('a box on a code block', () => {
+  test('`c` on a block’s line opens a box under it, on those lines at the head, kept with the block', async () => {
+    const { drawn, writing } = fakeBlock();
+    await onBlock(
+      writing,
+      { from: 5, to: 5 },
+      { kind: 'lines', path: PATH, side: 'new', from: 5, to: 5 },
+    );
+    expect(drawn).toHaveLength(1);
+    expect(drawn[0]).toMatchObject({
+      at: { file: 'x0', side: 'new', line: 5 },
+      options: { focus: true },
+    });
+    const box = boxIn(drawn[0]!);
+    expect(box.state.place).toEqual(onLines(null, 5));
+    // The block shows r1; the comment goes on the lines at r2, and its head says so.
+    expect(box.state.where).toBe('On line 5, new side, at r2');
+    drawn[0]!.on.change('Mine');
+    shut(drawn[0]!, true);
+    expect(asked('comments.draft')).toEqual([
+      { id: VIEW, place: onLines(null, 5), text: 'Mine', home: blockHome(5) },
+    ]);
+  });
+
+  test('it goes on the file, or the pull request, saying why, where it can’t go on the lines', async () => {
+    const { drawn, writing } = fakeBlock();
+    await onBlock(writing, { from: 4, to: 4 }, { kind: 'file', path: PATH, why: 'changed' });
+    expect(boxIn(drawn[0]!).state).toMatchObject({
+      place: { kind: 'thread', commit: HEAD, path: PATH, lines: null },
+      where: 'On the file, since these lines changed after r1',
+    });
+    // The pull request deletes the file: GitHub still takes a comment on it, by its old path.
+    await onBlock(writing, { from: 6, to: 6 }, { kind: 'gone', path: 'src/old.ts' });
+    expect(boxIn(drawn[1]!).state).toMatchObject({
+      place: { kind: 'thread', path: 'src/old.ts', lines: null },
+      where: 'On the file, which this pull request deletes',
+    });
+    expect(asked('comments.commentable')).toContainEqual({
+      id: VIEW,
+      commit: HEAD,
+      path: 'src/old.ts',
+      previous: null,
+    });
+    // It leaves the file alone: the comment goes on the pull request.
+    answers['comments.commentable'] = () => ({ kind: 'notInDiff' });
+    await onBlock(
+      writing,
+      { from: 8, to: 8 },
+      { kind: 'lines', path: 'docs/usage.md', side: 'new', from: 8, to: 8 },
+    );
+    expect(boxIn(drawn[2]!).state).toMatchObject({
+      place: { kind: 'conversation' },
+      where: 'On the pull request, since it doesn’t change this file',
+    });
+  });
+
+  test('`c` on a line a box is open on, as one on a range ending there, focuses that box', async () => {
+    const { drawn, writing } = fakeBlock();
+    const onRange = { kind: 'lines', path: PATH, side: 'new', from: 4, to: 6 } as const;
+    await onBlock(writing, { from: 4, to: 6 }, onRange);
+    const first = drawn[0]!;
+    const focused = first.composer.focused;
+    await onBlock(writing, { from: 6, to: 6 }, { ...onRange, from: 6 });
+    expect(drawn).toHaveLength(1);
+    expect(first.composer.focused).toBe(focused + 1);
+    // Once it's shut, `c` there opens one of its own.
+    shut(first, true);
+    await onBlock(writing, { from: 6, to: 6 }, { ...onRange, from: 6 });
+    expect(drawn).toHaveLength(2);
+    expect(boxIn(drawn[1]!).state.place).toEqual(onLines(null, 6));
+    // And so in the diff.
+    const onDiff = fakeDiff();
+    const span = { kind: 'line', at: { file: 'f0', side: 'new', from: 4, to: 6 } } as const;
+    await comment(tab(), span, 'review');
+    const before = onDiff.drawn[0]!.composer.focused;
+    await comment(tab(), { kind: 'line', at: { file: 'f0', side: 'new', line: 6 } }, 'review');
+    expect(onDiff.drawn).toHaveLength(1);
+    expect(onDiff.drawn[0]!.composer.focused).toBe(before + 1);
+  });
+
+  test('a box moves between its block and the diff with its text, and its draft’s home with it', async () => {
+    const block = fakeBlock();
+    const onDiff = fakeDiff();
+    const onLine = { kind: 'lines', path: PATH, side: 'new', from: 5, to: 5 } as const;
+    await onBlock(block.writing, { from: 5, to: 5 }, onLine);
+    block.drawn[0]!.on.change('Mine');
+    await comment(tab(), { kind: 'line', at: { file: 'f0', side: 'new', line: 5 } }, 'review');
+    expect(block.drawn[0]!.composer.closed).toBe('dismiss');
+    expect(onDiff.drawn.map((each) => each.composer.text)).toEqual(['Mine']);
+    expect(asked('comments.draft').at(-1)).toEqual({
+      id: VIEW,
+      place: onLines(null, 5),
+      text: 'Mine',
+      home: null,
+    });
+    await onBlock(block.writing, { from: 5, to: 5 }, onLine);
+    expect(onDiff.drawn[0]!.composer.closed).toBe('dismiss');
+    expect(block.drawn).toHaveLength(2);
+    expect(block.drawn[1]!.composer.text).toBe('Mine');
+    expect(asked('comments.draft').at(-1)).toMatchObject({ text: 'Mine', home: blockHome(5) });
+  });
+
+  test('after a restart, a draft written from a block reopens under it, whatever its place', async () => {
+    const block = fakeBlock();
+    const onDiff = fakeDiff();
+    takeDrafts({
+      id: VIEW,
+      drafts: [
+        row(onLines(null, 5), 'On the line', { savedAt: 1, restored: true, home: blockHome(5) }),
+        row({ kind: 'conversation' }, 'On the pull request', {
+          savedAt: 2,
+          restored: true,
+          home: blockHome(7),
+        }),
+      ],
+    });
+    await Promise.resolve();
+    expect(onDiff.drawn).toEqual([]);
+    expect(
+      block.drawn.map(({ at, options, composer }) => [at, options?.focus, composer.text]),
+    ).toEqual([
+      [{ file: 'x0', side: 'new', line: 5 }, false, 'On the line'],
+      [{ file: 'x0', side: 'new', line: 7 }, false, 'On the pull request'],
+    ]);
+  });
+
+  test('after a restart, a draft says again why it goes where it does', async () => {
+    const block = fakeBlock();
+    takeDrafts({
+      id: VIEW,
+      drafts: [
+        row(onTheFile(), 'On the file', { savedAt: 1, home: blockHome(6, 6, 'changed') }),
+        row({ kind: 'conversation' }, 'On the pull request', {
+          savedAt: 2,
+          home: blockHome(8, 8, 'untouched'),
+        }),
+      ],
+    });
+    await Promise.resolve();
+    expect(block.drawn.map((each) => boxIn(each).state.where)).toEqual([
+      'On the file, since these lines changed after r1',
+      'On the pull request, since it doesn’t change this file',
+    ]);
+  });
+
+  test('a draft whose block the overview no longer has opens where one with none would', async () => {
+    const block = fakeBlock();
+    const onDiff = fakeDiff();
+    takeDrafts({
+      id: VIEW,
+      drafts: [
+        row(onLines(null, 5), 'On the line', { savedAt: 1, home: blockHome(5) }),
+        row(onTheFile(), 'On the file', { savedAt: 2, home: blockHome(6, 6, 'changed') }),
+        row({ kind: 'conversation' }, 'On the pull request', {
+          savedAt: 3,
+          home: blockHome(7, 7, 'untouched'),
+        }),
+      ],
+    });
+    await Promise.resolve();
+    expect(block.drawn.map((each) => lineOf(each.at))).toEqual([5, 6, 7]);
+    expect(onDiff.drawn).toEqual([]);
+    // The overview moves to a newer push: its block, a newer one's, isn't this one, which goes with
+    // its boxes. Lines and a file open in the diff; the pull request's is the timeline's.
+    overview.blocks.clear();
+    overview.has.set(block.block.key, false);
+    for (const each of block.drawn) takenDown(boxIn(each), each.composer);
+    await Promise.resolve();
+    expect(onDiff.drawn.map(({ at, composer }) => [at, composer.text])).toEqual([
+      [{ file: 'f0', side: 'new', line: 5 }, 'On the line'],
+      [{ file: 'f0' }, 'On the file'],
+    ]);
+    expect(block.drawn).toHaveLength(3);
+    // Each in one box only: its block drawn again, the boxes stay where they are.
+    const again = fakeBlock();
+    reopenAll();
+    await Promise.resolve();
+    expect(again.drawn).toEqual([]);
+    expect(onDiff.drawn).toHaveLength(2);
+  });
+
+  test('drawn again with no input, the diff keeps a box open in it on its line, focused, though its block is back', async () => {
+    const onDiff = fakeDiff();
+    const key = blockKey(OLDER, PATH, 3, 9);
+    overview.has.set(key, false);
+    takeDrafts({
+      id: VIEW,
+      drafts: [row(onLines(null, 5), 'On the line', { savedAt: 1, home: blockHome(5) })],
+    });
+    await Promise.resolve();
+    const [first] = onDiff.drawn;
+    const box = boxIn(first!);
+    // Focus is in it, and the overview has its block again, drawn: it stays where it is.
+    box.set({ focused: true });
+    overview.has.delete(key);
+    const block = fakeBlock();
+    reopenAll();
+    await Promise.resolve();
+    expect(block.drawn).toEqual([]);
+    // The diff is drawn again, as when the local copy's files take the place of GitHub's: its
+    // frame goes, and the diff drawn anew draws it on its line, focused, and nowhere else.
+    takenDown(box, first!.composer);
+    const again = fakeDiff();
+    restore(VIEW);
+    reopenAll();
+    await Promise.resolve();
+    expect(
+      again.drawn.map(({ at, options, composer }) => [at, options?.focus, composer.text]),
+    ).toEqual([[{ file: 'f0', side: 'new', line: 5 }, true, 'On the line']]);
+    // As it was, which the code view reads.
+    expect(again.drawn[0]!.options?.kept).toEqual({ text: 'On the line', editor: 'as it was' });
+    expect(block.drawn).toEqual([]);
+  });
+
+  test('drawn again after a key, the diff opens a box that had focus without it', async () => {
+    const { box, drawn } = await opened();
+    box.set({ focused: true });
+    takenDown(box, drawn[0]!.composer);
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'j' }));
+    const again = fakeDiff();
+    restore(VIEW);
+    expect(again.drawn.map(({ at, options }) => [at, options?.focus])).toEqual([
+      [{ file: 'f0', side: 'new', line: 5 }, false],
+    ]);
+  });
+
+  test('drawn again with its lines still coming, a box that had focus opens without it after a key Lo’s command took', async () => {
+    const { box, drawn } = await opened();
+    box.set({ focused: true });
+    takenDown(box, drawn[0]!.composer);
+    let coming = true;
+    const again = fakeDiff(() => coming);
+    restore(VIEW);
+    expect(again.drawn).toEqual([]);
+    // `e` in the diff, as a press sends it: Lo's command takes it.
+    const before = commanded;
+    for (const type of ['keydown', 'keyup']) {
+      const init = { key: 'e', code: 'KeyE', bubbles: true, cancelable: true };
+      document.body.dispatchEvent(new KeyboardEvent(type, init));
+    }
+    expect(commanded).toBe(before + 1);
+    // The lines come, and the box opens on them, as it was, unfocused.
+    coming = false;
+    restore(VIEW);
+    expect(again.drawn.map(({ at, options }) => [at, options?.focus])).toEqual([
+      [{ file: 'f0', side: 'new', line: 5 }, false],
+    ]);
+  });
+
+  test('drawn again with its lines still coming, a box that had focus opens without it while a key Lo’s command took is held', async () => {
+    const { box, drawn } = await opened();
+    box.set({ focused: true });
+    takenDown(box, drawn[0]!.composer);
+    let coming = true;
+    const again = fakeDiff(() => coming);
+    restore(VIEW);
+    // `e` pressed and held: Lo's command takes it, and it isn't let go yet.
+    const init = { key: 'e', code: 'KeyE', bubbles: true, cancelable: true };
+    const before = commanded;
+    document.body.dispatchEvent(new KeyboardEvent('keydown', init));
+    expect(commanded).toBe(before + 1);
+    // The lines come meanwhile, and the box opens on them unfocused.
+    coming = false;
+    restore(VIEW);
+    expect(again.drawn.map(({ at, options }) => [at, options?.focus])).toEqual([
+      [{ file: 'f0', side: 'new', line: 5 }, false],
+    ]);
+    document.body.dispatchEvent(new KeyboardEvent('keyup', init));
+  });
+
+  test('drawn again without its line, a box opens under its file’s header there, still on its line, though its block is back', async () => {
+    const key = blockKey(OLDER, PATH, 3, 9);
+    overview.has.set(key, false);
+    const onDiff = fakeDiff();
+    takeDrafts({
+      id: VIEW,
+      drafts: [
+        row(onOldLine(4), 'From the block', { savedAt: 1, home: blockHome(4, 4, null, 'old') }),
+        row(onOldLine(6), 'Written in the diff', { savedAt: 2 }),
+      ],
+    });
+    await Promise.resolve();
+    expect(onDiff.drawn.map(({ composer }) => composer.text)).toEqual([
+      'From the block',
+      'Written in the diff',
+    ]);
+    // The overview has the first's block again, and the diff is drawn again with no older side.
+    overview.has.delete(key);
+    const block = fakeBlock();
+    for (const each of onDiff.drawn) takenDown(boxIn(each), each.composer);
+    const again = fakeDiff(() => false, true);
+    restore(VIEW);
+    reopenAll();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(again.drawn.map(({ at, composer }) => [at, composer.text])).toEqual([
+      [{ file: 'f0' }, 'From the block'],
+      [{ file: 'f0' }, 'Written in the diff'],
+    ]);
+    expect(block.drawn).toEqual([]);
+    // It says where it goes, as its place does: on its line.
+    expect(boxIn(again.drawn[1]!).state.place).toEqual(onOldLine(6));
+  });
+
+  test('drawn again with neither its line nor its file, a box opens under its block if the overview has it, else nowhere, saying so, until its line is drawn', async () => {
+    const onDiff = fakeDiff();
+    takeDrafts({
+      id: VIEW,
+      drafts: [
+        row(onLines(null, 4), 'From the block', { savedAt: 1, home: blockHome(4) }),
+        row(onLines(5, 6), 'Written in the diff', { savedAt: 2 }),
+      ],
+    });
+    // The overview has no block yet.
+    await Promise.resolve();
+    for (const each of onDiff.drawn) {
+      boxIn(each).set({ focused: true });
+      takenDown(boxIn(each), each.composer);
+    }
+    // The diff drawn anew is of another push, and the overview has the first's block now.
+    const block = fakeBlock();
+    const other = fakeDiff();
+    other.shown.at = OLDER;
+    restore(VIEW);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(other.drawn).toEqual([]);
+    expect(block.drawn.map(({ at, options }) => [at, options?.focus])).toEqual([
+      [{ file: 'x0', side: 'new', line: 4 }, false],
+    ]);
+    // The other is in no box, and the status bar says so, once.
+    expect(keptAway.get(VIEW).map(({ note }) => note)).toEqual([
+      'Draft kept · lines 5–6 of backoff.ts at r2 · opens when those lines show',
+    ]);
+    restore(VIEW);
+    expect(keptAway.get(VIEW)).toHaveLength(1);
+    // The next diff with its lines opens it there, unfocused, as a draft restored.
+    const back = fakeDiff();
+    restore(VIEW);
+    expect(back.drawn.map(({ at, options, composer }) => [at, options, composer.text])).toEqual([
+      [
+        { file: 'f0', side: 'new', from: 5, to: 6 },
+        { focus: false, name: boxIn(back.drawn[0]!).id },
+        'Written in the diff',
+      ],
+    ]);
+    expect(keptAway.get(VIEW)).toEqual([]);
+  });
+
+  test('a box the diff drawn again had nowhere to open is kept nowhere: its block takes it once the overview has it', async () => {
+    const key = blockKey(OLDER, PATH, 3, 9);
+    overview.has.set(key, false);
+    const onDiff = fakeDiff();
+    takeDrafts({
+      id: VIEW,
+      drafts: [row(onLines(null, 4), 'From the block', { savedAt: 1, home: blockHome(4) })],
+    });
+    await Promise.resolve();
+    const [first] = onDiff.drawn;
+    boxIn(first!).set({ focused: true });
+    takenDown(boxIn(first!), first!.composer);
+    // Drawn anew without its file, at the same push.
+    const without = fakeDiff();
+    without.shown.files = [];
+    restore(VIEW);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(without.drawn).toEqual([]);
+    expect(keptAway.get(VIEW).map(({ note, title }) => [note, title])).toEqual([
+      [
+        'Draft kept · line 4 of backoff.ts at r2 · opens when that line or its code block shows',
+        'Draft kept · line 4 of src/backoff.ts at r2 · opens when that line or its code block shows',
+      ],
+    ]);
+    // The overview has its block now: it opens there, unfocused, and the status bar says no more.
+    overview.has.delete(key);
+    const block = fakeBlock();
+    reopenAll();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(block.drawn.map(({ at, options }) => [at, options?.focus])).toEqual([
+      [{ file: 'x0', side: 'new', line: 4 }, false],
+    ]);
+    expect(without.drawn).toEqual([]);
+    expect(keptAway.get(VIEW)).toEqual([]);
+  });
+
+  test('the pull request’s draft from a block opens in the timeline’s box, once, as the overview moves past the block', async () => {
+    const block = fakeBlock();
+    takeDrafts({
+      id: VIEW,
+      drafts: [
+        row({ kind: 'conversation' }, 'On the pull request', {
+          savedAt: 3,
+          home: blockHome(7, 7, 'untouched'),
+        }),
+      ],
+    });
+    await Promise.resolve();
+    expect(block.drawn.map((each) => each.composer.text)).toEqual(['On the pull request']);
+    expect(timelineBoxes.get(VIEW)).toMatchObject({ own: undefined, away: 'block' });
+    // The overview moves to a newer push, whose blocks this one isn't.
+    overview.blocks.clear();
+    overview.has.set(block.block.key, false);
+    for (const each of block.drawn) takenDown(boxIn(each), each.composer);
+    await Promise.resolve();
+    const own = timelineBoxes.get(VIEW).own;
+    expect(own?.state.text).toBe('On the pull request');
+    expect(timelineBoxes.get(VIEW).away).toBeUndefined();
+    expect(timelineBox(VIEW, { kind: 'conversation' })).toBe(own);
+    // Once: nowhere else, however often the overview changes.
+    reopenAll();
+    await Promise.resolve();
+    expect(block.drawn).toHaveLength(1);
+    expect(timelineBoxes.get(VIEW).own).toBe(own);
+  });
+
+  test('the pull request’s draft whose block the overview has never shows in the timeline', async () => {
+    const block = fakeBlock();
+    // The timeline drew its box first, empty.
+    const empty = timelineBox(VIEW, { kind: 'conversation' });
+    expect(empty).toBeDefined();
+    takeDrafts({
+      id: VIEW,
+      drafts: [
+        row({ kind: 'conversation' }, 'On the pull request', {
+          savedAt: 3,
+          restored: true,
+          home: blockHome(7, 7, 'untouched'),
+        }),
+      ],
+    });
+    await Promise.resolve();
+    expect(block.drawn.map((each) => each.composer.text)).toEqual(['On the pull request']);
+    expect(timelineBoxes.get(VIEW)).toMatchObject({ own: undefined, away: 'block' });
+    expect(timelineBox(VIEW, { kind: 'conversation' })).toBeUndefined();
+    // Still unknown while the overview is read again: it waits, and isn't the timeline's either.
+    overview.has.set(block.block.key, 'unknown');
+    overview.blocks.clear();
+    reopenAll();
+    await Promise.resolve();
+    expect(timelineBoxes.get(VIEW)).toMatchObject({ own: undefined, away: 'waits' });
+  });
+
+  test('a draft waits while Lo can’t tell whether the overview has its block', async () => {
+    const onDiff = fakeDiff();
+    const key = blockKey(OLDER, PATH, 3, 9);
+    overview.has.set(key, 'unknown');
+    takeDrafts({
+      id: VIEW,
+      drafts: [row(onLines(null, 5), 'On the line', { savedAt: 1, home: blockHome(5) })],
+    });
+    await Promise.resolve();
+    expect(onDiff.drawn).toEqual([]);
+    // The overview, checked, has another commit's blocks.
+    overview.has.set(key, false);
+    reopenAll();
+    expect(onDiff.drawn.map((each) => each.composer.text)).toEqual(['On the line']);
+  });
+
+  test('a box on a line of one side doesn’t take `c` on that number on the other', async () => {
+    const { drawn, writing } = fakeBlock();
+    await onBlock(
+      writing,
+      { from: 6, to: 6 },
+      { kind: 'lines', path: PATH, side: 'new', from: 6, to: 6 },
+    );
+    await onBlock(
+      writing,
+      { from: 6, to: 6, side: 'old' },
+      { kind: 'file', path: PATH, why: 'older' },
+    );
+    expect(drawn.map((each) => each.at)).toEqual([
+      { file: 'x0', side: 'new', line: 6 },
+      { file: 'x0', side: 'old', line: 6 },
+    ]);
+    expect(boxIn(drawn[1]!).state.where).toBe(
+      'On the file, since Lo maps only new-side lines from r1 to r2',
+    );
+  });
+
+  test('a draft on the pull request with no block stays kept, shut and unsent', async () => {
+    vi.useFakeTimers();
+    const onDiff = fakeDiff();
+    takeDrafts({
+      id: VIEW,
+      drafts: [row({ kind: 'conversation' }, 'Kept', { savedAt: 1, restored: true })],
+    });
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(onDiff.drawn).toEqual([]);
+    expect(bridge.calls.map(([name]) => name)).not.toContain('comments.draft');
+    expect(bridge.calls.map(([name]) => name)).not.toContain('comments.send');
+  });
+
+  test('sent, a comment that won’t show under its block says where it went', async () => {
+    const { drawn, writing } = fakeBlock();
+    answers['comments.send'] = (): SendOutcome => ({
+      kind: 'sent',
+      pending: true,
+      joined: false,
+      thread: null,
+      landedOn: null,
+    });
+    await onBlock(writing, { from: 4, to: 4 }, { kind: 'file', path: PATH, why: 'unknown' });
+    drawn[0]!.on.change('On the file.');
+    await send(boxIn(drawn[0]!), 'review');
+    expect(drawn[0]!.composer.closed).toBe('close');
+    expect(notice()).toMatchObject({
+      title: 'Added to your review, on the file',
+      body: 'src/backoff.ts. It shows under the file’s header in the diff.',
+    });
+    answers['comments.commentable'] = () => ({ kind: 'notInDiff' });
+    answers['comments.send'] = (): SendOutcome => ({
+      kind: 'sent',
+      pending: false,
+      joined: false,
+      thread: null,
+      landedOn: null,
+    });
+    await onBlock(
+      writing,
+      { from: 6, to: 6 },
+      { kind: 'lines', path: 'docs/usage.md', side: 'new', from: 6, to: 6 },
+      'now',
+    );
+    drawn[1]!.on.change('On the pull request.');
+    await send(boxIn(drawn[1]!), 'now');
+    expect(notice()).toMatchObject({
+      title: 'Posted on the pull request',
+      body: 'It shows in the timeline.',
+    });
+  });
+});
+
 describe('sending', () => {
   test('sent, the box closes as after a send, and a thread on a newer push is marked', async () => {
     const { drawn, box } = await opened();
@@ -476,5 +1268,351 @@ describe('sending', () => {
     expect(drawn[0]!.composer.closed).toBeUndefined();
     takeDrafts({ id: VIEW, drafts: [] });
     expect(drawn[0]!.composer.closed).toBe('close');
+  });
+});
+
+/** The window's name for each upload main was asked for. */
+function uploadIds(): unknown[] {
+  return asked('comments.upload').map((input) =>
+    typeof input === 'object' && input !== null && 'upload' in input ? input.upload : undefined,
+  );
+}
+
+/** A PNG's first bytes, as a file dropped on a box. */
+function png(): File {
+  return new File([new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])], 'shot.png');
+}
+
+describe('files attached', () => {
+  /** Each upload's answer, given by the test once main is asked. */
+  const uploads: ((outcome: UploadOutcome) => void)[] = [];
+
+  beforeEach(() => {
+    uploads.length = 0;
+    answers['comments.attachable'] = () => ({ kind: 'open', login: 'rozed-bot' });
+    answers['comments.upload'] = () =>
+      new Promise<UploadOutcome>((resolve) => {
+        uploads.push(resolve);
+      });
+    answers['comments.cancelUpload'] = () => undefined;
+    answers['comments.send'] = () => ({ kind: 'refused', refusal: { kind: 'notInDiff' } });
+  });
+
+  test('nothing is sent while one is on its way in, by `⌘⏎` or a button, and it goes once it’s in', async () => {
+    const { drawn, box } = await opened();
+    drawn[0]!.on.files?.([png()]);
+    await vi.waitFor(() => expect(uploadIds()).toHaveLength(1));
+    drawn[0]!.on.submit('review');
+    await send(box, 'now');
+    expect(asked('comments.send')).toEqual([]);
+    uploads[0]!({ kind: 'uploaded', markdown: '![shot](https://example.com/a.png)', viaGh: false });
+    await vi.waitFor(async () => {
+      await send(box, 'review');
+      expect(asked('comments.send')).toHaveLength(1);
+    });
+  });
+
+  test('a restored draft holding a placeholder whose upload isn’t under way isn’t sent until it’s taken out', async () => {
+    const { drawn } = fakeDiff();
+    // As Lo wrote it before it quit, and partly edited.
+    const placeholder = '![Uploading shot.png…](lo-upload:9f86d081884c7d65)';
+    const edited = '[Uploading old.png…](lo-upload:0123456789abcdef';
+    const text = `Repro: ${placeholder}`;
+    takeDrafts({
+      id: VIEW,
+      drafts: [
+        row(onLines(null, 5), text, { savedAt: 1 }),
+        row(onLines(null, 7), `Before: ${edited}`, { savedAt: 1 }),
+      ],
+    });
+    const [box, other] = [boxIn(drawn[0]!), boxIn(drawn[1]!)];
+    await send(box, 'review');
+    await send(other, 'review');
+    expect(asked('comments.send')).toEqual([]);
+    // Nothing takes it out but the reader.
+    expect(drawn[0]!.composer.text).toBe(text);
+    drawn[0]!.composer.replace(7, text.length, '');
+    await send(box, 'review');
+    expect(asked('comments.send')).toHaveLength(1);
+  });
+
+  test('text that only reads like a placeholder is sent as it is', async () => {
+    const { drawn } = fakeDiff();
+    const texts = [
+      'Retries stall while uploading big files… then time out.',
+      '[notes](uploading guide.md)',
+      '```suggestion\nlog.info("uploading %d files…", count);\n```',
+    ];
+    takeDrafts({
+      id: VIEW,
+      drafts: texts.map((text, at) => row(onLines(null, 3 + at), text, { savedAt: 1 })),
+    });
+    for (const each of drawn) await send(boxIn(each), 'review');
+    const sent = asked('comments.send').map((input) =>
+      typeof input === 'object' && input !== null && 'text' in input ? input.text : undefined,
+    );
+    expect(sent).toEqual(texts);
+  });
+
+  test('a box closed with nothing in it gives up what’s uploading, and nothing goes into its draft', async () => {
+    const { drawn } = await opened();
+    drawn[0]!.on.files?.([png()]);
+    await vi.waitFor(() => expect(uploadIds()).toHaveLength(1));
+    drawn[0]!.on.change('');
+    drawn[0]!.on.close(false);
+    expect(asked('comments.cancelUpload')).toEqual([{ id: VIEW, upload: uploadIds()[0] }]);
+    uploads[0]!({ kind: 'uploaded', markdown: '![shot](https://example.com/a.png)', viaGh: false });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(asked('comments.draft')).toEqual([
+      { id: VIEW, place: onLines(null, 5), text: '', home: null },
+    ]);
+  });
+});
+
+/** A comment of a thread main sent, by `author`. */
+function threadComment(id: string, author: string, body: string): ThreadRow['comments'][number] {
+  return {
+    id,
+    author,
+    authorType: 'User',
+    body,
+    state: 'SUBMITTED',
+    createdAt: '2026-11-13T11:00:00Z',
+    url: 'https://github.com/rozed-dev/e2e/pull/94#discussion_r1',
+    hidden: null,
+    viewerCanUpdate: author === 'rozed-bot',
+    viewerCanDelete: author === 'rozed-bot',
+  };
+}
+
+/** Thread `id` on new line `line` of src/backoff.ts, open, with rozed-bot's comment. */
+function threadRow(id: string, line: number, changes: Partial<ThreadRow> = {}): ThreadRow {
+  return {
+    id,
+    path: 'src/backoff.ts',
+    subject: 'LINE',
+    side: 'RIGHT',
+    startSide: null,
+    line,
+    startLine: null,
+    originalLine: line,
+    originalStartLine: null,
+    outdated: false,
+    resolved: false,
+    currentOn: HEAD,
+    writtenOn: HEAD,
+    comments: [threadComment(`${id}_C1`, 'rozed-bot', 'Start a little higher?\nIt waits.')],
+    viewerCanReply: true,
+    viewerCanResolve: true,
+    viewerCanUnresolve: false,
+    ...changes,
+  };
+}
+
+/** Resolving thread T2, as it stands. */
+function standing(stands: ActRow['stands']): ActRow {
+  return { thread: 'T2', comment: null, change: 'resolve', stands };
+}
+
+/** The diff, with `rows`, the threads main sent, placed in it and drawn. */
+function withThreads(...rows: ThreadRow[]) {
+  const fake = fakeDiff();
+  threads.held.set(VIEW, {
+    threads: {
+      id: VIEW,
+      status: 'ready',
+      threads: rows,
+      missing: 0,
+      compared: null,
+      problem: null,
+    },
+  });
+  threads.placedIn(VIEW, fake.writing.drawn());
+  for (const { id } of rows) {
+    const at = threads.shownAt(VIEW, id);
+    if (!at) continue;
+    fake.onScreen.set(where(at), [...(fake.onScreen.get(where(at)) ?? []), id]);
+  }
+  return fake;
+}
+
+describe('acting on a thread', () => {
+  const ON_TWO = { kind: 'line', at: { file: 'f0', side: 'new', line: 2 } } as const;
+  const ON_FIVE = { kind: 'line', at: { file: 'f0', side: 'new', line: 5 } } as const;
+
+  test('`r` opens a reply box right after the only thread on the line, opening it first', () => {
+    const { drawn, toggled } = withThreads(
+      threadRow('T2', 2),
+      threadRow('T5a', 5),
+      threadRow('T5b', 5),
+    );
+    acts.reply(tab(), ON_TWO);
+    expect(toggled).toEqual(['T2']);
+    expect(drawn.map((each) => each.at)).toEqual([{ thread: 'T2' }]);
+    expect(replying.get(VIEW).has('T2')).toBe(true);
+    // Two threads on a line: `]t` picks one.
+    acts.reply(tab(), ON_FIVE);
+    expect(notice()?.body).toBe('There are 2 threads here. Press ]t to pick one.');
+    acts.reply(tab(), { kind: 'line', at: { file: 'f0', side: 'new', line: 9 } });
+    expect(notice()?.body).toBe('There’s no thread on this line.');
+    // One `]t` landed on is the one.
+    acts.reply(tab(), { ...ON_FIVE, thread: 'T5b' });
+    expect(drawn.map((each) => each.at)).toEqual([{ thread: 'T2' }, { thread: 'T5b' }]);
+  });
+
+  test('a thread placed under a line but not drawn there yet is no key’s to act on', async () => {
+    const { drawn, onScreen } = withThreads(threadRow('T2', 2));
+    onScreen.clear();
+    answers['comments.resolve'] = (): ActOutcome => ({ kind: 'done' });
+    acts.resolve(tab(), ON_TWO);
+    expect(notice()?.body).toBe('There’s no thread on this line.');
+    acts.reply(tab(), ON_TWO);
+    await acts.edit(tab(), ON_TWO);
+    acts.remove(tab(), ON_TWO);
+    expect(notice()?.body).toBe('There’s no thread on this line.');
+    expect(drawn).toEqual([]);
+    expect(acts.deleteAsking()).toBeUndefined();
+    expect(asked('comments.resolve')).toEqual([]);
+    expect(asked('comments.editing')).toEqual([]);
+  });
+
+  test('a reply box closed and kept lets the card offer “Reply…” again', () => {
+    const { drawn } = withThreads(threadRow('T2', 2));
+    acts.reply(tab(), ON_TWO);
+    expect(replying.get(VIEW).has('T2')).toBe(true);
+    drawn[0]!.on.close(true);
+    expect(replying.get(VIEW).has('T2')).toBe(false);
+  });
+
+  test('a thread GitHub takes no reply on says so', () => {
+    const { drawn } = withThreads(threadRow('T2', 2, { viewerCanReply: false }));
+    acts.reply(tab(), ON_TWO);
+    expect(drawn).toEqual([]);
+    expect(notice()?.body).toBe('GitHub doesn’t let you reply to this thread.');
+  });
+
+  test('`x` claims the thread and resolves it; a refusal says why and lets the claim go', async () => {
+    const { claimed, released } = withThreads(threadRow('T2', 2));
+    answers['comments.resolve'] = (): ActOutcome => ({ kind: 'done' });
+    acts.resolve(tab(), ON_TWO);
+    await vi.waitFor(() =>
+      expect(asked('comments.resolve')).toEqual([{ id: VIEW, thread: 'T2', resolved: true }]),
+    );
+    expect(claimed).toEqual(['T2']);
+    expect(released).toEqual([]);
+    answers['comments.resolve'] = (): ActOutcome => ({
+      kind: 'refused',
+      refusal: { kind: 'paused', until: new Date(2026, 10, 13, 14, 5).getTime() },
+    });
+    acts.resolve(tab(), ON_TWO);
+    await vi.waitFor(() => expect(released).toEqual(['T2']));
+    expect(notice()?.body).toMatch(/^GitHub asked Lo to hold off until .+\. Resolve it then\.$/);
+  });
+
+  test('`x` where GitHub doesn’t let you, or offline, sends nothing', () => {
+    withThreads(threadRow('T2', 2, { viewerCanResolve: false }), threadRow('T5', 5));
+    acts.resolve(tab(), ON_TWO);
+    expect(notice()?.body).toMatch(/^GitHub doesn’t let you resolve this thread\./);
+    said.pull = pull({
+      connection: { kind: 'offline', savedAt: null, retryAt: null, error: 'down' },
+    });
+    acts.resolve(tab(), ON_FIVE);
+    expect(notice()?.body).toBe('Offline. Try again once GitHub can be reached.');
+    expect(asked('comments.resolve')).toEqual([]);
+  });
+
+  test('`i` starts an edit of your newest comment from its text, in a box after the thread', async () => {
+    const mine = threadComment('C_mine', 'rozed-bot', 'Mine.');
+    const { drawn } = withThreads(
+      threadRow('T2', 2, { comments: [threadComment('C_old', 'rozed-bot', 'Older.'), mine] }),
+      threadRow('T5', 5, { comments: [threadComment('C_theirs', 'ravi-k', 'Theirs.')] }),
+    );
+    answers['comments.editing'] = (): ActOutcome => ({ kind: 'done' });
+    answers['comments.edit'] = (): ActOutcome => ({ kind: 'done' });
+    await acts.edit(tab(), ON_TWO);
+    const place = { kind: 'edit', thread: 'T2', comment: 'C_mine' };
+    expect(asked('comments.editing')).toEqual([{ id: VIEW, place, base: 'Mine.' }]);
+    expect(drawn.map((each) => [each.at, each.composer.text])).toEqual([
+      [{ thread: 'T2' }, 'Mine.'],
+    ]);
+    drawn[0]!.composer.replace(0, 5, 'Mine, edited.');
+    drawn[0]!.on.submit('review');
+    await vi.waitFor(() =>
+      expect(asked('comments.edit')).toEqual([{ id: VIEW, place, text: 'Mine, edited.' }]),
+    );
+    await vi.waitFor(() => expect(drawn[0]!.composer.closed).toBe('close'));
+    // Someone else's is refused in Lo's words.
+    await acts.edit(tab(), ON_FIVE);
+    expect(notice()?.body).toBe(
+      'None of this thread’s comments are yours. You can edit and delete only your own.',
+    );
+    await acts.edit(tab(), { kind: 'thread', thread: 'T5' }, 'C_theirs');
+    expect(notice()?.body).toBe('It’s ravi-k’s comment. You can edit and delete only your own.');
+  });
+
+  test('an edit closed with no text is discarded, as is one edited on GitHub since', async () => {
+    const { drawn } = withThreads(threadRow('T2', 2));
+    answers['comments.editing'] = (): ActOutcome => ({ kind: 'done' });
+    await acts.edit(tab(), ON_TWO);
+    drawn[0]!.composer.replace(0, drawn[0]!.composer.text.length, '');
+    drawn[0]!.on.close(false);
+    expect(asked('comments.discard')).toEqual([
+      { id: VIEW, place: { kind: 'edit', thread: 'T2', comment: 'T2_C1' } },
+    ]);
+  });
+
+  test('`dd` asks first, and Delete deletes the comment as the question showed it', async () => {
+    const { claimed } = withThreads(threadRow('T2', 2));
+    answers['comments.remove'] = (): ActOutcome => ({ kind: 'done' });
+    acts.remove(tab(), ON_TWO);
+    expect(acts.deleteAsking()).toMatchObject({
+      thread: 'T2',
+      comment: 'T2_C1',
+      pending: false,
+      onlyComment: true,
+    });
+    expect(asked('comments.remove')).toEqual([]);
+    acts.cancelDelete();
+    expect(acts.deleteAsking()).toBeUndefined();
+    acts.remove(tab(), ON_TWO);
+    await acts.confirmDelete();
+    expect(acts.deleteAsking()).toBeUndefined();
+    expect(asked('comments.remove')).toEqual([
+      {
+        id: VIEW,
+        thread: 'T2',
+        comment: 'T2_C1',
+        asked: { body: 'Start a little higher?\nIt waits.', pending: false, onlyComment: true },
+      },
+    ]);
+    expect(claimed).toEqual(['T2']);
+  });
+
+  test('`dd` offline says so at once, asking nothing', () => {
+    withThreads(threadRow('T2', 2));
+    said.pull = pull({
+      connection: { kind: 'offline', savedAt: null, retryAt: null, error: 'down' },
+    });
+    acts.remove(tab(), ON_TWO);
+    expect(acts.deleteAsking()).toBeUndefined();
+    expect(notice()?.body).toBe('Offline. Try again once GitHub can be reached.');
+  });
+
+  test('a change whose answer was lost says Lo is checking, or that it didn’t go, until the thread shows it', () => {
+    const unresolved = threadRow('T2', 2);
+    expect(acts.actNote(standing('sending'), unresolved, false)).toBeUndefined();
+    expect(acts.actNote(standing('checking'), unresolved, false)).toEqual({
+      text: 'GitHub’s answer was lost. Lo is checking whether it resolved the thread.',
+      again: false,
+      checking: true,
+    });
+    expect(acts.actNote(standing('notDone'), unresolved, false)).toMatchObject({ again: true });
+    expect(acts.actNote(standing('unknown'), unresolved, false)?.text).toBe(
+      'GitHub’s answer was lost, and Lo can’t tell whether it resolved the thread.',
+    );
+    expect(
+      acts.actNote(standing('unknown'), { ...unresolved, resolved: true }, false),
+    ).toBeUndefined();
+    expect(acts.actNote(standing('unknown'), unresolved, true)).toBeUndefined();
   });
 });

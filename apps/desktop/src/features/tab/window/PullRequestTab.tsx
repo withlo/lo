@@ -1,10 +1,22 @@
 // A pull request's tab: its header, its banners, the left panel, the middle sheet, with what goes
-// across its top, and the right panel other features fill, and its status bar. Until the diff and the threads arrive,
-// the middle says what's coming.
+// across its top, and the right panel other features fill, with the header's toggle for it, and its
+// status bar, which ends with the keys held for a command still to come, and Vim's mode while code
+// has focus. Until the diff and the threads arrive, the middle says what's coming.
 
-import { Banner, PRHeader, Spinner, StatusBar, StatusItem, type HeaderConnection } from '@lo/ui';
+import {
+  Banner,
+  PRHeader,
+  Spinner,
+  StatusBar,
+  StatusItem,
+  StatusKeys,
+  StatusMode,
+  type HeaderConnection,
+} from '@lo/ui';
+import { focusedMode, onFocusedMode } from '@lo/ui/code';
 import { useCallback, useEffect, useState, useSyncExternalStore, type ReactNode } from 'react';
 
+import { registry } from '../../../window/commands/registry.ts';
 import { client } from '../../../window/ipc.ts';
 import { Slot, useViews } from '../../../window/slots.tsx';
 import { contract as settings } from '../../settings/contract.ts';
@@ -31,9 +43,26 @@ import {
   useTabs,
   type PullTab,
 } from './shared.ts';
-import { middleIds, panels, useTabPanels, viewCounts } from './panels.ts';
+import {
+  middleIds,
+  panels,
+  takeRightFocus,
+  useRightOpen,
+  useTabPanels,
+  viewCounts,
+} from './panels.ts';
 import { Placeholder } from './Placeholder.tsx';
+import { RightToggle } from './RightToggle.tsx';
 import { ViewSwitch } from './ViewSwitch.tsx';
+
+/**
+ * Gives the right panel focus as it's drawn, once after it opens: its scope's element, so its keys
+ * work at once.
+ */
+function focusRight(panel: HTMLElement | null): void {
+  if (!panel || !takeRightFocus()) return;
+  panel.querySelector<HTMLElement>('[data-lo-scope]')?.focus({ preventScroll: true });
+}
 
 /** The time now, ticking each second while `ticking`, for what counts down. */
 function useNow(ticking: boolean): number {
@@ -218,6 +247,24 @@ function LocalItem({ local }: { local: LocalState | undefined }): ReactNode {
   }
 }
 
+const onHeldKeys = (listener: () => void) => registry().onHeldKeys(listener);
+const heldKeys = () => registry().heldKeys();
+
+/**
+ * The keys held for a command still to come, and Vim's mode in the code view that has focus,
+ * while one has, as the status bar's end shows them.
+ */
+function FocusedMode() {
+  const held = useSyncExternalStore(onHeldKeys, heldKeys);
+  const mode = useSyncExternalStore(onFocusedMode, focusedMode);
+  return (
+    <>
+      {held !== '' && <StatusKeys keys={held} />}
+      {mode !== undefined && <StatusMode name={mode} />}
+    </>
+  );
+}
+
 /** A pull request's tab, as its kind draws it. */
 export function PullRequestTab({ tab }: { tab: PullTab }) {
   const view = usePull(tab.id);
@@ -227,13 +274,19 @@ export function PullRequestTab({ tab }: { tab: PullTab }) {
   const lefts = useViews(left);
   const middles = useViews(middle);
   const rights = useViews(right);
+  const rightOpen = useRightOpen();
   viewCounts.left = lefts.length;
   viewCounts.middle = middles.length;
-  if (middleIds.ids.length !== middles.length) middleIds.ids = middles.map((each) => each.id);
+  viewCounts.right = rights.length;
+  if (middleIds.ids.length !== middles.length) {
+    middleIds.ids = middles.map((each) => each.id);
+    middleIds.labeled = middles.map((each) => each.label !== undefined);
+  }
   const heading = view?.header;
   const acting = view?.acting;
   const showLeft = leftOpen && lefts.length > 0;
-  const showRight = rights.length > 0;
+  // Only as the reader opens or closes it, so the middle's width changes by their asking alone.
+  const showRight = rightOpen && rights.length > 0;
   const shownMiddle = middles[panels.get(tab.id).middle % Math.max(1, middles.length)];
   // The middle views shown since the tab was drawn stay drawn, hidden while another is on screen.
   const [kept, setKept] = useState<readonly string[]>([]);
@@ -259,6 +312,7 @@ export function PullRequestTab({ tab }: { tab: PullTab }) {
         <Slot slot={header} props={{ tab }} />
         <span className="min-w-8 flex-1" />
         <ViewSwitch tab={tab} views={middles} shown={shownMiddle?.id} />
+        {rights.length > 0 && <RightToggle tab={tab} views={rights} />}
       </PRHeader>
       <Banners tab={tab} own={banners} />
       <div className="flex min-h-0 flex-1">
@@ -299,8 +353,10 @@ export function PullRequestTab({ tab }: { tab: PullTab }) {
         </section>
         {showRight && (
           <aside
+            ref={focusRight}
             className="flex w-panel-right-w min-w-0 flex-none flex-col bg-bg-chrome"
             aria-label="Threads"
+            data-lo-right
           >
             <Slot slot={right} props={{ tab }} />
           </aside>
@@ -319,6 +375,7 @@ export function PullRequestTab({ tab }: { tab: PullTab }) {
             <Slot slot={status} props={{ tab }} />
           </>
         }
+        end={<FocusedMode />}
       />
     </div>
   );

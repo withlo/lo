@@ -144,8 +144,22 @@ export function useMiddle(tab: string): { shown: string | undefined; ids: readon
  */
 export const over = defineSlot<{ tab: PullTab }>('tab.over');
 
-/** The right panel of a pull request's tab: its threads. */
-export const right = defineSlot<{ tab: PullTab }>('tab.right');
+/** What the header's toggle for the right panel shows of a view in it. */
+export interface RightToggle {
+  /**
+   * What goes after the toggle's icon for a tab, such as how many of its threads are unresolved.
+   * It says what it means itself, to a screen reader too.
+   */
+  readonly count?: ((props: { tab: PullTab }) => ReactNode) | undefined;
+}
+
+/**
+ * The right panel of a pull request's tab: its threads. It's open or closed for the whole window,
+ * by `⌘⇧\` or the header's toggle, each tab showing its view on screen's, and takes focus as it
+ * opens: its element named by `data-lo-scope`. Opening or closing it changes the middle's width,
+ * as the left panel does.
+ */
+export const right = defineSlot<{ tab: PullTab }, RightToggle>('tab.right');
 
 /** Items in a pull request's tab's status bar, after Lo's own. */
 export const status = defineSlot<{ tab: PullTab }>('tab.status');

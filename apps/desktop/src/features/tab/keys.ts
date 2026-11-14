@@ -1,7 +1,7 @@
 // The tab strip's keys: a tab by its place, the next and previous tab, moving one, the tabs that
 // don't fit and closing one. They work wherever focus is, a text field included, but not under a
 // dialog or a palette, which hold the keys while they're open. And a pull request's tab's: its left
-// panel, and its middle views.
+// and right panels, and its middle views.
 
 import { defineCommands, type When } from '@lo/ui/commands';
 
@@ -88,7 +88,21 @@ export default defineCommands('tab', {
     when: outside,
     bar: { menu: 'View', order: 10 },
   },
-  /** The next of a pull request's middle views: overview, diff, timeline, round the end. */
+  /**
+   * Opens and closes the right panel, the threads, in every pull request's tab: opened, it takes
+   * focus, so its keys work at once; closed, focus in it goes back to the middle view.
+   */
+  rightPanel: {
+    label: 'Threads panel',
+    group: 'Panels',
+    keys: ['cmd+shift+\\'],
+    when: outside,
+    bar: { menu: 'View', order: 20 },
+  },
+  /**
+   * The next of a pull request's middle views the header's switch lists: overview, diff, timeline,
+   * round the end. A file whole isn't one of them: it opens from a file, and `⌃o` goes back.
+   */
   nextView: {
     label: 'Next middle view',
     group: 'View',

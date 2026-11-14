@@ -79,9 +79,6 @@ test('` steps from the diff to the timeline, read as it’s first shown; j, k an
 }) => {
   await open(page);
   await focusedOn(page, 'diff.view');
-  // The whole file comes between the diff and the timeline.
-  await page.keyboard.press('`');
-  await focusedOn(page, 'diff.whole');
   await page.keyboard.press('`');
 
   const timeline = page.getByRole('listbox', { name: 'Timeline' });

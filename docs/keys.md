@@ -48,20 +48,28 @@ Each command's id is what [the keymap file](#the-keymap-file) binds keys to.
 
 ## Act
 
-| Action                       | Keys                              | Where                                                    | Command                  |
-| ---------------------------- | --------------------------------- | -------------------------------------------------------- | ------------------------ |
-| Comment                      | `c`                               | In `diff`; in code views, only in normal and visual mode | `comments.comment`       |
-| Comment right away           | `C`                               | In `diff`; in code views, only in normal and visual mode | `comments.commentNow`    |
-| Suggest a change             | `s`                               | In `diff`; in code views, only in normal and visual mode | `comments.suggest`       |
-| Comment on the file          | `c`                               | In `tree`                                                | `comments.commentOnFile` |
-| Comment on the file instead  | `⏎`                               | In `diff`; in code views, only in normal mode            | `comments.onFileInstead` |
-| Discard the draft            | None: in its menu and the palette | In `box`                                                 | `comments.discard`       |
-| Send it anyway               | None: in its menu and the palette | In `box`                                                 | `comments.sendAnyway`    |
-| Move the comment to the file | None: in its menu and the palette | In `box`                                                 | `comments.moveToFile`    |
-| Mark viewed                  | `e`                               | In `diff`; in code views, only in normal mode            | `diff.markViewed`        |
-| Show the hidden comment      | None: in its menu and the palette | In `timeline`                                            | `timeline.showComment`   |
-| Mark viewed                  | `e`                               | In `tree`                                                | `tree.markViewed`        |
-| Sign in with GitHub          | `⏎`                               | In `welcome`                                             | `welcome.signIn`         |
+| Action                          | Keys                              | Where                                                                   | Command                   |
+| ------------------------------- | --------------------------------- | ----------------------------------------------------------------------- | ------------------------- |
+| Comment                         | `c`                               | In `diff`; in code views, only in normal and visual mode                | `comments.comment`        |
+| Comment right away              | `C`                               | In `diff`; in code views, only in normal and visual mode                | `comments.commentNow`     |
+| Suggest a change                | `s`                               | In `diff`; in code views, only in normal and visual mode                | `comments.suggest`        |
+| Comment on the file             | `c`                               | In `tree`                                                               | `comments.commentOnFile`  |
+| Comment on these lines          | `c`                               | In `overview` and `file`; in code views, only in normal and visual mode | `comments.commentOnBlock` |
+| Comment on the file instead     | `⏎`                               | In `diff`; in code views, only in normal mode                           | `comments.onFileInstead`  |
+| Reply to the thread             | `r`                               | In `diff`; in code views, only in normal mode                           | `comments.reply`          |
+| Resolve or unresolve the thread | `x`                               | In `diff`; in code views, only in normal mode                           | `comments.resolve`        |
+| Edit your comment               | `i`                               | In `diff`; in code views, only in normal mode                           | `comments.edit`           |
+| Delete your comment…            | `d d`                             | In `diff`; in code views, only in normal mode                           | `comments.remove`         |
+| Discard the draft               | None: in its menu and the palette | In `box`                                                                | `comments.discard`        |
+| Send it anyway                  | None: in its menu and the palette | In `box`                                                                | `comments.sendAnyway`     |
+| Move the comment to the file    | None: in its menu and the palette | In `box`                                                                | `comments.moveToFile`     |
+| Mark viewed                     | `e`                               | In `diff`; in code views, only in normal mode                           | `diff.markViewed`         |
+| Comment on the pull request     | `c`                               | In `timeline`                                                           | `timeline.comment`        |
+| Edit your comment               | `i`                               | In `timeline`                                                           | `timeline.editComment`    |
+| Delete your comment…            | `d d`                             | In `timeline`                                                           | `timeline.deleteComment`  |
+| Show the hidden comment         | None: in its menu and the palette | In `timeline`                                                           | `timeline.showComment`    |
+| Mark viewed                     | `e`                               | In `tree`                                                               | `tree.markViewed`         |
+| Sign in with GitHub             | `⏎`                               | In `welcome`                                                            | `welcome.signIn`          |
 
 ## Code
 
@@ -72,26 +80,28 @@ Each command's id is what [the keymap file](#the-keymap-file) binds keys to.
 
 ## Copy and open
 
-| Action                         | Keys                              | Where                                                               | Command                 |
-| ------------------------------ | --------------------------------- | ------------------------------------------------------------------- | ----------------------- |
-| Copy the sign-in code          | `y y`                             | In `dialog`                                                         | `accounts.copyCode`     |
-| Whole file at the cursor       | `g f`                             | In `diff`; in code views, only in normal mode                       | `diff.wholeFile`        |
-| Copy the lines                 | `y y`                             | In `diff` and `file`; in code views, only in normal and visual mode | `diff.copyLines`        |
-| Copy the line's link           | `y l`                             | In `diff` and `file`; in code views, only in normal mode            | `diff.copyLink`         |
-| Copy path                      | `y p`                             | In `diff` and `file`; in code views, only in normal mode            | `diff.copyPath`         |
-| Open on GitHub                 | `g x`                             | In `diff` and `file`; in code views, only in normal mode            | `diff.openOnGithub`     |
-| Overview note                  | None: in its menu and the palette | In `diff`; in code views, only in normal mode                       | `diff.overviewNote`     |
-| Open on GitHub                 | `g x`                             | In `stack`                                                          | `stacks.openOnGithub`   |
-| See the older events on GitHub | None: in its menu and the palette | In `timeline`                                                       | `timeline.seeOlder`     |
-| Open on GitHub                 | `g x`                             | In `timeline`                                                       | `timeline.openOnGithub` |
-| Whole file                     | `g f`                             | In `tree`                                                           | `tree.wholeFile`        |
-| Copy path                      | `y p`                             | In `tree`                                                           | `tree.copyPath`         |
-| Open on GitHub                 | `g x`                             | In `tree`                                                           | `tree.openOnGithub`     |
+| Action                                    | Keys                              | Where                                                               | Command                       |
+| ----------------------------------------- | --------------------------------- | ------------------------------------------------------------------- | ----------------------------- |
+| Copy the sign-in code                     | `y y`                             | In `dialog`                                                         | `accounts.copyCode`           |
+| Whole file at the cursor                  | `g f`                             | In `diff`; in code views, only in normal mode                       | `diff.wholeFile`              |
+| Copy the lines                            | `y y`                             | In `diff` and `file`; in code views, only in normal and visual mode | `diff.copyLines`              |
+| Copy the line's link                      | `y l`                             | In `diff` and `file`; in code views, only in normal mode            | `diff.copyLink`               |
+| Copy path                                 | `y p`                             | In `diff` and `file`; in code views, only in normal mode            | `diff.copyPath`               |
+| Open on GitHub                            | `g x`                             | In `diff` and `file`; in code views, only in normal mode            | `diff.openOnGithub`           |
+| Overview note                             | None: in its menu and the palette | In `diff`; in code views, only in normal mode                       | `diff.overviewNote`           |
+| Copy the overview skill’s install command | `y c`                             | In `settings`                                                       | `overview.copyInstallCommand` |
+| Open on GitHub                            | `g x`                             | In `stack`                                                          | `stacks.openOnGithub`         |
+| See the older events on GitHub            | None: in its menu and the palette | In `timeline`                                                       | `timeline.seeOlder`           |
+| Open on GitHub                            | `g x`                             | In `timeline`                                                       | `timeline.openOnGithub`       |
+| Whole file                                | `g f`                             | In `tree`                                                           | `tree.wholeFile`              |
+| Copy path                                 | `y p`                             | In `tree`                                                           | `tree.copyPath`               |
+| Open on GitHub                            | `g x`                             | In `tree`                                                           | `tree.openOnGithub`           |
 
 ## Review
 
 | Action                   | Keys  | Where                                                                                  | Command          |
 | ------------------------ | ----- | -------------------------------------------------------------------------------------- | ---------------- |
+| Submit review            | `⌘⏎`  | Anywhere but `box`, `dialog`, `palette` and `menu`                                     | `review.submit`  |
 | Make this a GitHub stack | `g S` | Anywhere but `menu`, `dialog`, `palette` and `box`; in code views, only in normal mode | `stacks.convert` |
 
 ## Find
@@ -122,19 +132,24 @@ Each command's id is what [the keymap file](#the-keymap-file) binds keys to.
 
 ## Files
 
-| Action                                 | Keys     | Where                                                                                                   | Command            |
-| -------------------------------------- | -------- | ------------------------------------------------------------------------------------------------------- | ------------------ |
-| Go to the stack, or the file on screen | `-`      | In `tree`                                                                                               | `stacks.focus`     |
-| Go to the file tree                    | `-`      | Anywhere but `menu`, `dialog`, `palette`, `box`, `tree` and `stack`; in code views, only in normal mode | `tree.focus`       |
-| Tree or review order                   | `t`      | In `tree`                                                                                               | `tree.mode`        |
-| Changed files only                     | `f`      | In `tree`                                                                                               | `tree.changedOnly` |
-| Next row of the tree                   | `j`, `↓` | In `tree`                                                                                               | `tree.down`        |
-| Previous row of the tree               | `k`, `↑` | In `tree`                                                                                               | `tree.up`          |
-| Open the folder                        | `l`, `→` | In `tree`                                                                                               | `tree.open`        |
-| Close the folder                       | `h`, `←` | In `tree`                                                                                               | `tree.close`       |
-| Open every folder                      | `z R`    | In `tree`                                                                                               | `tree.openAll`     |
-| Close every folder                     | `z M`    | In `tree`                                                                                               | `tree.closeAll`    |
-| Show the file                          | `⏎`      | In `tree`                                                                                               | `tree.show`        |
+| Action                                 | Keys          | Where                                                                                                   | Command            |
+| -------------------------------------- | ------------- | ------------------------------------------------------------------------------------------------------- | ------------------ |
+| Go to the stack, or the file on screen | `-`           | In `tree`                                                                                               | `stacks.focus`     |
+| Go to the file tree                    | `+`           | In `stack`                                                                                              | `stacks.files`     |
+| Go to the file tree                    | `-`           | Anywhere but `menu`, `dialog`, `palette`, `box`, `tree` and `stack`; in code views, only in normal mode | `tree.focus`       |
+| Tree or review order                   | `t`           | In `tree`                                                                                               | `tree.mode`        |
+| Changed files only                     | `f`           | In `tree`                                                                                               | `tree.changedOnly` |
+| Next row of the tree                   | `j`, `↓`      | In `tree`                                                                                               | `tree.down`        |
+| Previous row of the tree               | `k`, `↑`      | In `tree`                                                                                               | `tree.up`          |
+| First row of the tree                  | `g g`, `Home` | In `tree`                                                                                               | `tree.top`         |
+| Last row of the tree                   | `G`, `End`    | In `tree`                                                                                               | `tree.bottom`      |
+| Page down the tree                     | `PgDn`        | In `tree`                                                                                               | `tree.pageDown`    |
+| Page up the tree                       | `PgUp`        | In `tree`                                                                                               | `tree.pageUp`      |
+| Open the folder                        | `l`, `→`      | In `tree`                                                                                               | `tree.open`        |
+| Close the folder                       | `h`, `←`      | In `tree`                                                                                               | `tree.close`       |
+| Open every folder                      | `z R`         | In `tree`                                                                                               | `tree.openAll`     |
+| Close every folder                     | `z M`         | In `tree`                                                                                               | `tree.closeAll`    |
+| Show the file                          | `⏎`           | In `tree`                                                                                               | `tree.show`        |
 
 ## Overview
 
@@ -155,15 +170,21 @@ Each command's id is what [the keymap file](#the-keymap-file) binds keys to.
 
 ## Panels
 
-| Action                                          | Keys                              | Where                               | Command         |
-| ----------------------------------------------- | --------------------------------- | ----------------------------------- | --------------- |
-| Next layer in the stack                         | `j`, `↓`                          | In `stack`                          | `stacks.down`   |
-| Previous layer in the stack                     | `k`, `↑`                          | In `stack`                          | `stacks.up`     |
-| Show this layer                                 | `⏎`                               | In `stack`                          | `stacks.show`   |
-| Choose a run from here                          | `v`                               | In `stack`                          | `stacks.choose` |
-| View the stack up to here as one diff           | None: in its menu and the palette | Anywhere                            | `stacks.upTo`   |
-| Stop choosing a run, or back to the middle view | `Esc`                             | In `stack`                          | `stacks.cancel` |
-| Left panel                                      | `⌘\`                              | Anywhere but `dialog` and `palette` | `tab.leftPanel` |
+| Action                                          | Keys                              | Where                               | Command                   |
+| ----------------------------------------------- | --------------------------------- | ----------------------------------- | ------------------------- |
+| Next thread in the panel                        | `j`, `↓`                          | In `threads`                        | `comments.nextThread`     |
+| Previous thread in the panel                    | `k`, `↑`                          | In `threads`                        | `comments.previousThread` |
+| Show the thread in the diff                     | `⏎`                               | In `threads`                        | `comments.showThread`     |
+| Resolve or unresolve the thread                 | `x`                               | In `threads`                        | `comments.resolveInPanel` |
+| Unresolved, all or your threads                 | `f`                               | In `threads`                        | `comments.filterThreads`  |
+| Next layer in the stack                         | `j`, `↓`                          | In `stack`                          | `stacks.down`             |
+| Previous layer in the stack                     | `k`, `↑`                          | In `stack`                          | `stacks.up`               |
+| Show this layer                                 | `⏎`                               | In `stack`                          | `stacks.show`             |
+| Choose a run from here                          | `v`                               | In `stack`                          | `stacks.choose`           |
+| View the stack up to here as one diff           | None: in its menu and the palette | Anywhere                            | `stacks.upTo`             |
+| Stop choosing a run, or back to the middle view | `Esc`                             | In `stack`                          | `stacks.cancel`           |
+| Left panel                                      | `⌘\`                              | Anywhere but `dialog` and `palette` | `tab.leftPanel`           |
+| Threads panel                                   | `⌘⇧\`                             | Anywhere but `dialog` and `palette` | `tab.rightPanel`          |
 
 ## Diff view
 
@@ -247,6 +268,7 @@ comment box and another elsewhere.
 | `file`      | A whole file, a code view.                                                            |
 | `peek`      | A peek at code elsewhere, such as a definition, a code view.                          |
 | `box`       | A comment box, a code view with an insert mode.                                       |
+| `threads`   | Named by `comments`.                                                                  |
 | `recent`    | Named by `open`.                                                                      |
 | `overview`  | Named by `overview`.                                                                  |
 | `revisions` | Named by `revisions`.                                                                 |
@@ -257,16 +279,39 @@ comment box and another elsewhere.
 | `welcome`   | Named by `welcome`.                                                                   |
 
 In a code view, keys follow Vim's mode. In insert mode, and while Vim waits for the rest of a
-command (after a count or an operator), only chords are Lo's, and other keys go to Vim. In a text
-field, typing and moving through the text are the field's.
+command (after a count or an operator), only chords are Lo's, and other keys go to Vim, but for the
+keys of Lo's commands that take a count, after a count alone in normal mode (see [Counts](#counts)).
+In a text field, typing and moving through the text are the field's.
 
-A key that starts one of Lo's sequences waits up to 1 s for the rest. In a code view, a waiting key
-that isn't completed goes on to Vim: with the next key, when that doesn't go on with it, so `y w`
-still yanks a word, or alone once the time is up. Anywhere else it's dropped, and the next key
-counts on its own. A chord Lo runs drops the waiting key, as do `Esc`, focus leaving, a click and a
-tab switch.
+A key that starts one of Lo's sequences waits for the rest. In a code view it waits however long it
+takes, as Vim's own `y` and `g` do, and a key that doesn't go on with it goes to Vim after it, so
+`y w` still yanks a word. Anywhere else it waits up to 1 s, and if the rest doesn't come it's
+dropped, and the next key counts on its own. A chord Lo runs drops the waiting key, as do `Esc`,
+focus leaving, a click and a tab switch. The status bar shows the keys waiting, after any count, as
+Vim shows a command it's waiting on the rest of.
 
 `Tab` doesn't move focus out of a scope; only dialogs and forms keep the browser's `Tab`.
+
+## Counts
+
+Digits typed just before a key are a count, as in Vim, for the commands that take one: `3 e` marks
+three files viewed, and `1 e` one, where `e` alone clears a mark. Before any other key a count is
+dropped, and the key runs once; in a code view it goes on to Vim with the key, so `3 j` still moves
+three lines. `Esc` drops a count and does nothing else.
+
+| Action                   | Keys     | Counts | Where                                                                                  | Command                |
+| ------------------------ | -------- | ------ | -------------------------------------------------------------------------------------- | ---------------------- |
+| Mark viewed              | `e`      | files  | In `diff`; in code views, only in normal mode                                          | `diff.markViewed`      |
+| Copy the lines           | `y y`    | lines  | In `diff` and `file`; in code views, only in normal and visual mode                    | `diff.copyLines`       |
+| Next layer               | `] s`    | layers | Anywhere but `menu`, `dialog`, `palette` and `box`; in code views, only in normal mode | `stacks.nextLayer`     |
+| Previous layer           | `[ s`    | layers | Anywhere but `menu`, `dialog`, `palette` and `box`; in code views, only in normal mode | `stacks.previousLayer` |
+| Next row of the tree     | `j`, `↓` | rows   | In `tree`                                                                              | `tree.down`            |
+| Previous row of the tree | `k`, `↑` | rows   | In `tree`                                                                              | `tree.up`              |
+| Mark viewed              | `e`      | files  | In `tree`                                                                              | `tree.markViewed`      |
+
+In a code view the count is Vim's until one of these keys takes it, in normal mode only. Elsewhere
+digits are a count only in `tree`, where a command of the scope's own takes one, and a count waits
+for its key as a sequence's first key does.
 
 ## Keys for one system
 
@@ -290,29 +335,34 @@ meanings.
 Code views (`diff`, `file`, `peek` and `box`) run Vim, and Lo leaves Vim's keys to it there, except
 these, which run Lo's command in place of Vim's key:
 
-| Keys             | Action                          | Vim's key | Where                                                                | Command                  |
-| ---------------- | ------------------------------- | --------- | -------------------------------------------------------------------- | ------------------------ |
-| `c`              | Comment                         | `c`       | `diff`                                                               | `comments.comment`       |
-| `C`              | Comment right away              | `C`       | `diff`                                                               | `comments.commentNow`    |
-| `s`              | Suggest a change                | `s`       | `diff`                                                               | `comments.suggest`       |
-| `⏎`              | Comment on the file instead     | `⏎`       | `diff` (normal)                                                      | `comments.onFileInstead` |
-| `e`              | Mark viewed                     | `e`       | `diff` (normal)                                                      | `diff.markViewed`        |
-| `g i`            | Inline or side by side          | `g i`     | `diff` (normal)                                                      | `diff.inline`            |
-| `g w`            | Hide or show whitespace changes | `g w`     | `diff` (normal)                                                      | `diff.whitespace`        |
-| `y y`            | Copy the lines                  | `y`       | `diff` and `file`                                                    | `diff.copyLines`         |
-| `y l`            | Copy the line's link            | `y`       | `diff` (normal) and `file` (normal)                                  | `diff.copyLink`          |
-| `y p`            | Copy path                       | `y`       | `diff` (normal) and `file` (normal)                                  | `diff.copyPath`          |
-| `?`              | Every key                       | `?`       | `diff`, `file`, `peek` and `box` (normal and visual)                 | `keys.help`              |
-| `⌃o`             | Back                            | `⌃o`      | `diff`, `file` and `peek`                                            | `keys.back`              |
-| `⌃i`             | Forward                         | `⌃i`      | `diff`, `file` and `peek`                                            | `keys.forward`           |
-| `y a`            | Copy prompt for an agent        | `y`       | `diff` (normal), `file` (normal) and `peek` (normal)                 | `overview.copyPrompt`    |
-| `g v`            | Compare revisions               | `g v`     | `diff` (normal), `file` (normal) and `peek` (normal)                 | `revisions.picker`       |
-| `` ` ``          | Next middle view                | `` ` ``   | `diff` (normal), `file` (normal) and `peek` (normal)                 | `tab.nextView`           |
-| `~`              | Previous middle view            | `~`       | `diff` (normal), `file` (normal) and `peek` (normal)                 | `tab.previousView`       |
-| `-`              | Go to the file tree             | `-`       | `diff` (normal), `file` (normal) and `peek` (normal)                 | `tree.focus`             |
-| `Ctrl+Q` (Linux) | Quit Lo                         | `Ctrl+Q`  | `diff`, `file`, `peek` and `box` (normal and visual)                 | `app.quit`               |
-| `Ctrl+W` (Linux) | Close tab                       | `Ctrl+W`  | `diff` (normal), `file` (normal), `peek` (normal) and `box` (normal) | `tab.close`              |
-| `Ctrl+P` (Linux) | Go to a file                    | `Ctrl+P`  | `diff`, `file`, `peek` and `box` (normal and visual)                 | `tree.find`              |
+| Keys             | Action                          | Vim's key | Where                                                                | Command                   |
+| ---------------- | ------------------------------- | --------- | -------------------------------------------------------------------- | ------------------------- |
+| `c`              | Comment                         | `c`       | `diff`                                                               | `comments.comment`        |
+| `C`              | Comment right away              | `C`       | `diff`                                                               | `comments.commentNow`     |
+| `s`              | Suggest a change                | `s`       | `diff`                                                               | `comments.suggest`        |
+| `⏎`              | Comment on the file instead     | `⏎`       | `diff` (normal)                                                      | `comments.onFileInstead`  |
+| `r`              | Reply to the thread             | `r`       | `diff` (normal)                                                      | `comments.reply`          |
+| `x`              | Resolve or unresolve the thread | `x`       | `diff` (normal)                                                      | `comments.resolve`        |
+| `i`              | Edit your comment               | `i`       | `diff` (normal)                                                      | `comments.edit`           |
+| `d d`            | Delete your comment…            | `d`       | `diff` (normal)                                                      | `comments.remove`         |
+| `e`              | Mark viewed                     | `e`       | `diff` (normal)                                                      | `diff.markViewed`         |
+| `g i`            | Inline or side by side          | `g i`     | `diff` (normal)                                                      | `diff.inline`             |
+| `g w`            | Hide or show whitespace changes | `g w`     | `diff` (normal)                                                      | `diff.whitespace`         |
+| `y y`            | Copy the lines                  | `y`       | `diff` and `file`                                                    | `diff.copyLines`          |
+| `y l`            | Copy the line's link            | `y`       | `diff` (normal) and `file` (normal)                                  | `diff.copyLink`           |
+| `y p`            | Copy path                       | `y`       | `diff` (normal) and `file` (normal)                                  | `diff.copyPath`           |
+| `?`              | Every key                       | `?`       | `diff`, `file`, `peek` and `box` (normal and visual)                 | `keys.help`               |
+| `⌃o`             | Back                            | `⌃o`      | `diff`, `file` and `peek`                                            | `keys.back`               |
+| `⌃i`             | Forward                         | `⌃i`      | `diff`, `file` and `peek`                                            | `keys.forward`            |
+| `y a`            | Copy prompt for an agent        | `y`       | `diff` (normal), `file` (normal) and `peek` (normal)                 | `overview.copyPrompt`     |
+| `g v`            | Compare revisions               | `g v`     | `diff` (normal), `file` (normal) and `peek` (normal)                 | `revisions.picker`        |
+| `` ` ``          | Next middle view                | `` ` ``   | `diff` (normal), `file` (normal) and `peek` (normal)                 | `tab.nextView`            |
+| `~`              | Previous middle view            | `~`       | `diff` (normal), `file` (normal) and `peek` (normal)                 | `tab.previousView`        |
+| `-`              | Go to the file tree             | `-`       | `diff` (normal), `file` (normal) and `peek` (normal)                 | `tree.focus`              |
+| `c`              | Comment on these lines          | `c`       | `file`                                                               | `comments.commentOnBlock` |
+| `Ctrl+Q` (Linux) | Quit Lo                         | `Ctrl+Q`  | `diff`, `file`, `peek` and `box` (normal and visual)                 | `app.quit`                |
+| `Ctrl+W` (Linux) | Close tab                       | `Ctrl+W`  | `diff` (normal), `file` (normal), `peek` (normal) and `box` (normal) | `tab.close`               |
+| `Ctrl+P` (Linux) | Go to a file                    | `Ctrl+P`  | `diff`, `file`, `peek` and `box` (normal and visual)                 | `tree.find`               |
 
 In code views, Vim runs Lo's motions (next change, previous change, next file, previous file, next
 thread and previous thread) under Lo's keys, so a count repeats them and they extend a selection in

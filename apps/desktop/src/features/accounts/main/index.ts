@@ -33,7 +33,7 @@ import { buildOf } from './build.ts';
 import { Gh } from './gh.ts';
 import { Github } from './github.ts';
 import { Grants } from './grants.ts';
-import { importFromGh, listGh, rereadFromGh } from './importing.ts';
+import { ghTokenForUpload, importFromGh, listGh, rereadFromGh } from './importing.ts';
 import { SignIns } from './signin.ts';
 
 /**
@@ -44,9 +44,9 @@ const SAVE_WITHIN = STOP_LIMITS.each - 1_000;
 
 /**
  * Every read from GitHub goes through Chromium's network stack, with the system's proxy, keeping
- * nothing in Chromium's cache. Every write goes over Node's HTTP client, through the proxy Chromium
- * would take, so it's sent at most once: Chromium sends a request again by itself when its reused
- * connection drops (`main/once.ts`).
+ * nothing in Chromium's cache. Every write goes over Node's HTTP stack, undici, through the proxy
+ * Chromium names, so it's sent at most once: Chromium sends a request again by itself when its
+ * reused connection drops (`main/once.ts`).
  */
 const fetch = writesOnce(
   netFetch((options) => net.request(options)),
@@ -149,6 +149,7 @@ export default defineFeature(contract, {
       build: thisBuild(),
       log,
       reread: rereadFromGh({ gh, fetch, urls, log }),
+      ghToken: ghTokenForUpload({ gh, fetch, urls, log }),
     });
     const signIns = new SignIns({
       fetch,

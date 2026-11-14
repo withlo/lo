@@ -1,8 +1,10 @@
 // The stacks' keys. `]s` and `[s` show the next and previous layer of the stack on screen, in the
-// order its tree lists them, and `gS` makes the chain the pull request on screen is in a GitHub
-// stack, once you confirm what will change: they work anywhere in a pull request's tab, and over Vim
-// in code views in normal mode, as `gv` does. `-` in the file tree goes up to the stack's tree, where
-// single keys act on the layer the keyboard is on: moving, showing it, and opening it on GitHub.
+// order its tree lists them, or with a count that many on, and `gS` makes the chain the pull
+// request on screen is in a GitHub stack, once you confirm what will change: they work anywhere in a
+// pull request's tab, and over Vim in code views in normal mode, as `gv` does. `-` in the file tree
+// goes up to the stack's tree, and `+` there back down, as Vim's `-` and `+` go up and down a line.
+// In the stack's tree single keys act on the layer the keyboard is on: moving, showing it, and
+// opening it on GitHub.
 // `v` there chooses a run of layers to view as one diff, as Vim's `V` selects lines: `j` and `k`
 // grow it, `⏎` shows it and `Esc` stops. In a run on screen, `Esc` in the diff, once nothing nearer
 // takes it, goes back to the layer it was chosen from. A layer's right-click menu shows it, chooses
@@ -23,9 +25,22 @@ export default defineCommands(
     /**
      * Shows the next layer of the stack, bottom up, each branch finished before the next, and stops
      * at the last. Showing a layer isn't a jump: each layer keeps its own place, and `[s` comes back.
+     * A count goes that many layers, as far as the last.
      */
-    nextLayer: { label: 'Next layer', group: 'Jump', keys: ['] s'], when: anywhere },
-    previousLayer: { label: 'Previous layer', group: 'Jump', keys: ['[ s'], when: anywhere },
+    nextLayer: {
+      label: 'Next layer',
+      group: 'Jump',
+      keys: ['] s'],
+      when: anywhere,
+      count: 'layers',
+    },
+    previousLayer: {
+      label: 'Previous layer',
+      group: 'Jump',
+      keys: ['[ s'],
+      when: anywhere,
+      count: 'layers',
+    },
     /**
      * Goes up from the file tree to the stack's tree, at the layer on screen; for a pull request
      * that isn't in a stack, back to the file on screen in the tree, as `-` does from the code.
@@ -35,6 +50,13 @@ export default defineCommands(
       group: 'Files',
       keys: ['-'],
       when: { scope: 'tree' },
+    },
+    /** Goes down from the stack's tree to the file tree, at the file on screen. */
+    files: {
+      label: 'Go to the file tree',
+      group: 'Files',
+      keys: ['+'],
+      when: tree,
     },
     down: {
       label: 'Next layer in the stack',

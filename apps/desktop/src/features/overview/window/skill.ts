@@ -1,15 +1,25 @@
 // The overview skill as the window knows it: where it stands for each agent, and installing it from
-// Settings, the welcome screen or the app menu alike.
+// Settings, the welcome screen or the app menu alike; and the command that installs it from a
+// terminal, which Settings shows and copies.
 
 import { createStore } from 'zustand/vanilla';
 
 import { notify } from '../../../window/commands/notices.tsx';
 import type { Agent, SkillResult, SkillState } from '../contract.ts';
-import { main } from './main.ts';
+import { main, tabs } from './main.ts';
 import { agentsToInstall, resultWords } from './words.ts';
+
+/** The checker Lo builds in, `@withlo/overview@<version>`, as electron.vite.config.ts reads it. */
+declare const LO_OVERVIEW_CHECKER: string;
 
 /** What the notice and the command are called. */
 export const TITLE = 'Install overview skill';
+
+/**
+ * The command that installs the skill from a terminal: the checker by the exact version the skill
+ * Lo installs runs, so the skill it installs is the one Lo does.
+ */
+export const INSTALL_COMMAND = `npx ${LO_OVERVIEW_CHECKER} install`;
 
 export interface SkillStore {
   /** Where the skill stands for each agent, once main has said. */
@@ -18,12 +28,15 @@ export interface SkillStore {
   readonly installing: boolean;
   /** What went wrong when main couldn't be asked to install it, until the next install. */
   readonly said: string | undefined;
+  /** Whether the install command was copied a moment ago: not since Settings' row appeared. */
+  readonly copied: boolean;
 }
 
 export const skillStore = createStore<SkillStore>()(() => ({
   state: undefined,
   installing: false,
   said: undefined,
+  copied: false,
 }));
 
 /** How many times main has pushed where the skill stands. */
@@ -79,4 +92,30 @@ export async function installSkill(
   skillStore.setState({ installing: false });
   notify(TITLE, said);
   return results;
+}
+
+/** What the notice for copying the command is called. */
+export const COPY_TITLE = 'Copy the install command';
+
+/** How long the button says "Copied" after a copy, in ms. */
+export const COPIED_FOR = 3000;
+
+let forgetting: ReturnType<typeof setTimeout> | undefined;
+
+/**
+ * Puts the command that installs the skill from a terminal on the clipboard, as `yc` does, and says
+ * so for a few seconds, each time. When it can't, says that in a notice.
+ */
+export async function copyInstallCommand(): Promise<void> {
+  let copied = true;
+  try {
+    await tabs().copy({ text: INSTALL_COMMAND });
+  } catch (error) {
+    console.error("Lo couldn't copy the command that installs the overview skill:", error);
+    notify(COPY_TITLE, "Lo couldn't copy the command.");
+    copied = false;
+  }
+  clearTimeout(forgetting);
+  skillStore.setState({ copied });
+  if (copied) forgetting = setTimeout(() => skillStore.setState({ copied: false }), COPIED_FOR);
 }

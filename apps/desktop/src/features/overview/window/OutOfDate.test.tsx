@@ -250,7 +250,15 @@ const RESOLVED: CodeState = { state: 'resolved' };
 /** The blocks' context, for an overview of `commit`, out of date against `head` when given. */
 function contextOf(head: string | undefined, commit = R1): CodeContext {
   const read: CodeRead = { kind: 'read', commit, files: [] };
-  return { tab, commit, head, read, target: () => ({ code: RESOLVED, answer: undefined }) };
+  return {
+    tab,
+    pull: { id: tab, kind: 'pull', owner: 'rozed-dev', repo: 'e2e', number: 80 },
+    tree: 1,
+    commit,
+    head,
+    read,
+    target: () => ({ code: RESOLVED, answer: undefined }),
+  };
 }
 
 function excerpt(path: string, start: number, end: number): Excerpt {

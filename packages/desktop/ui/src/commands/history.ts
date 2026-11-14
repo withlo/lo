@@ -2,21 +2,28 @@
 // target), never an editor or a DOM node, so a view that's gone can't be reached through it, and
 // going back after `Tab` lands on the side the jump was made on. Each view registers how it
 // reveals an entry; an entry no view can reveal now (a closed file view, a file a push removed) is
-// skipped.
+// skipped. An entry can say what its view showed then, such as the diff's comparison, which the
+// view shows again before the place.
 
 import { plainTarget, type Place, type Span, type Target } from './targets.ts';
 
 /** The views history's places are in. */
 export type View = 'diff' | 'file' | 'overview' | 'timeline';
 
-/** A place in a tab: a view, and where in it. */
+/**
+ * A place in a tab: a view, where in it, and what the view showed then, as the view names it, when
+ * it can show other things, as the diff shows one comparison or another.
+ */
 export interface Entry {
   view: View;
   at: Target;
+  within?: string | undefined;
 }
 
-/** Shows `at` in its view and says whether it could. */
-export type Reveal = (at: Target) => boolean;
+/**
+ * Shows `at` in its view, in what `within` names when the entry has it, and says whether it could.
+ */
+export type Reveal = (at: Target, within?: string) => boolean;
 
 /** As many entries as Vim keeps. */
 export const HISTORY_LIMIT = 100;
@@ -133,7 +140,11 @@ export class History {
   private push(list: List, entry: Entry): void {
     const last = list.entries.at(-1);
     if (last && same(last, entry)) return;
-    list.entries.push({ view: entry.view, at: plainTarget(entry.at) });
+    list.entries.push({
+      view: entry.view,
+      at: plainTarget(entry.at),
+      ...(entry.within === undefined ? {} : { within: entry.within }),
+    });
     const over = list.entries.length - this.limit;
     if (over > 0) {
       list.entries.splice(0, over);
@@ -146,16 +157,19 @@ export class History {
     if (reveal === undefined) return false;
     this.revealing = true;
     try {
-      return reveal(entry.at);
+      return reveal(entry.at, entry.within);
     } finally {
       this.revealing = false;
     }
   }
 }
 
-/** Whether two entries are one place: the same view, file, side and line, or the same thing. */
+/**
+ * Whether two entries are one place: the same view, showing the same thing, and the same file,
+ * side and line, or the same thing in it.
+ */
 function same(a: Entry, b: Entry): boolean {
-  if (a.view !== b.view) return false;
+  if (a.view !== b.view || a.within !== b.within) return false;
   const x = a.at;
   const y = b.at;
   if (x.kind === 'line' && y.kind === 'line') return sameAt(x.at, y.at);

@@ -29,15 +29,16 @@ export type Mode = 'normal' | 'visual' | 'insert';
 export interface KeySource {
   /**
    * Vim's state: its mode, whether it's in the middle of a command (after a count or an
-   * operator), and what a key there acts on: the cursor's line, the lines `v` selected, a thread.
+   * operator), the count when that's all Vim holds, and what a key there acts on: the cursor's
+   * line, the lines `v` selected, a thread.
    */
-  keyState(): { mode: Mode; pending: boolean; target: Target };
+  keyState(): { mode: Mode; pending: boolean; count?: number | undefined; target: Target };
   /** Keys the registry held back, replayed into Vim, in Vim's key notation (`y`, `<C-o>`). */
   passKeys(keys: readonly string[]): void;
   /**
    * Drops whatever Vim is waiting on: a count, an operator, a key replayed into it. The registry
    * calls it when focus leaves the view, the window loses focus or the tab changes, so no key
-   * typed before then completes a command after.
+   * typed before then completes a command after, and when one of Lo's commands takes Vim's count.
    */
   clearPending(): void;
   /** The keys Vim runs Lo's motions with and the keymap's `vim` lines: after a remap, and at first. */

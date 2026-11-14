@@ -1,39 +1,74 @@
-// The comment boxes of each view's diff, in the window until the view's tab closes: where each is,
-// its text, and how sending it stands, as main keeps its draft. A box opens from `c`, `C`, `s` or a
-// file's `c`; a draft main restored reopens, unfocused, once its view's diff draws its line, and so
-// does a box the diff took down as it was drawn again, and, after the window is loaded again, every
-// draft's. Text is saved 300 ms after typing stops, and at once as the box closes or the window
-// goes. While it's sent, and until Lo knows whether it posted, its text is held as it is. A box
-// goes once what it sent is on GitHub, or its draft is discarded; `Esc Esc` closes it and keeps the
-// draft for the next box there.
+// The comment boxes of each view's diff, of its overview's code blocks and of its timeline, in the
+// window until the view's tab closes: where each is, its text, and how sending it stands, as main
+// keeps its draft. A box opens from `c`, `C`, `s` or a file's `c` in the diff, and in a thread,
+// right after its card, from `r` (a reply) or `i` (an edit of your comment, which starts from
+// GitHub's text and saves over it); from `c` on a code block, under the block's lines, on the lines
+// they are at the head on screen, their file, or the pull request; and in the timeline, the pull
+// request's own box at its end, and an edit of your comment there in its card. A draft opens in one
+// box only: under the block it was written on while the tab's overview has that block, and
+// otherwise where a draft of its place opens, in the diff for lines and a file, and in the timeline
+// for the pull request. A box showing a draft keeps it while it's open, whatever the overview does,
+// and a draft in no box waits while Lo can't tell whether the overview has its block. A draft main
+// restored reopens there, unfocused, once its view's diff draws its line, its block is drawn or its
+// timeline is, and so does a box the diff or a block took down as it was drawn again, or the
+// timeline let go as it went, and, after the window is loaded again, every draft's. Text is saved
+// 300 ms after typing stops, and at once as the box closes or the window goes. While it's sent, and
+// until Lo knows whether it posted, its text is held as it is. A box goes once what it sent is on
+// GitHub, or its draft is discarded; `Esc Esc` closes it and keeps the draft for the next box
+// there. Files dropped on it, pasted into it or picked are attached (`./uploads.ts`). It isn't sent
+// while one is on its way in, nor while its text holds a placeholder whose upload isn't, and its
+// uploads are given up as its draft goes.
 
-import { Lines, suggestionBlock, takesSuggestion } from '@lo/review';
-import type { Composer, ComposerEvents, Mode, Send } from '@lo/ui/code';
-import type { BoxTarget, Handler, HeaderTarget, LineTarget } from '@lo/ui/commands';
+import { Lines, Screen, suggestionBlock, takesSuggestion } from '@lo/review';
+import type { Composer, ComposerEvents, KeptBox, Mode, Send } from '@lo/ui/code';
+import {
+  type BoxTarget,
+  type Handler,
+  type HeaderTarget,
+  KEY_EVENT,
+  type LineTarget,
+  type Target,
+} from '@lo/ui/commands';
 
 import { announce, notice, notify, withdraw } from '../../../window/commands/notices.tsx';
 import { client } from '../../../window/ipc.ts';
-import { showDiff, writingDiff, type WritingDiff } from '../../diff/window/shared.ts';
+import { diffStateOf, showDiff, writingDiff, type WritingDiff } from '../../diff/window/shared.ts';
+import {
+  blockInOverview,
+  blockKey,
+  blockLines,
+  commentOnHead,
+  revisionName,
+  writingBlock,
+  type WritingBlock,
+} from '../../overview/window/shared.ts';
 import { contract as revisionsContract } from '../../revisions/contract.ts';
-import { pullOf, runOf, type PullTab } from '../../tab/window/shared.ts';
+import { pullOf, runOf, tabState, type PullTab } from '../../tab/window/shared.ts';
 import type {
+  ActOutcome,
   Commentable,
+  DraftHomeRow,
   DraftPlaceRow,
   DraftRow,
   DraftsView,
-  SendRefusal,
+  SendOutcome,
   Sending,
 } from '../contract.ts';
 import { main, tabs } from './main.ts';
 import { screenOf } from './placing.ts';
 import type { PostPull } from './Post.tsx';
 import { landed } from './landed.ts';
-import { held } from './threads.ts';
+import { held, shownAt } from './threads.ts';
+import { attachFiles, draggingOver, endUploads, pickFiles, uploadsHold } from './uploads.ts';
+import { wrotePull } from './written.ts';
 import {
+  blockComment,
+  blockWhere,
   boxAt,
   commentableOn,
   githubPath,
   IN_A_LAYER,
+  inTimeline,
   linesAt,
   NEW_SIDE_ONLY,
   NO_LINES,
@@ -41,9 +76,14 @@ import {
   offerLabels,
   offersOf,
   type Offer,
+  ON_FILE_NOT_IN_DIFF,
+  ON_PULL,
   placeKey,
   placeOf,
+  type Refusal,
+  sentFromBlock,
   SIGN_IN,
+  whyOf,
 } from './writing.ts';
 
 /** How long after the last key a box's text is saved, in milliseconds. */
@@ -73,7 +113,114 @@ export interface BoxState {
   /** A send was asked for, and main hasn't answered. */
   readonly busy: boolean;
   /** Why the last send was refused. */
-  readonly refusal: SendRefusal | undefined;
+  readonly refusal: Refusal | undefined;
+  /**
+   * What its head says of where the comment goes, where that's more than its place says, as for a
+   * comment on a block's file in place of its lines.
+   */
+  readonly where: string | undefined;
+}
+
+/**
+ * Where a box would rather be drawn: in its view's diff, or under lines of a code block of its
+ * overview, the block it was written from, as main keeps with its draft. A draft keeps that block
+ * as its home wherever its comment goes, the pull request included, and opens there while the
+ * tab's overview has the block; otherwise where a draft of its place opens with no home
+ * ({@link opensAt}).
+ */
+export type Home =
+  { readonly kind: 'diff' } | { readonly kind: 'block'; readonly block: DraftHomeRow };
+
+/** In the diff. */
+export const IN_DIFF: Home = { kind: 'diff' };
+
+/** The home main keeps with a box's draft: its block, or none for the diff. */
+function homeRow(home: Home): DraftHomeRow | null {
+  return home.kind === 'block' ? home.block : null;
+}
+
+/** The home of a draft main kept: its block, or the diff. */
+function homeOf(row: DraftRow): Home {
+  return row.home ? { kind: 'block', block: row.home } : IN_DIFF;
+}
+
+/** The key of the block a box's home is, as the overview draws it (`DrawnBlock.key`). */
+function keyOfBlock(home: DraftHomeRow): string {
+  return blockKey(home.commit, home.path, home.block.start, home.block.end);
+}
+
+/**
+ * Whether a draft with `home` opens under its block in view `view`: it has one, and the tab's
+ * overview has it now. `unknown` while Lo is still reading or checking the overview. A draft opens
+ * in one box only: one on the pull request that doesn't open under a block is the timeline's.
+ */
+export function opensUnderBlock(view: string, home: DraftHomeRow | null): boolean | 'unknown' {
+  return home ? blockInOverview(view, keyOfBlock(home)) : false;
+}
+
+/**
+ * Where a box opens now, in one place only: under its home block, while the tab's overview has it;
+ * otherwise where a draft of its place opens with no home, the diff for lines and a file, and the
+ * timeline for the pull request itself, its own box or an edit of your comment there. It `waits`
+ * while Lo can't tell yet whether the overview has its block.
+ */
+type Opens =
+  | { readonly kind: 'block'; readonly block: DraftHomeRow }
+  | { readonly kind: 'diff' }
+  | { readonly kind: 'timeline' }
+  | { readonly kind: 'waits' };
+
+function opensAt(box: Box): Opens {
+  // Taken down open as the diff was drawn again, it's still in its box there, whatever the
+  // overview did meanwhile, until the diff drawn anew has placed it or couldn't.
+  if (box.kept !== undefined) return IN_DIFF;
+  const { home } = box;
+  if (home.kind === 'block') {
+    const under = opensUnderBlock(box.view, home.block);
+    if (under === true) return home;
+    if (under === 'unknown') return { kind: 'waits' };
+  }
+  return inTimeline(box.state.place) ? { kind: 'timeline' } : IN_DIFF;
+}
+
+/**
+ * Whether box `box` is the draft the box at the end of its view's timeline keeps: the one it's
+ * showing, while it's open, whatever the overview does, so nothing on screen moves and focus stays;
+ * otherwise a comment on the pull request itself with no home, or whose block the tab's overview
+ * doesn't have now. Not one that waits while Lo can't tell: it opens in one box only.
+ */
+function isPullsOwn(box: Box): boolean {
+  if (box.state.place.kind !== 'conversation') return false;
+  if (box.composer !== undefined && box.drawnIn === 'timeline') return true;
+  return opensUnderBlock(box.view, homeRow(box.home)) === false;
+}
+
+/**
+ * Where a box is drawn, as a key, where another box can be drawn there too: under a block's line
+ * on its side, where one box goes, or under the last line of a new thread's lines in the diff, or
+ * its file's header. Nothing for one drawn by its thread.
+ */
+function spotOf(home: Home, place: DraftPlaceRow): string | undefined {
+  if (home.kind === 'block') {
+    const { side, to } = home.block.at;
+    return JSON.stringify([keyOfBlock(home.block), side, to]);
+  }
+  if (place.kind !== 'thread') return undefined;
+  const end = place.lines?.end;
+  return JSON.stringify([place.commit.toLowerCase(), place.path, end?.side, end?.number]);
+}
+
+/** Where box `box`, drawn, is, as {@link spotOf} keys it. */
+function spotOfBox(box: Box): string | undefined {
+  return spotOf(box.drawnIn === 'block' ? box.home : IN_DIFF, box.state.place);
+}
+
+/** What a box's head says of where a draft written on a block goes, as main kept it. */
+function whereOf(view: string, home: DraftHomeRow, place: DraftPlaceRow): string | undefined {
+  return blockWhere(home.why, place, {
+    written: revisionName(view, home.commit),
+    now: revisionName(view, home.head),
+  });
 }
 
 /** Whether a box's comment is being sent, or may be on GitHub: its text is held as it is. */
@@ -99,6 +246,23 @@ export class Box {
   /** Whether main marked its draft sent, as after GitHub's answer to it was lost. */
   sentMark = false;
   retries = 0;
+  /** Where it would rather be drawn. */
+  home: Home = IN_DIFF;
+  /** Where its composer is drawn, while it has one. */
+  drawnIn: 'diff' | 'block' | 'timeline' | undefined;
+  /**
+   * The box as it was as the diff, drawn again, took it down open: it opens in the diff drawn anew
+   * as it was, whatever the overview did meanwhile, until that diff has placed it or couldn't
+   * ({@link placeKept}).
+   */
+  kept: Kept | undefined;
+  /** Its editor is taking main's text, not the reader's typing, which isn't saved again. */
+  taking = false;
+  /**
+   * What takes focus once the box goes while it had it, where the view it's drawn in doesn't take
+   * it back itself, as the timeline's list does.
+   */
+  left: (() => void) | undefined;
   #state: BoxState;
   #save: ReturnType<typeof setTimeout> | undefined;
   readonly #listeners = new Set<() => void>();
@@ -119,6 +283,7 @@ export class Box {
       sending: null,
       busy: false,
       refusal: undefined,
+      where: undefined,
     };
   }
 
@@ -150,12 +315,21 @@ export class Box {
     if (this.#save === undefined) return;
     clearTimeout(this.#save);
     this.#save = undefined;
-    save(this.view, this.state.place, this.state.text);
+    save(this.view, this.state.place, this.state.text, homeRow(this.home));
   }
 
   /** Whether its text is waiting to be saved. */
   get saving(): boolean {
     return this.#save !== undefined;
+  }
+
+  /**
+   * Puts `text` in as its text while it isn't drawn, as when an upload's placeholder becomes its
+   * Markdown, and saves it once typing would have stopped.
+   */
+  rewrite(text: string): void {
+    this.set({ text, restored: undefined });
+    this.saveSoon();
   }
 
   /** Forgets the text waiting to be saved, as when its draft is discarded or sent. */
@@ -194,9 +368,9 @@ function boxesOf(view: string): Map<string, Box> {
   return own;
 }
 
-function save(view: string, place: DraftPlaceRow, text: string): void {
+function save(view: string, place: DraftPlaceRow, text: string, home: DraftHomeRow | null): void {
   main()
-    .draft({ id: view, place, text })
+    .draft({ id: view, place, text, home })
     .catch((error: unknown) => console.error("Lo couldn't save a comment's draft:", error));
 }
 
@@ -279,6 +453,10 @@ function commentableOf(
 function eventsOf(box: Box): ComposerEvents {
   return {
     change(text) {
+      if (box.taking) {
+        box.set({ text });
+        return;
+      }
       box.set({ text, restored: undefined });
       box.saveSoon();
     },
@@ -288,22 +466,41 @@ function eventsOf(box: Box): ComposerEvents {
     close(keep) {
       box.composer = undefined;
       box.open = false;
+      // Shut, it's kept nowhere, and takes no focus the next time it opens by itself.
+      box.kept = undefined;
+      box.focusOnOpen = false;
+      unsay(box);
+      replyingChanged(box.view);
       if (keep) {
         box.saveNow();
         return;
       }
-      // Nothing to keep: its draft goes, unless main is still settling what it sent.
+      // Nothing to keep: its draft goes, unless main is still settling what it sent, and nothing
+      // still uploading goes into it. An edit's keeps its draft even with no text, so it goes as
+      // discarded.
       box.dropSave();
+      endUploads(box);
       if (box.sentMark || box.state.busy) return;
       boxesOf(box.view).delete(box.key);
       holdDropped(box);
-      save(box.view, box.state.place, '');
+      if (box.state.place.kind === 'edit') discard(box);
+      else save(box.view, box.state.place, '', null);
     },
     mode(mode) {
       box.set({ mode });
     },
     preview(on) {
       box.set({ previewing: on });
+    },
+    // Nothing is attached while its text is held, as while it's sent.
+    attach() {
+      if (!sendingNow(box.state)) pickFiles(box);
+    },
+    files(files) {
+      if (!sendingNow(box.state)) attachFiles(box, files);
+    },
+    dragging(count) {
+      draggingOver(box, count);
     },
   };
 }
@@ -319,54 +516,267 @@ export function frameWith(given: (box: Box) => Parameters<WritingDiff['compose']
 }
 
 /**
- * Opens `box` in its view's diff, where its place is drawn, if it is: focused when it asks to be.
+ * Opens `box` where it opens now ({@link opensAt}), if its place is drawn: in its view's diff,
+ * `diff`, or under its code block's lines while the block is drawn; focused when it asks to be.
  * Says whether it's open.
  */
-function show(box: Box, diff: WritingDiff): boolean {
+function show(box: Box, diff: WritingDiff | undefined): boolean {
   if (box.composer) {
     if (box.focusOnOpen) box.composer.focus();
     box.focusOnOpen = false;
     return true;
   }
-  const drawn = diff.drawn();
-  const file = drawn.files.find((each) => githubPath(each) === box.state.place.path);
-  const where = boxAt(drawn, screenFor(box.view, diff, file?.since ?? false), box.state.place);
-  if (!where) return false;
+  const options = { focus: box.focusOnOpen, name: box.id };
   try {
-    box.composer = diff.compose(where.at, box.state.text, eventsOf(box), framer?.(box), {
-      focus: box.focusOnOpen,
-      name: box.id,
-    });
+    const opens = opensAt(box);
+    if (opens.kind === 'block') {
+      const block = writingBlock(box.view, keyOfBlock(opens.block));
+      if (!block) return false;
+      const { file } = block.block;
+      const { side, from, to } = opens.block.at;
+      const at = from === to ? { file, side, line: to } : { file, side, from, to };
+      // A block draws one box under a line: another box's there stays, and this one waits.
+      const spot = spotOf(opens, box.state.place);
+      const there = [...boxesOf(box.view).values()].find(
+        (each) => each !== box && each.composer && spotOfBox(each) === spot,
+      );
+      if (there) return false;
+      drew(box, block.compose(at, box.state.text, eventsOf(box), framer?.(box), options), 'block');
+    } else {
+      if (opens.kind !== 'diff' || !diff) return false;
+      const where = inDiffAt(box, diff);
+      if (!where) return false;
+      const { text } = box.state;
+      drew(box, diff.compose(where.at, text, eventsOf(box), framer?.(box), options), 'diff');
+    }
   } catch {
     // Its line isn't drawn yet, as while its file's diff is worked out.
     return false;
   }
-  box.composer.hold(sendingNow(box.state));
-  box.set({ mode: box.composer.mode });
+  return true;
+}
+
+/** Box `box` is drawn, as `composer`, in `where`. */
+function drew(box: Box, composer: Composer, where: 'diff' | 'block'): void {
+  box.composer = composer;
+  box.drawnIn = where;
+  composer.hold(sendingNow(box.state));
+  box.set({ mode: composer.mode, previewing: composer.previewing });
   box.focusOnOpen = false;
   box.retries = 0;
-  return true;
+  box.kept = undefined;
+  unsay(box);
+}
+
+/**
+ * Where box `box` goes in `diff` as it's drawn now: under the last of its lines, or its file's
+ * header, or in its thread, as {@link boxAt} places it. Nowhere where the diff can't place it.
+ */
+function inDiffAt(box: Box, diff: WritingDiff): ReturnType<typeof boxAt> {
+  const drawn = diff.drawn();
+  const { place } = box.state;
+  const file =
+    place.kind === 'thread'
+      ? drawn.files.find((each) => githubPath(each) === place.path)
+      : undefined;
+  const screen = screenFor(box.view, diff, file?.since ?? false);
+  return boxAt(drawn, screen, place, (thread) => shownAt(box.view, thread) !== undefined);
+}
+
+/**
+ * Where box `box`, on lines, goes in `diff` where the diff doesn't place it on them: under their
+ * file's header, if the diff is of the revision they're at and has the file.
+ */
+function headerAt(box: Box, diff: WritingDiff): ReturnType<typeof boxAt> {
+  const drawn = diff.drawn();
+  const { place } = box.state;
+  if (place.kind !== 'thread' || place.commit.toLowerCase() !== drawn.at.toLowerCase()) {
+    return undefined;
+  }
+  const file = drawn.files.find((each) => githubPath(each) === place.path);
+  return file ? { at: { file: file.id } } : undefined;
+}
+
+/** A box the diff took down open as it was drawn again: what opens it as it was there anew. */
+interface Kept {
+  /** The box as it was. */
+  readonly box: KeptBox;
+  /** Whether focus was in it. */
+  readonly focused: boolean;
+  /** How much the reader had done as it was taken down: focus comes back with nothing since. */
+  readonly inputs: number;
+}
+
+/**
+ * What the reader does that moves on from a box the diff took down: a key, a click, the wheel. A key
+ * one of Lo's commands takes goes no further than the key listener's `keydown`, which tells the
+ * focused element first (`KEY_EVENT`).
+ */
+const INPUT = ['keydown', KEY_EVENT, 'pointerdown', 'wheel'] as const;
+
+/** How many keys, clicks and wheel turns the reader has made, since Lo first needed to know. */
+let inputs = 0;
+let counting = false;
+
+/** How many keys, clicks and wheel turns the reader has made, counting from now on. */
+function inputsSoFar(): number {
+  if (!counting) {
+    counting = true;
+    const count = () => {
+      inputs += 1;
+    };
+    for (const type of INPUT) window.addEventListener(type, count, true);
+  }
+  return inputs;
+}
+
+/**
+ * Opens box `box`, kept as the diff was drawn again, in the diff drawn anew, `diff`, as it was, in
+ * the first place it can of: its line, or its thread; its file's header, as for a file closed as
+ * viewed, still on its lines; its block, only where the diff has neither, unfocused. Focused if it
+ * had focus, the reader has done nothing since, and focus is where the redraw left it. It waits a
+ * while for lines still coming, and after that goes under its file's header. Says where it went:
+ * nowhere, in the end, where it can't be placed, and it's kept for the next time its line or block
+ * is drawn.
+ */
+function placeKept(
+  box: Box,
+  kept: Kept,
+  diff: WritingDiff,
+): 'diff' | 'waits' | 'block' | 'nowhere' {
+  const line = inDiffAt(box, diff);
+  const header = headerAt(box, diff);
+  const at = line ?? header;
+  if (at) {
+    if (showKept(box, kept, diff, at.at)) return 'diff';
+    if (box.retries < RETRIES) {
+      box.retries += 1;
+      return 'waits';
+    }
+    if (line && header && showKept(box, kept, diff, header.at)) return 'diff';
+  }
+  box.kept = undefined;
+  box.retries = 0;
+  box.focusOnOpen = false;
+  return opensUnderBlock(box.view, homeRow(box.home)) === true ? 'block' : 'nowhere';
+}
+
+/** Opens box `box`, kept as `kept`, at `at` in `diff`, as it was. Says whether it opened. */
+function showKept(
+  box: Box,
+  kept: Kept,
+  diff: WritingDiff,
+  at: Parameters<WritingDiff['compose']>[0],
+): boolean {
+  const focused = document.activeElement;
+  const free = !focused || focused === document.body || diff.hasFocus();
+  const focus = kept.focused && kept.inputs === inputs && free;
+  const options = { focus, name: box.id, kept: kept.box };
+  try {
+    drew(box, diff.compose(at, box.state.text, eventsOf(box), framer?.(box), options), 'diff');
+    return true;
+  } catch {
+    // Its lines aren't drawn yet, as while its file's diff is worked out.
+    return false;
+  }
+}
+
+/**
+ * A draft the diff, drawn again, had nowhere to open, as the status bar says it: its box, what it
+ * is and where, and when it opens again; and, on hover, where with its file's whole path.
+ */
+export interface KeptAway {
+  readonly box: string;
+  readonly note: string;
+  readonly title: string;
+}
+
+/**
+ * Each view's drafts the diff, drawn again, took down open and had nowhere to open: neither their
+ * lines, nor their file's header, nor their code block. The status bar says so, until each opens
+ * again or goes.
+ */
+export const keptAway = tabState<readonly KeptAway[]>(() => []);
+
+/** Says in view `view`'s status bar that the diff drawn anew had nowhere to open `boxes`. */
+function say(view: string, boxes: readonly Box[]): void {
+  const ids = new Set(boxes.map((box) => box.id));
+  keptAway.update(view, (was) => [
+    ...was.filter((each) => !ids.has(each.box)),
+    ...boxes.map((box) => ({ box: box.id, ...keptNote(box) })),
+  ]);
+}
+
+/** Box `box` opened again, or went: the status bar no longer says it's kept. */
+function unsay(box: Box): void {
+  const was = keptAway.get(box.view);
+  if (!was.some((each) => each.box === box.id)) return;
+  keptAway.set(
+    box.view,
+    was.filter((each) => each.box !== box.id),
+  );
+}
+
+/**
+ * What the status bar says of a draft the diff had nowhere to open: "Draft kept · line 41 of
+ * retry.ts at r2 · opens when that line shows", or its code block, where it has one.
+ */
+function keptNote(box: Box): { note: string; title: string } {
+  const { place } = box.state;
+  const block = box.home.kind === 'block' ? ' or its code block' : '';
+  if (place.kind !== 'thread') {
+    const what = place.kind === 'reply' ? 'Reply' : place.kind === 'edit' ? 'Edit' : 'Draft';
+    const note = `${what} kept · opens when its thread${block} shows`;
+    return { note, title: note };
+  }
+  const at = revisionName(box.view, place.commit);
+  const { lines } = place;
+  const name = place.path.slice(place.path.lastIndexOf('/') + 1);
+  let span = '';
+  let what = 'file';
+  if (lines) {
+    const { start, end } = lines;
+    const one = !start || start.number === end.number;
+    span = one ? `line ${end.number} of ` : `lines ${start.number}–${end.number} of `;
+    what = one ? 'line' : 'lines';
+  }
+  let when = `opens when that ${what}${block} shows`;
+  if (what === 'lines') when = `opens when those lines${block} ${block ? 'shows' : 'show'}`;
+  return {
+    note: `Draft kept · ${span}${name} at ${at} · ${when}`,
+    title: `Draft kept · ${span}${place.path} at ${at} · ${when}`,
+  };
 }
 
 const retrying = new Map<string, ReturnType<typeof setTimeout>>();
 
 /**
- * Opens view `view`'s boxes that should show, in its diff as it's drawn now: drafts restored as Lo
- * started, and boxes the diff took down as it was drawn again. One whose line isn't drawn yet tries
- * again in a moment, a few times.
+ * Opens view `view`'s boxes that should show in its diff, as it's drawn now: drafts restored as Lo
+ * started, boxes the diff took down as it was drawn again ({@link placeKept}), and those whose
+ * block the overview no longer has. One whose line isn't drawn yet tries again in a moment, a few
+ * times. The status bar says which of the boxes the diff took down it had nowhere to open.
  */
 export function restore(view: string): void {
   const diff = writingDiff(view);
   const own = views.get(view);
   if (!diff || !own) return;
   let again = false;
+  let moved = false;
+  const nowhere: Box[] = [];
   for (const box of own.values()) {
-    if (!box.open || box.composer) continue;
-    if (!show(box, diff) && box.retries < RETRIES) {
+    if (!box.open || box.composer || opensAt(box).kind !== 'diff') continue;
+    if (box.kept) {
+      const went = placeKept(box, box.kept, diff);
+      if (went === 'waits') again = true;
+      else if (went === 'block') moved = true;
+      else if (went === 'nowhere') nowhere.push(box);
+    } else if (!show(box, diff) && box.retries < RETRIES) {
       box.retries += 1;
       again = true;
     }
   }
+  if (moved) queueMicrotask(() => reopen(view));
+  if (nowhere.length > 0) say(view, nowhere);
   if (again && !retrying.has(view)) {
     retrying.set(
       view,
@@ -378,6 +788,48 @@ export function restore(view: string): void {
   }
 }
 
+/**
+ * Opens the boxes of a code block just drawn, `block`, that were open under its lines, unfocused:
+ * once its drawing is done.
+ */
+export function restoreBlock(block: WritingBlock): void {
+  const { tab, key } = block.block;
+  queueMicrotask(() => {
+    for (const box of views.get(tab)?.values() ?? []) {
+      if (!box.open || box.composer) continue;
+      const opens = opensAt(box);
+      if (opens.kind === 'block' && keyOfBlock(opens.block) === key) show(box, undefined);
+    }
+  });
+}
+
+/**
+ * Opens view `view`'s boxes that should show where they open now, as after the overview changed or
+ * a block was taken down: in the diff, or under a block drawn.
+ */
+export function reopen(view: string): void {
+  const own = views.get(view);
+  if (!own) return;
+  restore(view);
+  const blocks = new Set<string>();
+  for (const box of own.values()) {
+    if (!box.open || box.composer) continue;
+    const opens = opensAt(box);
+    if (opens.kind === 'block') blocks.add(keyOfBlock(opens.block));
+  }
+  for (const key of blocks) {
+    const block = writingBlock(view, key);
+    if (block) restoreBlock(block);
+  }
+  // The pull request's draft goes to or from the timeline's box as its block comes or goes.
+  timelineChanged(view);
+}
+
+/** Opens every view's boxes that should show where they open now, as after the overview changed. */
+export function reopenAll(): void {
+  for (const view of views.keys()) reopen(view);
+}
+
 const caught = new Set<string>();
 
 /** Asks main once for view `view`'s drafts, for a view drawn before main said anything of them. */
@@ -387,13 +839,16 @@ export function catchUpDrafts(view: string): void {
   main()
     .current({ id: view })
     .then(({ drafts }) => {
-      if (drafts && !views.has(view)) takeDrafts(drafts);
+      // Unless the drafts came meanwhile. A box drawn before main said anything, as the timeline's
+      // own is, takes its draft's text.
+      if (drafts && !heard.has(view)) takeDrafts(drafts);
     })
     .catch((error: unknown) => console.error("Lo couldn't ask about a view's drafts:", error));
 }
 
-/** Whether two places are the same lines of the same file, at whatever revision. */
+/** Whether two places are new threads' on the same lines of the same file, at whatever revision. */
 function sameLines(a: DraftPlaceRow, b: DraftPlaceRow): boolean {
+  if (a.kind !== 'thread' || b.kind !== 'thread') return false;
   return a.path === b.path && JSON.stringify(a.lines) === JSON.stringify(b.lines);
 }
 
@@ -421,16 +876,17 @@ export function takeDrafts(given: DraftsView): void {
   for (const [key, box] of own) {
     if (rows.has(key)) continue;
     if (box.sentMark) {
-      // What GitHub's lost answer was to posted: it's done.
+      // What GitHub's lost answer was to posted, or what was sent and posted before its answer
+      // came here: it's done.
       own.delete(key);
       box.open = false;
-      const { composer } = box;
-      box.composer = undefined;
-      composer?.close();
+      unsay(box);
+      takeAway(box, 'close');
       continue;
     }
     if (box.composer || box.saving || box.state.busy) continue;
     own.delete(key);
+    unsay(box);
     gone.push(box);
   }
   for (const [key, row] of rows) {
@@ -440,39 +896,87 @@ export function takeDrafts(given: DraftsView): void {
         (each) => sameLines(each.state.place, row.place) && each.state.text === row.text,
       );
       box = new Box(view, row.place, moved?.state.primary ?? 'review', row.text);
+      box.home = moved?.home ?? homeOf(row);
+      // Moved to a newer push as the diff was drawn again for it: it opens in that diff as it was.
+      box.kept = moved?.kept;
+      if (row.home) box.set({ where: whereOf(view, row.home, row.place) });
       box.open = row.restored || first || (moved?.open ?? false);
       if (first) box.set({ restored: row.savedAt });
       own.set(key, box);
+    } else if (row.home && box.home.kind !== 'block' && !box.saving && box.state.text === '') {
+      // Drawn before main said anything, as the timeline's box is, with nothing typed: it takes its
+      // draft's home, and opens there, never drawn where it was with the draft's text.
+      box.home = homeOf(row);
+      box.set({ where: whereOf(view, row.home, row.place) });
+      if (box.composer && opensAt(box).kind !== box.drawnIn) {
+        const { composer } = box;
+        box.composer = undefined;
+        box.drawnIn = undefined;
+        composer.dismiss();
+      }
     }
     takeRow(box, row);
   }
-  restore(view);
+  reopen(view);
+  replyingChanged(view);
 }
 
-/** A box takes its draft's row: how sending it stands, and its text unless it was typed in. */
+/**
+ * A box takes its draft's row: how sending it stands, and its text unless it was typed in. One drawn
+ * with nothing in it yet, as the timeline's own box drawn before main said anything, takes the
+ * draft's text too.
+ */
 function takeRow(box: Box, row: DraftRow): void {
   box.sentMark = row.sent !== null;
-  const typed = box.composer !== undefined || box.saving;
+  const { composer } = box;
+  const blank = composer !== undefined && !box.saving && composer.text === '' && row.text !== '';
+  const typed = (composer !== undefined || box.saving) && !blank;
   box.set({
     sending: row.sending,
     ...(row.restored ? { restored: row.savedAt } : {}),
     ...(typed ? {} : { text: row.text }),
   });
+  if (!blank) return;
+  // Main's text, not typing: it isn't saved again, which would take back what main said of how
+  // sending it stands, and the box still says it was restored.
+  box.taking = true;
+  try {
+    composer.replace(0, 0, row.text);
+  } finally {
+    box.taking = false;
+  }
+  if (row.restored) box.set({ restored: row.savedAt });
 }
 
 /**
- * Opens a box at `place` in view `view`'s diff, focused: the one there, if there is one. One with
- * no text yet starts with `draft`.
+ * Opens a box at `place` in view `view`, focused, at `home`: in the diff, `diff`, or under a code
+ * block's lines. It's the box there is at `place`, if there is one, taken from wherever else it's
+ * drawn; where another box is open on the same line, as one on a range that ends there, it's that
+ * one, focused. One with no text yet starts with `draft`. `where` is what its head says of where it
+ * goes, where that's more than its place says.
  */
-function openAt(
+export function openAt(
   view: string,
-  diff: WritingDiff,
+  diff: WritingDiff | undefined,
+  home: Home,
   place: DraftPlaceRow,
   how: Send,
   draft = '',
+  where?: string,
 ): Box | undefined {
   const own = boxesOf(view);
   const key = placeKey(place);
+  const spot = spotOf(home, place);
+  const open =
+    spot === undefined
+      ? undefined
+      : [...own.values()].find(
+          (each) => each.key !== key && each.composer && spotOfBox(each) === spot,
+        );
+  if (open?.composer) {
+    open.composer.focus();
+    return open;
+  }
   let box = own.get(key);
   if (!box) {
     box = new Box(view, place, how, draft);
@@ -481,10 +985,24 @@ function openAt(
   } else if (!box.composer) {
     box.set({ primary: how, ...(box.state.text.trim() === '' ? { text: draft } : {}) });
   }
+  // Opened here by the reader: it's kept nowhere else.
+  box.kept = undefined;
+  const elsewhere = box.composer !== undefined && box.drawnIn !== home.kind;
+  if (elsewhere || JSON.stringify(box.home) !== JSON.stringify(home)) {
+    // Drawn elsewhere: it comes here, its text as it is, and its draft's home with it.
+    const { composer } = box;
+    box.composer = undefined;
+    composer?.dismiss();
+    box.home = home;
+    if (box.state.text.trim() !== '') save(view, place, box.state.text, homeRow(home));
+  }
+  box.set({ where });
   box.open = true;
   box.focusOnOpen = true;
   const fresh = box.composer !== undefined && box.composer.text.trim() === '' && draft !== '';
-  if (!show(box, diff)) return undefined;
+  const shown = show(box, diff);
+  replyingChanged(view);
+  if (!shown) return undefined;
   if (fresh && box.composer) {
     box.composer.replace(0, box.composer.text.length, draft);
     box.composer.focus();
@@ -533,7 +1051,7 @@ export async function comment(
       );
       return;
     }
-    openAt(view, diff, placeOf(drawn, path, undefined), how);
+    openAt(view, diff, IN_DIFF, placeOf(drawn.at, path, undefined), how);
     return;
   }
   const on = linesAt(takes, target.at);
@@ -555,9 +1073,9 @@ export async function comment(
     notify(title, NEW_SIDE_ONLY);
     return;
   }
-  const place = placeOf(drawn, path, on);
+  const place = placeOf(drawn.at, path, on);
   if (!suggest) {
-    openAt(view, diff, place, how);
+    openAt(view, diff, IN_DIFF, place, how);
     return;
   }
   const lines = {
@@ -570,7 +1088,7 @@ export async function comment(
   // In a box with no text yet the cursor goes inside the block, after its last line, in insert
   // mode; in one with text, the block goes after it.
   const end = block.lastIndexOf('\n');
-  const box = openAt(view, diff, place, how, block.slice(0, end));
+  const box = openAt(view, diff, IN_DIFF, place, how, block.slice(0, end));
   const composer = box?.composer;
   if (!composer) return;
   const { text } = composer;
@@ -616,34 +1134,45 @@ export async function commentOnFile(tab: PullTab, key: string): Promise<void> {
   await comment(tab, { kind: 'header', file: file.id, side: 'new' }, 'review');
 }
 
-/** Sends a box's text, as `⌘⏎` (`review`) or `⌥⏎` (`now`) asks. */
+/**
+ * Sends a box's text, as `⌘⏎` (`review`) or `⌥⏎` (`now`) asks: an edit's saves it over the
+ * comment, either way.
+ */
 export async function send(box: Box, how: Send): Promise<void> {
   const { view } = box;
   const { place, text } = box.state;
-  if (sendingNow(box.state)) return;
+  if (sendingNow(box.state) || uploadsHold(box) !== undefined) return;
   if (text.trim() === '' || offline(view) || canWrite(view) !== true) return;
   box.dropSave();
   box.lastHow = how;
   box.set({ busy: true, refusal: undefined });
   try {
-    const outcome = await main().send({ id: view, place, text, how });
+    const outcome: SendOutcome | ActOutcome =
+      place.kind === 'edit'
+        ? await main().edit({ id: view, place, text })
+        : await main().send({ id: view, place, text, how });
     switch (outcome.kind) {
+      case 'done':
+        closeSent(box);
+        if (place.kind === 'edit' && place.thread === null) {
+          wrotePull(view, { kind: 'edited', comment: place.comment, text });
+        }
+        break;
       case 'sent': {
-        boxesOf(view).delete(box.key);
-        box.open = false;
-        const { composer } = box;
-        box.composer = undefined;
-        composer?.close();
+        closeSent(box);
+        if (place.kind === 'conversation') wrotePull(view, { kind: 'posted', text });
         if (outcome.landedOn && outcome.thread !== null) {
           const thread = outcome.thread;
           landed.update(view, (was) => new Set([...was, thread]));
         }
-        if (outcome.joined) {
-          announce(
-            'Added to your pending review',
-            'GitHub posts nothing else from you while you have one.',
-          );
-        }
+        const joined = outcome.joined
+          ? 'GitHub posts nothing else from you while you have one.'
+          : undefined;
+        // A comment from a block that won't show under it says where it went.
+        const { home } = box;
+        const went = home.kind === 'block' ? wentFrom(view, home.block, place, outcome) : undefined;
+        if (went) announce(went.title, joined ? `${went.body} ${joined}` : went.body);
+        else if (joined) announce('Added to your pending review', joined);
         break;
       }
       case 'refused':
@@ -661,6 +1190,47 @@ export async function send(box: Box, how: Send): Promise<void> {
   } finally {
     box.set({ busy: false });
   }
+}
+
+/**
+ * Where a comment view `view` sent from block `home` went, where it won't show under the block: on
+ * the pull request, its file, or lines of a newer head.
+ */
+function wentFrom(
+  view: string,
+  home: DraftHomeRow,
+  place: DraftPlaceRow,
+  outcome: { readonly pending: boolean },
+): { readonly title: string; readonly body: string } | undefined {
+  return sentFromBlock(place, home.commit, outcome.pending, {
+    written: revisionName(view, home.commit),
+    now: place.kind === 'thread' ? revisionName(view, place.commit) : '',
+  });
+}
+
+/**
+ * Takes `box`'s editor away, as `how` does. Focus in it goes where the box says it goes, if it says,
+ * as one the timeline draws does; the diff takes it back itself.
+ */
+function takeAway(box: Box, how: 'close' | 'dismiss'): void {
+  const { composer } = box;
+  const focused = box.state.focused;
+  box.composer = undefined;
+  if (how === 'close') composer?.close();
+  else composer?.dismiss();
+  if (focused) box.left?.();
+}
+
+/** Closes the box of a comment or an edit GitHub took. */
+function closeSent(box: Box): void {
+  const { view } = box;
+  const own = boxesOf(view);
+  // Unless main's drafts took it down first, and another box is there now.
+  if (own.get(box.key) === box) own.delete(box.key);
+  box.open = false;
+  unsay(box);
+  takeAway(box, 'close');
+  replyingChanged(view);
 }
 
 /** Does what a box's note offers. */
@@ -704,15 +1274,21 @@ export function act(box: Box, offer: Offer): void {
  */
 function drop(box: Box): void {
   const { view, key } = box;
+  endUploads(box);
   boxesOf(view).delete(key);
   box.dropSave();
   box.open = false;
-  const { composer } = box;
-  box.composer = undefined;
-  composer?.dismiss();
+  unsay(box);
+  takeAway(box, 'dismiss');
   holdDropped(box);
+  discard(box);
+  replyingChanged(view);
+}
+
+/** Has main discard `box`'s draft. */
+function discard(box: Box): void {
   main()
-    .discard({ id: view, place: box.state.place })
+    .discard({ id: box.view, place: box.state.place })
     .catch((error: unknown) => console.error("Lo couldn't discard a draft:", error));
 }
 
@@ -726,15 +1302,20 @@ function holdDropped(box: Box): void {
   own.add(box.key);
 }
 
-/** Moves a box's text to a box on its file, as GitHub takes no comment on its lines. */
+/**
+ * Moves a box's text to a box on its file, as GitHub takes no comment on its lines: in the diff,
+ * under the file's header; on a code block, under the same lines.
+ */
 function toFile(box: Box): void {
-  const { view } = box;
-  const diff = writingDiff(view);
-  if (!diff) return;
+  const { view, home } = box;
   const { place, text, primary } = box.state;
+  if (place.kind !== 'thread') return;
+  const diff = writingDiff(view);
+  if (home.kind === 'diff' && !diff) return;
   const onFile: DraftPlaceRow = { ...place, lines: null };
   drop(box);
-  const there = openAt(view, diff, onFile, primary);
+  const where = home.kind === 'block' ? ON_FILE_NOT_IN_DIFF : undefined;
+  const there = openAt(view, diff, home, onFile, primary, '', where);
   if (!there?.composer) return;
   const kept = there.composer.text.replace(/\s+$/, '');
   const moved = kept === '' ? text : `${kept}\n\n${text}`;
@@ -762,9 +1343,255 @@ export function keepBoxesOf(kept: ReadonlySet<string>): void {
   for (const [key, { view }] of commentables) if (!kept.has(view)) commentables.delete(key);
 }
 
-/** The box the diff took down as it was drawn again: it opens again once the diff is drawn. */
+/** The threads of each view a reply box is open in, by their ids. */
+export const replying = tabState<ReadonlySet<string>>(() => new Set());
+
+/**
+ * The boxes of each view its timeline draws: the pull request's own, if there's one yet, and the
+ * edits of your comments on the pull request itself that are open, by the comments' ids.
+ */
+export interface TimelineBoxes {
+  readonly own: Box | undefined;
+  /**
+   * Where the pull request's draft opens while it isn't the timeline's: under the code block it was
+   * written on (`block`), or, while Lo can't tell yet whether the overview has the block, in no box
+   * until it can (`waits`). Nothing while it's the timeline's, or there's none.
+   */
+  readonly away: 'block' | 'waits' | undefined;
+  readonly edits: ReadonlyMap<string, Box>;
+}
+
+export const timelineBoxes = tabState<TimelineBoxes>(() => ({
+  own: undefined,
+  away: undefined,
+  edits: new Map(),
+}));
+
+/** Notes which boxes view `view`'s timeline draws, as a box opens or goes, or its block does. */
+function timelineChanged(view: string): void {
+  let own: Box | undefined;
+  let away: TimelineBoxes['away'];
+  const edits = new Map<string, Box>();
+  for (const box of views.get(view)?.values() ?? []) {
+    const { place } = box.state;
+    if (place.kind === 'conversation') {
+      if (isPullsOwn(box)) own = box;
+      else away = opensUnderBlock(view, homeRow(box.home)) === true ? 'block' : 'waits';
+    } else if (place.kind === 'edit' && place.thread === null && box.open) {
+      edits.set(place.comment, box);
+    }
+  }
+  const was = timelineBoxes.get(view);
+  const same =
+    was.own === own &&
+    was.away === away &&
+    was.edits.size === edits.size &&
+    [...edits].every(([id, each]) => was.edits.get(id) === each);
+  if (!same) timelineBoxes.set(view, { own, away, edits });
+}
+
+/**
+ * The box at `place` in view `view`, which its timeline draws: the one there is, or a new one, with
+ * no text yet. A new one is noted as the timeline's. Nothing while the pull request's draft opens
+ * elsewhere, as under the code block it was written on: it opens in one box only.
+ */
+export function timelineBox(view: string, place: DraftPlaceRow): Box | undefined {
+  const own = boxesOf(view);
+  const key = placeKey(place);
+  let box = own.get(key);
+  if (box && !isPullsOwn(box)) return undefined;
+  if (!box) {
+    box = new Box(view, place, 'now', '');
+    box.open = true;
+    // A draft discarded here stays so, whatever main sent before it heard.
+    own.set(key, box);
+    queueMicrotask(() => timelineChanged(view));
+  }
+  return box;
+}
+
+/**
+ * `c` in view `view`'s timeline while the pull request's draft opens under the code block it was
+ * written on, or waits for Lo to tell whether it does: the draft comes to the timeline's box, its
+ * text as it is, and keeps no block, as `c` on a block takes it there. Says whether there was one to
+ * bring.
+ */
+export function bringToTimeline(view: string): boolean {
+  const box = boxesOf(view).get(placeKey(ON_PULL));
+  if (!box || isPullsOwn(box)) return false;
+  const { composer } = box;
+  box.composer = undefined;
+  box.drawnIn = undefined;
+  composer?.dismiss();
+  box.home = IN_DIFF;
+  box.set({ where: undefined });
+  box.open = true;
+  box.focusOnOpen = true;
+  if (box.state.text.trim() !== '') save(view, box.state.place, box.state.text, null);
+  replyingChanged(view);
+  return true;
+}
+
+/**
+ * Opens the edit at `place`, of your comment on the pull request itself, in view `view`'s timeline,
+ * in the comment's card, focused: the one there is, with its draft as it was left, or one starting
+ * from `base`, GitHub's text.
+ */
+export function openInTimeline(view: string, place: DraftPlaceRow, base: string): Box {
+  const own = boxesOf(view);
+  const key = placeKey(place);
+  let box = own.get(key);
+  if (!box) {
+    box = new Box(view, place, 'review', base);
+    own.set(key, box);
+    dropped.get(view)?.delete(key);
+  } else if (!box.composer && box.state.text.trim() === '') {
+    box.set({ text: base });
+  }
+  box.open = true;
+  box.focusOnOpen = true;
+  box.composer?.focus();
+  replyingChanged(view);
+  return box;
+}
+
+/**
+ * The events of a box the timeline draws. `Esc` in normal mode, or in the preview, leaves it,
+ * keeping its draft: the pull request's own box stays where it is, and an edit's closes, its card
+ * showing the comment again, unless it holds no text, which discards the edit. Focus goes back to
+ * the timeline's list, as `leave` does. Files are attached as in the diff's boxes.
+ */
+export function timelineEvents(box: Box, leave: () => void): ComposerEvents {
+  return {
+    change(text) {
+      if (box.taking) {
+        box.set({ text });
+        return;
+      }
+      box.set({ text, restored: undefined });
+      box.saveSoon();
+    },
+    submit(how) {
+      void send(box, how);
+    },
+    close(keep) {
+      const { view } = box;
+      if (box.state.place.kind === 'conversation') {
+        box.saveNow();
+        leave();
+        return;
+      }
+      box.open = false;
+      if (keep) box.saveNow();
+      else {
+        box.dropSave();
+        endUploads(box);
+        if (!box.sentMark && !box.state.busy) {
+          boxesOf(view).delete(box.key);
+          holdDropped(box);
+          discard(box);
+        }
+      }
+      replyingChanged(view);
+      leave();
+    },
+    mode(mode) {
+      box.set({ mode });
+    },
+    preview(on) {
+      box.set({ previewing: on });
+    },
+    // Files are attached as in the diff's boxes, and nothing while its text is held.
+    attach() {
+      if (!sendingNow(box.state)) pickFiles(box);
+    },
+    files(files) {
+      if (!sendingNow(box.state)) attachFiles(box, files);
+    },
+    dragging(count) {
+      draggingOver(box, count);
+    },
+  };
+}
+
+/** The frame a box the timeline draws gets, as the window feature draws frames. */
+export function timelineFrame(box: Box): Parameters<WritingDiff['compose']>[3] {
+  return framer?.(box);
+}
+
+/**
+ * Notes `composer` as `box`'s editor, drawn in its view's timeline, so the box is open; `left` takes
+ * focus once it goes while it had it.
+ */
+export function drawnInTimeline(box: Box, composer: Composer, left: () => void): void {
+  box.composer = composer;
+  box.drawnIn = 'timeline';
+  box.open = true;
+  box.left = left;
+  composer.hold(sendingNow(box.state));
+  box.set({ mode: composer.mode });
+}
+
+/**
+ * The timeline stopped drawing `composer`, `box`'s editor, as when the timeline goes. Unless it was
+ * closed already or taken elsewhere, it's taken down, and a box still open opens where it opens now:
+ * under the code block it was written on, if the overview has it now, though the block was drawn
+ * while the timeline still had the draft.
+ */
+export function leftTimeline(box: Box, composer: Composer): void {
+  if (box.composer !== composer) return;
+  box.composer = undefined;
+  box.drawnIn = undefined;
+  composer.dismiss();
+  if (box.open) queueMicrotask(() => reopen(box.view));
+}
+
+/**
+ * Notes which threads of view `view` a reply box is open in, as a box opens or goes: their cards
+ * offer no reply of their own meanwhile. The card that changes is the reader's doing. Notes which
+ * boxes its timeline draws, too.
+ */
+function replyingChanged(view: string): void {
+  timelineChanged(view);
+  const now = new Set<string>();
+  for (const box of views.get(view)?.values() ?? []) {
+    if (box.open && box.state.place.kind === 'reply') now.add(box.state.place.thread);
+  }
+  const was = replying.get(view);
+  if (was.size === now.size && [...now].every((thread) => was.has(thread))) return;
+  const diff = writingDiff(view);
+  for (const thread of new Set([...was, ...now])) {
+    if (was.has(thread) !== now.has(thread) && diff) claimBriefly(diff, thread);
+  }
+  replying.set(view, now);
+}
+
+/**
+ * Has what next comes under thread `thread` in `diff` be the reader's doing, for as long as a card
+ * takes to be drawn again: what comes in the second frame from now, after the next has laid it out
+ * and measured it.
+ */
+export function claimBriefly(diff: WritingDiff, thread: string): void {
+  const release = diff.claimThread(thread);
+  requestAnimationFrame(() => requestAnimationFrame(release));
+}
+
+/**
+ * The box the diff or a block took down as it was drawn again: one the diff took down, open, opens
+ * again as it was once the diff is drawn anew ({@link placeKept}); one from a block the overview no
+ * longer has, where it opens now.
+ */
 export function takenDown(box: Box, composer: Composer): void {
-  if (box.composer === composer) box.composer = undefined;
+  if (box.composer !== composer) return;
+  box.composer = undefined;
+  // A block goes as its overview changes: its boxes open where they open now, once it's gone.
+  if (box.drawnIn === 'block') queueMicrotask(() => reopen(box.view));
+  // The diff is drawn again: a box open there stays in its box, as it was, once the diff drawn
+  // anew places it, whatever the overview did meanwhile.
+  else if (box.drawnIn === 'diff' && box.open) {
+    box.retries = 0;
+    box.kept = { box: composer.keep(), focused: box.state.focused, inputs: inputsSoFar() };
+  }
 }
 
 /**
@@ -784,4 +1611,69 @@ export function offering(offer: Offer): Handler<BoxTarget> {
     enabled: (target) => offers(target) || `“${offerLabels[offer]}” isn’t offered in this box now.`,
     listed: offers,
   };
+}
+
+/** A file's path in the base at the head on screen, for one the pull request renames there. */
+function previousAt(view: string, path: string): string | null {
+  const state = diffStateOf(view);
+  if (state?.comparison !== null) return null;
+  const file = state.files?.find((each) => each.path.text === path);
+  return file?.previous && file.previous.text !== path ? file.previous.text : null;
+}
+
+/**
+ * `c` on a code block of view `tab`'s overview, `target`: a box under the block's lines, or the
+ * cursor's line in its code, or the lines `v` selected there. The lines are mapped to the head on
+ * screen: where GitHub takes a comment on them there, it goes on them; otherwise on their file,
+ * where the pull request changes or deletes it; otherwise on the pull request itself. Its head says
+ * where it goes and why, where that's not the lines the block shows.
+ */
+export async function commentOnBlock(tab: PullTab, target: Target, how: Send): Promise<void> {
+  const view = tab.id;
+  const found = blockLines(view, target);
+  if (typeof found === 'string') {
+    notify('Comment', found);
+    return;
+  }
+  const { writing, at } = found;
+  const { block } = writing;
+  const head = pullOf(view)?.shown ?? undefined;
+  if (head === undefined) {
+    notify('Comment', 'Lo hasn’t read the pull request from GitHub yet.');
+    return;
+  }
+  knowPull(tab);
+  const lines =
+    'line' in at
+      ? { side: at.side, from: at.line, to: at.line }
+      : { side: at.side, from: Math.min(at.from, at.to), to: Math.max(at.from, at.to) };
+  const onHead = await commentOnHead(view, block.commit, block.path, lines);
+  // A file gone at the head is named by its path in the base, as GitHub names one it deletes.
+  const commentable = await commentableOf(
+    view,
+    head,
+    onHead.path,
+    onHead.kind === 'gone' ? null : previousAt(view, onHead.path),
+  );
+  // The reader moved on meanwhile: to another push, or the block let go.
+  if (pullOf(view)?.shown !== head || !writingBlock(view, block.key)) return;
+  const screen = block.from === null ? Screen.full(head) : Screen.replayed(block.from, head);
+  const takes = commentableOn(screen, commentable);
+  const goes = blockComment(onHead, takes);
+  const home: Home = {
+    kind: 'block',
+    block: {
+      commit: block.commit.toLowerCase(),
+      path: block.path,
+      block: block.named,
+      at: lines,
+      why: whyOf(goes),
+      head: head.toLowerCase(),
+    },
+  };
+  const place =
+    goes.kind === 'pull'
+      ? ON_PULL
+      : placeOf(head, onHead.path, goes.kind === 'lines' ? goes.lines : undefined);
+  openAt(view, undefined, home, place, how, '', whereOf(view, home.block, place));
 }

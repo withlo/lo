@@ -10,6 +10,7 @@
 //   command from Vim's prompt, started is undone, the cursor back where it was.
 // - Vim's jumplist goes (`jumps.ts`), and the keys that go by the screen go by the box that scrolls
 //   (`screen.ts`).
+// - Each editor says its mode while it has focus, for the status bar (`mode.ts`).
 
 import { Annotation, EditorState, type Extension } from '@codemirror/state';
 import { EditorView, ViewPlugin } from '@codemirror/view';
@@ -18,6 +19,7 @@ import { CodeMirror, type CodeMirrorV, getCM, Vim } from '@replit/codemirror-vim
 import type { JumpTo, Mode, VimKey } from './api.ts';
 import { diffMotions } from './api.ts';
 import { installJumps, type JumpSink, sendJumps } from './jumps.ts';
+import { type ModeName, sayMode } from './mode.ts';
 import { defineScreenKeys } from './screen.ts';
 
 /** What one of a code view's own editors does for Vim. */
@@ -275,6 +277,20 @@ export function vimPending(view: EditorView): boolean {
   );
 }
 
+/**
+ * The count Vim in `view` holds when that's all it holds: `3` before a key, as in `3e`. Vim keeps
+ * the digits with the keys it has buffered until a command takes them.
+ */
+export function vimCount(view: EditorView): number | undefined {
+  const input = getCM(view)?.state.vim?.inputState;
+  if (!input || input.motionRepeat.length > 0) return undefined;
+  if (input.operator || input.motion || input.registerName !== undefined) return undefined;
+  const digits = [...input.prefixRepeat, ...input.keyBuffer].join('');
+  if (!/^[1-9]\d*$/.test(digits)) return undefined;
+  const count = Number(digits);
+  return Number.isSafeInteger(count) ? count : undefined;
+}
+
 /** Drops whatever Vim in `view` is in the middle of, leaving its mode. */
 export function clearVim(view: EditorView): void {
   const cm = getCM(view);
@@ -319,3 +335,36 @@ export function onVimMode(view: EditorView, listener: (mode: Mode) => void): () 
   CodeMirror.on(cm, 'vim-mode-change', changed);
   return () => CodeMirror.off(cm, 'vim-mode-change', changed);
 }
+
+/** Vim's mode in `view`, as the status bar names it. */
+export function modeName(view: EditorView): ModeName {
+  const vim = getCM(view)?.state.vim;
+  if (vim?.insertMode) return 'INSERT';
+  if (!vim?.visualMode) return 'NORMAL';
+  if (vim.visualLine) return 'V-LINE';
+  return vim.visualBlock ? 'V-BLOCK' : 'VISUAL';
+}
+
+/**
+ * What a code view's editor has, after Vim, to say its mode while it has focus, and that it has
+ * none once focus leaves it.
+ */
+export const showMode: Extension = ViewPlugin.define((view) => {
+  const tell = (): void => {
+    sayMode(view, view.hasFocus ? modeName(view) : undefined);
+  };
+  // A key Vim is in the middle of can pass through modes: what it left is said once it's done.
+  const stop = onVimMode(view, () => {
+    if (handlingKey(view)) queueMicrotask(tell);
+    else tell();
+  });
+  return {
+    update(update) {
+      if (update.focusChanged) tell();
+    },
+    destroy() {
+      stop();
+      sayMode(view, undefined);
+    },
+  };
+});

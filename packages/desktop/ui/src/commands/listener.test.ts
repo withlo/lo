@@ -3,7 +3,7 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
 import { FakeView, testCommands, type Ran } from '../../test/commands.ts';
-import { listen } from './listener.ts';
+import { KEY_EVENT, listen } from './listener.ts';
 import { Registry } from './registry.ts';
 import { setScopeSource } from './scopes.ts';
 
@@ -103,6 +103,17 @@ describe('the listener', () => {
     const other = press('row', 'q');
     expect(other.defaultPrevented).toBe(false);
     expect(log).toEqual(['row q']);
+  });
+
+  test('tells the element a key is for of it first, though the registry takes the key', () => {
+    const heard: string[] = [];
+    element('diff').addEventListener(KEY_EVENT, (event) => {
+      const id = event.target instanceof Element ? event.target.id : '';
+      heard.push(`${id}, ${ran.length} run`);
+    });
+    expect(press('editor', 'e').defaultPrevented).toBe(true);
+    expect(heard).toEqual(['editor, 0 run']);
+    expect(ids()).toEqual(['diff.markViewed']);
   });
 
   test('runs a key on the code view’s target', () => {
@@ -417,21 +428,17 @@ describe('leaving a code view', () => {
     expect(log).toEqual(['clearPending', 'clearPending']);
   });
 
-  test('leaves the diff when focus moves to a box nested in it, so a timed-out g dies there', () => {
-    vi.useFakeTimers();
-    try {
-      press('editor', 'g');
-      vi.advanceTimersByTime(1000);
-      expect(log).toEqual(['passKeys g']);
-      element('text').focus();
-      expect(log).toEqual(['passKeys g', 'clearPending']);
-      expect(diffView.pending).toBe(false);
-      // Back in the diff, `e` marks the file viewed: it isn't Vim's `ge`.
-      expect(press('editor', 'e').defaultPrevented).toBe(true);
-      expect(ids()).toEqual(['diff.markViewed']);
-    } finally {
-      vi.useRealTimers();
-    }
+  test('leaves the diff when focus moves to a box nested in it, so a g Vim waits on dies there', () => {
+    // `q` sends the held `g` back to Vim, which then waits on the rest.
+    press('editor', 'g');
+    press('editor', 'q');
+    expect(log).toEqual(['passKeys g']);
+    element('text').focus();
+    expect(log).toEqual(['passKeys g', 'clearPending']);
+    expect(diffView.pending).toBe(false);
+    // Back in the diff, `e` marks the file viewed: it isn't Vim's `ge`.
+    expect(press('editor', 'e').defaultPrevented).toBe(true);
+    expect(ids()).toEqual(['diff.markViewed']);
   });
 
   test('leaves Vim as it is when focus moves within the view, to its prompt', () => {

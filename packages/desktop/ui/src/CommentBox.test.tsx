@@ -182,6 +182,7 @@ describe('CommentBox', () => {
 
   it('shows the upload warning first, each file with its size and progress, and holds the buttons', () => {
     const onCancel = vi.fn<() => void>();
+    const onInsert = vi.fn<() => void>();
     const onClick = vi.fn<() => void>();
     const host = render(
       <CommentBox
@@ -197,6 +198,7 @@ describe('CommentBox', () => {
           { key: 'a', name: 'retry-storm.gif', size: '3.4 MB', progress: 0.62, onCancel },
           { key: 'b', name: 'grafana-429s.png', size: '212 KB', uploaded: true },
           { key: 'c', name: 'trace.mp4', size: '9 MB' },
+          { key: 'd', name: 'flame.png', size: '2 KB', uploaded: true, onInsert },
         ]}
         foot={{
           mode: { name: 'INSERT', kind: 'insert' },
@@ -215,7 +217,9 @@ describe('CommentBox', () => {
     expect(html.indexOf('Uploads go to GitHub')).toBeLessThan(html.indexOf('data-testid="editor"'));
     expect(html.indexOf('data-testid="editor"')).toBeLessThan(html.indexOf('retry-storm.gif'));
     expect(html.indexOf('retry-storm.gif')).toBeLessThan(html.indexOf('INSERT'));
-    const [moving, done, unknown] = [...box.querySelectorAll('[aria-label="Uploads"] > li')];
+    const [moving, done, unknown, unplaced] = [
+      ...box.querySelectorAll('[aria-label="Uploads"] > li'),
+    ];
     // (The meter holds a hidden character of Base UI's own between the size and the button.)
     expect(moving?.textContent).toMatch(/^retry-storm\.gif3\.4 MB.*Cancel$/);
     expect(moving?.querySelector('[role="meter"]')?.getAttribute('aria-valuenow')).toBe('62');
@@ -224,6 +228,12 @@ describe('CommentBox', () => {
     // A progress it can't know shows no bar and no number.
     expect(unknown?.textContent).toBe('trace.mp49 MBUploadingCancel');
     expect(unknown?.querySelector('[role="meter"]')).toBeNull();
+    // One uploaded whose placeholder went says it isn't in the comment, and offers to put it in.
+    expect(unplaced?.textContent).toBe('flame.png2 KBNot in the commentInsert');
+    const insert = unplaced!.querySelector('button')!;
+    expect(insert.getAttribute('aria-label')).toBe('Insert flame.png at the cursor');
+    click(insert);
+    expect(onInsert).toHaveBeenCalledOnce();
     click(moving!.querySelector('button')!);
     expect(onCancel).toHaveBeenCalledOnce();
     // Sending waits while an upload runs.
@@ -370,6 +380,13 @@ describe('CommentBox', () => {
           uploads={[
             { key: 'a', name: 'a.gif', size: '1 MB', progress: 0.5 },
             { key: 'b', name: 'b.png', size: '1 KB', uploaded: true },
+            {
+              key: 'c',
+              name: 'c.png',
+              size: '1 KB',
+              uploaded: true,
+              onInsert: vi.fn<() => void>(),
+            },
           ]}
           dropping={2}
         />

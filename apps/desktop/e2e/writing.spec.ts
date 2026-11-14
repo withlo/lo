@@ -6,14 +6,22 @@
 // the lines selected, `s` one with them in a suggestion block, and `c` on a file's header one on
 // the file. A box closed with `Esc Esc` keeps its draft on this computer, and after a restart, here
 // with GitHub out of reach, it's back, unfocused, saying so; offline, nothing sends, and it stays
-// until it's discarded from its frame's right-click menu.
+// until it's discarded from its frame's right-click menu. With the comment pending, `⌘⏎` opens the
+// submit dialog, which offers only Comment on rozed-bot's own pull request and submits the review
+// as `app_comments_write` recorded; Approve is offered, and goes, on `app_comments_write_others`,
+// derived from it as if someone else had opened the pull request (`testing/src/derivations.ts`).
 
 import { writeFileSync } from 'node:fs';
 
 import { cassette as recorded, Replay } from '@lo/testing';
 import { COMMENTS_PULL, writeCommentsRemote } from '@lo/testing/git';
 import { serveReplay, type ReplayServer } from '@lo/testing/server';
-import { _electron as electron, type ElectronApplication, type Page } from '@playwright/test';
+import {
+  _electron as electron,
+  type ElectronApplication,
+  type Locator,
+  type Page,
+} from '@playwright/test';
 
 import {
   appEnvironment,
@@ -49,7 +57,7 @@ const test = base.extend<{
     await server.close();
   },
   front: async ({ cassette, cut, github }, use) => {
-    const front = await serveBodies(cassette, new URL(github.urls.api).origin, { cut });
+    const front = await serveBodies(cassette, new URL(github.urls.api).origin, undefined, { cut });
     await use(front);
     await front.close();
   },
@@ -140,32 +148,101 @@ async function onLineTwo(page: Page): Promise<void> {
 /** The comment boxes in the diff. */
 const boxes = (page: Page) => page.locator('[data-lo-diff] .lo-diffcomposer');
 
+/** The toast that says `text`. */
+const toast = (page: Page, text: string) => page.getByRole('status').filter({ hasText: text });
+
+/** The comment the review's tests add, and the summary they submit it with, as recorded. */
+const COMMENT = 'Does the first wait need a cap?';
+const SUMMARY = 'One question inline.';
+
+/**
+ * `c` on line 2 of src/backoff.ts, the comment typed and `⌘⏎`, which starts rozed-bot's pending
+ * review with it: the box goes, its room held until the reader's next key, and the thread GitHub
+ * made comes under the line, pending. The thread.
+ */
+async function addComment(page: Page): Promise<Locator> {
+  await open(page);
+  await onLineTwo(page);
+  await page.keyboard.press('c');
+  const box = boxes(page);
+  await expect(box).toHaveCount(1);
+  await expect(box).toContainText('On line 2, new side');
+  await expect(box).toContainText('as rozed-bot');
+  await expect(box.getByRole('button', { name: /Add to review/ })).toBeVisible();
+  await expect(box.locator('.mode-chip')).toHaveText('INSERT');
+  await page.keyboard.type(COMMENT);
+  await page.keyboard.press(`${cmd}+Enter`);
+  await expect(box).toHaveCount(0, { timeout: 20_000 });
+  // The key comes once the thread is read: one read after it would be above the screen, which a
+  // thread arriving there doesn't move.
+  await expect.poll(() => threadsUnder(page, 'src/backoff.ts', 2), { timeout: 20_000 }).toBe(2);
+  await page.keyboard.press('Shift');
+  const thread = page.locator('[data-lo-diff] [role="group"]').filter({ hasText: COMMENT });
+  await expect(thread).toContainText('Pending', { timeout: 20_000 });
+  return thread;
+}
+
+/**
+ * Opens the submit dialog with `⌘⏎` from the diff, once the status bar counts the pending comment,
+ * and waits for its summary to take focus. The dialog.
+ */
+async function openSubmit(page: Page): Promise<Locator> {
+  await expect(page.getByTitle('Submit your review: 1 pending comment')).toContainText('1 pending');
+  await page.keyboard.press(`${cmd}+Enter`);
+  const dialog = page.getByTestId('submit-review');
+  await expect(dialog).toBeVisible();
+  await expect(dialog).toContainText('1 pending comment goes with it');
+  await expect(dialog).toContainText(`backoff.ts · new 2${COMMENT}`);
+  // The summary's editor takes focus once it's made, in insert mode.
+  await expect(dialog.getByRole('textbox', { name: 'Summary' })).toBeFocused();
+  return dialog;
+}
+
 test.describe('with a write recorded', () => {
   test.use({ cassette: 'app_comments_write' });
 
-  test('`c` on a line opens a box under it, and `⌘⏎` adds the comment to a pending review', async ({
+  test('`c` on a line opens a box under it, `⌘⏎` adds the comment to a pending review, and `⌘⏎` again submits it', async ({
     page,
   }) => {
-    await open(page);
-    await onLineTwo(page);
-    await page.keyboard.press('c');
-    const box = boxes(page);
-    await expect(box).toHaveCount(1);
-    await expect(box).toContainText('On line 2, new side');
-    await expect(box).toContainText('as rozed-bot');
-    await expect(box.getByRole('button', { name: /Add to review/ })).toBeVisible();
-    await expect(box.locator('.mode-chip')).toHaveText('INSERT');
-    await page.keyboard.type('Does the first wait need a cap?');
-    await page.keyboard.press(`${cmd}+Enter`);
-    // The box goes, its room held until the reader's next key, and then the thread GitHub made
-    // comes under the line, pending.
-    await expect(box).toHaveCount(0, { timeout: 20_000 });
-    await page.keyboard.press('Shift');
-    await expect.poll(() => threadsUnder(page, 'src/backoff.ts', 2), { timeout: 20_000 }).toBe(2);
-    const thread = page
-      .locator('[data-lo-diff] [role="group"]')
-      .filter({ hasText: 'Does the first wait need a cap?' });
-    await expect(thread).toContainText('Pending');
+    const thread = await addComment(page);
+    await test.step('on rozed-bot’s own pull request, the dialog offers only Comment', async () => {
+      const dialog = await openSubmit(page);
+      await expect(dialog).toContainText('e2e #94 · your PR, so GitHub takes comments only');
+      await expect(dialog.getByRole('radio')).toHaveCount(1);
+      await expect(dialog.getByRole('radio', { name: /Comment/ })).toHaveAttribute(
+        'aria-checked',
+        'true',
+      );
+      await expect(dialog.getByRole('button', { name: /^Comment/ })).toBeVisible();
+    });
+    await test.step('the summary typed, `⌘⏎` submits the review, and the comment is no longer pending', async () => {
+      await page.keyboard.type(SUMMARY);
+      await page.keyboard.press(`${cmd}+Enter`);
+      await expect(toast(page, 'Commented on #94')).toBeVisible({ timeout: 20_000 });
+      await expect(page.getByTestId('submit-review')).toBeHidden();
+      await expect(thread).not.toContainText('Pending', { timeout: 20_000 });
+    });
+  });
+});
+
+test.describe('as if someone else had opened the pull request', () => {
+  test.use({ cassette: 'app_comments_write_others' });
+
+  test('the submit dialog offers every verdict, and Approve submits the review', async ({
+    page,
+  }) => {
+    await addComment(page);
+    const dialog = await openSubmit(page);
+    await expect(dialog.getByRole('radio')).toHaveText([
+      /^Comment/,
+      /^Approve/,
+      /^Request changes/,
+    ]);
+    await page.keyboard.type(SUMMARY);
+    await dialog.getByRole('radio', { name: /Approve/ }).click();
+    await dialog.getByRole('button', { name: /^Approve/ }).click();
+    await expect(toast(page, 'Approved #94')).toBeVisible({ timeout: 20_000 });
+    await expect(dialog).toBeHidden();
   });
 });
 
@@ -197,7 +274,7 @@ test.describe('with a comment posted at once recorded', () => {
   test.use({ cassette: 'app_comments_now' });
 
   test('`C` opens a box whose button posts the comment at once', async ({ page }) => {
-    await open(page);
+    const tab = await open(page);
     await onLineTwo(page);
     await page.keyboard.press('Shift+C');
     const box = boxes(page);
@@ -209,6 +286,16 @@ test.describe('with a comment posted at once recorded', () => {
     // The box goes, its room held until the reader's next key, and then the thread GitHub made
     // comes under the line, posted.
     await expect(box).toHaveCount(0, { timeout: 20_000 });
+    // The box can go before the thread is read back: the key comes once Lo has it.
+    await expect
+      .poll(
+        async () =>
+          JSON.stringify(
+            await page.evaluate((id) => window.lo.invoke('comments.current', { id }), tab),
+          ),
+        { timeout: 20_000 },
+      )
+      .toContain('Is two the right start?');
     await page.keyboard.press('Shift');
     await expect.poll(() => threadsUnder(page, 'src/backoff.ts', 2), { timeout: 20_000 }).toBe(2);
     const thread = page

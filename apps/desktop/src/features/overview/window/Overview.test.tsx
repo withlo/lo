@@ -26,6 +26,7 @@ import { Checking } from './checking.ts';
 import { OverviewMark } from './Mark.tsx';
 import { openings } from './opening.ts';
 import { OverviewView } from './Overview.tsx';
+import { blockInOverview, blockKey } from './shared.ts';
 import { OverviewStatus } from './Status.tsx';
 import { checked, publish, states } from './store.ts';
 
@@ -382,6 +383,26 @@ describe('a run of a stack’s layers on screen as one diff', () => {
     );
     expect(view.textContent).toContain('Go to the diff');
     expect(openings.get(tab.id).on).toBeUndefined();
+  });
+});
+
+describe('the blocks a tab’s overview has', () => {
+  it('are known by the commit it describes and the lines each names, once it’s checked', async () => {
+    const tab = tabOf();
+    const key = blockKey(HEAD, 'src/a.ts', 1, 2);
+    expect(blockInOverview(tab.id, key)).toBe('unknown');
+    const checking = checkingFor(tab);
+    states.set(tab.id, stateOf(tab));
+    checking.take(stateOf(tab));
+    expect(blockInOverview(tab.id, key)).toBe('unknown');
+    await until(() => checked.get(tab.id)?.kind === 'checked');
+    expect(blockInOverview(tab.id, key)).toBe(true);
+    // Another commit's block of the same lines, or other lines, aren't its.
+    expect(blockInOverview(tab.id, blockKey('b'.repeat(40), 'src/a.ts', 1, 2))).toBe(false);
+    expect(blockInOverview(tab.id, blockKey(HEAD, 'src/a.ts', 1, 3))).toBe(false);
+    // With none, it has none.
+    states.set(tab.id, stateOf(tab, { overview: null, found: 'none' }));
+    expect(blockInOverview(tab.id, key)).toBe(false);
   });
 });
 

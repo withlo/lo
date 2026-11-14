@@ -10,6 +10,7 @@ import {
   at,
   comment,
   commentOn,
+  LOGIN,
   object,
   log,
   Polling,
@@ -23,6 +24,7 @@ import {
   withBody,
   type Logged,
 } from './support/polling.ts';
+import type { GithubClient } from '../src/client.ts';
 import { GithubError } from '../src/errors.ts';
 import { PUSH_HISTORY_WATCHED } from '../src/push-history.ts';
 import { readPullSummary } from '../src/pulls.ts';
@@ -595,6 +597,49 @@ test('a write goes between the requests of a long cached read', async () => {
       [9, 'GET /pulls/1'],
     ),
   );
+});
+
+/** Another made-up read, named to come after {@link COUNTED}. */
+const WAITED: ReadKind<number> = { name: 'Waited', watched: PUSH_HISTORY_WATCHED };
+
+/**
+ * A read someone on screen waits on for its first value, as a diff drawing its review threads does,
+ * goes ahead of everything else due once the open pull request's check is in, and its requests go
+ * ahead of the reads waiting in the account's queue, as an opening tab's overview reads do. Only
+ * that run: once it has a value, it waits its turn as any poll does.
+ */
+test('the first run of a read someone waits on goes ahead of polls and waiting reads', async () => {
+  const t = await Polling.start('read_first', recorded(), { delay: 1000 });
+  const client = await t.accounts.client(LOGIN);
+  const finished: string[] = [];
+  const read = (name: string) => async (github: GithubClient) => {
+    await github.get(pr(1).restPath(), readPullSummary);
+    finished.push(name);
+    return 1;
+  };
+  const waiting = (name: string) => void t.poller.queue.read(() => read(name)(client));
+  void t.poller.setOpen(pr(1));
+  await t.run();
+  // While the open pull request's poll holds the queue, a tab's reads wait in it.
+  waiting('tree');
+  waiting('files');
+  void t.poller.readCached(pr(1), WAITED, read('waited'), () => 'foreground');
+  void t.poller.readCached(pr(1), COUNTED, read('counted'));
+  await t.run();
+  await t.runUntil(12);
+  // The poll ends at 3 and hands the queue to the read that came first. The read waited on goes
+  // next, ahead of the other waiting read, then the repository's poll, from 6 to 9, then the other
+  // read.
+  expect(finished).toEqual(['tree', 'waited', 'files', 'counted']);
+  expect(t.requests().map(([secs]) => secs)).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9]);
+
+  finished.length = 0;
+  waiting('tree');
+  waiting('files');
+  t.poller.readAfresh(pr(1), WAITED);
+  await t.run();
+  await t.runUntil(16);
+  expect(finished).toEqual(['tree', 'files', 'waited']);
 });
 
 /** `stacks_playground`'s recorded StackLayers answer, for PR #1 and #2, and the IDs it asked for. */

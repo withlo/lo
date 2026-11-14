@@ -3,77 +3,15 @@
 // closed with `Esc` stays closed when the window loses focus and gets it back, until focus has
 // been somewhere else.
 
-import { mkdirSync, writeFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
+import { expect, test, type ElectronApplication, type Page } from '@playwright/test';
 
-import {
-  _electron as electron,
-  expect,
-  test,
-  type ElectronApplication,
-  type Page,
-} from '@playwright/test';
-// Imported from Node, the electron package is the path to its binary, whatever its types say.
-import electronPackage from 'electron';
-import { build } from 'vite';
+import { buildPage, launch } from './electron.ts';
 
-const electronBinary: unknown = electronPackage;
-
-/**
- * Where the page is built, and the Electron main process that opens it: a folder for each worker,
- * since building empties the folder first.
- */
+/** Where the page is built. */
 let harness = '';
 
-/**
- * Electron's side: one window, never shown, with the page. As a file, the page loads its script as
- * a plain one: Chromium loads no module from a `file:` address.
- */
-const MAIN = `
-const { app, BrowserWindow } = require('electron');
-const { join } = require('node:path');
-app.whenReady().then(() => {
-  const window = new BrowserWindow({
-    width: 1200,
-    height: 900,
-    show: false,
-    webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false },
-  });
-  void window.loadFile(join(__dirname, 'index.html'));
-});
-app.on('window-all-closed', () => app.quit());
-`;
-
-const PAGE =
-  '<!doctype html><meta charset="utf-8"><title>Overview</title>' +
-  '<div id="root" class="lo-app"></div><script src="./overview.js"></script>';
-
 test.beforeAll(async () => {
-  // One folder for each worker running at once: a worker started again after a failure takes the
-  // place of the one before, and its folder, rather than a new one.
-  const worker = test.info().parallelIndex;
-  harness = fileURLToPath(new URL(`../test-results/harness-${worker}/`, import.meta.url));
-  mkdirSync(harness, { recursive: true });
-  await build({
-    configFile: false,
-    root: fileURLToPath(new URL('harness/', import.meta.url)),
-    logLevel: 'warn',
-    define: { 'process.env.NODE_ENV': JSON.stringify('production') },
-    build: {
-      outDir: harness,
-      emptyOutDir: true,
-      minify: false,
-      lib: {
-        entry: 'overview.tsx',
-        formats: ['iife'],
-        name: 'harness',
-        fileName: () => 'overview.js',
-      },
-    },
-  });
-  writeFileSync(`${harness}index.html`, PAGE);
-  writeFileSync(`${harness}main.cjs`, MAIN);
-  writeFileSync(`${harness}package.json`, JSON.stringify({ main: 'main.cjs' }));
+  harness = await buildPage('overview.tsx', 'Overview');
 });
 
 let app: ElectronApplication | undefined;
@@ -84,18 +22,7 @@ test.afterEach(async () => {
 });
 
 async function open() {
-  if (typeof electronBinary !== 'string') throw new Error('The electron package gave no path.');
-  const env: Record<string, string> = {};
-  for (const [name, value] of Object.entries(process.env)) {
-    if (value !== undefined) env[name] = value;
-  }
-  delete env.ELECTRON_RUN_AS_NODE;
-  app = await electron.launch({
-    args: [harness],
-    executablePath: electronBinary,
-    env,
-    chromiumSandbox: true,
-  });
+  app = await launch(harness);
   const page = await app.firstWindow();
   await page.waitForSelector('.lo-ov');
   return page;

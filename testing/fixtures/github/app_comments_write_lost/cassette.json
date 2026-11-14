@@ -1,0 +1,4 @@
+{
+  "description": "app_comments_write with the pending review's submission answered 502, as when GitHub's gateway gives up whatever it did by then: Lo can't tell whether it was submitted, and reads your reviews (YourReviews) to find out, as recorded after it was.",
+  "derived_from": "app_comments_write"
+}

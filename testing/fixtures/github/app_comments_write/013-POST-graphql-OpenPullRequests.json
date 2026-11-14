@@ -17,19 +17,19 @@
     "headers": {
       "content-type": "application/json; charset=utf-8",
       "x-ratelimit-limit": "5000",
-      "x-ratelimit-remaining": "4948",
-      "x-ratelimit-reset": "1794605105",
+      "x-ratelimit-remaining": "4973",
+      "x-ratelimit-reset": "1794621239",
       "x-ratelimit-resource": "graphql",
-      "x-ratelimit-used": "52"
+      "x-ratelimit-used": "27"
     },
     "body": {
       "data": {
         "rateLimit": {
           "cost": 1,
           "limit": 5000,
-          "remaining": 4948,
-          "used": 52,
-          "resetAt": "2026-11-13T21:25:05Z"
+          "remaining": 4973,
+          "used": 27,
+          "resetAt": "2026-11-14T01:53:59Z"
         },
         "repository": {
           "defaultBranchRef": {
@@ -89,7 +89,7 @@
                 "title": "Comments fixture: back off between retries",
                 "isDraft": false,
                 "createdAt": "2026-11-13T18:57:42Z",
-                "updatedAt": "2026-11-13T18:59:53Z",
+                "updatedAt": "2026-11-13T23:39:22Z",
                 "author": {
                   "__typename": "User",
                   "login": "rozed-bot"

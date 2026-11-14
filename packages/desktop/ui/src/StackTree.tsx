@@ -14,6 +14,7 @@ import {
 import { Avatar } from './Avatar.tsx';
 import { StateIcon, type PullRequestState } from './StatePill.tsx';
 import { Tag } from './Tag.tsx';
+import { CommentIcon } from './ThreadCount.tsx';
 
 /** What a layer's reviews say. */
 export type StackReview = 'approved' | 'changes' | 'required';
@@ -61,6 +62,11 @@ export interface StackTreeLayer {
    * ones, so there may be more.
    */
   viewed?: { viewed: number; total: number; partial?: boolean | undefined } | undefined;
+  /**
+   * How many of its review threads are unresolved, shown while any are. `partial` when GitHub said
+   * only of the first ones, so there may be more.
+   */
+  threads?: { unresolved: number; partial?: boolean | undefined } | undefined;
   /** How long ago it merged or closed, as the row says it: "40 min ago". */
   when?: string | undefined;
   /**
@@ -309,6 +315,29 @@ const FINISHED: Partial<Record<PullRequestState, { word: string; tone: string }>
   closed: { word: 'Closed', tone: 'text-state-closed' },
 };
 
+/**
+ * A layer's unresolved threads as a comment mark and their number, standing out as a file's count
+ * does while any is unresolved, and nothing while none is.
+ */
+function Unresolved({ threads }: { threads: StackTreeLayer['threads'] }) {
+  if (threads === undefined || threads.unresolved <= 0) return null;
+  const more = threads.partial === true;
+  const said = `${more ? 'At least ' : ''}${threads.unresolved} unresolved ${threads.unresolved === 1 && !more ? 'thread' : 'threads'}`;
+  return (
+    <span
+      role="img"
+      aria-label={said}
+      title={said}
+      data-open=""
+      className="lo-num inline-flex flex-none items-center gap-2 text-fg"
+    >
+      <CommentIcon />
+      {threads.unresolved}
+      {more ? '+' : ''}
+    </span>
+  );
+}
+
 function Meta({ layer }: { layer: StackTreeLayer }) {
   const { state, review, checks, viewed, overview, queue } = layer;
   const said = FINISHED[state];
@@ -375,6 +404,7 @@ function Meta({ layer }: { layer: StackTreeLayer }) {
           </span>
         </Item>
       )}
+      <Unresolved threads={layer.threads} />
       {layer.needsRebase === true && <Tag tone="warning">Needs rebase</Tag>}
       {layer.sitsOn !== undefined && <span className="lo-num">on #{layer.sitsOn}</span>}
     </div>

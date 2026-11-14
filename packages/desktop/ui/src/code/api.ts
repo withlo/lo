@@ -148,6 +148,11 @@ export interface ThreadView {
   open: boolean;
   /** Changes whenever what the thread shows changes, so the view has the caller draw it again. */
   version: number;
+  /**
+   * The keyboard is on it: `]t` landed on it, and the cursor is still on its line. The view sets
+   * it; what the caller gives is taken as false.
+   */
+  focused?: boolean;
 }
 
 /** What the caller drew for a thread, which the view keeps up to date and takes down. */
@@ -249,6 +254,21 @@ export interface Composer {
    * closes it, but without a word to the caller, and leaving its line no claim on what comes there.
    */
   dismiss(): void;
+  /**
+   * The box as it is, for another to open as it was ({@link ComposeOptions.kept}), as when the view
+   * it's in is about to be drawn anew.
+   */
+  keep(): KeptBox;
+}
+
+/**
+ * A comment box as it was, from {@link Composer.keep}: its text, and what a code view opening
+ * another as it was reads, its caret and selection, undo history, Vim's mode and its preview.
+ */
+export interface KeptBox {
+  readonly text: string;
+  /** The rest, which only a code view reads. */
+  readonly editor: unknown;
 }
 
 /**
@@ -282,9 +302,19 @@ export interface ComposeOptions {
   focus?: boolean;
   /**
    * The caller's name for the box: a key in it acts on its line or header with the box named
-   * (`box`), so the caller's commands can act on the box, as from its frame's right-click menu.
+   * (`box`), so the caller's commands can act on the box, as from its frame's right-click menu. A
+   * box named otherwise than one open at its place is a box of its own.
    */
   name?: string;
+  /**
+   * The box this one is, as it was before the view was drawn anew: it opens as that one was, with
+   * its caret and selection, undo history, Vim's mode and preview, if its text is the draft. That's
+   * a change no input asked for, so what's on screen stays where it is, whether it takes focus or
+   * not. On a line its file is drawn without, as a file closed as viewed is, or one too large, it
+   * goes under the file's header. While the file's lines are still coming, it throws, as for any
+   * line not drawn.
+   */
+  kept?: KeptBox;
 }
 
 /** A comment box outside a code view, as the timeline's and a review's summary are. */
@@ -406,14 +436,18 @@ export interface DiffView extends KeySource {
    * Replaces the threads drawn under lines, and under files' headers, each drawn by `render` in an
    * element of its own the first time it's drawn, and kept up to date through what that returns. A
    * file's threads go under its header in the newer column, or in the inline layout's one, whether
-   * or not the file shows its lines. A line or header on screen whose
-   * threads change keeps those it shows until it's off screen, or in a diff too short to scroll,
-   * until the reader's next wheel, key or click, so no line on screen moves; the rest change now,
-   * and what's at the top of the screen stays where it is. A thread drawn on screen that changes
-   * size with no input asking, as when an image in it loads, is held at the height it was drawn at
-   * the same way. What the reader does to a thread, such as opening it, keeps its line where it is.
-   * With `now`, lines on screen take their threads at once too: for a view the reader hasn't seen
-   * yet, as one made in the same task.
+   * or not the file shows its lines. A line or header on screen whose threads change keeps those it
+   * shows until it's off screen, or until the reader's next wheel, key or click, a key `listen`
+   * hands the registry too, so no line on screen moves without them; the rest change now, and
+   * what's at the top of the screen stays where it is. A thread drawn on screen that changes size
+   * with no input asking, as when an image in it loads, is held at the height it was drawn at the
+   * same way, unless a reply's box was closed right after it as its answer came: then it grows into
+   * the room the box left, where that's tall enough. What comes with the reader's input leaves what
+   * they read where it is: the comment box they write in, or the thread they clicked; or else the
+   * cursor's line, while it's on screen; or else the top of the screen. `]t` counts the threads
+   * waiting on screen, which come as it's pressed. What the reader does to a thread, such as
+   * opening it, keeps its line where it is. With `now`, lines on screen take their threads at once
+   * too: for a view the reader hasn't seen yet, as one made in the same task.
    */
   setThreads(
     threads: readonly ThreadView[],
@@ -425,6 +459,12 @@ export interface DiffView extends KeySource {
    * again, its line staying where it is. Says whether the view has the thread.
    */
   openThread(id: string, open: boolean | 'toggle'): boolean;
+  /**
+   * The threads drawn under line `at`, or under file `at`'s header, by their ids, in their order:
+   * none while those given there wait to come, as they do while the line is on screen. What a key
+   * there can act on.
+   */
+  threadsDrawn(at: Place | OnFile): readonly string[];
   /**
    * Replaces the marks on lines: overview markers, in a gutter that's there from the start, so
    * marks change no line's width or height, and what's on screen stays where it is. Kinds the diff
@@ -502,11 +542,13 @@ export interface DiffView extends KeySource {
   /** The text of a span's lines, as `yy` copies them. */
   lines(span: Span): readonly string[];
   /**
-   * Opens a comment box with `draft` in it, under a line, the last line of a span, a thread, or a
-   * file's header, for a comment on the file, with `frame` drawn around its editor, and focuses it,
-   * unless `focus` is false, as for a draft restored. A box already open there is focused instead,
-   * as it is. The box's line or header stays where it is as it opens, grows and closes. A box on a
-   * file goes where its threads do, whether or not the file shows its lines.
+   * Opens a comment box with `draft` in it, under a line, the last line of a span, or a file's
+   * header, for a comment on the file, or in a thread, right after it, with `frame` drawn around
+   * its editor, and focuses it, unless `focus` is false, as for a draft restored. A box already open
+   * there with the same name, or with none, is focused instead, as it is: boxes named otherwise are
+   * boxes of their own, as a reply's in a thread is beside a comment on its line. The box's line or
+   * header stays where it is as it opens, grows and closes. A box on a file goes where its threads
+   * do, whether or not the file shows its lines.
    */
   compose(
     at: Place | Span | { thread: string } | OnFile,
@@ -515,6 +557,15 @@ export interface DiffView extends KeySource {
     frame?: BoxFrame,
     options?: ComposeOptions,
   ): Composer;
+  /**
+   * The reader acted on thread `id` by a write whose answer will change it, as resolving it or
+   * deleting one of its comments: what next comes under its line or header, and its own next
+   * changes of size, are their doing, as what comes under a sent comment box's line is. It comes
+   * at once, and keeps the line where it is. That lasts until something comes there, the line goes
+   * off screen, or the function returned is called, as when the write changed nothing. A thread the
+   * view doesn't have gets a function that does nothing.
+   */
+  claimThread(id: string): () => void;
   focus(): void;
   destroy(): void;
   readonly probe: Probe;
@@ -570,9 +621,19 @@ export interface OverviewMark {
   at: Span;
   /** The caller's id for the block, which `explained` gives back. */
   block: string;
-  /** What the note shows, as plain text: a label, such as the block's section, and the text. */
-  note: { label: string; text: string };
+  /**
+   * What the note shows: a label, such as the block's section, and the text, plain, which the view
+   * sizes the note by and tells one note from another by. `draw` draws the text the caller's way in
+   * its place, as rich text.
+   */
+  note: { label: string; text: string; draw?: DrawNote | undefined };
 }
+
+/**
+ * Draws a note's text in `into`, an element the view makes for it, in place of its plain text: at
+ * once, as the view measures the note as it's drawn. Returns what takes it down.
+ */
+export type DrawNote = (into: HTMLElement) => () => void;
 
 /** Where a peek's answer came from: a language server, or Lo's own reading of the syntax. */
 export type PeekSource = 'server' | 'syntax';
@@ -706,21 +767,29 @@ export interface ExcerptView extends KeySource {
   setStale(lines: readonly number[]): void;
   /**
    * Replaces the threads drawn under the lines the excerpt shows, each drawn by `render` as the
-   * diff view's are. Threads on lines it doesn't show are left out.
+   * diff view's are. Threads on lines it doesn't show are left out. Once the excerpt has been on
+   * the page, threads that would come, go or move on a line on screen wait, until none of the lines
+   * they change is on screen, the reader acts in the excerpt, or acts anywhere while no scroll can
+   * take those lines off screen, a key `listen` hands the registry counting; then they come
+   * together.
    */
   setThreads(threads: readonly ThreadView[], render: RenderThread): void;
   /** Opens a thread, collapses it, or the other of the two. Says whether the excerpt has it. */
   openThread(id: string, open: boolean | 'toggle'): boolean;
   /**
    * Opens a comment box with `draft` in it, under a line the excerpt shows, the last line of a
-   * span, or a thread, with `frame` drawn around its editor, and focuses it. A box already open
-   * there is focused instead, as it is. Throws for a line the excerpt doesn't show.
+   * span, or a thread, with `frame` drawn around its editor, and focuses it unless
+   * `options.focus` is false. A box already open there is the one it gives, as it is. Throws for a
+   * line the excerpt doesn't show. A box closed once its comment was sent (`close()`) on screen
+   * keeps its room, as the threads that come there wait; the thread right above it, as a reply's
+   * comes, grows into it, where it's tall enough.
    */
   compose(
     at: Place | Span | { thread: string },
     draft: string,
     on: ComposerEvents,
     frame?: BoxFrame,
+    options?: ComposeOptions,
   ): Composer;
   /**
    * Moves the cursor to what `at` names, and brings it on screen: a line the excerpt shows, the

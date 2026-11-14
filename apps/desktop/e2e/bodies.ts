@@ -3,8 +3,9 @@
 // on. Which posts the window asks for at once depends on which are near the screen, and so on the
 // window's size and how fast it draws, so a read can't be matched to a recorded one as it was
 // asked. Each post is answered as it was recorded, and one that wasn't as GitHub answers an ID it
-// has no post for. It can also cut the connection of a write once its request has come, as a proxy
-// that drops it would, and says which GraphQL operations came.
+// has no post for. A test can hold a request at it, as an upload is held until the test lets it go,
+// or cut the connection of a write once its request has come, as a proxy that drops it would. It
+// says which GraphQL operations came.
 
 import { createServer, type ServerResponse } from 'node:http';
 import { buffer } from 'node:stream/consumers';
@@ -64,11 +65,13 @@ export interface BodiesOptions {
 
 /**
  * Serves, on `127.0.0.1`, reads of posts' HTML from what `cassette` recorded, and passes every
- * other request on to the replay server at `behind`, its origin.
+ * other request on to the replay server at `behind`, its origin, once `hold` lets it go: what it
+ * answers for a request's path, when there's anything to wait for.
  */
 export async function serveBodies(
   cassette: string,
   behind: string,
+  hold: (path: string) => Promise<void> | undefined = () => undefined,
   options: BodiesOptions = {},
 ): Promise<BodiesServer> {
   const { data, posts } = recordedBodies(cassette);
@@ -76,6 +79,7 @@ export async function serveBodies(
   const front = createServer((incoming, outgoing) => {
     void (async () => {
       const body = await buffer(incoming);
+      await hold(incoming.url ?? '/');
       if (incoming.url?.endsWith('/graphql')) {
         const asked = objectOf(parseJson(body.toString('utf8')));
         const name = asked?.['operationName'];

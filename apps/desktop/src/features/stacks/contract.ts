@@ -45,6 +45,17 @@ export const viewedCount = z.discriminatedUnion('source', [
 export type ViewedCount = z.output<typeof viewedCount>;
 
 /**
+ * How many of a layer's review threads are unresolved, as read with the layers: among the first 100
+ * of its threads, so `complete` is false when it has more.
+ */
+export const threadCount = z.strictObject({
+  unresolved: count,
+  threads: count,
+  complete: z.boolean(),
+});
+export type ThreadCount = z.output<typeof threadCount>;
+
+/**
  * A layer of the stack, a row of its tree, in the order `]s` walks them: from the bottom up, each
  * branch finished before the next.
  *
@@ -65,7 +76,9 @@ export type ViewedCount = z.output<typeof viewedCount>;
  *   commits;
  * - `overview`: whether it has an overview, from one read of the repository's overviews' refs:
  *   `null` until that's read, and for a layer from a fork, whose overview Lo can't see;
- * - `viewed`: where its viewed count comes from, `null` until the layers' state is read.
+ * - `viewed`: where its viewed count comes from, `null` until the layers' state is read;
+ * - `threads`: how many of its review threads are unresolved, `null` until the layers' state is
+ *   read. The window counts the layer on screen's from its threads instead, once it has them.
  */
 export const row = z.strictObject({
   number,
@@ -83,6 +96,7 @@ export const row = z.strictObject({
   needsRebase: z.boolean(),
   overview: z.boolean().nullable(),
   viewed: viewedCount.nullable(),
+  threads: threadCount.nullable(),
 });
 export type Row = z.output<typeof row>;
 

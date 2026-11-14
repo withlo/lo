@@ -14,6 +14,7 @@ import {
   back,
   cancel,
   choose,
+  goDown,
   goUp,
   moveFocus,
   showTarget,
@@ -63,6 +64,7 @@ function row(number: number, below: number[]): Row {
     needsRebase: false,
     overview: null,
     viewed: null,
+    threads: null,
   };
 }
 
@@ -129,6 +131,36 @@ describe('- in the file tree', () => {
     expect(tree.goToTree).not.toHaveBeenCalled();
     expect(document.activeElement).toBe(drawn);
     expect(focused.get(tab.id)).toBe(84);
+  });
+});
+
+describe('+ in the stack’s tree', () => {
+  it('goes down to the file tree, at the file on screen, while the tree is open', () => {
+    const tab = showing(84, STACK);
+    expect(goDown.enabled()).toBe('The file tree isn’t open.');
+    const files = document.createElement('div');
+    files.dataset['loScope'] = 'tree';
+    document.body.append(files);
+    expect(goDown.enabled()).toBe(true);
+    goDown.run();
+    expect(tree.goToTree).toHaveBeenCalledWith(tab.id);
+  });
+});
+
+describe(']s and [s with a count', () => {
+  it('go that many layers, each branch finished before the next, as far as the end', async () => {
+    const tab = showing(82, STACK);
+    walking(1).run(undefined, 2);
+    walking(1).run(undefined, 9);
+    await answered();
+    expect(bridge.calls).toEqual([
+      ['tab.layer', { id: tab.id, number: 84 }],
+      ['tab.layer', { id: tab.id, number: 85 }],
+    ]);
+    const top = showing(85, STACK);
+    walking(-1).run(undefined, 2);
+    await answered();
+    expect(bridge.calls.at(-1)).toEqual(['tab.layer', { id: top.id, number: 83 }]);
   });
 });
 

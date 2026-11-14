@@ -4,6 +4,7 @@
 // chain a GitHub stack. Nothing here calls Electron or GitHub.
 
 import {
+  layerThreads,
   MAX_OPEN_PULL_REQUESTS,
   openPullRequest,
   viewedFiles,
@@ -165,6 +166,7 @@ function drawn(
         needsRebase: layer?.needsRebase !== undefined,
         overview: overviewOf(input.overviews, layer),
         viewed: viewedOf(read(number), number === input.number),
+        threads: threadsOf(read(number)),
       },
     };
   });
@@ -184,7 +186,13 @@ function drawn(
         queue: null,
         needsRebase: false,
         viewed: { source: 'tab' },
-        ...(state ? { review: reviewOf(state.reviewDecision), checks: checksOf(state) } : {}),
+        ...(state
+          ? {
+              review: reviewOf(state.reviewDecision),
+              checks: checksOf(state),
+              threads: threadsOf(state),
+            }
+          : {}),
       },
     });
   }
@@ -280,6 +288,11 @@ function viewedOf(layer: StackLayer | undefined, current: boolean): Row['viewed'
   if (current) return { source: 'tab' };
   if (!layer) return null;
   return { source: 'layers', ...viewedFiles(layer) };
+}
+
+/** How many of a layer's review threads are unresolved, as read with the layers. */
+function threadsOf(layer: StackLayer | undefined): Row['threads'] {
+  return layer ? layerThreads(layer) : null;
 }
 
 /** Whether every one of `layers` is in one GitHub stack, as the head says in place of the links. */

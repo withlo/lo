@@ -218,6 +218,8 @@ export function testCommands(ran: Ran[] = []): Command[] {
 export class FakeView implements KeySource {
   mode: Mode = 'normal';
   pending = false;
+  /** The count Vim holds, when that's all it holds. */
+  count: number | undefined = undefined;
   target: Target = { kind: 'line', at: { file: 'a.ts', side: 'new', line: 1 } };
   vimKeys: readonly VimKey[] = [];
   readonly log: string[];
@@ -227,17 +229,19 @@ export class FakeView implements KeySource {
   }
 
   keyState() {
-    return { mode: this.mode, pending: this.pending, target: this.target };
+    return { mode: this.mode, pending: this.pending, count: this.count, target: this.target };
   }
 
   passKeys(held: readonly string[]) {
     this.log.push(`passKeys ${held.join(' ')}`);
     this.pending = true;
+    this.count = undefined;
   }
 
   clearPending() {
     this.log.push('clearPending');
     this.pending = false;
+    this.count = undefined;
   }
 
   setVimKeys(given: readonly VimKey[]) {
