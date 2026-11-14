@@ -20,7 +20,7 @@
 // uploads are given up as its draft goes.
 
 import { Lines, Screen, suggestionBlock, takesSuggestion } from '@lo/review';
-import type { Composer, ComposerEvents, Mode, Send } from '@lo/ui/code';
+import type { Composer, ComposerEvents, KeptBox, Mode, Send } from '@lo/ui/code';
 import type { BoxTarget, Handler, HeaderTarget, LineTarget, Target } from '@lo/ui/commands';
 
 import { announce, notice, notify, withdraw } from '../../../window/commands/notices.tsx';
@@ -165,7 +165,7 @@ type Opens =
 
 function opensAt(box: Box): Opens {
   // Taken down open as the diff was drawn again, it's still in its box there, whatever the
-  // overview did meanwhile.
+  // overview did meanwhile, until the diff drawn anew has placed it or couldn't.
   if (box.kept !== undefined) return IN_DIFF;
   const { home } = box;
   if (home.kind === 'block') {
@@ -244,11 +244,11 @@ export class Box {
   /** Where its composer is drawn, while it has one. */
   drawnIn: 'diff' | 'block' | 'timeline' | undefined;
   /**
-   * Where it opens in its view's diff once the diff, drawn again with it open, draws it anew: on its
-   * line (`line`), as it stays in its box, whatever the overview did meanwhile; or, its line gone
-   * from the diff drawn anew and its block not in the overview, under its file's header (`file`).
+   * The box as it was as the diff, drawn again, took it down open: it opens in the diff drawn anew
+   * as it was, whatever the overview did meanwhile, until that diff has placed it or couldn't
+   * ({@link placeKept}).
    */
-  kept: 'line' | 'file' | undefined;
+  kept: Kept | undefined;
   /** Its editor is taking main's text, not the reader's typing, which isn't saved again. */
   taking = false;
   /**
@@ -462,6 +462,7 @@ function eventsOf(box: Box): ComposerEvents {
       // Shut, it's kept nowhere, and takes no focus the next time it opens by itself.
       box.kept = undefined;
       box.focusOnOpen = false;
+      unsay(box);
       replyingChanged(box.view);
       if (keep) {
         box.saveNow();
@@ -533,31 +534,36 @@ function show(box: Box, diff: WritingDiff | undefined): boolean {
         (each) => each !== box && each.composer && spotOfBox(each) === spot,
       );
       if (there) return false;
-      box.composer = block.compose(at, box.state.text, eventsOf(box), framer?.(box), options);
-      box.drawnIn = 'block';
+      drew(box, block.compose(at, box.state.text, eventsOf(box), framer?.(box), options), 'block');
     } else {
       if (opens.kind !== 'diff' || !diff) return false;
       const where = inDiffAt(box, diff);
       if (!where) return false;
-      box.composer = diff.compose(where.at, box.state.text, eventsOf(box), framer?.(box), options);
-      box.drawnIn = 'diff';
+      const { text } = box.state;
+      drew(box, diff.compose(where.at, text, eventsOf(box), framer?.(box), options), 'diff');
     }
   } catch {
     // Its line isn't drawn yet, as while its file's diff is worked out.
     return false;
   }
-  box.composer.hold(sendingNow(box.state));
-  box.set({ mode: box.composer.mode });
+  return true;
+}
+
+/** Box `box` is drawn, as `composer`, in `where`. */
+function drew(box: Box, composer: Composer, where: 'diff' | 'block'): void {
+  box.composer = composer;
+  box.drawnIn = where;
+  composer.hold(sendingNow(box.state));
+  box.set({ mode: composer.mode, previewing: composer.previewing });
   box.focusOnOpen = false;
   box.retries = 0;
   box.kept = undefined;
-  return true;
+  unsay(box);
 }
 
 /**
  * Where box `box` goes in `diff` as it's drawn now: under the last of its lines, or its file's
- * header, or in its thread, as {@link boxAt} places it; under its file's header for one kept there
- * as its line went. Nowhere where the diff can't place it.
+ * header, or in its thread, as {@link boxAt} places it. Nowhere where the diff can't place it.
  */
 function inDiffAt(box: Box, diff: WritingDiff): ReturnType<typeof boxAt> {
   const drawn = diff.drawn();
@@ -566,61 +572,189 @@ function inDiffAt(box: Box, diff: WritingDiff): ReturnType<typeof boxAt> {
     place.kind === 'thread'
       ? drawn.files.find((each) => githubPath(each) === place.path)
       : undefined;
-  if (box.kept === 'file') {
-    const here = place.kind === 'thread' && place.commit.toLowerCase() === drawn.at.toLowerCase();
-    return file && here ? { at: { file: file.id } } : undefined;
-  }
   const screen = screenFor(box.view, diff, file?.since ?? false);
   return boxAt(drawn, screen, place, (thread) => shownAt(box.view, thread) !== undefined);
 }
 
 /**
- * Box `box`, kept on its line as the diff was drawn again, can't open there: the diff drawn anew,
- * `diff`, doesn't have the line, or never drew it. It opens where it would now: under its block,
- * unfocused, if the overview has the block; otherwise, in the same diff, under its file's header,
- * with its place as it was; and in another diff, as of another revision, where a draft of its place
- * opens.
+ * Where box `box`, on lines, goes in `diff` where the diff doesn't place it on them: under their
+ * file's header, if the diff is of the revision they're at and has the file.
  */
-function lineGone(box: Box, diff: WritingDiff): void {
+function headerAt(box: Box, diff: WritingDiff): ReturnType<typeof boxAt> {
+  const drawn = diff.drawn();
   const { place } = box.state;
-  const same =
-    place.kind === 'thread' && place.commit.toLowerCase() === diff.drawn().at.toLowerCase();
-  box.retries = 0;
-  if (same && opensUnderBlock(box.view, homeRow(box.home)) !== true) {
-    box.kept = 'file';
-    return;
+  if (place.kind !== 'thread' || place.commit.toLowerCase() !== drawn.at.toLowerCase()) {
+    return undefined;
+  }
+  const file = drawn.files.find((each) => githubPath(each) === place.path);
+  return file ? { at: { file: file.id } } : undefined;
+}
+
+/** A box the diff took down open as it was drawn again: what opens it as it was there anew. */
+interface Kept {
+  /** The box as it was. */
+  readonly box: KeptBox;
+  /** Whether focus was in it. */
+  readonly focused: boolean;
+  /** How much the reader had done as it was taken down: focus comes back with nothing since. */
+  readonly inputs: number;
+}
+
+/** What the reader does that moves on from a box the diff took down. */
+const INPUT = ['keydown', 'pointerdown', 'wheel'] as const;
+
+/** How many keys, clicks and wheel turns the reader has made, since Lo first needed to know. */
+let inputs = 0;
+let counting = false;
+
+/** How many keys, clicks and wheel turns the reader has made, counting from now on. */
+function inputsSoFar(): number {
+  if (!counting) {
+    counting = true;
+    const count = () => {
+      inputs += 1;
+    };
+    for (const type of INPUT) window.addEventListener(type, count, true);
+  }
+  return inputs;
+}
+
+/**
+ * Opens box `box`, kept as the diff was drawn again, in the diff drawn anew, `diff`, as it was, in
+ * the first place it can of: its line, or its thread; its file's header, as for a file closed as
+ * viewed, still on its lines; its block, only where the diff has neither, unfocused. Focused if it
+ * had focus, the reader has done nothing since, and focus is where the redraw left it. It waits a
+ * while for lines still coming, and after that goes under its file's header. Says where it went:
+ * nowhere, in the end, where it can't be placed, and it's kept for the next time its line or block
+ * is drawn.
+ */
+function placeKept(
+  box: Box,
+  kept: Kept,
+  diff: WritingDiff,
+): 'diff' | 'waits' | 'block' | 'nowhere' {
+  const line = inDiffAt(box, diff);
+  const header = headerAt(box, diff);
+  const at = line ?? header;
+  if (at) {
+    if (showKept(box, kept, diff, at.at)) return 'diff';
+    if (box.retries < RETRIES) {
+      box.retries += 1;
+      return 'waits';
+    }
+    if (line && header && showKept(box, kept, diff, header.at)) return 'diff';
   }
   box.kept = undefined;
+  box.retries = 0;
   box.focusOnOpen = false;
+  return opensUnderBlock(box.view, homeRow(box.home)) === true ? 'block' : 'nowhere';
+}
+
+/** Opens box `box`, kept as `kept`, at `at` in `diff`, as it was. Says whether it opened. */
+function showKept(
+  box: Box,
+  kept: Kept,
+  diff: WritingDiff,
+  at: Parameters<WritingDiff['compose']>[0],
+): boolean {
+  const focused = document.activeElement;
+  const free = !focused || focused === document.body || diff.hasFocus();
+  const focus = kept.focused && kept.inputs === inputs && free;
+  const options = { focus, name: box.id, kept: kept.box };
+  try {
+    drew(box, diff.compose(at, box.state.text, eventsOf(box), framer?.(box), options), 'diff');
+    return true;
+  } catch {
+    // Its lines aren't drawn yet, as while its file's diff is worked out.
+    return false;
+  }
+}
+
+/** A draft the diff, drawn again, had nowhere to open, as the status bar says: its box, and why. */
+export interface KeptAway {
+  readonly box: string;
+  readonly why: string;
+}
+
+/**
+ * Each view's drafts the diff, drawn again, took down open and had nowhere to open: neither their
+ * lines, nor their file's header, nor their code block. The status bar says so, until each opens
+ * again or goes.
+ */
+export const keptAway = tabState<readonly KeptAway[]>(() => []);
+
+/** Says in view `view`'s status bar that the diff drawn anew had nowhere to open `boxes`. */
+function say(view: string, boxes: readonly Box[]): void {
+  const ids = new Set(boxes.map((box) => box.id));
+  keptAway.update(view, (was) => [
+    ...was.filter((each) => !ids.has(each.box)),
+    ...boxes.map((box) => ({ box: box.id, why: keptWhy(box) })),
+  ]);
+}
+
+/** Box `box` opened again, or went: the status bar no longer says it's kept. */
+function unsay(box: Box): void {
+  const was = keptAway.get(box.view);
+  if (!was.some((each) => each.box === box.id)) return;
+  keptAway.set(
+    box.view,
+    was.filter((each) => each.box !== box.id),
+  );
+}
+
+/** Where a draft the diff had nowhere to open is, and how it comes back, as the status bar says. */
+function keptWhy(box: Box): string {
+  const { place } = box.state;
+  const block =
+    box.home.kind === 'block' ? ', or under its code block once the overview has it' : '';
+  if (place.kind === 'reply' || place.kind === 'edit') {
+    const what = place.kind === 'reply' ? 'reply' : 'edit of your comment';
+    return `Lo kept your ${what}, whose thread this diff doesn’t show. It opens there again once a diff does${block}.`;
+  }
+  if (place.kind !== 'thread') return 'Lo kept your draft, which this diff doesn’t show.';
+  const at = revisionName(box.view, place.commit);
+  const { lines } = place;
+  let where = place.path;
+  if (lines) {
+    const { start, end } = lines;
+    const span =
+      start && start.number !== end.number
+        ? `lines ${start.number}–${end.number}`
+        : `line ${end.number}`;
+    where = `${span} of ${place.path}`;
+  }
+  return `Lo kept your draft on ${where} at ${at}, which this diff doesn’t show. It opens there again once a diff does${block}.`;
 }
 
 const retrying = new Map<string, ReturnType<typeof setTimeout>>();
 
 /**
  * Opens view `view`'s boxes that should show in its diff, as it's drawn now: drafts restored as Lo
- * started, boxes the diff took down as it was drawn again, and those whose block the overview no
- * longer has. One whose line isn't drawn yet tries again in a moment, a few times. A box the diff
- * took down whose line it no longer has, or never draws, opens where it would now ({@link lineGone}).
+ * started, boxes the diff took down as it was drawn again ({@link placeKept}), and those whose
+ * block the overview no longer has. One whose line isn't drawn yet tries again in a moment, a few
+ * times. The status bar says which of the boxes the diff took down it had nowhere to open.
  */
 export function restore(view: string): void {
   const diff = writingDiff(view);
   const own = views.get(view);
   if (!diff || !own) return;
   let again = false;
-  let gone = false;
+  let moved = false;
+  const nowhere: Box[] = [];
   for (const box of own.values()) {
     if (!box.open || box.composer || opensAt(box).kind !== 'diff') continue;
-    if (show(box, diff)) continue;
-    const onLines = box.kept === 'line' && box.state.place.kind === 'thread';
-    if (onLines && (!inDiffAt(box, diff) || box.retries >= RETRIES)) {
-      lineGone(box, diff);
-      gone = true;
-    } else if (box.retries < RETRIES) {
+    if (box.kept) {
+      const went = placeKept(box, box.kept, diff);
+      if (went === 'waits') again = true;
+      else if (went === 'block') moved = true;
+      else if (went === 'nowhere') nowhere.push(box);
+    } else if (!show(box, diff) && box.retries < RETRIES) {
       box.retries += 1;
       again = true;
     }
   }
-  if (gone) queueMicrotask(() => reopen(view));
+  if (moved) queueMicrotask(() => reopen(view));
+  if (nowhere.length > 0) say(view, nowhere);
   if (again && !retrying.has(view)) {
     retrying.set(
       view,
@@ -724,11 +858,13 @@ export function takeDrafts(given: DraftsView): void {
       // came here: it's done.
       own.delete(key);
       box.open = false;
+      unsay(box);
       takeAway(box, 'close');
       continue;
     }
     if (box.composer || box.saving || box.state.busy) continue;
     own.delete(key);
+    unsay(box);
     gone.push(box);
   }
   for (const [key, row] of rows) {
@@ -739,6 +875,8 @@ export function takeDrafts(given: DraftsView): void {
       );
       box = new Box(view, row.place, moved?.state.primary ?? 'review', row.text);
       box.home = moved?.home ?? homeOf(row);
+      // Moved to a newer push as the diff was drawn again for it: it opens in that diff as it was.
+      box.kept = moved?.kept;
       if (row.home) box.set({ where: whereOf(view, row.home, row.place) });
       box.open = row.restored || first || (moved?.open ?? false);
       if (first) box.set({ restored: row.savedAt });
@@ -1068,6 +1206,7 @@ function closeSent(box: Box): void {
   // Unless main's drafts took it down first, and another box is there now.
   if (own.get(box.key) === box) own.delete(box.key);
   box.open = false;
+  unsay(box);
   takeAway(box, 'close');
   replyingChanged(view);
 }
@@ -1117,6 +1256,7 @@ function drop(box: Box): void {
   boxesOf(view).delete(key);
   box.dropSave();
   box.open = false;
+  unsay(box);
   takeAway(box, 'dismiss');
   holdDropped(box);
   discard(box);
@@ -1416,19 +1556,19 @@ export function claimBriefly(diff: WritingDiff, thread: string): void {
 
 /**
  * The box the diff or a block took down as it was drawn again: one the diff took down, open, opens
- * again on its line once the diff is drawn anew; one from a block the overview no longer has, where
- * it opens now.
+ * again as it was once the diff is drawn anew ({@link placeKept}); one from a block the overview no
+ * longer has, where it opens now.
  */
 export function takenDown(box: Box, composer: Composer): void {
   if (box.composer !== composer) return;
   box.composer = undefined;
   // A block goes as its overview changes: its boxes open where they open now, once it's gone.
   if (box.drawnIn === 'block') queueMicrotask(() => reopen(box.view));
-  // The diff is drawn again: a box open there stays in its box, on its line once that's drawn
-  // anew, focused if it was, whatever the overview did meanwhile.
+  // The diff is drawn again: a box open there stays in its box, as it was, once the diff drawn
+  // anew places it, whatever the overview did meanwhile.
   else if (box.drawnIn === 'diff' && box.open) {
-    box.kept = 'line';
-    if (box.state.focused) box.focusOnOpen = true;
+    box.retries = 0;
+    box.kept = { box: composer.keep(), focused: box.state.focused, inputs: inputsSoFar() };
   }
 }
 

@@ -84,6 +84,7 @@ function drawn(box: Box): Composer {
     hold() {},
     close() {},
     dismiss() {},
+    keep: () => ({ text, editor: undefined }),
   } satisfies Composer;
   box.composer = composer;
   return composer;

@@ -663,6 +663,7 @@ export function draw(options: DrawOptions): Drawing {
           view.reveal({ kind: 'file', file: to });
           view.scrollTo({ at: header, offset: box.top - place });
         },
+        hasFocus: () => parent.contains(document.activeElement),
       }),
       setMiddle({
         focus: () => view.focus(),
