@@ -8,9 +8,7 @@
 // stays, a restart included, and once a while has passed since it was sent, Lo reads the threads
 // afresh and looks among your comments for it, by GitHub's clock: found, the draft goes; otherwise
 // the reader is told, and may send it again. Until then it can't be sent again. Text that changed
-// since it was sent is never dropped. Nothing is ever sent again by itself. A comment on the pull
-// request itself, in its conversation, is sent the same way, in turn with the rest, and posts at
-// once, joining no review; one whose answer was lost is looked for in the timeline read afresh.
+// since it was sent is never dropped. Nothing is ever sent again by itself.
 //
 // Replies go as comments do. Editing your comment, resolving or unresolving a thread and deleting
 // your comment take their turn among the pull request's writes too. An edit is kept as a draft with
