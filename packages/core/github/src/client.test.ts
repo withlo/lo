@@ -57,6 +57,22 @@ test('sends githubs headers', async () => {
   expect(named.seen[0]?.headers.get('user-agent')).toBe('lo/1.2.3');
 });
 
+test('GitHub’s clock is read from its answers’ dates, for every client sharing the state', async () => {
+  const fetch = replay(
+    ['GET', 'https://api.github.com/user', 200, {}, '{}'],
+    ['GET', 'https://api.github.com/user', 200, { date: 'Fri, 13 Nov 2026 12:00:00 GMT' }, '{}'],
+  );
+  const account = client(fetch);
+  await account.get('/user', json);
+  expect(account.githubAhead()).toBeUndefined();
+  const before = Date.now();
+  await account.get('/user', json);
+  const ahead = account.githubAhead();
+  expect(ahead).toBeLessThanOrEqual(Date.parse('2026-11-13T12:00:00Z') - before);
+  expect(ahead).toBeGreaterThanOrEqual(Date.parse('2026-11-13T12:00:00Z') - Date.now());
+  expect(account.gated(() => Promise.resolve(() => {})).githubAhead()).toBe(ahead);
+});
+
 test('a get modified since a time sends it', async () => {
   const date = 'Fri, 06 Nov 2026 08:15:07 GMT';
   const fetch = replayFetch(

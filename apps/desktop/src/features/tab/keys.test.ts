@@ -126,6 +126,14 @@ describe('the tab keys', () => {
     }
   });
 
+  it('⌘⇧A is left to a comment box, which attaches files with it', () => {
+    for (const mode of ['insert', 'normal'] as const) {
+      expect(runs('cmd+shift+a', view('box', mode))).toBeUndefined();
+      expect(runs('cmd+shift+a', view('box', mode), 'linux')).toBeUndefined();
+    }
+    expect(runs('cmd+\\', view('box', 'insert'))).toBe('tab.leftPanel');
+  });
+
   it('` and ~ step through the middle views, over Vim’s marks, but not in a comment box or a text field', () => {
     expect(runs('`', window)).toBe('tab.nextView');
     expect(runs('~', window)).toBe('tab.previousView');

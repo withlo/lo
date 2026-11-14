@@ -22,12 +22,17 @@ export interface Span {
   to: number;
 }
 
-/** A line, or the lines `v` selected, with the thread on it when there's one to act on. */
+/**
+ * A line, or the lines `v` selected, with the thread on it when there's one to act on, and the
+ * comment box a key in one under it is in.
+ */
 export interface LineTarget {
   kind: 'line';
   at: Place | Span;
   /** The thread `]t` landed on, or the only one on the cursor's line. */
   thread?: string;
+  /** The comment box the key is in, by its caller's name for it. */
+  box?: string;
 }
 
 export interface FileTarget {
@@ -35,11 +40,16 @@ export interface FileTarget {
   file: string;
 }
 
-/** A file's header in a code view that shows one, on one side: where `]f` lands. */
+/**
+ * A file's header in a code view that shows one, on one side: where `]f` lands. With the comment
+ * box on the file a key is in.
+ */
 export interface HeaderTarget {
   kind: 'header';
   file: string;
   side: Side;
+  /** The comment box the key is in, by its caller's name for it. */
+  box?: string;
 }
 
 export interface ThreadTarget {
@@ -70,6 +80,12 @@ export interface RowTarget {
   row: string;
 }
 
+/** A comment box, by its caller's name for it: what its frame's buttons do. */
+export interface BoxTarget {
+  kind: 'box';
+  box: string;
+}
+
 /** Nothing in particular: the command acts on the window or the review. */
 export interface NoTarget {
   kind: 'none';
@@ -84,6 +100,7 @@ export type Target =
   | BlockTarget
   | TabTarget
   | RowTarget
+  | BoxTarget
   | NoTarget;
 
 export type TargetKind = Target['kind'];
@@ -101,6 +118,7 @@ export const targetKinds: readonly TargetKind[] = [
   'block',
   'tab',
   'row',
+  'box',
   'none',
 ];
 
@@ -109,7 +127,8 @@ export const NO_TARGET: NoTarget = { kind: 'none' };
 /**
  * `target` as one of `kinds`, which a command takes, or undefined if it's none of them. A target of
  * one of the kinds is taken as it is. Otherwise, in `kinds`' order: a line or a header gives its file, a line its
- * thread, and a command that takes `none` takes anything.
+ * thread, a line or a header in a comment box the box, and a command that takes `none` takes
+ * anything.
  */
 export function fit<K extends TargetKind>(
   kinds: readonly K[],
@@ -139,6 +158,10 @@ function derive(kind: TargetKind, target: Target): Target | undefined {
       return target.kind === 'line' && target.thread !== undefined
         ? { kind: 'thread', thread: target.thread }
         : undefined;
+    case 'box':
+      return (target.kind === 'line' || target.kind === 'header') && target.box !== undefined
+        ? { kind: 'box', box: target.box }
+        : undefined;
     case 'line':
     case 'header':
     case 'layer':
@@ -159,13 +182,16 @@ function derive(kind: TargetKind, target: Target): Target | undefined {
 export function plainTarget(target: Target): Target {
   switch (target.kind) {
     case 'line': {
-      const at = plainAt(target.at);
-      return target.thread === undefined
-        ? { kind: 'line', at }
-        : { kind: 'line', at, thread: target.thread };
+      const line: LineTarget = { kind: 'line', at: plainAt(target.at) };
+      if (target.thread !== undefined) line.thread = target.thread;
+      if (target.box !== undefined) line.box = target.box;
+      return line;
     }
-    case 'header':
-      return { kind: 'header', file: target.file, side: target.side };
+    case 'header': {
+      const header: HeaderTarget = { kind: 'header', file: target.file, side: target.side };
+      if (target.box !== undefined) header.box = target.box;
+      return header;
+    }
     case 'file':
       return { kind: 'file', file: target.file };
     case 'thread':
@@ -178,6 +204,8 @@ export function plainTarget(target: Target): Target {
       return { kind: 'tab', tab: target.tab };
     case 'row':
       return { kind: 'row', row: target.row };
+    case 'box':
+      return { kind: 'box', box: target.box };
     case 'none':
       return NO_TARGET;
     default:

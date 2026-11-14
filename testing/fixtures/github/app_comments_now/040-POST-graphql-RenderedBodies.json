@@ -1,0 +1,31 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "https://api.github.com/graphql",
+    "operation": "RenderedBodies",
+    "variables": {
+      "owner": "rozed-dev",
+      "name": "e2e",
+      "number": 94,
+      "description": false,
+      "ids": [
+        "PRRC_kwDOVleUfc8AAAABEGNJow",
+        "PRRC_kwDOVleUfc8AAAABEDzPIg",
+        "PRRC_kwDOVleUfc8AAAABEDy95g"
+      ]
+    },
+    "query_sha256": "285b3a71ef24563ae33870f157b845fcb0e9fc71ff54b6235fa3b18c95041504"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "x-ratelimit-limit": "5000",
+      "x-ratelimit-remaining": "4983",
+      "x-ratelimit-reset": "1794616605",
+      "x-ratelimit-resource": "graphql",
+      "x-ratelimit-used": "17"
+    },
+    "body_text": "{\"data\":{\"rateLimit\":{\"cost\":1,\"limit\":5000,\"remaining\":4983,\"used\":17,\"resetAt\":\"2026-11-14T00:36:45Z\"},\"repository\":{},\"nodes\":[{\"__typename\":\"PullRequestReviewComment\",\"id\":\"PRRC_kwDOVleUfc8AAAABEGNJow\",\"bodyHTML\":\"<p dir=\\\"auto\\\">Is two the right start?</p>\"},{\"__typename\":\"PullRequestReviewComment\",\"id\":\"PRRC_kwDOVleUfc8AAAABEDzPIg\",\"bodyHTML\":\"<p dir=\\\"auto\\\">Fixture C: Thirty seconds is longer than most callers wait for a job.</p>\"},{\"__typename\":\"PullRequestReviewComment\",\"id\":\"PRRC_kwDOVleUfc8AAAABEDy95g\",\"bodyHTML\":\"<p dir=\\\"auto\\\">Fixture C: The spread, as measured:</p>\\n<p dir=\\\"auto\\\"><a target=\\\"_blank\\\" rel=\\\"noopener noreferrer\\\" href=\\\"https://private-user-images.githubusercontent.com/353226052/699308503-08c730b3-f0b0-4c7d-93a2-95f8d167d0d9.png?jwt=REDACTED\"><img src=\\\"https://private-user-images.githubusercontent.com/353226052/699308503-08c730b3-f0b0-4c7d-93a2-95f8d167d0d9.png?jwt=REDACTED\" alt=\\\"two by two\\\" style=\\\"max-width: 100%;\\\"></a></p>\"}]}}"
+  }
+}

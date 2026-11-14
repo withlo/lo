@@ -778,6 +778,32 @@ description's, for the timeline and the diff's threads alike, with its `Post` co
   Markdown at once, and is asked for again. Main offers the same read to other features as
   `comments.bodies`.
 
+### Writing comments
+
+The `comments` feature writes review comments from the diff: `c` on a line, the lines `v` selected
+or a file's header, `C` to post right away, `s` for a suggestion, and `c` on a file in the tree.
+
+- The window opens a comment box through the diff (`writingDiff(tab).compose`) and draws its frame
+  (`window/Frame.tsx`); `window/boxes.ts` keeps each view's boxes, and `window/writing.ts` works out
+  where a comment goes, as plain functions tested alone. Main says which lines GitHub takes a
+  comment on (`comments.commentable`): from GitHub's patch at the latest head, or else the local
+  copy's from where the revision branched off.
+- Main keeps every box's text as a draft (`comments_drafts`), saved 300 ms after typing stops and at
+  once as the box closes or the window goes, by account, pull request and place, until GitHub takes
+  it. Drafts saved before Lo started, or before the window was loaded again, reopen, unfocused, once
+  their view's diff draws their line. A push moves a draft to the newer revision when its file
+  didn't change.
+- `comments.send` plans each write with `@lo/review`'s `YourReview` and sends it with the poller's
+  `sendReview`, one write to a pull request at a time, each planned from your pending review as read
+  after the last one's answer. The box's text is held, read-only, while it's sent. A refusal keeps
+  the draft and says why in the box. From the send until GitHub's answer, the draft is marked sent,
+  with when, in the database. When the answer is lost, the mark stays, a restart included, and the
+  draft can't be sent again until main's own read of the threads, made 10 s or more after it was
+  sent, settles it, even after a restart: found among your comments made since, by GitHub's clock,
+  the box closes; not found, or not read, the box says so. While the read can't be made, as offline,
+  it stays checking and main tries again. Text changed since it was sent stays as the draft. Nothing
+  is sent again by itself, and nothing is sent while GitHub can't be reached.
+
 ### Images from GitHub
 
 The window shows an image from outside Lo only as `<img src="lo-image://…">`, which main serves.

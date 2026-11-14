@@ -68,8 +68,10 @@ vi.mock('@lo/ui/code', () => ({
       counted.push(`${id} ${threads ? `${threads.unresolved} of ${threads.total}` : 'none'}`);
     },
     setThreads: (threads, _render, options) => {
-      const at = threads.map(({ id, at: { file, side, line } }) => `${id} ${file} ${side} ${line}`);
-      threadsTold.push(`${at.join(', ')}${options?.now ? ' now' : ''}`);
+      const described = threads.map(({ id, at }) =>
+        'line' in at ? `${id} ${at.file} ${at.side} ${at.line}` : `${id} ${at.file}`,
+      );
+      threadsTold.push(`${described.join(', ')}${options?.now ? ' now' : ''}`);
     },
     setMoves: () => undefined,
     loadFailed: (id) => void told.push(`failed ${id}`),

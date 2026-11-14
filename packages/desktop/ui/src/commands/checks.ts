@@ -279,6 +279,8 @@ function sampleTarget(kind: TargetKind): Target {
       return { kind, tab: 't' };
     case 'row':
       return { kind, row: 'r' };
+    case 'box':
+      return { kind, box: 'b' };
     case 'none':
       return NO_TARGET;
     default:
