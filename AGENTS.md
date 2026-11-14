@@ -897,9 +897,13 @@ builds and packs the checker, and publishes that version with npm's trusted publ
 no token and signs provenance. The skill runs the checker by that exact version, so CI's `overview`
 job fails a pull request whose package differs from npm's copy of its version, its manifest's
 `devDependencies`, `nx` and build scripts aside (the scripts an install runs count).
-`scripts/overview-npm.sh` packs the package the same way for both. Every bumped version is
-published: one that isn't above every release npm has, as when bumps merged close together publish
-out of order, goes out under the `previous` tag, so `latest` only moves forward.
+`scripts/overview-npm.sh` packs the package the same way for both. The workflow's runs go one at a
+time, in the order they started, so every bumped version is published, and bumps merged close
+together publish in order. A version that isn't above every release npm has, as when a failed run is
+re-run after a newer bump has published, or a prerelease, goes out under the `previous` tag, so
+`latest` only moves forward. A version can't carry build metadata (`1.2.3+build`): npm drops it when
+it publishes, so the version on npm wouldn't be the one the skill runs, and CI's `overview` job and
+the workflow both refuse it.
 
 Only main can publish. The publish job runs in the `npm` environment, and npm's trusted publisher
 for the package names that environment, so a branch's edited copy of the workflow can't publish as
