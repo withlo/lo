@@ -23,6 +23,7 @@ import {
   isObject,
   readCassette,
   recordedKey,
+  type Cassette,
   type CassetteInfo,
   type Interaction,
   type Json,
@@ -81,7 +82,7 @@ export async function rerecord(options: RerecordOptions): Promise<Map<string, nu
   const writes: { path: string; text: string }[] = [];
   const counts = new Map<string, number>();
   for (const { dir, files } of cassettes) {
-    const cassette = readCassette(dir);
+    const cassette = recordedCassette(dir);
     const recorded = cassette.interactions.filter(
       ({ file, interaction }) =>
         interaction.request.operation === operation && (files?.includes(file) ?? true),
@@ -148,7 +149,7 @@ export async function addAnswers(options: AddOptions): Promise<Map<string, numbe
   const writes: { path: string; text: string }[] = [];
   const counts = new Map<string, number>();
   for (const dir of dirs) {
-    const cassette = readCassette(dir);
+    const cassette = recordedCassette(dir);
     const held = new Set(
       cassette.interactions
         .filter(({ interaction }) => interaction.request.operation === operation)
@@ -217,7 +218,7 @@ export function copyAnswer({ from, dirs, at }: CopyOptions): void {
   const what = request.operation ?? `${request.method} ${request.url}`;
   const writes: { path: string; text: string }[] = [];
   for (const dir of dirs) {
-    const cassette = readCassette(dir);
+    const cassette = recordedCassette(dir);
     const key = recordedKey(request);
     if (cassette.interactions.some(({ interaction }) => recordedKey(interaction.request) === key)) {
       throw new Error(`${dir} holds ${what} already`);
@@ -281,4 +282,19 @@ export function readQuery(path: string): string {
   const text = readFileSync(path, 'utf8');
   queryOperation(text);
   return text;
+}
+
+/**
+ * The cassette in `dir`, to change in place: a recorded one. A derived one is written again from
+ * its recorded one instead (`testing/scripts/derive-answers.ts`).
+ */
+function recordedCassette(dir: string): Cassette {
+  const cassette = readCassette(dir);
+  const from = cassette.info.derived_from;
+  if (from !== undefined) {
+    throw new Error(
+      `${dir} is derived from ${from}: change ${from}, then run testing/scripts/derive-answers.ts`,
+    );
+  }
+  return cassette;
 }

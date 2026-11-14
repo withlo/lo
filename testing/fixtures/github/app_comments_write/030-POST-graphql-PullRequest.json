@@ -17,10 +17,10 @@
     "headers": {
       "content-type": "application/json; charset=utf-8",
       "x-ratelimit-limit": "5000",
-      "x-ratelimit-remaining": "4959",
-      "x-ratelimit-reset": "1794605193",
+      "x-ratelimit-remaining": "4966",
+      "x-ratelimit-reset": "1794621242",
       "x-ratelimit-resource": "graphql",
-      "x-ratelimit-used": "41"
+      "x-ratelimit-used": "34"
     },
     "body": {
       "data": {
@@ -32,7 +32,7 @@
             "url": "https://github.com/rozed-dev/e2e/pull/94",
             "state": "OPEN",
             "isDraft": false,
-            "updatedAt": "2026-11-13T18:59:53Z",
+            "updatedAt": "2026-11-13T23:39:22Z",
             "author": {
               "__typename": "User",
               "login": "rozed-bot",

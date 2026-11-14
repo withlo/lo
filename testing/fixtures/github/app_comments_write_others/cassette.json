@@ -1,0 +1,4 @@
+{
+  "description": "app_comments_write as if someone else had opened rozed-dev/e2e#94: every read of it names ghost as its author, so rozed-bot may approve it or request changes, which GitHub takes from no pull request's author. The pending review's submission is answered for each verdict as it was for a comment.",
+  "derived_from": "app_comments_write"
+}

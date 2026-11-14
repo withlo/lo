@@ -7,14 +7,14 @@
     "status": 200,
     "headers": {
       "content-type": "application/json; charset=utf-8",
-      "etag": "W/\"4a84984d15b72c92079ba2c2dd55dd8c5bb9162993ac19e3032975ff0b2e1d8b\"",
+      "etag": "W/\"7c6b133346ab88debb3d4386a53e8a9860a36f67c0316cd62595d9fdcdb6a8cd\"",
       "last-modified": "Sun, 08 Nov 2026 13:03:37 GMT",
       "x-github-api-version-selected": "2022-11-28",
       "x-ratelimit-limit": "5000",
-      "x-ratelimit-remaining": "4941",
-      "x-ratelimit-reset": "1794607921",
+      "x-ratelimit-remaining": "4960",
+      "x-ratelimit-reset": "1794621229",
       "x-ratelimit-resource": "core",
-      "x-ratelimit-used": "59"
+      "x-ratelimit-used": "40"
     },
     "body": {
       "id": 1448580221,
@@ -91,7 +91,7 @@
       "clone_url": "https://github.com/rozed-dev/e2e.git",
       "svn_url": "https://github.com/rozed-dev/e2e",
       "homepage": null,
-      "size": 1018,
+      "size": 1019,
       "stargazers_count": 0,
       "watchers_count": 0,
       "language": null,

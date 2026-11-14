@@ -4,7 +4,7 @@ import { expect, test } from 'vitest';
 import { openDatabase } from '../../../main/database.ts';
 import { migrate } from '../../../main/migrations.ts';
 import type { DraftPlaceRow } from '../contract.ts';
-import { DraftStore, placeJson } from './drafts.ts';
+import { DraftStore, placeJson, SUMMARY } from './drafts.ts';
 
 // The feature's migrations, named by their paths in the app, as main finds them.
 const migrations = Object.fromEntries(
@@ -106,4 +106,25 @@ test('drafts on an older revision move to the newer one where their file is the 
       [placeJson(on(R2, 'same.ts')), 'On the file'],
     ].toSorted(([a], [b]) => (a! < b! ? -1 : 1)),
   );
+});
+
+test('the summary is kept beside the threads’ drafts, its mark of a review sent too, a blank one’s included', () => {
+  const db = database();
+  const store = new DraftStore(db, () => 700);
+  store.save('rozed-bot', PULL, on(R1, 'a.ts', 4), 'A line');
+  expect(store.save('rozed-bot', PULL, SUMMARY, 'Looks good')).toBe(true);
+  // The threads' drafts are only the threads'.
+  expect(store.of('rozed-bot', PULL).map(({ text }) => text)).toEqual(['A line']);
+  expect(store.get('rozed-bot', PULL, SUMMARY)).toMatchObject({ text: 'Looks good', sent: null });
+  // A review sent with no summary keeps a blank one, marked, so the mark outlasts a restart.
+  store.take('rozed-bot', PULL, SUMMARY);
+  store.markSent('rozed-bot', PULL, SUMMARY, 'Ignored', 800);
+  expect(store.get('rozed-bot', PULL, SUMMARY)).toBeUndefined();
+  store.markSent('rozed-bot', PULL, SUMMARY, '', 800, true);
+  const again = new DraftStore(db);
+  expect(again.markedSummaries()).toMatchObject([
+    { account: 'rozed-bot', kept: { place: SUMMARY, text: '', sent: '', sentAt: 800 } },
+  ]);
+  expect(again.marked()).toEqual([]);
+  expect(again.of('rozed-bot', PULL).map(({ text }) => text)).toEqual(['A line']);
 });

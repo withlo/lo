@@ -43,7 +43,11 @@ const declared = defineCommands(
   { scopes: ['tree'] },
 );
 
-function registry(system: 'mac' | 'linux' = 'mac', disabled: readonly string[] = []) {
+function registry(
+  system: 'mac' | 'linux' = 'mac',
+  disabled: readonly string[] = [],
+  queued?: number,
+) {
   return new Registry({
     system,
     commands: handlers(declared, {
@@ -53,7 +57,11 @@ function registry(system: 'mac' | 'linux' = 'mac', disabled: readonly string[] =
       open: run,
       quit: run,
       escape: run,
-      merge: { run() {}, enabled: () => (disabled.includes('merge') ? 'Nothing to merge.' : true) },
+      merge: {
+        run() {},
+        enabled: () => (disabled.includes('merge') ? 'Nothing to merge.' : true),
+        detail: () => (queued === undefined ? undefined : `${queued} queued`),
+      },
     }),
   });
 }
@@ -180,6 +188,17 @@ describe('the palette', () => {
       keys: ['Ctrl+Shift+P'],
       shortcut: 'Control+Shift+P',
     });
+  });
+
+  it('says after a label what its handler says of it now, which the query matches too', () => {
+    const label = (queued?: number) =>
+      paletteItems(registry('mac', [], queued), 'window', NO_TARGET).find(
+        (item) => item.id === 'diff.merge',
+      )?.label;
+    expect(label()).toBe('Merge');
+    expect(label(3)).toBe('Merge · 3 queued');
+    const items = paletteItems(registry('mac', [], 3), 'window', NO_TARGET);
+    expect(filterPalette(items, 'queued').map(({ item }) => item.id)).toEqual(['diff.merge']);
   });
 
   it('gives each command’s key as aria-keyshortcuts too, for one key or a chord only', () => {

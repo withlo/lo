@@ -15,23 +15,23 @@
     "headers": {
       "content-type": "application/json; charset=utf-8",
       "x-ratelimit-limit": "5000",
-      "x-ratelimit-remaining": "4957",
-      "x-ratelimit-reset": "1794605193",
+      "x-ratelimit-remaining": "4967",
+      "x-ratelimit-reset": "1794621239",
       "x-ratelimit-resource": "graphql",
-      "x-ratelimit-used": "43"
+      "x-ratelimit-used": "33"
     },
     "body": {
       "data": {
         "rateLimit": {
           "cost": 1,
           "limit": 5000,
-          "remaining": 4957,
-          "used": 43,
-          "resetAt": "2026-11-13T21:26:33Z"
+          "remaining": 4967,
+          "used": 33,
+          "resetAt": "2026-11-14T01:53:59Z"
         },
         "repository": {
           "pullRequest": {
-            "updatedAt": "2026-11-13T18:59:53Z",
+            "updatedAt": "2026-11-14T01:04:21Z",
             "state": "OPEN",
             "isDraft": false,
             "baseRefName": "comments/base",
@@ -43,8 +43,8 @@
             "checkCounts": null,
             "mergeQueueEntry": null,
             "timelineItems": {
-              "updatedAt": "2026-11-13T21:16:49Z",
-              "totalCount": 21
+              "updatedAt": "2026-11-14T01:04:21Z",
+              "totalCount": 23
             },
             "revisionEvents": {
               "filteredCount": 0
@@ -56,7 +56,7 @@
               "totalCount": 17
             },
             "submittedReviews": {
-              "totalCount": 16
+              "totalCount": 17
             },
             "reviewThreads": {
               "totalCount": 12,
@@ -136,14 +136,7 @@
               ]
             },
             "viewerPendingReview": {
-              "nodes": [
-                {
-                  "viewerDidAuthor": true,
-                  "comments": {
-                    "totalCount": 1
-                  }
-                }
-              ]
+              "nodes": []
             },
             "comments": {
               "totalCount": 1
@@ -151,8 +144,8 @@
             "changedFiles": 4,
             "lastEditedAt": null,
             "timelineEvents": {
-              "filteredCount": 17,
-              "updatedAt": "2026-11-13T21:16:49Z"
+              "filteredCount": 19,
+              "updatedAt": "2026-11-14T01:04:21Z"
             }
           }
         }
