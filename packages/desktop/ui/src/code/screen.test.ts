@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { EditorState, Text } from '@codemirror/state';
-import { type BlockInfo, BlockType, Decoration, EditorView } from '@codemirror/view';
+import { BlockInfo, BlockType, Decoration, EditorView } from '@codemirror/view';
 import { getCM, vim, Vim } from '@replit/codemirror-vim';
 import { afterEach, beforeAll, beforeEach, describe, expect, test, vi } from 'vitest';
 
@@ -298,5 +298,46 @@ describe('with only a spacer on the focused side’s screen', () => {
     expect(top()).toBe(0);
     expect(diff.box.scrollTop - scroll).toBe(start);
     expect(lineOf(diff.new)).toBe(41);
+  });
+});
+
+describe('bringing the cursor into view', () => {
+  test('on a line that wraps, the cursor’s row is read without asking the editor as it updates', () => {
+    // A frame is asked for, and reading the layout then measures at once, as the frame would.
+    vi.spyOn(window, 'requestAnimationFrame').mockReturnValue(1);
+    const box = document.createElement('div');
+    box.style.overflowY = 'auto';
+    document.body.append(box);
+    opened.boxes.push(box);
+    const errors: unknown[] = [];
+    const view = new EditorView({
+      parent: box,
+      state: EditorState.create({
+        doc: Text.of(['  wraps'.repeat(60), '  short']),
+        extensions: [
+          leaveOnScreen,
+          EditorView.lineWrapping,
+          EditorView.exceptionSink.of((error) => errors.push(error)),
+        ],
+      }),
+    });
+    opened.views.push(view);
+    Object.defineProperty(view.scrollDOM, 'clientHeight', { value: screenHeight });
+    // jsdom measures every line as nothing tall: the first wraps onto five rows.
+    const lineBlockAt: unknown = Reflect.get(EditorView.prototype, 'lineBlockAt');
+    vi.spyOn(EditorView.prototype, 'lineBlockAt').mockImplementation(function (
+      this: EditorView,
+      pos: number,
+    ) {
+      const block: unknown =
+        typeof lineBlockAt === 'function' ? Reflect.apply(lineBlockAt, this, [pos]) : undefined;
+      if (!(block instanceof BlockInfo)) throw new Error('The editor has no line there.');
+      const tall: unknown = Object.create(block, { height: { value: 5 * lineHeight } });
+      if (!(tall instanceof BlockInfo)) throw new Error('The line could not be made taller.');
+      return tall;
+    });
+    view.dispatch({ selection: { anchor: 200 }, scrollIntoView: true });
+    view.coordsAtPos(0);
+    expect(errors).toEqual([]);
   });
 });
