@@ -1,6 +1,7 @@
 // The registry: the window's commands, the keys bound to them (the defaults, with the keymap file's
 // lines over them), the pending sequence, and each tab's history. Keys reach it through the
-// listener; the palette, menus and the app menu run commands through `run`.
+// listener; the palette, menus and the app menu run commands through `run`. The keys it holds are
+// shown in the status bar, as Vim shows a command it's waiting on the rest of.
 
 import type { Command, Handler } from './declare.ts';
 import { History, type Entry } from './history.ts';
@@ -14,7 +15,7 @@ import {
   type Focus,
   type Pending,
 } from './match.ts';
-import { vimKey, vimKeys, type Stroke, type System } from './notation.ts';
+import { keyLabels, vimKey, vimKeys, type Stroke, type System } from './notation.ts';
 import {
   isKeySource,
   scopeTarget,
@@ -32,7 +33,7 @@ export interface RegistryOptions {
   readonly commands: readonly Command[];
   /** Where the tab is now: the place a `jump` command records before it runs. */
   readonly here?: () => Entry | undefined;
-  /** How long a held key waits for the rest of its sequence, in ms. */
+  /** How long a held key waits for the rest of its sequence outside a code view, in ms. */
   readonly timeout?: number;
   /** A clock in ms, for timing sequences. */
   readonly now?: () => number;
@@ -95,6 +96,9 @@ export class Registry {
   /** The code view the last key was pressed in, whose Vim a tab switch leaves. */
   private active: KeySource | undefined;
   private timer: ReturnType<typeof setTimeout> | undefined;
+  /** The keys held, as the status bar shows them, and who's told when they change. */
+  private held = '';
+  private readonly heldListeners = new Set<() => void>();
 
   constructor(options: RegistryOptions) {
     this.system = options.system;
@@ -205,12 +209,12 @@ export class Registry {
   }
 
   /**
-   * Runs `id` on `target`, as a key, a menu or the palette asks: `true`, or why it didn't. A
-   * `jump` command records where the tab is in its history first. A command that can't run is
-   * reported to `onRefused`, and a handler that throws or rejects to `onError`, never thrown to
-   * the caller.
+   * Runs `id` on `target`, as a key, a menu or the palette asks, with the `count` typed before its
+   * keys for a command that takes one: `true`, or why it didn't. A `jump` command records where the tab is in its
+   * history first. A command that can't run is reported to `onRefused`, and a handler that throws
+   * or rejects to `onError`, never thrown to the caller.
    */
-  run(id: string, target: Target): true | string {
+  run(id: string, target: Target, count?: number): true | string {
     const ready = this.prepare(id, target);
     if (typeof ready === 'string') {
       this.onRefused?.(ready, id);
@@ -222,7 +226,7 @@ export class Registry {
       if (from) this.history.record(from);
     }
     try {
-      const result = handler.run(ready.target);
+      const result = handler.run(ready.target, command.count === undefined ? undefined : count);
       if (result !== undefined) {
         result.catch((error: unknown) => {
           this.onError(error, command);
@@ -253,19 +257,24 @@ export class Registry {
         return { scope: place.scope.name, text: true, view: { mode: 'insert', pending: true } };
       }
     };
-    let step = matchAny(this.bindings, this.pending, { ...press, time }, focus());
+    let seen = focus();
+    let step = matchAny(this.bindings, this.pending, { ...press, time }, seen);
     if (step?.outcome.kind === 'replay') {
       this.replay(step.outcome.strokes);
       // Vim has the held keys now, and may be in the middle of a command.
-      step = matchAny(this.bindings, undefined, { ...press, time }, focus());
+      seen = focus();
+      step = matchAny(this.bindings, undefined, { ...press, time }, seen);
     }
     if (!step) return broken ? STOP : PASS;
     this.pending = step.pending;
+    this.tellHeld(seen.view?.count);
     const { outcome } = step;
     switch (outcome.kind) {
       case 'hold':
         this.holder = place.scope.source;
-        this.arm();
+        // In a code view held keys wait for the next however long it takes, as Vim's own do.
+        if (isKeySource(source)) this.disarm();
+        else this.arm();
         return STOP;
       case 'stop':
         this.settle();
@@ -282,7 +291,9 @@ export class Registry {
             this.onError(error, outcome.command);
           }
         }
-        this.run(outcome.command.id, target);
+        // A count Vim held is the command's now, and Vim drops it.
+        if (outcome.count !== undefined && isKeySource(source)) this.clear(source);
+        this.run(outcome.command.id, target, outcome.count);
         return STOP;
       }
       case 'arrow':
@@ -305,6 +316,7 @@ export class Registry {
     this.pending = undefined;
     this.holder = undefined;
     this.disarm();
+    this.tellHeld();
   }
 
   /**
@@ -315,8 +327,13 @@ export class Registry {
     this.drop();
     if (!isKeySource(left)) return;
     if (left === this.active) this.active = undefined;
+    this.clear(left);
+  }
+
+  /** Drops whatever `view` has Vim waiting on. */
+  private clear(view: KeySource): void {
     try {
-      left.clearPending();
+      view.clearPending();
     } catch (error) {
       this.onError(error, undefined);
     }
@@ -336,14 +353,41 @@ export class Registry {
     return this.pending !== undefined;
   }
 
+  /**
+   * The keys held for a command still to come, as the status bar shows them, after the count typed
+   * before them, Vim's in a code view: `g`, `2y`, `3`. Empty while none are.
+   */
+  heldKeys(): string {
+    return this.held;
+  }
+
+  /** Calls `listener` each time {@link heldKeys} changes. Returns a function that stops it. */
+  onHeldKeys(listener: () => void): () => void {
+    this.heldListeners.add(listener);
+    return () => {
+      this.heldListeners.delete(listener);
+    };
+  }
+
+  /** Says the keys held now, after `count`, Vim's, if the pending keys have none of their own. */
+  private tellHeld(count?: number): void {
+    const { pending } = this;
+    const held = pending
+      ? `${pending.count ?? count ?? ''}${keyLabels(pending.strokes, this.system).join('')}`
+      : '';
+    if (held === this.held) return;
+    this.held = held;
+    for (const listener of this.heldListeners) listener();
+  }
+
   private focus(place: KeyPlace): Focus {
     const { source, name } = place.scope;
     if (isKeySource(source)) {
       // A field inside a code view, such as Vim's prompt, is typed into as insert mode is.
       if (place.text === 'field')
         return { scope: name, text: true, view: { mode: 'insert', pending: false } };
-      const { mode, pending } = source.keyState();
-      return { scope: name, text: false, view: { mode, pending } };
+      const { mode, pending, count } = source.keyState();
+      return { scope: name, text: false, view: { mode, pending, count } };
     }
     return { scope: name, text: place.text !== undefined };
   }
@@ -360,7 +404,7 @@ export class Registry {
     }
   }
 
-  /** After the timeout, the held keys go to the code view, as Vim's do after its `timeoutlen`. */
+  /** After the timeout, held keys outside a code view are dropped. */
   private arm(): void {
     this.disarm();
     this.timer = setTimeout(() => {

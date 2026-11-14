@@ -308,6 +308,23 @@ test('answers its keys: files, changes, sides, layout, whitespace and folds, Esc
   await focusDiff(page);
   const clipboard = () => app.evaluate(({ clipboard: board }) => board.readText());
 
+  await test.step('Vim’s mode, in the status bar while the diff has focus, and a key held', async () => {
+    const status = page.locator('footer[aria-label="Status"]');
+    await expect(status).toContainText('NORMAL');
+    const held = status.locator('[title="Keys typed so far"]');
+    await press(page, 'g');
+    await expect(held).toHaveText('g');
+    await press(page, 'Escape');
+    await expect(held).toHaveCount(0);
+    await press(page, 'Shift+V');
+    await expect(status).toContainText('V-LINE');
+    await press(page, 'Escape');
+    await expect(status).toContainText('NORMAL');
+    await page.locator('[role="tree"][data-lo-scope="tree"]').focus();
+    await expect(status).not.toContainText('NORMAL');
+    await focusDiff(page);
+  });
+
   await test.step('files, changes, sides, layout, whitespace and folds', async () => {
     await press(page, ']', 'f');
     await expect.poll(async () => (await cursor(page))?.path).toBe('data/numbers.txt');
@@ -417,6 +434,16 @@ test('answers its keys: files, changes, sides, layout, whitespace and folds, Esc
       await expect
         .poll(clipboard)
         .toBe('/** `text` broken into lines of at most `width` characters, at spaces. */');
+      // A count copies that many, as Vim's `2yy` yanks two.
+      await press(page, '2', 'y', 'y');
+      await expect
+        .poll(clipboard)
+        .toBe(
+          [
+            '/** `text` broken into lines of at most `width` characters, at spaces. */',
+            'export function wrap(text: string, width: number): string[] {',
+          ].join('\n'),
+        );
     });
   }
 });
@@ -744,9 +771,9 @@ test.describe('without git', () => {
 });
 
 test.describe('when the tree has the changed files after the diff does', () => {
-  // Long enough for the tree to come well after the diff: the diff's first draw waits up to a
-  // second for the review threads, whose read waits behind the tree's in the account's queue.
-  test.use({ cassette: 'app_e2e_late', lateRemote: true, slowTree: 3000 });
+  // The diff's first draw waits for the review threads, whose first read goes ahead of the tree's
+  // in the account's queue, so the tree comes well after the diff.
+  test.use({ cassette: 'app_e2e_late', lateRemote: true, slowTree: 1500 });
 
   test('draws one view, in the panel’s order, from the tab’s opening to the local copy’s', async ({
     app,

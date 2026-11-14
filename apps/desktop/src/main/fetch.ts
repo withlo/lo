@@ -66,9 +66,10 @@ export class AnswerTooLarge extends Error {
  * whole answer before resolving. A request given up through its signal is cancelled, and fails
  * with the signal's reason. One whose `init` is a {@link FetchInit} with an `uploadProgress` reports
  * how much of its body has gone every {@link UPLOAD_PROGRESS_EVERY} ms while that changes, and once
- * more as the answer starts. With a `limit`, an answer whose body says it's longer, or turns out to
- * be, is cancelled as soon as it does, and fails with {@link AnswerTooLarge}, so no more than that
- * is ever kept.
+ * more as the answer starts, and one with an `answerBegan` hears as the answer starts, before its
+ * body comes. With a `limit`, an answer whose body says it's longer, or turns out to be, is
+ * cancelled as soon as it does, and fails with {@link AnswerTooLarge}, so no more than that is ever
+ * kept.
  */
 export function netFetch(
   request: (options: ClientRequestConstructorOptions) => NetRequest,
@@ -78,6 +79,7 @@ export function netFetch(
   return async (input, init?: FetchInit) => {
     const asked = new Request(input, init);
     const uploadProgress = init?.uploadProgress;
+    const answerBegan = init?.answerBegan;
     const { signal } = asked;
     signal.throwIfAborted();
     const body = asked.body === null ? undefined : Buffer.from(await asked.arrayBuffer());
@@ -140,6 +142,11 @@ export function netFetch(
         // The body has gone: what's left to hear of it, once.
         progress?.report();
         progress?.stop();
+        try {
+          answerBegan?.();
+        } catch {
+          // Whoever listens can't stop the request.
+        }
         const chunks: Buffer[] = [];
         let received = 0;
         if (Number(headersOf(answer.headers).get('content-length') ?? 0) > limit) {

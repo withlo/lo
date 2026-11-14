@@ -19,8 +19,8 @@ const tables: Record<System, Bindings> = {
   linux: new Bindings('linux', declaredBindings(testCommands(), 'linux')),
 };
 
-function view(scope: string, mode: Mode = 'normal', pending = false): Focus {
-  return { scope, text: false, view: { mode, pending } };
+function view(scope: string, mode: Mode = 'normal', pending = false, count?: number): Focus {
+  return { scope, text: false, view: { mode, pending, count } };
 }
 const diff = view('diff');
 const tree: Focus = { scope: 'tree', text: false };
@@ -29,9 +29,9 @@ const anywhere: Focus = { scope: 'window', text: false };
 function said(outcome: Outcome): string {
   switch (outcome.kind) {
     case 'run':
-      return `run ${outcome.command.id}`;
+      return `run ${outcome.command.id}${outcome.count === undefined ? '' : ` ×${outcome.count}`}`;
     case 'replay':
-      return `replay ${vimKeys(outcome.strokes)}`;
+      return outcome.strokes.length === 0 ? 'replay' : `replay ${vimKeys(outcome.strokes)}`;
     case 'arrow':
       return outcome.key;
     case 'pass':
@@ -45,6 +45,8 @@ function said(outcome: Outcome): string {
 
 interface Typing {
   readonly system?: System;
+  /** The bindings to match with, in place of the test commands'. */
+  readonly bindings?: Bindings;
   /** When each key is pressed, in ms; by default 10 ms apart. */
   readonly times?: readonly number[];
   readonly repeat?: readonly boolean[];
@@ -64,7 +66,7 @@ function type(
   typing: Typing = {},
 ): { said: string[]; pending: Pending | undefined } {
   const system = typing.system ?? 'mac';
-  const bindings = tables[system];
+  const bindings = typing.bindings ?? tables[system];
   let pending = typing.pending;
   const outcomes: string[] = [];
   keys.forEach((text, index) => {
@@ -133,15 +135,23 @@ describe('sequences', () => {
     expect(type(['esc', 'esc'], view('box')).said).toEqual(['hold', 'run review.close']);
   });
 
-  test('after a second, the held key goes back to the view, as Vim’s timeoutlen does', () => {
-    expect(type(['y', 'l'], diff, { times: [0, SEQUENCE_TIMEOUT - 1] }).said).toEqual([
+  test('in a code view the held key waits for the next however long, as Vim’s own `y` does', () => {
+    expect(type(['y', 'l'], diff, { times: [0, SEQUENCE_TIMEOUT * 10] }).said).toEqual([
       'hold',
       'run diff.copyLink',
     ]);
-    expect(type(['y', 'l'], diff, { times: [0, SEQUENCE_TIMEOUT] }).said).toEqual([
+    // What doesn't go on with it still goes to Vim after it.
+    expect(type(['y', 'w'], diff, { times: [0, SEQUENCE_TIMEOUT * 10] }).said).toEqual([
       'hold',
       'replay y',
       'pass',
+    ]);
+  });
+
+  test('anywhere else it waits a second', () => {
+    expect(type(['z', 'R'], tree, { times: [0, SEQUENCE_TIMEOUT - 1] }).said).toEqual([
+      'hold',
+      'run tree.openAll',
     ]);
     // Measured from the last key held.
     expect(type(['z', 'R'], tree, { times: [0, SEQUENCE_TIMEOUT + 5] }).said).toEqual([
@@ -362,5 +372,159 @@ describe('repeats', () => {
       type([']', 'b', 'b'], { scope: 'overview', text: false }, { repeat: [false, false, true] })
         .said,
     ).toEqual(['hold', 'run overview.nextBlock', 'pass']);
+  });
+});
+
+describe('counts', () => {
+  const counting = defineCommands(
+    'counted',
+    {
+      markViewed: {
+        label: 'Mark viewed',
+        group: 'Act',
+        keys: ['e'],
+        overVim: true,
+        count: 'files',
+        when: { scope: ['diff', 'tree'], mode: 'normal' },
+      },
+      copyLines: {
+        label: 'Copy the lines',
+        group: 'Copy and open',
+        keys: ['y y'],
+        overVim: true,
+        count: 'lines',
+        when: { scope: ['diff', 'file'], mode: ['normal', 'visual'] },
+      },
+      copyLink: {
+        label: 'Copy the line’s link',
+        group: 'Copy and open',
+        keys: ['y l'],
+        overVim: true,
+        when: { scope: ['diff', 'file'], mode: 'normal' },
+      },
+      inline: {
+        label: 'Inline or side by side',
+        group: 'Diff view',
+        keys: ['g i'],
+        overVim: true,
+        when: { scope: 'diff', mode: 'normal' },
+      },
+      nextLayer: {
+        label: 'Next layer',
+        group: 'Jump',
+        keys: ['] s'],
+        count: 'layers',
+        when: { except: ['box'], mode: 'normal' },
+      },
+      down: {
+        label: 'Next row of the tree',
+        group: 'Files',
+        keys: ['j'],
+        repeat: true,
+        count: 'rows',
+        when: { scope: 'tree' },
+      },
+      mode: { label: 'Tree or review order', group: 'Files', keys: ['t'], when: { scope: 'tree' } },
+      openAll: { label: 'Open all', group: 'Files', keys: ['z R'], when: { scope: 'tree' } },
+      middle: { label: 'Back to the middle view', group: 'Panels', keys: ['esc'] },
+      palette: { label: 'Every action', group: 'Find', keys: ['cmd+shift+p'] },
+    },
+    { scopes: ['tree'] },
+  );
+  const bindings = new Bindings('mac', declaredBindings(commandsOf(counting), 'mac'));
+  /** The diff with `3` typed: Vim holds the count. */
+  const three = view('diff', 'normal', true, 3);
+  /** The diff once Vim has an operator too. */
+  const operator = view('diff', 'normal', true);
+
+  test('in a code view the count is Vim’s, and a command that takes one takes it', () => {
+    expect(type(['e'], three, { bindings }).said).toEqual(['run counted.markViewed ×3']);
+    expect(type(['y', 'y'], three, { bindings }).said).toEqual([
+      'hold',
+      'run counted.copyLines ×3',
+    ]);
+    expect(type([']', 's'], three, { bindings }).said).toEqual([
+      'hold',
+      'run counted.nextLayer ×3',
+    ]);
+    // Without one, they run once.
+    expect(type(['e'], diff, { bindings }).said).toEqual(['run counted.markViewed']);
+  });
+
+  test('in a code view a count goes on to Vim with any other key', () => {
+    // `3yl` is Vim's: the held `y` goes back, and `l` after it.
+    expect(type(['y', 'l'], three, { bindings, afterReplay: operator }).said).toEqual([
+      'hold',
+      'replay y',
+      'pass',
+    ]);
+    expect(type(['g'], three, { bindings }).said).toEqual(['pass']);
+    // In visual mode a count is Vim's, to move the selection's end.
+    expect(type(['e'], view('diff', 'visual', true, 3), { bindings }).said).toEqual(['pass']);
+    // After an operator, the count isn't all Vim holds.
+    expect(type(['e'], operator, { bindings }).said).toEqual(['pass']);
+    // Chords are Lo's, and the count stays Vim's.
+    expect(type(['cmd+shift+p'], three, { bindings }).said).toEqual(['run counted.palette']);
+  });
+
+  test('elsewhere digits are held as a count where the scope has a command that takes one', () => {
+    expect(type(['3', 'j'], tree, { bindings })).toEqual({
+      said: ['hold', 'run counted.down ×3'],
+      pending: undefined,
+    });
+    expect(type(['1', '2', 'j'], tree, { bindings }).said).toEqual([
+      'hold',
+      'hold',
+      'run counted.down ×12',
+    ]);
+    expect(type(['1', '0', 'e'], tree, { bindings }).said).toEqual([
+      'hold',
+      'hold',
+      'run counted.markViewed ×10',
+    ]);
+    // A command for anywhere that takes one takes it there.
+    expect(type(['2', ']', 's'], tree, { bindings }).said).toEqual([
+      'hold',
+      'hold',
+      'run counted.nextLayer ×2',
+    ]);
+    // `0` starts none, as in Vim.
+    expect(type(['0'], tree, { bindings }).said).toEqual(['pass']);
+  });
+
+  test('a count before a command that takes none is dropped, and the command runs once', () => {
+    expect(type(['3', 't'], tree, { bindings }).said).toEqual(['hold', 'run counted.mode']);
+    expect(type(['3', 'z', 'R'], tree, { bindings }).said).toEqual([
+      'hold',
+      'hold',
+      'run counted.openAll',
+    ]);
+    // Esc drops it, and does nothing else: alone, it's a command of its own.
+    expect(type(['3', 'esc', 'j'], tree, { bindings }).said).toEqual([
+      'hold',
+      'stop',
+      'run counted.down',
+    ]);
+    expect(type(['esc'], tree, { bindings }).said).toEqual(['run counted.middle']);
+    expect(type(['z', 'esc'], tree, { bindings }).said).toEqual(['hold', 'stop']);
+  });
+
+  test('a count waits as a held key does, and only where a command of the scope’s takes one', () => {
+    expect(type(['3', 'j'], tree, { bindings, times: [0, SEQUENCE_TIMEOUT + 1] }).said).toEqual([
+      'hold',
+      'replay',
+      'run counted.down',
+    ]);
+    // Nothing of its own takes one in the window: `]s` there is for anywhere.
+    expect(type(['3'], anywhere, { bindings }).said).toEqual(['pass']);
+    expect(type(['3'], { scope: 'tree', text: true }, { bindings }).said).toEqual(['pass']);
+  });
+
+  test('a held digit counts once', () => {
+    expect(type(['3', '3', 'j'], tree, { bindings, repeat: [false, true, false] }).said).toEqual([
+      'hold',
+      'stop',
+      'run counted.down ×3',
+    ]);
   });
 });

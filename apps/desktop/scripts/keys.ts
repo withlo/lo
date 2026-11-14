@@ -148,11 +148,43 @@ function scopeSection(features: readonly Declarations[]): string[] {
     '',
     ...table(['Scope', 'What it is'], rows),
     '',
-    "In a code view, keys follow Vim's mode. In insert mode, and while Vim waits for the rest of a command (after a count or an operator), only chords are Lo's, and other keys go to Vim. In a text field, typing and moving through the text are the field's.",
+    "In a code view, keys follow Vim's mode. In insert mode, and while Vim waits for the rest of a command (after a count or an operator), only chords are Lo's, and other keys go to Vim, but for the keys of Lo's commands that take a count, after a count alone in normal mode (see [Counts](#counts)). In a text field, typing and moving through the text are the field's.",
     '',
-    `A key that starts one of Lo's sequences waits up to ${seconds} s for the rest. In a code view, a waiting key that isn't completed goes on to Vim: with the next key, when that doesn't go on with it, so \`y w\` still yanks a word, or alone once the time is up. Anywhere else it's dropped, and the next key counts on its own. A chord Lo runs drops the waiting key, as do \`Esc\`, focus leaving, a click and a tab switch.`,
+    `A key that starts one of Lo's sequences waits for the rest. In a code view it waits however long it takes, as Vim's own \`y\` and \`g\` do, and a key that doesn't go on with it goes to Vim after it, so \`y w\` still yanks a word. Anywhere else it waits up to ${seconds} s, and if the rest doesn't come it's dropped, and the next key counts on its own. A chord Lo runs drops the waiting key, as do \`Esc\`, focus leaving, a click and a tab switch. The status bar shows the keys waiting, after any count, as Vim shows a command it's waiting on the rest of.`,
     '',
     "`Tab` doesn't move focus out of a scope; only dialogs and forms keep the browser's `Tab`.",
+    '',
+  ];
+}
+
+/** The commands that take a count, and what one counts. */
+function countSection(commands: readonly Command[]): string[] {
+  const counting = commands.filter(
+    (command) => command.count !== undefined && systemsOf(command).includes('mac'),
+  );
+  if (counting.length === 0) return [];
+  const rows = counting.map((command) => [
+    command.label,
+    command.keys
+      .map(specOf)
+      .filter(({ on }) => on !== 'linux')
+      .map(({ keys }) => code(form(keys, 'mac')))
+      .join(', '),
+    command.count ?? '',
+    where(command),
+    code(command.id),
+  ]);
+  const views = new Set<string>(codeScopes);
+  const named = new Set(counting.flatMap((command) => listOf(command.when?.scope)));
+  const scopes = [...named].filter((scope) => !views.has(scope));
+  return [
+    '## Counts',
+    '',
+    'Digits typed just before a key are a count, as in Vim, for the commands that take one: `3 e` marks three files viewed, and `1 e` one, where `e` alone clears a mark. Before any other key a count is dropped, and the key runs once; in a code view it goes on to Vim with the key, so `3 j` still moves three lines. `Esc` drops a count and does nothing else.',
+    '',
+    ...table(['Action', 'Keys', 'Counts', 'Where', 'Command'], rows),
+    '',
+    `In a code view the count is Vim's until one of these keys takes it, in normal mode only.${scopes.length > 0 ? ` Elsewhere digits are a count only in ${listed(scopes.map(code))}, where a command of the scope's own takes one, and a count waits for its key as a sequence's first key does.` : ''}`,
     '',
   ];
 }
@@ -334,6 +366,7 @@ export function keysDoc(features: readonly Declarations[], vim: VimKeys = vimDef
     '',
     ...groupSections(commands),
     ...scopeSection(features),
+    ...countSection(commands),
     ...systemSection(commands),
     ...vimSection(commands, vim),
     ...keymapSection(commands),

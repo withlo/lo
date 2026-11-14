@@ -123,19 +123,24 @@ Each command's id is what [the keymap file](#the-keymap-file) binds keys to.
 
 ## Files
 
-| Action                                 | Keys     | Where                                                                                                   | Command            |
-| -------------------------------------- | -------- | ------------------------------------------------------------------------------------------------------- | ------------------ |
-| Go to the stack, or the file on screen | `-`      | In `tree`                                                                                               | `stacks.focus`     |
-| Go to the file tree                    | `-`      | Anywhere but `menu`, `dialog`, `palette`, `box`, `tree` and `stack`; in code views, only in normal mode | `tree.focus`       |
-| Tree or review order                   | `t`      | In `tree`                                                                                               | `tree.mode`        |
-| Changed files only                     | `f`      | In `tree`                                                                                               | `tree.changedOnly` |
-| Next row of the tree                   | `j`, `↓` | In `tree`                                                                                               | `tree.down`        |
-| Previous row of the tree               | `k`, `↑` | In `tree`                                                                                               | `tree.up`          |
-| Open the folder                        | `l`, `→` | In `tree`                                                                                               | `tree.open`        |
-| Close the folder                       | `h`, `←` | In `tree`                                                                                               | `tree.close`       |
-| Open every folder                      | `z R`    | In `tree`                                                                                               | `tree.openAll`     |
-| Close every folder                     | `z M`    | In `tree`                                                                                               | `tree.closeAll`    |
-| Show the file                          | `⏎`      | In `tree`                                                                                               | `tree.show`        |
+| Action                                 | Keys          | Where                                                                                                   | Command            |
+| -------------------------------------- | ------------- | ------------------------------------------------------------------------------------------------------- | ------------------ |
+| Go to the stack, or the file on screen | `-`           | In `tree`                                                                                               | `stacks.focus`     |
+| Go to the file tree                    | `+`           | In `stack`                                                                                              | `stacks.files`     |
+| Go to the file tree                    | `-`           | Anywhere but `menu`, `dialog`, `palette`, `box`, `tree` and `stack`; in code views, only in normal mode | `tree.focus`       |
+| Tree or review order                   | `t`           | In `tree`                                                                                               | `tree.mode`        |
+| Changed files only                     | `f`           | In `tree`                                                                                               | `tree.changedOnly` |
+| Next row of the tree                   | `j`, `↓`      | In `tree`                                                                                               | `tree.down`        |
+| Previous row of the tree               | `k`, `↑`      | In `tree`                                                                                               | `tree.up`          |
+| First row of the tree                  | `g g`, `Home` | In `tree`                                                                                               | `tree.top`         |
+| Last row of the tree                   | `G`, `End`    | In `tree`                                                                                               | `tree.bottom`      |
+| Page down the tree                     | `PgDn`        | In `tree`                                                                                               | `tree.pageDown`    |
+| Page up the tree                       | `PgUp`        | In `tree`                                                                                               | `tree.pageUp`      |
+| Open the folder                        | `l`, `→`      | In `tree`                                                                                               | `tree.open`        |
+| Close the folder                       | `h`, `←`      | In `tree`                                                                                               | `tree.close`       |
+| Open every folder                      | `z R`         | In `tree`                                                                                               | `tree.openAll`     |
+| Close every folder                     | `z M`         | In `tree`                                                                                               | `tree.closeAll`    |
+| Show the file                          | `⏎`           | In `tree`                                                                                               | `tree.show`        |
 
 ## Overview
 
@@ -258,16 +263,39 @@ comment box and another elsewhere.
 | `welcome`   | Named by `welcome`.                                                                   |
 
 In a code view, keys follow Vim's mode. In insert mode, and while Vim waits for the rest of a
-command (after a count or an operator), only chords are Lo's, and other keys go to Vim. In a text
-field, typing and moving through the text are the field's.
+command (after a count or an operator), only chords are Lo's, and other keys go to Vim, but for the
+keys of Lo's commands that take a count, after a count alone in normal mode (see [Counts](#counts)).
+In a text field, typing and moving through the text are the field's.
 
-A key that starts one of Lo's sequences waits up to 1 s for the rest. In a code view, a waiting key
-that isn't completed goes on to Vim: with the next key, when that doesn't go on with it, so `y w`
-still yanks a word, or alone once the time is up. Anywhere else it's dropped, and the next key
-counts on its own. A chord Lo runs drops the waiting key, as do `Esc`, focus leaving, a click and a
-tab switch.
+A key that starts one of Lo's sequences waits for the rest. In a code view it waits however long it
+takes, as Vim's own `y` and `g` do, and a key that doesn't go on with it goes to Vim after it, so
+`y w` still yanks a word. Anywhere else it waits up to 1 s, and if the rest doesn't come it's
+dropped, and the next key counts on its own. A chord Lo runs drops the waiting key, as do `Esc`,
+focus leaving, a click and a tab switch. The status bar shows the keys waiting, after any count, as
+Vim shows a command it's waiting on the rest of.
 
 `Tab` doesn't move focus out of a scope; only dialogs and forms keep the browser's `Tab`.
+
+## Counts
+
+Digits typed just before a key are a count, as in Vim, for the commands that take one: `3 e` marks
+three files viewed, and `1 e` one, where `e` alone clears a mark. Before any other key a count is
+dropped, and the key runs once; in a code view it goes on to Vim with the key, so `3 j` still moves
+three lines. `Esc` drops a count and does nothing else.
+
+| Action                   | Keys     | Counts | Where                                                                                  | Command                |
+| ------------------------ | -------- | ------ | -------------------------------------------------------------------------------------- | ---------------------- |
+| Mark viewed              | `e`      | files  | In `diff`; in code views, only in normal mode                                          | `diff.markViewed`      |
+| Copy the lines           | `y y`    | lines  | In `diff` and `file`; in code views, only in normal and visual mode                    | `diff.copyLines`       |
+| Next layer               | `] s`    | layers | Anywhere but `menu`, `dialog`, `palette` and `box`; in code views, only in normal mode | `stacks.nextLayer`     |
+| Previous layer           | `[ s`    | layers | Anywhere but `menu`, `dialog`, `palette` and `box`; in code views, only in normal mode | `stacks.previousLayer` |
+| Next row of the tree     | `j`, `↓` | rows   | In `tree`                                                                              | `tree.down`            |
+| Previous row of the tree | `k`, `↑` | rows   | In `tree`                                                                              | `tree.up`              |
+| Mark viewed              | `e`      | files  | In `tree`                                                                              | `tree.markViewed`      |
+
+In a code view the count is Vim's until one of these keys takes it, in normal mode only. Elsewhere
+digits are a count only in `tree`, where a command of the scope's own takes one, and a count waits
+for its key as a sequence's first key does.
 
 ## Keys for one system
 

@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
 import { FakeView, testCommands, type Ran } from '../../test/commands.ts';
-import type { Command } from './declare.ts';
+import { commandsOf, defineCommands, type Command } from './declare.ts';
 import type { Entry } from './history.ts';
 import { keyLabels, parseKeys, systemStrokes, type System } from './notation.ts';
 import { Registry, type KeyPlace } from './registry.ts';
@@ -269,7 +269,7 @@ describe('keys', () => {
     ]);
   });
 
-  describe('after the timeout', () => {
+  describe('waiting for the rest', () => {
     beforeEach(() => {
       vi.useFakeTimers();
     });
@@ -277,14 +277,15 @@ describe('keys', () => {
       vi.useRealTimers();
     });
 
-    test('the held key goes to the code view, as Vim’s timeoutlen does', () => {
+    test('a key held in a code view waits for the next however long, as Vim’s own `y` does', () => {
       const { registry, press } = setup();
       const view = new FakeView();
       press(['y'], scope('diff', view));
-      vi.advanceTimersByTime(999);
+      vi.advanceTimersByTime(60_000);
       expect(view.log).toEqual([]);
       expect(registry.isPending()).toBe(true);
-      vi.advanceTimersByTime(1);
+      // The next key decides: here, Vim's `yw`.
+      expect(press(['w'], scope('diff', view))).toEqual(['pass']);
       expect(view.log).toEqual(['passKeys y']);
       expect(registry.isPending()).toBe(false);
     });
@@ -292,8 +293,8 @@ describe('keys', () => {
     test('leaving the code view clears what Vim waits on, so no later key completes it', () => {
       const { registry, ran, press } = setup();
       const view = new FakeView();
-      press(['g'], scope('diff', view));
-      vi.advanceTimersByTime(1000);
+      // `g` goes back to Vim with `q`, which Vim then waits on the rest of.
+      press(['g', 'q'], scope('diff', view));
       expect(view.pending).toBe(true);
       registry.leave(view);
       expect(view.log).toEqual(['passKeys g', 'clearPending']);
@@ -308,15 +309,14 @@ describe('keys', () => {
       view.passKeys = () => {
         throw new Error('broken');
       };
-      press(['g'], scope('diff', view));
-      expect(() => vi.advanceTimersByTime(1000)).not.toThrow();
+      expect(() => press(['g', 'q'], scope('diff', view))).not.toThrow();
       expect(registry.isPending()).toBe(false);
       expect(
         errors.map(([error, id]) => [error instanceof Error ? error.message : error, id]),
       ).toEqual([['broken', 'view']]);
     });
 
-    test('a key held anywhere else is dropped', () => {
+    test('a key held anywhere else is dropped after a second', () => {
       const { registry, ran, press } = setup();
       press(['z'], scope('tree'));
       vi.advanceTimersByTime(1000);
@@ -338,6 +338,101 @@ describe('keys', () => {
     // The view keys last went to stops waiting, and was never handed the held key.
     expect(view.log).toEqual(['clearPending']);
     expect(ran).toEqual([]);
+  });
+});
+
+/** The test commands, with `diff.markViewed` and a row move for the tree taking a count. */
+function counting() {
+  const counts: [string, number | undefined][] = [];
+  const heard =
+    (id: string) =>
+    (_target: Target, count?: number): void => {
+      counts.push([id, count]);
+    };
+  const down = commandsOf(
+    defineCommands('rows', {
+      down: {
+        label: 'Next row',
+        group: 'Files',
+        keys: ['j'],
+        count: 'rows',
+        when: { scope: 'tree' },
+      },
+    }),
+  ).map((command) => ({ ...command, handler: { run: heard(command.id) } }));
+  const commands = testCommands().map((command) => {
+    if (command.id === 'diff.markViewed') {
+      return { ...command, count: 'files', handler: { run: heard(command.id) } };
+    }
+    return command.id === 'diff.copyLine'
+      ? { ...command, count: 'lines', handler: { run: heard(command.id) } }
+      : command;
+  });
+  return { counts, ...setup({ commands: [...commands, ...down] }) };
+}
+
+describe('counts', () => {
+  test('a count Vim holds goes to a command that takes one, and Vim drops it', () => {
+    const { counts, registry, press } = counting();
+    const view = new FakeView();
+    view.pending = true;
+    view.count = 3;
+    expect(press(['e'], scope('diff', view))).toEqual(['stop']);
+    expect(view.log).toEqual(['clearPending']);
+    // Without one, none, from a menu or the palette too; and `1` is a count of its own.
+    expect(press(['e'], scope('diff', view))).toEqual(['stop']);
+    registry.run('diff.markViewed', place(2));
+    view.pending = true;
+    view.count = 1;
+    expect(press(['e'], scope('diff', view))).toEqual(['stop']);
+    expect(counts).toEqual([
+      ['diff.markViewed', 3],
+      ['diff.markViewed', undefined],
+      ['diff.markViewed', undefined],
+      ['diff.markViewed', 1],
+    ]);
+  });
+
+  test('elsewhere the digits typed before a key are its count', () => {
+    const { counts, registry, press } = counting();
+    expect(press(['1', '2', 'j'], scope('tree'))).toEqual(['stop', 'stop', 'stop']);
+    expect(registry.isPending()).toBe(false);
+    expect(press(['j'], scope('tree'))).toEqual(['stop']);
+    expect(counts).toEqual([
+      ['rows.down', 12],
+      ['rows.down', undefined],
+    ]);
+  });
+});
+
+describe('the keys held', () => {
+  test('are said as they’re held, after Vim’s count, and no longer once they run or go', () => {
+    const { registry, press } = counting();
+    const heard: string[] = [];
+    registry.onHeldKeys(() => heard.push(registry.heldKeys()));
+    const view = new FakeView();
+    view.pending = true;
+    view.count = 2;
+    press(['y'], scope('diff', view));
+    expect(registry.heldKeys()).toBe('2y');
+    press(['y'], scope('diff', view));
+    expect(registry.heldKeys()).toBe('');
+    view.pending = false;
+    view.count = undefined;
+    press(['g'], scope('diff', view));
+    expect(registry.heldKeys()).toBe('g');
+    registry.leave(view);
+    expect(heard).toEqual(['2y', '', 'g', '']);
+  });
+
+  test('elsewhere, a count held is said, and the keys after it', () => {
+    const { registry, press } = counting();
+    press(['3'], scope('tree'));
+    expect(registry.heldKeys()).toBe('3');
+    press(['z'], scope('tree'));
+    expect(registry.heldKeys()).toBe('3z');
+    press(['esc'], scope('tree'));
+    expect(registry.heldKeys()).toBe('');
   });
 });
 

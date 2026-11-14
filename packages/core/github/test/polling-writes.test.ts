@@ -17,6 +17,7 @@ import {
   Polling,
   postComment,
   pr,
+  type PollingOptions,
   QUIET,
   recorded,
   useFakeClock,
@@ -908,8 +909,9 @@ async function reviewing(
   name: string,
   answers: readonly Interaction[],
   threads: ReviewThreadList,
+  options?: PollingOptions,
 ): Promise<{ t: Polling; runs: ReviewRuns }> {
-  const t = await Polling.start(name, [...recorded(), ...answers]);
+  const t = await Polling.start(name, [...recorded(), ...answers], options);
   const runs = new ReviewRuns();
   void t.poller.setOpen(pr(1));
   keepReviewReads(t, runs, threads);
@@ -1278,6 +1280,38 @@ test('a comment whose answer was lost reads the threads and your pending review 
   expect(error instanceof GithubError && error.mayHavePosted()).toBe(true);
   expect([runs.threads, runs.pending]).toEqual([2, 2]);
   expect(runs.timeline()).toEqual([]);
+});
+
+/**
+ * A comment whose answer never begins is given up once GitHub would have answered, so the queue
+ * goes on, and counts as an answer lost: it may have posted, so it's never sent again, and the
+ * threads and your pending review are read again for it.
+ */
+test('a comment whose answer never begins is given up as lost and never sent again', async () => {
+  const r = recorded();
+  const unanswered = mutation(at(r, 1), 'AddPullRequestReviewThread', added(1), {
+    data: { addPullRequestReviewThread: null },
+  });
+  const { t, runs } = await reviewing('unanswered_comment', [unanswered], reviewThreads(1), {
+    // GitHub never answers it, as over a connection that stalled.
+    delay: (what) => (what === 'AddPullRequestReviewThread' ? 60 * 60_000 : undefined),
+  });
+  t.requests();
+
+  const sent = outcome(t.poller.sendReview(pr(1), addThread(1)));
+  const answered = await t.finish(sent);
+  // Sent at 10 s, and given up 15 s later.
+  expect(t.now()).toBe(25);
+  const error = answered.ok ? undefined : answered.error;
+  expect(error instanceof GithubError && error.detail).toMatchObject({
+    kind: 'network',
+    failure: 'lost',
+  });
+  expect(error instanceof GithubError && error.mayHavePosted()).toBe(true);
+  await t.runUntil(40);
+  expect([runs.threads, runs.pending]).toEqual([2, 2]);
+  const writes = t.requests().filter(([, what]) => what === 'AddPullRequestReviewThread');
+  expect(writes).toEqual([[10, 'AddPullRequestReviewThread']]);
 });
 
 test('deleting a pending comment leaves the timeline alone', async () => {

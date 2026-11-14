@@ -12,7 +12,7 @@ import { follow } from './follow.ts';
 import { main } from './main.ts';
 import { moreStore, setMoreOpen } from './more.ts';
 import { inStrip, movable, stepTab } from './order.ts';
-import { panels, viewCounts } from './panels.ts';
+import { middleIds, panels, stepAmong, viewCounts } from './panels.ts';
 import { PullRequestTab } from './PullRequestTab.tsx';
 import { activeTab, kinds } from './shared.ts';
 import { pullsStore, showFiles, showLocal, showPull, showTabs, tabsStore } from './store.ts';
@@ -35,14 +35,17 @@ function pullOnScreen(): Extract<Tab, { kind: 'pull' }> | string {
   return tab?.kind === 'pull' ? tab : 'There’s no pull request on screen.';
 }
 
-/** Steps the tab on screen's middle view by `step`, round the ends. */
+/**
+ * Steps the tab on screen's middle view by `step` among those the header's switch lists, round the
+ * ends. A view with no label, such as a file whole, opens from what it shows and isn't stepped to.
+ */
 function stepMiddle(step: 1 | -1): void {
   const tab = pullOnScreen();
   if (typeof tab === 'string') return;
-  const count = viewCounts.middle;
+  const { labeled } = middleIds;
   panels.update(tab.id, (current) => ({
     ...current,
-    middle: (current.middle + step + count) % Math.max(1, count),
+    middle: stepAmong(current.middle % Math.max(1, labeled.length), step, labeled),
   }));
 }
 
@@ -50,7 +53,8 @@ function stepMiddle(step: 1 | -1): void {
 function middleSteps(): true | string {
   const tab = pullOnScreen();
   if (typeof tab === 'string') return tab;
-  return viewCounts.middle > 1 ? true : 'This pull request has one view so far.';
+  const listed = middleIds.labeled.filter(Boolean).length;
+  return listed > 1 ? true : 'This pull request has one view so far.';
 }
 
 /** Asks main what it has for every view of a pull request's tab the window has heard nothing of. */
