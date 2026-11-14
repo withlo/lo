@@ -204,6 +204,13 @@ interface OpenBox {
   answered?: boolean;
 }
 
+/** The room a comment box left where it was, under its line, and how tall it is now. */
+interface KeptRoom {
+  place: At;
+  room: BoxHost;
+  height: number;
+}
+
 /** The view's threads in one file, by where they are (`side:line`). */
 type FileThreads = Map<string, ThreadView[]>;
 
@@ -236,11 +243,8 @@ function lineAt(file: number, key: string): At {
   };
 }
 
-/**
- * Which changes held on screen the view lets go: those off it, those on it that no scroll can take
- * off it, or all.
- */
-type Letting = 'off' | 'stuck' | 'all';
+/** Which changes held on screen the view lets go: those off it, or all, as on the reader's input. */
+type Letting = 'off' | 'all';
 
 /** An overview mark, on one side of a file by its index, as the view keeps it. */
 interface OverviewAt extends MarkedLines {
@@ -293,9 +297,15 @@ class View implements DiffView {
   #wanted: FileThreads[];
   /** Each thread's element, and what the caller drew in it. */
   readonly #hosts: Threads;
-  /** Threads held at the height they were drawn at while they're on screen. */
+  /**
+   * Threads held at the height they were drawn at while they're on screen, until the reader's next
+   * input.
+   */
   readonly #held = new Set<ThreadHost>();
-  /** Lines whose threads changed while they were on screen, which wait until they're off it. */
+  /**
+   * Lines whose threads changed while they were on screen, which wait until they're off it, or
+   * until the reader's next input.
+   */
   readonly #waiting = new Set<string>();
   /** File lines on each side that stay shown: those under threads and comment boxes. */
   readonly #keep: { old: Set<number>; new: Set<number> }[];
@@ -802,11 +812,18 @@ class View implements DiffView {
   readonly #claimed = new Map<string, Set<symbol>>();
 
   /**
-   * The room comment boxes took on screen, kept empty, by their keys: boxes their callers closed
-   * with no input of the reader's, as their answers came. What's on screen stays as it was, and
-   * what comes under their lines waits, until the reader's next input, or until it's off screen.
+   * The room comment boxes took on screen, kept empty, by their keys, with how tall each is: boxes
+   * their callers closed with no input of the reader's, as their answers came. What's on screen
+   * stays as it was, and what comes under their lines waits, until the reader's next input, or
+   * until it's off screen. A reply's room is the thread's to grow into meanwhile.
    */
-  readonly #rooms = new Map<string, { place: At; room: BoxHost }>();
+  readonly #rooms = new Map<string, KeptRoom>();
+
+  /** The room the box of a reply to thread `host` left right after it, while it's kept. */
+  #roomAfter(host: ThreadHost): KeptRoom | undefined {
+    for (const room of this.#rooms.values()) if (room.room.thread === host.id) return room;
+    return undefined;
+  }
 
   claimThread(id: string): () => void {
     const place = this.#threadPlace(id);
@@ -886,14 +903,10 @@ class View implements DiffView {
 
   /**
    * Whether what's drawn from `span.top` to `span.bottom` on the page may change now, as `letting`
-   * says: with `off`, what isn't drawn on screen; with `stuck`, what's on screen that no scroll can
-   * take off it, the rest waiting for the scroll that takes it off.
+   * says: with `off`, only what isn't drawn on screen.
    */
   #mayGo(letting: Letting, span: { top: number; bottom: number } | undefined): boolean {
-    if (letting === 'all') return true;
-    const shown = span !== undefined && this.#spanOnScreen(span.top, span.bottom);
-    if (letting === 'off') return !shown;
-    return shown && !this.#canLeave(span.top, span.bottom);
+    return letting === 'all' || span === undefined || !this.#spanOnScreen(span.top, span.bottom);
   }
 
   /**
@@ -975,22 +988,31 @@ class View implements DiffView {
   /**
    * What the caller drew in threads changed size. Each is still the height it was drawn at, what
    * changed in it cut off. One whose change no input asked for, drawn on screen, is held so until
-   * it's off screen. The rest take theirs in the next frame, what's at the top of the screen
-   * staying where it is, or for what the reader did, as when they opened a thread, the line it's
-   * under: a change of size made now, as the page tells its observers of sizes, would go untold to
-   * those watching the editors.
+   * it's off screen or the reader's next input, unless the room its reply's box left right after it
+   * takes the change, as when the reply comes after GitHub's answer closed the box. The rest take
+   * theirs in the next frame, what's at the top of the screen staying where it is, or for what the
+   * reader did, as when they opened a thread, the line it's under: a change of size made now, as
+   * the page tells its observers of sizes, would go untold to those watching the editors.
    */
   #resized(entries: readonly ResizeObserverEntry[]): void {
     const threads = this.#hosts.resized(entries);
     if (threads.length === 0) return;
-    const taking = this.#taking ?? { hosts: new Set<ThreadHost>(), kept: undefined };
+    const taking = this.#taking ?? {
+      hosts: new Set<ThreadHost>(),
+      kept: undefined,
+      roomed: new Set<ThreadHost>(),
+    };
     for (const { host, fresh, reflowed } of threads) {
       host.hold();
+      taking.roomed.delete(host);
       if (!fresh && (host.takeInput() || this.#claimedAt(host))) {
         taking.kept ??= this.#threadPlace(host.id);
         taking.hosts.add(host);
       } else if (!fresh && !reflowed && this.#onScreen(host.dom)) {
-        this.#held.add(host);
+        if (this.#roomAfter(host)) {
+          taking.hosts.add(host);
+          taking.roomed.add(host);
+        } else this.#held.add(host);
       } else {
         taking.hosts.add(host);
       }
@@ -1000,19 +1022,42 @@ class View implements DiffView {
     this.#takeFrame = requestAnimationFrame(this.#take);
   }
 
-  /** Threads whose change of size the next frame takes, and the line to keep while it does. */
-  #taking: { hosts: Set<ThreadHost>; kept: At | undefined } | undefined;
+  /**
+   * Threads whose change of size the next frame takes, the line to keep while it does, and those
+   * whose change goes into the room after them.
+   */
+  #taking: { hosts: Set<ThreadHost>; kept: At | undefined; roomed: Set<ThreadHost> } | undefined;
   #takeFrame = 0;
 
-  /** The threads `#resized` left for this frame take their content's height. */
+  /**
+   * The threads `#resized` left for this frame take their content's height. A room after one
+   * changes by as much the other way, so nothing after it moves, where it has the room; where it
+   * hasn't, the thread is held as any change no input asked for.
+   */
   readonly #take = (): void => {
     const taking = this.#taking;
     this.#taking = undefined;
     if (!taking) return;
-    const hosts = [...taking.hosts].filter((host) => host.held && !this.#held.has(host));
+    const rooms = new Map<KeptRoom, number>();
+    const hosts = [...taking.hosts].filter((host) => {
+      if (!host.held || this.#held.has(host)) return false;
+      if (!taking.roomed.has(host)) return true;
+      const room = this.#roomAfter(host);
+      const grown = (host.height ?? 0) - (host.pinned ?? 0);
+      if (room && room.height >= grown) {
+        rooms.set(room, room.height - grown);
+        return true;
+      }
+      this.#held.add(host);
+      return false;
+    });
     if (hosts.length === 0) return;
     const change = (): void => {
       for (const host of hosts) host.letGo();
+      for (const [room, height] of rooms) {
+        room.height = height;
+        room.room.dom.style.height = `${height}px`;
+      }
       this.#aligner.schedule();
     };
     if (taking.kept) this.#keepLine(taking.kept, change);
@@ -1262,9 +1307,10 @@ class View implements DiffView {
   #settling: ReturnType<typeof setTimeout> | undefined;
 
   /**
-   * The reader's wheel, key or click. Notes, threads and lines held on screen where no scroll can
-   * take them off it, as in a diff too short to scroll or near its ends, would never leave it: they
-   * take what they have now, once the input is handled, so it acts on what the reader saw.
+   * The reader's wheel, key or click. Threads and lines held on screen, and the rooms of boxes,
+   * take what they have now, once the input is handled, so it acts on what the reader saw. So do
+   * notes held where no scroll can take them off screen, as in a diff too short to scroll or near
+   * its ends, which would never leave it.
    */
   readonly #afterInput = (): void => {
     if (this.#settling !== undefined) return;
@@ -1276,7 +1322,7 @@ class View implements DiffView {
       this.#settling = undefined;
       this.#letRoomsGo(() => true);
       this.#letHeldGo((note) => this.#noteOnScreen(note) && this.#noteStuck(note));
-      this.#letThreadsGo('stuck', false);
+      this.#letThreadsGo('all', false);
     });
   };
 
@@ -2201,14 +2247,15 @@ class View implements DiffView {
     const nowhere = active === null || active === document.body;
     if (sent && !this.#hearing && this.#onScreen(box.dom)) {
       // Closed on screen as its answer came: its room stays, empty, and what it sent waits there,
-      // until the reader's next input.
+      // until the reader's next input. A reply grows into it meanwhile, as far as it has room.
       const room = document.createElement('div');
       room.className = 'lo-diffcomposer-room';
-      room.style.height = `${box.dom.getBoundingClientRect().height}px`;
+      const { height } = box.dom.getBoundingClientRect();
+      room.style.height = `${height}px`;
       this.#boxClosed.delete(waitKey(place.file, `${place.side}:${place.line}`));
       const { thread } = box;
       const attach = (parent: HTMLElement) => parent.append(room);
-      this.#rooms.set(key, { place, room: { dom: room, thread, attach } });
+      this.#rooms.set(key, { place, room: { dom: room, thread, attach }, height });
       this.#refresh(place.file);
     } else if (sent) this.#keepUnasked(() => this.#refresh(place.file));
     else this.#keepLine(place, () => this.#refresh(place.file));

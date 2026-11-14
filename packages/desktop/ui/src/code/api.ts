@@ -412,12 +412,13 @@ export interface DiffView extends KeySource {
    * Replaces the threads drawn under lines, and under files' headers, each drawn by `render` in an
    * element of its own the first time it's drawn, and kept up to date through what that returns. A
    * file's threads go under its header in the newer column, or in the inline layout's one, whether
-   * or not the file shows its lines. A line or header on screen whose
-   * threads change keeps those it shows until it's off screen, or in a diff too short to scroll,
-   * until the reader's next wheel, key or click, so no line on screen moves; the rest change now,
-   * and what's at the top of the screen stays where it is. A thread drawn on screen that changes
-   * size with no input asking, as when an image in it loads, is held at the height it was drawn at
-   * the same way. What the reader does to a thread, such as opening it, keeps its line where it is.
+   * or not the file shows its lines. A line or header on screen whose threads change keeps those it
+   * shows until it's off screen, or until the reader's next wheel, key or click, so no line on
+   * screen moves without them; the rest change now, and what's at the top of the screen stays where
+   * it is. A thread drawn on screen that changes size with no input asking, as when an image in it
+   * loads, is held at the height it was drawn at the same way, unless a reply's box was closed right
+   * after it as its answer came: then it grows into the room the box left, where that's tall
+   * enough. What the reader does to a thread, such as opening it, keeps its line where it is.
    * With `now`, lines on screen take their threads at once too: for a view the reader hasn't seen
    * yet, as one made in the same task.
    */

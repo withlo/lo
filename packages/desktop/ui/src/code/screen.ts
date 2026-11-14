@@ -187,16 +187,34 @@ function wraps(view: EditorView, body: BlockInfo): boolean {
 /**
  * The row of text a cursor at `offset` is on, by height in the document, as CodeMirror and the
  * spacer pass bring it into view: its row's body, or, in a line that wraps, the row of the
- * character after it.
+ * character after it. `updating` while the editor updates, as when it brings the cursor into view:
+ * it refuses to say where text is then, so the row is read from what it drew.
  */
-function caretOf(view: EditorView, offset: number): Span {
+function caretOf(view: EditorView, offset: number, updating = false): Span {
   const body = bodyOf(view.lineBlockAt(offset));
   if (!wraps(view, body)) return body;
-  const rect = view.coordsAtPos(offset, 1);
+  const rect = updating ? drawnAt(view, offset) : view.coordsAtPos(offset, 1);
   if (!rect) return body;
   const origin = view.documentTop;
   const row = { top: rect.top - origin, bottom: rect.bottom - origin };
   return row.bottom > body.top && row.top < body.bottom ? row : body;
+}
+
+/**
+ * Where the character at `offset` is drawn, or at the end of its text the one before it, which is
+ * on the same row of text: what `coordsAtPos` says of its row, read from the page. Nothing where
+ * the editor drew no text there.
+ */
+function drawnAt(view: EditorView, offset: number): DOMRect | undefined {
+  const { node, offset: at } = view.domAtPos(offset);
+  const length = node.nodeType === Node.TEXT_NODE ? (node.nodeValue?.length ?? 0) : 0;
+  if (length === 0) return undefined;
+  const range = node.ownerDocument?.createRange();
+  if (!range) return undefined;
+  const from = Math.min(at, length - 1);
+  range.setStart(node, from);
+  range.setEnd(node, from + 1);
+  return [...range.getClientRects()].find((rect) => rect.height > 0);
 }
 
 /** The first offset from `from` to `to` that `fits`, which holds from one on; `to + 1` if none. */
@@ -624,7 +642,7 @@ export const leaveOnScreen = EditorView.scrollHandler.of((view, range, options) 
   if (!range.empty) return false;
   const scroller = scrollerOf(view);
   if (!scroller) return false;
-  return within(caretOf(view, range.head), screenOf(view, scroller));
+  return within(caretOf(view, range.head, true), screenOf(view, scroller));
 });
 
 /** Puts Lo's versions of Vim's screen keys in place of Vim's, once. */

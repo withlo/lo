@@ -1517,31 +1517,65 @@ describe('threads', () => {
     expect(shown.probe.cursor()?.at).toMatchObject(onLine('b', 'new', 6));
   });
 
-  test('in a diff that scrolls a little, what no scroll takes off screen changes on input', async () => {
+  test('what waits or is held on screen changes on the reader’s next input, though a scroll could take it off', async () => {
     const sizes = observers();
     const shown = open();
     const { render } = plain();
     shown.setThreads([thread('one', at('a', 'new', 4))], render);
-    const screen = onScreen(['line 4'], ['one'], 300);
-    Object.defineProperty(scroller(), 'scrollHeight', { configurable: true, value: 750 });
+    onScreen(['line 4'], ['one']);
+    Object.defineProperty(scroller(), 'scrollHeight', { configurable: true, value: 2000 });
     const card = parent!.querySelector<HTMLElement>('[data-thread-id="one"]')!;
     const content = card.querySelector('.lo-diffthread__host')!;
     sizes.resize(content, 40);
     sizes.resize(content, 90);
     expect(card.classList).toContain('is-held');
+    // Threads that come after the reader has seen the line, as GitHub's answer comes late.
     shown.setThreads([thread('one', at('a', 'new', 4)), thread('two', at('a', 'new', 4))], render);
     expect(drawnThreads()).toEqual(['one']);
     press(scroller(), 'j');
     await new Promise((resolve) => setTimeout(resolve));
+    expect(card.style.height).toBe('90px');
     expect(card.classList).not.toContain('is-held');
     expect(drawnThreads()).toEqual(['one', 'two']);
-    // Where a scroll can take it off screen, it waits for that.
-    Object.defineProperty(scroller(), 'scrollHeight', { configurable: true, value: 2000 });
-    screen.threads.add('two');
+  });
+
+  test('a reply that comes once its box closed on screen takes the room the box left', async () => {
+    const sizes = observers();
+    const shown = open();
+    const { render } = plain();
     shown.setThreads([thread('one', at('a', 'new', 4))], render);
-    press(scroller(), 'j');
-    await new Promise((resolve) => setTimeout(resolve));
-    expect(drawnThreads()).toEqual(['one', 'two']);
+    onScreen(['line 4'], ['one']);
+    // The box, the room it leaves and the thread are on screen, each 80 px tall as first drawn.
+    vi.spyOn(Element.prototype, 'getClientRects').mockImplementation(function (this: Element) {
+      return boxOrThread(this) ? oneRect(new DOMRect(0, 100, 400, 80)) : noRects();
+    });
+    vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (
+      this: Element,
+    ) {
+      if (this.classList.contains('lo-diffview')) return new DOMRect(0, 0, 800, 600);
+      return boxOrThread(this) ? new DOMRect(0, 100, 400, 80) : new DOMRect();
+    });
+    const card = parent!.querySelector<HTMLElement>('[data-thread-id="one"]')!;
+    const content = card.querySelector('.lo-diffthread__host')!;
+    sizes.resize(content, 40);
+    const box = shown.compose({ thread: 'one' }, 'A reply', composerEvents());
+    shown.focus();
+    // Closed as GitHub answered, before the reply is in the thread.
+    box.close();
+    const room = parent!.querySelector<HTMLElement>('.lo-diffcomposer-room')!;
+    expect(room.style.height).toBe('80px');
+    shown.setThreads([thread('one', at('a', 'new', 4), true, 2)], render);
+    sizes.resize(content, 90);
+    await nextFrame();
+    expect(card.style.height).toBe('90px');
+    expect(card.classList).not.toContain('is-held');
+    expect(room.style.height).toBe('30px');
+    // More than the room has left waits for the reader's next input.
+    shown.setThreads([thread('one', at('a', 'new', 4), true, 3)], render);
+    sizes.resize(content, 150);
+    await nextFrame();
+    expect(card.style.height).toBe('90px');
+    expect(card.classList).toContain('is-held');
   });
 });
 
