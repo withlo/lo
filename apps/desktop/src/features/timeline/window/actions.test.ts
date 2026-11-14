@@ -28,6 +28,9 @@ describe('revealHidden', () => {
     list.tabIndex = 0;
     const row = document.createElement('li');
     row.dataset['key'] = HIDDEN.key;
+    // jsdom has no scrollIntoView, and the row is brought on screen a frame later, which can come
+    // after the test.
+    Reflect.set(row, 'scrollIntoView', () => undefined);
     const button = document.createElement('button');
     row.append(button);
     list.append(row);
