@@ -26,6 +26,8 @@ export class ThreadHost {
   #given: ThreadView;
   /** Whether it's open: as the caller last said, or as `setOpen` left it since. */
   #open: boolean;
+  /** Whether `]t` landed on it. */
+  #focused = false;
   #content: ThreadContent | undefined;
   /** How tall and wide the caller's content was when last measured drawn, and if open then. */
   height: number | undefined;
@@ -67,9 +69,22 @@ export class ThreadHost {
     this.dom.append(this.host);
   }
 
-  /** The thread as the caller draws it: as given, open or not as it is now. */
+  /**
+   * The thread as the caller draws it: as given, open or not as it is now, and whether `]t` landed
+   * on it.
+   */
   get thread(): ThreadView {
-    return { ...this.#given, open: this.#open };
+    return { ...this.#given, open: this.#open, focused: this.#focused };
+  }
+
+  /**
+   * Says whether `]t` landed on it, the cursor still on its line: the caller draws it again. It
+   * changes no size.
+   */
+  setFocused(focused: boolean): void {
+    if (focused === this.#focused) return;
+    this.#focused = focused;
+    this.#content?.update(this.thread);
   }
 
   get open(): boolean {

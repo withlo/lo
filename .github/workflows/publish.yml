@@ -21,14 +21,15 @@ on:
 permissions:
   contents: read
 
-# Runs for one commit wait for each other, so a run started by hand while the push's run publishes
-# then finds the version on npm. Runs for different commits don't wait, so a newer bump never
-# cancels an older one waiting to publish: each publishes its own version, and the publish job tags
-# one that lost the race so npm takes it. Two runs publishing the same version can't both succeed:
-# npm refuses the second.
+# Runs go one at a time, in the order they started. Each waits for every run before it, and
+# `queue: max` keeps up to 100 waiting, where GitHub would otherwise cancel all but the newest, so
+# no bumped version is dropped. A run started by hand while the push's run publishes then finds the
+# version on npm, and two bumps merged close together publish one after the other, so the older
+# can't move latest back after the newer has taken it.
 concurrency:
-  group: publish-${{ github.sha }}
+  group: publish
   cancel-in-progress: false
+  queue: max
 
 env:
   # nx.json turns both off too.
@@ -149,10 +150,12 @@ jobs:
 
       # npm gives a version the latest tag only when it's above every release npm has, leaving out
       # prereleases and deprecated versions, and refuses one that isn't unless it's given a tag.
-      # Runs for different commits race, so a newer bump can publish first, and a run can be re-run
-      # after a newer one has published. Such a version, or a prerelease, goes out under the
-      # `previous` tag, so every version is published and latest only moves forward. Lo's skill
-      # runs the checker by its exact version, so the tag changes nothing for it.
+      # Such a version, as when a failed run is re-run after a newer bump has published, or a
+      # prerelease, goes out under the `previous` tag, so every version is published and latest
+      # only moves forward. Trusted publishing takes the tag with the publish; moving it later with
+      # npm dist-tag needs a permission the trusted publisher doesn't have. Lo's skill runs the
+      # checker by its exact version, so the tag changes nothing for it. As for npm, an empty
+      # deprecation message deprecates nothing.
       - name: Choose the tag
         id: tag
         env:
@@ -164,8 +167,8 @@ jobs:
           newest=$(jq --arg version "$VERSION" '
             def release: test("^[0-9]+\\.[0-9]+\\.[0-9]+$");
             def parts: split(".") | map(tonumber);
-            [.versions | to_entries[] | select(.value.deprecated == null) | .key | select(release)
-              | parts]
+            [.versions | to_entries[] | select((.value.deprecated // "") == "") | .key
+              | select(release) | parts]
             | max as $highest
             | ($version | release) and ($highest == null or ($version | parts) > $highest)
           ' "$RUNNER_TEMP/package.json")
@@ -173,8 +176,10 @@ jobs:
           echo "$VERSION goes out tagged $tag."
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
 
-      # For latest, npm's own default applies, so npm still refuses the version if a newer one
-      # lands in the meantime, rather than moving latest back. A re-run then tags it previous.
+      # For latest, npm's own default applies: just before publishing, npm reads the package's
+      # versions again and refuses this one if a newer one has landed since, rather than moving
+      # latest back. Runs don't overlap, so only a version published by hand can land then. A re-run
+      # then tags it previous.
       - name: Publish to npm
         env:
           TARBALL: ${{ runner.temp }}/pack/withlo-overview-${{ needs.version.outputs.version }}.tgz

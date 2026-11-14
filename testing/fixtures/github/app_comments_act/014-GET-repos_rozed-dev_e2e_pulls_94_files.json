@@ -1,0 +1,70 @@
+{
+  "request": {
+    "method": "GET",
+    "url": "https://api.github.com/repos/rozed-dev/e2e/pulls/94/files?per_page=100"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "etag": "W/\"74b1f64c731afd42abc6279c36d50183eb52d4b8c02e382c798eb9d34a5a95ef\"",
+      "last-modified": "Sat, 14 Nov 2026 01:04:21 GMT",
+      "x-github-api-version-selected": "2022-11-28",
+      "x-ratelimit-limit": "5000",
+      "x-ratelimit-remaining": "4894",
+      "x-ratelimit-reset": "1794621229",
+      "x-ratelimit-resource": "core",
+      "x-ratelimit-used": "106"
+    },
+    "body": [
+      {
+        "sha": "10f61142c413adcde37f0302f152c2432c893801",
+        "filename": "docs/usage.md",
+        "status": "modified",
+        "additions": 1,
+        "deletions": 1,
+        "changes": 2,
+        "blob_url": "https://github.com/rozed-dev/e2e/blob/cd44b64496be1a5e43c30aa48c8ed98edbbd7b3c/docs%2Fusage.md",
+        "raw_url": "https://github.com/rozed-dev/e2e/raw/cd44b64496be1a5e43c30aa48c8ed98edbbd7b3c/docs%2Fusage.md",
+        "contents_url": "https://api.github.com/repos/rozed-dev/e2e/contents/docs%2Fusage.md?ref=cd44b64496be1a5e43c30aa48c8ed98edbbd7b3c",
+        "patch": "@@ -1,5 +1,5 @@\n # Usage\n \n-Add a job with `enqueue`. Two jobs run at once, and the rest wait their turn.\n+Add a job with `enqueue`. Four jobs run at once, and the rest wait their turn.\n \n A job that fails is tried again, up to three times, a second apart."
+      },
+      {
+        "sha": "111dbc3a56d68bcf27972d94a67e5d13027791ee",
+        "filename": "src/backoff.ts",
+        "status": "added",
+        "additions": 18,
+        "deletions": 0,
+        "changes": 18,
+        "blob_url": "https://github.com/rozed-dev/e2e/blob/cd44b64496be1a5e43c30aa48c8ed98edbbd7b3c/src%2Fbackoff.ts",
+        "raw_url": "https://github.com/rozed-dev/e2e/raw/cd44b64496be1a5e43c30aa48c8ed98edbbd7b3c/src%2Fbackoff.ts",
+        "contents_url": "https://api.github.com/repos/rozed-dev/e2e/contents/src%2Fbackoff.ts?ref=cd44b64496be1a5e43c30aa48c8ed98edbbd7b3c",
+        "patch": "@@ -0,0 +1,18 @@\n+/** The first wait between tries, in milliseconds. */\n+const FIRST = 250;\n+\n+/** How much longer each wait is than the one before. */\n+const FACTOR = 2;\n+\n+/** The longest wait, in milliseconds. */\n+const MOST = 30_000;\n+\n+/** How long to wait after try `tried`, counted from 0: longer each time, up to `MOST`. */\n+export function delayFor(tried: number): number {\n+  return Math.min(MOST, FIRST * FACTOR ** tried);\n+}\n+\n+/** A wait of up to `delay` milliseconds, at random, so clients that failed together retry apart. */\n+export function jittered(delay: number, random = Math.random): number {\n+  return Math.floor(delay * random());\n+}"
+      },
+      {
+        "sha": "3d9f7a227a00fe3e190706b779b682afaa4c7380",
+        "filename": "src/queue.ts",
+        "status": "modified",
+        "additions": 4,
+        "deletions": 2,
+        "changes": 6,
+        "blob_url": "https://github.com/rozed-dev/e2e/blob/cd44b64496be1a5e43c30aa48c8ed98edbbd7b3c/src%2Fqueue.ts",
+        "raw_url": "https://github.com/rozed-dev/e2e/raw/cd44b64496be1a5e43c30aa48c8ed98edbbd7b3c/src%2Fqueue.ts",
+        "contents_url": "https://api.github.com/repos/rozed-dev/e2e/contents/src%2Fqueue.ts?ref=cd44b64496be1a5e43c30aa48c8ed98edbbd7b3c",
+        "patch": "@@ -1,11 +1,13 @@\n+import { retry } from './retry.ts';\n+\n /** A job the queue runs: a name, and the work itself. */\n export interface Job {\n   readonly name: string;\n   readonly run: () => Promise<void>;\n }\n \n /** How many jobs run at once. */\n-const CONCURRENCY = 2;\n+const CONCURRENCY = 4;\n \n /** Jobs waiting their turn, first in first out. */\n const waiting: Job[] = [];\n@@ -30,7 +32,7 @@ function next(): void {\n   const job = waiting.shift();\n   if (job === undefined) return;\n   running += 1;\n-  void job.run().finally(() => {\n+  void retry(job.run).finally(() => {\n     running -= 1;\n     next();\n   });"
+      },
+      {
+        "sha": "ce3496cdea98ae01d34127ab615c587a2d3fb018",
+        "filename": "src/retry.ts",
+        "status": "modified",
+        "additions": 2,
+        "deletions": 3,
+        "changes": 5,
+        "blob_url": "https://github.com/rozed-dev/e2e/blob/cd44b64496be1a5e43c30aa48c8ed98edbbd7b3c/src%2Fretry.ts",
+        "raw_url": "https://github.com/rozed-dev/e2e/raw/cd44b64496be1a5e43c30aa48c8ed98edbbd7b3c/src%2Fretry.ts",
+        "contents_url": "https://api.github.com/repos/rozed-dev/e2e/contents/src%2Fretry.ts?ref=cd44b64496be1a5e43c30aa48c8ed98edbbd7b3c",
+        "patch": "@@ -1,5 +1,4 @@\n-/** How long to wait between tries, in milliseconds. */\n-const DELAY = 1000;\n+import { delayFor, jittered } from './backoff.ts';\n \n /** Waits `ms` milliseconds. */\n function sleep(ms: number): Promise<void> {\n@@ -14,7 +13,7 @@ export async function retry(attempt: () => Promise<void>, times = 3): Promise<vo\n       return await attempt();\n     } catch (error) {\n       last = error;\n-      await sleep(DELAY);\n+      await sleep(jittered(delayFor(tried)));\n     }\n   }\n   throw last;"
+      }
+    ]
+  }
+}

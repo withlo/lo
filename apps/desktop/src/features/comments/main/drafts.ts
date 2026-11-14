@@ -1,10 +1,11 @@
 // The drafts of comment boxes, in main: what the reader typed and hasn't posted, by account, pull
 // request and place, saved in the database as the window hands it over, so quitting Lo or a crash
-// loses none of it. Those saved before Lo started come back marked restored. Besides new threads'
-// boxes, a pull request has one box on the pull request itself, and one summary, the submit
-// dialog's, which the review feature keeps here through the `comments.drafts` service. A place of a
-// kind this version of Lo doesn't know, written by a later one, stays in the database as it is and
-// is never opened. Nothing here calls Electron.
+// loses none of it. Those saved before Lo started come back marked restored. An edit's keeps the
+// text it started from, while it's kept at all. Besides the boxes' drafts (new threads, replies,
+// edits and the pull request's own), a pull request has one summary, the submit dialog's, which the
+// review feature keeps here through the `comments.drafts` service. A place of a kind this version
+// of Lo doesn't know, written by a later one, stays in the database as it is and is never opened.
+// Nothing here calls Electron.
 
 import { PullRef } from '@lo/github';
 import { Drafts, type DraftPlace, type ThreadDraftPlace } from '@lo/review';
@@ -20,10 +21,10 @@ export interface SummaryPlace {
 /** The summary's place. */
 export const SUMMARY: SummaryPlace = { kind: 'summary' };
 
-/** Any place a draft is kept by: a comment box's, or the summary. */
+/** Any place a draft is kept by: a box's, or the summary. */
 export type StoredPlace = DraftPlaceRow | SummaryPlace;
 
-/** A draft as main keeps it, a comment box's unless it says otherwise. */
+/** A draft as main keeps it, a box's unless it says otherwise. */
 export interface Kept<P extends StoredPlace = DraftPlaceRow> {
   readonly place: P;
   readonly text: string;
@@ -38,6 +39,8 @@ export interface Kept<P extends StoredPlace = DraftPlaceRow> {
   readonly sent: string | null;
   /** When it was sent, while it's marked sent. */
   readonly sentAt: number | null;
+  /** For an edit, the comment's text on GitHub when it started. */
+  readonly base: string | null;
 }
 
 function integer(value: unknown): number {
@@ -49,29 +52,36 @@ function lower(text: string): string {
   return text.replace(/[A-Z]/g, (letter) => letter.toLowerCase());
 }
 
-/** Whether `place` is a new thread's. */
-function isThread(place: StoredPlace): place is ThreadPlaceRow {
-  return place.kind === 'thread';
-}
-
-/** Whether `place` is a comment box's: a new thread's, or the pull request's own. */
+/** Whether `place` is a box's: a new thread's, a reply's or an edit's. */
 function isBox(place: StoredPlace): place is DraftPlaceRow {
-  return place.kind === 'thread' || place.kind === 'conversation';
+  return place.kind !== SUMMARY.kind;
 }
 
 /** A place as the database keeps it: JSON, the same for the same place. */
 export function placeJson(place: StoredPlace): string {
-  if (!isThread(place)) return JSON.stringify({ kind: place.kind });
-  const { lines } = place;
-  return JSON.stringify({
-    kind: place.kind,
-    commit: lower(place.commit),
-    path: place.path,
-    lines: lines && {
-      start: lines.start && { side: lines.start.side, number: lines.start.number },
-      end: { side: lines.end.side, number: lines.end.number },
-    },
-  });
+  switch (place.kind) {
+    case 'thread': {
+      const { lines } = place;
+      return JSON.stringify({
+        kind: place.kind,
+        commit: lower(place.commit),
+        path: place.path,
+        lines: lines && {
+          start: lines.start && { side: lines.start.side, number: lines.start.number },
+          end: { side: lines.end.side, number: lines.end.number },
+        },
+      });
+    }
+    case 'reply':
+      return JSON.stringify({ kind: place.kind, thread: place.thread });
+    case 'edit':
+      return JSON.stringify({ kind: place.kind, thread: place.thread, comment: place.comment });
+    case 'conversation':
+    case 'summary':
+      return JSON.stringify({ kind: place.kind });
+    default:
+      throw new Error(`a draft's place Lo doesn't know: ${JSON.stringify(place satisfies never)}`);
+  }
 }
 
 /** A place the database kept, if this version of Lo knows its kind. */
@@ -87,7 +97,7 @@ export function readPlace(json: string): StoredPlace | undefined {
   return read.success ? read.data : undefined;
 }
 
-/** A place as `@lo/review` takes it. */
+/** A new thread's place as `@lo/review` takes it. */
 export function corePlace(place: ThreadPlaceRow): ThreadDraftPlace {
   const { lines } = place;
   return {
@@ -98,7 +108,7 @@ export function corePlace(place: ThreadPlaceRow): ThreadDraftPlace {
   };
 }
 
-/** A place from `@lo/review`, if it's of a kind the contract carries. */
+/** A new thread's place from `@lo/review`, if it's of a kind the contract carries. */
 export function rowPlace(place: DraftPlace): ThreadPlaceRow | undefined {
   if (place.kind !== 'thread') return undefined;
   const { lines } = place;
@@ -115,14 +125,9 @@ function sameKind<P extends StoredPlace>(kept: Kept<StoredPlace>, place: P): kep
   return kept.place.kind === place.kind;
 }
 
-/** Whether `kept` is a comment box's draft. */
+/** Whether `kept` is a box's draft. */
 function isBoxDraft(kept: Kept<StoredPlace>): kept is Kept {
   return isBox(kept.place);
-}
-
-/** Whether `kept` is a new thread's draft. */
-function isThreadDraft(kept: Kept<StoredPlace>): kept is Kept<ThreadPlaceRow> {
-  return isThread(kept.place);
 }
 
 /** What a pull request's drafts are kept by, for one account. */
@@ -144,7 +149,7 @@ export class DraftStore {
     this.#now = now;
     const rows = database
       .prepare(
-        'SELECT account, owner, repo, number, place, body, sent, sent_at, saved_at FROM comments_drafts',
+        'SELECT account, owner, repo, number, place, body, sent, sent_at, saved_at, base FROM comments_drafts',
       )
       .all();
     for (const row of rows) {
@@ -158,11 +163,12 @@ export class DraftStore {
         restored: true,
         sent: row.sent === null ? null : String(row.sent),
         sentAt: row.sent === null || row.sent_at === null ? null : integer(row.sent_at),
+        base: row.base === null ? null : String(row.base),
       });
     }
   }
 
-  /** `account`'s comment boxes' drafts on `pull`, ordered by place. */
+  /** `account`'s boxes' drafts on `pull`, ordered by place. */
   of(account: string, pull: PullRef): Kept[] {
     const own = this.#kept.get(keyOf(account, pull));
     if (!own) return [];
@@ -171,7 +177,7 @@ export class DraftStore {
       .flatMap(([, kept]) => (isBoxDraft(kept) ? [kept] : []));
   }
 
-  /** Every comment box's draft marked sent, with its account and pull request. */
+  /** Every box's draft marked sent, with its account and pull request. */
   marked(): { account: string; pull: PullRef; kept: Kept }[] {
     return this.#marked(isBoxDraft);
   }
@@ -202,12 +208,13 @@ export class DraftStore {
 
   /**
    * Keeps `text` as the draft at `place`, as typed: blank text removes it, unless it was sent with
-   * its answer lost, which keeps it until that's settled. Says whether anything changed.
+   * its answer lost, which keeps it until that's settled, or it's an edit's, which keeps the text it
+   * started from until it's sent or discarded. Says whether anything changed.
    */
   save(account: string, pull: PullRef, place: StoredPlace, text: string): boolean {
     const json = placeJson(place);
     const was = this.#kept.get(keyOf(account, pull))?.get(json);
-    if (text.trim() === '' && was?.sent == null)
+    if (text.trim() === '' && was?.sent == null && was?.base == null)
       return this.take(account, pull, place) !== undefined;
     if (was?.text === text) return false;
     this.#put(account, pull, json, {
@@ -217,6 +224,27 @@ export class DraftStore {
       restored: false,
       sent: was?.sent ?? null,
       sentAt: was?.sentAt ?? null,
+      base: was?.base ?? null,
+    });
+    return true;
+  }
+
+  /**
+   * Starts the draft of an edit at `place`, its text `base`, the comment's on GitHub now, which it
+   * keeps as what the edit started from. A draft there already stays as it is. Says whether it
+   * started one.
+   */
+  startEdit(account: string, pull: PullRef, place: DraftPlaceRow, base: string): boolean {
+    const json = placeJson(place);
+    if (place.kind !== 'edit' || this.#kept.get(keyOf(account, pull))?.has(json)) return false;
+    this.#put(account, pull, json, {
+      place,
+      text: base,
+      savedAt: this.#now(),
+      restored: false,
+      sent: null,
+      sentAt: null,
+      base,
     });
     return true;
   }
@@ -238,7 +266,7 @@ export class DraftStore {
     const was =
       this.#kept.get(keyOf(account, pull))?.get(json) ??
       (keep && sent !== null
-        ? { place, text: sent, savedAt: at, restored: false, sent: null, sentAt: null }
+        ? { place, text: sent, savedAt: at, restored: false, sent: null, sentAt: null, base: null }
         : undefined);
     if (!was || (was.sent === null && sent === null)) return;
     this.#put(account, pull, json, { ...was, sent, sentAt: sent === null ? null : at });
@@ -275,7 +303,10 @@ export class DraftStore {
     latest: string,
     moved: (place: ThreadDraftPlace) => DraftPlace | undefined,
   ): boolean {
-    const own = this.of(account, pull).filter(isThreadDraft);
+    // Only a new thread's draft is on a revision: a reply or an edit is wherever its thread is.
+    const own = this.of(account, pull).flatMap((kept) =>
+      kept.place.kind === 'thread' ? [{ place: kept.place, text: kept.text }] : [],
+    );
     if (own.length === 0) return false;
     const { owner, name } = pull.repo;
     const pullRequest = { owner, repo: name, number: pull.number };
@@ -326,11 +357,11 @@ export class DraftStore {
     this.#database
       .prepare(
         `INSERT INTO comments_drafts
-           (account, owner, repo, number, place, body, sent, sent_at, saved_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+           (account, owner, repo, number, place, body, sent, sent_at, saved_at, base)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT (account, owner, repo, number, place) DO UPDATE SET
            body = excluded.body, sent = excluded.sent, sent_at = excluded.sent_at,
-           saved_at = excluded.saved_at`,
+           saved_at = excluded.saved_at, base = excluded.base`,
       )
       .run(
         account,
@@ -342,6 +373,7 @@ export class DraftStore {
         kept.sent,
         kept.sentAt === null ? null : Math.round(kept.sentAt),
         Math.round(kept.savedAt),
+        kept.base,
       );
   }
 }

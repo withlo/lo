@@ -113,6 +113,7 @@ export function ThreadsPanel({ tab }: { tab: PullTab }): ReactNode {
   const next = keysOf('comments.nextThread');
   const previous = keysOf('comments.previousThread');
   const filters = keysOf('comments.filterThreads');
+  const resolving = keysOf('comments.resolveInPanel');
   const panelKey = keysOf('tab.rightPanel');
   return (
     <div className="flex min-h-0 flex-1 flex-col" data-lo-threads={view}>
@@ -143,6 +144,7 @@ export function ThreadsPanel({ tab }: { tab: PullTab }): ReactNode {
         {next && <PaletteHint keys={next}>Next</PaletteHint>}
         {previous && <PaletteHint keys={previous}>Previous</PaletteHint>}
         {show && <PaletteHint keys={show}>Show</PaletteHint>}
+        {resolving && <PaletteHint keys={resolving}>Resolve</PaletteHint>}
         {filters && <PaletteHint keys={filters}>Filter</PaletteHint>}
       </div>
     </div>

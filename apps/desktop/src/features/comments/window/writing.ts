@@ -1,7 +1,8 @@
 // Writing comments in a view's diff, worked out: where a comment on the cursor's line, the lines
 // `v` selected or a file goes, as GitHub takes it and as main keeps its draft; where one on an
-// overview's code block goes; where a draft's box goes in the diff as drawn; and what a box's frame
-// says of where it is and how sending it stands.
+// overview's code block goes; where a draft's box goes in the diff as drawn, a reply's or an
+// edit's in its thread; and what a box's frame says of where it is and how sending it stands, and
+// why a change to a thread wasn't made.
 
 import { CommentableLines, Line, type Lines, type Screen } from '@lo/review';
 import type { OnFile, Place, Span } from '@lo/ui/code';
@@ -10,6 +11,7 @@ import { clockOf, savedWhen } from '../../../window/time.ts';
 import type { DrawnDiff, ThreadedFile } from '../../diff/window/shared.ts';
 import type { CommentOnHead } from '../../overview/window/shared.ts';
 import type {
+  ActRefusal,
   Commentable,
   CommentLinesRow,
   ConversationPlaceRow,
@@ -123,40 +125,56 @@ export const ON_PULL: ConversationPlaceRow = { kind: 'conversation' };
 
 /** A key for a draft's place: the same for the same place, however its object was made. */
 export function placeKey(place: DraftPlaceRow): string {
-  if (place.kind === 'conversation') return JSON.stringify([place.kind]);
-  const { commit, path, lines } = place;
-  return JSON.stringify([
-    place.kind,
-    commit.toLowerCase(),
-    path,
-    lines && lineKey(lines.start),
-    lines && lineKey(lines.end),
-  ]);
+  switch (place.kind) {
+    case 'thread': {
+      const { commit, path, lines } = place;
+      return JSON.stringify([
+        place.kind,
+        commit.toLowerCase(),
+        path,
+        lines && lineKey(lines.start),
+        lines && lineKey(lines.end),
+      ]);
+    }
+    case 'reply':
+      return JSON.stringify([place.kind, place.thread]);
+    case 'edit':
+      return JSON.stringify([place.kind, place.thread, place.comment]);
+    case 'conversation':
+      return JSON.stringify([place.kind]);
+    default:
+      throw new Error(`a draft's place Lo doesn't know: ${JSON.stringify(place satisfies never)}`);
+  }
 }
 
 /**
  * Where a draft's box goes in a diff as drawn: under the last of its lines, or under its file's
- * header. Nowhere when the diff shows another head than the one it was written at, or not its file,
- * or, for one on the older side, another commit than the base there, as between revisions.
+ * header, or, for a reply or an edit, in its thread, when the diff places it (`placed`). Nowhere
+ * when the diff shows another head than the one it was written at, or not its file, or, for one on
+ * the older side, another commit than the base there, as between revisions.
  */
 export function boxAt(
   drawn: DrawnDiff,
   screen: Screen,
   place: DraftPlaceRow,
-): { file: ThreadedFile; at: Place | Span | OnFile } | undefined {
-  if (place.kind !== 'thread') return undefined;
+  placed: (thread: string) => boolean = () => false,
+): { at: Place | Span | OnFile | { thread: string } } | undefined {
+  // The pull request's own box isn't in the diff.
+  if (place.kind === 'conversation') return undefined;
+  if (place.kind !== 'thread')
+    return placed(place.thread) ? { at: { thread: place.thread } } : undefined;
   if (place.commit.toLowerCase() !== drawn.at.toLowerCase()) return undefined;
   const file = drawn.files.find((each) => githubPath(each) === place.path);
   if (!file) return undefined;
-  if (!place.lines) return { file, at: { file: file.id } };
+  if (!place.lines) return { at: { file: file.id } };
   const { start, end } = place.lines;
   const left = start?.side === 'LEFT' || end.side === 'LEFT';
   if (left && (file.since || screen.left.kind !== 'base')) return undefined;
   const side = end.side === 'RIGHT' ? 'new' : 'old';
   if (start && start.side === end.side) {
-    return { file, at: { file: file.id, side, from: start.number, to: end.number } };
+    return { at: { file: file.id, side, from: start.number, to: end.number } };
   }
-  return { file, at: { file: file.id, side, line: end.number } };
+  return { at: { file: file.id, side, line: end.number } };
 }
 
 /** A side as the box's head says it. */
@@ -166,10 +184,15 @@ function sideWords(side: 'LEFT' | 'RIGHT'): string {
 
 /**
  * Where a box's comment goes, as its head says: "On line 41, new side", "On lines 39–41, new side",
- * "On the file", "On the pull request".
+ * "On the file", "Reply to mira-chen's thread", "Edit your comment", "On the pull request".
+ * `author` started the thread a reply is in, if GitHub still has the account.
  */
-export function whereText(place: DraftPlaceRow): string {
+export function whereText(place: DraftPlaceRow, author?: string | null): string {
   if (place.kind === 'conversation') return 'On the pull request';
+  if (place.kind === 'reply') {
+    return author ? `Reply to ${author}’s thread` : 'Reply to the thread';
+  }
+  if (place.kind === 'edit') return 'Edit your comment';
   const { lines } = place;
   if (!lines) return 'On the file';
   const { start, end } = lines;
@@ -206,8 +229,77 @@ function note(text: string, offers?: readonly Offer[]): BoxNote {
   return { key: 'refusal', tone: 'warning', icon: 'blocked', text, offers };
 }
 
-/** What a box says of why its comment wasn't sent, and what it offers to do. */
-export function refusalNote(refusal: SendRefusal): BoxNote {
+/** Why a box's text, or a change to a thread, wasn't sent. */
+export type Refusal = SendRefusal | ActRefusal;
+
+/** What was being done: a comment written, an edit saved, or a change to a thread. */
+export type Doing = 'comment' | 'edit' | 'resolve' | 'unresolve' | 'delete';
+
+/** How the end of a sentence asks for it again: "Send it then." */
+const AGAIN: Readonly<Record<Doing, string>> = {
+  comment: 'Send it',
+  edit: 'Save it',
+  resolve: 'Resolve it',
+  unresolve: 'Unresolve it',
+  delete: 'Delete it',
+};
+
+/** Why GitHub doesn't let you change a comment, by its reasons (`CommentCannotUpdateReason`). */
+const CANNOT: Readonly<Record<string, string>> = {
+  ARCHIVED: 'the repository is archived',
+  LOCKED: 'the conversation is locked',
+  INSUFFICIENT_ACCESS: 'your account can’t write there',
+  VERIFIED_EMAIL_REQUIRED: 'your account’s email address isn’t verified',
+  LOGIN_REQUIRED: 'your account is signed out',
+  MAINTENANCE: 'GitHub is under maintenance',
+};
+
+/**
+ * Why a change to a thread, or to one of your comments, wasn't made, in Lo's words, with what to
+ * do. The refusals of a comment written are its box's (`refusalNote`).
+ */
+export function actText(refusal: ActRefusal, doing: Doing): string {
+  switch (refusal.kind) {
+    case 'theirs':
+      return `It’s ${refusal.author ?? 'a deleted account'}’s comment. You can edit and delete only your own.`;
+    case 'notAllowed': {
+      const why = refusal.reasons.map((reason) => CANNOT[reason]).find((each) => each);
+      const verb = doing === 'delete' ? 'delete' : 'edit';
+      return why === undefined
+        ? `GitHub doesn’t let you ${verb} it now.`
+        : `GitHub doesn’t let you ${verb} it: ${why}.`;
+    }
+    case 'cantResolve':
+      return `GitHub doesn’t let you ${refusal.resolved ? 'resolve' : 'unresolve'} this thread. The pull request’s author and people who can write to the repository can.`;
+    case 'changed':
+      return doing === 'delete'
+        ? 'It changed on GitHub since you asked. Look at it again, then delete it.'
+        : 'It was edited on GitHub since you started. Your text is kept here; copy it, then edit again.';
+    case 'gone':
+      if (doing === 'edit') {
+        return 'It was deleted on GitHub. Your text is kept here; copy it, then discard it.';
+      }
+      return doing === 'delete'
+        ? 'It’s gone from GitHub already.'
+        : 'The thread is gone from GitHub.';
+    case 'busy':
+      return 'It’s being sent already, or Lo is still checking whether it went.';
+    case 'paused':
+      return `GitHub asked Lo to hold off until ${clockOf(refusal.until)}. ${AGAIN[doing]} then.`;
+    case 'signIn':
+      return SIGN_IN;
+    case 'run':
+      return IN_A_LAYER;
+    case 'github':
+      return refusal.message;
+    default:
+      refusal satisfies never;
+      return 'GitHub didn’t take it.';
+  }
+}
+
+/** What a box says of why its text, a comment or an edit, wasn't sent, and what it offers to do. */
+export function refusalNote(refusal: Refusal, doing: 'comment' | 'edit' = 'comment'): BoxNote {
   switch (refusal.kind) {
     case 'notLatest':
       return note(
@@ -219,7 +311,7 @@ export function refusalNote(refusal: SendRefusal): BoxNote {
     case 'notInDiff':
       return note('GitHub takes comments only on lines in the pull request’s diff.', ['onFile']);
     case 'paused':
-      return note(`GitHub asked Lo to hold off until ${clockOf(refusal.until)}. Send it then.`);
+      return note(actText(refusal, doing));
     case 'pendingUnknown':
       return note('Lo couldn’t tell whether you have a pending review. Send it again in a moment.');
     case 'signIn':
@@ -228,14 +320,23 @@ export function refusalNote(refusal: SendRefusal): BoxNote {
       return note('Comment in a layer');
     case 'github':
       return note(refusal.message);
+    // An edit's: it's kept, and once it's discarded, an edit starts from GitHub's text.
+    case 'changed':
+    case 'gone':
+      return note(actText(refusal, doing), ['discard']);
+    case 'theirs':
+    case 'notAllowed':
+    case 'cantResolve':
+    case 'busy':
+      return note(actText(refusal, doing));
     default:
       refusal satisfies never;
       return note('GitHub didn’t take it.');
   }
 }
 
-/** What a box says of how sending its comment stands, if anything. */
-export function sendingNote(sending: Sending | null): BoxNote | undefined {
+/** What a box says of how sending its text stands, if anything: an edit's, `edit`. */
+export function sendingNote(sending: Sending | null, edit = false): BoxNote | undefined {
   switch (sending) {
     case null:
     case 'sending':
@@ -246,16 +347,30 @@ export function sendingNote(sending: Sending | null): BoxNote | undefined {
       return {
         key: 'sending',
         tone: 'info',
-        text: 'GitHub’s answer was lost. Lo is checking whether it posted.',
+        text: edit
+          ? 'GitHub’s answer was lost. Lo is checking whether it saved the edit.'
+          : 'GitHub’s answer was lost. Lo is checking whether it posted.',
       };
     case 'notPosted':
-      return { key: 'sending', tone: 'warning', text: 'It didn’t post. Send it again.' };
+      return {
+        key: 'sending',
+        tone: 'warning',
+        text: edit ? 'It wasn’t saved. Save it again.' : 'It didn’t post. Send it again.',
+      };
     case 'unknown':
       return {
         key: 'sending',
         tone: 'warning',
-        text: 'Lo can’t tell whether it posted.',
+        text: edit ? 'Lo can’t tell whether it saved.' : 'Lo can’t tell whether it posted.',
         offers: ['sendAnyway'],
+      };
+    case 'changed':
+    case 'gone':
+      return {
+        key: 'sending',
+        tone: 'warning',
+        text: actText({ kind: sending }, 'edit'),
+        offers: ['discard'],
       };
     default:
       sending satisfies never;
@@ -266,16 +381,17 @@ export function sendingNote(sending: Sending | null): BoxNote | undefined {
 /** What a box's notes say, in order: a restored draft, a refusal, how sending stands. */
 export function notesOf(
   state: {
+    readonly place?: DraftPlaceRow | undefined;
     readonly restored: number | undefined;
-    readonly refusal: SendRefusal | undefined;
+    readonly refusal: Refusal | undefined;
     readonly sending: Sending | null;
   },
   now: number,
 ): BoxNote[] {
   return [
     state.restored === undefined ? undefined : restoredNote(state.restored, now),
-    state.refusal && refusalNote(state.refusal),
-    sendingNote(state.sending),
+    state.refusal && refusalNote(state.refusal, state.place?.kind === 'edit' ? 'edit' : 'comment'),
+    sendingNote(state.sending, state.place?.kind === 'edit'),
   ].filter((each) => each !== undefined);
 }
 
@@ -294,6 +410,9 @@ export function restoredNote(savedAt: number, now: number): BoxNote {
     offers: ['discard'],
   };
 }
+
+/** Why a thread takes no reply. */
+export const NO_REPLY = 'GitHub doesn’t let you reply to this thread';
 
 /** Why a line refuses a comment, after `c` on it: what `⏎` does next. */
 export const NOT_IN_DIFF =

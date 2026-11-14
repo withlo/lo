@@ -810,6 +810,32 @@ or a file's header, `C` to post right away, `s` for a suggestion, and `c` on a f
   it stays checking and main tries again. Text changed since it was sent stays as the draft. Nothing
   is sent again by itself, and nothing is sent while GitHub can't be reached.
 
+### Acting on review threads
+
+On a thread in the diff, `r` replies, `x` resolves or unresolves it, `i` edits your newest comment
+and `dd` deletes it, as do the card's buttons and its right-click menu (`window/acts.ts`). A key
+acts on the thread `]t` landed on, or the only one the view has drawn on the cursor's line or under
+the file's header (`threadsDrawn`), never one placed there that hasn't come on screen yet. `]t`
+stops at each drawn thread, so one of several on a line, or on a file, can be picked. The threads
+panel's `x` resolves the thread the keyboard is on, through the same function.
+
+- A reply's box and an edit's are comment boxes, kept by their thread (`reply` and `edit` places),
+  and drawn right after the thread's card. The code view keeps a box for each place and name, so a
+  reply's box and a new comment's on the same line both stay open.
+- An edit's draft keeps the text it started from (`base`, in `comments_drafts`), GitHub's as the
+  card showed it when `i` started it (`comments.editing`), through a restart. `comments.edit` reads
+  the comment afresh (`reviewComment`) and saves only if GitHub's text is still that one
+  (`beforeEdit`); otherwise the box keeps the text and offers to discard it.
+- `comments.resolve` and `comments.remove` go in their turn among the pull request's writes, like a
+  comment. A delete reads the comment afresh first, and goes only if it's as the question showed it
+  (its text, whether it's pending, whether it's its thread's only comment). Lo changes only your own
+  comments.
+- A write whose answer is lost is never sent again by itself: main reads the comment or the threads
+  10 s or more after it was sent, and `comments.acts` says how it stands meanwhile, which the card
+  shows, with "Try again" once Lo found it didn't go or can't tell.
+- A thread the reader acts on is claimed in the diff (`claimThread`), so what their write changes
+  there comes at once and keeps their line in place, as what comes under a sent box's line does.
+
 ### Submitting a review
 
 The `review` feature submits your review of the pull request on screen: `⌘⏎` anywhere in its tab but
@@ -897,9 +923,13 @@ builds and packs the checker, and publishes that version with npm's trusted publ
 no token and signs provenance. The skill runs the checker by that exact version, so CI's `overview`
 job fails a pull request whose package differs from npm's copy of its version, its manifest's
 `devDependencies`, `nx` and build scripts aside (the scripts an install runs count).
-`scripts/overview-npm.sh` packs the package the same way for both. Every bumped version is
-published: one that isn't above every release npm has, as when bumps merged close together publish
-out of order, goes out under the `previous` tag, so `latest` only moves forward.
+`scripts/overview-npm.sh` packs the package the same way for both. The workflow's runs go one at a
+time, in the order they started, so every bumped version is published, and bumps merged close
+together publish in order. A version that isn't above every release npm has, as when a failed run is
+re-run after a newer bump has published, or a prerelease, goes out under the `previous` tag, so
+`latest` only moves forward. A version can't carry build metadata (`1.2.3+build`): npm drops it when
+it publishes, so the version on npm wouldn't be the one the skill runs, and CI's `overview` job and
+the workflow both refuse it.
 
 Only main can publish. The publish job runs in the `npm` environment, and npm's trusted publisher
 for the package names that environment, so a branch's edited copy of the workflow can't publish as
