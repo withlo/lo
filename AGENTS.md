@@ -398,6 +398,12 @@ repositories, which account opens a repository, and the pull requests opened lat
   `net.request`), so it takes the system's proxy, with nothing kept in Chromium's cache and no
   cookie. Electron's `net.fetch` isn't used: it fails a redirect GitHub's client asks to see, and
   the client follows redirects itself, only to where the token may go.
+- Each account's requests go one at a time through its poller's queue. One whose answer hasn't begun
+  within 15 s (GitHub gives up on a request after 10 s), or hasn't all come within 30 s, is given up
+  as an answer lost, so the queue goes on: a read is tried again later, and a write may have been
+  done, so it's never sent again by itself. An upload has a limit of its own. A view's first read of
+  its review threads goes ahead of polls and of the tab's other reads while it's on screen, as an
+  opening tab's overview reads do, since the diff's first draw waits on it.
 - Each account's poller keeps what it read in the database, read back only by the build of Lo that
   wrote it (a hash of main's output folder), talking to the same GitHub.
 - The window gets each account's summary (its login and name, how it signed in, whether it's signed

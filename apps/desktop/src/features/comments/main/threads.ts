@@ -17,6 +17,7 @@ import {
   type PollStatus,
   PullRef,
   type ReadKind,
+  type ReadPriority,
   REVIEW_THREADS,
   type ReviewThreadList,
 } from '@lo/github';
@@ -292,8 +293,14 @@ export class ThreadReads {
       changes();
     };
     const { pull } = followed;
+    // The diff's first draw waits on the first read of the view's threads while it's on screen, so
+    // that read goes ahead of polls and of the tab's other reads in the account's queue.
+    const waiting = (): ReadPriority =>
+      this.#current(followed) && this.#options.onScreen() === followed.id
+        ? 'foreground'
+        : 'background';
     const [threads, review] = await Promise.allSettled([
-      poller.reviewThreads(pull),
+      poller.reviewThreads(pull, waiting),
       poller.pendingReview(pull),
     ]);
     if (!this.#current(followed)) return;

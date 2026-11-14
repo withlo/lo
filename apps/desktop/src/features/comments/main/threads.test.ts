@@ -6,6 +6,7 @@ import {
   type PollStatus,
   PullRef,
   type ReadKind,
+  type ReadPriorityNow,
   REVIEW_THREADS,
   type ReviewThread,
   type ReviewThreadList,
@@ -87,7 +88,12 @@ function fakePoller(threads: ReviewThreadList | Error, review: PendingReviewRead
   const listeners = new Set<(event: PollEvent) => void>();
   const watchers = new Set<() => void>();
   const asked: string[] = [];
-  const held = { threads, review };
+  const held: {
+    threads: ReviewThreadList | Error;
+    review: PendingReviewRead;
+    /** Who the threads' first read said waits on it. */
+    first?: ReadPriorityNow | undefined;
+  } = { threads, review };
   let status: PollStatus = { rateLimit: { kind: 'normal' }, offline: undefined, signedOut: false };
   function cachedRead(
     pull: PullRef,
@@ -102,8 +108,9 @@ function fakePoller(threads: ReviewThreadList | Error, review: PendingReviewRead
     return value instanceof Error ? undefined : { value, fetchedAt: 0 };
   }
   const poller: ThreadsPoller = {
-    reviewThreads(pull) {
+    reviewThreads(pull, first) {
       asked.push(`threads ${pull.key}`);
+      held.first = first;
       return held.threads instanceof Error
         ? Promise.reject(held.threads)
         : Promise.resolve({ value: held.threads, fetchedAt: 0 });
@@ -181,6 +188,13 @@ test('reads a view’s threads and pending review once it’s on screen, and sen
   expect(reviews.at(-1)).toEqual({ id: 't1', review: { kind: 'none' } });
   expect(reading.current('t1')).toEqual({ threads: threads.at(-1), review: reviews.at(-1) });
   expect(reading.current('t2')).toEqual({ threads: undefined, review: undefined });
+  // The first read goes ahead of the account's other reads while the view is on screen, as the
+  // diff's first draw waits on it.
+  const { first } = github.held;
+  const now = () => (typeof first === 'function' ? first() : first);
+  expect(now()).toBe('foreground');
+  shown = 't2';
+  expect(now()).toBe('background');
 });
 
 test('follows the poller’s reads of the pull request, and says when the first fails', async () => {

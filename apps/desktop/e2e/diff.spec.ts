@@ -771,9 +771,9 @@ test.describe('without git', () => {
 });
 
 test.describe('when the tree has the changed files after the diff does', () => {
-  // Long enough for the tree to come well after the diff: the diff's first draw waits up to a
-  // second for the review threads, whose read waits behind the tree's in the account's queue.
-  test.use({ cassette: 'app_e2e_late', lateRemote: true, slowTree: 3000 });
+  // The diff's first draw waits for the review threads, whose first read goes ahead of the tree's
+  // in the account's queue, so the tree comes well after the diff.
+  test.use({ cassette: 'app_e2e_late', lateRemote: true, slowTree: 1500 });
 
   test('draws one view, in the panel’s order, from the tab’s opening to the local copy’s', async ({
     app,
