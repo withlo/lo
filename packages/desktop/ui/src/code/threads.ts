@@ -299,13 +299,12 @@ export class Threads {
   }
 }
 
-/** Whether a thread draws the same: its version, whether it's open, and its line. */
+/** Whether a thread draws the same: its version, whether it's open, and its line or file. */
 function sameThread(a: ThreadView, b: ThreadView): boolean {
-  return (
-    a.version === b.version &&
-    a.open === b.open &&
-    a.at.file === b.at.file &&
-    a.at.side === b.at.side &&
-    a.at.line === b.at.line
-  );
+  const [at, other] = [a.at, b.at];
+  const sameLine =
+    'line' in at
+      ? 'line' in other && at.side === other.side && at.line === other.line
+      : !('line' in other);
+  return a.version === b.version && a.open === b.open && at.file === other.file && sameLine;
 }

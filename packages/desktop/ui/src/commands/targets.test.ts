@@ -27,6 +27,19 @@ test('a header gives its file, and is a line for no command', () => {
   expect(plainTarget({ ...header, extra: 1 } as Target)).toEqual(header);
 });
 
+test('a line or a header in a comment box gives the box, and nothing else does', () => {
+  const inBox: LineTarget = { ...line, box: 'b1' };
+  expect(fit(['box'], inBox)).toEqual({ kind: 'box', box: 'b1' });
+  expect(fit(['box'], { kind: 'header', file: 'a.ts', side: 'new', box: 'b2' })).toEqual({
+    kind: 'box',
+    box: 'b2',
+  });
+  expect(fit(['box'], line)).toBeUndefined();
+  expect(fit(['line', 'box'], inBox)).toBe(inBox);
+  expect(plainTarget(inBox)).toEqual(inBox);
+  expect(plainTarget({ kind: 'box', box: 'b1' })).toEqual({ kind: 'box', box: 'b1' });
+});
+
 test('a target that fits none of the kinds is refused', () => {
   expect(fit(['line'], { kind: 'none' })).toBeUndefined();
   expect(fit(['block'], line)).toBeUndefined();

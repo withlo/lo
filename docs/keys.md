@@ -48,12 +48,20 @@ Each command's id is what [the keymap file](#the-keymap-file) binds keys to.
 
 ## Act
 
-| Action                  | Keys                              | Where                                         | Command                |
-| ----------------------- | --------------------------------- | --------------------------------------------- | ---------------------- |
-| Mark viewed             | `e`                               | In `diff`; in code views, only in normal mode | `diff.markViewed`      |
-| Show the hidden comment | None: in its menu and the palette | In `timeline`                                 | `timeline.showComment` |
-| Mark viewed             | `e`                               | In `tree`                                     | `tree.markViewed`      |
-| Sign in with GitHub     | `⏎`                               | In `welcome`                                  | `welcome.signIn`       |
+| Action                       | Keys                              | Where                                                    | Command                  |
+| ---------------------------- | --------------------------------- | -------------------------------------------------------- | ------------------------ |
+| Comment                      | `c`                               | In `diff`; in code views, only in normal and visual mode | `comments.comment`       |
+| Comment right away           | `C`                               | In `diff`; in code views, only in normal and visual mode | `comments.commentNow`    |
+| Suggest a change             | `s`                               | In `diff`; in code views, only in normal and visual mode | `comments.suggest`       |
+| Comment on the file          | `c`                               | In `tree`                                                | `comments.commentOnFile` |
+| Comment on the file instead  | `⏎`                               | In `diff`; in code views, only in normal mode            | `comments.onFileInstead` |
+| Discard the draft            | None: in its menu and the palette | In `box`                                                 | `comments.discard`       |
+| Send it anyway               | None: in its menu and the palette | In `box`                                                 | `comments.sendAnyway`    |
+| Move the comment to the file | None: in its menu and the palette | In `box`                                                 | `comments.moveToFile`    |
+| Mark viewed                  | `e`                               | In `diff`; in code views, only in normal mode            | `diff.markViewed`        |
+| Show the hidden comment      | None: in its menu and the palette | In `timeline`                                            | `timeline.showComment`   |
+| Mark viewed                  | `e`                               | In `tree`                                                | `tree.markViewed`        |
+| Sign in with GitHub          | `⏎`                               | In `welcome`                                             | `welcome.signIn`         |
 
 ## Code
 
@@ -104,6 +112,8 @@ Each command's id is what [the keymap file](#the-keymap-file) binds keys to.
 
 | Action                                 | Keys                              | Where                                                                                               | Command               |
 | -------------------------------------- | --------------------------------- | --------------------------------------------------------------------------------------------------- | --------------------- |
+| Load the newer push                    | None: in its menu and the palette | In `box`                                                                                            | `comments.loadNewer`  |
+| Show the latest push                   | None: in its menu and the palette | In `box`                                                                                            | `comments.showLatest` |
 | Compare revisions                      | `g v`                             | Anywhere but `menu`, `dialog`, `palette`, `box` and `revisions`; in code views, only in normal mode | `revisions.picker`    |
 | Next middle view                       | `` ` ``                           | Anywhere but `menu`, `dialog`, `palette` and `box`; in code views, only in normal mode              | `tab.nextView`        |
 | Previous middle view                   | `~`                               | Anywhere but `menu`, `dialog`, `palette` and `box`; in code views, only in normal mode              | `tab.previousView`    |
@@ -218,7 +228,7 @@ Each command's id is what [the keymap file](#the-keymap-file) binds keys to.
 | Previous tab              | `⌘⇧[`, `⌃⇧⇥`                          | Anywhere but `dialog` and `palette`                                                    | `tab.previous`          |
 | Move tab left             | `⌃⇧PgUp`                              | Anywhere but `dialog` and `palette`                                                    | `tab.moveLeft`          |
 | Move tab right            | `⌃⇧PgDn`                              | Anywhere but `dialog` and `palette`                                                    | `tab.moveRight`         |
-| Tabs that don’t fit       | `⌘⇧A`                                 | Anywhere but `dialog` and `palette`                                                    | `tab.more`              |
+| Tabs that don’t fit       | `⌘⇧A`                                 | Anywhere but `dialog`, `palette` and `box`                                             | `tab.more`              |
 | Close tab                 | `⌘W`                                  | Anywhere but `dialog` and `palette`                                                    | `tab.close`             |
 
 ## Where keys apply
@@ -280,25 +290,29 @@ meanings.
 Code views (`diff`, `file`, `peek` and `box`) run Vim, and Lo leaves Vim's keys to it there, except
 these, which run Lo's command in place of Vim's key:
 
-| Keys             | Action                          | Vim's key | Where                                                                | Command               |
-| ---------------- | ------------------------------- | --------- | -------------------------------------------------------------------- | --------------------- |
-| `e`              | Mark viewed                     | `e`       | `diff` (normal)                                                      | `diff.markViewed`     |
-| `g i`            | Inline or side by side          | `g i`     | `diff` (normal)                                                      | `diff.inline`         |
-| `g w`            | Hide or show whitespace changes | `g w`     | `diff` (normal)                                                      | `diff.whitespace`     |
-| `y y`            | Copy the lines                  | `y`       | `diff` and `file`                                                    | `diff.copyLines`      |
-| `y l`            | Copy the line's link            | `y`       | `diff` (normal) and `file` (normal)                                  | `diff.copyLink`       |
-| `y p`            | Copy path                       | `y`       | `diff` (normal) and `file` (normal)                                  | `diff.copyPath`       |
-| `?`              | Every key                       | `?`       | `diff`, `file`, `peek` and `box` (normal and visual)                 | `keys.help`           |
-| `⌃o`             | Back                            | `⌃o`      | `diff`, `file` and `peek`                                            | `keys.back`           |
-| `⌃i`             | Forward                         | `⌃i`      | `diff`, `file` and `peek`                                            | `keys.forward`        |
-| `y a`            | Copy prompt for an agent        | `y`       | `diff` (normal), `file` (normal) and `peek` (normal)                 | `overview.copyPrompt` |
-| `g v`            | Compare revisions               | `g v`     | `diff` (normal), `file` (normal) and `peek` (normal)                 | `revisions.picker`    |
-| `` ` ``          | Next middle view                | `` ` ``   | `diff` (normal), `file` (normal) and `peek` (normal)                 | `tab.nextView`        |
-| `~`              | Previous middle view            | `~`       | `diff` (normal), `file` (normal) and `peek` (normal)                 | `tab.previousView`    |
-| `-`              | Go to the file tree             | `-`       | `diff` (normal), `file` (normal) and `peek` (normal)                 | `tree.focus`          |
-| `Ctrl+Q` (Linux) | Quit Lo                         | `Ctrl+Q`  | `diff`, `file`, `peek` and `box` (normal and visual)                 | `app.quit`            |
-| `Ctrl+W` (Linux) | Close tab                       | `Ctrl+W`  | `diff` (normal), `file` (normal), `peek` (normal) and `box` (normal) | `tab.close`           |
-| `Ctrl+P` (Linux) | Go to a file                    | `Ctrl+P`  | `diff`, `file`, `peek` and `box` (normal and visual)                 | `tree.find`           |
+| Keys             | Action                          | Vim's key | Where                                                                | Command                  |
+| ---------------- | ------------------------------- | --------- | -------------------------------------------------------------------- | ------------------------ |
+| `c`              | Comment                         | `c`       | `diff`                                                               | `comments.comment`       |
+| `C`              | Comment right away              | `C`       | `diff`                                                               | `comments.commentNow`    |
+| `s`              | Suggest a change                | `s`       | `diff`                                                               | `comments.suggest`       |
+| `⏎`              | Comment on the file instead     | `⏎`       | `diff` (normal)                                                      | `comments.onFileInstead` |
+| `e`              | Mark viewed                     | `e`       | `diff` (normal)                                                      | `diff.markViewed`        |
+| `g i`            | Inline or side by side          | `g i`     | `diff` (normal)                                                      | `diff.inline`            |
+| `g w`            | Hide or show whitespace changes | `g w`     | `diff` (normal)                                                      | `diff.whitespace`        |
+| `y y`            | Copy the lines                  | `y`       | `diff` and `file`                                                    | `diff.copyLines`         |
+| `y l`            | Copy the line's link            | `y`       | `diff` (normal) and `file` (normal)                                  | `diff.copyLink`          |
+| `y p`            | Copy path                       | `y`       | `diff` (normal) and `file` (normal)                                  | `diff.copyPath`          |
+| `?`              | Every key                       | `?`       | `diff`, `file`, `peek` and `box` (normal and visual)                 | `keys.help`              |
+| `⌃o`             | Back                            | `⌃o`      | `diff`, `file` and `peek`                                            | `keys.back`              |
+| `⌃i`             | Forward                         | `⌃i`      | `diff`, `file` and `peek`                                            | `keys.forward`           |
+| `y a`            | Copy prompt for an agent        | `y`       | `diff` (normal), `file` (normal) and `peek` (normal)                 | `overview.copyPrompt`    |
+| `g v`            | Compare revisions               | `g v`     | `diff` (normal), `file` (normal) and `peek` (normal)                 | `revisions.picker`       |
+| `` ` ``          | Next middle view                | `` ` ``   | `diff` (normal), `file` (normal) and `peek` (normal)                 | `tab.nextView`           |
+| `~`              | Previous middle view            | `~`       | `diff` (normal), `file` (normal) and `peek` (normal)                 | `tab.previousView`       |
+| `-`              | Go to the file tree             | `-`       | `diff` (normal), `file` (normal) and `peek` (normal)                 | `tree.focus`             |
+| `Ctrl+Q` (Linux) | Quit Lo                         | `Ctrl+Q`  | `diff`, `file`, `peek` and `box` (normal and visual)                 | `app.quit`               |
+| `Ctrl+W` (Linux) | Close tab                       | `Ctrl+W`  | `diff` (normal), `file` (normal), `peek` (normal) and `box` (normal) | `tab.close`              |
+| `Ctrl+P` (Linux) | Go to a file                    | `Ctrl+P`  | `diff`, `file`, `peek` and `box` (normal and visual)                 | `tree.find`              |
 
 In code views, Vim runs Lo's motions (next change, previous change, next file, previous file, next
 thread and previous thread) under Lo's keys, so a count repeats them and they extend a selection in

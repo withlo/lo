@@ -36,7 +36,8 @@ export interface ViewFile extends HeaderInfo {
 
 /**
  * What's under one of a file's lines: the threads there, a comment box, the notes of overview
- * markers that end there, or any of them together.
+ * markers that end there, or any of them together. Line 0 is the file's header, under which go the
+ * threads and comment box on the file.
  */
 export interface ViewThread {
   id: string;
@@ -105,8 +106,9 @@ export function fileBlocks(
   const headerLine = doc.line(lines.header);
   const text = input.note && noteText(file, input.note);
   // A side without lines beside one with them gets a spacer, not a note.
+  const onFile = threads.find((thread) => thread.line === 0 && thread.side === side);
   const out = [
-    header(input, headerLine, lines.count === 0 && !input.otherLines ? text : undefined),
+    header(input, headerLine, lines.count === 0 && !input.otherLines ? text : undefined, onFile),
   ];
   if (text) {
     if (lines.count > 0) {
@@ -131,7 +133,8 @@ export function fileBlocks(
   }
   movedLabels(input, side, (number) => line(number).from, out);
   for (const thread of threads) {
-    if (thread.side === side) out.push(threadAt(thread, input, tag, line(thread.line).to));
+    if (thread.side !== side || thread.line === 0) continue;
+    out.push(threadAt(thread, input, tag, line(thread.line).to));
   }
   return out;
 }
@@ -145,7 +148,8 @@ export function inlineBlocks(
   const headerLine = doc.line(lines.header);
   const note = input.note ?? (diff && inline ? undefined : 'pending');
   const text = note && noteText(file, note);
-  const out = [header(input, headerLine, lines.count === 0 ? text : undefined)];
+  const onFile = threads.find((thread) => thread.line === 0);
+  const out = [header(input, headerLine, lines.count === 0 ? text : undefined, onFile)];
   if (text) {
     if (lines.count > 0) {
       const widget = new FileNoteWidget(index, text, true);
@@ -176,21 +180,29 @@ export function inlineBlocks(
     movedLabels(input, side, (number) => at(side, number).from, out);
   }
   for (const thread of threads) {
-    out.push(threadAt(thread, input, tag, at(thread.side, thread.line).to));
+    if (thread.line > 0) out.push(threadAt(thread, input, tag, at(thread.side, thread.line).to));
   }
   return out;
 }
 
 /**
- * The file's header, with `note` in it, where the file has no lines: as a block of its own after
- * the header, CodeMirror can draw a note above the lines it draws (see `HeaderWidget`).
+ * The file's header, with `note` in it, where the file has no lines, and `onFile`, the threads and
+ * comment box on the file: as blocks of their own after the header, CodeMirror can draw them above
+ * the lines it draws (see `HeaderWidget`).
  */
 function header(
   input: Common,
   line: { from: number; to: number },
   note?: string,
+  onFile?: ViewThread,
 ): Range<Decoration> {
-  const widget = new HeaderWidget(input.index, input.file, note);
+  const under = onFile && {
+    threads: onFile.threads,
+    box: onFile.box,
+    drawing: onFile.drawing ?? 0,
+    draw: input.draw,
+  };
+  const widget = new HeaderWidget(input.index, input.file, note, under);
   return Decoration.replace({ widget, block: true, file: input.index }).range(line.from, line.to);
 }
 

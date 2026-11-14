@@ -25,34 +25,69 @@ export interface HeaderInfo {
 }
 
 /**
+ * What goes under a file's header on one side: the threads on the file, each in the element the
+ * caller draws it in, and a comment box on the file being written, last. Like a line's threads,
+ * they're elements that outlive the block, and move into whichever block draws them last.
+ */
+export interface UnderHeader {
+  readonly threads: readonly ThreadHost[];
+  readonly box: BoxHost | undefined;
+  /** Changes when the threads and the box must be drawn again, to move them into another editor. */
+  readonly drawing: number;
+  /** Has the caller draw a thread the first time it's drawn. */
+  readonly draw: (thread: ThreadHost) => void;
+}
+
+/**
  * A file's header, the same on both sides, with a note under it on why a file with no lines isn't
- * shown. The note is part of the header's block, not a block after it: CodeMirror's decoration
- * cursor can lose a block that sits after another at the same place when a chunk of decorations
- * ends between them, and then draws it where it shouldn't, above the lines it draws.
+ * shown, and under that the threads and comment box on the file, on the side they're on. Both are
+ * part of the header's block, not blocks after it: CodeMirror's decoration cursor can lose a block
+ * that sits after another at the same place when a chunk of decorations ends between them, and
+ * then draws it where it shouldn't, above the lines it draws.
  */
 export class HeaderWidget extends WidgetType {
   readonly file: number;
   readonly info: HeaderInfo;
   readonly note: string | undefined;
+  readonly under: UnderHeader | undefined;
 
-  constructor(file: number, info: HeaderInfo, note?: string) {
+  constructor(file: number, info: HeaderInfo, note?: string, under?: UnderHeader) {
     super();
     this.file = file;
     this.info = info;
     this.note = note;
+    this.under = under;
   }
 
   override eq(other: HeaderWidget): boolean {
-    return other.file === this.file && other.note === this.note && other.info === this.info;
+    return (
+      other.file === this.file &&
+      other.note === this.note &&
+      other.info === this.info &&
+      sameUnder(other.under, this.under)
+    );
   }
 
   toDOM(): HTMLElement {
     const head = this.#head();
-    if (this.note === undefined) return head;
+    if (this.note === undefined && !this.under) return head;
     const block = element('div', 'lo-fileblock');
-    const note = element('div', 'lo-collapsed lo-filenote', this.note);
-    note.dataset.row = `n:${this.file}`;
-    block.append(head, note);
+    block.append(head);
+    if (this.note !== undefined) {
+      const note = element('div', 'lo-collapsed lo-filenote', this.note);
+      note.dataset.row = `n:${this.file}`;
+      block.append(note);
+    }
+    if (this.under) {
+      // As under a line: the space around the cards is padding, which the editor measures.
+      const threads = element('div', 'lo-diffthread');
+      for (const thread of this.under.threads) {
+        this.under.draw(thread);
+        threads.append(thread.dom);
+      }
+      this.under.box?.attach(threads);
+      block.append(threads);
+    }
     return block;
   }
 
@@ -94,12 +129,33 @@ export class HeaderWidget extends WidgetType {
   }
 
   override get estimatedHeight(): number {
-    return this.note === undefined ? 38 : 66;
+    let height = this.note === undefined ? 38 : 66;
+    const { under } = this;
+    if (under) {
+      const parts = under.threads.length + (under.box ? 1 : 0);
+      height += BLOCK_PADDING + Math.max(0, parts - 1) * BLOCK_GAP;
+      for (const thread of under.threads) height += thread.estimate;
+      if (under.box) height += under.box.dom.offsetHeight || 120;
+    }
+    return height;
   }
 
-  override ignoreEvent(): boolean {
-    return false;
+  /** The header's own events are the editor's; the threads and the box under it handle theirs. */
+  override ignoreEvent(event: Event): boolean {
+    const { target } = event;
+    return target instanceof Element && target.closest('.lo-diffthread') !== null;
   }
+}
+
+/** Whether two headers draw the same threads and box under them. */
+function sameUnder(a: UnderHeader | undefined, b: UnderHeader | undefined): boolean {
+  if (!a || !b) return a === b;
+  return (
+    a.box === b.box &&
+    a.drawing === b.drawing &&
+    a.threads.length === b.threads.length &&
+    a.threads.every((thread, index) => thread === b.threads[index])
+  );
 }
 
 /** Unchanged lines collapsed into one block, or a whole file that isn't shown yet or at all. */

@@ -321,6 +321,154 @@ function firstEditable(within: HTMLElement | null): HTMLElement | undefined {
   );
 }
 
+/** Why each of a foot's buttons that's off is off, once for each reason, in order. */
+function reasonsOf(foot: CommentBoxFoot | undefined): string[] {
+  return [
+    ...new Set(
+      (foot?.actions ?? []).flatMap((each) =>
+        each.disabled === true && each.why !== undefined ? [each.why] : [],
+      ),
+    ),
+  ];
+}
+
+/**
+ * The id of the note that says `why` a button is off, among `reasons`, for a box whose id is `id`.
+ */
+function reasonId(id: string, reasons: readonly string[], why: string | undefined) {
+  return why === undefined ? undefined : `${id}-why-${reasons.indexOf(why)}`;
+}
+
+/**
+ * A box's head: the Write and Preview switch, where the comment goes and who it's from. For a frame
+ * a code view hosts, drawn in the head it makes; `CommentBox` draws it itself.
+ */
+export function CommentBoxHeadBar({
+  head,
+  previewing = false,
+}: {
+  head: CommentBoxHead;
+  previewing?: boolean | undefined;
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-x-8 gap-y-4 border-b border-border-subtle py-6 ps-12 pe-8 text-fg-muted text-small">
+      <SegmentedControl
+        label="Write or preview"
+        kind="views"
+        size="sm"
+        value={previewing ? 'preview' : 'write'}
+        onChange={(value) => head.onPreviewing?.(value === 'preview')}
+        keys={head.previewKeys}
+        items={[
+          { value: 'write', label: 'Write' },
+          { value: 'preview', label: 'Preview' },
+        ]}
+      />
+      {head.where !== undefined && <span className="min-w-0 truncate">{head.where}</span>}
+      {head.account !== undefined && (
+        <span
+          className="ms-auto inline-flex h-24 min-w-0 shrink-first items-center gap-6 rounded-pill ps-4 pe-8 whitespace-nowrap text-fg"
+          title={`Commenting as ${head.account.login}`}
+        >
+          <Avatar login={head.account.login} image={head.account.image} size="sm" />
+          <span className="min-w-0 truncate">
+            <span className="text-fg-muted">as</span> {head.account.login}
+          </span>
+        </span>
+      )}
+    </div>
+  );
+}
+
+/**
+ * A box's notes, and a note for each reason one of its foot's buttons is off, which the button
+ * names as what describes it. `id` is the box's, as its foot is given it.
+ */
+export function CommentBoxNotes({
+  id,
+  notes = [],
+  foot,
+}: {
+  id: string;
+  notes?: readonly CommentBoxNote[] | undefined;
+  foot?: CommentBoxFoot | undefined;
+}) {
+  const reasons = reasonsOf(foot);
+  return (
+    <>
+      {notes.map((each) => (
+        <Note key={each.key} each={each} />
+      ))}
+      {reasons.map((why) => (
+        <Note
+          key={why}
+          id={reasonId(id, reasons, why)}
+          each={{ key: why, tone: 'info', text: why }}
+        />
+      ))}
+    </>
+  );
+}
+
+/** What shows over the editor while files are dragged over the box: how many it would attach. */
+export function CommentBoxDropzone({ dropping }: { dropping: number }) {
+  return (
+    <div className="pointer-events-none absolute inset-6 grid place-items-center rounded-sm border-2 border-dashed border-accent bg-accent-soft text-fg-accent text-ui-strong">
+      {dropping > 0
+        ? `Drop to attach ${dropping} ${dropping === 1 ? 'file' : 'files'}`
+        : 'Drop to attach files'}
+    </div>
+  );
+}
+
+/** A box's uploads: each file, uploading or uploaded. */
+export function CommentBoxUploads({ uploads }: { uploads: readonly CommentBoxUpload[] }) {
+  return (
+    <ul
+      aria-label="Uploads"
+      className="flex list-none flex-col gap-6 border-t border-border-subtle px-12 py-8"
+    >
+      {uploads.map((each) => (
+        <Upload key={each.key} each={each} />
+      ))}
+    </ul>
+  );
+}
+
+/**
+ * A box's foot: the Vim mode, Attach, and the buttons, the main one last. A button that's off
+ * names the note that says why as what describes it: `id` is the box's, as its notes are given it.
+ */
+export function CommentBoxFootBar({
+  id,
+  foot,
+  focused = false,
+}: {
+  id: string;
+  foot: CommentBoxFoot;
+  /** The editor has focus: the mode chip is lit. */
+  focused?: boolean | undefined;
+}) {
+  const reasons = reasonsOf(foot);
+  return (
+    <div className="flex flex-wrap items-center gap-8 border-t border-border-subtle py-8 ps-12 pe-8 text-fg-muted text-small">
+      {foot.mode !== undefined && (
+        <span className={mode({ kind: foot.mode.kind, lit: focused })}>{foot.mode.name}</span>
+      )}
+      {foot.text !== undefined && <span>{foot.text}</span>}
+      {foot.attach !== undefined && <Attach attach={foot.attach} />}
+      <span className="flex-1" />
+      {foot.actions?.map((action) => (
+        <ActionButton
+          key={action.label}
+          action={action}
+          reason={reasonId(id, reasons, action.why)}
+        />
+      ))}
+    </div>
+  );
+}
+
 /**
  * The frame around a comment's editor: a head with the Write and Preview switch, where the comment
  * goes and who it's from; notes; the editor, or its preview; the files being uploaded; and a foot
@@ -328,7 +476,9 @@ function firstEditable(within: HTMLElement | null): HTMLElement | undefined {
  * reply, the timeline's and the review summary, each with the parts it needs. It draws what it's
  * given and decides nothing, but for where focus goes when the preview takes the editor's place:
  * the preview, and back to the editor when it goes, so the keys of the box (`box` scope) work
- * throughout.
+ * throughout. A box a code view hosts has its parts made for it, and its frame draws each part on
+ * its own: `CommentBoxHeadBar`, `CommentBoxNotes`, `CommentBoxDropzone`, `CommentBoxUploads` and
+ * `CommentBoxFootBar`.
  */
 export function CommentBox({
   children,
@@ -365,17 +515,6 @@ export function CommentBox({
     }
   }, [previewing]);
 
-  // A button that's off says why in a note, once for each reason.
-  const reasons = [
-    ...new Set(
-      (foot?.actions ?? []).flatMap((each) =>
-        each.disabled === true && each.why !== undefined ? [each.why] : [],
-      ),
-    ),
-  ];
-  const reasonId = (why: string | undefined) =>
-    why === undefined ? undefined : `${id}-why-${reasons.indexOf(why)}`;
-
   return (
     <div
       ref={frameRef}
@@ -392,49 +531,11 @@ export function CommentBox({
         if (next instanceof Node && !event.currentTarget.contains(next)) held.current = false;
       }}
     >
-      {head !== undefined && (
-        <div className="flex flex-wrap items-center gap-x-8 gap-y-4 border-b border-border-subtle py-6 ps-12 pe-8 text-fg-muted text-small">
-          <SegmentedControl
-            label="Write or preview"
-            kind="views"
-            size="sm"
-            value={previewing ? 'preview' : 'write'}
-            onChange={(value) => head.onPreviewing?.(value === 'preview')}
-            keys={head.previewKeys}
-            items={[
-              { value: 'write', label: 'Write' },
-              { value: 'preview', label: 'Preview' },
-            ]}
-          />
-          {head.where !== undefined && <span className="min-w-0 truncate">{head.where}</span>}
-          {head.account !== undefined && (
-            <span
-              className="ms-auto inline-flex h-24 min-w-0 shrink-first items-center gap-6 rounded-pill ps-4 pe-8 whitespace-nowrap text-fg"
-              title={`Commenting as ${head.account.login}`}
-            >
-              <Avatar login={head.account.login} image={head.account.image} size="sm" />
-              <span className="min-w-0 truncate">
-                <span className="text-fg-muted">as</span> {head.account.login}
-              </span>
-            </span>
-          )}
-        </div>
-      )}
-      {notes.map((each) => (
-        <Note key={each.key} each={each} />
-      ))}
-      {reasons.map((why) => (
-        <Note key={why} id={reasonId(why)} each={{ key: why, tone: 'info', text: why }} />
-      ))}
+      {head !== undefined && <CommentBoxHeadBar head={head} previewing={previewing} />}
+      <CommentBoxNotes id={id} notes={notes} foot={foot} />
       <div ref={slot} hidden={previewing} className="relative bg-code-bg text-code-fg code-text">
         {children}
-        {dropping !== undefined && !previewing && (
-          <div className="pointer-events-none absolute inset-6 grid place-items-center rounded-sm border-2 border-dashed border-accent bg-accent-soft text-fg-accent text-ui-strong">
-            {dropping > 0
-              ? `Drop to attach ${dropping} ${dropping === 1 ? 'file' : 'files'}`
-              : 'Drop to attach files'}
-          </div>
-        )}
+        {dropping !== undefined && !previewing && <CommentBoxDropzone dropping={dropping} />}
       </div>
       {previewing && (
         <div
@@ -447,29 +548,8 @@ export function CommentBox({
           {preview ?? <p className="text-fg-muted">Nothing to preview.</p>}
         </div>
       )}
-      {uploads.length > 0 && (
-        <ul
-          aria-label="Uploads"
-          className="flex list-none flex-col gap-6 border-t border-border-subtle px-12 py-8"
-        >
-          {uploads.map((each) => (
-            <Upload key={each.key} each={each} />
-          ))}
-        </ul>
-      )}
-      {foot !== undefined && (
-        <div className="flex flex-wrap items-center gap-8 border-t border-border-subtle py-8 ps-12 pe-8 text-fg-muted text-small">
-          {foot.mode !== undefined && (
-            <span className={mode({ kind: foot.mode.kind, lit: focused })}>{foot.mode.name}</span>
-          )}
-          {foot.text !== undefined && <span>{foot.text}</span>}
-          {foot.attach !== undefined && <Attach attach={foot.attach} />}
-          <span className="flex-1" />
-          {foot.actions?.map((action) => (
-            <ActionButton key={action.label} action={action} reason={reasonId(action.why)} />
-          ))}
-        </div>
-      )}
+      {uploads.length > 0 && <CommentBoxUploads uploads={uploads} />}
+      {foot !== undefined && <CommentBoxFootBar id={id} foot={foot} focused={focused} />}
     </div>
   );
 }

@@ -1,7 +1,7 @@
 // Review threads in the diff: Lo, started on the replay server as rozed-bot, reads the threads on
 // the comments fixture (`testing/fixtures/comments.sh`), rozed-dev/e2e#94, and draws them under
-// their lines, unresolved ones open and resolved ones collapsed, with an outdated one left out,
-// those on the first screen with it.
+// their lines, or a file's under its header, unresolved ones open and resolved ones collapsed, with
+// an outdated one left out, those on the first screen with it.
 // Each file's header and its row in the tree count them, `]t` and `[t` walk them, and `za` opens
 // or collapses the one the cursor is on. Comments are drawn as GitHub renders them, images and all.
 // A renamed file's thread under one of its old lines shows there. A stack's layer shows its own
@@ -74,7 +74,10 @@ function placed(page: Page): Promise<string[]> {
     const paths = new Map(diff.files.map((file) => [file.id, file.path]));
     return diff
       .threads()
-      .map(({ at }) => `${paths.get(at.file) ?? at.file} ${at.side} ${at.line}`)
+      .map(({ at }) => {
+        const where = 'line' in at ? `${at.side} ${at.line}` : 'file';
+        return `${paths.get(at.file) ?? at.file} ${where}`;
+      })
       .toSorted();
   });
 }
@@ -114,11 +117,12 @@ test('draws threads under their lines, resolved ones collapsed, and counts them'
   page,
 }) => {
   await open(page, COMMENTS_PULL.number);
-  // Every thread on a line the diff of the latest push shows: the outdated one isn't, and the
-  // one on docs/usage.md is on the file.
+  // Every thread on a line the diff of the latest push shows, and the one on docs/usage.md, which
+  // is on the file, under its header: the outdated one isn't.
   await expect
     .poll(() => placed(page), { timeout: 20_000 })
     .toEqual([
+      'docs/usage.md file',
       'src/backoff.ts new 15',
       'src/backoff.ts new 17',
       'src/backoff.ts new 2',
@@ -147,7 +151,7 @@ test('draws threads under their lines, resolved ones collapsed, and counts them'
 
 test('walks the threads with ]t and [t, and opens or collapses one with za', async ({ page }) => {
   await open(page, COMMENTS_PULL.number);
-  await expect.poll(() => placed(page), { timeout: 20_000 }).toHaveLength(9);
+  await expect.poll(() => placed(page), { timeout: 20_000 }).toHaveLength(10);
   await settled(page);
   await page.keyboard.press(']');
   await page.keyboard.press('t');

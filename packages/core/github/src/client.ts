@@ -191,6 +191,8 @@ interface Shared {
   limited: HeardLimit[];
   /** GitHub's latest run of writes turned away as content sent too fast ({@link GithubClient.tooFast}). */
   tooFast: TooFast | undefined;
+  /** How far GitHub's clock is ahead of this computer's ({@link GithubClient.githubAhead}). */
+  githubAhead: number | undefined;
 }
 
 /** A refusal for the rate limit, used up or secondary. */
@@ -242,6 +244,7 @@ export class GithubClient {
       state: { rateLimits: new RateLimits(), sso: undefined },
       limited: [],
       tooFast: undefined,
+      githubAhead: undefined,
     };
     this.#store = options.store;
     this.#onUnauthorized = options.onUnauthorized;
@@ -312,6 +315,15 @@ export class GithubClient {
   /** Records GitHub's latest run of writes turned away as content sent too fast ({@link GithubClient.tooFast}). */
   setTooFast(tooFast: TooFast | undefined): void {
     this.#shared.tooFast = tooFast;
+  }
+
+  /**
+   * How far GitHub's clock is ahead of this computer's, in milliseconds, by the `Date` of the last
+   * answer to this client or those sharing its state: nothing before one gave it. `Date` is to the
+   * second, so this is too, give or take the time the answer took.
+   */
+  githubAhead(): number | undefined {
+    return this.#shared.githubAhead;
   }
 
   /** Records `error`, if it's a refusal for the rate limit ({@link GithubClient.rateLimited}). */
@@ -526,6 +538,8 @@ export class GithubClient {
       state.rateLimits.recordHeaders(response.headers);
       const sso = parseSsoHeader(response.headers.get('x-github-sso'));
       if (sso) state.sso = sso;
+      const date = Date.parse(response.headers.get('date') ?? '');
+      if (!Number.isNaN(date)) this.#shared.githubAhead = date - Date.now();
     }
     return new RestResponse(response.status, response.headers, bytes);
   }
