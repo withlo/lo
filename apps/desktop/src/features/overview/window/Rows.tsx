@@ -1,10 +1,19 @@
-// The overview skill's rows: the step on the welcome screen, and the row in Settings' Command line.
+// The overview skill's rows: the step on the welcome screen, and the rows in Settings' Command line,
+// for installing it and for the command that installs it from a terminal.
 
-import { Button, Setting, SetupItem } from '@lo/ui';
+import { Button, Key, keyAria, Setting, SetupItem } from '@lo/ui';
 import { useEffect } from 'react';
 import { useStore } from 'zustand';
 
-import { checkSkill, installSkill, skillStore } from './skill.ts';
+import { useKeys } from '../../../window/commands/registry.ts';
+import { keyOf } from './labels.ts';
+import {
+  checkSkill,
+  copyInstallCommand,
+  INSTALL_COMMAND,
+  installSkill,
+  skillStore,
+} from './skill.ts';
 import { ABOUT, installedEverywhere, installLabel, standing } from './words.ts';
 
 function SkillIcon() {
@@ -53,6 +62,38 @@ export function SkillRow() {
       <Button disabled={installing} onClick={() => void installSkill()}>
         {installLabel(state)}
       </Button>
+    </Setting>
+  );
+}
+
+/**
+ * The command that installs the skill from a terminal, by the version of the checker Lo's own skill
+ * runs, with a button that copies it, as `yc` does.
+ */
+export function InstallCommandRow() {
+  useKeys();
+  const copied = useStore(skillStore, (state) => state.copied);
+  useEffect(() => {
+    skillStore.setState({ copied: false });
+  }, []);
+  const keys = keyOf('overview.copyInstallCommand');
+  return (
+    <Setting
+      label="Install from a terminal"
+      description={
+        <>
+          <span className="text-fg select-all code-small">{INSTALL_COMMAND}</span> installs the
+          skill Lo does, for each agent set up where it runs.
+        </>
+      }
+    >
+      <Button {...keyAria(keys, undefined)} onClick={() => void copyInstallCommand()}>
+        {copied ? 'Copied' : 'Copy'}
+        {keys !== undefined && <Key keys={keys} quiet decorative />}
+      </Button>
+      <span role="status" className="sr-only">
+        {copied ? 'Copied the command.' : ''}
+      </span>
     </Setting>
   );
 }

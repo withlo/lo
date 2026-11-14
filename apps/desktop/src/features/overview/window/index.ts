@@ -1,7 +1,8 @@
 // The overview feature in the window: each pull request's tab's overview, checked as main reads
 // it, shown as the first of the tab's middle views, with its mark in the view switch and what it
 // says in the status bar; its markers in the diff; the prompt `ya` copies; the setting for what a
-// tab opens on; and the overview skill's rows.
+// tab opens on; and the overview skill's rows, with the command that installs it from a terminal,
+// which `yc` copies.
 
 import { handlers, type Target } from '@lo/ui/commands';
 import { closeCards } from '@lo/ui/overview';
@@ -26,7 +27,7 @@ import { followMarkers, keepMarkersOnly } from './markers.ts';
 import { OverviewMark } from './Mark.tsx';
 import { OpenRow } from './OpenRow.tsx';
 import { OverviewView } from './Overview.tsx';
-import { SkillRow, SkillStep } from './Rows.tsx';
+import { InstallCommandRow, SkillRow, SkillStep } from './Rows.tsx';
 import {
   besideFor,
   besides,
@@ -50,7 +51,7 @@ import {
   type DrawnOverview,
   type Scroll,
 } from './follow.ts';
-import { followSkill, installSkill } from './skill.ts';
+import { copyInstallCommand, followSkill, installSkill } from './skill.ts';
 import { keepSinceOnly } from './since.ts';
 import { OverviewStatus } from './Status.tsx';
 import { catchUp, keepOnly, states, takeRevisions, takeState } from './store.ts';
@@ -278,6 +279,7 @@ export default {
         await installSkill();
       },
     },
+    copyInstallCommand: { run: () => copyInstallCommand() },
   }),
   views: [
     // The first middle view, before the diff (20).
@@ -309,6 +311,11 @@ export default {
       id: 'overview.skillRow',
       order: 10,
       render: () => createElement(SkillRow),
+    }),
+    defineView(commandLine, {
+      id: 'overview.installCommand',
+      order: 20,
+      render: () => createElement(InstallCommandRow),
     }),
   ],
   start() {
