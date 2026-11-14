@@ -13,8 +13,8 @@ import type {
   Place,
   Span,
 } from '@lo/ui/code';
-import type { LineTarget } from '@lo/ui/commands';
-import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
+import { commandsOf, defineCommands, type LineTarget, listen, Registry } from '@lo/ui/commands';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from 'vitest';
 
 import { notice } from '../../../window/commands/notices.tsx';
 import { installBridge } from '../../../window/test/bridge.ts';
@@ -403,6 +403,25 @@ let views = 0;
 
 /** Each box as it's drawn: the frame it'd get is where its state is read. */
 const boxesSeen: Box[] = [];
+/** How many times Lo's command on `e` ran, from the window's key listener. */
+let commanded = 0;
+let stopKeys: () => void = () => {};
+
+// The window's key listener, as it starts before anything else listens for keys: a key one of Lo's
+// commands takes goes no further than its `keydown`.
+beforeAll(() => {
+  const keys = defineCommands('test', { act: { label: 'Act', group: 'Act', keys: ['e'] } });
+  const handler = {
+    run() {
+      commanded += 1;
+    },
+  };
+  const commands = commandsOf(keys).map((command) => ({ ...command, handler }));
+  stopKeys = listen(window, new Registry({ system: 'mac', commands }));
+});
+
+afterAll(() => stopKeys());
+
 frameWith((box) => {
   boxesSeen.push(box);
   return undefined;
@@ -879,6 +898,28 @@ describe('a box on a code block', () => {
     ]);
   });
 
+  test('drawn again with its lines still coming, a box that had focus opens without it after a key Lo’s command took', async () => {
+    const { box, drawn } = await opened();
+    box.set({ focused: true });
+    takenDown(box, drawn[0]!.composer);
+    let coming = true;
+    const again = fakeDiff(() => coming);
+    restore(VIEW);
+    expect(again.drawn).toEqual([]);
+    // `e` in the diff, as a press sends it: Lo's command takes it.
+    for (const type of ['keydown', 'keyup']) {
+      const init = { key: 'e', code: 'KeyE', bubbles: true, cancelable: true };
+      document.body.dispatchEvent(new KeyboardEvent(type, init));
+    }
+    expect(commanded).toBe(1);
+    // The lines come, and the box opens on them, as it was, unfocused.
+    coming = false;
+    restore(VIEW);
+    expect(again.drawn.map(({ at, options }) => [at, options?.focus])).toEqual([
+      [{ file: 'f0', side: 'new', line: 5 }, false],
+    ]);
+  });
+
   test('drawn again without its line, a box opens under its file’s header there, still on its line, though its block is back', async () => {
     const key = blockKey(OLDER, PATH, 3, 9);
     overview.has.set(key, false);
@@ -938,8 +979,8 @@ describe('a box on a code block', () => {
       [{ file: 'x0', side: 'new', line: 4 }, false],
     ]);
     // The other is in no box, and the status bar says so, once.
-    expect(keptAway.get(VIEW).map(({ why }) => why)).toEqual([
-      'Lo kept your draft on lines 5–6 of src/backoff.ts at r2, which this diff doesn’t show. It opens there again once a diff does.',
+    expect(keptAway.get(VIEW).map(({ note }) => note)).toEqual([
+      'Draft kept · lines 5–6 of backoff.ts at r2 · opens when those lines show',
     ]);
     restore(VIEW);
     expect(keptAway.get(VIEW)).toHaveLength(1);
@@ -974,8 +1015,11 @@ describe('a box on a code block', () => {
     restore(VIEW);
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(without.drawn).toEqual([]);
-    expect(keptAway.get(VIEW).map(({ why }) => why)).toEqual([
-      'Lo kept your draft on line 4 of src/backoff.ts at r2, which this diff doesn’t show. It opens there again once a diff does, or under its code block once the overview has it.',
+    expect(keptAway.get(VIEW).map(({ note, title }) => [note, title])).toEqual([
+      [
+        'Draft kept · line 4 of backoff.ts at r2 · opens when that line or its code block shows',
+        'Draft kept · line 4 of src/backoff.ts at r2 · opens when that line or its code block shows',
+      ],
     ]);
     // The overview has its block now: it opens there, unfocused, and the status bar says no more.
     overview.has.delete(key);

@@ -600,8 +600,12 @@ interface Kept {
   readonly inputs: number;
 }
 
-/** What the reader does that moves on from a box the diff took down. */
-const INPUT = ['keydown', 'pointerdown', 'wheel'] as const;
+/**
+ * What the reader does that moves on from a box the diff took down: a key, a click, the wheel. A key
+ * one of Lo's commands takes goes no further than the key listener's `keydown`, so a key counts as
+ * it's let go too, which nothing stops.
+ */
+const INPUT = ['keydown', 'keyup', 'pointerdown', 'wheel'] as const;
 
 /** How many keys, clicks and wheel turns the reader has made, since Lo first needed to know. */
 let inputs = 0;
@@ -670,10 +674,14 @@ function showKept(
   }
 }
 
-/** A draft the diff, drawn again, had nowhere to open, as the status bar says: its box, and why. */
+/**
+ * A draft the diff, drawn again, had nowhere to open, as the status bar says it: its box, what it
+ * is and where, and when it opens again; and, on hover, where with its file's whole path.
+ */
 export interface KeptAway {
   readonly box: string;
-  readonly why: string;
+  readonly note: string;
+  readonly title: string;
 }
 
 /**
@@ -688,7 +696,7 @@ function say(view: string, boxes: readonly Box[]): void {
   const ids = new Set(boxes.map((box) => box.id));
   keptAway.update(view, (was) => [
     ...was.filter((each) => !ids.has(each.box)),
-    ...boxes.map((box) => ({ box: box.id, why: keptWhy(box) })),
+    ...boxes.map((box) => ({ box: box.id, ...keptNote(box) })),
   ]);
 }
 
@@ -702,28 +710,35 @@ function unsay(box: Box): void {
   );
 }
 
-/** Where a draft the diff had nowhere to open is, and how it comes back, as the status bar says. */
-function keptWhy(box: Box): string {
+/**
+ * What the status bar says of a draft the diff had nowhere to open: "Draft kept · line 41 of
+ * retry.ts at r2 · opens when that line shows", or its code block, where it has one.
+ */
+function keptNote(box: Box): { note: string; title: string } {
   const { place } = box.state;
-  const block =
-    box.home.kind === 'block' ? ', or under its code block once the overview has it' : '';
-  if (place.kind === 'reply' || place.kind === 'edit') {
-    const what = place.kind === 'reply' ? 'reply' : 'edit of your comment';
-    return `Lo kept your ${what}, whose thread this diff doesn’t show. It opens there again once a diff does${block}.`;
+  const block = box.home.kind === 'block' ? ' or its code block' : '';
+  if (place.kind !== 'thread') {
+    const what = place.kind === 'reply' ? 'Reply' : place.kind === 'edit' ? 'Edit' : 'Draft';
+    const note = `${what} kept · opens when its thread${block} shows`;
+    return { note, title: note };
   }
-  if (place.kind !== 'thread') return 'Lo kept your draft, which this diff doesn’t show.';
   const at = revisionName(box.view, place.commit);
   const { lines } = place;
-  let where = place.path;
+  const name = place.path.slice(place.path.lastIndexOf('/') + 1);
+  let span = '';
+  let what = 'file';
   if (lines) {
     const { start, end } = lines;
-    const span =
-      start && start.number !== end.number
-        ? `lines ${start.number}–${end.number}`
-        : `line ${end.number}`;
-    where = `${span} of ${place.path}`;
+    const one = !start || start.number === end.number;
+    span = one ? `line ${end.number} of ` : `lines ${start.number}–${end.number} of `;
+    what = one ? 'line' : 'lines';
   }
-  return `Lo kept your draft on ${where} at ${at}, which this diff doesn’t show. It opens there again once a diff does${block}.`;
+  let when = `opens when that ${what}${block} shows`;
+  if (what === 'lines') when = `opens when those lines${block} ${block ? 'shows' : 'show'}`;
+  return {
+    note: `Draft kept · ${span}${name} at ${at} · ${when}`,
+    title: `Draft kept · ${span}${place.path} at ${at} · ${when}`,
+  };
 }
 
 const retrying = new Map<string, ReturnType<typeof setTimeout>>();
