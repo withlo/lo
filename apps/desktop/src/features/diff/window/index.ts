@@ -25,6 +25,7 @@ import { LayoutRow } from './LayoutRow.tsx';
 import { DiffStatus } from './Status.tsx';
 import { keepOnly, keysDiff, loaderOf, takeState, type Drawn } from './tabs.ts';
 import { markViewed } from './viewed.ts';
+import { spansOf } from './spans.ts';
 import { WholeFile } from './WholeFile.tsx';
 import {
   changedIn,
@@ -51,10 +52,12 @@ function onScreen(): Drawn | string {
 }
 
 /** Runs `act` on the diff on screen. */
-function withDiff<T = undefined>(act: (drawn: Drawn, target: T) => unknown) {
-  return (target: T): void => {
+function withDiff<T = undefined>(
+  act: (drawn: Drawn, target: T, count: number | undefined) => unknown,
+) {
+  return (target: T, count?: number): void => {
     const drawn = onScreen();
-    if (typeof drawn !== 'string') void act(drawn, target);
+    if (typeof drawn !== 'string') void act(drawn, target, count);
   };
 }
 
@@ -106,13 +109,13 @@ function wholeLines(whole: WholeOn): readonly string[] | undefined {
 
 /** Runs `act` on the whole file on screen, if there is one, or on the diff on screen. */
 function inCode<T>(
-  onWhole: (whole: WholeOn, target: T) => unknown,
-  onDiff: (drawn: Drawn, target: T) => unknown,
+  onWhole: (whole: WholeOn, target: T, count: number | undefined) => unknown,
+  onDiff: (drawn: Drawn, target: T, count: number | undefined) => unknown,
 ) {
-  return (target: T): void => {
+  return (target: T, count?: number): void => {
     const whole = wholeOnScreen();
-    if (whole) void onWhole(whole, target);
-    else withDiff(onDiff)(target);
+    if (whole) void onWhole(whole, target, count);
+    else withDiff(onDiff)(target, count);
   };
 }
 
@@ -146,11 +149,6 @@ function noteNow(target: LineTarget): true | string {
   const drawn = onScreen();
   if (typeof drawn === 'string') return drawn;
   return drawn.view.hasNote(placeOf(target.at)) || 'There’s no overview note on this line.';
-}
-
-/** The lines a line target is on: the cursor's line, or the lines `v` selected. */
-function spanOf(at: Place | Span): Span {
-  return 'line' in at ? { file: at.file, side: at.side, from: at.line, to: at.line } : at;
 }
 
 /** The line a target is on, for a link: the cursor's, or the last of the lines selected. */
@@ -270,16 +268,20 @@ export default {
     },
     copyLines: {
       run: inCode(
-        async (whole, target) => {
-          const span = spanOf(target.at);
-          const lines = wholeLines(whole)?.slice(
-            Math.min(span.from, span.to) - 1,
-            Math.max(span.from, span.to),
+        async (whole, target, count) => {
+          const all = wholeLines(whole);
+          if (!all) return;
+          const lines = spansOf(target, count).flatMap((span) =>
+            all.slice(Math.min(span.from, span.to) - 1, Math.max(span.from, span.to)),
           );
-          if (lines) await copy(lines.join('\n'));
+          await copy(lines.join('\n'));
         },
-        async ({ view }, target) => {
-          await copy(view.lines(spanOf(target.at)).join('\n'));
+        async ({ view }, target, count) => {
+          await copy(
+            spansOf(target, count)
+              .flatMap((span) => view.lines(span))
+              .join('\n'),
+          );
         },
       ),
       enabled: codeNow,
@@ -332,7 +334,8 @@ export default {
       label: 'Diff',
       render: ({ tab, shown }) => createElement(Diff, { tab, shown }),
     }),
-    // After the diff, among the middle views `` ` `` steps through.
+    // After the diff. With no label, it's not one of the views `` ` `` steps through: a file opens
+    // in it, and `⌃o` goes back.
     defineView(middle, {
       id: WHOLE_VIEW,
       order: 25,

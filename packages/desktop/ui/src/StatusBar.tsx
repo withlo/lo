@@ -66,3 +66,35 @@ export function StatusItem({
     </button>
   );
 }
+
+/**
+ * The keys typed so far of a command still to come, before Vim's mode at the status bar's end, as
+ * Vim shows a command it's waiting on the rest of: `g`, `2y`.
+ */
+export function StatusKeys({ keys }: { keys: string }) {
+  return (
+    <span className="flex-none text-fg code-key" title="Keys typed so far">
+      {keys}
+    </span>
+  );
+}
+
+/** How each kind of mode draws, as a comment box's foot draws it. */
+const MODES = {
+  normal: 'mode-chip mode-chip-normal',
+  visual: 'mode-chip',
+  insert: 'mode-chip mode-chip-insert',
+} as const;
+
+/**
+ * Vim's mode, at the status bar's end, named as Vim names it: `NORMAL`, `VISUAL`, `V-LINE`,
+ * `V-BLOCK` or `INSERT`.
+ */
+export function StatusMode({ name }: { name: string }) {
+  const kind = name === 'NORMAL' ? 'normal' : name === 'INSERT' ? 'insert' : 'visual';
+  return (
+    <span className={`flex-none ${MODES[kind]}`} title="Vim’s mode in the code that has focus">
+      {name}
+    </span>
+  );
+}

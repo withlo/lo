@@ -417,21 +417,17 @@ describe('leaving a code view', () => {
     expect(log).toEqual(['clearPending', 'clearPending']);
   });
 
-  test('leaves the diff when focus moves to a box nested in it, so a timed-out g dies there', () => {
-    vi.useFakeTimers();
-    try {
-      press('editor', 'g');
-      vi.advanceTimersByTime(1000);
-      expect(log).toEqual(['passKeys g']);
-      element('text').focus();
-      expect(log).toEqual(['passKeys g', 'clearPending']);
-      expect(diffView.pending).toBe(false);
-      // Back in the diff, `e` marks the file viewed: it isn't Vim's `ge`.
-      expect(press('editor', 'e').defaultPrevented).toBe(true);
-      expect(ids()).toEqual(['diff.markViewed']);
-    } finally {
-      vi.useRealTimers();
-    }
+  test('leaves the diff when focus moves to a box nested in it, so a g Vim waits on dies there', () => {
+    // `q` sends the held `g` back to Vim, which then waits on the rest.
+    press('editor', 'g');
+    press('editor', 'q');
+    expect(log).toEqual(['passKeys g']);
+    element('text').focus();
+    expect(log).toEqual(['passKeys g', 'clearPending']);
+    expect(diffView.pending).toBe(false);
+    // Back in the diff, `e` marks the file viewed: it isn't Vim's `ge`.
+    expect(press('editor', 'e').defaultPrevented).toBe(true);
+    expect(ids()).toEqual(['diff.markViewed']);
   });
 
   test('leaves Vim as it is when focus moves within the view, to its prompt', () => {

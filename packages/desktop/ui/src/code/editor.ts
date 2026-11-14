@@ -1,5 +1,5 @@
 // What every code view's own editors have, the diff's and the whole file's alike: Vim, with the
-// rules `keys.ts` gives it; read-only text split into lines at `\n` alone, as the diff splits it;
+// rules `keys.ts` gives it, saying its mode for the status bar; read-only text split into lines at `\n` alone, as the diff splits it;
 // long lines wrapped; their style elements carrying the window's nonce, which its content security
 // policy lets in; and the scroll Lo's screen keys leave alone (`screen.ts`).
 
@@ -7,7 +7,7 @@ import { EditorState, type Extension } from '@codemirror/state';
 import { drawSelection, EditorView } from '@codemirror/view';
 import { vim } from '@replit/codemirror-vim';
 
-import { handlingKey, readOnly } from './keys.ts';
+import { handlingKey, readOnly, showMode } from './keys.ts';
 import { leaveOnScreen } from './screen.ts';
 
 /**
@@ -18,6 +18,7 @@ import { leaveOnScreen } from './screen.ts';
 export function codeEditor(nonce: string, moved: () => void): Extension {
   return [
     vim(),
+    showMode,
     drawSelection(),
     EditorState.lineSeparator.of('\n'),
     readOnly(),

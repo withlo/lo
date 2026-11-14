@@ -64,7 +64,8 @@ export default defineCommands('diff', {
   },
   /**
    * Marks the file viewed, or clears its mark. Marking closes it and goes to the next file that
-   * isn't viewed, round the end. `e` is Vim's "end of word", which `w` and `b` stand in for.
+   * isn't viewed, round the end. A count marks that many, and clears none: `3e`. `e` is Vim's "end
+   * of word", which `w` and `b` stand in for.
    */
   markViewed: {
     label: 'Mark viewed',
@@ -72,6 +73,7 @@ export default defineCommands('diff', {
     keys: ['e'],
     targets: ['line', 'header'],
     overVim: true,
+    count: 'files',
     when: normal,
     menu: { on: 'header', order: 5 },
   },
@@ -151,13 +153,17 @@ export default defineCommands('diff', {
     targets: ['header', 'line'],
     when: { scope: 'file', mode: 'normal' },
   },
-  /** The cursor's line, or the lines `v` selected, onto the clipboard. */
+  /**
+   * The cursor's line, or the lines `v` selected, across files and sides too, onto the clipboard.
+   * A count copies that many from the cursor's, as Vim's `2yy` yanks two.
+   */
   copyLines: {
     label: 'Copy the lines',
     group: 'Copy and open',
     keys: ['y y'],
     targets: ['line'],
     overVim: true,
+    count: 'lines',
     when: { scope: ['diff', 'file'], mode: ['normal', 'visual'] },
     menu: { on: 'line', order: 10 },
   },

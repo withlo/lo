@@ -1,6 +1,6 @@
 // What the stack's keys and clicks do: `]s` and `[s` show the next and previous layer, `-` in the
-// file tree goes up to the stack's tree, and there the keyboard moves from layer to layer, shows
-// one, opens one on GitHub, or makes the chain through one a GitHub stack. A layer shows in its
+// file tree goes up to the stack's tree, and `+` back down, and there the keyboard moves from layer
+// to layer, shows one, opens one on GitHub, or makes the chain through one a GitHub stack. A layer shows in its
 // tab, which keeps a view of each layer shown, so each keeps its place; showing one isn't a jump.
 //
 // And runs of layers: `v` starts choosing one, `j` and `k` move its end along its branch, and `⏎`
@@ -78,9 +78,9 @@ export function showLayer(tab: PullTab, number: number): Promise<string | undefi
 
 /**
  * Where `]s` (`by` 1) or `[s` (-1) goes from the layer on screen, or from a run's, the layer it was
- * chosen from, or why it can't.
+ * chosen from, `count` layers on but no further than the last or the first, or why it can't go one.
  */
-function stepOnScreen(by: 1 | -1): { tab: PullTab; layer: number } | string {
+function stepOnScreen(by: 1 | -1, count = 1): { tab: PullTab; layer: number } | string {
   const tab = pullOnScreen();
   if (typeof tab === 'string') return tab;
   const view = stacks.get(tab.id);
@@ -88,14 +88,24 @@ function stepOnScreen(by: 1 | -1): { tab: PullTab; layer: number } | string {
     return `Sign in to see the stack #${tab.number} is in.`;
   }
   const step = stepFrom(view, tab.run?.from ?? tab.number, by);
-  return 'why' in step ? step.why : { tab, layer: step.layer };
+  if ('why' in step) return step.why;
+  let { layer } = step;
+  for (let left = count - 1; left > 0; left--) {
+    const further = stepFrom(view, layer, by);
+    if ('why' in further) break;
+    layer = further.layer;
+  }
+  return { tab, layer };
 }
 
-/** `]s` and `[s`: show the next or previous layer, unless it's the last or the first. */
+/**
+ * `]s` and `[s`: show the next or previous layer, or with a count that many on, unless it's the last
+ * or the first.
+ */
 export function walking(by: 1 | -1) {
   return {
-    run: () => {
-      const step = stepOnScreen(by);
+    run: (_target?: unknown, count = 1) => {
+      const step = stepOnScreen(by, count);
       if (typeof step !== 'string') void showLayer(step.tab, step.layer);
     },
     enabled: () => {
@@ -115,6 +125,24 @@ export function stackTarget(tab: PullTab): Target {
   const layer = focusedLayer(tab);
   return layer === undefined ? { kind: 'none' } : { kind: 'layer', layer };
 }
+
+/**
+ * `+` in the stack's tree: goes down to the file tree, at the file on screen, as `-` goes up, or
+ * why it can't.
+ */
+export const goDown = {
+  run(): void {
+    const tab = pullOnScreen();
+    if (typeof tab !== 'string') goToTree(tab.id);
+  },
+  enabled(): true | string {
+    const tab = pullOnScreen();
+    if (typeof tab === 'string') return tab;
+    return document.querySelector('[data-lo-scope="tree"]') !== null
+      ? true
+      : 'The file tree isn’t open.';
+  },
+};
 
 /**
  * `-` in the file tree: goes up to the stack's tree, at the layer on screen, when the view on screen

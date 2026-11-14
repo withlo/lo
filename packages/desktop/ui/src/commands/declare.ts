@@ -96,6 +96,12 @@ export interface Declaration {
   /** A held key runs it again with each repeat. Without it, a held key runs it once. */
   readonly repeat?: boolean;
   /**
+   * What a count typed before its keys counts, as in Vim's `3j`: `files` for `3e`. Its handler gets
+   * the count, `1` for `1e`, or nothing without one. Without it, a count before its keys goes on to
+   * Vim in a code view, and is dropped elsewhere.
+   */
+  readonly count?: string;
+  /**
    * It's in the right-click menu of targets of this kind, or of each of these kinds, after the
    * commands with a lower `order`. A menu draws a separator wherever the key table's `group`
    * changes between neighbours, so commands of one group sit together.
@@ -116,7 +122,8 @@ export interface Declarations<D extends Record<string, Declaration> = Record<str
 
 /** What runs a command, given its target. */
 export interface Handler<T extends Target = Target> {
-  run(target: T): void | Promise<void>;
+  /** `count` is the count typed before its keys, for a command that takes one, if one was. */
+  run(target: T, count?: number): void | Promise<void>;
   /** `true`, or why it can't run on `target` now, as menus grey it out with. */
   enabled?(target: T): true | string;
   /**

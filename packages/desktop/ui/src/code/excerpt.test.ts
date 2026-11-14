@@ -441,6 +441,41 @@ describe('places', () => {
     });
     vim().keys('<Esc>');
   });
+
+  test('lines selected on one side take the other side’s between them, as they show', () => {
+    const shown = open(events(), { range: { side: 'new', from: 16, to: 17 } });
+    shown.reveal({ kind: 'line', at: at(16) });
+    vim().keys('V', 'G');
+    expect(shown.keyState().target).toEqual({
+      kind: 'line',
+      at: { file: 'a', side: 'new', from: 16, to: 17 },
+      across: [
+        { file: 'a', side: 'new', from: 16, to: 16 },
+        { file: 'a', side: 'old', from: 15, to: 15 },
+        { file: 'a', side: 'new', from: 17, to: 17 },
+      ],
+    });
+    vim().keys('<Esc>');
+  });
+
+  test('Vim’s count is said, and takes that many lines from the cursor’s as they show', () => {
+    const shown = open(events(), { range: { side: 'old', from: 10, to: 11 } });
+    shown.reveal({ kind: 'line', at: at(10, 'old') });
+    vim().keys('3');
+    expect(shown.keyState()).toMatchObject({
+      mode: 'normal',
+      count: 3,
+      target: {
+        at: { file: 'a', side: 'old', line: 10 },
+        across: [
+          { file: 'a', side: 'old', from: 10, to: 10 },
+          { file: 'a', side: 'new', from: 11, to: 12 },
+        ],
+      },
+    });
+    shown.clearPending();
+    expect(shown.keyState().count).toBeUndefined();
+  });
 });
 
 /** Presses `keys` on new line 8, focused, and says what became of it. */
