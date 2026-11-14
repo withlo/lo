@@ -1,18 +1,22 @@
 // The comments feature in the window: each view's review threads, as main sends them, placed under
 // their lines in the view's diff and drawn there, and counted on each file's header and its row in
 // the tree; posts' text, as other features draw it through `Post`, from the HTML main reads for the
-// posts on screen; and writing comments: the keys that open a comment box in the diff, the box's
-// frame, and its draft, which main keeps until it's sent. What it keeps of a view goes as the
-// view's tab closes.
+// posts on screen; writing comments: the keys that open a comment box in the diff, the box's
+// frame, and its draft, which main keeps until it's sent; and acting on threads: replying,
+// resolving, and editing and deleting your comments, with the dialog that asks before a delete.
+// What it keeps of a view goes as the view's tab closes.
 
 import { handlers, type HeaderTarget, type LineTarget } from '@lo/ui/commands';
+import { createElement } from 'react';
 
 import type { WindowFeature } from '../../../window/features.ts';
+import { defineView } from '../../../window/slots.tsx';
 import { onDiffDrawn, setThreader, threadsChanged, writingDiff } from '../../diff/window/shared.ts';
 import { viewIds } from '../../tab/contract.ts';
-import { activeTab, type PullTab } from '../../tab/window/shared.ts';
+import { activeTab, dialogs, type PullTab } from '../../tab/window/shared.ts';
 import { fileCountsChanged, setFileCounts } from '../../tree/window/shared.ts';
 import keys from '../keys.ts';
+import { edit, remove, reply, resolve, takeActs, type ThreadKeyTarget } from './acts.ts';
 import {
   canWrite,
   catchUpDrafts,
@@ -27,6 +31,7 @@ import {
   takeDrafts,
   takeOffer,
 } from './boxes.ts';
+import { DeleteDialog } from './DeleteDialog.tsx';
 import { frameOf } from './Frame.tsx';
 import { main, tabs } from './main.ts';
 import { renderThreads } from './render.ts';
@@ -75,7 +80,23 @@ function writing(how: 'review' | 'now', suggest = false) {
   };
 }
 
+/** Acts on a thread as `r`, `x`, `i` or `dd` do. */
+function onThread(run: (tab: PullTab, target: ThreadKeyTarget) => unknown) {
+  return (target: ThreadKeyTarget): void => {
+    const tab = writable();
+    if (typeof tab !== 'string') void run(tab, target);
+  };
+}
+
 export default {
+  views: [
+    // After the other features' dialogs: one opens at a time.
+    defineView(dialogs, {
+      id: 'comments.delete',
+      order: 40,
+      render: () => createElement(DeleteDialog),
+    }),
+  ],
   commands: handlers(keys, {
     comment: { run: writing('review'), enabled: enabled(inDiff) },
     commentNow: { run: writing('now'), enabled: enabled(inDiff) },
@@ -97,6 +118,10 @@ export default {
         writingDiff(tab.id, true)?.vim(['<CR>']);
       },
     },
+    reply: { run: onThread(reply), enabled: enabled(writable) },
+    resolve: { run: onThread(resolve), enabled: enabled(writable) },
+    edit: { run: onThread(edit), enabled: enabled(writable) },
+    remove: { run: onThread(remove), enabled: enabled(writable) },
     discard: offering('discard'),
     sendAnyway: offering('sendAnyway'),
     moveToFile: offering('onFile'),
@@ -121,6 +146,7 @@ export default {
       if (takeThreads(view)) threadsChanged(view.id);
     });
     main().subscribe('review', takeReview);
+    main().subscribe('acts', takeActs);
     setThreader({
       threadsIn(view, drawn) {
         // A view drawn before main said anything of it asks main once.

@@ -112,6 +112,8 @@ function fakeDiff(missing: (at: unknown) => boolean = () => false) {
     },
     toTop: () => true,
     vim,
+    openThread: () => true,
+    claimThread: () => () => {},
   };
   diff.current = writing;
   return { drawn, writing, vim };
@@ -154,7 +156,16 @@ function onLines(start: number | null, end: number): DraftPlaceRow {
 }
 
 function row(place: DraftPlaceRow, text: string, changes: Partial<DraftRow> = {}): DraftRow {
-  return { place, text, savedAt: 0, restored: false, sending: null, sent: null, ...changes };
+  return {
+    place,
+    text,
+    savedAt: 0,
+    restored: false,
+    sending: null,
+    sent: null,
+    base: null,
+    ...changes,
+  };
 }
 
 /** The requests to `channel` made so far. */

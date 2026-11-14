@@ -1,7 +1,10 @@
-// The comments' keys: writing a comment in the diff. `c` opens a comment box under the cursor's
-// line, or the lines `v` selected, on either side, or on the file with the cursor on its header;
-// `C` opens the same box to post right away; `s` opens it with the lines in a `suggestion` block.
-// In the file tree `c` comments on the file. Each replaces Vim's key, since the diff is read-only.
+// The comments' keys: writing a comment in the diff, and acting on its review threads. `c` opens a
+// comment box under the cursor's line, or the lines `v` selected, on either side, or on the file
+// with the cursor on its header; `C` opens the same box to post right away; `s` opens it with the
+// lines in a `suggestion` block. In the file tree `c` comments on the file. On a thread, the one
+// `]t` landed on or the only one on the cursor's line or the header's file, `r` replies, `x`
+// resolves or unresolves it, `i` edits your newest comment in it and `dd` deletes that comment,
+// after asking. Each replaces Vim's key, since the diff is read-only.
 // A line GitHub takes no comment on says so, and then `⏎` comments on its file instead; anywhere
 // else `⏎` is Vim's. The box's own keys are the code view's (`⌘⏎`, `⌥⏎`, `⌘⇧V`, `Esc Esc`). What
 // the buttons in a box's notes do is also on its frame's right-click menu, and in the palette while
@@ -14,6 +17,9 @@ const diff: When = { scope: 'diff', mode: ['normal', 'visual'] };
 
 /** In a comment box. */
 const box: When = { scope: 'box' };
+
+/** In the diff, on the thread the cursor's on. */
+const onThread: When = { scope: 'diff', mode: 'normal' };
 
 export default defineCommands('comments', {
   /** A comment box on the cursor's line, the lines `v` selected, or, on a header, on the file. */
@@ -72,6 +78,46 @@ export default defineCommands('comments', {
     targets: ['line'],
     overVim: true,
     when: { scope: 'diff', mode: 'normal' },
+  },
+  /** A reply box in the thread, right after its card. */
+  reply: {
+    label: 'Reply to the thread',
+    group: 'Act',
+    keys: ['r'],
+    targets: ['line', 'header', 'thread'],
+    overVim: true,
+    when: onThread,
+    menu: { on: 'thread', order: 10, label: 'Reply' },
+  },
+  /** Resolves the thread, or unresolves it once it's resolved, where GitHub lets you. */
+  resolve: {
+    label: 'Resolve or unresolve the thread',
+    group: 'Act',
+    keys: ['x'],
+    targets: ['line', 'header', 'thread'],
+    overVim: true,
+    when: onThread,
+    menu: { on: 'thread', order: 20, label: 'Resolve or unresolve' },
+  },
+  /** A box with your newest comment in the thread, to edit it and save it over GitHub's text. */
+  edit: {
+    label: 'Edit your comment',
+    group: 'Act',
+    keys: ['i'],
+    targets: ['line', 'header', 'thread'],
+    overVim: true,
+    when: onThread,
+    menu: { on: 'thread', order: 40 },
+  },
+  /** Deletes your newest comment in the thread, once you say so. */
+  remove: {
+    label: 'Delete your comment…',
+    group: 'Act',
+    keys: ['d d'],
+    targets: ['line', 'header', 'thread'],
+    overVim: true,
+    when: onThread,
+    menu: { on: 'thread', order: 50 },
   },
   /** On a draft restored as Lo started: drops it, and its box, as the note's "Discard" does. */
   discard: {

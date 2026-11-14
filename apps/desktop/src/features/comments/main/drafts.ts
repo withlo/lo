@@ -306,11 +306,11 @@ export class DraftStore {
     this.#database
       .prepare(
         `INSERT INTO comments_drafts
-           (account, owner, repo, number, place, body, sent, sent_at, saved_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+           (account, owner, repo, number, place, body, sent, sent_at, saved_at, base)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT (account, owner, repo, number, place) DO UPDATE SET
            body = excluded.body, sent = excluded.sent, sent_at = excluded.sent_at,
-           saved_at = excluded.saved_at`,
+           saved_at = excluded.saved_at, base = excluded.base`,
       )
       .run(
         account,
@@ -322,6 +322,7 @@ export class DraftStore {
         kept.sent,
         kept.sentAt === null ? null : Math.round(kept.sentAt),
         Math.round(kept.savedAt),
+        kept.base,
       );
   }
 }

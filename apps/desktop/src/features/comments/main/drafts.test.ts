@@ -46,6 +46,7 @@ test('a draft is saved as typed, comes back restored, and blank text removes it'
       restored: false,
       sent: null,
       sentAt: null,
+      base: null,
     },
   ]);
   const again = new DraftStore(db);
@@ -106,4 +107,35 @@ test('drafts on an older revision move to the newer one where their file is the 
       [placeJson(on(R2, 'same.ts')), 'On the file'],
     ].toSorted(([a], [b]) => (a! < b! ? -1 : 1)),
   );
+});
+
+test('an edit’s draft keeps the text it started from through blank text and a restart', () => {
+  const db = database();
+  const store = new DraftStore(db, () => 500);
+  const place: DraftPlaceRow = { kind: 'edit', thread: 'PRRT_1', comment: 'PRRC_1' };
+  expect(store.startEdit('rozed-bot', PULL, place, 'GitHub’s text')).toBe(true);
+  expect(store.get('rozed-bot', PULL, place)).toMatchObject({
+    text: 'GitHub’s text',
+    base: 'GitHub’s text',
+  });
+  store.save('rozed-bot', PULL, place, 'Typed');
+  // Started again, it's the draft there that stays.
+  expect(store.startEdit('rozed-bot', PULL, place, 'Newer')).toBe(false);
+  store.save('rozed-bot', PULL, place, '');
+  expect(new DraftStore(db).get('rozed-bot', PULL, place)).toMatchObject({
+    text: '',
+    base: 'GitHub’s text',
+    restored: true,
+  });
+  store.take('rozed-bot', PULL, place);
+  expect(new DraftStore(db).of('rozed-bot', PULL)).toEqual([]);
+});
+
+test('a reply’s draft is kept by its thread, and stays where it is as a newer push is shown', () => {
+  const store = new DraftStore(database());
+  const place: DraftPlaceRow = { kind: 'reply', thread: 'PRRT_1' };
+  store.save('rozed-bot', PULL, place, 'A reply');
+  expect(store.startEdit('rozed-bot', PULL, place, 'Not an edit')).toBe(false);
+  expect(store.moveToLatest('rozed-bot', PULL, R2, () => undefined)).toBe(false);
+  expect(store.of('rozed-bot', PULL)).toMatchObject([{ place, text: 'A reply', base: null }]);
 });

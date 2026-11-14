@@ -466,14 +466,21 @@ export class Writer {
       const refused = held && changeRefused(held, login, 'delete');
       if (refused) return { kind: 'refused', refusal: refused };
       const now = await poller.readOnce((client) => readComment(client, thread, comment));
-      if (!now) return { kind: 'refused', refusal: { kind: 'gone' } };
+      if (!now) {
+        poller.readAfresh(pull, REVIEW_THREADS);
+        return { kind: 'refused', refusal: { kind: 'gone' } };
+      }
       if (!now.viewerDidAuthor) {
         return { kind: 'refused', refusal: { kind: 'theirs', author: now.author ?? null } };
       }
       if (!now.viewerCanDelete) {
         return { kind: 'refused', refusal: { kind: 'notAllowed', reasons: now.cannotUpdate } };
       }
-      if (!asAsked(asked, now)) return { kind: 'refused', refusal: { kind: 'changed' } };
+      if (!asAsked(asked, now)) {
+        // What the question showed may be older than GitHub's: the card is brought up to date.
+        poller.readAfresh(pull, REVIEW_THREADS);
+        return { kind: 'refused', refusal: { kind: 'changed' } };
+      }
       // Deleting a pending comment changes your pending review, perhaps to none.
       if (now.state === 'PENDING') this.#written.add(pull.key);
       return () => poller.deleteComment(pull, inThread(comment));
@@ -663,6 +670,8 @@ export class Writer {
         return { kind: 'done' };
       case 'changed':
       case 'gone':
+        // The threads don't watch for edits: what the card shows is brought up to date.
+        poller.readAfresh(pull, REVIEW_THREADS);
         this.#settled(target, key, null);
         return { kind: 'refused', refusal: { kind: before.kind } };
       case 'theirs':

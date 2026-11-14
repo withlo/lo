@@ -155,15 +155,15 @@ export function boxAt(
   if (place.commit.toLowerCase() !== drawn.at.toLowerCase()) return undefined;
   const file = drawn.files.find((each) => githubPath(each) === place.path);
   if (!file) return undefined;
-  if (!place.lines) return { file, at: { file: file.id } };
+  if (!place.lines) return { at: { file: file.id } };
   const { start, end } = place.lines;
   const left = start?.side === 'LEFT' || end.side === 'LEFT';
   if (left && (file.since || screen.left.kind !== 'base')) return undefined;
   const side = end.side === 'RIGHT' ? 'new' : 'old';
   if (start && start.side === end.side) {
-    return { file, at: { file: file.id, side, from: start.number, to: end.number } };
+    return { at: { file: file.id, side, from: start.number, to: end.number } };
   }
-  return { file, at: { file: file.id, side, line: end.number } };
+  return { at: { file: file.id, side, line: end.number } };
 }
 
 /** A side as the box's head says it. */

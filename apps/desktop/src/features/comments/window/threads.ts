@@ -2,6 +2,8 @@
 // until the view's tab closes; and what places them in the view's diff and counts them for its
 // tree, as the diff and the tree ask.
 
+import type { ThreadView } from '@lo/ui/code';
+
 import { tabState } from '../../tab/window/shared.ts';
 import type { DrawnDiff } from '../../diff/window/shared.ts';
 import type { FileThreads } from '../../tree/window/shared.ts';
@@ -14,6 +16,9 @@ export const held = tabState<{ threads?: ThreadsView; review?: ReviewView }>(() 
 
 /** What each view's threads hold in each file of its diff as last placed, by the tree's key. */
 const counted = tabState<ReadonlyMap<string, FileThreads>>(() => new Map());
+
+/** Where each view's threads are in its diff as last placed, by their ids. */
+const shown = tabState<ReadonlyMap<string, ThreadView['at']>>(() => new Map());
 
 /** Takes the threads main sent. Says whether they changed what was held. */
 export function takeThreads(view: ThreadsView): boolean {
@@ -36,7 +41,31 @@ export function placedIn(view: string, drawn: DrawnDiff): Placed {
     threads?.compared ?? null,
   );
   counted.set(view, placed.byKey);
+  shown.set(view, new Map(placed.threads.map((thread) => [thread.id, thread.at])));
   return placed;
+}
+
+/** Where thread `id` is in view `view`'s diff as last placed: nowhere when it isn't there. */
+export function shownAt(view: string, id: string): ThreadView['at'] | undefined {
+  return shown.get(view).get(id);
+}
+
+/**
+ * The threads in view `view`'s diff as last placed under a line of file `file`, on `side`, or with
+ * no line, under its header: by their ids, in their order.
+ */
+export function shownUnder(
+  view: string,
+  file: string,
+  line?: { readonly side: 'old' | 'new'; readonly line: number },
+): string[] {
+  const ids: string[] = [];
+  for (const [id, at] of shown.get(view)) {
+    if (at.file !== file) continue;
+    const under = 'line' in at ? line && at.side === line.side && at.line === line.line : !line;
+    if (under) ids.push(id);
+  }
+  return ids;
 }
 
 /** What view `view`'s threads hold in each file of its diff as last placed, by the tree's key. */
