@@ -1,0 +1,31 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "https://api.github.com/graphql",
+    "operation": "RenderedBodies",
+    "variables": {
+      "owner": "rozed-dev",
+      "name": "e2e",
+      "number": 94,
+      "description": false,
+      "ids": [
+        "IC_kwDOVleUfc8AAAABmQSeTw",
+        "PRR_kwDOVleUfc8AAAABX3Toww",
+        "PRR_kwDOVleUfc8AAAABX66xPg"
+      ]
+    },
+    "query_sha256": "285b3a71ef24563ae33870f157b845fcb0e9fc71ff54b6235fa3b18c95041504"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "x-ratelimit-limit": "5000",
+      "x-ratelimit-remaining": "4964",
+      "x-ratelimit-reset": "1794633503",
+      "x-ratelimit-resource": "graphql",
+      "x-ratelimit-used": "36"
+    },
+    "body_text": "{\"data\":{\"rateLimit\":{\"cost\":1,\"limit\":5000,\"remaining\":4964,\"used\":36,\"resetAt\":\"2026-11-14T05:18:23Z\"},\"repository\":{},\"nodes\":[{\"__typename\":\"IssueComment\",\"id\":\"IC_kwDOVleUfc8AAAABmQSeTw\",\"bodyHTML\":\"<p dir=\\\"auto\\\">Fixture C: Retries before and after, side by side:</p>\\n<p dir=\\\"auto\\\"><a target=\\\"_blank\\\" rel=\\\"noopener noreferrer\\\" href=\\\"https://private-user-images.githubusercontent.com/353226052/699308503-08c730b3-f0b0-4c7d-93a2-95f8d167d0d9.png?jwt=REDACTED\"><img src=\\\"https://private-user-images.githubusercontent.com/353226052/699308503-08c730b3-f0b0-4c7d-93a2-95f8d167d0d9.png?jwt=REDACTED\" alt=\\\"two by two\\\" style=\\\"max-width: 100%;\\\"></a></p>\"},{\"__typename\":\"PullRequestReview\",\"id\":\"PRR_kwDOVleUfc8AAAABX3Toww\",\"bodyHTML\":\"<p dir=\\\"auto\\\">Fixture C: Backing off reads right. Notes inline on the jitter and the cap.</p>\"},{\"__typename\":\"PullRequestReview\",\"id\":\"PRR_kwDOVleUfc8AAAABX66xPg\",\"bodyHTML\":\"<p dir=\\\"auto\\\">One question inline.</p>\"}]}}"
+  }
+}

@@ -1,8 +1,9 @@
 // Writing comments in a view's diff, worked out: where a comment on the cursor's line, the lines
 // `v` selected or a file goes, as GitHub takes it and as main keeps its draft; where one on an
 // overview's code block goes; where a draft's box goes in the diff as drawn, a reply's or an
-// edit's in its thread; and what a box's frame says of where it is and how sending it stands, and
-// why a change to a thread wasn't made.
+// edit's in its thread, or whether it's one the timeline draws, as the pull request's own box and
+// an edit of your comment on it are; and what a box's frame says of where it is and how sending it
+// stands, and why a change to a thread, or to a comment, wasn't made.
 
 import { CommentableLines, Line, type Lines, type Screen } from '@lo/review';
 import type { OnFile, Place, Span } from '@lo/ui/code';
@@ -123,6 +124,15 @@ function lineKey(each: CommentLinesRow['end'] | null): string {
 /** The place of the comment box on the pull request itself: one a pull request. */
 export const ON_PULL: ConversationPlaceRow = { kind: 'conversation' };
 
+/**
+ * Whether a draft's box, unless it opens under a code block it was written on, is drawn in the
+ * timeline, not the diff: the pull request's own box, and an edit of your comment on the pull
+ * request itself, which is in no thread.
+ */
+export function inTimeline(place: DraftPlaceRow): boolean {
+  return place.kind === 'conversation' || (place.kind === 'edit' && place.thread === null);
+}
+
 /** A key for a draft's place: the same for the same place, however its object was made. */
 export function placeKey(place: DraftPlaceRow): string {
   switch (place.kind) {
@@ -138,10 +148,10 @@ export function placeKey(place: DraftPlaceRow): string {
     }
     case 'reply':
       return JSON.stringify([place.kind, place.thread]);
-    case 'edit':
-      return JSON.stringify([place.kind, place.thread, place.comment]);
     case 'conversation':
       return JSON.stringify([place.kind]);
+    case 'edit':
+      return JSON.stringify([place.kind, place.thread, place.comment]);
     default:
       throw new Error(`a draft's place Lo doesn't know: ${JSON.stringify(place satisfies never)}`);
   }
@@ -151,7 +161,8 @@ export function placeKey(place: DraftPlaceRow): string {
  * Where a draft's box goes in a diff as drawn: under the last of its lines, or under its file's
  * header, or, for a reply or an edit, in its thread, when the diff places it (`placed`). Nowhere
  * when the diff shows another head than the one it was written at, or not its file, or, for one on
- * the older side, another commit than the base there, as between revisions.
+ * the older side, another commit than the base there, as between revisions; nor for a box the
+ * timeline draws.
  */
 export function boxAt(
   drawn: DrawnDiff,
@@ -159,10 +170,12 @@ export function boxAt(
   place: DraftPlaceRow,
   placed: (thread: string) => boolean = () => false,
 ): { at: Place | Span | OnFile | { thread: string } } | undefined {
-  // The pull request's own box isn't in the diff.
+  // The pull request's own box isn't in the diff, nor an edit of a comment on it.
   if (place.kind === 'conversation') return undefined;
-  if (place.kind !== 'thread')
-    return placed(place.thread) ? { at: { thread: place.thread } } : undefined;
+  if (place.kind !== 'thread') {
+    const { thread } = place;
+    return thread !== null && placed(thread) ? { at: { thread } } : undefined;
+  }
   if (place.commit.toLowerCase() !== drawn.at.toLowerCase()) return undefined;
   const file = drawn.files.find((each) => githubPath(each) === place.path);
   if (!file) return undefined;

@@ -184,8 +184,7 @@ export interface TimelineRowProps extends TimelineRowAttributes {
 
 /**
  * One row of the timeline: a marker on the rail, and what happened beside it, as one of the
- * timeline's options. The other rows are made of this one, and so is a box at the end of the
- * timeline, which has its own avatar for a marker.
+ * timeline's options. The other rows are made of this one.
  */
 export function TimelineRow({
   marker,
@@ -223,6 +222,8 @@ export interface TimelineProps extends Omit<HTMLAttributes<HTMLOListElement>, 'c
   focused?: string | undefined;
   /** The list itself, which can take focus, with the row the keyboard is on as its active descendant. */
   listRef?: Ref<HTMLOListElement> | undefined;
+  /** What follows the rows, outside the list: the box at the timeline's end, a {@link TimelineEnd}. */
+  end?: ReactNode;
 }
 
 /**
@@ -230,7 +231,14 @@ export interface TimelineProps extends Omit<HTMLAttributes<HTMLOListElement>, 'c
  * options are its rows, as the threads list is. Like the threads list it takes what a focusable
  * list takes: a ref, `tabIndex` and the rest.
  */
-export function Timeline({ children, focused, listRef, className = '', ...rest }: TimelineProps) {
+export function Timeline({
+  children,
+  focused,
+  listRef,
+  end,
+  className = '',
+  ...rest
+}: TimelineProps) {
   const prefix = useId();
   const rows = useMemo<Rows>(() => ({ prefix, focused }), [prefix, focused]);
   return (
@@ -245,6 +253,25 @@ export function Timeline({ children, focused, listRef, className = '', ...rest }
       >
         <RowsContext value={rows}>{children}</RowsContext>
       </ol>
+      {end}
+    </div>
+  );
+}
+
+export interface TimelineEndProps extends HTMLAttributes<HTMLDivElement> {
+  marker: TimelineMarker;
+  children: ReactNode;
+}
+
+/**
+ * What follows a timeline's rows, outside its list, laid out as a row is, off the rail: a marker,
+ * such as the avatar of whoever writes in the box at the timeline's end, and what's beside it.
+ */
+export function TimelineEnd({ marker, children, className = '', ...rest }: TimelineEndProps) {
+  return (
+    <div {...rest} className={`mx-auto flex max-w-read-measure gap-12 px-8 py-8 ${className}`}>
+      <Marker marker={marker} />
+      <div className="min-w-0 flex-1">{children}</div>
     </div>
   );
 }
@@ -496,7 +523,8 @@ export interface TimelineCommentProps extends TimelineRowAttributes {
   body: ReactNode;
   /**
    * An edit box, in place of the text, while the comment is being edited. Edit and Delete step
-   * aside while it shows.
+   * aside while it shows, and the row isn't one of the timeline's options, whose content is read
+   * as their name alone.
    */
   editing?: ReactNode;
   /** The keys of Edit and Delete, as this system shows each (`['i']`, `['d', 'd']`). */
@@ -528,8 +556,11 @@ export function TimelineComment({
   ...row
 }: TimelineCommentProps) {
   const acts = mine === true && hidden === undefined && editing === undefined;
+  // An option's content is read as its name alone, so while an edit box shows, the row isn't one:
+  // the box is read as the text box it is.
+  const role = editing === undefined ? {} : { role: 'none', 'aria-selected': undefined };
   return (
-    <TimelineRow marker={{ login: author, image }} focused={focused} {...row}>
+    <TimelineRow marker={{ login: author, image }} focused={focused} {...row} {...role}>
       <div className={card}>
         <div className={cardHead({ edge: 'below' })}>
           <span>

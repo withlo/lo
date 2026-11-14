@@ -61,7 +61,7 @@ function lower(text: string): string {
   return text.replace(/[A-Z]/g, (letter) => letter.toLowerCase());
 }
 
-/** Whether `place` is a box's: a new thread's, a reply's or an edit's. */
+/** Whether `place` is a box's: a new thread's, a reply's, the pull request's own or an edit's. */
 function isBox(place: StoredPlace): place is DraftPlaceRow {
   return place.kind !== SUMMARY.kind;
 }

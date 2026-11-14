@@ -14,11 +14,12 @@
 // your comment take their turn among the pull request's writes too. An edit is kept as a draft with
 // the text it started from, and goes only while a read of the comment, made as it's sent, finds
 // GitHub's text still that one, so it never overwrites an edit made elsewhere since. A delete goes
-// only while such a read finds the comment as the question showed it. Each whose answer is lost is
-// settled the same way as a comment, from a read made a while after, and never sent again by
-// itself. A comment on the pull request itself, in its conversation, takes its turn the same way and
-// posts at once, joining no review; one whose answer was lost is looked for in the timeline read
-// afresh, only its newest page where Lo keeps it. Nothing here calls Electron.
+// only while such a read finds the comment as the question showed it. Your comments on the pull
+// request itself are edited and deleted the same way, read from its timeline afresh. Each whose
+// answer is lost is settled the same way as a comment, from a read made a while after, and never
+// sent again by itself. A comment on the pull request itself, in its conversation, takes its turn
+// the same way and posts at once, joining no review; one whose answer was lost is looked for in the
+// timeline read afresh, only its newest page where Lo keeps it. Nothing here calls Electron.
 
 import {
   type Cached,
@@ -36,13 +37,16 @@ import {
   type ReviewWrite,
   type ReviewWriteRefusal,
   type Sent,
-  TIMELINE,
+  type CommentId,
   describeReviewRefusal,
+  type GithubClient,
   reviewThreads,
+  TIMELINE,
 } from '@lo/github';
 import {
   afterLostEdit,
   beforeEdit,
+  type CommentNow,
   type NewComment,
   type ReviewRefusal,
   sameCommentText,
@@ -66,10 +70,18 @@ import type {
   SendOutcome,
   SendRefusal,
   Sending,
+  ThreadCommentRow,
   ThreadRow,
 } from '../contract.ts';
 import { actRefusal, asAsked, changeRefused, inThread, readComment } from './acting.ts';
-import { holdsPullComment, postOnPull } from './conversation.ts';
+import {
+  holdsPullComment,
+  onPull,
+  postOnPull,
+  pullComment,
+  pullCommentRow,
+  readPullComment,
+} from './conversation.ts';
 import { type DraftStore, type Kept, placeJson } from './drafts.ts';
 import { threadRows } from './threads.ts';
 
@@ -260,6 +272,56 @@ function threadsOf(poller: WriterPoller, pull: PullRef): Map<string, ThreadRow> 
   return list && new Map(threadRows(list).map((thread) => [thread.id, thread]));
 }
 
+/**
+ * Your comment `comment`, in the thread `thread` or, with no thread, on the pull request itself, as
+ * `poller` last read it: nothing when it hasn't read it.
+ */
+function heldComment(
+  poller: WriterPoller,
+  pull: PullRef,
+  thread: string | null,
+  comment: string,
+): ThreadCommentRow | undefined {
+  if (thread === null) {
+    const timeline = poller.cachedRead<PullRequestTimeline>(pull, TIMELINE)?.value;
+    const found = pullComment(timeline, comment);
+    return found && pullCommentRow(found);
+  }
+  return threadsOf(poller, pull)
+    ?.get(thread)
+    ?.comments.find((each) => each.id === comment);
+}
+
+/**
+ * Reads the comment `comment`, in the thread `thread` or, with no thread, on the pull request
+ * itself, as GitHub has it now, read as `login`: nothing when it's gone.
+ */
+function readYours(
+  client: GithubClient,
+  pull: PullRef,
+  thread: string | null,
+  comment: string,
+  login: string,
+): Promise<CommentNow | undefined> {
+  return thread === null
+    ? readPullComment(client, pull, comment, login)
+    : readComment(client, thread, comment);
+}
+
+/** The comment `comment`, in the thread `thread` or on the pull request itself, as a write names it. */
+function commentId(thread: string | null, comment: string): CommentId {
+  return thread === null ? onPull(comment) : inThread(comment);
+}
+
+/**
+ * Has `poller` read again, afresh, what shows the comments in the thread `thread`, or with no thread
+ * those on the pull request itself: the threads, or the timeline. Neither watches for edits.
+ */
+function readAgain(poller: WriterPoller, pull: PullRef, thread: string | null): void {
+  if (thread === null) poller.readAfresh(pull, TIMELINE);
+  else poller.readAfresh(pull, REVIEW_THREADS);
+}
+
 /** Whether a write starts or adds to your pending review, rather than posting at once. */
 function intoReview(write: ReviewWrite): boolean {
   return write.kind === 'startReview' || write.kind === 'addThread' || write.kind === 'addReply';
@@ -418,9 +480,7 @@ export class Writer {
     if ('kind' in target) return target;
     const { login, pull } = target;
     const poller = await this.#options.poller(login);
-    const comment = threadsOf(poller, pull)
-      ?.get(place.thread)
-      ?.comments.find((each) => each.id === place.comment);
+    const comment = heldComment(poller, pull, place.thread, place.comment);
     const refusal = comment && changeRefused(comment, login, 'edit');
     if (refusal) return { kind: 'refused', refusal };
     if (this.#options.drafts.startEdit(login, pull, place, base)) this.#changed(target);
@@ -478,21 +538,26 @@ export class Writer {
   }
 
   /**
-   * Deletes your comment `comment` in the thread `thread` on view `id`, once the last write to its
-   * pull request has its answer, and only if a read of it made then finds it as the question showed
-   * it, `asked`.
+   * Deletes your comment `comment` in the thread `thread` on view `id`, or, with no thread, on its
+   * pull request itself, once the last write to its pull request has its answer, and only if a read
+   * of it made then finds it as the question showed it, `asked`.
    */
-  remove(id: string, thread: string, comment: string, asked: DeleteAsked): Promise<ActOutcome> {
+  remove(
+    id: string,
+    thread: string | null,
+    comment: string,
+    asked: DeleteAsked,
+  ): Promise<ActOutcome> {
     return this.#act(id, { thread, comment, change: 'delete' }, async (target, poller) => {
       const { login, pull } = target;
-      const held = threadsOf(poller, pull)
-        ?.get(thread)
-        ?.comments.find((each) => each.id === comment);
+      const held = heldComment(poller, pull, thread, comment);
       const refused = held && changeRefused(held, login, 'delete');
       if (refused) return { kind: 'refused', refusal: refused };
-      const now = await poller.readOnce((client) => readComment(client, thread, comment));
+      const now = await poller.readOnce((client) =>
+        readYours(client, pull, thread, comment, login),
+      );
       if (!now) {
-        poller.readAfresh(pull, REVIEW_THREADS);
+        readAgain(poller, pull, thread);
         return { kind: 'refused', refusal: { kind: 'gone' } };
       }
       if (!now.viewerDidAuthor) {
@@ -501,14 +566,16 @@ export class Writer {
       if (!now.viewerCanDelete) {
         return { kind: 'refused', refusal: { kind: 'notAllowed', reasons: now.cannotUpdate } };
       }
-      if (!asAsked(asked, now)) {
+      // A comment on the pull request itself is in no review and no thread: only its text counts.
+      const same = thread === null ? sameCommentText(asked.body, now.body) : asAsked(asked, now);
+      if (!same) {
         // What the question showed may be older than GitHub's: the card is brought up to date.
-        poller.readAfresh(pull, REVIEW_THREADS);
+        readAgain(poller, pull, thread);
         return { kind: 'refused', refusal: { kind: 'changed' } };
       }
       // Deleting a pending comment changes your pending review, perhaps to none.
       if (now.state === 'PENDING') this.#written.add(pull.key);
-      return () => poller.deleteComment(pull, inThread(comment));
+      return () => poller.deleteComment(pull, commentId(thread, comment));
     });
   }
 
@@ -765,7 +832,8 @@ export class Writer {
     this.#sending.set(key, 'sending');
     this.#changed(target);
     const poller = await this.#options.poller(login);
-    const now = await poller.readOnce((client) => readComment(client, place.thread, place.comment));
+    const { thread, comment } = place;
+    const now = await poller.readOnce((client) => readYours(client, pull, thread, comment, login));
     const before = beforeEdit(base, text, now);
     switch (before.kind) {
       case 'send':
@@ -775,8 +843,8 @@ export class Writer {
         return { kind: 'done' };
       case 'changed':
       case 'gone':
-        // The threads don't watch for edits: what the card shows is brought up to date.
-        poller.readAfresh(pull, REVIEW_THREADS);
+        // Nothing polled watches for edits: what the card shows is brought up to date.
+        readAgain(poller, pull, thread);
         this.#settled(target, key, null);
         return { kind: 'refused', refusal: { kind: before.kind } };
       case 'theirs':
@@ -795,7 +863,7 @@ export class Writer {
     this.#changed(target);
     let answer;
     try {
-      answer = await poller.editComment(pull, inThread(place.comment), text);
+      answer = await poller.editComment(pull, commentId(thread, comment), text);
     } catch (error) {
       if (!(error instanceof GithubError) || !error.mayHavePosted()) throw error;
       this.#lost(target, key, place, text, sentAt);
@@ -826,7 +894,8 @@ export class Writer {
     const target = this.#actTarget(id);
     if ('kind' in target) return Promise.resolve(target);
     const { pull } = target;
-    const key = this.#actKey(target, asked.thread);
+    // One change a thread at a time, and one to a comment on the pull request itself.
+    const key = this.#actKey(target, asked.thread ?? asked.comment ?? '');
     const stands = this.#acts.get(key)?.row.stands;
     if (stands === 'waiting' || stands === 'sending' || stands === 'checking') {
       return Promise.resolve({ kind: 'refused', refusal: { kind: 'busy' } });
@@ -881,8 +950,10 @@ export class Writer {
     const look = async (poller: WriterPoller): Promise<'again' | undefined> => {
       let done: boolean | 'again';
       if (comment !== null) {
-        done =
-          (await poller.readOnce((client) => readComment(client, thread, comment))) === undefined;
+        const now = await poller.readOnce((client) =>
+          readYours(client, pull, thread, comment, login),
+        );
+        done = now === undefined;
       } else {
         const list = await poller.readOnce((client) => reviewThreads(client, pull));
         const found = threadRows(list).find((each) => each.id === thread);
@@ -893,7 +964,7 @@ export class Writer {
       if (!still() || done === 'again') return done === 'again' ? 'again' : undefined;
       if (done) {
         this.#setAct(target, key, undefined);
-        poller.readAfresh(pull, REVIEW_THREADS);
+        readAgain(poller, pull, thread);
       } else {
         this.#setAct(target, key, { ...asked, stands: 'notDone' });
       }
@@ -917,8 +988,8 @@ export class Writer {
     }
   }
 
-  #actKey({ login, pull }: Target, thread: string): string {
-    return `${login.toLowerCase()}|${pull.key}|${thread}`;
+  #actKey({ login, pull }: Target, node: string): string {
+    return `${login.toLowerCase()}|${pull.key}|${node}`;
   }
 
   /** The account and pull request view `id` changes threads on, or why it can't. */
@@ -1054,17 +1125,18 @@ export class Writer {
     };
     if (place.kind === 'edit') {
       const base = this.#options.drafts.get(login, pull, place)?.base ?? null;
+      const { thread, comment } = place;
       const look = async (poller: WriterPoller) => {
         const found = await poller.readOnce((client) =>
-          readComment(client, place.thread, place.comment),
+          readYours(client, pull, thread, comment, login),
         );
         if (!still()) return undefined;
         const after =
           base === null ? { kind: 'notTaken' as const } : afterLostEdit(base, text, found);
         if (after.kind === 'taken') {
           this.#posted(target, key, place, text);
-          // The threads don't watch for edits: they show the new text once they're read again.
-          poller.readAfresh(pull, REVIEW_THREADS);
+          // Nothing polled watches for edits: it shows the new text once it's read again.
+          readAgain(poller, pull, thread);
           return undefined;
         }
         this.#options.drafts.markSent(login, pull, place, null);
@@ -1106,12 +1178,10 @@ export class Writer {
       if (!still()) return undefined;
       // When it was sent, by GitHub's clock.
       const sentThere = at + (read.ahead ?? 0);
-      const threads = threadRows(read.list);
+      const holds = holdsComment(threadRows(read.list), login, place, text, sentThere);
       // Not found where GitHub left threads out: it may be among them.
-      if (read.list.missing > 0 && !holdsComment(threads, login, place, text, sentThere)) {
-        return 'again';
-      }
-      this.#look(target, key, place, text, sentThere, threads);
+      if (read.list.missing > 0 && !holds) return 'again';
+      this.#look(target, key, place, text, holds);
       return undefined;
     };
     this.#lookAfter(login, at, still, look, unknown);
@@ -1194,21 +1264,14 @@ export class Writer {
   }
 
   /**
-   * Looks among `threads` for the comment sent as `sent` at `place`, at `sentAt` by GitHub's clock,
-   * and settles it: found, as {@link Writer.#posted}; otherwise it didn't post.
+   * Settles the comment sent as `sent` at `place` by whether a fresh read `holds` it: found, as
+   * {@link Writer.#posted}; otherwise it didn't post.
    */
-  #look(
-    target: Target,
-    key: string,
-    place: DraftPlaceRow,
-    sent: string,
-    sentAt: number,
-    threads: readonly ThreadRow[],
-  ): void {
+  #look(target: Target, key: string, place: DraftPlaceRow, sent: string, holds: boolean): void {
     const { login, pull } = target;
     const kept = this.#options.drafts.get(login, pull, place);
     if (!kept) return;
-    if (holdsComment(threads, login, place, sent, sentAt)) {
+    if (holds) {
       this.#posted(target, key, place, sent);
       return;
     }

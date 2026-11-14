@@ -1,0 +1,5 @@
+{
+  "description": "What the app's test of writing on a pull request itself reads from GitHub and writes there, recorded from the app with writes and the comments fixture's git: rozed-dev/e2e#94, opened on its diff, and its timeline shown from there; c and a comment posted from the box at the timeline's end; i on the comment, edited and saved; dd and ⏎, which deleted it; the timeline read again after each, and the polls repeated while it stayed open.",
+  "recorded_at": "2026-11-14T04:26:24Z",
+  "repo": "rozed-dev/e2e"
+}

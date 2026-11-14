@@ -18,16 +18,25 @@ import { canWrite, claimBriefly, IN_DIFF, knowPull, loginOf, offline, openAt } f
 import { main } from './main.ts';
 import { threadOf } from './placing.ts';
 import { held, shownAt } from './threads.ts';
+import { wrotePull } from './written.ts';
 import { actText, NO_REPLY, type Doing } from './writing.ts';
 
 /** Why a change to a thread can't go while GitHub can't be reached. */
 export const OFFLINE_ACT = 'Offline. Try again once GitHub can be reached.';
 
-/** How each view's changes to its threads stand, as main last sent them, by thread. */
+/**
+ * How each view's changes to its threads stand, as main last sent them, by thread, or by comment
+ * for a comment on the pull request itself.
+ */
 export const acting = tabState<ReadonlyMap<string, ActRow>>(() => new Map());
 
 /** The changes whose note the reader closed, by view. */
 export const closedActs = tabState<ReadonlySet<ActRow>>(() => new Set());
+
+/** What a change is kept by: its thread, or the comment on the pull request itself it's to. */
+export function actKey(row: Pick<ActRow, 'thread' | 'comment'>): string {
+  return row.thread ?? row.comment ?? '';
+}
 
 /**
  * Takes how view's changes to its threads stand, as main sent it. A card that changes because of
@@ -35,12 +44,13 @@ export const closedActs = tabState<ReadonlySet<ActRow>>(() => new Set());
  */
 export function takeActs(view: ActsView): void {
   const was = acting.get(view.id);
-  const now = new Map(view.acts.map((row) => [row.thread, row]));
+  const now = new Map(view.acts.map((row) => [actKey(row), row]));
   const diff = writingDiff(view.id);
-  for (const thread of new Set([...was.keys(), ...now.keys()])) {
-    const before = was.get(thread);
-    const after = now.get(thread);
-    if (before?.stands !== after?.stands && diff) claimBriefly(diff, thread);
+  for (const key of new Set([...was.keys(), ...now.keys()])) {
+    const before = was.get(key);
+    const after = now.get(key);
+    const thread = (before ?? after)?.thread;
+    if (before?.stands !== after?.stands && diff && thread != null) claimBriefly(diff, thread);
   }
   acting.set(view.id, now);
 }
@@ -48,6 +58,13 @@ export function takeActs(view: ActsView): void {
 /** Closes the note of `row`, a change of view `view`'s that didn't go, or may not have. */
 export function closeAct(view: string, row: ActRow): void {
   closedActs.update(view, (was) => new Set([...was, row]));
+}
+
+/** What a card says of a change asked of it, while it says anything. */
+export interface ActNote {
+  readonly text: string;
+  readonly again: boolean;
+  readonly checking: boolean;
 }
 
 /**
@@ -59,12 +76,21 @@ export function actNote(
   row: ActRow | undefined,
   thread: ThreadRow,
   isClosed: boolean,
-): { readonly text: string; readonly again: boolean; readonly checking: boolean } | undefined {
-  if (!row || isClosed) return undefined;
+): ActNote | undefined {
+  if (!row) return undefined;
   const asked =
     row.change === 'delete'
       ? !thread.comments.some((each) => each.id === row.comment)
       : thread.resolved === (row.change === 'resolve');
+  return noteOf(row, asked, isClosed);
+}
+
+/**
+ * What a card says of the change `row` asked of it, if anything: nothing once the card shows it
+ * done (`asked`), or the reader closed the note.
+ */
+export function noteOf(row: ActRow, asked: boolean, isClosed: boolean): ActNote | undefined {
+  if (isClosed) return undefined;
   if (row.stands === 'waiting' || row.stands === 'sending') return undefined;
   const what = {
     resolve: 'resolved the thread',
@@ -305,7 +331,8 @@ export async function edit(tab: PullTab, target: ThreadKeyTarget, comment?: stri
 /** What the dialog that asks before a comment is deleted shows, while it's open. */
 export interface DeleteAsking {
   readonly tab: PullTab;
-  readonly thread: string;
+  /** Its thread: none for a comment on the pull request itself. */
+  readonly thread: string | null;
   readonly comment: string;
   /** Its text, as the card shows it. */
   readonly body: string;
@@ -317,7 +344,8 @@ export interface DeleteAsking {
 let asking: DeleteAsking | undefined;
 const listeners = new Set<() => void>();
 
-function setAsking(next: DeleteAsking | undefined): void {
+/** Opens the question to delete a comment, or closes it. */
+export function setAsking(next: DeleteAsking | undefined): void {
   asking = next;
   for (const listener of listeners) listener();
 }
@@ -367,7 +395,8 @@ export function cancelDelete(): void {
 
 /**
  * The question's Delete: deletes the comment, if GitHub still has it as the question showed it.
- * Its thread is claimed in the diff, so it changes there at once.
+ * Its thread is claimed in the diff, so it changes there at once; a comment on the pull request
+ * itself, in the timeline.
  */
 export async function confirmDelete(): Promise<void> {
   const asked = asking;
@@ -379,7 +408,8 @@ export async function confirmDelete(): Promise<void> {
     notify(title, OFFLINE_ACT);
     return;
   }
-  const release = writingDiff(tab.id)?.claimThread(thread) ?? (() => {});
+  const release =
+    thread === null ? () => {} : (writingDiff(tab.id)?.claimThread(thread) ?? (() => {}));
   try {
     const outcome = await main().remove({
       id: tab.id,
@@ -390,6 +420,8 @@ export async function confirmDelete(): Promise<void> {
     if (outcome.kind === 'refused') {
       release();
       refused(title, outcome.refusal, 'delete');
+    } else if (outcome.kind === 'done' && thread === null) {
+      wrotePull(tab.id, { kind: 'deleted', comment });
     }
   } catch (error) {
     release();
@@ -400,6 +432,7 @@ export async function confirmDelete(): Promise<void> {
 /** Asks for the change `row` names again, as its note's "Try again" does. */
 export function tryAgain(tab: PullTab, row: ActRow): void {
   closeAct(tab.id, row);
+  if (row.thread === null) return;
   const thread = { kind: 'thread' as const, thread: row.thread };
   if (row.change === 'delete') {
     if (row.comment !== null) remove(tab, thread, row.comment);

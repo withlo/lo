@@ -770,6 +770,17 @@ The `timeline` feature shows a pull request's GitHub timeline as the third of it
   back to the list. A row is a `row` target, the keys' from the scope and a right-click's from the
   row clicked: its menu, and the palette for the row the keyboard is on, offer what its buttons do,
   each listed only for rows that have it.
+- What main sends while the timeline is on screen waits for the reader's next key, click or scroll
+  (`window/holding.ts`, `window/store.ts`), except what their own write changed, which the comments
+  feature tells it of (`onCommentWritten`) and which shows as it comes, for a minute at most. As it
+  goes on screen, what the reader is at keeps its place (`window/place.ts`): the box at the end
+  while they write in it or the list is at its end, or else the keyboard's row while it's on screen,
+  or else the first row on screen. When the keyboard's row goes, as a comment deleted, the keyboard
+  moves to its neighbour, with nothing scrolled.
+- The box at the end comments on the pull request itself, and your comments there have Edit and
+  Delete (`i`, `dd`), drawn through the comments feature's `PullCommentBox`, `PullCommentEdit` and
+  `PullCommentNote`. `window/yours.ts` says which row a key acts on, and refuses the rest in Lo's
+  words.
 
 ### Posts
 
@@ -859,6 +870,26 @@ panel's `x` resolves the thread the keyboard is on, through the same function.
   shows, with "Try again" once Lo found it didn't go or can't tell.
 - A thread the reader acts on is claimed in the diff (`claimThread`), so what their write changes
   there comes at once and keeps their line in place, as what comes under a sent box's line does.
+
+### Writing on the pull request itself
+
+The comment box at the end of the timeline comments on the pull request itself, and `i` and `dd` on
+your comment there edit and delete it (`window/conversation.ts`, `window/TimelineBox.tsx`).
+
+- The box is the comment box's editor (`createComposer`), in the same frame, taking files as the
+  diff's boxes do, kept with the drafts as the `conversation` place: one a pull request, which
+  restores after a restart with how sending it stands. `comments.send` posts it at once, in its turn
+  among the pull request's writes, with the poller's `addConversationComment`
+  (`main/conversation.ts`). Its answer lost, main reads the timeline afresh 10 s or more after, and
+  looks for your comment with its text made since, by GitHub's clock.
+- The draft is the one an overview's code block writes on the pull request too. It opens under that
+  block while the overview has it (`opensUnderBlock`), and otherwise in this box (`isPullsOwn`),
+  checked again as the overview changes. While it's under the block, the box says so, and `c` or its
+  "Write it here" brings the draft into the box (`bringToTimeline`).
+- An edit of your comment there is an `edit` place with no thread, drawn in the comment's card. It,
+  and a delete, read the comment afresh from a full read of the timeline (`readPullComment`); one
+  the read may have left out among older events settles nothing. A delete's question is the diff's
+  dialog, and only the comment's text has to be as it showed.
 
 ### Submitting a review
 

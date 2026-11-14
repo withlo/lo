@@ -1,7 +1,9 @@
 // The timeline's keys, in its own view, the `timeline` scope: moving between its rows, opening the
 // row the keyboard is on on GitHub, and going through its links and buttons with `Tab`, `Esc` going
-// back to the list. What a row's buttons do is also on the row's right-click menu, and in the
-// palette for the row the keyboard is on, without a key of its own.
+// back to the list. `c` puts focus in the box at the timeline's end, which comments on the pull
+// request itself; on one of your comments, `i` edits it and `dd` deletes it, after asking. What a
+// row's buttons do is also on the row's right-click menu, and in the palette for the row the
+// keyboard is on, without a key of its own where it has none.
 
 import { defineCommands, type When } from '@lo/ui/commands';
 
@@ -40,6 +42,31 @@ export default defineCommands(
       group: 'Move',
       keys: ['shift+tab'],
       when: timeline,
+    },
+    /** Focus in the box at the timeline's end, which comments on the pull request itself. */
+    comment: {
+      label: 'Comment on the pull request',
+      group: 'Act',
+      keys: ['c'],
+      when: timeline,
+    },
+    /** A box with your comment's text, in its card, to edit it and save it over GitHub's text. */
+    editComment: {
+      label: 'Edit your comment',
+      group: 'Act',
+      keys: ['i'],
+      targets: ['row'],
+      when: timeline,
+      menu: { on: 'row', order: 2 },
+    },
+    /** Deletes your comment, once you say so. */
+    deleteComment: {
+      label: 'Delete your comment…',
+      group: 'Act',
+      keys: ['d d'],
+      targets: ['row'],
+      when: timeline,
+      menu: { on: 'row', order: 4 },
     },
     /** Shows the hidden comment or review, as its "Show comment" does. */
     showComment: {
