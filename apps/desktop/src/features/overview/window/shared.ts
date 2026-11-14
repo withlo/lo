@@ -13,6 +13,7 @@ import { commentLinesOnHead } from './since.ts';
 import { labelOf } from './stale.ts';
 import { revisions } from './store.ts';
 import {
+  blockKey as keyOfBlock,
   blockLinesOf,
   blockThreadsWith,
   changed,
@@ -24,7 +25,6 @@ import {
 
 export type { CommentOnHead, FileWhy } from './mapping.ts';
 export type { BlockLines, BlockThreads, DrawnBlock, WritingBlock } from './threaded.ts';
-export { blockKey } from './threaded.ts';
 
 /**
  * Whether there's an overview: one for the newest push (`current`), for an older one (`stale`), one
@@ -75,6 +75,14 @@ export function isCodeBlock(tab: string, target: Target): boolean {
   const overview = drawnIn(tab);
   if (!overview || target.kind !== 'block') return false;
   return blockAt(overview, target)?.querySelector('[data-lo-excerpt]') != null;
+}
+
+/**
+ * The key of a code block that points at `path`'s lines `start` to `end`, of an overview that
+ * describes `commit`, as `DrawnBlock.key` has it: the same after a restart.
+ */
+export function blockKey(commit: string, path: string, start: number, end: number): string {
+  return keyOfBlock(commit, path, start, end);
 }
 
 /** What the reader calls the revision whose head is `commit`, in tab `tab`: `r3`, or its short id. */
