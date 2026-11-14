@@ -9,6 +9,7 @@ import {
   type OnUnauthorized,
 } from './client.ts';
 import { GithubError } from './errors.ts';
+import { AddCommentDocument, ViewerDocument } from './generated/graphql.ts';
 import { unchecked } from './json.ts';
 import { RequestQueue } from './poll/queue.ts';
 import { Token } from './token.ts';
@@ -503,6 +504,29 @@ test('an upload hands its fetch where to report progress, which plain fetch igno
   });
   expect(answered.status).toBe(201);
   expect(heard).toHaveLength(1);
+});
+
+test('a write is sent at most once, and a read, a GraphQL query too, may go again', async () => {
+  const once: string[] = [];
+  const fetch: typeof globalThis.fetch = (input, init?: FetchInit) => {
+    const url = input instanceof Request ? input.url : input.toString();
+    if (init?.once === true) once.push(`${init.method} ${url}`);
+    return Promise.resolve(new Response('{"data":{}}', { status: 200 }));
+  };
+  const github = client(fetch);
+
+  await github.get('/user', json);
+  await github.graphqlPartial(ViewerDocument, {});
+  await github.send('POST', '/graphql', { body: '{}', once: false });
+  await github.graphqlPartial(AddCommentDocument, { subjectId: 'PR_1', body: 'Looks good' });
+  await github.write('PATCH', '/repos/o/r/pulls/1', '{}', json);
+  await github.delete('/repos/o/r/issues/comments/1');
+
+  expect(once).toEqual([
+    'POST https://api.github.com/graphql',
+    'PATCH https://api.github.com/repos/o/r/pulls/1',
+    'DELETE https://api.github.com/repos/o/r/issues/comments/1',
+  ]);
 });
 
 test('a request given up fails with the reason, and one given up first is never sent', async () => {

@@ -3,7 +3,9 @@
 // on. Which posts the window asks for at once depends on which are near the screen, and so on the
 // window's size and how fast it draws, so a read can't be matched to a recorded one as it was
 // asked. Each post is answered as it was recorded, and one that wasn't as GitHub answers an ID it
-// has no post for. A test can hold a request at it, as an upload is held until the test lets it go.
+// has no post for. A test can hold a request at it, as an upload is held until the test lets it go,
+// or cut the connection of a write once its request has come, as a proxy that drops it would. It
+// says which GraphQL operations came.
 
 import { createServer, type ServerResponse } from 'node:http';
 import { buffer } from 'node:stream/consumers';
@@ -48,7 +50,17 @@ function json(outgoing: ServerResponse, body: Json): void {
 export interface BodiesServer {
   /** Where Lo finds GitHub: this server's origin. */
   readonly origin: string;
+  /** The name of each GraphQL operation that came, in order. */
+  readonly operations: string[];
   close(): Promise<void>;
+}
+
+export interface BodiesOptions {
+  /**
+   * The GraphQL operation whose connection is cut once its whole request has come, with no answer,
+   * as a proxy that drops the connection then would.
+   */
+  readonly cut?: string | undefined;
 }
 
 /**
@@ -60,14 +72,22 @@ export async function serveBodies(
   cassette: string,
   behind: string,
   hold: (path: string) => Promise<void> | undefined = () => undefined,
+  options: BodiesOptions = {},
 ): Promise<BodiesServer> {
   const { data, posts } = recordedBodies(cassette);
+  const operations: string[] = [];
   const front = createServer((incoming, outgoing) => {
     void (async () => {
       const body = await buffer(incoming);
       await hold(incoming.url ?? '/');
       if (incoming.url?.endsWith('/graphql')) {
         const asked = objectOf(parseJson(body.toString('utf8')));
+        const name = asked?.['operationName'];
+        if (typeof name === 'string') operations.push(name);
+        if (name !== undefined && name === options.cut) {
+          incoming.socket.destroy();
+          return undefined;
+        }
         if (asked?.['operationName'] === 'RenderedBodies') {
           const ids = objectOf(asked['variables'])?.['ids'];
           const strings = Array.isArray(ids) ? ids.filter((id) => typeof id === 'string') : [];
@@ -101,11 +121,15 @@ export async function serveBodies(
       outgoing.destroy();
     });
   });
+  // Cutting a write's connection, the connections stay open between requests, as GitHub's do, so
+  // a network stack that sends a request again when its reused connection drops has one to reuse.
+  if (options.cut !== undefined) front.keepAliveTimeout = 60_000;
   await new Promise<void>((resolve) => front.listen(0, '127.0.0.1', resolve));
   const address = front.address();
   if (address === null || typeof address === 'string') throw new Error('no port');
   return {
     origin: `http://127.0.0.1:${address.port}`,
+    operations,
     async close() {
       front.closeAllConnections();
       await new Promise((resolve) => front.close(resolve));

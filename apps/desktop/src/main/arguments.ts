@@ -65,7 +65,8 @@ const refusedVariables: readonly { name: string; refuses: (value: string) => boo
   // Chromium's own logs, to the console or a file: what `--enable-logging` and `--log-file` do.
   { name: 'ELECTRON_ENABLE_LOGGING', refuses: () => true },
   { name: 'ELECTRON_LOG_FILE', refuses: () => true },
-  // Node's TLS, which Lo's requests don't use, stops checking certificates.
+  // Node's TLS, which Lo's writes to GitHub go over, stops checking certificates for any request that
+  // doesn't ask for the check itself, as Lo's writes do.
   { name: 'NODE_TLS_REJECT_UNAUTHORIZED', refuses: (value) => value === '0' },
 ];
 

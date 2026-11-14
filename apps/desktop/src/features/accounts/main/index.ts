@@ -6,7 +6,7 @@
 import { fileURLToPath } from 'node:url';
 
 import { RepoRef, sameLogin } from '@lo/github';
-import { app, clipboard, net, safeStorage } from 'electron';
+import { app, clipboard, net, safeStorage, session } from 'electron';
 
 import { IpcError } from '../../../ipc/contract.ts';
 import { openPage } from '../../../main/browser.ts';
@@ -18,6 +18,7 @@ import {
 } from '../../../main/environment.ts';
 import { defineFeature, STOP_LIMITS } from '../../../main/features.ts';
 import { netFetch } from '../../../main/fetch.ts';
+import { authorities, onceFetch, writesOnce } from '../../../main/once.ts';
 import { provides } from '../../../main/services.ts';
 import {
   accountSummary,
@@ -42,10 +43,18 @@ import { SignIns } from './signin.ts';
 const SAVE_WITHIN = STOP_LIMITS.each - 1_000;
 
 /**
- * Every request to GitHub goes through Chromium's network stack, with the system's proxy, keeping
- * nothing in Chromium's cache.
+ * Every read from GitHub goes through Chromium's network stack, with the system's proxy, keeping
+ * nothing in Chromium's cache. Every write goes over Node's HTTP stack, undici, through the proxy
+ * Chromium names, so it's sent at most once: Chromium sends a request again by itself when its
+ * reused connection drops (`main/once.ts`).
  */
-const fetch = netFetch((options) => net.request(options));
+const fetch = writesOnce(
+  netFetch((options) => net.request(options)),
+  onceFetch({
+    proxy: (address) => session.defaultSession.resolveProxy(address),
+    ca: authorities,
+  }),
+);
 
 /**
  * This build of Lo: a hash of the code main runs, which holds the pollers' reads and their shapes.

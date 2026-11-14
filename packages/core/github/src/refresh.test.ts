@@ -1,6 +1,7 @@
 import { Replay, replayFetch } from '@lo/testing';
 import { expect, test } from 'vitest';
 
+import type { FetchInit } from './client.ts';
 import { CLIENT_ID } from './errors.ts';
 import { RenewalError, type Grant } from './grant.ts';
 import {
@@ -173,8 +174,9 @@ test('absurd lifetimes dont overflow', () => {
   expect(refresh?.refreshTokenExpiresAt).toBeUndefined();
 });
 
-test('a refresh sends no client secret', async () => {
-  const fetch = replayFetch(
+test('a refresh sends no client secret, and goes at most once', async () => {
+  const sent: (boolean | undefined)[] = [];
+  const replay = replayFetch(
     new Replay('synthetic', [
       {
         request: {
@@ -195,9 +197,15 @@ test('a refresh sends no client secret', async () => {
       },
     ]),
   );
+  const fetch: typeof globalThis.fetch = (input, init?: FetchInit) => {
+    sent.push(init?.once);
+    return replay(input, init);
+  };
   const before = nowSeconds();
   const grant = await refreshGrant({ fetch }, new Token('ghr_OLD'));
   const after = nowSeconds();
+  // It spends the refresh token.
+  expect(sent).toEqual([true]);
   expect(grant.token.expose()).toBe('gho_NEW');
   expect(grant.refresh?.token.expose()).toBe('ghr_NEW');
   const expiresAt = grant.refresh?.expiresAt ?? 0;

@@ -41,20 +41,23 @@ const cmd = process.platform === 'darwin' ? 'Meta' : 'Control';
 
 const test = base.extend<{
   cassette: string;
+  /** The GraphQL operation whose connection drops once its request has come, if any. */
+  cut: string | undefined;
   github: ReplayServer;
   front: BodiesServer;
   githubOrigin: string;
   remote: string;
 }>({
   cassette: ['app_comments', { option: true }],
+  cut: [undefined, { option: true }],
   github: async ({ cassette }, use) => {
     const answers = recorded(cassette).interactions.map(({ interaction }) => interaction);
     const server = await serveReplay(new Replay(cassette, answers));
     await use(server);
     await server.close();
   },
-  front: async ({ cassette, github }, use) => {
-    const front = await serveBodies(cassette, new URL(github.urls.api).origin);
+  front: async ({ cassette, cut, github }, use) => {
+    const front = await serveBodies(cassette, new URL(github.urls.api).origin, undefined, { cut });
     await use(front);
     await front.close();
   },
@@ -243,11 +246,35 @@ test.describe('as if someone else had opened the pull request', () => {
   });
 });
 
+test.describe('when the connection drops once a comment has gone', () => {
+  test.use({ cassette: 'app_comments_write', cut: 'AddPullRequestReview' });
+
+  test('the comment goes to GitHub once, and Lo looks for it', async ({ page, front }) => {
+    const tab = await open(page);
+    await onLineTwo(page);
+    await page.keyboard.press('c');
+    await expect(boxes(page)).toHaveCount(1);
+    await page.keyboard.type('Does the first wait need a cap?');
+    await page.keyboard.press(`${cmd}+Enter`);
+    // Its answer lost, it may have posted: Lo looks for it rather than send it again.
+    await expect
+      .poll(
+        async () =>
+          JSON.stringify(
+            await page.evaluate((id) => window.lo.invoke('comments.current', { id }), tab),
+          ),
+        { timeout: 20_000 },
+      )
+      .toContain('"sending":"checking"');
+    expect(front.operations.filter((name) => name === 'AddPullRequestReview')).toHaveLength(1);
+  });
+});
+
 test.describe('with a comment posted at once recorded', () => {
   test.use({ cassette: 'app_comments_now' });
 
   test('`C` opens a box whose button posts the comment at once', async ({ page }) => {
-    await open(page);
+    const tab = await open(page);
     await onLineTwo(page);
     await page.keyboard.press('Shift+C');
     const box = boxes(page);
@@ -259,6 +286,16 @@ test.describe('with a comment posted at once recorded', () => {
     // The box goes, its room held until the reader's next key, and then the thread GitHub made
     // comes under the line, posted.
     await expect(box).toHaveCount(0, { timeout: 20_000 });
+    // The box can go before the thread is read back: the key comes once Lo has it.
+    await expect
+      .poll(
+        async () =>
+          JSON.stringify(
+            await page.evaluate((id) => window.lo.invoke('comments.current', { id }), tab),
+          ),
+        { timeout: 20_000 },
+      )
+      .toContain('Is two the right start?');
     await page.keyboard.press('Shift');
     await expect.poll(() => threadsUnder(page, 'src/backoff.ts', 2), { timeout: 20_000 }).toBe(2);
     const thread = page
