@@ -100,6 +100,8 @@ export interface Drawn {
    * it shows is the reader's from now on.
    */
   viewedHere(id: string, viewed: boolean, next: string | undefined): void;
+  /** Whether focus is in it. */
+  hasFocus(): boolean;
 }
 
 const drawn = new Map<string, Drawn>();

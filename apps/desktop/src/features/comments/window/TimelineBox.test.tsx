@@ -169,6 +169,7 @@ function drawBlock(): { writing: WritingBlock; texts: string[] } {
         hold() {},
         close() {},
         dismiss() {},
+        keep: () => ({ text, editor: undefined }),
       } satisfies Composer;
     },
   };

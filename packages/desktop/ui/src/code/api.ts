@@ -254,6 +254,21 @@ export interface Composer {
    * closes it, but without a word to the caller, and leaving its line no claim on what comes there.
    */
   dismiss(): void;
+  /**
+   * The box as it is, for another to open as it was ({@link ComposeOptions.kept}), as when the view
+   * it's in is about to be drawn anew.
+   */
+  keep(): KeptBox;
+}
+
+/**
+ * A comment box as it was, from {@link Composer.keep}: its text, and what a code view opening
+ * another as it was reads, its caret and selection, undo history, Vim's mode and its preview.
+ */
+export interface KeptBox {
+  readonly text: string;
+  /** The rest, which only a code view reads. */
+  readonly editor: unknown;
 }
 
 /**
@@ -291,6 +306,15 @@ export interface ComposeOptions {
    * box named otherwise than one open at its place is a box of its own.
    */
   name?: string;
+  /**
+   * The box this one is, as it was before the view was drawn anew: it opens as that one was, with
+   * its caret and selection, undo history, Vim's mode and preview, if its text is the draft. That's
+   * a change no input asked for, so what's on screen stays where it is, whether it takes focus or
+   * not. On a line its file is drawn without, as a file closed as viewed is, or one too large, it
+   * goes under the file's header. While the file's lines are still coming, it throws, as for any
+   * line not drawn.
+   */
+  kept?: KeptBox;
 }
 
 /** A comment box outside a code view, as the timeline's and a review's summary are. */

@@ -148,6 +148,9 @@ interface At {
   line: number;
 }
 
+/** What a file's note says while its lines are still coming. */
+const COMING: ReadonlySet<FileNote> = new Set(['loading', 'pending']);
+
 /** Replaces one file's decorations. */
 /** How long a line put back at the top stays there once it's settled, in milliseconds. */
 const HOLD_AFTER = 2_000;
@@ -2219,10 +2222,15 @@ class View implements DiffView {
     frame?: BoxFrame,
     options: ComposeOptions = {},
   ): Composer {
-    const place = this.#boxPlace(at);
+    const asked = this.#boxPlace(at);
+    const { kept } = options;
     // A box on the file goes under its header, which every file draws; one on a line, only under a
-    // line drawn.
-    if (place.line === 0 ? 'line' in at : place.line < 1 || this.#noteOf(place.file)) {
+    // line drawn. One opened as it was before the view was drawn anew goes under its file's header
+    // where the file is drawn without its lines, as one closed is, not while they're still coming.
+    const note = asked.line > 0 ? this.#noteOf(asked.file) : undefined;
+    const header = kept !== undefined && note !== undefined && !COMING.has(note);
+    const place: At = header ? { file: asked.file, side: 'new', line: 0 } : asked;
+    if (!header && (place.line === 0 ? 'line' in at : place.line < 1 || note !== undefined)) {
       throw new Error('A comment box goes under a line of a file that is shown.');
     }
     // A box the caller named is one of its own: a reply's beside a comment on the same line.
@@ -2234,7 +2242,7 @@ class View implements DiffView {
     }
     // A box opened where one's room is kept: the room, and what waited under its line, go first.
     if (this.#rooms.has(key)) this.#letRoomsGo((room) => room === this.#rooms.get(key)?.room.dom);
-    const thread = 'thread' in at ? at.thread : this.#threadAt(place);
+    const thread = 'thread' in at && !header ? at.thread : this.#threadAt(place);
     let target: LineTarget | HeaderTarget;
     if (place.line === 0) {
       target = { kind: 'header', file: this.#ids[place.file]!, side: place.side };
@@ -2247,11 +2255,12 @@ class View implements DiffView {
     if (options.name !== undefined) target.box = options.name;
     const box = new CommentBox({
       target,
-      thread: 'thread' in at ? at.thread : undefined,
+      thread: 'thread' in at && !header ? at.thread : undefined,
       draft,
       on,
       frame,
       nonce: this.#nonce,
+      kept,
       escape: (closed) => {
         const keep = closed.text.trim() !== '';
         this.#closeBox(closed, false);
@@ -2262,20 +2271,22 @@ class View implements DiffView {
       resized: (grown) => this.#boxResized(grown, place),
     });
     this.#boxes.set(key, { box, place });
-    // The lines `v` selected are the box's now.
+    // The lines `v` selected are the box's now, where the reader opened it.
     const focus = options.focus !== false;
     const active = this.#viewOf(this.#activePane());
-    if (focus && vimMode(active) === 'visual') passToVim(active, ['<Esc>']);
+    if (focus && !kept && vimMode(active) === 'visual') passToVim(active, ['<Esc>']);
     const opened = () => {
       if (place.line > 0) this.#boxLines[place.file]![place.side].add(place.line);
       this.#keepAt(place.file);
       this.#refresh(place.file);
     };
-    // A box the reader opened keeps its line where it is; one opened for them, as a draft restored,
-    // is a change no input asked for, and keeps what's on screen where it is.
-    if (focus) this.#keepLine(place, opened);
+    // A box the reader opened keeps its line where it is; one opened for them, as a draft restored
+    // or a box opened as it was as the view was drawn anew, is a change no input asked for, and
+    // keeps what's on screen where it is. One opened as it was takes focus as it had it.
+    if (focus && !kept) this.#keepLine(place, opened);
     else this.#keepUnasked(opened);
-    if (focus) box.focus();
+    if (focus && kept) box.focusShown();
+    else if (focus) box.focus();
     return box.composer;
   }
 

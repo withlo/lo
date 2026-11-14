@@ -8,6 +8,8 @@ import { afterEach, beforeAll, describe, expect, type Mock, test, vi } from 'vit
 import { findScope, isKeySource, KEY_EVENT } from '../commands/index.ts';
 import type {
   BoxFrame,
+  ComposeOptions,
+  Composer,
   ComposerEvents,
   DiffEvents,
   DiffFile,
@@ -942,6 +944,78 @@ describe('comment boxes', () => {
     expect(box.text).toBe('Gone');
   });
 
+  test('a box opened as it was, as the view is drawn anew, keeps its mode, caret and undo history, where it is', () => {
+    const box = open().compose(at('a', 'new', 10), '', composerEvents());
+    box.insert('one\ntwo\nthree');
+    vimIn('Comment').keys('<Esc>', 'g', 'g');
+    const again = drawnAnew(box, { focus: true });
+    const comment = vimIn('Comment');
+    expect(comment.mode).toBe('normal');
+    expect(comment.cursor).toBe(0);
+    expect(parent!.contains(document.activeElement)).toBe(true);
+    // Vim's keys, not text typed.
+    comment.keys('d', 'd');
+    expect(again.text).toBe('two\nthree');
+    comment.keys('u');
+    expect(again.text).toBe('one\ntwo\nthree');
+    comment.keys('u');
+    expect(again.text).toBe('');
+  });
+
+  test('a box opened as it was comes back in visual line or insert mode, or previewing, as it was', () => {
+    const box = open().compose(at('a', 'new', 10), 'one\ntwo\nthree', composerEvents());
+    vimIn('Comment').keys('<Esc>', '2', 'G', 'V');
+    const lines = drawnAnew(box, { focus: true });
+    expect(vimIn('Comment').mode).toBe('visual');
+    // The whole line, as `V` selected it.
+    vimIn('Comment').keys('d');
+    expect(lines.text).toBe('one\nthree');
+    // Insert mode after the `t` of `three`, where `d` left the cursor.
+    vimIn('Comment').keys('0', 'l', 'i');
+    const inserting = drawnAnew(lines, { focus: false });
+    const comment = vimIn('Comment');
+    expect([comment.mode, comment.cursor]).toEqual(['insert', 5]);
+    inserting.preview(true);
+    const previewing = drawnAnew(inserting, { focus: false });
+    expect(previewing.previewing).toBe(true);
+    expect(parent!.querySelector<HTMLElement>('.lo-diffcomposer__preview')!.hidden).toBe(false);
+    // Back in insert mode where it was.
+    previewing.preview(false);
+    expect([vimIn('Comment').mode, vimIn('Comment').cursor]).toEqual(['insert', 5]);
+  });
+
+  test('a box opened as it was goes under its file’s header where the file is drawn closed, not while its lines are coming', () => {
+    const shown = open();
+    shown.setCollapsed('a', true);
+    const kept = { text: 'Kept', editor: undefined };
+    const shownLine = 'A comment box goes under a line of a file that is shown.';
+    expect(() => shown.compose(at('a', 'new', 10), 'Kept', composerEvents())).toThrow(shownLine);
+    const box = shown.compose(at('a', 'new', 10), 'Kept', composerEvents(), undefined, {
+      kept,
+      focus: false,
+    });
+    expect(box.text).toBe('Kept');
+    const scope = findScope(vimIn('Comment').content);
+    expect(isKeySource(scope.source) && scope.source.keyState().target).toEqual({
+      kind: 'header',
+      file: 'a',
+      side: 'new',
+    });
+    // Drawn anew, with no file's diff in yet: it waits for the line.
+    shown.destroy();
+    parent!.remove();
+    parent = document.createElement('div');
+    document.body.append(parent);
+    view = createDiffView(
+      parent,
+      { files, layout: 'split', vimKeys: motions, nonce: 'n' },
+      events(),
+    );
+    expect(() =>
+      view!.compose(at('a', 'new', 10), 'Kept', composerEvents(), undefined, { kept }),
+    ).toThrow(shownLine);
+  });
+
   test('a box outside any view tells the caller of Esc Esc, and goes on close()', () => {
     parent = document.createElement('div');
     document.body.append(parent);
@@ -962,6 +1036,20 @@ describe('comment boxes', () => {
     expect(destroy).toHaveBeenCalledOnce();
   });
 });
+
+/**
+ * The view drawn anew, as the window draws a diff again, with `box` open in it again on line 10 of
+ * `a`'s newer side as it was, with `options`.
+ */
+function drawnAnew(box: Composer, options: ComposeOptions): Composer {
+  const kept = box.keep();
+  view?.destroy();
+  parent?.remove();
+  return open().compose(at('a', 'new', 10), kept.text, composerEvents(), undefined, {
+    ...options,
+    kept,
+  });
+}
 
 /** A box's events, with those a frame hears. */
 function boxEvents() {

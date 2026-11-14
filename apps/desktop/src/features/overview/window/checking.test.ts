@@ -6,10 +6,18 @@
 
 import { describe, expect, it, vi } from 'vitest';
 
+import { IpcError } from '../../../ipc/contract.ts';
 import type { CodeAccess, CodeReply, OverviewCommit, OverviewState } from '../contract.ts';
 import type { CodeFile } from '../jobs.ts';
 import { localJobs } from '../test/jobs.ts';
-import { Checking, keyOf, prOf, type CheckedOverview, type CodeRead } from './checking.ts';
+import {
+  Checking,
+  failedWhy,
+  keyOf,
+  prOf,
+  type CheckedOverview,
+  type CodeRead,
+} from './checking.ts';
 
 const encoder = new TextEncoder();
 const HEAD = 'a'.repeat(40);
@@ -469,7 +477,8 @@ describe('Checking', () => {
     const commit = commitOf();
     failing.take(stateOf(commit, 'ready'));
     await vi.waitFor(() => expect(published).toHaveLength(1));
-    expect(last()).toMatchObject({ kind: 'failed', why: expect.stringContaining('out of reach') });
+    // In Lo's words: what main said goes to the log.
+    expect(last()).toMatchObject({ kind: 'failed', why: 'Lo couldn’t read artifact.md.' });
     fail = false;
     failing.take({ ...stateOf(commit, 'ready'), problem: null, saved: true });
     await vi.waitFor(() => expect(published).toHaveLength(3));
@@ -498,6 +507,20 @@ function readOf(size: number): CodeRead {
     files: [{ path: 'a', lines: true, answer: { kind: 'file', size, read: size } }],
   };
 }
+
+describe('failedWhy', () => {
+  it('says why a check failed in Lo’s words, never the error’s own', () => {
+    expect(failedWhy(new IpcError('timeout', 'overview.check ran past 10000 ms.'))).toBe(
+      'Checking it took longer than Lo allows.',
+    );
+    expect(failedWhy(new IpcError('internal', 'SQLITE_BUSY: database is locked'))).toBe(
+      'Lo can’t tell why.',
+    );
+    expect(failedWhy(new TypeError("Cannot read properties of undefined (reading 'x')"))).toBe(
+      'Lo can’t tell why.',
+    );
+  });
+});
 
 describe('keyOf', () => {
   it('tells results apart by what was read, not by the bytes read', () => {
