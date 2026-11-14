@@ -1,15 +1,16 @@
 // The drafts of comment boxes, in main: what the reader typed and hasn't posted, by account, pull
 // request and place, saved in the database as the window hands it over, so quitting Lo or a crash
 // loses none of it. Those saved before Lo started come back marked restored. Besides new threads'
-// boxes, a pull request has one summary, the submit dialog's, which the review feature keeps here
-// through the `comments.drafts` service. A place of a kind this version of Lo doesn't know, written
-// by a later one, stays in the database as it is and is never opened. Nothing here calls Electron.
+// boxes, a pull request has one box on the pull request itself, and one summary, the submit
+// dialog's, which the review feature keeps here through the `comments.drafts` service. A place of a
+// kind this version of Lo doesn't know, written by a later one, stays in the database as it is and
+// is never opened. Nothing here calls Electron.
 
 import { PullRef } from '@lo/github';
 import { Drafts, type DraftPlace, type ThreadDraftPlace } from '@lo/review';
 
 import type { Database } from '../../../main/database.ts';
-import { draftPlace, type DraftPlaceRow } from '../contract.ts';
+import { draftPlace, type DraftPlaceRow, type ThreadPlaceRow } from '../contract.ts';
 
 /** The submit dialog's summary: one a pull request, for each account. */
 export interface SummaryPlace {
@@ -19,10 +20,10 @@ export interface SummaryPlace {
 /** The summary's place. */
 export const SUMMARY: SummaryPlace = { kind: 'summary' };
 
-/** Any place a draft is kept by: a new thread's, or the summary. */
+/** Any place a draft is kept by: a comment box's, or the summary. */
 export type StoredPlace = DraftPlaceRow | SummaryPlace;
 
-/** A draft as main keeps it, a new thread's unless it says otherwise. */
+/** A draft as main keeps it, a comment box's unless it says otherwise. */
 export interface Kept<P extends StoredPlace = DraftPlaceRow> {
   readonly place: P;
   readonly text: string;
@@ -49,8 +50,13 @@ function lower(text: string): string {
 }
 
 /** Whether `place` is a new thread's. */
-function isThread(place: StoredPlace): place is DraftPlaceRow {
+function isThread(place: StoredPlace): place is ThreadPlaceRow {
   return place.kind === 'thread';
+}
+
+/** Whether `place` is a comment box's: a new thread's, or the pull request's own. */
+function isBox(place: StoredPlace): place is DraftPlaceRow {
+  return place.kind === 'thread' || place.kind === 'conversation';
 }
 
 /** A place as the database keeps it: JSON, the same for the same place. */
@@ -82,7 +88,7 @@ export function readPlace(json: string): StoredPlace | undefined {
 }
 
 /** A place as `@lo/review` takes it. */
-export function corePlace(place: DraftPlaceRow): ThreadDraftPlace {
+export function corePlace(place: ThreadPlaceRow): ThreadDraftPlace {
   const { lines } = place;
   return {
     kind: 'thread',
@@ -93,7 +99,7 @@ export function corePlace(place: DraftPlaceRow): ThreadDraftPlace {
 }
 
 /** A place from `@lo/review`, if it's of a kind the contract carries. */
-export function rowPlace(place: DraftPlace): DraftPlaceRow | undefined {
+export function rowPlace(place: DraftPlace): ThreadPlaceRow | undefined {
   if (place.kind !== 'thread') return undefined;
   const { lines } = place;
   return {
@@ -109,8 +115,13 @@ function sameKind<P extends StoredPlace>(kept: Kept<StoredPlace>, place: P): kep
   return kept.place.kind === place.kind;
 }
 
+/** Whether `kept` is a comment box's draft. */
+function isBoxDraft(kept: Kept<StoredPlace>): kept is Kept {
+  return isBox(kept.place);
+}
+
 /** Whether `kept` is a new thread's draft. */
-function isThreadDraft(kept: Kept<StoredPlace>): kept is Kept {
+function isThreadDraft(kept: Kept<StoredPlace>): kept is Kept<ThreadPlaceRow> {
   return isThread(kept.place);
 }
 
@@ -151,18 +162,18 @@ export class DraftStore {
     }
   }
 
-  /** `account`'s new threads' drafts on `pull`, ordered by place. */
+  /** `account`'s comment boxes' drafts on `pull`, ordered by place. */
   of(account: string, pull: PullRef): Kept[] {
     const own = this.#kept.get(keyOf(account, pull));
     if (!own) return [];
     return [...own.entries()]
       .toSorted(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
-      .flatMap(([, kept]) => (isThreadDraft(kept) ? [kept] : []));
+      .flatMap(([, kept]) => (isBoxDraft(kept) ? [kept] : []));
   }
 
-  /** Every new thread's draft marked sent, with its account and pull request. */
+  /** Every comment box's draft marked sent, with its account and pull request. */
   marked(): { account: string; pull: PullRef; kept: Kept }[] {
-    return this.#marked(isThreadDraft);
+    return this.#marked(isBoxDraft);
   }
 
   /** Every summary marked sent, with its account and pull request. */
@@ -264,7 +275,7 @@ export class DraftStore {
     latest: string,
     moved: (place: ThreadDraftPlace) => DraftPlace | undefined,
   ): boolean {
-    const own = this.of(account, pull);
+    const own = this.of(account, pull).filter(isThreadDraft);
     if (own.length === 0) return false;
     const { owner, name } = pull.repo;
     const pullRequest = { owner, repo: name, number: pull.number };

@@ -5,11 +5,19 @@
 // there from its commit (`since.ts`), each file once Lo has worked out how it changed: lines that
 // changed since, or went, get none, nor do lines of a file Lo can't compare. At any other commit,
 // as when the diff compares older revisions, there are none. The diff asks again as the overview,
-// its check or what's worked out of its files changes.
+// its check or what's worked out of its files changes. A note draws its words as the overview does.
 
-import { generationOf } from '@lo/ui/markdown';
+import { createElement } from 'react';
+import { flushSync } from 'react-dom';
+import { createRoot } from 'react-dom/client';
+
+import type { Overview, OverviewBlock } from '@lo/artifact';
+import type { DrawNote } from '@lo/ui/code';
+import { generationOf, secureLink, type Followed } from '@lo/ui/markdown';
+import { OverviewNote } from '@lo/ui/overview';
 
 import { explainedChanged, setExplainer, type ExplainedLines } from '../../diff/window/shared.ts';
+import { followLink } from '../../open/window/shared.ts';
 import { pullOf } from '../../tab/window/shared.ts';
 import { setStep } from './blocks.ts';
 import { explainedId, explanationsOf, readExplainedId, type Explanation } from './explained.ts';
@@ -41,9 +49,44 @@ export function markedLines(
     const placed = place(explanation);
     if (placed === undefined || placed === 'waiting') return [];
     const block = explainedId(tree, explanation);
-    const note = { label: explanation.section, text: explanation.text };
+    const note = {
+      label: explanation.section,
+      text: explanation.text,
+      draw: drawerOf(explanation),
+    };
     return placed.runs.map(({ from, to }) => ({ path: placed.path, from, to, block, note }));
   });
+}
+
+/** What draws each explanation's words in a note, made once. */
+const drawers = new WeakMap<Explanation, DrawNote>();
+
+function drawerOf(explanation: Explanation): DrawNote {
+  let draw = drawers.get(explanation);
+  if (!draw) {
+    draw = drawNote(explanation.content);
+    drawers.set(explanation, draw);
+  }
+  return draw;
+}
+
+/**
+ * What draws `blocks` in a note's element as the overview draws its words: at once, as the diff
+ * measures the note as it draws it. A link to a web page opens through main.
+ */
+export function drawNote(blocks: readonly OverviewBlock[]): DrawNote {
+  return (into) => {
+    const root = createRoot(into);
+    flushSync(() => root.render(createElement(OverviewNote, { blocks, onFollow: followWeb })));
+    // Not while React may be rendering, as when the diff takes notes down in an effect.
+    return () => queueMicrotask(() => root.unmount());
+  };
+}
+
+function followWeb(target: Followed<Overview>): void {
+  if (target.kind !== 'web') return;
+  const url = secureLink(target.url);
+  if (url !== undefined) void followLink(url);
 }
 
 /** Each tree's explanations, worked out once. */

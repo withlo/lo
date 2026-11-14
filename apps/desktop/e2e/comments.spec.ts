@@ -5,10 +5,10 @@
 // Each file's header and its row in the tree count them, `]t` and `[t` walk them, and `za` opens
 // or collapses the one the cursor is on. Comments are drawn as GitHub renders them, images and all.
 // A renamed file's thread under one of its old lines shows there. A stack's layer shows its own
-// threads. The threads panel, `⌘⇧\`, lists them, without moving the diff's lines, and shows one in
-// the diff, an outdated one in the whole diff of the revision it was written on, which `⌃o` and
-// `⌃i` compare again; the last thread asked for wins. The stack's rows count each layer's unresolved
-// threads.
+// threads, and its overview's code block the one on its lines. The threads panel, `⌘⇧\`, lists
+// them, without moving the diff's lines, and shows one in the diff, an outdated one in the whole
+// diff of the revision it was written on, which `⌃o` and `⌃i` compare again; the last thread asked
+// for wins. The stack's rows count each layer's unresolved threads.
 
 import { writeFileSync } from 'node:fs';
 
@@ -292,23 +292,44 @@ test('a thread under a renamed file’s old line shows in its older column', asy
   await expect(tree.getByRole('img', { name: '1 unresolved' })).toBeVisible();
 });
 
-onStacks('a layer of a stack shows its own threads', async ({ page }) => {
-  test.setTimeout(60_000);
-  await open(page, STACK.b);
-  await expect.poll(() => placed(page), { timeout: 20_000 }).toEqual(['src/cost.ts new 5']);
-  await expect(card(page, 'GitHub rounds each 100 nodes up')).toBeVisible();
+onStacks(
+  'a layer of a stack shows its own threads, in its diff and on its overview’s code block',
+  async ({ page }) => {
+    test.setTimeout(60_000);
+    await open(page, STACK.b);
+    await expect.poll(() => placed(page), { timeout: 20_000 }).toEqual(['src/cost.ts new 5']);
+    await expect(card(page, 'GitHub rounds each 100 nodes up')).toBeVisible();
 
-  await settled(page);
-  await page.keyboard.press('[');
-  await page.keyboard.press('s');
-  await expect
-    .poll(() => page.evaluate(() => window.loDiff?.files.map((file) => file.path)), {
-      timeout: 20_000,
-    })
-    .toEqual(['src/plans.ts']);
-  await expect.poll(() => placed(page)).toEqual([]);
-  await expect(card(page, 'GitHub rounds each 100 nodes up')).toHaveCount(0);
-});
+    await test.step('its overview’s code block on those lines shows the thread under its line', async () => {
+      await settled(page);
+      await page.keyboard.press('~');
+      const block = page
+        .locator('[data-lo-middle-view="overview.view"] .lo-codeblock')
+        .filter({ has: page.locator('.lo-codeblock__path', { hasText: 'src/cost.ts' }) });
+      await expect(block.locator('[data-lo-code="drawn"]')).toBeAttached({ timeout: 20_000 });
+      const thread = block.locator('[role="group"][aria-label$="thread by rozed-bot"]');
+      await expect(thread).toContainText('GitHub rounds each 100 nodes up');
+      // Under line 5, the line it's on.
+      const above = await thread.evaluate(
+        (element) => element.closest('.cm-content > *')?.previousElementSibling?.textContent,
+      );
+      expect(above).toBe('  return Math.max(1, Math.ceil(nodes / 100));');
+      await page.keyboard.press('`');
+      await expect(page.locator('.lo-diffview')).toBeVisible();
+    });
+
+    await settled(page);
+    await page.keyboard.press('[');
+    await page.keyboard.press('s');
+    await expect
+      .poll(() => page.evaluate(() => window.loDiff?.files.map((file) => file.path)), {
+        timeout: 20_000,
+      })
+      .toEqual(['src/plans.ts']);
+    await expect.poll(() => placed(page)).toEqual([]);
+    await expect(card(page, 'GitHub rounds each 100 nodes up')).toHaveCount(0);
+  },
+);
 
 onStacks(
   'the threads panel shows the layer on screen’s threads, and the stack counts each layer’s',

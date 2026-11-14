@@ -365,7 +365,8 @@ each other ("moved from `api/user.ts:40`"), and only edits inside the block are 
 ### Overview markers
 
 Lines the overview explains carry a marker beside them. Opening it shows the explanation in place,
-with a link to that point in the overview.
+with its code, emphasis and lists drawn as the overview draws them, cut at 600 characters, and a
+link to that point in the overview.
 
 ## 7. Revisions and viewed files
 
@@ -471,10 +472,14 @@ A repo's or a user's instructions can drop, add or reorder everything except the
 - **Code blocks are real code.** Lo fills each one in from the repo at the overview's commit, so it
   can't misquote the PR. A block may point at changed lines, unchanged lines, or a file the PR
   doesn't touch.
-- **Threads on a block.** A code block shows the review threads on its lines. A comment written on
-  the block is an ordinary review comment on those lines. GitHub only accepts line comments on lines
-  in the diff, so for other blocks Lo offers a file-level comment when the file is in the PR, and a
-  comment on the PR itself otherwise.
+- **Threads on a block.** A code block shows the review threads on its lines at the overview's
+  commit, under the line each is on. An out-of-date overview's blocks show only the threads on that
+  commit's lines. `c` on a block, or on lines of its code, writes a comment under them, in the same
+  box as the diff's. It's an ordinary review comment on those lines at the head, where they're there
+  unchanged and in the diff. GitHub only accepts line comments on lines in the diff, so otherwise
+  the comment goes on the file when the file is in the PR, and on the PR itself when it isn't. A
+  comment on the PR itself is posted at once, since it joins no review. Threads that arrive, grow or
+  go while a block is on screen move nothing you're reading.
 - **From the block to the code.** Following a block jumps to the diff at that spot, or to the
   whole-file view when the code is outside the diff. `⌃o` returns to the same place in the overview.
   A menu and a key open the code beside the overview instead.
@@ -739,7 +744,7 @@ the keymap file, `~/.config/lo/keymap`. `?` shows every key.
 | Find            | `⌘L` open PR (`⌘O` too on macOS), `⌘P` files, `⌘⇧P` command palette, `/` search, `n`/`N` next and previous match                                                                                                                                                                                             |
 | View            | `` ` `` next middle view (overview, diff, timeline), `~` previous, `gv` compare revisions                                                                                                                                                                                                                    |
 | Files           | `-` go to the file tree at the file on screen, and `-` again up to the stack tree. In the tree: `t` tree or review order, `f` changed files only, `l`/`h` (or `→`/`←`) open and close a folder, `zR`/`zM` open and close all, `⏎` show the file, `e` mark viewed, `Esc` back                                 |
-| Overview        | `]b`/`[b` next and previous block, `⏎` follow a block to its code, `o` open its code beside the overview (`o` again or `Esc` to close), `Tab` next part of a figure, `←`/`→` walkthrough step or tab, `ya` copy a prompt for an agent                                                                        |
+| Overview        | `]b`/`[b` next and previous block, `⏎` follow a block to its code, `o` open its code beside the overview (`o` again or `Esc` to close), `c` comment on a block's lines, `Tab` next part of a figure, `←`/`→` walkthrough step or tab, `ya` copy a prompt for an agent                                        |
 | Timeline        | `j`/`k` move between events, `Tab` through its links and buttons, `Esc` back to the list, `gx` open the one you're on on GitHub                                                                                                                                                                              |
 | Panels          | `⌘\` left panel, `⌘⇧\` threads panel. In the threads panel: `j`/`k` move, `⏎` show the thread in the diff, `f` unresolved, all or yours. In the stack tree: `j`/`k` move, `⏎` show the layer, `gx` open it on GitHub, `Esc` back, `v` choose a run of layers, `j`/`k` to grow it, `⏎` to view it as one diff |
 | Diff view       | `gi` inline or side by side, `gw` hide or show whitespace, `zo`/`zc` expand and collapse unchanged code, `zR` the whole file, `za` open or close a collapsed file or the thread at the cursor                                                                                                                |

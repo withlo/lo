@@ -28,5 +28,6 @@ export {
   type CodeBlockVariant,
 } from './CodeBlock.tsx';
 export { Held, useNear, useNearness, type Nearness } from './Held.tsx';
+export { OverviewNote, type OverviewNoteProps } from './Note.tsx';
 export { OutOfDate } from './Stale.tsx';
 export { Walkthrough } from './Walkthrough.tsx';

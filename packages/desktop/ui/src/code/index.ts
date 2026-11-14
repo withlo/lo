@@ -15,6 +15,7 @@ export type {
   DiffLayout,
   DiffNote,
   DiffView,
+  DrawNote,
   ExcerptEvents,
   ExcerptInit,
   ExcerptView,

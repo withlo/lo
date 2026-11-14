@@ -15,6 +15,7 @@ import {
   createFileView,
   type ExcerptView,
   type FileView,
+  type RenderThread,
 } from '@lo/ui/code';
 import {
   CodeBlock,
@@ -38,7 +39,7 @@ import {
 } from 'react';
 
 import { registry } from '../../../window/commands/registry.ts';
-import { useLocalCopy, usePull, useTabState } from '../../tab/window/shared.ts';
+import { useLocalCopy, usePull, useTabState, type PullTab } from '../../tab/window/shared.ts';
 import { findFile, showFile } from '../../tree/window/shared.ts';
 import { onStep, setStep, stepOf } from './blocks.ts';
 import type { CodeRead } from './checking.ts';
@@ -55,6 +56,15 @@ import { fileSince } from './since.ts';
 import { flagWords, labelOf } from './stale.ts';
 import { revisions } from './store.ts';
 import { nameOf, showsOf, type Shows, type Target, type Words } from './targets.ts';
+import {
+  blockIdOf,
+  blockKey,
+  blockThreader,
+  drawBlock,
+  onBlockThreads,
+  threadsSettled,
+  type DrawnBlock,
+} from './threaded.ts';
 
 /**
  * The commit tab `tab`'s diff starts from, for a stack's layer, as its local copy last said: a
@@ -72,6 +82,10 @@ function useStartOf(tab: string): string {
  */
 export interface CodeContext {
   readonly tab: string;
+  /** The pull request's tab, whose threads blocks show. */
+  readonly pull: PullTab;
+  /** The number Lo gave the overview's tree, which its blocks' ids carry. */
+  readonly tree: number;
   readonly commit: string;
   readonly head?: string | undefined;
   readonly read: CodeRead;
@@ -153,6 +167,8 @@ export function ExcerptBlock({ node, context }: { node: Excerpt; context: CodeCo
           ) : (
             <ExcerptCode
               tab={context.tab}
+              pull={context.pull}
+              tree={context.tree}
               commit={context.commit}
               head={head}
               target={target}
@@ -189,10 +205,14 @@ function turn(first: FirstDraw | undefined): { ready: Promise<void>; done: () =>
  * height, and let go, keeping its room. Near the screen as the overview is first laid out, it
  * draws before the overview is seen. When `head`, the head on screen, isn't the overview's commit,
  * it's drawn once what changed in its file by the head is in too, its changed lines marked, and
- * says which to `changed` as it's drawn, for its flag.
+ * says which to `changed` as it's drawn, for its flag. The review threads on its lines at the
+ * overview's commit are drawn under them, waiting a moment for their first read before it's
+ * drawn, and comments are written under its lines.
  */
 function ExcerptCode({
   tab,
+  pull,
+  tree,
   commit,
   head,
   target,
@@ -200,6 +220,8 @@ function ExcerptCode({
   changed,
 }: {
   tab: string;
+  pull: PullTab;
+  tree: number;
   commit: string;
   head: string | undefined;
   target: CodeRange;
@@ -232,6 +254,11 @@ function ExcerptCode({
   useLayoutEffect(() => {
     tell.current = changed;
   }, [changed]);
+  // The pull request's tab, which changes as its title or state does, with no need to draw again.
+  const pullTab = useRef(pull);
+  useLayoutEffect(() => {
+    pullTab.current = pull;
+  }, [pull]);
 
   // Near the screen as the overview is first laid out, it draws before it's seen.
   const drawn = useRef<(() => void) | undefined>(undefined);
@@ -264,8 +291,8 @@ function ExcerptCode({
               soon: near,
               quick: first?.onScreen() ?? true,
             });
-      // Drawn in its own typeface, it's as tall as it stays.
-      await codeTypeface();
+      // Drawn in its own typeface, it's as tall as it stays, with the threads on its lines.
+      await Promise.all([codeTypeface(), threadsSettled(tab)]);
       if (!live) return;
       if (found.kind === 'unread') {
         drawn.current?.();
@@ -314,6 +341,32 @@ function ExcerptCode({
     drawnView.current = view;
     // `yy` copies from it.
     const forget = drawnLines(id, code.lines);
+    // The threads on its lines, drawn with it, and as they change; and the comments written on it.
+    const block: DrawnBlock = {
+      tab,
+      key: blockKey(blockIdOf(parent, tree) ?? '', path, start, end),
+      block: blockIdOf(parent, tree) ?? '',
+      file: id,
+      path,
+      commit,
+      from: from === '' ? null : from,
+      lines: { start, end: Math.max(start, Math.min(end, code.lines.new.length)) },
+    };
+    let rendering: { threader: object; render: RenderThread } | undefined;
+    const threads = () => {
+      const threader = blockThreader();
+      if (!threader) return;
+      if (rendering?.threader !== threader) {
+        rendering = {
+          threader,
+          render: threader.render(pullTab.current, (thread) => view.openThread(thread, 'toggle')),
+        };
+      }
+      view.setThreads(threader.threadsOn(block), rendering.render);
+    };
+    threads();
+    const unthread = onBlockThreads(tab, threads);
+    const undraw = drawBlock(block, view, parent);
     // Its height is its code's once the view has measured its lines, which it does a frame on.
     let frame = requestAnimationFrame(() => {
       frame = requestAnimationFrame(() => {
@@ -328,10 +381,12 @@ function ExcerptCode({
       // Let go far from the screen, it keeps its room: as tall as its lines, laid out.
       parent.style.minHeight = `${view.height()}px`;
       forget();
+      unthread();
+      undraw();
       stop();
       view.destroy();
     };
-  }, [code, page, id, path, start, end]);
+  }, [code, page, id, path, start, end, tab, tree, commit, from]);
 
   // Highlighted near the screen once the diff's job has it, which changes no line's height; drawn
   // only for its height, far from it, it isn't.
@@ -349,7 +404,13 @@ function ExcerptCode({
     };
   }, [near, code]);
 
-  return <div ref={box} data-lo-code={code ? 'drawn' : measured ? 'measured' : 'waiting'} />;
+  return (
+    <div
+      ref={box}
+      data-lo-code={code ? 'drawn' : measured ? 'measured' : 'waiting'}
+      data-lo-excerpt=""
+    />
+  );
 }
 
 /**

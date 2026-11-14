@@ -570,9 +570,19 @@ export interface OverviewMark {
   at: Span;
   /** The caller's id for the block, which `explained` gives back. */
   block: string;
-  /** What the note shows, as plain text: a label, such as the block's section, and the text. */
-  note: { label: string; text: string };
+  /**
+   * What the note shows: a label, such as the block's section, and the text, plain, which the view
+   * sizes the note by and tells one note from another by. `draw` draws the text the caller's way in
+   * its place, as rich text.
+   */
+  note: { label: string; text: string; draw?: DrawNote | undefined };
 }
+
+/**
+ * Draws a note's text in `into`, an element the view makes for it, in place of its plain text: at
+ * once, as the view measures the note as it's drawn. Returns what takes it down.
+ */
+export type DrawNote = (into: HTMLElement) => () => void;
 
 /** Where a peek's answer came from: a language server, or Lo's own reading of the syntax. */
 export type PeekSource = 'server' | 'syntax';
@@ -706,21 +716,27 @@ export interface ExcerptView extends KeySource {
   setStale(lines: readonly number[]): void;
   /**
    * Replaces the threads drawn under the lines the excerpt shows, each drawn by `render` as the
-   * diff view's are. Threads on lines it doesn't show are left out.
+   * diff view's are. Threads on lines it doesn't show are left out. Once the excerpt has been on
+   * the page, threads that would come, go or move on a line on screen wait, until none of the lines
+   * they change is on screen, the reader acts in the excerpt, or acts anywhere while no scroll can
+   * take those lines off screen; then they come together.
    */
   setThreads(threads: readonly ThreadView[], render: RenderThread): void;
   /** Opens a thread, collapses it, or the other of the two. Says whether the excerpt has it. */
   openThread(id: string, open: boolean | 'toggle'): boolean;
   /**
    * Opens a comment box with `draft` in it, under a line the excerpt shows, the last line of a
-   * span, or a thread, with `frame` drawn around its editor, and focuses it. A box already open
-   * there is focused instead, as it is. Throws for a line the excerpt doesn't show.
+   * span, or a thread, with `frame` drawn around its editor, and focuses it unless
+   * `options.focus` is false. A box already open there is the one it gives, as it is. Throws for a
+   * line the excerpt doesn't show. A box closed once its comment was sent (`close()`) on screen
+   * keeps its room, as the threads that come there wait.
    */
   compose(
     at: Place | Span | { thread: string },
     draft: string,
     on: ComposerEvents,
     frame?: BoxFrame,
+    options?: ComposeOptions,
   ): Composer;
   /**
    * Moves the cursor to what `at` names, and brings it on screen: a line the excerpt shows, the

@@ -1,4 +1,5 @@
 // Where a comment on a line, a range or a file goes, as GitHub takes it and as its draft is kept;
+// where one on a code block's lines goes, falling back to the file and then the pull request;
 // where a draft's box goes in a diff as drawn; and what a box's frame says.
 
 import { Screen } from '@lo/review';
@@ -7,6 +8,7 @@ import { describe, expect, test } from 'vitest';
 import type { DrawnDiff, ThreadedFile } from '../../diff/window/shared.ts';
 import type { Commentable, DraftPlaceRow } from '../contract.ts';
 import {
+  blockComment,
   boxAt,
   commentableOn,
   hunksOf,
@@ -88,8 +90,49 @@ describe('the lines a comment goes on', () => {
   });
 });
 
+describe('a comment on a code block’s lines', () => {
+  const takes = commentableOn(Screen.full(HEAD), commentable);
+  const path = 'src/backoff.ts';
+
+  test('goes on the lines at the head, where GitHub takes one on them', () => {
+    expect(blockComment({ kind: 'lines', path, side: 'new', from: 4, to: 6 }, takes)).toEqual({
+      kind: 'lines',
+      lines: { start: { side: 'RIGHT', number: 4 }, end: { side: 'RIGHT', number: 6 } },
+    });
+    expect(blockComment({ kind: 'lines', path, side: 'new', from: 5, to: 5 }, takes)).toEqual({
+      kind: 'lines',
+      lines: { end: { side: 'RIGHT', number: 5 } },
+    });
+  });
+
+  test('goes on the file where GitHub takes none on those lines, they changed, or Lo can’t tell', () => {
+    expect(blockComment({ kind: 'lines', path, side: 'new', from: 30, to: 34 }, takes)).toEqual({
+      kind: 'file',
+    });
+    expect(blockComment({ kind: 'file', path }, takes)).toEqual({ kind: 'file' });
+    expect(blockComment({ kind: 'lines', path, side: 'new', from: 4, to: 6 }, undefined)).toEqual({
+      kind: 'file',
+    });
+  });
+
+  test('goes on the pull request for a file it leaves alone, or one gone', () => {
+    const untouched = commentableOn(Screen.full(HEAD), { kind: 'notInDiff' });
+    expect(blockComment({ kind: 'lines', path, side: 'new', from: 4, to: 6 }, untouched)).toEqual({
+      kind: 'pull',
+    });
+    expect(blockComment({ kind: 'gone' }, takes)).toEqual({ kind: 'pull' });
+  });
+
+  test('a comment on the pull request says so, and has no box in the diff', () => {
+    const onPull: DraftPlaceRow = { kind: 'conversation' };
+    expect(whereText(onPull)).toBe('On the pull request');
+    expect(boxAt(drawn, Screen.full(HEAD), onPull)).toBeUndefined();
+    expect(placeKey(onPull)).not.toBe(placeKey(placeOf(drawn.at, 'src/backoff.ts', undefined)));
+  });
+});
+
 describe('a draft’s place', () => {
-  const onLines = placeOf(drawn, 'src/backoff.ts', {
+  const onLines = placeOf(drawn.at, 'src/backoff.ts', {
     start: { side: 'RIGHT', number: 4 },
     end: { side: 'RIGHT', number: 6 },
   });
@@ -101,7 +144,7 @@ describe('a draft’s place', () => {
       path: 'src/backoff.ts',
       lines: { start: { side: 'RIGHT', number: 4 }, end: { side: 'RIGHT', number: 6 } },
     });
-    expect(placeOf(drawn, 'src/backoff.ts', undefined).lines).toBeNull();
+    expect(placeOf(drawn.at, 'src/backoff.ts', undefined).lines).toBeNull();
     expect(placeKey(onLines)).toBe(placeKey({ ...onLines, commit: HEAD.toUpperCase() }));
     expect(placeKey(onLines)).not.toBe(placeKey({ ...onLines, lines: null }));
   });

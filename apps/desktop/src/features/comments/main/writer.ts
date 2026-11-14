@@ -8,8 +8,10 @@
 // stays, a restart included, and once a while has passed since it was sent, Lo reads the threads
 // afresh and looks among your comments for it, by GitHub's clock: found, the draft goes; otherwise
 // the reader is told, and may send it again. Until then it can't be sent again. Text that changed
-// since it was sent is never dropped. Nothing is ever sent again by itself. Nothing here calls
-// Electron.
+// since it was sent is never dropped. Nothing is ever sent again by itself. A comment on the pull
+// request itself, in its conversation, is sent the same way, in turn with the rest, and posts at
+// once, joining no review; one whose answer was lost is looked for in the timeline read afresh.
+// Nothing here calls Electron.
 
 import {
   type Cached,
@@ -25,6 +27,7 @@ import {
   type ReviewWriteRefusal,
   type Sent,
   describeReviewRefusal,
+  readTimeline,
   reviewThreads,
 } from '@lo/github';
 import {
@@ -44,8 +47,10 @@ import type {
   SendOutcome,
   SendRefusal,
   Sending,
+  ThreadPlaceRow,
   ThreadRow,
 } from '../contract.ts';
+import { holdsPullComment, postOnPull } from './conversation.ts';
 import { type DraftStore, type Kept, placeJson } from './drafts.ts';
 import { threadRows } from './threads.ts';
 
@@ -53,6 +58,7 @@ import { threadRows } from './threads.ts';
 export type WriterPoller = Pick<
   Poller,
   | 'sendReview'
+  | 'addConversationComment'
   | 'pendingReview'
   | 'pullRequest'
   | 'cachedRead'
@@ -174,7 +180,7 @@ export function writeRefusal(refusal: ReviewWriteRefusal): SendRefusal {
 /**
  * Whether `thread` is on `place`'s file and lines, or on the file as it is, as it is now or was.
  */
-function threadOn(thread: ThreadRow, place: DraftPlaceRow): boolean {
+function threadOn(thread: ThreadRow, place: ThreadPlaceRow): boolean {
   if (thread.path !== place.path) return false;
   const { lines } = place;
   if (lines === null) return thread.subject === 'FILE';
@@ -203,7 +209,7 @@ function threadOn(thread: ThreadRow, place: DraftPlaceRow): boolean {
 export function holdsComment(
   threads: readonly ThreadRow[],
   login: string,
-  place: DraftPlaceRow,
+  place: ThreadPlaceRow,
   sent: string,
   sentAt: number,
 ): boolean {
@@ -404,6 +410,7 @@ export class Writer {
     const { login, pull } = target;
     const same = new Set<string>();
     for (const kept of this.#options.drafts.of(login, pull)) {
+      if (kept.place.kind !== 'thread') continue;
       const { commit, path } = kept.place;
       if (commit === head || kept.sent !== null) continue;
       const moves = await unchanged(id, commit, head, path).catch(() => false);
@@ -445,6 +452,7 @@ export class Writer {
     this.#sending.set(key, 'sending');
     this.#changed(target);
     const poller = await this.#options.poller(login);
+    if (place.kind === 'conversation') return this.#sendOnPull(target, key, place, text, poller);
     const details = poller.pullRequest(pull)?.details;
     const read = await this.#reviewRead(poller, pull);
     if (!details) {
@@ -517,6 +525,45 @@ export class Writer {
     }
     this.#unsent(target, key, place);
     return { kind: 'refused', refusal: { kind: 'github', message: 'GitHub didn’t take it.' } };
+  }
+
+  /**
+   * Posts `text` on the pull request itself, from the draft at `place`, in its turn: it joins no
+   * review, so it posts at once however it was sent. Its answer lost, Lo looks for it in the
+   * timeline, as for any comment.
+   */
+  async #sendOnPull(
+    target: Target,
+    key: string,
+    place: DraftPlaceRow,
+    text: string,
+    poller: WriterPoller,
+  ): Promise<SendOutcome> {
+    const { login, pull } = target;
+    const details = poller.pullRequest(pull)?.details;
+    if (!details) {
+      this.#settled(target, key, null);
+      const message = 'Lo hasn’t read the pull request from GitHub yet. Send it once it has.';
+      return { kind: 'refused', refusal: { kind: 'github', message } };
+    }
+    // From here it may be on GitHub, until GitHub says otherwise: a restart keeps that.
+    const sentAt = this.#now();
+    this.#options.drafts.markSent(login, pull, place, text, sentAt);
+    this.#changed(target);
+    let sent;
+    try {
+      sent = await postOnPull(poller, pull, details.id, text);
+    } catch (error) {
+      if (!(error instanceof GithubError) || !error.mayHavePosted()) throw error;
+      this.#lost(target, key, place, text, sentAt);
+      return { kind: 'lost' };
+    }
+    if (typeof sent !== 'string') {
+      this.#unsent(target, key, place);
+      return { kind: 'refused', refusal: writeRefusal(sent) };
+    }
+    this.#posted(target, key, place, text);
+    return { kind: 'sent', pending: false, joined: false, thread: null, landedOn: null };
   }
 
   /**
@@ -611,10 +658,18 @@ export class Writer {
       let read;
       try {
         const poller = await this.#options.poller(login);
-        read = await poller.readOnce(async (client) => ({
-          list: await reviewThreads(client, pull),
-          ahead: client.githubAhead(),
-        }));
+        read =
+          place.kind === 'conversation'
+            ? await poller.readOnce(async (client) => ({
+                kind: 'timeline' as const,
+                timeline: await readTimeline(client, pull),
+                ahead: client.githubAhead(),
+              }))
+            : await poller.readOnce(async (client) => ({
+                kind: 'threads' as const,
+                list: await reviewThreads(client, pull),
+                ahead: client.githubAhead(),
+              }));
       } catch (error) {
         if (!still()) return;
         if (!(error instanceof GithubError) || error.isWaitable()) {
@@ -628,13 +683,24 @@ export class Writer {
       if (!still()) return;
       // When it was sent, by GitHub's clock.
       const sentThere = at + (read.ahead ?? 0);
-      const threads = threadRows(read.list);
+      if (read.kind === 'timeline') {
+        this.#look(
+          target,
+          key,
+          place,
+          text,
+          holdsPullComment(read.timeline, login, text, sentThere, CLOCK_SLACK),
+        );
+        return;
+      }
+      if (place.kind !== 'thread') return;
+      const holds = holdsComment(threadRows(read.list), login, place, text, sentThere);
       // Not found where GitHub left threads out: it may be among them.
-      if (read.list.missing > 0 && !holdsComment(threads, login, place, text, sentThere)) {
+      if (read.list.missing > 0 && !holds) {
         later(retryAfter);
         return;
       }
-      this.#look(target, key, place, text, sentThere, threads);
+      this.#look(target, key, place, text, holds);
     };
     const later = (wait: number): void => {
       if (this.#stopped) return;
@@ -682,21 +748,14 @@ export class Writer {
   }
 
   /**
-   * Looks among `threads` for the comment sent as `sent` at `place`, at `sentAt` by GitHub's clock,
-   * and settles it: found, as {@link Writer.#posted}; otherwise it didn't post.
+   * Settles the comment sent as `sent` at `place` by whether a fresh read `holds` it: found, as
+   * {@link Writer.#posted}; otherwise it didn't post.
    */
-  #look(
-    target: Target,
-    key: string,
-    place: DraftPlaceRow,
-    sent: string,
-    sentAt: number,
-    threads: readonly ThreadRow[],
-  ): void {
+  #look(target: Target, key: string, place: DraftPlaceRow, sent: string, holds: boolean): void {
     const { login, pull } = target;
     const kept = this.#options.drafts.get(login, pull, place);
     if (!kept) return;
-    if (holdsComment(threads, login, place, sent, sentAt)) {
+    if (holds) {
       this.#posted(target, key, place, sent);
       return;
     }

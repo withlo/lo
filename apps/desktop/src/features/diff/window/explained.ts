@@ -4,7 +4,7 @@
 // and each time they change, so marks are always on the lines it draws, and "Read it in the
 // overview" in a note goes back to what explains them.
 
-import type { Mark } from '@lo/ui/code';
+import type { DrawNote, Mark } from '@lo/ui/code';
 
 /** Lines of a file the diff's newer side shows, and what explains them. */
 export interface ExplainedLines {
@@ -15,8 +15,15 @@ export interface ExplainedLines {
   readonly to: number;
   /** The explainer's id for what explains them, which "Read it in the overview" gives back. */
   readonly block: string;
-  /** What the note says, as plain text, never HTML: a label, such as a section, and the words. */
-  readonly note: { readonly label: string; readonly text: string };
+  /**
+   * What the note says, as plain text, never HTML: a label, such as a section, and the words; and
+   * what draws the words in their place, as rich text.
+   */
+  readonly note: {
+    readonly label: string;
+    readonly text: string;
+    readonly draw?: DrawNote | undefined;
+  };
 }
 
 /** What explains the lines of pull requests' diffs. */

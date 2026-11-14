@@ -15,7 +15,8 @@ import { afterEach, describe, expect, test, vi } from 'vitest';
 import { openDatabase } from '../../../main/database.ts';
 import { migrate } from '../../../main/migrations.ts';
 import type { PullTabInfo } from '../../tab/service.ts';
-import type { DraftPlaceRow, DraftsView } from '../contract.ts';
+import type { DraftPlaceRow, DraftsView, ThreadPlaceRow } from '../contract.ts';
+import { holdsPullComment } from './conversation.ts';
 import { DraftStore } from './drafts.ts';
 import { threadRows as threadRowsOf } from './threads.ts';
 import { holdsComment, Writer, type WriterPoller } from './writer.ts';
@@ -36,7 +37,7 @@ const OLDER = 'b'.repeat(40);
 const PULL = new PullRef('rozed-dev', 'e2e', 94);
 
 /** A line comment on new line 5 of `src/backoff.ts`, written at `commit`. */
-function onLine(commit = HEAD): DraftPlaceRow {
+function onLine(commit = HEAD): ThreadPlaceRow {
   return {
     kind: 'thread',
     commit,
@@ -45,7 +46,12 @@ function onLine(commit = HEAD): DraftPlaceRow {
   };
 }
 
-const ON_FILE: DraftPlaceRow = { kind: 'thread', commit: HEAD, path: 'docs/usage.md', lines: null };
+const ON_FILE: ThreadPlaceRow = {
+  kind: 'thread',
+  commit: HEAD,
+  path: 'docs/usage.md',
+  lines: null,
+};
 
 /** #94's view `t1`, on screen at `HEAD` as rozed-bot. */
 function info(overrides: Partial<PullTabInfo> = {}): PullTabInfo {
@@ -114,7 +120,7 @@ function node(
   };
 }
 
-type Answer = Sent | ReviewWriteRefusal | Error | Promise<Sent | ReviewWriteRefusal>;
+type Answer = Sent | ReviewWriteRefusal | Error | Promise<Sent | ReviewWriteRefusal> | string;
 
 /**
  * An account's poller that answers each write with the next of `answers`, with `pending` as your
@@ -126,6 +132,8 @@ function poller(
 ) {
   const listeners = new Set<(event: PollEvent) => void>();
   const sent: ReviewWrite[] = [];
+  /** What was posted on the pull request itself, in order. */
+  const posted: string[] = [];
   /** What each read holds against the last mark, by its name. */
   const since = new Map<string, ReturnType<WriterPoller['readSince']>>();
   /** The reads asked for afresh, by name, in order. */
@@ -168,6 +176,13 @@ function poller(
       if (answer === undefined) throw new Error('No answer left.');
       return Promise.resolve(answer);
     },
+    addConversationComment(_pull: PullRef, pullRequestId: string, body: string) {
+      posted.push(`${pullRequestId}: ${body}`);
+      const answer = answers.shift();
+      if (answer instanceof Error) return Promise.reject(answer);
+      if (answer === undefined) throw new Error('No answer left.');
+      return Promise.resolve(answer);
+    },
     readAfresh(_pull: PullRef, kind: { name: string }): ReadMark {
       afresh.push(kind.name);
       since.set(kind.name, { kind: 'waiting' });
@@ -188,6 +203,7 @@ function poller(
     // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- only these are read.
     poller: fake as unknown as WriterPoller,
     sent,
+    posted,
     afresh,
     threads,
     readAt,
@@ -350,6 +366,36 @@ describe('sending', () => {
     }
   });
 
+  test('a comment on the pull request posts at once, in its conversation, joining no review', async () => {
+    const pending = {
+      kind: 'read',
+      review: { id: 'PRR_1', commit: { oid: HEAD }, comments: { totalCount: 1 } },
+    } as PendingReviewRead;
+    const fake = poller(['IC_1'], pending);
+    const { made, last } = writer(fake);
+    const onPull: DraftPlaceRow = { kind: 'conversation' };
+    made.save('t1', onPull, 'Looks right to me.');
+    expect(last()).toMatchObject([{ place: onPull, text: 'Looks right to me.' }]);
+    expect(await made.send('t1', onPull, 'Looks right to me.', 'now')).toEqual({
+      kind: 'sent',
+      pending: false,
+      joined: false,
+      thread: null,
+      landedOn: null,
+    });
+    expect(fake.posted).toEqual(['PR_94: Looks right to me.']);
+    expect(fake.sent).toEqual([]);
+    expect(last()).toEqual([]);
+    // Refused, it keeps the draft, in the box's words.
+    const refused = poller([{ refusal: 'paused', until: 1234 }]);
+    const kept = writer(refused);
+    expect(await kept.made.send('t1', onPull, 'Kept.', 'now')).toEqual({
+      kind: 'refused',
+      refusal: { kind: 'paused', until: 1234 },
+    });
+    expect(kept.last()).toMatchObject([{ text: 'Kept.', sending: null, sent: null }]);
+  });
+
   test('nobody, and a run of layers, are refused before anything is sent', async () => {
     const fake = poller([]);
     const nobody = writer(fake, info({ acting: { kind: 'anonymous' } }));
@@ -504,4 +550,37 @@ test('a comment is found by its file, lines, author and text, made since it was 
   expect(holdsComment(rows, 'rozed-bot', range, 'Text', sentAt)).toBe(false);
   // The same text, written well before it was sent, is another comment.
   expect(holdsComment(rows, 'rozed-bot', onLine(), 'Text', sentAt + 10 * 60_000)).toBe(false);
+});
+
+/** `login`'s comment `body` on the pull request itself, made at `createdAt`, as the timeline has it. */
+function pullComment(login: string, body: string, createdAt = '2026-11-13T12:00:01Z') {
+  return {
+    cursor: createdAt,
+    item: {
+      kind: 'comment' as const,
+      comment: {
+        id: 'IC_1',
+        author: { login, type: 'User' as const },
+        body,
+        createdAt,
+        lastEditedAt: undefined,
+        url: 'https://github.com/rozed-dev/e2e/pull/94#issuecomment-1',
+        hidden: undefined,
+        viewerCanUpdate: true,
+        viewerCanDelete: true,
+      },
+    },
+  };
+}
+
+test('a comment on the pull request is found by its author and text, made since it was sent', () => {
+  const sentAt = Date.parse('2026-11-13T12:00:00Z');
+  const timeline = { items: [pullComment('rozed-bot', 'Looks right.\r\n')] };
+  expect(holdsPullComment(timeline, 'Rozed-Bot', 'Looks right.', sentAt, 5_000)).toBe(true);
+  expect(holdsPullComment(timeline, 'someone', 'Looks right.', sentAt, 5_000)).toBe(false);
+  expect(holdsPullComment(timeline, 'rozed-bot', 'Other.', sentAt, 5_000)).toBe(false);
+  // Made well before it was sent, beyond the clocks' slack: another comment.
+  expect(holdsPullComment(timeline, 'rozed-bot', 'Looks right.', sentAt + 60_000, 5_000)).toBe(
+    false,
+  );
 });

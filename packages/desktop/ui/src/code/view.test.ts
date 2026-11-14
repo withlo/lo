@@ -2259,6 +2259,29 @@ describe('overview marks', () => {
     expect(shown.closeNote()).toBe(false);
   });
 
+  test('a note’s text is the caller’s to draw, in place of its plain text, until it closes', () => {
+    const shown = open();
+    const takenDown = vi.fn<() => void>();
+    const draw = vi.fn<(into: HTMLElement) => () => void>((into) => {
+      const words = document.createElement('p');
+      const stress = document.createElement('em');
+      stress.textContent = 'refused';
+      words.append('A query is ', stress);
+      into.append(words);
+      return takenDown;
+    });
+    const mark = overview('new', 4, 6, 'one', 'A query is refused');
+    if (mark.kind === 'overview') mark.note.draw = draw;
+    shown.setMarks([mark]);
+    shown.openNote(at('a', 'new', 4));
+    expect(draw).toHaveBeenCalledTimes(1);
+    const text = parent!.querySelector('.cm-content[aria-label="After"] .lo-ovnote__text')!;
+    expect(text.innerHTML).toBe('<p>A query is <em>refused</em></p>');
+    expect(takenDown).not.toHaveBeenCalled();
+    shown.closeNote();
+    expect(takenDown).toHaveBeenCalledTimes(1);
+  });
+
   test('Esc in the diff closes the note opened last, once Vim is waiting on nothing', () => {
     const shown = open();
     shown.setMarks([overview('new', 2, 3), overview('new', 5, 6, 'two', 'The second.')]);

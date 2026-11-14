@@ -18,7 +18,15 @@ import type { SinceReply } from '../contract.ts';
 import { standingOf } from './facts.ts';
 import { QUICK_LIMIT, quickDiff } from './files.ts';
 import { main } from './main.ts';
-import { blockChange, fileSinceOf, onHead, type FileSince, type OnHead } from './mapping.ts';
+import {
+  blockChange,
+  commentOnHead,
+  fileSinceOf,
+  onHead,
+  type CommentOnHead,
+  type FileSince,
+  type OnHead,
+} from './mapping.ts';
 import { staleAgainst } from './stale.ts';
 import { checked, states } from './store.ts';
 
@@ -303,6 +311,25 @@ export function placing(tab: string, path: string): Promise<unknown> | undefined
   const compared = comparedIn(tab);
   if (!compared || knownIn(tab, path)) return undefined;
   return fileSince(tab, compared.commit, compared.head, path, { soon: true });
+}
+
+/**
+ * Where lines `from` to `to` on `side` of the file at `path`, at `commit`, the commit tab `tab`'s
+ * overview describes, are for a comment at the head on screen, once Lo has worked out how the file
+ * changed (`commentOnHead`): as they are where the overview describes that head; on the file where
+ * the overview on screen is for another commit, or Lo can't tell.
+ */
+export async function commentLinesOnHead(
+  tab: string,
+  commit: string,
+  path: string,
+  lines: { readonly side: 'old' | 'new'; readonly from: number; readonly to: number },
+): Promise<CommentOnHead> {
+  if (pullOf(tab)?.shown === commit) return commentOnHead('same', path, lines);
+  const compared = comparedIn(tab);
+  if (compared?.commit !== commit) return { kind: 'file', path };
+  const since = await fileSince(tab, commit, compared.head, path, { soon: true });
+  return commentOnHead(since, path, lines);
 }
 
 /**

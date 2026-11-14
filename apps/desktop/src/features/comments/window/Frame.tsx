@@ -64,10 +64,24 @@ function useWhyNot(box: Box): string | undefined {
   return undefined;
 }
 
-/** The foot's buttons: the main one, as `c` or `C` opened the box, last. */
+/**
+ * The foot's buttons: the main one, as `c` or `C` opened the box, last. A comment on the pull
+ * request itself joins no review, so its one button posts it, with `⌘⏎` as `⌥⏎` does.
+ */
 function footOf(box: Box, state: BoxState, why: string | undefined): CommentBoxFoot {
   const waiting = sendingNow(state);
   const blank = state.text.trim() === '';
+  if (state.place.kind === 'conversation') {
+    const post: CommentBoxAction = {
+      label: 'Comment',
+      keys: labels('cmd+enter'),
+      primary: true,
+      disabled: why !== undefined || waiting || blank,
+      why,
+      onClick: () => void send(box, 'now'),
+    };
+    return { mode: modes[state.mode], actions: [post] };
+  }
   const button = (how: 'review' | 'now'): CommentBoxAction => ({
     label: how === 'review' ? 'Add to review' : 'Comment now',
     keys: labels(how === 'review' ? 'cmd+enter' : 'alt+enter'),
@@ -110,7 +124,7 @@ function Head({ box, composer }: { box: Box; composer: Composer }): ReactNode {
           box.set({ previewing: on });
         },
         previewKeys: labels('cmd+shift+v'),
-        where: whereText(state.place),
+        where: state.where ?? whereText(state.place),
         account:
           login === undefined
             ? undefined

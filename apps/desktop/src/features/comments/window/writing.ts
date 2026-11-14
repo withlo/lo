@@ -1,19 +1,23 @@
 // Writing comments in a view's diff, worked out: where a comment on the cursor's line, the lines
-// `v` selected or a file goes, as GitHub takes it and as main keeps its draft; where a draft's box
-// goes in the diff as drawn; and what a box's frame says of where it is and how sending it stands.
+// `v` selected or a file goes, as GitHub takes it and as main keeps its draft; where one on an
+// overview's code block goes; where a draft's box goes in the diff as drawn; and what a box's frame
+// says of where it is and how sending it stands.
 
 import { CommentableLines, Line, type Lines, type Screen } from '@lo/review';
 import type { OnFile, Place, Span } from '@lo/ui/code';
 
 import { clockOf, savedWhen } from '../../../window/time.ts';
 import type { DrawnDiff, ThreadedFile } from '../../diff/window/shared.ts';
+import type { CommentOnHead } from '../../overview/window/shared.ts';
 import type {
   Commentable,
   CommentLinesRow,
+  ConversationPlaceRow,
   DraftPlaceRow,
   HunkRow,
   SendRefusal,
   Sending,
+  ThreadPlaceRow,
 } from '../contract.ts';
 
 /**
@@ -96,12 +100,12 @@ function lineRow(line: Line): CommentLinesRow['end'] {
 
 /**
  * The place main keeps the draft of a comment by: on `lines` of `file`, or on the file without
- * them, at the head the diff's newer column shows.
+ * them, at `head`, the head the diff's newer column shows.
  */
-export function placeOf(drawn: DrawnDiff, path: string, lines: Lines | undefined): DraftPlaceRow {
+export function placeOf(head: string, path: string, lines: Lines | undefined): ThreadPlaceRow {
   return {
     kind: 'thread',
-    commit: drawn.at.toLowerCase(),
+    commit: head.toLowerCase(),
     path,
     lines: lines
       ? { start: lines.start ? lineRow(lines.start) : null, end: lineRow(lines.end) }
@@ -114,8 +118,12 @@ function lineKey(each: CommentLinesRow['end'] | null): string {
   return each ? `${each.side}${each.number}` : '';
 }
 
+/** The place of the comment box on the pull request itself: one a pull request. */
+export const ON_PULL: ConversationPlaceRow = { kind: 'conversation' };
+
 /** A key for a draft's place: the same for the same place, however its object was made. */
 export function placeKey(place: DraftPlaceRow): string {
+  if (place.kind === 'conversation') return JSON.stringify([place.kind]);
   const { commit, path, lines } = place;
   return JSON.stringify([
     place.kind,
@@ -136,6 +144,7 @@ export function boxAt(
   screen: Screen,
   place: DraftPlaceRow,
 ): { file: ThreadedFile; at: Place | Span | OnFile } | undefined {
+  if (place.kind !== 'thread') return undefined;
   if (place.commit.toLowerCase() !== drawn.at.toLowerCase()) return undefined;
   const file = drawn.files.find((each) => githubPath(each) === place.path);
   if (!file) return undefined;
@@ -157,9 +166,10 @@ function sideWords(side: 'LEFT' | 'RIGHT'): string {
 
 /**
  * Where a box's comment goes, as its head says: "On line 41, new side", "On lines 39–41, new side",
- * "On the file".
+ * "On the file", "On the pull request".
  */
 export function whereText(place: DraftPlaceRow): string {
+  if (place.kind === 'conversation') return 'On the pull request';
   const { lines } = place;
   if (!lines) return 'On the file';
   const { start, end } = lines;
@@ -305,3 +315,38 @@ export const IN_A_LAYER = 'Comment in a layer';
 /** Why a suggestion can't go on the older side. */
 export const NEW_SIDE_ONLY =
   'Suggestions work on the new side only, since GitHub applies them there';
+
+/** What a box on a code block's lines says of a comment on their file, which it falls back to. */
+export const ON_FILE_FROM_BLOCK = 'On the file, since GitHub takes line comments only in the diff';
+
+/**
+ * What a comment on a code block's lines goes on: the lines at the head on screen they are, a
+ * comment on their file, or one on the pull request itself.
+ */
+export type BlockComment =
+  | { readonly kind: 'lines'; readonly lines: Lines }
+  | { readonly kind: 'file' }
+  | { readonly kind: 'pull' };
+
+/**
+ * Where a comment on a code block's lines goes, as GitHub takes it, from where they are at the head
+ * on screen (`onHead`) and what GitHub takes on their file there (`takes`, none where main couldn't
+ * read it): on those lines, where they're there unchanged and GitHub takes a comment on them;
+ * otherwise on the file, where the pull request changes it, or where Lo can't tell; otherwise on
+ * the pull request itself, as for a file it leaves alone, or one gone.
+ */
+export function blockComment(
+  onHead: CommentOnHead,
+  takes: CommentableLines | undefined,
+): BlockComment {
+  if (onHead.kind === 'gone') return { kind: 'pull' };
+  if (takes && !takes.takesFileComment()) return { kind: 'pull' };
+  if (onHead.kind === 'lines') {
+    const { side, from, to } = onHead;
+    const at: Place | Span =
+      from === to ? { file: '', side, line: to } : { file: '', side, from, to };
+    const lines = linesAt(takes, at);
+    if (lines) return { kind: 'lines', lines };
+  }
+  return { kind: 'file' };
+}

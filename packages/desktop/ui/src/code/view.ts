@@ -49,6 +49,7 @@ import type {
   DiffInit,
   DiffLayout,
   DiffView,
+  DrawNote,
   FileHeader,
   Fold,
   JumpTo,
@@ -248,6 +249,7 @@ interface OverviewAt extends MarkedLines {
   block: string;
   label: string;
   text: string;
+  draw: DrawNote | undefined;
 }
 
 /** What a note shows, and where: under a line of one side of a file, by its index. */
@@ -258,6 +260,8 @@ interface NoteShown {
   block: string;
   label: string;
   text: string;
+  /** What draws the text in its place, which a note with the same text keeps as it was drawn. */
+  draw: DrawNote | undefined;
 }
 
 /**
@@ -1039,8 +1043,8 @@ class View implements DiffView {
       const from = Math.max(1, Math.min(mark.at.from, mark.at.to));
       const key = `${file}:${side}:${from}:${to}:${mark.block}`;
       if (keys.has(key)) continue;
-      const { label, text } = mark.note;
-      const at: OverviewAt = { key, file, side, from, to, block: mark.block, label, text };
+      const { label, text, draw } = mark.note;
+      const at: OverviewAt = { key, file, side, from, to, block: mark.block, label, text, draw };
       keys.set(key, at);
       let byFile = next.get(file);
       if (!byFile) {
@@ -2677,6 +2681,7 @@ class View implements DiffView {
         block: mark.block,
         label: mark.label,
         text: mark.text,
+        draw: mark.draw,
         link: this.#on.explained !== undefined,
       };
       byPlace.set(key, { ...shown, notes: [...(shown.notes ?? []), note] });
@@ -3303,8 +3308,8 @@ function viewFile(file: DiffFile): ViewFile {
 
 /** What a mark's note shows, under its last line. */
 function shownOf(mark: OverviewAt): NoteShown {
-  const { file, side, to: line, block, label, text } = mark;
-  return { file, side, line, block, label, text };
+  const { file, side, to: line, block, label, text, draw } = mark;
+  return { file, side, line, block, label, text, draw };
 }
 
 function sameShown(a: NoteShown, b: NoteShown): boolean {

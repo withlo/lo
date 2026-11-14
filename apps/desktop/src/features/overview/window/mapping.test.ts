@@ -1,7 +1,7 @@
 // Mapping an overview's lines, at the commit it describes, onto the head on screen: lines that
 // moved as lines above them came and went, renamed files, deleted lines, a file deleted at the
-// head, and one that isn't text there; and which lines of a block changed, from a real diff of the
-// two texts, as the diff's background job makes it.
+// head, and one that isn't text there; which lines of a block changed, from a real diff of the
+// two texts, as the diff's background job makes it; and where a comment on a block's lines goes.
 
 import { diffText } from '@lo/diff';
 import { describe, expect, it } from 'vitest';
@@ -9,6 +9,7 @@ import { describe, expect, it } from 'vitest';
 import type { DiffedText } from '../../diff/window/shared.ts';
 import {
   blockChange,
+  commentOnHead,
   fileSinceOf,
   lineOnHead,
   linesIn,
@@ -183,6 +184,73 @@ describe('onHead', () => {
     expect(onHead({ kind: 'unknown', why: 'Offline.' }, 'src/a.ts', { start: 3, end: 4 })).toEqual(
       written,
     );
+  });
+});
+
+describe('commentOnHead', () => {
+  it('keeps the lines as they are where the head is the overview’s commit, either side', () => {
+    const lines = { side: 'old' as const, from: 6, to: 4 };
+    expect(commentOnHead('same', 'src/a.ts', lines)).toEqual({
+      kind: 'lines',
+      path: 'src/a.ts',
+      side: 'old',
+      from: 4,
+      to: 6,
+    });
+  });
+
+  it('maps the newer side’s lines where each is there unchanged, in a row, at the new path', () => {
+    const old = numbered(10);
+    const now = ['added', ...old];
+    const since = changed(text(old), text(now), 'src/b.ts');
+    expect(commentOnHead(since, 'src/a.ts', { side: 'new', from: 4, to: 6 })).toEqual({
+      kind: 'lines',
+      path: 'src/b.ts',
+      side: 'new',
+      from: 5,
+      to: 7,
+    });
+    // The base under the older side may have moved since.
+    expect(commentOnHead(since, 'src/a.ts', { side: 'old', from: 4, to: 6 })).toEqual({
+      kind: 'file',
+      path: 'src/b.ts',
+    });
+  });
+
+  it('goes on the file where a line changed, or one was added between them', () => {
+    const old = numbered(10);
+    const changedLine = [...old.slice(0, 4), 'changed 5', ...old.slice(5)];
+    expect(
+      commentOnHead(changed(text(old), text(changedLine)), 'src/a.ts', {
+        side: 'new',
+        from: 4,
+        to: 6,
+      }),
+    ).toEqual({ kind: 'file', path: 'src/a.ts' });
+    const between = [...old.slice(0, 4), 'added', ...old.slice(4)];
+    expect(
+      commentOnHead(changed(text(old), text(between)), 'src/a.ts', {
+        side: 'new',
+        from: 4,
+        to: 6,
+      }),
+    ).toEqual({ kind: 'file', path: 'src/a.ts' });
+  });
+
+  it('goes on the file while Lo can’t tell, and nowhere on it once it’s gone', () => {
+    const lines = { side: 'new' as const, from: 1, to: 2 };
+    expect(commentOnHead({ kind: 'unknown', why: 'Offline.' }, 'src/a.ts', lines)).toEqual({
+      kind: 'file',
+      path: 'src/a.ts',
+    });
+    expect(
+      commentOnHead(
+        { kind: 'opaque', path: 'src/b.bin', pushed: true, why: 'Binary.' },
+        'src/a.ts',
+        lines,
+      ),
+    ).toEqual({ kind: 'file', path: 'src/b.bin' });
+    expect(commentOnHead({ kind: 'deleted' }, 'src/a.ts', lines)).toEqual({ kind: 'gone' });
   });
 });
 

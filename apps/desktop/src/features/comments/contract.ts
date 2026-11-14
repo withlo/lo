@@ -177,18 +177,26 @@ export type CommentLinesRow = z.output<typeof commentLines>;
 const path = z.string().min(1).max(4096);
 
 /**
- * Where a comment box is, which its draft is kept by: a new thread on lines of the revision whose
- * head is `commit`, the newer column's when it was written, or on the file when it has no lines.
+ * A new thread's comment box: on lines of the revision whose head is `commit`, the newer column's
+ * when it was written, or on the file when it has no lines.
+ */
+export const threadPlace = z.strictObject({
+  kind: z.literal('thread'),
+  commit: oid,
+  path,
+  lines: commentLines.nullable(),
+});
+export type ThreadPlaceRow = z.output<typeof threadPlace>;
+
+/** The comment box on the pull request itself, in its conversation: one a pull request. */
+export const conversationPlace = z.strictObject({ kind: z.literal('conversation') });
+export type ConversationPlaceRow = z.output<typeof conversationPlace>;
+
+/**
+ * Where a comment box is, which its draft is kept by: a new thread's, or the pull request's own.
  * Boxes of other kinds come with the features that open them.
  */
-export const draftPlace = z.discriminatedUnion('kind', [
-  z.strictObject({
-    kind: z.literal('thread'),
-    commit: oid,
-    path,
-    lines: commentLines.nullable(),
-  }),
-]);
+export const draftPlace = z.discriminatedUnion('kind', [threadPlace, conversationPlace]);
 export type DraftPlaceRow = z.output<typeof draftPlace>;
 
 /**
@@ -329,9 +337,10 @@ export const contract = defineContract('comments', {
     },
     /**
      * Sends `text` as the comment at `place` on view `id`'s pull request, as its account: added to
-     * your pending review (`review`), or posted at once (`now`). It's kept as the draft until
-     * GitHub takes it. One write to a pull request goes at a time: this one waits for the last
-     * one's answer. Never sent again by itself.
+     * your pending review (`review`), or posted at once (`now`); a comment on the pull request
+     * itself (`conversation`) is posted at once either way, as it joins no review. It's kept as the
+     * draft until GitHub takes it. One write to a pull request goes at a time: this one waits for
+     * the last one's answer. Never sent again by itself.
      */
     send: {
       input: z.strictObject({
