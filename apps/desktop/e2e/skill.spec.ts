@@ -186,7 +186,7 @@ test.describe('in Settings, from a terminal', () => {
       .locator('.setting-row')
       .filter({ hasText: 'Install from a terminal' });
     await expect(terminal).toContainText(
-      `${command} installs the skill Lo does, for each agent set up where it runs.`,
+      `${command} installs the skill Lo does, for each agent set up on the computer you run it on.`,
     );
     // Writing the clipboard only where it's the test's own: not on a Mac someone works on.
     test.skip(mac, "The Mac's clipboard is its user's.");

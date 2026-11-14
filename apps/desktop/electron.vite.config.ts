@@ -18,15 +18,23 @@ import { z } from 'zod';
  * vitest.config.ts defines it for the tests too.
  */
 export const OVERVIEW_CHECKER = ((): string => {
-  let folder = dirname(createRequire(import.meta.url).resolve('@withlo/overview/install'));
+  const name = '@withlo/overview';
+  let folder = dirname(createRequire(import.meta.url).resolve(`${name}/install`));
   while (!existsSync(join(folder, 'package.json'))) {
-    if (dirname(folder) === folder) throw new Error("@withlo/overview's package.json is missing.");
+    if (dirname(folder) === folder) throw new Error(`${name}'s package.json is missing.`);
     folder = dirname(folder);
   }
+  const path = join(folder, 'package.json');
   const manifest = z
-    .object({ name: z.string(), version: z.string() })
-    .parse(JSON.parse(readFileSync(join(folder, 'package.json'), 'utf8')));
-  return `${manifest.name}@${manifest.version}`;
+    .object({ name: z.string().optional(), version: z.string().optional() })
+    .parse(JSON.parse(readFileSync(path, 'utf8')));
+  // A manifest nested in the package, such as one that marks a folder's module type, isn't the
+  // package's own: its version would be the wrong one to pin, so the build stops.
+  if (manifest.name !== name) {
+    throw new Error(`${path} isn't ${name}'s manifest: it names ${manifest.name ?? 'no package'}.`);
+  }
+  if (manifest.version === undefined) throw new Error(`${path} has no version.`);
+  return `${name}@${manifest.version}`;
 })();
 
 /** The fonts' licenses, shipped beside the window's files as the SIL Open Font License asks. */

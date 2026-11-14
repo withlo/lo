@@ -83,12 +83,18 @@ export function InstallCommandRow() {
       description={
         <>
           <span className="text-fg select-all code-small">{INSTALL_COMMAND}</span> installs the
-          skill Lo does, for each agent set up where it runs.
+          skill Lo does, for each agent set up on the computer you run it on.
         </>
       }
     >
       <Button {...keyAria(keys, undefined)} onClick={() => void copyInstallCommand()}>
-        {copied ? 'Copied' : 'Copy'}
+        {/* Both labels take the room of the longer, so the button and the row hold still. */}
+        <span className="inline-grid justify-items-center">
+          <span className="col-start-1 row-start-1">{copied ? 'Copied' : 'Copy'}</span>
+          <span className="invisible col-start-1 row-start-1" aria-hidden="true">
+            Copied
+          </span>
+        </span>
         {keys !== undefined && <Key keys={keys} quiet decorative />}
       </Button>
       <span role="status" className="sr-only">
