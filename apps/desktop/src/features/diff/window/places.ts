@@ -8,7 +8,12 @@ import type { Side, Target } from '@lo/ui/commands';
 
 import { notify, withdraw } from '../../../window/commands/notices.tsx';
 import { here, registry } from '../../../window/commands/registry.ts';
-import { compareAgain, comparisonHere, holdLimit } from '../../revisions/window/shared.ts';
+import {
+  compareAgain,
+  comparisonComing,
+  comparisonHere,
+  holdLimit,
+} from '../../revisions/window/shared.ts';
 import { showMiddle } from '../../tab/window/shared.ts';
 import { fileKey, type TreePath } from '../../tree/contract.ts';
 import { onShowFile, pathOf } from '../../tree/window/shared.ts';
@@ -219,12 +224,15 @@ function placeOf(target: Target): { file: string; side: Side } | undefined {
 /**
  * Shows `target` in tab `tab`'s diff and focuses it: at once if the diff is drawn; otherwise once
  * it's drawn again, if it has the file, bringing it on screen. In another comparison than the one
- * on screen, `within`, it's compared again first, and shown once its diff is drawn. Says whether
- * it could.
+ * on screen, `within`, it's compared again first, and shown once its diff is drawn. Going there is
+ * the reader's last move, so another comparison still coming is called off, or replaced. Says
+ * whether it could.
  */
 function revealInDiff(tab: string, target: Target, within: string | undefined): boolean {
-  if (within !== undefined && within !== comparisonHere(tab)) {
-    const asked = compareAgain(tab, within);
+  const onScreen = comparisonHere(tab);
+  const name = within ?? onScreen;
+  if (name !== undefined && (name !== onScreen || comparisonComing(tab) !== undefined)) {
+    const asked = compareAgain(tab, name);
     if (typeof asked !== 'string') return false;
     if (asked === 'coming') {
       const state = loaderOf(tab).snapshot().ready;

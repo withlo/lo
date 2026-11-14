@@ -489,4 +489,44 @@ test.describe('while the local copy is still coming', () => {
     await expect.poll(() => placed(page)).toEqual(AT_HEAD);
     await expect.poll(() => cursor(page)).toBe('src/backoff.ts new 15');
   });
+
+  test('⌃o calls off a comparison still coming, and takes back what it said', async ({ page }) => {
+    test.setTimeout(60_000);
+    const id = await open(page, COMMENTS_PULL.number);
+    await expect.poll(() => placed(page), { timeout: 20_000 }).toEqual(AT_HEAD);
+    await settled(page);
+    await page.keyboard.press(PANEL);
+    await expect.poll(() => rows(page)).toHaveLength(10);
+    // new 8, then new 15, past the outdated thread between them.
+    await page.keyboard.press('j');
+    await page.keyboard.press('j');
+    await page.keyboard.press('Enter');
+    await expect.poll(() => cursor(page)).toBe('src/backoff.ts new 8');
+    await page.keyboard.press('j');
+    await page.keyboard.press('j');
+    await page.keyboard.press('Enter');
+    await expect.poll(() => cursor(page)).toBe('src/backoff.ts new 15');
+    // The outdated thread asks for r1's whole diff, which needs the local copy, so it's coming.
+    await page.keyboard.press('k');
+    await expect(focusedRow(page)).toContainText('r1 · line 9');
+    await page.keyboard.press('Enter');
+    await expect.poll(() => compared(page, id)).toBe('coming');
+    const note = page.getByRole('status').filter({ hasText: 'Comparing base → r1' });
+    await expect(note).toBeVisible();
+    // Going back is the last move: r1 is called off, and so is what was said of it.
+    await page.keyboard.press('Control+o');
+    await expect.poll(() => compared(page, id)).toBe('whole');
+    await expect.poll(() => cursor(page)).toBe('src/backoff.ts new 8');
+    await expect(note).toHaveCount(0);
+    // Nor does r1 come with the local copy.
+    writeCommentsRemote(test.info().outputPath('remote'));
+    await page.evaluate((tab) => window.lo.invoke('tab.retry', { id: tab }), id);
+    await expect(page.locator('footer').getByText('GitHub’s diff', { exact: true })).toHaveCount(
+      0,
+      { timeout: 30_000 },
+    );
+    expect(await compared(page, id)).toBe('whole');
+    await expect.poll(() => placed(page)).toEqual(AT_HEAD);
+    await expect.poll(() => cursor(page)).toBe('src/backoff.ts new 8');
+  });
 });

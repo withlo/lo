@@ -12,7 +12,7 @@ import { keyLabels, type Target } from '@lo/ui/commands';
 import { useStore } from 'zustand';
 import { createStore } from 'zustand/vanilla';
 
-import { announce, notify } from '../../../window/commands/notices.tsx';
+import { notify } from '../../../window/commands/notices.tsx';
 import { registry } from '../../../window/commands/registry.ts';
 import { diffStateOf, showThread as showInDiff, type ShowWhen } from '../../diff/window/shared.ts';
 import {
@@ -200,16 +200,13 @@ export function showThread(tab: PullTab, id: string): void {
     case 'compare': {
       // The place it leaves goes in the history first, with what's compared now.
       show(tab.id, row, 'drawn');
-      const asked = compareTo(tab.id, plan.compared, SHOW);
-      if (typeof asked !== 'string') {
-        notify(SHOW, asked.why);
-        return;
-      }
       const back = keyOf('keys.back');
-      announce(
-        `Comparing base → ${plan.label}`,
-        `This thread is on ${plan.label}.${back === undefined ? '' : ` ${back} goes back.`}`,
-      );
+      // Said as it's asked for, and taken back if a later move calls it off.
+      const asked = compareTo(tab.id, plan.compared, SHOW, {
+        title: `Comparing base → ${plan.label}`,
+        body: `This thread is on ${plan.label}.${back === undefined ? '' : ` ${back} goes back.`}`,
+      });
+      if (typeof asked !== 'string') notify(SHOW, asked.why);
       return;
     }
     case 'why':

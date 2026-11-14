@@ -4,6 +4,7 @@
 
 import { describe, expect, it, vi } from 'vitest';
 
+import { notice } from '../../../window/commands/notices.tsx';
 import type { ComparisonView } from '../contract.ts';
 import {
   comparedIn,
@@ -101,6 +102,18 @@ describe('comparing another pair', () => {
     await Promise.resolve();
     views.set('asking', view({ id: 'asking', comparison: whole, pending: first }));
     expect(comparisonComing('asking')).toEqual(first);
+  });
+
+  it('says so as it’s asked for, and takes it back once it’s called off', () => {
+    views.set('saying', view({ id: 'saying', comparison: whole }));
+    const say = { title: 'Comparing base → r1', body: 'This thread is on r1.' };
+    expect(compareTo('saying', first, 'Show the thread', say)).toBe('coming');
+    expect(notice()).toMatchObject(say);
+    // Asked for again, it stands.
+    expect(compareTo('saying', first, 'Back')).toBe('coming');
+    expect(notice()).toMatchObject(say);
+    expect(compareTo('saying', whole, 'Back')).toBe('now');
+    expect(notice()).toBeUndefined();
   });
 
   it('can’t be before the revisions are read', () => {

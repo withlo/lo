@@ -643,9 +643,10 @@ to all threads, then to yours: the ones you started or replied in.
 screen, and focus stays in the panel. It's a jump, so `⌃o` goes back. A thread the diff on screen
 doesn't show, such as an outdated one, shows in the whole diff of the revision it's on, which Lo
 compares first, saying so: "Comparing base → r1". `⌃o` then goes back to the comparison before and
-the place in it, and `⌃i` comes forward again. The last thread asked for is the one shown: one the
-diff on screen shows, asked for while another's comparison is still coming, calls that comparison
-off. A file-level thread shows its file's header. In the diff, `]t` and `[t` jump between threads.
+the place in it, and `⌃i` comes forward again. The last move wins: a comparison still coming is
+called off, with what Lo said of it, when the diff on screen shows the next thread asked for, or
+when `⌃o` or `⌃i` goes elsewhere first. A file-level thread shows its file's header. In the diff,
+`]t` and `[t` jump between threads.
 
 ### Timeline
 

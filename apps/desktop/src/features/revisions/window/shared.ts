@@ -7,7 +7,7 @@
 // pair, as the threads panel does to show a thread, and the diff's history to go back.
 
 import { IpcError } from '../../../ipc/contract.ts';
-import { notify } from '../../../window/commands/notices.tsx';
+import { announce, notify, withdraw } from '../../../window/commands/notices.tsx';
 import { useTabState } from '../../tab/window/shared.ts';
 import type { TreePath } from '../../tree/contract.ts';
 import type { Compared, ComparisonView } from '../contract.ts';
@@ -184,16 +184,35 @@ export function comparisonComing(tab: string): Compared | undefined {
   return coming && !sameCompared(coming, comparedIn(view)) ? coming : undefined;
 }
 
+/** What a comparison asked for says as it's asked for: a note, taken back if it's called off. */
+export interface Said {
+  readonly title: string;
+  readonly body: string;
+}
+
+/** The note each tab's last comparison asked for put up, and that comparison. */
+const said = new Map<string, Said & { readonly compared: Compared }>();
+
+/** Takes back the note tab `tab`'s last comparison put up, unless it was for `compared`. */
+function takeBack(tab: string, compared: Compared): void {
+  const note = said.get(tab);
+  if (!note || sameCompared(note.compared, compared)) return;
+  said.delete(tab);
+  withdraw(note.title, note.body);
+}
+
 /**
  * Has tab `tab` compare `compared`, as the reader asked: `now` when that's on screen and nothing
  * else is coming, `coming` when it's asked for, or why it can't be. One asked for after another
  * takes its place, so the last asked for is what shows: asked for what's on screen, what was coming
- * is called off. Main's refusal comes as a note titled `title`.
+ * is called off, and the note it put up, `say`, is taken back. Main's refusal comes as a note titled
+ * `title`.
  */
 export function compareTo(
   tab: string,
   compared: Compared,
   title: string,
+  say?: Said,
 ): 'now' | 'coming' | { readonly why: string } {
   const view = views.get(tab);
   if (!view || view.status !== 'ready') {
@@ -203,7 +222,12 @@ export function compareTo(
   if (sameCompared(coming, compared)) return 'coming';
   const now = sameCompared(comparedIn(view), compared);
   if (now && coming === undefined) return 'now';
+  takeBack(tab, compared);
   asked.set(tab, compared);
+  if (say) {
+    said.set(tab, { ...say, compared });
+    announce(say.title, say.body);
+  }
   const taken = () => {
     if (asked.get(tab) === compared) asked.delete(tab);
   };
