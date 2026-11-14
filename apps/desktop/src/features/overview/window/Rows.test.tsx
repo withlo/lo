@@ -21,7 +21,7 @@ import { commandLine } from '../../open/window/shared.ts';
 import { setup } from '../../welcome/window/shared.ts';
 import type { SkillAgent, SkillResult, SkillState } from '../contract.ts';
 import feature from './index.ts';
-import { COPIED_FOR, INSTALL_COMMAND, skillStore, TITLE } from './skill.ts';
+import { COPIED_FOR, COPY_TITLE, INSTALL_COMMAND, skillStore } from './skill.ts';
 
 /** Both agents as main reports them, `changes` over each. */
 function state(claude: Partial<SkillAgent> = {}, codex: Partial<SkillAgent> = {}): SkillState {
@@ -475,7 +475,7 @@ describe('Settings’ row for the command that installs the skill', () => {
     click(button(commandRow() ?? null, 'Copied'));
     await settle();
     expect(asked.bridge.calls.filter(([channel]) => channel === 'tab.copy')).toHaveLength(2);
-    expect(notice()).toEqual({ title: TITLE, body: "Lo couldn't copy the command." });
+    expect(notice()).toEqual({ title: COPY_TITLE, body: "Lo couldn't copy the command." });
     // Not "Copied", which would say the clipboard has what it doesn't.
     expect(button(commandRow() ?? null, 'Copy')).toBeDefined();
     expect(commandRow()?.querySelector('[role="status"]')?.textContent).toBe('');

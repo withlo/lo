@@ -94,6 +94,9 @@ export async function installSkill(
   return results;
 }
 
+/** What the notice for copying the command is called. */
+export const COPY_TITLE = 'Copy the install command';
+
 /** How long the button says "Copied" after a copy, in ms. */
 export const COPIED_FOR = 3000;
 
@@ -109,7 +112,7 @@ export async function copyInstallCommand(): Promise<void> {
     await tabs().copy({ text: INSTALL_COMMAND });
   } catch (error) {
     console.error("Lo couldn't copy the command that installs the overview skill:", error);
-    notify(TITLE, "Lo couldn't copy the command.");
+    notify(COPY_TITLE, "Lo couldn't copy the command.");
     copied = false;
   }
   clearTimeout(forgetting);

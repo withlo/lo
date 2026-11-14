@@ -26,11 +26,14 @@ export const OVERVIEW_CHECKER = ((): string => {
   }
   const path = join(folder, 'package.json');
   const manifest = z
-    .object({ name: z.string(), version: z.string() })
+    .object({ name: z.string().optional(), version: z.string().optional() })
     .parse(JSON.parse(readFileSync(path, 'utf8')));
   // A manifest nested in the package, such as one that marks a folder's module type, isn't the
   // package's own: its version would be the wrong one to pin, so the build stops.
-  if (manifest.name !== name) throw new Error(`${path} names ${manifest.name}, not ${name}.`);
+  if (manifest.name !== name) {
+    throw new Error(`${path} isn't ${name}'s manifest: it names ${manifest.name ?? 'no package'}.`);
+  }
+  if (manifest.version === undefined) throw new Error(`${path} has no version.`);
   return `${name}@${manifest.version}`;
 })();
 
