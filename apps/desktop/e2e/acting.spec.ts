@@ -25,6 +25,12 @@ const TOKEN = 'gho_FAKE_E2E_ACCOUNT';
 
 const CASSETTE = 'app_comments_act';
 
+/**
+ * The cassette that recorded the images #94's comments show, which the threads' cards load as they
+ * come on screen, though `app_comments_act` scrolled past them before they did.
+ */
+const IMAGES = 'app_comments';
+
 const cmd = process.platform === 'darwin' ? 'Meta' : 'Control';
 
 /** The writes the recording sent, by their GraphQL operations. */
@@ -58,7 +64,16 @@ class Staged extends Replay {
   constructor(name: string) {
     const interactions = recorded(name).interactions.map(({ interaction }) => interaction);
     super(name, interactions);
-    const stages: Interaction[][] = [[]];
+    // The images it didn't record, from the start.
+    const keys = new Set(interactions.map((each) => recordedKey(each.request)));
+    const images = recorded(IMAGES)
+      .interactions.map(({ interaction }) => interaction)
+      .filter(
+        (each) =>
+          new URL(each.request.url).host !== 'api.github.com' &&
+          !keys.has(recordedKey(each.request)),
+      );
+    const stages: Interaction[][] = [[...images]];
     for (const each of interactions) {
       stages.at(-1)!.push(each);
       if (WRITES.has(each.request.operation ?? '')) stages.push([]);
