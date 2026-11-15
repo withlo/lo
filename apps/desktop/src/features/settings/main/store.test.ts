@@ -238,6 +238,7 @@ describe('reading', () => {
       schema: z.string().transform((text): string | Date => new Date(text)),
       fallback: '2000-01-01',
       accepts: 'a date',
+      window: 'write',
     };
     const { settings } = open();
     settings.declare(when);
@@ -567,5 +568,83 @@ describe('changing a setting', () => {
     await settings.stop();
     await changing;
     expect(JSON.parse(contents())).toEqual({ theme: 'dark' });
+  });
+});
+
+describe('a setting only main changes', () => {
+  /** A list of names, which the window shows and only main writes, ignoring names of one letter. */
+  const names = defineSetting('code.names', z.array(z.string().min(1)), [], 'a list of names', {
+    window: 'read',
+    problems: (value) =>
+      value
+        .filter((name) => name.length < 2)
+        .map((name) => `"${name}" is too short, so Lo ignores it.`),
+  });
+
+  it('is shown to the window, but never changed by it', async () => {
+    write('{ "code.names": ["lo"] }');
+    const { settings } = open();
+    settings.declare(names);
+    expect((await settings.state()).values['code.names']).toEqual(['lo']);
+    const refused = await refusal(settings.set('code.names', ['lo', 'more']));
+    expect(refused?.code).toBe('unwritable');
+    expect(refused?.message).toBe("Settings can't change code.names: only Lo itself does.");
+    expect(contents()).toBe('{ "code.names": ["lo"] }');
+  });
+
+  it('is changed by main from the file as it is now, keeping what Lo doesn’t know', async () => {
+    write('{ "theme": "dark", "code.names": ["lo"] }');
+    const { settings, changes } = open();
+    settings.declare(theme);
+    await settings.state();
+    // Saved by a person after Lo last read it.
+    write('{ "theme": "light", "code.names": ["lo", "git"], "from": 1 }');
+    await settings.update(names, (now) => [...now, 'sh']);
+    expect(JSON.parse(contents())).toEqual({
+      theme: 'light',
+      'code.names': ['lo', 'git', 'sh'],
+      from: 1,
+    });
+    expect(changes.at(-1)?.values['code.names']).toEqual(['lo', 'git', 'sh']);
+  });
+
+  it('refuses to change a value in the file the schema refuses, so it’s never lost', async () => {
+    for (const text of ['{ "code.names": "lo" }', '{ "code.names": ["lo", 7] }']) {
+      write(text);
+      const { settings } = open();
+      const refused = await refusal(settings.update(names, (now) => [...now, 'sh']));
+      expect(refused?.code).toBe('unwritable');
+      expect(refused?.message).toBe(
+        "Lo didn't change code.names: the settings file holds one that isn't a list of names, which Lo won't replace. Fix it there, or take it out.",
+      );
+      expect(contents()).toBe(text);
+    }
+  });
+
+  it('starts from the default when the file holds no value', async () => {
+    write('{}');
+    const { settings } = open();
+    await settings.update(names, (now) => [...now, 'sh']);
+    expect(JSON.parse(contents())).toEqual({ 'code.names': ['sh'] });
+  });
+
+  it('refuses a change the schema refuses, writing nothing', async () => {
+    write('{ "code.names": ["lo"] }');
+    const { settings } = open();
+    const refused = await refusal(settings.update(names, () => ['']));
+    expect(refused?.code).toBe('invalid');
+    expect(contents()).toBe('{ "code.names": ["lo"] }');
+  });
+
+  it('reports what the setting ignores in a value it keeps', async () => {
+    write('{ "code.names": ["lo", "x", "y"] }');
+    const { settings } = open();
+    settings.declare(names);
+    const state = await settings.state();
+    expect(state.values['code.names']).toEqual(['lo', 'x', 'y']);
+    expect(state.problems).toEqual([
+      { key: 'code.names', message: '"x" is too short, so Lo ignores it.' },
+      { key: 'code.names', message: '"y" is too short, so Lo ignores it.' },
+    ]);
   });
 });

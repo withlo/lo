@@ -34,6 +34,9 @@ not a `diff` object holding `layout`.
 - **A link to a file is followed.** A settings file kept with other dotfiles stays a link, and the
   file it leads to is the one Lo reads, watches and replaces.
 - The file is read up to 1 MiB.
+- **Which repos you trust changes only through Lo's own dialog.** Lo adds one to `code.trusted` once
+  you say "Trust" there, and takes one out once you remove it in Settings. You can still edit the
+  file.
 
 ## The settings
 
@@ -43,4 +46,40 @@ not a `diff` object holding `layout`.
 | `cache.cap`       | a whole number of GB, from 1 to 10,000 | `10`         | The size Lo keeps its local copies of repos under. Past it, the least recently used go.                                                          |
 | `diff.layout`     | split or inline                        | `"split"`    | The diff's layout: the two sides next to each other, or one column of both. `gi` switches it.                                                    |
 | `diff.whitespace` | show or hide                           | `"show"`     | Whether the diff shows changes to whitespace alone. `gw` switches it. GitHub's diff, shown until the local copy is ready, shows them either way. |
+| `code.trusted`    | a list of trusted repos and PRs        | `[]`         | The repos, and pull requests from forks, that language servers may run on, as below.                                                             |
 | `overview.open`   | overview or diff                       | `"overview"` | What a pull request opens on when it has an overview Lo can show: the overview, or the diff. Without one, it always opens on the diff.           |
+
+## Trusted repos and pull requests
+
+`code.trusted` lists what language servers may run on. Lo writes an entry once you trust a repo, or
+a pull request from a fork, from its tab, and takes it out once you remove it in Settings:
+
+```json
+{
+  "code.trusted": [
+    { "repo": "fieldwork/atlas-api", "id": "R_kgDOVleUfQ", "at": "2026-11-15T09:12:44.000Z" },
+    {
+      "repo": "fieldwork/atlas-api",
+      "id": "R_kgDOVleUfQ",
+      "pull": 4833,
+      "from": "sam-whit/atlas-api",
+      "fromId": "R_kgDOVvlr6A",
+      "at": "2026-11-15T09:20:03.000Z"
+    }
+  ]
+}
+```
+
+- `repo` and `id` are the repository, by its name and GitHub's node ID for it. Lo trusts a pull
+  request whose branch is in that repository only while both match, so a name that comes to belong
+  to another repository, as when an account is deleted and its name taken, isn't trusted. A
+  repository renamed since is asked about again.
+- `pull`, `from` and `fromId` make an entry for one pull request from a fork: its number, and the
+  fork by its name and node ID. Later pushes to it are trusted too, while its branch stays in that
+  fork, by both: a fork that moves to another owner, or is renamed, is asked about again. A
+  repository's entry never trusts a pull request from a fork.
+- An entry Lo can't read, as one without an `id`, is reported and ignored, and stays in the file. A
+  `code.trusted` that isn't a list, or holds more than 10,000 entries, trusts nothing, and Lo won't
+  add to it until it's fixed.
+- Taking an entry out, in the file or in Settings, removes the checkouts Lo made for what it alone
+  trusted.

@@ -175,6 +175,25 @@ describe('createRouter', () => {
     expect(log).toHaveBeenCalledWith('notes.crash failed:', expect.any(Error));
   });
 
+  it('tells a handler which window asked, and no window when none is said', async () => {
+    const asked: (number | undefined)[] = [];
+    const feature = defineFeature(notes, {
+      handlers: {
+        add: () => ({ id: 1 }),
+        remove: () => null,
+        count: (_input, _context, { windowId }) => {
+          asked.push(windowId);
+          return 0;
+        },
+        crash: () => null,
+      },
+    });
+    const { routes } = start([feature]);
+    await routes.answer('notes.count', 'lo-app://app/index.html', undefined, { windowId: 7 });
+    await routes.answer('notes.count', 'lo-app://app/index.html', undefined);
+    expect(asked).toEqual([7, undefined]);
+  });
+
   it("refuses to push a value that doesn't match the topic", () => {
     const sent: unknown[] = [];
     const feature = defineFeature(notes, {

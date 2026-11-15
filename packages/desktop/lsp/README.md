@@ -55,3 +55,27 @@ own (`setsid`) is still found.
   round freezes all it finds, so this takes a process that starts others faster than Lo can read.
 - A read of the family has 250 ms. If it takes longer, or fails, only the group, and what was found
   before, is signalled.
+
+## Downloads
+
+`servers.json` pins what Lo downloads, and `scripts/pin.ts` writes it (see `AGENTS.md`). An
+`Installer` puts each version in `<cache>/servers/<id>/<version>/`, holding a download to these:
+
+| What                       | Limit                                                       |
+| -------------------------- | ----------------------------------------------------------- |
+| Addresses                  | `https`, the usual port, the entry's hosts by exact name    |
+| Redirects                  | 5, each held to the same rules                              |
+| A file                     | the size the manifest pins, then its SHA-256                |
+| Tries                      | 3, when the connection fails, the file comes short or a 5xx |
+| What an archive unpacks to | 100,000 entries and 2 GB                                    |
+| A symbolic link's target   | 1 KB, relative, resolving inside                            |
+
+Nothing is unpacked before its hash matches, and nothing is used before its marker says it's whole.
+Absolute paths, `..`, hard links, devices and pipes are refused, and files are written before any
+link is made, so nothing is written through one.
+
+### What isn't checked
+
+What a program does once it runs: the hash says it's the file that was pinned, and the signature
+`pin.ts` checked then says who published it, not what it does. That's what trust and each server's
+environment are for.

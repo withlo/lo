@@ -19,6 +19,7 @@ import {
   expect,
   KEYCHAIN,
   settingsPath,
+  tabBanners,
   test as base,
 } from './app.ts';
 
@@ -943,7 +944,7 @@ test.describe('while the local copy takes GitHub’s place', () => {
         await expect(status.getByText(/^Diffing \d+ of \d+$/)).toHaveCount(0, {
           timeout: 20_000,
         });
-        await expect(page.locator('[data-lo-banners]')).toHaveCount(0);
+        await expect(tabBanners(page)).toHaveCount(0);
         await page.waitForTimeout(1500);
         const moved = await page.evaluate(() => {
           window.loStill = true;
@@ -1152,7 +1153,7 @@ test.describe('when the local copy comes after GitHub’s diff, on a file the re
 async function underBanner(app: ElectronApplication, page: Page): Promise<void> {
   await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.setSize(1100, 440));
   await drawn(page, 'github', { moves: false });
-  await expect(page.locator('[data-lo-banners]')).toBeVisible({ timeout: 20_000 });
+  await expect(tabBanners(page)).toBeVisible({ timeout: 20_000 });
 }
 
 /** Where the first row below `view`'s top is on the page now, and how to read it again. */
@@ -1225,7 +1226,7 @@ test.describe('when a banner over the diff goes', () => {
     // The banner says the local copy's fetch failed, over the diff, which is at its top: there's
     // less to scroll up than the banner is tall. The banner can come after GitHub's diff, which
     // then scrolls to stay where it was, so the reader goes back to the top.
-    await expect(page.locator('[data-lo-banners]')).toBeVisible({ timeout: 20_000 });
+    await expect(tabBanners(page)).toBeVisible({ timeout: 20_000 });
     // Two frames on, the view has made up for the banner coming, which it does as a frame is laid
     // out: a scroll to the top before then would be taken back.
     await page.evaluate(
@@ -1241,7 +1242,7 @@ test.describe('when a banner over the diff goes', () => {
 
     writeAppRemote(test.info().outputPath('remote'));
     await page.evaluate((tab) => window.lo.invoke('tab.retry', { id: tab }), id);
-    await expect(page.locator('[data-lo-banners]')).toHaveCount(0, { timeout: 30_000 });
+    await expect(tabBanners(page)).toHaveCount(0, { timeout: 30_000 });
     // The local copy's diff then takes GitHub's place, which on a busy machine comes well after
     // the banner goes: nothing moves meanwhile either.
     const status = page.locator('footer');

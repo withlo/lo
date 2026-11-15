@@ -3,11 +3,14 @@
   "compilerOptions": {
     "outDir": ".tsbuild/lib"
   },
-  "include": ["src/**/*.ts"],
+  "include": ["src/**/*.ts", "servers.json"],
   "exclude": ["src/**/*.test.ts"],
   "references": [
     {
       "path": "../../../testing"
+    },
+    {
+      "path": "../git/tsconfig.lib.json"
     }
   ]
 }

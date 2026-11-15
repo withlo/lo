@@ -3,6 +3,6 @@
   "compilerOptions": {
     "outDir": ".tsbuild/test"
   },
-  "include": ["src/**/*.test.ts", "test/**/*.ts", "*.config.ts"],
+  "include": ["src/**/*.test.ts", "test/**/*.ts", "scripts/**/*.ts", "*.config.ts"],
   "references": [{ "path": "./tsconfig.lib.json" }]
 }

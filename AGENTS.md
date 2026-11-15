@@ -263,9 +263,10 @@ the window find them with `import.meta.glob`.
   stops first, each once the one before it has. Each gets 5 s of its own, and once they've taken 30
   s in all no more start stopping, except features that provide services, which always get their own
   5 s; the database closes once nothing stopping is still within its own 5 s. Each part gets the
-  feature's context: `publish`, `database`, `git` and `use`. A handler throws an `IpcError` for a
-  failure the window should see; any other error is logged and reaches the window only as
-  `internal`.
+  feature's context: `publish`, `database`, `git` and `use`. A handler also gets who asked, as its
+  third argument: `{ windowId }`, the window whose page sent the request, for what it shows there,
+  as a dialog. A handler throws an `IpcError` for a failure the window should see; any other error
+  is logged and reaches the window only as `internal`.
 - `service.ts` names what the feature's main side offers other features, each with
   `defineService<T>('<feature>.<name>')`: the GitHub clients, say. Its `provide` pairs each with its
   value (`provides(service, value)`). Every feature's `provide` runs before any feature's `start`,
@@ -284,7 +285,10 @@ the window find them with `import.meta.glob`.
   through the settings feature's `service.ts` (`use(settings).watch(setting, listener)`, which also
   declares the setting), the window through its `window/shared.ts` (`useSetting`, `changeSetting`),
   where a feature puts its section of Settings in the `settings.sections` slot with `defineSection`.
-  `docs/settings.md` lists every setting; a test fails when one is missing.
+  A setting declared with `{ window: 'read' }`, such as which repositories are trusted, the window
+  shows but can't change: `settings.set` refuses it as `unwritable`, and only main writes it, with
+  `use(settings).update(setting, change)`. `docs/settings.md` lists every setting; a test fails when
+  one is missing.
 - `migrations/001-<name>.sql`, `002-<name>.sql` and on create and change the feature's tables. At
   startup, before any handler can be asked anything, each feature's new migrations run in order,
   each in a transaction, and are recorded with their SHA-256.
@@ -417,9 +421,30 @@ toolchain and git's variables each server needs.
   inside a feature's 5 s. A process read earlier is signalled only while it's the same one, by its
   start time. The package's README says what can't be found.
 - Its stderr and messages make its log, the last 1,000 lines, in memory only.
+- What Lo downloads is pinned in `packages/desktop/lsp/servers.json`: each server's version, and
+  that of the Node the JavaScript ones run on, with each file's address, size and SHA-256 per
+  platform. `pnpm nx run lsp:pin -- <id> <version>` records one, by hand and never in CI: it checks
+  each file against its publisher's signature first (Node's releasers' keys, in `scripts/keys/`, and
+  npm's registry keys), and that it unpacks as Lo would. Lo trusts only the manifest's hashes.
+- A download goes over `https` only, on the usual port, to its entry's hosts, following at most 5
+  redirects, each held to the same rules, with no token or cookie. In the app it goes through
+  `net.request` (`netFetch` with `stream`), so it takes the system's proxy. It's written to
+  `<cache>/servers/.partial/` and stopped past the pinned size, and nothing reads it before its size
+  and hash match. A connection that fails is tried 3 times in all.
+- Then it's unpacked there: a `tar.gz` (npm's `tar`), a `zip` (`yauzl`), a gzipped program, a
+  program as it is, or an npm package's tarballs laid out as `node_modules`, with nothing run.
+  Absolute paths, `..`, hard links, devices and links that resolve outside are refused, and so is
+  more than 100,000 entries or 2 GB. The folder is renamed into `<cache>/servers/<id>/<version>/`
+  with a marker naming what it holds; one without a matching marker is removed and fetched again.
+  Two installs of a version at once make one download.
+- A server installed by the user is used only from where its adapter says it may be, when the app's
+  folder check passes it (the one git is held to), it isn't in Lo's cache, and it isn't a version
+  manager's shim, which picks a program from the checkout.
 - Tests start only the fake server, `testing/lsp/fake-server.ts`, at most two at once in a test
   file, each killed with its group when the test ends. No test starts a real server or downloads
-  one.
+  one: download tests serve archives they build from a server on this machine. The live check,
+  `pnpm nx run lsp:live`, installs what's pinned into `~/.cache/lo-live/` and asks each server a
+  hover and a definition, by hand only.
 
 ### Accounts
 
@@ -1031,6 +1056,34 @@ The window shows an image from outside Lo only as `<img src="lo-image://…">`, 
   otherwise, finds it.
 - A test run fetches the image hosts from the test's GitHub too, each under `/images/<host>/`,
   through `githubSettings`, so a packaged build never does.
+
+### Trust
+
+The `code` feature decides which pull requests language servers may run on. Nothing else changes
+with trust: highlighting, the diff and comments work the same on every repository.
+
+- What's trusted is `code.trusted` in the settings file, a setting the window may only read: an
+  entry `{ repo, id, at }` for a repository, and `{ repo, id, pull, from, fromId, at }` for one pull
+  request from a fork, each `id` GitHub's node ID. An entry Lo can't read, as one without an `id`,
+  is reported and ignored.
+- Each view of a tab decides for itself (`main/decide.ts`), a run of layers as its top layer.
+  Without git, nothing runs. With no entry naming its repository or pull request, it's untrusted,
+  and nothing is read from GitHub. Once one does and the local copy is ready, main reads
+  `PullRequestRepositories`: a repository's entry trusts the view when its ID is the base's and the
+  head is in the base, and a pull request's when it matches the base's ID, the number and the fork's
+  ID and name. A pull request whose fork is gone is a fork. A decision rests only on a read started
+  after its view opened and its pull request was last pushed to or reloaded (`main/views.ts`), and a
+  pull request's reads are forgotten once its last view closes. A read that fails leaves the view
+  untrusted, and is tried again after 5 s, doubling to 5 minutes. A renamed repository, or fork, is
+  asked about again.
+- Only main writes trust, once its own native dialog, attached to the window that asked, says
+  "Trust" (`main/confirm.ts`); `code.trust` only asks main to ask. "Cancel" is the dialog's default
+  and its `Esc`, one dialog asks at a time, and closing the window meanwhile trusts nothing. A test
+  answers it with `answerDialogs` in `e2e/app.ts`.
+- An untrusted view's banner shows until it's dismissed for its repository (`code_dismissed`).
+  Settings' Trust section lists the entries; its "Remove", or "Stop trusting this repo", takes one
+  out. However an entry leaves the file, Lo lets go of the checkouts it alone trusted
+  (`main/entries.ts`, `main/checkouts.ts`).
 
 ## The interface
 
