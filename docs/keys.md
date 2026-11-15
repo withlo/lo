@@ -73,10 +73,14 @@ Each command's id is what [the keymap file](#the-keymap-file) binds keys to.
 
 ## Code
 
-| Action  | Keys | Where              | Command        |
-| ------- | ---- | ------------------ | -------------- |
-| Back    | `⌃o` | Anywhere but `box` | `keys.back`    |
-| Forward | `⌃i` | Anywhere but `box` | `keys.forward` |
+| Action                                    | Keys                                  | Where              | Command          |
+| ----------------------------------------- | ------------------------------------- | ------------------ | ---------------- |
+| Trust this repo…                          | None: in the app menu and the palette | Anywhere           | `code.trust`     |
+| Trust this PR…                            | None: in the app menu and the palette | Anywhere           | `code.trustPull` |
+| Stop trusting this repo                   | None: in the app menu and the palette | Anywhere           | `code.untrust`   |
+| Dismiss the banner about language servers | None: in the app menu and the palette | Anywhere           | `code.dismiss`   |
+| Back                                      | `⌃o`                                  | Anywhere but `box` | `keys.back`      |
+| Forward                                   | `⌃i`                                  | Anywhere but `box` | `keys.forward`   |
 
 ## Copy and open
 

@@ -45,7 +45,14 @@ describe('defineSetting', () => {
       schema: layout,
       fallback: 'split',
       accepts: 'split or inline',
+      window: 'write',
     });
+  });
+
+  it('makes one the window may only read, when asked', () => {
+    expect(
+      defineSetting('diff.layout', layout, 'split', 'split or inline', { window: 'read' }).window,
+    ).toBe('read');
   });
 
   it('refuses a key that is not written as the file writes them', () => {

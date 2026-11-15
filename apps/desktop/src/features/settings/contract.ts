@@ -29,6 +29,24 @@ export interface Setting<T> {
   readonly fallback: T;
   /** What the value may be, in words for the person editing the file: "dark, light or system". */
   readonly accepts: string;
+  /**
+   * What the window may do with it: `write`, show it and change it, as Settings does with most; or
+   * `read`, show it only. Main alone changes a `read` setting, through the settings service, as
+   * the repositories language servers run on change only once main's own dialog says so. The
+   * person editing the file can change either.
+   */
+  readonly window: 'read' | 'write';
+  /**
+   * What's wrong with a value the schema accepts, each in words for the person editing the file:
+   * the parts of it Lo ignores. Each is reported with the setting, and the value stays as it is.
+   */
+  problems?(value: T): readonly string[];
+}
+
+/** What else a setting says of itself, as {@link Setting} has it. `window` is `write` unless said. */
+export interface SettingOptions<T> {
+  readonly window?: 'read' | 'write';
+  readonly problems?: (value: T) => readonly string[];
 }
 
 /**
@@ -40,6 +58,7 @@ export function defineSetting<T>(
   schema: z.ZodType<T>,
   fallback: T,
   accepts: string,
+  options: SettingOptions<T> = {},
 ): Setting<T> {
   if (!settingKey.safeParse(key).success) {
     throw new Error(`A setting is named in words joined by dots, as diff.layout is, not "${key}".`);
@@ -50,7 +69,8 @@ export function defineSetting<T>(
   if (!settingValue.safeParse(fallback).success) {
     throw new Error(`The default of the setting ${key} isn't JSON, which the settings file holds.`);
   }
-  return { key, schema, fallback, accepts };
+  const setting: Setting<T> = { key, schema, fallback, accepts, window: options.window ?? 'write' };
+  return options.problems ? { ...setting, problems: options.problems } : setting;
 }
 
 /** Something wrong in the settings file, in words for the person who wrote it. */
@@ -99,9 +119,9 @@ export const contract = defineContract('settings', {
     read: { input: z.undefined(), reply: reply<SettingsState>() },
     /**
      * Changes a setting. Main refuses a key no feature declared, and a value its schema refuses
-     * (`invalid`), and a change the file can't take (`unwritable`): the file has a problem that
-     * writing over would lose, or can't be written. Other settings, and what Lo doesn't know of,
-     * stay in the file as they are.
+     * (`invalid`), a setting the window may only read, and a change the file can't take
+     * (`unwritable`): the file has a problem that writing over would lose, or can't be written.
+     * Other settings, and what Lo doesn't know of, stay in the file as they are.
      */
     set: {
       input: z.strictObject({ key: settingKey, value: settingValue }),

@@ -17,11 +17,18 @@ import {
   type ValueOf,
 } from '../ipc/contract.ts';
 
+/** Who sent a request, for a handler that answers in the window that asked, as a dialog does. */
+export interface Caller {
+  /** The id of the window whose page sent it, as Electron numbers windows, when it's one. */
+  readonly windowId: number | undefined;
+}
+
 /** A feature's handler for each of its requests, typed from its contract. */
 export type Handlers<C extends Contract> = {
   [Name in keyof C['requests']]: (
     input: ParsedOf<C['requests'][Name]>,
     context: FeatureContext<C>,
+    caller: Caller,
   ) => ReplyOf<C['requests'][Name]> | Promise<ReplyOf<C['requests'][Name]>>;
 };
 
@@ -46,7 +53,7 @@ export interface FeatureContext<C extends Contract> {
 
 /** A function whose parameters are checked both ways, so any handler fits in a list of them. */
 type AnyHandler = {
-  handle(input: unknown, context: FeatureContext<Contract>): unknown;
+  handle(input: unknown, context: FeatureContext<Contract>, caller: Caller): unknown;
 }['handle'];
 
 /** A feature as main runs it, its types checked where it was defined. */
@@ -160,11 +167,17 @@ export interface Router {
   /** Every request's channel. */
   readonly channels: readonly string[];
   /**
-   * Answers a request from the page at `sender`: refused unless it's Lo's own page, invalid unless
-   * its input matches the contract, and otherwise the handler's reply. A handler's unexpected
-   * error is reported to `log` and reaches the window only as `internal`.
+   * Answers a request from the page at `sender`, in the window `caller` names: refused unless it's
+   * Lo's own page, invalid unless its input matches the contract, and otherwise the handler's
+   * reply. A handler's unexpected error is reported to `log` and reaches the window only as
+   * `internal`.
    */
-  answer(channel: string, sender: string | undefined, input: unknown): Promise<Result<unknown>>;
+  answer(
+    channel: string,
+    sender: string | undefined,
+    input: unknown,
+    caller?: Caller,
+  ): Promise<Result<unknown>>;
   /**
    * Runs each feature's `provide`, checks that every service the features define was provided,
    * then runs each feature's `start`.
@@ -243,7 +256,7 @@ export function createRouter(
   return {
     channels: [...requests.keys()],
 
-    async answer(name, sender, input) {
+    async answer(name, sender, input, caller = { windowId: undefined }) {
       if (sender === undefined || !options.isAllowedSender(sender)) {
         return fail('forbidden', `${name} answers only Lo's own page.`);
       }
@@ -255,7 +268,7 @@ export function createRouter(
         return fail('invalid', `${name} got a malformed request (${where.join(', ')}).`);
       }
       try {
-        return { ok: true, value: await request.handle(parsed.data, request.context) };
+        return { ok: true, value: await request.handle(parsed.data, request.context, caller) };
       } catch (error) {
         if (error instanceof IpcError) return fail(error.code, error.message);
         options.log(`${name} failed:`, error);

@@ -18,6 +18,7 @@ import {
   drawnWindow,
   expect,
   KEYCHAIN,
+  tabBanners,
   test as base,
 } from './app.ts';
 
@@ -117,7 +118,7 @@ test('opens a pull request with its header, and fetches its local copy at the he
       files: { total: 7 },
     });
   // All's well, so there's no banner.
-  await expect(page.locator('[data-lo-banners]')).toHaveCount(0);
+  await expect(tabBanners(page)).toHaveCount(0);
 });
 
 test("says why a pull request GitHub doesn't have, or one no account can see, can't be opened", async ({

@@ -9,8 +9,8 @@ import type { Service } from './services.ts';
 /**
  * Answers each feature's requests over Electron's IPC, and runs each feature's `provide`, then
  * each one's `start`. A request reaches its handler only from Lo's own page and only once its
- * input matches the contract. Pushes go to every window. Returns what stops the features, as Lo
- * quits.
+ * input matches the contract, and its handler is told which window asked. Pushes go to every
+ * window. Returns what stops the features, as Lo quits.
  */
 export function serveFeatures(
   features: readonly Feature[],
@@ -31,7 +31,9 @@ export function serveFeatures(
   });
   for (const channel of router.channels) {
     ipcMain.handle(channel, (event, input: unknown) =>
-      router.answer(channel, event.senderFrame?.url, input),
+      router.answer(channel, event.senderFrame?.url, input, {
+        windowId: BrowserWindow.fromWebContents(event.sender)?.id,
+      }),
     );
   }
   router.start();

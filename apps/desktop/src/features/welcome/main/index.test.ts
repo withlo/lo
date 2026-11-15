@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import type { FeatureContext } from '../../../main/features.ts';
+import type { Caller, FeatureContext } from '../../../main/features.ts';
 import type { LocalGit } from '../../../main/git.ts';
 import { contract } from '../contract.ts';
 import feature from './index.ts';
@@ -12,6 +12,9 @@ function contextWith(git: Pick<LocalGit, 'check'>): FeatureContext<typeof contra
 }
 
 /** The parts of git the handler doesn't touch. */
+/** A request from no window in particular. */
+const NO_WINDOW: Caller = { windowId: undefined };
+
 const stub: Omit<LocalGit, 'check'> = {
   status: undefined,
   cache: undefined,
@@ -33,7 +36,7 @@ describe('welcome.checkGit', () => {
       looking = false;
       return { status: 'missing', message: "Lo can't find git.", install: 'Install git.' };
     });
-    const answered = feature.handlers['checkGit']?.(undefined, contextWith({ check }));
+    const answered = feature.handlers['checkGit']?.(undefined, contextWith({ check }), NO_WINDOW);
     expect(check).toHaveBeenCalledOnce();
     expect(looking).toBe(true);
     expect(await answered).toBeUndefined();
@@ -43,7 +46,7 @@ describe('welcome.checkGit', () => {
   it('fails when git has stopped, as Lo quits, for main to log', async () => {
     const check = vi.fn<LocalGit['check']>(() => Promise.reject(new Error('git has stopped')));
     await expect(
-      Promise.resolve(feature.handlers['checkGit']?.(undefined, contextWith({ check }))),
+      Promise.resolve(feature.handlers['checkGit']?.(undefined, contextWith({ check }), NO_WINDOW)),
     ).rejects.toThrow('git has stopped');
   });
 });
