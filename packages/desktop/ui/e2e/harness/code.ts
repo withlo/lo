@@ -13,6 +13,18 @@ import {
 } from '../../src/code/index.ts';
 import { listen, Registry } from '../../src/commands/index.ts';
 
+/** What the next key does first, before Lo's key listener, or anything else, hears of it. */
+let beforeKey: (() => void) | undefined;
+window.addEventListener(
+  'keydown',
+  () => {
+    const run = beforeKey;
+    beforeKey = undefined;
+    run?.();
+  },
+  { capture: true },
+);
+
 // No command of Lo's: every key is Vim's, and the reader's input as it comes.
 listen(window, new Registry({ system: 'linux', commands: [] }));
 
@@ -168,7 +180,15 @@ const harness = {
    * what the key does is done at the new width.
    */
   narrowOnKey(width: number): void {
-    window.addEventListener('keydown', () => harness.narrow(width), { capture: true, once: true });
+    beforeKey = () => harness.narrow(width);
+  },
+  /** The view narrows to `width` as the next wheel comes, before the view hears of it. */
+  narrowOnWheel(width: number): void {
+    window.addEventListener('wheel', () => harness.narrow(width), {
+      capture: true,
+      once: true,
+      passive: true,
+    });
   },
   /**
    * Thread `id` grows to `height` with no input, as `grow` has it, and the view narrows to `width`
@@ -186,6 +206,11 @@ const harness = {
   cursor(line: number): void {
     view().reveal({ kind: 'line', at: { file: 'a', side: 'new', line } });
     view().focus();
+  },
+  /** How far down the screen the top of the cursor's row is. */
+  cursorTop(): number | undefined {
+    const cursor = view().probe.cursor();
+    return cursor && cursor.top - screen().top;
   },
   /** Opens a comment box under new line `line`, with focus in it. */
   compose(line: number): void {

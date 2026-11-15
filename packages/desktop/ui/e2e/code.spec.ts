@@ -2,7 +2,8 @@
 // held on screen for the reader's next input comes with it, and what they read stays where it is,
 // side by side and inline: the cursor's line as `j` moves it, the comment box they type in, and the
 // thread they click. A change the view takes on its own as the view narrows, lines wrapping anew,
-// leaves the line at the top of the screen where it is.
+// leaves the line at the top of the screen where it is, and the reader's own scroll as it narrows,
+// by key, wheel or jump, goes where it says.
 
 import { readFileSync } from 'node:fs';
 
@@ -59,11 +60,24 @@ async function open(
  * above the screen wrap onto more rows, line 19 among them, which moves the lines on screen down
  * until the view puts them back.
  */
-async function wrapping(layout: DiffLayout): Promise<Page> {
-  const page = await open(layout, { wrapped: 19, below: 30 });
+async function wrapping(layout: DiffLayout, below = 30): Promise<Page> {
+  const page = await open(layout, { wrapped: 19, below });
   await page.evaluate(() => window.harness.cursor(25));
   await frames(page);
   return page;
+}
+
+/** The view narrows to 640 px, and a frame starts before the view has taken it. */
+function narrowed(page: Page): Promise<void> {
+  return page.evaluate(() => {
+    window.harness.narrow(640);
+    return window.harness.frames(1);
+  });
+}
+
+/** Where unchanged line `line` starts, down from the top of the screen. */
+function lineTop(page: Page, line: number): Promise<number | undefined> {
+  return page.evaluate((at) => window.harness.lineTop(at), line);
 }
 
 /** Waits for a few frames, which lay out and measure what changed, and line it up. */
@@ -225,5 +239,49 @@ for (const layout of ['split', 'inline'] as const) {
       expect(await height()).toBeGreaterThan(before.height);
       expect(Math.abs((await box())! - before.top!)).toBeLessThan(1);
     });
+
+    // The reader's input as the view narrows, or as it's still putting back what the narrowing
+    // moved: the narrowing is put back, the input's scroll never is.
+    for (const when of ['as', 'after'] as const) {
+      const narrowing = when === 'as' ? 'as the view narrows' : 'a frame after the view narrows';
+
+      test(`\`Ctrl-d\` ${narrowing} scrolls half a screen from what the reader saw, the cursor staying on its row`, async () => {
+        const page = await wrapping(layout, 0);
+        const cursor = () => page.evaluate(() => window.harness.cursorTop());
+        const before = { cursor: await cursor(), line: await lineTop(page, 40) };
+
+        if (when === 'as') await page.evaluate(() => window.harness.narrowOnKey(640));
+        else await narrowed(page);
+        await page.keyboard.press('Control+d');
+        await frames(page);
+        expect(Math.abs((await cursor())! - before.cursor!)).toBeLessThan(1);
+        expect(before.line! - (await lineTop(page, 40))!).toBeGreaterThan(200);
+      });
+
+      test(`the wheel ${narrowing} scrolls as far as it turns from what the reader saw`, async () => {
+        const page = await wrapping(layout);
+        await page.mouse.move(300, 300);
+        const before = await lineTop(page, 40);
+
+        if (when === 'as') await page.evaluate(() => window.harness.narrowOnWheel(640));
+        else await narrowed(page);
+        await page.mouse.wheel(0, 200);
+        await frames(page);
+        expect(Math.abs((await lineTop(page, 40))! - (before! - 200))).toBeLessThan(1);
+      });
+
+      test(`a jump ${narrowing} puts its line at the top`, async () => {
+        const page = await wrapping(layout);
+
+        // Made before the frame the view takes the narrowing in, there or as it starts.
+        await page.evaluate((now) => {
+          window.harness.narrow(640);
+          if (now) window.harness.scrollTo(60);
+          else requestAnimationFrame(() => window.harness.scrollTo(60));
+        }, when === 'as');
+        await frames(page);
+        expect(Math.abs((await lineTop(page, 60))!)).toBeLessThan(1);
+      });
+    }
   });
 }

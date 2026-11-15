@@ -271,6 +271,8 @@ export class Aligner {
    */
   #scrolled = false;
   readonly #wheel = { old: 0, new: 0 };
+  /** Whether the anchor is where the wheel took a line from before the lines wrapped anew. */
+  #wheeledOff = false;
   /** How far the scroll has gone since lines were last forgotten, and where it was then. */
   #travel = 0;
   #travelledFrom = 0;
@@ -317,9 +319,17 @@ export class Aligner {
       'scroll',
       () => {
         const top = this.#scroller.scrollTop;
-        if (this.#running || top === this.#anchor?.scrollTop) return;
-        if (this.#anchor) this.#direction = top > this.#anchor.scrollTop ? 1 : -1;
-        this.#anchor = this.#anchorNow();
+        const anchor = this.#anchor;
+        if (this.#running || top === anchor?.scrollTop) return;
+        if (anchor) this.#direction = top > anchor.scrollTop ? 1 : -1;
+        // The wheel, as the editors' text has changed width since the last pass: what's on screen
+        // has moved as the lines wrapped anew, which the pass puts back, so the line anchored
+        // goes where the wheel took it, on screen or off.
+        this.#wheeledOff = Boolean(anchor && this.#wheeled() && this.#rewrapped());
+        this.#anchor =
+          anchor && this.#wheeledOff
+            ? { ...anchor, offset: anchor.offset - (top - anchor.scrollTop), scrollTop: top }
+            : this.#anchorNow();
         this.#scrolled = true;
         this.schedule();
       },
@@ -537,6 +547,7 @@ export class Aligner {
           anchor = this.#anchorNow();
         } else if (
           turn === 0 &&
+          !this.#wheeledOff &&
           anchor.element === undefined &&
           (anchor.offset < 0 || anchor.offset >= this.#scroller.clientHeight)
         ) {
@@ -565,6 +576,7 @@ export class Aligner {
       this.#selected = false;
       this.#topTaken = false;
       this.#chosen = false;
+      this.#wheeledOff = false;
       const ms = performance.now() - started;
       this.stats.passes++;
       if (changed) this.stats.changed++;
@@ -1212,6 +1224,11 @@ export class Aligner {
     const recent = (side: Side): boolean => now - this.#wheel[side] < wheelAnchoring;
     if (recent('old') && (!recent('new') || this.#wheel.old > this.#wheel.new)) return 'old';
     return 'new';
+  }
+
+  /** Whether the wheel just turned over either editor. */
+  #wheeled(): boolean {
+    return Date.now() - Math.max(this.#wheel.old, this.#wheel.new) < wheelAnchoring;
   }
 
   /** How wide each editor's text is now. */
