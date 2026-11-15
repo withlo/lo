@@ -160,6 +160,21 @@ describe('the listener', () => {
     }
   });
 
+  test('tells nothing of a key that leaves a sequence pending until the sequence ends', () => {
+    const heard: string[] = [];
+    element('diff').addEventListener(KEY_EVENT, () => heard.push(`${ran.length} run`));
+    press('editor', 'z');
+    // The held key repeating, a modifier alone, and a key the input method composes.
+    press('editor', 'z', { repeat: true });
+    press('editor', 'Shift', { shiftKey: true });
+    press('editor', 'x', { isComposing: true });
+    expect(registry.isPending()).toBe(true);
+    expect(heard).toEqual([]);
+    press('editor', 'o');
+    expect(heard).toEqual(['0 run']);
+    expect(ids()).toEqual(['diff.expand']);
+  });
+
   test('runs a key on the code view’s target', () => {
     press('editor', 'e');
     expect(ran).toEqual([

@@ -1687,18 +1687,32 @@ describe('acting on a thread', () => {
     expect(notice()?.body).toBe('It’s ravi-k’s comment. You can edit and delete only your own.');
   });
 
-  test('an edit the diff drawn again has nowhere to open is a draft kept, which says it’s your edit', async () => {
-    const { drawn } = withThreads(threadRow('T2', 2));
+  test('a reply and an edit the diff drawn again has nowhere to open are drafts kept, which say whose and where their threads are', async () => {
+    const rows = [threadRow('T2', 2), threadRow('T5', 5, { startLine: 3 })];
+    const { drawn } = withThreads(...rows);
     answers['comments.editing'] = (): ActOutcome => ({ kind: 'done' });
     await acts.edit(tab(), ON_TWO);
-    takenDown(boxIn(drawn[0]!), drawn[0]!.composer);
-    // Drawn anew without the thread.
+    acts.reply(tab(), ON_FIVE);
+    for (const each of drawn) takenDown(boxIn(each), each.composer);
+    // Drawn anew without the threads, which main still has.
     withThreads();
+    threads.held.set(VIEW, { threads: { ...threads.held.get(VIEW).threads!, threads: rows } });
     restore(VIEW);
     await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(keptAway.get(VIEW).map(({ note }) => note)).toEqual([
-      'Draft kept · your edit · opens when its thread shows',
+    expect(keptAway.get(VIEW).map(({ note, title }) => [note, title])).toEqual([
+      [
+        'Draft kept · your edit on line 2 of backoff.ts · opens when its thread shows',
+        'Draft kept · your edit on line 2 of src/backoff.ts · opens when its thread shows',
+      ],
+      [
+        'Draft kept · your reply on lines 3–5 of backoff.ts · opens when its thread shows',
+        'Draft kept · your reply on lines 3–5 of src/backoff.ts · opens when its thread shows',
+      ],
     ]);
+    expect(keptSummary(keptAway.get(VIEW))?.title).toBe(
+      'Your edit on line 2 of src/backoff.ts · opens when its thread shows\n' +
+        'Your reply on lines 3–5 of src/backoff.ts · opens when its thread shows',
+    );
   });
 
   test('an edit closed with no text is discarded, as is one edited on GitHub since', async () => {

@@ -712,7 +712,7 @@ describe('threads and comment boxes', () => {
     expect(drawnThreads()).toEqual([]);
   });
 
-  test('a key or a click in a dialog over the overview lets nothing in it come; one in the overview does', async () => {
+  test('a key, click or wheel in a dialog over the overview lets nothing in it come; one in the overview does, or one with nothing focused', async () => {
     const shown = open();
     // The overview the excerpt is in, and a dialog over it, in a portal of its own.
     parent!.setAttribute('data-lo-scope', 'overview');
@@ -728,9 +728,12 @@ describe('threads and comment boxes', () => {
     await frame();
     shown.setThreads([thread('here', 6)], plain().render);
     expect(drawnThreads()).toEqual([]);
-    for (const type of [KEY_EVENT, 'keydown', 'pointerdown']) {
+    for (const type of [KEY_EVENT, 'pointerdown', 'wheel']) {
       field.dispatchEvent(new Event(type, { bubbles: true }));
     }
+    expect(drawnThreads()).toEqual([]);
+    // A key counts as the listener says it's input, a sequence's only as it ends.
+    text.dispatchEvent(new Event('keydown', { bubbles: true }));
     expect(drawnThreads()).toEqual([]);
     text.dispatchEvent(new Event(KEY_EVENT, { bubbles: true }));
     expect(drawnThreads()).toEqual(['here']);
@@ -739,6 +742,19 @@ describe('threads and comment boxes', () => {
     field.dispatchEvent(new Event('pointerdown', { bubbles: true }));
     expect(drawnThreads()).toEqual(['here']);
     text.dispatchEvent(new Event('pointerdown', { bubbles: true }));
+    expect(drawnThreads()).toEqual([]);
+    // So is the wheel, over the excerpt too.
+    shown.setThreads([thread('here', 6)], plain().render);
+    editor().contentDOM.dispatchEvent(new Event('wheel', { bubbles: true }));
+    expect(drawnThreads()).toEqual(['here']);
+    // And a key with nothing focused, which the listener sends to the page itself; not one with
+    // focus in the dialog.
+    shown.setThreads([], plain().render);
+    field.focus();
+    document.body.dispatchEvent(new Event(KEY_EVENT, { bubbles: true }));
+    expect(drawnThreads()).toEqual(['here']);
+    field.blur();
+    document.body.dispatchEvent(new Event(KEY_EVENT, { bubbles: true }));
     expect(drawnThreads()).toEqual([]);
   });
 

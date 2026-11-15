@@ -55,6 +55,7 @@ import type {
   JoinedView,
   SendOutcome,
   Sending,
+  ThreadRow,
 } from '../contract.ts';
 import { main, tabs } from './main.ts';
 import { screenOf } from './placing.ts';
@@ -611,12 +612,12 @@ interface Kept {
 
 /**
  * What the reader does that moves on from a box the diff took down: a key, a click, the wheel, a
- * command chosen in the app menu. A key one of Lo's commands takes goes no further than the key
- * listener's `keydown`, which tells the focused element once the key is the reader's input
- * (`KEY_EVENT`), as the sequence it starts ends; a click in the app menu makes no event in the page,
- * and the command it chose is told of the same way.
+ * command chosen in the app menu. The key listener tells the focused element of a key once it's the
+ * reader's input (`KEY_EVENT`), a sequence's only as it ends, and those Lo's commands take go no
+ * further; a click in the app menu makes no event in the page, and the command it chose is told of
+ * the same way.
  */
-const INPUT = ['keydown', KEY_EVENT, 'pointerdown', 'wheel'] as const;
+const INPUT = [KEY_EVENT, 'pointerdown', 'wheel'] as const;
 
 /**
  * How many keys, clicks, wheel turns and app menu commands the reader has made, since Lo first
@@ -730,19 +731,27 @@ function unsay(box: Box): void {
 /**
  * What the status bar says of a draft the diff had nowhere to open: "Draft kept · line 41 of
  * retry.ts at r2 · opens when that line shows", or its code block, where it has one; for a reply or
- * an edit, "Draft kept · your reply · opens when its thread shows".
+ * an edit, "Draft kept · your reply on line 41 of retry.ts · opens when its thread shows", where its
+ * thread is, as the view's threads have it.
  */
 function keptNote(box: Box): Omit<KeptAway, 'box'> {
   const { place } = box.state;
   const block = box.home.kind === 'block' ? ' or its code block' : '';
   if (place.kind !== 'thread') {
     const what = place.kind === 'reply' ? 'reply' : place.kind === 'edit' ? 'edit' : 'comment';
-    const note = `Draft kept · your ${what} · opens when its thread${block} shows`;
-    return { note, title: note, where: `Your ${what} · opens when its thread${block} shows` };
+    const id = place.kind === 'conversation' ? null : place.thread;
+    const row = held.get(box.view).threads?.threads.find((each) => each.id === id);
+    const on = (path: string) => (row ? ` on ${threadSpan(row)}${path}` : '');
+    const when = `opens when its thread${block} shows`;
+    return {
+      note: `Draft kept · your ${what}${on(baseName(row?.path ?? ''))} · ${when}`,
+      title: `Draft kept · your ${what}${on(row?.path ?? '')} · ${when}`,
+      where: `Your ${what}${on(row?.path ?? '')} · ${when}`,
+    };
   }
   const at = revisionName(box.view, place.commit);
   const { lines } = place;
-  const name = place.path.slice(place.path.lastIndexOf('/') + 1);
+  const name = baseName(place.path);
   let span = '';
   let what = 'file';
   if (lines) {
@@ -760,6 +769,19 @@ function keptNote(box: Box): Omit<KeptAway, 'box'> {
     // A path starts as it's written.
     where: span ? `${where.charAt(0).toUpperCase()}${where.slice(1)}` : where,
   };
+}
+
+/** The file's name in `path`, without its folders. */
+function baseName(path: string): string {
+  return path.slice(path.lastIndexOf('/') + 1);
+}
+
+/** The lines thread `row` is on, as "line 41 of " or "lines 39–41 of ", or none for one on a file. */
+function threadSpan(row: ThreadRow): string {
+  const end = row.line ?? row.originalLine;
+  if (row.subject === 'FILE' || end === null) return '';
+  const start = row.line === null ? row.originalStartLine : row.startLine;
+  return start === null || start === end ? `line ${end} of ` : `lines ${start}–${end} of `;
 }
 
 /**

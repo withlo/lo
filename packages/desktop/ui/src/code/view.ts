@@ -151,6 +151,12 @@ interface At {
 /** What a file's note says while its lines are still coming. */
 const COMING: ReadonlySet<FileNote> = new Set(['loading', 'pending']);
 
+/**
+ * The reader's input in the view, which lets go of the line held at the top: the wheel, a pointer
+ * down, and keys as the key listener's event says they're input, a sequence's only as it ends.
+ */
+const INPUT = ['wheel', KEY_EVENT, 'pointerdown'] as const;
+
 /** Replaces one file's decorations. */
 /** How long a line put back at the top stays there once it's settled, in milliseconds. */
 const HOLD_AFTER = 2_000;
@@ -478,8 +484,7 @@ class View implements DiffView {
     this.#boxHeight = this.dom.clientHeight;
     this.dom.addEventListener('scroll', this.#placeChosen, { passive: true });
     this.dom.addEventListener('scroll', this.#trimRoom, { passive: true });
-    // Keys the registry takes, which reach the view only as its event, are the reader's too.
-    for (const type of ['wheel', 'keydown', KEY_EVENT, 'pointerdown'] as const) {
+    for (const type of INPUT) {
       this.dom.addEventListener(type, this.#letGo, { passive: true, capture: true });
     }
     this.#boxWatch = new ResizeObserver(this.#keepPlace);
@@ -489,12 +494,12 @@ class View implements DiffView {
     this.dom.addEventListener('keydown', this.#escape, { capture: true });
     this.dom.addEventListener('scroll', this.#letNotesGo, { passive: true });
     // After `Esc`'s own, so `Esc` closes the note the reader sees.
-    for (const type of ['wheel', 'keydown', KEY_EVENT, 'click'] as const) {
+    for (const type of ['wheel', KEY_EVENT, 'click'] as const) {
       this.dom.addEventListener(type, this.#afterInput, { passive: true, capture: true });
     }
     this.dom.addEventListener('mousedown', this.#readNote);
     this.dom.addEventListener('click', this.#readNote);
-    for (const type of ['pointerdown', 'keydown', KEY_EVENT] as const) {
+    for (const type of ['pointerdown', KEY_EVENT] as const) {
       this.dom.addEventListener(type, this.#touched, { capture: true });
     }
     for (const side of ['old', 'new'] as const) {
@@ -2072,7 +2077,7 @@ class View implements DiffView {
     this.#boxWatch.disconnect();
     this.dom.removeEventListener('scroll', this.#placeChosen);
     this.dom.removeEventListener('scroll', this.#trimRoom);
-    for (const type of ['wheel', 'keydown', KEY_EVENT, 'pointerdown'] as const) {
+    for (const type of INPUT) {
       this.dom.removeEventListener(type, this.#letGo, { capture: true });
     }
     clearTimeout(this.#settling);

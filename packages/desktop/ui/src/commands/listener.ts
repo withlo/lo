@@ -10,13 +10,16 @@ import { endsTab, findScope, textKind } from './scopes.ts';
 type Win = Window & typeof globalThis;
 
 /**
- * What a key sends to the element it's for, bubbling, once it's the reader's input: what listens
- * there for the reader's keys hears those the registry takes too, which go no further. A key that
- * starts no sequence sends it at once, before the command it runs; one that starts or goes on with
- * a sequence, only as the sequence ends: run, broken by another key, or dropped, as by a pointer
- * down, a focus change or the wait running out. So nothing that waits for the reader's next input
- * comes between the keys of a sequence, for its command to act on. A command chosen in the app
- * menu, which makes no event in the page either, is sent the same way.
+ * What a key sends to the element it's for, bubbling, once it's the reader's input, so what listens
+ * for the reader's keys listens for this rather than `keydown`: it hears those the registry takes,
+ * which go no further, and a sequence's only as it ends. A key pressed while no sequence is pending,
+ * and that starts none, sends it at once, before the command it runs. While one is pending, no key
+ * does, whether it goes on with the sequence, repeats as it's held, is a modifier alone or is
+ * composed by the system's input method, until the sequence ends: run, broken by another key, or
+ * dropped, as by a pointer down, a focus change, a command from the app menu or the wait running
+ * out. Then it's sent once, before the command the sequence completes runs. So nothing that waits
+ * for the reader's next input comes between the keys of a sequence, for its command to act on. A
+ * command chosen in the app menu, which makes no event in the page either, is sent the same way.
  */
 export const KEY_EVENT = 'lo-key';
 

@@ -244,8 +244,8 @@ export class Registry {
    * What becomes of a keydown pressed at `place`. The listener stops the event unless it passes.
    * A code view that can't say its state is broken: Lo's chords still run there, and every other
    * key is dropped rather than handed to a Vim in a state nobody knows. `heard` is called once the
-   * key is the reader's input, before any command it completes runs: at once for a key that starts
-   * no sequence, and for one that does, only as the sequence ends, run, broken or dropped.
+   * key is the reader's input, before any command it completes runs: at once for a key while no
+   * sequence is pending, and otherwise only as the sequence ends, run, broken or dropped.
    */
   handle(press: KeyPress, place: KeyPlace, heard: () => void = () => {}): Handled {
     const time = this.now();
@@ -261,8 +261,14 @@ export class Registry {
         return { scope: place.scope.name, text: true, view: { mode: 'insert', pending: true } };
       }
     };
-    // This key ends the pending sequence or goes on with it: it tells for the sequence's keys.
+    // This key tells for the pending sequence's keys, and its own, as the sequence ends. While one is
+    // still pending after it, as after a key that starts or goes on with one, a held key repeating,
+    // a modifier alone or a key the system's input method composes, it tells nothing yet.
     this.unheard = undefined;
+    const tell = (): void => {
+      if (this.pending) this.unheard = heard;
+      else heard();
+    };
     let seen = focus();
     let step = matchAny(this.bindings, this.pending, { ...press, time }, seen);
     if (step?.outcome.kind === 'replay') {
@@ -272,16 +278,13 @@ export class Registry {
       step = matchAny(this.bindings, undefined, { ...press, time }, seen);
     }
     if (!step) {
-      heard();
+      tell();
       return broken ? STOP : PASS;
     }
     this.pending = step.pending;
     this.tellHeld(seen.view?.count);
     const { outcome } = step;
-    // A key that starts or goes on with a sequence is input only once the sequence ends, and so
-    // are the keys of one it broke.
-    if (outcome.kind === 'hold') this.unheard = heard;
-    else heard();
+    tell();
     switch (outcome.kind) {
       case 'hold':
         this.holder = place.scope.source;

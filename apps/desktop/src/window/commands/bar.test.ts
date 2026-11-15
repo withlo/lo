@@ -1,5 +1,13 @@
 // @vitest-environment jsdom
-import { defineCommands, handlers, KEY_EVENT, Registry, type Target } from '@lo/ui/commands';
+import {
+  defineCommands,
+  handlers,
+  KEY_EVENT,
+  parseKeys,
+  Registry,
+  systemStrokes,
+  type Target,
+} from '@lo/ui/commands';
 import { describe, expect, it } from 'vitest';
 
 import { barItems, runFromBar } from './bar.ts';
@@ -26,6 +34,11 @@ const commands = handlers(declarations, {
   threads: { run() {} },
   hidden: { run() {} },
 });
+
+/** A keydown of `text`, in Lo's notation, as the listener hands it to the registry. */
+function key(text: string) {
+  return { strokes: systemStrokes(parseKeys(text), 'mac'), repeat: false, composing: false };
+}
 
 describe('the app menu’s items', () => {
   const none: Target = { kind: 'none' };
@@ -124,6 +137,28 @@ describe('a click in the app menu', () => {
     expect(heard).toEqual(['field, 0 run']);
     expect(ran).toEqual(['inline']);
     field.remove();
+  });
+
+  it('drops the keys held for a sequence, as a click in the page does', () => {
+    const ran: string[] = [];
+    const registry = new Registry({
+      system: 'mac',
+      commands: handlers(declarations, {
+        inline: { run: () => void ran.push('inline') },
+        threads: { run: () => void ran.push('threads') },
+        hidden: { run: () => void ran.push('hidden') },
+      }),
+    });
+    const place = {
+      scope: { name: 'window', element: undefined, source: undefined },
+      text: undefined,
+    };
+    // `g` of `g i`, then a command from the menu: `i` is no longer the end of `g i`.
+    expect(registry.handle(key('g'), place).kind).toBe('stop');
+    runFromBar(registry, 'view.threads', { kind: 'file', file: 'a.ts' });
+    expect(registry.isPending()).toBe(false);
+    expect(registry.handle(key('i'), place).kind).toBe('pass');
+    expect(ran).toEqual(['threads']);
   });
 });
 

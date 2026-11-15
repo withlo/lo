@@ -248,13 +248,14 @@ class Room implements BoxHost {
 type Letting = 'off' | 'stuck' | 'all';
 
 /**
- * The reader's input outside the excerpt, in the page around it, which lets go of what no scroll can
- * take off screen: keys the registry takes too, which go no further than its event.
+ * The reader's input in the page around the excerpt, which lets go of what no scroll can take off
+ * screen: a pointer down, the wheel, and keys as the key listener's event says they're input, those
+ * the registry takes among them, a sequence's only as it ends.
  */
-const INPUT = ['keydown', KEY_EVENT, 'pointerdown'] as const;
+const INPUT = [KEY_EVENT, 'pointerdown', 'wheel'] as const;
 
-/** The reader's input in the excerpt, which lets go of what waits in it. */
-const TOUCH = ['pointerdown', 'keydown', KEY_EVENT] as const;
+/** The reader's pointer or keys in the excerpt, which let go of what waits in it. */
+const TOUCH = ['pointerdown', KEY_EVENT] as const;
 
 class Excerpt implements ExcerptView {
   readonly dom: HTMLElement;
@@ -737,19 +738,30 @@ class Excerpt implements ExcerptView {
   };
 
   /**
-   * The reader's pointer or key outside the excerpt, in the page around it, as the overview: what no
-   * scroll can take off screen changes. Input in a dialog or the palette over the page, or in
-   * another panel, isn't the page's.
+   * The reader's input in the page around the excerpt, as the overview, or with nothing focused:
+   * what no scroll can take off screen changes. Input in a dialog or the palette over the page, or
+   * in another panel, isn't the page's. A pointer or key in the excerpt is `#touched`'s; the wheel
+   * over it is the page's.
    */
   readonly #elsewhere = (event: Event): void => {
-    if (!this.#holding || !(event.target instanceof Node)) return;
-    if (this.dom.contains(event.target) || !this.#page().contains(event.target)) return;
+    const { target } = event;
+    if (!this.#holding || !(target instanceof Node)) return;
+    if (event.type !== 'wheel' && this.dom.contains(target)) return;
+    if (!this.#page().contains(target) && !this.#unfocused(target)) return;
     this.#letGo('stuck');
   };
 
   /** The page the excerpt is in: the scope around its own, as the overview, or else the document. */
   #page(): Node {
     return this.dom.parentElement?.closest(`[${SCOPE_ATTRIBUTE}]`) ?? this.dom.ownerDocument;
+  }
+
+  /** Whether input at `target` is for nothing in particular: the page itself, with nothing focused. */
+  #unfocused(target: Node): boolean {
+    const { ownerDocument } = this.dom;
+    if (target !== ownerDocument && target !== ownerDocument.body) return false;
+    const focused = ownerDocument.activeElement;
+    return focused === null || focused === ownerDocument.body;
   }
 
   /** The reader's pointer or key in the excerpt: what waits in it changes. */
