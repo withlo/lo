@@ -52,10 +52,15 @@ put_exec() {
   chmod +x "$work/$1"
 }
 
+# Commits what's staged as written and committed at <date>.
+commit_staged() {
+  GIT_AUTHOR_DATE=$2 GIT_COMMITTER_DATE=$2 g commit -q -m "$1"
+}
+
 # Commits everything in the working copy as written and committed at <date>.
 commit() {
   g add -A
-  GIT_AUTHOR_DATE=$2 GIT_COMMITTER_DATE=$2 g commit -q -m "$1"
+  commit_staged "$@"
 }
 
 # Makes <bare>, a bare repository holding the branches <refspec>... of the working copy, as GitHub
@@ -83,6 +88,12 @@ code_login() {
     echo "$script: set LO_FIXTURE_TOKEN_FILE to a file holding rozed-bot's token" >&2
     return 1
   fi
+  if [ ! -f "$LO_FIXTURE_TOKEN_FILE" ]; then
+    echo "$script: $LO_FIXTURE_TOKEN_FILE isn't a file" >&2
+    return 1
+  fi
+  # An absolute path, since git runs the credential helper from the working copy.
+  LO_FIXTURE_TOKEN_FILE=$(cd "$(dirname "$LO_FIXTURE_TOKEN_FILE")" && pwd)/$(basename "$LO_FIXTURE_TOKEN_FILE")
   export LO_FIXTURE_TOKEN_FILE
   login=$(api GET /user | read_json 'json.login')
   if [ "$login" != rozed-bot ]; then
@@ -165,11 +176,12 @@ ensure_fork() {
   fi
 }
 
-# Makes sure a pull request from <head> into <base> is open in rozed-dev/e2e, with <title> and
-# <body> and the fixture label, and sets `pull` to its number. <head> is a branch of rozed-dev/e2e
-# or <owner>:<branch>. One that was closed is opened again; one that was merged can't be, and fails.
-ensure_pull() {
-  local head=$1 base=$2 title=$3 body=$4 owner branch found number state
+# Prints the number and state (`open`, `closed` or `merged`) of the pull request from <head> in
+# rozed-dev/e2e, preferring an open one to the newest, and nothing when there's none. <head> is a
+# branch of rozed-dev/e2e or <owner>:<branch>. It looks by the head alone, since the base is one of
+# the things a test may have changed.
+find_pull() {
+  local head=$1 owner branch
   case $head in
     *:*)
       owner=${head%%:*}
@@ -180,8 +192,29 @@ ensure_pull() {
       branch=$head
       ;;
   esac
-  found=$(api GET "/repos/$E2E_REPO/pulls?state=all&base=$base&head=$owner:$branch&per_page=100" |
-    read_json '((p) => (p ? `${p.number} ${p.merged_at ? "merged" : p.state}` : ""))(json.find((p) => p.state === "open") ?? json[0])')
+  api GET "/repos/$E2E_REPO/pulls?state=all&head=$owner:$branch&per_page=100" |
+    read_json '((p) => (p ? `${p.number} ${p.merged_at ? "merged" : p.state}` : ""))(json.find((p) => p.state === "open") ?? json[0])'
+}
+
+# Opens the pull request from <head>, if it was closed, with <base> as its base, before a push
+# replaces its head: GitHub opens a closed pull request again only while its head is the one it
+# was closed with. It's no loss if GitHub refuses: `ensure_pull` tries again after the push.
+reopen_pull() {
+  local head=$1 base=$2 found number
+  found=$(find_pull "$head")
+  if [ "${found#* }" = closed ]; then
+    number=${found% *}
+    api PATCH "/repos/$E2E_REPO/pulls/$number" "$(json_of state=open base="$base")" >/dev/null ||
+      echo "GitHub wouldn't open $E2E_REPO#$number yet" >&2
+  fi
+}
+
+# Makes sure a pull request from <head> into <base> is open in rozed-dev/e2e, with <title> and
+# <body> and the fixture label, and sets `pull` to its number. One that was closed is opened again,
+# and one whose base was changed is put back; one that was merged can't be, and fails.
+ensure_pull() {
+  local head=$1 base=$2 title=$3 body=$4 found number state
+  found=$(find_pull "$head")
   if [ -z "$found" ]; then
     pull=$(api POST "/repos/$E2E_REPO/pulls" \
       "$(json_of title="$title" head="$head" base="$base" body="$body")" | read_json 'json.number')

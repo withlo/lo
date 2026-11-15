@@ -189,8 +189,10 @@ EOF
 
 # Pushes the branches, and opens the pull requests. Sets `code_pull` and `fork_pull`.
 publish_code() {
-  push_to "$E2E_REPO" code/base:refs/heads/code/base code/feature:refs/heads/code/feature
   ensure_fork
+  reopen_pull code/feature code/base
+  reopen_pull "${FORK_REPO%%/*}:code/fork" code/base
+  push_to "$E2E_REPO" code/base:refs/heads/code/base code/feature:refs/heads/code/feature
   push_to "$FORK_REPO" code/feature:refs/heads/code/fork
   ensure_pull code/feature code/base "$CODE_TITLE" "$CODE_BODY"
   code_pull=$pull

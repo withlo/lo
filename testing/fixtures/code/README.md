@@ -34,7 +34,8 @@ Every project has the same shape:
 Each is a project its language's tools open as it is: `tsconfig.json`, `jsconfig.json`,
 `Cargo.toml`, `go.mod`, `Package.swift`, `Sample.csproj`, `composer.json`, and Gradle's
 `settings.gradle.kts` and `build.gradle.kts` for Kotlin. Java, Python, Ruby and Terraform need no
-build file. None has a dependency, so none needs a download to build.
+build file. None has a dependency. Kotlin's build needs the Kotlin Gradle plugin, though, which
+Gradle downloads; the rest need nothing from a registry to build.
 
 `cases.json` says what to ask. For each language, `at` is a call of `countWords` in `report` and
 `definition` is where `words` defines it, each with a `line` and a `character` counted from 0, as

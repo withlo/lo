@@ -195,9 +195,14 @@ test(
   },
 );
 
-/** What every program a plant is says: it writes the empty marker beside itself, and fails. */
+/**
+ * What every program a plant is says: it writes the empty marker beside itself, and fails. A script
+ * a shell sources doesn't fail, and finds itself by `BASH_SOURCE`, since its `$0` is the shell's.
+ */
 const SHELL_PLANT =
   /^#!\/bin\/sh\n# Fixture: [^\n]+\. Writes the empty file (lo-hostile-[a-z-]+) beside itself, and nothing else\.\n: >"\$\(dirname "\$0"\)\/\1"\nexit 1\n$/;
+const BASH_PLANT =
+  /^#!\/usr\/bin\/env bash\n# Fixture: [^\n]+\. Writes the empty file (lo-hostile-[a-z-]+) beside itself, and nothing else\.\n: >"\$\(dirname "\$\{BASH_SOURCE\[0\]\}"\)\/\1"\n$/;
 const NODE_PLANT =
   /^\/\/ Fixture: [^\n]+\. Writes the empty file (lo-hostile-[a-z-]+) beside itself, and nothing else\.\nrequire\('node:fs'\)\.writeFileSync\(require\('node:path'\)\.join\(__dirname, '\1'\), ''\);\nthrow new Error\('\1'\);\n$/;
 const PLUGIN =
@@ -206,6 +211,9 @@ const PLUGIN =
 /** What no other planted file says: nothing that deletes, sends, reads or leaves its folder. */
 const FORBIDDEN =
   /\b(curl|wget|nc|ssh|scp|rm|mv|cp|kill|sudo|eval|exec|dd|tar|base64|osascript|launchctl|crontab)\b|>>|\$HOME|~\/|\/etc\b|\/tmp\b|\/Users\b|\/var\b|\.\.\/|\bhttp:\/\/(?!maven\.apache\.org)/;
+
+/** What `terraform` hashes a provider's folder to, in a lock file, which isn't text to check. */
+const DIRHASH = /\bh1:[A-Za-z0-9+/=]+/g;
 
 /** The hosts a planted file's text names. */
 function hostsIn(contents: string): string[] {
@@ -224,11 +232,15 @@ test(
       git(bare, 'rev-parse', 'code/hostile'),
     );
 
-    // The files its commit adds or changes.
+    // The files its commit adds or changes. A submodule isn't a file: it's a commit nothing has.
     const before = tree(bare, 'code/feature');
-    const planted = [...tree(bare, 'code/hostile')].filter(
+    const changed = [...tree(bare, 'code/hostile')].filter(
       ([path, { blob }]) => before.get(path)?.blob !== blob,
     );
+    expect(changed.filter(([, { mode }]) => mode === '160000').map(([path]) => path)).toEqual([
+      'hostile/submodule',
+    ]);
+    const planted = changed.filter(([, { mode }]) => mode !== '160000');
     expect(planted.length).toBeGreaterThan(60);
     const contents = texts(
       bare,
@@ -240,7 +252,7 @@ test(
     const wrong: string[] = [];
     for (const [path, { mode }] of planted) {
       const text = contents.get(path) ?? '';
-      const shell = SHELL_PLANT.exec(text);
+      const shell = SHELL_PLANT.exec(text) ?? BASH_PLANT.exec(text);
       const program = shell ?? NODE_PLANT.exec(text) ?? PLUGIN.exec(text);
       if (program) markers.add(program[1] ?? '');
       // No marker is committed, nor a folder named like one.
@@ -249,9 +261,11 @@ test(
       }
       // A script is executable, and only a script is.
       if ((mode === '100755') !== (shell !== null)) wrong.push(`${path} is executable, or isn't`);
-      // A file that's a program is one of the three forms, and the rest holds nothing of the kind.
+      // A file that's a program is one of the four forms, and the rest holds nothing of the kind.
       if (!program && /\.(sh|js)$/.test(path)) wrong.push(`${path} is a program of another kind`);
-      if (!program && FORBIDDEN.test(text)) wrong.push(`${path} says something forbidden`);
+      if (!program && FORBIDDEN.test(text.replace(DIRHASH, ''))) {
+        wrong.push(`${path} says something forbidden`);
+      }
       // A host is one that can't resolve.
       for (const host of hostsIn(text)) {
         if (host !== 'maven.apache.org' && !host.endsWith('.lo-hostile.invalid')) {
@@ -264,22 +278,24 @@ test(
     // The script says each marker, so whoever checks knows what to look for.
     const said = new Set(script.match(/lo-hostile-[a-z]+(?:-[a-z]+)*/g));
     expect([...markers].toSorted()).toEqual([...said].toSorted());
-    expect(markers.size).toBe(14);
+    expect(markers.size).toBe(15);
   },
 );
 
 test("Lo's own repository holds nothing a tool would pick up from what the hostile pull request plants", () => {
   // The sample projects are the pull request's head, so they have none of what a language server
-  // or a version manager would pick: no wrappers, node_modules, interpreters, version files,
-  // wrapper settings or package scripts.
+  // or a version manager would pick: no wrappers, node_modules, version files, tool settings or
+  // package scripts.
   const named = new Set([
     '.cargo',
+    '.gitmodules',
     '.mvn',
     '.npmrc',
     '.nvmrc',
     '.phpactor.json',
     '.python-version',
     '.ruby-version',
+    '.terraform',
     '.tool-versions',
     '.vscode',
     'gradle',
@@ -289,9 +305,8 @@ test("Lo's own repository holds nothing a tool would pick up from what the hosti
     'mvnw',
     'node_modules',
     'package.json',
-    'pyrightconfig.json',
+    'rust-analyzer.toml',
     'rust-toolchain.toml',
-    'venv',
   ]);
   const files = filesUnder(samples);
   expect(files.filter((file) => file.split('/').some((part) => named.has(part)))).toEqual([]);
