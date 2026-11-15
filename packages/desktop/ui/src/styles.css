@@ -373,12 +373,12 @@
   max-width: calc(100vw - var(--lo-sp-32));
 }
 
-/* A hover's signature and its docs, twelve lines tall at most before they scroll. A card holds no
-   focus, so its parts are no stop for `Tab` (they carry `tabindex="-1"`) and are scrolled by the
-   wheel alone: they stay short enough to read most of at once. */
+/* A hover's signature and its docs, twelve lines tall at most, the rest cut off. A card holds no
+   focus, so its parts can't be scrollers: Chromium makes one a stop for `Tab`, and a `tabindex`
+   that stops it makes a click focus the card. The wheel scrolls them instead. */
 @utility typehover-part {
   max-height: 12lh;
-  overflow-y: auto;
+  overflow: hidden;
 }
 
 /* The docs wrap to the card instead of scrolling inside it, since a scroller in a card that takes no

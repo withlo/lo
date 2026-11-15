@@ -76,43 +76,65 @@ describe('ReferencesHead', () => {
   });
 });
 
-describe('control characters', () => {
-  it('shows them in a word a server named, a path, and the revision', () => {
+describe('format characters', () => {
+  it('shows them in a word a server named, and the revision, as code points', () => {
     const host = render(
       <ReferencesHead
         name={'evil\u202Elive'}
         count={2}
         files={1}
-        source={{ kind: 'server', name: 'Type\u202EScript' }}
+        source={{ kind: 'server', name: 'Type\u200BScript' }}
         at={'r\u202E5'}
       />,
     );
     const text = host.textContent ?? '';
-    expect(text).not.toMatch(/[\u202A-\u202E\u2066-\u2069]/);
-    expect(text).toBe('evil\uFFFDlive2 in 1 file · Type\uFFFDScript, at r\uFFFD5');
+    expect(text).not.toMatch(/\p{Cf}/u);
+    expect(text).toBe('evilU+202Elive2 in 1 file · TypeU+200BScript, at rU+202E5');
+    expect(host.firstElementChild?.firstElementChild?.getAttribute('title')).toBe(
+      'evil\u2039U+202E\u203Alive',
+    );
   });
 
   it('shows them in a row’s text, and keeps the word marked where it is', () => {
-    const text = 'x\u202Ey = RateLimitedError;';
+    const text = 'x\u200By = RateLimitedError;\u2060';
     const host = render(
       <ReferencesList
         groups={[{ key: 'a', path: 'src/evil\u202Egnp.ts', rows: [row('a-1', 1, text)] }]}
       />,
     );
     const shown = options(host)[0]!;
-    expect(shown.textContent).toBe('1x\uFFFDy = RateLimitedError;');
+    expect(shown.textContent).toBe('1xU+200By = RateLimitedError;U+2060');
     expect(shown.querySelector('mark')?.textContent).toBe(WORD);
     expect(host.querySelector('[role="group"]')?.getAttribute('aria-label')).toBe(
-      'src/evil\uFFFDgnp.ts',
+      'src/evil\u2039U+202E\u203Agnp.ts',
     );
-    expect(host.textContent).not.toMatch(/[\u202A-\u202E\u2066-\u2069]/);
+    expect(host.textContent).not.toMatch(/\p{Cf}/u);
+    // Inside the word too: a name with a hidden character in it is another name.
+    const inside = render(
+      <ReferencesList
+        groups={[
+          {
+            key: 'b',
+            path: 'a.ts',
+            rows: [{ key: 'b-1', line: 1, text: 'foo\u200Bbar', match: { from: 0, to: 7 } }],
+          },
+        ]}
+      />,
+    );
+    expect(inside.querySelector('mark')?.textContent).toBe('fooU+200Bbar');
   });
 
-  it('counts a row’s offsets as the text had them, so the mark stays on its word', () => {
+  it('counts a row’s offsets as the text had them, and keeps a format character in its indentation', () => {
     expect(around(row('a', 1, '\u202E\u202E  x RateLimitedError y'))).toEqual({
-      before: '\uFFFD\uFFFD  x ',
+      before: '\u202E\u202E  x ',
       word: WORD,
       after: ' y',
+    });
+    // The byte order mark is a character of the line, not space before it.
+    expect(around(row('b', 1, '\uFEFF  RateLimitedError'))).toEqual({
+      before: '\uFEFF  ',
+      word: WORD,
+      after: '',
     });
   });
 });

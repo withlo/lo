@@ -7,7 +7,7 @@ import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { buildCss, declarations } from '../scripts/stylesheet.ts';
 import { missingRules } from '../test/classes.ts';
-import { cleanUp, click, focus, press, render } from '../test/dom.ts';
+import { cleanUp, click, focus, press, render, rerender } from '../test/dom.ts';
 import { ServerStatus, type ServerState, type ServerTrust } from './ServerStatus.tsx';
 
 beforeAll(() => {
@@ -54,6 +54,49 @@ function marks(state: ServerState): { spinner: boolean; dot: string } {
     spinner: own.querySelector('.spinner') !== null,
     dot: own.querySelector('.rounded-full:not(.spinner)')?.className ?? '',
   };
+}
+
+/**
+ * A status bar whose item the caller draws again, under a key of its own, once trust is stopped:
+ * it says "Language servers off" then. A button before it and after it are the bar's other items.
+ */
+function Redrawn({ before = false, around = false }: { before?: boolean; around?: boolean }) {
+  const [drawn, setDrawn] = useState(0);
+  return (
+    <footer aria-label="Status">
+      {(before || around) && (
+        <button type="button" id="before">
+          Before
+        </button>
+      )}
+      <ServerStatus
+        key={drawn}
+        name="TypeScript"
+        state={drawn === 0 ? { kind: 'ready' } : { kind: 'off' }}
+        trust={{ action: 'stop', onChoose: () => setDrawn(1) }}
+      />
+      {around && !before && (
+        <button type="button" id="after">
+          After
+        </button>
+      )}
+    </footer>
+  );
+}
+
+/** A bar of three items, the middle one a server's, drawn only while `withServer`. */
+function bar(withServer: boolean) {
+  return (
+    <footer aria-label="Status">
+      <button type="button" id="before">
+        Before
+      </button>
+      {withServer && <ServerStatus name="TypeScript" state={MEMORY} onShowLog={() => undefined} />}
+      <button type="button" id="after">
+        After
+      </button>
+    </footer>
+  );
 }
 
 /** A status bar that holds the server's state, and starts it when Restart is pressed. */
@@ -395,36 +438,87 @@ describe('ServerStatus', () => {
     expect(onChoose).toHaveBeenCalledTimes(1);
   });
 
-  it('shows the control characters in what a server or the toolchain said', async () => {
+  it('shows the format characters in what a server or the toolchain said', async () => {
     const host = render(
       <ServerStatus
-        name={'Type\u202EScript'}
+        name={'Type\u200BScript'}
         state={{ kind: 'failed', why: { kind: 'error', message: 'It said evil\u202Elive.' } }}
         version={'tsserver 5.\u202E6'}
         onRestart={() => undefined}
       />,
     );
-    expect(host.textContent).toBe('Type\uFFFDScript failedRestart');
+    expect(host.textContent).toBe('TypeU+200BScript failedRestart');
     expect(host.querySelectorAll('button')[1]?.getAttribute('aria-label')).toBe(
-      'Restart Type\uFFFDScript',
+      'Restart Type\u2039U+200B\u203AScript',
     );
     click(item(host));
     await settle();
-    expect(details()?.textContent).not.toMatch(/[\u202A-\u202E\u2066-\u2069]/);
-    expect(details()?.textContent).toContain('It said evil\uFFFDlive.');
-    expect(details()?.textContent).toContain('tsserver 5.\uFFFD6');
+    expect(details()?.textContent).not.toMatch(/\p{Cf}/u);
+    expect(details()?.textContent).toContain('It said evilU+202Elive.');
+    expect(details()?.textContent).toContain('tsserver 5.U+202E6');
     cleanUp();
     const missing = render(
       <ServerStatus
         name="Go"
-        state={{ kind: 'missing', needs: 'Go\u202E 1.24', install: 'brew\u202E install go' }}
+        state={{ kind: 'missing', needs: 'Go\u202E 1.24', install: 'brew\u200B install go' }}
       />,
     );
     click(item(missing));
     await settle();
     expect(details()?.textContent).toContain(
-      'Go needs Go\uFFFD 1.24. Install it with brew\uFFFD install go.',
+      'Go needs GoU+202E 1.24. Install it with brewU+200B install go.',
     );
+  });
+
+  it('hands focus to the next item when it is drawn again and had focus in its details', async () => {
+    const host = render(<Redrawn around />);
+    click(item(host));
+    await settle();
+    const stop = details()!.querySelector('button')!;
+    expect(document.activeElement).toBe(stop);
+    click(stop);
+    await settle();
+    // The caller drew another item for the new state; focus is on the bar's next, not the page.
+    expect(host.querySelector('footer')?.textContent).toContain('Language servers off');
+    expect(document.activeElement).toBe(host.querySelector('#after'));
+  });
+
+  it('hands focus to the previous item when it was the last, and to the bar when it was alone', async () => {
+    const last = render(<Redrawn before />);
+    click(item(last));
+    await settle();
+    click(details()!.querySelector('button')!);
+    await settle();
+    expect(document.activeElement).toBe(last.querySelector('#before'));
+    cleanUp();
+
+    const alone = render(<Redrawn />);
+    click(item(alone));
+    await settle();
+    click(details()!.querySelector('button')!);
+    await settle();
+    const footer = alone.querySelector('footer')!;
+    expect(document.activeElement).toBe(footer);
+    // The bar holds it only until it goes elsewhere: it was never a stop for `Tab`.
+    act(() => footer.blur());
+    expect(footer.hasAttribute('tabindex')).toBe(false);
+  });
+
+  it('hands focus on when the item goes while its details are open, and leaves focus that was elsewhere', async () => {
+    const host = render(bar(true));
+    click(item(host));
+    await settle();
+    expect(details()).not.toBeNull();
+    expect(details()?.contains(document.activeElement)).toBe(true);
+    rerender(host, bar(false));
+    await settle();
+    expect(document.activeElement).toBe(host.querySelector('#after'));
+
+    // With focus on another button of the bar, an item that goes takes none of it with it.
+    rerender(host, bar(true));
+    focus(host.querySelector<HTMLElement>('#before')!);
+    rerender(host, bar(false));
+    expect(document.activeElement).toBe(host.querySelector('#before'));
   });
 
   it('closes on Esc and gives focus back to its item', async () => {

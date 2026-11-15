@@ -170,15 +170,16 @@ describe('TrustList', () => {
     expect(document.activeElement).toBe(remove(host, 'web'));
   });
 
-  it('shows the control characters in a name, and in the button that names it', () => {
+  it('shows the format characters in a name, and in the label of the button that names it', () => {
     const host = render(
       <TrustList
         entries={[{ key: 'x', name: 'evil\u202Elive/atlas', kind: 'repo', trusted: 'today' }]}
       />,
     );
-    expect(host.textContent).toContain('evil\uFFFDlive/atlas');
+    expect(host.textContent).toContain('evilU+202Elive/atlas');
+    expect(host.textContent).not.toMatch(/\p{Cf}/u);
     expect(host.querySelector('button')?.getAttribute('aria-label')).toBe(
-      'Remove evil\uFFFDlive/atlas',
+      'Remove evil\u2039U+202E\u203Alive/atlas',
     );
   });
 

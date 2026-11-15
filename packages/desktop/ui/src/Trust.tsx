@@ -1,8 +1,9 @@
 import { useLayoutEffect, useRef } from 'react';
 
 import { Button } from './Button.tsx';
-import { showControls } from './controls.ts';
+import { showFormat } from './controls.ts';
 import { Setting } from './Settings.tsx';
+import { ShownText } from './ShownText.tsx';
 
 /** What a trust entry covers: every pull request of a repo, or one pull request from a fork. */
 export type TrustKind = 'repo' | 'fork';
@@ -36,13 +37,17 @@ const KIND: Record<TrustKind, string> = {
 export function TrustRow({ entry, onRemove }: TrustRowProps) {
   return (
     <Setting
-      label={<span className="text-fg code-small">{showControls(entry.name)}</span>}
+      label={
+        <span className="text-fg code-small">
+          <ShownText text={entry.name} />
+        </span>
+      }
       description={`${KIND[entry.kind]} · trusted ${entry.trusted}`}
     >
       <Button
         variant="ghost"
         size="sm"
-        aria-label={`Remove ${showControls(entry.name)}`}
+        aria-label={`Remove ${showFormat(entry.name)}`}
         onClick={() => onRemove?.(entry.key)}
       >
         Remove

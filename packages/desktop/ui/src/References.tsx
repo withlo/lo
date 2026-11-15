@@ -1,7 +1,8 @@
 import { useId, type HTMLAttributes, type ReactNode, type Ref } from 'react';
 
-import { showControls } from './controls.ts';
+import { showFormat } from './controls.ts';
 import { FileIcon } from './FileTree.tsx';
+import { ShownText } from './ShownText.tsx';
 import { PathName, SourceMark, type AnswerSource } from './Source.tsx';
 
 /** The word's references in one file: the rows the list shows under the file's name. */
@@ -47,8 +48,8 @@ function filesIn(count: number): string {
 export function ReferencesHead({ name, count, files, source, at }: ReferencesHeadProps) {
   return (
     <div className="flex flex-none flex-col gap-4 px-16 pb-8">
-      <span className="min-w-0 truncate text-fg code-text" title={showControls(name)}>
-        {showControls(name)}
+      <span className="min-w-0 truncate text-fg code-text" title={showFormat(name)}>
+        <ShownText text={name} />
       </span>
       <span className="min-w-0 text-fg-muted text-small">
         <span className="lo-num">
@@ -56,7 +57,11 @@ export function ReferencesHead({ name, count, files, source, at }: ReferencesHea
         </span>
         {' · '}
         <SourceMark source={source} />
-        {at !== undefined && `, at ${showControls(at)}`}
+        {at !== undefined && (
+          <>
+            , at <ShownText text={at} />
+          </>
+        )}
       </span>
     </div>
   );
@@ -80,10 +85,9 @@ export function around(row: Pick<ReferenceRow, 'text' | 'match'>): {
   word: string;
   after: string;
 } {
-  // Bidirectional controls show as a character each, so the match's offsets still fit.
-  const line = showControls(row.text);
-  const lead = line.length - line.trimStart().length;
-  const text = line.slice(lead);
+  // Only spaces and tabs are indentation: a format character there is part of the line.
+  const lead = /^[ \t]*/.exec(row.text)?.[0].length ?? 0;
+  const text = row.text.slice(lead);
   const from = Math.min(Math.max(row.match.from - lead, 0), text.length);
   const to = Math.min(Math.max(row.match.to - lead, from), text.length);
   let start = to > REACH ? Math.max(0, from - BEFORE) : 0;
@@ -167,7 +171,7 @@ export function ReferencesList({
           <div
             key={group.key}
             role="group"
-            aria-label={showControls(group.path)}
+            aria-label={showFormat(group.path)}
             className="flex flex-col"
           >
             <GroupHead group={group} />
@@ -186,11 +190,11 @@ export function ReferencesList({
                 >
                   <span className="lo-num text-end text-code-gutter">{row.line}</span>
                   <span className="min-w-0 truncate">
-                    {before}
+                    <ShownText text={before} />
                     <mark className="rounded-xs bg-code-bracket text-inherit ring-1 ring-accent-line">
-                      {word}
+                      <ShownText text={word} />
                     </mark>
-                    {after}
+                    <ShownText text={after} />
                   </span>
                 </div>
               );

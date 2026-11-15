@@ -162,11 +162,14 @@ export {
   type ReferencesHeadProps,
   type ReferencesListProps,
 } from './References.tsx';
-export { showControls } from './controls.ts';
+export { showFormat, showProse } from './controls.ts';
+export { hoverLinks, type HoverLink } from './hoverDocs.ts';
+export { ShownText } from './ShownText.tsx';
 export { PathName, SourceMark, sourceName, type AnswerSource } from './Source.tsx';
 export {
   TypeHover,
   TypeHoverWaiting,
+  type HighlightCode,
   type SignatureRun,
   type TypeHoverKeys,
   type TypeHoverProps,

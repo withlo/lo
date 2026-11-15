@@ -1,9 +1,10 @@
 import { useId, type HTMLAttributes, type ReactNode, type Ref } from 'react';
 
 import { Button } from './Button.tsx';
-import { showControls } from './controls.ts';
+import { showFormat } from './controls.ts';
 import { Key } from './Key.tsx';
 import { PaletteHint } from './Palette.tsx';
+import { ShownText } from './ShownText.tsx';
 import { PathName, SourceMark, type AnswerSource } from './Source.tsx';
 
 /** An answer in a file of the repository: its line, and where the answer came from. */
@@ -142,7 +143,7 @@ export function Peek({
   return (
     <div
       role="dialog"
-      aria-label={`Definitions of ${showControls(name)}`}
+      aria-label={`Definitions of ${showFormat(name)}`}
       // The frame is the container its parts adapt to, so a peek in a narrow place stacks its list
       // above its code whatever the window's width is.
       className={`@container overflow-hidden rounded-md bg-bg-raised text-fg ring-1 ring-border text-ui focus-within:shadow-ring ${className}`}
@@ -152,10 +153,16 @@ export function Peek({
         <div className="col-span-full flex min-h-32 min-w-0 flex-wrap items-center gap-x-8 gap-y-2 border-b border-border-subtle py-2 ps-12 pe-8 text-fg-muted text-small">
           <EyeIcon />
           <span className="max-w-full min-w-0 truncate">
-            <strong className="font-semibold text-fg">{showControls(name)}</strong> ·{' '}
-            <span className="lo-num">{definitions(candidates.length)}</span>
+            <strong className="font-semibold text-fg">
+              <ShownText text={name} />
+            </strong>{' '}
+            · <span className="lo-num">{definitions(candidates.length)}</span>
           </span>
-          {at !== undefined && <span className="flex-none">at {showControls(at)}</span>}
+          {at !== undefined && (
+            <span className="flex-none">
+              at <ShownText text={at} />
+            </span>
+          )}
           <span className="flex-1" />
           <span className="peek-go">
             <Button variant="ghost" size="sm" disabled={!goes} onClick={() => onGo?.()}>
@@ -209,6 +216,7 @@ export function Peek({
               )}
               <span className="col-span-full min-w-0 text-fg-muted text-small">
                 <SourceMark
+                  wrap
                   source={each.source}
                   note={
                     each.outside !== true && each.from !== undefined
@@ -230,7 +238,7 @@ export function Peek({
         </div>
         <div className="col-span-full flex min-h-32 min-w-0 flex-wrap items-center gap-x-12 gap-y-2 border-t border-border-subtle py-2 ps-12 pe-8 text-fg-muted text-small">
           <span className="lo-num min-w-0 truncate">
-            {meta !== undefined && showControls(meta)}
+            {meta !== undefined && <ShownText text={meta} />}
           </span>
           <span className="flex-1" />
           {keys?.move && !single && <PaletteHint keys={keys.move}>Candidate</PaletteHint>}

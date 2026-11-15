@@ -3,14 +3,16 @@
 // with their images as links, where the answer came from, and what the card says while the server
 // is still starting.
 
-import { afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { act } from 'react';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { markdownTree, type Tree } from '@lo/markdown';
 
 import { buildCss, declarations } from '../scripts/stylesheet.ts';
 import { missingRules } from '../test/classes.ts';
-import { cleanUp, render } from '../test/dom.ts';
-import { TypeHover, TypeHoverWaiting } from './TypeHover.tsx';
+import { cleanUp, focus, render } from '../test/dom.ts';
+import { hoverLinks } from './hoverDocs.ts';
+import { TypeHover, TypeHoverWaiting, type HighlightCode } from './TypeHover.tsx';
 
 beforeAll(() => {
   Reflect.set(globalThis, 'IS_REACT_ACT_ENVIRONMENT', true);
@@ -77,6 +79,13 @@ function foot(host: HTMLElement): string {
   return host.querySelector('[role="tooltip"] > :last-child')?.textContent ?? '';
 }
 
+/** The end of a press: what the browser does with a button that lets go. */
+function release(): void {
+  act(() => {
+    document.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+  });
+}
+
 describe('TypeHover', () => {
   it('shows the signature as code, and the docs under it, with where they came from', () => {
     const host = render(
@@ -108,14 +117,48 @@ describe('TypeHover', () => {
     );
   });
 
-  it('shows a link and an image in the docs as their words, with nothing to follow', () => {
+  it('shows a link and an image in the docs as their words and where they go, with nothing to follow', () => {
     const host = render(<TypeHover signature={SIGNATURE} docs={DOCS} source={TYPESCRIPT} />);
     const card = host.querySelector('[role="tooltip"]')!;
     // An image is only its words: a hover loads nothing, and holds nothing to press.
     expect(host.querySelector('img, picture, source')).toBeNull();
     expect(card.querySelector('a, [role="link"]')).toBeNull();
-    expect(card.textContent).toContain('A chart of the cost');
-    expect(card.textContent).toContain('See the limits.');
+    // Each says where it goes, as code the reader can read: the words of a link can say anything.
+    expect(card.textContent).toContain(
+      'A chart of the cost (https://user-images.githubusercontent.com/1/chart.png)',
+    );
+    expect(card.textContent).toContain('See the limits (https://example.com/limits).');
+    expect([...card.querySelectorAll('code')].map((code) => code.textContent).slice(-2)).toEqual([
+      'https://user-images.githubusercontent.com/1/chart.png',
+      'https://example.com/limits',
+    ]);
+  });
+
+  it('shows where a link goes however it is written, and says an address once', () => {
+    const docs = markdownTree(
+      [
+        '[github.com](https://evil\u0435xample.com/x) and [plain](http://example.com/a).',
+        'Bare https://example.com/b and <https://example.com/c> and [here](#top).',
+      ].join('\n\n'),
+    );
+    const host = render(<TypeHover signature={SIGNATURE} docs={docs} source={TYPESCRIPT} />);
+    const text = host.textContent ?? '';
+    // A lookalike host reads as punycode, and a page Lo won't open still shows where it goes.
+    expect(text).toContain('github.com (https://xn--evilxample-nsi.com/x)');
+    expect(text).toContain('plain (http://example.com/a)');
+    // A link whose words are its address doesn't say it twice, and an anchor has none to say.
+    expect(text).toContain('Bare https://example.com/b and https://example.com/c and here.');
+  });
+
+  it('lists the links it shows for a key to open, the ones Lo can open, each address once', () => {
+    expect(hoverLinks(DOCS)).toEqual([
+      {
+        text: 'A chart of the cost',
+        url: 'https://user-images.githubusercontent.com/1/chart.png',
+        image: true,
+      },
+      { text: 'the limits', url: 'https://example.com/limits', image: false },
+    ]);
   });
 
   it('holds nothing a keyboard can land on, whatever the docs hold', () => {
@@ -133,13 +176,154 @@ describe('TypeHover', () => {
     expect(card.textContent).toContain('Details');
     expect(card.querySelector('pre')).not.toBeNull();
     expect(card.querySelector('table')).not.toBeNull();
-    // A part that scrolls can't be a stop: it is told it isn't one, so `Tab` goes past the card.
-    for (const part of card.querySelectorAll('.typehover-part')) {
-      expect(part.getAttribute('tabindex')).toBe('-1');
-    }
+    // Nothing has a `tabindex` of any kind, so `Tab` goes past the card and a click can't focus it.
+    expect(card.querySelectorAll('[tabindex]')).toHaveLength(0);
     expect(tabStops(card)).toEqual([]);
-    // Nor does the card itself take focus.
     expect(card.hasAttribute('tabindex')).toBe(false);
+  });
+
+  it('has nothing in it that can take focus, so asking each part to changes nothing', () => {
+    const host = render(
+      <>
+        <button type="button" id="elsewhere">
+          Elsewhere
+        </button>
+        <TypeHover signature={SIGNATURE} docs={HEAVY} source={TYPESCRIPT} />
+        <TypeHoverWaiting server="TypeScript" />
+      </>,
+    );
+    const elsewhere = host.querySelector<HTMLElement>('#elsewhere')!;
+    focus(elsewhere);
+    for (const part of host.querySelectorAll<HTMLElement>('[role="tooltip"] *')) part.focus();
+    expect(document.activeElement).toBe(elsewhere);
+  });
+
+  it('gives focus back to where it was once a click in it is over, and keeps what was selected', () => {
+    const host = render(
+      <>
+        <button type="button" id="elsewhere">
+          Elsewhere
+        </button>
+        <TypeHover signature={SIGNATURE} docs={DOCS} source={TYPESCRIPT} />
+        <TypeHoverWaiting server="TypeScript" />
+      </>,
+    );
+    const elsewhere = host.querySelector<HTMLElement>('#elsewhere')!;
+    // What the browser does with a press on text: the button loses focus, and the press selects.
+    const press = (target: Element) => {
+      act(() => {
+        target.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+        elsewhere.blur();
+      });
+    };
+    const paragraph = host.querySelector('.typehover-docs p')!;
+    focus(elsewhere);
+    press(paragraph);
+    expect(document.activeElement).toBe(document.body);
+    // The press is still on, so it can still select.
+    const range = document.createRange();
+    range.selectNodeContents(paragraph);
+    document.getSelection()?.removeAllRanges();
+    document.getSelection()?.addRange(range);
+    release();
+    expect(document.activeElement).toBe(elsewhere);
+    expect(document.getSelection()?.toString()).toContain('What estimateCost found');
+
+    // The waiting card too, and a press that began with nothing focused changes nothing.
+    document.getSelection()?.removeAllRanges();
+    focus(elsewhere);
+    press(host.querySelector('[role="tooltip"]:last-child')!);
+    release();
+    expect(document.activeElement).toBe(elsewhere);
+    act(() => {
+      if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+    });
+    press(paragraph);
+    release();
+    expect(document.activeElement).toBe(document.body);
+  });
+
+  it('scrolls its parts by the wheel, which is all that reaches them, and lets it through at the ends', () => {
+    const host = render(<TypeHover signature={SIGNATURE} docs={HEAVY} source={TYPESCRIPT} />);
+    const part = host.querySelector<HTMLElement>('.typehover-docs')!;
+    let top = 0;
+    Object.defineProperties(part, {
+      scrollHeight: { value: 300 },
+      clientHeight: { value: 100 },
+      scrollTop: {
+        get: () => top,
+        set: (value: number) => {
+          top = value;
+        },
+      },
+    });
+    const wheel = (deltaY: number) => {
+      const event = new WheelEvent('wheel', { deltaY, bubbles: true, cancelable: true });
+      act(() => {
+        part.dispatchEvent(event);
+      });
+      return event;
+    };
+    expect(wheel(60).defaultPrevented).toBe(true);
+    expect(top).toBe(60);
+    // Past the end it stops there, and at the end the wheel goes on to what is behind.
+    expect(wheel(500).defaultPrevented).toBe(true);
+    expect(top).toBe(200);
+    expect(wheel(40).defaultPrevented).toBe(false);
+    expect(wheel(-500).defaultPrevented).toBe(true);
+    expect(top).toBe(0);
+    expect(wheel(-40).defaultPrevented).toBe(false);
+  });
+
+  it('colours a code block in the docs with the runs the caller gives, and only colours it', () => {
+    const docs = markdownTree('```ts\nconst a = 1;\n```');
+    const highlight = vi.fn<HighlightCode>(({ text }) =>
+      text === 'const a = 1;'
+        ? [
+            { text: 'const', token: 'keyword' },
+            { text: ' a = ' },
+            { text: '1', token: 'number' },
+            { text: ';' },
+          ]
+        : undefined,
+    );
+    const host = render(
+      <TypeHover signature={SIGNATURE} docs={docs} source={TYPESCRIPT} highlight={highlight} />,
+    );
+    expect(highlight).toHaveBeenCalledWith({ text: 'const a = 1;', language: 'ts' });
+    const code = host.querySelector('pre code')!;
+    expect(code.textContent).toBe('const a = 1;');
+    expect([...code.querySelectorAll('span')].map((span) => span.className)).toEqual([
+      'lo-syn-keyword',
+      'lo-syn-number',
+    ]);
+    // It is still only text: nothing in the card can be pressed.
+    expect(tabStops(host.querySelector('[role="tooltip"]')!)).toEqual([]);
+  });
+
+  it('leaves a code block plain when the runs do not add up to its text, or there are none', () => {
+    const docs = markdownTree('```\nlet x;\n```');
+    const wrong = render(
+      <TypeHover
+        signature={SIGNATURE}
+        docs={docs}
+        source={TYPESCRIPT}
+        highlight={() => [{ text: 'let', token: 'keyword' }]}
+      />,
+    );
+    expect(wrong.querySelector('pre code')?.textContent).toBe('let x;');
+    expect(wrong.querySelector('pre [class^="lo-syn"]')).toBeNull();
+    const none = render(<TypeHover signature={SIGNATURE} docs={docs} source={TYPESCRIPT} />);
+    expect(none.querySelector('pre code')?.textContent).toBe('let x;');
+    // A code block shows a hidden character in it too, as a name does.
+    const hidden = render(
+      <TypeHover
+        signature={SIGNATURE}
+        docs={markdownTree('```\nfo\u200Bo\n```')}
+        source={TYPESCRIPT}
+      />,
+    );
+    expect(hidden.querySelector('pre code')?.textContent).toBe('foU+200Bo');
   });
 
   it('draws a fold as its title over what it holds, open, since a card has no way to open one', () => {
@@ -155,9 +339,9 @@ describe('TypeHover', () => {
     const parts = card.querySelectorAll('.typehover-part');
     expect(parts).toHaveLength(2);
     for (const part of parts) expect(part.classList.contains('wrap-anywhere')).toBe(true);
-    // Code and tables, which the Markdown scrolls on its own, are clipped and wrapped here.
+    // Code wraps, and a table the Markdown scrolls on its own is clipped here and shares its width.
     const docs = card.querySelector('.typehover-docs')!;
-    expect(docs.querySelector('pre.overflow-x-auto')).not.toBeNull();
+    expect(docs.querySelector('pre')?.className).toContain('whitespace-pre-wrap');
     expect(docs.querySelector('div.overflow-x-auto > table')).not.toBeNull();
     const css = squash(await buildCss(['typehover-docs', 'wrap-anywhere']));
     expect(css).toContain('.wrap-anywhere { overflow-wrap: anywhere; }');
@@ -166,24 +350,76 @@ describe('TypeHover', () => {
     expect(css).toContain('.typehover-docs .overflow-x-auto { overflow-x: clip; }');
   });
 
-  it('shows the control characters in what a server wrote', () => {
+  it('reads each paragraph of the docs in the direction of its own text', () => {
+    const docs = markdownTree('English first.\n\n\u05E9\u05DC\u05D5\u05DD\n\nA third.');
+    const host = render(<TypeHover signature={SIGNATURE} docs={docs} source={TYPESCRIPT} />);
+    const paragraphs = [...host.querySelectorAll('.typehover-docs p')];
+    expect(paragraphs).toHaveLength(3);
+    expect(paragraphs.map((paragraph) => paragraph.getAttribute('dir'))).toEqual([
+      'auto',
+      'auto',
+      'auto',
+    ]);
+  });
+
+  it('keeps the format characters that scripts and emoji need in the docs, and shows the rest', () => {
+    const kept = ['\u200E', '\u200F', '\u061C', '\u200D', '\u200C'];
+    const prose = `a${kept.join('b')}z`;
+    const shown = [
+      '\u202A',
+      '\u202B',
+      '\u202C',
+      '\u202D',
+      '\u202E',
+      '\u2066',
+      '\u2067',
+      '\u2068',
+      '\u2069',
+    ];
+    const docs = markdownTree(
+      `${prose}\n\n${shown.map((mark) => `x${mark}y`).join(' ')}\n\nzero\u200Bwidth tag\u{E0041}s`,
+    );
+    const host = render(<TypeHover signature={SIGNATURE} docs={docs} source={TYPESCRIPT} />);
+    const [first, second, third] = [...host.querySelectorAll('.typehover-docs p')];
+    // Right-to-left text and emoji sequences keep what they are written with.
+    expect(first?.textContent).toBe(prose);
+    // Everything that reorders text around it, the embeddings, overrides and isolates, is shown.
+    expect(second?.textContent).toBe(
+      'xU+202Ay xU+202By xU+202Cy xU+202Dy xU+202Ey xU+2066y xU+2067y xU+2068y xU+2069y',
+    );
+    expect([...second!.querySelectorAll('code')]).toHaveLength(9);
+    // So is what hides: a zero-width space, a tag character.
+    expect(third?.textContent).toBe('zeroU+200Bwidth tagU+E0041s');
+    expect(host.querySelector('.typehover-docs')?.textContent).not.toMatch(
+      /[\u202A-\u202E\u2066-\u2069\u200B]/,
+    );
+  });
+
+  it('shows each format character in a signature, a source and a path as its code point', () => {
     const host = render(
       <TypeHover
         signature={[{ text: 'const evil\u202Elive: string' }, { text: ' = 1', token: 'keyword' }]}
         docs={markdownTree('Open `evil\u202Elive` or [evil\u2066live](https://example.com/x).')}
-        source={{ kind: 'server', name: 'Type\u202EScript' }}
+        source={{ kind: 'server', name: 'Type\u200BScript' }}
         location={{ path: 'src/evil\u202Egnp.ts', line: 3 }}
       />,
     );
     const text = host.textContent ?? '';
-    expect(text).not.toMatch(/[\u202A-\u202E\u2066-\u2069]/);
-    expect(text).toContain('const evil\uFFFDlive: string = 1');
-    expect(text).toContain('Open evil\uFFFDlive or evil\uFFFDlive.');
-    expect(text).toContain('Type\uFFFDScript');
-    expect(text).toContain('src/evil\uFFFDgnp.ts:3');
-    // A plain string signature shows them too.
+    expect(text).not.toMatch(/[\u202A-\u202E\u2066-\u2069\u200B]/);
+    expect(text).not.toContain('\uFFFD');
+    // In the signature, each shows as a badge of its own and none is dropped.
+    expect(host.querySelector('[role="tooltip"]')?.firstElementChild?.textContent).toBe(
+      'const evilU+202Elive: string = 1',
+    );
+    expect(host.querySelector('[title="U+202E right-to-left override"]')).not.toBeNull();
+    // Code has no room for a badge, so its mark is spelled out; prose between draws one as code.
+    expect(text).toContain(
+      'Open evil\u2039U+202E\u203Alive or evilU+2066live (https://example.com/x)',
+    );
+    expect(text).toContain('TypeU+200BScript');
+    expect(text).toContain('src/evilU+202Egnp.ts:3');
     const plain = render(<TypeHover signature={'a\u202Eb'} source={TYPESCRIPT} />);
-    expect(plain.textContent).toContain('a\uFFFDb');
+    expect(plain.textContent).toContain('aU+202Eb');
   });
 
   it('says a language server found no docs, and where the word is declared', () => {
@@ -257,7 +493,7 @@ describe('TypeHover', () => {
     expect(declarations(css, 'typehover')).toBe(
       'width: 480px; max-width: calc(100vw - var(--lo-sp-32));',
     );
-    expect(declarations(css, 'typehover-part')).toBe('max-height: 12lh; overflow-y: auto;');
+    expect(declarations(css, 'typehover-part')).toBe('max-height: 12lh; overflow: hidden;');
     const host = render(<TypeHover signature={SIGNATURE} docs={DOCS} source={TYPESCRIPT} />);
     // Its signature and its docs each scroll rather than grow the card past what it can show.
     expect(host.querySelectorAll('.typehover-part')).toHaveLength(2);
@@ -302,6 +538,19 @@ describe('TypeHoverWaiting', () => {
     expect(host.textContent).toBe(
       'Go is still starting. The syntax index knows Reader as an interface.',
     );
+  });
+
+  it('shows the format characters in the names it was given', () => {
+    const host = render(
+      <TypeHoverWaiting
+        server={'Type\u200BScript'}
+        known={{ name: 'ta\u202Eke', kind: 'method' }}
+      />,
+    );
+    expect(host.textContent).toBe(
+      'TypeU+200BScript is still starting. The syntax index knows taU+202Eke as a method.',
+    );
+    expect(host.querySelector('code')?.textContent).toBe('taU+202Eke');
   });
 
   it('says only that it is starting when the syntax index has nothing', () => {

@@ -262,7 +262,7 @@ describe('Peek', () => {
     expect(host.textContent).not.toContain("Lo doesn't read files");
   });
 
-  it('shows the control characters in text a server or a repository wrote', () => {
+  it('shows each format character in what a server or a repository wrote as its code point', () => {
     const host = render(
       <Peek
         name={'evil\u202Elive'}
@@ -271,7 +271,7 @@ describe('Peek', () => {
             key: 'a',
             path: 'src/evil\u202Egnp.ts',
             line: 1,
-            source: { kind: 'server', name: 'Type\u202EScript' },
+            source: { kind: 'server', name: 'Type\u200BScript' },
             note: 'o\u2066verload',
           },
         ]}
@@ -281,11 +281,32 @@ describe('Peek', () => {
       />,
     );
     const text = host.textContent ?? '';
-    expect(text).not.toMatch(/[\u202A-\u202E\u2066-\u2069]/);
-    expect(text).toContain('evil\uFFFDlive');
-    expect(text).toContain('src/evil\uFFFDgnp.ts1');
-    expect(text).toContain('Type\uFFFDScript · o\uFFFDverload');
-    expect(text).toContain('at r\uFFFD5');
+    // None is left to be invisible, and none is swapped for a stand-in that stands for all.
+    expect(text).not.toMatch(/\p{Cf}/u);
+    expect(text).not.toContain('\uFFFD');
+    expect(text).toContain('evilU+202Elive');
+    expect(text).toContain('src/evilU+202Egnp.ts1');
+    expect(text).toContain('TypeU+200BScript · oU+2066verload');
+    expect(text).toContain('at rU+202E5');
+    const titles = [...host.querySelectorAll('[title^="U+"]')].map((mark) =>
+      mark.getAttribute('title'),
+    );
+    expect(titles).toContain('U+202E right-to-left override');
+    expect(titles).toContain('U+200B zero width space');
+    // A label has no room for a badge, and spells it out.
+    expect(host.querySelector('[role="dialog"]')?.getAttribute('aria-label')).toBe(
+      'Definitions of evil\u2039U+202E\u203Alive',
+    );
+  });
+
+  it('keeps a long note in the answers column whole, on more lines, with no sideways scroll to it', () => {
+    const host = render(<Peek name="estimateCost" candidates={SYNTAX} selected="import" />);
+    const note = options(host)[0]!.lastElementChild!.firstElementChild!;
+    // It isn't cut with an ellipsis or held on one line, where the column is too narrow for it.
+    expect(note.className).not.toContain('whitespace-nowrap');
+    expect(note.className).toContain('flex');
+    expect(note.lastElementChild?.className).toContain('wrap-anywhere');
+    expect(note.lastElementChild?.className).not.toContain('truncate');
   });
 
   it('draws with no answer picked, and no active descendant', () => {

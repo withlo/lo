@@ -15,7 +15,9 @@ import {
   drawBlock,
   isMarkdownAttribute,
   Markdown,
+  MarkdownBlocks,
   MARKDOWN_ELEMENTS,
+  MarkdownProvider,
   MAX_IMAGES,
   type Followed,
   type Rendering,
@@ -201,6 +203,63 @@ describe('Markdown', () => {
     expect(() => drawBlock(node, rendering)).toThrow(/"script"/);
     const inline = paragraph(JSON.parse('{"kind":"iframe"}'));
     expect(() => renderToStaticMarkup(<Markdown tree={tree([inline])} />)).toThrow(/"iframe"/);
+  });
+});
+
+/** `blocks` drawn as markup, under a rendering with `rendering`'s settings. */
+function drawn(blocks: Block[], rendering: Partial<Rendering>): string {
+  return renderToStaticMarkup(
+    <MarkdownProvider
+      rendering={{
+        anchors: new Anchors('lo-mdtest', blocks),
+        follow: () => undefined,
+        extension: {},
+        interactive: true,
+        ...rendering,
+      }}
+    >
+      <MarkdownBlocks blocks={blocks} />
+    </MarkdownProvider>,
+  );
+}
+
+describe('reading direction', () => {
+  const blocks = [BLOCKS.paragraph, BLOCKS.heading, BLOCKS.quote, BLOCKS.list];
+
+  it('leaves each paragraph to read as its place does, unless asked', () => {
+    expect(drawn(blocks, {})).not.toContain('dir=');
+  });
+
+  it('lets each paragraph take its direction from its own text, when asked', () => {
+    const markup = drawn(blocks, { dir: 'auto' });
+    // A paragraph of its own and one in a quote, and each item of a tight list, which holds its
+    // paragraph's text itself: all of them and nothing else, not the heading.
+    expect(markup.match(/<p dir="auto"/g)).toHaveLength(2);
+    expect(markup.match(/<li dir="auto"/g)).toHaveLength(3);
+    expect(markup.match(/dir="auto"/g)).toHaveLength(5);
+  });
+
+  it('allows the attribute on a paragraph and a list item, and no other', () => {
+    expect(isMarkdownAttribute('p', 'dir')).toBe(true);
+    expect(isMarkdownAttribute('h1', 'dir')).toBe(false);
+    expect(isMarkdownAttribute('li', 'dir')).toBe(true);
+    expect(isMarkdownAttribute('td', 'dir')).toBe(false);
+  });
+});
+
+describe('where nothing can be followed', () => {
+  const blocks = [
+    BLOCKS.heading,
+    BLOCKS.footnotes,
+    paragraph(INLINES.link, INLINES.footnoteReference),
+  ];
+
+  it('gives no heading or footnote a tabindex, since nothing moves focus to one, and a click can’t', () => {
+    expect(drawn(blocks, { interactive: false })).not.toContain('tabindex');
+    // Where links can be followed, they're what focus moves to.
+    const markup = drawn(blocks, { interactive: true });
+    expect(markup).toContain('<h3 id="lo-mdtest-a0" tabindex="-1">');
+    expect(markup).toContain('tabindex="-1" class="space-y-6"');
   });
 });
 

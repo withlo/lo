@@ -1,10 +1,11 @@
 import { Popover } from '@base-ui/react/popover';
 import { cva } from 'class-variance-authority';
-import { useRef, useState, type ReactNode } from 'react';
+import { useCallback, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 
 import { Button } from './Button.tsx';
-import { showControls } from './controls.ts';
+import { showFormat } from './controls.ts';
 import { useTakeFocus } from './focus.ts';
+import { ShownText } from './ShownText.tsx';
 import { Spinner } from './Spinner.tsx';
 
 /** Why a language server isn't running. */
@@ -81,7 +82,7 @@ function percentOf(percent: number): number {
 
 /** The word or words beside the language's name in the status bar. */
 function Words({ name: raw, state }: { name: string; state: ServerState }): ReactNode {
-  const name = showControls(raw);
+  const name = <ShownText text={raw} />;
   switch (state.kind) {
     case 'downloading':
       return (
@@ -159,21 +160,21 @@ const item = cva(
 );
 
 /** What the details' heading says of the server: "TypeScript ready", "TypeScript stopped". */
-function heading(raw: string, state: ServerState): string {
-  const name = showControls(raw);
+function heading(raw: string, state: ServerState): ReactNode {
+  const name = <ShownText text={raw} />;
   switch (state.kind) {
     case 'downloading':
-      return `${name} downloading`;
+      return <>{name} downloading</>;
     case 'starting':
-      return `${name} starting`;
+      return <>{name} starting</>;
     case 'indexing':
-      return `${name} indexing`;
+      return <>{name} indexing</>;
     case 'ready':
-      return `${name} ready`;
+      return <>{name} ready</>;
     case 'failed':
-      return `${name} stopped`;
+      return <>{name} stopped</>;
     case 'missing':
-      return `${name} toolchain missing`;
+      return <>{name} toolchain missing</>;
     case 'off':
       return 'Language servers off';
     default:
@@ -183,15 +184,20 @@ function heading(raw: string, state: ServerState): string {
 }
 
 /** What went wrong, in a sentence, for a failure. */
-function why(failure: ServerFailure): string {
+function why(failure: ServerFailure): ReactNode {
   switch (failure.kind) {
     case 'memory':
-      return failure.files === undefined
-        ? `It ran out of memory at ${showControls(failure.limit)}.`
-        : `It ran out of memory at ${showControls(failure.limit)} while loading ${failure.files.toLocaleString('en-US')} files.`;
+      return (
+        <>
+          It ran out of memory at <ShownText text={failure.limit} />
+          {failure.files !== undefined &&
+            ` while loading ${failure.files.toLocaleString('en-US')} files`}
+          .
+        </>
+      );
     case 'download':
     case 'error':
-      return showControls(failure.message);
+      return <ShownText text={failure.message} />;
     default:
       failure satisfies never;
       throw new Error(`A failure Lo doesn't know: ${JSON.stringify(failure)}.`);
@@ -200,7 +206,7 @@ function why(failure: ServerFailure): string {
 
 /** What the details say under the heading. */
 function detail(raw: string, state: ServerState): ReactNode {
-  const name = showControls(raw);
+  const name = <ShownText text={raw} />;
   switch (state.kind) {
     case 'downloading':
     case 'starting':
@@ -209,16 +215,23 @@ function detail(raw: string, state: ServerState): ReactNode {
     case 'ready':
       return undefined;
     case 'failed':
-      return `${why(state.why)} ${FALLBACK}`;
+      return (
+        <>
+          {why(state.why)} {FALLBACK}
+        </>
+      );
     case 'missing':
       return (
         <>
-          {name} needs {showControls(state.needs)}.
+          {name} needs <ShownText text={state.needs} />.
           {state.install !== undefined && (
             <>
               {' '}
               Install it with{' '}
-              <code className="text-fg code-small">{showControls(state.install)}</code>.
+              <code className="text-fg code-small">
+                <ShownText text={state.install} />
+              </code>
+              .
             </>
           )}{' '}
           {UNTIL}
@@ -253,6 +266,40 @@ function restartLabel(state: ServerState): string {
 }
 
 /**
+ * Where focus goes when an item leaves the page with it: the bar's next item, else its previous
+ * one, else the bar itself. `own` is the item's own buttons, and `details` its open details, which
+ * leave with it. Nothing happens unless focus is on one of them, or inside the details.
+ */
+function handOffFocus(own: readonly (HTMLElement | null)[], details: HTMLElement | null): void {
+  const mine = own.filter((each) => each !== null);
+  const leaving = mine.find((each) => each.isConnected);
+  const bar = leaving?.parentElement;
+  if (!leaving || !bar) return;
+  const active = leaving.ownerDocument.activeElement;
+  if (!active || !(mine.some((each) => each === active) || details?.contains(active))) return;
+  const stops = [...bar.querySelectorAll<HTMLElement>('button:not(:disabled), a[href]')].filter(
+    (stop) => !mine.includes(stop) && !details?.contains(stop),
+  );
+  const next =
+    stops.find(
+      (stop) => leaving.compareDocumentPosition(stop) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ) ??
+    stops.findLast(
+      (stop) => leaving.compareDocumentPosition(stop) & Node.DOCUMENT_POSITION_PRECEDING,
+    );
+  if (next) {
+    next.focus({ preventScroll: true });
+    return;
+  }
+  // The bar is no stop for `Tab`: it takes focus only for as long as it needs to hold it.
+  if (!bar.hasAttribute('tabindex')) {
+    bar.tabIndex = -1;
+    bar.addEventListener('blur', () => bar.removeAttribute('tabindex'), { once: true });
+  }
+  bar.focus({ preventScroll: true });
+}
+
+/**
  * One language server in the status bar: a mark and its name, with how far it has got while it's
  * coming up. A click, or `⏎` on it, opens its details over it, with what to do: start it again, or
  * read its log. A failed server shows "Restart" beside its name, since that's the one thing to do.
@@ -274,9 +321,21 @@ export function ServerStatus({
   const restart = useRef<HTMLButtonElement>(null);
   const first = useRef<HTMLButtonElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
+  const beside = useRef<HTMLButtonElement>(null);
+  const details = useRef<HTMLElement | null>(null);
   // The details take focus as they open, not a frame on, so a key pressed then is theirs. It goes
   // to Restart, or to the first of the other buttons when the server has none to offer.
   const takeFocus = useTakeFocus(onRestart ? restart : first);
+  const popup = useCallback(
+    (element: HTMLElement | null) => {
+      details.current = element;
+      takeFocus(element);
+    },
+    [takeFocus],
+  );
+  // Whatever takes the item away while it has focus, such as a caller that draws another item for
+  // the new state, would drop focus on the page: it goes to the bar instead.
+  useLayoutEffect(() => () => handOffFocus([trigger.current, beside.current], details.current), []);
   const failed = state.kind === 'failed';
   const says = detail(name, state);
   const change = (next: boolean) => {
@@ -301,7 +360,7 @@ export function ServerStatus({
             className="z-popover outline-none"
           >
             <Popover.Popup
-              ref={takeFocus}
+              ref={popup}
               initialFocus={false}
               data-lo-scope="dialog"
               className="flex server-details flex-col gap-8 rounded-md bg-bg-overlay px-12 py-12 text-fg shadow-pop outline-none text-ui"
@@ -313,7 +372,7 @@ export function ServerStatus({
                 </Popover.Title>
                 {version !== undefined && (
                   <span className="lo-num ms-auto flex-none text-fg-muted text-small">
-                    {showControls(version)}
+                    <ShownText text={version} />
                   </span>
                 )}
               </div>
@@ -371,9 +430,10 @@ export function ServerStatus({
       </Popover.Root>
       {failed && onRestart && (
         <button
+          ref={beside}
           type="button"
           // Named for its server: a bar can hold several, each with a button like it.
-          aria-label={`${restartLabel(state)} ${showControls(name)}`}
+          aria-label={`${restartLabel(state)} ${showFormat(name)}`}
           className="inline-flex h-20 flex-none items-center rounded-xs px-6 text-fg hover:bg-hover focus-visible:shadow-ring"
           onClick={() => {
             // The button goes once the server is starting, and takes focus with it: the item stays.

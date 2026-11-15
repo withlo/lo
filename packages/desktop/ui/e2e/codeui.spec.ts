@@ -72,6 +72,8 @@ interface Fit {
   color: string;
   /** The page's own horizontal scroll. */
   scrolls: boolean;
+  /** Each part that scrolls sideways for want of room, as it would show a scrollbar. */
+  sideways: string[];
 }
 
 async function fit(page: Page, scene: Scene, theme: Theme, width: number): Promise<Fit> {
@@ -102,7 +104,18 @@ async function fit(page: Page, scene: Scene, theme: Theme, width: number): Promi
       if (clipped && clipped !== element) continue;
       if (own.width > 0) widest = Math.max(widest, own.right - rect.left);
     }
+    // A part that can scroll sideways, and has more than it shows, is too narrow for what's in it.
+    const sideways = [...document.querySelectorAll<HTMLElement>('#root *')]
+      .filter((element) => {
+        const { overflowX } = getComputedStyle(element);
+        return (
+          (overflowX === 'auto' || overflowX === 'scroll') &&
+          element.scrollWidth > element.clientWidth + 1
+        );
+      })
+      .map((element) => `${element.localName}.${element.className}`);
     return {
+      sideways,
       over: Math.max(0, box.scrollWidth - box.clientWidth),
       widest,
       box: rect.width,
@@ -125,6 +138,9 @@ for (const { scene, widths } of PLACES) {
           result.box + 1,
         );
         expect(result.scrolls, `${scene} in ${theme} makes the page scroll`).toBe(false);
+        expect(result.sideways, `${scene} in ${theme} has a part that scrolls sideways`).toEqual(
+          [],
+        );
         colors.push(result.color);
       }
       // The light theme is drawn in light's colors, not the dark's.
@@ -253,4 +269,35 @@ test('Tab goes past a hover whose docs hold links, code and a long signature', a
       .map((element) => `${element.localName}.${element.className}`),
   );
   expect(sideways).toEqual([]);
+});
+
+test('a click or a selection in the hover leaves focus where it was', async () => {
+  const page = await open();
+  await fit(page, 'hover-long', 'dark', 520);
+  const focused = () => page.evaluate(() => document.activeElement?.id);
+  await page.locator('#before').focus();
+  // A click on the signature, on the docs' text and on its code each lands on text, not a stop.
+  await page.locator('[role="tooltip"] .typehover-part').first().click();
+  expect(await focused()).toBe('before');
+  await page.locator('.typehover-docs p').first().click();
+  expect(await focused()).toBe('before');
+  await page.locator('.typehover-docs pre').click();
+  expect(await focused()).toBe('before');
+  // Selecting text works all the same: a paragraph by a triple click, to copy.
+  await page.locator('.typehover-docs p').nth(1).click({ clickCount: 3 });
+  expect(await page.evaluate(() => window.getSelection()?.toString().trim())).toContain(
+    'A path of',
+  );
+  expect(await focused()).toBe('before');
+});
+
+test('the wheel scrolls a hover’s docs, which no key or click reaches', async () => {
+  const page = await open();
+  await fit(page, 'hover-long', 'dark', 520);
+  const docs = page.locator('.typehover-docs');
+  const box = (await docs.boundingBox())!;
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  expect(await docs.evaluate((part) => part.scrollTop)).toBe(0);
+  await page.mouse.wheel(0, 80);
+  await expect.poll(() => docs.evaluate((part) => part.scrollTop)).toBeGreaterThan(0);
 });
