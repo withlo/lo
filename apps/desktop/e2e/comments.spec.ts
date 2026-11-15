@@ -166,34 +166,29 @@ function lineTop(page: Page): Promise<number> {
   });
 }
 
-/**
- * Waits for src/backoff.ts's new line 10 to hold the same place for `ms`, and says where. A scroll
- * puts it there in passes, as the editors measure and the file's sticky header takes its room: it
- * can be at the same place on two reads a hundred milliseconds apart and then move to its last,
- * 30 px lower, a few frames later. A place taken between passes isn't where it stays.
- */
-async function stillLine(page: Page, ms = 700): Promise<number> {
-  let place = Number.NaN;
-  let since = Date.now();
-  await expect
-    .poll(
-      async () => {
-        const y = await lineTop(page);
-        if (y !== place) {
-          place = y;
-          since = Date.now();
-        }
-        return Number.isFinite(y) && Date.now() - since >= ms;
-      },
-      { intervals: [50], timeout: 15_000 },
-    )
-    .toBe(true);
-  return place;
-}
-
 /** How far src/backoff.ts's new line 10 has moved since it was `before` below the diff's top. */
 async function moved(page: Page, before: number): Promise<number> {
   return Math.abs((await lineTop(page)) - before);
+}
+
+/**
+ * Waits for tab `id`'s local copy to be ready, and the banner that says it's fetching to have gone.
+ * The banner comes over the diff just after the tab opens, moving the diff's box down, and goes once
+ * the fetch is done, moving it back up. A line a jump put at the top goes down with the box, and
+ * stays where it is on the page as the box goes back up: below the box's top, it's then as much
+ * lower as the banner was tall.
+ */
+async function localCopy(page: Page, id: string): Promise<void> {
+  await expect
+    .poll(
+      async () => {
+        const reply = await page.evaluate((tab) => window.lo.invoke('tab.state', { id: tab }), id);
+        return reply.ok ? reply.value : reply;
+      },
+      { timeout: 20_000 },
+    )
+    .toMatchObject({ local: { state: { kind: 'ready' } } });
+  await expect(page.locator('[data-lo-banners]')).toHaveCount(0);
 }
 
 /** `⌘⇧\`, which opens and closes the threads panel. */
@@ -399,9 +394,11 @@ onStacks(
 
 test('the threads panel lists the threads and shows one in the diff', async ({ page }) => {
   test.setTimeout(60_000);
-  await open(page, COMMENTS_PULL.number);
+  const id = await open(page, COMMENTS_PULL.number);
   await expect.poll(() => placed(page), { timeout: 20_000 }).toHaveLength(10);
   await settled(page);
+  // Once the local copy is in, so no banner comes or goes over the diff and moves its box.
+  await localCopy(page, id);
   // Down the diff a way, so the line at the top is one a change of width could move. It stays
   // where it is as the panel opens and closes, as it does for the left panel.
   await page.evaluate(() => {
@@ -413,10 +410,16 @@ test('the threads panel lists the threads and shows one in the diff', async ({ p
       });
     }
   });
-  // Once it's scrolled there and still: at the top, below the file's header.
-  const before = await stillLine(page);
-  expect(before).toBeGreaterThanOrEqual(0);
-  expect(before).toBeLessThan(100);
+  // Once it's scrolled there: at the top, below the file's header.
+  let before = Number.NaN;
+  await expect
+    .poll(async () => {
+      const y = await lineTop(page);
+      const still = y === before;
+      before = y;
+      return still && y >= 0 && y < 100;
+    })
+    .toBe(true);
 
   await test.step('opens and closes, leaving the diff’s lines where they were', async () => {
     const toggle = page.locator('[data-lo-right-toggle]');

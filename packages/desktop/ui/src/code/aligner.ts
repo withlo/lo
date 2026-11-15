@@ -271,6 +271,8 @@ export class Aligner {
    */
   #scrolled = false;
   readonly #wheel = { old: 0, new: 0 };
+  /** Whether the anchor is where the wheel took a line from before the lines wrapped anew. */
+  #wheeledOff = false;
   /** How far the scroll has gone since lines were last forgotten, and where it was then. */
   #travel = 0;
   #travelledFrom = 0;
@@ -296,6 +298,8 @@ export class Aligner {
   #keyed = -Infinity;
   /** The lines the last pass lined up on each side, which keep their spacers when others go. */
   #lined: { old?: { from: number; to: number }; new?: { from: number; to: number } } = {};
+  /** How wide each editor's text was when the last pass lined it up, which is where it wraps. */
+  #widths: { old: number; new: number } | undefined;
   readonly #resized: ResizeObserver;
 
   constructor(
@@ -315,9 +319,17 @@ export class Aligner {
       'scroll',
       () => {
         const top = this.#scroller.scrollTop;
-        if (this.#running || top === this.#anchor?.scrollTop) return;
-        if (this.#anchor) this.#direction = top > this.#anchor.scrollTop ? 1 : -1;
-        this.#anchor = this.#anchorNow();
+        const anchor = this.#anchor;
+        if (this.#running || top === anchor?.scrollTop) return;
+        if (anchor) this.#direction = top > anchor.scrollTop ? 1 : -1;
+        // The wheel, as the editors' text has changed width since the last pass: what's on screen
+        // has moved as the lines wrapped anew, which the pass puts back, so the line anchored
+        // goes where the wheel took it, on screen or off.
+        this.#wheeledOff = Boolean(anchor && this.#wheeled() && this.#rewrapped());
+        this.#anchor =
+          anchor && this.#wheeledOff
+            ? { ...anchor, offset: anchor.offset - (top - anchor.scrollTop), scrollTop: top }
+            : this.#anchorNow();
         this.#scrolled = true;
         this.schedule();
       },
@@ -382,12 +394,14 @@ export class Aligner {
    * It's taken once, before the first change, and stands until the pass runs: a change already
    * made has moved what's drawn, and the pass that puts it back is still to come, so reading where
    * lines are now would keep the move. When a change has been made since the last pass, the anchor
-   * that pass left, or the scroll took, stands.
+   * that pass left, or the scroll took, stands. So it does when the editors have changed width
+   * since, as when a panel opens beside the diff: their lines wrap anew, and those above the screen
+   * have moved what's on it before the pass hears of it.
    */
   anchorTop(): void {
     if (this.#paused || this.#topTaken) return;
     this.#topTaken = true;
-    if (this.#scheduled) return;
+    if (this.#scheduled || this.#rewrapped()) return;
     const side = this.#anchorSide();
     const found = this.#screenLine(side, true) ?? this.#screenLine(otherSide(side), true);
     if (found) this.#anchor = { for: side, ...found };
@@ -399,10 +413,17 @@ export class Aligner {
    * when a comment box under it grows, and what's above it stays where it is. With `element`, drawn
    * among the line's blocks, as a comment box the reader writes in, that stays where it is instead,
    * while it's drawn. It stands, as `anchorTop`'s does, until the pass runs. A line that isn't
-   * drawn leaves the anchor as it is.
+   * drawn leaves the anchor as it is. So does a change of the editors' width since the last pass,
+   * as for `anchorTop`: where the line is drawn now is where its new wrapping put it, not where the
+   * reader saw it, and the anchor that pass left stands, chosen as this one would have been.
    */
   anchorAt(side: Side, pos: number, element?: Element): void {
     if (this.#paused) return;
+    if (this.#rewrapped()) {
+      this.#topTaken = true;
+      this.#chosen = true;
+      return;
+    }
     const top = element ? element.getBoundingClientRect().top : drawnTop(this.#views[side], pos);
     if (top === undefined) return;
     this.#topTaken = true;
@@ -526,6 +547,7 @@ export class Aligner {
           anchor = this.#anchorNow();
         } else if (
           turn === 0 &&
+          !this.#wheeledOff &&
           anchor.element === undefined &&
           (anchor.offset < 0 || anchor.offset >= this.#scroller.clientHeight)
         ) {
@@ -548,11 +570,13 @@ export class Aligner {
         changed ||= spaced;
         if (!spaced && !moved) break;
       }
+      this.#widths = this.#widthsNow();
     } finally {
       this.#running = false;
       this.#selected = false;
       this.#topTaken = false;
       this.#chosen = false;
+      this.#wheeledOff = false;
       const ms = performance.now() - started;
       this.stats.passes++;
       if (changed) this.stats.changed++;
@@ -1202,6 +1226,30 @@ export class Aligner {
     return 'new';
   }
 
+  /** Whether the wheel just turned over either editor. */
+  #wheeled(): boolean {
+    return Date.now() - Math.max(this.#wheel.old, this.#wheel.new) < wheelAnchoring;
+  }
+
+  /** How wide each editor's text is now. */
+  #widthsNow(): { old: number; new: number } {
+    const width = (side: Side): number =>
+      this.#views[side].contentDOM.getBoundingClientRect().width;
+    return { old: width('old'), new: width('new') };
+  }
+
+  /**
+   * Whether either editor's text has changed width since the last pass lined it up: its lines
+   * wrap anew, and what's drawn has moved, though the pass that puts it back hasn't run yet.
+   */
+  #rewrapped(): boolean {
+    const before = this.#widths;
+    // Hidden at the last pass, the editors drew nothing that's moved since.
+    if (!before || (before.old === 0 && before.new === 0)) return false;
+    const now = this.#widthsNow();
+    return Math.abs(now.old - before.old) >= 0.5 || Math.abs(now.new - before.new) >= 0.5;
+  }
+
   /**
    * A line the anchoring editor draws on screen, and how far below the top of the scroller it
    * starts: the line's own top, not its block's, which takes in the spacers and labels drawn above
@@ -1273,26 +1321,8 @@ export class Aligner {
    * for the first whichever way the scroll went.
    */
   #screenLine(side: Side, down = this.#direction > 0): Omit<Anchor, 'for'> | undefined {
-    const view = this.#views[side];
     const screen = this.#scroller.getBoundingClientRect();
-    const y = screen.top - origin(view);
-    const blocks = view.viewportLineBlocks;
-    let found: { pos: number; top: number } | undefined;
-    // From the top on the way down, from the bottom on the way up, to the first drawn on screen.
-    const first = blockIndex(blocks, y);
-    const last = blockIndex(blocks, y + screen.height);
-    for (
-      let index = down ? first : last;
-      down ? index <= last : index >= first;
-      index += down ? 1 : -1
-    ) {
-      const block = blocks[index]!;
-      // Where it's drawn, which the height map can be off from by a line it has only estimated.
-      const top = drawnTop(view, block.from);
-      if (top === undefined || top < screen.top || top >= screen.bottom) continue;
-      found = { pos: block.from, top };
-      break;
-    }
+    const found = lineOnScreen(this.#views[side], screen, down);
     return (
       found && {
         side,
@@ -1322,6 +1352,34 @@ export class Aligner {
     this.#anchor = { ...anchor, scrollTop: this.#scroller.scrollTop };
     return moved;
   }
+}
+
+/**
+ * The line `view` draws whose own top is on `screen` furthest from where rows come into view: the
+ * first, or with `down` false the last. Where it's drawn too, which the height map can be off from
+ * by a line it has only estimated.
+ */
+export function lineOnScreen(
+  view: EditorView,
+  screen: DOMRect,
+  down = true,
+): { pos: number; top: number } | undefined {
+  const y = screen.top - origin(view);
+  const blocks = view.viewportLineBlocks;
+  // From the top on the way down, from the bottom on the way up, to the first drawn on screen.
+  const first = blockIndex(blocks, y);
+  const last = blockIndex(blocks, y + screen.height);
+  for (
+    let index = down ? first : last;
+    down ? index <= last : index >= first;
+    index += down ? 1 : -1
+  ) {
+    const block = blocks[index]!;
+    const top = drawnTop(view, block.from);
+    if (top === undefined || top < screen.top || top >= screen.bottom) continue;
+    return { pos: block.from, top };
+  }
+  return undefined;
 }
 
 /**
