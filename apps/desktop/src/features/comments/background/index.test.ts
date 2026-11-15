@@ -60,6 +60,7 @@ describe('excerptFrom', () => {
       'Before the chart after',
     );
     expect(excerptFrom('<img src="a.png">')).toBe('image');
+    expect(excerptFrom('See <summary>More</summary>hidden')).toBe('See More hidden');
     expect(excerptFrom('Use `<div>` here.')).toBe('Use <div> here.');
   });
 
