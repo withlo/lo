@@ -1,11 +1,22 @@
 // The git a language server runs in its checkout, with the variables `serverGitEnvironment` gives
-// it, against a pull request that plants a bare repository, a repository whose own settings name
-// programs to run, and a file the clone lacks. Each is run without them too, to show what they
-// keep from happening.
+// it, against a pull request that plants a bare repository, a symlink and a submodule, a
+// repository whose own settings name programs to run, the system's and the user's settings, a
+// clone with garbage to collect, and a file the clone lacks. Each is run without them too, to show
+// what they keep from happening.
 
 import { spawnSync } from 'node:child_process';
-import { copyFileSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import {
+  copyFileSync,
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  writeFileSync,
+} from 'node:fs';
 import { join } from 'node:path';
+import { deflateSync } from 'node:zlib';
 
 import { blobId, git, missingObjects, type RemoteRepo } from '@lo/testing/git';
 import { expect, test } from 'vitest';
@@ -25,19 +36,24 @@ function markers(): { program: (name: string) => string; left: () => string[] } 
 }
 
 /**
- * An environment built from nothing, as a server's is: a `PATH` with git, an empty `HOME`, an
- * author, and no system or global config, so what git does without the server's variables comes
- * from the repository alone. With `server`, those variables too.
+ * An environment built from nothing, as a server's is: a `PATH` with git, a `HOME`, and an
+ * author. The system's settings and the user's are the test's own files, which say only where
+ * they're from: `lo.from` is `system` in the one and `user` in the other. With `server`, the
+ * server's variables too, and nothing else of git's: whatever keeps those files from being read
+ * comes from them.
  */
 function environment(server: boolean): Record<string, string> {
-  const home = join(tempFolder(), 'home');
+  const dir = tempFolder();
+  const home = join(dir, 'home');
   mkdirSync(home);
+  writeFileSync(join(home, '.gitconfig'), '[lo]\n\tfrom = user\n');
+  const system = join(dir, 'system-config');
+  writeFileSync(system, '[lo]\n\tfrom = system\n');
   return {
     PATH: systemPath(),
     HOME: home,
+    GIT_CONFIG_SYSTEM: system,
     LC_ALL: 'C',
-    GIT_CONFIG_NOSYSTEM: '1',
-    GIT_CONFIG_GLOBAL: '/dev/null',
     GIT_AUTHOR_NAME: 'Server',
     GIT_AUTHOR_EMAIL: 'server@lo.invalid',
     GIT_COMMITTER_NAME: 'Server',
@@ -146,4 +162,91 @@ test('a server’s git never downloads what the clone lacks', async () => {
   // Without them, git downloads it from the clone's remote.
   expect(run(dir, environment(false), ['cat-file', '-p', lacking]).stdout).toBe('pub fn a() {}');
   expect(missingObjects(clone, base)).not.toContain(lacking);
+});
+
+test('a server’s git reads neither the system’s settings nor the user’s', () => {
+  const dir = tempFolder();
+  expect(run(dir, environment(false), ['config', '--get-all', 'lo.from']).stdout).toBe(
+    'system\nuser',
+  );
+
+  const read = run(dir, environment(true), ['config', '--get-all', 'lo.from']);
+
+  expect(read).toMatchObject({ code: 1, stdout: '' });
+});
+
+test('a server’s git leaves a checkout’s symlinks plain files', async () => {
+  const { dir } = await checkedOut((remote) => remote.symlink('link', '/etc/hosts'));
+  const link = join(dir, 'link');
+  // Without the server's variables, git takes the file Lo checked out for a changed link.
+  expect(run(dir, environment(false), ['status', '--porcelain']).stdout).toBe('T link');
+
+  const env = environment(true);
+  expect(run(dir, env, ['status', '--porcelain']).stdout).toBe('');
+  expect(run(dir, env, ['checkout', '--', 'link']).code).toBe(0);
+
+  expect(lstatSync(link).isSymbolicLink()).toBe(false);
+  expect(readFileSync(link, 'utf8')).toBe('/etc/hosts');
+});
+
+test('a server’s git reaches no remote a pull request names', async () => {
+  const { program, left } = markers();
+  const { dir } = await checkedOut((remote) =>
+    remote
+      .write(
+        '.gitmodules',
+        '[submodule "vendor"]\n\tpath = vendor\n\turl = ssh://example.invalid/x.git\n',
+      )
+      .gitlink('vendor', '1'.repeat(40)),
+  );
+  // ssh, as git would run it to reach the submodule.
+  const ssh = { GIT_SSH_COMMAND: program('ssh') };
+
+  const update = run(dir, { ...environment(true), ...ssh }, ['submodule', 'update', '--init']);
+
+  expect(update.code).not.toBe(0);
+  expect(update.stderr).toContain("transport 'ssh' not allowed");
+  expect(left()).toEqual([]);
+  // Without the server's variables, git runs ssh.
+  run(dir, { ...environment(false), ...ssh }, ['submodule', 'update', '--init']);
+  expect(left()).toEqual(['ssh']);
+});
+
+/**
+ * Writes `count` loose objects into the clone at `gitDir`, all in `objects/17`, the folder git
+ * counts to tell whether it's time to collect garbage: past 27 there, as many as 6,700 in all.
+ */
+function plantLooseObjects(gitDir: string, count: number): void {
+  const folder = join(gitDir, 'objects', '17');
+  mkdirSync(folder, { recursive: true });
+  for (let at = 0, planted = 0; planted < count; at++) {
+    const body = Buffer.from(`planted ${at}\n`);
+    const object = Buffer.concat([Buffer.from(`blob ${body.length}\0`), body]);
+    const oid = createHash('sha1').update(object).digest('hex');
+    if (!oid.startsWith('17')) continue;
+    writeFileSync(join(folder, oid.slice(2)), deflateSync(object));
+    planted++;
+  }
+}
+
+test('a server’s git never collects garbage or runs maintenance in the clone', async () => {
+  const { clone, dir } = await checkedOut(() => undefined);
+  plantLooseObjects(clone, 30);
+  // What each git started, as git traces it. Neither detaches, so all of it is done when it ends.
+  const runs = (env: Record<string, string>) => {
+    const trace = join(tempFolder(), 'trace');
+    const traced = { ...env, GIT_TRACE: trace };
+    const quiet = ['-c', 'gc.autoDetach=false', '-c', 'maintenance.autoDetach=false'];
+    run(dir, traced, [...quiet, 'gc', '--auto']);
+    run(dir, traced, [...quiet, 'commit', '-q', '--allow-empty', '-m', 'a commit']);
+    const lines = existsSync(trace) ? readFileSync(trace, 'utf8').split('\n') : [];
+    return lines.flatMap((line) => /run_command: git (\S+)/.exec(line)?.[1] ?? []);
+  };
+
+  expect(runs(environment(true))).toEqual([]);
+
+  // Without the server's variables, git repacks the clone, and a commit starts maintenance.
+  const started = runs(environment(false));
+  expect(started).toContain('repack');
+  expect(started).toContain('maintenance');
 });

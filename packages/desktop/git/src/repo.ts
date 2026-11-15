@@ -743,13 +743,17 @@ export class Repo {
    *
    * Every one is looked at before any is read: blobs the clone lacks are `notDownloaded`, naming
    * each; an object that isn't a blob is an error; and a blob larger than `maxBytes` alone is
-   * `tooLarge`. A submodule's commit isn't in this repository: never ask for one.
+   * `tooLarge`, naming it and its size. A submodule's commit isn't in this repository: never ask
+   * for one. `maxBytes` is a whole number of bytes, at least 1, or it's `invalid`.
    */
   async *readBlobs(
     oids: readonly Oid[],
     options: { maxBytes: number },
   ): AsyncGenerator<BlobContents[], void, undefined> {
     const { maxBytes } = options;
+    if (!Number.isSafeInteger(maxBytes) || maxBytes < 1) {
+      throw new GitError({ kind: 'invalid', what: 'byte cap', value: String(maxBytes) });
+    }
     const wanted = unique(oids);
     const headers = await this.#headers(wanted);
     const lacking = wanted.filter((oid) => !headers.has(oid));
@@ -761,7 +765,12 @@ export class Repo {
       const { type, size } = headers.get(oid) ?? { type: 'missing', size: 0 };
       if (type !== 'blob') throw notABlob(oid, type);
       if (size > maxBytes) {
-        throw new GitError({ kind: 'tooLarge', command: READER, limit: maxBytes });
+        throw new GitError({
+          kind: 'tooLarge',
+          command: READER,
+          limit: maxBytes,
+          blob: { oid, size },
+        });
       }
       if (batch.length > 0 && bytes + size > maxBytes) {
         batches.push(batch);

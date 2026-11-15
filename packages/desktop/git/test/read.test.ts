@@ -306,22 +306,54 @@ test('reads many blobs a batch at a time, each once and in order', async () => {
 test('a read of many blobs refuses one the clone lacks, one too large, or a commit, reading none', async () => {
   const f = await fixture();
   await downloadChanges(f.repo, f.base, f.head);
-  const keep = version(f, f.head, 'keep.txt', 'regular').oid;
+  // 14 and 6 bytes: with a cap of 14, each would be a batch of its own.
+  const [keep, added] = ['keep.txt', 'added.txt'].map(
+    (path) => version(f, f.head, path, 'regular').oid,
+  );
+  if (keep === undefined || added === undefined) throw new Error('no blobs');
   // A file the pull request doesn't touch, which nothing downloaded.
   const untouched = parseOid(blobId(f.remote.work, f.head, 'odd\nname.txt'));
   const before = packs(f.repo.folder);
-  const readAll = async (oids: Oid[], maxBytes = 1024) => {
-    for await (const batch of f.repo.readBlobs(oids, { maxBytes })) void batch;
+  // The batches it gave before failing, and how it failed. Each refusal comes after batches it
+  // could have read, so none is given.
+  const readAll = async (oids: Oid[], maxBytes = 14) => {
+    const batches: Oid[][] = [];
+    const error = await failure(
+      (async () => {
+        for await (const batch of f.repo.readBlobs(oids, { maxBytes })) {
+          batches.push(batch.map((blob) => blob.oid));
+        }
+      })(),
+    );
+    return { batches, error };
   };
 
-  const lacking = await failure(readAll([keep, untouched, UNKNOWN]));
-  expect(lacking.detail).toEqual({ kind: 'notDownloaded', oids: [untouched, UNKNOWN] });
+  const lacking = await readAll([keep, added, untouched, UNKNOWN]);
+  expect(lacking.batches).toEqual([]);
+  expect(lacking.error.detail).toEqual({ kind: 'notDownloaded', oids: [untouched, UNKNOWN] });
   expect(missingObjects(f.repo.folder, f.head)).toContain(untouched);
   expect(packs(f.repo.folder)).toBe(before);
 
-  const large = await failure(readAll([keep], 13));
-  expect(large.detail).toMatchObject({ kind: 'tooLarge', limit: 13 });
-  expect((await failure(readAll([keep, f.head]))).message).toContain('is a commit, not a file');
+  const large = await readAll([added, keep], 13);
+  expect(large.batches).toEqual([]);
+  expect(large.error.detail).toMatchObject({
+    kind: 'tooLarge',
+    limit: 13,
+    blob: { oid: keep, size: 14 },
+  });
+  expect(large.error.message).toBe(
+    `file ${keep.slice(0, 7)} is 14 bytes, more than the 13 Lo reads at once`,
+  );
+
+  const commit = await readAll([keep, added, f.head]);
+  expect(commit.batches).toEqual([]);
+  expect(commit.error.message).toContain('is a commit, not a file');
+
+  // A cap that isn't a whole number of bytes, at least 1, is no cap.
+  for (const maxBytes of [Number.NaN, Infinity, 0, -1, 1.5]) {
+    const refused = await readAll([keep], maxBytes);
+    expect.soft(refused.error.detail).toMatchObject({ kind: 'invalid', what: 'byte cap' });
+  }
 
   // Nothing at all reads nothing.
   for await (const batch of f.repo.readBlobs([], { maxBytes: 1 })) expect(batch).toBeUndefined();
