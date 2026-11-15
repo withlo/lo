@@ -5,7 +5,8 @@ import { Language, Parser } from 'web-tree-sitter';
 import { beforeAll, describe, expect, test, vi } from 'vitest';
 
 import { diskLoader, packageFolder } from './disk.ts';
-import { Highlighter, nestingDepth, resolve, type Loader } from './highlight.ts';
+import { nestingDepth } from './depth.ts';
+import { Highlighter, resolve, type Loader } from './highlight.ts';
 import { languageOfPath, type LanguageName } from './languages.ts';
 import { tokenOf, tokens } from './tokens.ts';
 
@@ -352,6 +353,8 @@ describe('loading grammars', () => {
 
     expect(await fresh.highlight('toml', 'a = 1\n')).toEqual({ skipped: 'failed' });
     expect(fresh.usable).toBe(false);
+    // The memory is whole, so the thread's other highlighters go on.
+    expect(highlighter.usable).toBe(true);
   });
 });
 

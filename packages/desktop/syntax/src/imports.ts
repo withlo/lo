@@ -49,7 +49,10 @@ export const maxImports = 4000;
 /** The most names read from one import statement. */
 const maxNames = 1000;
 
-/** The longest module an import may name. An import from a longer one is left out. */
+/**
+ * The longest module an import may name, or a file declare itself in. An import from a longer one
+ * is left out, and so is a longer package or namespace.
+ */
 const maxModuleLength = 256;
 
 /**
@@ -65,6 +68,7 @@ export function importsOf(
   const out: Imports = { imports: [] };
   if (!read) return out;
   const at = (node: Node): string => text.slice(node.startIndex, node.endIndex);
+  let declared = false;
   for (const statement of statements) {
     if (out.imports.length >= maxImports) break;
     const line = statement.startPosition.row + 1;
@@ -80,7 +84,10 @@ export function importsOf(
         });
       },
       (namespace) => {
-        out.namespace ??= namespace;
+        // The first the file declares, unless it's longer than any module an import may name.
+        if (declared) return;
+        declared = true;
+        if (namespace.length <= maxModuleLength) out.namespace = namespace;
       },
     );
   }

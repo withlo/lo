@@ -77,6 +77,14 @@ export function runtimeUsable(): boolean {
 }
 
 /**
+ * Whether `error` is a fault in WebAssembly, a `RuntimeError`, or the stack running out, a
+ * `RangeError`: what can leave the memory broken, as it parses, or as a grammar loads.
+ */
+export function isFault(error: unknown): boolean {
+  return error instanceof WebAssembly.RuntimeError || error instanceof RangeError;
+}
+
+/**
  * Parses `text` with `parser`, which is reset after. A scanner's abort throws `Aborted`; a fault,
  * or the stack running out, throws as it came, and can leave the memory broken.
  */
@@ -84,9 +92,8 @@ export function parseText(parser: Parser, text: string, options: ParseOptions): 
   try {
     return parser.parse(text, null, options);
   } catch (error) {
-    // A fault, or the stack running out, is a `RuntimeError` or a `RangeError`. Anything else
-    // was thrown by a call out of WebAssembly, as a scanner's abort is.
-    if (error instanceof WebAssembly.RuntimeError || error instanceof RangeError) throw error;
+    // Anything but a fault was thrown by a call out of WebAssembly, as a scanner's abort is.
+    if (isFault(error)) throw error;
     throw new Aborted('A scanner aborted.', { cause: error });
   } finally {
     parser.reset();

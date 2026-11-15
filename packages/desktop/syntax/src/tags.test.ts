@@ -2,6 +2,7 @@ import { Language, Query } from 'web-tree-sitter';
 import { beforeAll, describe, expect, test } from 'vitest';
 
 import { diskLoader } from './disk.ts';
+import type { Loader } from './highlight.ts';
 import { languages } from './languages.ts';
 import { taggedLanguageOfPath, taggedLanguages, tagQueries } from './tagged.ts';
 import {
@@ -289,6 +290,23 @@ describe('Tagger.symbols', () => {
     expect((await symbols('rust', `use ${longest}a::B;\n`)).imports).toEqual([]);
   });
 
+  test.each([
+    ['java', (parts: string) => `package ${parts.replaceAll('/', '.')};\n`],
+    ['kotlin', (parts: string) => `package ${parts.replaceAll('/', '.')}\n`],
+    ['php', (parts: string) => `<?php\nnamespace ${parts.replaceAll('/', '\\')};\n`],
+  ] as const)(
+    '%s: leaves out a package longer than the longest module an import may name',
+    async (language, declaration) => {
+      // 40,001 characters over lines, which none of the checks before parsing sees.
+      const long = await symbols(language, declaration(`${'a/\n'.repeat(20_000)}b`));
+      // 256 characters, as long as one may be.
+      const longest = await symbols(language, declaration(`${'a/'.repeat(127)}bc`));
+
+      expect(long.namespace).toBeUndefined();
+      expect(longest.namespace).toHaveLength(256);
+    },
+  );
+
   test('reads what it can of a file with syntax errors', async () => {
     const { definitions } = await symbols(
       'python',
@@ -312,6 +330,23 @@ describe('Tagger.find', () => {
       ],
     });
     expect(await tagger.find('typescript', text, 'Circl')).toEqual({ uses: [] });
+  });
+});
+
+describe('a tagger whose grammars or queries fail to load', () => {
+  test('stops, and leaves the thread to the others', async () => {
+    const missing: Loader = {
+      ...diskLoader(),
+      grammar: () => Promise.reject(new Error('No such grammar.')),
+    };
+    const fresh = await Tagger.create(missing);
+
+    expect(await fresh.symbols('go', 'package a\n')).toEqual({ skipped: 'failed' });
+    expect(fresh.usable).toBe(false);
+    expect(tagger.usable).toBe(true);
+    expect(listed((await symbols('go', 'package a\n\nfunc f() {}\n')).definitions)).toEqual([
+      'function f 3:5',
+    ]);
   });
 });
 
