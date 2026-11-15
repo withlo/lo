@@ -3,6 +3,7 @@ import { cva } from 'class-variance-authority';
 import { useRef, useState, type ReactNode } from 'react';
 
 import { Button } from './Button.tsx';
+import { showControls } from './controls.ts';
 import { useTakeFocus } from './focus.ts';
 import { Spinner } from './Spinner.tsx';
 
@@ -28,7 +29,22 @@ export type ServerState =
    * The toolchain it needs isn't installed: `needs` names it ("Go 1.24 or later", "a JDK"), and
    * `install` is a command that installs it, when there is one.
    */
-  | { kind: 'missing'; needs: string; install?: string | undefined };
+  | { kind: 'missing'; needs: string; install?: string | undefined }
+  /**
+   * Lo doesn't run language servers here, since the repo isn't trusted. The item says so for all of
+   * them, whatever its `name` is.
+   */
+  | { kind: 'off' };
+
+/** What the details offer to do about trust. */
+export interface ServerTrust {
+  /**
+   * "Trust this repo…" and "Trust this PR…" ask in a dialog of main's, so they end in an ellipsis;
+   * "Stop trusting this repo" takes it away at once.
+   */
+  action: 'repo' | 'pr' | 'stop';
+  onChoose: () => void;
+}
 
 export interface ServerStatusProps {
   /** The language: "TypeScript". */
@@ -39,6 +55,8 @@ export interface ServerStatusProps {
   /** The button that starts it again. A failed download offers "Retry" in its place. */
   onRestart?: (() => void) | undefined;
   onShowLog?: (() => void) | undefined;
+  /** The details' way to trust the repo, or to stop. */
+  trust?: ServerTrust | undefined;
   /** Whether the details are open. Without it, the item keeps its own. */
   open?: boolean | undefined;
   onOpenChange?: ((open: boolean) => void) | undefined;
@@ -62,7 +80,8 @@ function percentOf(percent: number): number {
 }
 
 /** The word or words beside the language's name in the status bar. */
-function Words({ name, state }: { name: string; state: ServerState }): ReactNode {
+function Words({ name: raw, state }: { name: string; state: ServerState }): ReactNode {
+  const name = showControls(raw);
   switch (state.kind) {
     case 'downloading':
       return (
@@ -93,6 +112,8 @@ function Words({ name, state }: { name: string; state: ServerState }): ReactNode
       return <>{name} failed</>;
     case 'missing':
       return <>{name} toolchain missing</>;
+    case 'off':
+      return 'Language servers off';
     default:
       state satisfies never;
       throw new Error(`A language server state Lo doesn't know: ${JSON.stringify(state)}.`);
@@ -103,6 +124,7 @@ const DOT = {
   ok: 'bg-success',
   warn: 'bg-warning',
   fail: 'bg-danger',
+  idle: 'bg-fg-dim',
 } as const;
 
 /** A language server's state as a mark: a ring turning while it's coming up, else a dot. */
@@ -118,6 +140,8 @@ function Mark({ state }: { state: ServerState }) {
       return <span className={`size-8 flex-none rounded-full ${DOT.fail}`} aria-hidden="true" />;
     case 'missing':
       return <span className={`size-8 flex-none rounded-full ${DOT.warn}`} aria-hidden="true" />;
+    case 'off':
+      return <span className={`size-8 flex-none rounded-full ${DOT.idle}`} aria-hidden="true" />;
     default:
       state satisfies never;
       throw new Error(`A language server state Lo doesn't know: ${JSON.stringify(state)}.`);
@@ -135,7 +159,8 @@ const item = cva(
 );
 
 /** What the details' heading says of the server: "TypeScript ready", "TypeScript stopped". */
-function heading(name: string, state: ServerState): string {
+function heading(raw: string, state: ServerState): string {
+  const name = showControls(raw);
   switch (state.kind) {
     case 'downloading':
       return `${name} downloading`;
@@ -149,6 +174,8 @@ function heading(name: string, state: ServerState): string {
       return `${name} stopped`;
     case 'missing':
       return `${name} toolchain missing`;
+    case 'off':
+      return 'Language servers off';
     default:
       state satisfies never;
       throw new Error(`A language server state Lo doesn't know: ${JSON.stringify(state)}.`);
@@ -160,11 +187,11 @@ function why(failure: ServerFailure): string {
   switch (failure.kind) {
     case 'memory':
       return failure.files === undefined
-        ? `It ran out of memory at ${failure.limit}.`
-        : `It ran out of memory at ${failure.limit} while loading ${failure.files.toLocaleString('en-US')} files.`;
+        ? `It ran out of memory at ${showControls(failure.limit)}.`
+        : `It ran out of memory at ${showControls(failure.limit)} while loading ${failure.files.toLocaleString('en-US')} files.`;
     case 'download':
     case 'error':
-      return failure.message;
+      return showControls(failure.message);
     default:
       failure satisfies never;
       throw new Error(`A failure Lo doesn't know: ${JSON.stringify(failure)}.`);
@@ -172,7 +199,8 @@ function why(failure: ServerFailure): string {
 }
 
 /** What the details say under the heading. */
-function detail(name: string, state: ServerState): ReactNode {
+function detail(raw: string, state: ServerState): ReactNode {
+  const name = showControls(raw);
   switch (state.kind) {
     case 'downloading':
     case 'starting':
@@ -185,19 +213,37 @@ function detail(name: string, state: ServerState): ReactNode {
     case 'missing':
       return (
         <>
-          {name} needs {state.needs}.
+          {name} needs {showControls(state.needs)}.
           {state.install !== undefined && (
             <>
               {' '}
-              Install it with <code className="text-fg code-small">{state.install}</code>.
+              Install it with{' '}
+              <code className="text-fg code-small">{showControls(state.install)}</code>.
             </>
           )}{' '}
           {UNTIL}
         </>
       );
+    case 'off':
+      return `Lo runs language servers only on repos you trust. ${UNTIL}`;
     default:
       state satisfies never;
       throw new Error(`A language server state Lo doesn't know: ${JSON.stringify(state)}.`);
+  }
+}
+
+/** What the button that takes the reader to trust, or to stop, says. */
+function trustLabel(action: ServerTrust['action']): string {
+  switch (action) {
+    case 'repo':
+      return 'Trust this repo…';
+    case 'pr':
+      return 'Trust this PR…';
+    case 'stop':
+      return 'Stop trusting this repo';
+    default:
+      action satisfies never;
+      throw new Error(`A way to change trust Lo doesn't know: ${JSON.stringify(action)}.`);
   }
 }
 
@@ -218,6 +264,7 @@ export function ServerStatus({
   version,
   onRestart,
   onShowLog,
+  trust,
   open,
   onOpenChange,
   container,
@@ -225,8 +272,11 @@ export function ServerStatus({
   const [kept, setKept] = useState(false);
   const shown = open ?? kept;
   const restart = useRef<HTMLButtonElement>(null);
-  // The details take focus as they open, not a frame on, so a key pressed then is theirs.
-  const takeFocus = useTakeFocus(restart);
+  const first = useRef<HTMLButtonElement>(null);
+  const trigger = useRef<HTMLButtonElement>(null);
+  // The details take focus as they open, not a frame on, so a key pressed then is theirs. It goes
+  // to Restart, or to the first of the other buttons when the server has none to offer.
+  const takeFocus = useTakeFocus(onRestart ? restart : first);
   const failed = state.kind === 'failed';
   const says = detail(name, state);
   const change = (next: boolean) => {
@@ -236,7 +286,7 @@ export function ServerStatus({
   return (
     <>
       <Popover.Root open={shown} onOpenChange={change}>
-        <Popover.Trigger className={item({ failed })}>
+        <Popover.Trigger ref={trigger} className={item({ failed })}>
           <Mark state={state} />
           <span className="min-w-0 truncate">
             <Words name={name} state={state} />
@@ -263,7 +313,7 @@ export function ServerStatus({
                 </Popover.Title>
                 {version !== undefined && (
                   <span className="lo-num ms-auto flex-none text-fg-muted text-small">
-                    {version}
+                    {showControls(version)}
                   </span>
                 )}
               </div>
@@ -272,8 +322,8 @@ export function ServerStatus({
                   {says}
                 </Popover.Description>
               )}
-              {(onRestart || onShowLog) && (
-                <div className="flex gap-6">
+              {(onRestart || onShowLog || trust) && (
+                <div className="flex flex-wrap gap-6">
                   {onRestart && (
                     <Button
                       ref={restart}
@@ -289,6 +339,7 @@ export function ServerStatus({
                   )}
                   {onShowLog && (
                     <Button
+                      ref={onRestart ? undefined : first}
                       variant="ghost"
                       size="sm"
                       onClick={() => {
@@ -297,6 +348,19 @@ export function ServerStatus({
                       }}
                     >
                       Show the log
+                    </Button>
+                  )}
+                  {trust && (
+                    <Button
+                      ref={onRestart || onShowLog ? undefined : first}
+                      variant={state.kind === 'off' ? 'secondary' : 'ghost'}
+                      size="sm"
+                      onClick={() => {
+                        change(false);
+                        trust.onChoose();
+                      }}
+                    >
+                      {trustLabel(trust.action)}
                     </Button>
                   )}
                 </div>
@@ -308,8 +372,14 @@ export function ServerStatus({
       {failed && onRestart && (
         <button
           type="button"
+          // Named for its server: a bar can hold several, each with a button like it.
+          aria-label={`${restartLabel(state)} ${showControls(name)}`}
           className="inline-flex h-20 flex-none items-center rounded-xs px-6 text-fg hover:bg-hover focus-visible:shadow-ring"
-          onClick={onRestart}
+          onClick={() => {
+            // The button goes once the server is starting, and takes focus with it: the item stays.
+            trigger.current?.focus({ preventScroll: true });
+            onRestart();
+          }}
         >
           {restartLabel(state)}
         </button>

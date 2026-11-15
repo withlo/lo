@@ -1,3 +1,5 @@
+import { showControls } from './controls.ts';
+
 /**
  * Where an answer about code came from: a language server, by its name, or Lo's own reading of the
  * syntax. A peek, the references and a type hover all say it beside what they show.
@@ -22,8 +24,8 @@ export function SourceMark({ source, note }: { source: AnswerSource; note?: stri
         aria-hidden="true"
       />
       <span className="min-w-0 truncate">
-        {sourceName(source)}
-        {note !== undefined && ` · ${note}`}
+        {showControls(sourceName(source))}
+        {note !== undefined && ` · ${showControls(note)}`}
       </span>
     </span>
   );
@@ -33,7 +35,8 @@ export function SourceMark({ source, note }: { source: AnswerSource; note?: stri
  * A path with its file's name standing out from the folders before it. When the row is too narrow,
  * the folders give way first, so the name is always there to read.
  */
-export function PathName({ path, strong = false }: { path: string; strong?: boolean }) {
+export function PathName({ path: raw, strong = false }: { path: string; strong?: boolean }) {
+  const path = showControls(raw);
   const at = path.lastIndexOf('/');
   return (
     <span className="flex min-w-0 items-baseline" title={path}>

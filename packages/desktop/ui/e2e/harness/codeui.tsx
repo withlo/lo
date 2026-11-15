@@ -13,7 +13,7 @@ import { ReferencesHead, ReferencesList, type ReferencesGroup } from '../../src/
 import { ServerStatus, type ServerState } from '../../src/ServerStatus.tsx';
 import { StatusBar } from '../../src/StatusBar.tsx';
 import { TrustList, type TrustEntry } from '../../src/Trust.tsx';
-import { TypeHover, TypeHoverWaiting } from '../../src/TypeHover.tsx';
+import { TypeHover, TypeHoverWaiting, type SignatureRun } from '../../src/TypeHover.tsx';
 
 export type Theme = 'dark' | 'light';
 
@@ -21,10 +21,12 @@ export type Theme = 'dark' | 'light';
 export type Scene =
   | 'peek'
   | 'peek-single'
+  | 'peek-syntax'
   | 'references'
   | 'references-empty'
   | 'hover'
   | 'hover-bare'
+  | 'hover-long'
   | 'hover-waiting'
   | 'status'
   | 'details'
@@ -44,6 +46,17 @@ const ANSWERS: PeekCandidate[] = [
     source: { kind: 'server', name: 'TypeScript' },
     note: 'overload',
   },
+];
+
+/** What the syntax index answers when no server did: the asking file's import, a same-name answer. */
+const SYNTAX_ANSWERS: PeekCandidate[] = [
+  {
+    key: 'import',
+    path: 'packages/graphql/src/cost/estimate.ts',
+    line: 3,
+    source: { kind: 'syntax' },
+    from: 'zod',
+  },
   {
     key: 'helpers',
     path: 'test/helpers/cost.ts',
@@ -51,6 +64,7 @@ const ANSWERS: PeekCandidate[] = [
     source: { kind: 'syntax' },
     note: 'same name',
   },
+  { key: 'outside', outside: true, source: { kind: 'syntax' } },
 ];
 
 const KEYS = {
@@ -131,18 +145,42 @@ const DOCS = markdownTree(
   ].join('\n\n'),
 );
 
-const SIGNATURE = (
-  <>
-    <span className="lo-syn-keyword">const</span> report:{' '}
-    <span className="lo-syn-type">CostReport</span>
-    {'\n'}
-    <span className="lo-syn-keyword">type</span> <span className="lo-syn-type">CostReport</span> ={' '}
-    {'{'}
-    {'\n  '}total: <span className="lo-syn-type">number</span>;{'\n  '}fields:{' '}
-    <span className="lo-syn-type">FieldCost</span>[];{'\n  '}ceilingHit:{' '}
-    <span className="lo-syn-type">boolean</span>;{'\n'}
-    {'}'}
-  </>
+const SIGNATURE: SignatureRun[] = [
+  { text: 'const', token: 'keyword' },
+  { text: ' report: ' },
+  { text: 'CostReport', token: 'type' },
+  { text: '\n' },
+  { text: 'type', token: 'keyword' },
+  { text: ' ' },
+  { text: 'CostReport', token: 'type' },
+  { text: ' = {\n  total: ' },
+  { text: 'number', token: 'type' },
+  { text: ';\n  fields: ' },
+  { text: 'FieldCost', token: 'type' },
+  { text: '[];\n  ceilingHit: ' },
+  { text: 'boolean', token: 'type' },
+  { text: ';\n}' },
+];
+
+/** A signature with a word no card is wide enough for, and more lines than the card shows. */
+const LONG_SIGNATURE = [
+  `export function estimate${'Aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'.repeat(3)}(`,
+  ...Array.from({ length: 16 }, (_, index) => `  field${index}: number,`),
+  '): CostReport',
+].join('\n');
+
+/** Docs with a link, a code block and a table that run past the card, and a word with no break. */
+const LONG_DOCS = markdownTree(
+  [
+    'See [the limits](https://example.com/limits) and [the guide](https://example.com/guide).',
+    '```ts\nconst estimate = estimateCost(schema, document, { operationName: "Pull", weights: DEFAULT_WEIGHTS });\n```',
+    '| field | cost |\n| --- | --- |\n| a_column_with_a_name_that_is_much_too_long_for_its_share_of_the_card | 1 |',
+    `A path of ${'unbroken'.repeat(14)} that has no place to break.`,
+    ...Array.from(
+      { length: 12 },
+      (_, index) => `Paragraph ${index + 1} of the docs, which run on.`,
+    ),
+  ].join('\n\n'),
 );
 
 const ENTRIES: TrustEntry[] = [
@@ -161,6 +199,26 @@ const STATES: { name: string; state: ServerState }[] = [
   { name: 'Go', state: { kind: 'missing', needs: 'Go 1.24 or later', install: 'brew install go' } },
 ];
 
+/** The hover with everything that used to be a stop for Tab, between two buttons that are. */
+function LongHover() {
+  return (
+    <div className="flex flex-col gap-12 p-12">
+      <button type="button" id="before" className="self-start">
+        Before
+      </button>
+      <TypeHover
+        signature={LONG_SIGNATURE}
+        docs={LONG_DOCS}
+        source={{ kind: 'server', name: 'TypeScript' }}
+        keys={{ definition: ['g', 'd'], close: ['Esc'] }}
+      />
+      <button type="button" id="after" className="self-start">
+        After
+      </button>
+    </div>
+  );
+}
+
 function sceneNode(scene: Scene, container: HTMLElement): ReactNode {
   switch (scene) {
     case 'peek':
@@ -176,6 +234,17 @@ function sceneNode(scene: Scene, container: HTMLElement): ReactNode {
         >
           <StandInCode />
         </Peek>
+      );
+    case 'peek-syntax':
+      return (
+        <Peek
+          name="estimateCost"
+          candidates={SYNTAX_ANSWERS}
+          selected="outside"
+          at="r5"
+          keys={KEYS}
+          className="m-12"
+        />
       );
     case 'peek-single':
       return (
@@ -230,6 +299,8 @@ function sceneNode(scene: Scene, container: HTMLElement): ReactNode {
           className="m-12"
         />
       );
+    case 'hover-long':
+      return <LongHover />;
     case 'hover-waiting':
       return (
         <TypeHoverWaiting

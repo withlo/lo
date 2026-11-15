@@ -307,18 +307,51 @@
 }
 
 /* A peek: its answers beside its code, with a head and a foot across both. A single answer has no
-   column of its own, so its row sits above the code. */
+   column of its own, so its row sits above the code. The peek is the container its parts adapt to:
+   under 36rem the answers stack above the code, as the one answer's do, since a column of 250px
+   leaves a narrow place too little room for the code. */
 @utility peek {
   display: grid;
   grid-template-columns: 250px minmax(0, 1fr);
+  @container (width < 36rem) {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 @utility peek-single {
   grid-template-columns: minmax(0, 1fr);
 }
 
-/* The answers' list, no taller than the code beside it can be: 15 lines. */
+/* The answers' list, no taller than the code beside it can be: 15 lines, and 8 when it's above the
+   code. */
 @utility peek-list {
   max-height: calc(15 * var(--lo-code-line));
+  @container (width < 36rem) {
+    max-height: calc(8 * var(--lo-code-line));
+  }
+}
+
+/* The hairline between the answers and the code: beside the list, or under it once it's above. */
+@utility peek-rule {
+  border-inline-end: 1px solid var(--lo-border-subtle);
+  @container (width < 36rem) {
+    border-inline-end: 0;
+    border-block-end: 1px solid var(--lo-border-subtle);
+  }
+}
+
+/* The head's two buttons when the peek is narrow: the way to close it stays beside its name, and
+   the way to go to the answer wraps to a row of its own, so the name and the count are never cut
+   short for it. */
+@utility peek-close {
+  @container (width < 36rem) {
+    order: 2;
+  }
+}
+@utility peek-go {
+  @container (width < 36rem) {
+    order: 3;
+    margin-inline-start: auto;
+  }
 }
 
 /* One answer: its path and line, then where it came from on a row of its own. */
@@ -340,11 +373,27 @@
   max-width: calc(100vw - var(--lo-sp-32));
 }
 
-/* A hover's signature and its docs, twelve lines tall at most before they scroll: a card that holds
-   no focus can't be scrolled by key, so it stays short enough to read most of at once. */
+/* A hover's signature and its docs, twelve lines tall at most before they scroll. A card holds no
+   focus, so its parts are no stop for `Tab` (they carry `tabindex="-1"`) and are scrolled by the
+   wheel alone: they stay short enough to read most of at once. */
 @utility typehover-part {
   max-height: 12lh;
   overflow-y: auto;
+}
+
+/* The docs wrap to the card instead of scrolling inside it, since a scroller in a card that takes no
+   focus can't be reached: code breaks at its width, and a table shares it out among its columns. */
+@utility typehover-docs {
+  & pre {
+    white-space: pre-wrap;
+  }
+  & table {
+    width: 100%;
+    table-layout: fixed;
+  }
+  & .overflow-x-auto {
+    overflow-x: clip;
+  }
 }
 
 /* A language server's details, over its item in the status bar. */

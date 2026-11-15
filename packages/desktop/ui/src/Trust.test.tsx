@@ -2,6 +2,7 @@
 // Settings' list of what the reader trusts: a row for each repo or pull request from a fork, how
 // long ago it was trusted, and the button that removes it.
 
+import { useState } from 'react';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { missingRules } from '../test/classes.ts';
@@ -16,11 +17,47 @@ afterEach(() => {
   cleanUp();
 });
 
+/** The list as Settings holds it: a row that is removed leaves, and the rest stay. */
+function Held({ entries }: { entries: readonly TrustEntry[] }) {
+  const [held, setHeld] = useState(entries);
+  return (
+    <TrustList
+      entries={held}
+      onRemove={(key) => setHeld((all) => all.filter((e) => e.key !== key))}
+    />
+  );
+}
+
+/** The "Remove" button of the row for `key`. */
+function remove(host: HTMLElement, key: string): HTMLButtonElement {
+  return host.querySelector<HTMLButtonElement>(`[role="listitem"][data-key="${key}"] button`)!;
+}
+
 const ENTRIES: TrustEntry[] = [
   { key: 'api', name: 'fieldwork/atlas-api', kind: 'repo', trusted: '12 days ago' },
   { key: 'web', name: 'fieldwork/atlas-web', kind: 'repo', trusted: '3 days ago' },
   { key: 'fork', name: 'sam-whit/atlas-api#4833', kind: 'fork', trusted: 'today' },
 ];
+
+/** A list whose row goes only when `#land` is pressed, as when main answers after the press. */
+function Later() {
+  const [held, setHeld] = useState(ENTRIES);
+  const [landed, setLanded] = useState(false);
+  return (
+    <>
+      <button type="button" id="land" onClick={() => setLanded(true)}>
+        Land
+      </button>
+      <button type="button" id="elsewhere">
+        Elsewhere
+      </button>
+      <TrustList
+        entries={landed ? held.filter((e) => e.key !== 'api') : held}
+        onRemove={() => setHeld((all) => [...all])}
+      />
+    </>
+  );
+}
 
 describe('TrustList', () => {
   it('lists each thing trusted by its name, what it covers and since when', () => {
@@ -72,13 +109,77 @@ describe('TrustList', () => {
     expect(document.activeElement).toBe(buttons[1]);
   });
 
-  it('says when nothing is trusted, and where to trust something', () => {
+  it('says when nothing is trusted, and points to places that are always there', () => {
     const host = render(<TrustList entries={[]} />);
+    // Not to the banner, which a reader has dismissed by now.
     expect(host.textContent).toBe(
-      'Nothing is trusted yet. Trust a repo or a PR from the banner on its tab.',
+      'Nothing is trusted yet. Trust a repo or a PR from the language servers item in the status bar, or from the command palette.',
     );
+    expect(host.textContent).not.toContain('banner');
     expect(host.querySelector('button')).toBeNull();
     expect(host.querySelector('[role="list"]')).toBeNull();
+    expect(host.querySelector('[role="group"]')?.getAttribute('aria-label')).toBe(
+      'Trusted repos and PRs',
+    );
+  });
+
+  it('moves focus to the next row’s button when a row is removed', () => {
+    const host = render(<Held entries={ENTRIES} />);
+    focus(remove(host, 'api'));
+    click(remove(host, 'api'));
+    expect(remove(host, 'api')).toBeNull();
+    expect(document.activeElement).toBe(remove(host, 'web'));
+  });
+
+  it('moves focus to the previous row’s button when the last row is removed', () => {
+    const host = render(<Held entries={ENTRIES} />);
+    focus(remove(host, 'fork'));
+    click(remove(host, 'fork'));
+    expect(document.activeElement).toBe(remove(host, 'web'));
+  });
+
+  it('moves focus to the list when the last row of all is removed, and it stays there', () => {
+    const host = render(<Held entries={[ENTRIES[0]!]} />);
+    focus(remove(host, 'api'));
+    click(remove(host, 'api'));
+    const list = host.querySelector<HTMLElement>('[aria-label="Trusted repos and PRs"]')!;
+    expect(document.activeElement).toBe(list);
+    expect(list.getAttribute('role')).toBe('group');
+    // It is the same element before and after, so nothing it held is lost with the row.
+    expect(host.textContent).toContain('Nothing is trusted yet.');
+    // The list takes focus when it is told to, and is no stop for `Tab` of its own.
+    expect(list.getAttribute('tabindex')).toBe('-1');
+  });
+
+  it('leaves focus where the reader put it, when it has gone elsewhere before the row is gone', () => {
+    // A caller that removes a row later than the press, as one waiting on main does.
+    const host = render(<Later />);
+    focus(remove(host, 'api'));
+    click(remove(host, 'api'));
+    const elsewhere = host.querySelector<HTMLButtonElement>('#elsewhere')!;
+    focus(elsewhere);
+    click(host.querySelector('#land')!);
+    expect(remove(host, 'api')).toBeNull();
+    expect(document.activeElement).toBe(elsewhere);
+  });
+
+  it('keeps focus on the button of a row that was not removed', () => {
+    const host = render(<TrustList entries={ENTRIES} onRemove={() => undefined} />);
+    focus(remove(host, 'web'));
+    click(remove(host, 'web'));
+    expect(document.activeElement).toBe(remove(host, 'web'));
+  });
+
+  it('shows the control characters in a name, and in the button that names it', () => {
+    const host = render(
+      <TrustList
+        entries={[{ key: 'x', name: 'evil\u202Elive/atlas', kind: 'repo', trusted: 'today' }]}
+      />,
+    );
+    expect(host.textContent).toContain('evil\uFFFDlive/atlas');
+    expect(host.querySelector('button')?.getAttribute('aria-label')).toBe(
+      'Remove evil\uFFFDlive/atlas',
+    );
   });
 
   it("only uses utilities that Lo's stylesheet has", async () => {

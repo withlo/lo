@@ -76,6 +76,47 @@ describe('ReferencesHead', () => {
   });
 });
 
+describe('control characters', () => {
+  it('shows them in a word a server named, a path, and the revision', () => {
+    const host = render(
+      <ReferencesHead
+        name={'evil\u202Elive'}
+        count={2}
+        files={1}
+        source={{ kind: 'server', name: 'Type\u202EScript' }}
+        at={'r\u202E5'}
+      />,
+    );
+    const text = host.textContent ?? '';
+    expect(text).not.toMatch(/[\u202A-\u202E\u2066-\u2069]/);
+    expect(text).toBe('evil\uFFFDlive2 in 1 file · Type\uFFFDScript, at r\uFFFD5');
+  });
+
+  it('shows them in a row’s text, and keeps the word marked where it is', () => {
+    const text = 'x\u202Ey = RateLimitedError;';
+    const host = render(
+      <ReferencesList
+        groups={[{ key: 'a', path: 'src/evil\u202Egnp.ts', rows: [row('a-1', 1, text)] }]}
+      />,
+    );
+    const shown = options(host)[0]!;
+    expect(shown.textContent).toBe('1x\uFFFDy = RateLimitedError;');
+    expect(shown.querySelector('mark')?.textContent).toBe(WORD);
+    expect(host.querySelector('[role="group"]')?.getAttribute('aria-label')).toBe(
+      'src/evil\uFFFDgnp.ts',
+    );
+    expect(host.textContent).not.toMatch(/[\u202A-\u202E\u2066-\u2069]/);
+  });
+
+  it('counts a row’s offsets as the text had them, so the mark stays on its word', () => {
+    expect(around(row('a', 1, '\u202E\u202E  x RateLimitedError y'))).toEqual({
+      before: '\uFFFD\uFFFD  x ',
+      word: WORD,
+      after: ' y',
+    });
+  });
+});
+
 describe('around', () => {
   it('splits a line around its word, and drops the indentation before it', () => {
     expect(around(row('a', 1, '    throw new RateLimitedError();'))).toEqual({

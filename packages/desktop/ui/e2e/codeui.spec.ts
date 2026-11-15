@@ -1,5 +1,5 @@
 // The code components in Chromium itself, in both themes at the widths they sit at: the peek in the
-// middle view's width, the references in the threads panel's, the hover at its own, the status bar
+// middle view's width and in a place narrower than it, the references in the threads panel's, the hover at its own, the status bar
 // at the window's least width and its default, and Settings' trust rows at a section's. What a real
 // browser shows and jsdom can't: that the parts fit the room they're given, and run past it
 // nowhere, in light as in dark.
@@ -36,14 +36,16 @@ test.afterEach(async () => {
 /** Where each scene sits, and how wide its place is: the widths the design names. */
 const PLACES: readonly { scene: Scene; widths: readonly number[] }[] = [
   // The middle view, as wide as a window at its least leaves it, and as the default window does.
-  { scene: 'peek', widths: [720, 980] },
-  { scene: 'peek-single', widths: [720, 980] },
+  { scene: 'peek', widths: [340, 480, 720, 980] },
+  { scene: 'peek-single', widths: [340, 720, 980] },
+  { scene: 'peek-syntax', widths: [340, 720] },
   // The threads panel's width.
   { scene: 'references', widths: [340] },
   { scene: 'references-empty', widths: [340] },
   // The card is 480 px wide, and the box has room for it.
   { scene: 'hover', widths: [520] },
   { scene: 'hover-bare', widths: [520] },
+  { scene: 'hover-long', widths: [520] },
   { scene: 'hover-waiting', widths: [520] },
   // A window at its least, and at its default.
   { scene: 'status', widths: [720, 1280] },
@@ -156,4 +158,99 @@ test('a status item opens its details from the keyboard, which take focus, close
   await page.keyboard.press('Escape');
   await expect(details).toHaveCount(0);
   await expect(item).toBeFocused();
+});
+
+/** Where the parts of the peek that the layout moves are, once drawn. */
+async function layout(page: Page, scene: Scene, width: number) {
+  await fit(page, scene, 'dark', width);
+  return page.evaluate(() => {
+    const [list, code, go, close] = [
+      '[role="listbox"]',
+      '[role="dialog"] > .peek > :nth-child(3)',
+      '.peek-go',
+      '.peek-close',
+    ].map((selector) => {
+      const rect = document.querySelector(selector)?.getBoundingClientRect();
+      if (!rect) throw new Error(`The page has no ${selector}.`);
+      return { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom };
+    });
+    const head = document.querySelector<HTMLElement>('[role="dialog"] > .peek > :first-child')!;
+    const counted = head.querySelector<HTMLElement>('.truncate')!;
+    return {
+      list: list!,
+      code: code!,
+      go: go!,
+      close: close!,
+      // Whether the name and the count are shown whole, not cut short by a truncating part.
+      whole: counted.scrollWidth <= counted.clientWidth,
+      text: counted.textContent,
+    };
+  });
+}
+
+test('a wide peek has its answers beside its code', async () => {
+  const page = await open();
+  const wide = await layout(page, 'peek', 720);
+  expect(wide.list.right).toBeLessThanOrEqual(wide.code.left + 1);
+  expect(wide.list.right - wide.list.left).toBeCloseTo(250, 0);
+  expect(wide.whole).toBe(true);
+});
+
+test('a narrow peek stacks its answers above its code, and keeps the count in its head', async () => {
+  const page = await open();
+  for (const width of [340, 480]) {
+    const narrow = await layout(page, 'peek', width);
+    expect(narrow.list.bottom, `at ${width} px the answers sit above the code`).toBeLessThanOrEqual(
+      narrow.code.top + 1,
+    );
+    // The code has the whole width, not what a column leaves it.
+    expect(narrow.code.right - narrow.code.left).toBeGreaterThan(width - 40);
+    expect(narrow.text, `at ${width} px`).toContain('2 definitions');
+    expect(narrow.whole, `at ${width} px the head shows the name and the count whole`).toBe(true);
+    // Where the head has no room for both buttons beside the name, the way to close stays on its
+    // first row and the way to go wraps below it, so the name and the count aren't cut for it.
+    if (width === 340) {
+      expect(
+        narrow.close.bottom,
+        `at ${width} px the way to go is on its own row`,
+      ).toBeLessThanOrEqual(narrow.go.top + 1);
+    }
+  }
+});
+
+test('a peek says an answer is outside the repository, and has nothing to go to for it', async () => {
+  const page = await open();
+  await fit(page, 'peek-syntax', 'dark', 720);
+  const dialog = page.getByRole('dialog');
+  await expect(dialog.getByRole('option', { name: /Outside this repository/ })).toBeVisible();
+  await expect(dialog.getByRole('option', { name: /zod, which Lo doesn't install/ })).toBeVisible();
+  await expect(dialog.getByRole('button', { name: /Open the whole file/ })).toBeDisabled();
+});
+
+test('Tab goes past a hover whose docs hold links, code and a long signature', async () => {
+  const page = await open();
+  const result = await fit(page, 'hover-long', 'dark', 520);
+  expect(result.over).toBe(0);
+  await page.locator('#before').focus();
+  await page.keyboard.press('Tab');
+  // Nothing in the card takes focus: not a link, the signature or the code block that overflow.
+  await expect(page.locator('#after')).toBeFocused();
+  await page.keyboard.press('Shift+Tab');
+  await expect(page.locator('#before')).toBeFocused();
+  // Both of its parts are taller than the card shows, so each is a scroller, which Chromium would
+  // make a stop for `Tab` had it not been told otherwise.
+  const scrollers = await page.evaluate(
+    () =>
+      [...document.querySelectorAll<HTMLElement>('[role="tooltip"] .typehover-part')].filter(
+        (part) => part.scrollHeight > part.clientHeight,
+      ).length,
+  );
+  expect(scrollers).toBe(2);
+  // Its parts wrap at the card's width rather than scrolling sideways.
+  const sideways = await page.evaluate(() =>
+    [...document.querySelectorAll<HTMLElement>('[role="tooltip"] *')]
+      .filter((element) => element.scrollWidth > element.clientWidth + 1)
+      .map((element) => `${element.localName}.${element.className}`),
+  );
+  expect(sideways).toEqual([]);
 });

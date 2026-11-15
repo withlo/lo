@@ -1,12 +1,13 @@
 import { useId, type HTMLAttributes, type ReactNode, type Ref } from 'react';
 
 import { Button } from './Button.tsx';
+import { showControls } from './controls.ts';
 import { Key } from './Key.tsx';
 import { PaletteHint } from './Palette.tsx';
 import { PathName, SourceMark, type AnswerSource } from './Source.tsx';
 
-/** One answer of a peek: a line somewhere in the repository, and where the answer came from. */
-export interface PeekCandidate {
+/** An answer in a file of the repository: its line, and where the answer came from. */
+export interface PeekPlace {
   /** What identifies it, and what `selected` and `onPick` name. */
   key: string;
   /** The file's path in the repository. */
@@ -16,7 +17,28 @@ export interface PeekCandidate {
   source: AnswerSource;
   /** What sets it apart from the other answers: "overload", "same name". */
   note?: string | undefined;
+  /**
+   * The module the word is imported from, when this answer is the asking file's import of it and
+   * the language server found no definition: its row says Lo doesn't install it. The path and line
+   * are the import's own.
+   */
+  from?: string | undefined;
+  outside?: false | undefined;
 }
+
+/**
+ * An answer outside the repository, such as a toolchain's own sources. Lo never reads one, so the
+ * row says so and names no file; there's no code to show for it and nothing to go to.
+ */
+export interface PeekOutside {
+  key: string;
+  outside: true;
+  source: AnswerSource;
+  note?: string | undefined;
+}
+
+/** One answer of a peek. */
+export type PeekCandidate = PeekPlace | PeekOutside;
 
 /**
  * The keys of a peek's actions, as this system shows each (`['j', 'k']`, `['g', 'r']`). An action
@@ -40,7 +62,11 @@ export interface PeekProps extends Omit<
 > {
   /** The word the peek answers for. */
   name: string;
-  /** The answers, a language server's first. */
+  /**
+   * The answers to pick between. A language server's answer within its deadline is shown alone, so
+   * they come from one source: the server's, or else the syntax index's, with the asking file's
+   * import of the word, if it has one, first.
+   */
   candidates: readonly PeekCandidate[];
   /** The answer whose code shows, by key: the one `j` and `k` have reached. */
   selected: string | undefined;
@@ -53,12 +79,15 @@ export interface PeekProps extends Omit<
   keys?: PeekKeys | undefined;
   /** An answer was clicked: it's the one shown. */
   onPick?: ((key: string) => void) | undefined;
-  /** The button that goes to the answer shown was pressed. */
+  /** The button that goes to the answer shown was pressed. It can't, for one outside the repository. */
   onGo?: (() => void) | undefined;
   onClose?: (() => void) | undefined;
   /** The list of answers, which takes focus. */
   listRef?: Ref<HTMLDivElement> | undefined;
-  /** The shown answer's code, as the diff view draws a peek's. */
+  /**
+   * The shown answer's code, as the diff view draws a peek's. An answer outside the repository has
+   * none, and the peek says so in its place.
+   */
   children?: ReactNode;
 }
 
@@ -107,66 +136,107 @@ export function Peek({
   const single = candidates.length === 1;
   const index = candidates.findIndex((each) => each.key === selected);
   const closeLabel = keys?.close ? `Close (${keys.close.join(' ')})` : 'Close';
+  // An answer outside the repository has no file to go to.
+  const shown = candidates[index];
+  const goes = shown !== undefined && shown.outside !== true;
   return (
     <div
       role="dialog"
-      aria-label={`Definitions of ${name}`}
-      className={`peek ${single ? 'peek-single' : ''} overflow-hidden rounded-md bg-bg-raised text-fg ring-1 ring-border text-ui focus-within:shadow-ring ${className}`}
+      aria-label={`Definitions of ${showControls(name)}`}
+      // The frame is the container its parts adapt to, so a peek in a narrow place stacks its list
+      // above its code whatever the window's width is.
+      className={`@container overflow-hidden rounded-md bg-bg-raised text-fg ring-1 ring-border text-ui focus-within:shadow-ring ${className}`}
       {...rest}
     >
-      <div className="col-span-full flex h-32 min-w-0 items-center gap-8 border-b border-border-subtle ps-12 pe-8 text-fg-muted text-small">
-        <EyeIcon />
-        <span className="min-w-0 truncate">
-          <strong className="font-semibold text-fg">{name}</strong> ·{' '}
-          <span className="lo-num">{definitions(candidates.length)}</span>
-        </span>
-        {at !== undefined && <span className="flex-none">at {at}</span>}
-        <span className="flex-1" />
-        <Button variant="ghost" size="sm" onClick={() => onGo?.()}>
-          {goLabel}
-          {keys?.go && <Key keys={keys.go} quiet />}
-        </Button>
-        <Button variant="ghost" size="sm" icon aria-label={closeLabel} onClick={() => onClose?.()}>
-          <svg className="lo-i lo-i--sm" viewBox="0 0 16 16" aria-hidden="true">
-            <path d="M4 4l8 8M12 4l-8 8" />
-          </svg>
-        </Button>
-      </div>
-      <div
-        ref={listRef}
-        role="listbox"
-        aria-label="Candidates"
-        tabIndex={0}
-        aria-activedescendant={index === -1 ? undefined : `${prefix}-${index}`}
-        className={`group/list flex peek-list flex-col gap-2 overflow-auto p-6 ${single ? 'border-b' : 'border-e'} border-border-subtle`}
-      >
-        {candidates.map((each, place) => (
-          <div
-            key={each.key}
-            id={`${prefix}-${place}`}
-            role="option"
-            aria-selected={each.key === selected}
-            data-key={each.key}
-            className={`peek-answer cursor-default gap-x-8 gap-y-2 rounded-sm px-8 py-6 hover:bg-hover ${each.key === selected ? 'bg-current-strong group-focus-visible/list:shadow-ring-inset' : ''}`}
-            onClick={() => onPick?.(each.key)}
-          >
-            <span className="min-w-0 code-small">
-              <PathName path={each.path} strong />
-            </span>
-            <span className="lo-num text-fg-muted text-small">{each.line}</span>
-            <span className="col-span-full min-w-0 text-fg-muted text-small">
-              <SourceMark source={each.source} note={each.note} />
-            </span>
-          </div>
-        ))}
-      </div>
-      <div className="min-w-0 bg-code-bg">{children}</div>
-      <div className="col-span-full flex h-32 min-w-0 items-center gap-12 border-t border-border-subtle ps-12 pe-8 text-fg-muted text-small">
-        <span className="lo-num min-w-0 truncate">{meta}</span>
-        <span className="flex-1" />
-        {keys?.move && !single && <PaletteHint keys={keys.move}>Candidate</PaletteHint>}
-        {keys?.references && <PaletteHint keys={keys.references}>References</PaletteHint>}
-        {keys?.back && <PaletteHint keys={keys.back}>Back</PaletteHint>}
+      <div className={`peek ${single ? 'peek-single' : ''}`}>
+        <div className="col-span-full flex min-h-32 min-w-0 flex-wrap items-center gap-x-8 gap-y-2 border-b border-border-subtle py-2 ps-12 pe-8 text-fg-muted text-small">
+          <EyeIcon />
+          <span className="max-w-full min-w-0 truncate">
+            <strong className="font-semibold text-fg">{showControls(name)}</strong> ·{' '}
+            <span className="lo-num">{definitions(candidates.length)}</span>
+          </span>
+          {at !== undefined && <span className="flex-none">at {showControls(at)}</span>}
+          <span className="flex-1" />
+          <span className="peek-go">
+            <Button variant="ghost" size="sm" disabled={!goes} onClick={() => onGo?.()}>
+              {goLabel}
+              {keys?.go && <Key keys={keys.go} quiet />}
+            </Button>
+          </span>
+          <span className="peek-close">
+            <Button
+              variant="ghost"
+              size="sm"
+              icon
+              aria-label={closeLabel}
+              onClick={() => onClose?.()}
+            >
+              <svg className="lo-i lo-i--sm" viewBox="0 0 16 16" aria-hidden="true">
+                <path d="M4 4l8 8M12 4l-8 8" />
+              </svg>
+            </Button>
+          </span>
+        </div>
+        <div
+          ref={listRef}
+          role="listbox"
+          aria-label="Candidates"
+          tabIndex={0}
+          aria-activedescendant={index === -1 ? undefined : `${prefix}-${index}`}
+          className={`group/list flex peek-list flex-col gap-2 overflow-auto p-6 ${single ? 'border-b border-border-subtle' : 'peek-rule'}`}
+        >
+          {candidates.map((each, place) => (
+            <div
+              key={each.key}
+              id={`${prefix}-${place}`}
+              role="option"
+              aria-selected={each.key === selected}
+              data-key={each.key}
+              className={`peek-answer cursor-default gap-x-8 gap-y-2 rounded-sm px-8 py-6 hover:bg-hover ${each.key === selected ? 'bg-current-strong group-focus-visible/list:shadow-ring-inset' : ''}`}
+              onClick={() => onPick?.(each.key)}
+            >
+              {each.outside === true ? (
+                <span className="col-span-full min-w-0 truncate text-fg-muted text-small">
+                  Outside this repository
+                </span>
+              ) : (
+                <>
+                  <span className="min-w-0 code-small">
+                    <PathName path={each.path} strong />
+                  </span>
+                  <span className="lo-num text-fg-muted text-small">{each.line}</span>
+                </>
+              )}
+              <span className="col-span-full min-w-0 text-fg-muted text-small">
+                <SourceMark
+                  source={each.source}
+                  note={
+                    each.outside !== true && each.from !== undefined
+                      ? `From ${each.from}, which Lo doesn't install`
+                      : each.note
+                  }
+                />
+              </span>
+            </div>
+          ))}
+        </div>
+        <div className="min-w-0 bg-code-bg">
+          {children ??
+            (shown?.outside === true && (
+              <p className="m-0 px-12 py-8 text-fg-muted text-small">
+                Lo doesn&apos;t read files outside this repository.
+              </p>
+            ))}
+        </div>
+        <div className="col-span-full flex min-h-32 min-w-0 flex-wrap items-center gap-x-12 gap-y-2 border-t border-border-subtle py-2 ps-12 pe-8 text-fg-muted text-small">
+          <span className="lo-num min-w-0 truncate">
+            {meta !== undefined && showControls(meta)}
+          </span>
+          <span className="flex-1" />
+          {keys?.move && !single && <PaletteHint keys={keys.move}>Candidate</PaletteHint>}
+          {keys?.references && <PaletteHint keys={keys.references}>References</PaletteHint>}
+          {keys?.back && <PaletteHint keys={keys.back}>Back</PaletteHint>}
+        </div>
       </div>
     </div>
   );

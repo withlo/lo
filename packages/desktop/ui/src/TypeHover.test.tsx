@@ -3,15 +3,14 @@
 // with their images as links, where the answer came from, and what the card says while the server
 // is still starting.
 
-import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 
-import { markdownTree } from '@lo/markdown';
+import { markdownTree, type Tree } from '@lo/markdown';
 
 import { buildCss, declarations } from '../scripts/stylesheet.ts';
 import { missingRules } from '../test/classes.ts';
-import { cleanUp, click, render } from '../test/dom.ts';
+import { cleanUp, render } from '../test/dom.ts';
 import { TypeHover, TypeHoverWaiting } from './TypeHover.tsx';
-import type { Followed } from './markdown/index.ts';
 
 beforeAll(() => {
   Reflect.set(globalThis, 'IS_REACT_ACT_ENVIRONMENT', true);
@@ -23,6 +22,11 @@ afterEach(() => {
 
 const SIGNATURE = 'const report: CostReport';
 const TYPESCRIPT = { kind: 'server', name: 'TypeScript' } as const;
+
+/** CSS on one line, its runs of space as one space. */
+function squash(css: string): string {
+  return css.replace(/\s+/g, ' ');
+}
 const DOCS = markdownTree(
   [
     "What `estimateCost` found: the query's total cost and each field's share.",
@@ -32,6 +36,42 @@ const DOCS = markdownTree(
     'See [the limits](https://example.com/limits).',
   ].join('\n'),
 );
+
+/** Docs with every part of Markdown that takes focus or scrolls on its own. */
+const HEAVY_TEXT = markdownTree(
+  [
+    'See [the limits](https://example.com/limits)[^1] and ![A chart](https://user-images.githubusercontent.com/1/chart.png).',
+    '```ts\nconst estimate = estimateCost(schema, document, { operationName: "Pull", weights });\n```',
+    '| field | cost |\n| --- | --- |\n| a_name_much_too_long_for_its_share_of_the_card | 1 |',
+    '[^1]: A note on the limits.',
+  ].join('\n\n'),
+);
+const HEAVY: Tree = {
+  ...HEAVY_TEXT,
+  blocks: [
+    ...HEAVY_TEXT.blocks,
+    // What `githubTree` makes of a `<details>` block.
+    {
+      kind: 'details',
+      open: false,
+      summary: [{ kind: 'text', value: 'Details' }],
+      children: [
+        { kind: 'paragraph', children: [{ kind: 'text', value: 'The fold holds more text.' }] },
+      ],
+    },
+  ],
+};
+
+/** What a keyboard can land on inside `root`: a stop for `Tab`, a link, a button, a fold's title. */
+const STOPS = 'a, button, input, select, textarea, summary, [contenteditable], [tabindex]';
+
+/** The stops in `root` that `Tab` reaches: those with a `tabindex` of 0 or more, or none to need one. */
+function tabStops(root: Element): Element[] {
+  return [...root.querySelectorAll(STOPS)].filter((stop) => {
+    const index = stop.getAttribute('tabindex');
+    return index === null || Number(index) >= 0;
+  });
+}
 
 function foot(host: HTMLElement): string {
   return host.querySelector('[role="tooltip"] > :last-child')?.textContent ?? '';
@@ -50,40 +90,100 @@ describe('TypeHover', () => {
     expect(foot(host)).toBe('TypeScriptEsc Close');
   });
 
-  it('draws a signature that is already highlighted as it is given', () => {
+  it('colours a signature’s stretches by their tokens', () => {
     const host = render(
       <TypeHover
-        signature={
-          <>
-            <span className="lo-syn-keyword">const</span> report
-          </>
-        }
+        signature={[
+          { text: 'const', token: 'keyword' },
+          { text: ' report: ' },
+          { text: 'CostReport', token: 'type' },
+        ]}
         source={TYPESCRIPT}
       />,
     );
     expect(host.querySelector('.lo-syn-keyword')?.textContent).toBe('const');
+    expect(host.querySelector('.lo-syn-type')?.textContent).toBe('CostReport');
     expect(host.querySelector('[role="tooltip"]')?.firstElementChild?.textContent).toBe(
-      'const report',
+      'const report: CostReport',
     );
   });
 
-  it('shows an image in the docs as a link to it, and loads nothing', () => {
-    const onFollow = vi.fn<(target: Followed, from: Element) => void>();
-    const host = render(
-      <TypeHover signature={SIGNATURE} docs={DOCS} source={TYPESCRIPT} onFollow={onFollow} />,
-    );
+  it('shows a link and an image in the docs as their words, with nothing to follow', () => {
+    const host = render(<TypeHover signature={SIGNATURE} docs={DOCS} source={TYPESCRIPT} />);
+    const card = host.querySelector('[role="tooltip"]')!;
+    // An image is only its words: a hover loads nothing, and holds nothing to press.
     expect(host.querySelector('img, picture, source')).toBeNull();
-    const links = [...host.querySelectorAll('a')];
-    const image = links.find((link) => link.textContent === 'A chart of the cost');
-    expect(image).toBeDefined();
-    // A link has no address on the page: following it hands the target to the caller.
-    expect(image?.hasAttribute('href')).toBe(false);
-    click(image!);
-    expect(onFollow).toHaveBeenCalledTimes(1);
-    expect(onFollow.mock.calls[0]?.[0]).toEqual({
-      kind: 'web',
-      url: 'https://user-images.githubusercontent.com/1/chart.png',
-    });
+    expect(card.querySelector('a, [role="link"]')).toBeNull();
+    expect(card.textContent).toContain('A chart of the cost');
+    expect(card.textContent).toContain('See the limits.');
+  });
+
+  it('holds nothing a keyboard can land on, whatever the docs hold', () => {
+    const host = render(
+      <TypeHover
+        signature={`export function ${'estimate'.repeat(30)}(schema: GraphQLSchema): CostReport`}
+        docs={HEAVY}
+        source={TYPESCRIPT}
+        location={{ path: 'a.ts', line: 1 }}
+      />,
+    );
+    const card = host.querySelector('[role="tooltip"]')!;
+    // The docs held a link, a footnote link, an image, a fold, code and a table.
+    expect(card.textContent).toContain('the limits');
+    expect(card.textContent).toContain('Details');
+    expect(card.querySelector('pre')).not.toBeNull();
+    expect(card.querySelector('table')).not.toBeNull();
+    // A part that scrolls can't be a stop: it is told it isn't one, so `Tab` goes past the card.
+    for (const part of card.querySelectorAll('.typehover-part')) {
+      expect(part.getAttribute('tabindex')).toBe('-1');
+    }
+    expect(tabStops(card)).toEqual([]);
+    // Nor does the card itself take focus.
+    expect(card.hasAttribute('tabindex')).toBe(false);
+  });
+
+  it('draws a fold as its title over what it holds, open, since a card has no way to open one', () => {
+    const host = render(<TypeHover signature={SIGNATURE} docs={HEAVY} source={TYPESCRIPT} />);
+    const card = host.querySelector('[role="tooltip"]')!;
+    expect(card.querySelector('details, summary')).toBeNull();
+    expect(card.textContent).toContain('DetailsThe fold holds more text.');
+  });
+
+  it('wraps the docs and the signature to the card instead of scrolling them sideways', async () => {
+    const host = render(<TypeHover signature={SIGNATURE} docs={HEAVY} source={TYPESCRIPT} />);
+    const card = host.querySelector('[role="tooltip"]')!;
+    const parts = card.querySelectorAll('.typehover-part');
+    expect(parts).toHaveLength(2);
+    for (const part of parts) expect(part.classList.contains('wrap-anywhere')).toBe(true);
+    // Code and tables, which the Markdown scrolls on its own, are clipped and wrapped here.
+    const docs = card.querySelector('.typehover-docs')!;
+    expect(docs.querySelector('pre.overflow-x-auto')).not.toBeNull();
+    expect(docs.querySelector('div.overflow-x-auto > table')).not.toBeNull();
+    const css = squash(await buildCss(['typehover-docs', 'wrap-anywhere']));
+    expect(css).toContain('.wrap-anywhere { overflow-wrap: anywhere; }');
+    expect(css).toContain('.typehover-docs pre { white-space: pre-wrap; }');
+    expect(css).toContain('.typehover-docs table { width: 100%; table-layout: fixed; }');
+    expect(css).toContain('.typehover-docs .overflow-x-auto { overflow-x: clip; }');
+  });
+
+  it('shows the control characters in what a server wrote', () => {
+    const host = render(
+      <TypeHover
+        signature={[{ text: 'const evil\u202Elive: string' }, { text: ' = 1', token: 'keyword' }]}
+        docs={markdownTree('Open `evil\u202Elive` or [evil\u2066live](https://example.com/x).')}
+        source={{ kind: 'server', name: 'Type\u202EScript' }}
+        location={{ path: 'src/evil\u202Egnp.ts', line: 3 }}
+      />,
+    );
+    const text = host.textContent ?? '';
+    expect(text).not.toMatch(/[\u202A-\u202E\u2066-\u2069]/);
+    expect(text).toContain('const evil\uFFFDlive: string = 1');
+    expect(text).toContain('Open evil\uFFFDlive or evil\uFFFDlive.');
+    expect(text).toContain('Type\uFFFDScript');
+    expect(text).toContain('src/evil\uFFFDgnp.ts:3');
+    // A plain string signature shows them too.
+    const plain = render(<TypeHover signature={'a\u202Eb'} source={TYPESCRIPT} />);
+    expect(plain.textContent).toContain('a\uFFFDb');
   });
 
   it('says a language server found no docs, and where the word is declared', () => {
@@ -149,7 +249,7 @@ describe('TypeHover', () => {
     const host = render(<TypeHover signature={SIGNATURE} source={TYPESCRIPT} />);
     const card = host.querySelector('[role="tooltip"]')!;
     expect(card.hasAttribute('tabindex')).toBe(false);
-    expect(card.querySelector('button, input, [tabindex]')).toBeNull();
+    expect(tabStops(card)).toEqual([]);
   });
 
   it('is 480 px wide, and no wider than the window', async () => {

@@ -36,9 +36,28 @@ const CANDIDATES: PeekCandidate[] = [
     key: 'helpers',
     path: 'test/helpers/cost.ts',
     line: 7,
+    source: { kind: 'server', name: 'TypeScript' },
+    note: 'overload',
+  },
+];
+
+/** What the syntax index answers when no server did: the asking file's import, then its own finds. */
+const SYNTAX: PeekCandidate[] = [
+  {
+    key: 'import',
+    path: 'graphql/cost/estimate.ts',
+    line: 3,
+    source: { kind: 'syntax' },
+    from: 'zod',
+  },
+  {
+    key: 'same',
+    path: 'test/helpers/cost.ts',
+    line: 7,
     source: { kind: 'syntax' },
     note: 'same name',
   },
+  { key: 'outside', outside: true, source: { kind: 'syntax' } },
 ];
 
 const KEYS: PeekKeys = {
@@ -51,6 +70,11 @@ const KEYS: PeekKeys = {
 
 function options(host: HTMLElement): HTMLElement[] {
   return [...host.querySelectorAll<HTMLElement>('[role="option"]')];
+}
+
+/** CSS on one line, its runs of space as one space. */
+function squash(css: string): string {
+  return css.replace(/\s+/g, ' ');
 }
 
 describe('Peek', () => {
@@ -68,14 +92,13 @@ describe('Peek', () => {
     expect(host.querySelector('pre')?.textContent).toBe('code');
   });
 
-  it('lists each answer with its path, its line and where it came from, the server first', () => {
+  it('lists each answer with its path, its line and where it came from', () => {
     const host = render(<Peek name="estimateCost" candidates={CANDIDATES} selected="estimate" />);
     const rows = options(host);
     expect(rows.map((row) => row.dataset['key'])).toEqual(['estimate', 'cost', 'helpers']);
     expect(rows[0]?.textContent).toBe('graphql/cost/estimate.ts18TypeScript');
     expect(rows[1]?.textContent).toBe('ratelimit/src/cost.ts41TypeScript · overload');
-    // Lo's own reading of the syntax is named the same wherever it answers.
-    expect(rows[2]?.textContent).toBe('test/helpers/cost.ts7Syntax index · same name');
+    expect(rows[2]?.textContent).toBe('test/helpers/cost.ts7TypeScript · overload');
     // The file's name stands out from the folders before it.
     expect(rows[0]?.querySelector('b, .font-semibold')?.textContent).toBe('estimate.ts');
   });
@@ -142,7 +165,7 @@ describe('Peek', () => {
     const dialog = host.querySelector('[role="dialog"]');
     expect(dialog?.textContent).toContain('estimateCost · 1 definition');
     expect(dialog?.textContent).not.toContain('definitions');
-    expect(dialog?.classList.contains('peek-single')).toBe(true);
+    expect(host.querySelector('.peek')?.classList.contains('peek-single')).toBe(true);
     expect(options(host)).toHaveLength(1);
     // There's nothing for `j` and `k` to pick, so the foot doesn't offer them.
     expect(dialog?.textContent).not.toContain('Candidate');
@@ -171,7 +194,7 @@ describe('Peek', () => {
     const bare = render(<Peek name="estimateCost" candidates={CANDIDATES} selected="estimate" />);
     expect(bare.querySelectorAll('kbd')).toHaveLength(0);
     expect(bare.textContent).not.toContain('Candidate');
-    expect(bare.querySelector('button:last-of-type')?.getAttribute('aria-label')).toBe('Close');
+    expect([...bare.querySelectorAll('button')].at(-1)?.getAttribute('aria-label')).toBe('Close');
   });
 
   it('asks for what a click on its parts means, and nothing it wasn’t asked to do', () => {
@@ -202,6 +225,69 @@ describe('Peek', () => {
     expect(onPick).toHaveBeenCalledTimes(1);
   });
 
+  it('names the syntax index’s answers the same wherever they sit, and says what a server was not asked', () => {
+    const host = render(<Peek name="estimateCost" candidates={SYNTAX} selected="import" />);
+    const rows = options(host);
+    expect(rows[0]?.textContent).toBe(
+      "graphql/cost/estimate.ts3Syntax index · From zod, which Lo doesn't install",
+    );
+    expect(rows[1]?.textContent).toBe('test/helpers/cost.ts7Syntax index · same name');
+  });
+
+  it('shows an answer outside the repository as that, with no path, nothing to go to and no code', () => {
+    const onGo = vi.fn<() => void>();
+    const host = render(
+      <Peek name="estimateCost" candidates={SYNTAX} selected="outside" keys={KEYS} onGo={onGo} />,
+    );
+    const outside = options(host)[2]!;
+    expect(outside.textContent).toBe('Outside this repositorySyntax index');
+    // No path or line to read, and `aria-selected` says it is the one on.
+    expect(outside.getAttribute('aria-selected')).toBe('true');
+    expect(outside.querySelector('.font-semibold')).toBeNull();
+    // Lo reads nothing there, so the peek says so where the code would be.
+    expect(host.textContent).toContain("Lo doesn't read files outside this repository.");
+    const go = [...host.querySelectorAll('button')].find((button) =>
+      button.textContent?.startsWith('Open the whole file'),
+    )!;
+    expect(go.disabled).toBe(true);
+    click(go);
+    expect(onGo).not.toHaveBeenCalled();
+    // Another answer shown, and the button is back.
+    rerender(host, <Peek name="estimateCost" candidates={SYNTAX} selected="import" keys={KEYS} />);
+    expect(
+      [...host.querySelectorAll('button')].find((button) =>
+        button.textContent?.startsWith('Open the whole file'),
+      )?.disabled,
+    ).toBe(false);
+    expect(host.textContent).not.toContain("Lo doesn't read files");
+  });
+
+  it('shows the control characters in text a server or a repository wrote', () => {
+    const host = render(
+      <Peek
+        name={'evil\u202Elive'}
+        candidates={[
+          {
+            key: 'a',
+            path: 'src/evil\u202Egnp.ts',
+            line: 1,
+            source: { kind: 'server', name: 'Type\u202EScript' },
+            note: 'o\u2066verload',
+          },
+        ]}
+        selected="a"
+        at={'r\u202E5'}
+        meta={'src/evil\u202Egnp.ts · r5'}
+      />,
+    );
+    const text = host.textContent ?? '';
+    expect(text).not.toMatch(/[\u202A-\u202E\u2066-\u2069]/);
+    expect(text).toContain('evil\uFFFDlive');
+    expect(text).toContain('src/evil\uFFFDgnp.ts1');
+    expect(text).toContain('Type\uFFFDScript · o\uFFFDverload');
+    expect(text).toContain('at r\uFFFD5');
+  });
+
   it('draws with no answer picked, and no active descendant', () => {
     const host = render(<Peek name="estimateCost" candidates={CANDIDATES} selected={undefined} />);
     expect(host.querySelector('[role="listbox"]')?.hasAttribute('aria-activedescendant')).toBe(
@@ -215,9 +301,38 @@ describe('Peek', () => {
     const list = host.querySelector('[role="listbox"]')!;
     expect(list.classList.contains('peek-list')).toBe(true);
     expect(list.classList.contains('overflow-auto')).toBe(true);
-    const css = await buildCss(['peek-list', 'peek', 'peek-single']);
-    expect(declarations(css, 'peek-list')).toBe('max-height: calc(15 * var(--lo-code-line));');
+    const css = squash(await buildCss(['peek-list', 'peek', 'peek-single']));
+    expect(css).toContain(
+      '.peek-list { max-height: calc(15 * var(--lo-code-line)); @container (width < 36rem) { max-height: calc(8 * var(--lo-code-line)); } }',
+    );
     expect(declarations(css, 'peek-single')).toBe('grid-template-columns: minmax(0, 1fr);');
+  });
+
+  it('gives its answers column up to the code when the peek itself is narrow', async () => {
+    // The peek is the container its parts answer to, so a narrow place stacks them, not a window.
+    const host = render(<Peek name="estimateCost" candidates={CANDIDATES} selected="estimate" />);
+    const frame = host.querySelector('[role="dialog"]')!;
+    expect(frame.classList.contains('@container')).toBe(true);
+    const grid = frame.firstElementChild!;
+    expect(grid.classList.contains('peek')).toBe(true);
+    // Its parts are inside the grid, which is inside the container: a container can't query itself.
+    expect(grid.querySelector('.peek-go')).not.toBeNull();
+    expect(grid.querySelector('.peek-close')).not.toBeNull();
+    expect(host.querySelector('[role="listbox"]')?.classList.contains('peek-rule')).toBe(true);
+    const css = squash(await buildCss(['peek', 'peek-rule', 'peek-go', 'peek-close']));
+    expect(css).toContain(
+      '.peek { display: grid; grid-template-columns: 250px minmax(0, 1fr); @container (width < 36rem) { grid-template-columns: minmax(0, 1fr); } }',
+    );
+    expect(css).toContain(
+      '.peek-rule { border-inline-end: 1px solid var(--lo-border-subtle); @container (width < 36rem) { border-inline-end: 0; border-block-end: 1px solid var(--lo-border-subtle); } }',
+    );
+    expect(css).toContain('.peek-go { order: 3; margin-inline-start: auto; }');
+    expect(css).toContain('.peek-close { order: 2; }');
+    // One answer has the line of its own under its head, as the list's rule would be.
+    const single = render(
+      <Peek name="estimateCost" candidates={[CANDIDATES[0]!]} selected="estimate" />,
+    );
+    expect(single.querySelector('[role="listbox"]')?.classList.contains('peek-rule')).toBe(false);
   });
 
   it("only uses utilities that Lo's stylesheet has", async () => {
@@ -231,5 +346,7 @@ describe('Peek', () => {
       <Peek name="estimateCost" candidates={[CANDIDATES[0]!]} selected="estimate" />,
     );
     expect(await missingRules(single)).toEqual([]);
+    const syntax = render(<Peek name="estimateCost" candidates={SYNTAX} selected="outside" />);
+    expect(await missingRules(syntax)).toEqual([]);
   });
 });

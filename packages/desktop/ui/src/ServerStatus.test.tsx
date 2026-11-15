@@ -2,13 +2,13 @@
 // A language server's item in the status bar: what each state says and shows, the details it opens
 // over itself, and the buttons that start the server again or open its log.
 
-import { act } from 'react';
+import { act, useState } from 'react';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { buildCss, declarations } from '../scripts/stylesheet.ts';
 import { missingRules } from '../test/classes.ts';
-import { cleanUp, click, press, render } from '../test/dom.ts';
-import { ServerStatus, type ServerState } from './ServerStatus.tsx';
+import { cleanUp, click, focus, press, render } from '../test/dom.ts';
+import { ServerStatus, type ServerState, type ServerTrust } from './ServerStatus.tsx';
 
 beforeAll(() => {
   Reflect.set(globalThis, 'IS_REACT_ACT_ENVIRONMENT', true);
@@ -56,6 +56,36 @@ function marks(state: ServerState): { spinner: boolean; dot: string } {
   };
 }
 
+/** A status bar that holds the server's state, and starts it when Restart is pressed. */
+function Bar() {
+  const [state, setState] = useState<ServerState>(MEMORY);
+  return (
+    <ServerStatus
+      name="TypeScript"
+      state={state}
+      onRestart={() => setState({ kind: 'starting' })}
+    />
+  );
+}
+
+/** The labels of the buttons on the details of a server in `state`, with `trust` offered. */
+async function labels(trust: ServerTrust, state: ServerState): Promise<string[]> {
+  const host = render(
+    <ServerStatus
+      name="TypeScript"
+      state={state}
+      onRestart={() => undefined}
+      onShowLog={() => undefined}
+      trust={trust}
+    />,
+  );
+  click(item(host));
+  await settle();
+  const found = [...details()!.querySelectorAll('button')].map((button) => button.textContent);
+  cleanUp();
+  return found;
+}
+
 describe('ServerStatus', () => {
   it('says each state in the one phrase that fits, with its numbers', () => {
     expect(say('TypeScript', { kind: 'downloading', done: 12_300_000, total: 40_100_000 })).toBe(
@@ -67,6 +97,8 @@ describe('ServerStatus', () => {
     expect(say('TypeScript', { kind: 'ready' })).toBe('TypeScript');
     expect(say('TypeScript', MEMORY)).toBe('TypeScript failed');
     expect(say('Go', { kind: 'missing', needs: 'Go 1.24 or later' })).toBe('Go toolchain missing');
+    // An untrusted repo has none of them on, whichever server is named.
+    expect(say('TypeScript', { kind: 'off' })).toBe('Language servers off');
   });
 
   it('keeps a progress report to the scale it is on', () => {
@@ -86,6 +118,10 @@ describe('ServerStatus', () => {
     expect(marks(MEMORY).dot).toContain('bg-danger');
     expect(marks({ kind: 'missing', needs: 'a JDK' }).dot).toContain('bg-warning');
     expect(marks({ kind: 'ready' }).spinner).toBe(false);
+    expect(marks({ kind: 'off' })).toEqual({
+      spinner: false,
+      dot: expect.stringContaining('bg-fg-dim'),
+    });
   });
 
   it('is a button that opens details, so it’s reached and opened by keyboard', () => {
@@ -156,6 +192,8 @@ describe('ServerStatus', () => {
     const host = render(<ServerStatus name="TypeScript" state={MEMORY} onRestart={onRestart} />);
     const buttons = [...host.querySelectorAll('button')];
     expect(buttons.map((button) => button.textContent)).toEqual(['TypeScript failed', 'Restart']);
+    // Named for its server, since a bar holds one for each that fails.
+    expect(buttons[1]?.getAttribute('aria-label')).toBe('Restart TypeScript');
     // The failed item is tinted, and says why in words besides: a color never stands alone.
     expect(buttons[0]?.className).toContain('bg-danger-bg');
     click(buttons[1]!);
@@ -167,6 +205,28 @@ describe('ServerStatus', () => {
     expect(ready.querySelectorAll('button')).toHaveLength(1);
     const unwired = render(<ServerStatus name="TypeScript" state={MEMORY} />);
     expect(unwired.querySelectorAll('button')).toHaveLength(1);
+  });
+
+  it('names the retry of a failed download for its server too', () => {
+    const host = render(
+      <ServerStatus
+        name="Python"
+        state={{ kind: 'failed', why: { kind: 'download', message: 'GitHub returned 502.' } }}
+        onRestart={() => undefined}
+      />,
+    );
+    expect(host.querySelectorAll('button')[1]?.getAttribute('aria-label')).toBe('Retry Python');
+  });
+
+  it('keeps focus on its item when the Restart beside it goes with the failure', () => {
+    // As a window holds it: once the server is starting, the state is no longer failed.
+    const host = render(<Bar />);
+    const restart = host.querySelectorAll('button')[1]!;
+    focus(restart);
+    click(restart);
+    expect(host.querySelectorAll('button')).toHaveLength(1);
+    expect(host.textContent).toBe('TypeScript starting');
+    expect(document.activeElement).toBe(item(host));
   });
 
   it('says what a missing toolchain needs and how to install it', async () => {
@@ -273,6 +333,98 @@ describe('ServerStatus', () => {
     const open = details()!;
     expect(open.textContent).toBe('TypeScript readytsserver 5.6.3Show the log');
     expect(open.querySelector('p')).toBeNull();
+  });
+
+  it('says why language servers are off, and offers to trust the repo', async () => {
+    const onChoose = vi.fn<() => void>();
+    const host = render(
+      <ServerStatus
+        name="TypeScript"
+        state={{ kind: 'off' }}
+        trust={{ action: 'repo', onChoose }}
+      />,
+    );
+    click(item(host));
+    await settle();
+    const open = details()!;
+    expect(open.textContent).toContain('Language servers off');
+    expect(open.textContent).toContain(
+      'Lo runs language servers only on repos you trust. Until then, peek, references and hovers use the syntax index.',
+    );
+    const buttons = [...open.querySelectorAll('button')];
+    expect(buttons.map((button) => button.textContent)).toEqual(['Trust this repo…']);
+    // The one thing to do has focus, though it has no Restart, and isn't the main button: it asks.
+    expect(document.activeElement).toBe(buttons[0]);
+    expect(buttons[0]?.className).not.toContain('bg-accent');
+    click(buttons[0]!);
+    expect(onChoose).toHaveBeenCalledTimes(1);
+    await settle();
+    expect(item(host).getAttribute('aria-expanded')).toBe('false');
+  });
+
+  it('puts the trust choice after Restart and the log', async () => {
+    const stop: ServerTrust = { action: 'stop', onChoose: () => undefined };
+    expect(await labels(stop, { kind: 'ready' })).toEqual([
+      'Restart',
+      'Show the log',
+      'Stop trusting this repo',
+    ]);
+    expect(await labels({ action: 'pr', onChoose: () => undefined }, { kind: 'off' })).toEqual([
+      'Restart',
+      'Show the log',
+      'Trust this PR…',
+    ]);
+  });
+
+  it('takes the trust choice and closes the details as it does', async () => {
+    const onChoose = vi.fn<() => void>();
+    const host = render(
+      <ServerStatus
+        name="TypeScript"
+        state={{ kind: 'ready' }}
+        trust={{ action: 'stop', onChoose }}
+      />,
+    );
+    click(item(host));
+    await settle();
+    // With only this to press, it has focus as the details open.
+    const only = details()!.querySelector('button')!;
+    expect(only.textContent).toBe('Stop trusting this repo');
+    expect(document.activeElement).toBe(only);
+    click(only);
+    expect(onChoose).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows the control characters in what a server or the toolchain said', async () => {
+    const host = render(
+      <ServerStatus
+        name={'Type\u202EScript'}
+        state={{ kind: 'failed', why: { kind: 'error', message: 'It said evil\u202Elive.' } }}
+        version={'tsserver 5.\u202E6'}
+        onRestart={() => undefined}
+      />,
+    );
+    expect(host.textContent).toBe('Type\uFFFDScript failedRestart');
+    expect(host.querySelectorAll('button')[1]?.getAttribute('aria-label')).toBe(
+      'Restart Type\uFFFDScript',
+    );
+    click(item(host));
+    await settle();
+    expect(details()?.textContent).not.toMatch(/[\u202A-\u202E\u2066-\u2069]/);
+    expect(details()?.textContent).toContain('It said evil\uFFFDlive.');
+    expect(details()?.textContent).toContain('tsserver 5.\uFFFD6');
+    cleanUp();
+    const missing = render(
+      <ServerStatus
+        name="Go"
+        state={{ kind: 'missing', needs: 'Go\u202E 1.24', install: 'brew\u202E install go' }}
+      />,
+    );
+    click(item(missing));
+    await settle();
+    expect(details()?.textContent).toContain(
+      'Go needs Go\uFFFD 1.24. Install it with brew\uFFFD install go.',
+    );
   });
 
   it('closes on Esc and gives focus back to its item', async () => {

@@ -1,5 +1,6 @@
 import { useId, type HTMLAttributes, type ReactNode, type Ref } from 'react';
 
+import { showControls } from './controls.ts';
 import { FileIcon } from './FileTree.tsx';
 import { PathName, SourceMark, type AnswerSource } from './Source.tsx';
 
@@ -46,8 +47,8 @@ function filesIn(count: number): string {
 export function ReferencesHead({ name, count, files, source, at }: ReferencesHeadProps) {
   return (
     <div className="flex flex-none flex-col gap-4 px-16 pb-8">
-      <span className="min-w-0 truncate text-fg code-text" title={name}>
-        {name}
+      <span className="min-w-0 truncate text-fg code-text" title={showControls(name)}>
+        {showControls(name)}
       </span>
       <span className="min-w-0 text-fg-muted text-small">
         <span className="lo-num">
@@ -55,7 +56,7 @@ export function ReferencesHead({ name, count, files, source, at }: ReferencesHea
         </span>
         {' · '}
         <SourceMark source={source} />
-        {at !== undefined && `, at ${at}`}
+        {at !== undefined && `, at ${showControls(at)}`}
       </span>
     </div>
   );
@@ -79,8 +80,10 @@ export function around(row: Pick<ReferenceRow, 'text' | 'match'>): {
   word: string;
   after: string;
 } {
-  const lead = row.text.length - row.text.trimStart().length;
-  const text = row.text.slice(lead);
+  // Bidirectional controls show as a character each, so the match's offsets still fit.
+  const line = showControls(row.text);
+  const lead = line.length - line.trimStart().length;
+  const text = line.slice(lead);
   const from = Math.min(Math.max(row.match.from - lead, 0), text.length);
   const to = Math.min(Math.max(row.match.to - lead, from), text.length);
   let start = to > REACH ? Math.max(0, from - BEFORE) : 0;
@@ -161,7 +164,12 @@ export function ReferencesList({
       {groups
         .filter((group) => group.rows.length > 0)
         .map((group) => (
-          <div key={group.key} role="group" aria-label={group.path} className="flex flex-col">
+          <div
+            key={group.key}
+            role="group"
+            aria-label={showControls(group.path)}
+            className="flex flex-col"
+          >
             <GroupHead group={group} />
             {group.rows.map((row) => {
               const { before, word, after } = around(row);
