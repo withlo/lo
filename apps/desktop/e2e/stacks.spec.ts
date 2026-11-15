@@ -23,6 +23,7 @@ import {
   KEYCHAIN,
   onStacks as test,
   STACK,
+  tabBanners,
 } from './app.ts';
 
 /** Waits for the account from the token file, then opens pull request `number`'s tab. */
@@ -205,7 +206,7 @@ test(']s and [s walk the layers in the tree’s order, in one tab, and stop at t
         .toMatchObject({ compareFrom: below[at] });
       await settled(page);
     }
-    await expect(page.locator('[data-lo-banners]')).toHaveCount(0);
+    await expect(tabBanners(page)).toHaveCount(0);
     await type(page, ']', 's');
     await expect(said(page, `#${STACK.d} is the last layer.`)).toHaveCount(1);
     await expect(current(page)).toHaveAttribute('data-key', String(STACK.d));
@@ -484,7 +485,7 @@ test.describe('a layer’s diff', () => {
       await expect
         .poll(() => diffOf(page, e), { timeout: 30_000 })
         .toEqual({ ...onM, from: 'local' });
-      await expect(page.locator('[data-lo-banners]')).toHaveCount(0);
+      await expect(tabBanners(page)).toHaveCount(0);
       expect(await open(page, STACK.c)).toBe(c);
       await page.evaluate((tab) => window.lo.invoke('tab.retry', { id: tab }), c);
       await expect

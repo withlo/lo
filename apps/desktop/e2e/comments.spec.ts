@@ -16,7 +16,16 @@ import { COMMENTS_PULL, COMMENTS_RENAME_PULL, writeCommentsRemote } from '@lo/te
 import { serveReplay, type ReplayServer } from '@lo/testing/server';
 import type { Page } from '@playwright/test';
 
-import { appFolder, DIFF_FIRST, expect, KEYCHAIN, onStacks, STACK, test as base } from './app.ts';
+import {
+  appFolder,
+  DIFF_FIRST,
+  expect,
+  KEYCHAIN,
+  onStacks,
+  STACK,
+  tabBanners,
+  test as base,
+} from './app.ts';
 import { serveBodies } from './bodies.ts';
 
 /** A stand-in token, never a real one: the cassette was recorded with the same. */
@@ -188,7 +197,7 @@ async function localCopy(page: Page, id: string): Promise<void> {
       { timeout: 20_000 },
     )
     .toMatchObject({ local: { state: { kind: 'ready' } } });
-  await expect(page.locator('[data-lo-banners]')).toHaveCount(0);
+  await expect(tabBanners(page)).toHaveCount(0);
 }
 
 /** `⌘⇧\`, which opens and closes the threads panel. */

@@ -16,6 +16,16 @@ export interface SettingsStore {
    * Returns a function that stops it.
    */
   watch<T>(setting: Setting<T>, listener: (value: T) => void): () => void;
+  /**
+   * Changes `setting` from main, as only main may change one the window can only read: declares it
+   * if it isn't, reads the file afresh, and writes `change` of its value there (its default when
+   * the file has none, or one its schema refuses). `change` may be called again on the file as a
+   * person saved it meanwhile, so it makes its answer from what it's given alone. Other settings,
+   * and what Lo doesn't know of, stay in the file as they are. Fails with an `IpcError` as
+   * Settings' changes do: `invalid` when `change` makes a value the schema refuses, `unwritable`
+   * when the file has a problem or can't be written.
+   */
+  update<T>(setting: Setting<T>, change: (value: T) => T): Promise<void>;
 }
 
 export const settings = defineService<SettingsStore>('settings.file');

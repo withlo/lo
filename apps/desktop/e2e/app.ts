@@ -13,6 +13,7 @@ import {
   expect,
   test as base,
   type ElectronApplication,
+  type Locator,
   type Page,
 } from '@playwright/test';
 
@@ -333,6 +334,17 @@ export async function sizeWindow(
 }
 
 /**
+ * The banners over a pull request's tab but the one saying language servers are off, which a tab of
+ * a repository nobody trusts shows, as every test's is: what a test that isn't about trust waits
+ * for, or for none of.
+ */
+export function tabBanners(page: Page): Locator {
+  return page
+    .locator('[data-lo-banners] > *')
+    .filter({ hasNotText: /^Language servers are off for|^This PR comes from a fork/ });
+}
+
+/**
  * A settings file that opens a pull request on its diff, overview or not, for tests of the diff and
  * what's beside it, which would otherwise find the overview first.
  */
@@ -513,3 +525,46 @@ export const onStacks = test.extend<{
     });
   },
 });
+
+/**
+ * Answers main's native dialogs (`dialog.showMessageBox`) from now on with the button labelled
+ * `button`, or with none at all for a label they lack, for a test, which can't press a native
+ * dialog. What each dialog asked is kept, for {@link dialogsAsked}. Only a build run from source can
+ * be reached this way: a packaged one takes no debugger.
+ */
+export async function answerDialogs(app: ElectronApplication, button: string): Promise<void> {
+  await app.evaluate(({ dialog }, label) => {
+    const kept: unknown = Reflect.get(globalThis, 'loDialogs');
+    const asked: unknown[] = Array.isArray(kept) ? kept : [];
+    Reflect.set(globalThis, 'loDialogs', asked);
+    const answer = (...args: unknown[]) => {
+      const options: unknown = args.at(-1);
+      const read = (key: string): unknown =>
+        typeof options === 'object' && options !== null ? Reflect.get(options, key) : undefined;
+      const listed = read('buttons');
+      const buttons = Array.isArray(listed) ? listed.map(String) : [];
+      asked.push({
+        message: read('message'),
+        detail: read('detail'),
+        buttons,
+        defaultId: read('defaultId'),
+        cancelId: read('cancelId'),
+        // Attached to a window: one comes before the options.
+        attached: args.length > 1,
+      });
+      return Promise.resolve({ response: buttons.indexOf(label), checkboxChecked: false });
+    };
+    Reflect.set(dialog, 'showMessageBox', answer);
+  }, button);
+}
+
+/**
+ * What each dialog main asked since {@link answerDialogs} first answered them said: its `message`,
+ * `detail`, `buttons`, `defaultId` and `cancelId`, and whether it was `attached` to a window.
+ */
+export async function dialogsAsked(app: ElectronApplication): Promise<unknown[]> {
+  return app.evaluate(() => {
+    const kept: unknown = Reflect.get(globalThis, 'loDialogs');
+    return Array.isArray(kept) ? kept.map((each: unknown) => each) : [];
+  });
+}
