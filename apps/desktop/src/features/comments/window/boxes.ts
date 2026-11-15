@@ -31,6 +31,7 @@ import {
 } from '@lo/ui/commands';
 
 import { announce, notice, notify, withdraw } from '../../../window/commands/notices.tsx';
+import { registry } from '../../../window/commands/registry.ts';
 import { client } from '../../../window/ipc.ts';
 import { diffStateOf, showDiff, writingDiff, type WritingDiff } from '../../diff/window/shared.ts';
 import {
@@ -54,6 +55,7 @@ import type {
   JoinedView,
   SendOutcome,
   Sending,
+  ThreadRow,
 } from '../contract.ts';
 import { main, tabs } from './main.ts';
 import { screenOf } from './placing.ts';
@@ -609,17 +611,22 @@ interface Kept {
 }
 
 /**
- * What the reader does that moves on from a box the diff took down: a key, a click, the wheel. A key
- * one of Lo's commands takes goes no further than the key listener's `keydown`, which tells the
- * focused element first (`KEY_EVENT`).
+ * What the reader does that moves on from a box the diff took down: a key, a click, the wheel, a
+ * command chosen in the app menu. The key listener tells the focused element of a key once it's the
+ * reader's input (`KEY_EVENT`), a sequence's only as it ends, and those Lo's commands take go no
+ * further; a click in the app menu makes no event in the page, and the command it chose is told of
+ * the same way.
  */
-const INPUT = ['keydown', KEY_EVENT, 'pointerdown', 'wheel'] as const;
+const INPUT = [KEY_EVENT, 'pointerdown', 'wheel'] as const;
 
-/** How many keys, clicks and wheel turns the reader has made, since Lo first needed to know. */
+/**
+ * How many keys, clicks, wheel turns and app menu commands the reader has made, since Lo first
+ * needed to know.
+ */
 let inputs = 0;
 let counting = false;
 
-/** How many keys, clicks and wheel turns the reader has made, counting from now on. */
+/** How many keys, clicks, wheel turns and app menu commands the reader has made, from now on. */
 function inputsSoFar(): number {
   if (!counting) {
     counting = true;
@@ -635,10 +642,10 @@ function inputsSoFar(): number {
  * Opens box `box`, kept as the diff was drawn again, in the diff drawn anew, `diff`, as it was, in
  * the first place it can of: its line, or its thread; its file's header, as for a file closed as
  * viewed, still on its lines; its block, only where the diff has neither, unfocused. Focused if it
- * had focus, the reader has done nothing since, and focus is where the redraw left it. It waits a
- * while for lines still coming, and after that goes under its file's header. Says where it went:
- * nowhere, in the end, where it can't be placed, and it's kept for the next time its line or block
- * is drawn.
+ * had focus, the reader has done nothing since and holds no keys for the rest of a sequence, and
+ * focus is where the redraw left it. It waits a while for lines still coming, and after that goes
+ * under its file's header. Says where it went: nowhere, in the end, where it can't be placed, and
+ * it's kept for the next time its line or block is drawn.
  */
 function placeKept(
   box: Box,
@@ -671,7 +678,8 @@ function showKept(
 ): boolean {
   const focused = document.activeElement;
   const free = !focused || focused === document.body || diff.hasFocus();
-  const focus = kept.focused && kept.inputs === inputs && free;
+  // Keys held for a sequence count once it ends, and focus moved now would end it in the box.
+  const focus = kept.focused && kept.inputs === inputs && free && !registry().isPending();
   const options = { focus, name: box.id, kept: kept.box };
   try {
     drew(box, diff.compose(at, box.state.text, eventsOf(box), framer?.(box), options), 'diff');
@@ -683,13 +691,15 @@ function showKept(
 }
 
 /**
- * A draft the diff, drawn again, had nowhere to open, as the status bar says it: its box, what it
- * is and where, and when it opens again; and, on hover, where with its file's whole path.
+ * A draft the diff, drawn again, had nowhere to open, as the status bar says it: its box, that it's
+ * kept, what it is or where, and when it opens again; on hover, with its file's whole path; and in
+ * the note for several, where and when alone.
  */
 export interface KeptAway {
   readonly box: string;
   readonly note: string;
   readonly title: string;
+  readonly where: string;
 }
 
 /**
@@ -720,19 +730,28 @@ function unsay(box: Box): void {
 
 /**
  * What the status bar says of a draft the diff had nowhere to open: "Draft kept · line 41 of
- * retry.ts at r2 · opens when that line shows", or its code block, where it has one.
+ * retry.ts at r2 · opens when that line shows", or its code block, where it has one; for a reply or
+ * an edit, "Draft kept · your reply on line 41 of retry.ts · opens when its thread shows", where its
+ * thread is, as the view's threads have it.
  */
-function keptNote(box: Box): { note: string; title: string } {
+function keptNote(box: Box): Omit<KeptAway, 'box'> {
   const { place } = box.state;
   const block = box.home.kind === 'block' ? ' or its code block' : '';
   if (place.kind !== 'thread') {
-    const what = place.kind === 'reply' ? 'Reply' : place.kind === 'edit' ? 'Edit' : 'Draft';
-    const note = `${what} kept · opens when its thread${block} shows`;
-    return { note, title: note };
+    const what = place.kind === 'reply' ? 'reply' : place.kind === 'edit' ? 'edit' : 'comment';
+    const id = place.kind === 'conversation' ? null : place.thread;
+    const row = held.get(box.view).threads?.threads.find((each) => each.id === id);
+    const on = (path: string) => (row ? ` on ${threadSpan(row)}${path}` : '');
+    const when = `opens when its thread${block} shows`;
+    return {
+      note: `Draft kept · your ${what}${on(baseName(row?.path ?? ''))} · ${when}`,
+      title: `Draft kept · your ${what}${on(row?.path ?? '')} · ${when}`,
+      where: `Your ${what}${on(row?.path ?? '')} · ${when}`,
+    };
   }
   const at = revisionName(box.view, place.commit);
   const { lines } = place;
-  const name = place.path.slice(place.path.lastIndexOf('/') + 1);
+  const name = baseName(place.path);
   let span = '';
   let what = 'file';
   if (lines) {
@@ -743,10 +762,54 @@ function keptNote(box: Box): { note: string; title: string } {
   }
   let when = `opens when that ${what}${block} shows`;
   if (what === 'lines') when = `opens when those lines${block} ${block ? 'shows' : 'show'}`;
+  const where = `${span}${place.path} at ${at} · ${when}`;
   return {
     note: `Draft kept · ${span}${name} at ${at} · ${when}`,
-    title: `Draft kept · ${span}${place.path} at ${at} · ${when}`,
+    title: `Draft kept · ${where}`,
+    // A path starts as it's written.
+    where: span ? `${where.charAt(0).toUpperCase()}${where.slice(1)}` : where,
   };
+}
+
+/** The file's name in `path`, without its folders. */
+function baseName(path: string): string {
+  return path.slice(path.lastIndexOf('/') + 1);
+}
+
+/** The lines thread `row` is on, as "line 41 of " or "lines 39–41 of ", or none for one on a file. */
+function threadSpan(row: ThreadRow): string {
+  const end = row.line ?? row.originalLine;
+  if (row.subject === 'FILE' || end === null) return '';
+  const start = row.line === null ? row.originalStartLine : row.startLine;
+  return start === null || start === end ? `line ${end} of ` : `lines ${start}–${end} of `;
+}
+
+/**
+ * The status bar's one note for a view's kept drafts, `kept`: a draft's own, or "2 drafts kept"
+ * and, on hover, where each is and when it opens, a line each. None while none is kept.
+ */
+export function keptSummary(
+  kept: readonly KeptAway[],
+): { note: string; title: string } | undefined {
+  const [only] = kept;
+  if (!only) return undefined;
+  if (kept.length === 1) return { note: only.note, title: only.title };
+  return { note: `${kept.length} drafts kept`, title: wheres(kept) };
+}
+
+/**
+ * Says in a note where each of view `view`'s kept drafts is and when it opens, a line each, as the
+ * status bar's note for them does on hover: for its click, and for its command.
+ */
+export function showKeptDrafts(view: string): void {
+  const kept = keptAway.get(view);
+  if (kept.length === 0) return;
+  notify(kept.length === 1 ? 'Draft kept' : `${kept.length} drafts kept`, wheres(kept));
+}
+
+/** Where each of `kept` is and when it opens, a line each. */
+function wheres(kept: readonly KeptAway[]): string {
+  return kept.map(({ where }) => where).join('\n');
 }
 
 const retrying = new Map<string, ReturnType<typeof setTimeout>>();

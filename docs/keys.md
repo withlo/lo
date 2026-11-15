@@ -120,15 +120,16 @@ Each command's id is what [the keymap file](#the-keymap-file) binds keys to.
 
 ## View
 
-| Action                                 | Keys                              | Where                                                                                               | Command               |
-| -------------------------------------- | --------------------------------- | --------------------------------------------------------------------------------------------------- | --------------------- |
-| Load the newer push                    | None: in its menu and the palette | In `box`                                                                                            | `comments.loadNewer`  |
-| Show the latest push                   | None: in its menu and the palette | In `box`                                                                                            | `comments.showLatest` |
-| Compare revisions                      | `g v`                             | Anywhere but `menu`, `dialog`, `palette`, `box` and `revisions`; in code views, only in normal mode | `revisions.picker`    |
-| Next middle view                       | `` ` ``                           | Anywhere but `menu`, `dialog`, `palette` and `box`; in code views, only in normal mode              | `tab.nextView`        |
-| Previous middle view                   | `~`                               | Anywhere but `menu`, `dialog`, `palette` and `box`; in code views, only in normal mode              | `tab.previousView`    |
-| Show the review’s comments in the diff | None: in its menu and the palette | In `timeline`                                                                                       | `timeline.showInDiff` |
-| Compare the force-push’s revisions     | None: in its menu and the palette | In `timeline`                                                                                       | `timeline.compare`    |
+| Action                                 | Keys                                  | Where                                                                                               | Command               |
+| -------------------------------------- | ------------------------------------- | --------------------------------------------------------------------------------------------------- | --------------------- |
+| Load the newer push                    | None: in its menu and the palette     | In `box`                                                                                            | `comments.loadNewer`  |
+| Show the latest push                   | None: in its menu and the palette     | In `box`                                                                                            | `comments.showLatest` |
+| Show where kept drafts are             | None: in the app menu and the palette | Anywhere                                                                                            | `comments.keptDrafts` |
+| Compare revisions                      | `g v`                                 | Anywhere but `menu`, `dialog`, `palette`, `box` and `revisions`; in code views, only in normal mode | `revisions.picker`    |
+| Next middle view                       | `` ` ``                               | Anywhere but `menu`, `dialog`, `palette` and `box`; in code views, only in normal mode              | `tab.nextView`        |
+| Previous middle view                   | `~`                                   | Anywhere but `menu`, `dialog`, `palette` and `box`; in code views, only in normal mode              | `tab.previousView`    |
+| Show the review’s comments in the diff | None: in its menu and the palette     | In `timeline`                                                                                       | `timeline.showInDiff` |
+| Compare the force-push’s revisions     | None: in its menu and the palette     | In `timeline`                                                                                       | `timeline.compare`    |
 
 ## Files
 

@@ -18,7 +18,9 @@
 // declared as its own (`editor`): listed, checked for clashes, and never run or offered by the
 // registry, nor changed by the keymap file. What the buttons in a box's notes do is also on its
 // frame's right-click menu, and in the palette while focus is in the box, each only where the box
-// offers it, without a key of its own.
+// offers it, without a key of its own. Where the drafts are that the diff, drawn again, had nowhere
+// to open, the palette and the app menu's Review menu say, as a click on the status bar's note for
+// them does.
 //
 // In the threads panel, the `threads` scope: `j` and `k` move between its threads, `⏎` shows the
 // one the keyboard is on in the diff, and `f` steps through what it lists: the unresolved threads,
@@ -263,6 +265,16 @@ export default defineCommands(
       keys: ['esc'],
       editor: true,
       when: { scope: 'box', mode: 'normal' },
+    },
+    /**
+     * Says where each draft is that the diff, drawn again, had nowhere to open, and when it opens,
+     * as a click on the status bar's note for them does.
+     */
+    keptDrafts: {
+      label: 'Show where kept drafts are',
+      group: 'View',
+      keys: [],
+      bar: { menu: 'Review', order: 20 },
     },
     nextThread: {
       label: 'Next thread in the panel',

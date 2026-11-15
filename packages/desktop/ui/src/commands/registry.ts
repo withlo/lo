@@ -93,6 +93,8 @@ export class Registry {
   private pending: Pending | undefined;
   /** The scope's source the pending keys were typed in. */
   private holder: ScopeSource | undefined;
+  /** Tells that the pending keys are the reader's input, should they be dropped before they end. */
+  private unheard: (() => void) | undefined;
   /** The code view the last key was pressed in, whose Vim a tab switch leaves. */
   private active: KeySource | undefined;
   private timer: ReturnType<typeof setTimeout> | undefined;
@@ -241,9 +243,11 @@ export class Registry {
   /**
    * What becomes of a keydown pressed at `place`. The listener stops the event unless it passes.
    * A code view that can't say its state is broken: Lo's chords still run there, and every other
-   * key is dropped rather than handed to a Vim in a state nobody knows.
+   * key is dropped rather than handed to a Vim in a state nobody knows. `heard` is called once the
+   * key is the reader's input, before any command it completes runs: at once for a key while no
+   * sequence is pending, and otherwise only as the sequence ends, run, broken or dropped.
    */
-  handle(press: KeyPress, place: KeyPlace): Handled {
+  handle(press: KeyPress, place: KeyPlace, heard: () => void = () => {}): Handled {
     const time = this.now();
     const { source } = place.scope;
     this.active = isKeySource(source) ? source : undefined;
@@ -257,6 +261,14 @@ export class Registry {
         return { scope: place.scope.name, text: true, view: { mode: 'insert', pending: true } };
       }
     };
+    // This key tells for the pending sequence's keys, and its own, as the sequence ends. While one is
+    // still pending after it, as after a key that starts or goes on with one, a held key repeating,
+    // a modifier alone or a key the system's input method composes, it tells nothing yet.
+    this.unheard = undefined;
+    const tell = (): void => {
+      if (this.pending) this.unheard = heard;
+      else heard();
+    };
     let seen = focus();
     let step = matchAny(this.bindings, this.pending, { ...press, time }, seen);
     if (step?.outcome.kind === 'replay') {
@@ -265,10 +277,14 @@ export class Registry {
       seen = focus();
       step = matchAny(this.bindings, undefined, { ...press, time }, seen);
     }
-    if (!step) return broken ? STOP : PASS;
+    if (!step) {
+      tell();
+      return broken ? STOP : PASS;
+    }
     this.pending = step.pending;
     this.tellHeld(seen.view?.count);
     const { outcome } = step;
+    tell();
     switch (outcome.kind) {
       case 'hold':
         this.holder = place.scope.source;
@@ -311,12 +327,18 @@ export class Registry {
     }
   }
 
-  /** Drops the pending sequence, as a pointer down does. */
+  /**
+   * Drops the pending sequence, as a pointer down does, and tells that its keys were the reader's
+   * input.
+   */
   drop(): void {
+    const unheard = this.unheard;
+    this.unheard = undefined;
     this.pending = undefined;
     this.holder = undefined;
     this.disarm();
     this.tellHeld();
+    unheard?.();
   }
 
   /**

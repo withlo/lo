@@ -39,11 +39,13 @@ import {
   offering,
   frameWith,
   keepBoxesOf,
+  keptAway,
   knowPull,
   restore,
   reopenAll,
   restoreBlock,
   saveAll,
+  showKeptDrafts,
   takeDrafts,
   takeJoined,
   takeOffer,
@@ -176,6 +178,16 @@ export default {
     moveToFile: offering('onFile'),
     loadNewer: offering('loadNewer'),
     showLatest: offering('showLatest'),
+    keptDrafts: {
+      run: () => {
+        const tab = activeTab();
+        if (tab) showKeptDrafts(tab.id);
+      },
+      enabled: () => {
+        const tab = activeTab();
+        return tab && keptAway.get(tab.id).length > 0 ? true : 'No draft is kept.';
+      },
+    },
     nextThread: { run: () => moveRow(1), enabled: inPanel },
     previousThread: { run: () => moveRow(-1), enabled: inPanel },
     showThread: { run: showTarget, enabled: onThread },

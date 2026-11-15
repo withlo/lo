@@ -1,7 +1,14 @@
 // Lo's commands in the macOS app menu: those that declare `bar`, with the key each shows there and
 // whether it can run on what has focus.
 
-import { findScope, isChord, scopeTarget, type Registry, type Target } from '@lo/ui/commands';
+import {
+  findScope,
+  isChord,
+  KEY_EVENT,
+  scopeTarget,
+  type Registry,
+  type Target,
+} from '@lo/ui/commands';
 
 import type { BarItem } from '../../features/keys/contract.ts';
 
@@ -39,10 +46,15 @@ export function barItems(registry: Registry, target: Target, blocked = false): B
 
 /**
  * Runs the command a click in the app menu chose, on `target`, through the registry: only one the
- * menu lists, one that declares `bar`. `true`, or why it didn't run.
+ * menu lists, one that declares `bar`. `true`, or why it didn't run. The click is the reader's input,
+ * but makes no event in the page: before the command runs, it drops the keys held for a sequence, as
+ * a click in the page does, and the focused element hears it as it hears a key the registry takes
+ * (`KEY_EVENT`), so what waits for the reader's next input knows of it.
  */
 export function runFromBar(registry: Registry, id: string, target: Target): true | string {
   if (!registry.command(id)?.bar) return `${id} isn't in the app menu.`;
+  registry.drop();
+  (document.activeElement ?? document.body).dispatchEvent(new Event(KEY_EVENT, { bubbles: true }));
   return registry.run(id, target);
 }
 

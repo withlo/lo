@@ -196,8 +196,12 @@ function vimIn(label: string) {
   };
 }
 
-/** Presses a key in `element`, as the page sends it. */
+/**
+ * Presses a key in `element`, as the page sends it: the key listener's event first, as it sends it
+ * for a key while no sequence is pending, then the key.
+ */
 function press(element: Element, key: string, modifiers: KeyboardEventInit = {}): void {
+  element.dispatchEvent(new Event(KEY_EVENT, { bubbles: true }));
   element.dispatchEvent(
     new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true, ...modifiers }),
   );
