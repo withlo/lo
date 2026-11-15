@@ -194,10 +194,11 @@ for (const layout of ['split', 'inline'] as const) {
       });
     }
 
-    // Line 20 partly above the top, at the top where a jump left it, and line 40 partly below the
-    // foot, the cursor on it.
+    // Line 20, 18 px tall, partly above the top, 10 px or 2 px of it on screen, at the top where a
+    // jump left it, and line 40 partly below the foot, the cursor on it.
     for (const { name, line, below } of [
       { name: 'partly above the top of the screen', line: 20, below: -8 },
+      { name: 'all but 2 px above the top of the screen', line: 20, below: -16 },
       { name: 'at the top of the screen, where a jump put it', line: 20, below: 0 },
       { name: 'partly below the foot of the screen', line: 40, below: 590 },
     ]) {
@@ -224,6 +225,26 @@ for (const layout of ['split', 'inline'] as const) {
         near([await lineTop(page, line)], [before]);
       });
     }
+
+    test('a peek opened and shown again in one go, under a line partly above the top, opens under it, the line staying where it is', async () => {
+      const page = await open(layout);
+      await page.evaluate(() => {
+        window.harness.cursor(20);
+        window.harness.scrollTo(20, -8);
+      });
+      await frames(page);
+      const before = await lineTop(page, 20);
+
+      await page.evaluate(() => {
+        window.harness.peek(20);
+        window.harness.peek(20, 14);
+      });
+      await frames(page);
+      near([await lineTop(page, 20)], [before]);
+      expect((await page.evaluate(() => window.harness.top('.lo-diffpeek')))!).toBeGreaterThan(
+        before!,
+      );
+    });
 
     test('keys in a peek scroll its code, and never the diff under it', async () => {
       const page = await open(layout);
@@ -403,18 +424,45 @@ for (const layout of ['split', 'inline'] as const) {
       expect(Math.abs(after! - before!)).toBeLessThan(1);
     });
 
+    // A peek or comment box under line 19, wrapped, whose last rows are across the top, then the
+    // view's width changing: the first line on screen stays where it is, as with neither.
     for (const opened of ['peek', 'comment box'] as const) {
-      test(`a ${opened} under a wrapped line partly above the top leaves the first line on screen where it is as the view then narrows`, async () => {
-        const page = await wrapping(layout);
-        // Under line 19, whose last rows are across the top.
-        if (opened === 'peek') await page.evaluate(() => window.harness.peek(19));
-        else await page.evaluate(() => window.harness.compose(19));
-        await frames(page);
-        const before = await lineTop(page, 20);
-        expect(before).toBeGreaterThan(0);
+      for (const widths of [[640], [1300], [640, 1000]]) {
+        test(`a ${opened} under a wrapped line partly above the top, then the view ${widths.join(' px, then ')} px wide, leaves the first line on screen where it is`, async () => {
+          const page = await wrapping(layout);
+          await page.evaluate((kind) => {
+            if (kind === 'peek') window.harness.peek(19);
+            else window.harness.compose(19);
+          }, opened);
+          await frames(page);
+          const before = await lineTop(page, 20);
+          expect(before).toBeGreaterThan(0);
 
-        await page.evaluate(() => window.harness.narrow(640));
+          for (const width of widths) {
+            await page.evaluate((to) => window.harness.narrow(to), width);
+            await frames(page);
+            near([await lineTop(page, 20)], [before]);
+          }
+        });
+      }
+
+      test(`a ${opened} under a wrapped line partly above the top, the view narrowing the frame after, leaves the first line on screen where it is`, async () => {
+        const page = await wrapping(layout);
+        const before = await page.evaluate(
+          (kind) =>
+            new Promise<number | undefined>((resolve) => {
+              if (kind === 'peek') window.harness.peek(19);
+              else window.harness.compose(19);
+              requestAnimationFrame(() => {
+                const top = window.harness.lineTop(20);
+                window.harness.narrow(640);
+                resolve(top);
+              });
+            }),
+          opened,
+        );
         await frames(page);
+        expect(before).toBeGreaterThan(0);
         near([await lineTop(page, 20)], [before]);
       });
     }

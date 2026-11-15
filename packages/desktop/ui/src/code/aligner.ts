@@ -272,8 +272,9 @@ export class Aligner {
   #chosen = false;
   /**
    * Whether `anchorAt` gave the coming pass a line of its own to keep, for the change it was taken
-   * for: that line counts as on screen while some of it is. Later passes take a line partly above
-   * the top as off it, as for any anchor, so the next width change keeps the first line on screen.
+   * for: that line counts as on screen while some of it is. Once that pass is over, what stands is
+   * what the pass takes with no such line, so every later one, as at the next width change, goes
+   * as it would have.
    */
   #given = false;
   /** Which way the scroll last went: down (1) or up (-1). */
@@ -516,7 +517,9 @@ export class Aligner {
     if (this.#paused || this.#running) return;
     const started = performance.now();
     this.#running = true;
-    const given = this.#given;
+    // A line given before the editors changed width is drawn where its new wrapping put it, not
+    // where the reader saw it: the pass goes as it does with none.
+    const given = this.#given && !this.#rewrapped();
     let changed = false;
     try {
       const side = this.#anchorSide();
@@ -566,9 +569,7 @@ export class Aligner {
           turn === 0 &&
           !this.#wheeledOff &&
           anchor.element === undefined &&
-          (given
-            ? this.#offScreen(anchor)
-            : anchor.offset < 0 || anchor.offset >= this.#scroller.clientHeight)
+          (given ? this.#offScreen(anchor) : this.#beyond(anchor))
         ) {
           // After a jump, neither editor drew anything on screen yet when the scroll moved, so the
           // anchor was a line off it: take one on screen, now that they've drawn there. A line
@@ -591,6 +592,12 @@ export class Aligner {
         anchor = this.#anchor!;
         changed ||= spaced;
         if (!spaced && !moved) break;
+      }
+      // The line given for this change is kept no longer: what stands is what the pass takes with
+      // none, a line on screen, as it would have taken at the start.
+      const kept = this.#anchor;
+      if (given && kept && kept.element === undefined && this.#beyond(kept)) {
+        this.#anchor = this.#anchorNow();
       }
       this.#widths = this.#widthsNow();
     } finally {
@@ -1354,6 +1361,11 @@ export class Aligner {
         scrollTop: this.#scroller.scrollTop,
       }
     );
+  }
+
+  /** Whether `anchor`'s line starts off the screen, above its top or below it, where it's held. */
+  #beyond(anchor: Anchor): boolean {
+    return anchor.offset < 0 || anchor.offset >= this.#scroller.clientHeight;
   }
 
   /**
