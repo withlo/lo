@@ -712,6 +712,36 @@ describe('threads and comment boxes', () => {
     expect(drawnThreads()).toEqual([]);
   });
 
+  test('a key or a click in a dialog over the overview lets nothing in it come; one in the overview does', async () => {
+    const shown = open();
+    // The overview the excerpt is in, and a dialog over it, in a portal of its own.
+    parent!.setAttribute('data-lo-scope', 'overview');
+    const text = document.createElement('p');
+    text.tabIndex = 0;
+    parent!.append(text);
+    const dialog = document.createElement('div');
+    dialog.setAttribute('data-lo-scope', 'dialog');
+    const field = document.createElement('input');
+    dialog.append(field);
+    document.body.append(dialog);
+    onTestFinished(() => dialog.remove());
+    await frame();
+    shown.setThreads([thread('here', 6)], plain().render);
+    expect(drawnThreads()).toEqual([]);
+    for (const type of [KEY_EVENT, 'keydown', 'pointerdown']) {
+      field.dispatchEvent(new Event(type, { bubbles: true }));
+    }
+    expect(drawnThreads()).toEqual([]);
+    text.dispatchEvent(new Event(KEY_EVENT, { bubbles: true }));
+    expect(drawnThreads()).toEqual(['here']);
+    // A click in the page is the overview's too.
+    shown.setThreads([], plain().render);
+    field.dispatchEvent(new Event('pointerdown', { bubbles: true }));
+    expect(drawnThreads()).toEqual(['here']);
+    text.dispatchEvent(new Event('pointerdown', { bubbles: true }));
+    expect(drawnThreads()).toEqual([]);
+  });
+
   test('a reply that comes once its box closed on screen takes the room the box left', async () => {
     const sizes = observers();
     const shown = open();

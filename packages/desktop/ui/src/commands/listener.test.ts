@@ -105,15 +105,59 @@ describe('the listener', () => {
     expect(log).toEqual(['row q']);
   });
 
-  test('tells the element a key is for of it first, though the registry takes the key', () => {
+  test('tells the element a key is for once it’s the reader’s input, before the command it completes runs', () => {
     const heard: string[] = [];
     element('diff').addEventListener(KEY_EVENT, (event) => {
       const id = event.target instanceof Element ? event.target.id : '';
       heard.push(`${id}, ${ran.length} run`);
     });
+    // A key on its own, at once, though the registry takes it.
     expect(press('editor', 'e').defaultPrevented).toBe(true);
     expect(heard).toEqual(['editor, 0 run']);
-    expect(ids()).toEqual(['diff.markViewed']);
+    // A sequence's keys only as it ends: run, or broken, its keys going to Vim.
+    press('editor', 'z');
+    expect(heard).toHaveLength(1);
+    press('editor', 'o');
+    expect(heard).toEqual(['editor, 0 run', 'editor, 1 run']);
+    press('editor', 'y');
+    expect(heard).toHaveLength(2);
+    press('editor', 'w');
+    expect(heard).toHaveLength(3);
+    expect(ids()).toEqual(['diff.markViewed', 'diff.expand']);
+  });
+
+  test('tells of a sequence’s keys as it’s dropped, and of one a key broke as that key’s own ends', () => {
+    vi.useFakeTimers();
+    try {
+      const heard: string[] = [];
+      for (const id of ['diff', 'tree']) {
+        element(id).addEventListener(KEY_EVENT, (event) => {
+          heard.push(event.target instanceof Element ? event.target.id : '');
+        });
+      }
+      // Outside a code view, the wait for the rest runs out after a second.
+      press('row', 'z');
+      vi.advanceTimersByTime(999);
+      expect(heard).toEqual([]);
+      vi.advanceTimersByTime(1);
+      expect(heard).toEqual(['row']);
+      // In one, the wait lasts until a pointer down drops it, or focus leaving.
+      press('editor', 'z');
+      element('editor').dispatchEvent(new MouseEvent('pointerdown', { bubbles: true }));
+      expect(heard).toEqual(['row', 'editor']);
+      press('editor', 'g');
+      element('text').focus();
+      expect(heard).toEqual(['row', 'editor', 'editor']);
+      // `z`, broken by a `z` that starts the sequence again: both are told of as `zR` runs.
+      press('row', 'z');
+      press('row', 'z');
+      expect(heard).toHaveLength(3);
+      press('row', 'R', { shiftKey: true });
+      expect(heard).toEqual(['row', 'editor', 'editor', 'row']);
+      expect(ids()).toEqual(['tree.openAll']);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   test('runs a key on the code view’s target', () => {

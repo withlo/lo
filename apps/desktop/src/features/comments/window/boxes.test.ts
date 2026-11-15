@@ -16,7 +16,9 @@ import type {
 import { commandsOf, defineCommands, type LineTarget, listen, Registry } from '@lo/ui/commands';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from 'vitest';
 
+import { runFromBar } from '../../../window/commands/bar.ts';
 import { notice } from '../../../window/commands/notices.tsx';
+import { createRegistry } from '../../../window/commands/registry.ts';
 import { installBridge } from '../../../window/test/bridge.ts';
 import type { DrawnDiff, WritingDiff } from '../../diff/window/shared.ts';
 import type * as OverviewShared from '../../overview/window/shared.ts';
@@ -49,10 +51,12 @@ import {
   frameWith,
   keepBoxesOf,
   keptAway,
+  keptSummary,
   offering,
   restore,
   SAVE_AFTER,
   send,
+  showKeptDrafts,
   reopenAll,
   takeDrafts,
   takeJoined,
@@ -138,6 +142,12 @@ vi.mock('../../overview/window/shared.ts', async (original) => ({
   blockInOverview: (_tab: string, key: string) => overview.has.get(key) ?? overview.blocks.has(key),
   revisionName: (_tab: string, commit: string) => (commit === HEAD ? 'r2' : 'r1'),
 }));
+
+/** Presses letter `key` with nothing focused, as the system would. */
+function press(key: string): void {
+  const init = { key, code: `Key${key.toUpperCase()}`, bubbles: true, cancelable: true };
+  document.body.dispatchEvent(new KeyboardEvent('keydown', init));
+}
 
 /** A box drawn in a fake diff or block, which says how it was focused and closed. */
 function composerOf(draft: string, on: ComposerEvents): Drawn['composer'] {
@@ -404,21 +414,24 @@ let views = 0;
 
 /** Each box as it's drawn: the frame it'd get is where its state is read. */
 const boxesSeen: Box[] = [];
-/** How many times Lo's command on `e` ran, from the window's key listener. */
+/** How many times Lo's commands on `e` and `z a` ran, from the window's key listener. */
 let commanded = 0;
 let stopKeys: () => void = () => {};
 
-// The window's key listener, as it starts before anything else listens for keys: a key one of Lo's
-// commands takes goes no further than its `keydown`.
+// The window's registry and key listener, as they start before anything else listens for keys: a
+// key one of Lo's commands takes goes no further than its `keydown`.
 beforeAll(() => {
-  const keys = defineCommands('test', { act: { label: 'Act', group: 'Act', keys: ['e'] } });
+  const keys = defineCommands('test', {
+    act: { label: 'Act', group: 'Act', keys: ['e'] },
+    fold: { label: 'Fold', group: 'Act', keys: ['z a'] },
+  });
   const handler = {
     run() {
       commanded += 1;
     },
   };
   const commands = commandsOf(keys).map((command) => ({ ...command, handler }));
-  stopKeys = listen(window, new Registry({ system: 'mac', commands }));
+  stopKeys = listen(window, createRegistry(commands, 'mac'));
 });
 
 afterAll(() => stopKeys());
@@ -922,6 +935,35 @@ describe('a box on a code block', () => {
     ]);
   });
 
+  test('drawn again with its lines still coming, a box that had focus opens without it after a command chosen in the app menu', async () => {
+    const { box, drawn } = await opened();
+    box.set({ focused: true });
+    takenDown(box, drawn[0]!.composer);
+    let coming = true;
+    const again = fakeDiff(() => coming);
+    restore(VIEW);
+    // A click in the macOS menu bar makes no event in the page; the command it chose runs.
+    const menu = defineCommands('menu', {
+      act: { label: 'Act', group: 'Act', keys: [], bar: { menu: 'View', order: 10 } },
+    });
+    let ran = 0;
+    const handler = {
+      run() {
+        ran += 1;
+      },
+    };
+    const commands = commandsOf(menu).map((command) => ({ ...command, handler }));
+    expect(
+      runFromBar(new Registry({ system: 'mac', commands }), 'menu.act', { kind: 'none' }),
+    ).toBe(true);
+    expect(ran).toBe(1);
+    coming = false;
+    restore(VIEW);
+    expect(again.drawn.map(({ at, options }) => [at, options?.focus])).toEqual([
+      [{ file: 'f0', side: 'new', line: 5 }, false],
+    ]);
+  });
+
   test('drawn again with its lines still coming, a box that had focus opens without it while a key Lo’s command took is held', async () => {
     const { box, drawn } = await opened();
     box.set({ focused: true });
@@ -941,6 +983,26 @@ describe('a box on a code block', () => {
       [{ file: 'f0', side: 'new', line: 5 }, false],
     ]);
     document.body.dispatchEvent(new KeyboardEvent('keyup', init));
+  });
+
+  test('drawn again with its lines still coming, a box that had focus opens without it while the first key of Lo’s sequence waits for the rest', async () => {
+    const { box, drawn } = await opened();
+    box.set({ focused: true });
+    takenDown(box, drawn[0]!.composer);
+    let coming = true;
+    const again = fakeDiff(() => coming);
+    restore(VIEW);
+    // `z` of `z a`, which is the reader's input only as the sequence ends.
+    press('z');
+    // The lines come meanwhile, and the box opens on them unfocused, so `a` ends the sequence.
+    coming = false;
+    restore(VIEW);
+    expect(again.drawn.map(({ at, options }) => [at, options?.focus])).toEqual([
+      [{ file: 'f0', side: 'new', line: 5 }, false],
+    ]);
+    const before = commanded;
+    press('a');
+    expect(commanded).toBe(before + 1);
   });
 
   test('drawn again without its line, a box opens under its file’s header there, still on its line, though its block is back', async () => {
@@ -1018,6 +1080,41 @@ describe('a box on a code block', () => {
       ],
     ]);
     expect(keptAway.get(VIEW)).toEqual([]);
+  });
+
+  test('drafts the diff drawn again had nowhere to open have one note in the status bar, which says where each is', async () => {
+    const onDiff = fakeDiff();
+    takeDrafts({
+      id: VIEW,
+      drafts: [
+        row(onLines(5, 6), 'One', { savedAt: 1 }),
+        row(onLines(null, 8), 'Two', { savedAt: 2 }),
+      ],
+    });
+    await Promise.resolve();
+    for (const each of onDiff.drawn) takenDown(boxIn(each), each.composer);
+    // The diff drawn anew is of another push.
+    const other = fakeDiff();
+    other.shown.at = OLDER;
+    restore(VIEW);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(other.drawn).toEqual([]);
+    const each = [
+      'Lines 5–6 of src/backoff.ts at r2 · opens when those lines show',
+      'Line 8 of src/backoff.ts at r2 · opens when that line shows',
+    ];
+    expect(keptSummary(keptAway.get(VIEW))).toEqual({
+      note: '2 drafts kept',
+      title: each.join('\n'),
+    });
+    // Its click, and its command, say where each is in a note.
+    showKeptDrafts(VIEW);
+    expect(notice()).toMatchObject({ title: '2 drafts kept', body: each.join('\n') });
+    // One kept is its own note.
+    expect(keptSummary(keptAway.get(VIEW).slice(1))).toEqual({
+      note: 'Draft kept · line 8 of backoff.ts at r2 · opens when that line shows',
+      title: 'Draft kept · line 8 of src/backoff.ts at r2 · opens when that line shows',
+    });
   });
 
   test('a box the diff drawn again had nowhere to open is kept nowhere: its block takes it once the overview has it', async () => {
@@ -1588,6 +1685,20 @@ describe('acting on a thread', () => {
     );
     await acts.edit(tab(), { kind: 'thread', thread: 'T5' }, 'C_theirs');
     expect(notice()?.body).toBe('It’s ravi-k’s comment. You can edit and delete only your own.');
+  });
+
+  test('an edit the diff drawn again has nowhere to open is a draft kept, which says it’s your edit', async () => {
+    const { drawn } = withThreads(threadRow('T2', 2));
+    answers['comments.editing'] = (): ActOutcome => ({ kind: 'done' });
+    await acts.edit(tab(), ON_TWO);
+    takenDown(boxIn(drawn[0]!), drawn[0]!.composer);
+    // Drawn anew without the thread.
+    withThreads();
+    restore(VIEW);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(keptAway.get(VIEW).map(({ note }) => note)).toEqual([
+      'Draft kept · your edit · opens when its thread shows',
+    ]);
   });
 
   test('an edit closed with no text is discarded, as is one edited on GitHub since', async () => {

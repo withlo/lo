@@ -1,4 +1,5 @@
-import { defineCommands, handlers, Registry, type Target } from '@lo/ui/commands';
+// @vitest-environment jsdom
+import { defineCommands, handlers, KEY_EVENT, Registry, type Target } from '@lo/ui/commands';
 import { describe, expect, it } from 'vitest';
 
 import { barItems, runFromBar } from './bar.ts';
@@ -98,6 +99,31 @@ describe('a click in the app menu', () => {
       "Threads panel doesn't apply here.",
     );
     expect(ran).toEqual(['inline']);
+  });
+
+  it('is the reader’s input: the focused element hears it, as a key the registry takes, before it runs', () => {
+    const ran: string[] = [];
+    const registry = new Registry({
+      system: 'mac',
+      commands: handlers(declarations, {
+        inline: { run: () => void ran.push('inline') },
+        threads: { run: () => void ran.push('threads') },
+        hidden: { run: () => void ran.push('hidden') },
+      }),
+    });
+    const field = document.createElement('input');
+    document.body.append(field);
+    field.focus();
+    const heard: string[] = [];
+    document.body.addEventListener(KEY_EVENT, (event) => {
+      heard.push(`${event.target === field ? 'field' : 'elsewhere'}, ${ran.length} run`);
+    });
+    runFromBar(registry, 'view.inline', { kind: 'none' });
+    // One the menu doesn't list is nothing the reader did.
+    runFromBar(registry, 'view.hidden', { kind: 'none' });
+    expect(heard).toEqual(['field, 0 run']);
+    expect(ran).toEqual(['inline']);
+    field.remove();
   });
 });
 

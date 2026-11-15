@@ -248,8 +248,8 @@ class Room implements BoxHost {
 type Letting = 'off' | 'stuck' | 'all';
 
 /**
- * The reader's input outside the excerpt, which lets go of what no scroll can take off screen: keys
- * the registry takes too, which go no further than its event.
+ * The reader's input outside the excerpt, in the page around it, which lets go of what no scroll can
+ * take off screen: keys the registry takes too, which go no further than its event.
  */
 const INPUT = ['keydown', KEY_EVENT, 'pointerdown'] as const;
 
@@ -736,11 +736,21 @@ class Excerpt implements ExcerptView {
     if (this.#holding) this.#letGo('off');
   };
 
-  /** The reader's pointer or key outside the excerpt: what no scroll can take off screen changes. */
+  /**
+   * The reader's pointer or key outside the excerpt, in the page around it, as the overview: what no
+   * scroll can take off screen changes. Input in a dialog or the palette over the page, or in
+   * another panel, isn't the page's.
+   */
   readonly #elsewhere = (event: Event): void => {
-    if (!this.#holding || (event.target instanceof Node && this.dom.contains(event.target))) return;
+    if (!this.#holding || !(event.target instanceof Node)) return;
+    if (this.dom.contains(event.target) || !this.#page().contains(event.target)) return;
     this.#letGo('stuck');
   };
+
+  /** The page the excerpt is in: the scope around its own, as the overview, or else the document. */
+  #page(): Node {
+    return this.dom.parentElement?.closest(`[${SCOPE_ATTRIBUTE}]`) ?? this.dom.ownerDocument;
+  }
 
   /** The reader's pointer or key in the excerpt: what waits in it changes. */
   readonly #touched = (event: Event): void => {
