@@ -94,8 +94,8 @@ Lo's.
 | typescript | [zed-industries/tree-sitter-typescript](https://github.com/zed-industries/tree-sitter-typescript)               | MIT, Copyright (c) 2017 Max Brunsfeld                                                                             |
 
 Each comes from its grammar's repository at the commit `grammars.json` pins, as its header says, and
-JavaScript's from the release the TypeScript grammars build on. The MIT License they're under, with
-each file's copyright line:
+JavaScript's from the release the TypeScript grammars build on. Elixir's is under the Apache License
+in `LICENSE-APACHE`, and the rest under the MIT License, with each file's copyright line:
 
 > Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
 > associated documentation files (the "Software"), to deal in the Software without restriction,
