@@ -268,6 +268,65 @@ test('reads files by blob id', async () => {
   expect(await read(data?.new)).toBe('\x00\x01\x02head');
 });
 
+test('reads many blobs a batch at a time, each once and in order', async () => {
+  const f = await fixture();
+  await downloadChanges(f.repo, f.base, f.head);
+  const paths = ['keep.txt', 'added.txt', 'data.bin', 'src/new_name.rs', 'run.sh'];
+  const blobs = paths.map((path) => version(f, f.head, path, 'regular'));
+  // 14, 6, 7, 698 and 9 bytes: with 700 a batch, the large one goes in a batch of its own.
+  expect(blobs.map((blob) => blob.size)).toEqual([14, 6, 7, 698, 9]);
+  const maxBytes = 700;
+  const oids = blobs.map((blob) => blob.oid);
+
+  const batches = [];
+  for await (const batch of f.repo.readBlobs([...oids, oids[0] ?? UNKNOWN], { maxBytes: 734 })) {
+    batches.push(batch);
+  }
+  expect(batches).toHaveLength(1);
+  expect(batches[0]?.map((blob) => blob.oid)).toEqual(oids);
+
+  const read: { oid: Oid; text: string }[][] = [];
+  for await (const batch of f.repo.readBlobs(oids, { maxBytes })) {
+    read.push(batch.map((blob) => ({ oid: blob.oid, text: blob.data.toString('latin1') })));
+  }
+  expect(read.map((batch) => batch.map(({ oid }) => paths[oids.indexOf(oid)]))).toEqual([
+    ['keep.txt', 'added.txt', 'data.bin'],
+    ['src/new_name.rs'],
+    ['run.sh'],
+  ]);
+  expect(read.flat().map(({ text }) => text)).toEqual([
+    'keep, changed\n',
+    'added\n',
+    '\x00\x01\x02head',
+    sourceLines('pub fn added() {}\n'),
+    'echo run\n',
+  ]);
+});
+
+test('a read of many blobs refuses one the clone lacks, one too large, or a commit, reading none', async () => {
+  const f = await fixture();
+  await downloadChanges(f.repo, f.base, f.head);
+  const keep = version(f, f.head, 'keep.txt', 'regular').oid;
+  // A file the pull request doesn't touch, which nothing downloaded.
+  const untouched = parseOid(blobId(f.remote.work, f.head, 'odd\nname.txt'));
+  const before = packs(f.repo.folder);
+  const readAll = async (oids: Oid[], maxBytes = 1024) => {
+    for await (const batch of f.repo.readBlobs(oids, { maxBytes })) void batch;
+  };
+
+  const lacking = await failure(readAll([keep, untouched, UNKNOWN]));
+  expect(lacking.detail).toEqual({ kind: 'notDownloaded', oids: [untouched, UNKNOWN] });
+  expect(missingObjects(f.repo.folder, f.head)).toContain(untouched);
+  expect(packs(f.repo.folder)).toBe(before);
+
+  const large = await failure(readAll([keep], 13));
+  expect(large.detail).toMatchObject({ kind: 'tooLarge', limit: 13 });
+  expect((await failure(readAll([keep, f.head]))).message).toContain('is a commit, not a file');
+
+  // Nothing at all reads nothing.
+  for await (const batch of f.repo.readBlobs([], { maxBytes: 1 })) expect(batch).toBeUndefined();
+});
+
 test('reads files by path at any revision', async () => {
   const f = await fixture();
   await downloadAt(f.repo, f.base, 'old_name.rs', 'odd\nname.txt');

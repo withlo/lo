@@ -1,6 +1,11 @@
 import { describe, expect, test } from 'vitest';
 
-import { gitEnvironment, inheritedEnvironment, parseRemote } from './environment.ts';
+import {
+  gitEnvironment,
+  inheritedEnvironment,
+  parseRemote,
+  serverGitEnvironment,
+} from './environment.ts';
 
 test('inherits only path tmpdir and network variables', () => {
   const kept = {
@@ -118,4 +123,26 @@ describe('parseRemote', () => {
       "`https://<redacted>@github.com` isn't a valid remote address",
     );
   });
+});
+
+test('a language server’s git gets Lo’s settings as protected configuration, and nothing else', () => {
+  expect(serverGitEnvironment()).toEqual({
+    GIT_CONFIG_NOSYSTEM: '1',
+    GIT_CONFIG_GLOBAL: '/dev/null',
+    GIT_CONFIG_COUNT: '5',
+    GIT_CONFIG_KEY_0: 'safe.bareRepository',
+    GIT_CONFIG_VALUE_0: 'explicit',
+    GIT_CONFIG_KEY_1: 'core.hooksPath',
+    GIT_CONFIG_VALUE_1: '/dev/null',
+    GIT_CONFIG_KEY_2: 'core.fsmonitor',
+    GIT_CONFIG_VALUE_2: 'false',
+    GIT_CONFIG_KEY_3: 'core.askPass',
+    GIT_CONFIG_VALUE_3: '',
+    GIT_CONFIG_KEY_4: 'credential.helper',
+    GIT_CONFIG_VALUE_4: '',
+    GIT_TERMINAL_PROMPT: '0',
+    GIT_NO_LAZY_FETCH: '1',
+  });
+  // Each call is the caller's to add to.
+  expect(serverGitEnvironment()).not.toBe(serverGitEnvironment());
 });

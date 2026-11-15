@@ -190,6 +190,57 @@ test('checkouts at once all succeed', async () => {
   expect(git(f.repo.folder, 'worktree', 'list').split('\n')).toHaveLength(3);
 });
 
+test('drops a pull requests checkouts, or all of a repositorys, and the clone forgets them', async () => {
+  const f = await fixture();
+  await pushR2(f);
+  const first = await f.repo.checkout(1, f.r1);
+  const second = await f.repo.checkout(1, f.r2);
+  const other = await f.repo.checkout(2, f.r1);
+  const listed = () => git(f.repo.folder, 'worktree', 'list').split('\n').length;
+  expect(listed()).toBe(4);
+
+  await f.cache.dropCheckouts('owner', 'repo', { pull: 1 });
+
+  expect([first, second].filter((dir) => existsSync(dir))).toEqual([]);
+  expect(existsSync(join(first, '..'))).toBe(false);
+  expect(git(other, 'rev-parse', 'HEAD')).toBe(f.r1);
+  expect(listed()).toBe(2);
+
+  // Every one, even with the clone closed, as when trust goes from Settings.
+  f.repo.close();
+  await f.cache.dropCheckouts('owner', 'repo');
+  expect(existsSync(f.cache.checkoutsFolder('owner', 'repo'))).toBe(false);
+  expect(existsSync(join(f.cache.root, 'checkouts/github.com/owner'))).toBe(false);
+  expect(listed()).toBe(1);
+
+  // One asked for again is made afresh.
+  const repo = await f.cache.open('owner', 'repo');
+  expect(await repo.checkout(1, f.r1)).toBe(first);
+  expect(read(join(first, 'src/lib.rs'))).toBe('pub fn a() { 1 }\n');
+});
+
+test('dropping checkouts waits for one being made, and never passes a link', async () => {
+  const f = await fixture();
+  const making = f.repo.checkout(1, f.r1);
+  const dropping = f.cache.dropCheckouts('owner', 'repo');
+  const dir = await making;
+  await dropping;
+  expect(existsSync(dir)).toBe(false);
+  expect(git(f.repo.folder, 'worktree', 'list').split('\n')).toHaveLength(1);
+
+  // A link where the owner's folder goes leads out of the cache, and nothing there is touched.
+  const owner = join(f.cache.root, 'checkouts/github.com/owner');
+  const outside = tempFolder();
+  mkdirSync(join(outside, 'repo/pull-1'), { recursive: true });
+  mkdirSync(join(f.cache.root, 'checkouts/github.com'), { recursive: true });
+  symlinkSync(outside, owner);
+  await expect(f.cache.dropCheckouts('owner', 'repo')).rejects.toThrow('leads out of the cache');
+  expect(readdirSync(join(outside, 'repo'))).toEqual(['pull-1']);
+  // Nor is a name or number Lo wouldn't make a folder of.
+  await expect(f.cache.dropCheckouts('owner', '../repo')).rejects.toThrow(GitError);
+  await expect(f.cache.dropCheckouts('owner', 'repo', { pull: -1 })).rejects.toThrow(GitError);
+});
+
 test('hashes a checkouts files as git would', async () => {
   const f = await fixture();
   const dir = await f.repo.checkout(1, f.r1);

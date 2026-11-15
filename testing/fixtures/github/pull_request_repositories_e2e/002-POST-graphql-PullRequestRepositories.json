@@ -1,0 +1,41 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "https://api.github.com/graphql",
+    "operation": "PullRequestRepositories",
+    "variables": {
+      "owner": "rozed-dev",
+      "name": "e2e",
+      "number": 97
+    },
+    "query_sha256": "8f0d7f13e5143dcae208980561f87ec71bdc353114887597092c60154a5a8800"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "x-ratelimit-limit": "5000",
+      "x-ratelimit-remaining": "4998",
+      "x-ratelimit-reset": "1794775643",
+      "x-ratelimit-resource": "graphql",
+      "x-ratelimit-used": "2"
+    },
+    "body": {
+      "data": {
+        "repository": {
+          "pullRequest": {
+            "isCrossRepository": true,
+            "baseRepository": {
+              "id": "R_kgDOVleUfQ",
+              "nameWithOwner": "rozed-dev/e2e"
+            },
+            "headRepository": {
+              "id": "R_kgDOVvlr6A",
+              "nameWithOwner": "rozed-bot/e2e"
+            }
+          }
+        }
+      }
+    }
+  }
+}

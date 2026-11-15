@@ -223,3 +223,48 @@ export function gitEnvironment(
   }
   return env;
 }
+
+/**
+ * The settings a language server's git gets, set as `GIT_CONFIG_COUNT` holds them. A server may
+ * run git in its checkout, where git would read the user's files and the settings of any
+ * repository it finds, a bare one committed into the checkout's files included, and such
+ * settings can name a program to run.
+ */
+const SERVER_GIT_SETTINGS = [
+  // A bare repository is used only when a command names it, never one git finds in a folder.
+  ['safe.bareRepository', 'explicit'],
+  // No hooks and no file system monitor, whatever a repository's settings say.
+  ['core.hooksPath', devNull],
+  ['core.fsmonitor', 'false'],
+  // No prompts: no askpass program, and no credential helper, which may ask or hand over the
+  // user's own credentials.
+  ['core.askPass', ''],
+  ['credential.helper', ''],
+] as const;
+
+/**
+ * The variables that hold the git a language server runs to Lo's settings, for a server's
+ * environment, which is built from nothing as git's is: no system or global config; a bare
+ * repository only when a command names it (`safe.bareRepository=explicit`); no hooks and no file
+ * system monitor; no prompts, askpass program or credential helper; and lazy fetching off, so a
+ * file the clone lacks is an error, never a download.
+ *
+ * The settings go in `GIT_CONFIG_COUNT`, which git takes as it takes `-c` on its command line:
+ * after every file, so they win, and as protected configuration, the only kind git takes
+ * `safe.bareRepository` from. The git a server finds on its `PATH` should be Lo's own, new enough
+ * for all of them.
+ */
+export function serverGitEnvironment(): Record<string, string> {
+  const env: Record<string, string> = {
+    GIT_CONFIG_NOSYSTEM: '1',
+    GIT_CONFIG_GLOBAL: devNull,
+    GIT_CONFIG_COUNT: String(SERVER_GIT_SETTINGS.length),
+    GIT_TERMINAL_PROMPT: '0',
+    GIT_NO_LAZY_FETCH: '1',
+  };
+  for (const [at, [key, value]] of SERVER_GIT_SETTINGS.entries()) {
+    env[`GIT_CONFIG_KEY_${at}`] = key;
+    env[`GIT_CONFIG_VALUE_${at}`] = value;
+  }
+  return env;
+}

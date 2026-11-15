@@ -779,6 +779,15 @@ export type PullRequestCheckQueryVariables = Exact<{
 
 export type PullRequestCheckQuery = { rateLimit: { cost: number, limit: number, remaining: number, used: number, resetAt: string } | null, repository: { pullRequest: { updatedAt: string, state: PullRequestState, isDraft: boolean, baseRefName: string, baseRefOid: string, headRefOid: string, reviewDecision: PullRequestReviewDecision | null, mergeStateStatus: MergeStateStatus, changedFiles: number, lastEditedAt: string | null, statusCheckRollup: { state: StatusState } | null, checkCounts: { contexts: { checkRunCountsByState: Array<{ state: CheckRunState, count: number }> | null, statusContextCountsByState: Array<{ state: StatusState, count: number }> | null } } | null, mergeQueueEntry: { state: MergeQueueEntryState, position: number } | null, timelineItems: { updatedAt: string, totalCount: number }, revisionEvents: { filteredCount: number }, commits: { totalCount: number }, reviews: { totalCount: number } | null, submittedReviews: { totalCount: number } | null, reviewThreads: { totalCount: number, nodes: Array<{ isResolved: boolean, comments: { totalCount: number } } | null> | null }, viewerPendingReview: { nodes: Array<{ viewerDidAuthor: boolean, comments: { totalCount: number } } | null> | null } | null, comments: { totalCount: number }, timelineEvents: { filteredCount: number, updatedAt: string } } | null } | null };
 
+export type PullRequestRepositoriesQueryVariables = Exact<{
+  owner: string;
+  name: string;
+  number: number;
+}>;
+
+
+export type PullRequestRepositoriesQuery = { repository: { pullRequest: { isCrossRepository: boolean, baseRepository: { id: string, nameWithOwner: string } | null, headRepository: { id: string, nameWithOwner: string } | null } | null } | null };
+
 export type PullRequestRevisionsQueryVariables = Exact<{
   owner: string;
   name: string;
@@ -4500,6 +4509,23 @@ export const PullRequestCheckDocument = new TypedDocumentString(`
   }
 }
     `) as unknown as TypedDocumentString<PullRequestCheckQuery, PullRequestCheckQueryVariables>;
+export const PullRequestRepositoriesDocument = new TypedDocumentString(`
+    query PullRequestRepositories($owner: String!, $name: String!, $number: Int!) {
+  repository(owner: $owner, name: $name) {
+    pullRequest(number: $number) {
+      isCrossRepository
+      baseRepository {
+        id
+        nameWithOwner
+      }
+      headRepository {
+        id
+        nameWithOwner
+      }
+    }
+  }
+}
+    `) as unknown as TypedDocumentString<PullRequestRepositoriesQuery, PullRequestRepositoriesQueryVariables>;
 export const PullRequestRevisionsDocument = new TypedDocumentString(`
     query PullRequestRevisions($owner: String!, $name: String!, $number: Int!, $login: String!, $first: Int!, $timelineAfter: String, $reviewsAfter: String) {
   rateLimit {
