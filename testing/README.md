@@ -226,6 +226,33 @@ on #94. Which posts the window asks GitHub to render at once depends on what's n
 the app's tests answer those reads from every post the cassette recorded
 (`apps/desktop/e2e/bodies.ts`).
 
+The code features' pull requests, rozed-dev/e2e#98, #99 and #100, come from `fixtures/code.sh`,
+`fixtures/code-hostile.sh` and `fixtures/code-reset.sh`, which write to GitHub rather than only
+build a repository to fetch from. They run as rozed-bot, with `LO_FIXTURE_TOKEN_FILE` as `record.ts`
+has it, and only once `GET /user` says the token is rozed-bot's:
+
+- `code.sh` pushes `code/base` and `code/feature` to rozed-dev/e2e and `code/feature` again to
+  rozed-bot's fork of it as `code/fork`, and opens the pull request from each into `code/base`: #98
+  within the repository, and #99 from the fork. Their files are `fixtures/code/`, a small project in
+  each language Lo has a syntax index for, which count and summarize words, with a definition in a
+  file the pull request leaves alone and a function moved from one file to another in TypeScript and
+  Python. The language servers' live check asks questions of the same projects, at the places
+  `fixtures/code/cases.json` names.
+- `code-hostile.sh` adds one commit to the code fixture, `code/hostile`, and opens #100 from it. Its
+  files try to run code, steer a language server or a version manager, or fetch from the network,
+  and each only writes an empty `lo-hostile-<name>` file beside itself or names a host ending
+  `.lo-hostile.invalid`, so none ran while no `lo-hostile-*` file is in a checkout and no proxy log
+  names such a host. It's all text the script writes: none of it is in this repository as a file a
+  tool here would pick up, and the tests read it back without running it.
+- `code-reset.sh` makes every commit again and pushes them, replacing the branches, opens a pull
+  request that was closed, puts back each one's title, description and base, and deletes the
+  comments and pending reviews a test wrote on them.
+
+The three share `fixtures/code-lib.sh`. `code.sh` and `code-hostile.sh` take `--local <folder>`,
+which builds the same commits, with the IDs GitHub has, into `<folder>/rozed-dev/e2e.git` and
+`<folder>/work` and reads no network, as the other fixtures do. Run again, they put the branches
+back and open a closed pull request.
+
 ## The fake language server
 
 `lsp/fake-server.ts` is a language server for tests: it speaks the protocol over stdio on

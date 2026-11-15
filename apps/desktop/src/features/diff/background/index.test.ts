@@ -5,8 +5,8 @@ import runner, { diffFile } from './index.ts';
 const lines = (...each: string[]) => `${each.join('\n')}\n`;
 
 describe('the diff’s jobs', () => {
-  it('diffs a file’s texts, and finds the lines moves are looked for among', () => {
-    const result = diffFile(
+  it('diffs a file’s texts, and finds the lines moves are looked for among', async () => {
+    const result = await diffFile(
       {
         kind: 'texts',
         path: 'a.ts',
@@ -26,14 +26,14 @@ describe('the diff’s jobs', () => {
     });
   });
 
-  it('hides changes to whitespace alone on request, keeping the lines’ numbers', () => {
+  it('hides changes to whitespace alone on request, keeping the lines’ numbers', async () => {
     const old = lines('function f() {', 'return 1;', '}', 'const a = 1;');
     const added = lines('function f() {', '  return 1;', '}', 'const a = 2;');
-    const shown = diffFile(
+    const shown = await diffFile(
       { kind: 'texts', path: 'a.ts', old, new: added },
       { whitespace: true, budget: 1000 },
     );
-    const hidden = diffFile(
+    const hidden = await diffFile(
       { kind: 'texts', path: 'a.ts', old, new: added },
       { whitespace: false, budget: 1000 },
     );
@@ -44,8 +44,8 @@ describe('the diff’s jobs', () => {
     expect(hidden.diff.oldLineCount).toBe(4);
   });
 
-  it('draws GitHub’s patch with its lines and gaps', () => {
-    const result = diffFile(
+  it('draws GitHub’s patch with its lines and gaps', async () => {
+    const result = await diffFile(
       { kind: 'patch', path: 'a.ts', patch: ['@@ -3,1 +3,1 @@', '-x', '+y'].join('\n') },
       { whitespace: false, budget: 1000 },
     );

@@ -31,14 +31,17 @@ function syntaxLoader(): Loader {
 export default defineRunner(contract, {
   files: {
     async run({ files, whitespace, highlight, budget }) {
+      // Each grammar loads the first time a file needs it.
       const highlighter = highlight ? await Highlighter.create(syntaxLoader()) : undefined;
-      return files.map((file) => {
+      const results: FileResult[] = [];
+      for (const file of files) {
         try {
-          return diffFile(file, { whitespace, budget, highlighter });
+          results.push(await diffFile(file, { whitespace, budget, highlighter }));
         } catch (error) {
-          return { ok: false, why: error instanceof Error ? error.message : String(error) };
+          results.push({ ok: false, why: error instanceof Error ? error.message : String(error) });
         }
-      });
+      }
+      return results;
     },
     // A batch of files, each diffed within its budget and highlighted within the syntax package's
     // two seconds a side.
@@ -47,9 +50,12 @@ export default defineRunner(contract, {
   highlight: {
     async run({ files }) {
       const highlighter = await Highlighter.create(syntaxLoader());
-      return files.map((file) =>
-        tokensOf(file.path, { old: linesOf(file.old), new: linesOf(file.new) }, highlighter),
-      );
+      const results: { old?: Uint32Array; new?: Uint32Array }[] = [];
+      for (const file of files) {
+        const lines = { old: linesOf(file.old), new: linesOf(file.new) };
+        results.push(await tokensOf(file.path, lines, highlighter));
+      }
+      return results;
     },
     limits: { deadline: 60_000 },
   },
@@ -68,10 +74,10 @@ export default defineRunner(contract, {
 });
 
 /** Diffs and highlights one file. */
-export function diffFile(
+export async function diffFile(
   file: FileJob,
   options: { whitespace: boolean; budget: number; highlighter?: Highlighter | undefined },
-): FileResult {
+): Promise<FileResult> {
   if (file.kind === 'patch') {
     const shown = patchShown(file.patch, { budget: options.budget });
     return {
@@ -79,7 +85,7 @@ export function diffFile(
       diff: shown.diff,
       lines: shown.lines,
       gaps: shown.gaps,
-      tokens: tokensOf(file.path, shown.lines, options.highlighter),
+      tokens: await tokensOf(file.path, shown.lines, options.highlighter),
       changes: changedRunsOf(shown.diff, shown.lines.old, shown.lines.new),
     };
   }
@@ -97,7 +103,7 @@ export function diffFile(
   return {
     ok: true,
     diff,
-    tokens: tokensOf(file.path, shownSides, options.highlighter),
+    tokens: await tokensOf(file.path, shownSides, options.highlighter),
     changes: changedRunsOf(diff, sides.old, sides.new),
   };
 }
@@ -108,18 +114,18 @@ function linesOf(text: string | null): string[] {
 }
 
 /** Each side highlighted, as its lines are shown: joined with `\n`, as the documents hold them. */
-function tokensOf(
+async function tokensOf(
   path: string,
   lines: { old: readonly string[]; new: readonly string[] },
   highlighter: Highlighter | undefined,
-): { old?: Uint32Array; new?: Uint32Array } {
+): Promise<{ old?: Uint32Array; new?: Uint32Array }> {
   const language = languageOfPath(path);
   const tokens: { old?: Uint32Array; new?: Uint32Array } = {};
   if (!highlighter || !language) return tokens;
   for (const side of ['old', 'new'] as const) {
     // A highlighter that failed can't be trusted with another file.
     if (lines[side].length === 0 || !highlighter.usable) continue;
-    const highlighted = highlighter.highlight(language, lines[side].join('\n'));
+    const highlighted = await highlighter.highlight(language, lines[side].join('\n'));
     if ('tokens' in highlighted) tokens[side] = highlighted.tokens;
   }
   return tokens;

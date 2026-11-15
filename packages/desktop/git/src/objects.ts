@@ -58,7 +58,7 @@ export class ObjectReader {
 
   /** What object `name` is, or `undefined` when the clone lacks it. */
   info(name: string): Promise<ObjectInfo | undefined> {
-    return this.#request(name, async (running) => {
+    return this.#request([name], async (running) => {
       running.send(`info ${name}\n`);
       return parseHeader(await running.output.line(), name, running.display);
     });
@@ -69,7 +69,7 @@ export class ObjectReader {
    * `maxBytes` is never read: it fails as `tooLarge`.
    */
   read(name: string, maxBytes = OUTPUT_LIMIT): Promise<GitObject | undefined> {
-    return this.#request(name, async (running) => {
+    return this.#request([name], async (running) => {
       running.send(`info ${name}\n`);
       const info = parseHeader(await running.output.line(), name, running.display);
       if (info === undefined) return undefined;
@@ -86,6 +86,31 @@ export class ObjectReader {
     });
   }
 
+  /**
+   * Objects `names` with their contents, in the order asked, each `undefined` when the clone lacks
+   * it: one request, with every name sent at once, so the answers come back without a round trip
+   * each. Each is read whole, so the caller looks at their sizes first, as {@link ObjectReader.info}
+   * or `git cat-file --batch-check` gives them.
+   */
+  readAll(names: readonly string[]): Promise<(GitObject | undefined)[]> {
+    if (names.length === 0) return Promise.resolve([]);
+    return this.#request(names, async (running) => {
+      running.send(names.map((name) => `contents ${name}\n`).join(''));
+      const objects: (GitObject | undefined)[] = [];
+      for (const name of names) {
+        const header = parseHeader(await running.output.line(), name, running.display);
+        if (header === undefined) {
+          objects.push(undefined);
+          continue;
+        }
+        // The contents, then a line break.
+        const data = await running.output.bytes(header.size + 1);
+        objects.push({ ...header, data: data.subarray(0, header.size) });
+      }
+      return objects;
+    });
+  }
+
   /** Stops the reader. Requests after this fail. */
   close(): void {
     this.#closed = true;
@@ -98,10 +123,11 @@ export class ObjectReader {
    * again, and the request tried once more if it said nothing as it died. A reader whose answer
    * made no sense is stopped, since what it says next can't be trusted to follow.
    */
-  #request<T>(name: string, work: (running: Running) => Promise<T>): Promise<T> {
+  #request<T>(names: readonly string[], work: (running: Running) => Promise<T>): Promise<T> {
     const run = async (): Promise<T> => {
-      if (!NAME.test(name)) {
-        throw new GitError({ kind: 'invalid', what: 'object name', value: name });
+      const bad = names.find((name) => !NAME.test(name));
+      if (bad !== undefined) {
+        throw new GitError({ kind: 'invalid', what: 'object name', value: bad });
       }
       for (let attempt = 0; ; attempt++) {
         if (this.#closed) {

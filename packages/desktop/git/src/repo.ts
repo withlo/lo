@@ -90,6 +90,12 @@ import {
 } from './tree.ts';
 import { formatMegabytes, stoppedError, watch } from './watch.ts';
 
+/** A blob's contents, as {@link Repo.readBlobs} reads them. */
+export interface BlobContents {
+  readonly oid: Oid;
+  readonly data: Buffer;
+}
+
 /** What a repository needs of the cache it's in. */
 export interface RepoHost {
   readonly runner: Runner;
@@ -725,14 +731,65 @@ export class Repo {
   ): Promise<Buffer | undefined> {
     const object = await this.#reader.read(oid, options.maxBytes);
     if (object === undefined) return undefined;
-    if (object.type !== 'blob') {
-      throw new GitError({
-        kind: 'git',
-        command: 'git cat-file --batch-command',
-        message: `${oid} is a ${object.type}, not a file`,
-      });
-    }
+    if (object.type !== 'blob') throw notABlob(oid, object.type);
     return object.data;
+  }
+
+  /**
+   * The contents of the blobs `oids`, each once, in the order asked, a batch at a time, as indexing
+   * a tree reads them: each batch is as many as fit in `maxBytes` together, read in one request to
+   * the clone's reader, and the next is read only once the caller asks for it, so no more than a
+   * batch is held at once. It never downloads: {@link Repo.download} them first.
+   *
+   * Every one is looked at before any is read: blobs the clone lacks are `notDownloaded`, naming
+   * each; an object that isn't a blob is an error; and a blob larger than `maxBytes` alone is
+   * `tooLarge`, naming it and its size. A submodule's commit isn't in this repository: never ask
+   * for one. `maxBytes` is a whole number of bytes, at least 1, or it's `invalid`.
+   */
+  async *readBlobs(
+    oids: readonly Oid[],
+    options: { maxBytes: number },
+  ): AsyncGenerator<BlobContents[], void, undefined> {
+    const { maxBytes } = options;
+    if (!Number.isSafeInteger(maxBytes) || maxBytes < 1) {
+      throw new GitError({ kind: 'invalid', what: 'byte cap', value: String(maxBytes) });
+    }
+    const wanted = unique(oids);
+    const headers = await this.#headers(wanted);
+    const lacking = wanted.filter((oid) => !headers.has(oid));
+    if (lacking.length > 0) throw new GitError({ kind: 'notDownloaded', oids: lacking });
+    const batches: Oid[][] = [];
+    let batch: Oid[] = [];
+    let bytes = 0;
+    for (const oid of wanted) {
+      const { type, size } = headers.get(oid) ?? { type: 'missing', size: 0 };
+      if (type !== 'blob') throw notABlob(oid, type);
+      if (size > maxBytes) {
+        throw new GitError({
+          kind: 'tooLarge',
+          command: READER,
+          limit: maxBytes,
+          blob: { oid, size },
+        });
+      }
+      if (batch.length > 0 && bytes + size > maxBytes) {
+        batches.push(batch);
+        batch = [];
+        bytes = 0;
+      }
+      batch.push(oid);
+      bytes += size;
+    }
+    if (batch.length > 0) batches.push(batch);
+    for (const names of batches) {
+      const objects = await this.#reader.readAll(names);
+      const gone = names.filter((_, at) => objects[at] === undefined);
+      // Gone since they were looked at, which only removing the clone does.
+      if (gone.length > 0) throw new GitError({ kind: 'notDownloaded', oids: gone });
+      yield objects.flatMap((object) =>
+        object === undefined ? [] : [{ oid: object.oid, data: object.data }],
+      );
+    }
   }
 
   /**
@@ -808,16 +865,28 @@ export class Repo {
   /** The size of each of `oids` the clone has, by ID, from one `git cat-file --batch-check`. */
   async #sizes(oids: readonly Oid[]): Promise<Map<string, number>> {
     const sizes = new Map<string, number>();
+    for (const [oid, { size }] of await this.#headers(oids)) sizes.set(oid, size);
+    return sizes;
+  }
+
+  /**
+   * The type and size of each of `oids` the clone has, by ID, from one `git cat-file
+   * --batch-check`, which downloads nothing.
+   */
+  async #headers(oids: readonly Oid[]): Promise<Map<string, { type: string; size: number }>> {
+    const headers = new Map<string, { type: string; size: number }>();
     const wanted = unique(oids);
-    if (wanted.length === 0) return sizes;
+    if (wanted.length === 0) return headers;
     const output = await this.#git()
-      .arg('cat-file', '--batch-check=%(objectname) %(objectsize)')
+      .arg('cat-file', '--batch-check=%(objectname) %(objecttype) %(objectsize)')
       .run(wanted.map((oid) => `${oid}\n`).join(''));
     for (const line of lines(output)) {
-      const [oid = '', size = ''] = line.split(' ');
-      if (/^\d+$/.test(size)) sizes.set(oid, Number(size));
+      const [oid = '', type = '', size = ''] = line.split(' ');
+      if (/^[a-z]+$/.test(type) && /^\d+$/.test(size)) {
+        headers.set(oid, { type, size: Number(size) });
+      }
     }
-    return sizes;
+    return headers;
   }
 
   /** What's at `path` in `rev`: a file, symlink or submodule, nothing, or an error for a folder. */
@@ -1954,6 +2023,14 @@ function patchTooLarge(limit: number, unit?: 'lines'): GitError {
 /** "1 file", or "2 files". */
 function countFiles(count: number): string {
   return `${count} ${count === 1 ? 'file' : 'files'}`;
+}
+
+/** The reader every read of objects' contents goes through, as errors name it. */
+const READER = 'git cat-file --batch-command';
+
+/** The error for object `oid`, a `type`, read as a file's contents. */
+function notABlob(oid: Oid, type: string): GitError {
+  return new GitError({ kind: 'git', command: READER, message: `${oid} is a ${type}, not a file` });
 }
 
 /** The error for reading `path`, which is a `what`, as a file. */

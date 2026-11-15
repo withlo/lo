@@ -29,6 +29,7 @@ export {
   type LineCounts,
 } from './diff.ts';
 export * from './errors.ts';
+export { serverGitEnvironment } from './environment.ts';
 export {
   defaultPlaces,
   findGit,
@@ -47,6 +48,7 @@ export { type FilePatch, MAX_PATCH_LINES } from './patch.ts';
 export * from './progress.ts';
 export { Child, type Finished, type StartOptions } from './spawn.ts';
 export {
+  type BlobContents,
   type FetchedPull,
   type HeadSource,
   PATCH_LIMIT,
