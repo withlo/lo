@@ -1,4 +1,4 @@
-# Highlight queries
+# Queries
 
 Each language's `highlights.scm` and `injections.scm` come from Zed, as each file's header says:
 from [Zed](https://github.com/zed-industries/zed) itself at
@@ -67,3 +67,59 @@ doesn't know, such as Swift's `#lua-match?`, are ignored.
 
 To update them, copy the same files from a newer Zed release or extension, move `grammars.json`'s
 commits to the ones it names, and run the build and the tests.
+
+## Tags
+
+The syntax index reads each language's definitions, the names it uses and its imports with three
+queries, run as one: its grammar's own `tags.scm`, Lo's additions after it in `lo-tags.scm`, and
+Lo's patterns for its import statements in `imports.scm`, which `src/imports.ts` reads.
+`src/tagged.ts` lists which each language takes. TypeScript and TSX take JavaScript's `tags.scm`
+after their own, as their grammar's `tree-sitter.json` does, and JavaScript, read with the TSX
+grammar, takes TypeScript's additions. HCL's grammar has no `tags.scm`, so Terraform's tags are all
+Lo's.
+
+| `tags.scm` | Source                                                                                                          | License                                                                                                           |
+| ---------- | --------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| csharp     | [tree-sitter/tree-sitter-c-sharp](https://github.com/tree-sitter/tree-sitter-c-sharp)                           | MIT, Copyright (c) 2014-2023 Max Brunsfeld, Damien Guard, Amaan Qureshi, and contributors                         |
+| elixir     | [elixir-lang/tree-sitter-elixir](https://github.com/elixir-lang/tree-sitter-elixir)                             | Apache-2.0, Copyright 2021 The Elixir Team                                                                        |
+| go         | [zed-industries/tree-sitter-go](https://github.com/zed-industries/tree-sitter-go)                               | MIT, Copyright (c) 2014 Max Brunsfeld                                                                             |
+| java       | [tree-sitter/tree-sitter-java](https://github.com/tree-sitter/tree-sitter-java)                                 | MIT, Copyright (c) 2017 Ayman Nadeem                                                                              |
+| javascript | [tree-sitter/tree-sitter-javascript](https://github.com/tree-sitter/tree-sitter-javascript), its 0.23.1 release | MIT, Copyright (c) 2014 Max Brunsfeld                                                                             |
+| kotlin     | [fwcd/tree-sitter-kotlin](https://github.com/fwcd/tree-sitter-kotlin)                                           | MIT, Copyright (c) 2019 fwcd                                                                                      |
+| php        | [tree-sitter/tree-sitter-php](https://github.com/tree-sitter/tree-sitter-php)                                   | MIT, Copyright (c) 2017 Josh Vera, GitHub, (c) 2019 Max Brunsfeld, Amaan Qureshi, Christian Frøystad, Caleb White |
+| python     | [tree-sitter/tree-sitter-python](https://github.com/tree-sitter/tree-sitter-python)                             | MIT, Copyright (c) 2016 Max Brunsfeld                                                                             |
+| ruby       | [tree-sitter/tree-sitter-ruby](https://github.com/tree-sitter/tree-sitter-ruby)                                 | MIT, Copyright (c) 2016 Rob Rix                                                                                   |
+| rust       | [tree-sitter/tree-sitter-rust](https://github.com/tree-sitter/tree-sitter-rust)                                 | MIT, Copyright (c) 2017 Maxim Sokolov                                                                             |
+| swift      | [alex-pinkus/tree-sitter-swift](https://github.com/alex-pinkus/tree-sitter-swift)                               | MIT, Copyright (c) 2021 alex-pinkus                                                                               |
+| typescript | [zed-industries/tree-sitter-typescript](https://github.com/zed-industries/tree-sitter-typescript)               | MIT, Copyright (c) 2017 Max Brunsfeld                                                                             |
+
+Each comes from its grammar's repository at the commit `grammars.json` pins, as its header says, and
+JavaScript's from the release the TypeScript grammars build on. The MIT License they're under, with
+each file's copyright line:
+
+> Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
+> associated documentation files (the "Software"), to deal in the Software without restriction,
+> including without limitation the rights to use, copy, modify, merge, publish, distribute,
+> sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is
+> furnished to do so, subject to the following conditions:
+>
+> The above copyright notice and this permission notice shall be included in all copies or
+> substantial portions of the Software.
+>
+> THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT
+> NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+> NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+> DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT
+> OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+`lo-tags.scm` and `imports.scm` are Lo's own. The `tags.scm` files are as their sources have them,
+apart from these changes, which each changed file's header notes:
+
+- Kotlin's tagged every property as a constant, the local ones in a function's body too. It tags
+  only those at the top of a file and in a class's or object's body.
+- Swift's tagged each member of a type with the whole type, and every constant and variable as a
+  property, the local ones too. Each member is tagged with its own declaration, and only the
+  properties of a type and at the top of a file.
+
+`src/tags.test.ts` compiles each language's tags against its grammar and checks that each capture is
+one a tag can have; `src/samples.test.ts` reads each language's sample in `test/tags/`.

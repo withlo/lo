@@ -1,0 +1,18 @@
+definitions
+  constant MaxRadius 12:6
+  variable Default 15:1
+  variable created 16:1
+  type Shape 20:5-22
+    method Area 21:1
+  type Circle 25:5-28
+    field Radius 26:1
+    field Unit 27:1
+  method Area 31:17-33
+  function New 36:5-39
+  function describe 41:5-43
+references
+  Area Circle MaxRadius Metre Min Pi Radius Shape Sprintf Unit float64 int string
+imports
+  5 fmt: *
+  6 math: *
+  8 github.com/acme/geometry/internal/units: *

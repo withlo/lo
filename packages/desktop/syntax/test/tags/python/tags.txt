@@ -1,0 +1,20 @@
+definitions
+  constant MAX_RADIUS 11:0
+  constant default_unit 12:0
+  class Circle 16:6-27
+    field radius 17:4
+    field tags 18:4
+    field count 19:4
+    function area 21:8-22
+    function diameter 25:8-27
+  function largest 30:4-32
+references
+  Circle Metre Shape area basename convert dataclass field float list make_field max pi property
+  radius record registry str
+imports
+  3 math: *
+  4 os.path: *
+  5 dataclasses: dataclass, field as make_field
+  7 .base: Shape
+  8 ..units: Metre, convert
+  9 .: registry

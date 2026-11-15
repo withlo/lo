@@ -5,8 +5,9 @@
 import { describe, expect, test } from 'vitest';
 
 import { diskLoader } from './disk.ts';
-import { Highlighter, memoryCeiling } from './highlight.ts';
+import { Highlighter } from './highlight.ts';
 import type { LanguageName } from './languages.ts';
+import { memoryCeiling } from './runtime.ts';
 
 const timeout = 500;
 /** What a step of parsing or querying can take past the deadline. */

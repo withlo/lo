@@ -1,0 +1,13 @@
+definitions
+  module Shapes 4:7-34
+    constant MAX_RADIUS 5:2
+    class Circle 8:8-27
+      method initialize 11:8-13
+      method area 15:8-18
+      method to_json 20:8-22
+      method unit 24:13-26
+    method largest 30:8-32
+references
+  MAX_RADIUS Math PI Shape area args attr_reader circles max_by min new radius require
+  require_relative squared to_json
+imports

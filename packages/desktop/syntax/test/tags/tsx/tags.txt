@@ -1,0 +1,14 @@
+definitions
+  constant SIZES 6:13
+  interface BadgeProps 8:17-11
+    field icon 9:2
+    field count 10:2
+  function Badge 13:16-22
+  function Details 24:6-26
+    function Details 24:25-26
+references
+  Badge BadgeProps Details Icon IconName label setOpen useState
+imports
+  1 react: useState
+  3 ./Icon.tsx: Icon, IconName
+  4 ../text/label.ts: label

@@ -3,17 +3,33 @@
 // It runs on worker threads in the background process, which hold the grammars and the compiled
 // queries, and sends the triples to the window, where only the visible part is decorated.
 
-import { Language, Parser, Query, type Node, type Range, type Tree } from 'web-tree-sitter';
+import { Language, Parser, Query, type Node, type Range } from 'web-tree-sitter';
 
 import { languageNamed, languages, type LanguageName } from './languages.ts';
+import {
+  abortedTooOften,
+  Aborted,
+  countAbort,
+  memoryCeiling,
+  memoryInUse,
+  parseText,
+  startTreeSitter,
+} from './runtime.ts';
 import { tokenOf } from './tokens.ts';
 
-/** Where a highlighter gets its grammars and queries from. */
+/**
+ * A language's queries: the highlights and injections it's highlighted with, the tags of its
+ * grammar's own and Lo's that find its definitions and references, and the patterns that find
+ * its imports.
+ */
+export type QueryKind = 'highlights' | 'injections' | 'tags' | 'lo-tags' | 'imports';
+
+/** Where a highlighter or a tagger gets its grammars and queries from. */
 export interface Loader {
   /** A grammar's WebAssembly, by its name in `grammars.json`. */
   grammar(name: string): Promise<Uint8Array>;
   /** One of a language's queries, or `undefined` when it has none. */
-  query(language: LanguageName, kind: 'highlights' | 'injections'): Promise<string | undefined>;
+  query(language: LanguageName, kind: QueryKind): Promise<string | undefined>;
 }
 
 export interface HighlightOptions {
@@ -53,41 +69,6 @@ export const defaultMaxLength = 8_000_000;
  * quotes take gigabytes to parse.
  */
 export const defaultMaxDepth = 100;
-
-/** WebAssembly memory past which a highlighter should be replaced: it never shrinks. */
-export const memoryCeiling = 256 * 1024 * 1024;
-
-/** The part of WebAssembly's API this needs, which the background process's types leave out. */
-declare const WebAssembly: {
-  Memory: new (descriptor: { initial: number; maximum: number }) => {
-    readonly buffer: ArrayBuffer;
-  };
-  RuntimeError: ErrorConstructor;
-};
-
-/**
- * The one WebAssembly memory every highlighter in this thread parses in, capped at 512 MB, so a
- * parse that runs away fails instead of taking the machine's memory.
- */
-const memory = new WebAssembly.Memory({ initial: 512, maximum: 8192 });
-
-let initialized: Promise<void> | undefined;
-
-/**
- * A parse a grammar's scanner stopped: it called `abort()`, as Kotlin's does when strings nest past
- * its limit, or an assertion of its failed. tree-sitter's runtime has neither function, so the
- * call throws. Unlike a fault, it stops the parse at a known place and leaves memory whole, so
- * only its text fails.
- */
-class Aborted extends Error {}
-
-/**
- * How many parses have aborted in this thread. An abort unwinds without giving back the stack the
- * calls into WebAssembly had taken: Kotlin's keeps 0.9 KB of the thread's 64 KB, so its stack runs
- * out after about 75. Past `maxAborts`, the thread's highlighters aren't `usable`.
- */
-let aborts = 0;
-const maxAborts = 8;
 
 /** How deep injections nest: Markdown's inline text, and the code in Markdown's code blocks. */
 const maxInjectionDepth = 3;
@@ -141,8 +122,7 @@ export class Highlighter {
 
   /** Starts tree-sitter in this thread. No grammar loads until a text needs it. */
   static async create(loader: Loader): Promise<Highlighter> {
-    initialized ??= Parser.init({ wasmMemory: memory });
-    await initialized;
+    await startTreeSitter();
     return new Highlighter(new Parser(), loader);
   }
 
@@ -153,7 +133,7 @@ export class Highlighter {
 
   /** How many bytes of WebAssembly memory the thread's highlighters hold. */
   get memory(): number {
-    return memory.buffer.byteLength;
+    return memoryInUse();
   }
 
   /**
@@ -161,7 +141,7 @@ export class Highlighter {
    * its memory is under the ceiling.
    */
   get usable(): boolean {
-    return !this.#failed && aborts < maxAborts && this.memory <= memoryCeiling;
+    return !this.#failed && !abortedTooOften() && this.memory <= memoryCeiling;
   }
 
   /**
@@ -173,7 +153,7 @@ export class Highlighter {
     text: string,
     options: HighlightOptions = {},
   ): Promise<Highlight> {
-    if (this.#failed || aborts >= maxAborts) return { skipped: 'failed' };
+    if (this.#failed || abortedTooOften()) return { skipped: 'failed' };
     if (text.length > (options.maxLength ?? defaultMaxLength)) return { skipped: 'too-long' };
     if (nestingDepth(text, language) > (options.maxDepth ?? defaultMaxDepth)) {
       return { skipped: 'too-deep' };
@@ -185,7 +165,7 @@ export class Highlighter {
       progressCallback: () => {
         if (stopped) return true;
         if (performance.now() > deadline) stopped = 'timed-out';
-        else if (memory.buffer.byteLength > memoryCeiling) stopped = 'out-of-memory';
+        else if (memoryInUse() > memoryCeiling) stopped = 'out-of-memory';
         return stopped !== undefined;
       },
       // Loading is the highlighter's own work, the same for any text, so it isn't the text's time.
@@ -206,7 +186,7 @@ export class Highlighter {
     } catch (error) {
       if (error instanceof Aborted) {
         // The text fails, and a new parser, with new scanners, takes the next.
-        aborts++;
+        countAbort();
         this.#parser.delete();
         this.#parser = new Parser();
       } else {
@@ -264,17 +244,7 @@ export class Highlighter {
     if (progressCallback()) return;
     const compiled = await run.load(name);
     this.#parser.setLanguage(compiled.language);
-    let tree: Tree | null;
-    try {
-      tree = this.#parser.parse(text, null, { includedRanges: ranges, progressCallback });
-    } catch (error) {
-      // A fault, or the stack running out, is a `RuntimeError` or a `RangeError`. Anything else
-      // was thrown by a call out of WebAssembly, as a scanner's abort is.
-      if (error instanceof WebAssembly.RuntimeError || error instanceof RangeError) throw error;
-      throw new Aborted('A scanner aborted.', { cause: error });
-    } finally {
-      this.#parser.reset();
-    }
+    const tree = parseText(this.#parser, text, { includedRanges: ranges, progressCallback });
     if (!tree) return;
     try {
       const options = { progressCallback };
