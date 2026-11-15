@@ -1,7 +1,8 @@
 // The code view in Chromium itself, where lines and threads take the room they're drawn in: what's
 // held on screen for the reader's next input comes with it, and what they read stays where it is,
 // side by side and inline: the cursor's line as `j` moves it, the comment box they type in, and the
-// thread they click.
+// thread they click. A change the view takes on its own as the view narrows, lines wrapping anew,
+// leaves the line at the top of the screen where it is.
 
 import { readFileSync } from 'node:fs';
 
@@ -29,15 +30,21 @@ test.afterEach(async () => {
   app = undefined;
 });
 
-/** The page, its view in `layout`, new line 20 at the top of the screen. */
-async function open(layout: DiffLayout): Promise<Page> {
+/**
+ * The page, its view in `layout`, new line 20 at the top of the screen, and the first `wrapped` lines
+ * long enough to wrap.
+ */
+async function open(layout: DiffLayout, wrapped = 0): Promise<Page> {
   app = await launch(harness);
   const page = await app.firstWindow();
   await page.waitForFunction(() => 'harness' in window);
-  await page.evaluate((shown) => {
-    window.harness.open(shown);
-    window.harness.scrollTo(20);
-  }, layout);
+  await page.evaluate(
+    ({ shown, lines }) => {
+      window.harness.open(shown, lines);
+      window.harness.scrollTo(20);
+    },
+    { shown: layout, lines: wrapped },
+  );
   await frames(page);
   return page;
 }
@@ -150,6 +157,28 @@ for (const layout of ['split', 'inline'] as const) {
       await drawn(page, ['late', 'clicked']);
       await frames(page);
       const after = await page.evaluate(() => window.harness.top('[data-thread-id="clicked"]'));
+      expect(Math.abs(after! - before!)).toBeLessThan(1);
+    });
+
+    test('a thread below the screen that changes as the view narrows leaves the line at the top where it is', async () => {
+      // The lines above the top of the screen wrap onto more rows as the view narrows, which moves
+      // the lines on screen down until the view puts them back.
+      const page = await open(layout, 19);
+      await page.evaluate(() => {
+        window.harness.threads([{ id: 'below', line: 60, height: 60 }], true);
+        // The reader's cursor on a line on screen: the jump that put line 20 at the top is over.
+        window.harness.cursor(25);
+      });
+      await frames(page);
+      await expect(page.locator('[data-thread-id="below"]')).toHaveCount(1);
+      const before = await page.evaluate(() => window.harness.lineTop(20));
+
+      // It grows with no input, so the view takes the change in a frame of its own, keeping what's
+      // at the top of the screen; the view narrows at the start of that frame, as when a panel
+      // opens beside it then.
+      await page.evaluate(() => window.harness.growAsItNarrows('below', 140, 640));
+      await frames(page);
+      const after = await page.evaluate(() => window.harness.lineTop(20));
       expect(Math.abs(after! - before!)).toBeLessThan(1);
     });
   });

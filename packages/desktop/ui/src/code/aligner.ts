@@ -296,6 +296,8 @@ export class Aligner {
   #keyed = -Infinity;
   /** The lines the last pass lined up on each side, which keep their spacers when others go. */
   #lined: { old?: { from: number; to: number }; new?: { from: number; to: number } } = {};
+  /** How wide each editor's text was when the last pass lined it up, which is where it wraps. */
+  #widths: { old: number; new: number } | undefined;
   readonly #resized: ResizeObserver;
 
   constructor(
@@ -382,12 +384,14 @@ export class Aligner {
    * It's taken once, before the first change, and stands until the pass runs: a change already
    * made has moved what's drawn, and the pass that puts it back is still to come, so reading where
    * lines are now would keep the move. When a change has been made since the last pass, the anchor
-   * that pass left, or the scroll took, stands.
+   * that pass left, or the scroll took, stands. So it does when the editors have changed width
+   * since, as when a panel opens beside the diff: their lines wrap anew, and those above the screen
+   * have moved what's on it before the pass hears of it.
    */
   anchorTop(): void {
     if (this.#paused || this.#topTaken) return;
     this.#topTaken = true;
-    if (this.#scheduled) return;
+    if (this.#scheduled || this.#rewrapped()) return;
     const side = this.#anchorSide();
     const found = this.#screenLine(side, true) ?? this.#screenLine(otherSide(side), true);
     if (found) this.#anchor = { for: side, ...found };
@@ -548,6 +552,7 @@ export class Aligner {
         changed ||= spaced;
         if (!spaced && !moved) break;
       }
+      this.#widths = this.#widthsNow();
     } finally {
       this.#running = false;
       this.#selected = false;
@@ -1200,6 +1205,24 @@ export class Aligner {
     const recent = (side: Side): boolean => now - this.#wheel[side] < wheelAnchoring;
     if (recent('old') && (!recent('new') || this.#wheel.old > this.#wheel.new)) return 'old';
     return 'new';
+  }
+
+  /** How wide each editor's text is now. */
+  #widthsNow(): { old: number; new: number } {
+    const width = (side: Side): number =>
+      this.#views[side].contentDOM.getBoundingClientRect().width;
+    return { old: width('old'), new: width('new') };
+  }
+
+  /**
+   * Whether either editor's text has changed width since the last pass lined it up: its lines
+   * wrap anew, and what's drawn has moved, though the pass that puts it back hasn't run yet.
+   */
+  #rewrapped(): boolean {
+    const before = this.#widths;
+    if (!before) return false;
+    const now = this.#widthsNow();
+    return Math.abs(now.old - before.old) >= 0.5 || Math.abs(now.new - before.new) >= 0.5;
   }
 
   /**
