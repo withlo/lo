@@ -430,7 +430,10 @@ export interface DiffView extends KeySource {
   /** Says a file asked for with `load` couldn't be loaded: its note says so, and `za` asks again. */
   loadFailed(file: string): void;
   setHeader(file: string, header: FileHeader): void;
-  /** Lays the diff out again, keeping the cursor's line on screen. */
+  /**
+   * Lays the diff out again, keeping the cursor's line on screen: or, with focus in the peek, the
+   * peek's line, where the cursor goes, as it does as the peek closes, and focus stays in the peek.
+   */
   setLayout(layout: DiffLayout): void;
   /**
    * Replaces the threads drawn under lines, and under files' headers, each drawn by `render` in an
@@ -572,12 +575,13 @@ export interface DiffView extends KeySource {
    * Shows `peek` under the line at `at`, with `frame` drawn around its code as it opens, or shows
    * what the peek there shows now, its frame kept; or, with `peek` undefined, closes the peek
    * there. A view has one peek at most: one elsewhere closes as this one opens. Each is the
-   * reader's asking, as `gd` is: the line stays where it is on screen, and so does all above it,
-   * and side by side the other column makes room level with it, as for threads. Its height comes
-   * from its code alone, so nothing it shows changes it after. Focus goes into the peek, a scope of
-   * its own (`peek`), from the view's code, and closing it puts focus back on the code, the cursor
-   * at `at`. Says whether there was a peek to show or close: there's none under a line not drawn,
-   * as of a file closed or kept out, or one GitHub's diff left out.
+   * reader's asking, as `gd` is: the line stays where it is on screen, and so does all above it, or
+   * while the line is off screen, what's at the top of the screen does; side by side the other
+   * column makes room level with it, as for threads. Its height comes from its code alone, so
+   * nothing it shows changes it after. Focus goes into the peek, a scope of its own (`peek`), from
+   * the view's code, and closing it puts focus back on the code, the cursor at `at`. Says whether
+   * there was a peek to show or close: there's none under a line not drawn, as of a file closed or
+   * kept out, one GitHub's diff left out, or one among collapsed lines, where no cursor is.
    */
   peek(at: Place, peek: PeekView | undefined, frame?: PeekFrame): boolean;
   /**
@@ -747,7 +751,9 @@ export interface PeekParts {
 
 /**
  * Draws a peek's frame in its parts as it opens, at once, and again with `update` as what the peek
- * shows changes. `destroy` takes it down as the peek closes.
+ * shows changes. `destroy` takes it down as the peek closes. A key that scrolls, which neither
+ * Lo's commands nor the frame take (it prevents its default), scrolls the peek's code, and never
+ * what's under the peek, short of one typed in a field the frame draws, or a button's `Space`.
  */
 export type PeekFrame = (
   parts: PeekParts,
@@ -802,8 +808,9 @@ export interface FileView extends KeySource {
   showLine(line: number): void;
   /**
    * Shows `peek` under the line at `at`, as the diff view does (`DiffView.peek`), or with `peek`
-   * undefined closes it: the line stays where it is on screen, and all above it. Says whether there
-   * was a peek to show or close: there's none under a line of another file or side.
+   * undefined closes it: the line stays where it is on screen, and all above it, or while it's off
+   * screen, the first line on screen does. Says whether there was a peek to show or close: there's
+   * none under a line of another file or side.
    */
   peek(at: Place, peek: PeekView | undefined, frame?: PeekFrame): boolean;
   /** Where the word at `at` is drawn, as the diff view finds it (`DiffView.anchor`). */

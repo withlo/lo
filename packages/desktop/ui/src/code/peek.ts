@@ -8,8 +8,9 @@
 // it.
 //
 // The peek is a scope of its own, `peek`, whose keys are Lo's: it has no Vim and no cursor, and
-// what a key there acts on is the line it's under. It's one element, which outlives the blocks a
-// view draws it in, as a thread's does, and moves into whichever draws it last.
+// what a key there acts on is the line it's under. The keys that scroll, which none of Lo's take,
+// scroll its code, never the view under it. It's one element, which outlives the blocks a view
+// draws it in, as a thread's does, and moves into whichever draws it last.
 
 import { WidgetType } from '@codemirror/view';
 
@@ -62,6 +63,8 @@ export class PeekBlock {
   #refocusing = false;
   /** Whether the code is still to be scrolled to its answer, once it's laid out. */
   #toScroll = true;
+  /** How far its code and list were scrolled as it moved, which moving it loses, to put back. */
+  #scrolled: { code: number; list: number } | undefined;
   readonly #laidOut: ResizeObserver;
 
   constructor(at: Place, peek: PeekView, frame: PeekFrame | undefined) {
@@ -84,9 +87,12 @@ export class PeekBlock {
     for (const part of Object.values(this.#parts)) part.hidden = frame === undefined;
     this.#show(peek);
     this.#stops.push(setScopeSource(this.dom, this));
-    // The code is scrolled to its answer once it has a size: not before it's in the page.
+    this.dom.addEventListener('keydown', this.#scrollKey);
+    // The code is scrolled to its answer once it has a size: not before it's in the page. Moved,
+    // it's scrolled back where it was.
     this.#laidOut = new ResizeObserver(() => {
       if (this.#toScroll) this.#scrollToAnswer();
+      else this.#scrollBack();
     });
     this.#laidOut.observe(this.#code);
     // Drawn now, with the rest, so the peek comes as tall as it is.
@@ -120,11 +126,15 @@ export class PeekBlock {
     return this.#refocusing || this.dom.contains(this.dom.ownerDocument.activeElement);
   }
 
-  /** Puts it in `parent`, keeping its focus. */
+  /** Puts it in `parent`, keeping its focus, and its code and list scrolled where they were. */
   attach(parent: HTMLElement): void {
     const focused = this.hasFocus;
+    if (this.dom.isConnected && this.#code.clientHeight > 0) {
+      this.#scrolled ??= { code: this.#code.scrollTop, list: this.#parts.list.scrollTop };
+    }
     parent.append(this.dom);
     // The block isn't in the page until the editor that draws it has put it there.
+    queueMicrotask(() => this.#scrollBack());
     if (!focused) return;
     this.#refocusing = true;
     queueMicrotask(() => {
@@ -132,6 +142,15 @@ export class PeekBlock {
       this.#refocusing = false;
       this.focus();
     });
+  }
+
+  /** Scrolls the code and list back where they were before it moved, once it's drawn again. */
+  #scrollBack(): void {
+    const scrolled = this.#scrolled;
+    if (!scrolled || this.#code.clientHeight === 0) return;
+    this.#scrolled = undefined;
+    this.#code.scrollTop = scrolled.code;
+    this.#parts.list.scrollTop = scrolled.list;
   }
 
   /** Takes focus, where it's drawn, without scrolling anything to it. */
@@ -162,6 +181,34 @@ export class PeekBlock {
 
   setVimKeys(): void {}
 
+  /**
+   * A key that scrolls, which nothing in the peek took: it scrolls the code, as it would a page,
+   * and never what's under the peek. A field the frame draws keeps its keys, and a button its
+   * `Space`.
+   */
+  readonly #scrollKey = (event: KeyboardEvent): void => {
+    if (event.defaultPrevented || event.isComposing) return;
+    const by = scrollOf(event, this.#code.clientHeight);
+    if (by === undefined) return;
+    if (this.#inField(event.target)) return;
+    if (event.key === ' ' && this.#within(event.target, BUTTONS)) return;
+    event.preventDefault();
+    const box = this.#code;
+    box.scrollTop = by === 'start' ? 0 : by === 'end' ? box.scrollHeight : box.scrollTop + by;
+  };
+
+  /** Whether `target` is a field the frame draws, which takes its own keys. */
+  #inField(target: EventTarget | null): boolean {
+    if (!(target instanceof HTMLElement) || !this.#within(target, '*')) return false;
+    return target.isContentEditable || target.matches(FIELDS);
+  }
+
+  /** Whether `target` is in what `selector` matches inside the peek, not the editor around it. */
+  #within(target: EventTarget | null, selector: string): boolean {
+    const found = target instanceof Element ? target.closest(selector) : null;
+    return found !== null && found !== this.dom && this.dom.contains(found);
+  }
+
   /** Draws `peek`'s code in its place, and with `scroll` scrolls it to its answer. */
   #show(peek: PeekView, scroll = true): void {
     this.dom.setAttribute('aria-label', peek.label);
@@ -171,6 +218,7 @@ export class PeekBlock {
     this.#code.replaceChildren(...(peek.code ? [codeElement(peek.code, answer)] : []));
     if (!scroll) return;
     this.#toScroll = true;
+    this.#scrolled = undefined;
     if (this.#code.isConnected) this.#scrollToAnswer();
   }
 
@@ -182,13 +230,50 @@ export class PeekBlock {
     const code = this.#peek.code;
     const answer = this.#peek.answers[this.#peek.shown];
     const index = code && answer ? answer.line - code.first : -1;
-    const numbers = box.querySelectorAll('.lo-ln');
-    const above = numbers[Math.max(0, index - ABOVE)];
-    if (index < 0 || !above) {
+    const first = index - ABOVE;
+    const above = box.querySelectorAll('.lo-ln')[first];
+    if (first <= 0 || !above) {
       box.scrollTop = 0;
       return;
     }
-    box.scrollTop += above.getBoundingClientRect().top - box.getBoundingClientRect().top;
+    const padding = Number.parseFloat(getComputedStyle(box).paddingTop) || 0;
+    box.scrollTop += above.getBoundingClientRect().top - box.getBoundingClientRect().top - padding;
+  }
+}
+
+/** The fields a frame can draw, which take their own keys, as does text it lets the reader edit. */
+const FIELDS = 'input, textarea, select';
+
+/** What `Space` presses, inside a frame. */
+const BUTTONS = 'button, a[href], [role="button"], [role="link"], [role="option"]';
+
+/**
+ * How far the key of `event` scrolls a box `height` tall, as the browser scrolls a page: by a line,
+ * by a page, or to an end. None for a key that doesn't scroll.
+ */
+function scrollOf(event: KeyboardEvent, height: number): number | 'start' | 'end' | undefined {
+  const page = Math.max(LINE, height - LINE);
+  switch (event.key) {
+    case 'ArrowDown':
+      return LINE;
+    case 'ArrowUp':
+      return -LINE;
+    case 'PageDown':
+      return page;
+    case 'PageUp':
+      return -page;
+    case ' ':
+      return event.shiftKey ? -page : page;
+    case 'Home':
+      return 'start';
+    case 'End':
+      return 'end';
+    case 'ArrowLeft':
+    case 'ArrowRight':
+      // The code wraps: there's nothing to the side.
+      return 0;
+    default:
+      return undefined;
   }
 }
 

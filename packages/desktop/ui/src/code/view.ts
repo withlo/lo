@@ -2645,16 +2645,18 @@ class View implements DiffView {
       this.#closePeek();
       return true;
     }
-    if (!place || !this.#drawable(place)) return false;
+    // A line among collapsed lines isn't drawn, as the cursor never is there: the reader opens
+    // the run first.
+    if (!place || !this.#drawable(place) || this.#collapsedAt(place)) return false;
     if (here) {
       const { block } = open;
-      this.#keepLine(place, () => block.update(peek));
+      this.#keepPeek(place, () => block.update(peek));
       return true;
     }
     // Focus in the view's code, or in the peek this one takes the place of, goes into it.
     const focused = this.#editors().some((view) => view.hasFocus) || open?.block.hasFocus === true;
     const block = new PeekBlock(at, peek, frame);
-    this.#keepLine(place, () => {
+    this.#keepPeek(place, () => {
       if (open) {
         open.block.destroy();
         if (open.place.file !== place.file) this.#refresh(open.place.file);
@@ -2669,15 +2671,45 @@ class View implements DiffView {
   }
 
   /**
-   * Closes the peek, its line staying where it is, and puts focus back on its line if it was in
-   * it: the cursor where it was as the peek opened.
+   * Makes a change to the peek under `place`, which the reader asked for: while the line is on
+   * screen, it stays where it is, and so does all above it; off screen, above it or below, what's
+   * at the top of the screen does, so a peek opening or closing out of sight moves nothing in it.
+   */
+  #keepPeek(place: At, change: () => void): void {
+    if (this.#lineOnScreen(place)) this.#keepLine(place, change);
+    else this.#keepTop(change);
+  }
+
+  /** Whether the top of line `place` is drawn on screen. */
+  #lineOnScreen(place: At): boolean {
+    const pane: Pane = this.#pane === 'inline' ? 'inline' : place.side;
+    const view = this.#viewOf(pane);
+    // Where it's drawn once what's waiting is measured, as a scroll the editor has yet to make.
+    view.lineBlockAtHeight(0);
+    const top = drawnTop(view, view.state.doc.line(this.#docLine(pane, place)).from);
+    const screen = this.dom.getBoundingClientRect();
+    return top !== undefined && top >= screen.top && top < screen.bottom;
+  }
+
+  /** Whether line `place` is among the collapsed lines its file shows now. */
+  #collapsedAt(place: At): boolean {
+    const diff = this.#diffs[place.file];
+    if (!diff) return false;
+    const { file } = place;
+    const runs = shownRuns(diff, this.#keep[file], this.#open[file], this.#gaps[file]);
+    return runAt(runs, place.side, place.line) !== undefined;
+  }
+
+  /**
+   * Closes the peek, its line staying where it is while it's on screen, and puts focus back on its
+   * line if it was in it: the cursor where it was as the peek opened.
    */
   #closePeek(): void {
     const open = this.#peek;
     if (!open) return;
     const { place, block } = open;
     const focused = block.hasFocus;
-    this.#keepLine(place, () => {
+    this.#keepPeek(place, () => {
       this.#peek = undefined;
       block.destroy();
       this.#refresh(place.file);
@@ -3146,6 +3178,9 @@ class View implements DiffView {
    * gives it focus unless `focus` is false.
    */
   #toggleLayout(focus = true): void {
+    // Focus in the peek stays there, and its line is what stays in view, the cursor going to it as
+    // it would as the peek closes.
+    const peek = this.#peek?.block.hasFocus === true ? this.#peek : undefined;
     // Lines, threads and hints waiting to change on screen change with the layout, which moves it
     // all.
     this.#letThreadsGo('all', false);
@@ -3157,7 +3192,10 @@ class View implements DiffView {
     this.#holding = undefined;
     const pane = this.#activePane();
     const view = this.#viewOf(pane);
-    const from = this.#placeAt(pane, view.state.doc.lineAt(view.state.selection.main.head).number);
+    const from =
+      peek?.place ??
+      this.#placeAt(pane, view.state.doc.lineAt(view.state.selection.main.head).number);
+    let shown: Pane;
     if (this.#pane === 'split') {
       const inline = this.#inline ?? this.#makeInline();
       this.#pane = 'inline';
@@ -3166,7 +3204,7 @@ class View implements DiffView {
       this.views.new.dom.hidden = true;
       inline.view.dom.hidden = false;
       this.#moveBoxes();
-      this.#show('inline', from, focus);
+      shown = 'inline';
     } else {
       this.#pane = 'split';
       if (this.#inline) this.#inline.view.dom.hidden = true;
@@ -3176,8 +3214,13 @@ class View implements DiffView {
       this.#moveBoxes();
       // The cursor stays on screen as the sides settle, as after any key that moves it.
       this.#aligner.follow();
-      this.#show(from.side, from, focus);
+      shown = from.side;
     }
+    this.#show(shown, from, focus && !peek);
+    if (!peek) return;
+    // Drawn now, where the editor scrolls to, so it can take focus.
+    this.#viewOf(shown).lineBlockAtHeight(0);
+    peek.block.focus();
   }
 
   /** Shows `pane`, scrolled to `place` with the cursor there, and focus in it unless `focus` is false. */

@@ -108,6 +108,16 @@ async function drawn(page: Page, ids: string[]): Promise<void> {
   await expect.poll(shown, { timeout: 20_000 }).toEqual({ ids, held: 0 });
 }
 
+/** The same lines are all on screen as `before` were, each within a pixel of where it was. */
+async function still(page: Page, before: { line: number; top: number }[]): Promise<void> {
+  const after = await onScreen(page);
+  expect(after.map((each) => each.line)).toEqual(before.map((each) => each.line));
+  near(
+    after.map((each) => each.top),
+    before.map((each) => each.top),
+  );
+}
+
 /** Each of `after` is within a pixel of the same of `before`. */
 function near(after: (number | undefined)[], before: (number | undefined)[]): void {
   expect(after).toHaveLength(before.length);
@@ -162,6 +172,95 @@ for (const layout of ['split', 'inline'] as const) {
       await expect(peek).toHaveCount(0);
       near([...(await tops()), await box()], [...before.tops, before.box]);
       expect(await level()).toBeLessThan(1);
+    });
+
+    for (const where of ['above', 'below'] as const) {
+      test(`a peek opened and closed under a line ${where} the screen, focus in it, leaves the screen where it is`, async () => {
+        const page = await open(layout);
+        const lines = await onScreen(page);
+        // Drawn, though off screen: line 20 is at the top.
+        const line = where === 'above' ? 14 : lines.at(-1)!.line + 6;
+        await page.evaluate((at) => window.harness.cursor(at), lines[5]!.line);
+        await frames(page);
+        const before = await onScreen(page);
+
+        expect(await page.evaluate((at) => window.harness.peek(at), line)).toBe(true);
+        await frames(page);
+        expect(await page.evaluate(() => window.harness.focused())).toBe('peek');
+        await still(page, before);
+        expect(await page.evaluate((at) => window.harness.unpeek(at), line)).toBe(true);
+        await frames(page);
+        await still(page, before);
+      });
+    }
+
+    test('keys in a peek scroll its code, and never the diff under it', async () => {
+      const page = await open(layout);
+      const line = (await onScreen(page))[5]!.line;
+      await page.evaluate((at) => {
+        window.harness.cursor(at);
+        window.harness.peek(at, 60);
+      }, line);
+      await frames(page);
+      expect(await page.evaluate(() => window.harness.focused())).toBe('peek');
+      const before = await onScreen(page);
+      const scrolled = () => page.evaluate(() => window.harness.peekScroll()!);
+      for (const key of ['ArrowDown', 'PageDown', 'Space', 'End']) {
+        const was = await scrolled();
+        await page.keyboard.press(key);
+        await frames(page);
+        expect(await scrolled()).toBeGreaterThan(was);
+      }
+      for (const key of ['ArrowUp', 'PageUp', 'Shift+Space', 'Home']) {
+        const was = await scrolled();
+        await page.keyboard.press(key);
+        await frames(page);
+        expect(await scrolled()).toBeLessThan(was);
+      }
+      await still(page, before);
+    });
+
+    test('a peek drawn again, as a thread comes under its line, keeps its code where the reader scrolled it', async () => {
+      const page = await open(layout);
+      const line = (await onScreen(page))[5]!.line;
+      await page.evaluate((at) => {
+        window.harness.cursor(at);
+        window.harness.peek(at, 60);
+      }, line);
+      await frames(page);
+      await page.keyboard.press('PageDown');
+      await frames(page);
+      const scrolled = await page.evaluate(() => window.harness.peekScroll());
+      expect(scrolled).toBeGreaterThan(0);
+
+      await page.evaluate(
+        (at) => window.harness.threads([{ id: 'here', line: at, height: 60 }], true),
+        line,
+      );
+      await frames(page);
+      await expect(page.locator('[data-thread-id="here"]')).toHaveCount(1);
+      expect(await page.evaluate(() => window.harness.peekScroll())).toBe(scrolled);
+    });
+
+    test(`focus in a peek off the cursor's line stays there as the layout changes`, async () => {
+      const page = await open(layout);
+      const lines = await onScreen(page);
+      await page.evaluate(
+        (at) => {
+          window.harness.cursor(at.cursor);
+          window.harness.peek(at.peek);
+        },
+        { cursor: lines[2]!.line, peek: lines[12]!.line },
+      );
+      await frames(page);
+      expect(await page.evaluate(() => window.harness.focused())).toBe('peek');
+
+      await page.evaluate((shown) => window.harness.layout(shown), other(layout));
+      await frames(page);
+      expect(await page.evaluate(() => window.harness.focused())).toBe('peek');
+      await page.evaluate((shown) => window.harness.layout(shown), layout);
+      await frames(page);
+      expect(await page.evaluate(() => window.harness.focused())).toBe('peek');
     });
 
     test('a word’s anchor is where it’s drawn, and the pointer resting on it says where it is, and leaving it says so', async () => {
@@ -388,6 +487,29 @@ for (const layout of ['split', 'inline'] as const) {
         expect(Math.abs((await lineTop(page, 60))!)).toBeLessThan(1);
       });
     }
+  });
+}
+
+for (const where of ['above', 'below'] as const) {
+  test(`in the whole file, a peek opened and closed under a line ${where} the screen, focus in it, leaves the screen where it is`, async () => {
+    app = await launch(harness);
+    const page = await app.firstWindow();
+    await page.waitForFunction(() => 'harness' in window);
+    await page.evaluate(() => window.harness.openFile(20));
+    await frames(page);
+    const lines = await onScreen(page);
+    const line = where === 'above' ? 14 : lines.at(-1)!.line + 6;
+    await page.evaluate((at) => window.harness.fileCursor(at), lines[5]!.line);
+    await frames(page);
+    const before = await onScreen(page);
+
+    expect(await page.evaluate((at) => window.harness.filePeek(at), line)).toBe(true);
+    await frames(page);
+    expect(await page.evaluate(() => window.harness.focused())).toBe('peek');
+    await still(page, before);
+    expect(await page.evaluate((at) => window.harness.filePeek(at, false), line)).toBe(true);
+    await frames(page);
+    await still(page, before);
   });
 }
 

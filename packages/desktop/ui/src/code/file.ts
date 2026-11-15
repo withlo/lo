@@ -339,11 +339,11 @@ class WholeFile implements FileView {
     if (open?.line === at.line) {
       const { block } = open;
       if (peek) {
-        this.#keepLine(at.line, () => block.update(peek));
+        this.#keepPeek(at.line, () => block.update(peek));
         return true;
       }
       const focused = block.hasFocus;
-      this.#keepLine(at.line, () => {
+      this.#keepPeek(at.line, () => {
         this.#peek = undefined;
         block.destroy();
         view.dispatch({ effects: setPeek.of(undefined) });
@@ -361,7 +361,7 @@ class WholeFile implements FileView {
     // Focus in the code, or in the peek this one takes the place of, goes into it.
     const focused = view.hasFocus || open?.block.hasFocus === true;
     const block = new PeekBlock(at, peek, frame);
-    this.#keepLine(at.line, () => {
+    this.#keepPeek(at.line, () => {
       open?.block.destroy();
       this.#peek = { line: at.line, block };
       view.dispatch({ effects: setPeek.of({ line: at.line, block }) });
@@ -397,11 +397,20 @@ class WholeFile implements FileView {
   }
 
   /**
-   * Makes a change under line `line`, as a peek opening there: the line stays where it is on
-   * screen, and so does all above it.
+   * Makes a change under line `line`, as a peek opening there: while the line is on screen, it
+   * stays where it is, and so does all above it; off screen, above it or below, the first line on
+   * screen does, so a peek opening or closing out of sight moves nothing in it.
    */
-  #keepLine(line: number, change: () => void): void {
-    this.#keepPos(this.#view.state.doc.line(line).from, change);
+  #keepPeek(line: number, change: () => void): void {
+    const view = this.#view;
+    view.lineBlockAtHeight(0);
+    const screen = this.dom.getBoundingClientRect();
+    const pos = view.state.doc.line(line).from;
+    const top = drawnTop(view, pos);
+    const onScreen = top !== undefined && top >= screen.top && top < screen.bottom;
+    const kept = onScreen ? pos : lineOnScreen(view, screen)?.pos;
+    if (kept === undefined) change();
+    else this.#keepPos(kept, change);
   }
 
   /**

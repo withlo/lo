@@ -82,6 +82,13 @@ function lines(count: number): PeekCode {
   return { first: 1, lines: Array.from({ length: count }, () => 'x') };
 }
 
+/** Presses `key` in `target`: whether something prevented what it does by default. */
+function pressed(target: Element, key: string): boolean {
+  const event = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true });
+  target.dispatchEvent(event);
+  return event.defaultPrevented;
+}
+
 describe('a peek', () => {
   test("draws its answer's code, numbered from its first line, its line and name marked", () => {
     const keyword = tokenNames.indexOf('keyword');
@@ -182,6 +189,38 @@ describe('a peek', () => {
     });
     block.destroy();
     expect(findScope(block.dom).source).toBeUndefined();
+  });
+
+  test('a key that scrolls, which nothing in it took, scrolls its code and goes no further', () => {
+    const { frame } = framed();
+    const block = new PeekBlock(at, definitions({ code: lines(60) }), frame);
+    // In an editor's text, as a block between its lines.
+    const editor = document.body.appendChild(document.createElement('div'));
+    editor.contentEditable = 'true';
+    const holder = editor.appendChild(document.createElement('div'));
+    holder.contentEditable = 'false';
+    block.attach(holder);
+    for (const key of ['ArrowDown', 'ArrowUp', 'PageDown', 'PageUp', ' ', 'Home', 'End']) {
+      expect(pressed(block.dom, key)).toBe(true);
+    }
+    // In the frame too, short of a field typed in, or a button's Space.
+    const list = block.dom.querySelector('.lo-diffpeek__list')!;
+    const field = list.appendChild(document.createElement('input'));
+    const button = list.appendChild(document.createElement('button'));
+    expect(pressed(list, 'PageDown')).toBe(true);
+    expect(pressed(button, 'ArrowDown')).toBe(true);
+    expect(pressed(field, 'ArrowDown')).toBe(false);
+    expect(pressed(button, ' ')).toBe(false);
+    // Others, and those the frame handles itself, are left alone.
+    expect(pressed(block.dom, 'x')).toBe(false);
+    list.addEventListener('keydown', (event) => event.preventDefault(), { once: true });
+    const spied = vi.spyOn(block.dom.querySelector('.lo-diffpeek__code')!, 'scrollTop', 'set');
+    expect(pressed(list, 'ArrowDown')).toBe(true);
+    expect(spied).not.toHaveBeenCalled();
+    expect(pressed(block.dom, 'End')).toBe(true);
+    expect(spied).toHaveBeenCalled();
+    block.destroy();
+    editor.remove();
   });
 
   test('moved into another block, it keeps focus, without scrolling to it', async () => {

@@ -2997,15 +2997,18 @@ describe('peeks', () => {
     expect(parent!.querySelector('.lo-diffpeek')).toBeNull();
   });
 
-  test('one keeps its line shown, among collapsed lines, once it closes too', () => {
+  test('none opens among collapsed lines; one opened in a run keeps its line once the run closes', () => {
     const shown = open();
     const before = runs();
-    shown.peek(at('a', 'new', 12), definition());
+    expect(shown.peek(at('a', 'new', 12), definition())).toBe(false);
+    expect(runs()).toEqual(before);
+    shown.fold(onLine('a', 'new', 12), 'open');
+    expect(shown.peek(at('a', 'new', 12), definition())).toBe(true);
     expect(peeked()).toEqual(['After', 'line 12']);
-    const opened = runs();
-    expect(opened).not.toEqual(before);
     shown.peek(at('a', 'new', 12), undefined);
-    expect(runs()).toEqual(opened);
+    shown.fold(onLine('a', 'new', 11), 'close');
+    expect(runs()).not.toEqual(before);
+    expect(shown.peek(at('a', 'new', 12), definition())).toBe(true);
   });
 
   test('focus goes into it from the code, and back to the cursor as it was, as it closes', () => {
