@@ -120,9 +120,9 @@ const harness = {
     );
     shown.setDiff('a', diffText(textOf(old), textOf(changed)));
   },
-  /** Puts new line `line` at the top of the screen. */
-  scrollTo(line: number): void {
-    view().scrollTo({ at: { kind: 'line', at: { file: 'a', side: 'new', line } }, offset: 0 });
+  /** Puts new line `line` at the top of the screen, or `below` pixels below it. */
+  scrollTo(line: number, below = 0): void {
+    view().scrollTo({ at: { kind: 'line', at: { file: 'a', side: 'new', line } }, offset: -below });
   },
   /** The unchanged lines whose text is all on screen, and how far down it each starts. */
   onScreen(): { line: number; top: number }[] {
@@ -159,6 +159,17 @@ const harness = {
     const card = cards.get(id);
     if (card) card.style.height = `${height}px`;
   },
+  /** The view narrows, or widens, to `width`, as when a panel opens or closes beside it. */
+  narrow(width: number): void {
+    root().style.width = `${width}px`;
+  },
+  /**
+   * The view narrows to `width` as the next key comes, before anything on the page hears of it, so
+   * what the key does is done at the new width.
+   */
+  narrowOnKey(width: number): void {
+    window.addEventListener('keydown', () => harness.narrow(width), { capture: true, once: true });
+  },
   /**
    * Thread `id` grows to `height` with no input, as `grow` has it, and the view narrows to `width`
    * at the start of the frame that takes the thread's change, before it's taken, as when a panel
@@ -169,11 +180,7 @@ const harness = {
     harness.grow(id, height);
     // Asked for in the next frame before it lays the thread out, and so before the view asks for
     // the frame after, this runs there ahead of the view's own.
-    requestAnimationFrame(() =>
-      requestAnimationFrame(() => {
-        root().style.width = `${width}px`;
-      }),
-    );
+    requestAnimationFrame(() => requestAnimationFrame(() => harness.narrow(width)));
   },
   /** Puts the cursor on new line `line`, and focus in the view. */
   cursor(line: number): void {

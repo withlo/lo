@@ -31,20 +31,37 @@ test.afterEach(async () => {
 });
 
 /**
- * The page, its view in `layout`, new line 20 at the top of the screen, and the first `wrapped` lines
- * long enough to wrap.
+ * The page, its view in `layout`, new line 20 at the top of the screen or `below` pixels below it,
+ * and the first `wrapped` lines long enough to wrap.
  */
-async function open(layout: DiffLayout, wrapped = 0): Promise<Page> {
+async function open(
+  layout: DiffLayout,
+  { wrapped = 0, below = 0 }: { wrapped?: number; below?: number } = {},
+): Promise<Page> {
   app = await launch(harness);
   const page = await app.firstWindow();
   await page.waitForFunction(() => 'harness' in window);
   await page.evaluate(
-    ({ shown, lines }) => {
+    ({ shown, lines, under }) => {
       window.harness.open(shown, lines);
-      window.harness.scrollTo(20);
+      window.harness.scrollTo(20, under);
     },
-    { shown: layout, lines: wrapped },
+    { shown: layout, lines: wrapped, under: below },
   );
+  await frames(page);
+  return page;
+}
+
+/**
+ * The page, its view in `layout`, with the lines above new line 20 long enough to wrap, the last
+ * rows of line 19 across the top of the screen and line 20 below them, and the reader's cursor on
+ * line 25, on screen, so the jump that put them there is over. As the view narrows, the lines
+ * above the screen wrap onto more rows, line 19 among them, which moves the lines on screen down
+ * until the view puts them back.
+ */
+async function wrapping(layout: DiffLayout): Promise<Page> {
+  const page = await open(layout, { wrapped: 19, below: 30 });
+  await page.evaluate(() => window.harness.cursor(25));
   await frames(page);
   return page;
 }
@@ -160,26 +177,53 @@ for (const layout of ['split', 'inline'] as const) {
       expect(Math.abs(after! - before!)).toBeLessThan(1);
     });
 
-    test('a thread below the screen that changes as the view narrows leaves the line at the top where it is', async () => {
-      // The lines above the top of the screen wrap onto more rows as the view narrows, which moves
-      // the lines on screen down until the view puts them back.
-      const page = await open(layout, 19);
-      await page.evaluate(() => {
-        window.harness.threads([{ id: 'below', line: 60, height: 60 }], true);
-        // The reader's cursor on a line on screen: the jump that put line 20 at the top is over.
-        window.harness.cursor(25);
-      });
+    test('the view narrowing leaves the line at the top where it is', async () => {
+      const page = await wrapping(layout);
+      const before = await page.evaluate(() => window.harness.lineTop(20));
+
+      await page.evaluate(() => window.harness.narrow(640));
       await frames(page);
-      await expect(page.locator('[data-thread-id="below"]')).toHaveCount(1);
+      const after = await page.evaluate(() => window.harness.lineTop(20));
+      expect(Math.abs(after! - before!)).toBeLessThan(1);
+    });
+
+    test('a thread above the screen that changes as the view narrows leaves the line at the top where it is', async () => {
+      const page = await wrapping(layout);
+      await page.evaluate(() =>
+        window.harness.threads([{ id: 'above', line: 18, height: 60 }], true),
+      );
+      await frames(page);
+      // Drawn, and all of it above the screen.
+      await expect(page.locator('[data-thread-id="above"]')).toHaveCount(1);
+      expect(
+        await page.evaluate(() => window.harness.top('[data-thread-id="above"]')),
+      ).toBeLessThan(-60);
       const before = await page.evaluate(() => window.harness.lineTop(20));
 
       // It grows with no input, so the view takes the change in a frame of its own, keeping what's
       // at the top of the screen; the view narrows at the start of that frame, as when a panel
       // opens beside it then.
-      await page.evaluate(() => window.harness.growAsItNarrows('below', 140, 640));
+      await page.evaluate(() => window.harness.growAsItNarrows('above', 140, 640));
       await frames(page);
       const after = await page.evaluate(() => window.harness.lineTop(20));
       expect(Math.abs(after! - before!)).toBeLessThan(1);
+    });
+
+    test('a new line typed in a comment box as the view narrows leaves the box where it is', async () => {
+      const page = await wrapping(layout);
+      await page.evaluate(() => window.harness.compose(30));
+      await frames(page);
+      const box = () => page.evaluate(() => window.harness.top('.lo-diffcomposer'));
+      const height = () =>
+        page.locator('.lo-diffcomposer').evaluate((each) => each.getBoundingClientRect().height);
+      const before = { top: await box(), height: await height() };
+
+      // The box grows with the new line as the key is handled, at the width the key came at.
+      await page.evaluate(() => window.harness.narrowOnKey(640));
+      await page.keyboard.press('Enter');
+      await frames(page);
+      expect(await height()).toBeGreaterThan(before.height);
+      expect(Math.abs((await box())! - before.top!)).toBeLessThan(1);
     });
   });
 }

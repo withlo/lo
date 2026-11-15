@@ -71,7 +71,7 @@ import type {
   Viewport,
   VimKey,
 } from './api.ts';
-import { Aligner, alignerFields, drawnBottom, drawnTop, ownTop } from './aligner.ts';
+import { Aligner, alignerFields, drawnBottom, drawnTop, lineOnScreen, ownTop } from './aligner.ts';
 import { CommentBox, placeKey } from './comments.ts';
 import {
   type FileNote,
@@ -493,6 +493,7 @@ class View implements DiffView {
     this.dom.addEventListener('contextmenu', (event) => this.#contextMenu(event));
     this.dom.addEventListener('keydown', this.#escape, { capture: true });
     this.dom.addEventListener('scroll', this.#letNotesGo, { passive: true });
+    this.dom.addEventListener('scroll', this.#noteInlineTop, { passive: true });
     // After `Esc`'s own, so `Esc` closes the note the reader sees.
     for (const type of ['wheel', KEY_EVENT, 'click'] as const) {
       this.dom.addEventListener(type, this.#afterInput, { passive: true, capture: true });
@@ -559,6 +560,15 @@ class View implements DiffView {
   #holdEnds = 0;
   /** The scroll when the line held last settled, to tell a scroll since that the view didn't make. */
   #heldScroll = 0;
+  /**
+   * Inline, what the view puts back at the top of the screen once the editor's text changes width
+   * and its lines wrap anew, as the spacer pass does side by side: a jump's line, or else the first
+   * line that starts on screen, where it was as the view last settled, and how wide the text was
+   * then.
+   */
+  #inlineTop: { at: Viewport; width: number } | undefined;
+  /** Whether `#noteInlineTop` is to run once the editor's update is done. */
+  #noting = false;
 
   /** The reader moves: what's at the top is theirs to choose again. */
   readonly #letGo = (): void => {
@@ -636,7 +646,10 @@ class View implements DiffView {
     }
     // A jump's line goes where it belongs after, as after the browser pulled the scroll back to
     // the end as the box grew, which leaves the content where it was.
-    if (!this.#keepJumped() && !kept) return;
+    const jumped = this.#keepJumped();
+    // Inline, a box that changed width has wrapped the lines anew: the line at the top goes back.
+    this.#noteInlineTop();
+    if (!jumped && !kept) return;
     this.#scrolled = this.dom.scrollTop;
     // The scroll goes by whole pixels, or halves, which can leave the content a fraction from where
     // it's meant to be: that place stays, so the next move makes up for it rather than adding to
@@ -1501,6 +1514,9 @@ class View implements DiffView {
    * pass holds it. Inline, the view puts it back at once, and with `hold`, holds it there as
    * `holdTop` does while the editor measures. A `fold`, which can leave less below the line than
    * the screen, does both in either layout, with the room after the last file that it needs.
+   * Inline, once the editor's text has changed width since the view last settled, what's drawn has
+   * moved as its lines wrapped anew: the line that was at the top goes back where it was, and is
+   * held there.
    */
   #keepTop(change: () => void, hold = true, fold = false): void {
     // What the reader reads is kept instead.
@@ -1514,7 +1530,8 @@ class View implements DiffView {
       change();
       return;
     }
-    const top = this.viewport();
+    const rewrapped = this.#rewrappedTop();
+    const top = rewrapped ?? this.viewport();
     const topOf = (): number | undefined => {
       const found = this.#atOf(top.at);
       if (!found) return undefined;
@@ -1522,7 +1539,8 @@ class View implements DiffView {
       const view = this.#viewOf(pane);
       return drawnTop(view, view.state.doc.line(this.#docLine(pane, found.place)).from);
     };
-    const before = topOf();
+    // Where it is on the page now, or for a line the new width moved, where it was.
+    const before = rewrapped ? this.dom.getBoundingClientRect().top - rewrapped.offset : topOf();
     change();
     const view = split ? undefined : this.#inline?.view;
     if (view) {
@@ -1537,7 +1555,80 @@ class View implements DiffView {
       if (fold) this.#makeRoom(after - before);
       this.dom.scrollTop += after - before;
     }
-    if (hold) this.#hold(top, false, fold);
+    if (hold || rewrapped) this.#hold(top, false, fold);
+    const width = this.#inlineWidth();
+    if (rewrapped && width !== undefined) this.#inlineTop = { at: rewrapped, width };
+  }
+
+  /** How wide the inline editor's text is, while it's the layout shown and drawn. */
+  #inlineWidth(): number | undefined {
+    if (this.#pane !== 'inline' || !this.#inline) return undefined;
+    const { width } = this.#inline.view.contentDOM.getBoundingClientRect();
+    return width > 0 ? width : undefined;
+  }
+
+  /**
+   * Inline, what was at the top of the screen as the view last settled, if the editor's text has
+   * changed width since: its lines have wrapped anew, which has moved what's drawn from where the
+   * reader saw it, though the editor may not have measured them yet.
+   */
+  #rewrappedTop(): Viewport | undefined {
+    const noted = this.#inlineTop;
+    const width = this.#inlineWidth();
+    if (!noted || width === undefined || Math.abs(width - noted.width) < 0.5) return undefined;
+    return noted.at;
+  }
+
+  /**
+   * Inline, notes what's at the top of the screen as the view settles, after a scroll, a change of
+   * the box or the editor measuring: what to put back once the text changes width. If it has
+   * changed since the last note, what that noted goes back first.
+   */
+  readonly #noteInlineTop = (): void => {
+    if (this.#rewrappedTop()) {
+      this.#keepTop(() => {});
+      return;
+    }
+    const width = this.#inlineWidth();
+    const at = width === undefined ? undefined : this.#inlineTopNow();
+    this.#inlineTop = at && width !== undefined ? { at, width } : undefined;
+  };
+
+  /** Notes what's at the top inline once the editor's update is done, as the spacer pass runs. */
+  #noteAfterUpdate(): void {
+    if (this.#noting) return;
+    this.#noting = true;
+    queueMicrotask(() => {
+      this.#noting = false;
+      this.#noteInlineTop();
+    });
+  }
+
+  /**
+   * What's at the top of the screen inline, to put back as the text changes width: a jump's line;
+   * or else the first line that starts on screen, as the spacer pass keeps side by side, so a line
+   * that runs on above the screen, which wraps onto more or fewer rows, moves nothing below it.
+   * While the view holds a line, that's the first on screen once the line held is back where it
+   * belongs.
+   */
+  #inlineTopNow(): Viewport | undefined {
+    const screen = this.dom.getBoundingClientRect();
+    const jumped = this.#jumped;
+    if (jumped && this.#atOf(jumped.at)) {
+      return { at: jumped.at, offset: screen.top - this.#jumpedAt(jumped) };
+    }
+    const view = this.#inline?.view;
+    if (!view) return undefined;
+    const held = this.#holding;
+    const holding = held && performance.now() < this.#holdEnds && !this.#scrolledAway(held);
+    const drawn = holding ? this.#spotTop(held.at) : undefined;
+    // How far everything is to move for the line held to be back: the screen as it shows then.
+    const shift = held && drawn !== undefined ? drawn - this.#heldAt(held.at) : 0;
+    const shown = new DOMRect(screen.x, screen.y + shift, screen.width, screen.height);
+    const found = lineOnScreen(view, shown);
+    if (!found) return undefined;
+    const line = view.state.doc.lineAt(found.pos).number;
+    return { at: this.#spot(this.#placeAt('inline', line)), offset: shown.top - found.top };
   }
 
   /**
@@ -1554,7 +1645,10 @@ class View implements DiffView {
   /**
    * Makes a change, keeping line `pos` of `pane` where it is on screen, and all above it, or
    * `element`, drawn among its blocks, while it's drawn. Side by side, the spacer pass holds it;
-   * inline, the view puts it back at once.
+   * inline, the view puts it back at once. Once the text has changed width since the view last
+   * settled, where those are drawn now is where the lines wrapping anew put them, not where the
+   * reader saw them: what was at the top of the screen goes back instead, as the pass's anchor
+   * does side by side.
    */
   #keepPos(pane: Pane, pos: number, change: () => void, element?: HTMLElement): void {
     const view = this.#viewOf(pane);
@@ -1562,6 +1656,10 @@ class View implements DiffView {
       this.#aligner.anchorAt(pane, pos, element);
       change();
       this.#aligner.schedule();
+      return;
+    }
+    if (this.#rewrappedTop()) {
+      this.#keepTop(change);
       return;
     }
     const top = (): number | undefined => {
@@ -2706,6 +2804,13 @@ class View implements DiffView {
             },
             tokens: (file, side) => this.#tokens[file]?.[side],
           }),
+          // What it drew moved or changed size, as it measured: what's at the top is noted again,
+          // or put back once the text has changed width.
+          EditorView.updateListener.of((update) => {
+            if (update.heightChanged || update.viewportChanged || update.geometryChanged) {
+              this.#noteAfterUpdate();
+            }
+          }),
         ],
       }),
     });
@@ -2746,6 +2851,8 @@ class View implements DiffView {
   #toggleLayout(focus = true): void {
     // Lines and threads waiting to change on screen change with the layout, which moves it all.
     this.#letThreadsGo('all', false);
+    // What was at the top inline is noted afresh once it's shown.
+    this.#inlineTop = undefined;
     const pane = this.#activePane();
     const view = this.#viewOf(pane);
     const from = this.#placeAt(pane, view.state.doc.lineAt(view.state.selection.main.head).number);
