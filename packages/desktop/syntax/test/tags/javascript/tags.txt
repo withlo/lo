@@ -1,0 +1,17 @@
+definitions
+  constant limits 2:6
+  constant DEFAULT_SIZE 6:13
+  class Queue 8:13-20
+    field items 9:2
+    method push 11:2-15
+    method drain 17:8-19
+  function create 22:16-24
+  function later 26:15-28
+    function later 26:32-28
+references
+  DEFAULT_SIZE EventEmitter MAX Queue RangeError backoff emit exports handle items length push retry
+imports
+  1 node:events: EventEmitter
+  2 ./limits.js: *
+  4 ./retry.js: retry, backoff as wait
+  27 ./later.js: *

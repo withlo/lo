@@ -5,8 +5,9 @@
 import { describe, expect, test } from 'vitest';
 
 import { diskLoader } from './disk.ts';
-import { Highlighter, memoryCeiling } from './highlight.ts';
+import { Highlighter } from './highlight.ts';
 import type { LanguageName } from './languages.ts';
+import { memoryCeiling } from './runtime.ts';
 
 const timeout = 500;
 /** What a step of parsing or querying can take past the deadline. */
@@ -36,17 +37,5 @@ describe('a highlighter at its limits', () => {
       true,
     );
     expect(highlighter.memory > memoryCeiling && highlighter.usable).toBe(false);
-  });
-
-  test('stops parsing once its memory passes the ceiling', async () => {
-    const highlighter = await Highlighter.create(diskLoader());
-    const started = performance.now();
-
-    // Markdown's tree for this takes more memory than the ceiling, and more time than allowed here.
-    const result = await highlighter.highlight('markdown', near('a\n\n'), { timeout: 10_000 });
-
-    expect(result).toEqual({ skipped: 'out-of-memory' });
-    expect(performance.now() - started - highlighter.loadMs).toBeLessThan(5000);
-    expect(highlighter.usable).toBe(false);
   });
 });

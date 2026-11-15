@@ -1,0 +1,20 @@
+definitions
+  class Circle 8:13-34
+    field MAX_RADIUS 9:31
+    field MIN_RADIUS 9:49
+    field radius 10:25
+    method area 17:18-20
+    method compareTo 23:15-25
+    enum Kind 27:9
+      constant ROUND 27:16
+      constant OVAL 27:23
+    class Measured 29:11
+    method sorted 31:24-33
+references
+  Area Circle Comparable Convert Double List MAX_RADIUS METRE Math Override PI Shape Unit area
+  compare compareTo min radius sorted stream toList toMetres
+imports
+  3 java.util: List
+  4 com.acme.units: *
+  5 com.acme.units.Convert: toMetres
+namespace com.acme.shapes

@@ -1,0 +1,19 @@
+definitions
+  class Circle 8:17-34
+    field MaxRadius 10:28
+    field radius 11:32
+    field created 11:40
+    property Radius 18:22
+    field Grown 20:34
+    method Area 22:22-26
+    method Sorted 28:35-33
+  interface IArea 36:21-39
+    method Area 38:15
+  enum Kind 41:16
+    constant Round 41:23
+    constant Oval 41:30
+  class Measured 43:25
+references
+  Acme Area Circle Collections CompareTo Convert EventHandler Generic IArea IEnumerable List Math
+  MaxRadius Metre Min PI Shape Shapes Sort System ToMetres Unit Units radius
+imports

@@ -1,0 +1,12 @@
+definitions
+  variable region 1:10-4
+  constant name 7:2
+  constant tags 8:2
+  class logs 11:26-14
+  class read 16:32-21
+  module network 23:8-26
+  variable bucket 28:8-30
+  variable vpc 32:8-34
+references
+  arn id logs name network region tags vpc_id
+imports

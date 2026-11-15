@@ -1,0 +1,24 @@
+definitions
+  module App\Shapes 3:10
+  constant MAX_RADIUS 9:6
+  class Circle 12:6-33
+    constant SIDES 14:17
+    field radius 16:19
+    function __construct 18:20-21
+    function area 23:20-27
+    function unit 29:27-32
+  interface Area 35:10-38
+    function area 37:20
+  enum Kind 40:5-44
+    constant Round 42:9
+    constant Oval 43:9
+  function largest 46:9-50
+references
+  App Area Circle Convert MAX_RADIUS M_PI MeasureUnit Metre Shape Shapes Support Unit Units area
+  clamp radius self toMetres usort
+imports
+  5 App\Units: Metre
+  6 App\Units: Convert
+  6 App\Units: Unit as MeasureUnit
+  7 App\Support: clamp
+namespace App\Shapes

@@ -1,0 +1,24 @@
+definitions
+  constant MAX_RADIUS 7:10
+  constant unitCircle 8:4
+  class Circle 11:6-22
+    property radius 11:17
+    variable label 12:8
+    function area 14:17-17
+    class Factory 19:21-21
+      function of 20:12
+  interface Area 24:10-26
+    function area 25:8
+  class Kind 28:11
+    constant ROUND 28:18
+    constant OVAL 28:25
+  type Circles 30:10
+  function total 32:12
+references
+  Area Circle Circles Double List MAX_RADIUS METRE Math PI Shape Unit area metres minOf registry
+  sumOf toMetres
+imports
+  3 com.acme.units: Unit
+  4 com.acme.units: toMetres as metres
+  5 com.acme.registry: *
+namespace com.acme.shapes

@@ -1,0 +1,12 @@
+definitions
+  module Shapes.Circle 1:10-24
+    constant max_radius 7:3
+    function area 14:6-17
+    function new 19:6
+    function describe 21:7
+    function unit 23:11
+  module Shapes.Area 26:12-28
+    function area 27:6
+references
+  Shape Shapes.Circle Shapes.Shape Shapes.Units is_number max_radius min new pi radius to_metres
+imports

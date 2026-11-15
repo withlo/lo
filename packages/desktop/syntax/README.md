@@ -1,8 +1,10 @@
 # syntax
 
-Syntax highlighting with [tree-sitter](https://tree-sitter.github.io/) grammars compiled to
-WebAssembly. It runs on worker threads in the background process: a file's text goes in, and its
-tokens come out as `[from, to, token]` triples for the `lo-syn-*` classes in `design/css/code.css`.
+Syntax highlighting and the syntax index's reading of files, with
+[tree-sitter](https://tree-sitter.github.io/) grammars compiled to WebAssembly. Both run on worker
+threads in the background process. To highlight, a file's text goes in, and its tokens come out as
+`[from, to, token]` triples for the `lo-syn-*` classes in `design/css/code.css`. To index, its
+definitions, the names it uses and its imports come out (see "Tags").
 
 ## Grammars
 
@@ -74,8 +76,37 @@ took 2.7 GB to compile Swift's lexer and kept it.
 ## Queries
 
 The highlight queries in `queries/` come from Zed and the extensions it installs, under the
-GPL-3.0-or-later, the Apache License 2.0 and the MIT License; `queries/README.md` says from where,
-and under which.
+GPL-3.0-or-later, the Apache License 2.0 and the MIT License, and the tag queries from the grammars'
+own repositories, under the MIT License and the Apache License 2.0; `queries/README.md` says from
+where, and under which.
+
+## Tags
+
+A `Tagger` reads a file in TypeScript, TSX, JavaScript, Python, Rust, Go, Java, Kotlin, C#, PHP,
+Ruby, Swift, Elixir or Terraform with its tag queries, and what it reads depends only on the text,
+so the index can keep one reading per blob:
+
+- `symbols` gives its definitions, each with its kind, its name's line and column, its last line and
+  the definition it's inside; the names it uses, each once; and its imports, with the package or
+  namespace it says it's in. Where patterns tag a name both ways, it's a definition, even where a
+  grammar's query `@ignore`s it.
+- `find` gives where it uses one name, for the references of a name found in the files that use it.
+
+`rank` orders a name's definitions for the file asking: the same file, the same folder, a file its
+imports name, then the rest, each in path order, leaving out languages the asking file can't call.
+Its imports are matched by a guess for each language from its path and imports alone, never a
+project's manifest: relative imports for TypeScript and JavaScript, `from` for Python, `crate::`,
+`self::`, `super::` and `mod` for Rust, the import path's last folders for Go, `import` and
+`package` for Java and Kotlin, and `use` with PSR-4's folders for PHP. Every answer is labelled
+"Syntax index", or "Syntax index · same name" when only its name links it to the asking file.
+
+`tagsVersion` is a hash of the grammars the tagged languages parse with, their tag queries and the
+code that reads them, written by `pnpm nx run syntax:codegen`. It changes with any of them, so the
+index can tell which of its readings to make again.
+
+A file is read with the highlighter's limits, and isn't read at all past a million characters, with
+a line over 10,000 characters, as minified files have, with a NUL, as binary files have, or with
+more than 100,000 names tagged, which bounds the memory a reading takes.
 
 ## Limits
 

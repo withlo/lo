@@ -1,0 +1,29 @@
+definitions
+  constant MAX_RADIUS 10:13
+  variable created 11:4
+  type Area 13:12
+  enum Unit 15:12-18
+    constant Metre 16:2
+    constant Foot 17:2
+  interface Sized 20:17-23
+    field size 21:2
+    method grow 22:2
+  class Circle 25:13-45
+    field size 26:2
+    field #label 27:2
+    method area 34:2-36
+    method grow 38:2-40
+    method toString 42:2-44
+  module Circles 47:17-49
+    constant unit 48:15
+  function describe 51:13
+  function load 53:22-55
+references
+  #label Area Base Circle MAX_RADIUS Math PI Promise Shape Sized Stats String min radius read round
+  sep size square stat
+imports
+  1 node:fs/promises: stat as read, Stats
+  2 node:path: *
+  4 ./base.ts: Base, Shape
+  5 ../math/index.ts: square
+  7 ./round.ts: round

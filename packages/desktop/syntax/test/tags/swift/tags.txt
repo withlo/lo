@@ -1,0 +1,19 @@
+definitions
+  property maxRadius 3:4
+  interface Shape 6:9-9
+    property name 7:8
+    method area 8:9
+  class Circle 12:7-24
+    property radius 13:8
+    property name 14:8
+    method init 16:4-18
+    method area 20:9-23
+  class Kind 26:5-28
+    constant round 27:9
+    constant oval 27:16
+  type Circles 30:10
+  method unit 33:16-35
+  function largest 38:5-40
+references
+  Circle Circles Double Foundation Shape String area max min pi radius
+imports
