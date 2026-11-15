@@ -17,7 +17,10 @@ function documentText(text: string | undefined): string | undefined {
   return text === undefined ? undefined : splitLines(text).join('\n');
 }
 
-parentPort?.on('message', (job: Job) => {
+// The process sends a worker one job at a time, and waits for its answer before the next.
+parentPort?.on('message', (job: Job) => void run(job));
+
+async function run(job: Job): Promise<void> {
   const diffStarted = performance.now();
   const diff = diffText(job.old, job.new);
   const changes = changedLines(
@@ -32,7 +35,7 @@ parentPort?.on('message', (job: Job) => {
   for (const side of ['old', 'new'] as const) {
     const text = documentText(job[side]);
     if (!language || text === undefined) continue;
-    const highlight = highlighter.highlight(language, text);
+    const highlight = await highlighter.highlight(language, text);
     if ('tokens' in highlight) tokens[side] = highlight.tokens;
   }
   const done: Done = {
@@ -49,4 +52,4 @@ parentPort?.on('message', (job: Job) => {
     done,
     [tokens.old?.buffer, tokens.new?.buffer].filter((buffer) => buffer instanceof ArrayBuffer),
   );
-});
+}

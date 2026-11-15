@@ -5,7 +5,7 @@
 
 import { Language, Parser, Query, type Node, type Range, type Tree } from 'web-tree-sitter';
 
-import { languageNamed, languageNames, languages, type LanguageName } from './languages.ts';
+import { languageNamed, languages, type LanguageName } from './languages.ts';
 import { tokenOf } from './tokens.ts';
 
 /** Where a highlighter gets its grammars and queries from. */
@@ -92,44 +92,40 @@ interface Capture {
   priority: number;
 }
 
+/** One call to `highlight`: what stops it, and how it loads a language it meets. */
+interface Run {
+  /** Whether to stop now: the deadline has passed, or the memory the ceiling. */
+  progressCallback: () => boolean;
+  /** A language's grammar and queries, with the time loading them took left off the deadline. */
+  load: (language: LanguageName) => Promise<Compiled>;
+}
+
 /**
- * Highlights text in every language in `languages`. Make one per worker thread. WebAssembly
- * memory is the thread's, so once a highlighter has failed, or its memory has grown past
- * `memoryCeiling`, it says it isn't `usable`, and its thread should be replaced.
+ * Highlights text in every language in `languages`. Make one per worker thread, and highlight one
+ * text at a time. A language's grammar loads and its queries compile the first time a text needs
+ * them, so a job that meets one language loads one grammar. WebAssembly memory is the thread's,
+ * so once a highlighter has failed, or its memory has grown past `memoryCeiling`, it says it isn't
+ * `usable`, and its thread should be replaced.
  */
 export class Highlighter {
   readonly #parser: Parser;
-  readonly #compiled: ReadonlyMap<LanguageName, Compiled>;
+  readonly #loader: Loader;
+  /** Each grammar once a language has needed it, by its name in `grammars.json`. */
+  readonly #grammars = new Map<string, Promise<Language>>();
+  /** Each language's grammar and queries once a text has needed them. */
+  readonly #compiled = new Map<LanguageName, Promise<Compiled>>();
   #failed = false;
 
-  private constructor(parser: Parser, compiled: ReadonlyMap<LanguageName, Compiled>) {
+  private constructor(parser: Parser, loader: Loader) {
     this.#parser = parser;
-    this.#compiled = compiled;
+    this.#loader = loader;
   }
 
-  /** Loads every grammar and compiles every query. A query that doesn't compile fails. */
+  /** Starts tree-sitter in this thread. No grammar loads until a text needs it. */
   static async create(loader: Loader): Promise<Highlighter> {
     initialized ??= Parser.init({ wasmMemory: memory });
     await initialized;
-    const grammars = new Map<string, Language>();
-    const compiled = new Map<LanguageName, Compiled>();
-    for (const name of languageNames) {
-      const { grammar } = languages[name];
-      let language = grammars.get(grammar);
-      if (!language) {
-        language = await Language.load(await loader.grammar(grammar));
-        grammars.set(grammar, language);
-      }
-      const highlights = await loader.query(name, 'highlights');
-      if (highlights === undefined) throw new Error(`${name} has no highlights query.`);
-      const injections = await loader.query(name, 'injections');
-      compiled.set(name, {
-        language,
-        highlights: new Query(language, highlights),
-        injections: injections === undefined ? undefined : injectionQuery(language, injections),
-      });
-    }
-    return new Highlighter(new Parser(), compiled);
+    return new Highlighter(new Parser(), loader);
   }
 
   /** How many bytes of WebAssembly memory the thread's highlighters hold. */
@@ -142,25 +138,43 @@ export class Highlighter {
     return !this.#failed && this.memory <= memoryCeiling;
   }
 
-  /** Highlights `text` as `language`. */
-  highlight(language: LanguageName, text: string, options: HighlightOptions = {}): Highlight {
+  /**
+   * Highlights `text` as `language`, loading its grammar, and those of the languages it injects,
+   * the first time they're needed. A grammar or query that doesn't load fails the highlighter.
+   */
+  async highlight(
+    language: LanguageName,
+    text: string,
+    options: HighlightOptions = {},
+  ): Promise<Highlight> {
     if (this.#failed) return { skipped: 'failed' };
     if (text.length > (options.maxLength ?? defaultMaxLength)) return { skipped: 'too-long' };
     if (nestingDepth(text, language) > (options.maxDepth ?? defaultMaxDepth)) {
       return { skipped: 'too-deep' };
     }
-    const deadline = performance.now() + (options.timeout ?? defaultTimeout);
+    let deadline = performance.now() + (options.timeout ?? defaultTimeout);
     let stopped: 'timed-out' | 'out-of-memory' | undefined;
-    // Parsing, querying and every injection stop once this returns true.
-    const progressCallback = (): boolean => {
-      if (stopped) return true;
-      if (performance.now() > deadline) stopped = 'timed-out';
-      else if (memory.buffer.byteLength > memoryCeiling) stopped = 'out-of-memory';
-      return stopped !== undefined;
+    const run: Run = {
+      // Parsing, querying and every injection stop once this returns true.
+      progressCallback: () => {
+        if (stopped) return true;
+        if (performance.now() > deadline) stopped = 'timed-out';
+        else if (memory.buffer.byteLength > memoryCeiling) stopped = 'out-of-memory';
+        return stopped !== undefined;
+      },
+      // Loading is the highlighter's own work, the same for any text, so it isn't the text's time.
+      load: async (name) => {
+        const started = performance.now();
+        try {
+          return await this.#load(name);
+        } finally {
+          deadline += performance.now() - started;
+        }
+      },
     };
     const captures: Capture[] = [];
     try {
-      this.#collect(language, text, [], 0, progressCallback, captures);
+      await this.#collect(language, text, [], 0, run, captures);
     } catch {
       // A failure in WebAssembly can leave its memory broken, so nothing more runs in it.
       this.#failed = true;
@@ -170,19 +184,50 @@ export class Highlighter {
     return { tokens: resolve(captures) };
   }
 
+  /** `name`'s grammar and compiled queries, loaded the first time they're asked for. */
+  #load(name: LanguageName): Promise<Compiled> {
+    let compiled = this.#compiled.get(name);
+    if (!compiled) {
+      compiled = this.#compile(name);
+      this.#compiled.set(name, compiled);
+    }
+    return compiled;
+  }
+
+  async #compile(name: LanguageName): Promise<Compiled> {
+    const { grammar } = languages[name];
+    let loaded = this.#grammars.get(grammar);
+    if (!loaded) {
+      loaded = this.#loader.grammar(grammar).then((wasm) => Language.load(wasm));
+      this.#grammars.set(grammar, loaded);
+    }
+    const [language, highlights, injections] = await Promise.all([
+      loaded,
+      this.#loader.query(name, 'highlights'),
+      this.#loader.query(name, 'injections'),
+    ]);
+    if (highlights === undefined) throw new Error(`${name} has no highlights query.`);
+    return {
+      language,
+      highlights: new Query(language, highlights),
+      injections: injections === undefined ? undefined : injectionQuery(language, injections),
+    };
+  }
+
   /** Adds the captures of `language` over `ranges` of `text`, or all of it, and its injections'. */
-  #collect(
+  async #collect(
     name: LanguageName,
     text: string,
     ranges: Range[],
     depth: number,
-    progressCallback: () => boolean,
+    run: Run,
     out: Capture[],
-  ): void {
-    const compiled = this.#compiled.get(name);
-    // Past the deadline or the memory ceiling, nothing more is parsed: a parse checks only every
-    // so often, and an injection can be too small to reach a check.
-    if (!compiled || progressCallback()) return;
+  ): Promise<void> {
+    const { progressCallback } = run;
+    // Past the deadline or the memory ceiling, nothing more is loaded or parsed: a parse checks
+    // only every so often, and an injection can be too small to reach a check.
+    if (progressCallback()) return;
+    const compiled = await run.load(name);
     this.#parser.setLanguage(compiled.language);
     let tree: Tree | null;
     try {
@@ -222,7 +267,7 @@ export class Highlighter {
         options,
       )) {
         if (progressCallback()) break;
-        this.#collect(language, text, injected, depth + 1, progressCallback, out);
+        await this.#collect(language, text, injected, depth + 1, run, out);
       }
     } finally {
       tree.delete();
@@ -237,10 +282,14 @@ export class Highlighter {
 interface Lexis {
   /** Comments from `//` to the end of the line, and from `/*` to the next `*` and `/`. */
   slashComments?: boolean;
+  /** Only the comments from `/*` to the next `*` and `/`, where `//` can start a URL. */
+  blockComments?: boolean;
   /** Comments from a `#` at the start of a line or after a space to the end of the line. */
   hashComments?: boolean;
   /** Quotes whose strings end at the same quote or the line's end, with `\` escaping. */
   quotes?: readonly number[];
+  /** Whether three of one of `quotes` start a string that runs over lines to the next three. */
+  tripleQuotes?: boolean;
   /** A quote whose strings can run over lines, and whether `\` escapes in them. */
   longQuote?: { quote: number; escapes: boolean };
   /** Regular expression literals, `/` starting one wherever it can't divide. */
@@ -258,18 +307,47 @@ const javascript: Lexis = {
   longQuote: { quote: backtick, escapes: true },
   regexes: true,
 };
+/** C's comments and quotes, with strings in three quotes over lines, as Java and Kotlin have. */
+const cLike: Lexis = {
+  slashComments: true,
+  quotes: [doubleQuote, singleQuote],
+  tripleQuotes: true,
+};
+/** Comments from `#`, and both quotes, alone or in threes, as Python, Elixir and TOML have. */
+const hashed: Lexis = {
+  hashComments: true,
+  quotes: [doubleQuote, singleQuote],
+  tripleQuotes: true,
+};
+const hcl: Lexis = { slashComments: true, hashComments: true, quotes: [doubleQuote] };
 const lexes: Record<LanguageName, Lexis> = {
   bash: { hashComments: true, quotes: [doubleQuote, singleQuote] },
+  csharp: cLike,
+  css: { blockComments: true, quotes: [doubleQuote, singleQuote] },
+  elixir: hashed,
   go: {
     slashComments: true,
     quotes: [doubleQuote, singleQuote],
     longQuote: { quote: backtick, escapes: false },
   },
+  hcl,
+  html: { quotes: [doubleQuote] },
+  java: cLike,
   javascript,
   json: { quotes: [doubleQuote] },
   jsonc: { slashComments: true, quotes: [doubleQuote] },
+  kotlin: cLike,
   markdown: { blockQuotes: true, indents: true },
   'markdown-inline': {},
+  php: { slashComments: true, hashComments: true, quotes: [doubleQuote, singleQuote] },
+  python: hashed,
+  ruby: { hashComments: true, quotes: [doubleQuote, singleQuote] },
+  // A `'` starts a lifetime as often as a character, so only `"` quotes, and its strings run over
+  // lines.
+  rust: { slashComments: true, longQuote: { quote: doubleQuote, escapes: true } },
+  swift: { slashComments: true, quotes: [doubleQuote], tripleQuotes: true },
+  terraform: hcl,
+  toml: hashed,
   tsx: javascript,
   typescript: javascript,
   yaml: { hashComments: true, quotes: [doubleQuote, singleQuote], indents: true },
@@ -345,9 +423,9 @@ export function nestingDepth(text: string, language: LanguageName): number {
       deepest = Math.max(deepest, blockQuotes, lexis.indents ? indent >> 1 : 0);
     }
     if (code === 32 || code === 9 || code === 13) continue;
-    if (code === 47 && lexis.slashComments) {
+    if (code === 47 && (lexis.slashComments || lexis.blockComments)) {
       const next = text.charCodeAt(at + 1);
-      if (next === 47) {
+      if (next === 47 && lexis.slashComments) {
         at = lineEnd(text, at);
         continue;
       }
@@ -365,6 +443,28 @@ export function nestingDepth(text: string, language: LanguageName): number {
       }
     }
     if (code === quote || code === otherQuote) {
+      if (
+        lexis.tripleQuotes &&
+        text.charCodeAt(at + 1) === code &&
+        text.charCodeAt(at + 2) === code
+      ) {
+        // To the next three of the same quote, over lines.
+        for (at += 3; at < length; at++) {
+          const inner = text.charCodeAt(at);
+          if (inner === 92) at++;
+          else if (
+            inner === code &&
+            text.charCodeAt(at + 1) === code &&
+            text.charCodeAt(at + 2) === code
+          ) {
+            at += 2;
+            break;
+          }
+        }
+        operand = true;
+        previous = code;
+        continue;
+      }
       // To the closing quote, or the end of the line, which `\` can escape.
       for (at++; at < length; at++) {
         const inner = text.charCodeAt(at);
@@ -436,13 +536,28 @@ function lineEnd(text: string, at: number): number {
 }
 
 /**
+ * What an injection's captures and properties are called, `injection.` and all, and the older
+ * names without it that some queries still use (`@content`, `(#set! "language" "regex")`).
+ */
+const injection = {
+  isLanguage: (name: string): boolean => name === 'injection.language' || name === 'language',
+  isContent: (name: string): boolean => name === 'injection.content' || name === 'content',
+  language: (properties: Record<string, string | null> | undefined): string | null | undefined =>
+    properties && 'injection.language' in properties
+      ? properties['injection.language']
+      : properties?.['language'],
+  combined: (properties: Record<string, string | null> | undefined): boolean =>
+    properties !== undefined && ('injection.combined' in properties || 'combined' in properties),
+};
+
+/**
  * An injections query, without the patterns that inject languages Lo doesn't highlight. Running
  * those, such as the ones for every comment, took longer than highlighting.
  */
 function injectionQuery(language: Language, source: string): Query {
   const query = new Query(language, source);
   for (let pattern = 0; pattern < query.patternCount(); pattern++) {
-    const named = query.setProperties[pattern]?.['injection.language'];
+    const named = injection.language(query.setProperties[pattern]);
     if (named !== undefined && (named === null || !languageNamed(named))) {
       query.disablePattern(pattern);
     }
@@ -463,11 +578,11 @@ function injectionsOf(
   // Combined injections parse all their ranges together, one parse per pattern and language.
   const combined = new Map<string, [LanguageName, Range[]]>();
   for (const match of injections.matches(root, options)) {
-    let named = match.setProperties?.['injection.language'] ?? undefined;
+    let named = injection.language(match.setProperties) ?? undefined;
     const ranges: Range[] = [];
     for (const { name, node } of match.captures) {
-      if (name === 'injection.language') named = node.text;
-      else if (name === 'injection.content' && node.endIndex > node.startIndex) {
+      if (injection.isLanguage(name)) named = node.text;
+      else if (injection.isContent(name) && node.endIndex > node.startIndex) {
         ranges.push({
           startIndex: node.startIndex,
           endIndex: node.endIndex,
@@ -478,7 +593,7 @@ function injectionsOf(
     }
     const language = named ? languageNamed(named) : undefined;
     if (!language || ranges.length === 0) continue;
-    if (match.setProperties && 'injection.combined' in match.setProperties) {
+    if (injection.combined(match.setProperties)) {
       const key = `${match.patternIndex} ${language}`;
       const entry = combined.get(key) ?? [language, []];
       entry[1].push(...ranges);
