@@ -1,0 +1,412 @@
+// The server's life against the fake language server: starting, the protocol both ways, its
+// requests and their deadlines, crashes, hangs, memory and stops. Each test starts one fake server,
+// which is killed with its group when the test ends.
+
+import { execFileSync } from 'node:child_process';
+import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
+
+import { expect, onTestFinished, test, vi } from 'vitest';
+
+import {
+  failureMessage,
+  OPEN_LIMIT,
+  type RequestOptions,
+  type Server,
+  type State,
+  startServer,
+} from '../src/index.ts';
+import { eventually, GIT, running, startFake, tempFolder } from './support.ts';
+
+const POSITION = { position: { line: 0, character: 6 } };
+
+/** Asks `server` for the hover on `src/a.ts`. */
+function hover(server: Server, options: RequestOptions = { deadline: 5000 }) {
+  return server.request('textDocument/hover', { path: 'src/a.ts', ...POSITION }, options);
+}
+
+/** What a started process's environment holds, read from outside it as the system reports it. */
+function environmentOf(pid: number): { text: string; names?: string[] } {
+  if (existsSync(`/proc/${pid}/environ`)) {
+    const variables = readFileSync(`/proc/${pid}/environ`, 'utf8').split('\0');
+    const names = variables.filter((line) => line !== '').map((line) => line.split('=')[0] ?? '');
+    return { text: variables.join('\n'), names };
+  }
+  return {
+    text: execFileSync('ps', ['eww', '-o', 'command=', '-p', String(pid)], { encoding: 'utf8' }),
+  };
+}
+
+test('it starts with Lo’s capabilities, and answers about the files Lo opened', async () => {
+  const { server, root, seen } = startFake({
+    answers: {
+      'textDocument/hover': { 'src/a.ts': { contents: { kind: 'markdown', value: '`const a`' } } },
+      'textDocument/definition': {
+        '*': [
+          {
+            uri: '$ROOT/src/b.ts',
+            range: { start: { line: 0, character: 0 }, end: { line: 0, character: 1 } },
+          },
+        ],
+      },
+    },
+  });
+  expect(server.state).toEqual({ kind: 'starting' });
+  expect(await server.ready).toBe(true);
+  expect(server.state).toEqual({ kind: 'ready' });
+
+  const initialize = seen().find((event) => event.event === 'initialize');
+  expect(initialize?.params).toMatchObject({
+    processId: process.pid,
+    rootUri: pathToFileURL(root).href,
+    workspaceFolders: [{ uri: pathToFileURL(root).href, name: 'checkout' }],
+    capabilities: {
+      general: { positionEncodings: ['utf-16'] },
+      workspace: { configuration: true },
+    },
+  });
+  const capabilities = JSON.stringify(initialize?.params.capabilities);
+  for (const never of ['completion', 'publishDiagnostics', 'rename', 'codeAction', 'applyEdit']) {
+    expect(capabilities).not.toContain(never);
+  }
+  await eventually(() => seen().some((event) => event.event === 'initialized'));
+
+  // Only a file Lo opened is asked about.
+  expect(await hover(server)).toEqual({ ok: false, why: 'notOpen' });
+  expect(server.open('src/a.ts', 'typescript', 'const a = 1;')).toBe(true);
+  expect(await hover(server)).toEqual({
+    ok: true,
+    value: { contents: { kind: 'markdown', value: '`const a`' } },
+  });
+  expect(seen()).toContainEqual({
+    event: 'opened',
+    uri: pathToFileURL(join(root, 'src/a.ts')).href,
+    text: 'const a = 1;',
+  });
+
+  // A location maps back to a path only inside the checkout.
+  const definition = await server.request(
+    'textDocument/definition',
+    { path: 'src/a.ts', ...POSITION },
+    { deadline: 5000 },
+  );
+  const b = pathToFileURL(join(root, 'src/b.ts')).href;
+  expect(definition).toMatchObject({ ok: true, value: [{ uri: b }] });
+  expect(server.pathOf(b)).toBe('src/b.ts');
+  expect(server.pathOf('file:///etc/passwd')).toBeUndefined();
+
+  // Past the limit, the file least recently asked about is closed.
+  for (let file = 0; file < OPEN_LIMIT; file += 1) server.open(`src/${file}.ts`, 'typescript', '');
+  await eventually(() => seen().some((event) => event.event === 'closed'));
+  expect(seen().filter((event) => event.event === 'closed')).toEqual([
+    { event: 'closed', uri: pathToFileURL(join(root, 'src/a.ts')).href },
+  ]);
+  expect(await hover(server)).toEqual({ ok: false, why: 'notOpen' });
+
+  // Another head's checkout: the server moves there, with its files closed.
+  const next = join(root, '..', 'next');
+  mkdirSync(next);
+  expect(await server.moveTo(next)).toBe(true);
+  expect(server.pathOf(pathToFileURL(join(next, 'src/c.ts')).href)).toBe('src/c.ts');
+  expect(server.pathOf(pathToFileURL(join(root, 'src/c.ts')).href)).toBeUndefined();
+  await eventually(() =>
+    seen().some(
+      (event) =>
+        event.event === 'notification' && event.method === 'workspace/didChangeWorkspaceFolders',
+    ),
+  );
+});
+
+test('a request past its deadline, given up or replaced is cancelled on the server', async () => {
+  const { server, seen } = startFake({ delays: { 'textDocument/hover': 10_000 } });
+  await server.ready;
+  server.open('src/a.ts', 'typescript', 'const a = 1;');
+
+  expect(await hover(server, { deadline: 100 })).toEqual({
+    ok: false,
+    why: 'deadline',
+  });
+  // Each is cancelled once the server is working on it, so its handler hears of the cancel.
+  const working = (count: number) =>
+    eventually(() => seen().filter((event) => event.event === 'request').length === count);
+  const asker = new AbortController();
+  const given = hover(server, {
+    deadline: 10_000,
+    signal: asker.signal,
+  });
+  await working(2);
+  asker.abort();
+  expect(await given).toEqual({ ok: false, why: 'cancelled' });
+  const first = hover(server, { deadline: 10_000, key: 'hover' });
+  await working(3);
+  const later = new AbortController();
+  const second = hover(server, {
+    deadline: 10_000,
+    key: 'hover',
+    signal: later.signal,
+  });
+  expect(await first).toEqual({ ok: false, why: 'replaced' });
+  await working(4);
+  later.abort();
+  expect(await second).toEqual({ ok: false, why: 'cancelled' });
+
+  await eventually(() => seen().filter((event) => event.event === 'cancelled').length === 4);
+  // One missed deadline isn't enough to call it not answering.
+  expect(server.state).toEqual({ kind: 'ready' });
+});
+
+test('it gets its settings, registrations and progress, and is refused the rest', async () => {
+  const { server, seen } = startFake(
+    {
+      stderr: ['Starting the fake server'],
+      requests: [
+        {
+          method: 'workspace/configuration',
+          params: { items: [{ section: 'fake.answer' }, { section: 'fake.missing' }] },
+        },
+        {
+          method: 'client/registerCapability',
+          params: { registrations: [{ id: '1', method: 'workspace/didChangeWatchedFiles' }] },
+        },
+        { method: 'window/workDoneProgress/create', params: { token: 'load' } },
+        { method: 'workspace/applyEdit', params: { edit: { changes: {} } } },
+        { method: 'window/showDocument', params: { uri: 'https://example.com', external: true } },
+        {
+          method: 'window/showMessageRequest',
+          params: { type: 1, message: 'Run the build?', actions: [{ title: 'Run' }] },
+        },
+        { method: 'fake/unknown', params: {} },
+      ],
+      notifications: [
+        {
+          method: '$/progress',
+          params: { token: 'load', value: { kind: 'begin', title: 'Loading', percentage: 40 } },
+        },
+        { method: 'window/logMessage', params: { type: 1, message: 'Something broke' } },
+      ],
+    },
+    { spec: { settings: { fake: { answer: 42 } } } },
+  );
+  await server.ready;
+  await eventually(() => server.state.kind === 'indexing');
+  expect(server.state).toEqual({
+    kind: 'indexing',
+    progress: { title: 'Loading', percentage: 40 },
+  });
+
+  const replies = seen().flatMap((event) => (event.event === 'reply' ? [event] : []));
+  expect(replies.slice(0, 3)).toEqual([
+    { event: 'reply', method: 'workspace/configuration', result: [42, null] },
+    { event: 'reply', method: 'client/registerCapability', result: null },
+    { event: 'reply', method: 'window/workDoneProgress/create', result: null },
+  ]);
+  expect(replies.slice(3).map((refused) => [refused.method, refused.error?.code])).toEqual([
+    ['workspace/applyEdit', -32601],
+    ['window/showDocument', -32601],
+    ['window/showMessageRequest', -32601],
+    ['fake/unknown', -32601],
+  ]);
+  await eventually(() => server.log.includes('Error: Something broke'));
+  expect(server.log).toContain('Starting the fake server');
+  expect(server.log.some((line) => line.includes("refused the server's workspace/applyEdit"))).toBe(
+    true,
+  );
+});
+
+test('a crash mid-request is seen with its exit code', async () => {
+  const { server } = startFake({ crash: { requests: 1, code: 3 } });
+  await server.ready;
+  server.open('src/a.ts', 'typescript', '');
+  expect(await hover(server)).toEqual({ ok: false, why: 'stopped' });
+  expect(server.state).toEqual({
+    kind: 'failed',
+    failure: { kind: 'exited', code: 3, signal: null },
+  });
+  expect(failureMessage({ kind: 'exited', code: 3, signal: null })).toBe(
+    'It quit with exit code 3.',
+  );
+  expect(server.log).toContain('Lo: it exited with code 3.');
+});
+
+test('a server that stops answering is not answering', async () => {
+  const { server } = startFake({ hang: true });
+  await server.ready;
+  server.open('src/a.ts', 'typescript', '');
+  const asks = [1, 2, 3].map(() => hover(server, { deadline: 50 }));
+  expect(await Promise.all(asks)).toEqual(
+    Array.from({ length: 3 }, () => ({ ok: false, why: 'deadline' })),
+  );
+  expect(server.state).toEqual({ kind: 'notAnswering' });
+});
+
+test('a server past its memory cap is stopped, with everything it started', async () => {
+  // Above the fake server's own, and its child's, on Node: about 80 MB and 40 MB.
+  const cap = 256 * 1024 * 1024;
+  const { server, seen } = startFake(
+    { memory: 512, child: true },
+    { spec: { memoryCap: cap }, limits: { memoryEvery: 100 } },
+  );
+  // It started well within the cap, and passed it only once it filled its memory.
+  expect(await server.ready).toBe(true);
+  await eventually(() => server.state.kind === 'failed');
+  expect(server.state).toEqual({ kind: 'failed', failure: { kind: 'memory', cap } });
+  expect(failureMessage({ kind: 'memory', cap })).toBe('It ran out of memory at 256 MB.');
+  expect(failureMessage({ kind: 'memory', cap: 64 * 1024 * 1024 })).toBe(
+    'It ran out of memory at 64 MB.',
+  );
+  expect(failureMessage({ kind: 'memory', cap: 4 * 1024 ** 3 })).toBe(
+    'It ran out of memory at 4 GB.',
+  );
+  const pids = seen().flatMap((event) =>
+    event.event === 'started' || event.event === 'child' ? [event.pid] : [],
+  );
+  await eventually(() => pids.every((pid) => !running(pid)));
+});
+
+test('its environment is built from nothing', async () => {
+  // Lo's own environment, with a token, the SSH agent and proxies in it.
+  for (const [name, value] of Object.entries({
+    GITHUB_TOKEN: 'gho_FAKE_PLANTED_TOKEN',
+    SSH_AUTH_SOCK: '/planted/agent.sock',
+    HTTPS_PROXY: 'http://planted-proxy:3128',
+    https_proxy: 'http://planted-proxy:3128',
+    LO_PLANTED: 'planted-value',
+  })) {
+    vi.stubEnv(name, value);
+  }
+  onTestFinished(() => {
+    vi.unstubAllEnvs();
+  });
+  const tools = tempFolder();
+  const { server, home, root, seen } = startFake(
+    {},
+    { spec: { path: [tools], variables: { GOPROXY: 'off' } } },
+  );
+  await server.ready;
+  const { text, names } = environmentOf(server.pid ?? 0);
+
+  for (const own of [
+    `HOME=${home}`,
+    `TMPDIR=${join(home, 'tmp')}`,
+    `PATH=${tools}:/usr/bin:/bin`,
+    'GOPROXY=off',
+    'LANG=C.UTF-8',
+    'GIT_CONFIG_COUNT=1',
+  ]) {
+    expect(text).toContain(own);
+  }
+  for (const planted of [
+    'GITHUB_TOKEN',
+    'gho_FAKE',
+    'SSH_AUTH_SOCK',
+    '/planted/',
+    'planted-proxy',
+    'LO_PLANTED',
+  ]) {
+    expect(text).not.toContain(planted);
+  }
+  // Where the system lists them one by one: nothing but what Lo set.
+  const set = 'GIT_CONFIG_COUNT GIT_CONFIG_KEY_0 GIT_CONFIG_VALUE_0 GOPROXY HOME LANG PATH TMPDIR';
+  expect(names?.toSorted() ?? set.split(' ')).toEqual(set.split(' '));
+  const started = seen().find((event) => event.event === 'started');
+  expect(started).toMatchObject({ cwd: root, env: { HOME: home, PATH: `${tools}:/usr/bin:/bin` } });
+  expect(existsSync(join(home, 'tmp'))).toBe(true);
+});
+
+test('a stop answers what was asked, asks the server to exit, and ends its group', async () => {
+  const { server, seen } = startFake({ child: true, delays: { 'textDocument/hover': 10_000 } });
+  await server.ready;
+  const child = await eventually(() => seen().find((event) => event.event === 'child'));
+  server.open('src/a.ts', 'typescript', '');
+  const asked = hover(server, { deadline: 10_000 });
+  const states: State['kind'][] = [];
+  server.onState((state) => states.push(state.kind));
+
+  const stopped = server.stop();
+  expect(await asked).toEqual({ ok: false, why: 'stopped' });
+  await stopped;
+  expect(states).toEqual(['stopping', 'stopped']);
+  expect(seen().map((event) => event.event)).toEqual(expect.arrayContaining(['shutdown', 'exit']));
+  await eventually(() => !running(child.pid));
+  expect(await hover(server, { deadline: 100 })).toEqual({ ok: false, why: 'stopped' });
+});
+
+test('a server that ignores shutdown, exit and SIGTERM is killed inside the stop’s 5 s', async () => {
+  const { server, seen } = startFake({ stubborn: true, child: true });
+  await server.ready;
+  const child = await eventually(() => seen().find((event) => event.event === 'child'));
+  const pid = server.pid ?? 0;
+  const started = performance.now();
+  await server.stop();
+  expect(performance.now() - started).toBeLessThan(5000);
+  expect(server.state).toEqual({ kind: 'stopped' });
+  await eventually(() => !running(pid) && !running(child.pid), 1000);
+});
+
+test('a stop while it starts never lets it initialize', async () => {
+  const { server, seen } = startFake({ initialize: { hang: true } });
+  await eventually(() => seen().some((event) => event.event === 'initialize'));
+  const pid = server.pid ?? 0;
+  await server.stop();
+  expect(await server.ready).toBe(false);
+  expect(server.state).toEqual({ kind: 'stopped' });
+  expect(seen().some((event) => event.event === 'initialized')).toBe(false);
+  await eventually(() => !running(pid), 1000);
+
+  // Stopped before it spawned, it never runs.
+  const early = startFake();
+  await early.server.stop();
+  expect(early.server.state).toEqual({ kind: 'stopped' });
+  expect(early.server.pid).toBeUndefined();
+  expect(early.seen()).toEqual([]);
+});
+
+test('it runs only a program of its own, outside the checkout', async () => {
+  const folder = tempFolder();
+  const root = join(folder, 'checkout');
+  mkdirSync(root);
+  const script = join(folder, 'launcher');
+  writeFileSync(script, '#!/bin/sh\nexec node server.js\n');
+  chmodSync(script, 0o755);
+  const inside = join(root, 'node');
+  writeFileSync(inside, 'binary');
+  chmodSync(inside, 0o755);
+  for (const [program, why] of [
+    [join(folder, 'missing'), 'isn’t there'],
+    [script, 'is a script'],
+    [inside, 'inside the checkout'],
+    ['node', 'isn’t an absolute path'],
+  ] as const) {
+    const server = startServer({
+      name: 'Fake',
+      program,
+      args: [],
+      root,
+      home: join(folder, 'home'),
+      path: [],
+      git: GIT,
+    });
+    onTestFinished(() => server.stop());
+    expect(await server.ready).toBe(false);
+    expect(server.state.kind).toBe('failed');
+    expect(server.state.kind === 'failed' && failureMessage(server.state.failure)).toContain(why);
+    expect(server.pid).toBeUndefined();
+  }
+});
+
+test('a bad answer to initialize, or a message too large, fails the server', async () => {
+  const wrong = startFake({
+    initialize: { result: { capabilities: { positionEncoding: 'utf-8' } } },
+  });
+  expect(await wrong.server.ready).toBe(false);
+  expect(wrong.server.state).toMatchObject({ kind: 'failed', failure: { kind: 'initialize' } });
+
+  const large = startFake({ oversized: 100 * 1024 * 1024 });
+  await large.server.ready;
+  await eventually(() => large.server.state.kind === 'failed');
+  expect(large.server.state).toMatchObject({ kind: 'failed', failure: { kind: 'protocol' } });
+  expect(
+    large.server.state.kind === 'failed' && failureMessage(large.server.state.failure),
+  ).toMatch(/past the limit/);
+});

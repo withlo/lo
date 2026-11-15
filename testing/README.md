@@ -226,6 +226,20 @@ on #94. Which posts the window asks GitHub to render at once depends on what's n
 the app's tests answer those reads from every post the cassette recorded
 (`apps/desktop/e2e/bodies.ts`).
 
+## The fake language server
+
+`lsp/fake-server.ts` is a language server for tests: it speaks the protocol over stdio on
+`vscode-jsonrpc`, and Node runs it as it is, stripping its types. It does what a scenario file says
+(`lsp/scenario.ts`): its answers by method and file (`$ROOT` stands for the checkout's URI), how
+long each takes, a crash after some requests, a hang, memory to fill, requests and notifications to
+send Lo, a process of its own to start, and whether it ignores `shutdown`, `exit` and `SIGTERM`. It
+reports what it sees, one JSON object per line: its environment, `initialize`, the files opened and
+closed, each request and cancel, and Lo's replies to its requests.
+
+`fakeServer(folder, scenario)` from `@lo/testing/lsp` writes the scenario and returns the program,
+arguments and report to start it with, and `readReport` reads what it saw. It's the only server
+tests start.
+
 ## The credential scan
 
 `test/fixtures.test.ts` checks every file under `fixtures/` the way the recorder checks a new one,

@@ -1,0 +1,26 @@
+{
+  "name": "@lo/lsp",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "lint": "oxlint",
+    "test": "vitest run --root ../../.. --project @lo/lsp"
+  },
+  "dependencies": {
+    "vscode-jsonrpc": "10.0.0",
+    "vscode-languageserver-protocol": "3.18.5"
+  },
+  "devDependencies": {
+    "@lo/testing": "workspace:*"
+  },
+  "nx": {
+    "name": "lsp",
+    "tags": [
+      "platform:desktop"
+    ]
+  }
+}

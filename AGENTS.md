@@ -381,6 +381,31 @@ Only main runs git, through `@lo/git`, and the background process never sees git
 - A build run from source takes the git to run from `LO_GIT`, a path or `none`, and fetches from
   `LO_GIT_REMOTE`, a server or folder on this machine, for its tests. A packaged build ignores both.
 
+### Language servers
+
+Only main runs language servers, through `@lo/lsp` (`packages/desktop/lsp`), and speaks the protocol
+with them, on `vscode-jsonrpc`. It depends on no other Lo package: the app hands it the folders, the
+toolchain and git's variables each server needs.
+
+- A server starts as its own program, by absolute path with an argument list: never through a shell,
+  never as a script (a launcher such as `bin/jdtls`), and never as a program in its checkout. It
+  leads a process group of its own, so a stop or a kill reaches whatever it started.
+- Its environment is built from nothing: a `HOME` of its own with `TMPDIR` inside it, a `PATH` of
+  the toolchain's folders and the system's, git's variables from `@lo/git`, and its adapter's own
+  variables, none of which may be a proxy, the SSH agent or named like a secret. Nothing of main's
+  reaches it.
+- Lo opens a file on a server with its text from git, at most 50 at once, and asks only for hovers,
+  definitions, references, inlay hints and document symbols, each with a deadline. A request is
+  cancelled once its deadline passes, its asker gives up or a newer one replaces it. Of what a
+  server asks, Lo answers settings, registrations and progress tokens, and refuses the rest.
+- Main reads each server's group's resident memory every 5 s and stops it past its cap (4 GB). A
+  stop sends `shutdown` and `exit`, a second each, then `SIGTERM` to the group, then `SIGKILL` 2 s
+  later, inside a feature's 5 s.
+- Its stderr and messages make its log, the last 1,000 lines, in memory only.
+- Tests start only the fake server, `testing/lsp/fake-server.ts`, at most two at once in a test
+  file, each killed with its group when the test ends. No test starts a real server or downloads
+  one.
+
 ### Accounts
 
 Only main talks to GitHub, through `@lo/github`, and only main holds a token. The `accounts` feature
