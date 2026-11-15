@@ -1,6 +1,7 @@
 // The page the code view's spec drives: a diff of one file, a line in every four changed, in a box
-// 600 px tall, its threads drawn as cards as tall as the spec says. The spec works it through
-// `window.harness`.
+// 600 px tall, its threads drawn as cards as tall as the spec says, with Lo's key listener, as the
+// window runs it, which tells the view of each key once it's the reader's input. The spec works it
+// through `window.harness`.
 
 import { diffText } from '@lo/diff';
 
@@ -10,6 +11,10 @@ import {
   type DiffView,
   type RenderThread,
 } from '../../src/code/index.ts';
+import { listen, Registry } from '../../src/commands/index.ts';
+
+// No command of Lo's: every key is Vim's, and the reader's input as it comes.
+listen(window, new Registry({ system: 'linux', commands: [] }));
 
 const old = Array.from({ length: 300 }, (_, index) => `line ${index + 1}`);
 // Lines 1, 5, 9 and on: three unchanged lines between changes, which none collapse.
