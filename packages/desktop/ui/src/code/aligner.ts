@@ -227,6 +227,12 @@ interface Anchor {
   scrollTop: number;
 }
 
+/**
+ * How far onto the screen a line must be drawn to count as on it, in pixels: past the fraction of a
+ * pixel a scroll leaves a line put at the screen's edge.
+ */
+const ON_SCREEN = 1;
+
 /** Rounds of measuring, lining up and restoring the scroll a pass may take to settle. */
 const rounds = 3;
 
@@ -264,6 +270,13 @@ export class Aligner {
    * before the pass, as it does into a comment box as it opens.
    */
   #chosen = false;
+  /**
+   * Whether `anchorAt` gave the coming pass a line of its own to keep, for the change it was taken
+   * for: that line counts as on screen while some of it is. Once that pass is over, what stands is
+   * what the pass takes with no such line, so every later one, as at the next width change, goes
+   * as it would have.
+   */
+  #given = false;
   /** Which way the scroll last went: down (1) or up (-1). */
   #direction: 1 | -1 = 1;
   /**
@@ -430,6 +443,7 @@ export class Aligner {
     if (top === undefined) return;
     this.#topTaken = true;
     this.#chosen = true;
+    this.#given = true;
     this.#anchor = {
       for: this.#anchorSide(),
       side,
@@ -446,6 +460,7 @@ export class Aligner {
     this.#anchor = undefined;
     this.#topTaken = false;
     this.#chosen = false;
+    this.#given = false;
     if (!paused) this.schedule();
   }
 
@@ -502,6 +517,9 @@ export class Aligner {
     if (this.#paused || this.#running) return;
     const started = performance.now();
     this.#running = true;
+    // A line given before the editors changed width is drawn where its new wrapping put it, not
+    // where the reader saw it: the pass goes as it does with none.
+    const given = this.#given && !this.#rewrapped();
     let changed = false;
     try {
       const side = this.#anchorSide();
@@ -551,10 +569,13 @@ export class Aligner {
           turn === 0 &&
           !this.#wheeledOff &&
           anchor.element === undefined &&
-          (anchor.offset < 0 || anchor.offset >= this.#scroller.clientHeight)
+          (given ? this.#offScreen(anchor) : this.#beyond(anchor))
         ) {
           // After a jump, neither editor drew anything on screen yet when the scroll moved, so the
-          // anchor was a line off it: take one on screen, now that they've drawn there.
+          // anchor was a line off it: take one on screen, now that they've drawn there. A line
+          // `anchorAt` gave for the change this pass lines up, as one a peek opens under, is on it
+          // while some of it is, partly above the top, or at the top where a jump left it a
+          // fraction of a pixel above.
           anchor = this.#anchorNow();
         }
         // The last round only measures, so what's drawn covers where the scroll ended up.
@@ -572,12 +593,19 @@ export class Aligner {
         changed ||= spaced;
         if (!spaced && !moved) break;
       }
+      // The line given for this change is kept no longer: what stands is what the pass takes with
+      // none, a line on screen, as it would have taken at the start.
+      const kept = this.#anchor;
+      if (given && kept && kept.element === undefined && this.#beyond(kept)) {
+        this.#anchor = this.#anchorNow();
+      }
       this.#widths = this.#widthsNow();
     } finally {
       this.#running = false;
       this.#selected = false;
       this.#topTaken = false;
       this.#chosen = false;
+      this.#given = false;
       this.#wheeledOff = false;
       const ms = performance.now() - started;
       this.stats.passes++;
@@ -1335,6 +1363,29 @@ export class Aligner {
     );
   }
 
+  /** Whether `anchor`'s line starts off the screen, above its top or below it, where it's held. */
+  #beyond(anchor: Anchor): boolean {
+    return anchor.offset < 0 || anchor.offset >= this.#scroller.clientHeight;
+  }
+
+  /**
+   * Whether none of `anchor`'s line was on screen where the anchor has it, past a fraction of a
+   * pixel.
+   */
+  #offScreen(anchor: Anchor): boolean {
+    const { offset } = anchor;
+    if (offset >= this.#scroller.clientHeight - ON_SCREEN) return true;
+    if (offset >= 0) return false;
+    const view = this.#views[anchor.side];
+    const top = drawnTop(view, anchor.pos);
+    const bottom = drawnBottom(view, anchor.pos);
+    const height =
+      top !== undefined && bottom !== undefined
+        ? bottom - top
+        : view.lineBlockAt(anchor.pos).height;
+    return offset + height <= ON_SCREEN;
+  }
+
   /** Puts the anchored line back where it was on screen. Says whether the scroll moved. */
   #restore(anchor: Anchor): boolean {
     const view = this.#views[anchor.side];
@@ -1390,6 +1441,19 @@ export function lineOnScreen(
  */
 export function drawnTop(view: EditorView, pos: number): number | undefined {
   return drawnRect(view, pos)?.top;
+}
+
+/**
+ * Whether some of the line at `pos` is drawn on `screen`, as {@link drawnTop} finds it: its text,
+ * not the blocks around it, more than a fraction of a pixel of it.
+ */
+export function partlyOnScreen(view: EditorView, pos: number, screen: DOMRect): boolean {
+  const drawn = drawnRect(view, pos);
+  return (
+    drawn !== undefined &&
+    drawn.bottom > screen.top + ON_SCREEN &&
+    drawn.top < screen.bottom - ON_SCREEN
+  );
 }
 
 /** Where on the page the line at `pos` ends, as {@link drawnTop} finds it, if it's drawn. */

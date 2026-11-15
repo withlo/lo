@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { StateEffect } from '@codemirror/state';
 import { BlockInfo, EditorView } from '@codemirror/view';
-import { diffText } from '@lo/diff';
+import { diffPullRequest, diffText } from '@lo/diff';
 import { getCM, Vim } from '@replit/codemirror-vim';
 import { afterEach, beforeAll, describe, expect, type Mock, test, vi } from 'vitest';
 
@@ -16,6 +16,9 @@ import type {
   DiffInit,
   DiffView,
   Mark,
+  OverviewMark,
+  PeekFrame,
+  PeekView,
   Place,
   RenderThread,
   Spot,
@@ -2135,6 +2138,114 @@ describe('moved code', () => {
       dispatched.mockRestore();
     }
   });
+
+  test('a label is a button to its other end, which takes no focus from the code', () => {
+    const on = { ...events(), moved: vi.fn<NonNullable<DiffEvents['moved']>>() };
+    const shown = open(on);
+    const words = { old: [], new: [] };
+    shown.setMoves([
+      { from: { file: 'c', first: 1, last: 3 }, to: { file: 'b', first: 3, last: 5 }, words },
+    ]);
+    shown.reveal(onHeader('c', 'old'));
+    const to = parent!.querySelector<HTMLElement>('[aria-label="Before"] .lo-movedlabel button');
+    expect(to?.textContent).toBe('src/b.ts:3');
+    // Named as the label reads.
+    expect(to?.getAttribute('aria-label')).toBe('Moved to src/b.ts:3');
+    const down = new MouseEvent('mousedown', { bubbles: true, cancelable: true });
+    to!.dispatchEvent(down);
+    expect(down.defaultPrevented).toBe(true);
+    to!.click();
+    expect(on.moved).toHaveBeenCalledWith(at('b', 'new', 3));
+    shown.reveal(onHeader('b', 'new'));
+    parent!.querySelector<HTMLElement>('[aria-label="After"] .lo-movedlabel button')!.click();
+    expect(on.moved).toHaveBeenLastCalledWith(at('c', 'old', 1));
+  });
+
+  test('otherEnd is where a moved line went or came from, line for line', () => {
+    const shown = open();
+    const words = { old: [], new: [] };
+    shown.setMoves([
+      { from: { file: 'c', first: 1, last: 3 }, to: { file: 'b', first: 3, last: 4 }, words },
+    ]);
+    expect(shown.otherEnd(at('c', 'old', 2))).toEqual(at('b', 'new', 4));
+    // As far as the other end goes.
+    expect(shown.otherEnd(at('c', 'old', 3))).toEqual(at('b', 'new', 4));
+    expect(shown.otherEnd(at('b', 'new', 3))).toEqual(at('c', 'old', 1));
+    expect(shown.otherEnd(at('c', 'old', 4))).toBeUndefined();
+    expect(shown.otherEnd(at('b', 'old', 3))).toBeUndefined();
+    expect(shown.otherEnd(at('gone', 'old', 1))).toBeUndefined();
+  });
+
+  test('otherEnd pairs the lines that aren’t blank, as moves are found, and comes back both ways', () => {
+    const block = [
+      'export function wrap(text: string): string[] {',
+      '  const lines: string[] = [];',
+      '',
+      '  for (const word of text.split(" ")) {',
+      '    lines.push(word);',
+      '  }',
+      '',
+      '  return lines;',
+      '}',
+    ];
+    // Moved from a to b, losing its first blank line, one line edited on the way.
+    const moved = [...block.slice(0, 2), ...block.slice(3)].map((line) =>
+      line === '    lines.push(word);' ? '    lines.push(word.trim());' : line,
+    );
+    const header = { additions: 1, deletions: 1 };
+    const both: DiffFile[] = [
+      {
+        id: 'a',
+        path: 'src/a.ts',
+        change: 'modified',
+        lines: { old: ['import x;', '', ...block], new: ['import x;'] },
+        header,
+      },
+      {
+        id: 'b',
+        path: 'src/b.ts',
+        change: 'modified',
+        lines: { old: ['// b'], new: ['// b', ...moved] },
+        header,
+      },
+    ];
+    const found = diffPullRequest(
+      both.map((file) => ({
+        path: file.path,
+        old: textOf(file.lines!.old),
+        new: textOf(file.lines!.new),
+      })),
+    );
+    const id = (file: number): string => both[file]!.id;
+    expect(found.moves.map((move) => [move.from, move.to, move.edits.length])).toEqual([
+      [
+        expect.objectContaining({ file: 0, first: 3, last: 11 }),
+        expect.objectContaining({ file: 1, first: 2, last: 9 }),
+        1,
+      ],
+    ]);
+    const shown = open(events(), { files: both });
+    shown.setMoves(
+      found.moves.map((move) => ({
+        from: { file: id(move.from.file), first: move.from.first, last: move.from.last },
+        to: { file: id(move.to.file), first: move.to.first, last: move.to.last },
+        words: move.words,
+      })),
+    );
+    // `for` to `for`, the edited line to the edited line, `return` to `return`.
+    expect(shown.otherEnd(at('a', 'old', 6))).toEqual(at('b', 'new', 4));
+    expect(shown.otherEnd(at('b', 'new', 4))).toEqual(at('a', 'old', 6));
+    expect(shown.otherEnd(at('a', 'old', 7))).toEqual(at('b', 'new', 5));
+    expect(shown.otherEnd(at('a', 'old', 10))).toEqual(at('b', 'new', 8));
+    // A blank line goes with the next line that isn't.
+    expect(shown.otherEnd(at('a', 'old', 5))).toEqual(at('b', 'new', 4));
+    expect(shown.otherEnd(at('b', 'new', 7))).toEqual(at('a', 'old', 10));
+    // Every line that isn't blank comes back to itself.
+    for (const line of [3, 4, 6, 7, 8, 10, 11]) {
+      const there = shown.otherEnd(at('a', 'old', line))!;
+      expect(shown.otherEnd(there)).toEqual(at('a', 'old', line));
+    }
+  });
 });
 
 describe('loading', () => {
@@ -2473,7 +2584,7 @@ function overview(
   to: number,
   block = 'one',
   text = 'A query over the plan’s ceiling is refused before it touches the bucket.',
-): Mark {
+): OverviewMark {
   return {
     kind: 'overview',
     at: { file: 'a', side, from, to },
@@ -2882,5 +2993,233 @@ describe('swapping', () => {
     expect(changed).toBe(3);
     editor.destroy();
     host.remove();
+  });
+});
+
+/** A peek at a definition, its code three lines of another file. */
+function definition(label = 'Definitions of line'): PeekView {
+  return {
+    label,
+    answers: [{ path: 'src/e.ts', line: 2, source: 'syntax' }],
+    shown: 0,
+    code: { first: 1, lines: ['e 1', 'e 2', 'e 3'] },
+  };
+}
+
+/** Where the peek is drawn, if it is: the label of its editor, and the line it's under. */
+function peeked(): (string | null)[] | undefined {
+  const peek = parent!.querySelector('.lo-diffpeek');
+  if (!peek) return undefined;
+  const editor = peek.closest('.cm-content');
+  const block = peek.closest('.cm-content > *');
+  return [
+    editor?.getAttribute('aria-label') ?? null,
+    block?.previousElementSibling?.textContent ?? null,
+  ];
+}
+
+describe('peeks', () => {
+  test('one opens under its line, on its side or inline, one at a time, and closes', () => {
+    const shown = open();
+    expect(shown.peek(at('a', 'new', 4), undefined)).toBe(false);
+    expect(shown.peek(at('a', 'new', 4), definition())).toBe(true);
+    expect(peeked()).toEqual(['After', 'line 4']);
+    expect(shown.peek(at('a', 'old', 5), definition())).toBe(true);
+    expect(peeked()).toEqual(['Before', 'line 5']);
+    expect(parent!.querySelectorAll('.lo-diffpeek')).toHaveLength(1);
+    // There's none open where it was.
+    expect(shown.peek(at('a', 'new', 4), undefined)).toBe(false);
+    shown.setLayout('inline');
+    expect(peeked()).toEqual(['Changes', 'line 5']);
+    expect(shown.peek(at('a', 'old', 5), undefined)).toBe(true);
+    expect(parent!.querySelector('.lo-diffpeek')).toBeNull();
+  });
+
+  test('shown again at its line, it’s the same peek, its frame told what it shows now', () => {
+    const shown = open();
+    const asked: string[] = [];
+    const frame: PeekFrame = (parts, peek) => {
+      asked.push(`draw ${peek.label}`);
+      parts.head.textContent = peek.label;
+      return {
+        update(next) {
+          asked.push(`update ${next.label}`);
+          parts.head.textContent = next.label;
+        },
+        destroy() {
+          asked.push('destroy');
+        },
+      };
+    };
+    shown.peek(at('a', 'new', 4), definition(), frame);
+    const peek = parent!.querySelector('.lo-diffpeek');
+    shown.peek(at('a', 'new', 4), definition('References of line'), frame);
+    expect(parent!.querySelector('.lo-diffpeek')).toBe(peek);
+    expect(peek?.querySelector('.lo-diffpeek__head')?.textContent).toBe('References of line');
+    shown.peek(at('a', 'new', 4), undefined);
+    expect(asked).toEqual(['draw Definitions of line', 'update References of line', 'destroy']);
+  });
+
+  test('none opens under a line that isn’t drawn', () => {
+    const shown = open();
+    // A file kept out, a side a file hasn't, lines past its end, and a file the view hasn't.
+    expect(shown.peek(at('d', 'new', 1), definition())).toBe(false);
+    expect(shown.peek(at('b', 'old', 1), definition())).toBe(false);
+    expect(shown.peek(at('a', 'new', 42), definition())).toBe(false);
+    expect(shown.peek(at('gone', 'new', 1), definition())).toBe(false);
+    expect(parent!.querySelector('.lo-diffpeek')).toBeNull();
+  });
+
+  test('with focus in it, the layout changing takes the cursor to its line, as a jump', () => {
+    const on = events();
+    const shown = open(on);
+    shown.reveal(onLine('a', 'new', 4, 2));
+    shown.focus();
+    shown.peek(at('a', 'new', 8), definition());
+    on.cursor.mockClear();
+    shown.setLayout('inline');
+    expect(document.activeElement).toBe(parent!.querySelector('.lo-diffpeek'));
+    expect(on.jumped).toHaveBeenLastCalledWith(onLine('a', 'new', 4), onLine('a', 'new', 8));
+    expect(on.cursor).toHaveBeenLastCalledWith(onLine('a', 'new', 8, 0));
+    // On its line already, it's no jump.
+    shown.setLayout('split');
+    expect(on.jumped).toHaveBeenCalledTimes(1);
+  });
+
+  test('the cursor already on its unchanged line, inline, is no jump as the layout changes', () => {
+    const on = events();
+    const shown = open(on, { layout: 'inline' });
+    shown.reveal(onLine('a', 'new', 3));
+    shown.focus();
+    shown.peek(at('a', 'old', 3), definition());
+    shown.setLayout('split');
+    expect(document.activeElement).toBe(parent!.querySelector('.lo-diffpeek'));
+    expect(shown.probe.cursor()?.at).toEqual(onLine('a', 'old', 3, 0));
+    expect(on.jumped).not.toHaveBeenCalled();
+  });
+
+  test('none opens among collapsed lines; one opened in a run keeps its line once the run closes', () => {
+    const shown = open();
+    const before = runs();
+    expect(shown.peek(at('a', 'new', 12), definition())).toBe(false);
+    expect(runs()).toEqual(before);
+    shown.fold(onLine('a', 'new', 12), 'open');
+    expect(shown.peek(at('a', 'new', 12), definition())).toBe(true);
+    expect(peeked()).toEqual(['After', 'line 12']);
+    shown.peek(at('a', 'new', 12), undefined);
+    shown.fold(onLine('a', 'new', 11), 'close');
+    expect(runs()).not.toEqual(before);
+    expect(shown.peek(at('a', 'new', 12), definition())).toBe(true);
+  });
+
+  test('focus goes into it from the code, and back to the cursor as it was, as it closes', () => {
+    const shown = open();
+    shown.reveal(onLine('a', 'new', 4, 3));
+    shown.focus();
+    const here = { ...at('a', 'new', 4), column: 3 };
+    shown.peek(here, definition());
+    const peek = parent!.querySelector<HTMLElement>('.lo-diffpeek')!;
+    expect(document.activeElement).toBe(peek);
+    expect(findScope(peek).name).toBe('peek');
+    shown.peek(here, undefined);
+    expect(document.activeElement).toBe(vimIn('After').content);
+    expect(shown.probe.cursor()?.at).toEqual(onLine('a', 'new', 4, 3));
+    // Focus elsewhere stays there.
+    const field = document.createElement('input');
+    document.body.append(field);
+    field.focus();
+    shown.peek(here, definition());
+    expect(document.activeElement).toBe(field);
+    shown.peek(here, undefined);
+    expect(document.activeElement).toBe(field);
+    field.remove();
+  });
+
+  test('it’s first in its line’s block, over a thread, a note and a box, and moves with the layout', async () => {
+    const shown = open();
+    const here = at('a', 'new', 4);
+    shown.setThreads([thread('one', here)], plain().render);
+    shown.setMarks([overview('new', 3, 4)]);
+    shown.openNote(here);
+    shown.compose(here, '', composerEvents(), undefined, { focus: false });
+    shown.reveal(onLine('a', 'new', 4));
+    shown.focus();
+    shown.peek(here, definition());
+    const peek = parent!.querySelector<HTMLElement>('.lo-diffpeek')!;
+    const block = (): Element | null => peek.closest('.lo-diffthread');
+    expect(block()?.firstElementChild).toBe(peek);
+    for (const other of ['[data-thread-id="one"]', '.lo-ovnote', '.lo-diffcomposer']) {
+      expect(block()?.querySelector(other)).not.toBeNull();
+    }
+    shown.setLayout('inline');
+    await Promise.resolve();
+    expect(peeked()).toEqual(['Changes', 'line 4']);
+    expect(block()?.firstElementChild).toBe(peek);
+    expect(document.activeElement).toBe(peek);
+    shown.setLayout('split');
+    await Promise.resolve();
+    expect(peeked()).toEqual(['After', 'line 4']);
+    expect(document.activeElement).toBe(peek);
+  });
+});
+
+/** The lines of the editor labelled `label` drawn with hints in them, as they read. */
+function hinted(label: string): string[] {
+  return [...parent!.querySelectorAll(`.cm-content[aria-label="${label}"] .cm-line`)]
+    .filter((line) => line.querySelector('.lo-inlay'))
+    .map((line) => line.textContent ?? '');
+}
+
+describe('hints', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.useRealTimers();
+  });
+
+  const hints: Mark[] = [
+    { kind: 'hint', at: { file: 'a', side: 'new', line: 4, column: 4 }, label: ': number' },
+    {
+      kind: 'hint',
+      at: { file: 'a', side: 'old', line: 5 },
+      label: 'end',
+      padding: { after: true },
+    },
+    { kind: 'hint', at: { file: 'gone', side: 'new', line: 1 }, label: 'nowhere' },
+  ];
+
+  test('each is drawn in its line, at its column or at its end, on its side or inline', () => {
+    const shown = open();
+    shown.setMarks(hints);
+    expect(hinted('After')).toEqual(['line: number 4']);
+    expect(hinted('Before')).toEqual(['line 5end']);
+    expect(parent!.querySelector('.lo-inlay--after')?.textContent).toBe('end');
+    shown.setLayout('inline');
+    expect(hinted('Changes')).toEqual(['line: number 4', 'line 5end']);
+  });
+
+  test('while the view is shown, they change with the reader’s next input', async () => {
+    vi.useFakeTimers();
+    const shown = open();
+    Object.defineProperty(scroller(), 'clientHeight', { configurable: true, value: 600 });
+    shown.setMarks(hints);
+    expect(hinted('After')).toEqual([]);
+    press(scroller(), 'j');
+    // Not before the input is handled.
+    expect(hinted('After')).toEqual([]);
+    await vi.runOnlyPendingTimersAsync();
+    expect(hinted('After')).toEqual(['line: number 4']);
+    // Others, as the view changes layout, which moves it all.
+    shown.setMarks([]);
+    expect(hinted('After')).toHaveLength(1);
+    shown.setLayout('inline');
+    expect(hinted('Changes')).toEqual([]);
+  });
+
+  test('while the view is hidden, as behind another, they change at once', () => {
+    const shown = open();
+    Object.defineProperty(scroller(), 'clientHeight', { configurable: true, value: 600 });
+    Object.assign(scroller(), { checkVisibility: () => false });
+    shown.setMarks(hints);
+    expect(hinted('After')).toEqual(['line: number 4']);
   });
 });
