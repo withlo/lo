@@ -40,17 +40,22 @@ export interface Scenario {
   readonly child?: boolean;
   /** It starts a process in a session of its own once initialized, out of its group. */
   readonly escapee?: boolean;
+  /**
+   * Its escapee starts a sleeper in a session of its own every few milliseconds, reporting each,
+   * until it's stopped.
+   */
+  readonly sleepers?: boolean;
   /** It ignores `shutdown`, `exit` and `SIGTERM`. */
   readonly stubborn?: boolean;
   /** Lines it writes to stderr as it starts. */
   readonly stderr?: readonly string[];
   /**
    * It writes `header` to stdout, then `frame` (64 KiB of `x` unless it says) again and again until
-   * it's killed: once initialized, or once it has answered `shutdown`, after which it ignores
-   * `exit` and `SIGTERM`.
+   * it's killed: once initialized; once asked to shut down, in place of its answer; or once it has
+   * answered `shutdown`. One that floods at shutdown ignores `exit` and `SIGTERM`.
    */
   readonly flood?: {
-    readonly at: 'initialized' | 'shutdown';
+    readonly at: 'initialized' | 'shutdown' | 'afterShutdown';
     readonly header: string;
     readonly frame?: string;
   };
@@ -81,5 +86,7 @@ export type Seen =
   | { readonly event: 'notification'; readonly method: string; readonly params: unknown }
   | { readonly event: 'child'; readonly pid: number }
   | { readonly event: 'escapee'; readonly pid: number }
+  /** A sleeper its escapee started. */
+  | { readonly event: 'sleeper'; readonly pid: number }
   | { readonly event: 'shutdown' }
   | { readonly event: 'exit' };

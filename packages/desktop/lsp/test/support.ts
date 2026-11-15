@@ -59,7 +59,9 @@ export function startFake(
   const seen = () => readReport(fake.report);
   onTestFinished(async () => {
     const pids = seen().flatMap((event) =>
-      event.event === 'child' || event.event === 'escapee' ? [event.pid] : [],
+      event.event === 'child' || event.event === 'escapee' || event.event === 'sleeper'
+        ? [event.pid]
+        : [],
     );
     if (server.pid !== undefined) pids.push(-server.pid);
     for (const pid of pids) {

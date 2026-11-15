@@ -10,9 +10,9 @@
 
 import type { ChildProcess } from 'node:child_process';
 import { mkdir, realpath } from 'node:fs/promises';
-import { basename } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 
-import { ErrorCodes, type MessageReader, ResponseError } from 'vscode-jsonrpc';
+import { ErrorCodes, type Message, type MessageReader, ResponseError } from 'vscode-jsonrpc';
 import {
   createMessageConnection,
   type MessageConnection,
@@ -31,9 +31,9 @@ import type {
 import { initializeAnswer, initializeParams } from './capabilities.ts';
 import { Documents } from './documents.ts';
 import { serverEnvironment, temporaryFolder } from './environment.ts';
-import { FrameMeter } from './framing.ts';
+import { FLOOD_BYTES, FLOOD_MESSAGES, FLOOD_WINDOW, FrameMeter } from './framing.ts';
 import { Log } from './log.ts';
-import { type ReadFamily, readFamily } from './family.ts';
+import { type Member, type ReadFamily, readFamily } from './family.ts';
 import { checkProgram, familyGone, signalFamily, sleep, startProcess } from './process.ts';
 import { type Answer, Queue } from './queue.ts';
 import { reply } from './requests.ts';
@@ -87,16 +87,24 @@ export interface Limits {
   readonly family: number;
   /** How long its family has after `SIGTERM`, before `SIGKILL`. */
   readonly term: number;
+  /** How long a kill may spend freezing its family, a round of reading at a time. */
+  readonly freeze: number;
   /** How long a stop waits for it to go after `SIGKILL`. */
   readonly kill: number;
+  /** The most messages it may send within {@link Limits.floodWindow}. */
+  readonly floodMessages: number;
+  /** The most output it may write within {@link Limits.floodWindow}, in bytes, stderr included. */
+  readonly floodBytes: number;
+  readonly floodWindow: number;
   /** How many deadlines it may miss within {@link Limits.missWindow} before it's `notAnswering`. */
   readonly misses: number;
   readonly missWindow: number;
 }
 
 /**
- * A stop takes at most `shutdown + exit + family + term + kill`, its family read once during
- * `shutdown` and once after `exit`: 4.65 s, inside a feature's 5 s to stop.
+ * A stop takes at most `shutdown + exit + family + term + freeze + kill`, its family read once
+ * during `shutdown` and once after `exit`: 4.9 s, inside a feature's 5 s to stop. Nothing the
+ * server sends is read once `shutdown` is answered or given up on, so no flood can hold it up.
  */
 export const LIMITS: Limits = {
   memoryCap: 4 * 1024 ** 3,
@@ -107,7 +115,11 @@ export const LIMITS: Limits = {
   exit: 1000,
   family: 250,
   term: 2000,
-  kill: 400,
+  freeze: 400,
+  kill: 250,
+  floodMessages: FLOOD_MESSAGES,
+  floodBytes: FLOOD_BYTES,
+  floodWindow: FLOOD_WINDOW,
   misses: 3,
   missWindow: 60_000,
 };
@@ -161,6 +173,9 @@ export function startServer(spec: ServerSpec, tuning: Tuning = {}): Server {
 /** How long a server may run on after its output ends, before it counts as failed. */
 const CLOSED_GRACE = 1000;
 
+/** The most rounds a kill reads and freezes its family in, until a round finds nothing new. */
+const FREEZE_ROUNDS = 8;
+
 /** How many progress tokens a server may have open. */
 const PROGRESS_TOKENS = 64;
 /** The longest progress title kept, in characters. */
@@ -199,6 +214,9 @@ export class Server {
   #memoryUnread = 0;
   /** Whether it broke a limit, and so is being killed. */
   #breached = false;
+  /** Whether what it writes to stdout, and to stderr, is no longer read. */
+  #deaf = false;
+  #muted = false;
   #misses: number[] = [];
   readonly #tokens = new Set<string | number>();
   readonly #progress = new Map<string | number, Progress>();
@@ -370,7 +388,7 @@ export class Server {
   async #shutDown(): Promise<void> {
     const connection = this.#connection;
     const group = this.#child?.pid;
-    let earlier: readonly number[] = [];
+    let earlier: readonly Member[] = [];
     if (connection !== undefined && group !== undefined) {
       const { shutdown, exit } = this.#limits;
       const read = this.#others(group);
@@ -383,6 +401,9 @@ export class Server {
       } catch {
         // The connection has closed.
       }
+      // Nothing more it sends matters, so none of it is read, and however much it sends, the stop
+      // keeps its time.
+      this.#deafen();
       earlier = await read;
       this.#notify('exit');
       await Promise.race([this.#exited, sleep(exit)]);
@@ -391,45 +412,66 @@ export class Server {
   }
 
   /**
-   * Stops what's left of the server's family, with any of `earlier` still running: `SIGTERM`, then
-   * `SIGKILL` if anything outlasts it.
+   * Stops what's left of the server's family, with any of `earlier` that's still the same process:
+   * `SIGTERM`, then, if anything outlasts it, a kill.
    */
-  async #endGroup(earlier: readonly number[] = []): Promise<void> {
+  async #endGroup(earlier: readonly Member[] = []): Promise<void> {
     const group = this.#child?.pid;
     if (group === undefined) return;
-    const others = [...new Set([...(await this.#others(group)), ...earlier])];
+    const others = await this.#others(group, earlier);
+    const pids = others.map((member) => member.pid);
     if (
-      signalFamily(group, others, 'SIGTERM') &&
-      !(await familyGone(group, others, this.#limits.term))
+      signalFamily(group, pids, 'SIGTERM') &&
+      !(await familyGone(group, pids, this.#limits.term))
     ) {
-      signalFamily(group, others, 'SIGKILL');
+      await this.#kill(others);
+      return;
     }
     await Promise.race([this.#exited, sleep(this.#limits.kill)]);
   }
 
-  /** Kills the server's family at once. */
-  async #kill(): Promise<void> {
+  /**
+   * Kills the server's family at once, with any of `known` that's still the same process. The
+   * group is frozen first, then each process found by its parent outside it, round after round
+   * until a round finds nothing new, so nothing in the family can start a process that outlives
+   * it. Only then is everything frozen killed.
+   */
+  async #kill(known: readonly Member[] = []): Promise<void> {
     const group = this.#child?.pid;
     if (group === undefined) return;
-    // Frozen first, so nothing it started outlives it unfound while its family is read.
     signalFamily(group, [], 'SIGSTOP');
-    signalFamily(group, await this.#others(group), 'SIGKILL');
+    const frozen = new Map<number, Member>();
+    const until = performance.now() + this.#limits.freeze;
+    for (let round = 0; round < FREEZE_ROUNDS; round += 1) {
+      const left = until - performance.now();
+      if (left <= 0) break;
+      const found = await this.#others(group, [...known, ...frozen.values()], left);
+      const fresh = found.filter((member) => !frozen.has(member.pid));
+      if (fresh.length === 0) break;
+      for (const member of fresh) frozen.set(member.pid, member);
+      signalFamily(group, [...frozen.keys()], 'SIGSTOP');
+    }
+    signalFamily(group, [...frozen.keys()], 'SIGKILL');
     await Promise.race([this.#exited, sleep(this.#limits.kill)]);
   }
 
   /**
    * The processes descended from the server's group that have left it, such as a daemon in a
-   * session of its own, as read within {@link Limits.family}. Once the group is empty, none can be
-   * found.
+   * session of its own, and each of `known` that's still the same process, with what descends from
+   * it, as read within `within`. Once the group is empty, only `known` leads anywhere.
    */
-  async #others(group: number): Promise<number[]> {
-    if (!signalFamily(group, [], 0)) return [];
+  async #others(
+    group: number,
+    known: readonly Member[] = [],
+    within = this.#limits.family,
+  ): Promise<Member[]> {
+    if (!signalFamily(group, [], 0) && known.length === 0) return [];
     try {
       const family = await Promise.race([
-        this.#readFamily(group),
-        sleep(this.#limits.family).then(() => []),
+        this.#readFamily(group, known),
+        sleep(within).then(() => []),
       ]);
-      return family.filter((member) => member.group !== group).map((member) => member.pid);
+      return family.filter((member) => member.group !== group);
     } catch {
       return [];
     }
@@ -452,6 +494,8 @@ export class Server {
       };
       serverEnvironment({ ...given, home: spec.home, path: spec.path });
       const path = await Promise.all(spec.path.map((folder) => resolved(folder)));
+      // Its home as it will resolve, checked before any of it is made.
+      serverEnvironment({ ...given, home: await resolvedAhead(spec.home), path });
       await mkdir(spec.home, { recursive: true, mode: 0o700 });
       const home = await realpath(spec.home);
       const env = serverEnvironment({ ...given, home, path });
@@ -489,27 +533,70 @@ export class Server {
     // A pipe's error, such as writing to a server that's gone, changes nothing: its exit says what
     // happened.
     for (const stream of [stdin, stdout, stderr]) stream.on('error', () => undefined);
+    const { floodMessages, floodBytes, floodWindow } = this.#limits;
+    const meter = new FrameMeter({
+      messages: floodMessages,
+      bytes: floodBytes,
+      within: floodWindow,
+    });
+    // Each piece of stderr has a turn of its own, so however much it writes, main has turns too.
     stderr.setEncoding('utf8');
-    stderr.on('data', (text: string) => this.#log.write(text));
+    stderr.on('data', (text: string) => {
+      this.#log.write(text);
+      const wrong = meter.counted(Buffer.byteLength(text));
+      if (wrong !== undefined) this.#breach({ kind: 'protocol', message: wrong });
+      stderr.pause();
+      setImmediate(() => {
+        if (!this.#muted) stderr.resume();
+      });
+    });
     stderr.on('end', () => this.#log.end());
-    // Measured before the reader reads each piece, so a message too large, or too much unread,
-    // ends the server before the reader holds it; and as the reader hands each message on.
-    const meter = new FrameMeter();
+    // Measured before the reader reads each piece, so a message too large, too much unread or too
+    // many ends the server before the reader holds it; and as each is handed to the connection.
+    // The connection handles one message a turn, so it's handed one a turn, and while the meter
+    // says too many wait, the server's output waits in its pipe: however much it sends, main holds
+    // a bounded amount of it, and has turns for everything else.
     stdout.on('data', (chunk: Buffer) => {
       const wrong = meter.feed(chunk);
       if (wrong !== undefined) this.#breach({ kind: 'protocol', message: wrong });
+      else if (meter.behind) stdout.pause();
     });
     const reader = new StreamMessageReader(stdout);
+    const waiting: Message[] = [];
+    let handing = false;
+    let deliver: ((message: Message) => void) | undefined;
+    const handOn = (): void => {
+      const message = waiting.shift();
+      // What it sent before Lo stopped reading is dropped.
+      if (message === undefined || this.#deaf) {
+        handing = false;
+        waiting.length = 0;
+        return;
+      }
+      const wrong = meter.handedOn();
+      if (wrong !== undefined) {
+        handing = false;
+        this.#breach({ kind: 'protocol', message: wrong });
+        return;
+      }
+      if (stdout.isPaused() && !meter.behind) stdout.resume();
+      deliver?.(message);
+      setImmediate(handOn);
+    };
     const metered: MessageReader = {
       onError: reader.onError,
       onClose: reader.onClose,
       onPartialMessage: reader.onPartialMessage,
-      listen: (callback) =>
-        reader.listen((message) => {
-          const wrong = meter.handedOn();
-          if (wrong === undefined) callback(message);
-          else this.#breach({ kind: 'protocol', message: wrong });
-        }),
+      listen: (callback) => {
+        deliver = callback;
+        return reader.listen((message) => {
+          if (this.#deaf) return;
+          waiting.push(message);
+          if (handing) return;
+          handing = true;
+          setImmediate(handOn);
+        });
+      },
       dispose: () => reader.dispose(),
     };
     const note = (message: string) => this.#log.add(`Lo: ${message}`);
@@ -651,6 +738,7 @@ export class Server {
     this.#breached = true;
     this.#log.add(`Lo: ${failureMessage(failure)}`);
     this.#failed(failure);
+    this.#deafen();
     this.#stopReading();
     if (this.#child?.pid !== undefined && this.#exit === undefined) this.#cleanup = this.#kill();
   }
@@ -665,8 +753,17 @@ export class Server {
     return true;
   }
 
-  /** Reads nothing more from the server. */
+  /** Reads nothing more of what the server writes, stderr included, though Lo can still write to it. */
+  #deafen(): void {
+    this.#deaf = true;
+    this.#muted = true;
+    this.#child?.stdout?.pause();
+    this.#child?.stderr?.pause();
+  }
+
+  /** Reads no more messages from the server, and ends the connection. Its stderr is still read. */
   #stopReading(): void {
+    this.#deaf = true;
     this.#connection?.dispose();
     this.#child?.stdout?.destroy();
   }
@@ -807,6 +904,22 @@ export class Server {
       } catch {
         // One listener's mistake doesn't keep the others from hearing.
       }
+    }
+  }
+}
+
+/**
+ * The real path `path` will have once it's made: its nearest folder that's there, resolved, with
+ * the rest after it.
+ */
+async function resolvedAhead(path: string): Promise<string> {
+  const rest: string[] = [];
+  for (let at = path; ; at = dirname(at)) {
+    try {
+      return join(await realpath(at), ...rest.toReversed());
+    } catch (error) {
+      if (dirname(at) === at) throw error;
+      rest.push(basename(at));
     }
   }
 }

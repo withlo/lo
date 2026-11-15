@@ -8,7 +8,13 @@
  * - a message's length passes {@link MESSAGE_LIMIT};
  * - what's been read but not yet handed on, whole messages and the one arriving, passes
  *   {@link UNREAD_LIMIT}. That holds whatever the headers say, so even a reader and meter that
- *   disagreed couldn't hold more.
+ *   disagreed couldn't hold more;
+ * - more than {@link FLOOD_MESSAGES} messages, or {@link FLOOD_BYTES} of output, arrive within
+ *   {@link FLOOD_WINDOW}: a flood of messages each within the limits. No real server comes near:
+ *   a large workspace's diagnostics are thousands of messages over many seconds.
+ *
+ * It also says when Lo is {@link FrameMeter.behind}, holding many whole messages it hasn't handed
+ * on, so the server's output can wait in its pipe while main catches up.
  *
  * The reader finds a header's end with a small state machine (below), reads the header as ASCII
  * with each byte's high bit dropped, splits it into lines at CRLF, takes each line's name up to its
@@ -29,6 +35,22 @@ export const HEADER_LIMIT = 8 * 1024;
  */
 export const UNREAD_LIMIT = MESSAGE_LIMIT + 16 * 1024 * 1024;
 
+/** The most messages a server may send within {@link FLOOD_WINDOW}, answers and notifications alike. */
+export const FLOOD_MESSAGES = 50_000;
+
+/** The most output a server may write within {@link FLOOD_WINDOW}, in bytes, stderr included. */
+export const FLOOD_BYTES = 256 * 1024 * 1024;
+
+/** The window a server's rate is measured over, in milliseconds. */
+export const FLOOD_WINDOW = 10_000;
+
+/** How many whole messages, or bytes of them, the reader may hold unhanded before it's behind. */
+const BEHIND_MESSAGES = 512;
+const BEHIND_BYTES = 1024 * 1024;
+
+/** How many slots a rate's window has: it reaches back between 9 and 10 of them. */
+const SLOTS = 10;
+
 const CR = 13;
 const LF = 10;
 
@@ -42,9 +64,25 @@ function next(state: number, byte: number): number {
   return 0;
 }
 
+/** What a meter allows, which tests can make smaller. */
+export interface MeterLimits {
+  readonly message?: number | undefined;
+  readonly unread?: number | undefined;
+  readonly messages?: number | undefined;
+  readonly bytes?: number | undefined;
+  readonly within?: number | undefined;
+  /** The clock, in milliseconds. */
+  readonly now?: (() => number) | undefined;
+}
+
 export class FrameMeter {
   readonly #limit: number;
   readonly #unreadLimit: number;
+  readonly #messages: number;
+  readonly #bytes: number;
+  readonly #within: number;
+  readonly #now: () => number;
+  readonly #window: Window;
   /** Where the current header's end is, in the reader's state machine. */
   #state = 0;
   /** The current header so far, as the reader decodes it. */
@@ -55,12 +93,24 @@ export class FrameMeter {
   #size = 0;
   /** The size of each whole message not yet handed on, oldest first. */
   readonly #whole: number[] = [];
+  /** Their sizes' sum. */
+  #wholeBytes = 0;
   /** Bytes read and not yet handed on. */
   #unread = 0;
 
-  constructor(limits: { readonly message?: number; readonly unread?: number } = {}) {
+  constructor(limits: MeterLimits = {}) {
     this.#limit = limits.message ?? MESSAGE_LIMIT;
     this.#unreadLimit = limits.unread ?? UNREAD_LIMIT;
+    this.#messages = limits.messages ?? FLOOD_MESSAGES;
+    this.#bytes = limits.bytes ?? FLOOD_BYTES;
+    this.#within = limits.within ?? FLOOD_WINDOW;
+    this.#now = limits.now ?? (() => performance.now());
+    this.#window = new Window(this.#within);
+  }
+
+  /** Whether the reader holds so many whole messages it hasn't handed on that reading should wait. */
+  get behind(): boolean {
+    return this.#whole.length >= BEHIND_MESSAGES || this.#wholeBytes >= BEHIND_BYTES;
   }
 
   /** Bytes read and not yet handed on. */
@@ -74,6 +124,7 @@ export class FrameMeter {
     if (this.#unread > this.#unreadLimit) {
       return `It sent more than ${megabytes(this.#unreadLimit)} before Lo could read it.`;
     }
+    const whole = this.#whole.length;
     let offset = 0;
     while (offset < chunk.byteLength) {
       if (this.#body > 0) {
@@ -101,7 +152,12 @@ export class FrameMeter {
       this.#body = length;
       if (length === 0) this.#end();
     }
-    return undefined;
+    return this.#count(this.#whole.length - whole, chunk.byteLength);
+  }
+
+  /** Counts output the server wrote elsewhere, its stderr, toward its rate. */
+  counted(bytes: number): string | undefined {
+    return this.#count(0, bytes);
   }
 
   /** The reader handed on a message. It returns what's wrong if the meter knew of no whole one. */
@@ -109,6 +165,19 @@ export class FrameMeter {
     const size = this.#whole.shift();
     if (size === undefined) return 'It sent a message Lo didn’t see the end of.';
     this.#unread -= size;
+    this.#wholeBytes -= size;
+    return undefined;
+  }
+
+  /** Adds `messages` and `bytes` to the rate's window, and says if either passes its limit. */
+  #count(messages: number, bytes: number): string | undefined {
+    const sum = this.#window.add(this.#now(), messages, bytes);
+    const seconds = `${(this.#within / 1000).toLocaleString('en-US')} s`;
+    if (sum.messages > this.#messages) {
+      return `It sent more than ${this.#messages.toLocaleString('en-US')} messages in ${seconds}.`;
+    }
+    if (sum.bytes > this.#bytes)
+      return `It sent more than ${megabytes(this.#bytes)} in ${seconds}.`;
     return undefined;
   }
 
@@ -136,8 +205,45 @@ export class FrameMeter {
   /** The current message is whole. */
   #end(): void {
     this.#whole.push(this.#size);
+    this.#wholeBytes += this.#size;
     this.#size = 0;
     this.#body = -1;
+  }
+}
+
+/** Sums over a window that slides a slot at a time. */
+class Window {
+  readonly #slot: number;
+  readonly #slots: { at: number; messages: number; bytes: number }[] = [];
+  #messages = 0;
+  #bytes = 0;
+
+  constructor(within: number) {
+    this.#slot = within / SLOTS;
+  }
+
+  /** Adds to the window at `now`, and returns what it holds. */
+  add(now: number, messages: number, bytes: number): { messages: number; bytes: number } {
+    const at = Math.floor(now / this.#slot);
+    for (
+      let old = this.#slots[0];
+      old !== undefined && old.at <= at - SLOTS;
+      old = this.#slots[0]
+    ) {
+      this.#slots.shift();
+      this.#messages -= old.messages;
+      this.#bytes -= old.bytes;
+    }
+    let slot = this.#slots.at(-1);
+    if (slot?.at !== at) {
+      slot = { at, messages: 0, bytes: 0 };
+      this.#slots.push(slot);
+    }
+    slot.messages += messages;
+    slot.bytes += bytes;
+    this.#messages += messages;
+    this.#bytes += bytes;
+    return { messages: this.#messages, bytes: this.#bytes };
   }
 }
 

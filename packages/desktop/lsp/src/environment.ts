@@ -14,9 +14,10 @@
  *   protected configuration, no system or global config, no prompts and no lazy fetching. They're
  *   the only `GIT_*` variables it gets.
  * - The adapter's own variables, such as `GOPROXY=off`. None may set what's above, a proxy, the
- *   SSH agent or anything named like a secret. Nor may one load code into a program or a shell
- *   (`LD_PRELOAD`, `DYLD_*`, `NODE_OPTIONS`, `ELECTRON_RUN_AS_NODE`, `BASH_ENV` and the like) or
- *   configure npm, unless the adapter names it in `allowed`, saying it sets it on purpose.
+ *   SSH agent or anything named like a secret or credential. Nor may one load code into a program
+ *   or a shell (`LD_PRELOAD`, `DYLD_*`, `NODE_OPTIONS`, `ELECTRON_RUN_AS_NODE`, `BASH_ENV`,
+ *   `RUSTC_WRAPPER`, `GOFLAGS`, `CLASSPATH` and the like) or configure npm, unless the adapter
+ *   names it in `allowed`, saying it sets it on purpose.
  * - `LANG=C.UTF-8`, so servers read source as UTF-8.
  */
 
@@ -55,8 +56,10 @@ const NEVER = [
   // The SSH agent, and the programs that ask for a password.
   /^SSH_(?:AUTH_SOCK|AGENT_PID|ASKPASS)/,
   /ASKPASS/,
-  // Anything named like a secret or a credential, such as `OPENAI_API_KEY` or npm's `_auth`.
-  /TOKEN|SECRET|PASSW(?:OR)?D|CREDENTIAL|API_?KEY|PRIVATE_?KEY|_AUTH/i,
+  // Anything named like a secret or a credential, such as `OPENAI_API_KEY`, `AWS_ACCESS_KEY_ID` or
+  // npm's `_auth`.
+  /TOKEN|SECRET|PASSW(?:OR)?D|PASSPHRASE|CREDENTIAL|API_?KEY|PRIVATE_?KEY|ACCESS_?KEY|_AUTH|COOKIE/i,
+  /(?:^|_)(?:KEY|PASS|PWD|AUTH|DSN|SESSION)(?:_|$)/i,
 ];
 
 /** Names that load code into a program or a shell, or configure one: only when an adapter allows them. */
@@ -69,7 +72,14 @@ const RISKY = [
   /^PYTHON(?:STARTUP|PATH|HOME|INSPECT|USERBASE)$/,
   /^PERL5?(?:OPT|LIB)$/,
   /^RUBY(?:OPT|LIB)$/,
-  /^(?:JAVA_TOOL_OPTIONS|_JAVA_OPTIONS|JDK_JAVA_OPTIONS)$/,
+  /^(?:JAVA_TOOL_OPTIONS|_JAVA_OPTIONS|JDK_JAVA_OPTIONS|JAVA_OPTS|CLASSPATH)$/,
+  /^(?:GRADLE_OPTS|GRADLE_USER_HOME|MAVEN_OPTS)$/,
+  /^(?:DOTNET_STARTUP_HOOKS|DOTNET_ADDITIONAL_DEPS|CORECLR_.+)$/,
+  // Programs a toolchain runs in place of its own, and flags it passes them.
+  /^(?:RUSTC_WRAPPER|RUSTC_WORKSPACE_WRAPPER|RUSTC|RUSTDOC|CARGO_BUILD_RUSTC_WRAPPER)$/,
+  /^GOFLAGS$/,
+  // Where the C library and Ruby load code from.
+  /^(?:GCONV_PATH|GEM_PATH|GEM_HOME|BUNDLE_GEMFILE|RUBYGEMS_GEMDEPS)$/,
   // What a shell runs as it starts, and how it reads.
   /^(?:BASH_ENV|ENV|ZDOTDIR|PROMPT_COMMAND|PS4|SHELLOPTS|BASHOPTS|IFS|CDPATH)$/,
   /^BASH_FUNC_/,

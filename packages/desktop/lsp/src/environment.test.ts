@@ -19,6 +19,7 @@ test('a server gets only its home, its toolchain, git’s variables and its adap
     ...BASE,
     path: ['/opt/go/bin', '/usr/bin'],
     variables: { GOPROXY: 'off', GOFLAGS: '-mod=mod' },
+    allowed: ['GOFLAGS'],
   });
   expect(env).toEqual({
     ...GIT,
@@ -97,12 +98,35 @@ test('no adapter loads code into a server or its shell unless it says it means t
     'PYTHONSTARTUP',
     'JAVA_TOOL_OPTIONS',
     'npm_config_script_shell',
+    'RUSTC_WRAPPER',
+    'GOFLAGS',
+    'DOTNET_STARTUP_HOOKS',
+    'CORECLR_PROFILER_PATH',
+    'CLASSPATH',
+    'GRADLE_OPTS',
+    'MAVEN_OPTS',
+    'GRADLE_USER_HOME',
+    'GCONV_PATH',
+    'GEM_PATH',
+    'BUNDLE_GEMFILE',
   ]) {
     expect(() => serverEnvironment({ ...BASE, variables: { [name]: 'x' } })).toThrow(
       /may not be given the variable/,
     );
   }
-  for (const name of ['OPENAI_API_KEY', 'ANTHROPIC_API_KEY', 'npm_config__auth', 'NPM_TOKEN']) {
+  for (const name of [
+    'OPENAI_API_KEY',
+    'ANTHROPIC_API_KEY',
+    'npm_config__auth',
+    'NPM_TOKEN',
+    'AWS_ACCESS_KEY_ID',
+    'AWS_SECRET_ACCESS_KEY',
+    'AZURE_CLIENT_SECRET',
+    'GPG_PASSPHRASE',
+    'SIGNING_KEY',
+    'SENTRY_DSN',
+    'DB_PASS',
+  ]) {
     expect(() => serverEnvironment({ ...BASE, variables: { [name]: 'x' } })).toThrow(
       `the variable ${name}`,
     );
@@ -115,9 +139,28 @@ test('no adapter loads code into a server or its shell unless it says it means t
     }).NODE_OPTIONS,
   ).toBe('--max-old-space-size=2048');
   // Allowing a secret, a proxy or one of git's doesn't make it one an adapter may set.
-  for (const name of ['GITHUB_TOKEN', 'HTTPS_PROXY', 'GIT_DIR', 'npm_config__auth', 'PATH']) {
+  for (const name of [
+    'GITHUB_TOKEN',
+    'AWS_ACCESS_KEY_ID',
+    'HTTPS_PROXY',
+    'GIT_DIR',
+    'npm_config__auth',
+    'PATH',
+  ]) {
     expect(() =>
       serverEnvironment({ ...BASE, variables: { [name]: 'x' }, allowed: [name] }),
     ).toThrow(`the variable ${name}`);
   }
+});
+
+test('an adapter’s ordinary settings pass', () => {
+  const variables = {
+    GOPROXY: 'off',
+    GOTOOLCHAIN: 'local',
+    CARGO_HOME: '/lo/servers/cargo',
+    RUST_LOG: 'error',
+    KEYTIMEOUT: '1',
+    DOTNET_CLI_TELEMETRY_OPTOUT: '1',
+  };
+  expect(serverEnvironment({ ...BASE, variables })).toMatchObject(variables);
 });

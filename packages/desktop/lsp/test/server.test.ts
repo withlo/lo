@@ -2,7 +2,7 @@
 // requests and their deadlines, crashes, hangs, memory and stops. Each test starts one fake server,
 // which is killed with its group when the test ends.
 
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import {
   chmodSync,
   existsSync,
@@ -23,6 +23,7 @@ import { expect, onTestFinished, test, vi } from 'vitest';
 import {
   failureMessage,
   OPEN_LIMIT,
+  readFamily,
   type RequestOptions,
   type Server,
   type State,
@@ -33,6 +34,34 @@ import { fakeServer } from '@lo/testing/lsp';
 import { eventually, GIT, running, startFake, tempFolder } from './support.ts';
 
 const POSITION = { position: { line: 0, character: 6 } };
+
+/** A notification, framed as a server sends it: what a flood of valid messages repeats. */
+const NOTIFICATION = (() => {
+  const body = JSON.stringify({ jsonrpc: '2.0', method: 'x/flood' });
+  return `Content-Length: ${Buffer.byteLength(body)}\r\n\r\n${body}`;
+})();
+
+/**
+ * Starts watching how late a 10 ms timer runs, and returns what stops it and says the latest it
+ * ran, in milliseconds: how long main's loop was kept from its turns.
+ */
+function watchLag(): () => number {
+  let worst = 0;
+  let last = performance.now();
+  const timer = setInterval(() => {
+    const now = performance.now();
+    worst = Math.max(worst, now - last - 10);
+    last = now;
+  }, 10);
+  return () => {
+    clearInterval(timer);
+    return worst;
+  };
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 /** Asks `server` for the hover on `src/a.ts`. */
 function hover(server: Server, options: RequestOptions = { deadline: 5000 }) {
@@ -442,7 +471,8 @@ test('a message with two lengths fails the server, whichever the reader would ta
 });
 
 test('a server that breaks a limit while it stops is killed at once', async () => {
-  // It answers shutdown, then floods behind a header of 999 GB, ignoring exit and SIGTERM.
+  // Asked to shut down, it floods behind a header of 999 GB in place of its answer, ignoring exit
+  // and SIGTERM.
   const { server, seen } = startFake({
     flood: { at: 'shutdown', header: `Content-Length: ${999 * 1024 ** 3}\r\n\r\n` },
   });
@@ -456,6 +486,126 @@ test('a server that breaks a limit while it stops is killed at once', async () =
   expect(server.log.some((line) => line.includes('past the limit'))).toBe(true);
   expect(server.state).toEqual({ kind: 'stopped' });
   expect(running(pid)).toBe(false);
+});
+
+test('a flood of valid messages fails the server that sends it', async () => {
+  const { server, seen } = startFake(
+    { flood: { at: 'initialized', header: '', frame: NOTIFICATION } },
+    { tuning: { floodMessages: 20_000 } },
+  );
+  expect(await server.ready).toBe(true);
+  await eventually(() => server.state.kind === 'failed');
+  expect(server.state).toEqual({
+    kind: 'failed',
+    failure: { kind: 'protocol', message: 'It sent more than 20,000 messages in 10 s.' },
+  });
+  const pid = seen().find((event) => event.event === 'started')?.pid ?? 0;
+  await eventually(() => !running(pid));
+});
+
+test('main reads a flood a turn at a time, and a stop keeps its time however much is sent', async () => {
+  // With no limit on its rate, only how it's read keeps main's turns.
+  const unlimited = startFake(
+    { flood: { at: 'initialized', header: '', frame: NOTIFICATION } },
+    {
+      tuning: { floodMessages: Number.MAX_SAFE_INTEGER, floodBytes: Number.MAX_SAFE_INTEGER },
+    },
+  );
+  expect(await unlimited.server.ready).toBe(true);
+  expect(unlimited.server.open('src/a.ts', 'typescript', 'const a = 1;')).toBe(true);
+  const lag = watchLag();
+  await sleep(1000);
+  // Lo holds only a little of the flood at a time, so an answer behind a second of it comes soon.
+  expect(await hover(unlimited.server, { deadline: 1000 })).toEqual({ ok: true, value: null });
+  expect(lag()).toBeLessThan(200);
+  expect(unlimited.server.state).toEqual({ kind: 'ready' });
+  await unlimited.server.stop();
+
+  // It answers shutdown, then floods its log, ignoring exit and SIGTERM. Nothing it sends after
+  // its answer is read, so none of the flood reaches the log, and the stop keeps its time.
+  const body = JSON.stringify({
+    jsonrpc: '2.0',
+    method: 'window/logMessage',
+    params: { type: 3, message: 'flooding' },
+  });
+  const { server, seen } = startFake({
+    flood: {
+      at: 'afterShutdown',
+      header: '',
+      frame: `Content-Length: ${Buffer.byteLength(body)}\r\n\r\n${body}`,
+    },
+  });
+  expect(await server.ready).toBe(true);
+  const pid = server.pid ?? 0;
+  const stopLag = watchLag();
+  const started = performance.now();
+  await server.stop();
+  expect(performance.now() - started).toBeLessThan(5000);
+  expect(stopLag()).toBeLessThan(200);
+  expect(seen().some((event) => event.event === 'shutdown')).toBe(true);
+  expect(server.log.filter((line) => line.includes('flooding'))).toEqual([]);
+  expect(server.state).toEqual({ kind: 'stopped' });
+  await eventually(() => !running(pid), 1000);
+});
+
+test('a kill freezes what left the group, round after round, before it kills anything', async () => {
+  // Its escapee starts a sleeper in a session of its own every 5 ms; once its memory reads past
+  // the cap, the server is killed.
+  let past = false;
+  const { server, seen } = startFake(
+    { escapee: true, sleepers: true },
+    {
+      tuning: {
+        memoryEvery: 50,
+        readFamily: async (group, also) => {
+          const family = await readFamily(group, also);
+          return past ? family.map((member) => ({ ...member, resident: 8 * 1024 ** 3 })) : family;
+        },
+      },
+    },
+  );
+  expect(await server.ready).toBe(true);
+  const sleepers = () => seen().flatMap((event) => (event.event === 'sleeper' ? [event.pid] : []));
+  await eventually(() => sleepers().length >= 10);
+  past = true;
+  await eventually(() => server.state.kind === 'failed');
+  expect(server.state).toMatchObject({ kind: 'failed', failure: { kind: 'memory' } });
+  const escapee = seen().find((event) => event.event === 'escapee')?.pid ?? 0;
+  await eventually(() => [escapee, ...sleepers()].every((pid) => !running(pid)), 3000);
+});
+
+test('a process read as the server stopped, and since another, is left alone', async () => {
+  const other = spawn('/bin/sleep', ['30'], { stdio: 'ignore' });
+  onTestFinished(() => {
+    other.kill('SIGKILL');
+  });
+  const pid = other.pid ?? 0;
+  // The read as the server shuts down finds a process of its own with the other's ID, started
+  // before it: the server's, which has since ended, and the ID taken again.
+  let stopping = false;
+  const { server } = startFake(
+    {},
+    {
+      tuning: {
+        memoryEvery: 60_000,
+        readFamily: async (group, also) => {
+          const family = await readFamily(group, also);
+          if (!stopping) return family;
+          stopping = false;
+          return [
+            ...family,
+            { pid, parent: group, group: pid, started: 'Thu Jan  1 00:00:00 1970' },
+          ];
+        },
+      },
+    },
+  );
+  expect(await server.ready).toBe(true);
+  stopping = true;
+  await server.stop();
+  await sleep(200);
+  expect(running(pid)).toBe(true);
+  expect(other.signalCode).toBeNull();
 });
 
 test('what a server started in a session of its own is stopped with it', async () => {
@@ -523,4 +673,6 @@ test('the program that runs is the one checked, and no folder resolves into the 
       failure: { kind: 'start', message: expect.stringContaining('outside its checkout') },
     });
   }
+  // A home that would resolve into the checkout is refused before any of it is made.
+  expect(existsSync(join(root, '.home'))).toBe(false);
 });

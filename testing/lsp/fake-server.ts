@@ -9,11 +9,13 @@ import { spawn } from 'node:child_process';
 import { appendFileSync, readFileSync } from 'node:fs';
 
 import {
+  AbstractMessageWriter,
   type CancellationToken,
   createMessageConnection,
+  type Message,
+  type MessageWriter,
   ResponseError,
   StreamMessageReader,
-  StreamMessageWriter,
 } from 'vscode-jsonrpc/node';
 
 import type { Scenario, Seen } from './scenario.ts';
@@ -58,9 +60,28 @@ report({ event: 'started', pid: process.pid, argv0: process.argv0, env, cwd: pro
 for (const line of scenario.stderr ?? []) process.stderr.write(`${line}\n`);
 if (scenario.stubborn) process.on('SIGTERM', () => undefined);
 
+/**
+ * Writes each message, header and body, in one piece, so a flood written beside it never lands
+ * inside one.
+ */
+class WholeWriter extends AbstractMessageWriter implements MessageWriter {
+  write(message: Message): Promise<void> {
+    const body = JSON.stringify(message);
+    return new Promise((resolve) => {
+      process.stdout.write(`Content-Length: ${Buffer.byteLength(body)}\r\n\r\n${body}`, () =>
+        resolve(),
+      );
+    });
+  }
+
+  end(): void {
+    // stdout stays open until it exits.
+  }
+}
+
 const connection = createMessageConnection(
   new StreamMessageReader(process.stdin),
-  new StreamMessageWriter(process.stdout),
+  new WholeWriter(),
 );
 
 /** The checkout's URI, from `initialize`, which `$ROOT` in an answer stands for. */
@@ -112,13 +133,19 @@ connection.onRequest('initialize', async (params: { rootUri?: string }) => {
   );
 });
 
+/** Whether it floods once asked to shut down, and so ignores `exit` and `SIGTERM`. */
+const floodsAtShutdown =
+  scenario.flood?.at === 'shutdown' || scenario.flood?.at === 'afterShutdown';
+
 connection.onRequest('shutdown', () => {
   report({ event: 'shutdown' });
+  if (floodsAtShutdown) process.on('SIGTERM', () => undefined);
   if (scenario.flood?.at === 'shutdown') {
-    process.on('SIGTERM', () => undefined);
-    // After its answer has gone.
-    setTimeout(flood, 50);
+    flood();
+    return never();
   }
+  // After its answer has gone.
+  if (scenario.flood?.at === 'afterShutdown') setTimeout(flood, 50);
   return scenario.stubborn ? never() : null;
 });
 
@@ -138,7 +165,7 @@ connection.onRequest(async (method: string, params: unknown, token: Cancellation
 
 connection.onNotification('exit', () => {
   report({ event: 'exit' });
-  if (!scenario.stubborn && scenario.flood?.at !== 'shutdown') process.exit(0);
+  if (!scenario.stubborn && !floodsAtShutdown) process.exit(0);
 });
 
 connection.onNotification('initialized', () => {
@@ -168,6 +195,22 @@ connection.onClose(() => {
   if (!scenario.stubborn && scenario.flood === undefined) process.exit(0);
 });
 
+/** A process that waits until it's killed. */
+const IDLE = 'setInterval(() => {}, 1 << 30)';
+
+/**
+ * A process that starts a sleeper in a session of its own every 5 ms, reporting each to the report
+ * it's given, until it's killed.
+ */
+const SLEEPERS = `
+const { spawn } = require('node:child_process');
+const { appendFileSync } = require('node:fs');
+setInterval(() => {
+  const sleeper = spawn('/bin/sleep', ['120'], { stdio: 'ignore', detached: true });
+  appendFileSync(process.argv[1], JSON.stringify({ event: 'sleeper', pid: sleeper.pid }) + '\\n');
+}, 5);
+`;
+
 /** Writes the flood's header, then its frame until stdout breaks or it's killed. */
 function flood(): void {
   const { header = '', frame = 'x'.repeat(64 * 1024) } = scenario.flood ?? {};
@@ -190,10 +233,14 @@ async function afterInitialized(): Promise<void> {
     report({ event: 'child', pid: child.pid ?? 0 });
   }
   if (scenario.escapee) {
-    const escapee = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1 << 30)'], {
-      stdio: 'ignore',
-      detached: true,
-    });
+    const escapee = spawn(
+      process.execPath,
+      ['-e', scenario.sleepers ? SLEEPERS : IDLE, scenario.report],
+      {
+        stdio: 'ignore',
+        detached: true,
+      },
+    );
     report({ event: 'escapee', pid: escapee.pid ?? 0 });
   }
   for (let megabyte = 0; megabyte < (scenario.memory ?? 0); megabyte += 1) {

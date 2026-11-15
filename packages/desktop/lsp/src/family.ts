@@ -4,9 +4,9 @@
  * family's resident memory against the server's cap, and stops the whole family.
  *
  * A process is found by its parent, so one that outlives the process that started it is no longer
- * found once that's gone. A stop reads the family while the server shuts down, before it exits,
- * and a kill freezes the group before it reads; what a server that crashed left behind is found no
- * longer. Processes are read from `/proc` on Linux, and from `ps` elsewhere, on macOS.
+ * found by it. A process read before can be named again, and is found while it's the same process:
+ * the same ID, started at the same time. Processes are read from `/proc` on Linux, and from `ps`
+ * elsewhere, on macOS. The package's README says what can't be found.
  */
 
 import { execFile } from 'node:child_process';
@@ -23,15 +23,20 @@ export interface Member {
   readonly group: number;
   /** Its resident memory, in bytes, once read. */
   readonly resident?: number | undefined;
+  /** When it started, as the system says, which tells it from a later process with its ID. */
+  readonly started?: string | undefined;
 }
 
-/** Reads the family of the group `group`: the processes in it and descended from them. */
-export type ReadFamily = (group: number) => Promise<readonly Member[]>;
+/**
+ * Reads the family of the group `group`: the processes in it and descended from them. Each of
+ * `also`, read before, is in it too, with what descends from it, while it's the same process.
+ */
+export type ReadFamily = (group: number, also?: readonly Member[]) => Promise<readonly Member[]>;
 
-/** The family of the group `group`, with each member's resident memory. */
-export const readFamily: ReadFamily = async (group) => {
-  if (process.platform !== 'linux') return familyOf(await fromPs(), group);
-  const members = familyOf(await fromProc(), group);
+/** The family of the group `group`, and of each of `also`, with each member's resident memory. */
+export const readFamily: ReadFamily = async (group, also = []) => {
+  if (process.platform !== 'linux') return familyOf(await fromPs(), group, also);
+  const members = familyOf(await fromProc(), group, also);
   return Promise.all(
     members.map(async (member) => {
       try {
@@ -45,8 +50,16 @@ export const readFamily: ReadFamily = async (group) => {
   );
 };
 
-/** The members of `table` in the group `group`, and every process descended from one of them. */
-export function familyOf(table: readonly Member[], group: number): Member[] {
+/**
+ * The members of `table` in the group `group`, each of `also` that's still the same process, and
+ * every process descended from one of them.
+ */
+export function familyOf(
+  table: readonly Member[],
+  group: number,
+  also: readonly Member[] = [],
+): Member[] {
+  const known = new Map(also.map((member) => [member.pid, member]));
   const children = new Map<number, Member[]>();
   for (const member of table) {
     const siblings = children.get(member.parent);
@@ -54,13 +67,25 @@ export function familyOf(table: readonly Member[], group: number): Member[] {
     else siblings.push(member);
   }
   const family = new Map<number, Member>();
-  const waiting = table.filter((member) => member.group === group);
+  const waiting = table.filter(
+    (member) => member.group === group || sameProcess(member, known.get(member.pid)),
+  );
   for (let member = waiting.pop(); member !== undefined; member = waiting.pop()) {
     if (family.has(member.pid)) continue;
     family.set(member.pid, member);
     waiting.push(...(children.get(member.pid) ?? []));
   }
   return [...family.values()];
+}
+
+/** Whether `member` is `known`, read before: the same ID, started at the same time. */
+export function sameProcess(member: Member, known: Member | undefined): boolean {
+  return (
+    known !== undefined &&
+    member.pid === known.pid &&
+    member.started !== undefined &&
+    member.started === known.started
+  );
 }
 
 /** Every process but a zombie, from its `/proc/<pid>/stat`. */
@@ -85,13 +110,21 @@ async function fromProc(): Promise<Member[]> {
 /** The process a `/proc/<pid>/stat` line describes, unless it's a zombie. Its name may hold spaces and parentheses. */
 export function memberOfStat(stat: string): Member | undefined {
   const pid = Number(stat.slice(0, stat.indexOf(' ')));
-  // After the name's closing parenthesis: state, parent, group.
-  const [state, parent, group] = stat
+  // After the name's closing parenthesis: state, parent and group, the 3rd to 5th fields, and its
+  // start, in clock ticks since boot, the 22nd.
+  const fields = stat
     .slice(stat.lastIndexOf(')') + 1)
     .trim()
     .split(/\s+/);
-  const member = { pid, parent: Number(parent), group: Number(group) };
-  if (state === 'Z' || ![member.pid, member.parent, member.group].every(Number.isSafeInteger)) {
+  const [state, parent, group] = fields;
+  const started = fields[19];
+  const member = { pid, parent: Number(parent), group: Number(group), started };
+  if (
+    state === 'Z' ||
+    started === undefined ||
+    !/^\d+$/.test(started) ||
+    ![member.pid, member.parent, member.group].every(Number.isSafeInteger)
+  ) {
     return undefined;
   }
   return member;
@@ -105,7 +138,8 @@ export function residentOfStatus(status: string): number | undefined {
 
 /** Every process, with its resident memory, from one run of `ps`. */
 async function fromPs(): Promise<Member[]> {
-  const { stdout } = await promisify(execFile)('/bin/ps', ['-A', '-o', 'pid=,ppid=,pgid=,rss='], {
+  const columns = 'pid=,ppid=,pgid=,rss=,lstart=';
+  const { stdout } = await promisify(execFile)('/bin/ps', ['-A', '-o', columns], {
     env: { PATH: '/usr/bin:/bin', LC_ALL: 'C' },
     encoding: 'utf8',
     maxBuffer: 16 * 1024 * 1024,
@@ -114,15 +148,24 @@ async function fromPs(): Promise<Member[]> {
   return membersOfPs(stdout);
 }
 
-/** The processes in `ps -o pid=,ppid=,pgid=,rss=`'s lines, with their memory in bytes. */
+/**
+ * The processes in `ps -o pid=,ppid=,pgid=,rss=,lstart=`'s lines, with their memory in bytes. The
+ * start, last, is a date in words, such as `Sun Nov 15 12:52:33 2026`.
+ */
 export function membersOfPs(output: string): Member[] {
   const table: Member[] = [];
   for (const line of output.split('\n')) {
-    const fields = line.trim().split(/\s+/).map(Number);
-    const [pid, parent, group, resident] = fields;
-    if (fields.length !== 4 || !fields.every(Number.isSafeInteger)) continue;
-    if (pid === undefined || parent === undefined || group === undefined) continue;
-    table.push({ pid, parent, group, resident: (resident ?? 0) * 1024 });
+    const [pid, parent, group, resident, ...start] = line.trim().split(/\s+/);
+    const numbers = [pid, parent, group, resident].map(Number);
+    if (start.length === 0 || !numbers.every(Number.isSafeInteger)) continue;
+    const [id = 0, parentId = 0, groupId = 0, pages = 0] = numbers;
+    table.push({
+      pid: id,
+      parent: parentId,
+      group: groupId,
+      resident: pages * 1024,
+      started: start.join(' '),
+    });
   }
   return table;
 }

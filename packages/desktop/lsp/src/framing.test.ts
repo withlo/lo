@@ -80,3 +80,37 @@ test('a flood of small messages is refused past what Lo holds unread', () => {
   }
   expect(wrong).toMatch(/before Lo could read it/);
 });
+
+test('more messages or output than a window allows is refused, and the window moves on', () => {
+  let now = 0;
+  const meter = new FrameMeter({ messages: 100, bytes: 64 * 1024, within: 1000, now: () => now });
+  const frame = Buffer.from(message('{"jsonrpc":"2.0","method":"x"}'));
+  for (let sent = 0; sent < 100; sent += 1) expect(meter.feed(frame)).toBeUndefined();
+  expect(meter.feed(frame)).toBe('It sent more than 100 messages in 1 s.');
+  // A window later, what came before no longer counts.
+  now = 1000;
+  for (let sent = 0; sent < 100; sent += 1) expect(meter.feed(frame)).toBeUndefined();
+  now = 2000;
+  // Its stderr counts toward its output.
+  expect(meter.counted(60 * 1024)).toBeUndefined();
+  expect(meter.counted(8 * 1024)).toBe('It sent more than 1 MB in 1 s.');
+});
+
+test('Lo is behind while many whole messages wait to be handed on', () => {
+  const meter = new FrameMeter();
+  const frame = Buffer.from(message('{"jsonrpc":"2.0","method":"x"}'));
+  for (let sent = 0; sent < 511; sent += 1) meter.feed(frame);
+  expect(meter.behind).toBe(false);
+  meter.feed(frame);
+  expect(meter.behind).toBe(true);
+  meter.handedOn();
+  expect(meter.behind).toBe(false);
+  // A message still arriving never counts: the reader can't hand it on until it's whole.
+  const large = new FrameMeter();
+  large.feed(
+    Buffer.from(`Content-Length: ${4 * 1024 * 1024}\r\n\r\n${'x'.repeat(2 * 1024 * 1024)}`),
+  );
+  expect(large.behind).toBe(false);
+  large.feed(Buffer.from('x'.repeat(2 * 1024 * 1024)));
+  expect(large.behind).toBe(true);
+});
