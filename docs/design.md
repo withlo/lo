@@ -903,6 +903,10 @@ repos and PRs, the theme, the cache, and whether a PR opens on its overview or i
 - **Offline.** Cached PRs open with a banner showing when the data is from. You can still write
   comments: they're kept on this computer as drafts, and you post them yourself once you're back
   online. Nothing posts by itself. Reviewing and merging are off until then.
+- **A proxy that asks you to sign in.** Behind a proxy that needs a sign-in, such as with Kerberos
+  or NTLM, reads keep working, but writes, such as comments, reviews and merges, stop before
+  anything is sent, saying the proxy asked Lo to sign in. Lo sends each write on a connection of its
+  own, so it goes at most once, and that connection can't sign in to a proxy.
 - **Unsent text.** Text in comment boxes is saved on this computer until it's posted, so a crash or
   restart doesn't lose it. After a restart, or a reload of the window, its box opens again where it
   was, unfocused, saying when the draft was saved, with a button to discard it.
