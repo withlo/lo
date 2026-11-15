@@ -8,6 +8,7 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   realpathSync,
   rmSync,
@@ -546,6 +547,19 @@ test('main reads a flood a turn at a time, and a stop keeps its time however muc
   expect(server.log.filter((line) => line.includes('flooding'))).toEqual([]);
   expect(server.state).toEqual({ kind: 'stopped' });
   await eventually(() => !running(pid), 1000);
+});
+
+test('a server stopped while it floods leaves no pipe open', async () => {
+  const folder = process.platform === 'linux' ? '/proc/self/fd' : '/dev/fd';
+  const open = () => readdirSync(folder).length;
+  const before = open();
+  // It floods stderr too, so what's left in that pipe when it exits is never read to its end.
+  const { server } = startFake({
+    flood: { at: 'afterShutdown', header: '', frame: NOTIFICATION, stderr: true },
+  });
+  expect(await server.ready).toBe(true);
+  await server.stop();
+  await eventually(() => open() <= before, 2000);
 });
 
 test('a kill freezes what left the group, round after round, before it kills anything', async () => {

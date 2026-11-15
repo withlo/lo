@@ -211,18 +211,23 @@ setInterval(() => {
 }, 5);
 `;
 
-/** Writes the flood's header, then its frame until stdout breaks or it's killed. */
+/**
+ * Writes the flood's header, then its frame, to stdout, and to stderr too if it says, until the pipe
+ * breaks or it's killed.
+ */
 function flood(): void {
-  const { header = '', frame = 'x'.repeat(64 * 1024) } = scenario.flood ?? {};
-  process.stdout.on('error', () => undefined);
+  const { header = '', frame = 'x'.repeat(64 * 1024), stderr = false } = scenario.flood ?? {};
   process.stdout.write(header);
-  const more = (): void => {
-    while (process.stdout.write(frame)) {
-      // The pipe takes it.
-    }
-    process.stdout.once('drain', more);
-  };
-  more();
+  for (const stream of stderr ? [process.stdout, process.stderr] : [process.stdout]) {
+    stream.on('error', () => undefined);
+    const more = (): void => {
+      while (stream.write(frame)) {
+        // The pipe takes it.
+      }
+      stream.once('drain', more);
+    };
+    more();
+  }
 }
 
 async function afterInitialized(): Promise<void> {

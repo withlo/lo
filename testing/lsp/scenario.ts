@@ -52,12 +52,14 @@ export interface Scenario {
   /**
    * It writes `header` to stdout, then `frame` (64 KiB of `x` unless it says) again and again until
    * it's killed: once initialized; once asked to shut down, in place of its answer; or once it has
-   * answered `shutdown`. One that floods at shutdown ignores `exit` and `SIGTERM`.
+   * answered `shutdown`. One that floods at shutdown ignores `exit` and `SIGTERM`. With `stderr`,
+   * it writes `frame` to stderr just as fast.
    */
   readonly flood?: {
     readonly at: 'initialized' | 'shutdown' | 'afterShutdown';
     readonly header: string;
     readonly frame?: string;
+    readonly stderr?: boolean;
   };
 }
 

@@ -709,6 +709,8 @@ export class Server {
     this.#connection?.dispose();
     this.#child?.stdin?.destroy();
     this.#child?.stdout?.destroy();
+    // A stderr no longer read is never read to its end, which would close it.
+    if (this.#muted) this.#child?.stderr?.destroy();
     this.#resolveExited();
   }
 
