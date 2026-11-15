@@ -5,7 +5,7 @@
 // - the WebAssembly toolchain the CLI builds with, wasi-sdk and binaryen, which this script
 //   downloads itself, against their SHA-256s, so the CLI never downloads them;
 // - each grammar's source, fetched with git at its pinned commit, which git checks against the
-//   commit's ID, with the patches in patches/ applied;
+//   commit's ID, with the patches in patches/ applied, and its lexer split into parts (split.ts);
 // - and each build, against the SHA-256 recorded beside the grammar, so a different source or
 //   toolchain fails the build.
 //
@@ -30,12 +30,16 @@ import { join } from 'node:path';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 
+import { splitLexers } from './split.ts';
+
 const root = join(import.meta.dirname, '..');
 const listFile = join(root, 'grammars.json');
 const output = join(root, 'dist', 'grammars');
 const sources = join(root, '.cache', 'sources');
 const patches = join(root, 'patches');
 const cli = join(root, 'node_modules', 'tree-sitter-cli', 'tree-sitter');
+/** The most lines of a grammar's lexer that go in one WebAssembly function. */
+const partLines = 500;
 const toolchains = join(
   process.env.XDG_CACHE_HOME || join(homedir(), '.cache'),
   'lo',
@@ -200,6 +204,8 @@ for (const grammar of list.grammars) {
   const started = performance.now();
   const repo = await checkout(grammar);
   await patch(repo, grammar.patches ?? []);
+  const parser = join(repo, grammar.path, 'src', 'parser.c');
+  writeFileSync(parser, splitLexers(readFileSync(parser, 'utf8'), partLines));
   const wasm = join(output, `${grammar.name}.wasm`);
   await run(cli, ['build', '--wasm', '--output', wasm, join(repo, grammar.path)], root, env);
   const sha256 = createHash('sha256').update(readFileSync(wasm)).digest('hex');

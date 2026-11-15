@@ -95,4 +95,10 @@ describe('tokens', () => {
     expect(tokens[tokenOf('function.method.call')!]).toBe('function-method');
     expect(tokenOf('embedded')).toBeUndefined();
   });
+
+  test('take the token an older name stands for', () => {
+    expect(tokens[tokenOf('float')!]).toBe('number');
+    expect(tokens[tokenOf('parameter')!]).toBe('variable-parameter');
+    expect(tokens[tokenOf('include')!]).toBe('keyword');
+  });
 });
