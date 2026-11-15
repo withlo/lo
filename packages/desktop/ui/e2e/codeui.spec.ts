@@ -55,7 +55,7 @@ const PLACES: readonly { scene: Scene; widths: readonly number[] }[] = [
 async function open(): Promise<Page> {
   app = await launch(harness);
   const page = await app.firstWindow();
-  await page.waitForFunction(() => 'harness' in window);
+  await page.waitForFunction(() => 'parts' in window);
   return page;
 }
 
@@ -75,7 +75,7 @@ interface Fit {
 async function fit(page: Page, scene: Scene, theme: Theme, width: number): Promise<Fit> {
   // The window is as wide as the box, so a part wider than its box scrolls the page.
   await page.setViewportSize({ width, height: 600 });
-  await page.evaluate((drawn) => window.harness.show(drawn.scene, drawn.theme, drawn.width), {
+  await page.evaluate((drawn) => window.parts.show(drawn.scene, drawn.theme, drawn.width), {
     scene,
     theme,
     width,
@@ -143,7 +143,7 @@ test('the hover card keeps inside a window narrower than it is', async () => {
 
 test('a status item opens its details from the keyboard, which take focus, close on Esc and give it back', async () => {
   const page = await open();
-  await page.evaluate(() => window.harness.show('status', 'dark', 1280));
+  await page.evaluate(() => window.parts.show('status', 'dark', 1280));
   const item = page.getByRole('button', { name: 'Java failed' });
   await item.focus();
   await page.keyboard.press('Enter');

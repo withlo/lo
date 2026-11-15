@@ -298,10 +298,11 @@ function show(scene: Scene, theme: Theme, width: number, height = 360): void {
   react.render(sceneNode(scene, root!));
 }
 
-Object.assign(window, { harness: { show } });
+Object.assign(window, { parts: { show } });
 
 declare global {
   interface Window {
-    harness: { show: typeof show };
+    /** What the components' spec draws the page with. */
+    parts: { show: typeof show };
   }
 }
