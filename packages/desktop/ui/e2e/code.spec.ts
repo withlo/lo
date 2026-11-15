@@ -3,7 +3,8 @@
 // side by side and inline: the cursor's line as `j` moves it, the comment box they type in, and the
 // thread they click. A change the view takes on its own as the view narrows, lines wrapping anew,
 // leaves the line at the top of the screen where it is, and the reader's own scroll as it narrows,
-// by key, wheel or jump, goes where it says.
+// by key, wheel or jump, goes where it says. A peek opens under its line and closes, leaving the
+// line where it is, the sides level; and a word is found where it's drawn, and under the pointer.
 
 import { readFileSync } from 'node:fs';
 
@@ -107,8 +108,84 @@ async function drawn(page: Page, ids: string[]): Promise<void> {
   await expect.poll(shown, { timeout: 20_000 }).toEqual({ ids, held: 0 });
 }
 
+/** Each of `after` is within a pixel of the same of `before`. */
+function near(after: (number | undefined)[], before: (number | undefined)[]): void {
+  expect(after).toHaveLength(before.length);
+  after.forEach((each, index) => expect(Math.abs(each! - before[index]!)).toBeLessThan(1));
+}
+
 for (const layout of ['split', 'inline'] as const) {
   test.describe(layout === 'split' ? 'Side by side' : 'Inline', () => {
+    test('a peek opens and closes under its line, by a thread and a comment box, leaving its line and the lines above where they are, the sides level', async () => {
+      const page = await open(layout);
+      const lines = await onScreen(page);
+      const line = lines[5]!.line;
+      await page.evaluate(
+        (at) => window.harness.threads([{ id: 'above', line: at, height: 60 }], true),
+        lines[3]!.line,
+      );
+      await page.evaluate((at) => window.harness.compose(at), lines[8]!.line);
+      await frames(page);
+      const above = lines.slice(0, 6).map((each) => each.line);
+      const tops = () =>
+        page.evaluate((each) => each.map((at) => window.harness.lineTop(at)), above);
+      const box = () => page.evaluate(() => window.harness.top('.lo-diffcomposer'));
+      const level = () => page.evaluate(() => window.harness.misalignment());
+      const before = { tops: await tops(), box: await box() };
+
+      expect(await page.evaluate((at) => window.harness.peek(at), line)).toBe(true);
+      await frames(page);
+      near(await tops(), before.tops);
+      const peek = page.locator('.lo-diffpeek');
+      const under = await page.evaluate(() => window.harness.top('.lo-diffpeek'));
+      expect(under!).toBeGreaterThan((await lineTop(page, line))!);
+      expect((await box())! - before.box!).toBeGreaterThan(200);
+      expect(await level()).toBeLessThan(1);
+      // What its frame draws in its list, later, scrolls there: the code alone sets its height.
+      const list = page.locator('.lo-diffpeek__list');
+      expect(await list.evaluate((each) => each.scrollHeight > each.clientHeight)).toBe(true);
+      const height = await peek.evaluate((each) => each.getBoundingClientRect().height);
+      const opened = [...(await tops()), under, await box()];
+      await page.evaluate(() => window.harness.frames(10));
+      near(
+        [
+          ...(await tops()),
+          await page.evaluate(() => window.harness.top('.lo-diffpeek')),
+          await box(),
+        ],
+        opened,
+      );
+      expect(await peek.evaluate((each) => each.getBoundingClientRect().height)).toBe(height);
+
+      expect(await page.evaluate((at) => window.harness.unpeek(at), line)).toBe(true);
+      await frames(page);
+      await expect(peek).toHaveCount(0);
+      near([...(await tops()), await box()], [...before.tops, before.box]);
+      expect(await level()).toBeLessThan(1);
+    });
+
+    test('a word’s anchor is where it’s drawn, and the pointer resting on it says where it is, and leaving it says so', async () => {
+      const page = await open(layout);
+      const line = (await onScreen(page))[4]!.line;
+      const word = (await page.evaluate((at) => window.harness.wordBox(at), line))!;
+      const anchor = await page.evaluate((at) => window.harness.anchor(at, 2), line);
+      near(
+        [anchor?.left, anchor?.top, anchor?.right, anchor?.bottom],
+        [word.left, word.top, word.right, word.bottom],
+      );
+      // Off screen, a word has none.
+      expect(await page.evaluate(() => window.harness.anchor(250, 0))).toBeUndefined();
+
+      const middle = (word.top + word.bottom) / 2;
+      await page.mouse.move((word.left + word.right) / 2, middle);
+      const rests = () => page.evaluate(() => window.harness.rests());
+      const rested = expect.objectContaining({ file: 'a', line, column: 0 });
+      await expect.poll(rests).toEqual([rested]);
+      // Past the end of its line, on no word.
+      await page.mouse.move(word.right + 200, middle);
+      await expect.poll(rests).toEqual([rested, undefined]);
+    });
+
     test('`j` lets threads waiting and held above the cursor come, and the line it goes to stays where it is, near the foot', async () => {
       const page = await open(layout);
       const first = await onScreen(page);

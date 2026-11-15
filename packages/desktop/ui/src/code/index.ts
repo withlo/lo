@@ -2,6 +2,7 @@
 // own terms (`api.ts`).
 
 export type {
+  Anchor,
   BoxFrame,
   BoxParts,
   ComposeOptions,
@@ -26,6 +27,7 @@ export type {
   FileView,
   Fold,
   HeaderTarget,
+  HintMark,
   JumpTo,
   KeptBox,
   KeySource,
@@ -41,11 +43,15 @@ export type {
   OverviewMark,
   PassStats,
   PeekAnswer,
+  PeekCode,
+  PeekFrame,
+  PeekParts,
   PeekSource,
   PeekView,
   Place,
   Probe,
   RenderThread,
+  Rested,
   Send,
   Side,
   Span,
@@ -57,7 +63,7 @@ export type {
   VimKey,
   WordRange,
 } from './api.ts';
-export { diffMotions } from './api.ts';
+export { diffMotions, PEEK_LINES } from './api.ts';
 export { createComposer } from './composer.ts';
 export { createExcerptView } from './excerpt.ts';
 export { createFileView } from './file.ts';

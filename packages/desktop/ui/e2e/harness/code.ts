@@ -7,8 +7,11 @@ import { diffText } from '@lo/diff';
 
 import {
   createDiffView,
+  type Anchor,
   type DiffLayout,
   type DiffView,
+  type PeekFrame,
+  type Place,
   type RenderThread,
 } from '../../src/code/index.ts';
 import { listen, Registry } from '../../src/commands/index.ts';
@@ -66,6 +69,27 @@ const render: RenderThread = (host, thread) => {
 };
 
 const ignore = (): void => {};
+
+/**
+ * A peek's frame, as the caller draws it: its head and foot at once, and its list of answers a
+ * frame later, as when a component draws it, longer than the list has room for.
+ */
+const frame: PeekFrame = (parts, peek) => {
+  parts.head.textContent = peek.label;
+  parts.foot.textContent = `${peek.shown + 1} of ${peek.answers.length}`;
+  requestAnimationFrame(() => {
+    for (const answer of Array.from({ length: 10 }, () => peek.answers).flat()) {
+      const item = document.createElement('div');
+      item.className = 'answer';
+      item.textContent = `${answer.path}:${answer.line}`;
+      parts.list.append(item);
+    }
+  });
+  return { update: ignore, destroy: ignore };
+};
+
+/** Each word the pointer rested on, and none as it left it. */
+const rests: (Place | undefined)[] = [];
 
 let shown: DiffView | undefined;
 
@@ -128,7 +152,15 @@ const harness = {
         vimKeys: [],
         nonce: 'harness',
       },
-      { cursor: ignore, mode: ignore, file: ignore, jumped: ignore, load: ignore, menu: ignore },
+      {
+        cursor: ignore,
+        mode: ignore,
+        file: ignore,
+        jumped: ignore,
+        load: ignore,
+        menu: ignore,
+        rested: (at) => rests.push(at),
+      },
     );
     shown.setDiff('a', diffText(textOf(old), textOf(changed)));
   },
@@ -227,6 +259,46 @@ const harness = {
       submit: ignore,
       close: ignore,
     });
+  },
+  /** Opens a peek under new line `line`, its code `lines` lines long, in its frame. */
+  peek(line: number, lines = 9): boolean {
+    const answers = [
+      { path: 'src/b.ts', line: 5, source: 'syntax' as const },
+      { path: 'src/c.ts', line: 2, source: 'syntax' as const },
+    ];
+    const code = { first: 1, lines: Array.from({ length: lines }, (_, index) => `b ${index + 1}`) };
+    const peek = { label: 'Definitions of line', answers, shown: 0, code };
+    return view().peek({ file: 'a', side: 'new', line }, peek, frame);
+  },
+  /** Closes the peek under new line `line`. */
+  unpeek(line: number): boolean {
+    return view().peek({ file: 'a', side: 'new', line }, undefined);
+  },
+  /** Where the word at `column` of new line `line` is drawn, as the view says. */
+  anchor(line: number, column: number): Anchor | undefined {
+    return view().anchor({ file: 'a', side: 'new', line, column });
+  },
+  /** Where the first word of unchanged new line `line`, `line`, is drawn. */
+  wordBox(line: number): Anchor | undefined {
+    const text = `line ${line}`;
+    const found = [...newSide().querySelectorAll('.cm-line')].find(
+      (each) => each.textContent === text,
+    );
+    const node = found?.firstChild;
+    if (!node) return undefined;
+    const range = document.createRange();
+    range.setStart(node, 0);
+    range.setEnd(node, 'line'.length);
+    const { left, top, right, bottom } = range.getBoundingClientRect();
+    return { left, top, right, bottom };
+  },
+  /** Each word the pointer rested on, and none as it left it, since the page opened. */
+  rests(): (Place | undefined)[] {
+    return rests;
+  },
+  /** How far apart the rows on screen are drawn side by side, at most. */
+  misalignment(): number {
+    return view().probe.misalignment().worst;
   },
   /** Waits for `count` frames. */
   frames(count: number): Promise<void> {

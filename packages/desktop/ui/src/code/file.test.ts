@@ -4,8 +4,8 @@ import { getCM, Vim } from '@replit/codemirror-vim';
 import tokenNames from '@lo/design/syntax.json' with { type: 'json' };
 import { afterEach, beforeAll, describe, expect, type Mock, test, vi } from 'vitest';
 
-import { findScope, isKeySource } from '../commands/index.ts';
-import type { FileEvents, FileInit, FileView, Place, Spot, VimKey } from './api.ts';
+import { findScope, isKeySource, KEY_EVENT } from '../commands/index.ts';
+import type { FileEvents, FileInit, FileView, Mark, PeekView, Place, Spot, VimKey } from './api.ts';
 import { createFileView } from './file.ts';
 
 const noRects = (): DOMRectList => Object.assign([], { item: () => null });
@@ -492,12 +492,119 @@ describe('what it draws', () => {
     parent!.querySelector('.cm-line')!.dispatchEvent(new MouseEvent('contextmenu', click));
     expect(on.menu).toHaveBeenLastCalledWith({ kind: 'header', file: 'a', side: 'new' }, 0, 0);
   });
+});
 
-  test('a peek is refused until peeks are drawn, and closing none does nothing', () => {
+/** A peek at a definition, its code three lines of another file. */
+function definition(): PeekView {
+  return {
+    label: 'Definitions of line',
+    answers: [{ path: 'src/b.ts', line: 2, source: 'syntax' }],
+    shown: 0,
+    code: { first: 1, lines: ['b 1', 'b 2', 'b 3'] },
+  };
+}
+
+/** The text of the line the peek is drawn under, if one is. */
+function peekedUnder(): string | undefined {
+  const block = parent!.querySelector('.lo-diffpeek')?.closest('.cm-content > *');
+  return block?.previousElementSibling?.textContent ?? undefined;
+}
+
+describe('peeks', () => {
+  test('a peek opens under its line, and closes, saying whether there was one', () => {
     const shown = open();
-    expect(() => shown.peek(at(3), undefined)).not.toThrow();
-    expect(() =>
-      shown.peek(at(3), { answers: [{ path: 'src/b.ts', line: 4, source: 'syntax' }], shown: 0 }),
-    ).toThrow("The whole-file view doesn't draw peeks yet.");
+    expect(shown.peek(at(3), undefined)).toBe(false);
+    expect(shown.peek(at(3), definition())).toBe(true);
+    expect(peekedUnder()).toBe('line 3');
+    // Shown again, it's the same peek, with what it shows now.
+    const peek = parent!.querySelector('.lo-diffpeek');
+    expect(shown.peek(at(3), { ...definition(), label: 'References of line' })).toBe(true);
+    expect(parent!.querySelector('.lo-diffpeek')).toBe(peek);
+    expect(peek?.getAttribute('aria-label')).toBe('References of line');
+    // One elsewhere takes its place.
+    expect(shown.peek(at(7), definition())).toBe(true);
+    expect(parent!.querySelectorAll('.lo-diffpeek')).toHaveLength(1);
+    expect(peekedUnder()).toBe('line 7');
+    expect(shown.peek(at(3), undefined)).toBe(false);
+    expect(shown.peek(at(7), undefined)).toBe(true);
+    expect(parent!.querySelector('.lo-diffpeek')).toBeNull();
+  });
+
+  test('there’s none under a line of another file or side, or past its end', () => {
+    const shown = open();
+    expect(shown.peek(at(3, 'old'), definition())).toBe(false);
+    expect(shown.peek(at(3, 'new', 'b'), definition())).toBe(false);
+    expect(shown.peek(at(41), definition())).toBe(false);
+    expect(parent!.querySelector('.lo-diffpeek')).toBeNull();
+  });
+
+  test('focus goes into the peek from the code, and back to the cursor as it was, as it closes', () => {
+    const shown = open();
+    shown.reveal(onLine(5, 3));
+    shown.focus();
+    const here = { ...at(5), column: 3 };
+    shown.peek(here, definition());
+    const peek = parent!.querySelector<HTMLElement>('.lo-diffpeek')!;
+    expect(document.activeElement).toBe(peek);
+    expect(findScope(peek).name).toBe('peek');
+    shown.peek(here, undefined);
+    expect(document.activeElement).toBe(vim().content);
+    expect(cursorAt(shown)).toEqual({ kind: 'line', at: here });
+    // Focus elsewhere stays there.
+    const field = document.createElement('input');
+    document.body.append(field);
+    field.focus();
+    shown.peek(here, definition());
+    expect(document.activeElement).toBe(field);
+    shown.peek(here, undefined);
+    expect(document.activeElement).toBe(field);
+    field.remove();
+  });
+});
+
+/** The lines drawn with hints in them, as they read. */
+function hinted(): string[] {
+  return [...parent!.querySelectorAll('.cm-line')]
+    .filter((line) => line.querySelector('.lo-inlay'))
+    .map((line) => line.textContent ?? '');
+}
+
+describe('hints', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  const hints: Mark[] = [
+    { kind: 'hint', at: { file: 'a', side: 'new', line: 2, column: 4 }, label: ': number' },
+    {
+      kind: 'hint',
+      at: { file: 'a', side: 'new', line: 3 },
+      label: 'end',
+      padding: { before: true },
+    },
+    { kind: 'hint', at: { file: 'a', side: 'old', line: 4 }, label: 'other side' },
+  ];
+
+  test('hints given as the view is made are drawn with it, in their lines', () => {
+    open(events(), { marks: hints });
+    expect(hinted()).toEqual(['line: number 2', 'line 3end']);
+    expect(parent!.querySelector('.lo-inlay--before')?.textContent).toBe('end');
+  });
+
+  test('hints given later wait for the reader’s next input, unless the view isn’t shown', () => {
+    vi.useFakeTimers();
+    const shown = open();
+    shown.setMarks(hints);
+    // jsdom lays nothing out, so the view shows nothing.
+    expect(hinted()).toEqual(['line: number 2', 'line 3end']);
+    Object.defineProperty(parent!.querySelector('.lo-fileview'), 'clientHeight', {
+      configurable: true,
+      value: 600,
+    });
+    shown.setMarks([]);
+    expect(hinted()).toHaveLength(2);
+    vim().content.dispatchEvent(new Event(KEY_EVENT, { bubbles: true }));
+    vi.runAllTimers();
+    expect(hinted()).toEqual([]);
   });
 });

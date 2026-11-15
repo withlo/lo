@@ -1,0 +1,300 @@
+// A peek: code from elsewhere, shown in place under a line, as a definition is for `gd`. Around
+// the code sits a frame the caller draws in the parts the peek makes: a head, the list of answers
+// beside the code when there's more than one, and a foot. The code is the shown answer's lines,
+// drawn read-only with their numbers and highlighting, its answer's line marked near the top, in a
+// box of at most 15 lines that scrolls past the rest. The peek's height comes from its code's lines
+// alone: its head and foot are as tall as the design has them, and its list as tall as the code
+// beside it, so nothing the frame draws, nor a width that wraps the code anew, moves what's under
+// it.
+//
+// The peek is a scope of its own, `peek`, whose keys are Lo's: it has no Vim and no cursor, and
+// what a key there acts on is the line it's under. It's one element, which outlives the blocks a
+// view draws it in, as a thread's does, and moves into whichever draws it last.
+
+import { WidgetType } from '@codemirror/view';
+
+import { SCOPE_ATTRIBUTE, setScopeSource, type Target } from '../commands/index.ts';
+import {
+  PEEK_LINES,
+  type Mode,
+  type PeekAnswer,
+  type PeekCode,
+  type PeekFrame,
+  type PeekParts,
+  type PeekView,
+  type Place,
+} from './api.ts';
+import { lineStarts, tokenClass, tokensFrom } from './highlight.ts';
+
+/** How many lines show above the answer's, where the code has them, as a doc comment above it. */
+const ABOVE = 4;
+
+/** The fewest lines tall the code is beside a list of answers, which scrolls in its height. */
+const LISTED = 6;
+
+/** How tall the head and foot are, and the code's lines and the room around them, in pixels. */
+const HEAD = 34;
+const FOOT = 32;
+const LINE = 20;
+const PADDING = 8;
+
+/** The room around a peek in the whole-file view, above and below it. */
+const HOLDER = 16;
+
+/** How many lines tall the code of `peek` is. */
+export function peekLines(peek: PeekView): number {
+  const lines = peek.code?.lines.length ?? 0;
+  return Math.min(PEEK_LINES, Math.max(1, lines, peek.answers.length > 1 ? LISTED : 0));
+}
+
+/** A peek under a line, as a code view draws it. */
+export class PeekBlock {
+  readonly dom: HTMLElement;
+  readonly #parts: PeekParts;
+  readonly #body: HTMLElement;
+  readonly #code: HTMLElement;
+  /** The line it's under, as the caller gave it, which a key in it acts on. */
+  readonly at: Place;
+  #peek: PeekView;
+  #frame: { update(peek: PeekView): void; destroy(): void } | undefined;
+  readonly #stops: (() => void)[] = [];
+  /** Focus left it as it moved into another block, and is on its way back. */
+  #refocusing = false;
+  /** Whether the code is still to be scrolled to its answer, once it's laid out. */
+  #toScroll = true;
+  readonly #laidOut: ResizeObserver;
+
+  constructor(at: Place, peek: PeekView, frame: PeekFrame | undefined) {
+    this.at = at;
+    this.#peek = peek;
+    this.dom = element('div', 'lo-diffpeek');
+    this.dom.setAttribute(SCOPE_ATTRIBUTE, 'peek');
+    this.dom.setAttribute('role', 'dialog');
+    this.dom.tabIndex = -1;
+    this.#parts = {
+      head: element('div', 'lo-diffpeek__head'),
+      list: element('div', 'lo-diffpeek__list'),
+      foot: element('div', 'lo-diffpeek__foot'),
+    };
+    this.#body = element('div', 'lo-diffpeek__body');
+    this.#code = element('div', 'lo-diffpeek__code');
+    this.#body.append(this.#parts.list, this.#code);
+    this.dom.append(this.#parts.head, this.#body, this.#parts.foot);
+    // Without a frame there's nothing to draw around the code.
+    for (const part of Object.values(this.#parts)) part.hidden = frame === undefined;
+    this.#show(peek);
+    this.#stops.push(setScopeSource(this.dom, this));
+    // The code is scrolled to its answer once it has a size: not before it's in the page.
+    this.#laidOut = new ResizeObserver(() => {
+      if (this.#toScroll) this.#scrollToAnswer();
+    });
+    this.#laidOut.observe(this.#code);
+    // Drawn now, with the rest, so the peek comes as tall as it is.
+    this.#frame = frame?.(this.#parts, peek);
+  }
+
+  get peek(): PeekView {
+    return this.#peek;
+  }
+
+  /** Shows what `peek` shows. Says whether the peek's height changes. */
+  update(peek: PeekView): boolean {
+    const before = peekLines(this.#peek);
+    const scroll = peek.shown !== this.#peek.shown || peek.code !== this.#peek.code;
+    this.#peek = peek;
+    this.#show(peek, scroll);
+    this.#frame?.update(peek);
+    return peekLines(peek) !== before;
+  }
+
+  /** How tall it is, drawn, or as tall as it comes before it is. */
+  get height(): number {
+    const drawn = this.dom.offsetHeight;
+    if (drawn > 0) return drawn;
+    const framed = this.#parts.head.hidden ? 0 : HEAD + FOOT;
+    return framed + peekLines(this.#peek) * LINE + PADDING;
+  }
+
+  /** Whether focus is in it, or on its way back to it after it moved. */
+  get hasFocus(): boolean {
+    return this.#refocusing || this.dom.contains(this.dom.ownerDocument.activeElement);
+  }
+
+  /** Puts it in `parent`, keeping its focus. */
+  attach(parent: HTMLElement): void {
+    const focused = this.hasFocus;
+    parent.append(this.dom);
+    // The block isn't in the page until the editor that draws it has put it there.
+    if (!focused) return;
+    this.#refocusing = true;
+    queueMicrotask(() => {
+      if (!this.#refocusing) return;
+      this.#refocusing = false;
+      this.focus();
+    });
+  }
+
+  /** Takes focus, where it's drawn, without scrolling anything to it. */
+  focus(): void {
+    this.dom.focus({ preventScroll: true });
+  }
+
+  destroy(): void {
+    this.#refocusing = false;
+    this.#laidOut.disconnect();
+    for (const stop of this.#stops) stop();
+    this.#stops.length = 0;
+    const frame = this.#frame;
+    this.#frame = undefined;
+    frame?.destroy();
+    this.dom.remove();
+  }
+
+  // Keys: Lo's alone. There's no Vim in a peek.
+
+  keyState(): { mode: Mode; pending: boolean; target: Target } {
+    return { mode: 'normal', pending: false, target: { kind: 'line', at: this.at } };
+  }
+
+  passKeys(): void {}
+
+  clearPending(): void {}
+
+  setVimKeys(): void {}
+
+  /** Draws `peek`'s code in its place, and with `scroll` scrolls it to its answer. */
+  #show(peek: PeekView, scroll = true): void {
+    this.dom.setAttribute('aria-label', peek.label);
+    this.dom.classList.toggle('lo-diffpeek--single', peek.answers.length <= 1);
+    this.#body.style.setProperty('--lo-diffpeek-lines', String(peekLines(peek)));
+    const answer = peek.answers[peek.shown];
+    this.#code.replaceChildren(...(peek.code ? [codeElement(peek.code, answer)] : []));
+    if (!scroll) return;
+    this.#toScroll = true;
+    if (this.#code.isConnected) this.#scrollToAnswer();
+  }
+
+  /** Scrolls the code so its answer's line has a few lines above it, as far as it can. */
+  #scrollToAnswer(): void {
+    const box = this.#code;
+    if (box.clientHeight === 0) return;
+    this.#toScroll = false;
+    const code = this.#peek.code;
+    const answer = this.#peek.answers[this.#peek.shown];
+    const index = code && answer ? answer.line - code.first : -1;
+    const numbers = box.querySelectorAll('.lo-ln');
+    const above = numbers[Math.max(0, index - ABOVE)];
+    if (index < 0 || !above) {
+      box.scrollTop = 0;
+      return;
+    }
+    box.scrollTop += above.getBoundingClientRect().top - box.getBoundingClientRect().top;
+  }
+}
+
+/**
+ * A peek as a block of its own under a line, as the whole-file view draws it. The peek outlives the
+ * block, and moves into whichever draws it last.
+ */
+export class PeekWidget extends WidgetType {
+  readonly block: PeekBlock;
+
+  constructor(block: PeekBlock) {
+    super();
+    this.block = block;
+  }
+
+  override eq(other: PeekWidget): boolean {
+    return other.block === this.block;
+  }
+
+  toDOM(): HTMLElement {
+    // The room around it is padding, which the editor measures, not margin.
+    const holder = element('div', 'lo-filepeek');
+    this.block.attach(holder);
+    return holder;
+  }
+
+  override get estimatedHeight(): number {
+    return this.block.height + HOLDER;
+  }
+
+  /** The peek handles its own events. */
+  override ignoreEvent(): boolean {
+    return true;
+  }
+}
+
+/**
+ * `code`'s lines, numbered, each wrapping under its own indent, highlighted from its tokens, with
+ * `answer`'s line marked and the name on it, where the answer says where that starts.
+ */
+function codeElement(code: PeekCode, answer: PeekAnswer | undefined): HTMLElement {
+  const grid = element('div', 'lo-uni');
+  const starts = lineStarts(code.lines);
+  code.lines.forEach((text, index) => {
+    const number = code.first + index;
+    const marked = answer?.line === number;
+    const gutter = element('div', marked ? 'lo-ln is-active' : 'lo-ln', String(number));
+    const line = element('div', marked ? 'lo-line lo-line-active' : 'lo-line');
+    line.style.setProperty('--ind', String(text.length - text.trimStart().length));
+    const name = marked && answer.column !== undefined ? nameAt(text, answer.column) : undefined;
+    line.append(...spans(text, code.tokens, starts[index]!, name));
+    grid.append(gutter, line);
+  });
+  return grid;
+}
+
+/** The name starting at `column` of `text`, as columns from and to, if one starts there. */
+function nameAt(text: string, column: number): { from: number; to: number } | undefined {
+  const found = /^[\p{L}\p{N}_$]+/u.exec(text.slice(column));
+  return found ? { from: column, to: column + found[0].length } : undefined;
+}
+
+/**
+ * The text of a line, starting at `start` in the code's text, in runs of one token's class each,
+ * the name in a run of its own.
+ */
+function spans(
+  text: string,
+  tokens: Uint32Array | undefined,
+  start: number,
+  name: { from: number; to: number } | undefined,
+): Node[] {
+  const classes: string[] = Array.from({ length: text.length }, () => '');
+  if (tokens) {
+    for (const { from, to, token } of tokensFrom(tokens, start, start + text.length)) {
+      const className = tokenClass(token);
+      if (!className) continue;
+      for (let at = Math.max(from, start); at < Math.min(to, start + text.length); at++) {
+        classes[at - start] = className;
+      }
+    }
+  }
+  if (name) {
+    for (let at = name.from; at < Math.min(name.to, text.length); at++) {
+      classes[at] = `${classes[at]} lo-diffpeek__name`.trim();
+    }
+  }
+  const out: Node[] = [];
+  let from = 0;
+  for (let at = 1; at <= text.length; at++) {
+    if (at < text.length && classes[at] === classes[from]) continue;
+    const run = text.slice(from, at);
+    const className = classes[from]!;
+    out.push(className ? element('span', className, run) : document.createTextNode(run));
+    from = at;
+  }
+  return out;
+}
+
+function element<K extends keyof HTMLElementTagNameMap>(
+  tag: K,
+  className: string,
+  text?: string,
+): HTMLElementTagNameMap[K] {
+  const node = document.createElement(tag);
+  node.className = className;
+  if (text !== undefined) node.textContent = text;
+  return node;
+}
