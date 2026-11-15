@@ -1,7 +1,7 @@
 // Main's side of the code port, one for each load of a window's page: each message is checked as
 // the background process checks its own, as plain data within limits and then against the port's
 // contract, before anything is read, since the window shows untrusted content. A question is
-// answered only about a view of the window the port was made for; a cancel stops one under way.
+// answered only about a view that's open, while the port's window is; a cancel stops one under way.
 // Nothing here calls Electron, so it runs under unit tests with a port of Node's.
 
 import { z } from 'zod';
@@ -21,8 +21,8 @@ export type Answerers = {
 };
 
 export interface PortOptions {
-  /** Whether view `view` is one this port's window shows. */
-  readonly owns: (view: string) => boolean;
+  /** Whether `view` is an open view, while the port's window is. */
+  readonly isOpen: (view: string) => boolean;
   readonly answer: Answerers;
   readonly log: (line: string) => void;
 }
@@ -86,8 +86,8 @@ export async function answerMessage(
     const where = checked.error.issues.map((issue) => issue.path.join('.') || 'input');
     return fail(id, 'invalid', `${job} got malformed input (${where.join(', ')}).`);
   }
-  if (!options.owns(checked.data.view)) {
-    return fail(id, 'refused', "That view isn't in this window.");
+  if (!options.isOpen(checked.data.view)) {
+    return fail(id, 'refused', "That view isn't open.");
   }
   try {
     // Each answerer takes its own question's input, which its schema just checked.

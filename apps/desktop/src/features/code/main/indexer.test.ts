@@ -1,6 +1,7 @@
 // The syntax index across views: a tree shown by two views is built once, the new side before the
 // old, each view says how far it has got, and a view back online builds what it left for want of
-// the network. Clearing the cache reads it all again.
+// the network. Clearing the cache reads it all again, and a tree with more files than git lists is
+// left partial.
 
 import { describe, expect, it, onTestFinished, vi } from 'vitest';
 
@@ -83,11 +84,27 @@ describe('the syntax index', () => {
     const { background, index } = setUp();
     index.follow('t1', ready(repo));
     await vi.waitFor(() => expect(index.state('t1')).toEqual({ kind: 'ready', partial: null }));
-    await index.clear();
+    const clearing = index.clear();
+    // Building from the start, with nothing read yet, while the store is let go of.
+    expect(index.state('t1')).toMatchObject({ kind: 'building', done: 0 });
+    await clearing;
     await vi.waitFor(() => expect(background.read).toHaveLength(4));
     await vi.waitFor(() => expect(index.state('t1')).toEqual({ kind: 'ready', partial: null }));
     index.follow('t1', undefined);
     expect(index.state('t1')).toBe(undefined);
     expect(index.sides('t1')).toBe(undefined);
+  });
+
+  it('leaves a tree with more files than git lists partial, and reads the other side', async () => {
+    const repo = fakeRepo({ commits, unlisted: ['head'] });
+    const { background, index } = setUp();
+    index.follow('t1', ready(repo));
+    await vi.waitFor(() =>
+      expect(index.state('t1')).toEqual({
+        kind: 'ready',
+        partial: { indexed: 1, total: 1, why: ['listing'] },
+      }),
+    );
+    expect(background.read).toEqual([PARSE]);
   });
 });

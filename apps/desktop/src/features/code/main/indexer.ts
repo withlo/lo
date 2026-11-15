@@ -3,9 +3,10 @@
 // first. A view says how far its index has got, counting its trees' blobs once each, and the
 // window hears each time that changes. A build that fails is tried again after 5 s, doubling to
 // 5 minutes, while a view still shows its tree; one left partial for want of the network is built
-// again once the view is back online. Nothing here calls Electron.
+// again once the view is back online. A tree with more files than git lists for Lo is left
+// partial, unread. Nothing here calls Electron.
 
-import { type Oid, type Repo } from '@lo/git';
+import { GitError, type Oid, type Repo, type TreeEntry } from '@lo/git';
 
 import { IpcError } from '../../../ipc/contract.ts';
 import type { IndexState } from '../contract.ts';
@@ -94,6 +95,16 @@ function describe(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+/** The files of `commit`, or `undefined` when it has more than git lists for Lo. */
+async function listed(repo: CodeRepo, commit: Oid): Promise<TreeEntry[] | undefined> {
+  try {
+    return await repo.tree(commit);
+  } catch (error) {
+    if (error instanceof GitError && error.detail.kind === 'tooLarge') return undefined;
+    throw error;
+  }
+}
+
 export class CodeIndex {
   readonly #options: IndexOptions;
   readonly #views = new Map<string, Followed>();
@@ -101,6 +112,8 @@ export class CodeIndex {
   readonly #queue: Oid[] = [];
   #running = false;
   #stopped = false;
+  /** How many clears are under way, which no build starts during. */
+  #clearing = 0;
   #version: Promise<string> | undefined;
 
   constructor(options: IndexOptions) {
@@ -162,14 +175,23 @@ export class CodeIndex {
     };
   }
 
-  /** Lets go of everything read, as clearing the cache does, and builds what's shown again. */
+  /**
+   * Lets go of everything read, as clearing the cache does, and builds what's shown again. Its
+   * views say they're building from the start, while the store is let go of.
+   */
   async clear(): Promise<void> {
-    for (const build of this.#builds.values()) {
-      build.controller.abort();
-      clearTimeout(build.retry);
+    this.#clearing += 1;
+    try {
+      for (const build of this.#builds.values()) {
+        build.controller.abort();
+        clearTimeout(build.retry);
+        this.#requeue(build);
+      }
+      await this.#options.store.clear();
+    } finally {
+      this.#clearing -= 1;
+      this.#pump();
     }
-    await this.#options.store.clear();
-    for (const build of this.#builds.values()) this.#requeue(build);
   }
 
   stop(): void {
@@ -245,7 +267,7 @@ export class CodeIndex {
   }
 
   #pump(): void {
-    if (this.#running || this.#stopped) return;
+    if (this.#running || this.#stopped || this.#clearing > 0) return;
     const build = this.#next();
     if (!build) return;
     this.#running = true;
@@ -273,23 +295,26 @@ export class CodeIndex {
     try {
       const repo = await view.clone();
       if (!repo) throw new Error("The pull request's local copy isn't open.");
-      build.tree = await repo.treeId(build.commit);
-      const entries = await repo.tree(build.commit);
+      const tree = await repo.treeId(build.commit);
+      build.tree = tree;
+      const entries = await listed(repo, build.commit);
       const other = view.new === build.commit ? view.old : view.new;
-      const theirs = other === undefined ? undefined : await repo.tree(other);
-      const version = await this.version();
-      const built = await buildTree({
-        repo,
-        commit: build.commit,
-        entries,
-        changed: changedPaths(entries, theirs),
-        store: this.#options.store,
-        read: this.#options.read,
-        version,
-        progress: build.progress,
-        moved: () => this.#publishViews(build),
-        signal,
-      });
+      const theirs = entries && other !== undefined ? await listed(repo, other) : undefined;
+      const built: Built = entries
+        ? await buildTree({
+            repo,
+            commit: build.commit,
+            entries,
+            // Without the other side's listing, nothing is known to have changed.
+            changed: other === undefined || theirs ? await changedPaths(entries, theirs) : [],
+            store: this.#options.store,
+            read: this.#options.read,
+            version: await this.version(),
+            progress: build.progress,
+            moved: () => this.#publishViews(build),
+            signal,
+          })
+        : { tree, total: 0, files: 0, indexed: 0, partial: ['listing'] };
       if (signal.aborted) return;
       build.built = built;
       build.state = 'built';

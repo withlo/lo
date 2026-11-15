@@ -1,7 +1,8 @@
-// The syntax index's jobs in the background process, which only main sends, over its own port and
-// behind the window's jobs: each file's definitions, the names it refers to and its imports, read
-// with tree-sitter's tags (`symbols`); and where files use a name (`find`). Main reads the files'
-// blobs from the local copy and sends their bytes; the process reads nothing itself.
+// The syntax index's jobs in the background process, which only main may send, over its own port
+// and behind the window's jobs; the window's port refuses them. Each file's definitions, the names
+// it refers to and its imports, read with tree-sitter's tags (`symbols`); and where files use a
+// name (`find`). Main reads the files' blobs from the local copy and sends their bytes, within a
+// job's limits; the process reads nothing itself.
 
 import { z } from 'zod';
 
@@ -32,6 +33,12 @@ export const fileJob = z.strictObject({
   bytes: z.instanceof(Uint8Array).refine((bytes) => bytes.byteLength <= FILE_BYTES),
 });
 export type FileJob = z.output<typeof fileJob>;
+
+/** A job's files: {@link FILES_PER_JOB} and {@link BYTES_PER_JOB} at most. */
+const jobFiles = z
+  .array(fileJob)
+  .max(FILES_PER_JOB)
+  .refine((files) => files.reduce((sum, file) => sum + file.bytes.byteLength, 0) <= BYTES_PER_JOB);
 
 /** What a definition is, as `@lo/syntax`'s tags name it. */
 export type DefinitionKind =
@@ -104,22 +111,26 @@ export type Tagged = { symbols: FileSymbols } | { skipped: Skip } | null;
 /** Where a file uses a name, or why it wasn't read; `null` as for {@link Tagged}. */
 export type Uses = { uses: { line: number; column: number }[] } | { skipped: Skip } | null;
 
-export const contract = defineJobs('code', {
-  /**
-   * Reads files' symbols. `version` stamps what read them: the grammars and queries the index
-   * reads with, so a change to either makes the index read its files again. With no files, it only
-   * says the version.
-   */
-  symbols: {
-    input: z.strictObject({ files: z.array(fileJob).max(FILES_PER_JOB) }),
-    reply: reply<{ version: string; files: Tagged[] }>(),
+export const contract = defineJobs(
+  'code',
+  {
+    /**
+     * Reads files' symbols. `version` stamps what read them: the grammars and queries the index
+     * reads with, so a change to either makes the index read its files again. With no files, it
+     * only says the version.
+     */
+    symbols: {
+      input: z.strictObject({ files: jobFiles }),
+      reply: reply<{ version: string; files: Tagged[] }>(),
+    },
+    /** Finds where files use `name`, as the names they refer to count them. */
+    find: {
+      input: z.strictObject({
+        name: z.string().min(1).max(256),
+        files: jobFiles.refine((files) => files.length > 0),
+      }),
+      reply: reply<Uses[]>(),
+    },
   },
-  /** Finds where files use `name`, as the names they refer to count them. */
-  find: {
-    input: z.strictObject({
-      name: z.string().min(1).max(256),
-      files: z.array(fileJob).min(1).max(FILES_PER_JOB),
-    }),
-    reply: reply<Uses[]>(),
-  },
-});
+  { from: 'main' },
+);

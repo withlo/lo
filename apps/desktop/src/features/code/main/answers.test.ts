@@ -5,6 +5,8 @@
 import { describe, expect, it } from 'vitest';
 
 import { IpcError } from '../../../ipc/contract.ts';
+import { BYTES_PER_JOB } from '../jobs.ts';
+import { MAX_REFERENCES } from '../port.ts';
 import {
   definitions,
   hover,
@@ -27,15 +29,16 @@ export function format(input: string) { return parse(input).join(' ') }
 const OTHER = `export function parse() { return 'another' }
 `;
 
-/** A view comparing `base` with `head`, both indexed. */
-async function view() {
+/** A view comparing `base` with `head`, both indexed; `more` adds files to both. */
+async function view(more: Readonly<Record<string, string>> = {}) {
   const repo = fakeRepo({
     commits: {
-      base: { 'src/parse.ts': PARSE, 'src/format.ts': FORMAT },
+      base: { 'src/parse.ts': PARSE, 'src/format.ts': FORMAT, ...more },
       head: {
         'src/parse.ts': PARSE,
         'src/format.ts': `${FORMAT}// later\n`,
         'lib/other.ts': OTHER,
+        ...more,
       },
     },
   });
@@ -65,7 +68,7 @@ async function view() {
     read: (files) => background.symbols(files),
     find: (name, files) => background.find(name, files),
   };
-  return { sides, answering };
+  return { sides, answering, background };
 }
 
 const head = commitOf('head');
@@ -131,6 +134,27 @@ describe('answers from the syntax index', () => {
       { path: 'src/format.ts', line: 2, column: 47 },
     ]);
     expect(found.answers[0]).toMatchObject({ label: 'Syntax index · same name', changed: true });
+  });
+
+  it('looks through a file once however many paths hold it, within a job’s bytes, and caps its uses', async () => {
+    // About 100 KB using `parse` 100 times, at 60 paths: 6 MB and 6,000 uses, were each path its own.
+    const copy = `${'parse()\n'.repeat(100)}${`// ${'x'.repeat(97)}\n`.repeat(1000)}`;
+    const copies = Object.fromEntries(
+      Array.from({ length: 60 }, (_, index) => [`copies/${index}.ts`, copy]),
+    );
+    const { sides, answering, background } = await view(copies);
+    const found = await references(answering, sides, {
+      key: head,
+      path: 'src/parse.ts',
+      line: 2,
+      column: 17,
+    });
+    expect(background.looked.filter((text) => text === copy)).toHaveLength(1);
+    for (const bytes of background.finds) expect(bytes).toBeLessThanOrEqual(BYTES_PER_JOB);
+    expect(found.answers).toHaveLength(MAX_REFERENCES);
+    expect(found.more).toBe(true);
+    // The first 50 paths, in path order, each with its 100 uses.
+    expect(new Set(found.answers.map((answer) => answer.path)).size).toBe(50);
   });
 
   it('shows the top definition’s line in the hover, and a file’s outline', async () => {

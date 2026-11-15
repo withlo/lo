@@ -1,5 +1,6 @@
 // Which of a tree's files the syntax index reads, and in what order: nearest the pull request's own
-// files first, then the rest of the repository, folder by folder upward.
+// files first, then the rest of the repository, folder by folder upward. A large tree's files are
+// gone through without holding main the whole time.
 
 import { parseOid, type TreeEntry } from '@lo/git';
 import { describe, expect, it } from 'vitest';
@@ -12,9 +13,19 @@ function entry(path: string, change: Partial<TreeEntry> = {}): TreeEntry {
   return { path: Buffer.from(path, 'utf8'), oid: OID, mode: 'regular', ...change };
 }
 
+/** Whether other work ran before `work` finished. */
+async function between(work: Promise<unknown>): Promise<boolean> {
+  let ran = false;
+  setImmediate(() => {
+    ran = true;
+  });
+  await work;
+  return ran;
+}
+
 describe('which files the index reads', () => {
-  it('reads files in a language with tags, but no lockfile, link, long path or file past 1 MB', () => {
-    const found = candidates([
+  it('reads files in a language with tags, but no lockfile, link, long path or file past 1 MB', async () => {
+    const found = await candidates([
       entry('src/parse.ts'),
       entry('src/view.tsx', { mode: 'executable' }),
       entry('README.md'),
@@ -31,8 +42,8 @@ describe('which files the index reads', () => {
     ]);
   });
 
-  it('reads the pull request’s files first, then those around them, then upward', () => {
-    const distance = distances(['app/web/form.ts', 'app/web/inputs/text.ts']);
+  it('reads the pull request’s files first, then those around them, then upward', async () => {
+    const distance = await distances(['app/web/form.ts', 'app/web/inputs/text.ts']);
     expect(distance('app/web/form.ts')).toBe(-1);
     expect(distance('app/web/field.ts')).toBe(0);
     expect(distance('app/web/inputs/other.ts')).toBe(0);
@@ -40,7 +51,7 @@ describe('which files the index reads', () => {
     expect(distance('app/api/route.ts')).toBe(1);
     expect(distance('lib/far.ts')).toBe(2);
     expect(distance('top.ts')).toBe(2);
-    const { chosen, more } = nearestFirst(
+    const { chosen, more } = await nearestFirst(
       ['lib/far.ts', 'app/api/route.ts', 'app/web/field.ts', 'app/web/form.ts'].map((path) => ({
         path,
         oid: OID,
@@ -58,14 +69,23 @@ describe('which files the index reads', () => {
     expect(more).toBe(true);
   });
 
-  it('finds the paths two trees differ in', () => {
+  it('finds the paths two trees differ in', async () => {
     const other = parseOid('b'.repeat(40));
     expect(
-      changedPaths(
+      await changedPaths(
         [entry('same.ts'), entry('edited.ts', { oid: other }), entry('added.ts')],
         [entry('same.ts'), entry('edited.ts'), entry('removed.ts')],
       ),
     ).toEqual(new Set(['edited.ts', 'added.ts', 'removed.ts']));
-    expect(changedPaths([entry('a.ts')], undefined)).toEqual(new Set(['a.ts']));
+    expect(await changedPaths([entry('a.ts')], undefined)).toEqual(new Set(['a.ts']));
+  });
+
+  it('lets main do other work while it goes through a large tree', async () => {
+    const ours = Array.from({ length: 20_000 }, (_, index) => entry(`src/${index}.ts`));
+    const theirs = ours.slice(1);
+    expect(await between(changedPaths(ours, theirs))).toBe(true);
+    const found = await candidates(ours);
+    expect(await between(candidates(ours))).toBe(true);
+    expect(await between(nearestFirst(found, ['src/0.ts']))).toBe(true);
   });
 });

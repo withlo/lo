@@ -31,6 +31,11 @@ export interface Runner {
   readonly jobs: Readonly<Record<string, { run: AnyRun; limits?: Partial<Limits> | undefined }>>;
 }
 
+/** The groups the window may send jobs of: all but those only main sends. */
+export function windowRunners(runners: readonly Runner[]): Runner[] {
+  return runners.filter((runner) => runner.contract.from !== 'main');
+}
+
 /** Defines the code for every job in a contract. */
 export function defineRunner<C extends JobContract>(contract: C, jobs: Jobs<C>): Runner {
   return { contract, jobs };

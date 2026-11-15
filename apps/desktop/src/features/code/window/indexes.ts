@@ -43,6 +43,7 @@ const WHY: Readonly<Record<PartialWhy, string>> = {
   files: `Lo reads ${count(TREE_FILES)} files of a tree at most, nearest the PR’s own first.`,
   bytes: `Lo downloads ${count(TREE_BYTES / 1024 ** 2)} MB of a tree’s files at most.`,
   offline: 'Offline, Lo reads only what the local copy has.',
+  listing: 'A tree has more files than Lo lists, so none of them are read.',
 };
 
 /**
@@ -72,7 +73,9 @@ export function indexItem(state: IndexState | null): IndexItem | undefined {
         dot: 'warn',
         text: 'Syntax index partial',
         title: [
-          `It has ${count(partial.indexed)} of ${count(partial.total)} files.`,
+          ...(partial.total > 0
+            ? [`It has ${count(partial.indexed)} of ${count(partial.total)} files.`]
+            : []),
           ...reasons,
         ].join(' '),
       };

@@ -11,7 +11,6 @@ import { IpcError } from '../../../ipc/contract.ts';
 import {
   BYTES_PER_JOB,
   FILE_BYTES,
-  FILES_PER_JOB,
   type Definition,
   type FileJob,
   type Import,
@@ -33,6 +32,7 @@ import {
   type Outline,
   type References,
 } from '../port.ts';
+import { inJobs } from './batches.ts';
 import type { ReadSymbols } from './build.ts';
 import type { CodeRepo, ViewSides } from './indexer.ts';
 import type { BlobKey, Found, Kept, Reading, TreeFile } from './store/store.ts';
@@ -326,28 +326,46 @@ export async function references(
     await file.repo.missingObjects(files.map((each) => parseOid(each.oid))),
   );
   const readable = files.filter((each) => !lacking.has(each.oid));
-  const byBlob = new Map<Oid, TreeFile[]>();
+  // Each blob is looked through once for each language it's read as, however many paths hold it,
+  // and what's found there goes to every one of them.
+  const blobs = new Map<Oid, HeldBlob[]>();
   for (const each of readable) {
     const oid = parseOid(each.oid);
-    byBlob.set(oid, [...(byBlob.get(oid) ?? []), each]);
+    const languages = blobs.get(oid) ?? [];
+    const held = languages.find((known) => known.language === each.language);
+    if (held) held.files.push(each);
+    else languages.push({ language: each.language, files: [each] });
+    blobs.set(oid, languages);
   }
-  const found: { file: TreeFile; line: number; column: number }[] = [];
-  reading: for await (const blobs of file.repo.readBlobs([...byBlob.keys()], {
+  const usesOf = new Map<TreeFile, readonly Use[]>();
+  let count = 0;
+  reading: for await (const batch of file.repo.readBlobs([...blobs.keys()], {
     maxBytes: BYTES_PER_JOB,
   })) {
     stopped(signal);
-    const batch = blobs.flatMap((contents) =>
-      (byBlob.get(contents.oid) ?? []).map((each) => ({ file: each, bytes: contents.data })),
+    const looked = batch.flatMap((contents) =>
+      (blobs.get(contents.oid) ?? []).map((held) => ({ held, bytes: contents.data })),
     );
-    for (const uses of await findAll(answering, name, batch, signal)) {
-      found.push(uses);
-      if (found.length > MAX_REFERENCES) {
+    for (const { held, uses } of await findAll(answering, name, looked, signal)) {
+      for (const each of held.files) usesOf.set(each, uses);
+      count += uses.length * held.files.length;
+      if (count > MAX_REFERENCES) {
         more = true;
         break reading;
       }
     }
   }
-  const shown = found.slice(0, MAX_REFERENCES);
+  // In the files' order, the asked file first, up to the cap.
+  const shown: { file: TreeFile; line: number; column: number }[] = [];
+  listing: for (const each of files) {
+    for (const use of usesOf.get(each) ?? []) {
+      if (shown.length === MAX_REFERENCES) {
+        more = true;
+        break listing;
+      }
+      shown.push({ file: each, ...use });
+    }
+  }
   const changed = await changes(
     file,
     sides,
@@ -372,31 +390,42 @@ export async function references(
   return { name, answers, more, note: BY_NAME };
 }
 
-/** Where each of `files` uses `name`, a job at a time, in the order given. */
+/** Where `name` is used, as a `code.find` job finds it in a file. */
+interface Use {
+  readonly line: number;
+  readonly column: number;
+}
+
+/** A blob read as one language, and the tree's files that hold it. */
+interface HeldBlob {
+  readonly language: string;
+  readonly files: TreeFile[];
+}
+
+/**
+ * Where each of `blobs` uses `name`, in jobs within the background process's per-job limits. A
+ * blob a job didn't get to goes in the next; one it skipped uses the name nowhere.
+ */
 async function findAll(
   answering: Answering,
   name: string,
-  files: readonly { file: TreeFile; bytes: Buffer }[],
+  blobs: readonly { held: HeldBlob; bytes: Buffer }[],
   signal: AbortSignal | undefined,
-): Promise<{ file: TreeFile; line: number; column: number }[]> {
-  const found: { file: TreeFile; line: number; column: number }[] = [];
-  const queue: (typeof files)[] = [];
-  for (let start = 0; start < files.length; start += FILES_PER_JOB) {
-    queue.push(files.slice(start, start + FILES_PER_JOB));
-  }
+): Promise<{ held: HeldBlob; uses: Use[] }[]> {
+  const found: { held: HeldBlob; uses: Use[] }[] = [];
+  const queue = inJobs(blobs, ({ bytes }) => bytes.byteLength);
   while (queue.length > 0) {
     const batch = queue.shift() ?? [];
     stopped(signal);
-    const jobs = batch.map(({ file, bytes }) => ({
-      language: file.language,
+    const jobs = batch.map(({ held, bytes }) => ({
+      language: held.language,
       bytes: new Uint8Array(bytes),
     }));
     const uses = await answering.find(name, jobs, signal);
     const again = batch.filter((_, index) => uses[index] === null);
     for (const [index, item] of batch.entries()) {
       const result = uses[index];
-      if (!result || !('uses' in result)) continue;
-      for (const use of result.uses) found.push({ file: item.file, ...use });
+      if (result && 'uses' in result) found.push({ held: item.held, uses: result.uses });
     }
     if (again.length > 0 && again.length < batch.length) queue.unshift(again);
   }

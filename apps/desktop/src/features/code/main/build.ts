@@ -7,15 +7,16 @@
 import { GitError, linguistBoolean, type Oid, type Repo, type TreeEntry } from '@lo/git';
 
 import { IpcError } from '../../../ipc/contract.ts';
+import type { PartialWhy } from '../contract.ts';
 import {
   BYTES_PER_JOB,
   FILE_BYTES,
-  FILES_PER_JOB,
   TREE_BYTES,
   TREE_FILES,
   type FileJob,
   type Tagged,
 } from '../jobs.ts';
+import { inJobs } from './batches.ts';
 import { blobKey, candidates, nearestFirst, type Candidate } from './select.ts';
 import type { Reading, TreeFile } from './store/store.ts';
 
@@ -46,9 +47,6 @@ export type ReadSymbols = (
   signal?: AbortSignal,
 ) => Promise<{ version: string; files: Tagged[] }>;
 
-/** Why an index is partial: past the tree's files, past its downloads, or without the network. */
-export type PartialWhy = 'files' | 'bytes' | 'offline';
-
 /** How far a tree's index has got, by blob, which a view's progress counts across its trees. */
 export interface TreeProgress {
   /** The blobs it reads, by {@link blobKey}. */
@@ -60,7 +58,10 @@ export interface TreeProgress {
 export interface Built {
   /** The tree's ID, which the store keeps its files by. */
   readonly tree: string;
-  /** How many of its files the index could read, how many it reads, and how many it has. */
+  /**
+   * How many of its files the index could read, as far as it looked for generated ones, how many it
+   * reads, and how many it has.
+   */
   readonly total: number;
   readonly files: number;
   readonly indexed: number;
@@ -139,11 +140,27 @@ export async function buildTree(options: BuildOptions): Promise<Built> {
   const tree = await repo.treeId(commit);
   const entries = options.entries ?? (await repo.tree(commit));
   stopped(signal);
-  const possible = candidates(entries);
-  const marked = await generated(repo, commit, possible);
-  const readable = possible.filter((file) => !marked.has(file.path));
-  const { chosen, more } = nearestFirst(readable, options.changed, limits.files);
-  const partial = new Set<PartialWhy>(more ? ['files'] : []);
+  const possible = await candidates(entries);
+  const { chosen: ordered } = await nearestFirst(
+    possible,
+    options.changed,
+    Number.POSITIVE_INFINITY,
+  );
+  // Files marked generated are looked for among the nearest, as many as fill the tree's files.
+  const chosen: Candidate[] = [];
+  let looked = 0;
+  let marked = 0;
+  while (chosen.length < limits.files && looked < ordered.length) {
+    const next = ordered.slice(looked, looked + limits.files - chosen.length);
+    const generatedPaths = await generated(repo, commit, next);
+    for (const file of next) {
+      if (generatedPaths.has(file.path)) marked += 1;
+      else chosen.push(file);
+    }
+    looked += next.length;
+    stopped(signal);
+  }
+  const partial = new Set<PartialWhy>(looked < ordered.length ? ['files'] : []);
   for (const file of chosen) progress.all.add(blobKey(file));
 
   // What the store has read already, and what's left, each blob once, nearest first.
@@ -234,17 +251,30 @@ export async function buildTree(options: BuildOptions): Promise<Built> {
   }
   return {
     tree,
-    total: readable.length,
+    total: possible.length - marked,
     files: chosen.length,
     indexed: chosen.filter((file) => progress.done.has(blobKey(file))).length,
     partial: [...partial],
   };
 }
 
+/** The failures a job's files cause, as the background process names them. */
+const FILES_FAULTS = new Set(['timeout', 'memory', 'failed', 'invalid']);
+
 /**
- * Has the background process read `files`, {@link FILES_PER_JOB} at a time, keeping what each job
- * read. A job that fails is tried again in halves, and a file that fails alone is kept as failed;
- * one a job didn't get to goes in the next. Returns the version the last job read with.
+ * Whether a job failed for something in its files: it ran past its deadline or its memory, threw,
+ * or was refused. Anything else, such as the background process restarting or being too busy, or
+ * the job being cancelled, says nothing of the files, which are read again later.
+ */
+function filesFault(error: unknown): boolean {
+  return error instanceof IpcError && FILES_FAULTS.has(error.code);
+}
+
+/**
+ * Has the background process read `files`, in jobs within its per-job limits, keeping what each
+ * job read. A job that fails for its files is tried again in halves, and a file that fails alone is
+ * kept as failed; one a job didn't get to goes in the next. Any other failure stops the tree's
+ * build, leaving what wasn't read for the next. Returns the version the last job read with.
  */
 async function readAll(
   files: readonly Item[],
@@ -254,10 +284,7 @@ async function readAll(
   signal: AbortSignal | undefined,
 ): Promise<string> {
   let at = version;
-  const queue: Item[][] = [];
-  for (let start = 0; start < files.length; start += FILES_PER_JOB) {
-    queue.push(files.slice(start, start + FILES_PER_JOB));
-  }
+  const queue = inJobs(files, ({ bytes }) => bytes.byteLength);
   while (queue.length > 0) {
     const batch = queue.shift() ?? [];
     if (batch.length === 0) continue;
@@ -270,7 +297,7 @@ async function readAll(
       );
     } catch (error) {
       stopped(signal);
-      if (error instanceof IpcError && error.code === 'cancelled') throw error;
+      if (!filesFault(error)) throw error;
       const [only] = batch;
       if (batch.length === 1 && only) {
         const { file } = only;

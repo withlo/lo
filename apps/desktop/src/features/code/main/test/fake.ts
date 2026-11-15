@@ -44,6 +44,8 @@ export function fakeRepo(options: {
   offline?: boolean;
   /** Fails a download with this, as when the network is down. */
   failDownloads?: boolean;
+  /** Commits whose trees have more files than git lists. */
+  unlisted?: readonly string[];
 }): FakeRepo {
   const blobs = new Map<Oid, Buffer>();
   const trees = new Map<Oid, Map<string, Oid>>();
@@ -98,6 +100,9 @@ export function fakeRepo(options: {
       return parseOid(createHash('sha1').update(`tree ${commit}`).digest('hex'));
     },
     async tree(commit) {
+      if (options.unlisted?.some((name) => commitOf(name) === commit)) {
+        throw new GitError({ kind: 'tooLarge', command: 'git ls-tree', limit: 500_000 });
+      }
       return [...treeOf(commit)].map(([path, oid]): TreeEntry => ({
         path: Buffer.from(path, 'utf8'),
         oid,
@@ -234,19 +239,34 @@ export function fakeSymbols(text: string): FileSymbols {
 
 /** The background process, standing in: reads what it's sent with {@link fakeSymbols}. */
 export function fakeBackground(
-  options: { version?: string; fail?: (text: string) => boolean } = {},
+  options: {
+    version?: string;
+    /** Whether a job with this text runs past its deadline. */
+    fail?: (text: string) => boolean;
+    /** Whether the process stops during the next job, as when it restarts. */
+    restarting?: () => boolean;
+  } = {},
 ) {
   const decoder = new TextDecoder();
   const read: string[] = [];
   const jobs: number[] = [];
+  const looked: string[] = [];
+  const finds: number[] = [];
   return {
     /** Each text read, in order. */
     read,
     /** How many files each job had. */
     jobs,
+    /** Each text a `find` job looked through, in order. */
+    looked,
+    /** How many bytes each `find` job had. */
+    finds,
     version: options.version ?? 'v1',
     async symbols(files: readonly FileJob[]): Promise<{ version: string; files: Tagged[] }> {
       jobs.push(files.length);
+      if (options.restarting?.()) {
+        throw new IpcError('restarted', 'The background process stopped during code.symbols.');
+      }
       const texts = files.map((file) => decoder.decode(file.bytes));
       if (texts.some((text) => options.fail?.(text))) {
         throw new IpcError('timeout', 'code.symbols ran past its 60000 ms.');
@@ -258,9 +278,12 @@ export function fakeBackground(
       };
     },
     async find(name: string, files: readonly FileJob[]): Promise<Uses[]> {
+      finds.push(files.reduce((sum, file) => sum + file.bytes.byteLength, 0));
       return files.map((file) => {
         const uses: { line: number; column: number }[] = [];
-        for (const [index, line] of decoder.decode(file.bytes).split('\n').entries()) {
+        const text = decoder.decode(file.bytes);
+        looked.push(text);
+        for (const [index, line] of text.split('\n').entries()) {
           for (const match of line.matchAll(new RegExp(`\\b${name}\\b`, 'g'))) {
             uses.push({ line: index + 1, column: match.index ?? 0 });
           }

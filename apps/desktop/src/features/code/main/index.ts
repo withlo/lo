@@ -243,8 +243,9 @@ function answerers(answering: Answering): Answerers {
 }
 
 /**
- * Hands each load of `window`'s page a new code port, closing the one before. Lo has one window,
- * which every tab is in, so a port answers about any open view while its window is.
+ * Hands each load of `window`'s page a new code port, closing the one before. A port answers about
+ * any open view while its window is alive. That's all a view of another window would need checking
+ * for, and there's none: Lo has one window, which every tab is in, and tabs aren't kept by window.
  */
 function handPorts(context: Context, window: BrowserWindow, answer: Answerers): void {
   const contents = window.webContents;
@@ -261,7 +262,7 @@ function handPorts(context: Context, window: BrowserWindow, answer: Answerers): 
     ports.set(
       id,
       servePort(portOf(port1), {
-        owns: (view) => !window.isDestroyed() && context.use(tabs).pull(view) !== undefined,
+        isOpen: (view) => !window.isDestroyed() && context.use(tabs).pull(view) !== undefined,
         answer,
         log,
       }),

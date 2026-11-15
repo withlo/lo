@@ -28,6 +28,13 @@ describe('the syntax index’s status item', () => {
       title:
         'It has 20,000 of 31,422 files. Lo reads 20,000 files of a tree at most, nearest the PR’s own first. Offline, Lo reads only what the local copy has.',
     });
+    // A tree too large to list has no files to count.
+    expect(
+      indexItem({ kind: 'ready', partial: { indexed: 0, total: 0, why: ['listing'] } }),
+    ).toMatchObject({
+      text: 'Syntax index partial',
+      title: 'A tree has more files than Lo lists, so none of them are read.',
+    });
     expect(indexItem({ kind: 'failed', message: 'The local copy is gone.' })).toMatchObject({
       dot: 'fail',
       text: 'Syntax index failed',

@@ -176,4 +176,23 @@ describe('indexing a tree', () => {
     // A job that failed was tried again in halves, so the file beside the one it failed on was read.
     expect(background.jobs).toEqual([2, 1, 1]);
   });
+
+  it('leaves what a job had to read again, not failed, when the background process stops', async () => {
+    const repo = fakeRepo({
+      commits: { head: { 'src/parse.ts': PARSE, 'src/format.ts': FORMAT } },
+    });
+    const store = memoryStore();
+    let restarting = true;
+    const background = fakeBackground({ restarting: () => restarting });
+    await expect(build(repo, 'head', { background, store })).rejects.toMatchObject({
+      code: 'restarted',
+    });
+    expect(store.store.kept('v1', { oid: blobOf(PARSE), language: 'typescript' })).toBe(undefined);
+    restarting = false;
+    expect(await build(repo, 'head', { background, store })).toMatchObject({
+      indexed: 2,
+      partial: [],
+    });
+    expect(background.read.toSorted()).toEqual([FORMAT, PARSE].toSorted());
+  });
 });

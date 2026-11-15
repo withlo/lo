@@ -29,6 +29,8 @@ export interface JobContract<
   /** The jobs' group, which names them: `<group>.<job>`. */
   readonly group: Group;
   readonly jobs: Specs;
+  /** `main` when only main may send them, over its own port; the window's port refuses them. */
+  readonly from?: 'main' | undefined;
 }
 
 const groupName = /^[a-z][a-z0-9]*$/;
@@ -40,6 +42,7 @@ export const jobPath = /^[a-z][a-z0-9]*\.[a-z][a-zA-Z0-9]*$/;
 export function defineJobs<const Group extends string, Specs extends Record<string, JobSpec>>(
   group: Group,
   specs: Specs,
+  options: { from?: 'main' } = {},
 ): JobContract<Group, Specs> {
   if (!groupName.test(group)) {
     throw new Error(`A job group's name is lowercase letters and digits, not "${group}".`);
@@ -47,7 +50,7 @@ export function defineJobs<const Group extends string, Specs extends Record<stri
   for (const name of Object.keys(specs)) {
     if (!jobName.test(name)) throw new Error(`${group}: "${name}" isn't a job name (camelCase).`);
   }
-  return { group, jobs: specs };
+  return options.from === undefined ? { group, jobs: specs } : { group, jobs: specs, from: 'main' };
 }
 
 /**

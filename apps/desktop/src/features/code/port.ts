@@ -1,8 +1,8 @@
 // The code port: what the window asks main of a file's code, over a port main hands it with each
 // load of the page, in the jobs protocol's shapes (`{ id, job, input }`, replies, `{ cancel }`).
-// Main checks every message and input as the background process does, answers only about a view of
-// the window that asks, a tree that view shows and a line that file has, and caps each reply. For
-// now every answer comes from the syntax index; language servers' come later.
+// Main checks every message and input as the background process does, answers only about an open
+// view, a tree that view shows and a line that file has, and caps each reply. Every answer comes
+// from the syntax index, which has no type hints, so `hints` answers none.
 
 import { z } from 'zod';
 

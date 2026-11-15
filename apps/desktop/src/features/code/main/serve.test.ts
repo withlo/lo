@@ -1,5 +1,5 @@
-// The code port's host in main, over a port of Node's: it answers a question about a view of its
-// window, refuses one of another window, refuses what isn't plain data or doesn't match the port's
+// The code port's host in main, over a port of Node's: it answers a question about an open view,
+// refuses one about a view that isn't, refuses what isn't plain data or doesn't match the port's
 // contract, and stops a question the window cancels.
 
 import { MessageChannel } from 'node:worker_threads';
@@ -14,7 +14,7 @@ const KEY = 'a'.repeat(40);
 const PLACE = { view: 't1', key: KEY, path: 'src/format.ts', line: 2, column: 48 };
 
 /** Main's end as the host takes it, and the window's, which sends a message and waits for its answer. */
-function channel(owns: (view: string) => boolean, answer: Partial<Answerers>) {
+function channel(isOpen: (view: string) => boolean, answer: Partial<Answerers>) {
   const { port1, port2 } = new MessageChannel();
   const main: Port = {
     postMessage: (message) => port1.postMessage(message),
@@ -25,7 +25,7 @@ function channel(owns: (view: string) => boolean, answer: Partial<Answerers>) {
   };
   const lines: string[] = [];
   const close = servePort(main, {
-    owns,
+    isOpen,
     answer: {
       definitions: async () => ({ name: 'parse', answers: [], more: false }),
       references: async () => ({ name: null, answers: [], more: false, note: '' }),
@@ -55,7 +55,7 @@ function channel(owns: (view: string) => boolean, answer: Partial<Answerers>) {
 }
 
 describe('the code port', () => {
-  it('answers a question about a view of its window', async () => {
+  it('answers a question about an open view', async () => {
     const { ask } = channel(() => true, {});
     expect(await ask({ id: 1, job: 'code.definitions', input: PLACE })).toEqual({
       id: 1,
@@ -64,7 +64,7 @@ describe('the code port', () => {
     });
   });
 
-  it('refuses a view of another window', async () => {
+  it('refuses a view that isn’t open', async () => {
     const { ask } = channel((view) => view === 'mine', {});
     expect(await ask({ id: 2, job: 'code.definitions', input: PLACE })).toMatchObject({
       id: 2,

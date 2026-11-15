@@ -68,8 +68,11 @@ export const status = z.strictObject({
 });
 export type Status = z.output<typeof status>;
 
-/** Why a view's syntax index isn't whole: past a tree's files, past its downloads, or offline. */
-export const partialWhy = z.enum(['files', 'bytes', 'offline']);
+/**
+ * Why a view's syntax index isn't whole: past a tree's files, past its downloads, offline, or a
+ * tree with more files than git lists for Lo.
+ */
+export const partialWhy = z.enum(['files', 'bytes', 'offline', 'listing']);
 export type PartialWhy = z.output<typeof partialWhy>;
 
 /**

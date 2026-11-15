@@ -343,7 +343,8 @@ reads files or the network.
   input schema and reply type, held to the same rules as `contract.ts`), and their code in
   `background/index.ts` (`defineRunner`, the default export), found by `import.meta.glob`. The
   window runs them through `jobs(contract)`, and main through `jobs(contract, mainJobs)`
-  (`src/main/background.ts`).
+  (`src/main/background.ts`). A contract made with `{ from: 'main' }` is main's alone: the window's
+  port refuses its jobs as `unavailable`.
 - Jobs take plain data: objects, arrays, strings, numbers, booleans and null, within limits. The
   window refuses anything else before sending, and the process checks every message, then each job's
   input, before anything runs.
@@ -1105,12 +1106,17 @@ parse them under `@lo/syntax`'s limits.
 - A file is read when its language has tags, it's at most 1 MB, and it's neither a lockfile nor
   marked `linguist-generated`; a minified file (a line over 10,000 characters) is skipped. At most
   20,000 files of a tree, and 200 MB downloaded for it, the files nearest the pull request's own
-  first (their folders, then upward), in path order after (`main/select.ts`). Past either, the index
-  is partial and says so. Offline, it reads only what the clone has, and once the view is back
-  online it builds what it left.
+  first (their folders, then upward), in git's path order after (`main/select.ts`), going through a
+  large tree a stretch at a time so main's other work runs between. Past either, the index is
+  partial and says so, as it is for a tree with more files than git lists for Lo, which it doesn't
+  read. Offline, it reads only what the clone has, and once the view is back online it builds what
+  it left.
 - Main reads the blobs in batches and sends them to the background process as `code.symbols` jobs,
-  over its own port, a job at a time. A job that fails is tried again in halves, and a file that
-  fails alone is kept as failed.
+  over its own port, a job at a time, each 500 files and 4 MB at most. The `code` jobs are main's
+  alone: the window's port refuses them. A job that fails for its files (past its deadline or
+  memory, or throwing) is tried again in halves, and a file that fails alone is kept as failed until
+  the version changes. One that fails otherwise, as when the background process restarts, leaves its
+  files to read again.
 - The store is `<cache>/code/symbols.db`, which only a worker thread of main's opens
   (`main/store/`), so its writes and lookups never hold main's event loop: each blob's definitions,
   names and imports once, by its ID and language, stamped with the version of the grammars and
@@ -1118,17 +1124,19 @@ parse them under `@lo/syntax`'s limits.
   it's needed. Past 1 GB, the trees and then the blobs no open view holds go, least recently used
   first. Settings counts it with the cache, and "Clear the cache" clears it.
 - The status bar says how far a view's index has got (`code.index`, the `indexed` topic): "Syntax
-  index 1,204 / 3,880" while it builds, "Syntax index" once it's ready, "Syntax index partial" with
-  how much on hover.
+  index 1,204 / 3,880" while it builds, again from the start once the cache is cleared, "Syntax
+  index" once it's ready, "Syntax index partial" with how much on hover.
 - The window asks over the code port (`port.ts`): a port main makes with each load of the page,
   handed over through the preload as `lo:code`, in the jobs protocol's shapes (`{ id, job, input }`,
   replies, `{ cancel }`). Main checks every message as plain data and each input against the
-  contract, and answers only about a view of the window that asked, a tree that view shows and a
-  line its file has (`main/serve.ts`). Definitions are found by name among the tree's blobs and
-  ranked by `@lo/syntax`, 100 at most; references are the blobs whose names include it, 2,000 files
-  at most, read again by `code.find` jobs for where, 5,000 at most, "By name"; the hover is the top
-  definition's line; the outline is the file's definitions, nested. An answer names its file by the
-  side's commit and path, and the first 10 come with 30 lines around them.
+  contract, and answers only about an open view, while the port's window is alive, a tree that view
+  shows and a line its file has (`main/serve.ts`). That's all the view check needs: Lo has one
+  window, which every tab is in. Definitions are found by name among the tree's blobs and ranked by
+  `@lo/syntax`, 100 at most; references are the blobs whose names include it, 2,000 files at most,
+  each blob looked through once by `code.find` jobs for where, whatever paths hold it, and what's
+  found goes to every one of them, 5,000 uses at most, "By name"; the hover is the top definition's
+  line; the outline is the file's definitions, nested. An answer names its file by the side's commit
+  and path, and the first 10 come with 30 lines around them.
 
 ## The interface
 
