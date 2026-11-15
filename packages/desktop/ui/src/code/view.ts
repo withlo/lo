@@ -2567,6 +2567,8 @@ class View implements DiffView {
       const pane: Pane = this.#pane === 'inline' ? 'inline' : place.side;
       const view = this.#viewOf(pane);
       const line = this.#docLine(pane, place);
+      // The key that closed the box didn't move the cursor: its line isn't brought on screen.
+      this.#aligner.unfollow();
       view.dispatch({ selection: { anchor: view.state.doc.line(line).from } });
       view.focus();
     }
