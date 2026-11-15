@@ -5,7 +5,9 @@
  *   compiled program, never a script (a launcher such as `bin/jdtls` is Python, and Kotlin's is a
  *   shell script), and it isn't inside the checkout.
  * - A process group of its own (`detached`), so a signal to the group reaches whatever the server
- *   started, and a terminal's Ctrl-C, which goes to the terminal's group, never reaches it.
+ *   started, and a terminal's Ctrl-C, which goes to the terminal's group, never reaches it. What
+ *   left the group, by a session of its own, is found by its parent (`family.ts`) and signalled
+ *   too.
  * - The environment it's given and nothing else: never Lo's, and never an empty one, which some
  *   launchers take to mean "inherit everything".
  */
@@ -17,14 +19,15 @@ import { isAbsolute } from 'node:path';
 
 import { isInside } from './environment.ts';
 
-/** How often a group is checked for processes while Lo waits for it to empty. */
-const GROUP_POLL = 25;
+/** How often a family is checked for processes while Lo waits for it to end. */
+const POLL = 25;
 
 /**
  * Checks that `program` is one a server may run as: an absolute path outside the checkout (each of
- * `roots` names it), to an executable file that isn't a script. It throws with what's wrong.
+ * `roots` names it), to an executable file that isn't a script. It returns the program's real path,
+ * the one to start, so what runs is what was checked. It throws with what's wrong.
  */
-export async function checkProgram(program: string, roots: readonly string[]): Promise<void> {
+export async function checkProgram(program: string, roots: readonly string[]): Promise<string> {
   if (!isAbsolute(program)) throw new Error(`${program} isn’t an absolute path.`);
   const real = await realpath(program);
   if (roots.some((root) => isInside(root, program) || isInside(root, real))) {
@@ -32,8 +35,8 @@ export async function checkProgram(program: string, roots: readonly string[]): P
   }
   const info = await stat(real);
   if (!info.isFile()) throw new Error(`${program} isn’t a file.`);
-  await access(program, constants.X_OK);
-  const file = await open(program, 'r');
+  await access(real, constants.X_OK);
+  const file = await open(real, 'r');
   try {
     const start = Buffer.alloc(2);
     const { bytesRead } = await file.read(start, 0, 2, 0);
@@ -43,6 +46,7 @@ export async function checkProgram(program: string, roots: readonly string[]): P
   } finally {
     await file.close();
   }
+  return real;
 }
 
 /** Starts `program` in a process group of its own, with pipes for its stdio. */
@@ -65,29 +69,39 @@ export function startProcess(
 }
 
 /**
- * Sends `signal` to every process in the group `group`, and says whether there was one to send it
- * to. It never throws.
+ * Sends `signal` to every process in the group `group` and to each of `others`, and says whether
+ * any was there to send it to. It never throws.
  */
-export function signalGroup(group: number, signal: NodeJS.Signals | 0): boolean {
-  try {
-    process.kill(-group, signal);
-    return true;
-  } catch {
-    return false;
+export function signalFamily(
+  group: number,
+  others: readonly number[],
+  signal: NodeJS.Signals | 0,
+): boolean {
+  let found = false;
+  for (const pid of [-group, ...others]) {
+    try {
+      process.kill(pid, signal);
+      found = true;
+    } catch {
+      // It's gone.
+    }
   }
+  return found;
 }
 
-/** Whether any process is left in the group `group`. */
-export function groupAlive(group: number): boolean {
-  return signalGroup(group, 0);
-}
-
-/** Waits at most `within` ms for the group `group` to have no process left, and says whether it does. */
-export async function groupEmptied(group: number, within: number): Promise<boolean> {
+/**
+ * Waits at most `within` ms for the group `group` and each of `others` to have no process left,
+ * and says whether they have.
+ */
+export async function familyGone(
+  group: number,
+  others: readonly number[],
+  within: number,
+): Promise<boolean> {
   const until = performance.now() + within;
-  while (groupAlive(group)) {
+  while (signalFamily(group, others, 0)) {
     if (performance.now() >= until) return false;
-    await sleep(Math.min(GROUP_POLL, Math.max(1, until - performance.now())));
+    await sleep(Math.min(POLL, Math.max(1, until - performance.now())));
   }
   return true;
 }

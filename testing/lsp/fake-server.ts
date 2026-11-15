@@ -54,7 +54,7 @@ function never(): Promise<never> {
 
 const env: Record<string, string> = {};
 for (const [name, value] of Object.entries(process.env)) if (value !== undefined) env[name] = value;
-report({ event: 'started', pid: process.pid, env, cwd: process.cwd() });
+report({ event: 'started', pid: process.pid, argv0: process.argv0, env, cwd: process.cwd() });
 for (const line of scenario.stderr ?? []) process.stderr.write(`${line}\n`);
 if (scenario.stubborn) process.on('SIGTERM', () => undefined);
 
@@ -114,6 +114,11 @@ connection.onRequest('initialize', async (params: { rootUri?: string }) => {
 
 connection.onRequest('shutdown', () => {
   report({ event: 'shutdown' });
+  if (scenario.flood?.at === 'shutdown') {
+    process.on('SIGTERM', () => undefined);
+    // After its answer has gone.
+    setTimeout(flood, 50);
+  }
   return scenario.stubborn ? never() : null;
 });
 
@@ -133,7 +138,7 @@ connection.onRequest(async (method: string, params: unknown, token: Cancellation
 
 connection.onNotification('exit', () => {
   report({ event: 'exit' });
-  if (!scenario.stubborn) process.exit(0);
+  if (!scenario.stubborn && scenario.flood?.at !== 'shutdown') process.exit(0);
 });
 
 connection.onNotification('initialized', () => {
@@ -160,8 +165,22 @@ connection.onNotification((method: string, params: unknown) => {
 
 // Lo has gone: nothing more can come.
 connection.onClose(() => {
-  if (!scenario.stubborn) process.exit(0);
+  if (!scenario.stubborn && scenario.flood === undefined) process.exit(0);
 });
+
+/** Writes the flood's header, then its frame until stdout breaks or it's killed. */
+function flood(): void {
+  const { header = '', frame = 'x'.repeat(64 * 1024) } = scenario.flood ?? {};
+  process.stdout.on('error', () => undefined);
+  process.stdout.write(header);
+  const more = (): void => {
+    while (process.stdout.write(frame)) {
+      // The pipe takes it.
+    }
+    process.stdout.once('drain', more);
+  };
+  more();
+}
 
 async function afterInitialized(): Promise<void> {
   if (scenario.child) {
@@ -169,6 +188,13 @@ async function afterInitialized(): Promise<void> {
       stdio: 'ignore',
     });
     report({ event: 'child', pid: child.pid ?? 0 });
+  }
+  if (scenario.escapee) {
+    const escapee = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1 << 30)'], {
+      stdio: 'ignore',
+      detached: true,
+    });
+    report({ event: 'escapee', pid: escapee.pid ?? 0 });
   }
   for (let megabyte = 0; megabyte < (scenario.memory ?? 0); megabyte += 1) {
     kept.push(Buffer.alloc(1024 * 1024, 1));
@@ -187,9 +213,7 @@ async function afterInitialized(): Promise<void> {
     await sleep(delay);
     await connection.sendNotification(method, params);
   }
-  if (scenario.oversized !== undefined) {
-    process.stdout.write(`Content-Length: ${scenario.oversized}\r\n\r\n{"jsonrpc":"2.0",`);
-  }
+  if (scenario.flood?.at === 'initialized') flood();
 }
 
 connection.listen();

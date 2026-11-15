@@ -7,13 +7,16 @@
  *   none of the user's files there (`~/.gitconfig`, `~/.npmrc`, `~/.cargo/config.toml`, shell
  *   profiles) and keeps its caches where nothing else looks.
  * - `PATH` holds the folders the server's adapter names, then the system's own (`/usr/bin`,
- *   `/bin`). Each is an absolute path outside the checkout, so nothing in the checkout chooses a
- *   program, and none is empty, which would mean the folder the server runs in: the checkout.
+ *   `/bin`). Each is an absolute path outside the checkout, as given and as the system resolves
+ *   it, so nothing in the checkout chooses a program, and none is empty, which would mean the
+ *   folder the server runs in: the checkout. `HOME` is held to the same.
  * - git's variables, from `@lo/git`, set up any git the server runs: Lo's safe settings as
  *   protected configuration, no system or global config, no prompts and no lazy fetching. They're
  *   the only `GIT_*` variables it gets.
  * - The adapter's own variables, such as `GOPROXY=off`. None may set what's above, a proxy, the
- *   SSH agent or anything named like a secret.
+ *   SSH agent or anything named like a secret. Nor may one load code into a program or a shell
+ *   (`LD_PRELOAD`, `DYLD_*`, `NODE_OPTIONS`, `ELECTRON_RUN_AS_NODE`, `BASH_ENV` and the like) or
+ *   configure npm, unless the adapter names it in `allowed`, saying it sets it on purpose.
  * - `LANG=C.UTF-8`, so servers read source as UTF-8.
  */
 
@@ -25,12 +28,17 @@ export const SYSTEM_PATH = ['/usr/bin', '/bin'] as const;
 export interface EnvironmentOptions {
   /** The server's own folder, its `HOME`. */
   readonly home: string;
-  /** The checkout the server runs on. Nothing on `PATH` may be inside it. */
-  readonly root: string;
+  /** The checkout the server runs on, as given and as the system resolves it. */
+  readonly roots: readonly string[];
   /** The folders of the toolchain the server needs, first on its `PATH`. */
   readonly path: readonly string[];
   /** The adapter's own variables. */
   readonly variables?: Readonly<Record<string, string>> | undefined;
+  /**
+   * The names among `variables` that load code or configure a program, which the adapter sets on
+   * purpose. Never a proxy, the SSH agent, git's or a secret.
+   */
+  readonly allowed?: readonly string[] | undefined;
   /** The variables that set up the git a server runs, each `GIT_*`, from `@lo/git`. */
   readonly git: Readonly<Record<string, string>>;
 }
@@ -39,7 +47,7 @@ export interface EnvironmentOptions {
 const OWN = new Set(['HOME', 'PATH', 'TMPDIR', 'LANG']);
 
 /** Names no adapter's variable may have. */
-const REFUSED = [
+const NEVER = [
   // Lo's settings for git come only from `@lo/git`.
   /^GIT_/,
   // Proxies, in every spelling programs read.
@@ -47,8 +55,26 @@ const REFUSED = [
   // The SSH agent, and the programs that ask for a password.
   /^SSH_(?:AUTH_SOCK|AGENT_PID|ASKPASS)/,
   /ASKPASS/,
-  // Anything named like a secret.
-  /TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL/i,
+  // Anything named like a secret or a credential, such as `OPENAI_API_KEY` or npm's `_auth`.
+  /TOKEN|SECRET|PASSW(?:OR)?D|CREDENTIAL|API_?KEY|PRIVATE_?KEY|_AUTH/i,
+];
+
+/** Names that load code into a program or a shell, or configure one: only when an adapter allows them. */
+const RISKY = [
+  // The dynamic loaders'.
+  /^(?:LD|DYLD)_/,
+  // Code a runtime loads before its program, or where it looks for modules.
+  /^NODE_(?:OPTIONS|PATH|REPL_EXTERNAL_MODULE)$/,
+  /^ELECTRON_/,
+  /^PYTHON(?:STARTUP|PATH|HOME|INSPECT|USERBASE)$/,
+  /^PERL5?(?:OPT|LIB)$/,
+  /^RUBY(?:OPT|LIB)$/,
+  /^(?:JAVA_TOOL_OPTIONS|_JAVA_OPTIONS|JDK_JAVA_OPTIONS)$/,
+  // What a shell runs as it starts, and how it reads.
+  /^(?:BASH_ENV|ENV|ZDOTDIR|PROMPT_COMMAND|PS4|SHELLOPTS|BASHOPTS|IFS|CDPATH)$/,
+  /^BASH_FUNC_/,
+  // npm's own settings, which can name a shell, a script or a registry.
+  /^npm_config_/i,
 ];
 
 /** A variable's name, as the shell spells one. */
@@ -70,15 +96,16 @@ export function temporaryFolder(home: string): string {
  * is a mistake in Lo's own code: an adapter's or the app's.
  */
 export function serverEnvironment(options: EnvironmentOptions): Record<string, string> {
-  const { home, root, path, variables = {}, git } = options;
-  if (!isAbsolute(home) || isInside(root, home)) {
+  const { home, roots, path, variables = {}, allowed = [], git } = options;
+  const inside = (folder: string) => roots.some((root) => isInside(root, folder));
+  if (!isAbsolute(home) || inside(home)) {
     throw new Error(`a server's home must be an absolute path outside its checkout: ${home}`);
   }
   for (const folder of path) {
     if (!isAbsolute(folder) || folder.includes(':') || folder.includes('\0')) {
       throw new Error(`a folder on a server's PATH must be an absolute path: ${folder}`);
     }
-    if (isInside(root, folder)) {
+    if (inside(folder)) {
       throw new Error(`a folder on a server's PATH must be outside its checkout: ${folder}`);
     }
   }
@@ -92,7 +119,8 @@ export function serverEnvironment(options: EnvironmentOptions): Record<string, s
     env[name] = checkedValue(name, git[name]);
   }
   for (const name of Object.keys(variables)) {
-    if (!NAME.test(name) || OWN.has(name) || REFUSED.some((pattern) => pattern.test(name))) {
+    const risky = RISKY.some((pattern) => pattern.test(name)) && !allowed.includes(name);
+    if (!NAME.test(name) || OWN.has(name) || NEVER.some((pattern) => pattern.test(name)) || risky) {
       throw new Error(`a server may not be given the variable ${name}`);
     }
     env[name] = checkedValue(name, variables[name]);

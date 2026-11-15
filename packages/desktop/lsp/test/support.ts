@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { fakeServer, readReport, type Scenario, type Seen } from '@lo/testing/lsp';
 import { onTestFinished } from 'vitest';
 
-import { type Limits, type Server, type ServerSpec, startServer } from '../src/index.ts';
+import { type Server, type ServerSpec, startServer, type Tuning } from '../src/index.ts';
 
 /** Stand-ins for the variables `@lo/git` sets up a server's git with. */
 export const GIT = {
@@ -36,7 +36,7 @@ export interface Fake {
  */
 export function startFake(
   scenario: Omit<Scenario, 'report'> = {},
-  options: { spec?: Partial<ServerSpec>; limits?: Partial<Limits> } = {},
+  options: { spec?: Partial<ServerSpec>; tuning?: Tuning } = {},
 ): Fake {
   const folder = tempFolder();
   const root = join(folder, 'checkout');
@@ -54,11 +54,13 @@ export function startFake(
       git: GIT,
       ...options.spec,
     },
-    options.limits,
+    options.tuning,
   );
   const seen = () => readReport(fake.report);
   onTestFinished(async () => {
-    const pids = seen().flatMap((event) => (event.event === 'child' ? [event.pid] : []));
+    const pids = seen().flatMap((event) =>
+      event.event === 'child' || event.event === 'escapee' ? [event.pid] : [],
+    );
     if (server.pid !== undefined) pids.push(-server.pid);
     for (const pid of pids) {
       try {

@@ -11,8 +11,10 @@ export type Failure =
   | { readonly kind: 'start'; readonly message: string }
   /** It exited, or a signal stopped it, without being asked to. */
   | { readonly kind: 'exited'; readonly code: number | null; readonly signal: string | null }
-  /** Its group held more than `cap` bytes, so Lo stopped it. */
+  /** Its family held more than `cap` bytes, so Lo stopped it. */
   | { readonly kind: 'memory'; readonly cap: number }
+  /** Lo couldn't read its memory, so couldn't hold it to its cap, and stopped it. */
+  | { readonly kind: 'memoryUnread' }
   /** Its answer to `initialize` wasn't one Lo can use, or it didn't answer. */
   | { readonly kind: 'initialize'; readonly message: string }
   /** It sent something Lo can't read, or too much of it. */
@@ -50,6 +52,8 @@ export function failureMessage(failure: Failure): string {
         : `It quit with exit code ${failure.code}.`;
     case 'memory':
       return `It ran out of memory at ${size(failure.cap)}.`;
+    case 'memoryUnread':
+      return 'Lo couldn’t read how much memory it used, so it stopped it.';
     default:
       throw new Error(`a failure Lo doesn't know: ${JSON.stringify(failure satisfies never)}`);
   }

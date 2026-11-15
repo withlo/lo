@@ -3,7 +3,18 @@
 // which is killed with its group when the test ends.
 
 import { execFileSync } from 'node:child_process';
-import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
@@ -17,6 +28,8 @@ import {
   type State,
   startServer,
 } from '../src/index.ts';
+import { fakeServer } from '@lo/testing/lsp';
+
 import { eventually, GIT, running, startFake, tempFolder } from './support.ts';
 
 const POSITION = { position: { line: 0, character: 6 } };
@@ -209,7 +222,7 @@ test('it gets its settings, registrations and progress, and is refused the rest'
   ]);
   await eventually(() => server.log.includes('Error: Something broke'));
   expect(server.log).toContain('Starting the fake server');
-  expect(server.log.some((line) => line.includes("refused the server's workspace/applyEdit"))).toBe(
+  expect(server.log.some((line) => line.includes('refused the server’s workspace/applyEdit'))).toBe(
     true,
   );
 });
@@ -245,7 +258,7 @@ test('a server past its memory cap is stopped, with everything it started', asyn
   const cap = 256 * 1024 * 1024;
   const { server, seen } = startFake(
     { memory: 512, child: true },
-    { spec: { memoryCap: cap }, limits: { memoryEvery: 100 } },
+    { spec: { memoryCap: cap }, tuning: { memoryEvery: 100 } },
   );
   // It started well within the cap, and passed it only once it filled its memory.
   expect(await server.ready).toBe(true);
@@ -402,11 +415,112 @@ test('a bad answer to initialize, or a message too large, fails the server', asy
   expect(await wrong.server.ready).toBe(false);
   expect(wrong.server.state).toMatchObject({ kind: 'failed', failure: { kind: 'initialize' } });
 
-  const large = startFake({ oversized: 100 * 1024 * 1024 });
+  const large = startFake({
+    flood: { at: 'initialized', header: `Content-Length: ${100 * 1024 * 1024}\r\n\r\n` },
+  });
   await large.server.ready;
   await eventually(() => large.server.state.kind === 'failed');
-  expect(large.server.state).toMatchObject({ kind: 'failed', failure: { kind: 'protocol' } });
-  expect(
-    large.server.state.kind === 'failed' && failureMessage(large.server.state.failure),
-  ).toMatch(/past the limit/);
+  expect(large.server.state).toMatchObject({
+    kind: 'failed',
+    failure: { kind: 'protocol', message: expect.stringContaining('past the limit') },
+  });
+});
+
+test('a message with two lengths fails the server, whichever the reader would take', async () => {
+  // The reader takes the last length and the meter once took the first: 400 MB went unmeasured.
+  const { server, seen } = startFake({
+    flood: { at: 'initialized', header: 'Content-Length: 10\r\nContent-Length: 400000000\r\n\r\n' },
+  });
+  await server.ready;
+  await eventually(() => server.state.kind === 'failed');
+  expect(server.state).toMatchObject({
+    kind: 'failed',
+    failure: { kind: 'protocol', message: 'It sent a message with two lengths.' },
+  });
+  const pid = seen().find((event) => event.event === 'started')?.pid ?? 0;
+  await eventually(() => !running(pid));
+});
+
+test('a server that breaks a limit while it stops is killed at once', async () => {
+  // It answers shutdown, then floods behind a header of 999 GB, ignoring exit and SIGTERM.
+  const { server, seen } = startFake({
+    flood: { at: 'shutdown', header: `Content-Length: ${999 * 1024 ** 3}\r\n\r\n` },
+  });
+  await server.ready;
+  const pid = server.pid ?? 0;
+  const started = performance.now();
+  await server.stop();
+  // Well before the stop's own SIGTERM and SIGKILL, 2 s and 4 s in.
+  expect(performance.now() - started).toBeLessThan(2000);
+  expect(seen().some((event) => event.event === 'shutdown')).toBe(true);
+  expect(server.log.some((line) => line.includes('past the limit'))).toBe(true);
+  expect(server.state).toEqual({ kind: 'stopped' });
+  expect(running(pid)).toBe(false);
+});
+
+test('what a server started in a session of its own is stopped with it', async () => {
+  const { server, seen } = startFake({ escapee: true });
+  await server.ready;
+  const escapee = await eventually(() => seen().find((event) => event.event === 'escapee'));
+  // It left the server's group, so only its parent ties it to the server.
+  expect(running(escapee.pid)).toBe(true);
+  await server.stop();
+  await eventually(() => !running(escapee.pid), 1000);
+});
+
+test('memory that can’t be read stops the server, since its cap would go unenforced', async () => {
+  const { server } = startFake(
+    {},
+    {
+      tuning: {
+        memoryEvery: 50,
+        readFamily: () => Promise.reject(new Error('ps failed')),
+      },
+    },
+  );
+  await eventually(() => server.state.kind === 'failed');
+  expect(server.state).toEqual({ kind: 'failed', failure: { kind: 'memoryUnread' } });
+  expect(server.log).toContain('Lo: couldn’t read its memory: Error: ps failed');
+});
+
+test('the program that runs is the one checked, and no folder resolves into the checkout', async () => {
+  // A program by a link runs by its real path, so changing the link after the check changes nothing.
+  const link = join(tempFolder(), 'node');
+  symlinkSync(process.execPath, link);
+  const { server, seen } = startFake({}, { spec: { program: link } });
+  await server.ready;
+  expect(seen().find((event) => event.event === 'started')).toMatchObject({
+    argv0: realpathSync(process.execPath),
+  });
+
+  // The checkout as given, which on a Mac isn't as the system resolves it, and links into it.
+  const folder = mkdtempSync(join(tmpdir(), 'lo-lsp-'));
+  onTestFinished(() => rmSync(folder, { recursive: true, force: true }));
+  const root = join(folder, 'checkout');
+  mkdirSync(join(root, 'bin'), { recursive: true });
+  symlinkSync(join(root, 'bin'), join(folder, 'tools'));
+  symlinkSync(root, join(folder, 'home'));
+  const fake = fakeServer(folder);
+  const cases = [
+    { path: [join(root, 'bin')], home: join(folder, 'own') },
+    { path: [join(folder, 'tools')], home: join(folder, 'own') },
+    { path: [], home: join(folder, 'home', '.home') },
+  ];
+  for (const { path, home } of cases) {
+    const refused = startServer({
+      name: 'Fake',
+      program: fake.program,
+      args: fake.args,
+      root,
+      home,
+      path,
+      git: GIT,
+    });
+    onTestFinished(() => refused.stop());
+    expect(await refused.ready).toBe(false);
+    expect(refused.state).toMatchObject({
+      kind: 'failed',
+      failure: { kind: 'start', message: expect.stringContaining('outside its checkout') },
+    });
+  }
 });

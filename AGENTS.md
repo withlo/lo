@@ -388,18 +388,27 @@ with them, on `vscode-jsonrpc`. It depends on no other Lo package: the app hands
 toolchain and git's variables each server needs.
 
 - A server starts as its own program, by absolute path with an argument list: never through a shell,
-  never as a script (a launcher such as `bin/jdtls`), and never as a program in its checkout. It
-  leads a process group of its own, so a stop or a kill reaches whatever it started.
+  never as a script (a launcher such as `bin/jdtls`), and never as a program in its checkout; what
+  starts is the real path that was checked. It leads a process group of its own, and its family is
+  that group with whatever descends from it, found by parent, so a stop or a kill reaches whatever
+  it started, a process in a session of its own included.
 - Its environment is built from nothing: a `HOME` of its own with `TMPDIR` inside it, a `PATH` of
   the toolchain's folders and the system's, git's variables from `@lo/git`, and its adapter's own
-  variables, none of which may be a proxy, the SSH agent or named like a secret. Nothing of main's
-  reaches it.
+  variables, none of which may be a proxy, the SSH agent or named like a secret, nor load code into
+  a program or shell (`NODE_OPTIONS`, `DYLD_*`, `BASH_ENV`) unless the adapter names it in
+  `allowed`. Each folder is checked as given and as it resolves, against the checkout as given and
+  as it resolves. Nothing of main's reaches it.
 - Lo opens a file on a server with its text from git, at most 50 at once, and asks only for hovers,
   definitions, references, inlay hints and document symbols, each with a deadline. A request is
-  cancelled once its deadline passes, its asker gives up or a newer one replaces it. Of what a
-  server asks, Lo answers settings, registrations and progress tokens, and refuses the rest.
-- Main reads each server's group's resident memory every 5 s and stops it past its cap (4 GB). A
-  stop sends `shutdown` and `exit`, a second each, then `SIGTERM` to the group, then `SIGKILL` 2 s
+  cancelled once its deadline passes, its asker gives up or a newer one replaces it, and keeps its
+  place at the server until answered or for 30 s, so a server never has more than 32 unanswered. Of
+  what a server asks, Lo answers settings, registrations and progress tokens, and refuses the rest.
+- Beside the reader, a meter reads each header as `vscode-jsonrpc` does and refuses a message past
+  64 MB, a header with two lengths, and more than 80 MB read but not handed on.
+- Main reads each server's family's resident memory every 5 s, and stops it if it can't three times
+  running. A server past its cap (4 GB) or the meter's limits is killed at once, whatever its state,
+  a stop's included: Lo reads nothing more from it, freezes its group and kills its family. A stop
+  sends `shutdown` and `exit`, a second each, then `SIGTERM` to the family, then `SIGKILL` 2 s
   later, inside a feature's 5 s.
 - Its stderr and messages make its log, the last 1,000 lines, in memory only.
 - Tests start only the fake server, `testing/lsp/fake-server.ts`, at most two at once in a test

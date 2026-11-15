@@ -12,7 +12,7 @@ import type { ChildProcess } from 'node:child_process';
 import { mkdir, realpath } from 'node:fs/promises';
 import { basename } from 'node:path';
 
-import { ErrorCodes, ResponseError } from 'vscode-jsonrpc';
+import { ErrorCodes, type MessageReader, ResponseError } from 'vscode-jsonrpc';
 import {
   createMessageConnection,
   type MessageConnection,
@@ -33,8 +33,8 @@ import { Documents } from './documents.ts';
 import { serverEnvironment, temporaryFolder } from './environment.ts';
 import { FrameMeter } from './framing.ts';
 import { Log } from './log.ts';
-import { groupMemory } from './memory.ts';
-import { checkProgram, groupEmptied, signalGroup, sleep, startProcess } from './process.ts';
+import { type ReadFamily, readFamily } from './family.ts';
+import { checkProgram, familyGone, signalFamily, sleep, startProcess } from './process.ts';
 import { type Answer, Queue } from './queue.ts';
 import { reply } from './requests.ts';
 import { type Failure, failureMessage, type Progress, type State } from './state.ts';
@@ -55,6 +55,8 @@ export interface ServerSpec {
   readonly path: readonly string[];
   /** Its adapter's own variables, such as `GOPROXY=off`. */
   readonly variables?: Readonly<Record<string, string>> | undefined;
+  /** The names among `variables` that load code or configure a program, set on purpose. */
+  readonly allowed?: readonly string[] | undefined;
   /** The variables that set up the git it runs, each `GIT_*`, from `@lo/git`. */
   readonly git: Readonly<Record<string, string>>;
   /** What it gets for `workspace/configuration`, by section. */
@@ -71,15 +73,19 @@ export interface ServerSpec {
 export interface Limits {
   /** The most resident memory a server's group may hold, in bytes, unless its spec says. */
   readonly memoryCap: number;
-  /** How often its group's memory is read. */
+  /** How often its family's memory is read. */
   readonly memoryEvery: number;
+  /** How many reads of its memory in a row may fail before it's stopped, unwatched. */
+  readonly memoryMisses: number;
   /** How long it has to answer `initialize`. */
   readonly initialize: number;
   /** How long a stop waits for its answer to `shutdown`. */
   readonly shutdown: number;
   /** How long a stop waits, after `exit`, for it to exit. */
   readonly exit: number;
-  /** How long its group has after `SIGTERM`, before `SIGKILL`. */
+  /** How long a stop waits to read its family, before it signals what it knows of. */
+  readonly family: number;
+  /** How long its family has after `SIGTERM`, before `SIGKILL`. */
   readonly term: number;
   /** How long a stop waits for it to go after `SIGKILL`. */
   readonly kill: number;
@@ -89,16 +95,19 @@ export interface Limits {
 }
 
 /**
- * A stop takes at most `shutdown + exit + term + kill`: 4.5 s, inside a feature's 5 s to stop.
+ * A stop takes at most `shutdown + exit + family + term + kill`, its family read once during
+ * `shutdown` and once after `exit`: 4.65 s, inside a feature's 5 s to stop.
  */
 export const LIMITS: Limits = {
   memoryCap: 4 * 1024 ** 3,
   memoryEvery: 5000,
+  memoryMisses: 3,
   initialize: 60_000,
   shutdown: 1000,
   exit: 1000,
+  family: 250,
   term: 2000,
-  kill: 500,
+  kill: 400,
   misses: 3,
   missWindow: 60_000,
 };
@@ -137,9 +146,16 @@ export interface RequestOptions {
   readonly key?: string | undefined;
 }
 
+/** What tests may change about how a server runs. */
+export type Tuning = Partial<Limits> & {
+  /** How its family is read, for its memory and to stop it. */
+  readonly readFamily?: ReadFamily | undefined;
+};
+
 /** Starts a server, and returns it at once, `starting`. */
-export function startServer(spec: ServerSpec, limits: Partial<Limits> = {}): Server {
-  return new Server(spec, { ...LIMITS, ...limits });
+export function startServer(spec: ServerSpec, tuning: Tuning = {}): Server {
+  const { readFamily: read = readFamily, ...limits } = tuning;
+  return new Server(spec, { ...LIMITS, ...limits }, read);
 }
 
 /** How long a server may run on after its output ends, before it counts as failed. */
@@ -156,6 +172,7 @@ export class Server {
   readonly ready: Promise<boolean>;
   readonly #spec: ServerSpec;
   readonly #limits: Limits;
+  readonly #readFamily: ReadFamily;
   #state: State = { kind: 'starting' };
   readonly #listeners = new Set<(state: State) => void>();
   readonly #log = new Log();
@@ -178,8 +195,10 @@ export class Server {
   #memory: number | undefined;
   #memoryTimer: ReturnType<typeof setInterval> | undefined;
   #readingMemory = false;
-  /** Whether a failed read of its memory has been noted, so its log notes it once. */
-  #memoryUnread = false;
+  /** How many reads of its memory in a row have failed. */
+  #memoryUnread = 0;
+  /** Whether it broke a limit, and so is being killed. */
+  #breached = false;
   #misses: number[] = [];
   readonly #tokens = new Set<string | number>();
   readonly #progress = new Map<string | number, Progress>();
@@ -188,10 +207,11 @@ export class Server {
   #resolveReady: (ready: boolean) => void = () => undefined;
   #resolveExited: () => void = () => undefined;
 
-  constructor(spec: ServerSpec, limits: Limits) {
+  constructor(spec: ServerSpec, limits: Limits, read: ReadFamily) {
     this.name = spec.name;
     this.#spec = spec;
     this.#limits = limits;
+    this.#readFamily = read;
     this.ready = new Promise((resolve) => {
       this.#resolveReady = resolve;
     });
@@ -317,7 +337,7 @@ export class Server {
 
   /**
    * Stops the server and everything it started: `shutdown` and `exit`, 1 s each, then `SIGTERM` to
-   * its group, then `SIGKILL` 2 s later. Its requests are answered `stopped` at once. It resolves
+   * its family, then `SIGKILL` 2 s later. Its requests are answered `stopped` at once. It resolves
    * once the group is gone, or once it's been killed, within 5 s. A server that failed stays
    * `failed`; any other is `stopped`.
    */
@@ -332,7 +352,6 @@ export class Server {
     if (!failed) this.#setState({ kind: 'stopping' });
     this.#queue.close('stopped');
     this.#resolveReady(false);
-    clearInterval(this.#memoryTimer);
     await this.#launched;
     if (this.#child?.pid !== undefined) {
       if (failed || this.#exit !== undefined) {
@@ -344,11 +363,17 @@ export class Server {
     if (!failed) this.#setState({ kind: 'stopped' });
   }
 
-  /** Asks the server to shut down and exit, then ends its group. */
+  /**
+   * Asks the server to shut down and exit, then ends its family. What left its group is read
+   * first, as it shuts down, since once the server exits nothing ties those to it.
+   */
   async #shutDown(): Promise<void> {
     const connection = this.#connection;
-    if (connection !== undefined) {
+    const group = this.#child?.pid;
+    let earlier: readonly number[] = [];
+    if (connection !== undefined && group !== undefined) {
       const { shutdown, exit } = this.#limits;
+      const read = this.#others(group);
       try {
         await Promise.race([
           connection.sendRequest('shutdown').catch(() => undefined),
@@ -358,28 +383,56 @@ export class Server {
       } catch {
         // The connection has closed.
       }
+      earlier = await read;
       this.#notify('exit');
       await Promise.race([this.#exited, sleep(exit)]);
     }
-    await this.#endGroup();
+    await this.#endGroup(earlier);
   }
 
-  /** Stops what's left of the server's group: `SIGTERM`, then `SIGKILL` if anything outlasts it. */
-  async #endGroup(): Promise<void> {
+  /**
+   * Stops what's left of the server's family, with any of `earlier` still running: `SIGTERM`, then
+   * `SIGKILL` if anything outlasts it.
+   */
+  async #endGroup(earlier: readonly number[] = []): Promise<void> {
     const group = this.#child?.pid;
     if (group === undefined) return;
-    if (signalGroup(group, 'SIGTERM') && !(await groupEmptied(group, this.#limits.term))) {
-      signalGroup(group, 'SIGKILL');
+    const others = [...new Set([...(await this.#others(group)), ...earlier])];
+    if (
+      signalFamily(group, others, 'SIGTERM') &&
+      !(await familyGone(group, others, this.#limits.term))
+    ) {
+      signalFamily(group, others, 'SIGKILL');
     }
     await Promise.race([this.#exited, sleep(this.#limits.kill)]);
   }
 
-  /** Kills the server's group at once. */
+  /** Kills the server's family at once. */
   async #kill(): Promise<void> {
     const group = this.#child?.pid;
     if (group === undefined) return;
-    signalGroup(group, 'SIGKILL');
+    // Frozen first, so nothing it started outlives it unfound while its family is read.
+    signalFamily(group, [], 'SIGSTOP');
+    signalFamily(group, await this.#others(group), 'SIGKILL');
     await Promise.race([this.#exited, sleep(this.#limits.kill)]);
+  }
+
+  /**
+   * The processes descended from the server's group that have left it, such as a daemon in a
+   * session of its own, as read within {@link Limits.family}. Once the group is empty, none can be
+   * found.
+   */
+  async #others(group: number): Promise<number[]> {
+    if (!signalFamily(group, [], 0)) return [];
+    try {
+      const family = await Promise.race([
+        this.#readFamily(group),
+        sleep(this.#limits.family).then(() => []),
+      ]);
+      return family.filter((member) => member.group !== group).map((member) => member.pid);
+    } catch {
+      return [];
+    }
   }
 
   /** Checks what the server needs, then starts it. */
@@ -388,18 +441,23 @@ export class Server {
     try {
       const root = await realpath(spec.root);
       this.#roots = [...new Set([root, spec.root])];
-      await checkProgram(spec.program, this.#roots);
-      const env = serverEnvironment({
-        home: spec.home,
-        root,
-        path: spec.path,
+      // The program that runs is the one checked, by its real path.
+      const program = await checkProgram(spec.program, this.#roots);
+      // The folders as given, then as the system resolves them, are each held to the same rules.
+      const given = {
+        roots: this.#roots,
         variables: spec.variables,
+        allowed: spec.allowed,
         git: spec.git,
-      });
+      };
+      serverEnvironment({ ...given, home: spec.home, path: spec.path });
+      const path = await Promise.all(spec.path.map((folder) => resolved(folder)));
       await mkdir(spec.home, { recursive: true, mode: 0o700 });
-      await mkdir(temporaryFolder(spec.home), { recursive: true, mode: 0o700 });
+      const home = await realpath(spec.home);
+      const env = serverEnvironment({ ...given, home, path });
+      await mkdir(temporaryFolder(home), { recursive: true, mode: 0o700 });
       if (this.#stopRequested) return;
-      const child = startProcess(spec.program, spec.args, { env, cwd: root });
+      const child = startProcess(program, spec.args, { env, cwd: root });
       this.#child = child;
       child.on('error', (error) => {
         // An error once it runs, such as a signal it can't be sent, changes nothing: its exit
@@ -434,18 +492,33 @@ export class Server {
     stderr.setEncoding('utf8');
     stderr.on('data', (text: string) => this.#log.write(text));
     stderr.on('end', () => this.#log.end());
-    // Measured before the reader reads each piece, so a message too large stops the server early.
+    // Measured before the reader reads each piece, so a message too large, or too much unread,
+    // ends the server before the reader holds it; and as the reader hands each message on.
     const meter = new FrameMeter();
     stdout.on('data', (chunk: Buffer) => {
       const wrong = meter.feed(chunk);
-      if (wrong !== undefined) this.#fail({ kind: 'protocol', message: wrong });
+      if (wrong !== undefined) this.#breach({ kind: 'protocol', message: wrong });
     });
+    const reader = new StreamMessageReader(stdout);
+    const metered: MessageReader = {
+      onError: reader.onError,
+      onClose: reader.onClose,
+      onPartialMessage: reader.onPartialMessage,
+      listen: (callback) =>
+        reader.listen((message) => {
+          const wrong = meter.handedOn();
+          if (wrong === undefined) callback(message);
+          else this.#breach({ kind: 'protocol', message: wrong });
+        }),
+      dispose: () => reader.dispose(),
+    };
     const note = (message: string) => this.#log.add(`Lo: ${message}`);
-    const connection = createMessageConnection(
-      new StreamMessageReader(stdout),
-      new StreamMessageWriter(stdin),
-      { error: note, warn: note, info: () => undefined, log: () => undefined },
-    );
+    const connection = createMessageConnection(metered, new StreamMessageWriter(stdin), {
+      error: note,
+      warn: note,
+      info: () => undefined,
+      log: () => undefined,
+    });
     this.#connection = connection;
     connection.onRequest((method: string, params: unknown) => {
       const answer = reply(method, params, {
@@ -453,7 +526,7 @@ export class Server {
         folders: this.#folders(),
       });
       if (!answer.accepted) {
-        note(`refused the server's ${method}: ${answer.message}`);
+        note(`refused the server’s ${method}: ${answer.message}`);
         return new ResponseError(ErrorCodes.MethodNotFound, answer.message);
       }
       if (method === 'window/workDoneProgress/create') this.#track(params);
@@ -465,7 +538,7 @@ export class Server {
     connection.onError(([error, message]) => {
       // A message it sent that Lo couldn't read. A failed write means it's gone, which its exit says.
       if (message === undefined && this.#exit === undefined) {
-        this.#fail({
+        this.#breach({
           kind: 'protocol',
           message: `It sent a message Lo can’t read: ${error.message}`,
         });
@@ -554,44 +627,71 @@ export class Server {
 
   /**
    * Marks the server failed with `failure`, unless it's stopping or ended already, and ends its
-   * process and group: at once past its memory cap, else asking first.
+   * family, asking first.
    */
   #fail(failure: Failure): void {
-    const { kind } = this.#state;
-    if (kind === 'failed' || kind === 'stopping' || kind === 'stopped') return;
-    this.#setState({ kind: 'failed', failure });
+    if (!this.#failed(failure)) return;
     // How it exited is noted as it exits.
     if (failure.kind !== 'exited') this.#log.add(`Lo: ${failureMessage(failure)}`);
-    this.#queue.close('stopped');
-    this.#resolveReady(false);
-    clearInterval(this.#memoryTimer);
     const child = this.#child;
     if (child?.pid === undefined) {
       this.#resolveExited();
       return;
     }
-    if (this.#exit === undefined) {
-      // Nothing more it says is read.
-      this.#connection?.dispose();
-      child.stdout?.destroy();
-    }
-    this.#cleanup = failure.kind === 'memory' ? this.#kill() : this.#endGroup();
+    if (this.#exit === undefined) this.#stopReading();
+    this.#cleanup = this.#endGroup();
   }
 
-  /** Reads its group's memory, and stops it past its cap. */
+  /**
+   * Ends a server that broke a limit, whatever its state, a stop's included: nothing more it sends
+   * is read, and its family is killed at once. It's marked failed unless it was stopping.
+   */
+  #breach(failure: Failure): void {
+    if (this.#breached) return;
+    this.#breached = true;
+    this.#log.add(`Lo: ${failureMessage(failure)}`);
+    this.#failed(failure);
+    this.#stopReading();
+    if (this.#child?.pid !== undefined && this.#exit === undefined) this.#cleanup = this.#kill();
+  }
+
+  /** Marks the server failed, unless it's failed, stopping or stopped, and says whether it did. */
+  #failed(failure: Failure): boolean {
+    const { kind } = this.#state;
+    if (kind === 'failed' || kind === 'stopping' || kind === 'stopped') return false;
+    this.#setState({ kind: 'failed', failure });
+    this.#queue.close('stopped');
+    this.#resolveReady(false);
+    return true;
+  }
+
+  /** Reads nothing more from the server. */
+  #stopReading(): void {
+    this.#connection?.dispose();
+    this.#child?.stdout?.destroy();
+  }
+
+  /**
+   * Reads its family's memory, and kills it past its cap, whatever its state. If its memory can't
+   * be read several times in a row, it's stopped, since its cap would go unenforced.
+   */
   async #watchMemory(): Promise<void> {
     const group = this.#child?.pid;
     if (this.#readingMemory || group === undefined || this.#exit !== undefined) return;
     this.#readingMemory = true;
     try {
-      const memory = (await groupMemory([group])).get(group);
-      if (memory === undefined || this.#exit !== undefined) return;
+      const family = await this.#readFamily(group);
+      if (this.#exit !== undefined) return;
+      if (family.length === 0) throw new Error('none of its processes were found');
+      const memory = family.reduce((sum, member) => sum + (member.resident ?? 0), 0);
       this.#memory = memory;
+      this.#memoryUnread = 0;
       const cap = this.#spec.memoryCap ?? this.#limits.memoryCap;
-      if (memory > cap) this.#fail({ kind: 'memory', cap });
+      if (memory > cap) this.#breach({ kind: 'memory', cap });
     } catch (error) {
-      if (!this.#memoryUnread) this.#log.add(`Lo: couldn't read its memory: ${String(error)}`);
-      this.#memoryUnread = true;
+      this.#memoryUnread += 1;
+      if (this.#memoryUnread === 1) this.#log.add(`Lo: couldn’t read its memory: ${String(error)}`);
+      if (this.#memoryUnread >= this.#limits.memoryMisses) this.#fail({ kind: 'memoryUnread' });
     } finally {
       this.#readingMemory = false;
     }
@@ -708,6 +808,15 @@ export class Server {
         // One listener's mistake doesn't keep the others from hearing.
       }
     }
+  }
+}
+
+/** The real path of `folder`, a toolchain's. */
+async function resolved(folder: string): Promise<string> {
+  try {
+    return await realpath(folder);
+  } catch {
+    throw new Error(`${folder}, on its PATH, isn’t there.`);
   }
 }
 

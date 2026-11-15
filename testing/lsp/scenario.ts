@@ -38,12 +38,22 @@ export interface Scenario {
   readonly notifications?: readonly Outgoing[];
   /** It starts a process of its own once initialized, which runs until it's killed. */
   readonly child?: boolean;
+  /** It starts a process in a session of its own once initialized, out of its group. */
+  readonly escapee?: boolean;
   /** It ignores `shutdown`, `exit` and `SIGTERM`. */
   readonly stubborn?: boolean;
   /** Lines it writes to stderr as it starts. */
   readonly stderr?: readonly string[];
-  /** Once initialized, it starts a message whose header says it's this many bytes. */
-  readonly oversized?: number;
+  /**
+   * It writes `header` to stdout, then `frame` (64 KiB of `x` unless it says) again and again until
+   * it's killed: once initialized, or once it has answered `shutdown`, after which it ignores
+   * `exit` and `SIGTERM`.
+   */
+  readonly flood?: {
+    readonly at: 'initialized' | 'shutdown';
+    readonly header: string;
+    readonly frame?: string;
+  };
 }
 
 /** What the fake server reports, in the order it saw it. */
@@ -51,6 +61,8 @@ export type Seen =
   | {
       readonly event: 'started';
       readonly pid: number;
+      /** The program it was started as, as given to it. */
+      readonly argv0: string;
       readonly env: Record<string, string>;
       readonly cwd: string;
     }
@@ -68,5 +80,6 @@ export type Seen =
     }
   | { readonly event: 'notification'; readonly method: string; readonly params: unknown }
   | { readonly event: 'child'; readonly pid: number }
+  | { readonly event: 'escapee'; readonly pid: number }
   | { readonly event: 'shutdown' }
   | { readonly event: 'exit' };
