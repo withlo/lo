@@ -8,14 +8,23 @@
   },
   "scripts": {
     "lint": "oxlint",
+    "live": "node scripts/live.ts",
+    "pin": "node scripts/pin.ts",
     "test": "vitest run --root ../../.. --project @lo/lsp"
   },
   "dependencies": {
+    "tar": "7.5.22",
     "vscode-jsonrpc": "10.0.0",
-    "vscode-languageserver-protocol": "3.18.5"
+    "vscode-languageserver-protocol": "3.18.5",
+    "yauzl": "3.4.0",
+    "zod": "4.6.7"
   },
   "devDependencies": {
-    "@lo/testing": "workspace:*"
+    "@lo/git": "workspace:*",
+    "@lo/testing": "workspace:*",
+    "@types/yauzl": "3.4.0",
+    "openpgp": "6.3.2",
+    "prettier": "3.9.10"
   },
   "nx": {
     "name": "lsp",

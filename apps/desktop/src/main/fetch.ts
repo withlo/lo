@@ -6,7 +6,8 @@
 // itself, only to where the token may go. So a redirect asked for that way is the answer here.
 // Nothing is kept in Chromium's HTTP cache, where GitHub's answers about private repositories
 // would sit on disk, and no cookie is sent or kept. A request given an `uploadProgress` hears how
-// much of its body has gone, as an attachment's progress bar needs.
+// much of its body has gone, as an attachment's progress bar needs. A `netFetch` that streams
+// hands over each answer as it begins, for downloads too large to hold whole.
 
 import type { FetchInit, UploadProgress } from '@lo/github';
 import type { ClientRequestConstructorOptions } from 'electron';
@@ -70,12 +71,16 @@ export class AnswerTooLarge extends Error {
  * body comes. With a `limit`, an answer whose body says it's longer, or turns out to be, is
  * cancelled as soon as it does, and fails with {@link AnswerTooLarge}, so no more than that is ever
  * kept.
+ *
+ * With `stream`, it resolves as each answer begins, and the body comes as it arrives: a body
+ * past the `limit`, a dropped connection or the signal giving up fails the body, and cancelling
+ * the body cancels the request.
  */
 export function netFetch(
   request: (options: ClientRequestConstructorOptions) => NetRequest,
-  options: { limit?: number | undefined } = {},
+  options: { limit?: number | undefined; stream?: boolean | undefined } = {},
 ): typeof globalThis.fetch {
-  const { limit = Infinity } = options;
+  const { limit = Infinity, stream = false } = options;
   return async (input, init?: FetchInit) => {
     const asked = new Request(input, init);
     const uploadProgress = init?.uploadProgress;
@@ -153,6 +158,10 @@ export function netFetch(
           tooLarge();
           return;
         }
+        if (stream) {
+          settle(() => streamed(sent, answer, { limit, signal }));
+          return;
+        }
         answer.on('data', (chunk) => {
           if (settled) return;
           received += chunk.length;
@@ -177,6 +186,63 @@ export function netFetch(
       sent.end();
     });
   };
+}
+
+/**
+ * `answer` to `sent` as a `Response` whose body comes as it arrives, up to `limit` bytes, until
+ * `signal` gives up.
+ */
+function streamed(
+  sent: NetRequest,
+  answer: NetAnswer,
+  options: { limit: number; signal: AbortSignal },
+): Response {
+  const { limit, signal } = options;
+  const init = {
+    status: answer.statusCode,
+    statusText: answer.statusMessage,
+    headers: headersOf(answer.headers),
+  };
+  if (NO_BODY.has(answer.statusCode)) {
+    sent.abort();
+    return new Response(null, init);
+  }
+  let done = false;
+  let received = 0;
+  const body = new ReadableStream<Uint8Array>({
+    start(controller) {
+      function stop(error: unknown) {
+        if (done) return;
+        done = true;
+        signal.removeEventListener('abort', giveUp);
+        controller.error(error);
+        sent.abort();
+      }
+      function giveUp() {
+        stop(signal.reason);
+      }
+      signal.addEventListener('abort', giveUp, { once: true });
+      answer.on('data', (chunk) => {
+        if (done) return;
+        received += chunk.length;
+        if (received > limit) stop(new AnswerTooLarge(`The answer is longer than ${limit} bytes.`));
+        else controller.enqueue(new Uint8Array(chunk));
+      });
+      answer.on('error', stop);
+      answer.on('aborted', () => stop(new Error('net::ERR_CONNECTION_CLOSED')));
+      answer.on('end', () => {
+        if (done) return;
+        done = true;
+        signal.removeEventListener('abort', giveUp);
+        controller.close();
+      });
+    },
+    cancel() {
+      done = true;
+      sent.abort();
+    },
+  });
+  return new Response(body, init);
 }
 
 /**

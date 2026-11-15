@@ -421,9 +421,30 @@ toolchain and git's variables each server needs.
   inside a feature's 5 s. A process read earlier is signalled only while it's the same one, by its
   start time. The package's README says what can't be found.
 - Its stderr and messages make its log, the last 1,000 lines, in memory only.
+- What Lo downloads is pinned in `packages/desktop/lsp/servers.json`: each server's version, and
+  that of the Node the JavaScript ones run on, with each file's address, size and SHA-256 per
+  platform. `pnpm nx run lsp:pin -- <id> <version>` records one, by hand and never in CI: it checks
+  each file against its publisher's signature first (Node's releasers' keys, in `scripts/keys/`, and
+  npm's registry keys), and that it unpacks as Lo would. Lo trusts only the manifest's hashes.
+- A download goes over `https` only, on the usual port, to its entry's hosts, following at most 5
+  redirects, each held to the same rules, with no token or cookie. In the app it goes through
+  `net.request` (`netFetch` with `stream`), so it takes the system's proxy. It's written to
+  `<cache>/servers/.partial/` and stopped past the pinned size, and nothing reads it before its size
+  and hash match. A connection that fails is tried 3 times in all.
+- Then it's unpacked there: a `tar.gz` (npm's `tar`), a `zip` (`yauzl`), a gzipped program, a
+  program as it is, or an npm package's tarballs laid out as `node_modules`, with nothing run.
+  Absolute paths, `..`, hard links, devices and links that resolve outside are refused, and so is
+  more than 100,000 entries or 2 GB. The folder is renamed into `<cache>/servers/<id>/<version>/`
+  with a marker naming what it holds; one without a matching marker is removed and fetched again.
+  Two installs of a version at once make one download.
+- A server installed by the user is used only from where its adapter says it may be, when the app's
+  folder check passes it (the one git is held to), it isn't in Lo's cache, and it isn't a version
+  manager's shim, which picks a program from the checkout.
 - Tests start only the fake server, `testing/lsp/fake-server.ts`, at most two at once in a test
   file, each killed with its group when the test ends. No test starts a real server or downloads
-  one.
+  one: download tests serve archives they build from a server on this machine. The live check,
+  `pnpm nx run lsp:live`, installs what's pinned into `~/.cache/lo-live/` and asks each server a
+  hover and a definition, by hand only.
 
 ### Accounts
 

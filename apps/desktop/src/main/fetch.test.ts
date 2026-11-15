@@ -71,7 +71,7 @@ class FakeRequest extends EventEmitter implements NetRequest {
 }
 
 /** A `netFetch` over fake requests, and the requests it made. */
-function fake(limit?: number) {
+function fake(limit?: number, stream?: boolean) {
   const sent: FakeRequest[] = [];
   const fetch = netFetch(
     (options) => {
@@ -79,7 +79,7 @@ function fake(limit?: number) {
       sent.push(request);
       return request;
     },
-    { limit },
+    { limit, stream },
   );
   /** The request made, once it has been sent whole. */
   const made = async (): Promise<FakeRequest> => {
@@ -263,5 +263,57 @@ describe('netFetch', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  describe('streaming', () => {
+    it('answers as the answer begins, and its body comes as it arrives', async () => {
+      const { fetch, made } = fake(undefined, true);
+      const answered = fetch('https://nodejs.org/dist/v1/node.tar.gz', { redirect: 'manual' });
+      const answer = new FakeAnswer(200, { 'content-length': '6' });
+      (await made()).emit('response', answer);
+      const response = await answered;
+      answer.emit('data', Buffer.from('nod'));
+      answer.emit('data', Buffer.from('e!!'));
+      answer.emit('end');
+      expect(await response.text()).toBe('node!!');
+    });
+
+    it('fails the body past its limit, or once the connection drops or the signal gives up', async () => {
+      const { fetch, made } = fake(4, true);
+      const large = fetch('https://nodejs.org/a');
+      const largeRequest = await made();
+      const largeAnswer = new FakeAnswer(200);
+      largeRequest.emit('response', largeAnswer);
+      const reading = (await large).arrayBuffer();
+      largeAnswer.emit('data', Buffer.from('fives'));
+      await expect(reading).rejects.toBeInstanceOf(AnswerTooLarge);
+      expect(largeRequest.aborted).toBe(true);
+
+      const dropped = fetch('https://nodejs.org/b');
+      const droppedAnswer = new FakeAnswer(200);
+      (await made()).emit('response', droppedAnswer);
+      const droppedReading = (await dropped).arrayBuffer();
+      droppedAnswer.emit('data', Buffer.from('no'));
+      droppedAnswer.emit('aborted');
+      await expect(droppedReading).rejects.toThrow('net::ERR_CONNECTION_CLOSED');
+
+      const controller = new AbortController();
+      const given = fetch('https://nodejs.org/c', { signal: controller.signal });
+      const givenRequest = await made();
+      givenRequest.emit('response', new FakeAnswer(200));
+      const givenReading = (await given).arrayBuffer();
+      controller.abort(new Error('stopped'));
+      await expect(givenReading).rejects.toThrow('stopped');
+      expect(givenRequest.aborted).toBe(true);
+    });
+
+    it('cancels the request when its body is cancelled', async () => {
+      const { fetch, made } = fake(undefined, true);
+      const answered = fetch('https://nodejs.org/a');
+      const request = await made();
+      request.emit('response', new FakeAnswer(200));
+      await (await answered).body?.cancel();
+      expect(request.aborted).toBe(true);
+    });
   });
 });
