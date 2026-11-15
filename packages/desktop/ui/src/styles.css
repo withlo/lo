@@ -306,6 +306,53 @@
   gap: var(--lo-sp-6) var(--lo-sp-12);
 }
 
+/* A peek: its answers beside its code, with a head and a foot across both. A single answer has no
+   column of its own, so its row sits above the code. */
+@utility peek {
+  display: grid;
+  grid-template-columns: 250px minmax(0, 1fr);
+}
+@utility peek-single {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+/* The answers' list, no taller than the code beside it can be: 15 lines. */
+@utility peek-list {
+  max-height: calc(15 * var(--lo-code-line));
+}
+
+/* One answer: its path and line, then where it came from on a row of its own. */
+@utility peek-answer {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+/* A reference: its line number, right-aligned in a column wide enough for five digits, then its
+   text. */
+@utility refs-item {
+  display: grid;
+  grid-template-columns: var(--lo-sp-40) minmax(0, 1fr);
+}
+
+/* A type hover's card: wide enough for a signature, and never wider than the window. */
+@utility typehover {
+  width: 480px;
+  max-width: calc(100vw - var(--lo-sp-32));
+}
+
+/* A hover's signature and its docs, twelve lines tall at most before they scroll: a card that holds
+   no focus can't be scrolled by key, so it stays short enough to read most of at once. */
+@utility typehover-part {
+  max-height: 12lh;
+  overflow-y: auto;
+}
+
+/* A language server's details, over its item in the status bar. */
+@utility server-details {
+  width: 360px;
+  max-width: calc(100vw - var(--lo-sp-32));
+}
+
 /* The branches in a run's bar, which the bar leaves out when it's under 1,000px wide, as the
    window's default is: there's no room for them beside the layers' names, which would be cut short
    for them, and the count of files, which is never cut. The bar is the container (`@container`). */

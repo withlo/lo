@@ -146,3 +146,34 @@ export {
   type TimelineTone,
   type TimelineVerdict,
 } from './Timeline.tsx';
+export { Peek, type PeekCandidate, type PeekKeys, type PeekProps } from './Peek.tsx';
+export {
+  ReferencesHead,
+  ReferencesList,
+  type ReferenceRow,
+  type ReferencesGroup,
+  type ReferencesHeadProps,
+  type ReferencesListProps,
+} from './References.tsx';
+export { PathName, SourceMark, sourceName, type AnswerSource } from './Source.tsx';
+export {
+  TypeHover,
+  TypeHoverWaiting,
+  type TypeHoverKeys,
+  type TypeHoverProps,
+  type TypeHoverWaitingProps,
+} from './TypeHover.tsx';
+export {
+  ServerStatus,
+  type ServerFailure,
+  type ServerState,
+  type ServerStatusProps,
+} from './ServerStatus.tsx';
+export {
+  TrustList,
+  TrustRow,
+  type TrustEntry,
+  type TrustKind,
+  type TrustListProps,
+  type TrustRowProps,
+} from './Trust.tsx';
