@@ -12,6 +12,7 @@
 import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 
 import { FakeIntersectionObserver, FakeResizeObserver, resize } from '../../test/figures.ts';
+import { KEY_EVENT } from '../commands/index.ts';
 import { holdHeight, holdPlace } from './hold.ts';
 
 /**
@@ -143,14 +144,20 @@ describe('an overview’s place on the page', () => {
     expect(page.scroller.scrollTop).toBe(320);
   });
 
-  it('takes a scroll the browser makes as what changes size as the reader’s once it follows their input', () => {
-    const page = articleOf([300, 100, 400]);
-    holdPlace(page.scroller);
-    page.scroll(380);
-    window.dispatchEvent(new WheelEvent('wheel'));
-    page.change(1, 40);
-    expect(page.scroller.scrollTop).toBe(340);
-  });
+  it.each([
+    ['the wheel', () => new WheelEvent('wheel')],
+    ['a key, as the key listener tells of it', () => new Event(KEY_EVENT)],
+  ])(
+    'takes a scroll the browser makes as what changes size as the reader’s once it follows their input: %s',
+    (_, input) => {
+      const page = articleOf([300, 100, 400]);
+      holdPlace(page.scroller);
+      page.scroll(380);
+      window.dispatchEvent(input());
+      page.change(1, 40);
+      expect(page.scroller.scrollTop).toBe(340);
+    },
+  );
 
   it('stays at the very top, by room above the article, which a banner coming takes away', () => {
     const view = scrollerOf(3000);

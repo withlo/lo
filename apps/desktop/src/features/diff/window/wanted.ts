@@ -6,10 +6,13 @@
 // on screen as it was asked for shows the place. The reader's next key, click or wheel drops what
 // still waits: they've moved on, and it would move what they're reading.
 
-import type { Target } from '@lo/ui/commands';
+import { KEY_EVENT, type Target } from '@lo/ui/commands';
 
-/** What the reader does that drops what still waits. */
-const INPUT = ['keydown', 'pointerdown', 'wheel'] as const;
+/**
+ * What the reader does that drops what still waits: a key, as the key listener tells of it once
+ * it's their input (`KEY_EVENT`), those Lo's commands take among them; a click; or the wheel.
+ */
+const INPUT = [KEY_EVENT, 'pointerdown', 'wheel'] as const;
 
 /**
  * What a tab's diff waits to show: a thread, or a place, with the diff it was asked for in front
