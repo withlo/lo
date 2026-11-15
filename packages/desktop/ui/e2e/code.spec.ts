@@ -194,6 +194,37 @@ for (const layout of ['split', 'inline'] as const) {
       });
     }
 
+    // Line 20 partly above the top, at the top where a jump left it, and line 40 partly below the
+    // foot, the cursor on it.
+    for (const { name, line, below } of [
+      { name: 'partly above the top of the screen', line: 20, below: -8 },
+      { name: 'at the top of the screen, where a jump put it', line: 20, below: 0 },
+      { name: 'partly below the foot of the screen', line: 40, below: 590 },
+    ]) {
+      test(`a peek under a line ${name} opens under it and closes, the line staying where it is`, async () => {
+        const page = await open(layout);
+        await page.evaluate(
+          (at) => {
+            window.harness.cursor(at.line);
+            window.harness.scrollTo(at.line, at.below);
+          },
+          { line, below },
+        );
+        await frames(page);
+        const before = await lineTop(page, line);
+
+        expect(await page.evaluate((at) => window.harness.peek(at), line)).toBe(true);
+        await frames(page);
+        expect(await page.evaluate(() => window.harness.focused())).toBe('peek');
+        near([await lineTop(page, line)], [before]);
+        const peek = await page.evaluate(() => window.harness.top('.lo-diffpeek'));
+        expect(peek!).toBeGreaterThan(before!);
+        expect(await page.evaluate((at) => window.harness.unpeek(at), line)).toBe(true);
+        await frames(page);
+        near([await lineTop(page, line)], [before]);
+      });
+    }
+
     test('keys in a peek scroll its code, and never the diff under it', async () => {
       const page = await open(layout);
       const line = (await onScreen(page))[5]!.line;
@@ -512,6 +543,28 @@ for (const where of ['above', 'below'] as const) {
     await still(page, before);
   });
 }
+
+test('in the whole file, a peek under a line partly above the top of the screen opens under it, the line staying where it is', async () => {
+  app = await launch(harness);
+  const page = await app.firstWindow();
+  await page.waitForFunction(() => 'harness' in window);
+  await page.evaluate(() => {
+    window.harness.openFile(20);
+    window.harness.fileCursor(20);
+  });
+  await frames(page);
+  await page.evaluate(() => window.harness.fileScrollTo(20, -8));
+  await frames(page);
+  const before = await lineTop(page, 20);
+  expect(before).toBeLessThan(0);
+
+  expect(await page.evaluate(() => window.harness.filePeek(20))).toBe(true);
+  await frames(page);
+  near([await lineTop(page, 20)], [before]);
+  expect(await page.evaluate(() => window.harness.filePeek(20, false))).toBe(true);
+  await frames(page);
+  near([await lineTop(page, 20)], [before]);
+});
 
 test('closing a comment box with `Esc` leaves its line where it is, above the screen', async () => {
   const page = await open('split');

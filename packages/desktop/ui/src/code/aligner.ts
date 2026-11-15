@@ -227,6 +227,12 @@ interface Anchor {
   scrollTop: number;
 }
 
+/**
+ * How far onto the screen a line must be drawn to count as on it, in pixels: past the fraction of a
+ * pixel a scroll leaves a line put at the screen's edge.
+ */
+const ON_SCREEN = 1;
+
 /** Rounds of measuring, lining up and restoring the scroll a pass may take to settle. */
 const rounds = 3;
 
@@ -551,10 +557,12 @@ export class Aligner {
           turn === 0 &&
           !this.#wheeledOff &&
           anchor.element === undefined &&
-          (anchor.offset < 0 || anchor.offset >= this.#scroller.clientHeight)
+          this.#offScreen(anchor)
         ) {
           // After a jump, neither editor drew anything on screen yet when the scroll moved, so the
-          // anchor was a line off it: take one on screen, now that they've drawn there.
+          // anchor was a line off it: take one on screen, now that they've drawn there. A line
+          // partly above the top, as one a peek opens under, or at the top where a jump left it a
+          // fraction of a pixel above, is on it.
           anchor = this.#anchorNow();
         }
         // The last round only measures, so what's drawn covers where the scroll ended up.
@@ -1335,6 +1343,24 @@ export class Aligner {
     );
   }
 
+  /**
+   * Whether none of `anchor`'s line was on screen where the anchor has it, past a fraction of a
+   * pixel.
+   */
+  #offScreen(anchor: Anchor): boolean {
+    const { offset } = anchor;
+    if (offset >= this.#scroller.clientHeight - ON_SCREEN) return true;
+    if (offset >= 0) return false;
+    const view = this.#views[anchor.side];
+    const top = drawnTop(view, anchor.pos);
+    const bottom = drawnBottom(view, anchor.pos);
+    const height =
+      top !== undefined && bottom !== undefined
+        ? bottom - top
+        : view.lineBlockAt(anchor.pos).height;
+    return offset + height <= ON_SCREEN;
+  }
+
   /** Puts the anchored line back where it was on screen. Says whether the scroll moved. */
   #restore(anchor: Anchor): boolean {
     const view = this.#views[anchor.side];
@@ -1390,6 +1416,19 @@ export function lineOnScreen(
  */
 export function drawnTop(view: EditorView, pos: number): number | undefined {
   return drawnRect(view, pos)?.top;
+}
+
+/**
+ * Whether some of the line at `pos` is drawn on `screen`, as {@link drawnTop} finds it: its text,
+ * not the blocks around it, more than a fraction of a pixel of it.
+ */
+export function partlyOnScreen(view: EditorView, pos: number, screen: DOMRect): boolean {
+  const drawn = drawnRect(view, pos);
+  return (
+    drawn !== undefined &&
+    drawn.bottom > screen.top + ON_SCREEN &&
+    drawn.top < screen.bottom - ON_SCREEN
+  );
 }
 
 /** Where on the page the line at `pos` ends, as {@link drawnTop} finds it, if it's drawn. */

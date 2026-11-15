@@ -76,7 +76,15 @@ import type {
   Viewport,
   VimKey,
 } from './api.ts';
-import { Aligner, alignerFields, drawnBottom, drawnTop, lineOnScreen, ownTop } from './aligner.ts';
+import {
+  Aligner,
+  alignerFields,
+  drawnBottom,
+  drawnTop,
+  lineOnScreen,
+  ownTop,
+  partlyOnScreen,
+} from './aligner.ts';
 import { CommentBox, placeKey } from './comments.ts';
 import {
   type FileNote,
@@ -2671,24 +2679,23 @@ class View implements DiffView {
   }
 
   /**
-   * Makes a change to the peek under `place`, which the reader asked for: while the line is on
-   * screen, it stays where it is, and so does all above it; off screen, above it or below, what's
-   * at the top of the screen does, so a peek opening or closing out of sight moves nothing in it.
+   * Makes a change to the peek under `place`, which the reader asked for: while some of the line is
+   * on screen, it stays where it is, and so does all above it; off screen, above it or below,
+   * what's at the top of the screen does, so a peek opening or closing out of sight moves nothing.
    */
   #keepPeek(place: At, change: () => void): void {
     if (this.#lineOnScreen(place)) this.#keepLine(place, change);
     else this.#keepTop(change);
   }
 
-  /** Whether the top of line `place` is drawn on screen. */
+  /** Whether some of line `place` is drawn on screen, as one partly above its top. */
   #lineOnScreen(place: At): boolean {
     const pane: Pane = this.#pane === 'inline' ? 'inline' : place.side;
     const view = this.#viewOf(pane);
     // Where it's drawn once what's waiting is measured, as a scroll the editor has yet to make.
     view.lineBlockAtHeight(0);
-    const top = drawnTop(view, view.state.doc.line(this.#docLine(pane, place)).from);
-    const screen = this.dom.getBoundingClientRect();
-    return top !== undefined && top >= screen.top && top < screen.bottom;
+    const pos = view.state.doc.line(this.#docLine(pane, place)).from;
+    return partlyOnScreen(view, pos, this.dom.getBoundingClientRect());
   }
 
   /** Whether line `place` is among the collapsed lines its file shows now. */
@@ -3192,9 +3199,11 @@ class View implements DiffView {
     this.#holding = undefined;
     const pane = this.#activePane();
     const view = this.#viewOf(pane);
-    const from =
-      peek?.place ??
-      this.#placeAt(pane, view.state.doc.lineAt(view.state.selection.main.head).number);
+    const cursor = this.#placeAt(
+      pane,
+      view.state.doc.lineAt(view.state.selection.main.head).number,
+    );
+    const from = peek?.place ?? cursor;
     let shown: Pane;
     if (this.#pane === 'split') {
       const inline = this.#inline ?? this.#makeInline();
@@ -3218,6 +3227,13 @@ class View implements DiffView {
     }
     this.#show(shown, from, focus && !peek);
     if (!peek) return;
+    // The cursor went to the peek's line, with focus not in its editor: said as any move of it is,
+    // and as a jump, from another line.
+    const { place } = peek;
+    if (cursor.file !== place.file || cursor.side !== place.side || cursor.line !== place.line) {
+      this.#on.jumped(this.#spot(cursor), this.#spot(place));
+    }
+    this.#tell(shown);
     // Drawn now, where the editor scrolls to, so it can take focus.
     this.#viewOf(shown).lineBlockAtHeight(0);
     peek.block.focus();

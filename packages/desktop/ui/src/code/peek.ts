@@ -183,25 +183,23 @@ export class PeekBlock {
 
   /**
    * A key that scrolls, which nothing in the peek took: it scrolls the code, as it would a page,
-   * and never what's under the peek. A field the frame draws keeps its keys, and a button its
-   * `Space`.
+   * and never what's under the peek. What the frame draws keeps a key it uses itself, as a field
+   * its `Space` and arrows, or a button its `Space`: one it doesn't, the browser would scroll with.
    */
   readonly #scrollKey = (event: KeyboardEvent): void => {
     if (event.defaultPrevented || event.isComposing) return;
     const by = scrollOf(event, this.#code.clientHeight);
     if (by === undefined) return;
-    if (this.#inField(event.target)) return;
-    if (event.key === ' ' && this.#within(event.target, BUTTONS)) return;
+    const { target } = event;
+    const inside = target instanceof HTMLElement && this.#within(target, '*') ? target : undefined;
+    const use = inside ? keyUse(inside, event.key) : 'scroll';
+    if (use === 'own') return;
     event.preventDefault();
+    if (use === 'caret' && inside) moveCaret(inside, event);
+    if (use !== 'scroll') return;
     const box = this.#code;
     box.scrollTop = by === 'start' ? 0 : by === 'end' ? box.scrollHeight : box.scrollTop + by;
   };
-
-  /** Whether `target` is a field the frame draws, which takes its own keys. */
-  #inField(target: EventTarget | null): boolean {
-    if (!(target instanceof HTMLElement) || !this.#within(target, '*')) return false;
-    return target.isContentEditable || target.matches(FIELDS);
-  }
 
   /** Whether `target` is in what `selector` matches inside the peek, not the editor around it. */
   #within(target: EventTarget | null, selector: string): boolean {
@@ -241,11 +239,85 @@ export class PeekBlock {
   }
 }
 
-/** The fields a frame can draw, which take their own keys, as does text it lets the reader edit. */
-const FIELDS = 'input, textarea, select';
+/** The kinds of `<input>` typed in, which a key moves the caret in. */
+const TEXT_INPUTS = new Set(['text', 'search', 'url', 'email', 'password', 'tel', 'number']);
 
-/** What `Space` presses, inside a frame. */
-const BUTTONS = 'button, a[href], [role="button"], [role="link"], [role="option"]';
+/** The kinds of `<input>` pressed, as a button is, or picked, as a box to tick. */
+const PRESSED_INPUTS = new Set(['button', 'submit', 'reset', 'image', 'checkbox', 'radio', 'file']);
+
+/** The roles of what's pressed or picked, as a button is, which `Space` is for, not scrolling. */
+const PRESSED_ROLES = new Set([
+  'button',
+  'link',
+  'option',
+  'menuitem',
+  'tab',
+  'checkbox',
+  'radio',
+  'switch',
+]);
+
+/**
+ * What `drawn`, drawn in the frame, does with `key`, a key that scrolls: uses it itself (`own`),
+ * as a field moving its caret or a button pressed with `Space`; has the peek move its caret
+ * (`caret`), for a key a field leaves to the browser on some systems, which would scroll; does
+ * nothing with it (`stop`), as a link with `Space`, which the browser would scroll with; or leaves
+ * it to scroll the code (`scroll`).
+ */
+function keyUse(drawn: HTMLElement, key: string): 'own' | 'caret' | 'stop' | 'scroll' {
+  const arrow = key.startsWith('Arrow');
+  const across = key === 'ArrowLeft' || key === 'ArrowRight';
+  if (drawn instanceof HTMLSelectElement) return 'own';
+  if (drawn instanceof HTMLInputElement && !TEXT_INPUTS.has(drawn.type)) {
+    if (PRESSED_INPUTS.has(drawn.type)) {
+      if (key === ' ' || (arrow && drawn.type === 'radio')) return 'own';
+      return 'scroll';
+    }
+    // A range, a date and the like take every key that moves them.
+    return 'own';
+  }
+  const typed = drawn instanceof HTMLInputElement || drawn instanceof HTMLTextAreaElement;
+  if (typed || drawn.isContentEditable) {
+    const lines = !(drawn instanceof HTMLInputElement);
+    if (key === ' ' || across || (arrow && lines)) return 'own';
+    // `Home` and `End`, and up and down a line of one: to its ends.
+    if (typed && key !== 'PageUp' && key !== 'PageDown') return 'caret';
+    return 'stop';
+  }
+  if (key !== ' ') return 'scroll';
+  if (drawn instanceof HTMLButtonElement) return 'own';
+  const pressed =
+    drawn.closest('a[href]') !== null || PRESSED_ROLES.has(drawn.getAttribute('role') ?? '');
+  return pressed ? 'stop' : 'scroll';
+}
+
+/**
+ * Moves the caret of `field` to the start or end of its line, as `Home` and `End` do, or `↑` and
+ * `↓` in a field of one line, the selection growing with `Shift`.
+ */
+function moveCaret(field: HTMLElement, event: KeyboardEvent): void {
+  if (!(field instanceof HTMLInputElement || field instanceof HTMLTextAreaElement)) return;
+  const { value, selectionStart, selectionEnd, selectionDirection } = field;
+  // Some kinds, as a number, have no caret to move.
+  if (selectionStart === null || selectionEnd === null) return;
+  const backward = selectionDirection === 'backward';
+  const head = backward ? selectionStart : selectionEnd;
+  const anchor = backward ? selectionEnd : selectionStart;
+  const end = value.indexOf('\n', head);
+  const to =
+    event.key === 'Home' || event.key === 'ArrowUp'
+      ? value.lastIndexOf('\n', head - 1) + 1
+      : end === -1
+        ? value.length
+        : end;
+  if (!event.shiftKey) field.setSelectionRange(to, to);
+  else
+    field.setSelectionRange(
+      Math.min(anchor, to),
+      Math.max(anchor, to),
+      to < anchor ? 'backward' : 'forward',
+    );
+}
 
 /**
  * How far the key of `event` scrolls a box `height` tall, as the browser scrolls a page: by a line,

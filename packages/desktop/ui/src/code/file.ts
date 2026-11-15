@@ -43,7 +43,7 @@ import type {
   Spot,
   VimKey,
 } from './api.ts';
-import { drawnTop, lineOnScreen } from './aligner.ts';
+import { drawnTop, lineOnScreen, partlyOnScreen } from './aligner.ts';
 import { codeEditor } from './editor.ts';
 import { type FileTokens, highlighting, lineStarts, tokensChanged } from './highlight.ts';
 import { columnAt, type HintAt, hintRanges, hintsOf, sameHintList } from './hints.ts';
@@ -397,18 +397,16 @@ class WholeFile implements FileView {
   }
 
   /**
-   * Makes a change under line `line`, as a peek opening there: while the line is on screen, it
-   * stays where it is, and so does all above it; off screen, above it or below, the first line on
-   * screen does, so a peek opening or closing out of sight moves nothing in it.
+   * Makes a change under line `line`, as a peek opening there: while some of the line is on screen,
+   * it stays where it is, and so does all above it; off screen, above it or below, the first line
+   * on screen does, so a peek opening or closing out of sight moves nothing in it.
    */
   #keepPeek(line: number, change: () => void): void {
     const view = this.#view;
     view.lineBlockAtHeight(0);
     const screen = this.dom.getBoundingClientRect();
     const pos = view.state.doc.line(line).from;
-    const top = drawnTop(view, pos);
-    const onScreen = top !== undefined && top >= screen.top && top < screen.bottom;
-    const kept = onScreen ? pos : lineOnScreen(view, screen)?.pos;
+    const kept = partlyOnScreen(view, pos, screen) ? pos : lineOnScreen(view, screen)?.pos;
     if (kept === undefined) change();
     else this.#keepPos(kept, change);
   }

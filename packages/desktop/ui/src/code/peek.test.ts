@@ -83,8 +83,8 @@ function lines(count: number): PeekCode {
 }
 
 /** Presses `key` in `target`: whether something prevented what it does by default. */
-function pressed(target: Element, key: string): boolean {
-  const event = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true });
+function pressed(target: Element, key: string, init: KeyboardEventInit = {}): boolean {
+  const event = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true, ...init });
   target.dispatchEvent(event);
   return event.defaultPrevented;
 }
@@ -203,13 +203,11 @@ describe('a peek', () => {
     for (const key of ['ArrowDown', 'ArrowUp', 'PageDown', 'PageUp', ' ', 'Home', 'End']) {
       expect(pressed(block.dom, key)).toBe(true);
     }
-    // In the frame too, short of a field typed in, or a button's Space.
+    // In the frame too, short of a button's Space.
     const list = block.dom.querySelector('.lo-diffpeek__list')!;
-    const field = list.appendChild(document.createElement('input'));
     const button = list.appendChild(document.createElement('button'));
     expect(pressed(list, 'PageDown')).toBe(true);
     expect(pressed(button, 'ArrowDown')).toBe(true);
-    expect(pressed(field, 'ArrowDown')).toBe(false);
     expect(pressed(button, ' ')).toBe(false);
     // Others, and those the frame handles itself, are left alone.
     expect(pressed(block.dom, 'x')).toBe(false);
@@ -221,6 +219,60 @@ describe('a peek', () => {
     expect(spied).toHaveBeenCalled();
     block.destroy();
     editor.remove();
+  });
+
+  test('what its frame draws keeps the keys it uses, and the browser scrolls with none of the rest', () => {
+    const block = new PeekBlock(at, definitions({ code: lines(60) }), framed().frame);
+    document.body.append(block.dom);
+    const list = block.dom.querySelector('.lo-diffpeek__list')!;
+    const scroller = block.dom.querySelector('.lo-diffpeek__code')!;
+    const scrolled = vi.spyOn(scroller, 'scrollTop', 'set');
+    const drawn = <K extends keyof HTMLElementTagNameMap>(tag: K, role?: string) => {
+      const element = list.appendChild(document.createElement(tag));
+      if (role) element.setAttribute('role', role);
+      return element;
+    };
+    // Space presses a link, or what's pressed or picked, as a button does: it never scrolls.
+    const link = drawn('a');
+    link.href = '#definition';
+    for (const element of [link, drawn('div', 'button'), drawn('div', 'option')]) {
+      expect(pressed(element, ' ')).toBe(true);
+    }
+    expect(scrolled).not.toHaveBeenCalled();
+    // A field keeps what it types and moves its caret with, and leaves no key to scroll with.
+    const field = drawn('input');
+    const box = drawn('textarea');
+    for (const key of [' ', 'ArrowLeft', 'ArrowRight']) expect(pressed(field, key)).toBe(false);
+    for (const key of ['ArrowUp', 'ArrowDown']) expect(pressed(box, key)).toBe(false);
+    for (const element of [field, box]) {
+      for (const key of ['PageDown', 'PageUp', 'Home', 'End']) {
+        expect(pressed(element, key)).toBe(true);
+      }
+    }
+    expect(scrolled).not.toHaveBeenCalled();
+    // Home and End, and up and down a line of one, go to its ends.
+    field.value = 'estimateCost';
+    field.setSelectionRange(4, 4);
+    pressed(field, 'End');
+    expect([field.selectionStart, field.selectionEnd]).toEqual([12, 12]);
+    pressed(field, 'ArrowUp');
+    expect([field.selectionStart, field.selectionEnd]).toEqual([0, 0]);
+    box.value = 'one\ntwo three\nfour';
+    box.setSelectionRange(6, 6);
+    pressed(box, 'Home', { shiftKey: true });
+    expect([box.selectionStart, box.selectionEnd, box.selectionDirection]).toEqual([
+      4,
+      6,
+      'backward',
+    ]);
+    pressed(box, 'End');
+    expect([box.selectionStart, box.selectionEnd]).toEqual([13, 13]);
+    // A box to tick takes Space; a list to pick from, every key.
+    const tick = drawn('input');
+    tick.type = 'checkbox';
+    expect(pressed(tick, ' ')).toBe(false);
+    expect(pressed(drawn('select'), 'PageDown')).toBe(false);
+    block.destroy();
   });
 
   test('moved into another block, it keeps focus, without scrolling to it', async () => {

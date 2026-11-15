@@ -2997,6 +2997,22 @@ describe('peeks', () => {
     expect(parent!.querySelector('.lo-diffpeek')).toBeNull();
   });
 
+  test('with focus in it, the layout changing takes the cursor to its line, as a jump', () => {
+    const on = events();
+    const shown = open(on);
+    shown.reveal(onLine('a', 'new', 4, 2));
+    shown.focus();
+    shown.peek(at('a', 'new', 8), definition());
+    on.cursor.mockClear();
+    shown.setLayout('inline');
+    expect(document.activeElement).toBe(parent!.querySelector('.lo-diffpeek'));
+    expect(on.jumped).toHaveBeenLastCalledWith(onLine('a', 'new', 4), onLine('a', 'new', 8));
+    expect(on.cursor).toHaveBeenLastCalledWith(onLine('a', 'new', 8, 0));
+    // On its line already, it's no jump.
+    shown.setLayout('split');
+    expect(on.jumped).toHaveBeenCalledTimes(1);
+  });
+
   test('none opens among collapsed lines; one opened in a run keeps its line once the run closes', () => {
     const shown = open();
     const before = runs();

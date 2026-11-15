@@ -196,8 +196,12 @@ const harness = {
       { id: 'a', path: 'src/a.ts', lines: changed, vimKeys: [], nonce: 'harness' },
       { cursor: ignore, mode: ignore, jumped: ignore, menu: ignore },
     );
+    harness.fileScrollTo(line);
+  },
+  /** Puts the whole file's line `line` at the top of the screen, or `below` pixels below it. */
+  fileScrollTo(line: number, below = 0): void {
     const box = document.querySelector('.lo-fileview')!;
-    box.scrollTop += lineTop(line) ?? 0;
+    box.scrollTop += (lineTop(line) ?? 0) - below;
   },
   /** Puts the whole file's cursor on line `line`, and focus in it. */
   fileCursor(line: number): void {
