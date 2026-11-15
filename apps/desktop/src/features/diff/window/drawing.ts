@@ -32,6 +32,7 @@ import { explainer, marksOf, onExplained, sameMarks } from './explained.ts';
 import { diffFileOf, headerOf, startWith } from './files.ts';
 import type { Entry, Loader, Moved, Shown } from './loader.ts';
 import { main } from './main.ts';
+import { followLabel } from './moved.ts';
 import { setDrawn, takeReveal } from './tabs.ts';
 import { drawnName, shown as shownWanted, wantedIn } from './wanted.ts';
 import {
@@ -465,6 +466,10 @@ export function draw(options: DrawOptions): Drawing {
         if (explainer()?.read(tab.id, block)) {
           keys.history.record(entryAt({ kind: 'line', at: line }));
         }
+      },
+      // A moved label's click: a jump, from the line the label is over, to the other end.
+      moved(to) {
+        followLabel(view, to, (left) => keys.history.record(entryAt(left)));
       },
     },
   );
