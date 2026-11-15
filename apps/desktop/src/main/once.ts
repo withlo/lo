@@ -65,8 +65,8 @@ export interface OnceOptions {
   /** The certificate authorities to trust, as PEM. */
   readonly ca: () => readonly string[];
   /**
-   * How long a connection, to GitHub or a proxy, may take to open, in ms: undici's 10 s unless
-   * given.
+   * How long each step of opening a write's connection may take, in ms. Unless given, it's
+   * undici's: 10 s to open a connection, and 5 s for each step once a SOCKS5 proxy is reached.
    */
   readonly timeout?: number;
 }
@@ -82,10 +82,7 @@ export class ProxyStopped extends Error {
   }
 }
 
-/**
- * A write whose connection to GitHub timed out before it went, through a proxy that had reached
- * GitHub.
- */
+/** A write whose connection to GitHub, through a proxy Lo had reached, timed out before it went. */
 class GithubTimedOut extends Error {
   override name = 'GithubTimedOut';
   /** As undici says of a connection too slow to open, which GitHub's client classifies. */
@@ -256,7 +253,7 @@ function stopped(error: unknown, shown: string, reached: boolean): unknown {
   // The handshake with GitHub, through the tunnel, timed out: the proxy did its part.
   if (reached && code === 'UND_ERR_CONNECT_TIMEOUT') {
     return new GithubTimedOut(
-      `The proxy ${shown} reached GitHub, but the connection to GitHub timed out, so nothing was sent.`,
+      `Lo reached the proxy ${shown}, but the connection through it to GitHub timed out, so nothing was sent.`,
     );
   }
   // A connection that never opened, through a proxy, is the proxy's. Lo doesn't see a SOCKS5

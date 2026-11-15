@@ -228,10 +228,13 @@ const END_TAG = /^<\/([A-Za-z][A-Za-z0-9-]*)\s*>$/;
  */
 export function htmlWords(html: string, elements: number): string {
   if (!html.includes('<')) return html;
-  // HTML in a line's text comes a tag at a time. An end tag alone builds nothing, but ends an
-  // element whose text, like `<summary>`'s, stands apart from what follows.
+  // HTML in a line's text comes a tag at a time. An end tag alone builds nothing, so it sets what
+  // follows apart as its start tag alone does what comes before: for an element whose text stands
+  // apart, like `<summary>`, but not one its start tag alone doesn't build, like `<td>`.
   const end = END_TAG.exec(html)?.[1]?.toLowerCase();
-  if (end !== undefined) return BLOCKS.has(end) ? ' ' : '';
+  if (end !== undefined) {
+    return BLOCKS.has(end) && htmlWords(`<${end}>`, elements) !== '' ? ' ' : '';
+  }
   const fragment = parseHtml(html, elements);
   if (!fragment) return html;
   let text = '';

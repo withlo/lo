@@ -278,7 +278,7 @@ describe('a write', () => {
 
     expect(await fail(`PROXY 127.0.0.1:${tunnel.port}; DIRECT`)).toEqual([
       'offline',
-      `The proxy 127.0.0.1:${tunnel.port} reached GitHub, but the connection to GitHub timed out, so nothing was sent.`,
+      `Lo reached the proxy 127.0.0.1:${tunnel.port}, but the connection through it to GitHub timed out, so nothing was sent.`,
     ]);
     expect(tunnel.asked).toEqual([`localhost:${github}`]);
     // An HTTPS proxy whose own handshake stalls is the proxy's.

@@ -837,6 +837,8 @@ describe('raw HTML as words', () => {
       'Text More hidden after',
     );
     expect(words('one<div>two</div>three, <b>b</b>old')).toBe('one two three, bold');
+    // A table's cell outside a table builds nothing, by its start tag or its end tag.
+    expect(words('a<td>b</td>c')).toBe('abc');
   });
 
   test('what GitHub never shows, and a comment, give nothing', () => {
