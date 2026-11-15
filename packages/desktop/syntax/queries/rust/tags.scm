@@ -1,6 +1,8 @@
 ; From tree-sitter-rust (https://github.com/tree-sitter/tree-sitter-rust), queries/tags.scm
 ; at 77a3747266f4d621d0757825e6b11edcbf991ca5.
 ; Copyright (c) 2017 Maxim Sokolov. MIT.
+; Changed for Lo: methods are the functions in an `impl` or a trait, where the grammar's query
+; took those in a module's block, `mod inner { … }`, for methods too.
 
 ; ADT definitions
 
@@ -20,9 +22,15 @@
 
 ; method definitions
 
-(declaration_list
-    (function_item
-        name: (identifier) @name) @definition.method)
+(impl_item
+    body: (declaration_list
+        (function_item
+            name: (identifier) @name) @definition.method))
+
+(trait_item
+    body: (declaration_list
+        (function_item
+            name: (identifier) @name) @definition.method))
 
 ; function definitions
 

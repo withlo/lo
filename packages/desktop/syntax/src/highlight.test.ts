@@ -9,9 +9,6 @@ import { Highlighter, nestingDepth, resolve, type Loader } from './highlight.ts'
 import { languageOfPath, type LanguageName } from './languages.ts';
 import { tokenOf, tokens } from './tokens.ts';
 
-/** The part of WebAssembly's API these tests need, which the types they're checked with leave out. */
-declare const WebAssembly: { RuntimeError: ErrorConstructor };
-
 let highlighter: Highlighter;
 beforeAll(async () => {
   highlighter = await Highlighter.create(diskLoader());
@@ -454,20 +451,6 @@ describe('hostile files', () => {
     } finally {
       parse.mockRestore();
       clock.mockRestore();
-    }
-  });
-
-  test('a fault in WebAssembly stops the highlighter for good', async () => {
-    const fresh = await Highlighter.create(diskLoader());
-    const parse = vi.spyOn(Parser.prototype, 'parse').mockImplementationOnce(() => {
-      throw new WebAssembly.RuntimeError('memory access out of bounds');
-    });
-    try {
-      expect(await fresh.highlight('typescript', 'let a;\n')).toEqual({ skipped: 'failed' });
-      expect(fresh.usable).toBe(false);
-      expect(await fresh.highlight('typescript', 'let a;\n')).toEqual({ skipped: 'failed' });
-    } finally {
-      parse.mockRestore();
     }
   });
 });

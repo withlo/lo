@@ -10,12 +10,13 @@ import { defaultMaxDepth, defaultTimeout, nestingDepth, type Loader } from './hi
 import { importsOf, maxImports, type Import, type Imports } from './imports.ts';
 import { languages } from './languages.ts';
 import {
-  abortedTooOften,
   Aborted,
+  breakRuntime,
   countAbort,
   memoryCeiling,
   memoryInUse,
   parseText,
+  runtimeUsable,
   startTreeSitter,
 } from './runtime.ts';
 import { tagQueries, type TaggedLanguage } from './tagged.ts';
@@ -78,8 +79,8 @@ export interface Use {
 /**
  * Why a file wasn't read: longer than `maxLength`, holding a NUL as binary files do, minified (a
  * line longer than `longestLine`), nested too deeply, with more than `maxTags` names, out of time,
- * out of memory, or failed: a scanner aborted on it, or something else failed, after which the
- * tagger isn't `usable`.
+ * out of memory (the memory passed `memoryCeiling` as it read the file), or failed: a scanner
+ * aborted on it, or something else failed, or had before, and the tagger isn't `usable`.
  */
 export type Skip =
   | 'too-long'
@@ -146,7 +147,7 @@ type Role =
 
 /**
  * What a capture's name marks: `@name` is the name a tag is for, `@definition.<kind>` and
- * `@reference.<kind>` the whole definition or use, `@ignore` a name no later pattern may tag,
+ * `@reference.<kind>` the whole definition or use, `@ignore` a name no later pattern may use,
  * and `@import` a statement that imports. Anything else, such as `@doc` or a name that only
  * feeds a predicate, marks nothing.
  */
@@ -178,7 +179,7 @@ interface Tag {
   pattern: number;
   line: number;
   column: number;
-  /** A definition's kind, or `reference`, or `ignore` for a name no later pattern may tag. */
+  /** A definition's kind, or `reference`, or `ignore` for a name no later pattern may use. */
   as: DefinitionKind | 'reference' | 'ignore';
   /** The whole definition, the name included. */
   start: number;
@@ -191,8 +192,10 @@ type Read = { tags: Tag[]; imports: Imports } | { skipped: Skip };
 /**
  * Reads files' tags in every language in `taggedLanguages`. Make one per worker thread, and read
  * one text at a time. A language's grammar loads and its queries compile the first time a text
- * needs them. WebAssembly memory is the thread's, so once a tagger has failed, or the memory has
- * grown past `memoryCeiling`, it says it isn't `usable`, and its thread should be replaced.
+ * needs them. WebAssembly memory is the thread's, so once a tagger has failed, a fault in any of
+ * the thread's taggers and highlighters has broken the memory, or the memory has grown past
+ * `memoryCeiling`, it says it isn't `usable`, skips every file after as failed, and its thread
+ * should be replaced.
  */
 export class Tagger {
   #parser: Parser;
@@ -200,6 +203,10 @@ export class Tagger {
   /** Each grammar once a language has needed it, by its name in `grammars.json`. */
   readonly #grammars = new Map<string, Promise<Language>>();
   readonly #compiled = new Map<TaggedLanguage, Promise<Compiled>>();
+  /**
+   * Whether a grammar or query didn't load, which stops this tagger but leaves the memory
+   * whole.
+   */
   #failed = false;
   #loadMs = 0;
 
@@ -225,11 +232,12 @@ export class Tagger {
   }
 
   /**
-   * Whether the tagger can go on: it hasn't failed, its thread hasn't aborted too often, and the
-   * memory is under the ceiling.
+   * Whether the tagger can go on: none of its grammars and queries has failed to load, and its
+   * thread can parse again: nothing has broken its memory, its scanners haven't aborted too often,
+   * and the memory is under the ceiling.
    */
   get usable(): boolean {
-    return !this.#failed && !abortedTooOften() && this.memory <= memoryCeiling;
+    return !this.#failed && runtimeUsable();
   }
 
   /** `text`'s definitions, the names it refers to and its imports, read as `language`. */
@@ -286,7 +294,8 @@ export class Tagger {
 
   /** `text`'s tags, each name's once, in the order the names appear, and its imports. */
   async #read(language: TaggedLanguage, text: string, options: TagOptions): Promise<Read> {
-    if (this.#failed || abortedTooOften()) return { skipped: 'failed' };
+    // Only the file that took the memory past the ceiling is out of memory; those after fail.
+    if (!this.usable) return { skipped: 'failed' };
     if (text.length > (options.maxLength ?? defaultTagLength)) return { skipped: 'too-long' };
     if (text.includes('\0')) return { skipped: 'binary' };
     if (hasLongLine(text, longestLine)) return { skipped: 'minified' };
@@ -327,8 +336,9 @@ export class Tagger {
         this.#parser.delete();
         this.#parser = new Parser();
       } else {
-        // Any other failure can leave WebAssembly's memory broken, so nothing more runs in it.
-        this.#failed = true;
+        // Any other failure can leave WebAssembly's memory broken, so nothing more runs in it,
+        // for the thread's highlighters as well.
+        breakRuntime();
       }
       return { skipped: 'failed' };
     }
@@ -378,8 +388,10 @@ function hasLongLine(text: string, limit: number): boolean {
 /**
  * Runs `compiled`'s query over the tree, a step at a time, and puts its tags together: each name
  * tagged once, in the order the names appear. Where patterns tag a name both ways, it's a
- * definition; otherwise the earliest pattern's tag wins, so the grammar's own win over Lo's, and
- * an `@ignore` keeps later patterns from using the name.
+ * definition; otherwise the earliest pattern's tag wins, so the grammar's own win over Lo's. An
+ * `@ignore` counts as a use: it keeps later patterns from using the name, but any pattern's
+ * definition of it wins, as Lo's definitions of Elixir's module attributes do over the
+ * grammar's `@ignore` of them.
  */
 function collect(
   language: TaggedLanguage,
@@ -415,7 +427,8 @@ function collect(
   }
   const halted = stopped();
   if (halted) return { skipped: halted };
-  // Of the tags for one name, a definition wins over a use, and then the earliest pattern.
+  // Of the tags for one name, a definition wins over a use or an `@ignore`, and then the
+  // earliest pattern.
   found.sort(
     (a, b) =>
       a.from - b.from ||
@@ -445,9 +458,10 @@ function uniqueStatements(statements: readonly Node[]): Node[] {
 }
 
 /**
- * The tag a match makes, if any: its `@name` with its `@definition.…` or `@reference.…`, or an
- * `@ignore`d name. Names that are too long, run over lines, hold a space or a syntax error, or
- * are empty make none.
+ * The tag a match makes, if any: its `@name` with its `@definition.…` or `@reference.…`, or, if
+ * it has neither, its `@ignore`d name. In a match with either, an `@ignore` only feeds a
+ * predicate. Names that are too long, run over lines, hold a space or a syntax error, or are
+ * empty make none.
  */
 function tagOf(
   captures: readonly QueryCapture[],
@@ -458,7 +472,7 @@ function tagOf(
   let name: Node | undefined;
   let tagged: Node | undefined;
   let as: Tag['as'] | undefined;
-  let ignored = false;
+  let ignored: Node | undefined;
   for (const capture of captures) {
     const role = roles.get(capture.name);
     switch (role?.kind) {
@@ -466,8 +480,7 @@ function tagOf(
         name = capture.node;
         break;
       case 'ignore':
-        ignored = true;
-        name = capture.node;
+        ignored = capture.node;
         break;
       case 'definition':
         tagged = capture.node;
@@ -486,12 +499,13 @@ function tagOf(
         break;
     }
   }
-  if (!name) return undefined;
   if (!tagged || !as) {
     if (!ignored) return undefined;
-    tagged = name;
+    name = ignored;
+    tagged = ignored;
     as = 'ignore';
   }
+  if (!name) return undefined;
   const { startIndex: from, endIndex: to, startPosition } = name;
   if (to <= from || to - from > maxNameLength) return undefined;
   if (name.endPosition.row !== startPosition.row || name.hasError) return undefined;

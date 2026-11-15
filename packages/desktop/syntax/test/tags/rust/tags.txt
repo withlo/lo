@@ -13,7 +13,7 @@ definitions
   method new 32:11-35
   method fmt 39:7-41
   module tests 45:4-52
-    method has_an_area 49:7-51
+    function has_an_area 49:7-51
 references
   Area Circle Display Formatter MAX_RADIUS Metre PI Result Self Shape assert base consts convert f64
   fmt min powi radius record registry std to_unit units write

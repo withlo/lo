@@ -1,5 +1,7 @@
 // The tree-sitter runtime a worker thread parses in, which highlighting and tagging share: one
-// WebAssembly memory, capped, and a count of the parses a grammar's scanner has aborted.
+// WebAssembly memory, capped, a count of the parses a grammar's scanner has aborted, and whether
+// a fault has left the memory broken. What stops one of the thread's highlighters and taggers
+// stops them all.
 
 import { Parser, type ParseOptions, type Tree } from 'web-tree-sitter';
 
@@ -54,9 +56,24 @@ export function countAbort(): void {
   aborts++;
 }
 
-/** Whether the thread's scanners have aborted too often for it to parse again. */
-export function abortedTooOften(): boolean {
-  return aborts >= maxAborts;
+/**
+ * Whether a parse or query has failed in a way that can leave the memory broken: a fault, the
+ * stack running out, or anything else but a scanner's abort.
+ */
+let broken = false;
+
+/** Marks the thread's memory broken, after which nothing more parses in it. */
+export function breakRuntime(): void {
+  broken = true;
+}
+
+/**
+ * Whether the thread can parse again: its memory isn't broken, its scanners haven't aborted too
+ * often, and the memory is under the ceiling. Once it can't, it never can, and the thread should
+ * be replaced.
+ */
+export function runtimeUsable(): boolean {
+  return !broken && aborts < maxAborts && memoryInUse() <= memoryCeiling;
 }
 
 /**

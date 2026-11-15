@@ -291,19 +291,38 @@ const rust: Reader = (statement, at, add) => {
   }
   if (statement.type !== 'use_declaration') return;
   let budget = maxNames;
-  // Walks a use tree, with the path of the lists it's in.
+  /**
+   * A path's parts, `a::b::c` as `a`, `b` and `c`, or `undefined` if it isn't a plain path, or
+   * its module, every part but the last, is longer than `maxModuleLength`. A path is a chain of
+   * nodes as long as it has parts, so it's walked in a loop, and no further than that length.
+   */
+  const path = (part: Node | null): string[] | undefined => {
+    // Last part first.
+    const parts: string[] = [];
+    let module = -2;
+    const push = (name: string): boolean => {
+      if (parts.length > 0) module += name.length + 2;
+      parts.push(name);
+      return module <= maxModuleLength;
+    };
+    for (let node = part; node;) {
+      if (node.type === 'scoped_identifier') {
+        const name = node.childForFieldName('name');
+        if (!name || !push(at(name))) return undefined;
+        node = node.childForFieldName('path');
+      } else if (['identifier', 'crate', 'self', 'super'].includes(node.type)) {
+        if (!push(at(node))) return undefined;
+        break;
+      } else {
+        return undefined;
+      }
+    }
+    return parts.toReversed();
+  };
+  // Walks a use tree, with the path of the lists it's in. Lists nest no deeper than the file's
+  // brackets, which the tagger has checked.
   const walk = (node: Node | null, prefix: string[]): void => {
     if (!node || budget-- <= 0) return;
-    const path = (part: Node | null): string[] | undefined => {
-      if (!part) return [];
-      if (part.type === 'scoped_identifier') {
-        const left = path(part.childForFieldName('path'));
-        const name = part.childForFieldName('name');
-        return left && name ? [...left, at(name)] : undefined;
-      }
-      if (['identifier', 'crate', 'self', 'super'].includes(part.type)) return [at(part)];
-      return undefined;
-    };
     switch (node.type) {
       case 'identifier':
       case 'scoped_identifier': {

@@ -2,8 +2,14 @@
 ; own, so where both define a name, or both use it, the grammar's tag wins.
 
 ; Trait methods without a body.
+(trait_item
+  body: (declaration_list
+    (function_signature_item
+      name: (identifier) @name) @definition.method))
+
+; Functions declared without a body anywhere else, as in `extern "C" { … }`.
 (function_signature_item
-  name: (identifier) @name) @definition.method
+  name: (identifier) @name) @definition.function
 
 ; Constants and statics.
 (const_item

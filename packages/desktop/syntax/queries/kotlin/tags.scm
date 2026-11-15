@@ -1,8 +1,15 @@
 ; From tree-sitter-kotlin (https://github.com/fwcd/tree-sitter-kotlin), queries/tags.scm
 ; at 1852ea17b7f60fb3f9d84e0b1555d56b46b39fb1.
 ; Copyright (c) 2019 fwcd. MIT.
-; Changed for Lo: properties are tagged only at the top of a file and in a class's or object's
-; body, where the grammar's query tagged every property, the local ones in function bodies too.
+; Changed for Lo: interfaces are tagged as interfaces, where the grammar's query tagged them as
+; classes; and properties only at the top of a file and in a class's or object's body, a `val` as
+; a constant and a `var` as a variable, where it tagged every property as a constant, the local
+; ones in function bodies too.
+
+; Interfaces, `fun interface` too, before classes, so that their tag wins
+(class_declaration
+  "interface"
+  (type_identifier) @name) @definition.interface
 
 ; Classes
 (class_declaration
@@ -19,13 +26,27 @@
 ; Properties
 (source_file
   (property_declaration
+    (binding_pattern_kind "val")
+    (variable_declaration
+      (simple_identifier) @name)) @definition.constant)
+
+(source_file
+  (property_declaration
+    (binding_pattern_kind "var")
+    (variable_declaration
+      (simple_identifier) @name)) @definition.variable)
+
+(class_body
+  (property_declaration
+    (binding_pattern_kind "val")
     (variable_declaration
       (simple_identifier) @name)) @definition.constant)
 
 (class_body
   (property_declaration
+    (binding_pattern_kind "var")
     (variable_declaration
-      (simple_identifier) @name)) @definition.constant)
+      (simple_identifier) @name)) @definition.variable)
 
 ; Enum entries
 (enum_entry

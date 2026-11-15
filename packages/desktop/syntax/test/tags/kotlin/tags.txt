@@ -3,11 +3,11 @@ definitions
   constant unitCircle 8:4
   class Circle 11:6-22
     property radius 11:17
-    constant label 12:8
+    variable label 12:8
     function area 14:17-17
     class Factory 19:21-21
       function of 20:12
-  class Area 24:10-26
+  interface Area 24:10-26
     function area 25:8
   class Kind 28:11
     constant ROUND 28:18

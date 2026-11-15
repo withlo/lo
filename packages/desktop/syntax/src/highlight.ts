@@ -7,12 +7,13 @@ import { Language, Parser, Query, type Node, type Range } from 'web-tree-sitter'
 
 import { languageNamed, languages, type LanguageName } from './languages.ts';
 import {
-  abortedTooOften,
   Aborted,
+  breakRuntime,
   countAbort,
   memoryCeiling,
   memoryInUse,
   parseText,
+  runtimeUsable,
   startTreeSitter,
 } from './runtime.ts';
 import { tokenOf } from './tokens.ts';
@@ -45,8 +46,8 @@ export type Highlight =
   | { tokens: Uint32Array }
   /**
    * Not highlighted: too long or nested too deeply to parse safely, out of time, out of memory
-   * (its memory passed `memoryCeiling`), or failed: a grammar's scanner aborted on the text, or
-   * something else failed, after which the highlighter isn't `usable`.
+   * (the memory passed `memoryCeiling` as it parsed), or failed: a grammar's scanner aborted on
+   * the text, or something else failed, or had before, and the highlighter isn't `usable`.
    */
   | { skipped: 'too-long' | 'too-deep' | 'timed-out' | 'out-of-memory' | 'failed' };
 
@@ -98,12 +99,16 @@ interface Run {
   load: (language: LanguageName) => Promise<Compiled>;
 }
 
+/** A grammar or query that didn't load, which fails the highlighter but leaves the memory whole. */
+class NotLoaded extends Error {}
+
 /**
  * Highlights text in every language in `languages`. Make one per worker thread, and highlight one
  * text at a time. A language's grammar loads and its queries compile the first time a text needs
  * them, so a job that meets one language loads one grammar. WebAssembly memory is the thread's,
- * so once a highlighter has failed, or its memory has grown past `memoryCeiling`, it says it isn't
- * `usable`, and its thread should be replaced.
+ * so once a highlighter has failed, a fault in any of the thread's highlighters and taggers has
+ * broken the memory, or the memory has grown past `memoryCeiling`, it says it isn't `usable`,
+ * skips every text after as failed, and its thread should be replaced.
  */
 export class Highlighter {
   #parser: Parser;
@@ -112,6 +117,10 @@ export class Highlighter {
   readonly #grammars = new Map<string, Promise<Language>>();
   /** Each language's grammar and queries once a text has needed them. */
   readonly #compiled = new Map<LanguageName, Promise<Compiled>>();
+  /**
+   * Whether a grammar or query didn't load, which stops this highlighter but leaves the memory
+   * whole.
+   */
   #failed = false;
   #loadMs = 0;
 
@@ -137,11 +146,12 @@ export class Highlighter {
   }
 
   /**
-   * Whether the highlighter can go on: it hasn't failed, its thread hasn't aborted too often, and
-   * its memory is under the ceiling.
+   * Whether the highlighter can go on: it hasn't failed, and its thread can parse again: nothing
+   * has broken its memory, its scanners haven't aborted too often, and the memory is under the
+   * ceiling.
    */
   get usable(): boolean {
-    return !this.#failed && !abortedTooOften() && this.memory <= memoryCeiling;
+    return !this.#failed && runtimeUsable();
   }
 
   /**
@@ -153,7 +163,7 @@ export class Highlighter {
     text: string,
     options: HighlightOptions = {},
   ): Promise<Highlight> {
-    if (this.#failed || abortedTooOften()) return { skipped: 'failed' };
+    if (!this.usable) return { skipped: 'failed' };
     if (text.length > (options.maxLength ?? defaultMaxLength)) return { skipped: 'too-long' };
     if (nestingDepth(text, language) > (options.maxDepth ?? defaultMaxDepth)) {
       return { skipped: 'too-deep' };
@@ -173,6 +183,8 @@ export class Highlighter {
         const started = performance.now();
         try {
           return await this.#load(name);
+        } catch (error) {
+          throw new NotLoaded(`${name} didn't load.`, { cause: error });
         } finally {
           const elapsed = performance.now() - started;
           deadline += elapsed;
@@ -189,9 +201,11 @@ export class Highlighter {
         countAbort();
         this.#parser.delete();
         this.#parser = new Parser();
+      } else if (error instanceof NotLoaded) {
+        this.#failed = true;
       } else {
         // Any other failure can leave WebAssembly's memory broken, so nothing more runs in it.
-        this.#failed = true;
+        breakRuntime();
       }
       return { skipped: 'failed' };
     }

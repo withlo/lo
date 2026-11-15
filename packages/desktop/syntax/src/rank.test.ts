@@ -1,6 +1,7 @@
 import { beforeAll, describe, expect, test } from 'vitest';
 
 import { diskLoader } from './disk.ts';
+import type { Import } from './imports.ts';
 import { importOf, join, rank, sameNameLabel, syntaxLabel, type Asking } from './rank.ts';
 import { taggedLanguageOfPath } from './tagged.ts';
 import { Tagger } from './tags.ts';
@@ -370,6 +371,52 @@ describe('import guesses', () => {
 
     expect(ranked('Circle', from, ['lib/shapes/circle.rb'])).toEqual(['lib/shapes/circle.rb name']);
   });
+});
+
+describe('ranking a large tree', () => {
+  /** A thousand names, as a file importing a module's every name by name might list. */
+  const thousand = Array.from({ length: 1000 }, (_name, index) => ({ name: `name${index}` }));
+
+  test.each([
+    ['Python', 'app/main.py', (at: number) => `pkg${at}.sub`, thousand, 'src/pkg5/sub/name7.py'],
+    [
+      'Java',
+      'app/Main.java',
+      (at: number) => `com.acme.pkg${at}`,
+      thousand,
+      'src/com/acme/pkg5/name7.java',
+    ],
+    ['PHP', 'app/Main.php', (at: number) => `App\\Pkg${at}`, thousand, 'src/Pkg5/name7.php'],
+    ['Go', 'app/main.go', (at: number) => `github.com/acme/pkg${at}`, 'all', 'acme/pkg5/shapes.go'],
+  ] as const)(
+    '%s: looks each candidate up in the imports, not each import at each candidate',
+    (_language, path, module, names, match) => {
+      // 90 imports, each of a thousand names, and 20,000 candidates the imports don't name.
+      const from: Asking = {
+        path,
+        imports: Array.from({ length: 90 }, (_import, at): Import => ({
+          line: at + 1,
+          module: module(at),
+          names,
+        })),
+      };
+      const extension = match.slice(match.lastIndexOf('.'));
+      const candidates = [
+        ...Array.from({ length: 20_000 }, (_candidate, at) => ({
+          path: `lib/pkg${at % 100}/sub/file${at}${extension}`,
+        })),
+        { path: match },
+      ];
+      const started = performance.now();
+
+      const result = rank('Name', from, candidates);
+
+      expect(performance.now() - started).toBeLessThan(1000);
+      expect(
+        result.filter(({ near }) => near === 'import').map(({ candidate }) => candidate.path),
+      ).toEqual([match]);
+    },
+  );
 });
 
 describe('importOf', () => {

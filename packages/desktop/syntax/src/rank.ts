@@ -149,9 +149,29 @@ export function join(folder: string, relative: string): string | undefined {
   return parts.join('/');
 }
 
-/** Whether `path` is `suffix`, or ends with a `/` and `suffix`. */
-function endsWithPath(path: string, suffix: string): boolean {
-  return suffix !== '' && (path === suffix || path.endsWith(`/${suffix}`));
+/**
+ * Whether `path`, or what follows one of its `/`s, is one of `suffixes`: whether it ends with one
+ * of them as a whole part. It looks up each of the path's few ends, however many suffixes there
+ * are, so ranking stays linear in the candidates and the imports.
+ */
+function endsWithAny(path: string, suffixes: ReadonlySet<string>): boolean {
+  if (suffixes.size === 0) return false;
+  for (let from = 0; from !== -1;) {
+    const end = path.slice(from);
+    if (end !== '' && suffixes.has(end)) return true;
+    const slash = path.indexOf('/', from);
+    from = slash === -1 ? -1 : slash + 1;
+  }
+  return false;
+}
+
+/** `path` and what follows each of its `/`s: each path it ends with as a whole part. */
+function endsOf(path: string): string[] {
+  const ends = [path];
+  for (let slash = path.indexOf('/'); slash !== -1; slash = path.indexOf('/', slash + 1)) {
+    ends.push(path.slice(slash + 1));
+  }
+  return ends.filter((end) => end !== '');
 }
 
 /** Whether an import brings `name` in by name, under its own name or the one the file uses. */
@@ -279,9 +299,7 @@ function python(from: Asking, name: string): (path: string) => boolean {
         : undefined;
     if (stem === undefined) return false;
     const module = baseOf(stem) === '__init__' ? folderOf(stem) : stem;
-    if (exact.has(module)) return true;
-    for (const suffix of suffixes) if (endsWithPath(module, suffix)) return true;
-    return false;
+    return exact.has(module) || endsWithAny(module, suffixes);
   };
 }
 
@@ -345,10 +363,13 @@ function rust(from: Asking, name: string): (path: string) => boolean {
  */
 function go(from: Asking, name: string): (path: string) => boolean {
   if (!/^\p{Lu}/u.test(name)) return () => false;
-  const packages = from.imports.filter(({ names }) => names === 'all').map(({ module }) => module);
+  // Each folder a package imported may be in: its path, and each end of it.
+  const folders = new Set(
+    from.imports.filter(({ names }) => names === 'all').flatMap(({ module }) => endsOf(module)),
+  );
   return (path) => {
     const folder = folderOf(path);
-    return path.endsWith('.go') && packages.some((module) => endsWithPath(module, folder));
+    return path.endsWith('.go') && folder !== '' && folders.has(folder);
   };
 }
 
@@ -390,11 +411,9 @@ function jvm(from: Asking, name: string): (path: string) => boolean {
   return (path) => {
     const extension = jvmExtensions.find((candidate) => path.endsWith(candidate));
     if (extension === undefined) return false;
-    const stem = path.slice(0, -extension.length);
-    for (const file of files) if (endsWithPath(stem, file)) return true;
-    const folder = folderOf(path);
-    for (const named of folders) if (endsWithPath(folder, named)) return true;
-    return false;
+    return (
+      endsWithAny(path.slice(0, -extension.length), files) || endsWithAny(folderOf(path), folders)
+    );
   };
 }
 
@@ -427,9 +446,6 @@ function php(from: Asking, name: string): (path: string) => boolean {
   }
   return (path) => {
     if (!path.endsWith('.php')) return false;
-    const stem = path.slice(0, -4);
-    for (const file of files) if (endsWithPath(stem, file)) return true;
-    for (const named of folders) if (endsWithPath(folderOf(path), named)) return true;
-    return false;
+    return endsWithAny(path.slice(0, -4), files) || endsWithAny(folderOf(path), folders);
   };
 }

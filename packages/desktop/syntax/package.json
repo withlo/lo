@@ -9,6 +9,7 @@
   },
   "scripts": {
     "build": "node scripts/build.ts",
+    "codegen": "node scripts/version.ts",
     "lint": "oxlint",
     "test": "vitest run --root ../../.. --project @lo/syntax"
   },
@@ -35,6 +36,20 @@
         ],
         "outputs": [
           "{projectRoot}/dist"
+        ]
+      },
+      "codegen": {
+        "inputs": [
+          "{projectRoot}/grammars.json",
+          "{projectRoot}/queries/**/*.scm",
+          "{projectRoot}/scripts/version.ts",
+          "{projectRoot}/src/imports.ts",
+          "{projectRoot}/src/languages.ts",
+          "{projectRoot}/src/tagged.ts",
+          "{projectRoot}/src/tags.ts"
+        ],
+        "outputs": [
+          "{projectRoot}/src/version.ts"
         ]
       },
       "test": {

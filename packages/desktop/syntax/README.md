@@ -88,7 +88,8 @@ so the index can keep one reading per blob:
 
 - `symbols` gives its definitions, each with its kind, its name's line and column, its last line and
   the definition it's inside; the names it uses, each once; and its imports, with the package or
-  namespace it says it's in. Where patterns tag a name both ways, it's a definition.
+  namespace it says it's in. Where patterns tag a name both ways, it's a definition, even where a
+  grammar's query `@ignore`s it.
 - `find` gives where it uses one name, for the references of a name found in the files that use it.
 
 `rank` orders a name's definitions for the file asking: the same file, the same folder, a file its
@@ -98,6 +99,10 @@ project's manifest: relative imports for TypeScript and JavaScript, `from` for P
 `self::`, `super::` and `mod` for Rust, the import path's last folders for Go, `import` and
 `package` for Java and Kotlin, and `use` with PSR-4's folders for PHP. Every answer is labelled
 "Syntax index", or "Syntax index · same name" when only its name links it to the asking file.
+
+`tagsVersion` is a hash of the grammars the tagged languages parse with, their tag queries and the
+code that reads them, written by `pnpm nx run syntax:codegen`. It changes with any of them, so the
+index can tell which of its readings to make again.
 
 A file is read with the highlighter's limits, and isn't read at all past a million characters, with
 a line over 10,000 characters, as minified files have, with a NUL, as binary files have, or with

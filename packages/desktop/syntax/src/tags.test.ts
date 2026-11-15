@@ -118,6 +118,99 @@ describe('Tagger.symbols', () => {
     expect(listed(functions.definitions)).toEqual(['function area 1:6']);
   });
 
+  test("keeps a definition over the grammar's @ignore of its name", async () => {
+    // Elixir's own query ignores every module attribute, and Lo's defines those holding a value.
+    const elixir = await symbols(
+      'elixir',
+      'defmodule Shapes do\n  @limit 10\n  def area, do: @limit\nend\n',
+    );
+
+    expect(listed(elixir.definitions)).toEqual([
+      'module Shapes 1:10',
+      'constant limit 2:3',
+      'function area 3:6',
+    ]);
+    expect(elixir.references).toEqual(['limit']);
+  });
+
+  test('names each definition what its language calls it', async () => {
+    const kotlin = await symbols(
+      'kotlin',
+      [
+        'interface Shape {',
+        '    fun area(): Double',
+        '}',
+        'fun interface Runner { fun run() }',
+        'class Circle : Shape {',
+        '    val radius = 1.0',
+        '    var count = 0',
+        '}',
+        'val top = 1',
+        'var mutable = 2',
+        '',
+      ].join('\n'),
+    );
+    const swift = await symbols(
+      'swift',
+      [
+        'enum Kind {',
+        '    case round',
+        '    static let all = 1',
+        '    var label: String { "x" }',
+        '    func describe() {}',
+        '}',
+        '',
+      ].join('\n'),
+    );
+    const rust = await symbols(
+      'rust',
+      [
+        'mod inner {',
+        '    fn helper() {}',
+        '    impl S {',
+        '        fn method(&self) {}',
+        '    }',
+        '}',
+        'trait T {',
+        '    fn provided() {}',
+        '    fn required(&self);',
+        '}',
+        'extern "C" {',
+        '    fn abs(x: i32) -> i32;',
+        '}',
+        '',
+      ].join('\n'),
+    );
+
+    expect(listed(kotlin.definitions)).toEqual([
+      'interface Shape 1:10',
+      'function area 2:8',
+      'interface Runner 4:14',
+      'function run 4:27',
+      'class Circle 5:6',
+      'constant radius 6:8',
+      'variable count 7:8',
+      'constant top 9:4',
+      'variable mutable 10:4',
+    ]);
+    expect(listed(swift.definitions)).toEqual([
+      'class Kind 1:5',
+      'constant round 2:9',
+      'property all 3:15',
+      'property label 4:8',
+      'method describe 5:9',
+    ]);
+    expect(listed(rust.definitions)).toEqual([
+      'module inner 1:4',
+      'function helper 2:7',
+      'method method 4:11',
+      'interface T 7:6',
+      'method provided 8:7',
+      'method required 9:7',
+      'function abs 12:7',
+    ]);
+  });
+
   test('lists each name referred to once, sorted', async () => {
     const { references } = await symbols(
       'go',
@@ -167,6 +260,33 @@ describe('Tagger.symbols', () => {
         `constant LIMIT ${line + 5}:13`,
       ]);
     }
+  });
+
+  test('reads a Rust path of any length, past the longest module an import may name', async () => {
+    // A path's parts are nodes each inside the one before, here 20,000 deep, on lines of their own
+    // and in no brackets, so the file passes every check before it's parsed.
+    const text = `use ${'a::\n'.repeat(20_000)}b;\nfn after() {}\n`;
+
+    expect(await tagger.symbols('rust', text, { timeout: 30_000 })).toEqual({
+      symbols: {
+        definitions: [
+          { name: 'after', kind: 'function', line: 20_002, column: 3, lastLine: 20_002 },
+        ],
+        references: ['a', 'b'],
+        imports: [],
+      },
+    });
+    expect(tagger.usable).toBe(true);
+    expect(listed((await symbols('rust', 'fn later() {}\n')).definitions)).toEqual([
+      'function later 1:3',
+    ]);
+    // A module as long as an import's may be is kept.
+    const longest = `${'a::'.repeat(85)}a`;
+    expect(longest).toHaveLength(256);
+    expect((await symbols('rust', `use ${longest}::B;\n`)).imports).toEqual([
+      { line: 1, module: longest, names: [{ name: 'B' }] },
+    ]);
+    expect((await symbols('rust', `use ${longest}a::B;\n`)).imports).toEqual([]);
   });
 
   test('reads what it can of a file with syntax errors', async () => {

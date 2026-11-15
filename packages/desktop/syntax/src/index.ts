@@ -50,3 +50,4 @@ export {
   type Use,
 } from './tags.ts';
 export { tokenClass, tokenOf, tokens, unstyled } from './tokens.ts';
+export { tagsVersion } from './version.ts';

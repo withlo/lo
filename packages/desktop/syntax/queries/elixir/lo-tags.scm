@@ -1,5 +1,6 @@
 ; Lo's additions to tree-sitter-elixir's tags, for what they leave out. They come after the
-; grammar's own, so where both define a name, or both use it, the grammar's tag wins.
+; grammar's own, so where both define a name, or both use it, the grammar's tag wins. A definition
+; here still wins over the grammar's `@ignore` of a name, as a module attribute's does.
 
 ; Module attributes that hold a value, `@max_size 10`, named without their `@`. Those Elixir
 ; reads itself, such as `@doc` and `@spec`, aren't definitions.

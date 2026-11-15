@@ -78,6 +78,11 @@ after their own, as their grammar's `tree-sitter.json` does, and JavaScript, rea
 grammar, takes TypeScript's additions. HCL's grammar has no `tags.scm`, so Terraform's tags are all
 Lo's.
 
+Where patterns tag one name, a definition wins over a use, and otherwise the earliest pattern's tag
+wins, so the grammar's tags win over Lo's. An `@ignore`, with which a grammar's query keeps later
+patterns from using a name, counts as a use: a definition still wins over it, as Lo's definitions of
+Elixir's module attributes do over the grammar's `@ignore` of them.
+
 | `tags.scm` | Source                                                                                                          | License                                                                                                           |
 | ---------- | --------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
 | csharp     | [tree-sitter/tree-sitter-c-sharp](https://github.com/tree-sitter/tree-sitter-c-sharp)                           | MIT, Copyright (c) 2014-2023 Max Brunsfeld, Damien Guard, Amaan Qureshi, and contributors                         |
@@ -115,11 +120,14 @@ in `LICENSE-APACHE`, and the rest under the MIT License, with each file's copyri
 `lo-tags.scm` and `imports.scm` are Lo's own. The `tags.scm` files are as their sources have them,
 apart from these changes, which each changed file's header notes:
 
-- Kotlin's tagged every property as a constant, the local ones in a function's body too. It tags
-  only those at the top of a file and in a class's or object's body.
+- Kotlin's tagged interfaces as classes, and every property as a constant, the local ones in a
+  function's body too. It tags interfaces as interfaces, and only the properties at the top of a
+  file and in a class's or object's body, a `val` as a constant and a `var` as a variable.
+- Rust's tagged the functions in a module's block, `mod inner { … }`, as methods, as it does those
+  in an `impl` or a trait. Only those are methods.
 - Swift's tagged each member of a type with the whole type, and every constant and variable as a
-  property, the local ones too. Each member is tagged with its own declaration, and only the
-  properties of a type and at the top of a file.
+  property, the local ones too. Each member is tagged with its own declaration, an enum's as well as
+  a class's or struct's, and only the properties of a type and at the top of a file.
 
 `src/tags.test.ts` compiles each language's tags against its grammar and checks that each capture is
 one a tag can have; `src/samples.test.ts` reads each language's sample in `test/tags/`.
