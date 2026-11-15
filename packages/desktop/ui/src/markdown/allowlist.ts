@@ -6,7 +6,7 @@
  * an address: one on Lo's image scheme, which main serves, and only when the document gives one.
  */
 export const MARKDOWN_ELEMENTS: Readonly<Record<string, readonly string[]>> = Object.freeze({
-  p: ['role'],
+  p: ['role', 'dir'],
   h1: ['id', 'tabindex'],
   h2: ['id', 'tabindex'],
   h3: ['id', 'tabindex'],
@@ -17,7 +17,7 @@ export const MARKDOWN_ELEMENTS: Readonly<Record<string, readonly string[]>> = Ob
   div: ['role'],
   ul: [],
   ol: ['start'],
-  li: ['id', 'tabindex'],
+  li: ['id', 'tabindex', 'dir'],
   span: ['role', 'aria-label'],
   pre: [],
   code: [],

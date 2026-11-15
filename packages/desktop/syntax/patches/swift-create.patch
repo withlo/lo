@@ -1,0 +1,14 @@
+diff --git a/src/scanner.c b/src/scanner.c
+index 3b1533b..120f762 100644
+--- a/src/scanner.c
++++ b/src/scanner.c
+@@ -229,7 +229,8 @@ struct ScannerState {
+ };
+ 
+ void *tree_sitter_swift_external_scanner_create() {
+-    return calloc(0, sizeof(struct ScannerState));
++    // One state, not none, so the scanner's writes to it stay inside what it allocates.
++    return calloc(1, sizeof(struct ScannerState));
+ }
+ 
+ void tree_sitter_swift_external_scanner_destroy(void *payload) {

@@ -17,7 +17,10 @@ function documentText(text: string | undefined): string | undefined {
   return text === undefined ? undefined : splitLines(text).join('\n');
 }
 
-parentPort?.on('message', (job: Job) => {
+// The process sends a worker one job at a time, and waits for its answer before the next.
+parentPort?.on('message', (job: Job) => void run(job));
+
+async function run(job: Job): Promise<void> {
   const diffStarted = performance.now();
   const diff = diffText(job.old, job.new);
   const changes = changedLines(
@@ -27,21 +30,25 @@ parentPort?.on('message', (job: Job) => {
   const diffMs = performance.now() - diffStarted;
 
   const highlightStarted = performance.now();
+  const loadedBefore = highlighter.loadMs;
   const language = languageOfPath(job.path);
   const tokens: Done['tokens'] = {};
   for (const side of ['old', 'new'] as const) {
     const text = documentText(job[side]);
     if (!language || text === undefined) continue;
-    const highlight = highlighter.highlight(language, text);
+    const highlight = await highlighter.highlight(language, text);
     if ('tokens' in highlight) tokens[side] = highlight.tokens;
   }
+  // A grammar loads the first time a file needs it, which isn't the file's highlighting.
+  const loadMs = highlighter.loadMs - loadedBefore;
   const done: Done = {
     index: job.index,
     diff,
     changes,
     tokens,
     diffMs,
-    highlightMs: performance.now() - highlightStarted,
+    highlightMs: performance.now() - highlightStarted - loadMs,
+    loadMs,
     // WebAssembly memory never shrinks, and after a failure it can't be trusted.
     replace: !highlighter.usable,
   };
@@ -49,4 +56,4 @@ parentPort?.on('message', (job: Job) => {
     done,
     [tokens.old?.buffer, tokens.new?.buffer].filter((buffer) => buffer instanceof ArrayBuffer),
   );
-});
+}

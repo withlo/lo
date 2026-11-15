@@ -26,9 +26,10 @@ describe('a highlighter at its limits', () => {
     const highlighter = await Highlighter.create(diskLoader());
     const started = performance.now();
 
-    const result = highlighter.highlight(language, text, { timeout });
+    const result = await highlighter.highlight(language, text, { timeout });
 
-    expect(performance.now() - started).toBeLessThan(timeout + margin);
+    // Loading the grammar is left out of the deadline, so it's left out here.
+    expect(performance.now() - started - highlighter.loadMs).toBeLessThan(timeout + margin);
     expect(result).toEqual(expect.anything());
     // Past the ceiling, the highlighter asks to be replaced.
     expect(highlighter.usable || highlighter.memory > memoryCeiling || 'skipped' in result).toBe(
@@ -42,10 +43,10 @@ describe('a highlighter at its limits', () => {
     const started = performance.now();
 
     // Markdown's tree for this takes more memory than the ceiling, and more time than allowed here.
-    const result = highlighter.highlight('markdown', near('a\n\n'), { timeout: 10_000 });
+    const result = await highlighter.highlight('markdown', near('a\n\n'), { timeout: 10_000 });
 
     expect(result).toEqual({ skipped: 'out-of-memory' });
-    expect(performance.now() - started).toBeLessThan(5000);
+    expect(performance.now() - started - highlighter.loadMs).toBeLessThan(5000);
     expect(highlighter.usable).toBe(false);
   });
 });

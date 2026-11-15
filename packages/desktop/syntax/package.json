@@ -29,6 +29,7 @@
         "inputs": [
           "{projectRoot}/grammars.json",
           "{projectRoot}/scripts/build.ts",
+          "{projectRoot}/scripts/split.ts",
           "{projectRoot}/patches/**/*",
           "{projectRoot}/package.json"
         ],
