@@ -238,6 +238,8 @@ export class MovedLabelWidget extends WidgetType {
     const label = element('div', 'lo-movedlabel');
     const button = element('button', 'lo-movedlabel__to', this.place);
     button.type = 'button';
+    // Named as the label reads: "Moved from src/text/wrap.ts:1". `gm` is the way there by key.
+    button.setAttribute('aria-label', `${this.text} ${this.place}`);
     button.tabIndex = -1;
     const { file, side, line } = this.to;
     button.setAttribute(MOVED_ATTRIBUTE, `${file}:${side}:${line}`);

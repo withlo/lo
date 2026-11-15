@@ -122,6 +122,7 @@ import {
   startingIn,
 } from './markers.ts';
 import { lineKey, marking, marksChanged, rowKey } from './marks.ts';
+import { otherLine } from './moves.ts';
 import { PeekBlock } from './peek.ts';
 import {
   collapsedRuns,
@@ -2748,12 +2749,18 @@ class View implements DiffView {
   otherEnd(at: Place): Place | undefined {
     const file = this.#index.get(at.file);
     if (file === undefined) return undefined;
+    const side = at.side;
+    const other: Side = side === 'old' ? 'new' : 'old';
     for (const move of this.#moves) {
-      const [here, there] = at.side === 'old' ? [move.from, move.to] : [move.to, move.from];
+      const [here, there] = side === 'old' ? [move.from, move.to] : [move.to, move.from];
       if (here.file !== file || at.line < here.first || at.line > here.last) continue;
-      // Line for line, as far as the other end goes.
-      const line = Math.min(there.last, there.first + at.line - here.first);
-      return { file: this.#ids[there.file]!, side: at.side === 'old' ? 'new' : 'old', line };
+      // Line for line, blank lines left out, as the move was found.
+      const line = otherLine(
+        { lines: this.#lines[here.file]![side], first: here.first, last: here.last },
+        at.line,
+        { lines: this.#lines[there.file]![other], first: there.first, last: there.last },
+      );
+      return { file: this.#ids[there.file]!, side: other, line };
     }
     return undefined;
   }

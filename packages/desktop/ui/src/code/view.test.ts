@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { StateEffect } from '@codemirror/state';
 import { BlockInfo, EditorView } from '@codemirror/view';
-import { diffText } from '@lo/diff';
+import { diffPullRequest, diffText } from '@lo/diff';
 import { getCM, Vim } from '@replit/codemirror-vim';
 import { afterEach, beforeAll, describe, expect, type Mock, test, vi } from 'vitest';
 
@@ -2149,6 +2149,8 @@ describe('moved code', () => {
     shown.reveal(onHeader('c', 'old'));
     const to = parent!.querySelector<HTMLElement>('[aria-label="Before"] .lo-movedlabel button');
     expect(to?.textContent).toBe('src/b.ts:3');
+    // Named as the label reads.
+    expect(to?.getAttribute('aria-label')).toBe('Moved to src/b.ts:3');
     const down = new MouseEvent('mousedown', { bubbles: true, cancelable: true });
     to!.dispatchEvent(down);
     expect(down.defaultPrevented).toBe(true);
@@ -2172,6 +2174,77 @@ describe('moved code', () => {
     expect(shown.otherEnd(at('c', 'old', 4))).toBeUndefined();
     expect(shown.otherEnd(at('b', 'old', 3))).toBeUndefined();
     expect(shown.otherEnd(at('gone', 'old', 1))).toBeUndefined();
+  });
+
+  test('otherEnd pairs the lines that aren’t blank, as moves are found, and comes back both ways', () => {
+    const block = [
+      'export function wrap(text: string): string[] {',
+      '  const lines: string[] = [];',
+      '',
+      '  for (const word of text.split(" ")) {',
+      '    lines.push(word);',
+      '  }',
+      '',
+      '  return lines;',
+      '}',
+    ];
+    // Moved from a to b, losing its first blank line, one line edited on the way.
+    const moved = [...block.slice(0, 2), ...block.slice(3)].map((line) =>
+      line === '    lines.push(word);' ? '    lines.push(word.trim());' : line,
+    );
+    const header = { additions: 1, deletions: 1 };
+    const both: DiffFile[] = [
+      {
+        id: 'a',
+        path: 'src/a.ts',
+        change: 'modified',
+        lines: { old: ['import x;', '', ...block], new: ['import x;'] },
+        header,
+      },
+      {
+        id: 'b',
+        path: 'src/b.ts',
+        change: 'modified',
+        lines: { old: ['// b'], new: ['// b', ...moved] },
+        header,
+      },
+    ];
+    const found = diffPullRequest(
+      both.map((file) => ({
+        path: file.path,
+        old: textOf(file.lines!.old),
+        new: textOf(file.lines!.new),
+      })),
+    );
+    const id = (file: number): string => both[file]!.id;
+    expect(found.moves.map((move) => [move.from, move.to, move.edits.length])).toEqual([
+      [
+        expect.objectContaining({ file: 0, first: 3, last: 11 }),
+        expect.objectContaining({ file: 1, first: 2, last: 9 }),
+        1,
+      ],
+    ]);
+    const shown = open(events(), { files: both });
+    shown.setMoves(
+      found.moves.map((move) => ({
+        from: { file: id(move.from.file), first: move.from.first, last: move.from.last },
+        to: { file: id(move.to.file), first: move.to.first, last: move.to.last },
+        words: move.words,
+      })),
+    );
+    // `for` to `for`, the edited line to the edited line, `return` to `return`.
+    expect(shown.otherEnd(at('a', 'old', 6))).toEqual(at('b', 'new', 4));
+    expect(shown.otherEnd(at('b', 'new', 4))).toEqual(at('a', 'old', 6));
+    expect(shown.otherEnd(at('a', 'old', 7))).toEqual(at('b', 'new', 5));
+    expect(shown.otherEnd(at('a', 'old', 10))).toEqual(at('b', 'new', 8));
+    // A blank line goes with the next line that isn't.
+    expect(shown.otherEnd(at('a', 'old', 5))).toEqual(at('b', 'new', 4));
+    expect(shown.otherEnd(at('b', 'new', 7))).toEqual(at('a', 'old', 10));
+    // Every line that isn't blank comes back to itself.
+    for (const line of [3, 4, 6, 7, 8, 10, 11]) {
+      const there = shown.otherEnd(at('a', 'old', line))!;
+      expect(shown.otherEnd(there)).toEqual(at('a', 'old', line));
+    }
   });
 });
 

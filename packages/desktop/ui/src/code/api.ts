@@ -589,7 +589,11 @@ export interface DiffView extends KeySource {
    * none while it isn't on screen.
    */
   anchor(at: Place): Anchor | undefined;
-  /** The place at the other end of the moved code `at` is in, if it's in some. */
+  /**
+   * The place at the other end of the moved code `at` is in, if it's in some: line for line, blank
+   * lines left out, as the move was found, so a line comes back to itself from its other end. A
+   * blank line goes with the next line that isn't.
+   */
   otherEnd(at: Place): Place | undefined;
   focus(): void;
   destroy(): void;
