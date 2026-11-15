@@ -90,6 +90,12 @@ export interface Rendering<X extends Extension = Plain> {
    */
   readonly interactive: boolean;
   /**
+   * Which way a paragraph reads. `auto` leaves it to the paragraph's own text, as GitHub does, so
+   * a line of Hebrew in English docs reads from the right and the rest from the left. Without it
+   * a paragraph reads as the place it's in does.
+   */
+  readonly dir?: 'auto' | undefined;
+  /**
    * Where to load an image from: an address on Lo's image scheme, which main serves, or nothing to
    * show the image as a link to it. Without this, every image is a link.
    */
@@ -348,7 +354,7 @@ export function drawBlock<X extends Extension>(node: Block<X>, r: Rendering<X>):
   const plain = node;
   switch (plain.kind) {
     case 'paragraph':
-      return <p>{drawInlines(plain.children, r)}</p>;
+      return <p dir={r.dir}>{drawInlines(plain.children, r)}</p>;
     case 'heading':
       return heading(plain, r);
     case 'quote':
@@ -385,8 +391,9 @@ export function drawBlock<X extends Extension>(node: Block<X>, r: Rendering<X>):
 }
 
 function heading<X extends Extension>(node: Heading<X>, r: Rendering<X>): ReactNode {
-  // Headings take focus when a link moves to them, so the keyboard reads on from there.
-  const props = { id: r.anchors.id(node.anchor), tabIndex: -1 };
+  // Headings take focus when a link moves to them, so the keyboard reads on from there. Where
+  // nothing can be followed, nothing moves there, and a click on one has nothing to focus.
+  const props = { id: r.anchors.id(node.anchor), tabIndex: r.interactive ? -1 : undefined };
   const content = drawInlines(node.children, r);
   switch (node.level) {
     case 1:
@@ -443,7 +450,12 @@ function list<X extends Extension>(node: List<X>, r: Rendering<X>): ReactNode {
   const items = node.items.map((item, index) => {
     const classes = [item.checked === undefined ? '' : 'list-none', node.tight ? '' : 'space-y-8'];
     return (
-      <li key={index} className={classes.join(' ').trim() || undefined}>
+      // A tight list's items hold their paragraph's text themselves, so they take its direction.
+      <li
+        key={index}
+        dir={node.tight ? r.dir : undefined}
+        className={classes.join(' ').trim() || undefined}
+      >
         {item.checked !== undefined && <TaskMark done={item.checked} />}
         {node.tight
           ? item.children.map((child, at) => (
@@ -525,7 +537,12 @@ function footnotes<X extends Extension>(node: Footnotes<X>, r: Rendering<X>): Re
     >
       <ol>
         {node.items.map((item) => (
-          <li key={item.number} id={r.anchors.id(item.name)} tabIndex={-1} className="space-y-6">
+          <li
+            key={item.number}
+            id={r.anchors.id(item.name)}
+            tabIndex={r.interactive ? -1 : undefined}
+            className="space-y-6"
+          >
             {drawBlocks(item.children, r)}
           </li>
         ))}
