@@ -30,6 +30,7 @@ async function run(job: Job): Promise<void> {
   const diffMs = performance.now() - diffStarted;
 
   const highlightStarted = performance.now();
+  const loadedBefore = highlighter.loadMs;
   const language = languageOfPath(job.path);
   const tokens: Done['tokens'] = {};
   for (const side of ['old', 'new'] as const) {
@@ -38,13 +39,16 @@ async function run(job: Job): Promise<void> {
     const highlight = await highlighter.highlight(language, text);
     if ('tokens' in highlight) tokens[side] = highlight.tokens;
   }
+  // A grammar loads the first time a file needs it, which isn't the file's highlighting.
+  const loadMs = highlighter.loadMs - loadedBefore;
   const done: Done = {
     index: job.index,
     diff,
     changes,
     tokens,
     diffMs,
-    highlightMs: performance.now() - highlightStarted,
+    highlightMs: performance.now() - highlightStarted - loadMs,
+    loadMs,
     // WebAssembly memory never shrinks, and after a failure it can't be trusted.
     replace: !highlighter.usable,
   };

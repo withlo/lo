@@ -41,6 +41,17 @@ grammars aren't committed.
 A highlighter loads a grammar the first time a text needs it, in its language or one it injects, not
 when it starts, so a job that meets one language loads one grammar.
 
+### Lexers
+
+tree-sitter generates a grammar's lexer as one function, which for Swift is 300 KB of WebAssembly.
+V8 compiles a function that runs often a second time, with its optimizing compiler, whose memory
+grows with the function's size and isn't all given back. So before it builds a grammar, the build
+splits each lexer longer than 500 lines into functions of at most 500 (`scripts/split.ts`), which
+run as fast. Highlighting one real Swift file, a worker thread under Electron grew by 385 MB at its
+peak and kept 98 MB; split, it grows by 60 MB and keeps 40 MB. With a file in each language, it grew
+by 516 MB and kept 142 MB, and now grows by 141 MB and keeps 67 MB. Node 24, which runs the tests,
+took 2.7 GB to compile Swift's lexer and kept it.
+
 ### Patches
 
 `patches/` holds changes to a grammar's source, applied before it's built:
@@ -49,6 +60,13 @@ when it starts, so a job that meets one language loads one grammar.
   any room left, so where the bytes before them were odd in number, as with a string open, it wrote
   a byte beyond tree-sitter's 1,024-byte buffer past about 510 levels and broke the WebAssembly
   memory. It now stops while two more bytes fit.
+- `ruby-serialize.patch`: the Ruby scanner saved four bytes and the word of each open heredoc while
+  two bytes and the word fitted, so with 93 heredocs of seven letters open on a line it wrote a byte
+  beyond tree-sitter's 1,024-byte buffer and broke the WebAssembly memory. It saved a word's length
+  in one byte, so it misread a word longer than 255 and failed an assertion. It now saves nothing
+  unless all of every heredoc fits, as it did past the buffer, nor a word longer than 255.
+- `swift-create.patch`: the Swift scanner allocated no bytes for its state, then wrote four, so a
+  raw string's count of `#`s started from whatever those bytes held. It now allocates its state.
 - `yaml-serialize.patch`: the YAML scanner saved four bytes a level of indentation while it had any
   room left, so past about 250 levels it wrote two bytes beyond tree-sitter's 1,024-byte buffer and
   broke the WebAssembly memory every later parse used. It now stops while four more bytes fit.
@@ -62,8 +80,12 @@ and under which.
 ## Limits
 
 A file longer than eight million characters, or nested more than a hundred levels deep, isn't
-parsed. Nesting counts brackets outside comments, strings and regular expressions, and Markdown's
-quotes and Markdown's and YAML's indentation. Parsing, querying and the parses of injected languages
-stop after two seconds, or once the WebAssembly memory passes 256 MB. That memory never shrinks, so
-once a highlighter fails or its memory passes 256 MB it says it isn't `usable`, and its worker
-thread should be replaced.
+parsed. Nesting counts brackets outside comments, strings and regular expressions, with code
+interpolated into a string, such as Kotlin's `${}`, a level inside it, and Markdown's quotes and
+Markdown's and YAML's indentation. Parsing, querying and the parses of injected languages stop after
+two seconds, or once the WebAssembly memory passes 256 MB.
+
+A scanner that aborts on a file, as Kotlin's does with strings nested 512 deep, fails only that
+file. Any other failure in WebAssembly can leave its memory broken, and that memory never shrinks,
+so once a highlighter fails, its memory passes 256 MB, or its thread has had eight aborts, it says
+it isn't `usable`, and its worker thread should be replaced.

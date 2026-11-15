@@ -9,6 +9,9 @@ import { Highlighter, nestingDepth, resolve, type Loader } from './highlight.ts'
 import { languageOfPath, type LanguageName } from './languages.ts';
 import { tokenOf, tokens } from './tokens.ts';
 
+/** The part of WebAssembly's API these tests need, which the types they're checked with leave out. */
+declare const WebAssembly: { RuntimeError: ErrorConstructor };
+
 let highlighter: Highlighter;
 beforeAll(async () => {
   highlighter = await Highlighter.create(diskLoader());
@@ -254,6 +257,7 @@ describe('Highlighter', () => {
       ['@doc:comment-doc', '*two*:emphasis'],
     ],
     ['markdown', 'a code block named by an alias', '```rs\nfn f() {}\n```\n', ['fn:keyword']],
+    ['swift', 'a raw string', 'let a = #"(x)"#\n', ['#"(x)"#:string']],
   ] as const)('highlights what %s holds: %s', async (language, _, text, expected) => {
     expect(await stretches(language, text)).toEqual(expect.arrayContaining([...expected]));
   });
@@ -318,7 +322,7 @@ describe('loading grammars', () => {
     expect(loaded.toSorted()).toEqual(['markdown', 'markdown_inline', 'rust']);
   });
 
-  test('leaves the time a grammar takes to load out of the text’s', async () => {
+  test('leaves the time a grammar takes to load out of the text’s, and counts it', async () => {
     // A minute passes while the grammar loads, and no time otherwise.
     let clock = 0;
     const disk = diskLoader();
@@ -334,6 +338,9 @@ describe('loading grammars', () => {
       const fresh = await Highlighter.create(slow);
 
       expect(await fresh.highlight('toml', 'a = 1\n')).toEqual({ tokens: expect.any(Uint32Array) });
+      expect(fresh.loadMs).toBe(60_000);
+      await fresh.highlight('toml', 'b = 2\n');
+      expect(fresh.loadMs).toBe(60_000);
     } finally {
       now.mockRestore();
     }
@@ -371,6 +378,25 @@ describe('hostile files', () => {
     expect(await stretches('yaml', 'name: ci\n')).toContain('name:property');
   });
 
+  test.each([
+    ['93 open heredocs of seven letters', 93, 'HEREDOC'],
+    ['a heredoc whose word is longer than 255 letters', 2, 'A'.repeat(300)],
+  ])(
+    'the patched Ruby grammar parses %s past the scanner’s saved state, then goes on',
+    async (_, count, word) => {
+      // Each open heredoc saves four bytes and its word, which outgrow the 1,024 bytes tree-sitter
+      // saves a scanner's state in, or the one byte a word's length is saved in.
+      const opened = Array.from({ length: count }, () => `<<${word}`).join(', ');
+      const text = `x = [${opened}]\n${`body\n${word}\n`.repeat(count)}`;
+
+      expect(await highlighter.highlight('ruby', text)).toEqual({
+        tokens: expect.any(Uint32Array),
+      });
+      expect(highlighter.usable).toBe(true);
+      expect(await stretches('ruby', 'def a; end\n')).toContain('def:keyword');
+    },
+  );
+
   test('the patched Python grammar parses indentation past the scanner’s saved state, then goes on', async () => {
     // 600 levels of indentation, with a string open at the deepest, take more than the 1,024
     // bytes tree-sitter saves a scanner's state in.
@@ -390,6 +416,8 @@ describe('hostile files', () => {
     ['yaml', 'a megabyte of nested flow collections', '[{'.repeat(500_000)],
     ['markdown', 'a megabyte of nested quotes', `${'>'.repeat(200)} x\n`.repeat(5000)],
     ['json', 'brackets nested past the limit', `${'['.repeat(150)}${']'.repeat(150)}`],
+    // Past 512, Kotlin's scanner aborts.
+    ['kotlin', 'strings nested 1,100 deep over lines', '"${\n'.repeat(1100)],
   ] as const)('skips %s: %s', async (language, _, text) => {
     const started = performance.now();
 
@@ -429,10 +457,10 @@ describe('hostile files', () => {
     }
   });
 
-  test('a failure in WebAssembly stops the highlighter for good', async () => {
+  test('a fault in WebAssembly stops the highlighter for good', async () => {
     const fresh = await Highlighter.create(diskLoader());
     const parse = vi.spyOn(Parser.prototype, 'parse').mockImplementationOnce(() => {
-      throw new Error('memory access out of bounds');
+      throw new WebAssembly.RuntimeError('memory access out of bounds');
     });
     try {
       expect(await fresh.highlight('typescript', 'let a;\n')).toEqual({ skipped: 'failed' });
@@ -456,7 +484,7 @@ describe('nestingDepth', () => {
     [
       'typescript',
       'strings, templates and comments',
-      'f(\'(((\', "[[[", `{{{${a}`); // (((\n/* [[[ */ g()',
+      'f(\'(((\', "[[[", `{{{`); // (((\n/* [[[ */ g()',
     ],
     ['typescript', 'a regular expression', 'const open = /[([{]+/g;\nreturn /\\(/.test(s)'],
     ['tsx', 'a regular expression after a JSX element', '<a>{b}</a>;\nx = /[(]/'],
@@ -474,6 +502,25 @@ describe('nestingDepth', () => {
     ['terraform', 'both kinds of comment', 'a = 1 # (((\nb = 2 // [[[\nc = f()'],
   ] as const)('skips the brackets in %s: %s', (language, _, text) => {
     expect(nestingDepth(text, language)).toBe(1);
+  });
+
+  test.each([
+    ['kotlin', '"${\n'],
+    ['kotlin', '"""${\n'],
+    ['swift', '"\\(\n'],
+    ['typescript', '`${\n'],
+    ['ruby', '"#{\n'],
+    ['elixir', '"#{\n'],
+    ['terraform', '"${\n'],
+    ['bash', '"$(\n'],
+  ] as const)('counts code interpolated into strings in %s, over lines: %j', (language, line) => {
+    expect(nestingDepth(line.repeat(150), language)).toBe(150);
+  });
+
+  test('counts interpolated code a level inside its string, which goes on after it', () => {
+    expect(nestingDepth('f("a ${g("(((")} [[[")\n', 'kotlin')).toBe(3);
+    expect(nestingDepth('`a ${`b ${c}`} {{{` / (d)\n', 'typescript')).toBe(2);
+    expect(nestingDepth('"a \\(b) \\\\(" + "(((" + (c)\n', 'swift')).toBe(1);
   });
 
   test('counts the brackets around a division', () => {

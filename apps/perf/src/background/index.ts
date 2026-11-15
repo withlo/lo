@@ -51,6 +51,7 @@ function fileResult(done: Done): Result {
     tokens: done.tokens,
     diffMs: done.diffMs,
     highlightMs: done.highlightMs,
+    loadMs: done.loadMs,
   };
 }
 

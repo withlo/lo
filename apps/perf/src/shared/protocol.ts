@@ -98,9 +98,13 @@ export interface Done {
   diff: FileDiff;
   changes: FileChanges;
   tokens: { old?: Uint32Array | undefined; new?: Uint32Array | undefined };
-  /** How long the diff took, and the highlighting, in milliseconds. */
+  /**
+   * How long the diff took, the highlighting, and loading the grammars and queries the
+   * highlighting first needed, in milliseconds.
+   */
   diffMs: number;
   highlightMs: number;
+  loadMs: number;
   /** Whether the worker's highlighter can't go on, so the worker should be replaced. */
   replace: boolean;
 }
@@ -114,6 +118,7 @@ export type Result =
       tokens: Done['tokens'];
       diffMs: number;
       highlightMs: number;
+      loadMs: number;
     }
   | { type: 'moves'; moves: MovedBlock[]; ms: number }
   /** Every diff and the moves are done, `ms` after the background process got the work. */

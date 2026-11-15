@@ -29,8 +29,8 @@ export type Highlight =
   | { tokens: Uint32Array }
   /**
    * Not highlighted: too long or nested too deeply to parse safely, out of time, out of memory
-   * (its memory passed `memoryCeiling`), or failed, after which the highlighter can't be used
-   * again.
+   * (its memory passed `memoryCeiling`), or failed: a grammar's scanner aborted on the text, or
+   * something else failed, after which the highlighter isn't `usable`.
    */
   | { skipped: 'too-long' | 'too-deep' | 'timed-out' | 'out-of-memory' | 'failed' };
 
@@ -62,6 +62,7 @@ declare const WebAssembly: {
   Memory: new (descriptor: { initial: number; maximum: number }) => {
     readonly buffer: ArrayBuffer;
   };
+  RuntimeError: ErrorConstructor;
 };
 
 /**
@@ -71,6 +72,22 @@ declare const WebAssembly: {
 const memory = new WebAssembly.Memory({ initial: 512, maximum: 8192 });
 
 let initialized: Promise<void> | undefined;
+
+/**
+ * A parse a grammar's scanner stopped: it called `abort()`, as Kotlin's does when strings nest past
+ * its limit, or an assertion of its failed. tree-sitter's runtime has neither function, so the
+ * call throws. Unlike a fault, it stops the parse at a known place and leaves memory whole, so
+ * only its text fails.
+ */
+class Aborted extends Error {}
+
+/**
+ * How many parses have aborted in this thread. An abort unwinds without giving back the stack the
+ * calls into WebAssembly had taken: Kotlin's keeps 0.9 KB of the thread's 64 KB, so its stack runs
+ * out after about 75. Past `maxAborts`, the thread's highlighters aren't `usable`.
+ */
+let aborts = 0;
+const maxAborts = 8;
 
 /** How deep injections nest: Markdown's inline text, and the code in Markdown's code blocks. */
 const maxInjectionDepth = 3;
@@ -108,13 +125,14 @@ interface Run {
  * `usable`, and its thread should be replaced.
  */
 export class Highlighter {
-  readonly #parser: Parser;
+  #parser: Parser;
   readonly #loader: Loader;
   /** Each grammar once a language has needed it, by its name in `grammars.json`. */
   readonly #grammars = new Map<string, Promise<Language>>();
   /** Each language's grammar and queries once a text has needed them. */
   readonly #compiled = new Map<LanguageName, Promise<Compiled>>();
   #failed = false;
+  #loadMs = 0;
 
   private constructor(parser: Parser, loader: Loader) {
     this.#parser = parser;
@@ -128,14 +146,22 @@ export class Highlighter {
     return new Highlighter(new Parser(), loader);
   }
 
+  /** How long the highlighter has spent loading grammars and compiling queries, in milliseconds. */
+  get loadMs(): number {
+    return this.#loadMs;
+  }
+
   /** How many bytes of WebAssembly memory the thread's highlighters hold. */
   get memory(): number {
     return memory.buffer.byteLength;
   }
 
-  /** Whether the highlighter can go on: it hasn't failed, and its memory is under the ceiling. */
+  /**
+   * Whether the highlighter can go on: it hasn't failed, its thread hasn't aborted too often, and
+   * its memory is under the ceiling.
+   */
   get usable(): boolean {
-    return !this.#failed && this.memory <= memoryCeiling;
+    return !this.#failed && aborts < maxAborts && this.memory <= memoryCeiling;
   }
 
   /**
@@ -147,7 +173,7 @@ export class Highlighter {
     text: string,
     options: HighlightOptions = {},
   ): Promise<Highlight> {
-    if (this.#failed) return { skipped: 'failed' };
+    if (this.#failed || aborts >= maxAborts) return { skipped: 'failed' };
     if (text.length > (options.maxLength ?? defaultMaxLength)) return { skipped: 'too-long' };
     if (nestingDepth(text, language) > (options.maxDepth ?? defaultMaxDepth)) {
       return { skipped: 'too-deep' };
@@ -168,16 +194,25 @@ export class Highlighter {
         try {
           return await this.#load(name);
         } finally {
-          deadline += performance.now() - started;
+          const elapsed = performance.now() - started;
+          deadline += elapsed;
+          this.#loadMs += elapsed;
         }
       },
     };
     const captures: Capture[] = [];
     try {
       await this.#collect(language, text, [], 0, run, captures);
-    } catch {
-      // A failure in WebAssembly can leave its memory broken, so nothing more runs in it.
-      this.#failed = true;
+    } catch (error) {
+      if (error instanceof Aborted) {
+        // The text fails, and a new parser, with new scanners, takes the next.
+        aborts++;
+        this.#parser.delete();
+        this.#parser = new Parser();
+      } else {
+        // Any other failure can leave WebAssembly's memory broken, so nothing more runs in it.
+        this.#failed = true;
+      }
       return { skipped: 'failed' };
     }
     if (stopped) return { skipped: stopped };
@@ -232,6 +267,11 @@ export class Highlighter {
     let tree: Tree | null;
     try {
       tree = this.#parser.parse(text, null, { includedRanges: ranges, progressCallback });
+    } catch (error) {
+      // A fault, or the stack running out, is a `RuntimeError` or a `RangeError`. Anything else
+      // was thrown by a call out of WebAssembly, as a scanner's abort is.
+      if (error instanceof WebAssembly.RuntimeError || error instanceof RangeError) throw error;
+      throw new Aborted('A scanner aborted.', { cause: error });
     } finally {
       this.#parser.reset();
     }
@@ -292,6 +332,11 @@ interface Lexis {
   tripleQuotes?: boolean;
   /** A quote whose strings can run over lines, and whether `\` escapes in them. */
   longQuote?: { quote: number; escapes: boolean };
+  /**
+   * What starts code in the strings of `quotes`, such as Kotlin's `${`, ending with the bracket
+   * whose match ends the code. The code nests a level inside its string, and can run over lines.
+   */
+  interpolation?: { opens: readonly string[]; quotes: readonly number[] };
   /** Regular expression literals, `/` starting one wherever it can't divide. */
   regexes?: boolean;
   /** Markdown's quotes, `>` at the start of a line. */
@@ -305,6 +350,7 @@ const javascript: Lexis = {
   slashComments: true,
   quotes: [doubleQuote, singleQuote],
   longQuote: { quote: backtick, escapes: true },
+  interpolation: { opens: ['${'], quotes: [backtick] },
   regexes: true,
 };
 /** C's comments and quotes, with strings in three quotes over lines, as Java and Kotlin have. */
@@ -319,12 +365,21 @@ const hashed: Lexis = {
   quotes: [doubleQuote, singleQuote],
   tripleQuotes: true,
 };
-const hcl: Lexis = { slashComments: true, hashComments: true, quotes: [doubleQuote] };
+const hcl: Lexis = {
+  slashComments: true,
+  hashComments: true,
+  quotes: [doubleQuote],
+  interpolation: { opens: ['${', '%{'], quotes: [doubleQuote] },
+};
 const lexes: Record<LanguageName, Lexis> = {
-  bash: { hashComments: true, quotes: [doubleQuote, singleQuote] },
+  bash: {
+    hashComments: true,
+    quotes: [doubleQuote, singleQuote],
+    interpolation: { opens: ['$(', '${'], quotes: [doubleQuote] },
+  },
   csharp: cLike,
   css: { blockComments: true, quotes: [doubleQuote, singleQuote] },
-  elixir: hashed,
+  elixir: { ...hashed, interpolation: { opens: ['#{'], quotes: [doubleQuote, singleQuote] } },
   go: {
     slashComments: true,
     quotes: [doubleQuote, singleQuote],
@@ -336,16 +391,25 @@ const lexes: Record<LanguageName, Lexis> = {
   javascript,
   json: { quotes: [doubleQuote] },
   jsonc: { slashComments: true, quotes: [doubleQuote] },
-  kotlin: cLike,
+  kotlin: { ...cLike, interpolation: { opens: ['${'], quotes: [doubleQuote] } },
   markdown: { blockQuotes: true, indents: true },
   'markdown-inline': {},
   php: { slashComments: true, hashComments: true, quotes: [doubleQuote, singleQuote] },
   python: hashed,
-  ruby: { hashComments: true, quotes: [doubleQuote, singleQuote] },
+  ruby: {
+    hashComments: true,
+    quotes: [doubleQuote, singleQuote],
+    interpolation: { opens: ['#{'], quotes: [doubleQuote] },
+  },
   // A `'` starts a lifetime as often as a character, so only `"` quotes, and its strings run over
   // lines.
   rust: { slashComments: true, longQuote: { quote: doubleQuote, escapes: true } },
-  swift: { slashComments: true, quotes: [doubleQuote], tripleQuotes: true },
+  swift: {
+    slashComments: true,
+    quotes: [doubleQuote],
+    tripleQuotes: true,
+    interpolation: { opens: ['\\('], quotes: [doubleQuote] },
+  },
   terraform: hcl,
   toml: hashed,
   tsx: javascript,
@@ -383,18 +447,56 @@ function isWord(code: number): boolean {
   );
 }
 
+/** How a string ends: at its quote or the line's end, at three of its quote, or at its quote. */
+type Form = 'line' | 'triple' | 'long';
+
 /**
  * How deeply `text` nests as `language` writes it: its deepest brackets outside comments, strings
- * and regular expressions, and where the language nests at the start of a line, its deepest run of
- * Markdown quotes or of indentation. It reads the text once without parsing it, so where it takes
- * a division for a regular expression or the other way round, it can be a level or two out.
+ * and regular expressions, with code interpolated into a string a level deeper than the string,
+ * and where the language nests at the start of a line, its deepest run of Markdown quotes or of
+ * indentation. It reads the text once without parsing it, so where it takes a division for a
+ * regular expression or the other way round, it can be a level or two out.
  */
 export function nestingDepth(text: string, language: LanguageName): number {
   const lexis = lexes[language];
   const [quote, otherQuote] = lexis.quotes ?? [];
+  const opens = (lexis.interpolation?.opens ?? []).map(
+    (open) => [open.charCodeAt(0), open] as const,
+  );
   const length = text.length;
   let deepest = 0;
   let brackets = 0;
+  // The strings whose interpolated code the text is in, innermost last, each with the brackets
+  // open once the code's own had opened.
+  const strings: { quote: number; form: Form; level: number }[] = [];
+  /**
+   * Reads a string from `from`, inside its quote, to its end: the index of its closing quote, the
+   * last of three, or of the character before the line break that ends it. Or, where code is
+   * interpolated into it first, the index of the bracket that starts the code, which it opens.
+   */
+  const stringEnd = (from: number, closing: number, form: Form): number => {
+    const interpolates = lexis.interpolation?.quotes.includes(closing) === true;
+    const escapes = form !== 'long' || lexis.longQuote?.escapes === true;
+    for (let index = from; index < length; index++) {
+      const char = text.charCodeAt(index);
+      const opened = interpolates
+        ? opens.find(([first, open]) => char === first && text.startsWith(open, index))
+        : undefined;
+      if (opened) {
+        brackets++;
+        if (brackets > deepest) deepest = brackets;
+        strings.push({ quote: closing, form, level: brackets });
+        return index + opened[1].length - 1;
+      }
+      if (char === 92 && escapes) index++;
+      else if (char === closing) {
+        if (form !== 'triple') return index;
+        const next = text.charCodeAt(index + 1) === closing;
+        if (next && text.charCodeAt(index + 2) === closing) return index + 2;
+      } else if (char === 10 && form === 'line') return index - 1;
+    }
+    return length;
+  };
   let lineStart = true;
   let indent = 0;
   let blockQuotes = 0;
@@ -442,50 +544,16 @@ export function nestingDepth(text: string, language: LanguageName): number {
         continue;
       }
     }
-    if (code === quote || code === otherQuote) {
-      if (
-        lexis.tripleQuotes &&
+    if (code === quote || code === otherQuote || code === lexis.longQuote?.quote) {
+      // To the closing quote or the end of the line, to the next three of the quote over lines,
+      // or to the closing long quote over lines, where `\` escapes; or into code inside it.
+      const long = code === lexis.longQuote?.quote;
+      const triple =
+        !long &&
+        lexis.tripleQuotes === true &&
         text.charCodeAt(at + 1) === code &&
-        text.charCodeAt(at + 2) === code
-      ) {
-        // To the next three of the same quote, over lines.
-        for (at += 3; at < length; at++) {
-          const inner = text.charCodeAt(at);
-          if (inner === 92) at++;
-          else if (
-            inner === code &&
-            text.charCodeAt(at + 1) === code &&
-            text.charCodeAt(at + 2) === code
-          ) {
-            at += 2;
-            break;
-          }
-        }
-        operand = true;
-        previous = code;
-        continue;
-      }
-      // To the closing quote, or the end of the line, which `\` can escape.
-      for (at++; at < length; at++) {
-        const inner = text.charCodeAt(at);
-        if (inner === 92) at++;
-        else if (inner === code) break;
-        else if (inner === 10) {
-          at--;
-          break;
-        }
-      }
-      operand = true;
-      previous = code;
-      continue;
-    }
-    if (code === lexis.longQuote?.quote) {
-      const { escapes } = lexis.longQuote;
-      for (at++; at < length; at++) {
-        const inner = text.charCodeAt(at);
-        if (inner === 92 && escapes) at++;
-        else if (inner === code) break;
-      }
+        text.charCodeAt(at + 2) === code;
+      at = stringEnd(at + (triple ? 3 : 1), code, long ? 'long' : triple ? 'triple' : 'line');
       operand = true;
       previous = code;
       continue;
@@ -523,7 +591,15 @@ export function nestingDepth(text: string, language: LanguageName): number {
       brackets++;
       if (brackets > deepest) deepest = brackets;
     } else if ((code === 41 || code === 93 || code === 125) && brackets > 0) {
+      const string = strings.at(-1);
       brackets--;
+      if (string && brackets < string.level) {
+        // The end of code interpolated into a string, which goes on.
+        strings.pop();
+        at = stringEnd(at + 1, string.quote, string.form);
+        operand = true;
+        previous = string.quote;
+      }
     }
   }
   return deepest;
