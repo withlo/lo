@@ -4,6 +4,8 @@
 // main sends while the timeline is on screen waits for the reader's next key, click or scroll,
 // unless it's what their own write changed (`holding.ts`).
 
+import { KEY_EVENT } from '@lo/ui/commands';
+
 import type { PullWrite } from '../../comments/window/shared.ts';
 import type { ComparisonView } from '../../revisions/contract.ts';
 import { tabState } from '../../tab/window/shared.ts';
@@ -62,9 +64,23 @@ export function takeTimeline(view: TimelineView): void {
   if (go) show(view.id);
 }
 
-/** The reader pressed a key, clicked or scrolled: view `id`'s timeline shows what's come since. */
-export function showHeld(id: string): void {
-  show(id);
+/**
+ * The reader's input that shows what came while they looked: a key, as the key listener tells the
+ * focused element of it once it's their input (`KEY_EVENT`), those Lo's commands take among them
+ * and a sequence's only as it ends; a click; or a scroll.
+ */
+const INPUT = [KEY_EVENT, 'pointerdown', 'wheel', 'touchstart'] as const;
+
+/**
+ * Has view `id`'s timeline show what's come since at the reader's next key, click or scroll, until
+ * the returned function stops it.
+ */
+export function showHeldOnInput(id: string): () => void {
+  const input = () => show(id);
+  for (const type of INPUT) document.addEventListener(type, input, true);
+  return () => {
+    for (const type of INPUT) document.removeEventListener(type, input, true);
+  };
 }
 
 /**

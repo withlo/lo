@@ -6,7 +6,7 @@
 // here moves what's on screen but a key, a click or a menu asks it to.
 
 import type { OverviewTree } from '@lo/artifact';
-import type { Entry, Target } from '@lo/ui/commands';
+import { KEY_EVENT, type Entry, type Target } from '@lo/ui/commands';
 import {
   blockNumber,
   blockOf,
@@ -390,8 +390,12 @@ export function follow(overview: DrawnOverview, block: HTMLElement): void {
 /** What the notes say when code can't be gone to. */
 const GO_TO_CODE = 'Go to code';
 
-/** What the reader does that stops code waiting to be placed: they've moved on. */
-const MOVED = ['keydown', 'pointerdown', 'wheel'] as const;
+/**
+ * What the reader does that stops code waiting to be placed, as they've moved on: a key, as the key
+ * listener tells of it once it's their input (`KEY_EVENT`), those Lo's commands take among them; a
+ * click; or the wheel.
+ */
+const MOVED = [KEY_EVENT, 'pointerdown', 'wheel'] as const;
 
 /** What stops the code each tab waits to go to while Lo works out where it is now. */
 const placings = new Map<string, () => void>();

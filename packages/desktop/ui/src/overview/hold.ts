@@ -18,6 +18,8 @@
 // shorter first gets room at the article's end, so the end never comes closer than the place being
 // read needs; the room goes once it's off screen, or as what grows later makes it unneeded.
 
+import { KEY_EVENT } from '../commands/index.ts';
+
 /** What keeps an overview's place: told as a block in it changes height. */
 interface Place {
   /** A block is about to change height by `by`. */
@@ -209,7 +211,9 @@ export function holdPlace(scroller: HTMLElement): () => void {
   const view = scroller.ownerDocument.defaultView ?? window;
   const inputs: [string, () => void][] = [
     ['wheel', onInput],
-    ['keydown', onInput],
+    // A key once the key listener says it's the reader's input, those Lo's commands take, such as
+    // `j`, among them.
+    [KEY_EVENT, onInput],
     ['touchmove', onInput],
     ['pointerdown', onPress],
     ['pointerup', onRelease],

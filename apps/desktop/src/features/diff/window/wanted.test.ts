@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 // What a tab's diff waits to show: the last thing asked for, until the reader does anything else.
 
+import { KEY_EVENT } from '@lo/ui/commands';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { drawnName, keepWanted, shown, wantedIn, wantPlace, wantThread } from './wanted.ts';
@@ -23,7 +24,7 @@ describe('what the diff waits to show', () => {
     wantThread('tab', 'T1');
     shown('tab');
     expect(wantedIn('tab')).toBeUndefined();
-    for (const event of [new KeyboardEvent('keydown'), new MouseEvent('pointerdown')]) {
+    for (const event of [new Event(KEY_EVENT), new MouseEvent('pointerdown')]) {
       wantThread('tab', 'T1');
       window.dispatchEvent(event);
       expect(wantedIn('tab')).toBeUndefined();

@@ -41,6 +41,7 @@ import {
   WidgetType,
 } from '@codemirror/view';
 
+import { KEY_EVENT } from '../commands/index.ts';
 import { alignRows, type RowHeights, type SideHeights } from './align.ts';
 import type { PassStats } from './api.ts';
 import type { Layout, Side } from './layout.ts';
@@ -341,8 +342,9 @@ export class Aligner {
       });
     }
     // A key that moves a cursor has the pass keep it on screen for a while; the wheel, a pointer
-    // or the scrollbar, which a pointer drags, stops it.
-    scroller.addEventListener('keydown', () => (this.#keyed = performance.now()), {
+    // or the scrollbar, which a pointer drags, stops it. Keys count once the key listener says
+    // they're the reader's input.
+    scroller.addEventListener(KEY_EVENT, () => (this.#keyed = performance.now()), {
       capture: true,
     });
     const stop = (): void => this.unfollow();

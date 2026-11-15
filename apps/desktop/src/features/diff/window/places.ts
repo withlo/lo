@@ -4,7 +4,7 @@
 // diff; a review thread another feature shows in the diff; and any file opened whole. Only one
 // middle view is drawn at a time, so a place in the other waits for it to be drawn.
 
-import type { Side, Target } from '@lo/ui/commands';
+import { KEY_EVENT, type Side, type Target } from '@lo/ui/commands';
 
 import { notify, withdraw } from '../../../window/commands/notices.tsx';
 import { here, registry } from '../../../window/commands/registry.ts';
@@ -107,8 +107,12 @@ const WAITING = { title: 'Go to code', body: 'Waiting for the diff’s list of f
 const TOO_LONG = 'The diff’s list of files hasn’t loaded yet. Try again in a moment.';
 const STOPPED = 'Lo stopped waiting for the diff’s list of files.';
 
-/** What the reader does that drops a place waiting for the diff's files: they've moved on. */
-const INPUT = ['keydown', 'pointerdown', 'wheel'] as const;
+/**
+ * What the reader does that drops a place waiting for the diff's files, as they've moved on: a key,
+ * as the key listener tells of it once it's their input (`KEY_EVENT`), those Lo's commands take
+ * among them; a click; or the wheel.
+ */
+const INPUT = [KEY_EVENT, 'pointerdown', 'wheel'] as const;
 
 /**
  * Shows line `line` of the file at `path`, at the head on screen, in tab `tab`: in the diff, with

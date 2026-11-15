@@ -507,7 +507,8 @@ class View implements DiffView {
     this.dom.addEventListener('keydown', this.#escape, { capture: true });
     this.dom.addEventListener('scroll', this.#letNotesGo, { passive: true });
     this.dom.addEventListener('scroll', this.#noteInlineTop, { passive: true });
-    // After `Esc`'s own, so `Esc` closes the note the reader sees.
+    // `KEY_EVENT` comes before `#escape` hears the key, and `#afterInput` waits for the input to be
+    // handled, so `Esc` closes the note the reader sees.
     for (const type of ['wheel', KEY_EVENT, 'click'] as const) {
       this.dom.addEventListener(type, this.#afterInput, { passive: true, capture: true });
     }
@@ -2566,6 +2567,8 @@ class View implements DiffView {
       const pane: Pane = this.#pane === 'inline' ? 'inline' : place.side;
       const view = this.#viewOf(pane);
       const line = this.#docLine(pane, place);
+      // The key that closed the box didn't move the cursor: its line isn't brought on screen.
+      this.#aligner.unfollow();
       view.dispatch({ selection: { anchor: view.state.doc.line(line).from } });
       view.focus();
     }

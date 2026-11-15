@@ -8,6 +8,7 @@
 
 import { Button, Key } from '@lo/ui';
 import { createComposer } from '@lo/ui/code';
+import { KEY_EVENT } from '@lo/ui/commands';
 import { useEffect, useLayoutEffect, useMemo, useRef, type ReactNode, type RefObject } from 'react';
 
 import { useTabState, type PullTab } from '../../tab/window/shared.ts';
@@ -80,7 +81,8 @@ function TimelineComposer({
 /**
  * Keeps `outer` as tall as `inner` has been since the reader's last key, click or scroll, so that
  * when `inner` shrinks with no input of theirs, nothing after it, and nothing scrolled to the end,
- * moves.
+ * moves. A key counts once the key listener says it's the reader's input (`KEY_EVENT`), those Lo's
+ * commands take, such as `j`, among them.
  */
 function useHeldHeight(
   outer: RefObject<HTMLDivElement | null>,
@@ -101,7 +103,7 @@ function useHeldHeight(
     };
     const observer = new ResizeObserver(measure);
     observer.observe(drawn);
-    const events = ['keydown', 'pointerdown', 'wheel', 'touchstart'] as const;
+    const events = [KEY_EVENT, 'pointerdown', 'wheel', 'touchstart'] as const;
     for (const event of events) document.addEventListener(event, input, true);
     return () => {
       observer.disconnect();

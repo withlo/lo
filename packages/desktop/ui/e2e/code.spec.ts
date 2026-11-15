@@ -313,3 +313,24 @@ for (const layout of ['split', 'inline'] as const) {
     }
   });
 }
+
+test('closing a comment box with `Esc` leaves its line where it is, above the screen', async () => {
+  const page = await open('split');
+  const line = (await onScreen(page))[10]!.line;
+  await page.evaluate((at) => window.harness.compose(at), line);
+  await frames(page);
+  // The reader wheels the box's line off the top, the box on screen with focus in it.
+  await page.mouse.move(300, 500);
+  await page.mouse.wheel(0, (await lineTop(page, line))! + 40);
+  await frames(page);
+  await page.keyboard.press('Escape');
+  await frames(page);
+  await expect(page.locator('.lo-diffcomposer')).toHaveCount(1);
+  const before = await lineTop(page, line);
+  expect(before).toBeLessThan(0);
+
+  await page.keyboard.press('Escape');
+  await expect(page.locator('.lo-diffcomposer')).toHaveCount(0);
+  await frames(page);
+  expect(Math.abs((await lineTop(page, line))! - before!)).toBeLessThan(1);
+});

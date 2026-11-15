@@ -1,9 +1,11 @@
 // @vitest-environment jsdom
 // Following a reference to code before a tab's diff has its files: the place waits for them, for a
 // while, saying so, then shows in the diff when it has the file, and whole when it doesn't; or
-// it's dropped, saying so, once it's waited too long or the reader does anything else.
+// it's dropped, saying so, once it's waited too long or the reader does anything else, a key Lo
+// takes included.
 
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { defineCommands, handlers, KEY_EVENT, listen, Registry } from '@lo/ui/commands';
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 
 import type * as TabShared from '../../tab/window/shared.ts';
 import type { DiffState, FileVersions } from '../contract.ts';
@@ -87,6 +89,11 @@ function state(files: FileVersions[] | null): DiffState {
   };
 }
 
+/** Presses `key` with nothing focused, as the system would. */
+function press(key: string): void {
+  document.body.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }));
+}
+
 /** Work that's never done. */
 const never = () => new Promise<never>(() => undefined);
 
@@ -158,7 +165,7 @@ describe('showPlace', () => {
 
   it('drops the place, saying so, once the reader does anything else', () => {
     for (const input of [
-      new KeyboardEvent('keydown', { key: 'j' }),
+      new Event(KEY_EVENT),
       new PointerEvent('pointerdown'),
       new WheelEvent('wheel'),
     ]) {
@@ -170,6 +177,22 @@ describe('showPlace', () => {
       diff.take(state([changed('src/parser.ts')]));
       expect(seen.middles).toEqual([]);
     }
+  });
+
+  it('drops the place once a key Lo takes, such as `] b`, ends its sequence', () => {
+    const declarations = defineCommands('overview', {
+      nextBlock: { label: 'Next block', group: 'Overview', keys: ['] b'] },
+    });
+    const commands = handlers(declarations, { nextBlock: { run() {} } });
+    onTestFinished(listen(window, new Registry({ system: 'mac', commands })));
+    const diff = loader();
+    showPlace('t1', 'src/parser.ts', 7);
+    press(']');
+    expect(seen.notes).toEqual(['Waiting for the diff’s list of files.']);
+    press('b');
+    expect(seen.notes.at(-1)).toBe('Lo stopped waiting for the diff’s list of files.');
+    diff.take(state([changed('src/parser.ts')]));
+    expect(seen.middles).toEqual([]);
   });
 
   it('shows a file the diff doesn’t have whole, once the files are known', () => {

@@ -1,14 +1,16 @@
 // @vitest-environment jsdom
 // What the timeline on screen shows of what main sends: nothing moves while the reader looks until
-// their next key, click or scroll, but what their own write changed shows as it comes, for a
-// minute at most; and what `i` and `dd` act on, refusing in Lo's words what Lo doesn't change.
+// their next key, a key Lo takes included, click or scroll, but what their own write changed shows
+// as it comes, for a minute at most; and what `i` and `dd` act on, refusing in Lo's words what Lo
+// doesn't change.
 
-import { afterEach, describe, expect, test, vi } from 'vitest';
+import { defineCommands, handlers, KEY_EVENT, listen, Registry } from '@lo/ui/commands';
+import { afterEach, describe, expect, onTestFinished, test, vi } from 'vitest';
 
 import type { Item, Timeline, TimelineView } from '../contract.ts';
 import { atOnce, CLAIM_FOR, holding, shows, stillToCome, type Claim } from './holding.ts';
 import type { Row } from './rows.ts';
-import { claim, setLooked, showHeld, shownTimelines, takeTimeline } from './store.ts';
+import { claim, setLooked, showHeldOnInput, shownTimelines, takeTimeline } from './store.ts';
 import { changeTarget, commentIn, isYours } from './yours.ts';
 
 const AT = '2026-11-13T12:00:00Z';
@@ -39,6 +41,11 @@ function timeline(items: Item[]): Timeline {
     shownUpdatedAt: AT,
     readInFullAt: AT,
   };
+}
+
+/** Presses `key` with nothing focused, as the system would. */
+function press(key: string): void {
+  document.body.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }));
 }
 
 let VIEW = 'h0';
@@ -113,18 +120,56 @@ describe('holding', () => {
   });
 
   test('the store holds what comes while the timeline is on screen until the reader’s input', () => {
+    onTestFinished(showHeldOnInput(VIEW));
     const first = view([said('IC_1', 'One.')]);
     takeTimeline(first);
     setLooked(VIEW, true);
     const next = view([said('IC_1', 'One.'), said('IC_2', 'Two.', 'ravi-k')]);
     takeTimeline(next);
     expect(shownTimelines.get(VIEW)).toBe(first);
-    showHeld(VIEW);
+    document.body.dispatchEvent(new Event(KEY_EVENT, { bubbles: true }));
     expect(shownTimelines.get(VIEW)).toBe(next);
     // Off screen, it comes at once.
     setLooked(VIEW, false);
     const third = view([said('IC_1', 'One.')]);
     takeTimeline(third);
+    expect(shownTimelines.get(VIEW)).toBe(third);
+  });
+
+  test('what came shows at a key Lo takes, such as `j`, and at a sequence’s once it ends, as `dd`’s', () => {
+    const declarations = defineCommands('timeline', {
+      down: { label: 'Next event in the timeline', group: 'Move', keys: ['j'] },
+      remove: { label: 'Delete your comment…', group: 'Act', keys: ['d d'] },
+    });
+    const ran: string[] = [];
+    const commands = handlers(declarations, {
+      down: {
+        run() {
+          ran.push('j');
+        },
+      },
+      remove: {
+        run() {
+          ran.push('dd');
+        },
+      },
+    });
+    onTestFinished(listen(window, new Registry({ system: 'mac', commands })));
+    onTestFinished(showHeldOnInput(VIEW));
+    takeTimeline(view([said('IC_1', 'One.')]));
+    setLooked(VIEW, true);
+    const next = view([said('IC_1', 'One.'), said('IC_2', 'Two.', 'ravi-k')]);
+    takeTimeline(next);
+    press('j');
+    expect(ran).toEqual(['j']);
+    expect(shownTimelines.get(VIEW)).toBe(next);
+    const third = view([said('IC_1', 'One.'), said('IC_3', 'Three.', 'ravi-k')]);
+    takeTimeline(third);
+    // `d` waits for the rest of `dd`: nothing comes between its keys for it to act on.
+    press('d');
+    expect(shownTimelines.get(VIEW)).toBe(next);
+    press('d');
+    expect(ran).toEqual(['j', 'dd']);
     expect(shownTimelines.get(VIEW)).toBe(third);
   });
 

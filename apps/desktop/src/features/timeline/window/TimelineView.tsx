@@ -70,7 +70,7 @@ import {
   comparisons,
   focusedRows,
   setLooked,
-  showHeld,
+  showHeldOnInput,
   shownHidden,
   shownTimelines,
   showTimeline,
@@ -193,9 +193,6 @@ function TimelineOf({ tab, shown }: { tab: PullTab; shown: boolean }) {
   }
 }
 
-/** The input that shows what came while the reader looked: a key, a click or a scroll. */
-const INPUT = ['keydown', 'pointerdown', 'wheel', 'touchstart'] as const;
-
 /**
  * While `shown`, what main sends of tab `tab`'s timeline waits for the reader's next key, click or
  * scroll; and as it goes on screen, what the reader looks at in `root` stays where it is, `rows`
@@ -211,14 +208,13 @@ function useHolding(
   useEffect(() => {
     setLooked(tab, shown);
     if (!shown) return undefined;
-    const input = () => showHeld(tab);
-    for (const event of INPUT) document.addEventListener(event, input, true);
+    const listening = showHeldOnInput(tab);
     const stop = beforeShowing(tab, () => {
       place.current = root.current ? readingPlace(root.current, focusedRows.get(tab)) : undefined;
     });
     return () => {
       stop();
-      for (const event of INPUT) document.removeEventListener(event, input, true);
+      listening();
       setLooked(tab, false);
     };
   }, [tab, shown, root]);
