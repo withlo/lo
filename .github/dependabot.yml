@@ -17,6 +17,9 @@ updates:
         patterns: ['oxlint', 'oxlint-tsgolint']
       stylelint:
         patterns: ['stylelint', 'stylelint-config-*']
+      # The protocol's package pins its own vscode-jsonrpc; a second copy would split their types.
+      lsp:
+        patterns: ['vscode-jsonrpc', 'vscode-languageserver-*']
     # The app runs on the Node its Electron release embeds (24), so Node's types move with Electron.
     ignore:
       - dependency-name: '@types/node'

@@ -253,6 +253,23 @@ which builds the same commits, with the IDs GitHub has, into `<folder>/rozed-dev
 `<folder>/work` and reads no network, as the other fixtures do. Run again, they put the branches
 back and open a closed pull request.
 
+## The fake language server
+
+`lsp/fake-server.ts` is a language server for tests: it speaks the protocol over stdio on
+`vscode-jsonrpc`, and Node runs it as it is, stripping its types. It does what a scenario file says
+(`lsp/scenario.ts`): its answers by method and file (`$ROOT` stands for the checkout's URI), how
+long each takes, a crash after some requests, a hang, memory to fill, requests and notifications to
+send Lo, a process of its own to start and one in a session of its own, which can start sleepers in
+sessions of their own as fast as it can, a flood of output once initialized, in place of its answer
+to `shutdown` or after it, on stderr too, and whether it ignores `shutdown`, `exit` and `SIGTERM`.
+It writes each message whole, so a flood never lands inside one. It reports what it sees, one JSON
+object per line: its environment and `argv0`, `initialize`, the files opened and closed, each
+request and cancel, Lo's replies to its requests, and each sleeper started.
+
+`fakeServer(folder, scenario)` from `@lo/testing/lsp` writes the scenario and returns the program,
+arguments and report to start it with, and `readReport` reads what it saw. It's the only server
+tests start.
+
 ## The credential scan
 
 `test/fixtures.test.ts` checks every file under `fixtures/` the way the recorder checks a new one,

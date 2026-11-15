@@ -43,6 +43,9 @@
     },
     {
       "path": "./skill/checker"
+    },
+    {
+      "path": "./packages/desktop/lsp"
     }
   ]
 }
