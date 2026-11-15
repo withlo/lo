@@ -9,6 +9,7 @@ import { draw, type Drawing, Pacer, samePlace } from './drawing.ts';
 import { setThreader, threadsChanged } from './shared.ts';
 import type { DrawnDiff, ThreadCounts } from './threads.ts';
 import { Loader, type LoaderWork } from './loader.ts';
+import { toOtherEnd } from './moved.ts';
 import { drawnFor, revealWhenDrawn } from './tabs.ts';
 
 /** What the stand-in view was told, in order, and the files it says are on screen. */
@@ -462,6 +463,25 @@ describe('a file the reader acts on', () => {
       'lines d2 local shown',
       'lines d3 local shown',
     ]);
+  });
+
+  it('takes them first when the reader goes to it from moved code, as for a key on it', async () => {
+    const loader = await drawnGithub(work, FIVE);
+    await frames();
+    const waiting: FrameRequestCallback[] = [];
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) =>
+      waiting.push(callback),
+    );
+    vi.stubGlobal('cancelAnimationFrame', () => undefined);
+    onScreen = ['d4'];
+    told.length = 0;
+    loader.take(state('shown', 'local', FIVE));
+    await waitFor(() => loader.shown('d4')?.from === 'local');
+    expect(told).toEqual([]);
+
+    toOtherEnd(drawnFor(TAB.id)!, { file: 'd4', side: 'new', line: 1 });
+    expect(told).toEqual(['lines d4 local shown', 'collapsed d4 false']);
+    expect(moved).toEqual(['reveal line']);
   });
 });
 

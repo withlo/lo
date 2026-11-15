@@ -362,6 +362,12 @@ export function draw(options: DrawOptions): Drawing {
     else if (shown) setLines(id, shown, true);
   };
 
+  /** The reader opened or closed a file, or went into it: how it starts out is theirs now. */
+  const acted = (id: string) => {
+    pending.delete(id);
+    catchUp(id);
+  };
+
   /** Makes a change to a file now, `onScreen` or not. Returns whether it could. */
   const apply = (id: string, change: Change, start: Start, onScreen = false): boolean => {
     switch (change) {
@@ -469,7 +475,7 @@ export function draw(options: DrawOptions): Drawing {
       },
       // A moved label's click: a jump, from the line the label is over, to the other end.
       moved(to) {
-        followLabel(view, to, (left) => keys.history.record(entryAt(left)));
+        followLabel({ view, acted }, to, (left) => keys.history.record(entryAt(left)));
       },
     },
   );
@@ -614,10 +620,7 @@ export function draw(options: DrawOptions): Drawing {
         pull: { owner: tab.owner, repo: tab.repo, number: tab.number },
         order: files.map((file) => file.id),
         threaded,
-        acted(id) {
-          pending.delete(id);
-          catchUp(id);
-        },
+        acted,
         toTop,
         fileAt(target) {
           const spot = spotOf(target);

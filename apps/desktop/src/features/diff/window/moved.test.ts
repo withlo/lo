@@ -9,7 +9,7 @@ import {
 } from '@lo/ui/code';
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 
-import { followLabel, movedNow, NOT_MOVED, toOtherEnd } from './moved.ts';
+import { followLabel, type Going, movedNow, NOT_MOVED, toOtherEnd } from './moved.ts';
 
 const noRects = (): DOMRectList => Object.assign([], { item: () => null });
 
@@ -33,11 +33,19 @@ beforeAll(() => {
 
 let view: DiffView | undefined;
 let parent: HTMLElement | undefined;
+/** The files the diff was told the reader acted on, as `za` tells it, in order. */
+const acted: string[] = [];
 afterEach(() => {
   view?.destroy();
   parent?.remove();
   view = undefined;
+  acted.length = 0;
 });
+
+/** The diff `made` is drawn in, as the keys and a label's click act on it. */
+function going(made: DiffView): Going {
+  return { view: made, acted: (file) => acted.push(file) };
+}
 
 /** A block of four lines, which `a` deletes and `b` adds. */
 const block = ['function wrap(text) {', '  const lines = [];', '  return lines;', '}'];
@@ -79,7 +87,7 @@ function shown(record: (left: Target) => void = () => {}): DiffView {
     jumped() {},
     load() {},
     menu() {},
-    moved: (to) => followLabel(made, to, record),
+    moved: (to) => followLabel(going(made), to, record),
   };
   const made = createDiffView(parent, { files, layout: 'split', vimKeys: [], nonce: '' }, on);
   view = made;
@@ -112,13 +120,14 @@ describe('the other end of moved code', () => {
     expect(movedNow(diff, { file: 'a', side: 'new', line: 3 })).toBe(NOT_MOVED);
   });
 
-  it('is the same line in the other file, which opens if it’s closed, with the cursor and focus', () => {
+  it('is the same line in the other file, acted on as za does, opened if it’s closed, with the cursor and focus', () => {
     const diff = shown();
     diff.reveal({ kind: 'line', at: { file: 'a', side: 'old', line: 4 } });
     expect(notes()).toEqual(['+4 −0, closed: za opens it']);
     const to = diff.otherEnd({ file: 'a', side: 'old', line: 4 });
     expect(to).toEqual({ file: 'b', side: 'new', line: 2 });
-    toOtherEnd(diff, to!);
+    toOtherEnd(going(diff), to!);
+    expect(acted).toEqual(['b']);
     expect(notes()).toEqual([]);
     expect(diff.keyState().target).toMatchObject({
       kind: 'line',
@@ -126,7 +135,7 @@ describe('the other end of moved code', () => {
     });
     expect(parent!.contains(document.activeElement)).toBe(true);
     // And back, to a file that's open: it stays as it is.
-    toOtherEnd(diff, diff.otherEnd({ file: 'b', side: 'new', line: 2 })!);
+    toOtherEnd(going(diff), diff.otherEnd({ file: 'b', side: 'new', line: 2 })!);
     expect(diff.keyState().target).toMatchObject({
       kind: 'line',
       at: { file: 'a', side: 'old', line: 4 },
@@ -146,6 +155,7 @@ describe('a moved label’s click', () => {
     expect(button?.textContent).toBe('src/b.ts:1');
     button!.click();
     expect(left).toEqual([{ kind: 'line', at: { file: 'a', side: 'old', line: 3 } }]);
+    expect(acted).toEqual(['b']);
     expect(diff.keyState().target).toMatchObject({
       kind: 'line',
       at: { file: 'b', side: 'new', line: 1 },

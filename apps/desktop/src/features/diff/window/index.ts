@@ -236,9 +236,9 @@ export default {
     nextThread: { run: withDiff(({ view }) => view.jump('thread', 1)), enabled: drawnNow },
     previousThread: { run: withDiff(({ view }) => view.jump('thread', -1)), enabled: drawnNow },
     otherEnd: {
-      run: withDiff(({ view }, target: LineTarget) => {
-        const to = view.otherEnd(placeOf(target.at));
-        if (to) toOtherEnd(view, to);
+      run: withDiff((drawn, target: LineTarget) => {
+        const to = drawn.view.otherEnd(placeOf(target.at));
+        if (to) toOtherEnd(drawn, to);
       }),
       enabled: otherEndNow,
     },
