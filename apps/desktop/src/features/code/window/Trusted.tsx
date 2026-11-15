@@ -2,11 +2,12 @@
 // file, which only main writes. "Remove" asks main to stop trusting one; trusting happens on a
 // pull request's tab, through main's own dialog.
 
+import { TrustList, type TrustEntry as TrustRow } from '@lo/ui';
+
 import { notify } from '../../../window/commands/notices.tsx';
 import { defineSection, useSetting } from '../../settings/window/shared.ts';
 import { readTrusted, trusted, type TrustEntry } from '../settings.ts';
 import { main } from './main.ts';
-import { TrustList, type TrustEntry as TrustRow } from './TrustList.tsx';
 
 const DAY = 24 * 60 * 60 * 1000;
 
