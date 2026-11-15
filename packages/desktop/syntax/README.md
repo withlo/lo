@@ -100,9 +100,10 @@ project's manifest: relative imports for TypeScript and JavaScript, `from` for P
 `package` for Java and Kotlin, and `use` with PSR-4's folders for PHP. Every answer is labelled
 "Syntax index", or "Syntax index · same name" when only its name links it to the asking file.
 
-`tagsVersion` is a hash of the grammars the tagged languages parse with, their tag queries and the
-code that reads them, written by `pnpm nx run syntax:codegen`. It changes with any of them, so the
-index can tell which of its readings to make again.
+`tagsVersion` is a hash of the grammars the tagged languages parse with, the version of
+`web-tree-sitter` that runs them, their tag queries and the code that reads them, the depth guard in
+`src/depth.ts` and the runtime included, written by `pnpm nx run syntax:codegen`. It changes with
+any of them, so the index can tell which of its readings to make again.
 
 A file is read with the highlighter's limits, and isn't read at all past a million characters, with
 a line over 10,000 characters, as minified files have, with a NUL, as binary files have, or with
