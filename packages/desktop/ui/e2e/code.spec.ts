@@ -403,6 +403,22 @@ for (const layout of ['split', 'inline'] as const) {
       expect(Math.abs(after! - before!)).toBeLessThan(1);
     });
 
+    for (const opened of ['peek', 'comment box'] as const) {
+      test(`a ${opened} under a wrapped line partly above the top leaves the first line on screen where it is as the view then narrows`, async () => {
+        const page = await wrapping(layout);
+        // Under line 19, whose last rows are across the top.
+        if (opened === 'peek') await page.evaluate(() => window.harness.peek(19));
+        else await page.evaluate(() => window.harness.compose(19));
+        await frames(page);
+        const before = await lineTop(page, 20);
+        expect(before).toBeGreaterThan(0);
+
+        await page.evaluate(() => window.harness.narrow(640));
+        await frames(page);
+        near([await lineTop(page, 20)], [before]);
+      });
+    }
+
     test('the view narrowing leaves the line at the top where it is', async () => {
       const page = await wrapping(layout);
       const before = await page.evaluate(() => window.harness.lineTop(20));

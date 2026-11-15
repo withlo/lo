@@ -3199,11 +3199,17 @@ class View implements DiffView {
     this.#holding = undefined;
     const pane = this.#activePane();
     const view = this.#viewOf(pane);
-    const cursor = this.#placeAt(
-      pane,
-      view.state.doc.lineAt(view.state.selection.main.head).number,
-    );
+    const line = view.state.doc.lineAt(view.state.selection.main.head).number;
+    const cursor = this.#placeAt(pane, line);
     const from = peek?.place ?? cursor;
+    // Whether the cursor is on the peek's line already: inline, an unchanged line is either side's.
+    const onPeek =
+      peek !== undefined &&
+      (pane === 'inline'
+        ? this.#docLine('inline', peek.place) === line
+        : cursor.file === peek.place.file &&
+          cursor.side === peek.place.side &&
+          cursor.line === peek.place.line);
     let shown: Pane;
     if (this.#pane === 'split') {
       const inline = this.#inline ?? this.#makeInline();
@@ -3229,10 +3235,7 @@ class View implements DiffView {
     if (!peek) return;
     // The cursor went to the peek's line, with focus not in its editor: said as any move of it is,
     // and as a jump, from another line.
-    const { place } = peek;
-    if (cursor.file !== place.file || cursor.side !== place.side || cursor.line !== place.line) {
-      this.#on.jumped(this.#spot(cursor), this.#spot(place));
-    }
+    if (!onPeek) this.#on.jumped(this.#spot(cursor), this.#spot(peek.place));
     this.#tell(shown);
     // Drawn now, where the editor scrolls to, so it can take focus.
     this.#viewOf(shown).lineBlockAtHeight(0);

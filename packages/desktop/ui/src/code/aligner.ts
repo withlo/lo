@@ -270,6 +270,12 @@ export class Aligner {
    * before the pass, as it does into a comment box as it opens.
    */
   #chosen = false;
+  /**
+   * Whether `anchorAt` gave the coming pass a line of its own to keep, for the change it was taken
+   * for: that line counts as on screen while some of it is. Later passes take a line partly above
+   * the top as off it, as for any anchor, so the next width change keeps the first line on screen.
+   */
+  #given = false;
   /** Which way the scroll last went: down (1) or up (-1). */
   #direction: 1 | -1 = 1;
   /**
@@ -436,6 +442,7 @@ export class Aligner {
     if (top === undefined) return;
     this.#topTaken = true;
     this.#chosen = true;
+    this.#given = true;
     this.#anchor = {
       for: this.#anchorSide(),
       side,
@@ -452,6 +459,7 @@ export class Aligner {
     this.#anchor = undefined;
     this.#topTaken = false;
     this.#chosen = false;
+    this.#given = false;
     if (!paused) this.schedule();
   }
 
@@ -508,6 +516,7 @@ export class Aligner {
     if (this.#paused || this.#running) return;
     const started = performance.now();
     this.#running = true;
+    const given = this.#given;
     let changed = false;
     try {
       const side = this.#anchorSide();
@@ -557,12 +566,15 @@ export class Aligner {
           turn === 0 &&
           !this.#wheeledOff &&
           anchor.element === undefined &&
-          this.#offScreen(anchor)
+          (given
+            ? this.#offScreen(anchor)
+            : anchor.offset < 0 || anchor.offset >= this.#scroller.clientHeight)
         ) {
           // After a jump, neither editor drew anything on screen yet when the scroll moved, so the
           // anchor was a line off it: take one on screen, now that they've drawn there. A line
-          // partly above the top, as one a peek opens under, or at the top where a jump left it a
-          // fraction of a pixel above, is on it.
+          // `anchorAt` gave for the change this pass lines up, as one a peek opens under, is on it
+          // while some of it is, partly above the top, or at the top where a jump left it a
+          // fraction of a pixel above.
           anchor = this.#anchorNow();
         }
         // The last round only measures, so what's drawn covers where the scroll ended up.
@@ -586,6 +598,7 @@ export class Aligner {
       this.#selected = false;
       this.#topTaken = false;
       this.#chosen = false;
+      this.#given = false;
       this.#wheeledOff = false;
       const ms = performance.now() - started;
       this.stats.passes++;

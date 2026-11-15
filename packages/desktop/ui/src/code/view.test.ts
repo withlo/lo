@@ -3013,6 +3013,18 @@ describe('peeks', () => {
     expect(on.jumped).toHaveBeenCalledTimes(1);
   });
 
+  test('the cursor already on its unchanged line, inline, is no jump as the layout changes', () => {
+    const on = events();
+    const shown = open(on, { layout: 'inline' });
+    shown.reveal(onLine('a', 'new', 3));
+    shown.focus();
+    shown.peek(at('a', 'old', 3), definition());
+    shown.setLayout('split');
+    expect(document.activeElement).toBe(parent!.querySelector('.lo-diffpeek'));
+    expect(shown.probe.cursor()?.at).toEqual(onLine('a', 'old', 3, 0));
+    expect(on.jumped).not.toHaveBeenCalled();
+  });
+
   test('none opens among collapsed lines; one opened in a run keeps its line once the run closes', () => {
     const shown = open();
     const before = runs();
