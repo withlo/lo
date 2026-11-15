@@ -41,6 +41,7 @@ export * from './queries.ts';
 export * from './rate-limit.ts';
 export { refreshGrant, type WebOptions } from './refresh.ts';
 export * from './refs.ts';
+export * from './repositories.ts';
 export * from './rules.ts';
 export * from './sidebar.ts';
 export * from './stack-layers.ts';

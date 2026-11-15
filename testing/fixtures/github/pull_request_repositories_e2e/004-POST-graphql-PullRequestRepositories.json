@@ -1,0 +1,47 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "https://api.github.com/graphql",
+    "operation": "PullRequestRepositories",
+    "variables": {
+      "owner": "rozed-dev",
+      "name": "e2e",
+      "number": 9999
+    },
+    "query_sha256": "8f0d7f13e5143dcae208980561f87ec71bdc353114887597092c60154a5a8800"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "x-ratelimit-limit": "5000",
+      "x-ratelimit-remaining": "4997",
+      "x-ratelimit-reset": "1794776085",
+      "x-ratelimit-resource": "graphql",
+      "x-ratelimit-used": "3"
+    },
+    "body": {
+      "data": {
+        "repository": {
+          "pullRequest": null
+        }
+      },
+      "errors": [
+        {
+          "type": "NOT_FOUND",
+          "path": [
+            "repository",
+            "pullRequest"
+          ],
+          "locations": [
+            {
+              "line": 4,
+              "column": 5
+            }
+          ],
+          "message": "Could not resolve to a PullRequest with the number of 9999."
+        }
+      ]
+    }
+  }
+}

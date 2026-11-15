@@ -64,9 +64,16 @@ export type GitErrorDetail =
   | { kind: 'invalid'; what: string; value: string }
   /**
    * A git command wrote, or would have, more than `limit` bytes, or `limit` of `unit`, such as a
-   * file's lines or a tree's entries, so Lo stopped it or never read it.
+   * file's lines or a tree's entries, so Lo stopped it or never read it. With `blob`, it's that
+   * file, of `size` bytes, that Lo never read.
    */
-  | { kind: 'tooLarge'; command: string; limit: number; unit?: 'lines' | 'entries' | undefined }
+  | {
+      kind: 'tooLarge';
+      command: string;
+      limit: number;
+      unit?: 'lines' | 'entries' | undefined;
+      blob?: { oid: string; size: number } | undefined;
+    }
   /** A git command took longer than `limit` milliseconds, so Lo stopped it. */
   | { kind: 'tooSlow'; command: string; limit: number }
   /** The cache is open in another process, or already in this one. */
@@ -175,6 +182,10 @@ function describe(detail: GitErrorDetail): string {
     case 'invalid':
       return `\`${detail.value}\` isn't a valid ${detail.what}`;
     case 'tooLarge':
+      if (detail.blob !== undefined) {
+        const { oid, size } = detail.blob;
+        return `file ${oid.slice(0, 7)} is ${size} bytes, more than the ${detail.limit} Lo reads at once`;
+      }
       return `\`${detail.command}\` wrote more than ${detail.limit} ${detail.unit ?? 'bytes'}, so Lo stopped it`;
     case 'tooSlow':
       return `\`${detail.command}\` took longer than ${formatDuration(detail.limit)}, so Lo stopped it`;
