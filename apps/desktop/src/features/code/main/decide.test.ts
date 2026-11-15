@@ -87,6 +87,21 @@ describe('the decision', () => {
     );
   });
 
+  it('asks again about a fork that moved to another owner, or was renamed, since it was trusted', () => {
+    const fork = view(97, { fork: 'rozed-bot/e2e' });
+    // The entry named the fork as it was; GitHub says rozed-bot/e2e now, with the same ID.
+    for (const from of ['someone-else/e2e', 'rozed-bot/e2e-old']) {
+      expect(decide(fork, [pullEntry(97, { from })], read[97]).trust).toEqual({
+        kind: 'untrusted',
+        why: 'other',
+      });
+    }
+    expect(decide(fork, [pullEntry(97, { from: 'Rozed-Bot/E2E' })], read[97]).trust).toEqual({
+      kind: 'trusted',
+      by: 'pull',
+    });
+  });
+
   it('counts a pull request whose fork is gone as a fork, which no entry can trust', () => {
     // The tab can't tell it from a branch of the repository's own.
     const gone = view(96, { fork: null });

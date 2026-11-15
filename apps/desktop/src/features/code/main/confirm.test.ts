@@ -14,6 +14,7 @@ import {
   type AskOptions,
   type AskWindow,
   type Question,
+  type TrustRequest,
 } from './confirm.ts';
 
 const E2E = { id: 'R_kgDOVleUfQ', name: 'rozed-dev/e2e' };
@@ -29,6 +30,8 @@ const CANCEL = BUTTONS.indexOf('Cancel');
 
 /** A dialog the test answers: what it was asked, and the answer it gives each. */
 interface Asked {
+  /** The window it's attached to. */
+  readonly window: TestWindow;
   readonly question: Question;
   readonly signal: AbortSignal;
   answer(button: number): void;
@@ -58,19 +61,25 @@ function asker(
   const write = vi.fn<(entry: TrustEntry) => Promise<void>>(async (entry) => {
     written.push(entry);
   });
-  const trust = new TrustAsker<TestWindow>({
+  const real = new TrustAsker<TestWindow>({
     view: (id) => views[id],
     read,
-    window: () => window,
-    confirm: (_window, question, signal) =>
+    confirm: (at, question, signal) =>
       new Promise((resolve) => {
-        dialogs.push({ question, signal, answer: resolve });
+        dialogs.push({ window: at, question, signal, answer: resolve });
       }),
     write,
     now: () => NOW,
     ...change,
   });
-  return { trust, window, dialogs, written, write };
+  /** The asker, asked from the test's window. */
+  const trust = {
+    ask: (request: TrustRequest) => real.ask(request, window),
+    get asking() {
+      return real.asking;
+    },
+  };
+  return { real, trust, window, dialogs, written, write };
 }
 
 const views: Record<string, AskedView> = {
@@ -161,6 +170,42 @@ describe('asking to trust', () => {
       dialogs.length = 0;
     }
     expect(write).not.toHaveBeenCalled();
+  });
+
+  it('asks in the window that asked, which alone cancels it by closing', async () => {
+    const { real, window, dialogs, write } = asker(views);
+    const other = new TestWindow();
+    const asking = real.ask({ view: 't1', repo: 'rozed-dev/e2e', pull: null }, other);
+    await until(() => dialogs.length === 1);
+    expect(dialogs[0]?.window).toBe(other);
+    // Another window closing leaves the dialog asking.
+    window.close();
+    expect(dialogs[0]?.signal.aborted).toBe(false);
+    other.close();
+    expect(dialogs[0]?.signal.aborted).toBe(true);
+    dialogs[0]?.answer(TRUST);
+    expect(await asking).toBe('cancelled');
+    expect(write).not.toHaveBeenCalled();
+  });
+
+  it('refuses, asking nothing, a repository GitHub names in a way it doesn’t allow', async () => {
+    for (const name of [
+      'rozed-dev/e2e\nTrust rozed-dev/safe',
+      'rozed-dev/\u202Eppa',
+      'rozed-dev/e2e ',
+      '../e2e',
+    ]) {
+      for (const repositories of [
+        { base: { ...E2E, name }, head: FORK, isCrossRepository: true },
+        { base: E2E, head: { ...FORK, name }, isCrossRepository: true },
+      ]) {
+        const { trust, dialogs, write } = asker(views, () => Promise.resolve(repositories));
+        const refused = await refusal(trust.ask({ view: 't2', repo: 'rozed-dev/e2e', pull: 97 }));
+        expect(refused?.code).toBe('refused');
+        expect(dialogs).toEqual([]);
+        expect(write).not.toHaveBeenCalled();
+      }
+    }
   });
 
   it('writes nothing once the window closes during the dialog, whatever it answers', async () => {
@@ -285,10 +330,13 @@ describe('asking to trust', () => {
       (await refusal(failing.trust.ask({ view: 't1', repo: 'rozed-dev/e2e', pull: null })))?.code,
     ).toBe('unread');
     expect(failing.dialogs).toEqual([]);
-    const windowless = asker(views, undefined, { window: () => undefined });
+    const windowless = asker(views);
     expect(
-      (await refusal(windowless.trust.ask({ view: 't1', repo: 'rozed-dev/e2e', pull: null })))
-        ?.code,
+      (
+        await refusal(
+          windowless.real.ask({ view: 't1', repo: 'rozed-dev/e2e', pull: null }, undefined),
+        )
+      )?.code,
     ).toBe('unavailable');
     expect(failing.write).not.toHaveBeenCalled();
     expect(windowless.write).not.toHaveBeenCalled();

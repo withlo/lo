@@ -1,9 +1,9 @@
 // The code feature in main: trust. For each view of a pull request's tab, whether language servers
 // may run on it, decided from the trusted entries in the settings file and, once one names the
 // view, the repositories' node IDs read from GitHub, and sent to the window each time it changes.
-// Trust is written only here, once main's own dialog, attached to the window, says "Trust"; the
-// banner, the palette and Settings only ask. Taking trust away lets go of what ran on it: its
-// checkouts are removed.
+// Trust is written only here, once main's own dialog, attached to the window that asked, says
+// "Trust"; the banner, the palette and Settings only ask. Taking trust away, however the settings
+// file loses an entry, lets go of what ran on it: its checkouts are removed.
 
 import { PullRef, readPullRequestRepositories, type PullRequestRepositories } from '@lo/github';
 import { BrowserWindow, dialog } from 'electron';
@@ -15,10 +15,18 @@ import { settings } from '../../settings/service.ts';
 import { tabs } from '../../tab/service.ts';
 import { contract } from '../contract.ts';
 import { readTrusted, trusted, type TrustEntry } from '../settings.ts';
+import { letGo } from './checkouts.ts';
 import { TrustAsker, type AskWindow } from './confirm.ts';
-import { naming } from './decide.ts';
 import { Dismissed } from './dismissed.ts';
-import { removes, withEntry, withoutEntries } from './entries.ts';
+import {
+  dropsFor,
+  goneFrom,
+  meant,
+  removes,
+  withEntry,
+  withoutEntries,
+  type Drop,
+} from './entries.ts';
 import { TrustViews, type ViewInfo } from './views.ts';
 
 type Context = FeatureContext<typeof contract>;
@@ -31,18 +39,19 @@ let dismissed: Dismissed | undefined;
 const stops: (() => void)[] = [];
 
 /**
- * What hears of an entry no longer trusted, once it's out of the settings file: each stops what
- * runs on what it trusted, then lets go of its checkouts.
+ * What hears of checkouts no longer trusted, once an entry is out of the settings file, however it
+ * went: each stops what runs on them, then lets go of them.
  */
-const untrusted = new Set<(entry: TrustEntry) => Promise<void>>();
+const untrusted = new Set<(drop: Drop) => Promise<void>>();
 
-/** Lo's window, which the dialog is attached to: the one in front, or else its only one. */
+/** The window that asked, which the dialog is attached to. */
 interface BrowserAsk extends AskWindow {
   readonly browser: BrowserWindow;
 }
 
-function loWindow(): BrowserAsk | undefined {
-  const browser = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
+/** The window Electron numbers `id`, while it's open. */
+function windowOf(id: number | undefined): BrowserAsk | undefined {
+  const browser = id === undefined ? undefined : BrowserWindow.fromId(id);
   if (!browser || browser.isDestroyed()) return undefined;
   return {
     browser,
@@ -79,6 +88,7 @@ function viewInfo(context: Context, id: string): ViewInfo | undefined {
     local: info.local.kind === 'ready',
     fork: fork === undefined ? undefined : fork && `${fork.owner}/${fork.name}`,
     canRead: info.acting !== undefined,
+    heads: `${info.latest ?? ''} ${info.shown ?? ''}`,
   };
 }
 
@@ -96,29 +106,20 @@ async function readRepositories(context: Context, id: string): Promise<PullReque
   return poller.readOnce((client) => readPullRequestRepositories(client, pull));
 }
 
-/** Lets go of the checkouts of what `entry` trusted. */
-async function dropCheckouts(context: Context, entry: TrustEntry): Promise<void> {
-  const cache = context.git.cache;
-  if (!cache) return;
-  const [owner = '', name = ''] = entry.repo.split('/');
-  await cache.dropCheckouts(owner, name, entry.kind === 'pull' ? { pull: entry.pull } : {});
-}
-
 /**
- * Takes out of the settings file the entries `take` picks, and tells those that hear of entries
- * no longer trusted, without holding up the reply.
+ * Takes out of the settings file the entries `take` picks. Watching the file, Lo then lets go of
+ * what they trusted.
  */
 async function untrust(context: Context, take: (entry: TrustEntry) => boolean): Promise<void> {
-  let removed: TrustEntry[] = [];
-  await context.use(settings).update(trusted, (list) => {
-    const changed = withoutEntries(list, take);
-    removed = changed.removed;
-    return changed.list;
-  });
-  for (const entry of removed) {
+  await context.use(settings).update(trusted, (list) => withoutEntries(list, take).list);
+}
+
+/** Tells those that hear of checkouts no longer trusted, without holding up what changed. */
+function letGoOf(drops: readonly Drop[]): void {
+  for (const drop of drops) {
     for (const listener of untrusted) {
-      listener(entry).catch((error: unknown) => {
-        log(`couldn't let go of what ran on ${entry.repo}: ${String(error)}`);
+      listener(drop).catch((error: unknown) => {
+        log(`couldn't let go of what ran on ${drop.repo}: ${String(error)}`);
       });
     }
   }
@@ -128,22 +129,16 @@ export default defineFeature(contract, {
   uses: [tabs, github, settings],
   handlers: {
     state: ({ view }) => viewsOf().status(view) ?? null,
-    trust(request) {
+    trust(request, _context, { windowId }) {
       if (!asker) throw new IpcError('unavailable', 'Lo is starting, or quitting.');
-      return asker.ask(request);
+      return asker.ask(request, windowOf(windowId));
     },
     async untrust(input, context) {
       if ('view' in input) {
         const view = viewInfo(context, input.view);
         if (!view) throw new IpcError('missing', "There's no pull request's tab with that id.");
         viewsOf().update(input.view);
-        const by = viewsOf().decision(input.view)?.by;
-        // What trusts it; or, while that isn't known, whatever names it.
-        const take = by
-          ? (entry: TrustEntry) =>
-              removes({ id: by.id, pull: by.kind === 'pull' ? by.pull : null }, entry)
-          : (entry: TrustEntry) => naming(view, [entry]).length > 0;
-        await untrust(context, take);
+        await untrust(context, meant(view, viewsOf().decision(input.view)));
         return;
       }
       await untrust(context, (entry) => removes(input, entry));
@@ -174,12 +169,7 @@ export default defineFeature(contract, {
         const view = viewInfo(context, id);
         return view && { id, repo: view.repo, number: view.number };
       },
-      async read(view) {
-        const repositories = await readRepositories(context, view.id);
-        followed.took(view, repositories);
-        return repositories;
-      },
-      window: loWindow,
+      read: (view) => followed.readNow(view.id),
       confirm: async ({ browser }, question, signal) => {
         const { response } = await dialog.showMessageBox(browser, {
           ...question,
@@ -191,11 +181,21 @@ export default defineFeature(contract, {
       write: (entry) => context.use(settings).update(trusted, (list) => withEntry(list, entry)),
     });
     // Until language servers run, there's only the checkouts to let go of.
-    untrusted.add((entry) => dropCheckouts(context, entry));
+    untrusted.add(async (drop) => {
+      const cache = context.git.cache;
+      if (cache) await letGo(cache, drop);
+    });
+    /** The entries as the file last had them, once it's been read. */
+    let before: readonly TrustEntry[] | undefined;
     stops.push(
-      context
-        .use(settings)
-        .watch(trusted, (value) => followed.setEntries(readTrusted(value).entries)),
+      context.use(settings).watch(trusted, (value) => {
+        const entries = readTrusted(value).entries;
+        const gone = before === undefined ? [] : goneFrom(before, entries);
+        before = entries;
+        // Views are decided again first, so nothing runs on what's let go of.
+        followed.setEntries(entries);
+        letGoOf(dropsFor(gone, entries));
+      }),
       service.onPull((id) => followed.update(id)),
     );
     context.git.onStatus(() => followed.updateAll());

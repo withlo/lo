@@ -1,6 +1,7 @@
 // Following views' trust: a repository no entry names reads nothing from GitHub, a name that
-// matches reads its pull request's repositories once for all its views, and a read that fails
-// leaves them untrusted, tried again after a wait that doubles.
+// matches reads its pull request's repositories for its views, read again for a view that opens
+// later and once it's pushed to or reloaded, and a read that fails leaves them untrusted, tried
+// again after a wait that doubles.
 
 import type { PullRequestRepositories } from '@lo/github';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -31,6 +32,7 @@ function info(id: string, number: number, change: Partial<ViewInfo> = {}): ViewI
     local: true,
     fork: null,
     canRead: true,
+    heads: 'c0ffee c0ffee',
     ...change,
   };
 }
@@ -76,7 +78,7 @@ describe('following views', () => {
     expect(reads).not.toHaveBeenCalled();
   });
 
-  it('reads a named pull request’s repositories once, for every view of it, then trusts them', async () => {
+  it('reads a named pull request’s repositories for each view as it opens, then trusts them', async () => {
     const open = new Map([
       ['t1', info('t1', 80)],
       ['t2:80', info('t2:80', 80)],
@@ -86,7 +88,8 @@ describe('following views', () => {
     views.update('t1');
     views.update('t2:80');
     await settle();
-    expect(reads).toHaveBeenCalledTimes(1);
+    // t2:80 opened after t1's read had started.
+    expect(reads).toHaveBeenCalledTimes(2);
     expect(views.status('t1')?.trust).toEqual({ kind: 'trusted', by: 'repo' });
     expect(views.status('t2:80')?.trust).toEqual({ kind: 'trusted', by: 'repo' });
     expect(views.decision('t1')?.by).toEqual(ENTRY);
@@ -143,6 +146,90 @@ describe('following views', () => {
     dismissed.add('rozed-dev/e2e');
     views.updateAll();
     expect(published.at(-1)?.dismissed).toBe(true);
+  });
+
+  it('never trusts by IDs read before a view opened, as when another repository takes the name', async () => {
+    // rozed-dev/e2e as trusted, then a repository of someone else's under the same name.
+    const TAKEN: PullRequestRepositories = {
+      base: { id: 'R_someoneElse', name: 'rozed-dev/e2e' },
+      head: { id: 'R_someoneElse', name: 'rozed-dev/e2e' },
+      isCrossRepository: false,
+    };
+    const open = new Map([['t1', info('t1', 5)]]);
+    let answer = OWN;
+    let answering: ((repositories: PullRequestRepositories) => void) | undefined;
+    const { views, reads } = follow(
+      open,
+      () =>
+        new Promise((resolve) => {
+          answering = resolve;
+        }),
+    );
+    views.setEntries([ENTRY]);
+    views.update('t1');
+    await settle();
+    answering?.(answer);
+    await settle();
+    expect(views.status('t1')?.trust).toEqual({ kind: 'trusted', by: 'repo' });
+    // The name changes hands while t1 is open, and t2 opens on #5 of the new repository: it reads
+    // again, and isn't trusted meanwhile.
+    answer = TAKEN;
+    open.set('t2', info('t2', 5));
+    views.update('t2');
+    await settle();
+    expect(reads).toHaveBeenCalledTimes(2);
+    expect(views.status('t2')?.trust).toEqual({ kind: 'checking' });
+    answering?.(answer);
+    await settle();
+    expect(views.status('t2')?.trust).toEqual({ kind: 'untrusted', why: 'other' });
+    expect(views.status('t1')?.trust).toEqual({ kind: 'untrusted', why: 'other' });
+    // Every view closed, and one opened again: what was read is forgotten, and read again.
+    open.clear();
+    views.update('t1');
+    views.update('t2');
+    answer = OWN;
+    open.set('t3', info('t3', 5));
+    views.update('t3');
+    await settle();
+    expect(reads).toHaveBeenCalledTimes(3);
+    expect(views.status('t3')?.trust).toEqual({ kind: 'checking' });
+  });
+
+  it('reads again once the pull request is pushed to or reloaded, trusting nothing meanwhile', async () => {
+    const open = new Map([['t1', info('t1', 80)]]);
+    const { views, reads } = follow(open, () => Promise.resolve(OWN));
+    views.setEntries([ENTRY]);
+    views.update('t1');
+    await settle();
+    expect(reads).toHaveBeenCalledTimes(1);
+    // A newer push.
+    open.set('t1', info('t1', 80, { heads: 'decade c0ffee' }));
+    views.update('t1');
+    expect(views.status('t1')?.trust).toEqual({ kind: 'checking' });
+    await settle();
+    expect(reads).toHaveBeenCalledTimes(2);
+    expect(views.status('t1')?.trust).toEqual({ kind: 'trusted', by: 'repo' });
+    // Reloaded, to show it.
+    open.set('t1', info('t1', 80, { heads: 'decade decade' }));
+    views.update('t1');
+    await settle();
+    expect(reads).toHaveBeenCalledTimes(3);
+    // Nothing changed: nothing read.
+    views.update('t1');
+    await settle();
+    expect(reads).toHaveBeenCalledTimes(3);
+  });
+
+  it('keeps a read made as the reader asks to trust, for the views of its pull request', async () => {
+    const open = new Map([['t1', info('t1', 80)]]);
+    const { views, reads } = follow(open, () => Promise.resolve(OWN));
+    views.setEntries([]);
+    views.update('t1');
+    expect(reads).not.toHaveBeenCalled();
+    await views.readNow('t1');
+    views.setEntries([ENTRY]);
+    expect(views.status('t1')?.trust).toEqual({ kind: 'trusted', by: 'repo' });
+    expect(reads).toHaveBeenCalledTimes(1);
   });
 
   it('forgets a view once its tab closes', () => {

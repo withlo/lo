@@ -263,9 +263,10 @@ the window find them with `import.meta.glob`.
   stops first, each once the one before it has. Each gets 5 s of its own, and once they've taken 30
   s in all no more start stopping, except features that provide services, which always get their own
   5 s; the database closes once nothing stopping is still within its own 5 s. Each part gets the
-  feature's context: `publish`, `database`, `git` and `use`. A handler throws an `IpcError` for a
-  failure the window should see; any other error is logged and reaches the window only as
-  `internal`.
+  feature's context: `publish`, `database`, `git` and `use`. A handler also gets who asked, as its
+  third argument: `{ windowId }`, the window whose page sent the request, for what it shows there,
+  as a dialog. A handler throws an `IpcError` for a failure the window should see; any other error
+  is logged and reaches the window only as `internal`.
 - `service.ts` names what the feature's main side offers other features, each with
   `defineService<T>('<feature>.<name>')`: the GitHub clients, say. Its `provide` pairs each with its
   value (`provides(service, value)`). Every feature's `provide` runs before any feature's `start`,
@@ -1009,15 +1010,19 @@ with trust: highlighting, the diff and comments work the same on every repositor
   and nothing is read from GitHub. Once one does and the local copy is ready, main reads
   `PullRequestRepositories`: a repository's entry trusts the view when its ID is the base's and the
   head is in the base, and a pull request's when it matches the base's ID, the number and the fork's
-  ID. A pull request whose fork is gone is a fork. A read that fails leaves the view untrusted, and
-  is tried again after 5 s, doubling to 5 minutes. A renamed repository is asked about again.
-- Only main writes trust, once its own native dialog, attached to the window, says "Trust"
-  (`main/confirm.ts`); `code.trust` only asks main to ask. "Cancel" is the dialog's default and its
-  `Esc`, one dialog asks at a time, and closing the window meanwhile trusts nothing. A test answers
-  it with `answerDialogs` in `e2e/app.ts`.
+  ID and name. A pull request whose fork is gone is a fork. A decision rests only on a read started
+  after its view opened and its pull request was last pushed to or reloaded (`main/views.ts`), and a
+  pull request's reads are forgotten once its last view closes. A read that fails leaves the view
+  untrusted, and is tried again after 5 s, doubling to 5 minutes. A renamed repository, or fork, is
+  asked about again.
+- Only main writes trust, once its own native dialog, attached to the window that asked, says
+  "Trust" (`main/confirm.ts`); `code.trust` only asks main to ask. "Cancel" is the dialog's default
+  and its `Esc`, one dialog asks at a time, and closing the window meanwhile trusts nothing. A test
+  answers it with `answerDialogs` in `e2e/app.ts`.
 - An untrusted view's banner shows until it's dismissed for its repository (`code_dismissed`).
   Settings' Trust section lists the entries; its "Remove", or "Stop trusting this repo", takes one
-  out, and lets go of its checkouts.
+  out. However an entry leaves the file, Lo lets go of the checkouts it alone trusted
+  (`main/entries.ts`, `main/checkouts.ts`).
 
 ## The interface
 

@@ -76,5 +76,10 @@ a pull request from a fork, from its tab, and takes it out once you remove it in
   repository renamed since is asked about again.
 - `pull`, `from` and `fromId` make an entry for one pull request from a fork: its number, and the
   fork by its name and node ID. Later pushes to it are trusted too, while its branch stays in that
-  fork. A repository's entry never trusts a pull request from a fork.
-- An entry Lo can't read, as one without an `id`, is reported and ignored, and stays in the file.
+  fork, by both: a fork that moves to another owner, or is renamed, is asked about again. A
+  repository's entry never trusts a pull request from a fork.
+- An entry Lo can't read, as one without an `id`, is reported and ignored, and stays in the file. A
+  `code.trusted` that isn't a list, or holds more than 10,000 entries, trusts nothing, and Lo won't
+  add to it until it's fixed.
+- Taking an entry out, in the file or in Settings, removes the checkouts Lo made for what it alone
+  trusted.

@@ -608,8 +608,21 @@ describe('a setting only main changes', () => {
     expect(changes.at(-1)?.values['code.names']).toEqual(['lo', 'git', 'sh']);
   });
 
-  it('starts from the default when the file holds a value the schema refuses', async () => {
-    write('{ "code.names": "lo" }');
+  it('refuses to change a value in the file the schema refuses, so it’s never lost', async () => {
+    for (const text of ['{ "code.names": "lo" }', '{ "code.names": ["lo", 7] }']) {
+      write(text);
+      const { settings } = open();
+      const refused = await refusal(settings.update(names, (now) => [...now, 'sh']));
+      expect(refused?.code).toBe('unwritable');
+      expect(refused?.message).toBe(
+        "Lo didn't change code.names: the settings file holds one that isn't a list of names, which Lo won't replace. Fix it there, or take it out.",
+      );
+      expect(contents()).toBe(text);
+    }
+  });
+
+  it('starts from the default when the file holds no value', async () => {
+    write('{}');
     const { settings } = open();
     await settings.update(names, (now) => [...now, 'sh']);
     expect(JSON.parse(contents())).toEqual({ 'code.names': ['sh'] });

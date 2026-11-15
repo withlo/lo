@@ -1,10 +1,12 @@
 // Trust in the app, on rozed-dev/e2e#80, which nothing trusts: its tab says language servers are
 // off, and a dismissal holds after Lo starts again; "Trust this repo" trusts it only once main's
 // own dialog, answered here as the reader would, says "Trust", and Settings lists it until it's
-// removed there. GitHub answers from `app_e2e`, and the repository's IDs, which Lo reads only once
-// the reader asks to trust it, from `pull_request_repositories_e2e`.
+// removed there; taken out of the file by hand, its checkouts go too. GitHub answers from
+// `app_e2e`, and the repository's IDs, which Lo reads only once the reader asks to trust it, from
+// `pull_request_repositories_e2e`.
 
-import { readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 
 import { cassette, Replay } from '@lo/testing';
 import { APP_PULL, writeAppRemote } from '@lo/testing/git';
@@ -153,7 +155,8 @@ test('trusts the repo only once main’s own dialog says Trust, and Settings lis
       buttons: ['Trust', 'Cancel'],
       defaultId: 1,
       cancelId: 1,
-      attached: true,
+      // The window that asked.
+      window: await (await app.browserWindow(page)).evaluate((browser) => browser.id),
     },
   ]);
   await expect(banner(page)).toBeVisible();
@@ -185,6 +188,23 @@ test('trusts the repo only once main’s own dialog says Trust, and Settings lis
   await list.getByRole('button', { name: 'Remove rozed-dev/e2e' }).click();
   await expect(page.getByText('Nothing is trusted yet.')).toBeVisible();
   expect(trustedInFile()).toEqual([]);
+  await expect
+    .poll(() => status(page, id))
+    .toMatchObject({ trust: { kind: 'untrusted', why: 'unnamed' } });
+
+  // Trusted again, then taken out of the file by hand: Lo lets go of the repo's checkouts, here
+  // one made as Lo's cache makes them.
+  await answerDialogs(app, 'Trust');
+  expect(
+    await page.evaluate(
+      (view) => window.lo.invoke('code.trust', { view, repo: 'rozed-dev/e2e', pull: null }),
+      id,
+    ),
+  ).toEqual({ ok: true, value: 'trusted' });
+  const checkout = join(dataFolder(), 'cache', 'checkouts', 'github.com', 'rozed-dev', 'e2e');
+  mkdirSync(join(checkout, 'pull-80'), { recursive: true });
+  writeFileSync(settingsPath(dataFolder()), '{ "code.trusted": [] }\n');
+  await expect.poll(() => existsSync(join(checkout, 'pull-80')), { timeout: 20_000 }).toBe(false);
   await expect
     .poll(() => status(page, id))
     .toMatchObject({ trust: { kind: 'untrusted', why: 'unnamed' } });

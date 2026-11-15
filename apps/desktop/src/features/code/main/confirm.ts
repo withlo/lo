@@ -1,16 +1,17 @@
 // Asking the reader to trust a repository, or one pull request from a fork: the only way Lo comes
 // to trust one. The window only asks main to ask; main reads from GitHub what the pull request
-// joins, asks in a dialog of its own attached to the window, which a page can't answer for the
-// reader, and writes what that dialog named only once the reader says "Trust" there. "Cancel" is
-// the dialog's default and its `Esc`, so a key held down from the banner never trusts anything.
-// One dialog at a time, for the whole window. Nothing here calls Electron, so it runs under unit
-// tests.
+// joins, asks in a dialog of its own attached to the window that asked, which a page can't answer
+// for the reader, and writes what that dialog named only once the reader says "Trust" there. It
+// names only what GitHub calls by a name GitHub allows, so no line break or direction mark ever
+// reaches it. "Cancel" is the dialog's default and its `Esc`, so a key held down from the banner
+// never trusts anything. One dialog at a time, for all of Lo. Nothing here calls Electron, so it
+// runs under unit tests.
 
 import type { PullRequestRepositories } from '@lo/github';
 
 import { IpcError } from '../../../ipc/contract.ts';
 import type { Asked } from '../contract.ts';
-import { sameName, type TrustEntry } from '../settings.ts';
+import { repoName, sameName, type TrustEntry } from '../settings.ts';
 
 /** What the reader is asked to trust: a repository, or one pull request from a fork. */
 export type Subject =
@@ -87,8 +88,6 @@ export interface AskOptions<W extends AskWindow> {
   readonly view: (id: string) => AskedView | undefined;
   /** Reads afresh the repositories `view`'s pull request joins, from GitHub. */
   readonly read: (view: AskedView) => Promise<PullRequestRepositories>;
-  /** The window to ask in, or nothing when there's none. */
-  readonly window: () => W | undefined;
   /**
    * Shows `question` in main's dialog, attached to `window`, and answers the index of the button
    * the reader pressed. Once `signal` aborts, the dialog closes as if cancelled.
@@ -117,6 +116,14 @@ export function subjectOf(
   repositories: PullRequestRepositories,
 ): Subject {
   const { base, head, isCrossRepository } = repositories;
+  for (const named of [base, head]) {
+    if (named && !repoName.safeParse(named.name).success) {
+      throw new IpcError(
+        'refused',
+        "GitHub named a repository of this PR in a way Lo doesn't expect, so Lo didn't ask about it.",
+      );
+    }
+  }
   if (!sameName(base.name, request.repo)) {
     throw new IpcError(
       'changed',
@@ -161,24 +168,24 @@ export class TrustAsker<W extends AskWindow = AskWindow> {
   }
 
   /**
-   * Asks, and answers how it went: `trusted` once the reader said "Trust" and the entry is
-   * written, `cancelled` for any other answer, or once the window closed meanwhile. Throws an
-   * `IpcError` for a request it won't ask, and while it's asking already (`busy`), so two requests
-   * never share a dialog.
+   * Asks in `window`, the window that sent `request`, and answers how it went: `trusted` once the
+   * reader said "Trust" and the entry is written, `cancelled` for any other answer, or once that
+   * window closed meanwhile. Throws an `IpcError` for a request it won't ask, with no window to ask
+   * in, and while it's asking already (`busy`), so two requests never share a dialog.
    */
-  async ask(request: TrustRequest): Promise<Asked> {
+  async ask(request: TrustRequest, window: W | undefined): Promise<Asked> {
     if (this.#asking) {
       throw new IpcError('busy', 'Lo is already asking whether to trust a repo.');
     }
     this.#asking = true;
     try {
-      return await this.#ask(request);
+      return await this.#ask(request, window);
     } finally {
       this.#asking = false;
     }
   }
 
-  async #ask(request: TrustRequest): Promise<Asked> {
+  async #ask(request: TrustRequest, window: W | undefined): Promise<Asked> {
     const options = this.#options;
     const view = options.view(request.view);
     if (!view) throw new IpcError('missing', "There's no pull request's tab with that id.");
@@ -188,7 +195,6 @@ export class TrustAsker<W extends AskWindow = AskWindow> {
     if (request.pull !== null && request.pull !== view.number) {
       throw new IpcError('invalid', `That tab is of #${view.number}, not #${request.pull}.`);
     }
-    const window = options.window();
     if (!window) throw new IpcError('unavailable', 'Lo has no window to ask in.');
     const closed = new AbortController();
     const stop = window.onClosed(() => closed.abort());

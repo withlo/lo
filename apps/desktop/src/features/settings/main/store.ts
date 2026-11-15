@@ -272,9 +272,14 @@ export function createSettings(options: SettingsOptions): Settings {
 
   /**
    * Writes the file with `entry`'s value as `next` makes it from what the file holds now, read
-   * afresh each try: its value there, if its schema accepts one, else its default.
+   * afresh each try: its value there, or its default when there's none. Made from what's there
+   * (`from`), it refuses a value there the schema refuses, rather than replace what it can't read.
    */
-  const write = (entry: Entry, next: (current: Json) => unknown): Promise<void> =>
+  const write = (
+    entry: Entry,
+    next: (current: Json) => unknown,
+    from: 'replace' | 'current' = 'replace',
+  ): Promise<void> =>
     enqueue(async () => {
       const { key } = entry;
       for (let attempt = 1; ; attempt++) {
@@ -292,6 +297,12 @@ export function createSettings(options: SettingsOptions): Settings {
         }
         const values = fresh.kind === 'ok' ? fresh.values : {};
         const current = Object.hasOwn(values, key) ? entry.check(values[key]) : undefined;
+        if (from === 'current' && current && !current.ok) {
+          throw new IpcError(
+            'unwritable',
+            `Lo didn't change ${key}: the settings file holds one that isn't ${entry.accepts}, which Lo won't replace. Fix it there, or take it out.`,
+          );
+        }
         const checked = entry.check(next(current?.ok ? current.value : entry.fallback));
         if (!checked.ok) throw new IpcError('invalid', `${key} must be ${entry.accepts}.`);
         const written = { ...values, [key]: checked.value };
@@ -366,7 +377,7 @@ export function createSettings(options: SettingsOptions): Settings {
       declare(setting);
       const entry = declared.get(setting.key);
       if (!entry) throw new Error(`The setting ${setting.key} isn't declared.`);
-      return write(entry, (current) => change(setting.schema.parse(current)));
+      return write(entry, (current) => change(setting.schema.parse(current)), 'current');
     },
 
     check,

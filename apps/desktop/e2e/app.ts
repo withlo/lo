@@ -549,8 +549,8 @@ export async function answerDialogs(app: ElectronApplication, button: string): P
         buttons,
         defaultId: read('defaultId'),
         cancelId: read('cancelId'),
-        // Attached to a window: one comes before the options.
-        attached: args.length > 1,
+        // The id of the window it's attached to, which comes before the options.
+        window: args.length > 1 ? Reflect.get(Object(args[0]), 'id') : undefined,
       });
       return Promise.resolve({ response: buttons.indexOf(label), checkboxChecked: false });
     };
@@ -560,7 +560,7 @@ export async function answerDialogs(app: ElectronApplication, button: string): P
 
 /**
  * What each dialog main asked since {@link answerDialogs} first answered them said: its `message`,
- * `detail`, `buttons`, `defaultId` and `cancelId`, and whether it was `attached` to a window.
+ * `detail`, `buttons`, `defaultId` and `cancelId`, and the id of the `window` it was attached to.
  */
 export async function dialogsAsked(app: ElectronApplication): Promise<unknown[]> {
   return app.evaluate(() => {

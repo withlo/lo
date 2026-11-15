@@ -69,6 +69,15 @@ describe('the trusted entries', () => {
     expect(problems[5]).toBe('Lo ignores 3 more entries of code.trusted.');
   });
 
+  it('holds thousands of entries, far more than anyone trusts', () => {
+    const many = Array.from({ length: 5000 }, (_, at) => ({
+      ...REPO,
+      repo: `rozed-dev/e2e-${at}`,
+    }));
+    expect(trusted.schema.safeParse(many).success).toBe(true);
+    expect(readTrusted(many).entries).toHaveLength(5000);
+  });
+
   it('is a setting the window may only read, reporting what it ignores', () => {
     expect(trusted.key).toBe('code.trusted');
     expect(trusted.window).toBe('read');

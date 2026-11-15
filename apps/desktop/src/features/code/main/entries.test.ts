@@ -1,9 +1,11 @@
-// Adding and taking out trusted entries, on the list as the file holds it.
+// Adding and taking out trusted entries, on the list as the file holds it, and what's let go of
+// once one is out of it.
 
 import { describe, expect, it } from 'vitest';
 
 import { fileEntry, type PullEntry, type RepoEntry } from '../settings.ts';
-import { removes, withEntry, withoutEntries } from './entries.ts';
+import type { DecidedView } from './decide.ts';
+import { dropsFor, goneFrom, meant, removes, withEntry, withoutEntries } from './entries.ts';
 
 const REPO: RepoEntry = {
   kind: 'repo',
@@ -62,5 +64,54 @@ describe('the trusted entries, changed', () => {
     expect(
       withoutEntries(list, (entry) => removes({ id: 'R_e2e', pull: 98 }, entry)).removed,
     ).toEqual([]);
+  });
+});
+
+describe('stopping trusting a view', () => {
+  const view: DecidedView = {
+    repo: 'rozed-dev/e2e',
+    number: 97,
+    noGit: false,
+    local: true,
+    fork: 'rozed-bot/e2e',
+  };
+  const both = [REPO, PULL];
+
+  it('takes out only the entry that trusts it, once that’s decided', () => {
+    const decided = { trust: { kind: 'trusted', by: 'pull' }, by: PULL, head: null } as const;
+    expect(both.filter(meant(view, decided))).toEqual([PULL]);
+  });
+
+  it('takes out only the repository’s entry while nothing is decided, never a pull request’s', () => {
+    expect(both.filter(meant(view, undefined))).toEqual([REPO]);
+    const checking = { trust: { kind: 'checking' }, head: null } as const;
+    expect(both.filter(meant(view, checking))).toEqual([REPO]);
+  });
+});
+
+describe('what’s let go of', () => {
+  const OTHER: RepoEntry = { kind: 'repo', repo: 'rozed-dev/other', id: 'R_other' };
+
+  it('finds what went from the list, however it went, but not an entry trusted again', () => {
+    const again = { ...REPO, at: '2026-11-16T09:00:00.000Z' };
+    expect(goneFrom([REPO, PULL, OTHER], [again, OTHER])).toEqual([PULL]);
+    // Trusted again after a rename: the old name's entry went.
+    const renamed = { ...REPO, repo: 'rozed-dev/e2e-renamed' };
+    expect(goneFrom([REPO], [renamed])).toEqual([REPO]);
+    // Another fork for the same pull request.
+    expect(goneFrom([PULL], [{ ...PULL, from: 'someone/e2e' }])).toEqual([PULL]);
+  });
+
+  it('lets go of a repository’s checkouts but those of forks’ pull requests still trusted', () => {
+    expect(dropsFor([REPO], [PULL, OTHER])).toEqual([{ repo: 'rozed-dev/e2e', except: [97] }]);
+    expect(dropsFor([REPO], [])).toEqual([{ repo: 'rozed-dev/e2e', except: [] }]);
+  });
+
+  it('lets go of a fork’s pull request alone, and of nothing still trusted', () => {
+    expect(dropsFor([PULL], [REPO])).toEqual([{ repo: 'rozed-dev/e2e', pull: 97 }]);
+    // The repository's entry still there, by its ID and name: what it trusts stays.
+    expect(dropsFor([REPO], [{ ...REPO, at: '2026-11-16T09:00:00.000Z' }])).toEqual([]);
+    // Both at once: the repository's drop takes the pull request's.
+    expect(dropsFor([PULL, REPO], [])).toEqual([{ repo: 'rozed-dev/e2e', except: [] }]);
   });
 });

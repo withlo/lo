@@ -55,8 +55,12 @@ export type PullEntry = z.output<typeof pullEntry> & { readonly kind: 'pull' };
 /** An entry of {@link trusted} that Lo reads. */
 export type TrustEntry = RepoEntry | PullEntry;
 
-/** The most entries the setting holds. */
-export const TRUSTED_MAX = 1000;
+/**
+ * The most entries the setting holds: far more than anyone trusts, and about what the settings
+ * file's own limit on its size leaves room for. A list longer than this is refused whole, and
+ * then main's `settings.update` won't add to it, rather than replace it.
+ */
+export const TRUSTED_MAX = 10_000;
 
 /**
  * The repositories and pull requests the reader trusts, as the file holds them: each entry a

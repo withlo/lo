@@ -6,7 +6,7 @@
 // main read the repositories' node IDs from GitHub, so a repository nobody trusted reads nothing
 // it didn't read before. Then the IDs decide, since a name can change hands: an entry for a
 // repository trusts its pull requests whose head is in it, and an entry for a pull request trusts
-// it alone, while its head stays in the fork it named.
+// it alone, while its head stays in the fork it named, by that fork's ID and name.
 
 import type { PullRequestRepositories } from '@lo/github';
 
@@ -106,7 +106,9 @@ export function decide(
       entry.id === base.id &&
       entry.pull === view.number &&
       from !== undefined &&
-      entry.fromId === from.id,
+      entry.fromId === from.id &&
+      // A fork that moved to another owner, or was renamed, is asked about again.
+      sameName(entry.from, from.name),
   );
   if (byPull) return { trust: { kind: 'trusted', by: 'pull' }, by: byPull, head };
   return { trust: { kind: 'untrusted', why: 'other' }, head };
