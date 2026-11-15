@@ -1,13 +1,16 @@
-// The code feature in the window: trust. The banner on a view nothing trusts, Settings' Trust
-// section, and the palette's trust commands, each of which only asks main.
+// The code feature in the window: trust, and the syntax index. The banner on a view nothing trusts,
+// Settings' Trust section, and the palette's trust commands, each of which only asks main; and the
+// index's item in the status bar.
 
 import { handlers } from '@lo/ui/commands';
 import { createElement } from 'react';
 
 import type { WindowFeature } from '../../../window/features.ts';
 import { defineView } from '../../../window/slots.tsx';
-import { banners } from '../../tab/window/shared.ts';
+import { banners, status as statusBar } from '../../tab/window/shared.ts';
 import keys from '../keys.ts';
+import { takeIndex } from './indexes.ts';
+import { IndexStatus } from './IndexStatus.tsx';
 import { main } from './main.ts';
 import {
   askToTrust,
@@ -64,8 +67,15 @@ export default {
       ...trustSwitch,
     }),
     Trusted,
+    // After the diff's (20) and the overview's (30).
+    defineView(statusBar, {
+      id: 'code.index',
+      order: 40,
+      render: ({ tab }) => createElement(IndexStatus, { tab }),
+    }),
   ],
   start() {
     main().subscribe('status', takeStatus);
+    main().subscribe('indexed', takeIndex);
   },
 } satisfies WindowFeature;

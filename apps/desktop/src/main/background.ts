@@ -10,9 +10,33 @@ import {
 // electron-vite builds the process's script and gives its path as this import's default.
 // oxlint-disable-next-line import/default
 import backgroundEntry from '../background/index.ts?modulePath';
-import { handOver, type HandOver } from '../ipc/jobs.ts';
+import {
+  createConnection,
+  handOver,
+  type Connection,
+  type HandOver,
+  type Port,
+} from '../ipc/jobs.ts';
 import { backgroundEnvironment, type BackgroundSettings } from './environment.ts';
 import { nextAttempt, pastCap, restartDelay } from './restarts.ts';
+
+/**
+ * Main's own connection to the background process, for work main hands it, such as parsing a pull
+ * request's files for the syntax index. Its jobs run one at a time, behind the window's. Jobs sent
+ * before the process starts, or while it restarts, wait for it, and those it had fail as
+ * `restarted`.
+ */
+export const mainJobs: Connection = createConnection();
+
+/** Main's end of a channel, as a connection, or the code port's host, takes it. */
+export function portOf(port: MessagePortMain): Port {
+  return {
+    postMessage: (message) => port.postMessage(message),
+    addEventListener: (_type, listener) => port.on('message', ({ data }) => listener({ data })),
+    start: () => port.start(),
+    close: () => port.close(),
+  };
+}
 
 export interface Background {
   /** Connects a window to the process each time its page loads, and again after each restart. */
@@ -24,7 +48,8 @@ export interface Background {
  * Starts the background process and keeps it running. Main reads its memory every second and
  * kills it past the cap, since memory outside the JavaScript heap (WebAssembly's) can't be capped
  * any other way. After any exit it starts again, waiting longer after each quick failure, and
- * every window gets a new port; the window fails the jobs it had sent as `restarted`.
+ * every window gets a new port, as {@link mainJobs} does; each fails the jobs it had sent as
+ * `restarted`.
  */
 export function startBackground(settings: BackgroundSettings): Background {
   const windows = new Set<WebContents>();
@@ -54,6 +79,10 @@ export function startBackground(settings: BackgroundSettings): Background {
       stdio: 'inherit',
     });
     child = started;
+    // Main's own port, whose jobs wait behind the window's.
+    const own = new MessageChannelMain();
+    started.postMessage('connect-main', [own.port1]);
+    mainJobs.connect(portOf(own.port2));
     // A fatal error counts as a crash: the process is stopped, and starts again like any other.
     started.on('error', (type, location) => {
       console.error(`The background process failed (${type} at ${location}); stopping it.`);
@@ -61,8 +90,10 @@ export function startBackground(settings: BackgroundSettings): Background {
     });
     started.once('exit', (code) => {
       child = undefined;
-      // The window fails the jobs it had sent now, rather than when the next port arrives.
+      // The window fails the jobs it had sent now, rather than when the next port arrives, and so
+      // does main.
       for (const contents of windows) if (!contents.isDestroyed()) tell(contents, 'lost');
+      mainJobs.lose();
       if (stopped) return;
       attempt = nextAttempt(attempt, Date.now() - startedAt);
       const delay = restartDelay(attempt);
@@ -98,6 +129,7 @@ export function startBackground(settings: BackgroundSettings): Background {
       clearInterval(watch);
       clearTimeout(restart);
       child?.kill();
+      mainJobs.lose();
     },
   };
 }

@@ -1,51 +1,75 @@
 // Jobs wait their turn for a worker, so however many arrive at once, no more run than the machine
-// has cores, and each one's deadline starts when it does.
+// has cores, and each one's deadline starts when it does. The window's jobs come first: main's own,
+// such as indexing a pull request's files, go one at a time, only when a worker is free and no job
+// of the window's is waiting for one.
 
 import type { Result } from '../ipc/contract.ts';
 import type { Execute } from './host.ts';
 
-export function pool(execute: Execute, size: number, waitingLimit = 1000): Execute {
+/** A pool's two ways in: the window's jobs, and main's, which wait behind them. */
+export interface Pool {
+  readonly window: Execute;
+  /** Main's: one at a time, starting only once no job of the window's is waiting. */
+  readonly main: Execute;
+}
+
+export function pool(execute: Execute, size: number, waitingLimit = 1000): Pool {
   let running = 0;
+  let mainRunning = false;
   const waiting: (() => void)[] = [];
+  const mainWaiting: (() => void)[] = [];
 
+  /** Starts what may start now: the window's first, then one of main's. */
   const next = () => {
-    running -= 1;
-    waiting.shift()?.();
+    for (;;) {
+      if (running >= size) return;
+      const start = waiting.shift() ?? (mainRunning ? undefined : mainWaiting.shift());
+      if (!start) return;
+      start();
+    }
   };
 
-  return (job, input, limits, signal) => {
-    if (running >= size && waiting.length >= waitingLimit) {
-      return Promise.resolve({
-        ok: false,
-        error: { code: 'busy', message: 'Too many jobs are waiting; try again later.' },
-      });
-    }
-    return new Promise<Result<unknown>>((resolve) => {
-      const start = () => {
-        signal?.removeEventListener('abort', leave);
-        running += 1;
-        void execute(job, input, limits, signal)
-          .catch((): Result<unknown> => ({
-            ok: false,
-            error: { code: 'failed', message: `${job} failed.` },
-          }))
-          .then(resolve)
-          .finally(next);
-      };
-      // Cancelled while it waits: it never starts.
-      const leave = () => {
-        const at = waiting.indexOf(start);
-        if (at < 0) return;
-        waiting.splice(at, 1);
-        resolve({ ok: false, error: { code: 'cancelled', message: `${job} was cancelled.` } });
-      };
-      if (running < size) start();
-      else {
-        waiting.push(start);
-        signal?.addEventListener('abort', leave, { once: true });
+  const way =
+    (main: boolean): Execute =>
+    (job, input, limits, signal) => {
+      const queue = main ? mainWaiting : waiting;
+      if (queue.length >= waitingLimit) {
+        return Promise.resolve({
+          ok: false,
+          error: { code: 'busy', message: 'Too many jobs are waiting; try again later.' },
+        });
       }
-    });
-  };
+      return new Promise<Result<unknown>>((resolve) => {
+        const start = () => {
+          signal?.removeEventListener('abort', leave);
+          running += 1;
+          if (main) mainRunning = true;
+          void execute(job, input, limits, signal)
+            .catch((): Result<unknown> => ({
+              ok: false,
+              error: { code: 'failed', message: `${job} failed.` },
+            }))
+            .then(resolve)
+            .finally(() => {
+              running -= 1;
+              if (main) mainRunning = false;
+              next();
+            });
+        };
+        // Cancelled while it waits: it never starts.
+        const leave = () => {
+          const at = queue.indexOf(start);
+          if (at < 0) return;
+          queue.splice(at, 1);
+          resolve({ ok: false, error: { code: 'cancelled', message: `${job} was cancelled.` } });
+        };
+        queue.push(start);
+        signal?.addEventListener('abort', leave, { once: true });
+        next();
+      });
+    };
+
+  return { window: way(false), main: way(true) };
 }
 
 /**

@@ -1,11 +1,20 @@
 // Jobs for the background process: pure work, such as parsing or diffing, that the window sends
-// straight to the process over a MessagePort. A group's contract gives each job an input schema
-// and a reply type, as a feature's contract does for requests to main. The process validates every
-// message: the window shows untrusted content, and the process has Node.
+// straight to the process over a MessagePort, and that main sends over a port of its own, behind
+// the window's. A group's contract gives each job an input schema and a reply type, as a feature's
+// contract does for requests to main. The process validates every message: the window shows
+// untrusted content, and the process has Node. The code port, from main to the window, speaks the
+// same shapes.
 
 import type { z } from 'zod';
 
-import type { Failure, Reply } from './contract.ts';
+import {
+  IpcError,
+  isResult,
+  type Failure,
+  type InputOf,
+  type Reply,
+  type ReplyOf,
+} from './contract.ts';
 
 /** A job: its input's schema and its reply's type. */
 export interface JobSpec<Input extends z.ZodType = z.ZodType, Output = unknown> {
@@ -15,11 +24,11 @@ export interface JobSpec<Input extends z.ZodType = z.ZodType, Output = unknown> 
 
 export interface JobContract<
   Group extends string = string,
-  Jobs extends Record<string, JobSpec> = Record<string, JobSpec>,
+  Specs extends Record<string, JobSpec> = Record<string, JobSpec>,
 > {
   /** The jobs' group, which names them: `<group>.<job>`. */
   readonly group: Group;
-  readonly jobs: Jobs;
+  readonly jobs: Specs;
 }
 
 const groupName = /^[a-z][a-z0-9]*$/;
@@ -28,17 +37,17 @@ const jobName = /^[a-z][a-zA-Z0-9]*$/;
 /** A job's full name: `<group>.<job>`. */
 export const jobPath = /^[a-z][a-z0-9]*\.[a-z][a-zA-Z0-9]*$/;
 
-export function defineJobs<const Group extends string, Jobs extends Record<string, JobSpec>>(
+export function defineJobs<const Group extends string, Specs extends Record<string, JobSpec>>(
   group: Group,
-  jobs: Jobs,
-): JobContract<Group, Jobs> {
+  specs: Specs,
+): JobContract<Group, Specs> {
   if (!groupName.test(group)) {
     throw new Error(`A job group's name is lowercase letters and digits, not "${group}".`);
   }
-  for (const name of Object.keys(jobs)) {
+  for (const name of Object.keys(specs)) {
     if (!jobName.test(name)) throw new Error(`${group}: "${name}" isn't a job name (camelCase).`);
   }
-  return { group, jobs };
+  return { group, jobs: specs };
 }
 
 /**
@@ -79,6 +88,23 @@ export interface HandOver {
   type: typeof handOver;
   state: 'connected' | 'lost';
   testing: boolean;
+}
+
+/**
+ * The channel main hands the window the code port on, through the preload: a port of main's own,
+ * made for each load of the page, which answers code features' questions from main (`code.*`).
+ */
+export const codeHandOver = 'lo:code';
+
+/** What main sends with the code port, which the preload passes on as a window message. */
+export interface CodeHandOver {
+  type: typeof codeHandOver;
+}
+
+export function isCodeHandOver(value: unknown): value is CodeHandOver {
+  return (
+    typeof value === 'object' && value !== null && 'type' in value && value.type === codeHandOver
+  );
 }
 
 export function isHandOver(value: unknown): value is HandOver {
@@ -147,4 +173,157 @@ export function plainDataProblem(value: unknown): string | undefined {
     return `it holds a ${typeof item === 'object' ? (item.constructor?.name ?? 'object') : typeof item}`;
   };
   return visit(value, 0);
+}
+
+/** A port as a connection uses it: the browser's MessagePort, Node's, or Electron's in main. */
+export interface Port {
+  postMessage(message: unknown): void;
+  addEventListener(type: 'message', listener: (event: { data: unknown }) => void): void;
+  start(): void;
+  close(): void;
+}
+
+/** One side's connection to whatever answers jobs over a port: the background process, or main. */
+export interface Connection {
+  /**
+   * Runs a job by its full name. Rejects with an `IpcError`: the other side's own, `invalid` for
+   * input that isn't plain data, `restarted` if the other side stopped meanwhile, `unanswered` past
+   * `timeout` milliseconds (a minute unless given), or `cancelled` once `signal` aborts, which
+   * stops the job on the other side too.
+   */
+  run(job: string, input: unknown, options?: RunOptions): Promise<unknown>;
+  /** Takes a new port. Jobs sent before any port go out on this one. */
+  connect(port: Port): void;
+  /** The other side stopped: the jobs sent to it fail as `restarted`, and new ones wait for a port. */
+  lose(): void;
+}
+
+/** How long to wait for a job, and what stops it. */
+export interface RunOptions {
+  timeout?: number;
+  signal?: AbortSignal | undefined;
+}
+
+interface Waiting {
+  job: string;
+  input: unknown;
+  sent: boolean;
+  timer: ReturnType<typeof setTimeout>;
+  resolve(value: unknown): void;
+  reject(error: Error): void;
+}
+
+/** A connection, whose jobs name `who` when it stops under them: the background process unless said. */
+export function createConnection(who = 'The background process'): Connection {
+  let port: Port | undefined;
+  let next = 1;
+  const waiting = new Map<number, Waiting>();
+
+  const settle = (id: number) => {
+    const job = waiting.get(id);
+    if (job) clearTimeout(job.timer);
+    waiting.delete(id);
+    return job;
+  };
+
+  const receive = (reply: unknown) => {
+    if (!isJobReply(reply)) return;
+    const job = settle(reply.id);
+    if (!job) return;
+    if (reply.ok) job.resolve(reply.value);
+    else job.reject(new IpcError(reply.error.code, reply.error.message));
+  };
+
+  const lose = () => {
+    for (const [id, job] of waiting) {
+      if (!job.sent) continue;
+      settle(id);
+      job.reject(new IpcError('restarted', `${who} stopped during ${job.job}.`));
+    }
+    port?.close();
+    port = undefined;
+  };
+
+  return {
+    run(job, input, { timeout = 60_000, signal } = {}) {
+      // A port drops what it can't send, such as a Blob, and the job would never be answered.
+      const problem = plainDataProblem(input);
+      if (problem) {
+        return Promise.reject(new IpcError('invalid', `${job} takes plain data, but ${problem}.`));
+      }
+      const cancelled = () => new IpcError('cancelled', `${job} was cancelled.`);
+      if (signal?.aborted) return Promise.reject(cancelled());
+      const id = next++;
+      return new Promise((resolve, reject) => {
+        const stop = () => {
+          const waited = settle(id);
+          if (!waited) return;
+          // The other side stops it too, if it has it.
+          if (waited.sent) port?.postMessage({ cancel: id });
+          reject(cancelled());
+        };
+        const timer = setTimeout(() => {
+          signal?.removeEventListener('abort', stop);
+          settle(id);
+          reject(new IpcError('unanswered', `${job} got no answer in ${timeout} ms.`));
+        }, timeout);
+        signal?.addEventListener('abort', stop, { once: true });
+        const done =
+          <T>(then: (value: T) => void) =>
+          (value: T) => {
+            signal?.removeEventListener('abort', stop);
+            then(value);
+          };
+        waiting.set(id, {
+          job,
+          input,
+          sent: port !== undefined,
+          timer,
+          resolve: done(resolve),
+          reject: done(reject),
+        });
+        port?.postMessage({ id, job, input });
+      });
+    },
+    connect(newPort) {
+      lose();
+      port = newPort;
+      port.addEventListener('message', (event) => receive(event.data));
+      port.start();
+      for (const [id, job] of waiting) {
+        job.sent = true;
+        port.postMessage({ id, job: job.job, input: job.input });
+      }
+    },
+    lose,
+  };
+}
+
+/**
+ * A job as a function, with what stops it. One whose input can be undefined may be called without
+ * it.
+ */
+type Call<Spec> =
+  undefined extends InputOf<Spec>
+    ? (input?: InputOf<Spec>, options?: RunOptions) => Promise<ReplyOf<Spec>>
+    : (input: InputOf<Spec>, options?: RunOptions) => Promise<ReplyOf<Spec>>;
+
+export type Jobs<C extends JobContract> = {
+  readonly [Name in keyof C['jobs']]: Call<C['jobs'][Name]>;
+};
+
+/** A job group's client on `connection`: `jobs(contract, c).highlight(input)` runs `<group>.highlight`. */
+export function jobs<C extends JobContract>(contract: C, connection: Connection): Jobs<C> {
+  const calls = Object.keys(contract.jobs).map((name) => [
+    name,
+    (input?: unknown, options?: RunOptions) =>
+      connection.run(`${contract.group}.${name}`, input, options),
+  ]);
+  // The other side answers each job as its contract says; replies aren't validated here.
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion
+  return Object.fromEntries(calls) as Jobs<C>;
+}
+
+function isJobReply(value: unknown): value is JobReply {
+  return isResult(value) && 'id' in value && typeof value.id === 'number';
 }

@@ -240,7 +240,8 @@ holding:
 - Its only way to main is `window.lo`, with `invoke` and `subscribe`. Main answers a request only
   from Lo's own page, and only once its input matches the feature's contract. A reply is
   `{ ok: true, value }` or `{ ok: false, error: { code, message } }`, never an error's text or
-  stack.
+  stack. Besides it, main hands each load of the page the code port (see "The syntax index"), whose
+  every message main checks as the background process checks its own.
 
 `src/main/policy.ts` holds these rules. Loosen one only for a stated reason, with a test that shows
 the new limit.
@@ -333,14 +334,16 @@ mode, foreign keys enforced, defensive. `src/main/database.ts` is the only modul
 ### The background process
 
 Pure work, such as parsing, highlighting and diffing, runs in one background process, an Electron
-utility process the window talks to directly over a MessagePort that main hands both of them. It has
-Node, so it gets an environment main builds for it (nothing of main's, so no token), and never reads
-files or the network for the window.
+utility process the window talks to directly over a MessagePort that main hands both of them. Main
+has a port of its own to it, for the work it hands it itself, such as the syntax index's parsing. It
+has Node, so it gets an environment main builds for it (nothing of main's, so no token), and never
+reads files or the network.
 
 - A feature's jobs are a contract in `jobs.ts`, exported as `contract` (`defineJobs`: each job's
   input schema and reply type, held to the same rules as `contract.ts`), and their code in
   `background/index.ts` (`defineRunner`, the default export), found by `import.meta.glob`. The
-  window runs them through `jobs(contract)`.
+  window runs them through `jobs(contract)`, and main through `jobs(contract, mainJobs)`
+  (`src/main/background.ts`).
 - Jobs take plain data: objects, arrays, strings, numbers, booleans and null, within limits. The
   window refuses anything else before sending, and the process checks every message, then each job's
   input, before anything runs.
@@ -352,10 +355,14 @@ files or the network for the window.
   when too many jobs are waiting. Every message with an id gets an answer, and the window gives up
   on one after a minute (`unanswered`). The window can cancel a job it sent (`run`'s `signal`): one
   still waiting never starts, and one running has its worker stopped; either fails as `cancelled`.
+- Main's jobs wait behind the window's: they run one at a time, and only once a worker is free and
+  none of the window's jobs is waiting for one, so main's work never slows what the reader asked
+  for. Main waits for each one longer than the window does, since its wait doesn't count against its
+  deadline.
 - Main watches the process's memory and stops it past 2 GB, since memory outside the heap
   (WebAssembly's) can't be capped any other way, and treats a fatal error the same way. Jobs the
-  window had sent fail as `restarted` at once; the process starts again, waiting longer after each
-  quick failure, and the window gets a new port.
+  window and main had sent fail as `restarted` at once; the process starts again, waiting longer
+  after each quick failure, and the window and main each get a new port.
 - A build run from source with `LO_TEST_JOBS=1` adds the smoke test's jobs and exposes the window's
   connection to it, and takes another cap from `LO_BACKGROUND_MEMORY_CAP_MB`. A packaged build
   ignores both. Main refuses a cap it couldn't hand the process whole, such as one too large to be a
@@ -1060,7 +1067,7 @@ The window shows an image from outside Lo only as `<img src="lo-image://…">`, 
 ### Trust
 
 The `code` feature decides which pull requests language servers may run on. Nothing else changes
-with trust: highlighting, the diff and comments work the same on every repository.
+with trust: highlighting, the diff, comments and the syntax index work the same on every repository.
 
 - What's trusted is `code.trusted` in the settings file, a setting the window may only read: an
   entry `{ repo, id, at }` for a repository, and `{ repo, id, pull, from, fromId, at }` for one pull
@@ -1084,6 +1091,44 @@ with trust: highlighting, the diff and comments work the same on every repositor
   Settings' Trust section lists the entries; its "Remove", or "Stop trusting this repo", takes one
   out. However an entry leaves the file, Lo lets go of the checkouts it alone trusted
   (`main/entries.ts`, `main/checkouts.ts`).
+
+### The syntax index
+
+The `code` feature keeps an index of each view's definitions and the names its files refer to, read
+with `@lo/syntax`'s tags, so code features answer on every repository, trusted or not. It needs no
+trust: it reads blobs through git, never runs the repository's code, and has the background process
+parse them under `@lo/syntax`'s limits.
+
+- For each view, once its local copy is ready at what it compares, main indexes the new side's tree,
+  then the old side's, the view on screen's first, one tree at a time (`main/indexer.ts`,
+  `main/build.ts`). A tree shown by several views is built once.
+- A file is read when its language has tags, it's at most 1 MB, and it's neither a lockfile nor
+  marked `linguist-generated`; a minified file (a line over 10,000 characters) is skipped. At most
+  20,000 files of a tree, and 200 MB downloaded for it, the files nearest the pull request's own
+  first (their folders, then upward), in path order after (`main/select.ts`). Past either, the index
+  is partial and says so. Offline, it reads only what the clone has, and once the view is back
+  online it builds what it left.
+- Main reads the blobs in batches and sends them to the background process as `code.symbols` jobs,
+  over its own port, a job at a time. A job that fails is tried again in halves, and a file that
+  fails alone is kept as failed.
+- The store is `<cache>/code/symbols.db`, which only a worker thread of main's opens
+  (`main/store/`), so its writes and lookups never hold main's event loop: each blob's definitions,
+  names and imports once, by its ID and language, stamped with the version of the grammars and
+  queries that read it, and each tree's paths and blobs. A row with another version is read again as
+  it's needed. Past 1 GB, the trees and then the blobs no open view holds go, least recently used
+  first. Settings counts it with the cache, and "Clear the cache" clears it.
+- The status bar says how far a view's index has got (`code.index`, the `indexed` topic): "Syntax
+  index 1,204 / 3,880" while it builds, "Syntax index" once it's ready, "Syntax index partial" with
+  how much on hover.
+- The window asks over the code port (`port.ts`): a port main makes with each load of the page,
+  handed over through the preload as `lo:code`, in the jobs protocol's shapes (`{ id, job, input }`,
+  replies, `{ cancel }`). Main checks every message as plain data and each input against the
+  contract, and answers only about a view of the window that asked, a tree that view shows and a
+  line its file has (`main/serve.ts`). Definitions are found by name among the tree's blobs and
+  ranked by `@lo/syntax`, 100 at most; references are the blobs whose names include it, 2,000 files
+  at most, read again by `code.find` jobs for where, 5,000 at most, "By name"; the hover is the top
+  definition's line; the outline is the file's definitions, nested. An answer names its file by the
+  side's commit and path, and the first 10 come with 30 lines around them.
 
 ## The interface
 
