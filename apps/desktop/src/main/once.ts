@@ -13,7 +13,7 @@ import { Readable } from 'node:stream';
 import { getCACertificates } from 'node:tls';
 
 import type { FetchInit } from '@lo/github';
-import { Agent, ProxyAgent, request, type Dispatcher } from 'undici';
+import { Agent, Pool, ProxyAgent, request, type buildConnector, type Dispatcher } from 'undici';
 
 import { UPLOAD_PROGRESS_EVERY } from './fetch.ts';
 
@@ -64,6 +64,11 @@ export interface OnceOptions {
   readonly proxy: (address: string) => Promise<string>;
   /** The certificate authorities to trust, as PEM. */
   readonly ca: () => readonly string[];
+  /**
+   * How long each step of opening a write's connection may take, in ms. Unless given, it's
+   * undici's: 10 s to open a connection, and 5 s for each step once a SOCKS5 proxy is reached.
+   */
+  readonly timeout?: number;
 }
 
 /** A write a proxy stopped before it went to GitHub, with a code GitHub's client classifies. */
@@ -75,6 +80,13 @@ export class ProxyStopped extends Error {
     super(message);
     this.code = code;
   }
+}
+
+/** A write whose connection to GitHub, through a proxy Lo had reached, timed out before it went. */
+class GithubTimedOut extends Error {
+  override name = 'GithubTimedOut';
+  /** As undici says of a connection too slow to open, which GitHub's client classifies. */
+  readonly code = 'UND_ERR_CONNECT_TIMEOUT';
 }
 
 /** Statuses whose answer has no body. */
@@ -112,15 +124,31 @@ export function onceFetch(options: OnceOptions): typeof globalThis.fetch {
     });
     if (body !== undefined) headers['content-length'] = String(body.length);
     const tls = { ca: [...options.ca()], rejectUnauthorized: true };
+    const { timeout } = options;
+    /** Whether the connection to the proxy opened: one that takes too long after it is GitHub's. */
+    let reached = false;
     // One HTTP/1.1 connection, for this write alone.
     const dispatcher: Dispatcher =
       route.kind === 'direct'
-        ? new Agent({ connect: tls, allowH2: false, connections: 1 })
+        ? new Agent({
+            connect: { ...tls, ...(timeout === undefined ? {} : { timeout }) },
+            allowH2: false,
+            connections: 1,
+          })
         : new ProxyAgent({
             uri: route.uri,
             requestTls: tls,
             // Only for an HTTPS proxy: given it, undici would speak TLS to a SOCKS5 proxy too.
             ...(route.uri.startsWith('https:') ? { proxyTls: tls } : {}),
+            ...(timeout === undefined ? {} : { connectTimeout: timeout }),
+            // The client to an HTTP or HTTPS proxy, as undici makes it, telling as it connects.
+            clientFactory: (origin, made) =>
+              new Pool(
+                origin,
+                opening(made, () => {
+                  reached = true;
+                }),
+              ),
             allowH2: false,
             connections: 1,
           });
@@ -134,7 +162,7 @@ export function onceFetch(options: OnceOptions): typeof globalThis.fetch {
         body: progress && body ? progress.chunks(body) : body,
         signal,
       }).catch((error: unknown) => {
-        throw route.kind === 'proxy' ? stopped(error, route.shown) : error;
+        throw route.kind === 'proxy' ? stopped(error, route.shown, reached) : error;
       });
       progress?.report();
       progress?.stop();
@@ -175,11 +203,33 @@ export function writesOnce(
 }
 
 /**
+ * `options` for the client to a proxy, as undici makes them, with `opened` called as each of its
+ * connections to the proxy opens.
+ */
+function opening(options: object, opened: () => void): Pool.Options {
+  const connect: unknown = Reflect.get(options, 'connect');
+  if (typeof connect !== 'function') return { ...options };
+  return {
+    ...options,
+    connect: (to: buildConnector.Options, callback: buildConnector.Callback): void => {
+      Reflect.apply(connect, undefined, [
+        to,
+        (...args: Parameters<buildConnector.Callback>) => {
+          if (args[0] === null) opened();
+          callback(...args);
+        },
+      ]);
+    },
+  };
+}
+
+/**
  * What `error`, from a write through the proxy `shown`, says when the proxy stopped the write
  * before it went: the proxy asked Lo to sign in, wouldn't connect to GitHub, or couldn't be
- * reached. Anything else is as undici said.
+ * reached. Once Lo had `reached` an HTTP or HTTPS proxy, a connection that took too long to open
+ * was GitHub's, through the proxy's tunnel. Anything else is as undici said.
  */
-function stopped(error: unknown, shown: string): unknown {
+function stopped(error: unknown, shown: string, reached: boolean): unknown {
   const said = typeof error === 'object' && error !== null ? Reflect.get(error, 'code') : undefined;
   const code = typeof said === 'string' ? said : '';
   // A proxy's answer to `CONNECT`, or its refusal of a request for an `http` address it forwards.
@@ -200,7 +250,14 @@ function stopped(error: unknown, shown: string): unknown {
       'ERR_TUNNEL_CONNECTION_FAILED',
     );
   }
-  // A connection that never opened, through a proxy, is the proxy's.
+  // The handshake with GitHub, through the tunnel, timed out: the proxy did its part.
+  if (reached && code === 'UND_ERR_CONNECT_TIMEOUT') {
+    return new GithubTimedOut(
+      `Lo reached the proxy ${shown}, but the connection through it to GitHub timed out, so nothing was sent.`,
+    );
+  }
+  // A connection that never opened, through a proxy, is the proxy's. Lo doesn't see a SOCKS5
+  // proxy's connection open, so one through it that took too long is the proxy's too.
   if (
     /^(ECONNREFUSED|ENOTFOUND|EAI_AGAIN|E\w+UNREACH|ENETDOWN|UND_ERR_CONNECT_TIMEOUT)$/.test(code)
   ) {

@@ -134,6 +134,11 @@ async function socksProxy(): Promise<{ port: number; asked: string[] }> {
   return { port: await listening(server), asked };
 }
 
+/** A server that takes connections and never says a word, as a TLS handshake that stalls. */
+async function silent(): Promise<number> {
+  return listening(createNetServer(() => undefined));
+}
+
 /** A port nothing listens on. */
 async function closedPort(): Promise<number> {
   const server = createNetServer();
@@ -254,6 +259,32 @@ describe('a write', () => {
     expect([asking.asked, refusing.asked]).toEqual([
       [new URL(origin).host],
       [new URL(origin).host],
+    ]);
+  });
+
+  it('blames its proxy only when the proxy failed, not GitHub’s handshake timing out through the tunnel', async () => {
+    const github = await silent();
+    const tunnel = await httpProxy();
+    const stalled = await silent();
+    const fail = async (proxy: string) => {
+      const timing = onceFetch({
+        proxy: () => Promise.resolve(proxy),
+        ca: () => [AUTHORITY],
+        timeout: 250,
+      });
+      const error = await thrown(timing(`https://localhost:${github}/graphql`, comment()));
+      return [classifyNetworkError(error), error instanceof Error ? error.message : error];
+    };
+
+    expect(await fail(`PROXY 127.0.0.1:${tunnel.port}; DIRECT`)).toEqual([
+      'offline',
+      `Lo reached the proxy 127.0.0.1:${tunnel.port}, but the connection through it to GitHub timed out, so nothing was sent.`,
+    ]);
+    expect(tunnel.asked).toEqual([`localhost:${github}`]);
+    // An HTTPS proxy whose own handshake stalls is the proxy's.
+    expect(await fail(`HTTPS localhost:${stalled}`)).toEqual([
+      'offline',
+      `Lo couldn't reach the proxy localhost:${stalled} (UND_ERR_CONNECT_TIMEOUT), so nothing was sent to GitHub.`,
     ]);
   });
 

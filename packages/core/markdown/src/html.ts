@@ -216,6 +216,9 @@ export function textOf(root: ChildNode | Fragment): string {
   return text;
 }
 
+/** An end tag, as Markdown reads one in a line's text. */
+const END_TAG = /^<\/([A-Za-z][A-Za-z0-9-]*)\s*>$/;
+
 /**
  * Raw `html`, as a Markdown text holds it, as the words it shows: its text, an image as its alt
  * text, or "image" when it has none, with the text of elements that stand apart set apart by
@@ -225,6 +228,13 @@ export function textOf(root: ChildNode | Fragment): string {
  */
 export function htmlWords(html: string, elements: number): string {
   if (!html.includes('<')) return html;
+  // HTML in a line's text comes a tag at a time. An end tag alone builds nothing, so it sets what
+  // follows apart as its start tag alone does what comes before: for an element whose text stands
+  // apart, like `<summary>`, but not one its start tag alone doesn't build, like `<td>`.
+  const end = END_TAG.exec(html)?.[1]?.toLowerCase();
+  if (end !== undefined) {
+    return BLOCKS.has(end) && htmlWords(`<${end}>`, elements) !== '' ? ' ' : '';
+  }
   const fragment = parseHtml(html, elements);
   if (!fragment) return html;
   let text = '';

@@ -832,6 +832,15 @@ describe('raw HTML as words', () => {
     expect(words('<p align="center"><img src="y.png" alt="logo"></p>')).toBe('logo');
   });
 
+  test('an element that stands apart, in a line’s text, sets its text apart from what follows', () => {
+    expect(words('Text <details><summary>More</summary>hidden</details> after')).toBe(
+      'Text More hidden after',
+    );
+    expect(words('one<div>two</div>three, <b>b</b>old')).toBe('one two three, bold');
+    // A table's cell outside a table builds nothing, by its start tag or its end tag.
+    expect(words('a<td>b</td>c')).toBe('abc');
+  });
+
   test('what GitHub never shows, and a comment, give nothing', () => {
     expect(words('<script>alert(1)</script>\n\n<style>p{}</style>\n\nb <!-- c -->')).toBe('b');
   });
