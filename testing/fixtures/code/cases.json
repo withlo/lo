@@ -1,0 +1,86 @@
+{
+  "cases": [
+    {
+      "language": "typescript",
+      "symbol": "countWords",
+      "at": { "file": "typescript/src/report.ts", "line": 9, "character": 16 },
+      "definition": { "file": "typescript/src/words.ts", "line": 1, "character": 16 }
+    },
+    {
+      "language": "javascript",
+      "symbol": "countWords",
+      "at": { "file": "javascript/src/report.js", "line": 12, "character": 16 },
+      "definition": { "file": "javascript/src/words.js", "line": 5, "character": 16 }
+    },
+    {
+      "language": "python",
+      "symbol": "count_words",
+      "at": { "file": "python/sample/report.py", "line": 13, "character": 12 },
+      "definition": { "file": "python/sample/words.py", "line": 7, "character": 4 }
+    },
+    {
+      "language": "rust",
+      "symbol": "count_words",
+      "at": { "file": "rust/src/report.rs", "line": 8, "character": 16 },
+      "definition": { "file": "rust/src/words.rs", "line": 3, "character": 7 }
+    },
+    {
+      "language": "go",
+      "symbol": "CountWords",
+      "at": { "file": "go/report.go", "line": 13, "character": 10 },
+      "definition": { "file": "go/words.go", "line": 5, "character": 5 }
+    },
+    {
+      "language": "terraform",
+      "symbol": "total",
+      "at": { "file": "terraform/main.tf", "line": 2, "character": 19 },
+      "definition": { "file": "terraform/locals.tf", "line": 2, "character": 2 }
+    },
+    {
+      "language": "java",
+      "symbol": "countWords",
+      "at": { "file": "java/src/main/java/sample/Report.java", "line": 14, "character": 22 },
+      "definition": { "file": "java/src/main/java/sample/Words.java", "line": 10, "character": 20 }
+    },
+    {
+      "language": "kotlin",
+      "symbol": "countWords",
+      "at": { "file": "kotlin/src/main/kotlin/sample/Report.kt", "line": 8, "character": 16 },
+      "definition": { "file": "kotlin/src/main/kotlin/sample/Words.kt", "line": 3, "character": 4 }
+    },
+    {
+      "language": "csharp",
+      "symbol": "CountWords",
+      "at": { "file": "csharp/Report.cs", "line": 13, "character": 26 },
+      "definition": { "file": "csharp/Words.cs", "line": 6, "character": 22 }
+    },
+    {
+      "language": "ruby",
+      "symbol": "count_words",
+      "at": { "file": "ruby/lib/report.rb", "line": 10, "character": 18 },
+      "definition": { "file": "ruby/lib/words.rb", "line": 5, "character": 11 }
+    },
+    {
+      "language": "php",
+      "symbol": "countWords",
+      "at": { "file": "php/src/Report.php", "line": 16, "character": 24 },
+      "definition": { "file": "php/src/Words.php", "line": 10, "character": 27 }
+    },
+    {
+      "language": "swift",
+      "symbol": "countWords",
+      "at": { "file": "swift/Sources/Sample/Report.swift", "line": 6, "character": 16 },
+      "definition": { "file": "swift/Sources/Sample/Words.swift", "line": 1, "character": 5 }
+    },
+    {
+      "language": "elixir",
+      "symbol": "count_words",
+      "at": { "file": "elixir/lib/report.ex", "line": 9, "character": 18 },
+      "definition": { "file": "elixir/lib/words.ex", "line": 5, "character": 6 }
+    }
+  ],
+  "moves": [
+    { "symbol": "wrap", "from": "typescript/src/report.ts", "to": "typescript/src/layout.ts" },
+    { "symbol": "wrap", "from": "python/sample/report.py", "to": "python/sample/layout.py" }
+  ]
+}
