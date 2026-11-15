@@ -12,7 +12,7 @@
  */
 
 import { randomUUID } from 'node:crypto';
-import { lstat, mkdir, readdir, rename, rm, stat } from 'node:fs/promises';
+import { lstat, mkdir, readdir, rename, rm, rmdir, stat } from 'node:fs/promises';
 import { dirname, isAbsolute, join, relative, sep } from 'node:path';
 
 import { GitError } from './errors.ts';
@@ -37,7 +37,7 @@ import { CloneLock, lockCache, type Release, unlockCache } from './lock.ts';
 import { ObjectReader } from './objects.ts';
 import type { Oid } from './oid.ts';
 import type { Activity } from './progress.ts';
-import { checkName } from './refs.ts';
+import { checkName, checkNumber } from './refs.ts';
 import { Repo } from './repo.ts';
 import { stampUsed } from './stamp.ts';
 import type { TokenSource } from './token.ts';
@@ -345,6 +345,48 @@ export class Cache {
   /** Where the checkouts of `owner/name`'s pull requests live. */
   checkoutsFolder(owner: string, name: string): string {
     return join(this.root, 'checkouts', HOST, owner.toLowerCase(), name.toLowerCase());
+  }
+
+  /**
+   * Removes the checkouts of `owner/name`'s pull requests, or only of pull request `pull`, as when
+   * the user stops trusting the repository or the pull request: moved aside in one rename, deleted
+   * afterwards, and forgotten by the clone. It waits for whatever writes to the clone, a checkout
+   * being made included, so none is left half made, and a checkout asked for later is made
+   * afresh. Stop what runs in them, such as language servers, first. A link on the way to them is
+   * an error, and nothing past it is touched. Once `options.signal` aborts, it stops waiting and
+   * fails with its reason.
+   */
+  async dropCheckouts(
+    owner: string,
+    name: string,
+    options: { pull?: number | undefined; signal?: AbortSignal | undefined } = {},
+  ): Promise<void> {
+    checkName('repository owner', owner);
+    checkName('repository name', name);
+    if (options.pull !== undefined) checkNumber(options.pull);
+    const root = this.checkoutsFolder(owner, name);
+    const folder = options.pull === undefined ? root : join(root, `pull-${options.pull}`);
+    const release = await this.cloneLock(owner, name).acquire('removing its checkouts', undefined, {
+      signal: options.signal,
+    });
+    try {
+      if (!(await this.trash(folder))) {
+        throw new GitError({
+          kind: 'io',
+          context: `removing ${folder}`,
+          message: 'a link on the way leads out of the cache, so Lo removes nothing there',
+        });
+      }
+      // The folders above, once they hold nothing else.
+      if (options.pull !== undefined) await rmdir(root).catch(() => undefined);
+      await rmdir(dirname(root)).catch(() => undefined);
+      const clone = this.repoFolder(owner, name);
+      if (await isFile(join(clone, 'HEAD'))) {
+        await this.runner.command({ gitDir: clone }).arg('worktree', 'prune').run();
+      }
+    } finally {
+      release();
+    }
   }
 
   /**

@@ -223,3 +223,67 @@ export function gitEnvironment(
   }
   return env;
 }
+
+/**
+ * The settings a language server's git gets, set as `GIT_CONFIG_COUNT` holds them. A server may
+ * run git in its checkout, where git would read the user's files and the settings of any
+ * repository it finds, a bare one committed into the checkout's files included, and such
+ * settings can name a program to run.
+ *
+ * Some of Lo's own settings aren't here. Those only a fetch reads (redirects, bundles,
+ * promisors, packfile URIs, passwords in addresses, the stall guard) have nothing to do, since a
+ * server's git reaches no remote. `core.protectHFS`, `core.protectNTFS` and leaving submodules
+ * alone are git's defaults wherever they matter, and only the clone's own settings, which Lo
+ * checks, could change them. Attributes only name drivers that settings define, so a checkout's
+ * apply as they are. And how a Mac's git composes names changes what it reports, never what it
+ * runs.
+ */
+const SERVER_GIT_SETTINGS = [
+  // A bare repository is used only when a command names it, never one git finds in a folder.
+  ['safe.bareRepository', 'explicit'],
+  // No hooks and no file system monitor, whatever a repository's settings say.
+  ['core.hooksPath', devNull],
+  ['core.fsmonitor', 'false'],
+  // No prompts: no askpass program, and no credential helper, which may ask or hand over the
+  // user's own credentials.
+  ['core.askPass', ''],
+  ['credential.helper', ''],
+  // A checkout's symlinks are plain files holding their target, as Lo checked them out: git
+  // neither reports them changed nor makes them links again.
+  ['core.symlinks', 'false'],
+  // No remote of any kind, so nothing a pull request names, such as a submodule's address, is
+  // reached, and no program such as ssh runs to reach it.
+  ['protocol.allow', 'never'],
+  // No garbage collection or maintenance of the clone the checkout shares, which only Lo writes.
+  ['gc.auto', '0'],
+  ['maintenance.auto', 'false'],
+] as const;
+
+/**
+ * The variables that hold the git a language server runs to Lo's settings, for a server's
+ * environment, which is built from nothing as git's is: no system or global config; a bare
+ * repository only when a command names it (`safe.bareRepository=explicit`); no hooks and no file
+ * system monitor; no prompts, askpass program or credential helper; symlinks as plain files; no
+ * remote; no garbage collection or maintenance; and lazy fetching off, so a file the clone lacks is
+ * an error, never a download.
+ *
+ * The settings go in `GIT_CONFIG_COUNT`, which git takes as it takes `-c` on its command line:
+ * after every file, so they win, and as protected configuration, the only kind git takes
+ * `safe.bareRepository` from. A git before 2.38 ignores `safe.bareRepository`, and one before 2.45
+ * ignores `GIT_NO_LAZY_FETCH`, both without a word. So whatever sets a server's `PATH` puts Lo's
+ * own git first, which is new enough for both.
+ */
+export function serverGitEnvironment(): Record<string, string> {
+  const env: Record<string, string> = {
+    GIT_CONFIG_NOSYSTEM: '1',
+    GIT_CONFIG_GLOBAL: devNull,
+    GIT_CONFIG_COUNT: String(SERVER_GIT_SETTINGS.length),
+    GIT_TERMINAL_PROMPT: '0',
+    GIT_NO_LAZY_FETCH: '1',
+  };
+  for (const [at, [key, value]] of SERVER_GIT_SETTINGS.entries()) {
+    env[`GIT_CONFIG_KEY_${at}`] = key;
+    env[`GIT_CONFIG_VALUE_${at}`] = value;
+  }
+  return env;
+}

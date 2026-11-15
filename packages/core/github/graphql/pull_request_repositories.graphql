@@ -1,0 +1,19 @@
+# The repositories a pull request joins, by GitHub's node IDs: the one it's in, the one its head
+# comes from, and whether they differ. An ID stays with its repository through a rename, and isn't
+# handed to whoever registers a deleted account's name. Once a fork is deleted, GitHub names no
+# head repository.
+query PullRequestRepositories($owner: String!, $name: String!, $number: Int!) {
+  repository(owner: $owner, name: $name) {
+    pullRequest(number: $number) {
+      isCrossRepository
+      baseRepository {
+        id
+        nameWithOwner
+      }
+      headRepository {
+        id
+        nameWithOwner
+      }
+    }
+  }
+}
