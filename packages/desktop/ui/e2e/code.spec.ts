@@ -80,6 +80,11 @@ function lineTop(page: Page, line: number): Promise<number | undefined> {
   return page.evaluate((at) => window.harness.lineTop(at), line);
 }
 
+/** The layout `layout` isn't. */
+function other(layout: DiffLayout): DiffLayout {
+  return layout === 'split' ? 'inline' : 'split';
+}
+
 /** Waits for a few frames, which lay out and measure what changed, and line it up. */
 function frames(page: Page): Promise<void> {
   return page.evaluate(() => window.harness.frames(3));
@@ -238,6 +243,29 @@ for (const layout of ['split', 'inline'] as const) {
       await frames(page);
       expect(await height()).toBeGreaterThan(before.height);
       expect(Math.abs((await box())! - before.top!)).toBeLessThan(1);
+    });
+
+    test('the cursor moved below the screen as the view narrows comes on screen', async () => {
+      const page = await wrapping(layout);
+
+      // The editor brings it on screen as it next measures, at the new width.
+      await page.evaluate(() => {
+        window.harness.cursor(80);
+        window.harness.narrow(640);
+      });
+      await frames(page);
+      expect(await page.evaluate(() => window.harness.cursorOnScreen())).toBe(true);
+    });
+
+    test('a jump is over once the layout changes, so the view narrowing after leaves the screen where it is', async () => {
+      const page = await open(layout);
+      await page.evaluate((shown) => window.harness.layout(shown), other(layout));
+      await frames(page);
+      const before = await lineTop(page, 20);
+
+      await page.evaluate(() => window.harness.narrow(640));
+      await frames(page);
+      expect(Math.abs((await lineTop(page, 20))! - before!)).toBeLessThan(1);
     });
 
     // The reader's input as the view narrows, or as it's still putting back what the narrowing

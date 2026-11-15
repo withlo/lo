@@ -207,6 +207,14 @@ const harness = {
     view().reveal({ kind: 'line', at: { file: 'a', side: 'new', line } });
     view().focus();
   },
+  /** Whether the cursor's row is drawn wholly on screen. */
+  cursorOnScreen(): boolean {
+    return view().probe.cursor()?.onScreen ?? false;
+  },
+  /** Shows the view in `layout`, as when the setting changes, with no input. */
+  layout(layout: DiffLayout): void {
+    view().setLayout(layout);
+  },
   /** How far down the screen the top of the cursor's row is. */
   cursorTop(): number | undefined {
     const cursor = view().probe.cursor();

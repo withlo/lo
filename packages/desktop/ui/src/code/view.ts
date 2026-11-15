@@ -13,6 +13,7 @@
 import {
   EditorState,
   type Extension,
+  Prec,
   type Range,
   StateEffect,
   StateField,
@@ -585,6 +586,8 @@ class View implements DiffView {
   #ownScroll = 0;
   /** The scroll as the inline editor started taking what it measured, until it's done. */
   #editorScroll: number | undefined;
+  /** The scroll as the inline editor started to bring a range on screen, until it's done. */
+  #intoViewFrom: number | undefined;
   /** Whether `#noteInlineTop` is to run once the editor's update is done. */
   #noting = false;
 
@@ -1576,6 +1579,9 @@ class View implements DiffView {
       view.requestMeasure();
       view.lineBlockAtHeight(0);
     }
+    // The editor brought a cursor it was moving on screen as it measured, at the new width: where
+    // it put it stands, as `#broughtIntoView` has it.
+    if (rewrapped && !this.#rewrappedTop()) return;
     // Read after the change is laid out, which has pulled the scroll back if less is left below.
     const after = topOf();
     if (before !== undefined && after !== undefined && Math.abs(after - before) >= 0.5) {
@@ -1642,6 +1648,39 @@ class View implements DiffView {
     if (!this.#rewrappedTop()) return false;
     this.#keepTop(() => {});
     return true;
+  }
+
+  /**
+   * Inline, the editor is about to bring a range on screen as it measures, as a cursor a key or
+   * `reveal` moved: that scroll is the reader's, or Lo's, not one that keeps what's on screen in
+   * place. What the editor scrolled before it counts as the view's own; what it scrolls from here
+   * doesn't, until it measures again.
+   */
+  #intoView(): void {
+    this.#tookEditorScroll();
+    this.#intoViewFrom = this.dom.scrollTop;
+  }
+
+  /**
+   * Inline, the editor has brought a range on screen. If it scrolled there once the text had
+   * changed width since the view last settled, it brought it to where the lines wrapped anew put
+   * it, and putting them back would take it off screen again: the place it chose stands, and
+   * what's at the top is noted afresh from there.
+   */
+  #broughtIntoView(): void {
+    const from = this.#intoViewFrom;
+    this.#intoViewFrom = undefined;
+    if (from === undefined || Math.abs(this.dom.scrollTop - from) < 0.5) return;
+    if (!this.#rewrappedTop()) return;
+    this.#inlineTop = undefined;
+    if (!this.#jumped) this.#holding = undefined;
+  }
+
+  /** Counts what the inline editor scrolled as it measured, since it started, as the view's own. */
+  #tookEditorScroll(): void {
+    const scroll = this.#editorScroll;
+    this.#editorScroll = undefined;
+    if (scroll !== undefined) this.#ownScroll += this.dom.scrollTop - scroll;
   }
 
   /** Notes what's at the top inline once the editor's update is done, as the spacer pass runs. */
@@ -2860,16 +2899,24 @@ class View implements DiffView {
           // keep what's at the top of its screen where it was, as the lines above change height.
           ViewPlugin.define(() => ({
             update: (update) => {
-              if (update.transactions.length === 0) this.#editorScroll ??= this.dom.scrollTop;
+              if (update.transactions.length !== 0) return;
+              this.#broughtIntoView();
+              this.#editorScroll ??= this.dom.scrollTop;
             },
           })),
+          // As the editor brings the cursor, or what else it was asked for, on screen.
+          Prec.high(
+            EditorView.scrollHandler.of(() => {
+              this.#intoView();
+              return false;
+            }),
+          ),
           // What it drew moved or changed size, as it measured: what's at the top is noted again,
           // or put back once the text has changed width. The editor's scroll as it measured keeps
           // what's on screen in place, as the view's own does.
           EditorView.updateListener.of((update) => {
-            const scroll = this.#editorScroll;
-            this.#editorScroll = undefined;
-            if (scroll !== undefined) this.#ownScroll += this.dom.scrollTop - scroll;
+            this.#broughtIntoView();
+            this.#tookEditorScroll();
             if (update.heightChanged || update.viewportChanged || update.geometryChanged) {
               this.#noteAfterUpdate();
             }
@@ -2914,8 +2961,11 @@ class View implements DiffView {
   #toggleLayout(focus = true): void {
     // Lines and threads waiting to change on screen change with the layout, which moves it all.
     this.#letThreadsGo('all', false);
-    // What was at the top inline is noted afresh once it's shown.
+    // What was at the top inline is noted afresh once it's shown, and a jump's line, or one held,
+    // is no longer where the screen is: it goes to the cursor.
     this.#inlineTop = undefined;
+    this.#jumped = undefined;
+    this.#holding = undefined;
     const pane = this.#activePane();
     const view = this.#viewOf(pane);
     const from = this.#placeAt(pane, view.state.doc.lineAt(view.state.selection.main.head).number);
