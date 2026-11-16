@@ -384,7 +384,9 @@ Only main runs git, through `@lo/git`, and the background process never sees git
   since.
 - With git, main opens the cache, `Lo` in the system's folder for caches (`Lo Dev` for a build run
   from source, or `cache` in `LO_USER_DATA_DIR`), as `git.cache`, and cleans it up without anyone
-  waiting. `git.setCap()` sets the size it's kept under.
+  waiting. `git.setCap()` sets the size it's kept under, which counts all of it but the toolchains
+  language servers use (`toolchains/`): Settings removes those, and their gigabytes would otherwise
+  evict clones.
 - Every git gets an environment of Lo's own making, never main's, and only a fetch gets the
   account's token, from a source read as each fetch starts. Fetches take the proxy Lo's own requests
   take.
