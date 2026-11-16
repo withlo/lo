@@ -1,7 +1,7 @@
 // Test servers: a build run from source runs the language servers a manifest names, in
-// `LO_TEST_SERVERS`, for its tests, which start only the fake server. Each runs as given, by an
-// absolute path with an argument list, with nothing downloaded. A packaged build never reads the
-// variable, nor the file it names. Nothing here calls Electron.
+// `LO_TEST_SERVERS`, for its tests, which start only the fake server, in place of Lo's own. Each
+// runs as given, by an absolute path with an argument list, with nothing downloaded. A packaged
+// build never reads the variable, nor the file it names. Nothing here calls Electron.
 
 import { readFileSync } from 'node:fs';
 import { isAbsolute } from 'node:path';
@@ -44,6 +44,26 @@ export function testServersFile(options: {
     throw new Error(`LO_TEST_SERVERS must be an absolute path, not "${file}".`);
   }
   return file;
+}
+
+/**
+ * The adapters Lo runs: its own, `shipped`, unless it's a build run from source for a test. That
+ * runs only the servers `LO_TEST_SERVERS` names, or, in a test run without it, none, so no test
+ * starts or downloads a real server.
+ */
+export function adaptersFor(options: {
+  packaged: boolean;
+  env: Environment;
+  /**
+   * Whether it's a test run: a build run from source talking to a GitHub on this machine, which a
+   * packaged build never is.
+   */
+  testRun: boolean;
+  shipped: readonly Adapter[];
+}): readonly Adapter[] {
+  const file = testServersFile(options);
+  if (file !== undefined) return readTestServers(file);
+  return options.testRun ? [] : options.shipped;
 }
 
 /**

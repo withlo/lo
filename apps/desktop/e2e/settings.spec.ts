@@ -322,6 +322,7 @@ function installGo(bytes: number): string {
     version: pinned.version,
     fingerprint: fingerprint('go', pinned, download),
     files: [['go/bin/go', bytes]],
+    folders: ['go', 'go/bin'],
     links: [],
   };
   writeFileSync(join(folder, 'installed.json'), JSON.stringify(marker));

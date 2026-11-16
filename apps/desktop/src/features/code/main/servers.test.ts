@@ -8,14 +8,14 @@ import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { type Server, startServer } from '@lo/lsp';
+import { type Server, serverEnvironment, type ServerSpec, startServer } from '@lo/lsp';
 import { fakeServer } from '@lo/testing/lsp';
 import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 
-import type { Adapter, Prepared } from './adapters.ts';
+import { ADAPTERS as SHIPPED, type Adapter, type Prepared } from './adapters.ts';
 import { noRoom, ServerPool, type PoolLimits, type PoolOptions, type PoolView } from './servers.ts';
 import { StandIn } from './test/server.ts';
-import { checkoutRefusal } from './toolchains.ts';
+import { checkoutRefusal, listedToolchain } from './toolchains.ts';
 
 function adapter(id: string, prepare?: Adapter['prepare']): Adapter {
   return {
@@ -478,6 +478,42 @@ describe('halting', () => {
     await settle();
     expect(started).toEqual([]);
     expect(pool.shown('a/x', 'go')?.state.kind).toBe('failed');
+  });
+});
+
+describe('Lo’s own servers', () => {
+  it('get git’s folder, then the system’s, on their PATH, and no variable of their own', async () => {
+    const specs: ServerSpec[] = [];
+    const pool = new ServerPool({
+      prepare: (each, progress, signal) =>
+        each.prepare({
+          install: (id) =>
+            Promise.resolve({ folder: `/lo/servers/${id}`, entry: `/lo/servers/${id}/entry` }),
+          toolchain: listedToolchain(each, () => Promise.reject(new Error('no toolchain here'))),
+          findCopy: () => Promise.resolve(undefined),
+          signal,
+        }),
+      start(spec) {
+        specs.push(spec);
+        return new StandIn(spec);
+      },
+      base: () => ({ home: '/home/lo', git: { GIT_CONFIG_COUNT: '0' }, path: ['/lo/git/bin'] }),
+      changed: () => undefined,
+      log: () => undefined,
+    });
+    onTestFinished(() => pool.stop());
+    pool.sync([view('v1', 'a/x', 1, SHIPPED)], 'v1');
+    await settle();
+    expect(specs.map((spec) => spec.name)).toEqual(['TypeScript', 'Python']);
+    for (const spec of specs) {
+      expect(serverEnvironment({ ...spec, roots: [spec.root] })).toEqual({
+        GIT_CONFIG_COUNT: '0',
+        HOME: '/home/lo',
+        TMPDIR: '/home/lo/tmp',
+        PATH: '/lo/git/bin:/usr/bin:/bin',
+        LANG: 'C.UTF-8',
+      });
+    }
   });
 });
 

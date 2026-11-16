@@ -39,6 +39,7 @@ import { app, BrowserWindow, dialog, MessageChannelMain, net } from 'electron';
 import { IpcError } from '../../../ipc/contract.ts';
 import { codeHandOver, jobs, type CodeHandOver } from '../../../ipc/jobs.ts';
 import { mainJobs, portOf } from '../../../main/background.ts';
+import { githubSettings } from '../../../main/environment.ts';
 import { defineFeature, type FeatureContext } from '../../../main/features.ts';
 import { netFetch } from '../../../main/fetch.ts';
 import { github } from '../../accounts/service.ts';
@@ -85,7 +86,7 @@ import {
   type ToolchainHost,
 } from './toolchains.ts';
 import { repoKey, ServingViews, type ServingInput } from './serving.ts';
-import { readTestServers, testServersFile } from './tests.ts';
+import { adaptersFor } from './tests.ts';
 import { storeWorker, type SymbolStore } from './store/client.ts';
 // electron-vite builds the store's worker and gives its path as this import's default.
 // oxlint-disable-next-line import/default
@@ -115,8 +116,8 @@ let index: CodeIndex | undefined;
 let store: SymbolStore | undefined;
 let pool: ServerPool | undefined;
 let serving: ServingViews | undefined;
-/** The language servers Lo can run: its own, and in a build run from source, a test's. */
-let adapters: readonly Adapter[] = ADAPTERS;
+/** The language servers Lo can run, once servers start: its own, or in a test run, a test's. */
+let adapters: readonly Adapter[] = [];
 /** What downloads language servers, once the first one is needed. */
 let installer: Installer | undefined;
 /** What downloads the toolchains they use, once the cache is open. */
@@ -577,13 +578,14 @@ async function installedCopy(context: Context, candidates: readonly string[]) {
 }
 
 /**
- * Starts following views for their language servers: the servers a build run from source's test
- * names, the pool they run in, and each view's needs, as its tab, its comparison, its trust, git
- * and the view on screen change.
+ * Starts following views for their language servers: Lo's own, or the servers a test names, the
+ * pool they run in, and each view's needs, as its tab, its comparison, its trust, git and the view
+ * on screen change.
  */
 function startServers(context: Context): void {
-  const file = testServersFile({ packaged: app.isPackaged, env: process.env });
-  if (file !== undefined) adapters = [...ADAPTERS, ...readTestServers(file)];
+  const packaged = app.isPackaged;
+  const { testRun } = githubSettings({ packaged, env: process.env });
+  adapters = adaptersFor({ packaged, env: process.env, testRun, shipped: ADAPTERS });
   const servers = new ServerPool({
     prepare: (adapter, progress, signal) => prepareServer(context, adapter, progress, signal),
     checkout: checkoutRefusal,
