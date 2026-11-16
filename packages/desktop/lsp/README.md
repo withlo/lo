@@ -62,13 +62,16 @@ own (`setsid`) is still found.
   `SourceKitService` is for SourceKit-LSP's `sourcekitd`. A server's spec names the services it
   starts (`services`), and each read of the family takes in each process by one of those names that
   has the server's home as its `HOME`, and what descends from it. A home is the folder of one
-  repository and one adapter, so no other server's environment names it. On Linux the read matches
-  that exact entry in `/proc/<pid>/environ`. On macOS it's a text search: `ps -E` lists a process's
-  program, arguments and environment as one line, and the read looks in it for ` HOME=<home>`
-  followed by another variable's ` NAME=` or the line's end, so an argument or another variable's
-  value could match too. Only processes named like a service are searched, so a false match is
-  unlikely, and it can only take in a process named like one of Lo's own services. So the service's
-  memory counts against the cap, and a stop or a kill signals it with the rest.
+  repository and one adapter, not of one server, so a service an earlier server there left is taken
+  in too, as Lo's own; no other repository's or adapter's server names it. On Linux the read matches
+  that exact entry in `/proc/<pid>/environ`. On macOS `ps -E` lists a process's program, arguments
+  and environment as one line, with nothing to tell its entries apart, so the read lists the same
+  processes without `-E` as well and looks only in what follows their program and arguments: for
+  `HOME=<home>` at its start or after a space, followed by another variable's ` NAME=` or the end.
+  No argument can match, but another variable whose value holds ` HOME=<home>` followed by its end
+  or what looks like a variable still could. Only processes named like a service are searched, so a
+  false match is unlikely, and it can only take in a process named like one of Lo's own services. So
+  the service's memory counts against the cap, and a stop or a kill signals it with the rest.
 
 ### What can't be found
 
