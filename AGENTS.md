@@ -385,11 +385,23 @@ Only main runs git, through `@lo/git`, and the background process never sees git
   system's usual folders, and the newest new enough wins. `app.info` says what it found, `checking`
   until it has, and `app.git` pushes each answer. Asking again (`git.check()`) finds a git installed
   since.
-- With git, main opens the cache, `Lo` in the system's folder for caches (`Lo Dev` for a build run
-  from source, or `cache` in `LO_USER_DATA_DIR`), as `git.cache`, and cleans it up without anyone
-  waiting. `git.setCap()` sets the size it's kept under, which counts all of it but the toolchains
-  language servers use (`toolchains/`): Settings removes those, and their gigabytes would otherwise
-  evict clones.
+- With git, main opens the cache, as `git.cache`, and cleans it up without anyone waiting.
+  `git.setCap()` sets the size it's kept under, which counts all of it but the toolchains language
+  servers use (`toolchains/`), since Settings removes those and their gigabytes would otherwise
+  evict clones, and what's being deleted (`tmp/*.trash`).
+- The cache is `Lo` (`Lo Dev` for a build run from source, or `cache` in `LO_USER_DATA_DIR`) in the
+  system's folder for this user's caches: `$XDG_CACHE_HOME` or `~/.cache` on Linux, and on a Mac the
+  one macOS keeps outside the home folder, `DARWIN_USER_CACHE_DIR`
+  (`/var/folders/<xx>/<random>/C/`), as `/usr/bin/getconf` names it. Tools that language servers run
+  read settings from every folder above their own, such as Cargo's `.cargo/config.toml`, and
+  tsserver loads plugins from every `node_modules` above its install, so the home folder is none of
+  them. Lo won't start unless that folder, as named and as it resolves, is a folder, not a link, of
+  the user's own that nobody else can change, and never falls back to the home folder.
+- Once the cache opens, the one an earlier Lo kept in `~/Library/Caches` goes, as the cache removes
+  its own: moved into its `tmp/` and deleted with the cache's other deletions, or deleted where it
+  is when it's on another volume. Only a folder, never a link, that holds a cache's folders goes,
+  never the open cache or a folder holding it, whatever links lead there, and only under its lock,
+  never while another Lo has it open.
 - Every git gets an environment of Lo's own making, never main's, and only a fetch gets the
   account's token, from a source read as each fetch starts. Fetches take the proxy Lo's own requests
   take.
@@ -489,12 +501,13 @@ toolchain and git's variables each server needs.
   adapter's alone, and nothing in the checkout picks what runs: vtsls runs its own TypeScript, loads
   no `tsserver` plugin from the checkout, and acquires no types; Pyright's Python is `/dev/null`, so
   it runs no interpreter. A plugin a `tsconfig.json` names is still looked for by its package's
-  name, beside Lo's TypeScript and in each `node_modules` above Lo's install, such as
-  `~/node_modules`, which neither vtsls nor `tsserver` can turn off (`test/plugins.test.ts`). No
-  server has a sandbox: each reads what the user can, outside the checkout too, and Lo never opens a
-  place outside the checkout an answer names. Each says whether it gives inlay hints (`hints`):
-  Pyright gives none. The package's README lists each with its source, version and license, and a
-  server's details name its license beside its version.
+  name, beside Lo's TypeScript and in each `node_modules` above Lo's install, which neither vtsls
+  nor `tsserver` can turn off (`test/plugins.test.ts`): on a Mac, where the cache is outside the
+  home folder, that's never `~/node_modules`; on Linux it can be. No server has a sandbox: each
+  reads what the user can, outside the checkout too, and Lo never opens a place outside the checkout
+  an answer names. Each says whether it gives inlay hints (`hints`): Pyright gives none. The
+  package's README lists each with its source, version and license, and a server's details name its
+  license beside its version.
 - Tests start only the fake server, `testing/lsp/fake-server.ts`, at most two at once in a test
   file, each killed with its group when the test ends. No test starts a real server or downloads
   one: download tests serve archives they build from a server on this machine. The live check,

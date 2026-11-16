@@ -17,7 +17,8 @@ function program(path: string): string {
 
 function setUp() {
   const home = tempFolder();
-  const cache = join(home, 'Library', 'Caches', 'Lo');
+  // Outside the home folder, as macOS's folder for the user's caches is.
+  const cache = join(tempFolder(), 'C', 'Lo');
   mkdirSync(cache, { recursive: true });
   return {
     home,
