@@ -423,8 +423,12 @@ export class ServerPool {
       const { server, stopping } = entry;
       entry.server = undefined;
       entry.moving = undefined;
-      if (server) stops.push(this.#stopServer(entry, server, entry.root));
       if (stopping) stops.push(stopping);
+      if (server) {
+        // Kept, so "Restart" starts it again only once it has stopped.
+        entry.stopping = this.#stopServer(entry, server, entry.root);
+        stops.push(entry.stopping);
+      }
       entry.phase = 'failed';
       entry.progress = undefined;
       entry.problem = { kind: 'failed', why: { kind: 'error', message: clip(message) } };
@@ -904,7 +908,9 @@ export class ServerPool {
    * Stops `entry`'s server, if it runs, and starts it again on `root`, if it may run there once the
    * old one has stopped. One that `held` room keeps it meanwhile, in the old one's place, and so
    * does one that finds room free; any other, such as one whose crash let its room go to the next
-   * in line, waits its turn, and takes it only once the old one has stopped.
+   * in line, waits its turn, and takes it only once the old one has stopped. One that held none and
+   * wasn't looked at on `root` yet, as one whose look failed, is looked at first, before it gets
+   * ready or takes room, and waits its turn only if it may run there.
    */
   async #again(
     entry: Entry,
@@ -921,16 +927,18 @@ export class ServerPool {
     if (root) entry.root = root;
     entry.controller.abort();
     entry.controller = new AbortController();
-    // The server before, or the one an earlier restart is still stopping.
+    // The server before, or the one an earlier restart or a halt is still stopping.
     const stopping = old ? this.#stopServer(entry, old, was) : entry.stopping;
+    const looks = !held && entry.checked !== entry.root.folder;
     if (!stopping) {
-      this.#launch(entry);
+      if (looks) await this.#queue(entry, entry.root);
+      else this.#launch(entry);
       return;
     }
     entry.run += 1;
     const { run } = entry;
     entry.stopping = stopping;
-    if (keeps) {
+    if (keeps && !looks) {
       entry.phase = 'preparing';
       entry.problem = undefined;
       entry.refused = undefined;

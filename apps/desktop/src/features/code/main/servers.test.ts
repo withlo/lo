@@ -637,6 +637,28 @@ describe('halting', () => {
     expect(live().map((server) => server.spec.name)).toEqual(['TypeScript', 'go']);
   });
 
+  it('starts one halted again on Restart only once its server has stopped', async () => {
+    const { pool, started } = standIns();
+    pool.sync([view('v1', 'a/x', 1, [GO])], 'v1');
+    await settle();
+    const first = started[0];
+    if (!first) throw new Error('nothing started');
+    first.set({ kind: 'ready' });
+    first.slow = true;
+    onTestFinished(() => first.exit());
+    void pool.halt(() => true, 'Go was removed. Restart downloads it again.');
+    await settle();
+    expect(first.stopped).toBe(true);
+
+    // Restart while it's still stopping: the new one waits for it.
+    void pool.restart('a/x', GO, { folder: '/cache/a/x/pull-1', pull: 1 });
+    await settle();
+    expect(started).toHaveLength(1);
+    first.exit();
+    await settle();
+    expect(started).toHaveLength(2);
+  });
+
   it('stops one getting ready, dropping what its download finds out late', async () => {
     const { promise, resolve } = Promise.withResolvers<Prepared>();
     let aborted = false;
@@ -864,6 +886,31 @@ describe('checkouts a server won’t run on', () => {
     await pool.restart('a/x', TS, root);
     await settle();
     expect(started).toHaveLength(1);
+  });
+
+  it('looks before Restart gets a failed server ready, so one refused there gets nothing ready', async () => {
+    const prepared: string[] = [];
+    const csharp: Adapter = {
+      ...CSHARP,
+      prepare() {
+        prepared.push(csharp.id);
+        return Promise.resolve({ kind: 'ready', launch: { program: '/bin/x', args: [] } });
+      },
+    };
+    let reads = false;
+    const { pool, started } = standIns({}, () =>
+      reads ? Promise.resolve(WHY) : Promise.reject(new Error('EIO: i/o error, scandir')),
+    );
+    pool.sync([view('v2', 'a/x', 2, [csharp])], 'v2');
+    await settle();
+    expect(pool.shown('a/x', 'csharp')?.state.kind).toBe('failed');
+
+    // The disk reads again, and finds what refuses it: Restart says so, and gets nothing ready.
+    reads = true;
+    await pool.restart('a/x', csharp, { folder: '/cache/a/x/pull-2', pull: 2 });
+    await settle();
+    expect([prepared, started]).toEqual([[], []]);
+    expect(pool.shown('a/x', 'csharp')?.state).toEqual(REFUSED);
   });
 
   it('never runs the SDK a checkout’s global.json plants for dotnet to find', async () => {
