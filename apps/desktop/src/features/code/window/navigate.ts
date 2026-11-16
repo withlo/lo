@@ -28,14 +28,17 @@ import {
   tabState,
   type RightKept,
 } from '../../tab/window/shared.ts';
-import type { Definitions, Hover, Lines, Outline, References } from '../port.ts';
+import type { Definitions, Hints, Hover, Lines, Outline, References } from '../port.ts';
 import {
+  allOutside,
+  cardOf,
   codeOf,
   failureOf,
-  HINTS_NEED_SERVER,
   isOutside,
   NO_NAME,
   noDefinition,
+  noHints,
+  noneFound,
   noReferences,
   notYet,
   peekOf,
@@ -43,6 +46,8 @@ import {
 } from './answers.ts';
 import { port } from './main.ts';
 import { say } from './said.ts';
+import { servers } from './servers.ts';
+import { statuses } from './status.ts';
 
 /** The references panel's id among the right panel's views. */
 export const REFERENCES = 'code.references';
@@ -260,7 +265,7 @@ export async function definition(target: LineTarget): Promise<void> {
     return;
   }
   if (found.answers.length === 0) {
-    say(tab, noDefinition(name));
+    say(tab, noneFound(noDefinition(name), found.fallback));
     return;
   }
   const views = codeViews(tab);
@@ -301,10 +306,17 @@ export function pick(step: 1 | -1): void {
   pickAnswer(open, Math.max(0, Math.min(open.found.answers.length - 1, open.shown + step)));
 }
 
-/** Shows answer `index` of `open`. */
+/**
+ * Shows answer `index` of `open`: as tall as its code, when that came with the answer, or as tall
+ * as code gets while it's read.
+ */
 export function pickAnswer(open: OpenPeek, index: number): void {
-  if (index === open.shown || !open.found.answers[index]) return;
-  const next = { ...open, shown: index };
+  const answer = open.found.answers[index];
+  if (index === open.shown || !answer) return;
+  // Code that came with the answer is drawn with it, so the peek is its height from the first.
+  const came = open.codes.has(index) || isOutside(answer) ? undefined : codeOf(answer.lines);
+  const codes = came ? new Map(open.codes).set(index, came) : open.codes;
+  const next = { ...open, shown: index, codes };
   setPeek(open.tab, next);
   draw(next);
   const signal = fresh('snippet', open.tab);
@@ -413,7 +425,11 @@ export async function references(target: LineTarget): Promise<void> {
     return;
   }
   if (found.answers.length === 0) {
-    say(tab, noReferences(name));
+    const outside = found.outside ?? 0;
+    say(
+      tab,
+      outside > 0 ? allOutside(name, outside) : noneFound(noReferences(name), found.fallback),
+    );
     return;
   }
   const open = peekIn(tab);
@@ -550,7 +566,8 @@ async function showHover(asked: Asked, byKey: boolean): Promise<void> {
     for (const kind of INPUT) window.removeEventListener(kind, stop, true);
   }
   if (signal.aborted) return;
-  if (!hover) {
+  // A hover with nothing the card can draw is none.
+  if (!hover || !cardOf(hover)) {
     if (byKey) say(tab, 'No definition found at the cursor.');
     return;
   }
@@ -608,35 +625,36 @@ export function hintsShownNow(): boolean {
 
 /**
  * Asks for the hints of the head's side of each file on screen in tab `tab`'s code views, and
- * draws them. Says whether any came.
+ * draws them. Gives what each file's question found, or nothing once a newer one took its place.
  */
-async function askHints(tab: string): Promise<boolean> {
+async function askHints(tab: string): Promise<Hints[] | undefined> {
   const views = codeViews(tab);
   const signal = fresh('hints', tab);
-  let any = false;
+  const found: Hints[] = [];
   for (const view of ['diff', 'file'] as const) {
     const marks: HintMark[] = [];
     for (const { file: id, lines } of views.newOnScreen(view)) {
       const at: Place = { file: id, side: 'new', line: 1 };
       const file = views.fileAt(at);
       if (!file?.commit) continue;
-      const hints = await port().hints(
+      const answer = await port().hints(
         { view: tab, key: file.commit, path: file.path, from: 1, to: lines },
         { signal },
       );
-      if (signal.aborted) return any;
-      for (const hint of hints) {
+      if (signal.aborted) return undefined;
+      found.push(answer);
+      for (const hint of answer.hints) {
         marks.push({
           kind: 'hint',
           at: { file: id, side: 'new', line: hint.line, column: hint.column },
           label: hint.label,
+          padding: { before: hint.paddingLeft === true, after: hint.paddingRight === true },
         });
       }
     }
-    any ||= marks.length > 0;
     views.setHints(view, marks);
   }
-  return any;
+  return found;
 }
 
 /** `gh`: inline type hints on, asked for the code on screen, or off. */
@@ -656,7 +674,9 @@ export async function toggleHints(): Promise<void> {
     return;
   }
   try {
-    if (!(await askHints(tab))) say(tab, HINTS_NEED_SERVER);
+    const found = await askHints(tab);
+    const none = found && noHints(found, statuses.get(tab), servers.get(tab));
+    if (none !== undefined) say(tab, none);
   } catch (error) {
     failed(tab, error);
   }

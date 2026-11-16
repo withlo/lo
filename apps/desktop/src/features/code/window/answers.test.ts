@@ -1,23 +1,30 @@
 // What the window shows of the code port's answers: a peek's answers and code, where each came
-// from, the references panel's rows, the outline's nesting and filter, and what the status bar says
-// when there's nothing to show.
+// from and why a language server didn't give them, the references panel's rows, the hover card's
+// declaration and docs, the outline's nesting and filter, and what the status bar says when there's
+// nothing to show, `gh`'s reasons among it.
 
+import { markdownTree } from '@lo/markdown';
 import { describe, expect, it } from 'vitest';
 
 import { IpcError } from '../../../ipc/contract.ts';
+import type { Servers, Status } from '../contract.ts';
 import type { CodeAnswer } from '../port.ts';
 import {
+  allOutside,
   candidatesOf,
+  cardOf,
   codeOf,
   failureOf,
   filterOutline,
   groupsOf,
   metaOf,
   noDefinition,
+  noHints,
+  noneFound,
   notYet,
   outlineRows,
   peekOf,
-  signatureOf,
+  peekSource,
   sourceOf,
   textsFrom,
 } from './answers.ts';
@@ -41,8 +48,17 @@ function answer(change: Partial<CodeAnswer> = {}): CodeAnswer {
 }
 
 describe('what the status bar says', () => {
-  it('names what has no definition', () => {
+  it('names what has no definition, and why a language server didn’t answer', () => {
     expect(noDefinition('parse')).toBe('No definition of `parse` found');
+    expect(noneFound(noDefinition('parse'), undefined)).toBe('No definition of `parse` found');
+    expect(noneFound(noDefinition('parse'), 'TypeScript is starting.')).toBe(
+      'No definition of `parse` found. TypeScript is starting.',
+    );
+  });
+
+  it('counts references a language server found only outside the repository', () => {
+    expect(allOutside('parse', 3)).toBe('`parse` has 3 references, all outside this repository.');
+    expect(allOutside('parse', 1)).toBe('`parse` has 1 reference, outside this repository.');
   });
 
   it('says why code features can’t answer before the local copy, or without git', () => {
@@ -71,6 +87,23 @@ describe('what the status bar says', () => {
 });
 
 describe('a peek', () => {
+  it('says in its head where a single answer came from, or why the index answered', () => {
+    const server = answer({ source: 'server', label: 'TypeScript' });
+    expect(peekSource({ answers: [server] })).toEqual({
+      source: { kind: 'server', name: 'TypeScript' },
+      note: undefined,
+    });
+    expect(peekSource({ answers: [answer({ from: 'zod' })] })).toEqual({
+      source: { kind: 'syntax' },
+      note: "From zod, which Lo doesn't install",
+    });
+    // Several, whose list says where each came from.
+    expect(peekSource({ answers: [server, server] })).toBeUndefined();
+    expect(
+      peekSource({ answers: [answer(), answer()], fallback: 'TypeScript is starting.' }),
+    ).toEqual({ source: { kind: 'syntax' }, note: 'TypeScript is starting.' });
+  });
+
   it('says where each answer came from, and what sets it apart', () => {
     expect(sourceOf(answer())).toEqual({ source: { kind: 'syntax' }, note: undefined });
     expect(sourceOf(answer({ label: 'Syntax index · same name' }))).toEqual({
@@ -210,17 +243,108 @@ describe('the outline', () => {
   });
 });
 
+/** A server's hover in Markdown, as the background process reads it. */
+function hoverIn(text: string) {
+  return { text, markdown: true, tree: markdownTree(text, { breaks: false }) };
+}
+
 describe('the card over a word', () => {
-  it('draws a language server’s declaration from its Markdown, and the syntax index’s line as it is', () => {
-    expect(
-      signatureOf({
-        text: '```typescript\ninterface Line\n```\n\nA line of the input.',
-        markdown: true,
-      }),
-    ).toBe('interface Line');
-    expect(signatureOf({ text: 'Plain words', markdown: true })).toBe('Plain words');
-    expect(signatureOf({ text: '  export interface Line {', markdown: false })).toBe(
-      '  export interface Line {',
+  it('draws a server’s code blocks at the start as the declaration, in order, and the rest as docs', () => {
+    const card = cardOf(
+      hoverIn(
+        '```rust\nlo::parse\n```\n\n```rust\npub fn parse(input: &str)\n```\n\n---\n\nReads a line.',
+      ),
     );
+    // A module's path, then the signature, as rust-analyzer writes them.
+    expect(card?.signature).toBe('lo::parse\npub fn parse(input: &str)');
+    expect(card?.docs?.blocks.map((block) => block.kind)).toEqual(['paragraph']);
+    expect(JSON.stringify(card?.docs)).toContain('Reads a line.');
+  });
+
+  it('draws a hover without a code block as its docs alone, never as Markdown text', () => {
+    const card = cardOf(hoverIn('**Line**: a line of the input.'));
+    expect(card?.signature).toBeUndefined();
+    expect(card?.docs?.blocks[0]?.kind).toBe('paragraph');
+    expect(JSON.stringify(card)).not.toContain('**');
+    // Markdown that came without its tree, or reads as nothing, draws nothing.
+    expect(cardOf({ text: '**Line**', markdown: true })).toBeUndefined();
+    expect(cardOf(hoverIn('---'))).toBeUndefined();
+  });
+
+  it('draws the syntax index’s line as it is', () => {
+    expect(cardOf({ text: '  export interface Line {', markdown: false })).toEqual({
+      signature: '  export interface Line {',
+      docs: undefined,
+    });
+    expect(cardOf({ text: ' ', markdown: false })).toBeUndefined();
+  });
+});
+
+describe('gh with no type hints', () => {
+  const view = 'a'.repeat(32);
+  const status = (trust: Status['trust'], head: Status['head'] = { kind: 'base' }): Status => ({
+    view,
+    repo: 'rozed-dev/e2e',
+    pull: 80,
+    head,
+    trust,
+    dismissed: false,
+  });
+  const trusted = status({ kind: 'trusted', by: 'repo' });
+  const servers = (state: Servers['servers'][number]['state']): Servers => ({
+    view,
+    off: false,
+    servers: [{ id: 'typescript', name: 'TypeScript', state }],
+  });
+  const ready = servers({ kind: 'ready' });
+
+  it('says nothing once one came', () => {
+    const hint = { line: 1, column: 1, label: ': string' };
+    expect(noHints([{ hints: [] }, { hints: [hint], label: 'TypeScript' }], trusted, ready)).toBe(
+      undefined,
+    );
+  });
+
+  it('says why the server that reads the code gave none', () => {
+    const asked = { hints: [], label: 'TypeScript' };
+    expect(noHints([asked], trusted, ready)).toBe(
+      'TypeScript gives no type hints for the code on screen.',
+    );
+    expect(noHints([{ ...asked, fallback: 'TypeScript is starting.' }], trusted, null)).toBe(
+      'TypeScript is starting.',
+    );
+    expect(noHints([{ ...asked, none: 'Pyright has no inline hints.' }], trusted, ready)).toBe(
+      'Pyright has no inline hints.',
+    );
+    const failed = servers({ kind: 'failed', why: { kind: 'error', message: 'It exited.' } });
+    expect(noHints([{ ...asked, fallback: 'TypeScript stopped.' }], trusted, failed)).toBe(
+      'TypeScript failed. Restart it from the status bar.',
+    );
+    const missing = servers({ kind: 'missing', needs: 'Go 1.24 or later' });
+    expect(noHints([asked], trusted, missing)).toBe('TypeScript needs Go 1.24 or later.');
+    // A file whose server says why comes before one that doesn't.
+    expect(noHints([asked, { ...asked, fallback: 'TypeScript is starting.' }], trusted, null)).toBe(
+      'TypeScript is starting.',
+    );
+  });
+
+  it('says why no server reads the code, from the view’s trust', () => {
+    expect(noHints([{ hints: [] }], trusted, ready)).toBe(
+      'No language server reads the code on screen.',
+    );
+    expect(noHints([], status({ kind: 'untrusted', why: 'unnamed' }), null)).toBe(
+      'Type hints need a language server, which Lo runs only on repos you trust.',
+    );
+    expect(
+      noHints(
+        [],
+        status({ kind: 'untrusted', why: 'unnamed' }, { kind: 'fork', repo: 'sam/e2e' }),
+        null,
+      ),
+    ).toBe('Type hints need a language server, which Lo runs only on PRs you trust.');
+    expect(noHints([], status({ kind: 'checking' }), null)).toBe(
+      'Type hints wait for Lo to work out whether this repo is trusted.',
+    );
+    expect(noHints([], null, null)).toBe('Type hints need a language server.');
   });
 });

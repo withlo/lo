@@ -5,6 +5,7 @@
 // refuses a tree the view doesn't show or a line the file doesn't have. Nothing here calls Electron.
 
 import { GitError, parseOid, type Oid } from '@lo/git';
+import type { Tree } from '@lo/markdown';
 import { rank, sameNameLabel, taggedLanguageOfPath, type Asking } from '@lo/syntax';
 
 import { IpcError } from '../../../ipc/contract.ts';
@@ -54,11 +55,18 @@ export interface AnswerStore {
 /** Finds where files use a name, as `code.find` does. */
 export type FindUses = (name: string, files: FileJob[], signal?: AbortSignal) => Promise<Uses[]>;
 
+/**
+ * A language server's hover, in Markdown, as Lo's tree, as `code.render` reads it, with view
+ * `view`'s repository as what `#123` refers to.
+ */
+export type RenderHover = (view: string, markdown: string, signal?: AbortSignal) => Promise<Tree>;
+
 export interface Answering {
   readonly store: AnswerStore;
   readonly version: () => Promise<string>;
   readonly read: ReadSymbols;
   readonly find: FindUses;
+  readonly render: RenderHover;
 }
 
 export const BY_NAME = 'By name: may include other things called this.';
@@ -483,11 +491,4 @@ export async function snippet(sides: ViewSides, at: Asked & { line: number }): P
   const file = await readAsked(sides, at);
   checkLine(file, at.line);
   return around(file.lines, at.line);
-}
-
-/** Type hints, which only language servers give: none, for a file the view shows. */
-export async function hints(sides: ViewSides, asked: Asked & { from: number; to: number }) {
-  const file = await readAsked(sides, asked);
-  checkLine(file, asked.from);
-  return [];
 }

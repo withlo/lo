@@ -5,6 +5,7 @@
 // view the reader trusts, a language server's answer within its deadline wins; otherwise, and
 // always on the old side, the syntax index answers, saying why when a server didn't.
 
+import type { Tree } from '@lo/markdown';
 import { z } from 'zod';
 
 import { reply } from '../../ipc/contract.ts';
@@ -22,8 +23,8 @@ export const MAX_REFERENCE_FILES = 2_000;
 export const MAX_HINTS = 2_000;
 /** The most symbols an outline lists. */
 export const MAX_SYMBOLS = 5_000;
-/** The longest a hover's text may be, in UTF-16 code units. */
-export const MAX_HOVER = 64 * 1024;
+// The longest a hover's text may be, which `code.render` reads too.
+export { MAX_HOVER } from './jobs.ts';
 /** How many answers come with the lines around them. */
 export const SNIPPETS = 10;
 /** How many lines around an answer it comes with. */
@@ -127,6 +128,12 @@ export interface Hover {
   text: string;
   /** Whether `text` is Markdown, as a server's hover is, rather than a line of code or plain text. */
   markdown: boolean;
+  /**
+   * A server's Markdown as Lo's tree, which the background process reads by `@lo/markdown`'s rules
+   * for text from anyone (`code.render`): what the card draws, never `text` itself. Every hover in
+   * Markdown has one.
+   */
+  tree?: Tree;
   source: 'server' | 'syntax';
   label: string;
   at?: CodeAnswer;
@@ -140,6 +147,23 @@ export interface Hint {
   label: string;
   paddingLeft?: boolean;
   paddingRight?: boolean;
+}
+
+/**
+ * A file's type hints, from the language server that reads it: none without one, on the old side,
+ * or when it gave none.
+ */
+export interface Hints {
+  hints: Hint[];
+  /** The server that reads the file, by name, when one does: "TypeScript". */
+  label?: string;
+  /** Why it gave none, when it could have: "TypeScript is starting." */
+  fallback?: string;
+  /**
+   * Why it never gives any, so Lo didn't ask: it doesn't offer them ("Python has no inline
+   * hints."), or its adapter says it has none to give Lo.
+   */
+  none?: string;
 }
 
 /** A symbol of a file's outline, nested by `parent`, its place in the list. */
@@ -168,10 +192,10 @@ export const contract = defineJobs('code', {
   references: { input: place, reply: reply<References>() },
   /** What the hover card says of the name at a place, or nothing. */
   hover: { input: place, reply: reply<Hover | null>() },
-  /** A language server's type hints for lines `from` to `to`: none without one. */
+  /** A language server's type hints for lines `from` to `to`, or why there are none. */
   hints: {
     input: z.strictObject({ ...file, from: line, to: line }),
-    reply: reply<Hint[]>(),
+    reply: reply<Hints>(),
   },
   /** A file's symbols, nested. */
   outline: { input: z.strictObject(file), reply: reply<Outline>() },

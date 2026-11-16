@@ -1,15 +1,19 @@
 // What the window shows of the code port's answers, as plain functions tested alone: a peek of a
-// name's definitions, the references panel's groups, the outline's rows, where an answer came from,
-// and what the status bar says when there's nothing to show.
+// name's definitions, the references panel's groups, the hover card's declaration and docs, the
+// outline's rows, where an answer came from and why a language server didn't give it, and what the
+// status bar says when there's nothing to show.
 
+import type { Tree } from '@lo/markdown';
 import type { AnswerSource, PeekCandidate, ReferenceRow, ReferencesGroup } from '@lo/ui';
 import type { PeekAnswer, PeekCode, PeekView } from '@lo/ui/code';
 
 import { IpcError } from '../../../ipc/contract.ts';
 import type { LocalState } from '../../tab/contract.ts';
+import type { Servers, Status } from '../contract.ts';
 import type {
   CodeAnswer,
   Definitions,
+  Hints,
   Hover,
   Lines,
   OutlineSymbol,
@@ -34,11 +38,96 @@ export function noReferences(name: string): string {
   return `No references of \`${name}\` found`;
 }
 
+/** What the status bar says of nothing found, with why a language server didn't answer, if it didn't. */
+export function noneFound(said: string, fallback: string | undefined): string {
+  return fallback === undefined ? said : `${said}. ${fallback}`;
+}
+
+/** "`parse` has 3 references, all outside this repository.": what a server found, none listed. */
+export function allOutside(name: string, count: number): string {
+  return count === 1
+    ? `\`${name}\` has 1 reference, outside this repository.`
+    : `\`${name}\` has ${count} references, all outside this repository.`;
+}
+
 /** What the status bar says when there's no name at the place asked about. */
 export const NO_NAME = 'There’s no name at the cursor.';
 
-/** What `gh` says while type hints come only from a language server, which none gives yet. */
-export const HINTS_NEED_SERVER = 'Type hints need a language server';
+/**
+ * Why no type hint came for the code on screen, from what each file's question found, the view's
+ * trust and its language servers as main last said: nothing once one came. A server that reads a
+ * file says why it gave none, a failed or missing one from what its item in the status bar shows;
+ * without one, the trust decides.
+ */
+export function noHints(
+  found: readonly Hints[],
+  status: Status | null,
+  servers: Servers | null,
+): string | undefined {
+  if (found.some((each) => each.hints.length > 0)) return undefined;
+  const served = found.filter((each) => each.label !== undefined);
+  const why =
+    served.find((each) => each.fallback !== undefined || each.none !== undefined) ?? served[0];
+  if (why?.label !== undefined) return serverHints(why.label, why, servers);
+  const trust = status?.trust;
+  switch (trust?.kind) {
+    case 'trusted':
+      return 'No language server reads the code on screen.';
+    case 'untrusted': {
+      if (trust.why === 'unread') break;
+      const head = status?.head;
+      switch (head?.kind) {
+        case 'fork':
+          return 'Type hints need a language server, which Lo runs only on PRs you trust.';
+        case 'gone':
+          return 'Type hints need a language server, which Lo doesn’t run on this PR.';
+        case 'base':
+        case undefined:
+          return 'Type hints need a language server, which Lo runs only on repos you trust.';
+        default:
+          head satisfies never;
+          return 'Type hints need a language server.';
+      }
+    }
+    case 'checking':
+    case 'waiting':
+      break;
+    case 'noGit':
+      return 'Code features need git.';
+    case undefined:
+      return 'Type hints need a language server.';
+    default:
+      trust satisfies never;
+      return 'Type hints need a language server.';
+  }
+  return 'Type hints wait for Lo to work out whether this repo is trusted.';
+}
+
+/** Why server `name` gave no type hints for a file: what it said, or where it is. */
+function serverHints(
+  name: string,
+  found: Pick<Hints, 'fallback' | 'none'>,
+  servers: Servers | null,
+): string {
+  if (found.none !== undefined) return found.none;
+  const state = servers?.servers.find((server) => server.name === name)?.state;
+  switch (state?.kind) {
+    case 'failed':
+      return `${name} failed. Restart it from the status bar.`;
+    case 'missing':
+      return `${name} needs ${state.needs}.`;
+    case 'downloading':
+    case 'starting':
+    case 'indexing':
+    case 'ready':
+    case 'notAnswering':
+    case undefined:
+      return found.fallback ?? `${name} gives no type hints for the code on screen.`;
+    default:
+      state satisfies never;
+      return found.fallback ?? `${name} gives no type hints for the code on screen.`;
+  }
+}
 
 /**
  * Why code features can't answer about a view yet, from its local copy, if they can't: what failed,
@@ -138,13 +227,56 @@ export function metaOf(answer: Definition, revision: string | undefined): string
 }
 
 /**
- * What a hover card draws as code: the first code block of a language server's Markdown, which is
- * where it writes the declaration, or its text where it has none; the syntax index's line as it is.
+ * Where a peek's answers came from, for its head, when no list beside them says: the one answer's
+ * source and what sets it apart, or the syntax index's with why a language server didn't answer.
+ * Nothing for several answers a server gave, whose list says.
  */
-export function signatureOf(hover: Pick<Hover, 'text' | 'markdown'>): string {
-  if (!hover.markdown) return hover.text;
-  const block = /^(`{3,}|~{3,})[^\n]*\n([\s\S]*?)\n\1/m.exec(hover.text);
-  return (block?.[2] ?? hover.text).trim();
+export function peekSource(
+  found: Pick<Definitions, 'answers' | 'fallback'>,
+): { source: AnswerSource; note: string | undefined } | undefined {
+  if (found.fallback !== undefined) return { source: { kind: 'syntax' }, note: found.fallback };
+  const [only, ...rest] = found.answers;
+  if (!only || rest.length > 0) return undefined;
+  const { source, note } = sourceOf(only);
+  if (!isOutside(only) && only.from !== undefined) {
+    return { source, note: `From ${only.from}, which Lo doesn't install` };
+  }
+  return { source, note };
+}
+
+/** What a hover card shows: the declaration, as code, and the docs, either of which may be all. */
+export interface HoverCard {
+  readonly signature: string | undefined;
+  readonly docs: Tree | undefined;
+}
+
+/**
+ * What the card draws of a hover: the syntax index's line, or a server's plain text, as code; or a
+ * server's Markdown, read by the background process into Lo's tree, its code blocks at the start as
+ * the declaration, in the order the server wrote them (some write a module's path before the
+ * signature), and the rest as the docs. Rules between them go, since the card divides them itself.
+ * Nothing when there's nothing to draw. A server's Markdown is never drawn as its text.
+ */
+export function cardOf(hover: Pick<Hover, 'text' | 'markdown' | 'tree'>): HoverCard | undefined {
+  if (!hover.markdown) {
+    return hover.text.trim() === '' ? undefined : { signature: hover.text, docs: undefined };
+  }
+  if (!hover.tree) return undefined;
+  const blocks = [...hover.tree.blocks];
+  const code: string[] = [];
+  for (let block = blocks[0]; block?.kind === 'code'; block = blocks[0]) {
+    blocks.shift();
+    code.push(block.text.replace(/\n+$/, ''));
+  }
+  while (blocks[0]?.kind === 'rule') blocks.shift();
+  while (blocks.at(-1)?.kind === 'rule') blocks.pop();
+  const signature = code.join('\n');
+  const declared = signature.trim() !== '';
+  if (!declared && blocks.length === 0) return undefined;
+  return {
+    signature: declared ? signature : undefined,
+    docs: blocks.length > 0 ? { ...hover.tree, blocks } : undefined,
+  };
 }
 
 /** The line `line` of `lines`, if they hold it. */

@@ -1,11 +1,13 @@
 // The syntax index's jobs: each file's definitions, the names it refers to and its imports, and
-// where files use a name, read with `@lo/syntax`'s tags under its limits. Pure work on the bytes
-// main sends: nothing here reads a file of the repository or the network, and nothing runs the
-// repository's code.
+// where files use a name, read with `@lo/syntax`'s tags under its limits; and a language server's
+// hover as Lo's tree, read with `@lo/markdown` as text from anyone. Pure work on what main sends:
+// nothing here reads a file of the repository or the network, and nothing runs the repository's
+// code.
 
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
+import { markdownTree } from '@lo/markdown';
 import {
   diskLoader,
   type Loader,
@@ -83,5 +85,11 @@ export default defineRunner(contract, {
       return found;
     },
     limits: { deadline: 60_000 },
+  },
+  render: {
+    // As the protocol's Markdown reads, a paragraph's line breaks are spaces; raw HTML shows as its
+    // text, and links and images pass Lo's rules or become text, as in any post.
+    run: ({ markdown, repo }) =>
+      markdownTree(markdown, repo === null ? { breaks: false } : { breaks: false, repo }),
   },
 });

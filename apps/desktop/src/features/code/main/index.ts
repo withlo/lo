@@ -77,6 +77,12 @@ type Context = FeatureContext<typeof contract>;
  */
 const JOB_WAIT = 10 * 60_000;
 
+/**
+ * How long main waits for a hover's Markdown to be read, behind its other jobs, such as the index's:
+ * past it the index answers, so a card isn't long in coming.
+ */
+const RENDER_WAIT = 5_000;
+
 const log = (line: string) => console.error(`code: ${line}`);
 
 let views: TrustViews | undefined;
@@ -329,6 +335,11 @@ function startIndex(context: Context): void {
     version: () => followed.version(),
     read,
     find: (name, files, signal) => background.find({ name, files }, { signal, timeout: JOB_WAIT }),
+    render: (view, markdown, signal) => {
+      const repository = context.use(tabs).pull(view)?.repository;
+      const repo = repository ? { owner: repository.owner, name: repository.name } : null;
+      return background.render({ markdown, repo }, { signal, timeout: RENDER_WAIT });
+    },
   });
   const follow = (id: string) => followed.follow(id, indexInput(context, id));
   const service = context.use(tabs);

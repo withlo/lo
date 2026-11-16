@@ -34,6 +34,13 @@ export interface ReferencesHeadProps {
   source: AnswerSource;
   /** The revision they're read at: "r5". */
   at?: string | undefined;
+  /**
+   * Why a language server didn't answer, when the syntax index answered in its place: "TypeScript
+   * is starting."
+   */
+  fallback?: string | undefined;
+  /** How many more a language server found outside the repository, which aren't listed. */
+  outside?: number | undefined;
 }
 
 /** "1 file", "6 files". */
@@ -41,11 +48,25 @@ function filesIn(count: number): string {
   return `${count} ${count === 1 ? 'file' : 'files'}`;
 }
 
+/** "1 more is outside this repository.", "3 more are outside this repository." */
+function outsideOf(count: number): string {
+  return `${count} more ${count === 1 ? 'is' : 'are'} outside this repository.`;
+}
+
 /**
  * The head of the references panel: the word, how many references it has in how many files, and
- * where the answer came from: "14 in 6 files · TypeScript, at r5".
+ * where the answer came from: "14 in 6 files · TypeScript, at r5". Under that, why a language
+ * server didn't answer, or how many more it found outside the repository.
  */
-export function ReferencesHead({ name, count, files, source, at }: ReferencesHeadProps) {
+export function ReferencesHead({
+  name,
+  count,
+  files,
+  source,
+  at,
+  fallback,
+  outside = 0,
+}: ReferencesHeadProps) {
   return (
     <div className="flex flex-none flex-col gap-4 px-16 pb-8">
       <span className="min-w-0 truncate text-fg code-text" title={showFormat(name)}>
@@ -63,6 +84,12 @@ export function ReferencesHead({ name, count, files, source, at }: ReferencesHea
           </>
         )}
       </span>
+      {fallback !== undefined && (
+        <span className="min-w-0 text-fg-muted text-small">
+          <ShownText text={fallback} />
+        </span>
+      )}
+      {outside > 0 && <span className="lo-num text-fg-muted text-small">{outsideOf(outside)}</span>}
     </div>
   );
 }

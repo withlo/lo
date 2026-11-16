@@ -442,6 +442,26 @@ describe('TypeHover', () => {
     expect(card.children).toHaveLength(2);
   });
 
+  it('shows docs alone when there’s no signature, as a hover that’s only prose', () => {
+    const host = render(<TypeHover docs={DOCS} source={TYPESCRIPT} keys={{ close: ['Esc'] }} />);
+    const card = host.querySelector('[role="tooltip"]')!;
+    expect(card.children).toHaveLength(2);
+    expect(card.firstElementChild?.className).not.toContain('code-small');
+    expect(card.firstElementChild?.textContent).toContain('What estimateCost found');
+    expect(foot(host)).toBe('TypeScriptEsc Close');
+  });
+
+  it('says why a language server didn’t answer beside the syntax index that did', () => {
+    const host = render(
+      <TypeHover
+        signature="export interface Line {"
+        source={{ kind: 'syntax' }}
+        fallback="TypeScript is starting."
+      />,
+    );
+    expect(foot(host)).toBe('Syntax index · TypeScript is starting.');
+  });
+
   it('empty docs say no doc comment too, and leave the card as short', () => {
     const host = render(
       <TypeHover signature={SIGNATURE} docs={markdownTree('')} source={TYPESCRIPT} />,

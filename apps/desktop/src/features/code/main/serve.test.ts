@@ -30,7 +30,7 @@ function channel(isOpen: (view: string) => boolean, answer: Partial<Answerers>) 
       definitions: async () => ({ name: 'parse', answers: [], more: false }),
       references: async () => ({ name: null, answers: [], more: false, note: '' }),
       hover: async () => null,
-      hints: async () => [],
+      hints: async () => ({ hints: [] }),
       outline: async () => ({ symbols: [], more: false, source: 'syntax' }),
       snippet: async () => ({ from: 1, text: [] }),
       ...answer,
