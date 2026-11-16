@@ -48,24 +48,11 @@
 
 import { dirname, join } from 'node:path';
 
+import type { NativeServer } from './native.ts';
 import type { Launch } from './node.ts';
 import type { Installed } from '../install.ts';
 import { MANIFEST, type Manifest } from '../manifest.ts';
 import type { ToolchainUse } from '../toolchains.ts';
-
-/** A language server that runs as a compiled program, not on Lo's Node. */
-export interface NativeServer {
-  /** Its entry in the manifest, `servers.json`, whose download is the program itself. */
-  readonly id: string;
-  /** What it's called, which labels its answers: "rust-analyzer". */
-  readonly name: string;
-  /** Its license, as its details and the README name it. */
-  readonly license: string;
-  /** Its own arguments, after the program. */
-  readonly args: readonly string[];
-  /** Whether it gives inlay hints, which `gh` shows. */
-  readonly hints: boolean;
-}
 
 /** rust-analyzer: a program Lo downloads, run on Lo's Rust toolchain. */
 export const RUST_ANALYZER: NativeServer = {

@@ -56,7 +56,7 @@ function installed(server: NodeServer): Installed {
 }
 
 /** What `server` hears when it asks for the setting `section`. */
-function setting(server: { readonly settings: unknown }, section: string): unknown {
+function setting(server: { readonly settings?: unknown }, section: string): unknown {
   return sectionOf(server.settings, section);
 }
 

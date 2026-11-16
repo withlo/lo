@@ -22,7 +22,11 @@ export interface NativeServer {
   /** Its license, as its details and the README name it: "MIT". */
   readonly license: string;
   readonly args: readonly string[];
-  readonly settings: unknown;
+  /**
+   * What `launchNative` tells it, static for a server launched that way. A server with its own
+   * launcher, such as rust-analyzer on Lo's toolchain, computes these instead and leaves it unset.
+   */
+  readonly settings?: unknown;
   readonly initializationOptions?: unknown;
   /** Whether it gives inlay hints, which `gh` shows: `false` for one that answers none. */
   readonly hints: boolean;

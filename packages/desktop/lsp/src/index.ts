@@ -5,7 +5,6 @@ export { NO_PYTHON, PYRIGHT } from './adapters/pyright.ts';
 export {
   type InstalledToolchain,
   launchRustAnalyzer,
-  type NativeServer,
   RUST_ANALYZER,
   rustAnalyzerSettings,
 } from './adapters/rust.ts';
