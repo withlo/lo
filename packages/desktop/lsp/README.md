@@ -148,18 +148,25 @@ says why each setting is as it is:
   project's library. It imports nothing: Gradle's and Maven's imports are off, and every folder is
   left out of its search for build files, so it reads no `build.gradle`, `pom.xml` or Eclipse
   `.project`, and no build script, wrapper, plugin or annotation processor runs. Lo finds the
-  checkout's source folders itself, from each `.java` file's package, and JDT LS makes a project of
-  them in its home, compiling nothing. All it writes is in its home: its workspace, Equinox's
-  configuration, the JVM's home and its temporary files, named by system properties, since a JVM
-  takes its home from the system, not `HOME`, and Gradle's home, by `GRADLE_USER_HOME`. A JVM takes
-  no proxy from the environment, so its JVM looks names up only in an empty hosts file of Lo's, and
-  reaches no host: Buildship, inside it, asks services.gradle.org for Gradle's versions as it
-  starts, whatever is imported, and no setting stops it. It doesn't start on a checkout whose root
-  holds a `.settings`, which it would link its project's settings to, reading them and writing
-  there. Above the checkout it reads nothing: when a folder the checkout is in is named `src`, it
-  looks only for whether the folder holding that one has a build file, and makes no project if it
-  has. Its heap is capped at 2.5 GB, under Lo's 4 GB for the group. It finds its project's folders
-  only as it starts, so it restarts on another checkout rather than moving there (`stays`).
+  checkout's source folders itself, from each `.java` file's package, in the 20,000 folders and
+  20,000 files nearest the root, and JDT LS makes a project of them in its home, compiling nothing;
+  a file in a source folder past those is outside its project, and gets fewer answers. All it writes
+  is in its home: its workspace, Equinox's configuration, the JVM's home and its temporary files,
+  named by system properties, since a JVM takes its home from the system, not `HOME`, and Gradle's
+  home, by `GRADLE_USER_HOME`. It reaches no host: its JVM looks names up only in an empty hosts
+  file of Lo's, and uses no proxy, which would look names up itself. A JVM takes none from the
+  environment, and JDT LS is told to give Eclipse's networking none of the system's
+  (`jdt.ls.disableProxies`, `java.net.useSystemProxies=false`). Two parts of it try to fetch
+  whatever its settings say, and no setting stops them trying: Buildship asks services.gradle.org
+  for Gradle's versions as it starts, and a hover on a class from a jar in `lib/`, or its source,
+  has it ask search.maven.org which artifact the jar is, by its SHA-1, then m2e to download the
+  artifact's sources, which Maven's offline setting keeps to the empty repository in its home. Java
+  isn't available for a repository that commits Eclipse's `.settings` folder at its root: JDT LS
+  would link its project's settings to it, reading them and writing there. Above the checkout it
+  reads nothing: when a folder the checkout is in is named `src`, it looks only for whether the
+  folder holding that one has a build file, and makes no project if it has. Its heap is capped at
+  2.5 GB, under Lo's 4 GB for the group. It finds its project's folders only as it starts, so it
+  restarts on another checkout rather than moving there (`stays`).
 
 None runs in a sandbox: each reads what you can, so an absolute import, Pyright's `extraPaths`, the
 folders of stubs a `.php-lsp.json` names, the paths a `composer.json`'s autoload names, or a

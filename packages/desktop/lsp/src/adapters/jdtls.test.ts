@@ -22,6 +22,8 @@ import {
   jdtlsSettings,
   launchJdtls,
   placeJdtls,
+  SOURCE_FILES,
+  SOURCE_FOLDERS,
   sourcePaths,
   TRIGGER,
 } from './jdtls.ts';
@@ -100,6 +102,14 @@ describe('JDT LS', () => {
     expect(JDTLS_HEAP + 1024).toBeLessThanOrEqual(LIMITS.memoryCap / 1024 ** 2);
   });
 
+  test('uses no proxy, for Eclipse’s networking or the JVM’s, and names none', () => {
+    // A proxy looks names up itself, past the hosts file: JDT LS would give Eclipse the system's.
+    expect(launch().args.filter((arg) => /prox(?:y|ies)/i.test(arg))).toEqual([
+      '-Djdt.ls.disableProxies=true',
+      '-Djava.net.useSystemProxies=false',
+    ]);
+  });
+
   test('refuses what it can’t start', () => {
     expect(() => launchJdtls({ folder: 'jdtls', entry: 'jdtls/launcher.jar' }, JDK, USE)).toThrow(
       "jdtls isn't an absolute path",
@@ -122,7 +132,7 @@ describe('JDT LS', () => {
     );
   });
 
-  test('imports nothing, builds nothing and fetches nothing', () => {
+  test('imports nothing, builds nothing, and keeps Gradle and Maven offline', () => {
     const settings = jdtlsSettings(['src/main/java']);
     expect(launch().settings).toEqual(jdtlsSettings([]));
     // No folder is searched for a build file, so Eclipse's import, which no setting turns off,
@@ -223,6 +233,41 @@ describe('sourcePaths', () => {
     expect(await sourcePaths(root)).toEqual([]);
   });
 
+  test('reads past annotations whatever they hold, and takes no folder from a file it can’t read', async () => {
+    const root = tempFolder();
+    write(root, {
+      'src/main/java/com/example/A.java': 'package com.example;\nclass A {}\n',
+      // JAXB's namespace: a `//` in a string.
+      'src/main/java/com/example/package-info.java':
+        '@XmlSchema(namespace = "http://example.com/a", elementFormDefault = XmlNsForm.QUALIFIED)\n' +
+        'package com.example;\n',
+      // Immutables' style: parentheses in parentheses.
+      'src/main/java/com/example/style/package-info.java':
+        '@Value.Style(defaults = @Value.Immutable(copy = false), typeImmutable = "*")\n' +
+        'package com.example.style;\n',
+      // A text block, characters and comments, holding what would end them, or the parentheses.
+      'src/main/java/com/example/odd/package-info.java':
+        '@A(x = """\n  ) " // \\""" ) """, c = \')\', d = "\\")") /* ) */ @B\n' +
+        'package com.example.odd;\n',
+      // Parentheses that never close, and a declaration that never ends.
+      'other/x/y/package-info.java': '@A(value = "x"\npackage x.y;\n',
+      'other/x/z/package-info.java': '@A\npackage x.z\n',
+    });
+    // No folder inside another, which would break every answer in the package.
+    expect(await sourcePaths(root)).toEqual(['src/main/java']);
+  });
+
+  test('looks in so many folders and reads so many files, the nearest the root first', async () => {
+    const root = tempFolder();
+    write(root, { 'a/src/p/A.java': 'package p;\n', 'b/src/q/B.java': 'package q;\n' });
+    // The root, then a and b, a/src and b/src, then a/src/p and b/src/q.
+    expect(await sourcePaths(root)).toEqual(['a/src', 'b/src']);
+    expect(await sourcePaths(root, { folders: 7, files: 2 })).toEqual(['a/src', 'b/src']);
+    expect(await sourcePaths(root, { folders: 6, files: 2 })).toEqual(['a/src']);
+    expect(await sourcePaths(root, { folders: 7, files: 1 })).toEqual(['a/src']);
+    expect([SOURCE_FOLDERS, SOURCE_FILES]).toEqual([20_000, 20_000]);
+  });
+
   test('looks in no hidden folder or node_modules, and follows no link', async () => {
     const root = tempFolder();
     const outside = tempFolder();
@@ -244,13 +289,18 @@ describe('jdtlsCheckoutProblem', () => {
     write(root, { 'java/.settings/org.eclipse.jdt.core.prefs': '', 'README.md': '' });
     // Anywhere but the root, it's a folder of files.
     expect(await jdtlsCheckoutProblem(root)).toBeUndefined();
-    const why = 'holds Eclipse’s settings, which Java’s server would read, and write to';
     mkdirSync(join(root, '.settings'));
-    expect(await jdtlsCheckoutProblem(root)).toContain(`The checkout’s .settings ${why}`);
+    // Plainly: what isn't available, for which repositories, and why.
+    expect(await jdtlsCheckoutProblem(root)).toBe(
+      'Java isn’t available for a repository that commits Eclipse’s .settings folder at its root. ' +
+        'Java’s server would read its settings from that folder, and write to it.',
+    );
 
     const file = tempFolder();
     writeFileSync(join(file, '.Settings'), '');
-    expect(await jdtlsCheckoutProblem(file)).toContain(`The checkout’s .Settings ${why}`);
+    expect(await jdtlsCheckoutProblem(file)).toMatch(
+      /^Java isn’t available .* Eclipse’s \.Settings /,
+    );
 
     const link = tempFolder();
     symlinkSync(tempFolder(), join(link, '.SETTINGS'));

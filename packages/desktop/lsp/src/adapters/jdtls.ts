@@ -40,9 +40,17 @@
  * libraries come from Lo's JDK alone: on macOS the JVM would also look in the folder it runs in.
  * Its warnings go to stderr, never to stdout, where the protocol is.
  *
- * It reaches no host: its JVM looks names up only in a hosts file in its home that has none
- * (`jdk.net.hosts.file`). Nothing it imports would fetch anything, but Buildship, Gradle's part of
- * it, asks services.gradle.org for Gradle's versions as it starts, and no setting stops it.
+ * It reaches no host. Its JVM looks names up only in a hosts file in its home that has none
+ * (`jdk.net.hosts.file`), and it uses no proxy, which would look names up itself: JDT LS would give
+ * Eclipse's networking the system's proxies, unless told not to (`jdt.ls.disableProxies`), and the
+ * JVM takes none either (`java.net.useSystemProxies`, and no `http.proxyHost`). Two parts of it
+ * try to fetch anyway, and no setting stops them trying, only finding no host:
+ *
+ * - Buildship, Gradle's part, asks services.gradle.org for Gradle's versions as it starts;
+ * - a hover on a class from a jar in `lib/`, or that class's source, has it ask search.maven.org
+ *   which artifact the jar is, by its SHA-1, then m2e, Maven's part, to download the artifact's
+ *   sources, named by the jar's own `pom.properties` when it has one. Maven's offline setting keeps
+ *   m2e to the repository in its home, which holds nothing.
  *
  * What in a checkout can reach it, then: the `.java` files, whose packages say where its source
  * folders are and which it reads as source; the jars in a `lib/` at the root, which it reads as
@@ -113,6 +121,7 @@ export function jdtlsSettings(sources: readonly string[]) {
           offline: { enabled: true },
           annotationProcessing: { enabled: false },
         },
+        // Offline, m2e asks no repository for a jar's sources either.
         maven: { enabled: false, offline: { enabled: true } },
         generatesMetadataFilesAtProjectRoot: false,
       },
@@ -192,6 +201,9 @@ export function launchJdtls(
       `-Dosgi.sharedConfiguration.area=${join(installed.folder, CONFIGURATIONS[platform])}`,
       '-Dosgi.sharedConfiguration.area.readOnly=true',
       '-Dosgi.configuration.cascaded=true',
+      // No proxy, for Eclipse's networking or the JVM's: one would look names up itself.
+      '-Djdt.ls.disableProxies=true',
+      '-Djava.net.useSystemProxies=false',
       '--add-modules=ALL-SYSTEM',
       '--add-opens',
       'java.base/java.util=ALL-UNNAMED',
@@ -237,6 +249,9 @@ export async function placeJdtls({ root, home }: Where, javaHome: string): Promi
   };
 }
 
+/** The most folders {@link sourcePaths} looks in, the checkout's root and the nearest it first. */
+export const SOURCE_FOLDERS = 20_000;
+
 /** The most `.java` files {@link sourcePaths} reads, the nearest the checkout's root first. */
 export const SOURCE_FILES = 20_000;
 
@@ -249,19 +264,28 @@ const HEAD = 16 * 1024;
  * `a`. A file whose path doesn't end with its package names none, as JDT LS would take it, and nor
  * does a file at the checkout's root: everything there would be code. Hidden folders and
  * `node_modules` aren't looked in, and no link is followed.
+ *
+ * It looks in {@link SOURCE_FOLDERS} folders and reads {@link SOURCE_FILES} files at most, or
+ * `limits`, the nearest the root first, and no further: a source folder only those past them show
+ * isn't found, so JDT LS takes the files in it as outside its project, as it would any file Lo
+ * hadn't named a folder for, and answers less there.
  */
-export async function sourcePaths(root: string): Promise<string[]> {
+export async function sourcePaths(
+  root: string,
+  limits: { folders: number; files: number } = { folders: SOURCE_FOLDERS, files: SOURCE_FILES },
+): Promise<string[]> {
   const found = new Set<string>();
   const folders = [''];
   let read = 0;
-  for (let at = 0; at < folders.length && read < SOURCE_FILES; at += 1) {
+  for (let at = 0; at < folders.length && read < limits.files; at += 1) {
     const folder = folders[at] ?? '';
     const entries = await readdir(join(root, folder), { withFileTypes: true }).catch(() => []);
     for (const entry of entries.toSorted((a, b) => (a.name < b.name ? -1 : 1))) {
       const path = folder === '' ? entry.name : `${folder}/${entry.name}`;
       if (entry.isDirectory()) {
-        if (!entry.name.startsWith('.') && entry.name !== 'node_modules') folders.push(path);
-      } else if (entry.isFile() && entry.name.endsWith('.java') && read < SOURCE_FILES) {
+        const looked = !entry.name.startsWith('.') && entry.name !== 'node_modules';
+        if (looked && folders.length < limits.folders) folders.push(path);
+      } else if (entry.isFile() && entry.name.endsWith('.java') && read < limits.files) {
         read += 1;
         const source = sourceFolder(path, await packageOf(join(root, path)));
         if (source !== undefined) found.add(source);
@@ -285,16 +309,9 @@ function sourceFolder(path: string, name: string | undefined): string | undefine
   return source === '' || source === '.' ? undefined : source;
 }
 
-/** Comments, which come before a package's name, or within it. */
-const COMMENTS = /\/\*[\s\S]*?\*\/|\/\/[^\n]*/g;
-
-/** A package declaration, after annotations, as a file starts once its comments are gone. */
-const PACKAGE =
-  /^\s*(?:@[\p{L}_$][\p{L}\p{N}_$.]*\s*(?:\([^)]*\))?\s*)*package\s+([\p{L}_$][\p{L}\p{N}_$]*(?:\s*\.\s*[\p{L}_$][\p{L}\p{N}_$]*)*)\s*;/u;
-
 /**
  * The package the Java file at `file` says it's in, from its start: `''` for none, or `undefined`
- * when its start can't be read, or is still a comment.
+ * when its start can't be read, or Lo can't tell ({@link declaredPackage}).
  */
 async function packageOf(file: string): Promise<string | undefined> {
   let text: string;
@@ -310,10 +327,106 @@ async function packageOf(file: string): Promise<string | undefined> {
   } catch {
     return undefined;
   }
-  const code = text.replace(COMMENTS, ' ');
-  if (code.includes('/*')) return undefined;
-  const declared = PACKAGE.exec(code)?.[1];
-  return declared === undefined ? '' : declared.replace(/\s+/g, '');
+  return declaredPackage(text);
+}
+
+/** A name in Java: a letter, `_` or `$`, then those and digits. */
+const NAME = /[\p{L}_$][\p{L}\p{N}_$]*/uy;
+
+/**
+ * The package `text`, a Java file's start, declares, read as Java reads it, past comments and
+ * annotations, whatever their arguments hold: `''` when it declares none, or `undefined` when Lo
+ * can't tell, since `text` ends first or doesn't read as Java. A file Lo can't tell names no source
+ * folder, so it can't put one inside another.
+ */
+export function declaredPackage(text: string): string | undefined {
+  let at = 0;
+
+  /** Past whitespace and comments, or `false` when nothing follows, or a comment doesn't end. */
+  function gap(): boolean {
+    for (;;) {
+      while (/\s/.test(text.charAt(at))) at += 1;
+      const close = text.startsWith('//', at) ? '\n' : text.startsWith('/*', at) ? '*/' : undefined;
+      if (close === undefined) return at < text.length;
+      const end = text.indexOf(close, at + 2);
+      // A comment that doesn't end leaves nothing after it to read.
+      if (end === -1) return false;
+      at = end + close.length;
+    }
+  }
+
+  /** The name that starts at `at`, which it moves past, or `undefined`. */
+  function name(): string | undefined {
+    NAME.lastIndex = at;
+    const found = NAME.exec(text)?.[0];
+    if (found !== undefined) at += found.length;
+    return found;
+  }
+
+  /** The names that start at `at`, by dots, `a.b.c`, with any gaps between them, or `undefined`. */
+  function qualified(): string | undefined {
+    let found = name();
+    while (found !== undefined) {
+      const before = at;
+      if (!gap() || text[at] !== '.') {
+        at = before;
+        return found;
+      }
+      at += 1;
+      const next = gap() ? name() : undefined;
+      found = next === undefined ? undefined : `${found}.${next}`;
+    }
+    return undefined;
+  }
+
+  /** Past the string, text block or character at `at`, or `false` when it doesn't end. */
+  function literal(): boolean {
+    const quote = text.startsWith('"""', at) ? '"""' : text.charAt(at);
+    at += quote.length;
+    while (at < text.length) {
+      if (text[at] === '\\') {
+        at += 2;
+      } else if (text.startsWith(quote, at)) {
+        at += quote.length;
+        return true;
+      } else if (text[at] === '\n' && quote.length === 1) {
+        return false;
+      } else {
+        at += 1;
+      }
+    }
+    return false;
+  }
+
+  /** Past the parentheses that open at `at`, and what they hold, or `false` if they don't close. */
+  function parenthesized(): boolean {
+    let depth = 0;
+    while (gap()) {
+      const char = text[at];
+      if (char === '"' || char === "'") {
+        if (!literal()) return false;
+        continue;
+      }
+      at += 1;
+      if (char === '(') depth += 1;
+      if (char === ')') depth -= 1;
+      if (depth === 0) return true;
+    }
+    return false;
+  }
+
+  if (!gap()) return undefined;
+  // Annotations, each a name and perhaps its arguments: `@Deprecated`, `@Value.Style(…)`.
+  while (text[at] === '@') {
+    at += 1;
+    if (!gap() || qualified() === undefined || !gap()) return undefined;
+    if (text[at] === '(' && (!parenthesized() || !gap())) return undefined;
+  }
+  const keyword = name();
+  if (keyword === undefined) return undefined;
+  if (keyword !== 'package') return '';
+  const declared = gap() ? qualified() : undefined;
+  return declared !== undefined && gap() && text[at] === ';' ? declared : undefined;
 }
 
 /**
@@ -325,5 +438,5 @@ export async function jdtlsCheckoutProblem(root: string): Promise<string | undef
   const names = await readdir(root);
   const settings = names.find((name) => name.toLowerCase() === '.settings');
   if (settings === undefined) return undefined;
-  return `The checkout’s ${settings} holds Eclipse’s settings, which Java’s server would read, and write to, in the checkout.`;
+  return `Java isn’t available for a repository that commits Eclipse’s ${settings} folder at its root. Java’s server would read its settings from that folder, and write to it.`;
 }

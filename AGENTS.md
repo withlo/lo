@@ -568,16 +568,21 @@ toolchain and git's variables each server needs.
   launcher, with `JAVA_HOME` the JDK's. It imports nothing: Gradle's and Maven's imports are off,
   and every folder is left out of its search for build files, so it reads no `build.gradle`,
   `pom.xml` or `.project`, and runs no build script, wrapper, plugin or annotation processor. Lo
-  finds the checkout's source folders from each `.java` file's package (`sourcePaths`), and JDT LS
-  makes a project of them in its home, compiling nothing. What a server is told can depend on where
-  it runs: an adapter's `place` gives it, as it starts, arguments, variables, files written in its
-  home and settings. JDT LS's names its home as the JVM's home and temporary folder, Equinox's
-  configuration and its workspace, writes a `gradle.properties` that holds a Gradle to Lo's JDK in
-  Gradle's home (`GRADLE_USER_HOME`, one of its `homeFolders`), and has its JVM, which takes no
-  proxy from the environment, look names up only in an empty hosts file there, so it reaches no
-  host. It doesn't start on a checkout whose root holds a `.settings`, which it would read and write
-  as its project's (the adapter's `checkout`, asked after the toolchains' `checkoutProblem`). It
-  finds its folders only as it starts, so it starts again rather than moving (`stays`).
+  finds the checkout's source folders from each `.java` file's package, read past comments and
+  annotations by a small scanner that leaves out any file it can't read (`sourcePaths`, in the
+  20,000 folders and files nearest the root), and JDT LS makes a project of them in its home,
+  compiling nothing. What a server is told can depend on where it runs: an adapter's `place` gives
+  it, as it starts, arguments, variables, files written in its home and settings. JDT LS's names its
+  home as the JVM's home and temporary folder, Equinox's configuration and its workspace, writes a
+  `gradle.properties` that holds a Gradle to Lo's JDK in Gradle's home (`GRADLE_USER_HOME`, one of
+  its `homeFolders`), and has its JVM look names up only in an empty hosts file there. It uses no
+  proxy, which would look names up itself (`jdt.ls.disableProxies`,
+  `java.net.useSystemProxies=false`), so Buildship's look for Gradle's versions and the
+  search.maven.org lookup of a `lib/` jar's sources, which no setting stops, reach no host. Java
+  isn't available for a repository that commits Eclipse's `.settings` folder at its root, which
+  Java's server would read and write as its project's (the adapter's `checkout`, asked after the
+  toolchains' `checkoutProblem`). It finds its folders only as it starts, so it starts again rather
+  than moving (`stays`).
 - Tests start only the fake server, `testing/lsp/fake-server.ts`, at most two at once in a test
   file, each killed with its group when the test ends. No test starts a real server or downloads
   one: download tests serve archives they build from a server on this machine. The live check,

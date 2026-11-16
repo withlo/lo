@@ -189,7 +189,7 @@ it('refuses a checkout by what each toolchain reads there, then by what the serv
   expect(await checkoutRefusal(java, root)).toBeUndefined();
   mkdirSync(join(root, '.settings'));
   expect(await checkoutRefusal(java, root)).toBe(
-    'The checkout’s .settings holds Eclipse’s settings, which Java’s server would read, and write to, in the checkout.',
+    'Java isn’t available for a repository that commits Eclipse’s .settings folder at its root. Java’s server would read its settings from that folder, and write to it.',
   );
   // A server that reads nothing there itself starts.
   expect(await checkoutRefusal(SHIPPED[0]!, root)).toBeUndefined();
