@@ -817,17 +817,53 @@ describe('checkouts a server won’t run on', () => {
     expect(running()).toEqual(['csharp /cache/a/x/pull-1']);
   });
 
-  it('says once that Lo won’t run a server, whether the reason says so or not', () => {
-    const rust =
-      'The checkout’s .cargo/config.toml has an [env] table, which cargo sets on the rustc it runs, so Lo won’t run rust-analyzer on it.';
-    const java =
-      'Java isn’t available for a repository that commits Eclipse’s .settings folder at its root.';
+  it('says first that Lo won’t run a server, once, whatever the reason names', () => {
     const go =
       '/src/go.work is a go.work in a folder above the checkout, which Go would take as the checkout’s workspace.';
-    expect(whyRefused('Rust', rust)).toBe(rust);
-    expect(whyRefused('Java', java)).toBe(java);
+    // A folder's name says it too, and the reason still gets its first sentence.
+    const rust =
+      '/src/won’t run/.cargo/config.toml is a Cargo config above the checkout, which cargo reads.';
     expect(whyRefused('Go', go)).toBe(`Lo won’t run Go on this checkout. ${go}`);
+    expect(whyRefused('Rust', rust)).toBe(`Lo won’t run Rust on this checkout. ${rust}`);
     expect(whyRefused('C#', 'x'.repeat(500))).toHaveLength(400);
+  });
+
+  it('gets nothing ready for one refused, as its checkout is looked at first', async () => {
+    const prepared: string[] = [];
+    const csharp: Adapter = {
+      ...CSHARP,
+      prepare() {
+        prepared.push(csharp.id);
+        return Promise.resolve({ kind: 'ready', launch: { program: '/bin/x', args: [] } });
+      },
+    };
+    const { pool, started } = standIns({}, () => Promise.resolve(WHY));
+    pool.sync([view('v2', 'a/x', 2, [csharp])], 'v2');
+    await settle();
+    expect([prepared, started]).toEqual([[], []]);
+    expect(pool.shown('a/x', 'csharp')?.state).toEqual(REFUSED);
+  });
+
+  it('fails one whose checkout Lo couldn’t look at, refusing nothing, so Restart looks again', async () => {
+    let fails = true;
+    const { pool, started } = standIns({}, () =>
+      fails ? Promise.reject(new Error('EIO: i/o error, scandir')) : Promise.resolve(undefined),
+    );
+    const root = { folder: '/cache/a/x/pull-1', pull: 1 };
+    pool.sync([view('v1', 'a/x', 1)], 'v1');
+    await settle();
+    expect(started).toEqual([]);
+    expect(pool.shown('a/x', 'ts')?.state).toEqual({
+      kind: 'failed',
+      why: { kind: 'error', message: 'Lo couldn’t check this checkout (EIO: i/o error, scandir).' },
+    });
+    expect(pool.find('a/x', 'ts', root.folder)).toEqual({ kind: 'failed' });
+
+    // The disk reads again: Restart looks again, and it starts.
+    fails = false;
+    await pool.restart('a/x', TS, root);
+    await settle();
+    expect(started).toHaveLength(1);
   });
 
   it('never runs the SDK a checkout’s global.json plants for dotnet to find', async () => {
@@ -1016,21 +1052,110 @@ describe('waiting for room', () => {
   }
 
   it('starts the next in line as soon as one on screen is refused, or fails', async () => {
-    const WHY = 'The checkout’s .cargo/config.toml has an [env] table, so Lo won’t run it.';
+    const WHY = 'The checkout’s .cargo/config.toml has an [env] table.';
+    const REFUSED = { kind: 'refused', why: `Lo won’t run b on this checkout. ${WHY}` };
     const { pool, running, last } = sixOnScreen((each) =>
       Promise.resolve(each === B ? WHY : undefined),
     );
     await settle();
-    // b was refused once it had room: e, first in line, runs in its place, and f waits.
+    // b was refused before it took any room: e runs in its place, and f waits.
     expect(running()).toEqual(['a', 'c', 'd', 'e']);
-    expect(pool.shown('r/1', 'b')?.state).toEqual({ kind: 'refused', why: WHY });
-    expect(pool.find('r/1', 'b', ROOT.folder)).toEqual({ kind: 'refused', why: WHY });
+    expect(pool.shown('r/1', 'b')?.state).toEqual(REFUSED);
+    expect(pool.find('r/1', 'b', ROOT.folder)).toEqual(REFUSED);
     expect(pool.shown('r/1', 'f')?.state).toEqual({ kind: 'waiting', count: 4, next: true });
 
     // c fails within a minute of starting, so it waits for Restart: f runs in its place.
     crash(last('c'), 1_000);
     await settle();
     expect(running()).toEqual(['a', 'd', 'e', 'f']);
+  });
+
+  it('looks at a checkout before one waits in line there, so one refused there never waits', async () => {
+    const WHY = 'The checkout’s .cargo/config.toml has an [env] table.';
+    // f mustn't run on #1's checkout, and e mustn't run on #2's.
+    const { pool, running } = sixOnScreen((each, folder) =>
+      Promise.resolve(
+        (each === F && folder === ROOT.folder) || (each === E && folder === '/cache/r/1/pull-2')
+          ? WHY
+          : undefined,
+      ),
+    );
+    await settle();
+    expect(running()).toEqual(['a', 'b', 'c', 'd']);
+    expect(pool.shown('r/1', 'f')?.state).toEqual({
+      kind: 'refused',
+      why: `Lo won’t run f on this checkout. ${WHY}`,
+    });
+    expect(pool.shown('r/1', 'e')?.state).toEqual({ kind: 'waiting', count: 4, next: true });
+
+    // #2 on screen: e, waiting, is looked at again there and refused at once, and f may run there.
+    pool.sync([view('v1', 'r/1', 1, ALL), view('v2', 'r/1', 2, ALL)], 'v2');
+    await settle();
+    expect(pool.shown('r/1', 'e')?.state).toEqual({
+      kind: 'refused',
+      why: `Lo won’t run e on this checkout. ${WHY}`,
+    });
+    expect(pool.shown('r/1', 'f')?.state).toEqual({ kind: 'waiting', count: 4, next: true });
+  });
+
+  it('gives one restarted its turn while its crashed server stops, and starts it once that has', async () => {
+    const { pool, views, running, last } = sixOnScreen();
+    await settle();
+    // d fails within a minute: e runs in its place.
+    const crashed = last('d');
+    crash(crashed, 1_000);
+    await settle();
+    expect(running()).toEqual(['a', 'b', 'c', 'e']);
+    // Restart finds no room: d waits first in line, while its process, slow to stop, goes.
+    if (crashed) crashed.slow = true;
+    onTestFinished(() => crashed?.exit());
+    pool.sync(views, 'v1');
+    void pool.restart('r/1', D, ROOT);
+    await settle();
+    expect(pool.shown('r/1', 'd')?.state).toEqual({ kind: 'waiting', count: 4, next: true });
+
+    // a fails: the room is d's, not f's, and d starts once its old process has gone.
+    crash(last('a'), 1_000);
+    await settle();
+    expect(pool.shown('r/1', 'd')?.state).toEqual({ kind: 'starting' });
+    expect(pool.shown('r/1', 'f')?.state).toEqual({ kind: 'waiting', count: 4, next: true });
+    expect(last('d')).toBe(crashed);
+    crashed?.exit();
+    await settle();
+    expect(last('d')).not.toBe(crashed);
+    expect(running()).toEqual(['b', 'c', 'd', 'e']);
+  });
+
+  it('counts no room for a crashed server’s process while it stops', async () => {
+    const { pool, views, running, last } = sixOnScreen();
+    await settle();
+    const crashed = last('d');
+    crash(crashed, 1_000);
+    await settle();
+    // Restart finds no room, and d waits while its process stops, slowly. Then the view no longer
+    // needs d, as once its files leave the diff.
+    if (crashed) crashed.slow = true;
+    onTestFinished(() => crashed?.exit());
+    pool.sync(views, 'v1');
+    void pool.restart('r/1', D, ROOT);
+    await settle();
+    pool.sync(
+      [
+        view(
+          'v1',
+          'r/1',
+          1,
+          ALL.filter((each) => each !== D),
+        ),
+      ],
+      'v1',
+    );
+    await settle();
+
+    // a fails: f runs in its place at once, though d's old process is still stopping.
+    crash(last('a'), 1_000);
+    await settle();
+    expect(running()).toEqual(['b', 'c', 'e', 'f']);
   });
 
   it('puts one restarted without room first in line, saying so, and starts it in the next room', async () => {

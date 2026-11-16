@@ -646,7 +646,9 @@ repo. The right side of a diff navigates the new commit, and the left side the o
   for Go, a `go.work` above the checkout or one that names folders outside it; for C#, a
   `global.json` that names folders to find an SDK in, or an MSBuild or NuGet settings file, such as
   `Directory.Build.props`, above the checkout; for Java, Eclipse's `.settings` folder at the root;
-  and for Swift, a `buildServer.json`, a `.bsp` or a `.sourcekit-lsp` anywhere in the checkout.
+  and for Swift, a `buildServer.json`, a `.bsp` or a `.sourcekit-lsp` anywhere in the checkout. Lo
+  looks as soon as a server is wanted, so one refused never waits in line. A look that fails, as a
+  read error may, refuses nothing: the server fails, and Restart looks again.
 - **Homes.** Each repo and language has a home in Lo's cache, where its server keeps what it writes,
   but for a cache Roslyn keeps in its install. The cache's size cap counts homes, and a repo's go
   with its clone.

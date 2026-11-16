@@ -312,14 +312,14 @@ describe('a checkout rust-analyzer won’t run on', () => {
       'crate/rust-analyzer.toml': '[cargo.buildScripts]\noverrideCommand = ["./evil.sh"]\n',
     });
     expect(await checkoutProblem('rust', root)).toBe(
-      'The checkout’s crate/rust-analyzer.toml is a rust-analyzer.toml, whose settings win over Lo’s and could run a program, so Lo won’t run rust-analyzer on it.',
+      'The checkout’s crate/rust-analyzer.toml is a rust-analyzer.toml, whose settings win over Lo’s and could run a program.',
     );
   });
 
   test('a rust-analyzer.toml named with a long s, which a Mac’s disk opens as one', async () => {
     const { root } = checkout({ 'ru\u017Ft-analyzer.toml': '[cargo]\nextraEnv = { X = "1" }\n' });
     expect(await checkoutProblem('rust', root)).toBe(
-      'The checkout’s ru\u017Ft-analyzer.toml is a rust-analyzer.toml, whose settings win over Lo’s and could run a program, so Lo won’t run rust-analyzer on it.',
+      'The checkout’s ru\u017Ft-analyzer.toml is a rust-analyzer.toml, whose settings win over Lo’s and could run a program.',
     );
   });
 
@@ -336,7 +336,7 @@ describe('a checkout rust-analyzer won’t run on', () => {
   ])('a .cargo/%s with an [env] table cargo sets on rustc: %j', async (name, text) => {
     const { root } = checkout({ [`.cargo/${name}`]: text });
     expect(await checkoutProblem('rust', root)).toBe(
-      `The checkout’s .cargo/${name} has an [env] table, which cargo sets on the rustc it runs, so Lo won’t run rust-analyzer on it.`,
+      `The checkout’s .cargo/${name} has an [env] table, which cargo sets on the rustc it runs.`,
     );
   });
 
@@ -348,9 +348,7 @@ describe('a checkout rust-analyzer won’t run on', () => {
     ['TOML that doesn’t parse', '[build\nrustc = "x"\n', 'isn’t TOML Lo can read'],
   ])('a .cargo/config.toml with %s', async (_, text, why) => {
     const { root } = checkout({ '.cargo/config.toml': text });
-    expect(await checkoutProblem('rust', root)).toBe(
-      `The checkout’s .cargo/config.toml ${why}, so Lo won’t run rust-analyzer on it.`,
-    );
+    expect(await checkoutProblem('rust', root)).toBe(`The checkout’s .cargo/config.toml ${why}.`);
   });
 
   test('a .cargo/config.toml that’s a link, which cargo follows', async () => {
@@ -358,16 +356,14 @@ describe('a checkout rust-analyzer won’t run on', () => {
     mkdirSync(join(root, '.cargo'));
     symlinkSync('../real.toml', join(root, '.cargo', 'config.toml'));
     expect(await checkoutProblem('rust', root)).toBe(
-      'The checkout’s .cargo/config.toml isn’t a plain file, so Lo won’t run rust-analyzer on it.',
+      'The checkout’s .cargo/config.toml isn’t a plain file.',
     );
   });
 
   test('a .cargo that’s a link to a folder whose config Lo wouldn’t see', async () => {
     const { root } = checkout({ 'elsewhere/config.toml': '[env]\nFOO = "bar"\n' });
     symlinkSync('elsewhere', join(root, '.cargo'));
-    expect(await checkoutProblem('rust', root)).toBe(
-      'The checkout’s .cargo isn’t a plain folder, so Lo won’t run rust-analyzer on it.',
-    );
+    expect(await checkoutProblem('rust', root)).toBe('The checkout’s .cargo isn’t a plain folder.');
   });
 
   test('nor looks for one through a link to a folder, which may lead anywhere', async () => {
@@ -384,7 +380,7 @@ describe('a checkout rust-analyzer won’t run on', () => {
     mkdirSync(join(above, '.cargo'), { recursive: true });
     writeFileSync(join(above, '.cargo', 'config.toml'), '[build]\ntarget = "x"\n');
     expect(await checkoutProblem('rust', root)).toBe(
-      `${join(above, '.cargo', 'config.toml')} is a Cargo config above the checkout, which cargo reads, so Lo won’t run rust-analyzer on this checkout.`,
+      `${join(above, '.cargo', 'config.toml')} is a Cargo config above the checkout, which cargo reads.`,
     );
   });
 
@@ -402,7 +398,7 @@ describe('a checkout rust-analyzer won’t run on', () => {
       mkdirSync(file);
     }
     expect(await checkoutProblem('rust', root)).toBe(
-      `${file} is a Cargo config above the checkout, which cargo reads, so Lo won’t run rust-analyzer on this checkout.`,
+      `${file} is a Cargo config above the checkout, which cargo reads.`,
     );
   });
 
@@ -548,18 +544,17 @@ describe('a checkout a server that uses Go won’t run on', () => {
 });
 
 describe('a checkout with more files and folders than Lo looks through', () => {
-  test.each([
-    ['dotnet', 'a server that uses the .NET SDK'],
-    ['go', 'a server that uses Go'],
-    ['rust', 'rust-analyzer'],
-  ])('is refused by %s, since what Lo didn’t look at could be anything', async (id, server) => {
-    // `app`, `app/main.txt` and `notes.txt`.
-    const { root } = checkout({ 'app/main.txt': '', 'notes.txt': '' });
-    expect(await checkoutProblem(id, root, 3)).toBeUndefined();
-    expect(await checkoutProblem(id, root, 2)).toBe(
-      `The checkout has more than 2 files and folders, more than Lo looks through, so Lo won’t run ${server} on it.`,
-    );
-  });
+  test.each(['dotnet', 'go', 'rust'])(
+    'is refused by %s, since what Lo didn’t look at could be anything',
+    async (id) => {
+      // `app`, `app/main.txt` and `notes.txt`.
+      const { root } = checkout({ 'app/main.txt': '', 'notes.txt': '' });
+      expect(await checkoutProblem(id, root, 3)).toBeUndefined();
+      expect(await checkoutProblem(id, root, 2)).toBe(
+        'The checkout has more than 2 files and folders, more than Lo looks through.',
+      );
+    },
+  );
 
   test('and the other toolchains don’t look', async () => {
     const { root } = checkout({ 'app/main.txt': '', 'notes.txt': '' });
