@@ -33,6 +33,7 @@ import {
   codeOf,
   failureOf,
   HINTS_NEED_SERVER,
+  isOutside,
   NO_NAME,
   noDefinition,
   noReferences,
@@ -211,7 +212,8 @@ function draw(open: OpenPeek): boolean {
 /** Reads, then highlights, the code of answer `index` of `open`, if it hasn't been. */
 async function readCode(open: OpenPeek, index: number, signal: AbortSignal): Promise<void> {
   const answer = open.found.answers[index];
-  if (!answer || open.codes.get(index)?.tokens) return;
+  // One outside the repository has no code Lo reads.
+  if (!answer || isOutside(answer) || open.codes.get(index)?.tokens) return;
   let lines: Lines | undefined = answer.lines ?? undefined;
   if (!lines && !open.codes.has(index)) {
     lines = await port().snippet(
@@ -263,9 +265,13 @@ export async function definition(target: LineTarget): Promise<void> {
   }
   const views = codeViews(tab);
   const inDiff = new Map(
-    found.answers.map((answer, index) => [index, views.inDiff(answer.path, answer.side)] as const),
+    found.answers.map(
+      (answer, index) =>
+        [index, !isOutside(answer) && views.inDiff(answer.path, answer.side)] as const,
+    ),
   );
-  const first = codeOf(found.answers[0]?.lines);
+  const top = found.answers[0];
+  const first = top && !isOutside(top) ? codeOf(top.lines) : undefined;
   const open: OpenPeek = {
     tab,
     view,
@@ -320,7 +326,8 @@ export function closePeek(open: OpenPeek | string = peekOnScreen()): void {
 export function goToAnswer(open: OpenPeek | string = peekOnScreen()): void {
   if (typeof open === 'string') return;
   const answer = open.found.answers[open.shown];
-  if (!answer) return;
+  // One outside the repository has nowhere to go.
+  if (!answer || isOutside(answer)) return;
   closePeek(open);
   showPlace(
     open.tab,

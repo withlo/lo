@@ -28,8 +28,10 @@ import {
   filesIn,
   filterOutline,
   groupsOf,
+  isOutside,
   metaOf,
   outlineRows,
+  signatureOf,
   sourceOf,
   type OutlineRow,
 } from './answers.ts';
@@ -92,7 +94,7 @@ function PeekFrame({ open }: { open: OpenPeek }) {
           count={found.answers.length}
           at={open.revision}
           goLabel={inDiff ? 'Show in the diff' : 'Open the whole file'}
-          goes={answer !== undefined}
+          goes={answer !== undefined && !isOutside(answer)}
           keys={keys}
           onGo={() => goToAnswer(open)}
           onClose={() => closePeek(open)}
@@ -238,9 +240,9 @@ function HoverCard() {
       data-lo-hover
     >
       <TypeHover
-        signature={hover.text}
+        signature={signatureOf(hover)}
         source={source}
-        location={{ path: hover.at.path, line: hover.at.line }}
+        location={hover.at && { path: hover.at.path, line: hover.at.line }}
         keys={{ definition: keysOf('code.definition'), close: keysOf('keys.escape') }}
       />
     </div>

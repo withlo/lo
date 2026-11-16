@@ -17,6 +17,7 @@ import {
   notYet,
   outlineRows,
   peekOf,
+  signatureOf,
   sourceOf,
   textsFrom,
 } from './answers.ts';
@@ -119,6 +120,24 @@ describe('a peek', () => {
     expect(peekOf({ name: 'Line', answers, more: false }, 0, undefined).waiting).toBe(true);
   });
 
+  it('lists an answer outside the repository with no file, nothing to go to and no code to wait for', () => {
+    const outside = {
+      outside: true,
+      name: 'Array',
+      source: 'server',
+      label: 'TypeScript',
+    } as const;
+    const answers = [outside, answer({ source: 'server', label: 'TypeScript' })];
+    expect(candidatesOf(answers)[0]).toEqual({
+      key: '0:outside:Array',
+      outside: true,
+      source: { kind: 'server', name: 'TypeScript' },
+      note: undefined,
+    });
+    expect(peekOf({ name: 'Array', answers, more: false }, 0, undefined).waiting).toBe(false);
+    expect(metaOf(outside, 'r2')).toBe('Outside this repository');
+  });
+
   it('says where the answer shown is, at which revision, and whether the PR changes it', () => {
     expect(metaOf(answer(), 'r2')).toBe('src/parser.ts · r2 · changed in this PR');
     expect(metaOf(answer({ changed: false }), undefined)).toBe(
@@ -188,5 +207,20 @@ describe('the outline', () => {
       ['number', 1],
     ]);
     expect(filterOutline(rows, '  ')).toBe(rows);
+  });
+});
+
+describe('the card over a word', () => {
+  it('draws a language server’s declaration from its Markdown, and the syntax index’s line as it is', () => {
+    expect(
+      signatureOf({
+        text: '```typescript\ninterface Line\n```\n\nA line of the input.',
+        markdown: true,
+      }),
+    ).toBe('interface Line');
+    expect(signatureOf({ text: 'Plain words', markdown: true })).toBe('Plain words');
+    expect(signatureOf({ text: '  export interface Line {', markdown: false })).toBe(
+      '  export interface Line {',
+    );
   });
 });

@@ -336,6 +336,7 @@ describe('K and the pointer resting', () => {
     name: 'Line',
     kind: 'interface',
     text: 'export interface Line {',
+    markdown: false,
     source: 'syntax',
     label: 'Syntax index',
     at: answer(),

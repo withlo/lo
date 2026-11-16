@@ -7,7 +7,22 @@ import type { PeekAnswer, PeekCode, PeekView } from '@lo/ui/code';
 
 import { IpcError } from '../../../ipc/contract.ts';
 import type { LocalState } from '../../tab/contract.ts';
-import type { CodeAnswer, Definitions, Lines, OutlineSymbol } from '../port.ts';
+import type {
+  CodeAnswer,
+  Definitions,
+  Hover,
+  Lines,
+  OutlineSymbol,
+  OutsideAnswer,
+} from '../port.ts';
+
+/** A definition: a place in the repository, or one a language server found outside it. */
+export type Definition = CodeAnswer | OutsideAnswer;
+
+/** Whether `answer` is outside the repository: Lo names no file for it and reads none. */
+export function isOutside(answer: Definition): answer is OutsideAnswer {
+  return 'outside' in answer;
+}
 
 /** "No definition of `parse` found". */
 export function noDefinition(name: string): string {
@@ -66,15 +81,18 @@ export function sourceOf(answer: Pick<CodeAnswer, 'source' | 'label'>): {
 }
 
 /** An answer's key among a list's: its place, which no two answers share. */
-export function answerKey(answer: Pick<CodeAnswer, 'path' | 'line' | 'column'>, index: number) {
+export function answerKey(answer: Definition, index: number): string {
+  if (isOutside(answer)) return `${index}:outside:${answer.name}`;
   return `${index}:${answer.path}:${answer.line}:${answer.column}`;
 }
 
 /** The peek's candidates, from a name's definitions. */
-export function candidatesOf(answers: readonly CodeAnswer[]): PeekCandidate[] {
-  return answers.map((answer, index) => {
+export function candidatesOf(answers: readonly Definition[]): PeekCandidate[] {
+  return answers.map((answer, index): PeekCandidate => {
     const { source, note } = sourceOf(answer);
-    return { key: answerKey(answer, index), path: answer.path, line: answer.line, source, note };
+    const key = answerKey(answer, index);
+    if (isOutside(answer)) return { key, outside: true, source, note };
+    return { key, path: answer.path, line: answer.line, source, note, from: answer.from };
   });
 }
 
@@ -89,27 +107,44 @@ export function codeOf(lines: Lines | undefined, tokens?: Uint32Array): PeekCode
  * for it: the window reads the code of every answer it shows.
  */
 export function peekOf(found: Definitions, shown: number, code: PeekCode | undefined): PeekView {
-  const answers = found.answers.map((answer): PeekAnswer => ({
-    path: answer.path,
-    line: answer.line,
-    column: answer.column,
-    source: answer.source,
-    label: answer.label,
-  }));
+  // One outside the repository has no file: its frame says so, and there's no code to wait for.
+  const answers = found.answers.map((answer): PeekAnswer =>
+    isOutside(answer)
+      ? { path: answer.name, line: 1, source: answer.source, label: answer.label }
+      : {
+          path: answer.path,
+          line: answer.line,
+          column: answer.column,
+          source: answer.source,
+          label: answer.label,
+        },
+  );
+  const answer = found.answers[shown];
   return {
     answers,
     shown,
     code,
-    waiting: code === undefined,
+    waiting: code === undefined && answer !== undefined && !isOutside(answer),
     label: `Definitions of ${found.name ?? ''}`,
   };
 }
 
 /** What a peek's foot says of its answer shown: its path, its revision, and whether the PR changes it. */
-export function metaOf(answer: CodeAnswer, revision: string | undefined): string {
+export function metaOf(answer: Definition, revision: string | undefined): string {
+  if (isOutside(answer)) return 'Outside this repository';
   return [answer.path, revision, answer.changed ? 'changed in this PR' : 'unchanged in this PR']
     .filter((part) => part !== undefined)
     .join(' · ');
+}
+
+/**
+ * What a hover card draws as code: the first code block of a language server's Markdown, which is
+ * where it writes the declaration, or its text where it has none; the syntax index's line as it is.
+ */
+export function signatureOf(hover: Pick<Hover, 'text' | 'markdown'>): string {
+  if (!hover.markdown) return hover.text;
+  const block = /^(`{3,}|~{3,})[^\n]*\n([\s\S]*?)\n\1/m.exec(hover.text);
+  return (block?.[2] ?? hover.text).trim();
 }
 
 /** The line `line` of `lines`, if they hold it. */
