@@ -1,9 +1,9 @@
-// Code features: trust, and the syntax index. Language servers run only on a repository, or a pull
-// request from a fork, the reader trusts, and only main decides which: the window asks main to ask
-// the reader in a dialog of main's own, and nothing the window sends trusts anything by itself.
-// Main tells the window where each view of a pull request's tab stands, for the banner, the palette
-// and Settings, and how far its syntax index has got, for the status bar. What code features ask
-// of the index goes over the code port (`port.ts`).
+// Code features: trust, the syntax index and language servers. Language servers run only on a
+// repository, or a pull request from a fork, the reader trusts, and only main decides which: the
+// window asks main to ask the reader in a dialog of main's own, and nothing the window sends trusts
+// anything by itself. Main tells the window where each view of a pull request's tab stands, for the
+// banner, the palette and Settings, how far its syntax index has got and where its language
+// servers are, for the status bar. What code features ask goes over the code port (`port.ts`).
 
 import { z } from 'zod';
 
@@ -110,6 +110,74 @@ export type IndexState = z.output<typeof indexState>;
 export const indexed = z.strictObject({ view: tabId, state: indexState });
 export type Indexed = z.output<typeof indexed>;
 
+/** An adapter's id, which names a language server to the window: `typescript`. */
+const serverId = z.string().regex(/^[a-z][a-z0-9-]{0,39}$/);
+
+/**
+ * Where a view's language server is, for its item in the status bar:
+ *
+ * - `downloading`, in bytes, the first time it's needed;
+ * - `starting`, also while its checkout is made, or while it moves to another head;
+ * - `indexing` while it says it's loading the project, `percent` far when it says;
+ * - `ready`, or `notAnswering` once it has missed several deadlines in a short while;
+ * - `failed`: out of memory at `cap` bytes, a download that failed, or anything else, in a
+ *   sentence; it waits for "Restart";
+ * - `missing`: the toolchain it needs isn't installed.
+ */
+export const serverState = z.discriminatedUnion('kind', [
+  z.strictObject({
+    kind: z.literal('downloading'),
+    done: z.number().int().nonnegative(),
+    total: z.number().int().nonnegative(),
+  }),
+  z.strictObject({ kind: z.literal('starting') }),
+  z.strictObject({
+    kind: z.literal('indexing'),
+    percent: z.number().int().min(0).max(100).optional(),
+  }),
+  z.strictObject({ kind: z.literal('ready') }),
+  z.strictObject({ kind: z.literal('notAnswering') }),
+  z.strictObject({
+    kind: z.literal('failed'),
+    why: z.discriminatedUnion('kind', [
+      z.strictObject({ kind: z.literal('memory'), cap: z.number().int().positive() }),
+      z.strictObject({ kind: z.literal('download'), message: z.string().max(400) }),
+      z.strictObject({ kind: z.literal('error'), message: z.string().max(400) }),
+    ]),
+  }),
+  z.strictObject({
+    kind: z.literal('missing'),
+    needs: z.string().max(200),
+    install: z.string().max(200).optional(),
+  }),
+]);
+export type ServerState = z.output<typeof serverState>;
+
+/**
+ * A view's language servers, sent each time they change: `off` when servers don't run on it
+ * because nothing trusts it, and otherwise one for each language its new side shows that a server
+ * reads, by its adapter's `id`, with its `name` and what it is (`version`) where Lo knows.
+ */
+export const servers = z.strictObject({
+  view: tabId,
+  off: z.boolean(),
+  servers: z.array(
+    z.strictObject({
+      id: serverId,
+      name: z.string().max(40),
+      version: z.string().max(80).optional(),
+      state: serverState,
+    }),
+  ),
+});
+export type Servers = z.output<typeof servers>;
+
+/** A language server's log, oldest line first, as main keeps it: in memory, plain text. */
+export interface ServerLog {
+  name: string;
+  lines: string[];
+}
+
 /** How asking to trust went: the reader said "Trust", or didn't. */
 export type Asked = 'trusted' | 'cancelled';
 
@@ -146,11 +214,28 @@ export const contract = defineContract('code', {
     dismiss: { input: z.strictObject({ view: tabId }), reply: reply<void>() },
     /** How far view `view`'s syntax index has got, or nothing for no such view. The `indexed` topic follows it. */
     index: { input: z.strictObject({ view: tabId }), reply: reply<IndexState | null>() },
+    /** View `view`'s language servers, or nothing for no such view. The `served` topic follows it. */
+    servers: { input: z.strictObject({ view: tabId }), reply: reply<Servers | null>() },
+    /**
+     * Starts view `view`'s language server `server` again, at the view's head, as "Restart" asks:
+     * one that failed to download downloads again. Refused for a view nothing trusts (`refused`).
+     */
+    restart: {
+      input: z.strictObject({ view: tabId, server: serverId }),
+      reply: reply<void>(),
+    },
+    /** View `view`'s language server `server`'s log, or nothing when it has none. */
+    log: {
+      input: z.strictObject({ view: tabId, server: serverId }),
+      reply: reply<ServerLog | null>(),
+    },
   },
   topics: {
     /** Where a view stands, each time that changes. */
     status,
     /** How far a view's syntax index has got, each time that changes. */
     indexed,
+    /** A view's language servers, each time they change. */
+    served: servers,
   },
 });

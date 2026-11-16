@@ -9,6 +9,7 @@ import { draw, type Drawing, Pacer, samePlace } from './drawing.ts';
 import { setThreader, threadsChanged } from './shared.ts';
 import type { DrawnDiff, ThreadCounts } from './threads.ts';
 import { Loader, type LoaderWork } from './loader.ts';
+import { followLabel } from './moved.ts';
 import { drawnFor, revealWhenDrawn } from './tabs.ts';
 
 /** What the stand-in view was told, in order, and the files it says are on screen. */
@@ -84,6 +85,7 @@ vi.mock('@lo/ui/code', () => ({
       moved.push(`top ${target.kind === 'file' ? target.file : target.kind}`);
       return true;
     },
+    otherEnd: () => undefined,
     setVimKeys: () => undefined,
     destroy: () => undefined,
   }),
@@ -488,40 +490,92 @@ describe('a file the reader acts on', () => {
   });
 
   it('kept out, takes the lines that came for it at once when the reader goes into it', async () => {
-    const loader = new Loader(work);
-    loader.setWhitespace(true);
-    // GitHub's diff keeps b out, as large; the local copy's starts it out shown.
-    loader.take({ ...state('shown', 'github'), files: aAndB('large') });
-    await frames();
-    const ready = loader.snapshot().ready;
-    if (!ready) throw new Error('GitHub’s diff isn’t ready');
-    drawing = draw({
-      parent: document.body.appendChild(document.createElement('div')),
-      tab: TAB,
-      loader,
-      entries: ready.entries,
-      at: HEAD,
-      comparison: null,
-      compareFrom: null,
-      layout: 'split',
-      nonce: '',
-      packaged: true,
-      shown: true,
-      before: undefined,
-      marks: { byPath: new Map(), count: undefined },
-    });
-    loader.subscribe(() => drawing?.update(loader.snapshot().ready?.entries ?? []));
+    const loader = await drawKeptOut();
     // The reader is on it, so its lines wait for it to go off screen.
     onScreen = ['d1'];
-    loader.take({ ...state('shown', 'local'), files: aAndB('shown') });
-    await waitFor(() => loader.shown('d1')?.from === 'local');
-    await frames();
-    expect(told.filter((each) => each.startsWith('lines d1'))).toEqual([]);
+    await takeLocal(loader);
+    expect(linesOf('d1')).toEqual([]);
 
     drawnFor(TAB.id)?.enter('d1');
-    expect(told.filter((each) => each.startsWith('lines d1'))).toEqual(['lines d1 local shown']);
+    expect(linesOf('d1')).toEqual(['lines d1 local shown']);
+  });
+
+  it('kept out and marked viewed here, stays out as its lines come, until the reader goes into it', async () => {
+    const loader = await drawKeptOut();
+    drawnFor(TAB.id)?.viewedHere('d1', true, undefined);
+    // Off screen, though nothing on screen waits for it to go: how it shows is the reader's.
+    await takeLocal(loader);
+    expect(linesOf('d1')).toEqual([]);
+
+    drawnFor(TAB.id)?.enter('d1');
+    expect(linesOf('d1')).toEqual(['lines d1 local shown']);
+  });
+
+  it('kept out and viewed, opens as the reader goes into it, and a new list leaves it open', async () => {
+    const loader = await drawKeptOut();
+    drawing?.setMarks(marksOf([['src/b.ts', 'viewed']]));
+    // The reader is on it, so its lines wait for it to go off screen.
+    onScreen = ['d1'];
+    await takeLocal(loader);
+    expect(linesOf('d1')).toEqual([]);
+
+    // A moved label's click into it.
+    followLabel(drawnFor(TAB.id)!, { file: 'd1', side: 'new', line: 1 }, () => {});
+    expect(linesOf('d1')).toEqual(['lines d1 local shown']);
+    expect(told.filter((each) => each.startsWith('collapsed d1')).at(-1)).toBe(
+      'collapsed d1 false',
+    );
+
+    // Off screen, the same list again: it stays open.
+    onScreen = ['d0'];
+    told.length = 0;
+    drawing?.update(loader.snapshot().ready?.entries ?? []);
+    await frames();
+    expect(told.filter((each) => each.startsWith('collapsed d1'))).toEqual([]);
   });
 });
+
+/**
+ * Draws GitHub's diff of `src/a.ts` and `src/b.ts`, which it keeps out, as large, as the diff's
+ * component does.
+ */
+async function drawKeptOut(): Promise<Loader> {
+  const loader = new Loader(work);
+  loader.setWhitespace(true);
+  loader.take({ ...state('shown', 'github'), files: aAndB('large') });
+  await frames();
+  const ready = loader.snapshot().ready;
+  if (!ready) throw new Error('GitHub’s diff isn’t ready');
+  drawing = draw({
+    parent: document.body.appendChild(document.createElement('div')),
+    tab: TAB,
+    loader,
+    entries: ready.entries,
+    at: HEAD,
+    comparison: null,
+    compareFrom: null,
+    layout: 'split',
+    nonce: '',
+    packaged: true,
+    shown: true,
+    before: undefined,
+    marks: { byPath: new Map(), count: undefined },
+  });
+  loader.subscribe(() => drawing?.update(loader.snapshot().ready?.entries ?? []));
+  return loader;
+}
+
+/** Has the local copy's list come, in which `src/b.ts` starts out shown, and its lines with it. */
+async function takeLocal(loader: Loader): Promise<void> {
+  loader.take({ ...state('shown', 'local'), files: aAndB('shown') });
+  await waitFor(() => loader.shown('d1')?.from === 'local');
+  await frames();
+}
+
+/** The lines file `id` was given, as the stand-in view was told. */
+function linesOf(id: string): string[] {
+  return told.filter((each) => each.startsWith(`lines ${id} `));
+}
 
 /** A line of file `d5`, and a column on it if given. */
 const at = (line: number, column?: number, side: 'old' | 'new' = 'new') => ({

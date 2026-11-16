@@ -1,8 +1,9 @@
-// The code feature in the window: trust, the syntax index, and code features. The banner on a
-// view nothing trusts, Settings' Trust section, and the palette's trust commands, each of which
-// only asks main; the index's item in the status bar; and `gd`, `gr`, `K`, `gh` and `gO`, with the
-// peek's and the references panel's keys, which ask main over the code port and show what it
-// answers in the diff's code views, the right panel and over the window.
+// The code feature in the window: trust, the syntax index, language servers and code features.
+// The banner on a view nothing trusts, Settings' Trust section, and the palette's trust commands,
+// each of which only asks main; the index's item in the status bar, and each language server's,
+// with its log; and `gd`, `gr`, `K`, `gh` and `gO`, with the peek's and the references panel's
+// keys, which ask main over the code port and show what it answers in the diff's code views, the
+// right panel and over the window.
 
 import { handlers } from '@lo/ui/commands';
 import { createElement } from 'react';
@@ -16,6 +17,9 @@ import { CodeOverlays, ReferencesPanel, SaidStatus } from './Code.tsx';
 import { takeIndex } from './indexes.ts';
 import { IndexStatus } from './IndexStatus.tsx';
 import { main } from './main.ts';
+import { ServerItems } from './ServerItems.tsx';
+import { ServerLog } from './ServerLog.tsx';
+import { restartServer, serversOnScreen, showLog, takeServers } from './servers.ts';
 import {
   closePeek,
   closeReferences,
@@ -93,6 +97,32 @@ export default {
         return bannerOf(status) ? true : "There's no banner about language servers on screen.";
       },
     },
+    restart: {
+      async run() {
+        const shown = serversOnScreen();
+        if (typeof shown === 'string') return;
+        await Promise.all(
+          shown.servers.map((server) => restartServer(shown.view, server.id, server.name)),
+        );
+      },
+      enabled: () => {
+        const shown = serversOnScreen();
+        return typeof shown === 'string' ? shown : true;
+      },
+    },
+    log: {
+      run() {
+        const shown = serversOnScreen();
+        const [first] = typeof shown === 'string' ? [] : shown.servers;
+        if (typeof shown !== 'string' && first) {
+          showLog({ view: shown.view, server: first.id, name: first.name });
+        }
+      },
+      enabled: () => {
+        const shown = serversOnScreen();
+        return typeof shown === 'string' ? shown : true;
+      },
+    },
   }),
   views: [
     // After the stack's offer of where the diff starts, which is about what's on screen now.
@@ -109,6 +139,12 @@ export default {
       order: 40,
       render: ({ tab }) => createElement(IndexStatus, { tab }),
     }),
+    defineView(statusBar, {
+      id: 'code.servers',
+      order: 41,
+      render: ({ tab }) => createElement(ServerItems, { tab }),
+    }),
+    defineView(dialogs, { id: 'code.log', order: 40, render: () => createElement(ServerLog) }),
     // What a key that found nothing says, after the rest.
     defineView(statusBar, {
       id: 'code.said',
@@ -131,6 +167,7 @@ export default {
   start() {
     main().subscribe('status', takeStatus);
     main().subscribe('indexed', takeIndex);
+    main().subscribe('served', takeServers);
     onCodeRest(rested);
     onDiffDrawn(redrawn);
   },

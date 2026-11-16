@@ -3,7 +3,6 @@
 // a change takes away, however it was made, which Lo lets go of: an entry's checkouts are named by
 // its repository's name, which is the name of every view it trusts.
 
-import type { Decision, DecidedView } from './decide.ts';
 import { fileEntry, readEntry, sameName, type Listed, type TrustEntry } from '../settings.ts';
 
 /** Whether `one` and `other` trust the same thing: the same repository, or the same pull request. */
@@ -60,20 +59,14 @@ export function withoutEntries(
 }
 
 /**
- * What "Stop trusting this repo" takes out for `view`: the entry that trusts it, as last decided;
- * or, while nothing has been decided to trust it, only the entries for its repository that name it,
- * never a pull request's.
+ * What "Stop trusting this repo" takes out for a view: `by`, the entry that trusts it, even while
+ * it's checked again after a push, so a pull request's entry goes rather than its repository's.
+ * Nothing when no entry trusts it.
  */
-export function meant(
-  view: DecidedView,
-  decision: Decision | undefined,
-): (entry: TrustEntry) => boolean {
-  const by = decision?.trust.kind === 'trusted' ? decision.by : undefined;
-  if (by) {
-    const removal: Removal = { id: by.id, pull: by.kind === 'pull' ? by.pull : null };
-    return (entry) => removes(removal, entry);
-  }
-  return (entry) => entry.kind === 'repo' && sameName(entry.repo, view.repo);
+export function meant(by: TrustEntry | undefined): (entry: TrustEntry) => boolean {
+  if (!by) return () => false;
+  const removal: Removal = { id: by.id, pull: by.kind === 'pull' ? by.pull : null };
+  return (entry) => removes(removal, entry);
 }
 
 /** Whether `one` and `other` trust exactly the same, whenever each was trusted. */

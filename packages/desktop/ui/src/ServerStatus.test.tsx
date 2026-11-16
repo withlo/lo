@@ -138,6 +138,7 @@ describe('ServerStatus', () => {
     expect(say('TypeScript', { kind: 'indexing', percent: 40 })).toBe('TypeScript indexing 40%');
     expect(say('TypeScript', { kind: 'indexing' })).toBe('TypeScript indexing');
     expect(say('TypeScript', { kind: 'ready' })).toBe('TypeScript');
+    expect(say('TypeScript', { kind: 'notAnswering' })).toBe('TypeScript not answering');
     expect(say('TypeScript', MEMORY)).toBe('TypeScript failed');
     expect(say('Go', { kind: 'missing', needs: 'Go 1.24 or later' })).toBe('Go toolchain missing');
     // An untrusted repo has none of them on, whichever server is named.
@@ -160,6 +161,7 @@ describe('ServerStatus', () => {
     expect(marks({ kind: 'ready' }).dot).toContain('bg-success');
     expect(marks(MEMORY).dot).toContain('bg-danger');
     expect(marks({ kind: 'missing', needs: 'a JDK' }).dot).toContain('bg-warning');
+    expect(marks({ kind: 'notAnswering' }).dot).toContain('bg-warning');
     expect(marks({ kind: 'ready' }).spinner).toBe(false);
     expect(marks({ kind: 'off' })).toEqual({
       spinner: false,

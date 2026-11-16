@@ -70,7 +70,7 @@ export interface Asked {
 }
 
 /** The file asked about, read. */
-interface File {
+export interface AskedFile {
   readonly repo: CodeRepo;
   readonly side: 'old' | 'new';
   readonly commit: Oid;
@@ -144,7 +144,7 @@ async function blob(repo: CodeRepo, commit: Oid, path: Buffer, oid: Oid): Promis
  * The file a question is about, read from the side whose tree `asked.key` names: refused for a
  * tree the view doesn't show, missing when there's no file there.
  */
-async function read(sides: ViewSides, asked: Asked): Promise<File> {
+export async function readAsked(sides: ViewSides, asked: Asked): Promise<AskedFile> {
   const side =
     asked.key === sides.new.commit
       ? 'new'
@@ -180,7 +180,7 @@ async function read(sides: ViewSides, asked: Asked): Promise<File> {
 }
 
 /** Refuses a line past the end of `file`. */
-function checkLine(file: File, line: number): void {
+export function checkLine(file: AskedFile, line: number): void {
   if (line > Math.max(1, file.lines.length)) {
     throw new IpcError(
       'invalid',
@@ -190,10 +190,10 @@ function checkLine(file: File, line: number): void {
 }
 
 /** What the index has of the asked file's own symbols, read now if it hasn't. */
-async function symbolsOf(
+export async function symbolsOf(
   answering: Answering,
   version: string,
-  file: File,
+  file: AskedFile,
 ): Promise<{ definitions: Definition[]; imports: Import[]; namespace?: string | undefined }> {
   const language = taggedLanguageOfPath(file.path);
   if (language === undefined) return { definitions: [], imports: [] };
@@ -213,8 +213,8 @@ async function symbolsOf(
  * Whether the pull request changes each of `paths`, given their blobs on the asked side: they're
  * the same on the other side, or there's no other side.
  */
-async function changes(
-  file: File,
+export async function changes(
+  file: AskedFile,
   sides: ViewSides,
   answers: readonly { path: string; oid: string }[],
 ): Promise<boolean[]> {
@@ -231,7 +231,11 @@ async function changes(
 }
 
 /** Adds the lines around each of the first few answers, read from their blobs. */
-async function withLines(file: File, answers: CodeAnswer[], oids: readonly string[]) {
+export async function withLines(
+  file: AskedFile,
+  answers: CodeAnswer[],
+  oids: readonly string[],
+): Promise<void> {
   const texts = new Map<string, string[] | undefined>();
   for (const [index, answer] of answers.slice(0, SNIPPETS).entries()) {
     const oid = oids[index];
@@ -251,7 +255,7 @@ async function withLines(file: File, answers: CodeAnswer[], oids: readonly strin
 }
 
 /** The name at a place in the asked file, which must have the line. */
-function askedName(file: File, line: number, column: number): string | undefined {
+export function askedName(file: AskedFile, line: number, column: number): string | undefined {
   checkLine(file, line);
   return nameAt(file.lines[line - 1] ?? '', column);
 }
@@ -262,8 +266,9 @@ export async function definitions(
   sides: ViewSides,
   at: Asked & { line: number; column: number },
   signal?: AbortSignal,
-): Promise<Definitions> {
-  const file = await read(sides, at);
+  given?: AskedFile,
+): Promise<Definitions & { answers: CodeAnswer[] }> {
+  const file = given ?? (await readAsked(sides, at));
   const name = askedName(file, at.line, at.column);
   if (name === undefined) return { name: null, answers: [], more: false };
   const version = await answering.version();
@@ -312,8 +317,9 @@ export async function references(
   sides: ViewSides,
   at: Asked & { line: number; column: number },
   signal?: AbortSignal,
+  given?: AskedFile,
 ): Promise<References> {
-  const file = await read(sides, at);
+  const file = given ?? (await readAsked(sides, at));
   const name = askedName(file, at.line, at.column);
   if (name === undefined) return { name: null, answers: [], more: false, note: BY_NAME };
   const version = await answering.version();
@@ -438,8 +444,9 @@ export async function hover(
   sides: ViewSides,
   at: Asked & { line: number; column: number },
   signal?: AbortSignal,
+  given?: AskedFile,
 ): Promise<Hover | null> {
-  const found = await definitions(answering, sides, at, signal);
+  const found = await definitions(answering, sides, at, signal, given);
   const [top] = found.answers;
   if (!top || found.name === null) return null;
   const line = top.lines?.text[top.line - top.lines.from] ?? '';
@@ -447,6 +454,7 @@ export async function hover(
     name: found.name,
     kind: top.kind,
     text: line.trim().slice(0, MAX_HOVER),
+    markdown: false,
     source: 'syntax',
     label: top.label,
     at: top,
@@ -458,8 +466,9 @@ export async function outline(
   answering: Answering,
   sides: ViewSides,
   asked: Asked,
+  given?: AskedFile,
 ): Promise<Outline> {
-  const file = await read(sides, asked);
+  const file = given ?? (await readAsked(sides, asked));
   const version = await answering.version();
   const { definitions: all } = await symbolsOf(answering, version, file);
   const symbols = all.slice(0, MAX_SYMBOLS).map((definition) => {
@@ -471,14 +480,14 @@ export async function outline(
 
 /** The lines around a line of a file. */
 export async function snippet(sides: ViewSides, at: Asked & { line: number }): Promise<Lines> {
-  const file = await read(sides, at);
+  const file = await readAsked(sides, at);
   checkLine(file, at.line);
   return around(file.lines, at.line);
 }
 
 /** Type hints, which only language servers give: none, for a file the view shows. */
 export async function hints(sides: ViewSides, asked: Asked & { from: number; to: number }) {
-  const file = await read(sides, asked);
+  const file = await readAsked(sides, asked);
   checkLine(file, asked.from);
   return [];
 }

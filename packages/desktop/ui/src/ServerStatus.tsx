@@ -25,6 +25,8 @@ export type ServerState =
   /** It's reading the project; `percent` is how far, from 0 to 100, when it says. */
   | { kind: 'indexing'; percent?: number | undefined }
   | { kind: 'ready' }
+  /** It runs, but missed several answers in a short while. It may come back by itself. */
+  | { kind: 'notAnswering' }
   | { kind: 'failed'; why: ServerFailure }
   /**
    * The toolchain it needs isn't installed: `needs` names it ("Go 1.24 or later", "a JDK"), and
@@ -109,6 +111,8 @@ function Words({ name: raw, state }: { name: string; state: ServerState }): Reac
       );
     case 'ready':
       return name;
+    case 'notAnswering':
+      return <>{name} not answering</>;
     case 'failed':
       return <>{name} failed</>;
     case 'missing':
@@ -139,6 +143,7 @@ function Mark({ state }: { state: ServerState }) {
       return <span className={`size-8 flex-none rounded-full ${DOT.ok}`} aria-hidden="true" />;
     case 'failed':
       return <span className={`size-8 flex-none rounded-full ${DOT.fail}`} aria-hidden="true" />;
+    case 'notAnswering':
     case 'missing':
       return <span className={`size-8 flex-none rounded-full ${DOT.warn}`} aria-hidden="true" />;
     case 'off':
@@ -171,6 +176,8 @@ function heading(raw: string, state: ServerState): ReactNode {
       return <>{name} indexing</>;
     case 'ready':
       return <>{name} ready</>;
+    case 'notAnswering':
+      return <>{name} not answering</>;
     case 'failed':
       return <>{name} stopped</>;
     case 'missing':
@@ -214,6 +221,8 @@ function detail(raw: string, state: ServerState): ReactNode {
       return WAITING;
     case 'ready':
       return undefined;
+    case 'notAnswering':
+      return `It missed several answers in a row. ${FALLBACK}`;
     case 'failed':
       return (
         <>

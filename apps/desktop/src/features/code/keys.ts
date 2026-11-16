@@ -7,8 +7,9 @@
 // closes it, putting the cursor back. In the references panel, the `references` scope, `j` and `k`
 // move, `⏎` goes, and `Esc` goes back to the threads, if they were showing, or closes the panel.
 //
-// Trust's commands have no key: trusting is done once a repository, and through main's own
-// dialog. In the palette and the app's Review menu; a pull request's banner offers the first two.
+// Trust's and language servers' commands, each with no key: trusting is done once a repository,
+// and through main's own dialog, and a server's status item offers the rest. In the palette and
+// the app's Review menu; a pull request's banner offers the first two.
 
 import { defineCommands, type When } from '@lo/ui/commands';
 
@@ -168,6 +169,20 @@ export default defineCommands(
       group: 'Code',
       keys: [],
       bar: { menu: 'Review', order: 43 },
+    },
+    /** Starts the language servers of the pull request on screen again. */
+    restart: {
+      label: 'Restart language servers',
+      group: 'Code',
+      keys: [],
+      bar: { menu: 'Review', order: 44 },
+    },
+    /** Shows the log of the pull request on screen's language server. */
+    log: {
+      label: 'Show the language server’s log',
+      group: 'Code',
+      keys: [],
+      bar: { menu: 'Review', order: 45 },
     },
   },
   { scopes: ['references'] },

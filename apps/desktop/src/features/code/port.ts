@@ -1,8 +1,9 @@
 // The code port: what the window asks main of a file's code, over a port main hands it with each
 // load of the page, in the jobs protocol's shapes (`{ id, job, input }`, replies, `{ cancel }`).
 // Main checks every message and input as the background process does, answers only about an open
-// view, a tree that view shows and a line that file has, and caps each reply. Every answer comes
-// from the syntax index, which has no type hints, so `hints` answers none.
+// view, a tree that view shows and a line that file has, and caps each reply. On the new side of a
+// view the reader trusts, a language server's answer within its deadline wins; otherwise, and
+// always on the old side, the syntax index answers, saying why when a server didn't.
 
 import { z } from 'zod';
 
@@ -64,48 +65,81 @@ export interface CodeAnswer {
   /** What's defined there, for a definition. */
   kind?: DefinitionKind;
   source: 'server' | 'syntax';
-  /** What says where it came from: "Syntax index · same name". */
+  /** What says where it came from: "TypeScript", "Syntax index · same name". */
   label: string;
   /** Whether the pull request changes its file. */
   changed: boolean;
   /** The lines around it, for the first {@link SNIPPETS} answers. */
   lines?: Lines;
+  /**
+   * The module the name is imported from, when this is the asking file's import of it, shown
+   * because the language server found nothing in the repository: "zod".
+   */
+  from?: string;
+}
+
+/**
+ * An answer a language server gave outside the repository, such as a toolchain's own sources or a
+ * `jdt://` address. Lo never reads one, and names no file for it.
+ */
+export interface OutsideAnswer {
+  outside: true;
+  name: string;
+  source: 'server';
+  label: string;
 }
 
 /**
  * A name's definitions, best first: `name` is the word at the place asked, `null` when there's
- * none; `more` when there were more than are listed.
+ * none; `more` when there were more than are listed. A language server's come alone; the syntax
+ * index's come with `fallback` saying why the server didn't answer, when one could have: "TypeScript
+ * is starting."
  */
 export interface Definitions {
   name: string | null;
-  answers: CodeAnswer[];
+  answers: (CodeAnswer | OutsideAnswer)[];
   more: boolean;
+  fallback?: string;
 }
 
-/** Where a name is used, by name alone, with what says so. */
+/**
+ * Where a name is used: a language server's answer, or the syntax index's, by name alone, with
+ * `note` saying so. `outside` counts the uses a server found outside the repository, which aren't
+ * listed.
+ */
 export interface References {
   name: string | null;
   answers: CodeAnswer[];
   more: boolean;
   /** "By name: may include other things called this." */
-  note: string;
+  note?: string;
+  outside?: number;
+  fallback?: string;
 }
 
-/** What the hover card shows: the name's top definition's line, its kind and where it is. */
+/**
+ * What the hover card shows: a language server's hover, as Markdown, or its plain text; or the
+ * name's top definition's line from the syntax index, with its kind and where it is.
+ */
 export interface Hover {
   name: string;
   kind: DefinitionKind | undefined;
   text: string;
+  /** Whether `text` is Markdown, as a server's hover is, rather than a line of code or plain text. */
+  markdown: boolean;
   source: 'server' | 'syntax';
   label: string;
-  at: CodeAnswer;
+  at?: CodeAnswer;
+  fallback?: string;
 }
 
-/** An inlay hint: a label after a place. */
+/** An inlay hint: a label after a place, with a space before or after it where it asks. */
 export interface Hint {
   line: number;
   column: number;
   label: string;
+  paddingLeft?: boolean;
+  paddingRight?: boolean;
 }
 
 /** A symbol of a file's outline, nested by `parent`, its place in the list. */
@@ -122,16 +156,19 @@ export interface Outline {
   symbols: OutlineSymbol[];
   more: boolean;
   source: 'server' | 'syntax';
+  /** The server's name, for a server's outline. */
+  label?: string;
+  fallback?: string;
 }
 
 export const contract = defineJobs('code', {
-  /** The definitions of the name at a place, ranked as `@lo/syntax` ranks them. */
+  /** The definitions of the name at a place: a server's, or ranked as `@lo/syntax` ranks them. */
   definitions: { input: place, reply: reply<Definitions>() },
   /** Where the name at a place is used, in files of the same tree. */
   references: { input: place, reply: reply<References>() },
   /** What the hover card says of the name at a place, or nothing. */
   hover: { input: place, reply: reply<Hover | null>() },
-  /** Type hints for lines `from` to `to`: none without a language server. */
+  /** A language server's type hints for lines `from` to `to`: none without one. */
   hints: {
     input: z.strictObject({ ...file, from: line, to: line }),
     reply: reply<Hint[]>(),
