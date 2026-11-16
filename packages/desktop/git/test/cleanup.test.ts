@@ -19,9 +19,9 @@ import {
 import { join } from 'node:path';
 
 import { git, gitBytes, gitProgram, packedObjects, type RepoServer } from '@lo/testing/git';
-import { expect, test } from 'vitest';
+import { expect, onTestFinished, test, vi } from 'vitest';
 
-import type { Cache } from '../src/cache.ts';
+import { type Cache, STAMP_EVERY } from '../src/cache.ts';
 import {
   CHECKOUTS_UNUSED_FOR,
   GEOMETRIC_LIMIT,
@@ -593,6 +593,12 @@ function there(...paths: string[]): boolean[] {
   return paths.map((path) => existsSync(path));
 }
 
+/** Lets go of `owner/name`'s server's hold, `release`, and waits until it has. */
+async function stopServer(cache: Cache, name: string, release: () => void, owner = 'owner') {
+  release();
+  await eventually(() => cache.cloneLock(owner, name).servers === 0);
+}
+
 test('past its cap checkouts and servers’ homes go together, least recently used first, before any clone', async () => {
   const cache = await cacheFor(server());
   const [old, fresh] = [await useRepo(cache, 'old'), await useRepo(cache, 'new')];
@@ -614,8 +620,8 @@ test('past its cap checkouts and servers’ homes go together, least recently us
   expect(existsSync(join(cache.root, 'code/homes/owner'))).toBe(false);
 });
 
-test('past its cap nothing of a repository a server runs on goes, and its home pushes no clone out', async () => {
-  const cache = await cacheFor(server());
+test('past its cap nothing of a repository a server runs on goes, nor is anything removed for it', async () => {
+  const cache = await cacheFor(server(), { maintenance: { idleFor: 10 } });
   const [old, fresh] = [await useRepo(cache, 'old'), await useRepo(cache, 'new')];
   stampDaysAgo(old, 10);
   stampDaysAgo(fresh, 1);
@@ -624,16 +630,129 @@ test('past its cap nothing of a repository a server runs on goes, and its home p
   const release = await cache.useForServer('owner', 'new', 'ts');
 
   // The home is what puts the cache over, but it stays while the server runs, with the checkout it
-  // runs on, so only what's free goes: the other clone's checkout, and never that clone.
+  // runs on, and removing the rest couldn't get the cache under: nothing goes, no clone and not the
+  // other clone's checkout either.
   expect(await cache.setCap((await cache.size()) - 2 * MB)).toEqual([]);
-  expect(there(home, newCheckout, oldCheckout)).toEqual([true, true, false]);
+  expect(there(home, newCheckout, oldCheckout)).toEqual([true, true, true]);
   expect(there(old, fresh)).toEqual([true, true]);
 
-  // Once the server has stopped, its home can go, and the clones still stay.
+  // Once the server has stopped, the cache is kept under its cap again by itself: the home goes,
+  // after the checkouts used before it, and the clones still stay.
+  await stopServer(cache, 'new', release);
+  await eventually(() => !existsSync(home));
+  expect(there(oldCheckout, newCheckout, old, fresh)).toEqual([false, false, true, true]);
+});
+
+test('a clone still goes while a server’s home stays, once the rest alone is over the cap', async () => {
+  const cache = await cacheFor(server());
+  const [old, fresh] = [await useRepo(cache, 'old'), await useRepo(cache, 'new')];
+  stampDaysAgo(old, 10);
+  stampDaysAgo(fresh, 1);
+  const home = homeOf(cache, 'new', 'ts', { bytes: 4 * MB });
+  const release = await cache.useForServer('owner', 'new', 'ts');
+
+  expect(await cache.setCap(1)).toEqual(['owner/old']);
+
+  expect(there(old, fresh, home, checkoutOf(cache, 'new'))).toEqual([false, true, true, true]);
   release();
-  expect(await cache.setCap(cache.cap)).toEqual([]);
-  expect(existsSync(home)).toBe(false);
-  expect(there(old, fresh)).toEqual([true, true]);
+});
+
+test('once nothing has a clone open, the cache is kept under its cap again by itself', async () => {
+  const cache = await cacheFor(server(), { maintenance: { idleFor: 10 } });
+  const [old, fresh] = [await useRepo(cache, 'old'), await useRepo(cache, 'new')];
+  const [oldCheckout, newCheckout] = [checkoutOf(cache, 'old'), checkoutOf(cache, 'new')];
+  const repo = await cache.open('owner', 'old');
+  // The open clone's checkout can't go, and nothing else would get the cache under.
+  expect(await cache.setCap((await cache.size()) - 1)).toEqual([]);
+  expect(existsSync(oldCheckout)).toBe(true);
+
+  // The tab closes: its checkout, the one used longest ago, goes.
+  repo.close();
+  await eventually(() => !existsSync(oldCheckout));
+  await eventually(async () => (await cache.size()) <= cache.cap);
+  expect(there(old, fresh, newCheckout)).toEqual([true, true, true]);
+});
+
+test('past its cap a home past a link stays, and frees nothing', async () => {
+  const cache = await cacheFor(server());
+  const [old, fresh] = [await useRepo(cache, 'old'), await useRepo(cache, 'new')];
+  stampDaysAgo(old, 10);
+  stampDaysAgo(fresh, 1);
+  const [oldCheckout, newCheckout] = [checkoutOf(cache, 'old'), checkoutOf(cache, 'new')];
+  checkoutUsedDaysAgo(oldCheckout, 10);
+  checkoutUsedDaysAgo(newCheckout, 3);
+  // The cache's folder of homes is reached through a link to a folder outside it, which holds a
+  // large home used longest ago.
+  const outside = tempFolder();
+  const linked = join(outside, 'homes/owner/new/ts');
+  mkdirSync(linked, { recursive: true });
+  writeFileSync(join(linked, 'data'), randomBytes(4 * MB));
+  writtenDaysAgo(linked, 20);
+  symlinkSync(outside, join(cache.root, 'code'));
+
+  // A byte under: the home can't be moved aside, so the checkout used longest ago goes instead.
+  expect(await cache.setCap((await cache.size()) - 1)).toEqual([]);
+
+  expect(await cache.size()).toBeLessThanOrEqual(cache.cap);
+  expect(there(join(linked, 'data'), oldCheckout, newCheckout)).toEqual([true, false, true]);
+});
+
+test('a server waits for cleanup removing anything of its repository, but not for replays, until its signal aborts', async () => {
+  const cache = await cacheFor(server());
+  await useRepo(cache, 'new');
+  const lock = cache.cloneLock('owner', 'new');
+  let held = false;
+  const removing = lock.tryRemove('keeping the cache small');
+  const waiting = cache.useForServer('owner', 'new', 'ts').then((release) => {
+    held = true;
+    return release;
+  });
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  // Counted at once, so no other removal starts, but held only once the removal is done.
+  expect([held, lock.servers]).toEqual([false, 1]);
+  removing?.();
+  await stopServer(cache, 'new', await waiting);
+
+  // Collecting replayed trees takes nothing a server reads, so it's not waited for.
+  const collecting = lock.tryRemove('removing replayed trees', undefined, 'objects');
+  expect(collecting).toBeDefined();
+  await stopServer(cache, 'new', await cache.useForServer('owner', 'new', 'ts'));
+  collecting?.();
+
+  // Its signal stops it waiting, and it counts for nothing then.
+  const again = lock.tryRemove('keeping the cache small');
+  const controller = new AbortController();
+  const reason = new Error('the tab was closed');
+  const aborted = cache.useForServer('owner', 'new', 'ts', { signal: controller.signal });
+  controller.abort(reason);
+  await expect(aborted).rejects.toBe(reason);
+  expect(lock.servers).toBe(0);
+  again?.();
+});
+
+test('a server’s home is stamped while it runs, and as it stops before its repository is let go', async () => {
+  const cache = await cacheFor(server());
+  await useRepo(cache, 'new');
+  const home = homeOf(cache, 'new', 'ts');
+  const lock = cache.cloneLock('owner', 'new');
+  const recent = () => Date.now() - statSync(home).mtimeMs < 60_000;
+  vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+  onTestFinished(() => {
+    vi.useRealTimers();
+  });
+  const release = await cache.useForServer('owner', 'new', 'ts');
+
+  // As if it started long ago: every few minutes it's stamped again.
+  writtenDaysAgo(home, 10);
+  vi.advanceTimersByTime(STAMP_EVERY);
+  await eventually(recent);
+
+  // Its stop is stamped before cleanup could take the repository.
+  writtenDaysAgo(home, 10);
+  release();
+  expect(lock.servers).toBe(1);
+  await eventually(() => lock.servers === 0);
+  expect(recent()).toBe(true);
 });
 
 test('a clone’s homes go with it, but never while a server runs on it', async () => {
@@ -653,7 +772,7 @@ test('a clone’s homes go with it, but never while a server runs on it', async 
   expect(existsSync(kept)).toBe(false);
 
   // Once it has stopped, they all go together, moved aside then deleted.
-  release();
+  await stopServer(cache, 'old', release);
   expect(await cache.removeUnused()).toEqual(['owner/old']);
   expect(there(old, ...homes)).toEqual([false, false, false]);
   expect(readdirSync(join(cache.root, 'code/homes'))).toEqual([]);
@@ -681,7 +800,7 @@ test('cleanup removes the homes of clones that are gone, but none past a link or
   expect(untouched(outside)).toBe(true);
 
   // The server's goes once it has stopped.
-  release();
+  await stopServer(cache, 'busy', release, 'someone');
   await cache.removeUnused();
   expect(existsSync(running)).toBe(false);
   expect(untouched(outside)).toBe(true);
@@ -1334,10 +1453,12 @@ test('a clone is looked at again once its lock is idle, a few times each launch 
   expect(tried()).toBe(2);
 });
 
-test('replayed trees are collected once nobody has the clone open and its lock is idle', async () => {
+test('replayed trees are collected once nobody has the clone open and its lock is idle, a server running or not', async () => {
   const cache = await cacheFor(server(), { maintenance: { idleFor: 100 } });
   const repo = await cache.open('owner', 'old');
   await fetch(repo);
+  // A language server still stopping once the tab closes, which reads nothing collecting removes.
+  const serving = await cache.useForServer('owner', 'old', 'ts');
   // A loose object, as a replay writes.
   const loose = gitBytes(repo.folder, ['hash-object', '-w', '--stdin'], 'replayed\n')
     .toString()
@@ -1350,6 +1471,7 @@ test('replayed trees are collected once nobody has the clone open and its lock i
   repo.close();
 
   await eventually(() => !hasObject(repo.folder, loose));
+  serving();
 });
 
 test('closing the cache stops its maintenance at once, and starts no more', async () => {

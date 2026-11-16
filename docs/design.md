@@ -214,8 +214,8 @@ and the whole-file view.
   size cap, 10 GB by default and changeable in Settings, which counts all of it but the toolchains
   language servers use. Past it, checkouts and what language servers keep go first, least recently
   used first, since Lo gets them back without a fetch, then the least recently used copies, each
-  only while the cache is still over. Nothing of a repo a language server runs on goes, and what a
-  server keeps never pushes a copy out.
+  only while the cache is still over. Nothing of a repo that's open or that a language server runs
+  on goes, and nothing else goes for it either.
 
 ### When git is missing
 

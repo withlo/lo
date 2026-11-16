@@ -64,6 +64,9 @@ export type ProxySource = (address: string) => Promise<string | undefined>;
  */
 const SETTLE_LIMIT = 2000;
 
+/** How often the home of a language server that runs is stamped as used, in milliseconds. */
+export const STAMP_EVERY = 5 * 60 * 1000;
+
 export interface CacheOptions {
   /** The cache's folder. It's made if it's missing. */
   readonly root: string;
@@ -127,6 +130,8 @@ export class Cache {
   readonly #deleting = new Set<Promise<void>>();
   /** Aborted as the cache closes, which stops maintenance. */
   readonly #closing = new AbortController();
+  /** The wait to keep the cache under its cap again, once what kept it over may have let go. */
+  #capCheck: ReturnType<typeof setTimeout> | undefined;
   #closed = false;
 
   private constructor(
@@ -176,6 +181,8 @@ export class Cache {
     this.#closed = true;
     for (const timer of this.#idle.values()) clearTimeout(timer);
     this.#idle.clear();
+    clearTimeout(this.#capCheck);
+    this.#capCheck = undefined;
     this.#closing.abort();
     await this.#maintaining;
     await this.#deleted();
@@ -269,8 +276,8 @@ export class Cache {
    * Sets the size to keep the cache under, from Settings, and keeps it there: past it, the least
    * recently used checkouts and language servers' homes go, then the least recently used clones,
    * only until it's under, and never anything of a clone that's open, being written to or that a
-   * server runs on, or the most recently used clone. What's being deleted doesn't count, and homes
-   * that stay never push a clone out. Returns the `owner/name` of each clone removed.
+   * server runs on, or the most recently used clone. What's being deleted doesn't count, and what
+   * can't go counts toward removing nothing else. Returns the `owner/name` of each clone removed.
    */
   async setCap(bytes: number): Promise<string[]> {
     this.#cap = bytes;
@@ -387,8 +394,10 @@ export class Cache {
    * checkouts and with its home, until the release, which the server's caller lets go once it has
    * stopped: meanwhile cleanup removes nothing of the repository, its clone, checkouts and homes
    * included. It waits for cleanup that's removing any of it to finish first, and once
-   * `options.signal` aborts, it stops waiting and fails with its reason. The home's folder is
-   * stamped now and at the release, which is when cleanup takes it to have been used last.
+   * `options.signal` aborts, it stops waiting and fails with its reason. The home's folder's time,
+   * which cleanup takes as when it was last used, is set now, every {@link STAMP_EVERY} while the
+   * server runs, and at the release, which lets go of the repository once that's written. Once
+   * nothing uses the repository, the cache is kept under its cap again.
    */
   async useForServer(
     owner: string,
@@ -398,19 +407,49 @@ export class Cache {
   ): Promise<Release> {
     const home = this.homeFolder(owner, name, server);
     const lock = this.cloneLock(owner, name);
-    // Counted first, so no removal starts once it waits.
+    // Counted first, so no removal starts once it waits. Removing objects in the clone, as
+    // collecting replayed trees does, takes nothing a server reads, so it isn't waited for.
     const done = lock.serve();
     try {
-      await lock.passRemoval('running a language server', options.signal);
+      await lock.passRemoval('running a language server', options.signal, 'repository');
     } catch (error) {
       done();
       throw error;
     }
     await stampTime(home);
+    // Stamped while it runs too, so after a crash it doesn't look last used when it started.
+    const stamping = setInterval(() => void stampTime(home), STAMP_EVERY);
+    stamping.unref();
+    let released = false;
     return () => {
-      void stampTime(home);
-      done();
+      if (released) return;
+      released = true;
+      clearInterval(stamping);
+      // Held until it's stamped, so cleanup straight after finds when it stopped.
+      void stampTime(home).finally(() => {
+        done();
+        this.#freed(lock);
+      });
     };
+  }
+
+  /**
+   * Keeps the cache under its cap again a while after `lock`'s clone has nothing left using it:
+   * no repository open on it and no language server running on it. What they used can't go while
+   * they do, and nothing else would look again until the next clone, cap or launch.
+   */
+  #freed(lock: CloneLock): void {
+    if (lock.users > 0 || lock.servers > 0) return;
+    if (this.#closed || this.#capCheck !== undefined) return;
+    this.#capCheck = setTimeout(() => {
+      this.#capCheck = undefined;
+      void this.#serially(() => keepUnder(this, this.#cap))
+        .then(() => this.#deleted())
+        .catch((error: unknown) => {
+          this.note(`can't keep the cache under its cap: ${String(error)}`);
+        });
+    }, this.maintenance.idleFor);
+    this.#capCheck.unref();
   }
 
   /**
@@ -532,13 +571,16 @@ export class Cache {
         if (reason === undefined) {
           await this.#pointAt(folder, url);
         } else {
-          // Never pulled out from under a repository that's still reading it.
-          if (lock.users > 0) {
+          // Never pulled out from under a repository that's still reading it, nor a language
+          // server still running on one of its checkouts, as one stopping may be.
+          if (lock.users > 0 || lock.servers > 0) {
+            const still =
+              lock.users > 0
+                ? 'is still open, so it can be made again only once it closes'
+                : 'a language server still runs on it, so it can be made again only once that stops';
             throw new GitError({
               kind: 'busy',
-              message:
-                `${owner}/${name}'s local copy can't be trusted, since ${reason}, and is still ` +
-                'open, so it can be made again only once it closes',
+              message: `${owner}/${name}'s local copy can't be trusted, since ${reason}, and ${still}`,
             });
           }
           this.#log?.(`${owner}/${name}: making its local copy again, since ${reason}`);
@@ -569,6 +611,7 @@ export class Cache {
       done: () => {
         reader.release();
         done();
+        this.#freed(lock);
       },
       reader: reader.reader,
       token: options.token,
@@ -626,6 +669,7 @@ export class Cache {
       done: () => {
         reader.release();
         done();
+        this.#freed(lock);
       },
       reader: reader.reader,
       replays: this.#replaysOf(owner, name),

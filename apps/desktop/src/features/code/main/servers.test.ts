@@ -506,6 +506,40 @@ describe('the cache', () => {
     expect(said).toEqual(['held a/x for ts with 0 started', 'let go of a/x for ts']);
   });
 
+  it.each(['a crash', 'Restart', 'a halt'])(
+    'lets go of the hold of a server stopped for %s once it has stopped',
+    async (what) => {
+      const said: string[] = [];
+      let holds = 0;
+      const { pool, started } = standIns({}, undefined, () => {
+        holds += 1;
+        const hold = holds;
+        said.push(`held ${hold}`);
+        return Promise.resolve(() => said.push(`let go of ${hold}`));
+      });
+      pool.sync([view('v1', 'a/x', 1)], 'v1');
+      await settle();
+      const first = started[0];
+      if (!first) throw new Error('nothing started');
+      first.set({ kind: 'ready' });
+      first.slow = true;
+      if (what === 'a crash') crash(first, 61_000);
+      else if (what === 'Restart') {
+        void pool.restart('a/x', TS, { folder: '/cache/a/x/pull-1', pull: 1 });
+      } else void pool.halt(() => true, 'Go was removed. Restart downloads it again.');
+      await settle();
+      expect([first.stopped, said]).toEqual([true, ['held 1']]);
+
+      // Once it has stopped, its hold goes, and the one started in its place holds anew.
+      first.exit();
+      await settle();
+      expect(said).toEqual(
+        what === 'a halt' ? ['held 1', 'let go of 1'] : ['held 1', 'let go of 1', 'held 2'],
+      );
+      expect(started).toHaveLength(what === 'a halt' ? 1 : 2);
+    },
+  );
+
   it('starts nothing until the hold comes, and lets go of one whose server never starts', async () => {
     const waiting: (() => void)[] = [];
     const said: string[] = [];

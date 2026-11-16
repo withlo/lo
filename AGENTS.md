@@ -391,15 +391,20 @@ Only main runs git, through `@lo/git`, and the background process never sees git
   count.
 - Past the cap, what Lo gets back without a fetch goes first: checkouts and language servers' homes,
   together, least recently used first, by a checkout's stamp and a home's folder time, which the
-  cache sets as each server using it starts and stops. Then clones go, least recently used first,
-  each with its checkouts and homes, but never the one used last. Each goes only while the cache is
-  still over. A clone costs a fetch and a home only its server's indexing, so homes that stay don't
-  count toward removing a clone, and a large one never pushes a clone out.
-- Nothing of a clone that's open, being written to or that a language server runs on goes, its homes
-  included: a server holds its repository (`cache.useForServer`) from just before it starts until it
-  has stopped, and one starting waits for cleanup that's removing any of it. A repository's homes go
-  with its clone, unused for 30 days, past the cap or cleared, through `Cache.trash`, and cleanup
-  removes homes left without a clone.
+  cache sets as each server using it starts, every 5 minutes while it runs, and as it stops, before
+  letting go. Then clones go, a fetch each to get back, least recently used first, each with its
+  checkouts and homes, but never the one used last. Each goes only while the cache is still over.
+- Nothing of a clone that's open, being written to or that a language server runs on goes, its
+  checkouts and homes included, and what can't go counts toward removing nothing else: removing the
+  rest for it would never get the cache under, and a running server's large home never pushes a
+  clone out. A server holds its repository (`cache.useForServer`) from just before it starts until
+  it has stopped, and one starting waits for cleanup that's removing any of it, but not for
+  collecting the trees comparisons replayed, which takes nothing a server reads and so runs
+  alongside servers. A minute after nothing has a clone open or runs on it any more, the cache is
+  kept under its cap again.
+- A repository's homes go with its clone, unused for 30 days, past the cap or cleared, through
+  `Cache.trash`, and cleanup removes homes left without a clone. A home past a link stays, and frees
+  nothing.
 - The cache is `Lo` (`Lo Dev` for a build run from source, or `cache` in `LO_USER_DATA_DIR`) in the
   system's folder for this user's caches: `$XDG_CACHE_HOME` or `~/.cache` on Linux, and on a Mac the
   one macOS keeps outside the home folder, `DARWIN_USER_CACHE_DIR`
