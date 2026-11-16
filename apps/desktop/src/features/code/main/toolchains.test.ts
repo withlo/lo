@@ -143,6 +143,7 @@ it('gives Lo’s own servers only the toolchain each names: none but Rust’s', 
     ['TypeScript', []],
     ['Python', []],
     ['Rust', ['rust']],
+    ['PHP', []],
   ]);
   for (const shipped of SHIPPED) {
     const toolchain = listedToolchain(shipped, (id) => Promise.resolve(id));

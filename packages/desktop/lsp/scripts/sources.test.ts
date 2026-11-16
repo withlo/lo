@@ -6,10 +6,10 @@ import { generateKeyPairSync, sign } from 'node:crypto';
 import * as openpgp from 'openpgp';
 import { expect, test } from 'vitest';
 
-import { PLATFORMS } from '../src/index.ts';
+import { type Platform, PLATFORMS } from '../src/index.ts';
 import { serve, sha256, tarGz } from '../test/downloads.ts';
 import { tempFolder } from '../test/support.ts';
-import { node, type RegistryKey, verifyRegistry } from './sources.ts';
+import { githubRelease, node, type RegistryKey, verifyRegistry } from './sources.ts';
 
 /** A key that signs as one of Node's releasers would, and its armored public key. */
 async function releaser() {
@@ -117,4 +117,66 @@ test('takes a package only with its integrity signed by npm’s registry', async
   await expect(
     verifyRegistry('pkg', '1.0.0', integrity, [{ keyid: 'SHA256:else', sig }], keys, tools),
   ).rejects.toThrow(/didn't sign pkg@1\.0\.0/);
+});
+
+/**
+ * A GitHub release of `version`, served as github.com would, each archive redirected to GitHub's
+ * store and listed in the `.sha256` beside it.
+ */
+async function githubServed(
+  version: string,
+  options: { tamper?: string; elsewhere?: string } = {},
+) {
+  const base = `https://github.com/lo/server/releases/download/v${version}/`;
+  const store = 'https://release-assets.githubusercontent.com/assets/';
+  const routes: Record<string, { body: Buffer } | { redirect: string }> = {};
+  for (const platform of PLATFORMS) {
+    const name = `server-${platform}.tar.gz`;
+    const archive = tarGz([{ path: 'server', data: `server for ${platform}`, mode: 0o755 }]);
+    routes[`${base}${name}.sha256`] = { body: Buffer.from(`${sha256(archive)}  ${name}\n`) };
+    const stored = platform === options.elsewhere ? 'https://example.com/' : store;
+    routes[`${base}${name}`] = { redirect: `${stored}${name}` };
+    routes[`${stored}${name}`] = {
+      body: platform === options.tamper ? Buffer.concat([archive, Buffer.from('x')]) : archive,
+    };
+  }
+  const served = await serve(routes);
+  return { fetch: served.fetch, folder: tempFolder(), log: () => undefined };
+}
+
+const ARCHIVES: Record<Platform, string> = {
+  'darwin-arm64': 'server-darwin-arm64.tar.gz',
+  'darwin-x64': 'server-darwin-x64.tar.gz',
+  'linux-x64': 'server-linux-x64.tar.gz',
+  'linux-arm64': 'server-linux-arm64.tar.gz',
+};
+
+test('records a GitHub release’s archives, each as the checksum beside it lists', async () => {
+  const pinned = await githubRelease(
+    'lo/server',
+    ARCHIVES,
+    'server',
+  )('1.2.3', await githubServed('1.2.3'));
+  expect(pinned.hosts).toEqual(['github.com', 'release-assets.githubusercontent.com']);
+  expect(Object.keys(pinned.platforms).toSorted()).toEqual([...PLATFORMS].toSorted());
+  expect(pinned.platforms['darwin-arm64']).toMatchObject({
+    kind: 'tar.gz',
+    url: 'https://github.com/lo/server/releases/download/v1.2.3/server-darwin-arm64.tar.gz',
+    entry: 'server',
+  });
+});
+
+test('refuses an archive its checksum doesn’t list, or one stored anywhere but GitHub', async () => {
+  const source = githubRelease('lo/server', ARCHIVES, 'server');
+  await expect(
+    source('1.2.3', await githubServed('1.2.3', { tamper: 'linux-arm64' })),
+  ).rejects.toThrow(
+    /server-linux-arm64\.tar\.gz isn’t what server-linux-arm64\.tar\.gz\.sha256 lists/,
+  );
+  await expect(
+    source('1.2.3', await githubServed('1.2.3', { elsewhere: 'linux-x64' })),
+  ).rejects.toThrow(/example\.com/);
+  await expect(source('latest', await githubServed('1.2.3'))).rejects.toThrow(
+    /isn’t a release’s version/,
+  );
 });

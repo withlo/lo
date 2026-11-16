@@ -6,18 +6,21 @@
 // ~/.cache/lo-live/, through the same checks Lo makes, so each version downloads once; a server
 // that uses a toolchain (rust-analyzer, Lo's Rust) downloads that too, from toolchains.json. Then
 // it runs each one's check below, one at a time. Node says its version. A server starts as its
-// adapter starts it, on the checkouts of two pull requests the code fixtures build with `--local`,
-// so no network or token is needed: the code fixture's (`testing/fixtures/code.sh`) and the hostile
-// fixture's (`code-hostile.sh`), which is the same with files planted to run code. On each it's
-// asked what `gd`, `gr`, `K`, `gh` and `gO` ask, at the places in its languages' sample projects
-// that `testing/fixtures/code/cases.json` names, printing what came back; a checkout a server
+// adapter starts it, on Lo's Node or as its own program, on the checkouts of two pull requests the
+// code fixtures build with `--local`, so no network or token is needed: the code fixture's
+// (`testing/fixtures/code.sh`) and the hostile fixture's (`code-hostile.sh`), which is the same
+// with files planted to run code. On each it's asked what `gd`, `gr`, `K`, `gh` and `gO` ask, at
+// the places in its languages' sample projects that `testing/fixtures/code/cases.json` names,
+// printing what came back, how long it took to start and what memory it held; a checkout a server
 // mustn't run on (`checkoutProblem`, which the pool asks before a start) starts nothing and says
 // why. Then the hostile checkout is searched for the markers its plants write if anything runs
-// them, and the check fails if there's one. Check the machine has memory to spare before running
-// it.
+// them, and the check fails if there's one, or if anything in either checkout changed. It fails too
+// if a server took the hostile checkout's settings: if it says it read code as the PHP its
+// `.php-lsp.json` names, or indexed a different number of files there than on the code fixture's
+// checkout. Check the machine has memory to spare before running it.
 
 import { execFile } from 'node:child_process';
-import { mkdtemp, readdir, readFile, realpath, rm } from 'node:fs/promises';
+import { lstat, mkdtemp, readdir, readFile, realpath, rm } from 'node:fs/promises';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
@@ -30,10 +33,14 @@ import {
   type Installed,
   Installer,
   type InstalledToolchain,
+  type Launch,
+  launchNative,
   launchOnNode,
   launchRustAnalyzer,
   MANIFEST,
+  type NativeServer,
   type NodeServer,
+  PHP_LSP,
   type Pinned,
   PYRIGHT,
   RUST_ANALYZER,
@@ -96,48 +103,106 @@ async function markers(folder: string): Promise<string[]> {
   return entries.filter((path) => path.split('/').some((part) => part.startsWith('lo-hostile-')));
 }
 
+/** Every entry under `folder`, by its path there, with its size and when it last changed. */
+async function snapshot(folder: string): Promise<Map<string, string>> {
+  const entries = await readdir(folder, { recursive: true });
+  const stats = await Promise.all(entries.map((path) => lstat(join(folder, path))));
+  return new Map(entries.map((path, at) => [path, `${stats[at]?.size}:${stats[at]?.mtimeMs}`]));
+}
+
+/** What a server's log says it indexed, as php-lsp's "indexed 2 files in 0.1 s" does. */
+const INDEXED = /\bindexed (\d+) files?\b/;
+
+/** The PHP the checkout's `.php-lsp.json` names, if it names one. */
+async function plantedPhp(root: string): Promise<string | undefined> {
+  let text: string;
+  try {
+    text = await readFile(join(root, '.php-lsp.json'), 'utf8');
+  } catch {
+    return undefined;
+  }
+  const settings = z.object({ phpVersion: z.string() }).safeParse(JSON.parse(text));
+  return settings.success ? settings.data.phpVersion : undefined;
+}
+
+/** What changed under a folder between snapshots `before` and `after`. */
+function changes(before: Map<string, string>, after: Map<string, string>): string[] {
+  const paths = new Set([...before.keys(), ...after.keys()]);
+  return [...paths].filter((path) => before.get(path) !== after.get(path)).toSorted();
+}
+
 /**
- * The check of a server on Lo's Node: it starts as its adapter starts it, on each fixture's
- * checkout, and is asked about each place in its `languages`, by the protocol's id for each.
+ * The check of a server: it starts as its adapter starts it (`launch`), on each fixture's checkout,
+ * and is asked about each place in its `languages`, by the protocol's id for each.
  */
-function onNode(server: NodeServer, languages: Readonly<Record<string, string>>): Check {
+function serverCheck(
+  server: { readonly id: string; readonly name: string },
+  launch: (installed: Installed, context: Context) => Promise<Launch>,
+  languages: Readonly<Record<string, string>>,
+  outlines: readonly Omit<Place, 'position'>[] = [],
+): Check {
   return async (installed, context) => {
-    const launch = launchOnNode(server, await context.install('node'), installed);
-    console.log(`${launch.version}: ${[launch.program, ...launch.args].join(' ')}`);
+    const launched = await launch(installed, context);
+    console.log(`${launched.version}: ${[launched.program, ...launched.args].join(' ')}`);
     const places = await placesFor(languages);
     const folder = await realpath(await mkdtemp(join(tmpdir(), `lo-live-${server.id}-`)));
+    // How many files it says it indexed on each checkout, if it says.
+    const indexed = new Map<string, string>();
     try {
       for (const script of ['code.sh', 'code-hostile.sh']) {
         const root = await checkout(script, join(folder, script));
+        const before = await snapshot(root);
         console.log(`\n--- ${server.name} on the checkout ${script} --local makes`);
         const log = await askServer({
           spec: {
             name: server.name,
-            program: launch.program,
-            args: launch.args,
+            program: launched.program,
+            args: launched.args,
             root,
             home: join(folder, `home-${script}`),
             path: [],
             git: serverGitEnvironment(),
-            settings: launch.settings,
-            initializationOptions: launch.initializationOptions,
+            settings: launched.settings,
+            initializationOptions: launched.initializationOptions,
           },
           places,
+          outlines,
         });
-        // What it says of plugins and interpreters, the folders' own names aside.
+        // What it says of plugins, interpreters, settings it ignored and what it indexed, the
+        // folders' own names aside.
         const said = log.filter((line) =>
-          /hostile|plugin|interpreter|pythonPath/i.test(
+          /hostile|plugin|interpreter|pythonPath|ignoring|using PHP|indexed/i.test(
             line.replaceAll(folder, '').replaceAll(script, 'the fixture'),
           ),
         );
         if (said.length > 0) console.log(`\nIts log, on those:\n${said.join('\n')}`);
+        const php = await plantedPhp(root);
+        if (php !== undefined && log.some((line) => line.includes(`using PHP ${php} (`))) {
+          throw new Error(`it read code as PHP ${php}, which the checkout's .php-lsp.json names`);
+        }
+        const count = log.map((line) => INDEXED.exec(line)?.[1]).findLast((n) => n !== undefined);
+        if (count !== undefined) indexed.set(script, count);
         const home = await readdir(join(folder, `home-${script}`), { recursive: true });
         const top = home.filter((path) => path.split('/').length <= 3);
         console.log(`\nIts home holds ${home.length} entries: ${top.join(', ')}`);
         const found = await markers(root);
         if (found.length > 0) throw new Error(`something ran what's planted: ${found.join(', ')}`);
+        const changed = changes(before, await snapshot(root));
+        if (changed.length > 0) throw new Error(`the checkout changed: ${changed.join(', ')}`);
       }
-      console.log(`\nNo marker was written: nothing ${server.name} ran was planted.`);
+      // The hostile checkout is the code fixture's with a package's class in `vendor/`, and
+      // settings that index it, so a server that took them indexes one more file there.
+      const [code, hostile] = [indexed.get('code.sh'), indexed.get('code-hostile.sh')];
+      if (code !== hostile) {
+        throw new Error(
+          `it indexed ${hostile ?? 'no'} files on the hostile checkout, and ${code ?? 'no'} on ` +
+            "the code fixture's: it indexed what the hostile checkout's settings asked for",
+        );
+      }
+      console.log(
+        `\nNo marker was written, and neither checkout changed: ${server.name} ran nothing ` +
+          'planted, and wrote nothing in them.',
+      );
     } finally {
       await rm(folder, { recursive: true, force: true });
     }
@@ -205,6 +270,23 @@ function onRustAnalyzer(languages: Readonly<Record<string, string>>): Check {
   };
 }
 
+/** The check of a server on Lo's Node, which installs first. */
+function onNode(server: NodeServer, languages: Readonly<Record<string, string>>): Check {
+  const launch = async (installed: Installed, context: Context) =>
+    launchOnNode(server, await context.install('node'), installed);
+  return serverCheck(server, launch, languages);
+}
+
+/** The check of a server that's a program of its own, which asks for `outlines` too. */
+function native(
+  server: NativeServer,
+  languages: Readonly<Record<string, string>>,
+  outlines: readonly Omit<Place, 'position'>[] = [],
+): Check {
+  const launch = (installed: Installed) => Promise.resolve(launchNative(server, installed));
+  return serverCheck(server, launch, languages, outlines);
+}
+
 /** Each ID's check. */
 const CHECKS: Record<string, Check> = {
   node: async (installed, { pinned }) => {
@@ -219,6 +301,8 @@ const CHECKS: Record<string, Check> = {
   vtsls: onNode(VTSLS, { typescript: 'typescript', javascript: 'javascript' }),
   pyright: onNode(PYRIGHT, { python: 'python' }),
   'rust-analyzer': onRustAnalyzer({ rust: 'rust' }),
+  // PHP's project has a file for each class, and `Tally` is in one of its own.
+  'php-lsp': native(PHP_LSP, { php: 'php' }, [{ file: 'php/src/Tally.php', languageId: 'php' }]),
 };
 
 const installer = new Installer({

@@ -5,13 +5,16 @@
 // `@lo/lsp`'s, with the reasons. Nothing here calls Electron.
 
 import {
+  launchNative,
   launchOnNode,
   launchRustAnalyzer,
+  PHP_LSP,
   PYRIGHT,
   RUST_ANALYZER,
   VTSLS,
   type Installed,
   type Launch,
+  type NativeServer,
   type NodeServer,
   type ToolchainUse,
 } from '@lo/lsp';
@@ -122,6 +125,22 @@ const RUST: Adapter = {
   },
 };
 
+/** An adapter for `server`, a program of its own, which downloads once, on first use. */
+function native(
+  server: NativeServer,
+  adapter: Omit<Adapter, 'prepare' | 'noHints' | 'downloads'>,
+): Adapter {
+  return {
+    ...adapter,
+    noHints: server.hints ? undefined : `${server.name} has no type hints.`,
+    // The server alone: it needs no Node and no toolchain.
+    downloads: { servers: [server.id], toolchains: [] },
+    async prepare(context) {
+      return { kind: 'ready', launch: launchNative(server, await context.install(server.id)) };
+    },
+  };
+}
+
 /** The adapters Lo ships. */
 export const ADAPTERS: readonly Adapter[] = [
   onNode(VTSLS, {
@@ -131,6 +150,7 @@ export const ADAPTERS: readonly Adapter[] = [
   }),
   onNode(PYRIGHT, { id: 'python', name: 'Python', languages: { python: 'python' } }),
   RUST,
+  native(PHP_LSP, { id: 'php', name: 'PHP', languages: { php: 'php' } }),
 ];
 
 /** The adapter that reads the file at `path`, and the protocol's id for its language, if one does. */

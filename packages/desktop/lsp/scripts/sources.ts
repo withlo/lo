@@ -1,8 +1,9 @@
 // Where each pinned file comes from, and how `pin.ts` checks it before recording its hash: by the
-// publisher's own signature where it has one, never by a checksum alone from the host the file
-// comes from. Each source downloads through Lo's own rules (https, the listed hosts, the
-// redirects), and unpacks what it downloads as Lo would, so a version Lo would refuse is refused
-// here, when it's pinned.
+// publisher's own signature where it has one. Where a publisher signs nothing, as php-lsp's
+// releases don't, it's checked against the checksum its release lists beside it, which catches a
+// download gone wrong but not a release someone else made. Each source downloads through Lo's own
+// rules (https, the listed hosts, the redirects), and unpacks what it downloads as Lo would, so a
+// version Lo would refuse is refused here, when it's pinned.
 
 import { execFile } from 'node:child_process';
 import { createHash, createPublicKey, verify } from 'node:crypto';
@@ -133,6 +134,39 @@ export function rustAnalyzer(): Source {
       platforms[platform] = download;
     }
     return { version, hosts, platforms };
+  };
+}
+
+/** Where GitHub serves a release's files from: its own host, which redirects each to its store. */
+const GITHUB_HOSTS = ['github.com', 'release-assets.githubusercontent.com'];
+
+/**
+ * A program from a GitHub repository's releases, tagged `v<version>`: for each platform, the
+ * `tar.gz` `archives` names, holding the program at `entry`, each checked against the SHA-256 in
+ * the `<archive>.sha256` beside it. Nobody signs either: the release's own build made both.
+ */
+export function githubRelease(
+  repo: string,
+  archives: Readonly<Record<Platform, string>>,
+  entry: string,
+): Source {
+  return async (version, tools) => {
+    if (!/^\d+\.\d+\.\d+$/.test(version)) throw new Error(`${version} isn’t a release’s version`);
+    const base = `https://github.com/${repo}/releases/download/v${version}/`;
+    const platforms: Record<string, Download> = {};
+    for (const platform of PLATFORMS) {
+      const name = archives[platform];
+      const sums = await fetchBytes(`${base}${name}.sha256`, GITHUB_HOSTS, tools);
+      const expected = parseSums(sums.toString('utf8')).get(name);
+      if (expected === undefined) throw new Error(`${name}.sha256 doesn’t list ${name}`);
+      const { part, file } = await fetchPart(`${base}${name}`, GITHUB_HOSTS, tools);
+      if (part.sha256 !== expected) throw new Error(`${name} isn’t what ${name}.sha256 lists`);
+      const download: Download = { kind: 'tar.gz', ...part, entry };
+      await checkUnpacks(download, [file], tools);
+      platforms[platform] = download;
+    }
+    tools.log(`Each archive is what the checksum its release lists beside it says.`);
+    return { version, hosts: GITHUB_HOSTS, platforms };
   };
 }
 

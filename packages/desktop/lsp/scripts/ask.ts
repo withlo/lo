@@ -18,6 +18,8 @@ export interface Place {
 export interface Ask {
   readonly spec: ServerSpec;
   readonly places: readonly Place[];
+  /** Files whose outline it's asked for besides the places', by their paths in the checkout. */
+  readonly outlines?: readonly Omit<Place, 'position'>[] | undefined;
 }
 
 /** How long a server has to answer, and to finish indexing before it's asked. */
@@ -25,27 +27,26 @@ const DEADLINE = 120_000;
 
 /**
  * Starts `ask.spec`, opens each place's file, waits for it to finish indexing, asks each place what
- * Lo asks, prints the answers, and stops it. It returns the server's log.
+ * Lo asks, prints the answers, how long it took to start and what memory it held, and stops it. It
+ * returns the server's log.
  */
 export async function askServer(ask: Ask): Promise<readonly string[]> {
-  const server = startServer(ask.spec);
   const started = performance.now();
+  const server = startServer(ask.spec);
   try {
     if (!(await server.ready)) {
       throw new Error(`${ask.spec.name} didn't start (${server.state.kind})`);
     }
-    console.log(`  started and ready in ${((performance.now() - started) / 1000).toFixed(1)} s`);
+    console.log(`It answered initialize ${seconds(performance.now() - started)} after it started.`);
     const texts = new Map<string, string>();
-    for (const place of ask.places) {
-      const text = await readFile(join(ask.spec.root, ...place.file.split('/')), 'utf8');
-      texts.set(place.file, text);
-      server.open(place.file, place.languageId, text);
+    for (const { file, languageId } of [...ask.places, ...(ask.outlines ?? [])]) {
+      if (texts.has(file)) continue;
+      const text = await readFile(join(ask.spec.root, ...file.split('/')), 'utf8');
+      texts.set(file, text);
+      server.open(file, languageId, text);
     }
-    await settled(server);
-    const memory = server.memory;
-    if (memory !== undefined) {
-      console.log(`  its family holds ${(memory / 1024 ** 2).toFixed(0)} MB once settled`);
-    }
+    const indexed = await settled(server);
+    console.log(`It was done indexing ${seconds(indexed - started)} after it started.`);
     const options = { deadline: DEADLINE };
     for (const { file, position } of ask.places) {
       console.log(`\n${file}:${position.line + 1}:${position.character + 1}`);
@@ -73,6 +74,14 @@ export async function askServer(ask: Ask): Promise<readonly string[]> {
       const symbols = await server.request('textDocument/documentSymbol', { path: file }, options);
       console.log(`  gO ${said(symbols, symbolsOf)}`);
     }
+    for (const { file } of ask.outlines ?? []) {
+      console.log(`\n${file}`);
+      const symbols = await server.request('textDocument/documentSymbol', { path: file }, options);
+      console.log(`  gO ${said(symbols, symbolsOf)}`);
+    }
+    const memory = await held(server);
+    const amount = memory === undefined ? 'an unread amount of' : megabytes(memory);
+    console.log(`\nIts processes held ${amount} memory then.`);
   } finally {
     await server.stop();
     const log = server.log.slice(-30);
@@ -81,14 +90,41 @@ export async function askServer(ask: Ask): Promise<readonly string[]> {
   return server.log;
 }
 
-/** Resolves once `server` has been out of `indexing` for a second, or after the deadline. */
-async function settled(server: Server): Promise<void> {
+/**
+ * Resolves once `server` has been out of `indexing` for a second, or after the deadline, with when
+ * it was last seen indexing, or when it began to be watched if it never was.
+ */
+async function settled(server: Server): Promise<number> {
   const until = performance.now() + DEADLINE;
+  let last = performance.now();
   let quiet = 0;
   while (quiet < 1000 && performance.now() < until) {
     await new Promise((resolve) => setTimeout(resolve, 100));
-    quiet = server.state.kind === 'indexing' ? 0 : quiet + 100;
+    if (server.state.kind === 'indexing') {
+      last = performance.now();
+      quiet = 0;
+    } else {
+      quiet += 100;
+    }
   }
+  return last;
+}
+
+/** The resident memory of `server`'s processes, once Lo has read it, within 6 s. */
+async function held(server: Server): Promise<number | undefined> {
+  const until = performance.now() + 6000;
+  while (server.memory === undefined && performance.now() < until) {
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  return server.memory;
+}
+
+function seconds(milliseconds: number): string {
+  return `${(milliseconds / 1000).toFixed(2)} s`;
+}
+
+function megabytes(bytes: number): string {
+  return `${Math.round(bytes / 1024 ** 2)} MB`;
 }
 
 /** An answer, as `read` puts its value, or why there's none. */
@@ -146,9 +182,14 @@ function hintsOf(value: unknown): string {
   return `${all.length} hints${shown.length > 0 ? `: ${shown.join(', ')}` : ''}`;
 }
 
-/** An outline's count of symbols at its top level, and their names. */
+/** An outline's count of symbols at its top level, and their names, each with what's inside it. */
 function symbolsOf(value: unknown): string {
   const all: unknown[] = Array.isArray(value) ? value : [];
-  const names = all.map((symbol) => (isObject(symbol) ? String(symbol.name) : '?'));
-  return `${all.length} at the top: ${names.join(', ')}`;
+  const named = (symbol: unknown): string => {
+    if (!isObject(symbol)) return '?';
+    const inside: unknown[] = Array.isArray(symbol.children) ? symbol.children : [];
+    const children = inside.length > 0 ? ` (${inside.map(named).join(', ')})` : '';
+    return `${String(symbol.name)}${children}`;
+  };
+  return `${all.length} at the top: ${all.map(named).join(', ')}`;
 }

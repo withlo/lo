@@ -1,9 +1,9 @@
-// Each server Lo runs on its Node, started as its adapter starts it on the hostile fixture's
-// checkout (`testing/fixtures/code-hostile.sh --local`), with the fake server standing in for it:
-// Node with the server's flags, its settings and its initialization options. The fake server
-// reports what it got, and asks for every setting the checkout's plants would set. Nothing the
-// fixture plants runs: the fake server runs nothing, and the plants are read as text, from the
-// bare repository.
+// Each server Lo runs, started as its adapter starts it on the hostile fixture's checkout
+// (`testing/fixtures/code-hostile.sh --local`), with the fake server standing in for it: Node with
+// the server's flags, or as its program, with its settings and its initialization options. The
+// fake server reports what it got, and asks for every setting the checkout's plants would set.
+// Nothing the fixture plants runs: the fake server runs nothing, and the plants are read as text,
+// from the bare repository.
 
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, realpathSync, rmSync } from 'node:fs';
@@ -16,9 +16,14 @@ import { FAKE_SERVER, fakeServer, readReport, type Seen } from '@lo/testing/lsp'
 import { afterAll, beforeAll, expect, onTestFinished, test } from 'vitest';
 
 import {
+  type Launch,
+  launchNative,
   launchOnNode,
+  type NativeServer,
   NO_PYTHON,
   type NodeServer,
+  PHP_LSP,
+  PHP_VERSION,
   PYRIGHT,
   startServer,
   VTSLS,
@@ -28,6 +33,18 @@ import { eventually, GIT, tempFolder } from './support.ts';
 const SCRIPT = fileURLToPath(
   new URL('../../../../testing/fixtures/code-hostile.sh', import.meta.url),
 );
+
+/** PHP's tools the fixture plants in `vendor/bin`. */
+const PHP_TOOLS = [
+  'phpcs',
+  'phpcbf',
+  'phpstan',
+  'phpmd',
+  'mago',
+  'pint',
+  'php-cs-fixer',
+  'phpunit',
+];
 
 let folder = '';
 /** The hostile pull request's checkout, as the system resolves it. */
@@ -63,10 +80,22 @@ function editorSettings(): Record<string, unknown> {
 }
 
 /**
+ * How `server`'s adapter starts it from its install in `own`, with the fake server, on
+ * `scenario`, in its place. Lo's Node is the one running the tests: a server on Lo's Node has the
+ * fake server's script as its entry point, and a program of its own is Node with that script.
+ */
+function standIn(server: NodeServer | NativeServer, own: string, scenario: string): Launch {
+  const node = { folder: own, entry: process.execPath };
+  return 'node' in server
+    ? launchOnNode({ ...server, args: [scenario] }, node, { folder: own, entry: FAKE_SERVER })
+    : launchNative({ ...server, args: [FAKE_SERVER, scenario] }, node);
+}
+
+/**
  * Starts `server` as its adapter would on the checkout, with the fake server in its place, asking
  * for the settings `sections` once it's initialized, and says what it saw once it has.
  */
-async function startAs(server: NodeServer, sections: readonly string[]) {
+async function startAs(server: NodeServer | NativeServer, sections: readonly string[]) {
   const own = tempFolder();
   const fake = fakeServer(own, {
     requests: [
@@ -76,13 +105,7 @@ async function startAs(server: NodeServer, sections: readonly string[]) {
       },
     ],
   });
-  const scenario = fake.args.at(-1) ?? '';
-  // Lo's Node is the one running the tests, and the fake server's script is the entry point.
-  const launch = launchOnNode(
-    { ...server, args: [scenario] },
-    { folder: own, entry: process.execPath },
-    { folder: own, entry: FAKE_SERVER },
-  );
+  const launch = standIn(server, own, fake.args.at(-1) ?? '');
   const running = startServer({
     name: server.name,
     program: launch.program,
@@ -131,7 +154,7 @@ async function startAs(server: NodeServer, sections: readonly string[]) {
  * settings set and for `ours`, and checks what holds for every server: it runs in the checkout with
  * an environment of Lo's alone, and hears nothing the checkout says.
  */
-async function heardBy(server: NodeServer, ours: readonly string[]) {
+async function heardBy(server: NodeServer | NativeServer, ours: readonly string[]) {
   const plants = editorSettings();
   const seen = await startAs(server, [...Object.keys(plants), ...ours]);
   const { started, initialize, heard, home } = seen;
@@ -191,4 +214,39 @@ test('Pyright gets no interpreter, whatever the checkout names', async () => {
     'python.pythonPath': NO_PYTHON,
     'python.venvPath': null,
   });
+});
+
+test('php-lsp runs no tool, and keeps its cache in its home, whatever the checkout plants', async () => {
+  // PHP's tools, where Composer installs them, a package's class committed in `vendor/`, and
+  // php-lsp's settings for the repository, which turn two of the tools on, put its cache in the
+  // checkout, read code as another PHP and index `vendor/`.
+  for (const tool of PHP_TOOLS) {
+    expect(planted(`vendor/bin/${tool}`)).toContain(`lo-hostile-${tool}`);
+  }
+  expect(planted('vendor/acme/planted/src/Planted.php')).toContain('class Planted');
+  expect(JSON.parse(planted('.php-lsp.json'))).toEqual({
+    externalTools: {
+      phpstan: { enabled: true, binPath: 'vendor/bin/phpstan' },
+      phpcs: { enabled: true, binPath: 'vendor/bin/phpcs' },
+    },
+    cachePath: 'lo-hostile-php-lsp-cache',
+    phpVersion: '7.4',
+    indexVendor: true,
+  });
+  const { started, heard, initialize, home } = await heardBy(PHP_LSP, ['php-lsp']);
+  // Each of Lo's is set, and wins over the repository's file key by key: a PHP, so it runs no
+  // `php` to ask, `vendor/` skipped, and the tools off.
+  const told = {
+    phpVersion: PHP_VERSION,
+    indexVendor: false,
+    externalTools: { phpstan: { enabled: false }, phpcs: { enabled: false } },
+  };
+  expect(initialize.initializationOptions).toEqual(told);
+  // It hears the same if it asks again, as it does once its settings change.
+  expect(heard['php-lsp']).toEqual(told);
+  // Named no `cachePath`, it keeps its cache in `$XDG_CACHE_HOME`, or else in `.cache` in its
+  // `HOME`. It gets no `XDG_CACHE_HOME`, and its `HOME` is its own folder, outside the checkout.
+  expect(started.env).not.toHaveProperty('XDG_CACHE_HOME');
+  expect(started.env.HOME).toBe(home);
+  expect(home.startsWith(`${checkout}/`)).toBe(false);
 });

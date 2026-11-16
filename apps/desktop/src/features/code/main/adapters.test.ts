@@ -4,8 +4,10 @@
 import {
   type Installed,
   type InstalledToolchain,
+  launchNative,
   launchOnNode,
   launchRustAnalyzer,
+  PHP_LSP,
   PYRIGHT,
   RUST_ANALYZER,
   toolchainUse,
@@ -13,7 +15,7 @@ import {
 } from '@lo/lsp';
 import { describe, expect, it } from 'vitest';
 
-import { ADAPTERS, adapterFor } from './adapters.ts';
+import { type Adapter, ADAPTERS, adapterFor } from './adapters.ts';
 
 function installedAs(id: string): Installed {
   return { folder: `/lo/cache/servers/${id}`, entry: `/lo/cache/servers/${id}/entry` };
@@ -34,8 +36,37 @@ function readBy(path: string) {
   return found && [found.adapter.name, found.languageId];
 }
 
+/** Lo's adapter `id`. */
+function shipped(id: string): Adapter {
+  const found = ADAPTERS.find((adapter) => adapter.id === id);
+  if (!found) throw new Error(`Lo ships no adapter ${id}`);
+  return found;
+}
+
+/**
+ * What `adapter` installs, in order, the toolchains it asks for, and what it says to start, with
+ * every install there.
+ */
+async function prepared(adapter: Adapter) {
+  const installs: string[] = [];
+  const toolchains: string[] = [];
+  const ready = await adapter.prepare({
+    install: (id) => {
+      installs.push(id);
+      return Promise.resolve(installedAs(id));
+    },
+    toolchain: (id) => {
+      toolchains.push(id);
+      return Promise.reject(new Error('no toolchain is asked for'));
+    },
+    findCopy: () => Promise.reject(new Error('no copy is looked for')),
+    signal: new AbortController().signal,
+  });
+  return { installs, toolchains, ready };
+}
+
 describe('Lo’s adapters', () => {
-  it('read TypeScript and JavaScript, Python, and Rust', () => {
+  it('read TypeScript and JavaScript, Python, Rust, and PHP', () => {
     expect(readBy('src/a.ts')).toEqual(['TypeScript', 'typescript']);
     expect(readBy('src/a.mts')).toEqual(['TypeScript', 'typescript']);
     expect(readBy('src/A.tsx')).toEqual(['TypeScript', 'typescriptreact']);
@@ -44,39 +75,24 @@ describe('Lo’s adapters', () => {
     expect(readBy('pkg/a.py')).toEqual(['Python', 'python']);
     expect(readBy('pkg/a.pyi')).toEqual(['Python', 'python']);
     expect(readBy('src/a.rs')).toEqual(['Rust', 'rust']);
-    // PHP and Ruby have none.
-    expect(readBy('src/A.php')).toBeUndefined();
+    expect(readBy('src/A.php')).toEqual(['PHP', 'php']);
+    expect(readBy('views/a.phtml')).toEqual(['PHP', 'php']);
+    // Ruby has none.
     expect(readBy('lib/a.rb')).toBeUndefined();
   });
 
-  it('download Node, then a JavaScript server, and start it on that Node, with no toolchain', async () => {
-    const servers = new Map([
+  it('download Node, then their server, and start it on that Node, with no toolchain', async () => {
+    for (const [id, server] of [
       ['typescript', VTSLS],
       ['python', PYRIGHT],
-    ]);
-    for (const adapter of ADAPTERS) {
-      if (adapter.id === 'rust') continue;
-      const installs: string[] = [];
-      const toolchains: string[] = [];
-      const prepared = await adapter.prepare({
-        install: (id) => {
-          installs.push(id);
-          return Promise.resolve(installedAs(id));
-        },
-        toolchain: (id) => {
-          toolchains.push(id);
-          return Promise.reject(new Error('no toolchain is asked for'));
-        },
-        findCopy: () => Promise.reject(new Error('no copy is looked for')),
-        signal: new AbortController().signal,
-      });
-      const server = servers.get(adapter.id);
-      if (!server) throw new Error(`${adapter.id} has no server here`);
+    ] as const) {
+      const adapter = shipped(id);
+      const { installs, toolchains, ready } = await prepared(adapter);
       expect(installs).toEqual(['node', server.id]);
       expect(toolchains).toEqual([]);
       // Named up front, so the status bar adds them up from the first byte.
       expect(adapter.downloads).toEqual({ servers: ['node', server.id], toolchains: [] });
-      expect(prepared).toEqual({
+      expect(ready).toEqual({
         kind: 'ready',
         launch: launchOnNode(server, installedAs('node'), installedAs(server.id)),
       });
@@ -84,12 +100,11 @@ describe('Lo’s adapters', () => {
   });
 
   it('download rust-analyzer and Lo’s Rust toolchain, and start it on that toolchain', async () => {
-    const rust = ADAPTERS.find((adapter) => adapter.id === 'rust');
-    if (!rust) throw new Error('there is no Rust adapter');
+    const adapter = shipped('rust');
     const installs: string[] = [];
     const toolchains: string[] = [];
     const toolchain = installedToolchain();
-    const prepared = await rust.prepare({
+    const ready = await adapter.prepare({
       install: (id) => {
         installs.push(id);
         return Promise.resolve(installedAs(id));
@@ -104,11 +119,21 @@ describe('Lo’s adapters', () => {
     expect(installs).toEqual([RUST_ANALYZER.id]);
     expect(toolchains).toEqual(['rust']);
     // Named up front: the server and the toolchain it runs on.
-    expect(rust.downloads).toEqual({ servers: [RUST_ANALYZER.id], toolchains: ['rust'] });
-    expect(prepared).toEqual({
+    expect(adapter.downloads).toEqual({ servers: [RUST_ANALYZER.id], toolchains: ['rust'] });
+    expect(ready).toEqual({
       kind: 'ready',
       launch: launchRustAnalyzer(installedAs(RUST_ANALYZER.id), toolchain),
     });
+  });
+
+  it('download php-lsp alone, with no toolchain, and start it as its own program', async () => {
+    const adapter = shipped('php');
+    const { installs, toolchains, ready } = await prepared(adapter);
+    expect(installs).toEqual(['php-lsp']);
+    expect(toolchains).toEqual([]);
+    expect(adapter.downloads).toEqual({ servers: ['php-lsp'], toolchains: [] });
+    expect(ready).toEqual({ kind: 'ready', launch: launchNative(PHP_LSP, installedAs('php-lsp')) });
+    expect(ready.kind === 'ready' && ready.launch.program).toBe(installedAs('php-lsp').entry);
   });
 
   it('say which servers give no inline type hints, as Pyright gives none', () => {
@@ -116,14 +141,14 @@ describe('Lo’s adapters', () => {
       ['typescript', undefined],
       ['python', 'Pyright has no type hints.'],
       ['rust', undefined],
+      ['php', undefined],
     ]);
   });
 
   it('start nothing when a download fails', async () => {
-    const [typescript] = ADAPTERS;
     const failed = new Error('npm’s registry answered 503');
     await expect(
-      typescript?.prepare({
+      shipped('typescript').prepare({
         install: (id) =>
           id === 'node' ? Promise.resolve(installedAs(id)) : Promise.reject(failed),
         toolchain: () => Promise.reject(new Error('no toolchain is asked for')),
@@ -131,5 +156,14 @@ describe('Lo’s adapters', () => {
         signal: new AbortController().signal,
       }),
     ).rejects.toBe(failed);
+    const missing = new Error('GitHub answered 404');
+    await expect(
+      shipped('php').prepare({
+        install: () => Promise.reject(missing),
+        toolchain: () => Promise.reject(new Error('no toolchain is asked for')),
+        findCopy: () => Promise.resolve(undefined),
+        signal: new AbortController().signal,
+      }),
+    ).rejects.toBe(missing);
   });
 });

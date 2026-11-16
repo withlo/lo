@@ -79,21 +79,23 @@ own (`setsid`) is still found.
 ## Servers
 
 The servers Lo runs, each downloaded on first use for a trusted view, as `servers.json` pins it, and
-each with its adapter in `src/adapters/`. The JavaScript servers run on Lo's own Node, which
-downloads first; rust-analyzer is a compiled program that runs on Lo's Rust toolchain, which
-downloads with it. None needs anything installed.
+each with its adapter in `src/adapters/`. vtsls and Pyright run on Lo's own Node, which downloads
+first; rust-analyzer is a compiled program that runs on Lo's Rust toolchain, which downloads with
+it; and php-lsp is a program of its own. None needs anything installed.
 
 | Server        | Version    | For                    | From                                                                               | License                                              |
 | ------------- | ---------- | ---------------------- | ---------------------------------------------------------------------------------- | ---------------------------------------------------- |
 | vtsls         | 0.3.0      | TypeScript, JavaScript | npm: `@vtsls/language-server` and its 17 dependencies, TypeScript 5.9.3 among them | MIT; TypeScript's is Apache-2.0, the rest MIT or ISC |
 | Pyright       | 1.1.414    | Python                 | npm: `pyright`                                                                     | MIT                                                  |
 | rust-analyzer | 2026-11-09 | Rust                   | GitHub releases: `rust-lang/rust-analyzer`                                         | MIT OR Apache-2.0                                    |
+| php-lsp       | 0.33.0     | PHP                    | GitHub: the releases of [jorgsowa/php-lsp](https://github.com/jorgsowa/php-lsp)    | MIT                                                  |
 | Node          | 26.13.1    | vtsls and Pyright      | nodejs.org                                                                         | MIT                                                  |
 
-The JavaScript servers start as Node, by its absolute path, with a cap on their heap, then their own
-entry point inside the install, never the launcher npm would link; rust-analyzer starts as the
-compiled program itself. Each runs with no shell and an environment built from nothing. What it's
-told is its adapter's alone, and the adapter says why each setting is as it is:
+vtsls and Pyright each start as Node, by its absolute path, with a cap on its heap, then the
+server's own entry point inside its install, never the launcher npm would link; rust-analyzer and
+php-lsp each start as the compiled program itself, by its absolute path inside its install. None
+runs through a shell, and each has an environment built from nothing. What each is told is its
+adapter's alone, and the adapter says why each setting is as it is:
 
 - **vtsls** runs its own TypeScript, never a workspace's (`node_modules/typescript`), and has
   automatic type acquisition off, so it runs no npm. It loads no `tsserver` plugin from the
@@ -130,11 +132,26 @@ told is its adapter's alone, and the adapter says why each setting is as it is:
   whose workspace settings win over Lo's and can run a program, and a `.cargo/config.toml` `[env]`
   table, which `cargo` sets on the `rustc` it runs; a `.cargo/config.toml` or `.cargo/config` in a
   folder above the checkout is refused too.
+- **php-lsp** carries the stubs of PHP's own functions and classes, so it needs no PHP. It's told
+  which PHP to read code as (`phpVersion`, PHP 8.5), so it never runs a `php` to ask: one can be
+  first on its `PATH`, in the folder of Lo's git, as Homebrew's is. Code for an older PHP is read as
+  8.5 too, so a function PHP 8 removed, such as `each`, has no hover. It has PHPStan and PHPCS off,
+  so it runs no tool. It skips `vendor/` as it indexes, since a committed `vendor/` can hold far
+  more code than the project, which would cost memory and time and count against its cap on the
+  files it indexes. `gd`, `K` and `gh` still find a class there through Composer's autoload, and
+  `gr` never looks there. Its cache is where it keeps one by default, `.cache/php-lsp` in its
+  `HOME`, a folder for each version of itself and each checkout, under caps of its own; Lo names no
+  `cachePath`, which php-lsp would take as the whole cache, with none of those. A checkout's
+  `.php-lsp.json` can't turn the tools on or move the cache, and what Lo says wins over the rest of
+  it key by key. Lo asks it for nothing that would run another program, such as formatting or a code
+  lens's tests.
 
-No server runs in a sandbox: each reads what you can, so an absolute import, Pyright's `extraPaths`
-or a Rust sysroot's sources lead it to files outside the checkout, and a hover can show what's in
-one. Nothing can send what it reads anywhere, and Lo never opens a place outside the checkout an
-answer names: it shows as outside the repository.
+No server runs in a sandbox: each reads what you can, so an absolute import, Pyright's `extraPaths`,
+a Rust sysroot's sources, the folders of stubs a `.php-lsp.json` names, the paths a
+`composer.json`'s autoload names, or a `composer.json` up to seven folders above the checkout, which
+php-lsp climbs to when the checkout has none, lead it to files outside the checkout, and a hover can
+show what's in one. It only reads there, and nothing can send what it reads anywhere. Lo never opens
+a place outside the checkout an answer names: it shows as outside the repository.
 
 Lo names each server's license wherever it says what the server is: a server's details in the status
 bar show its name, version and license, "Pyright 1.1.414 · MIT".
@@ -199,6 +216,10 @@ folder may be a link, as a cache moved elsewhere can be.
 What a program does once it runs: the hash says it's the file that was pinned, and the signature
 `pin.ts` checked then says who published it, not what it does. That's what trust and each server's
 environment are for.
+
+Who published php-lsp: its releases are signed by nobody, so `pin.ts` checks each archive against
+the checksum its release lists beside it, which the same build made. That catches a download gone
+wrong, not a release someone else made.
 
 An installed file's bytes: before each use, its size is checked, not its hash, which would read
 every byte. On macOS, `fsync` leaves what the drive itself caches, and Node can't ask for more
