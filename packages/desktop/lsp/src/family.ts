@@ -78,8 +78,9 @@ export function withServices(
 /**
  * The processes named one of `names` whose `HOME` is `home`, exactly, with their resident memory:
  * on Linux from `/proc`, by the name the system gives each (the first 15 characters of its
- * program's file name) and its environment; elsewhere, on macOS, by `ps`, by its program's file
- * name, then its environment, as `ps -E` lists it, for those so named.
+ * program's file name, unless it renamed itself) or the file name of its first argument, and its
+ * environment; elsewhere, on macOS, by `ps`, by its program's file name, then its environment, as
+ * `ps -E` lists it, for those so named.
  */
 export async function servicesOf(names: readonly string[], home: string): Promise<Member[]> {
   if (names.length === 0) return [];
@@ -131,7 +132,9 @@ async function servicesFromProc(names: readonly string[], home: string): Promise
       pids.slice(start, start + READS_AT_ONCE).map(async (pid) => {
         try {
           const name = (await readFile(`/proc/${pid}/comm`, 'utf8')).replace(/\n$/, '');
-          if (!short.has(name)) return;
+          // A program can rename itself, as Node names its main thread, so the file name it ran as,
+          // the first of its arguments, is asked too.
+          if (!short.has(name) && !names.includes(basename(await firstArgument(pid)))) return;
           const environment = await readFile(`/proc/${pid}/environ`, 'utf8');
           if (environment.split('\0').includes(`HOME=${home}`)) found.push(pid);
         } catch {
@@ -141,6 +144,11 @@ async function servicesFromProc(names: readonly string[], home: string): Promise
     );
   }
   return withResident(await fromProcIds(found));
+}
+
+/** The first argument the process `pid` was started with, from its `/proc/<pid>/cmdline`. */
+async function firstArgument(pid: string): Promise<string> {
+  return (await readFile(`/proc/${pid}/cmdline`, 'utf8')).split('\0')[0] ?? '';
 }
 
 /** `members`, each with its resident memory from its `/proc/<pid>/status`. */
