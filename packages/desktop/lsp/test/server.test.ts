@@ -360,6 +360,39 @@ test('its environment is built from nothing', async () => {
   const started = seen().find((event) => event.event === 'started');
   expect(started).toMatchObject({ cwd: root, env: { HOME: home, PATH: `${tools}:/usr/bin:/bin` } });
   expect(existsSync(join(home, 'tmp'))).toBe(true);
+  // A server not told of a cache gets no folder for one.
+  expect(existsSync(join(home, 'cache'))).toBe(false);
+});
+
+test('a server with a cache keeps it in a folder of its home, whatever its options said', async () => {
+  const { server, home, seen } = startFake(
+    {},
+    {
+      spec: {
+        initializationOptions: { phpVersion: '8.5', cachePath: '/elsewhere' },
+        cacheOption: 'cachePath',
+      },
+    },
+  );
+  expect(await server.ready).toBe(true);
+  const initialize = seen().find((event) => event.event === 'initialize');
+  expect(initialize?.event === 'initialize' && initialize.params.initializationOptions).toEqual({
+    phpVersion: '8.5',
+    cachePath: join(home, 'cache'),
+  });
+  expect(readdirSync(home).toSorted()).toEqual(['cache', 'tmp']);
+
+  // Options that aren't an object have nowhere to put it, so the server never starts.
+  const refused = startFake(
+    {},
+    { spec: { initializationOptions: ['8.5'], cacheOption: 'cachePath' } },
+  );
+  expect(await refused.server.ready).toBe(false);
+  expect(refused.server.state.kind === 'failed' && refused.server.state.failure).toEqual({
+    kind: 'start',
+    message: "Fake's initialization options aren't an object to add cachePath to.",
+  });
+  expect(refused.server.pid).toBeUndefined();
 });
 
 test('a stop answers what was asked, asks the server to exit, and ends its group', async () => {

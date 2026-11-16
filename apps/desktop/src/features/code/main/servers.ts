@@ -491,6 +491,7 @@ export class ServerPool {
         git: base.git,
         settings: launch.settings,
         initializationOptions: launch.initializationOptions,
+        cacheOption: launch.cacheOption,
       });
     } catch (error) {
       this.#refuse(entry, {

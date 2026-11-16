@@ -1,4 +1,6 @@
+export { launchNative, type NativeServer } from './adapters/native.ts';
 export { heapCap, launchOnNode, type Launch, type NodeServer } from './adapters/node.ts';
+export { PHP_LSP, PHP_VERSION } from './adapters/phplsp.ts';
 export { NO_PYTHON, PYRIGHT } from './adapters/pyright.ts';
 export { VTSLS } from './adapters/vtsls.ts';
 export { CLIENT_CAPABILITIES } from './capabilities.ts';

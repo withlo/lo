@@ -30,7 +30,7 @@ import type {
 
 import { initializeAnswer, initializeParams } from './capabilities.ts';
 import { Documents } from './documents.ts';
-import { serverEnvironment, temporaryFolder } from './environment.ts';
+import { cacheFolder, serverEnvironment, temporaryFolder } from './environment.ts';
 import { FLOOD_BYTES, FLOOD_LINES, FLOOD_MESSAGES, FLOOD_WINDOW, FrameMeter } from './framing.ts';
 import { Log } from './log.ts';
 import { type Member, type ReadFamily, readFamily, stillRunning } from './family.ts';
@@ -63,6 +63,12 @@ export interface ServerSpec {
   readonly settings?: unknown;
   /** Its `initializationOptions`. */
   readonly initializationOptions?: unknown;
+  /**
+   * The initialization option that names the folder it keeps its cache in, such as php-lsp's
+   * `cachePath`. Lo adds it to its `initializationOptions`, an object, as a folder inside its
+   * `HOME`, made before it starts, so nothing else picks where it writes.
+   */
+  readonly cacheOption?: string | undefined;
   /** The most resident memory its process group may hold, in bytes. */
   readonly memoryCap?: number | undefined;
   /** Lo's version, which it hears in `clientInfo`. */
@@ -548,7 +554,11 @@ export class Server {
       await mkdir(spec.home, { recursive: true, mode: 0o700 });
       const home = await realpath(spec.home);
       const env = serverEnvironment({ ...given, home, path });
+      const options = initializationOptions(spec, home);
       await mkdir(temporaryFolder(home), { recursive: true, mode: 0o700 });
+      if (spec.cacheOption !== undefined) {
+        await mkdir(cacheFolder(home), { recursive: true, mode: 0o700 });
+      }
       if (this.#stopRequested) return;
       const child = startProcess(program, spec.args, { env, cwd: root });
       this.#child = child;
@@ -565,7 +575,7 @@ export class Server {
       this.#connect(child);
       this.#memoryTimer = setInterval(() => void this.#watchMemory(), this.#limits.memoryEvery);
       this.#memoryTimer.unref();
-      void this.#initialize(root);
+      void this.#initialize(root, options);
     } catch (error) {
       this.#fail({ kind: 'start', message: startError(spec.program, error) });
     }
@@ -693,15 +703,15 @@ export class Server {
     connection.listen();
   }
 
-  /** Sends `initialize`, then `initialized` once it's answered. */
-  async #initialize(root: string): Promise<void> {
+  /** Sends `initialize`, with `options` as its initialization options, then `initialized`. */
+  async #initialize(root: string, options: unknown): Promise<void> {
     const connection = this.#connection;
     if (connection === undefined) return;
     const params = initializeParams({
       rootUri: folderUri(root),
       name: basename(root),
       version: this.#spec.version,
-      initializationOptions: this.#spec.initializationOptions,
+      initializationOptions: options,
     });
     let answer: unknown;
     const late = Symbol('late');
@@ -984,6 +994,21 @@ async function resolved(folder: string): Promise<string> {
   } catch {
     throw new Error(`${folder}, on its PATH, isn’t there.`);
   }
+}
+
+/**
+ * What `spec`'s server is told in `initialize`: its initialization options, with its cache's
+ * folder in `home`, its real path, under the option its adapter names for it, whatever else says.
+ */
+function initializationOptions(spec: ServerSpec, home: string): unknown {
+  const { initializationOptions: options, cacheOption } = spec;
+  if (cacheOption === undefined) return options;
+  if (options !== undefined && !isObject(options)) {
+    throw new Error(
+      `${spec.name}'s initialization options aren't an object to add ${cacheOption} to.`,
+    );
+  }
+  return { ...options, [cacheOption]: cacheFolder(home) };
 }
 
 /** What the reader is told when `program` couldn't start. */

@@ -1,6 +1,6 @@
-// The servers that run on Lo's Node, as their adapters start them: what runs, with which flags,
-// what each is told, and what the manifest pins for it. No server runs here; `test/hostile.test.ts`
-// starts each as Lo would, with the fake server standing in for it.
+// The servers Lo runs, on its Node or as programs of their own, as their adapters start them: what
+// runs, with which flags, what each is told, and what the manifest pins for it. No server runs
+// here; `test/hostile.test.ts` starts each as Lo would, with the fake server standing in for it.
 
 import { accessSync, constants, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
@@ -8,14 +8,30 @@ import { join } from 'node:path';
 import { describe, expect, test } from 'vitest';
 
 import type { Installed } from '../install.ts';
-import { MANIFEST } from '../manifest.ts';
+import { MANIFEST, PLATFORMS } from '../manifest.ts';
 import { sectionOf } from '../requests.ts';
 import { LIMITS } from '../server.ts';
+import { launchNative } from './native.ts';
 import { heapCap, launchOnNode, type NodeServer } from './node.ts';
+import { PHP_LSP, PHP_VERSION } from './phplsp.ts';
 import { NO_PYTHON, PYRIGHT } from './pyright.ts';
 import { VTSLS } from './vtsls.ts';
 
 const SERVERS = [VTSLS, PYRIGHT];
+
+/** The version the manifest pins of `id`. */
+function pinnedVersion(id: string): string {
+  return MANIFEST[id]?.version ?? '';
+}
+
+/** php-lsp's version, as the manifest pins it. */
+const PHP_LSP_VERSION = pinnedVersion('php-lsp');
+
+/** php-lsp, installed as the manifest pins it. */
+const PHP_LSP_INSTALLED: Installed = {
+  folder: `/lo/cache/servers/php-lsp/${PHP_LSP_VERSION}/files`,
+  entry: `/lo/cache/servers/php-lsp/${PHP_LSP_VERSION}/files/php-lsp`,
+};
 
 /** Lo's Node, installed as the manifest pins it. */
 const NODE: Installed = {
@@ -38,7 +54,7 @@ function installed(server: NodeServer): Installed {
 }
 
 /** What `server` hears when it asks for the setting `section`. */
-function setting(server: NodeServer, section: string): unknown {
+function setting(server: { readonly settings: unknown }, section: string): unknown {
   return sectionOf(server.settings, section);
 }
 
@@ -80,15 +96,19 @@ test('each starts as Lo’s Node, its heap capped, then its own entry point, wit
 });
 
 test('each says what it is, with its version and license, wherever its details show', () => {
-  expect(SERVERS.map((server) => launchOnNode(server, NODE, installed(server)).version)).toEqual([
-    `vtsls ${pinned(VTSLS).version} · MIT`,
-    `Pyright ${pinned(PYRIGHT).version} · MIT`,
+  expect([
+    ...SERVERS.map((server) => launchOnNode(server, NODE, installed(server)).version),
+    launchNative(PHP_LSP, PHP_LSP_INSTALLED).version,
+  ]).toEqual([
+    `vtsls ${pinnedVersion('vtsls')} · MIT`,
+    `Pyright ${pinnedVersion('pyright')} · MIT`,
+    `php-lsp ${pinnedVersion('php-lsp')} · MIT`,
   ]);
   // The README lists each with its version, source and license.
   const readme = readFileSync(join(import.meta.dirname, '..', '..', 'README.md'), 'utf8');
-  for (const server of SERVERS) {
+  for (const server of [...SERVERS, PHP_LSP]) {
     const row = new RegExp(
-      `^\\| ${server.name}\\b[^|\\n]*\\| ${pinned(server).version} +\\|[^\\n]*\\| ${server.license}\\b`,
+      `^\\| ${server.name}\\b[^|\\n]*\\| ${pinnedVersion(server.id)} +\\|[^\\n]*\\| ${server.license}\\b`,
       'm',
     );
     expect(readme).toMatch(row);
@@ -96,9 +116,10 @@ test('each says what it is, with its version and license, wherever its details s
 });
 
 test('each says whether it gives the inlay hints `gh` shows: Pyright has none', () => {
-  expect(SERVERS.map((server) => [server.id, server.hints])).toEqual([
+  expect([...SERVERS, PHP_LSP].map((server) => [server.id, server.hints])).toEqual([
     ['vtsls', true],
     ['pyright', false],
+    ['php-lsp', true],
   ]);
 });
 
@@ -159,5 +180,52 @@ describe('Pyright', () => {
     expect(pinned(PYRIGHT).download.packages.map((pkg) => pkg.path)).toEqual([
       'node_modules/pyright',
     ]);
+  });
+});
+
+describe('php-lsp', () => {
+  test('starts as its own program, from its release for each platform, with no launcher', () => {
+    const pinnedPhp = MANIFEST['php-lsp'];
+    expect(pinnedPhp?.hosts).toEqual(['github.com', 'release-assets.githubusercontent.com']);
+    expect(Object.keys(pinnedPhp?.platforms ?? {}).toSorted()).toEqual([...PLATFORMS].toSorted());
+    const release = `https://github.com/jorgsowa/php-lsp/releases/download/v${PHP_LSP_VERSION}/`;
+    for (const download of Object.values(pinnedPhp?.platforms ?? {})) {
+      expect(download).toMatchObject({ kind: 'tar.gz', entry: 'php-lsp' });
+      expect(download.kind === 'tar.gz' && download.url.startsWith(release)).toBe(true);
+    }
+    const launch = launchNative(PHP_LSP, PHP_LSP_INSTALLED);
+    expect([launch.program, launch.args]).toEqual([PHP_LSP_INSTALLED.entry, []]);
+    // Nothing of its own goes into its environment, which is Lo's alone.
+    expect([launch.path, launch.variables, launch.allowed]).toEqual([
+      undefined,
+      undefined,
+      undefined,
+    ]);
+    expect(() => launchNative(PHP_LSP, { folder: 'php-lsp', entry: 'php-lsp/php-lsp' })).toThrow(
+      "php-lsp/php-lsp isn't an absolute path",
+    );
+    expect(() => launchNative({ ...PHP_LSP, id: 'phpactor' }, PHP_LSP_INSTALLED)).toThrow(
+      'has no phpactor',
+    );
+  });
+
+  test('is told which PHP to read code as, so it runs no `php`, and runs no tools', () => {
+    const { initializationOptions } = launchNative(PHP_LSP, PHP_LSP_INSTALLED);
+    expect(initializationOptions).toEqual({
+      phpVersion: PHP_VERSION,
+      // A checkout has no dependencies installed, so only a committed `vendor/` is there to skip.
+      indexVendor: false,
+      externalTools: { phpstan: { enabled: false }, phpcs: { enabled: false } },
+    });
+    // One of those php-lsp knows (7.4, and 8.0 to 8.6), so it reads code as that PHP.
+    expect(PHP_VERSION).toMatch(/^(?:7\.4|8\.[0-6])$/);
+    // It hears the same when it asks for its settings, as it does once they change.
+    expect(setting(PHP_LSP, 'php-lsp')).toEqual(initializationOptions);
+  });
+
+  test('keeps its cache in the folder Lo adds as it starts it, and in no other', () => {
+    expect(launchNative(PHP_LSP, PHP_LSP_INSTALLED).cacheOption).toBe('cachePath');
+    expect(PHP_LSP.initializationOptions).not.toHaveProperty('cachePath');
+    expect(setting(PHP_LSP, 'php-lsp.cachePath')).toBeNull();
   });
 });

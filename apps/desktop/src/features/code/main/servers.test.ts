@@ -380,6 +380,30 @@ describe('trust, then and there', () => {
     expect(stopped).toBe(true);
   });
 
+  it('tells a server what its adapter says, its cache’s option included', async () => {
+    const { pool, started } = standIns();
+    const told = adapter('php', () =>
+      Promise.resolve({
+        kind: 'ready',
+        launch: {
+          program: '/bin/x',
+          args: [],
+          settings: { x: { version: '1' } },
+          initializationOptions: { version: '1' },
+          cacheOption: 'cachePath',
+        },
+      }),
+    );
+    pool.sync([view('v1', 'a/x', 1, [told])], 'v1');
+    await settle();
+    expect(started[0]?.spec).toMatchObject({
+      home: '/home/lo',
+      settings: { x: { version: '1' } },
+      initializationOptions: { version: '1' },
+      cacheOption: 'cachePath',
+    });
+  });
+
   it.each(['a move', 'Restart', 'a crash'])(
     'waits, as Lo quits, for the server stopped for %s',
     async (what) => {

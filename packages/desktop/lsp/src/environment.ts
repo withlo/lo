@@ -101,6 +101,11 @@ export function temporaryFolder(home: string): string {
   return join(home, 'tmp');
 }
 
+/** The folder a server keeps its cache in, inside its `HOME` (`ServerSpec`'s `cacheOption`). */
+export function cacheFolder(home: string): string {
+  return join(home, 'cache');
+}
+
 /**
  * The whole environment of a language server. It throws on a folder or variable it refuses, which
  * is a mistake in Lo's own code: an adapter's or the app's.

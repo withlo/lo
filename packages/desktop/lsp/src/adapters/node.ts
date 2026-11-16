@@ -33,6 +33,8 @@ export interface Launch {
   /** What it gets for `workspace/configuration`, by section. */
   readonly settings?: unknown;
   readonly initializationOptions?: unknown;
+  /** The initialization option Lo puts its cache's folder in, inside its `HOME`: `cachePath`. */
+  readonly cacheOption?: string | undefined;
   /** What it is, for its details: its name, version and license, "vtsls 0.3.0 · MIT". */
   readonly version?: string | undefined;
 }
