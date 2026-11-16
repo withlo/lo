@@ -12,12 +12,14 @@ import { markdownTree } from '@lo/markdown';
 import { IpcError } from '../../../ipc/contract.ts';
 import type * as TabShared from '../../tab/window/shared.ts';
 import type { RightKept } from '../../tab/window/shared.ts';
+import type { Status } from '../contract.ts';
 import type { CodeAnswer, Definitions, Hints, Hover, Outline, References } from '../port.ts';
 import {
   closePeek,
   closeReferences,
   definition,
   goToAnswer,
+  hints,
   hovers,
   listed,
   outline,
@@ -25,10 +27,12 @@ import {
   peekIn,
   pick,
   references,
+  redrawn,
   rested,
   toggleHints,
   typeOf,
   typeOutline,
+  viewClosed,
 } from './navigate.ts';
 import { said } from './said.ts';
 import { servers } from './servers.ts';
@@ -54,7 +58,10 @@ const seen = vi.hoisted(() => ({
   kept: { open: false, right: undefined } as RightKept,
   put: [] as RightKept[],
   middle: 0,
-  hints: [] as unknown[],
+  /** The hints drawn, in each view by its id and in which of its code views. */
+  hints: [] as { tab: string; view: string; hints: unknown }[],
+  /** The view on screen: a pull request's tab, or one of its layers. */
+  active: 't1',
 }));
 
 /** The code port's `job`: noted as asked, and answered as the test says, or never. */
@@ -80,7 +87,7 @@ vi.mock('./main.ts', () => {
 });
 
 vi.mock('../../diff/window/shared.ts', () => ({
-  codeViews: () => ({
+  codeViews: (tab: string) => ({
     onScreen: () => 'diff',
     fileAt: (at: Place) => ({ path: 'src/format.ts', commit: seen.commit, change: 'modified', at }),
     inDiff: () => true,
@@ -103,8 +110,8 @@ vi.mock('../../diff/window/shared.ts', () => ({
       return true;
     },
     anchor: () => ({ left: 10, top: 20, right: 40, bottom: 40 }),
-    setHints: (_view: string, hints: unknown) => {
-      seen.hints.push(hints);
+    setHints: (view: string, marks: unknown) => {
+      seen.hints.push({ tab, view, hints: marks });
     },
     go: () => true,
   }),
@@ -127,7 +134,7 @@ vi.mock('../../../window/commands/registry.ts', () => ({
 
 vi.mock('../../tab/window/shared.ts', async (original) => ({
   ...(await original<typeof TabShared>()),
-  activeTab: () => ({ id: 't1', kind: 'pull', owner: 'rozed-dev', repo: 'e2e', number: 80 }),
+  activeTab: () => ({ id: seen.active, kind: 'pull', owner: 'rozed-dev', repo: 'e2e', number: 80 }),
   localCopyOf: () => seen.local,
   rightShown: () => seen.rightShown,
   rightKept: () => seen.kept,
@@ -181,8 +188,10 @@ beforeEach(() => {
   seen.put.length = 0;
   seen.middle = 0;
   seen.hints.length = 0;
+  seen.active = 't1';
   closePeek(peekIn('t1') ?? '');
   said.set('t1', undefined);
+  hints.setState({ on: false, pressed: undefined }, true);
   statuses.set('t1', null);
   servers.set('t1', null);
 });
@@ -373,54 +382,196 @@ describe('gr with every reference outside the repository', () => {
   });
 });
 
+/** A hint TypeScript gives, and the mark it draws. */
+const HINT = { line: 2, column: 5, label: ': string' };
+const MARK = {
+  kind: 'hint',
+  at: { file: 'f1', side: 'new', line: 2, column: 5 },
+  label: ': string',
+  padding: { before: false, after: false },
+};
+
+/** The views asked for hints, each once, in the order first asked. */
+function viewsAsked(): unknown[] {
+  const views = seen.asked.flatMap(({ job, input }) =>
+    job === 'hints' && typeof input === 'object' && input !== null && 'view' in input
+      ? [input.view]
+      : [],
+  );
+  return [...new Set(views)];
+}
+
+/** The hints view `tab`'s diff drew last, if it drew any. */
+function drawnIn(tab: string): unknown {
+  return seen.hints.findLast((each) => each.tab === tab && each.view === 'diff')?.hints;
+}
+
+/** View `view`'s status: of an untrusted repository, unless `trust` says otherwise. */
+function statusOf(view: string, trust: Status['trust'] = { kind: 'untrusted', why: 'unnamed' }) {
+  return {
+    view,
+    repo: 'rozed-dev/e2e',
+    pull: 80,
+    head: { kind: 'base' },
+    trust,
+    dismissed: false,
+  } satisfies Status;
+}
+
+const UNTRUSTED = 'Type hints need a language server, which Lo runs only on repos you trust.';
+
 describe('gh', () => {
-  it('asks for the hints on screen, and says why none came', async () => {
+  it('asks for the hints on screen, and with none says why and stays off', async () => {
     seen.answers.set('hints', (): Hints => ({ hints: [] }));
-    statuses.set('t1', {
-      view: 't1',
-      repo: 'rozed-dev/e2e',
-      pull: 80,
-      head: { kind: 'base' },
-      trust: { kind: 'untrusted', why: 'unnamed' },
-      dismissed: false,
-    });
+    statuses.set('t1', statusOf('t1'));
     await toggleHints();
     expect(seen.asked[0]).toMatchObject({
       job: 'hints',
       input: { view: 't1', key: HEAD, path: 'src/format.ts', from: 1, to: 9 },
     });
-    expect(said.get('t1')?.text).toBe(
-      'Type hints need a language server, which Lo runs only on repos you trust.',
-    );
-    // Off again: the hints go.
+    expect(said.get('t1')?.text).toBe(UNTRUSTED);
+    expect(hints.getState()).toEqual({ on: false, pressed: undefined });
+    // Nothing came, so nothing was turned on: the next gh asks again.
+    seen.asked.length = 0;
     await toggleHints();
-    expect(seen.hints.at(-1)).toEqual([]);
+    expect(viewsAsked()).toEqual(['t1']);
   });
 
-  it('draws a server’s hints with the room it asks for, and says what a server says', async () => {
+  it('shows hints on the first gh once the repo is trusted', async () => {
+    statuses.set('t1', statusOf('t1'));
+    seen.answers.set('hints', (): Hints => ({ hints: [] }));
+    await toggleHints();
+    expect(said.get('t1')?.text).toBe(UNTRUSTED);
+    // Trusted, and TypeScript ready.
+    statuses.set('t1', statusOf('t1', { kind: 'trusted', by: 'repo' }));
+    seen.answers.set('hints', (): Hints => ({ hints: [HINT], label: 'TypeScript' }));
+    await toggleHints();
+    expect(drawnIn('t1')).toEqual([MARK]);
+    expect(hints.getState().on).toBe(true);
+  });
+
+  it('stays off, saying why, while a server starts, with one that has none, or none on screen', async () => {
+    statuses.set('t1', statusOf('t1', { kind: 'trusted', by: 'repo' }));
+    const cases: [Hints, string][] = [
+      [
+        { hints: [], label: 'TypeScript', fallback: 'TypeScript is starting.' },
+        'TypeScript is starting.',
+      ],
+      [
+        { hints: [], label: 'Pyright', none: 'Pyright has no type hints.' },
+        'Pyright has no type hints.',
+      ],
+      [
+        { hints: [], label: 'TypeScript' },
+        'TypeScript gives no type hints for the code on screen.',
+      ],
+    ];
+    for (const [found, text] of cases) {
+      seen.answers.set('hints', () => found);
+      await toggleHints();
+      expect(said.get('t1')?.text).toBe(text);
+      expect(hints.getState().on).toBe(false);
+      expect(drawnIn('t1')).toEqual([]);
+    }
+  });
+
+  it('asks nothing before the local copy, and stays off', async () => {
+    seen.local = { kind: 'fetching' };
+    await toggleHints();
+    expect(said.get('t1')?.text).toBe('The syntax index waits for the local copy.');
+    expect(seen.asked).toEqual([]);
+    expect(hints.getState().on).toBe(false);
+  });
+
+  it('draws a server’s hints with the room it asks for, and takes them away again', async () => {
     seen.answers.set('hints', (): Hints => ({
       hints: [{ line: 2, column: 5, label: ': string', paddingLeft: true }],
       label: 'TypeScript',
     }));
     await toggleHints();
-    expect(seen.hints[0]).toEqual([
-      {
-        kind: 'hint',
-        at: { file: 'f1', side: 'new', line: 2, column: 5 },
-        label: ': string',
-        padding: { before: true, after: false },
-      },
-    ]);
+    expect(drawnIn('t1')).toEqual([{ ...MARK, padding: { before: true, after: false } }]);
     expect(said.get('t1')).toBeUndefined();
     await toggleHints();
-    seen.answers.set('hints', (): Hints => ({
-      hints: [],
-      label: 'Python',
-      none: 'Python has no type hints.',
-    }));
+    expect(drawnIn('t1')).toEqual([]);
+    expect(hints.getState().on).toBe(false);
+  });
+
+  it('once on, has each view drawn ask for its own, quietly, and goes off everywhere', async () => {
+    // TypeScript reads t1's and t3's code, and Pyright t2's.
+    seen.answers.set('hints', (input): Hints => {
+      const view = typeof input === 'object' && input !== null && 'view' in input && input.view;
+      return view === 't2'
+        ? { hints: [], label: 'Pyright', none: 'Pyright has no type hints.' }
+        : { hints: [HINT], label: 'TypeScript' };
+    });
     await toggleHints();
-    expect(said.get('t1')?.text).toBe('Python has no type hints.');
+    expect(drawnIn('t1')).toEqual([MARK]);
+    // Other tabs, or other layers of a stack, come on screen: each asks as it's drawn.
+    seen.active = 't2';
+    redrawn('t2');
+    seen.active = 't3';
+    redrawn('t3');
+    await settle();
+    expect(viewsAsked()).toEqual(['t1', 't2', 't3']);
+    expect(said.get('t2')).toBeUndefined();
+    expect(drawnIn('t2')).toEqual([]);
+    expect(drawnIn('t3')).toEqual([MARK]);
+    // gh again, in any view: off in every view.
     await toggleHints();
+    expect([drawnIn('t1'), drawnIn('t3')]).toEqual([[], []]);
+    // Off, a view drawn asks for none.
+    seen.asked.length = 0;
+    redrawn('t1');
+    await settle();
+    expect(seen.asked).toEqual([]);
+  });
+
+  it('asks again as the view is drawn anew while gh asks, and decides on that answer', async () => {
+    statuses.set('t1', statusOf('t1'));
+    // The first question goes unanswered: the view is drawn anew meanwhile.
+    void toggleHints();
+    await settle();
+    expect(hints.getState()).toEqual({ on: false, pressed: 't1' });
+    const first = seen.asked[0]?.signal;
+    seen.answers.set('hints', (): Hints => ({ hints: [] }));
+    redrawn('t1');
+    await settle();
+    expect(first?.aborted).toBe(true);
+    expect(said.get('t1')?.text).toBe(UNTRUSTED);
+    expect(hints.getState()).toEqual({ on: false, pressed: undefined });
+    // So the first gh once it's trusted shows them.
+    statuses.set('t1', statusOf('t1', { kind: 'trusted', by: 'repo' }));
+    seen.answers.set('hints', (): Hints => ({ hints: [HINT], label: 'TypeScript' }));
+    await toggleHints();
+    expect(drawnIn('t1')).toEqual([MARK]);
+  });
+
+  it('stops asking in a view as it closes, and draws nothing from a late answer', async () => {
+    let late: ((found: Hints) => void) | undefined;
+    seen.answers.set('hints', () => new Promise<Hints>((resolve) => (late = resolve)));
+    void toggleHints();
+    await settle();
+    const asked = seen.asked[0]?.signal;
+    viewClosed('t1');
+    expect(asked?.aborted).toBe(true);
+    expect(hints.getState()).toEqual({ on: false, pressed: undefined });
+    late?.({ hints: [HINT], label: 'TypeScript' });
+    await settle();
+    expect(seen.hints).toEqual([]);
+    expect(said.get('t1')).toBeUndefined();
+    expect(hints.getState().on).toBe(false);
+    // Nor while hints are on: a view that closed while it asked draws nothing, and turning them
+    // off leaves it be.
+    seen.answers.set('hints', (): Hints => ({ hints: [HINT], label: 'TypeScript' }));
+    await toggleHints();
+    seen.answers.set('hints', () => new Promise<Hints>((resolve) => (late = resolve)));
+    redrawn('t2');
+    await settle();
+    viewClosed('t2');
+    late?.({ hints: [HINT], label: 'TypeScript' });
+    await settle();
+    await toggleHints();
+    expect(seen.hints.filter((each) => each.tab === 't2')).toEqual([]);
   });
 });
 

@@ -900,6 +900,11 @@ Copying is always `y` plus a letter; there's no single-key `y`. `⌃o` returns f
 took you: from the code back to the overview block, from a definition or the other end of moved code
 back to the diff.
 
+`gh` turns inline type hints on for the whole window only when the code on screen gets some back;
+otherwise it says why, as on a repo Lo runs no language server for, and leaves them off. Once
+they're on, each view shows its server's hints where it has them and none, quietly, where it
+doesn't, and `gh` again turns them off everywhere.
+
 A count typed before a key repeats it, as in Vim, for `e`, `yy`, `]s` and `[s`, and `j` and `k` in
 the file tree: `3e` marks three files viewed, and `2yy` copies two lines as they show. A count
 before any other key in the code goes to Vim with it, and `Esc` drops one. The status bar shows the
