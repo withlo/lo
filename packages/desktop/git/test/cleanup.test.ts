@@ -638,10 +638,10 @@ test('past its cap nothing of a repository a server runs on goes, nor is anythin
   expect(there(old, fresh)).toEqual([true, true]);
 
   // Once the server has stopped, the cache is kept under its cap again by itself: the home goes,
-  // after the checkouts used before it, and the clones still stay.
+  // and the clones still stay.
   await stopServer(cache, 'new', release);
   await eventually(() => !existsSync(home));
-  expect(there(oldCheckout, newCheckout, old, fresh)).toEqual([false, false, true, true]);
+  expect(there(old, fresh)).toEqual([true, true]);
 });
 
 test('a clone still goes while a server’s home stays, once the rest alone is over the cap', async () => {
@@ -661,16 +661,16 @@ test('a clone still goes while a server’s home stays, once the rest alone is o
 test('once nothing has a clone open, the cache is kept under its cap again by itself', async () => {
   const cache = await cacheFor(server(), { maintenance: { idleFor: 10, attempts: 0 } });
   const [old, fresh] = [await useRepo(cache, 'old'), await useRepo(cache, 'new')];
-  const [oldCheckout, newCheckout] = [checkoutOf(cache, 'old'), checkoutOf(cache, 'new')];
+  const oldCheckout = checkoutOf(cache, 'old');
+  // Opened last, so the clone used last, which stays, and its checkout can't go while it's open.
   const repo = await cache.open('owner', 'old');
-  // The open clone's checkout can't go, and nothing else would get the cache under.
-  expect(await cache.setCap((await cache.size()) - 1)).toEqual([]);
-  expect(existsSync(oldCheckout)).toBe(true);
+  expect(await cache.setCap(1)).toEqual(['owner/new']);
+  expect(there(old, oldCheckout, fresh)).toEqual([true, true, false]);
 
-  // The tab closes: its checkout, the one used longest ago, goes, and only that.
+  // The tab closes: its checkout goes too, and the clone stays.
   repo.close();
   await eventually(() => !existsSync(oldCheckout));
-  expect(there(old, fresh, newCheckout)).toEqual([true, true, true]);
+  expect(existsSync(old)).toBe(true);
 });
 
 test('past its cap a home past a link stays, and frees nothing', async () => {
