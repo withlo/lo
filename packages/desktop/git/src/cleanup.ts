@@ -371,19 +371,24 @@ async function removeHome(host: CleanupHost, path: string): Promise<boolean> {
 
 /**
  * Removes a clone, its checkouts and its language servers' homes, each moved aside first. Its lock
- * is held for removing, so no server runs on it. Returns whether the homes went: past a link,
- * they stay.
+ * is held for removing, so no server runs on it. Returns the folders that went: one past a link
+ * stays.
  */
-async function removeClone(host: CleanupHost, clone: CloneName): Promise<boolean> {
-  await host.trash(host.checkoutsFolder(clone.owner, clone.name));
-  await host.trash(host.repoFolder(clone.owner, clone.name));
+async function removeClone(host: CleanupHost, clone: CloneName): Promise<Set<string>> {
   const homes = host.homesFolder(clone.owner, clone.name);
-  const homesGone = await host.trash(homes);
+  const gone = new Set<string>();
+  for (const folder of [
+    host.checkoutsFolder(clone.owner, clone.name),
+    host.repoFolder(clone.owner, clone.name),
+    homes,
+  ]) {
+    if (await host.trash(folder)) gone.add(folder);
+  }
   for (const folder of ['repos', 'checkouts']) {
     await rmdir(join(host.root, folder, 'github.com', clone.owner)).catch(() => undefined);
   }
-  if (homesGone) await rmdir(dirname(homes)).catch(() => undefined);
-  return homesGone;
+  if (gone.has(homes)) await rmdir(dirname(homes)).catch(() => undefined);
+  return gone;
 }
 
 /**
@@ -439,20 +444,25 @@ async function removeUnusedCheckouts(host: CleanupHost, clone: CloneName, now: n
   }
 }
 
-/** Removes `checkouts` of `clone`, and has the clone forget them. Its lock is held. */
+/**
+ * Removes `checkouts` of `clone`, and has the clone forget them. Its lock is held. Returns how many
+ * went: one past a link stays.
+ */
 async function removeCheckouts(
   host: CleanupHost,
   clone: CloneName,
   checkouts: readonly { path: string }[],
-): Promise<void> {
+): Promise<number> {
+  let gone = 0;
   for (const { path } of checkouts) {
-    await host.trash(path);
+    if (await host.trash(path)) gone += 1;
     await rmdir(join(path, '..')).catch(() => undefined);
   }
   await host.runner
     .command({ gitDir: host.repoFolder(clone.owner, clone.name) })
     .arg('worktree', 'prune')
     .run();
+  return gone;
 }
 
 /**
@@ -653,8 +663,9 @@ async function counted(host: CleanupHost): Promise<number> {
  * removing the rest for them would never get the cache under, and a large home of a server that
  * runs never pushes a clone out. The most recently used clone always stays, so the cache is never
  * emptied: a clone over the cap alone loses its checkouts and homes and stays. Nothing more goes
- * once the cache is closing. Run one at a time: two at once would remove for the same bytes.
- * Returns the `owner/name` of each clone removed.
+ * once the cache is closing. Run it one at a time, and never beside {@link removeUnused} or
+ * {@link clear}: a run counting what another removes would remove for the same bytes. Returns the
+ * `owner/name` of each clone removed.
  */
 export async function keepUnder(host: CleanupHost, cap: number): Promise<string[]> {
   if (host.closing.aborted) return [];
@@ -710,6 +721,9 @@ export async function keepUnder(host: CleanupHost, cap: number): Promise<string[
     keptBy.set(key, (keptBy.get(key) ?? 0) + size);
     kept += size;
   }
+  // Only what goes counts as freed: what came into use since the run looked, which removing
+  // refuses, and what's past a link stay and free nothing, so the next goes in their place while
+  // the cache is still over.
   let trimmed = 0;
   let emptied = 0;
   for (const spare of free) {
@@ -720,9 +734,10 @@ export async function keepUnder(host: CleanupHost, cap: number): Promise<string[
     try {
       const size = await diskUsage(spare.path);
       if (spare.kind === 'checkout') {
-        await removeCheckouts(host, spare.clone, [spare]);
-        trimmed += 1;
-        total -= size;
+        if ((await removeCheckouts(host, spare.clone, [spare])) > 0) {
+          trimmed += 1;
+          total -= size;
+        }
       } else if (await removeHome(host, spare.path)) {
         emptied += 1;
         total -= size;
@@ -739,12 +754,16 @@ export async function keepUnder(host: CleanupHost, cap: number): Promise<string[
     if (release === undefined) continue;
     try {
       const key = keyOf(clone);
-      const size =
-        (await diskUsage(host.repoFolder(clone.owner, clone.name))) +
-        (await diskUsage(host.checkoutsFolder(clone.owner, clone.name)));
-      const homesSize = await diskUsage(host.homesFolder(clone.owner, clone.name));
-      const homesGone = await removeClone(host, clone);
-      total -= size + (homesGone ? homesSize : 0);
+      const sizes = new Map(
+        await Promise.all(
+          [
+            host.repoFolder(clone.owner, clone.name),
+            host.checkoutsFolder(clone.owner, clone.name),
+            host.homesFolder(clone.owner, clone.name),
+          ].map(async (folder) => [folder, await diskUsage(folder)] as const),
+        ),
+      );
+      for (const folder of await removeClone(host, clone)) total -= sizes.get(folder) ?? 0;
       // What was in use when the cache was looked at, and is free now, went with it.
       kept -= keptBy.get(key) ?? 0;
       removed.push(key);

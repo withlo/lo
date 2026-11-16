@@ -402,15 +402,18 @@ Only main runs git, through `@lo/git`, and the background process never sees git
   checkouts and homes included. Those checkouts and homes count toward removing nothing else, so a
   running server's large home never pushes out another's checkouts or clone, though the clone's own
   folder counts as any clone's does. Each run looks at what's in use all at once, so a server that
-  stops during it has its checkouts and homes kept alike, never one removed without the other. A
-  server holds its repository (`cache.useForServer`) from just before it starts until it has
-  stopped, and one starting waits for cleanup that's removing any of it, but not for collecting the
-  trees comparisons replayed, which takes nothing a server reads and so runs alongside servers. A
-  minute after nothing has a clone open or runs on it any more, the cache is kept under its cap
-  again. Runs keeping the cache under its cap go one at a time, and stop once the cache closes.
+  stops during it has its checkouts and homes kept alike, never one removed without the other. What
+  comes into use after it looks stays and frees nothing, and the next goes in its place. A server
+  holds its repository (`cache.useForServer`) from just before it starts until it has stopped, and
+  one starting waits for cleanup that's removing any of it, but not for collecting the trees
+  comparisons replayed, which takes nothing a server reads and so runs alongside servers. A minute
+  after nothing has a clone open or runs on it any more, the cache is kept under its cap again.
+  Keeping the cache under its cap, removing what's unused and clearing it take turns, in the order
+  they're asked for, so none counts what another is removing, and runs keeping it under its cap stop
+  once the cache closes.
 - A repository's homes go with its clone, unused for 30 days, past the cap or cleared, through
-  `Cache.trash`, and cleanup removes homes left without a clone. A home past a link stays, and frees
-  nothing.
+  `Cache.trash`, and cleanup removes homes left without a clone. A checkout, home or clone past a
+  link stays, and frees nothing.
 - The cache is `Lo` (`Lo Dev` for a build run from source, or `cache` in `LO_USER_DATA_DIR`) in the
   system's folder for this user's caches: `$XDG_CACHE_HOME` or `~/.cache` on Linux, and on a Mac the
   one macOS keeps outside the home folder, `DARWIN_USER_CACHE_DIR`

@@ -132,8 +132,11 @@ export class Cache {
   readonly #closing = new AbortController();
   /** The wait to keep the cache under its cap again, once what kept it over may have let go. */
   #capCheck: ReturnType<typeof setTimeout> | undefined;
-  /** The run keeping the cache under its cap, or waiting to: one at a time. */
-  #capping: Promise<unknown> = Promise.resolve();
+  /**
+   * The run keeping the cache under its cap, removing what's unused or clearing it, or waiting to:
+   * one at a time.
+   */
+  #removals: Promise<unknown> = Promise.resolve();
   #closed = false;
 
   private constructor(
@@ -187,7 +190,7 @@ export class Cache {
     this.#capCheck = undefined;
     this.#closing.abort();
     await this.#maintaining;
-    await this.#capping;
+    await this.#removals;
     await this.#deleted();
     await unlockCache(join(this.root, 'lo-cache.lock'), this.#release);
   }
@@ -246,11 +249,11 @@ export class Cache {
 
   /**
    * Removes every clone, checkout and language server's home that isn't open, being written to or
-   * that a server runs on, for Settings' "Clear cache". Returns the `owner/name` of each clone it
-   * had to leave.
+   * that a server runs on, for Settings' "Clear cache", in its turn with keeping the cache under
+   * its cap and removing what's unused. Returns the `owner/name` of each clone it had to leave.
    */
   async clear(): Promise<string[]> {
-    const left = await clear(this);
+    const left = await this.#inTurn(() => clear(this));
     await this.#deleted();
     return left;
   }
@@ -260,12 +263,12 @@ export class Cache {
    * servers' homes, checkouts for 14, what crashes and stopped fetches left a day or more ago,
    * checkouts and homes left without a clone, and from clones nobody has open, the trees
    * comparisons replayed. Never anything of a clone that's open, being written to or that a
-   * language server runs on. Returns the `owner/name` of each clone removed. It runs as
-   * maintenance, one at a time with the rest, and closing the cache waits for it, so no git it
-   * runs, such as a `prune` closing stopped, outlives the cache's lock.
+   * language server runs on. Returns the `owner/name` of each clone removed. It runs in its turn
+   * with keeping the cache under its cap and clearing it, and closing the cache waits for it, so no
+   * git it runs, such as a `prune` closing stopped, outlives the cache's lock.
    */
   async removeUnused(now = Date.now()): Promise<string[]> {
-    const removed = await this.#serially(() => removeUnused(this, now));
+    const removed = await this.#inTurn(() => removeUnused(this, now));
     await this.#deleted();
     return removed;
   }
@@ -319,13 +322,21 @@ export class Cache {
     });
   }
 
-  /**
-   * Keeps the cache under its cap, once the run before is done, so no two runs remove for the same
-   * bytes, and none once the cache is closing. Closing the cache waits for the one running.
-   */
+  /** Keeps the cache under its cap in its turn, and removes nothing once the cache is closing. */
   #keepUnder(): Promise<string[]> {
-    const run = this.#capping.then(() => keepUnder(this, this.#cap));
-    this.#capping = run.catch(() => undefined);
+    return this.#inTurn(() => keepUnder(this, this.#cap));
+  }
+
+  /**
+   * Runs `work`, which removes from the cache, once the removal before it is done, in the order
+   * they're asked for. Keeping the cache under its cap, removing what's unused and clearing it never
+   * run at once, so keeping it under its cap never counts what another is removing. Closing the
+   * cache waits for the one running. Repacks take turns of their own: they can run for minutes, and
+   * a fetch that made a clone waits for the cache to be kept under its cap.
+   */
+  #inTurn<T>(work: () => Promise<T>): Promise<T> {
+    const run = this.#removals.then(work);
+    this.#removals = run.catch(() => undefined);
     return run;
   }
 
