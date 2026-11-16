@@ -8,10 +8,13 @@
  *   LO_MERGE_GENERATION=<generation> LO_RECORD_WRITES=1 LO_FIXTURE_TOKEN_FILE=<file> \
  *     node testing/scripts/record.ts packages/core/github/test/scenarios/merge-queue.ts
  *
- * Run them in this order, as the list has them, as soon as `merge.sh` has opened the generation:
+ * Run `queue_view_e2e` and `queue_removal_e2e` in this order as soon as `merge.sh` has opened the
+ * generation, and `queue_waiting_e2e` while `queued-slow-2` is open and out of the queue: before
+ * them, or after `queue_removal_e2e` has taken it out.
  *
- * - `queue_waiting_e2e` reads the open pull requests into `e4/queued` while the slow ones' checks
- *   run;
+ * - `queue_waiting_e2e` turns auto-merge on for `queued-slow-2` while its `ci` runs, running it
+ *   again first if it has finished, reads the open pull requests into `e4/queued`, with it waiting
+ *   to join the queue, and turns auto-merge off again, so it never joins by itself;
  * - `queue_view_e2e` waits for `ci` to pass on each of the four, adds them to the queue in turn
  *   (`merge-async`, as Lo's merge panel does), slow ones first, then reads the queue as GitHub tests
  *   them together, until the one that fails in the queue is failing or gone;
@@ -31,6 +34,8 @@ import { Fields } from '../../src/json.ts';
 import { queueRemoval, queueView, queueWaiting, type QueueView } from '../../src/merge-queue.ts';
 import {
   dequeueNamed,
+  disableAutoMerge,
+  enableAutoMerge,
   isRefusal,
   mergeAsync,
   mergeAsyncResult,
@@ -62,14 +67,17 @@ export interface Setup {
   pulls: Record<Name, Pr>;
 }
 
+/** The generation's pull request `name`, as a cassette's setup keeps it in `pulls`. */
+function prOf(pulls: Fields, name: Name): Pr {
+  const fields = pulls.fields(name);
+  return { number: fields.integer('number'), id: fields.text('id'), head: fields.text('head') };
+}
+
 /** The setup a cassette keeps. */
 export function setupOf(json: unknown): Setup {
   const setup = new Fields(json, 'setup');
   const pulls = setup.fields('pulls');
-  const pr = (name: Name): Pr => {
-    const fields = pulls.fields(name);
-    return { number: fields.integer('number'), id: fields.text('id'), head: fields.text('head') };
-  };
+  const pr = (name: Name): Pr => prOf(pulls, name);
   return {
     generation: setup.integer('generation'),
     pulls: {
@@ -77,6 +85,32 @@ export function setupOf(json: unknown): Setup {
       'queued-slow-2': pr('queued-slow-2'),
       'queued-pass': pr('queued-pass'),
       'queued-fail': pr('queued-fail'),
+    },
+  };
+}
+
+/**
+ * The generation's pull requests `queue_waiting_e2e` reads, open and out of the queue:
+ * `queued-slow-2`, which waits to join with auto-merge on, and `queued-fail`, which doesn't.
+ */
+export const WAITING_NAMES = ['queued-slow-2', 'queued-fail'] as const;
+export type WaitingName = (typeof WAITING_NAMES)[number];
+
+/** What `queue_waiting_e2e` found for itself. */
+export interface WaitingSetup {
+  generation: number;
+  pulls: Record<WaitingName, Pr>;
+}
+
+/** The setup `queue_waiting_e2e` keeps. */
+export function waitingSetupOf(json: unknown): WaitingSetup {
+  const setup = new Fields(json, 'setup');
+  const pulls = setup.fields('pulls');
+  return {
+    generation: setup.integer('generation'),
+    pulls: {
+      'queued-slow-2': prOf(pulls, 'queued-slow-2'),
+      'queued-fail': prOf(pulls, 'queued-fail'),
     },
   };
 }
@@ -123,9 +157,19 @@ function unrecorded(token: string): GithubClient {
   return new GithubClient({ fetch: globalThis.fetch, token: new Token(token) });
 }
 
-/** The generation's pull requests into {@link BRANCH}, checked to be its own. */
-async function findPulls(github: GithubClient, number: number): Promise<Setup> {
-  const listed = await github.get(
+/** An open pull request into {@link BRANCH}, as REST lists it. */
+interface Listed {
+  number: number;
+  id: string;
+  title: string;
+  branch: string;
+  head: string;
+  base: string;
+}
+
+/** The open pull requests into {@link BRANCH}. */
+function openInto(github: GithubClient): Promise<Listed[]> {
+  return github.get(
     `/repos/${REPO.owner}/${REPO.name}/pulls?state=open&base=${BRANCH}&per_page=100`,
     (json) => {
       if (!Array.isArray(json)) throw new Error('the pull requests were not a list');
@@ -143,16 +187,24 @@ async function findPulls(github: GithubClient, number: number): Promise<Setup> {
       });
     },
   );
-  const find = (name: Name): Pr => {
-    const branch = `merge/${number}/${name}`;
-    const found = listed.filter((pull) => pull.branch === branch);
-    const [pull] = found;
-    if (found.length !== 1 || !pull) throw new Error(`no one open pull request from ${branch}`);
-    if (!pull.title.startsWith(`Fixture M${number}: `) || pull.base !== BRANCH) {
-      throw new Error(`#${pull.number} isn't the generation's own`);
-    }
-    return { number: pull.number, id: pull.id, head: pull.head };
-  };
+}
+
+/** Generation `number`'s pull request `name` among `listed`, checked to be its own. */
+function named(listed: readonly Listed[], number: number, name: Name): Pr {
+  const branch = `merge/${number}/${name}`;
+  const found = listed.filter((pull) => pull.branch === branch);
+  const [pull] = found;
+  if (found.length !== 1 || !pull) throw new Error(`no one open pull request from ${branch}`);
+  if (!pull.title.startsWith(`Fixture M${number}: `) || pull.base !== BRANCH) {
+    throw new Error(`#${pull.number} isn't the generation's own`);
+  }
+  return { number: pull.number, id: pull.id, head: pull.head };
+}
+
+/** The generation's pull requests into {@link BRANCH}, checked to be its own. */
+async function findPulls(github: GithubClient, number: number): Promise<Setup> {
+  const listed = await openInto(github);
+  const find = (name: Name): Pr => named(listed, number, name);
   return {
     generation: number,
     pulls: {
@@ -183,6 +235,30 @@ function prJson({ number, id, head }: Pr): Json {
   return { number, id, head };
 }
 
+/**
+ * Runs `ci` again on the pull request's head `head`, as its last run did, and waits until it's
+ * running: a `pull_request` run keeps its event, so `queued-slow-2`'s runs ten minutes again.
+ */
+async function rerunCi(github: GithubClient, head: string): Promise<void> {
+  const runs = await github.get(
+    `/repos/${REPO.owner}/${REPO.name}/actions/runs?head_sha=${head}&event=pull_request`,
+    (json) => {
+      const listed = new Fields(json, 'runs').raw('workflow_runs');
+      if (!Array.isArray(listed)) throw new Error('the workflow runs were not a list');
+      return listed.map((run: unknown) => {
+        const fields = new Fields(run, 'run');
+        return { id: fields.integer('id'), name: fields.text('name') };
+      });
+    },
+  );
+  const run = runs.find((found) => found.name === 'ci');
+  if (!run) throw new Error(`no ci run on ${head}`);
+  await github.send('POST', `/repos/${REPO.owner}/${REPO.name}/actions/runs/${run.id}/rerun`);
+  await waitFor('ci to run again', 5 * SECOND, 2 * MINUTE, async () =>
+    (await ciOn(github, head)) === undefined ? true : undefined,
+  );
+}
+
 function asJson(setup: Setup): Json {
   return {
     generation: setup.generation,
@@ -207,14 +283,43 @@ export const scenarios: Scenario[] = [
   {
     name: 'queue_waiting_e2e',
     description:
-      "QueueWaiting for rozed-dev/e2e's e4/queued, read as rozed-bot, its admin, right after the merge fixture opened a generation: the open pull requests into the branch, the 100 updated most recently, among them the generation's four, whose ci is running or passed. The repository doesn't allow auto-merge, so none has it on.",
+      "QueueWaiting for rozed-dev/e2e's e4/queued, read as rozed-bot, its admin, with a merge fixture generation's queued-slow-2 waiting to join the merge queue: open and out of the queue, ci running on its head (run again if it had finished), and auto-merge turned on by rozed-bot, squashing (enablePullRequestAutoMerge, unrecorded). Turned off again after the read, so it never joins. queued-fail is open too, with auto-merge off.",
     repo: 'rozed-dev/e2e',
     schema: SCHEMA,
+    writes: true,
     async run(fetch, token) {
-      const setup = await findPulls(unrecorded(token), generation());
-      const client = new GithubClient({ fetch, token: new Token(token) });
-      await queueWaiting(client, REPO, BRANCH);
-      return asJson(setup);
+      const github = unrecorded(token);
+      const number = generation();
+      const listed = await openInto(github);
+      const setup: WaitingSetup = {
+        generation: number,
+        pulls: {
+          'queued-slow-2': named(listed, number, 'queued-slow-2'),
+          'queued-fail': named(listed, number, 'queued-fail'),
+        },
+      };
+      const slow = setup.pulls['queued-slow-2'];
+      if ((await ciOn(github, slow.head)) !== undefined) await rerunCi(github, slow.head);
+      const enabled = await enableAutoMerge(github, pullOf(slow), slow.id, {
+        expectedHead: slow.head,
+        method: 'SQUASH',
+      });
+      if (isRefusal(enabled) || enabled.autoMerge === undefined || enabled.inQueue) {
+        throw new Error(`queued-slow-2 isn't waiting to join: ${JSON.stringify(enabled)}`);
+      }
+      try {
+        const client = new GithubClient({ fetch, token: new Token(token) });
+        await queueWaiting(client, REPO, BRANCH);
+      } finally {
+        const disabled = await disableAutoMerge(github, slow.id);
+        if (isRefusal(disabled) || disabled.autoMerge !== undefined) {
+          console.log(`turning auto-merge off for #${slow.number} failed`);
+        }
+      }
+      return {
+        generation: setup.generation,
+        pulls: Object.fromEntries(WAITING_NAMES.map((name) => [name, prJson(setup.pulls[name])])),
+      };
     },
   },
   {

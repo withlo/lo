@@ -1,25 +1,15 @@
 {
-  "description": "QueueWaiting for rozed-dev/e2e's e4/queued, read as rozed-bot, its admin, right after the merge fixture opened a generation: the open pull requests into the branch, the 100 updated most recently, among them the generation's four, whose ci is running or passed. The repository doesn't allow auto-merge, so none has it on.",
-  "recorded_at": "2026-11-16T19:04:27Z",
+  "description": "QueueWaiting for rozed-dev/e2e's e4/queued, read as rozed-bot, its admin, with a merge fixture generation's queued-slow-2 waiting to join the merge queue: open and out of the queue, ci running on its head (run again if it had finished), and auto-merge turned on by rozed-bot, squashing (enablePullRequestAutoMerge, unrecorded). Turned off again after the read, so it never joins. queued-fail is open too, with auto-merge off.",
+  "recorded_at": "2026-11-16T20:19:18Z",
   "repo": "rozed-dev/e2e",
   "schema": "github/docs@03caf3ce9bc56af9d147500036b0bb6dda352674",
   "setup": {
     "generation": 2,
     "pulls": {
-      "queued-slow-1": {
-        "number": 132,
-        "id": "PR_kwDOVleUfc8AAAABPnrkrA",
-        "head": "bdcd224a9a0300449aa711cfabfec1d5668ddb5c"
-      },
       "queued-slow-2": {
         "number": 133,
         "id": "PR_kwDOVleUfc8AAAABPnrpmQ",
         "head": "3230ff8eaabe0f4f6d0ebc6fa5188a1b6e51dfcd"
-      },
-      "queued-pass": {
-        "number": 131,
-        "id": "PR_kwDOVleUfc8AAAABPnrf7A",
-        "head": "684f2b1321be9652168cdb77a3c23a4a463df7bf"
       },
       "queued-fail": {
         "number": 134,

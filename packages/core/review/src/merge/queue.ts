@@ -118,8 +118,9 @@ export interface WaitingRow {
   /** Whether you opened it. */
   readonly yours: boolean;
   /**
-   * The method auto-merge was turned on with. A method newer than Lo reads as a merge commit; the
-   * queue's own method applies once it joins.
+   * The method auto-merge was turned on with, as GitHub gives it: on a branch with a merge queue,
+   * always a merge commit, as the queue's own method applies once it joins, so the view shows the
+   * queue's. A method newer than Lo reads as a merge commit.
    */
   readonly method: MergeMethod;
   /** Who turned auto-merge on. */

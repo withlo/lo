@@ -16,7 +16,7 @@
       "content-type": "application/json; charset=utf-8",
       "x-ratelimit-limit": "5000",
       "x-ratelimit-remaining": "4998",
-      "x-ratelimit-reset": "1794859430",
+      "x-ratelimit-reset": "1794863956",
       "x-ratelimit-resource": "graphql",
       "x-ratelimit-used": "2"
     },
@@ -27,11 +27,11 @@
           "limit": 5000,
           "remaining": 4998,
           "used": 2,
-          "resetAt": "2026-11-16T20:03:50Z"
+          "resetAt": "2026-11-16T21:19:16Z"
         },
         "repository": {
           "pullRequests": {
-            "totalCount": 11,
+            "totalCount": 9,
             "nodes": [
               {
                 "id": "PR_kwDOVleUfc8AAAABPnru6w",
@@ -67,43 +67,14 @@
                 "statusCheckRollup": {
                   "state": "PENDING"
                 },
-                "autoMergeRequest": null
-              },
-              {
-                "id": "PR_kwDOVleUfc8AAAABPnrkrA",
-                "number": 132,
-                "title": "Fixture M2: queued, slow (1)",
-                "url": "https://github.com/rozed-dev/e2e/pull/132",
-                "headRefOid": "bdcd224a9a0300449aa711cfabfec1d5668ddb5c",
-                "isInMergeQueue": false,
-                "viewerDidAuthor": true,
-                "author": {
-                  "__typename": "User",
-                  "login": "rozed-bot"
-                },
-                "reviewDecision": null,
-                "statusCheckRollup": {
-                  "state": "PENDING"
-                },
-                "autoMergeRequest": null
-              },
-              {
-                "id": "PR_kwDOVleUfc8AAAABPnrf7A",
-                "number": 131,
-                "title": "Fixture M2: queued, passing",
-                "url": "https://github.com/rozed-dev/e2e/pull/131",
-                "headRefOid": "684f2b1321be9652168cdb77a3c23a4a463df7bf",
-                "isInMergeQueue": false,
-                "viewerDidAuthor": true,
-                "author": {
-                  "__typename": "User",
-                  "login": "rozed-bot"
-                },
-                "reviewDecision": null,
-                "statusCheckRollup": {
-                  "state": "SUCCESS"
-                },
-                "autoMergeRequest": null
+                "autoMergeRequest": {
+                  "enabledAt": "2026-11-16T20:19:16Z",
+                  "mergeMethod": "MERGE",
+                  "enabledBy": {
+                    "__typename": "User",
+                    "login": "rozed-bot"
+                  }
+                }
               },
               {
                 "id": "PR_kwDOVleUfc8AAAABPnS3AQ",

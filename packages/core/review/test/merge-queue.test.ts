@@ -6,9 +6,10 @@
  * joined in that order (`queue_view_e2e`). rozed-bot then took `queued-slow-2` out by hand, GitHub
  * took `queued-fail` out, and `queued-pass` merged (`queue_removal_e2e`).
  *
- * rozed-dev/e2e doesn't allow auto-merge, so a pull request waiting to join with it on is a derived
- * answer (`queue_waiting_e2e_auto_merge`). The reasons no recording shows, such as a conflict, and
- * the parts GitHub leaves out with an error are the recorded answers edited here.
+ * The open pull requests into `e4/queued` were read with rozed-bot's auto-merge on for
+ * `queued-slow-2`, out of the queue, while its ci ran again (`queue_waiting_e2e`). The reasons no
+ * recording shows, such as a conflict, and the parts GitHub leaves out with an error are the
+ * recorded answers edited here.
  */
 
 import {
@@ -153,12 +154,14 @@ test('a chain broken behind the front tests only those ahead of it together', as
 });
 
 test('a pull request with auto-merge on waits to join until it is in the queue', async () => {
-  const waiting = await queueWaiting(client('queue_waiting_e2e_auto_merge'), E2E, BRANCH);
+  const waiting = await queueWaiting(client('queue_waiting_e2e'), E2E, BRANCH);
   const [joined] = await views();
   const slow = numberOf('queue_waiting_e2e', 'queued-slow-2');
+  const enabledAt = waiting.pullRequests.find((pull) => pull.number === slow)?.autoMerge?.enabledAt;
+  expect(enabledAt).toMatch(/^\d{4}-\d\d-\d\dT/);
 
-  // Read before any of the four joined: the queue was empty, and queued-slow-2 waits, with its
-  // ci running and no review required.
+  // With the queue empty, queued-slow-2 waits, its ci running and no review required. The method
+  // is GitHub's merge commit, which it gives on a branch with a queue whatever was asked.
   const empty: QueueView = { ...joined!, queue: { ...joined!.queue!, entries: [], total: 0 } };
   const before = queueRows(empty, waiting, BOT);
   expect(before.entries).toEqual([]);
@@ -171,14 +174,15 @@ test('a pull request with auto-merge on waits to join until it is in the queue',
       head: expect.stringMatching(/^[0-9a-f]{40}$/),
       author: BOT,
       yours: true,
-      method: 'SQUASH',
+      method: 'MERGE',
       enabledBy: BOT,
-      enabledAt: '2026-11-16T19:05:00Z',
+      enabledAt,
       reviewDecision: undefined,
       checks: 'running',
     },
   ]);
-  // Once it's in the queue, it's an entry, and waits no longer.
+  // queued-fail, with auto-merge off, doesn't wait. Once queued-slow-2 is in the queue, as when
+  // it joined, it's an entry, and waits no longer.
   expect(queueRows(joined!, waiting, BOT).waiting).toEqual([]);
   // A branch with no queue has nothing to wait to join.
   expect(queueRows({ ...joined!, queue: undefined }, waiting, BOT)).toEqual({
@@ -191,7 +195,7 @@ test('a pull request with auto-merge on waits to join until it is in the queue',
 });
 
 test('a queue github left part of out is never read as empty or whole', async () => {
-  const waiting = await queueWaiting(client('queue_waiting_e2e_auto_merge'), E2E, BRANCH);
+  const waiting = await queueWaiting(client('queue_waiting_e2e'), E2E, BRANCH);
   const [joined] = await views();
   const queue = joined!.queue!;
   expect(queueRows(joined!, waiting, BOT).leftOut).toBe(false);

@@ -418,7 +418,10 @@ export interface WaitingPullRequest {
 
 /** Auto-merge, turned on: `autoMergeRequest`. */
 export interface WaitingAutoMerge {
-  /** `mergeMethod`. The queue's own method applies once it joins. */
+  /**
+   * `mergeMethod`. On a branch with a merge queue, GitHub gives `MERGE` whatever was asked: the
+   * queue's own method applies once it joins.
+   */
   method: string;
   /** `enabledBy.login`. */
   enabledBy: string | undefined;

@@ -32,7 +32,7 @@ import {
 } from '../src/merge-queue.ts';
 import { PullRef, RepoRef } from '../src/refs.ts';
 import { Token } from '../src/token.ts';
-import { BRANCH, NAMES, setupOf } from './scenarios/merge-queue.ts';
+import { BRANCH, NAMES, setupOf, waitingSetupOf } from './scenarios/merge-queue.ts';
 import { branches, FORK_BRANCH } from './scenarios/pulls-from-head.ts';
 
 const E2E = new RepoRef('rozed-dev', 'e2e');
@@ -304,7 +304,7 @@ test('a removal github left out is noted, and a timeline left out fails the read
 });
 
 test('the open pull requests into a queue branch say whether auto-merge is on', async () => {
-  const { pulls } = setupOf(cassette('queue_waiting_e2e').info.setup);
+  const { pulls } = waitingSetupOf(cassette('queue_waiting_e2e').info.setup);
   const waiting = await queueWaiting(client(replayFetch('queue_waiting_e2e')), E2E, BRANCH);
 
   expect(waiting.branch).toBe(BRANCH);
@@ -312,34 +312,30 @@ test('the open pull requests into a queue branch say whether auto-merge is on', 
   expect(waiting.total).toBe(waiting.pullRequests.length);
   const numbers = waiting.pullRequests.map((pull) => pull.number);
   for (const pr of Object.values(pulls)) expect(numbers).toContain(pr.number);
-  // rozed-dev/e2e doesn't allow auto-merge, so none has it on, and none is queued yet.
-  expect(waiting.pullRequests.every((pull) => pull.autoMerge === undefined && !pull.inQueue)).toBe(
-    true,
-  );
-  // e4/queued requires no review, and the slow ones' ci was running.
-  const slow = waiting.pullRequests.find((pull) => pull.number === pulls['queued-slow-2'].number);
+  // None is in the queue, and only queued-slow-2 has auto-merge on.
+  expect(waiting.pullRequests.some((pull) => pull.inQueue)).toBe(false);
+  const on = waiting.pullRequests.filter((pull) => pull.autoMerge !== undefined);
+  expect(on.map((pull) => pull.number)).toEqual([pulls['queued-slow-2'].number]);
+
+  // rozed-bot turned it on while ci ran, squashing; e4/queued requires no review.
+  const slow = on[0];
   expect(slow).toMatchObject({
+    id: pulls['queued-slow-2'].id,
     head: pulls['queued-slow-2'].head,
     author: 'rozed-bot',
     viewerDidAuthor: true,
     reviewDecision: undefined,
     checks: 'PENDING',
   });
-  const passing = waiting.pullRequests.find((pull) => pull.number === pulls['queued-pass'].number);
-  expect(passing?.checks).toBe('SUCCESS');
-
-  const derived = await queueWaiting(
-    client(replayFetch('queue_waiting_e2e_auto_merge')),
-    E2E,
-    BRANCH,
-  );
-  const on = derived.pullRequests.filter((pull) => pull.autoMerge !== undefined);
-  expect(on.map((pull) => pull.number)).toEqual([pulls['queued-slow-2'].number]);
-  expect(on[0]?.autoMerge).toEqual({
-    method: 'SQUASH',
+  // On a branch with a merge queue, GitHub gives a merge commit whatever was asked: the queue's
+  // own method applies once it joins.
+  expect(slow?.autoMerge).toEqual({
+    method: 'MERGE',
     enabledBy: 'rozed-bot',
-    enabledAt: '2026-11-16T19:05:00Z',
+    enabledAt: expect.stringMatching(/^\d{4}-\d\d-\d\dT/),
   });
+  const failing = waiting.pullRequests.find((pull) => pull.number === pulls['queued-fail'].number);
+  expect(failing).toMatchObject({ checks: 'SUCCESS', autoMerge: undefined });
 });
 
 test('a pull request github left out of those waiting may be one waiting to join', async () => {
