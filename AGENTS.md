@@ -1355,12 +1355,13 @@ parse them under `@lo/syntax`'s limits.
 The `code` feature runs language servers on the views the reader trusts, and their answers come
 before the syntax index's. A server is whatever an adapter (`main/adapters.ts`) says to start for
 its languages: Lo ships those for TypeScript and JavaScript, and Python, each downloaded with the
-Node it runs on; PHP, whose server is a program of its own; Go, gopls, which Lo builds with the Go
-it then runs with; Terraform, terraform-ls, which reads a `.tfvars` file as Terraform's variables;
-Java, JDT LS, which runs on Lo's Temurin JDK; C#, Roslyn, which runs on Lo's .NET SDK; and, on
-macOS, Swift, the SourceKit-LSP that comes with Xcode or Apple's Command Line Tools, which Lo
-doesn't download. Without either, Swift's item says it needs Apple's Command Line Tools, and to
-install them with `xcode-select --install`.
+Node it runs on; Rust, rust-analyzer, which runs on Lo's Rust toolchain; PHP, whose server is a
+program of its own; Go, gopls, which Lo builds with the Go it then runs with; Terraform,
+terraform-ls, which reads a `.tfvars` file as Terraform's variables; Java, JDT LS, which runs on
+Lo's Temurin JDK; C#, Roslyn, which runs on Lo's .NET SDK; and, on macOS, Swift, the SourceKit-LSP
+that comes with Xcode or Apple's Command Line Tools, which Lo doesn't download. Without either,
+Swift's item says it needs Apple's Command Line Tools, and to install them with
+`xcode-select --install`.
 
 - Nothing starts for a view nothing trusts: no download, no checkout, no server. Once a trusted view
   is on screen and a file its pull request adds or changes on the new side, or one asked about, is
@@ -1379,13 +1380,13 @@ install them with `xcode-select --install`.
   (`main/servers.ts`). A rootless server, told of no workspace, moves with only its files closed. It
   doesn't start on, or move to, a checkout its toolchains or its adapter refuse (`checkoutRefusal`
   in `main/toolchains.ts`): .NET's for a `global.json` that steers it, Go's for a `go.work` that
-  reaches outside it, Java's for a `.settings` at the root, Swift's for a build server's file or
-  SourceKit-LSP's settings anywhere in it. Its `HOME` is
-  `<cache>/code/homes/<owner>/<name>/<adapter>` (`Cache.homeFolder`), which the cache's cap counts
-  and trims and which goes with the repository's clone, but never while a server of the repository
-  runs (see Git). Its `PATH` is its toolchain's folders, then Lo's git's, then the system's, so a
-  git from a folder of other programs, as Homebrew's is, can't bring that folder's `go` ahead of the
-  toolchain's.
+  reaches outside it, Rust's for a `rust-analyzer.toml` or a Cargo config that could load code,
+  Java's for a `.settings` at the root, Swift's for a build server's file or SourceKit-LSP's
+  settings anywhere in it. Its `HOME` is `<cache>/code/homes/<owner>/<name>/<adapter>`
+  (`Cache.homeFolder`), which the cache's cap counts and trims and which goes with the repository's
+  clone, but never while a server of the repository runs (see Git). Its `PATH` is its toolchain's
+  folders, then Lo's git's, then the system's, so a git from a folder of other programs, as
+  Homebrew's is, can't bring that folder's `go` ahead of the toolchain's.
 - An adapter names what its server downloads up front, the server and the toolchains it uses, so the
   status bar adds them up from the first byte ("Java downloading · 38.1 MB of 177.4 MB"), counting
   only what isn't installed yet, in the units Settings counts in (`formatBytes`). It gets only the
