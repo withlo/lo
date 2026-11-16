@@ -18,6 +18,9 @@
  * - Before it downloads, the disk must have room for the download and what it unpacks to at once.
  *   A download recorded with what it unpacks to may unpack to that and {@link UNPACKED_MARGIN} more;
  *   the rest are held to the limits every download shares.
+ * - A Go program the manifest pins by its modules, as gopls is, is built from them where they
+ *   came, offline, with the Go of Lo's it's given (`src/build.ts`), and put in place as the file
+ *   it built to only when that's the size and SHA-256 pinned for the platform.
  */
 
 import { createHash } from 'node:crypto';
@@ -25,6 +28,7 @@ import {
   lstat,
   mkdir,
   mkdtemp,
+  open,
   readFile,
   readdir,
   readlink,
@@ -39,6 +43,7 @@ import { dirname, isAbsolute, join, relative, sep } from 'node:path';
 
 import { z } from 'zod';
 
+import { buildGo, type GoDownload } from './build.ts';
 import { atOnce, syncPath } from './disk.ts';
 import { fetchFile, type StallLimits } from './download.ts';
 import { isInside } from './environment.ts';
@@ -77,6 +82,12 @@ const PARTIAL = '.partial';
 const FILES = 'files';
 const MARKER = 'installed.json';
 
+/**
+ * Inside a download's folder, while a Go program builds: its module proxy, caches and home, removed
+ * once the program is out of it, before the version is put in place.
+ */
+const BUILD = 'build';
+
 /** What a marker holds. */
 const markerSchema = z.object({
   fingerprint: z.string(),
@@ -112,6 +123,11 @@ export interface InstallOptions {
   readonly signal?: AbortSignal | undefined;
   /** Hears how many bytes of how many have come. */
   readonly progress?: ((received: number, total: number) => void) | undefined;
+  /**
+   * Lo's Go, installed, which a Go program the manifest pins by its modules is built with. It
+   * must be the version the program was pinned with.
+   */
+  readonly go?: { readonly version: string; readonly installed: Installed } | undefined;
 }
 
 /** A version that's installed. */
@@ -178,7 +194,7 @@ export class Installer {
    * {@link DownloadError} with why it couldn't, or, once `options.signal` aborts, its reason.
    */
   async install(id: string, pinned: Pinned, options: InstallOptions = {}): Promise<Installed> {
-    const { signal, progress } = options;
+    const { signal, progress, go } = options;
     signal?.throwIfAborted();
     // Nothing installs it while it's being removed, so nothing gets the folder that goes.
     const removing = this.#removing.get(id)?.at(-1);
@@ -195,7 +211,7 @@ export class Installer {
         waiting: 0,
         // A job stopped once it's done gives no folder: a removal may be deleting it.
         done: Promise.resolve()
-          .then(() => this.#run(id, pinned, created))
+          .then(() => this.#run(id, pinned, created, go))
           .then((installed) => {
             controller.signal.throwIfAborted();
             return installed;
@@ -333,18 +349,19 @@ export class Installer {
     }
   }
 
-  async #run(id: string, pinned: Pinned, job: Job): Promise<Installed> {
+  async #run(id: string, pinned: Pinned, job: Job, go: InstallOptions['go']): Promise<Installed> {
     const download = this.#downloadOf(pinned);
     const print = fingerprint(id, pinned, download);
     const target = this.folderOf(id, pinned.version);
     const found = await this.#whole(target, print, download);
     if (found !== undefined) return found;
     const { signal } = job.controller;
+    if (download.kind === 'go') checkGo(download, go);
     await this.#checkRoom(download);
     signal.throwIfAborted();
     for (let attempt = 1; ; attempt += 1) {
       try {
-        return await this.#attempt(id, pinned, download, print, job);
+        return await this.#attempt(id, pinned, download, print, job, go);
       } catch (error) {
         const again =
           error instanceof DownloadError && error.problem === 'interrupted' && attempt < TRIES;
@@ -361,6 +378,7 @@ export class Installer {
     download: Download,
     print: string,
     job: Job,
+    go: InstallOptions['go'],
   ): Promise<Installed> {
     const { signal } = job.controller;
     const partialRoot = join(this.#folder, PARTIAL);
@@ -411,8 +429,18 @@ export class Installer {
       await mkdir(into, { mode: 0o755 });
       const limits = this.#limits ?? limitsFor(download);
       const unpacker = new Unpacker(into, { limits, signal });
-      await unpack(unpacker, download, files, into);
+      const platform = this.#platform;
+      const build = join(work, BUILD);
+      await unpack(unpacker, download, files, into, async (program) => {
+        if (platform === undefined) throw new Error('there’s no platform to build for');
+        await mkdir(build, { mode: 0o700 });
+        const lo = checkGo(program, go);
+        return buildChecked(program, { files, folder: build, platform, go: lo, signal });
+      });
       for (const file of files) await rm(file, { force: true });
+      // A build's folder, its module proxy, caches and home, goes once the program is out of it,
+      // before anything is put in place: only the program and the marker stay.
+      if (download.kind === 'go') await this.#discard(build);
       signal.throwIfAborted();
       // What was unpacked is on the disk before the marker says so, and the marker before the
       // folder is in place, so a power loss leaves no folder that looks whole and isn't.
@@ -477,11 +505,13 @@ export class Installer {
 
   /**
    * Refuses `download` when the disk hasn't room for it: its files and what they unpack to, which
-   * are both there until the files are removed.
+   * are both there until the files are removed, or for a Go program, the most its build holds,
+   * which counts the module files moved into it.
    */
   async #checkRoom(download: Download): Promise<void> {
     const files = partsOf(download).reduce((sum, part) => sum + part.size, 0);
-    const needed = files + (download.unpacked ?? 0);
+    const needed =
+      download.kind === 'go' ? Math.max(files, download.room) : files + (download.unpacked ?? 0);
     await mkdir(this.#folder, { recursive: true, mode: 0o755 });
     const free = await this.#free(this.#folder).catch(() => undefined);
     if (free === undefined || free >= needed) return;
@@ -520,7 +550,11 @@ export class Installer {
 
   #downloadOf(pinned: Pinned): Download {
     const download = this.#platform === undefined ? undefined : downloadFor(pinned, this.#platform);
-    if (download === undefined) {
+    // A Go program builds only for the platforms its builds are pinned for.
+    const unbuilt =
+      download?.kind === 'go' &&
+      (this.#platform === undefined || download.builds[this.#platform] === undefined);
+    if (download === undefined || unbuilt) {
       throw new DownloadError('unavailable', 'There’s no download of it for this system.');
     }
     return download;
@@ -633,17 +667,21 @@ export async function unpackMeasured(
   return { entry, bytes };
 }
 
+/** Builds a Go program from its checked modules, and says where the program it built is. */
+type Build = (download: GoDownload) => Promise<string>;
+
 /**
  * Unpacks `files`, the parts of `download` in order, with `unpacker`, which writes into `into`,
- * makes its links, and says where its entry point is.
+ * makes its links, and says where its entry point is. A Go program is built with `build`.
  */
 async function unpack(
   unpacker: Unpacker,
   download: Download,
   files: readonly string[],
   into: string,
+  build?: Build,
 ): Promise<string> {
-  await unpackAll(unpacker, download, files);
+  await unpackAll(unpacker, download, files, build);
   await unpacker.finish();
   return checkEntry(into, download.entry);
 }
@@ -653,6 +691,7 @@ async function unpackAll(
   unpacker: Unpacker,
   download: Download,
   files: readonly string[],
+  build: Build | undefined,
 ): Promise<void> {
   const file = (index: number) => {
     const found = files[index];
@@ -678,9 +717,71 @@ async function unpackAll(
         await unpacker.tarGz(file(index), { from: layer.from });
       }
       return undefined;
+    case 'go':
+      if (build === undefined) throw new Error('a Go program is built, not unpacked');
+      return unpacker.program(await build(download), download.entry);
     default:
       throw new Error(`a download Lo doesn't know: ${JSON.stringify(download satisfies never)}`);
   }
+}
+
+/** The Go `download` is built with, once it's checked to be the version it was pinned with. */
+function checkGo(download: GoDownload, go: InstallOptions['go']): Installed {
+  if (go === undefined) throw new Error(`it’s built with Go ${download.go}, which it wasn’t given`);
+  if (go.version !== download.go) {
+    throw new DownloadError(
+      'refused',
+      `It’s pinned as Go ${download.go} builds it, and Lo has Go ${go.version}.`,
+    );
+  }
+  return go.installed;
+}
+
+/**
+ * Builds `download`'s program from `files`, its checked modules, in `folder`, and says where it
+ * is, once it's the size and SHA-256 pinned for `platform`.
+ */
+async function buildChecked(
+  download: GoDownload,
+  options: {
+    readonly files: readonly string[];
+    readonly folder: string;
+    readonly platform: Platform;
+    readonly go: Installed;
+    readonly signal: AbortSignal;
+  },
+): Promise<string> {
+  const { files, folder, platform, go, signal } = options;
+  const pinned = download.builds[platform];
+  if (pinned === undefined) {
+    throw new DownloadError('unavailable', 'There’s no download of it for this system.');
+  }
+  const program = await buildGo({ go: go.entry, download, files, folder, platform, signal });
+  const { size } = await stat(program);
+  if (size !== pinned.size || (await sha256Of(program)) !== pinned.sha256) {
+    throw new DownloadError(
+      'mismatch',
+      'What Lo built isn’t the program it pinned: its SHA-256 is another.',
+    );
+  }
+  return program;
+}
+
+/** The SHA-256 of the file at `path`, in lowercase hex, read a megabyte at a time. */
+async function sha256Of(path: string): Promise<string> {
+  const hash = createHash('sha256');
+  const buffer = Buffer.alloc(1024 * 1024);
+  const handle = await open(path, 'r');
+  try {
+    for (;;) {
+      const { bytesRead } = await handle.read(buffer, 0, buffer.length, null);
+      if (bytesRead === 0) break;
+      hash.update(buffer.subarray(0, bytesRead));
+    }
+  } finally {
+    await handle.close();
+  }
+  return hash.digest('hex');
 }
 
 /** The entry point `entry`'s absolute path inside `files`, checked to be a file there. */

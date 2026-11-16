@@ -1,12 +1,13 @@
 // Each server Lo runs, started as its adapter starts it on the hostile fixture's checkout
 // (`testing/fixtures/code-hostile.sh --local`), with the fake server standing in for it: Node with
-// the server's flags, or as its program, with its settings and its initialization options. The
-// fake server reports what it got, and asks for every setting the checkout's plants would set.
+// the server's flags, or as its program, with its toolchain's variables, its settings and its
+// initialization options. The fake server reports what it got, and asks for every setting the
+// checkout's plants would set.
 // Nothing the fixture plants runs: the fake server runs nothing, and the plants are read as text,
 // from the bare repository.
 
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, realpathSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, realpathSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -16,16 +17,23 @@ import { FAKE_SERVER, fakeServer, readReport, type Seen } from '@lo/testing/lsp'
 import { afterAll, beforeAll, expect, onTestFinished, test } from 'vitest';
 
 import {
+  checkoutProblem,
+  GOPLS,
   type Launch,
   launchNative,
   launchOnNode,
   type NativeServer,
+  NO_NETWORK,
   NO_PYTHON,
+  NO_TERRAFORM,
   type NodeServer,
   PHP_LSP,
   PHP_VERSION,
   PYRIGHT,
   startServer,
+  TERRAFORM_LS,
+  toolchainUse,
+  type ToolchainUse,
   VTSLS,
 } from '../src/index.ts';
 import { eventually, GIT, tempFolder } from './support.ts';
@@ -59,6 +67,8 @@ beforeAll(() => {
   });
   checkout = realpathSync(join(folder, 'work'));
   bare = join(folder, 'rozed-dev', 'e2e.git');
+  goFolder = join(realpathSync(folder), 'toolchains', 'go');
+  mkdirSync(join(goFolder, 'go', 'bin'), { recursive: true });
 });
 
 afterAll(() => {
@@ -79,23 +89,42 @@ function editorSettings(): Record<string, unknown> {
   return Object.fromEntries(Object.entries(settings));
 }
 
-/**
- * How `server`'s adapter starts it from its install in `own`, with the fake server, on
- * `scenario`, in its place. Lo's Node is the one running the tests: a server on Lo's Node has the
- * fake server's script as its entry point, and a program of its own is Node with that script.
- */
-function standIn(server: NodeServer | NativeServer, own: string, scenario: string): Launch {
-  const node = { folder: own, entry: process.execPath };
-  return 'node' in server
-    ? launchOnNode({ ...server, args: [scenario] }, node, { folder: own, entry: FAKE_SERVER })
-    : launchNative({ ...server, args: [FAKE_SERVER, scenario] }, node);
+/** Lo's Go, as the tests stand it in: a folder beside the checkout, with nothing in it. */
+let goFolder = '';
+
+/** Lo's Go, as `toolchainUse` gives it, installed in {@link goFolder}. */
+function goUse(): ToolchainUse {
+  return toolchainUse('go', '1.27.4', { folder: goFolder, entry: `${goFolder}/go/bin/go` });
 }
 
 /**
- * Starts `server` as its adapter would on the checkout, with the fake server in its place, asking
- * for the settings `sections` once it's initialized, and says what it saw once it has.
+ * How `server`'s adapter starts it from its install in `own`, with `toolchains`, and with the fake
+ * server, on `scenario`, in its place. Lo's Node is the one running the tests: a server on Lo's
+ * Node has the fake server's script as its entry point, and a program of its own is Node with that
+ * script.
  */
-async function startAs(server: NodeServer | NativeServer, sections: readonly string[]) {
+function standIn(
+  server: NodeServer | NativeServer,
+  own: string,
+  scenario: string,
+  toolchains: readonly ToolchainUse[],
+): Launch {
+  const node = { folder: own, entry: process.execPath };
+  return 'node' in server
+    ? launchOnNode({ ...server, args: [scenario] }, node, { folder: own, entry: FAKE_SERVER })
+    : launchNative({ ...server, args: [FAKE_SERVER, scenario] }, node, toolchains);
+}
+
+/**
+ * Starts `server` as its adapter would on the checkout, with `toolchains` and the fake server in
+ * its place, asking for the settings `sections` once it's initialized, and says what it saw once
+ * it has.
+ */
+async function startAs(
+  server: NodeServer | NativeServer,
+  sections: readonly string[],
+  toolchains: readonly ToolchainUse[] = [],
+) {
   const own = tempFolder();
   const fake = fakeServer(own, {
     requests: [
@@ -105,14 +134,17 @@ async function startAs(server: NodeServer | NativeServer, sections: readonly str
       },
     ],
   });
-  const launch = standIn(server, own, fake.args.at(-1) ?? '');
+  const launch = standIn(server, own, fake.args.at(-1) ?? '', toolchains);
   const running = startServer({
     name: server.name,
     program: launch.program,
     args: launch.args,
     root: checkout,
     home: join(own, 'home'),
-    path: [],
+    path: launch.path ?? [],
+    variables: launch.variables,
+    allowed: launch.allowed,
+    homeFolders: launch.homeFolders,
     git: GIT,
     settings: launch.settings,
     initializationOptions: launch.initializationOptions,
@@ -152,21 +184,37 @@ async function startAs(server: NodeServer | NativeServer, sections: readonly str
 /**
  * Starts `server` as Lo would on the checkout, asking for each setting the checkout's editor
  * settings set and for `ours`, and checks what holds for every server: it runs in the checkout with
- * an environment of Lo's alone, and hears nothing the checkout says.
+ * an environment of Lo's alone, its toolchain's `own` aside, and hears nothing the checkout says.
  */
-async function heardBy(server: NodeServer | NativeServer, ours: readonly string[]) {
+async function heardBy(
+  server: NodeServer | NativeServer,
+  ours: readonly string[],
+  own: {
+    toolchains?: ToolchainUse[];
+    path?: string[];
+    env?: (home: string) => Record<string, string>;
+  } = {},
+) {
   const plants = editorSettings();
-  const seen = await startAs(server, [...Object.keys(plants), ...ours]);
+  const seen = await startAs(server, [...Object.keys(plants), ...ours], own.toolchains);
   const { started, initialize, heard, home } = seen;
   expect(started.cwd).toBe(checkout);
-  // Its own home and the system's folders, git's settings, and nothing of the checkout's. macOS
-  // sets its text encoding in a process itself, as the process loads CoreFoundation.
+  // Its own home and the system's folders, git's settings, a proxy that leads nowhere, and nothing
+  // of the checkout's. macOS sets its text encoding in a process itself, as the process loads
+  // CoreFoundation.
   const { __CF_USER_TEXT_ENCODING: _system, ...env } = started.env;
   expect(env).toEqual({
     ...GIT,
+    ...own.env?.(home),
     HOME: home,
     TMPDIR: join(home, 'tmp'),
-    PATH: '/usr/bin:/bin',
+    PATH: [...(own.path ?? []), '/usr/bin', '/bin'].join(':'),
+    HTTPS_PROXY: NO_NETWORK,
+    https_proxy: NO_NETWORK,
+    HTTP_PROXY: NO_NETWORK,
+    http_proxy: NO_NETWORK,
+    ALL_PROXY: NO_NETWORK,
+    all_proxy: NO_NETWORK,
     LANG: 'C.UTF-8',
   });
   // It asks Lo for its settings, so it reads none from the checkout's files, and no setting it
@@ -249,4 +297,58 @@ test('php-lsp runs no tool, and keeps its cache in its home, whatever the checko
   expect(started.env).not.toHaveProperty('XDG_CACHE_HOME');
   expect(started.env.HOME).toBe(home);
   expect(home.startsWith(`${checkout}/`)).toBe(false);
+});
+
+test('gopls runs with Lo’s Go alone, whatever the checkout plants for Go', async () => {
+  // A workspace and a module asking for another Go, a generator, a cgo file, a package driver
+  // where direnv would put it on PATH, and editor settings that would add flags and a driver.
+  expect(planted('go.work')).toContain('toolchain go1.99.9');
+  expect(planted('go/go.mod')).toContain('toolchain go1.99.9');
+  expect(planted('go/generate.go')).toContain('//go:generate');
+  expect(planted('go/cgo.go')).toContain('#cgo pkg-config');
+  expect(planted('.envrc')).toContain('hostile/bin');
+  expect(planted('hostile/bin/gopackagesdriver')).toContain('lo-hostile-gopackagesdriver');
+  // The checkout's go.work names only its own folder, so the server starts on it.
+  expect(await checkoutProblem('go', checkout)).toBeUndefined();
+  const { heard, plants } = await heardBy(
+    GOPLS,
+    ['gopls.build.env', 'gopls.build.buildFlags', 'gopls.vulncheck'],
+    {
+      toolchains: [goUse()],
+      path: [`${goFolder}/go/bin`],
+      env: (home) => ({
+        GOROOT: `${goFolder}/go`,
+        GOTOOLCHAIN: 'local',
+        GOENV: 'off',
+        GOPROXY: 'off',
+        GOFLAGS: '',
+        CGO_ENABLED: '0',
+        GOPACKAGESDRIVER: 'off',
+        GOMEMLIMIT: '3072MiB',
+        GOPATH: join(home, 'go'),
+        GOMODCACHE: join(home, 'go', 'pkg', 'mod'),
+        GOCACHE: join(home, 'cache', 'go-build'),
+      }),
+    },
+  );
+  expect(plants.gopls).toMatchObject({ 'build.env': { GOPACKAGESDRIVER: expect.any(String) } });
+  expect(heard).toMatchObject({
+    'gopls.build.env': null,
+    'gopls.build.buildFlags': null,
+    'gopls.vulncheck': 'Off',
+  });
+});
+
+test('terraform-ls gets no Terraform it can run, whatever the checkout names or holds', async () => {
+  // A provider's plugin with the lock file that takes it as installed, and a `terraform` where
+  // direnv would put it on PATH.
+  const provider = 'hostile/terraform-provider/.terraform/providers/registry.terraform.io';
+  expect(
+    planted(`${provider}/hashicorp/null/9.9.9/linux_amd64/terraform-provider-null_v9.9.9`),
+  ).toContain('lo-hostile-terraform-provider');
+  expect(planted('hostile/terraform-provider/.terraform.lock.hcl')).toContain('hashicorp/null');
+  expect(planted('hostile/bin/terraform')).toContain('lo-hostile-terraform');
+  const { initialize, plants } = await heardBy(TERRAFORM_LS, []);
+  expect(plants['terraform.languageServer.terraform.path']).toContain('lo-server.sh');
+  expect(initialize.initializationOptions).toMatchObject({ terraform: { path: NO_TERRAFORM } });
 });

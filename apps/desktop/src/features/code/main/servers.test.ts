@@ -1,14 +1,15 @@
 // The language servers that run, and for how long: one per repository and language, moving with
 // the head on screen; stopped 10 minutes off screen and once their repository's last tab closes;
-// held to 4 servers and 8 GB in all, never stopping one on screen for another; and started again
-// by themselves after a crash only once, after a minute's run. Lifetimes run on stand-in servers
-// under fake timers; the fake language server runs one for real.
+// held to 4 servers and 8 GB in all, never stopping one on screen for another; started again by
+// themselves after a crash only once, after a minute's run; and each holding its repository in the
+// cache from before it starts until it has stopped. Lifetimes run on stand-in servers under
+// fake timers; the fake language server runs one for real.
 
 import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 
-import { type Server, serverEnvironment, type ServerSpec, startServer } from '@lo/lsp';
+import { NO_NETWORK, type Server, serverEnvironment, type ServerSpec, startServer } from '@lo/lsp';
 import { fakeServer } from '@lo/testing/lsp';
 import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 
@@ -82,11 +83,19 @@ function view(
   return { id, repo, pull, trust, root: trust === 'trusted' ? root : undefined, wants };
 }
 
-/** A pool of stand-ins, and each one it started, with `checkout` to look at each checkout. */
-function standIns(limits: Partial<PoolLimits> = {}, checkout?: PoolOptions['checkout']) {
+/**
+ * A pool of stand-ins, and each one it started, with `checkout` to look at each checkout and `hold`
+ * to hold each repository in the cache.
+ */
+function standIns(
+  limits: Partial<PoolLimits> = {},
+  checkout?: PoolOptions['checkout'],
+  hold?: PoolOptions['hold'],
+) {
   const started: StandIn[] = [];
   const pool = new ServerPool({
     checkout,
+    hold,
     prepare: (each, progress, signal) =>
       each.prepare({
         install: () => Promise.reject(new Error('no downloads in tests')),
@@ -473,6 +482,94 @@ describe('trust, then and there', () => {
   });
 });
 
+describe('the cache', () => {
+  it('holds a server’s repository from before it starts until it has stopped', async () => {
+    const said: string[] = [];
+    const { pool, started } = standIns({}, undefined, (repo, each) => {
+      said.push(`held ${repo} for ${each.id} with ${started.length} started`);
+      return Promise.resolve(() => said.push(`let go of ${repo} for ${each.id}`));
+    });
+    pool.sync([view('v1', 'a/x', 1)], 'v1');
+    await settle();
+    const first = started[0];
+    if (!first) throw new Error('nothing started');
+    expect(said).toEqual(['held a/x for ts with 0 started']);
+    first.set({ kind: 'ready' });
+    first.slow = true;
+
+    // Its repository's last tab closes: it's held while the server stops, and let go once it has.
+    pool.sync([], undefined);
+    await settle();
+    expect([first.stopped, said.length]).toEqual([true, 1]);
+    first.exit();
+    await settle();
+    expect(said).toEqual(['held a/x for ts with 0 started', 'let go of a/x for ts']);
+  });
+
+  it.each(['a crash', 'Restart', 'a halt'])(
+    'lets go of the hold of a server stopped for %s once it has stopped',
+    async (what) => {
+      const said: string[] = [];
+      let holds = 0;
+      const { pool, started } = standIns({}, undefined, () => {
+        holds += 1;
+        const hold = holds;
+        said.push(`held ${hold}`);
+        return Promise.resolve(() => said.push(`let go of ${hold}`));
+      });
+      pool.sync([view('v1', 'a/x', 1)], 'v1');
+      await settle();
+      const first = started[0];
+      if (!first) throw new Error('nothing started');
+      first.set({ kind: 'ready' });
+      first.slow = true;
+      if (what === 'a crash') crash(first, 61_000);
+      else if (what === 'Restart') {
+        void pool.restart('a/x', TS, { folder: '/cache/a/x/pull-1', pull: 1 });
+      } else void pool.halt(() => true, 'Go was removed. Restart downloads it again.');
+      await settle();
+      expect([first.stopped, said]).toEqual([true, ['held 1']]);
+
+      // Once it has stopped, its hold goes, and the one started in its place holds anew.
+      first.exit();
+      await settle();
+      expect(said).toEqual(
+        what === 'a halt' ? ['held 1', 'let go of 1'] : ['held 1', 'let go of 1', 'held 2'],
+      );
+      expect(started).toHaveLength(what === 'a halt' ? 1 : 2);
+    },
+  );
+
+  it('starts nothing until the hold comes, and lets go of one whose server never starts', async () => {
+    const waiting: (() => void)[] = [];
+    const said: string[] = [];
+    const { pool, started } = standIns(
+      {},
+      undefined,
+      (repo) =>
+        new Promise((resolve) => {
+          waiting.push(() => resolve(() => said.push(`let go of ${repo}`)));
+        }),
+    );
+    // Cleanup is removing something of the repository: nothing starts until it's done.
+    pool.sync([view('v1', 'a/x', 1)], 'v1');
+    await settle();
+    expect(started).toHaveLength(0);
+    waiting.shift()?.();
+    await settle();
+    expect(started).toHaveLength(1);
+
+    // Another repository's tab closes while its hold waits: its server never starts, and it lets go.
+    pool.sync([view('v1', 'a/x', 1), view('v2', 'b/y', 2)], 'v2');
+    await settle();
+    pool.sync([view('v1', 'a/x', 1)], 'v1');
+    await settle();
+    waiting.shift()?.();
+    await settle();
+    expect([started.length, said]).toEqual([1, ['let go of b/y']]);
+  });
+});
+
 describe('halting', () => {
   it('stops the servers that use a toolchain, each saying why until “Restart” starts it again', async () => {
     const { pool, started, live } = standIns();
@@ -522,7 +619,7 @@ describe('halting', () => {
 });
 
 describe('Lo’s own servers', () => {
-  it('get git’s folder, then the system’s, on their PATH, and no variable of their own', async () => {
+  it('that use no toolchain get git’s folder, then the system’s, on their PATH, and no variable of their own', async () => {
     const specs: ServerSpec[] = [];
     const pool = new ServerPool({
       prepare: (each, progress, signal) =>
@@ -542,16 +639,27 @@ describe('Lo’s own servers', () => {
       log: () => undefined,
     });
     onTestFinished(() => pool.stop());
-    pool.sync([view('v1', 'a/x', 1, SHIPPED)], 'v1');
+    const own = SHIPPED.filter((each) => each.downloads?.toolchains?.length === 0);
+    pool.sync([view('v1', 'a/x', 1, own)], 'v1');
     await settle();
-    // PHP's starts first, since it waits for one download, not Node's as well.
-    expect(specs.map((spec) => spec.name)).toEqual(['PHP', 'TypeScript', 'Python']);
+    expect(specs.map((spec) => spec.name).toSorted()).toEqual([
+      'PHP',
+      'Python',
+      'Terraform',
+      'TypeScript',
+    ]);
     for (const spec of specs) {
       expect(serverEnvironment({ ...spec, roots: [spec.root] })).toEqual({
         GIT_CONFIG_COUNT: '0',
         HOME: '/home/lo',
         TMPDIR: '/home/lo/tmp',
         PATH: '/lo/git/bin:/usr/bin:/bin',
+        HTTPS_PROXY: NO_NETWORK,
+        https_proxy: NO_NETWORK,
+        HTTP_PROXY: NO_NETWORK,
+        http_proxy: NO_NETWORK,
+        ALL_PROXY: NO_NETWORK,
+        all_proxy: NO_NETWORK,
         LANG: 'C.UTF-8',
       });
     }

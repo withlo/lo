@@ -5,12 +5,14 @@
 // `@lo/lsp`'s, with the reasons. Nothing here calls Electron.
 
 import {
+  GOPLS,
   launchNative,
   launchOnNode,
   launchRustAnalyzer,
   PHP_LSP,
   PYRIGHT,
   RUST_ANALYZER,
+  TERRAFORM_LS,
   VTSLS,
   type Installed,
   type Launch,
@@ -39,6 +41,8 @@ export type Prepared =
  * `Launch`: its folder of programs, first on the server's `PATH`, and its variables.
  */
 export interface Toolchain extends ToolchainUse {
+  /** The version installed, as `toolchains.json` pins it. */
+  readonly version: string;
   readonly installed: Installed;
 }
 
@@ -46,9 +50,10 @@ export interface Toolchain extends ToolchainUse {
 export interface PrepareContext {
   /**
    * Installs `id` as Lo's manifest pins it, unless it's installed already, and says where. Its
-   * download's progress shows in the status bar.
+   * download's progress shows in the status bar. A server Lo builds from its Go modules, as it
+   * does gopls, is built with `go`, Lo's Go.
    */
-  install(id: string): Promise<Installed>;
+  install(id: string, options?: { readonly go?: Toolchain | undefined }): Promise<Installed>;
   /**
    * Installs toolchain `id` as `toolchains.json` pins it, unless it's installed already, and says
    * what the server gets of it. Its download's progress shows with the server's, and a failure
@@ -68,8 +73,19 @@ export interface Adapter {
   readonly name: string;
   /** The languages it reads, each with the id the protocol names it by, such as `typescriptreact`. */
   readonly languages: Readonly<Partial<Record<LanguageName, string>>>;
+  /**
+   * The protocol's ids for files of its languages with these extensions, which its server reads
+   * as another kind of file: Terraform's variables, `.tfvars`, are `terraform-vars`.
+   */
+  readonly extensions?: Readonly<Record<string, string>> | undefined;
   /** How long `gd` waits for it, for a server slower than most to answer, such as a JVM's. */
   readonly definitionDeadline?: number | undefined;
+  /**
+   * Whether its server finds references only from a declaration, as terraform-ls does, so that
+   * asked at a use it finds none: when it finds none where the reader is, `gr` asks it for the
+   * definition, then for the references there.
+   */
+  readonly referencesFromDefinition?: boolean | undefined;
   /**
    * What it downloads, by ID, named up front so its progress adds them all up from the start
    * ("Java downloading · 38.1 MB of 177.4 MB"): servers and Node from the manifest, and
@@ -125,18 +141,25 @@ const RUST: Adapter = {
   },
 };
 
-/** An adapter for `server`, a program of its own, which downloads once, on first use. */
+/**
+ * An adapter for `server`, a program of its own, which uses the toolchains `toolchains` names:
+ * each downloads first, then the server, which Lo builds with its Go when it's built from Go
+ * modules, as gopls is.
+ */
 function native(
   server: NativeServer,
   adapter: Omit<Adapter, 'prepare' | 'noHints' | 'downloads'>,
+  toolchains: readonly string[] = [],
 ): Adapter {
   return {
     ...adapter,
     noHints: server.hints ? undefined : `${server.name} has no type hints.`,
-    // The server alone: it needs no Node and no toolchain.
-    downloads: { servers: [server.id], toolchains: [] },
+    downloads: { servers: [server.id], toolchains },
     async prepare(context) {
-      return { kind: 'ready', launch: launchNative(server, await context.install(server.id)) };
+      const used = new Map<string, Toolchain>();
+      for (const id of toolchains) used.set(id, await context.toolchain(id));
+      const installed = await context.install(server.id, { go: used.get('go') });
+      return { kind: 'ready', launch: launchNative(server, installed, [...used.values()]) };
     },
   };
 }
@@ -151,6 +174,14 @@ export const ADAPTERS: readonly Adapter[] = [
   onNode(PYRIGHT, { id: 'python', name: 'Python', languages: { python: 'python' } }),
   RUST,
   native(PHP_LSP, { id: 'php', name: 'PHP', languages: { php: 'php' } }),
+  native(GOPLS, { id: 'go', name: 'Go', languages: { go: 'go' } }, ['go']),
+  native(TERRAFORM_LS, {
+    id: 'terraform',
+    name: 'Terraform',
+    languages: { terraform: 'terraform' },
+    extensions: { tfvars: 'terraform-vars' },
+    referencesFromDefinition: true,
+  }),
 ];
 
 /** The adapter that reads the file at `path`, and the protocol's id for its language, if one does. */
@@ -160,9 +191,17 @@ export function adapterFor(
 ): { readonly adapter: Adapter; readonly languageId: string } | undefined {
   const language = languageOfPath(path);
   if (language === undefined) return undefined;
+  const extension = /\.([^./]+)$/.exec(path)?.[1]?.toLowerCase();
   for (const adapter of adapters) {
     const languageId = adapter.languages[language];
-    if (languageId !== undefined) return { adapter, languageId };
+    if (languageId === undefined) continue;
+    const byExtension =
+      extension !== undefined &&
+      adapter.extensions !== undefined &&
+      Object.hasOwn(adapter.extensions, extension)
+        ? adapter.extensions[extension]
+        : undefined;
+    return { adapter, languageId: byExtension ?? languageId };
   }
   return undefined;
 }

@@ -17,9 +17,10 @@
  *   and treats an empty one as no wrapper; `cargo` reads `RUSTC` before the file's `build.rustc`
  *   too. With no rustup on the `PATH` and `cargo.sysroot` set to Lo's toolchain, nothing reads a
  *   `rust-toolchain.toml`, so a checkout can't ask for another Rust.
- * - `CARGO_ENCODED_RUSTFLAGS` is empty, which beats `RUSTFLAGS` and a config's `build.rustflags` and
- *   `target.*.rustflags`, so no flag of a checkout's reaches Lo's `rustc`; with unstable options
- *   on, some flags would load code into it.
+ * - `CARGO_ENCODED_RUSTFLAGS` is empty, which beats `RUSTFLAGS` and a config's `build.rustflags`
+ *   and `target.*.rustflags`, so no flag of a checkout's reaches Lo's `rustc`; with unstable
+ *   options on, some flags would load code into it. `CARGO_ENCODED_RUSTDOCFLAGS` is empty too, for
+ *   `rustdoc`'s.
  * - `CARGO_NET_OFFLINE=true`, and `CARGO_HOME` defaults to a private `.cargo` in the server's
  *   `HOME`, empty and no one else's. So `cargo metadata` fetches nothing: no registry, no git
  *   dependency, no `[source]` replacement over the network, no `[registries]` and no
@@ -48,11 +49,11 @@
  * table, which `cargo` sets on the `rustc` it runs, whatever Lo's environment holds; an
  * `[unstable]` table, which `RUSTC_BOOTSTRAP=1` lets take effect; and an `include`, which reads
  * another config, one outside the checkout too. {@link checkoutProblem} refuses a checkout that
- * holds any of these, a Cargo config Lo can't read as TOML or that's a link, or anything named
- * `.cargo/config.toml` or `.cargo/config` in a folder above it, as `@lo/lsp`'s `toolchains.ts`
- * describes. Like every server Lo runs, rust-analyzer has no sandbox:
- * it reads what the user can, outside the checkout too (an absolute path, a sysroot's sources), and
- * Lo never opens a place outside the checkout an answer names.
+ * holds any of these, a Cargo config Lo can't read as TOML or that isn't a plain file, or anything
+ * named `.cargo/config.toml` or `.cargo/config` in a folder above it, as `@lo/lsp`'s
+ * `toolchains.ts` describes. Like every server Lo runs, rust-analyzer has no sandbox: it reads what
+ * the user can, outside the checkout too (an absolute path, a sysroot's sources), and Lo never
+ * opens a place outside the checkout an answer names.
  */
 
 import { dirname, join } from 'node:path';
@@ -130,6 +131,7 @@ export function launchRustAnalyzer(
     path: toolchain.path,
     variables: toolchain.variables,
     allowed: toolchain.allowed,
+    ...(toolchain.homeFolders === undefined ? {} : { homeFolders: toolchain.homeFolders }),
     // The section rust-analyzer asks for, and the same object in `initialize`.
     settings: { 'rust-analyzer': settings },
     initializationOptions: settings,

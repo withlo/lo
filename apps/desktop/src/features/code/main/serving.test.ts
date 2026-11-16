@@ -284,6 +284,32 @@ describe('following views for servers', () => {
     expect(typescript).toHaveProperty('noHints', undefined);
   });
 
+  it('gives a ready server each file’s own language, whichever file it was asked about from', async () => {
+    const { repo } = repoOf(['infra/prod.tfvars']);
+    const server = new StandIn({
+      name: 'stand-in',
+      program: '/bin/x',
+      args: [],
+      root: `/cache/checkouts/pull-80/${head}`,
+      home: '/home/lo',
+      path: [],
+      git: {},
+    });
+    const { serving } = follow(
+      () => input(repo),
+      ADAPTERS,
+      () => ({ kind: 'ready', server }),
+    );
+    serving.update('v1');
+    await settle();
+    const terraform = serving.serverFor('v1', head, 'infra/prod.tfvars');
+    if (terraform?.kind !== 'ready') throw new Error('terraform-ls should be ready');
+    expect(terraform.languageOf('infra/prod.tfvars')).toBe('terraform-vars');
+    expect(terraform.languageOf('infra/variables.tf')).toBe('terraform');
+    // Another server's file isn't its to open.
+    expect(terraform.languageOf('src/a.ts')).toBeUndefined();
+  });
+
   it('says a checkout that failed, and makes it again on Restart', async () => {
     const { repo } = repoOf(['src/a.ts']);
     let fail = true;

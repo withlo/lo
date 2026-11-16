@@ -282,7 +282,7 @@ test(
     expect(cache && settings.cachePath).toBe('lo-hostile-php-lsp-cache');
     const said = new Set(script.match(/lo-hostile-[a-z]+(?:-[a-z]+)*/g));
     expect([...markers, 'lo-hostile-php-lsp-cache'].toSorted()).toEqual([...said].toSorted());
-    expect(markers.size).toBe(28);
+    expect(markers.size).toBe(31);
   },
 );
 
@@ -292,6 +292,7 @@ test("Lo's own repository holds nothing a tool would pick up from what the hosti
   // settings or package scripts.
   const named = new Set([
     '.cargo',
+    '.envrc',
     '.gitmodules',
     '.mvn',
     '.npmrc',
@@ -306,6 +307,7 @@ test("Lo's own repository holds nothing a tool would pick up from what the hosti
     'gradle',
     'gradlew',
     'global.json',
+    'go.work',
     'mise.toml',
     'mvnw',
     'node_modules',

@@ -344,7 +344,7 @@ test('Settings lists the toolchains, and removes one that’s downloaded', async
     await expect(rows).toHaveText(
       [
         /^\.NET SDK 10\.0\.404Not downloaded · [\d.]+ MB · No language server uses it yet$/,
-        'Go 1.27.42 KB · No language server uses it yetRemove',
+        'Go 1.27.42 KB · For GoRemove',
         /^Rust 1\.100\.0Not downloaded · [\d.]+ MB/,
         /^Temurin JDK 25\.0\.5\+8Not downloaded · [\d.]+ MB/,
       ],

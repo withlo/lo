@@ -21,7 +21,7 @@ import { parseOid } from '../src/oid.ts';
 import type { Repo } from '../src/repo.ts';
 import { leadsElsewhere } from '../src/trust.ts';
 import { blobs, fetch, type PullRequest, pullRequest } from './fixtures.ts';
-import { cacheFor, repoServer, script, tempFolder } from './support.ts';
+import { cacheFor, eventually, repoServer, script, tempFolder } from './support.ts';
 
 /** A cache with pull request #1 fetched into `owner/repo`'s clone, and a folder for markers. */
 async function fetched(): Promise<{
@@ -287,5 +287,17 @@ test('a clone that fails the check is never pulled out from under a repository r
   await expect(cache.open('owner', 'repo')).rejects.toThrow('is still open');
   expect(existsSync(join(reading.folder, 'commondir'))).toBe(true);
   reading.close();
+  expect(await madeAgain(cache, repo)).toBe(true);
+});
+
+test('nor from under a language server still running on one of its checkouts', async () => {
+  const { cache, repo } = await fetched();
+  const release = await cache.useForServer('owner', 'repo', 'ts');
+  writeFileSync(join(repo.folder, 'commondir'), '/elsewhere\n');
+
+  await expect(cache.open('owner', 'repo')).rejects.toThrow('a language server still runs on it');
+  expect(existsSync(join(repo.folder, 'commondir'))).toBe(true);
+  release();
+  await eventually(() => cache.cloneLock('owner', 'repo').servers === 0);
   expect(await madeAgain(cache, repo)).toBe(true);
 });

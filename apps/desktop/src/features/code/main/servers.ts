@@ -14,6 +14,8 @@
 //   for "Restart".
 // - At most 4 run, holding 8 GB in all. Past either, the one used longest ago that isn't on screen
 //   stops; one on screen is never stopped for another. Each server's own cap, 4 GB, is `@lo/lsp`'s.
+// - Each holds its repository in the cache from just before it starts until it has stopped, so
+//   cleanup removes nothing of it meanwhile: not the checkout it runs on, nor its home.
 //
 // Nothing here calls Electron, so it runs under unit tests.
 
@@ -22,7 +24,7 @@ import { join } from 'node:path';
 import { failureMessage, type Server, type ServerSpec, type State } from '@lo/lsp';
 
 import type { ServerState } from '../contract.ts';
-import type { Adapter, Prepared } from './adapters.ts';
+import type { Adapter, Launch, Prepared } from './adapters.ts';
 
 /**
  * Where Lo installs language servers: `servers` in the cache at `root`. tsserver looks for a plugin
@@ -125,6 +127,14 @@ export interface PoolOptions {
       }
     | undefined;
   /**
+   * Holds `repo` in the cache for `adapter`'s server, the cache's `useForServer`, until the release,
+   * which comes once the server has stopped or, if it never started, once it won't: cleanup
+   * removes nothing of the repository meanwhile, its home included. It waits for cleanup that's
+   * removing any of it, and stops waiting once `signal` aborts. Nothing is held without it.
+   */
+  readonly hold?:
+    ((repo: string, adapter: Adapter, signal: AbortSignal) => Promise<() => void>) | undefined;
+  /**
    * Why `adapter`'s server mustn't run on the checkout at `folder`, such as a `global.json` there
    * that could choose a .NET SDK other than Lo's, or `undefined` when it may. Asked before it
    * starts there and before it moves there.
@@ -199,6 +209,8 @@ export class ServerPool {
   #budget: ReturnType<typeof setInterval> | undefined;
   /** Every server stopping, with the checkout it ran on, until it has stopped. */
   readonly #stopping = new Set<Stopping>();
+  /** What lets go of each server's hold on its repository, once it has stopped. */
+  readonly #holds = new Map<Running, () => void>();
   #stopped = false;
 
   constructor(options: PoolOptions) {
@@ -432,14 +444,21 @@ export class ServerPool {
     );
   }
 
-  /** Stops `entry`'s `server`, on `root`, kept among those stopping until it has. */
+  /**
+   * Stops `entry`'s `server`, on `root`, kept among those stopping until it has, and lets go of its
+   * hold on its repository then.
+   */
   #stopServer(entry: Entry, server: Running, root: Root | undefined): Promise<void> {
     const done = server.stop().catch((error: unknown) => {
       this.#options.log(`a language server's stop failed: ${describe(error)}`);
     });
     const stopping: Stopping = { repo: entry.repo, pull: root?.pull, done };
     this.#stopping.add(stopping);
-    void done.finally(() => this.#stopping.delete(stopping));
+    void done.finally(() => {
+      this.#stopping.delete(stopping);
+      this.#holds.get(server)?.();
+      this.#holds.delete(server);
+    });
     return done;
   }
 
@@ -511,30 +530,63 @@ export class ServerPool {
       });
       return;
     }
+    // Held from before every check that follows, so cleanup takes nothing the server would find.
+    let release: () => void;
+    try {
+      release =
+        (await this.#options.hold?.(entry.repo, adapter, entry.controller.signal)) ??
+        (() => undefined);
+    } catch (error) {
+      if (!this.#current(entry, run)) return;
+      this.#refuse(entry, {
+        kind: 'failed',
+        why: { kind: 'error', message: clip(describe(error)) },
+      });
+      return;
+    }
+    let held = false;
+    try {
+      held = await this.#startHeld(entry, run, prepared.launch, base, release);
+    } finally {
+      if (!held) release();
+    }
+  }
+
+  /**
+   * The rest of starting `entry`'s server, once its repository is held: whether the server
+   * started, and took the hold, which it lets go of once it has stopped.
+   */
+  async #startHeld(
+    entry: Entry,
+    run: number,
+    launch: Launch,
+    base: NonNullable<ReturnType<PoolOptions['base']>>,
+    release: () => void,
+  ): Promise<boolean> {
+    const { adapter } = entry;
     // Another may have started while this one got ready.
     if (!(await this.#room(entry, run))) {
       if (this.#current(entry, run)) this.#refuse(entry, undefined);
-      return;
+      return false;
     }
-    if (!this.#current(entry, run)) return;
+    if (!this.#current(entry, run)) return false;
     // Trust, or the view on screen, may have changed while it got ready, and the head it's on while
     // its checkout was looked at.
     let root = entry.root;
     for (;;) {
       if (!this.#allowed(entry.repo, root)) {
         void this.#end(entry, 'no trusted view on screen shows its head');
-        return;
+        return false;
       }
       const refused = await this.#refusal(adapter, root);
-      if (!this.#current(entry, run)) return;
+      if (!this.#current(entry, run)) return false;
       if (refused !== undefined) {
         this.#refuse(entry, { kind: 'failed', why: { kind: 'error', message: clip(refused) } });
-        return;
+        return false;
       }
       if (entry.root === root) break;
       root = entry.root;
     }
-    const { launch } = prepared;
     let server: Running;
     try {
       server = this.#options.start({
@@ -548,6 +600,7 @@ export class ServerPool {
         path: [...(launch.path ?? []), ...base.path],
         variables: launch.variables,
         allowed: launch.allowed,
+        homeFolders: launch.homeFolders,
         git: base.git,
         settings: launch.settings,
         initializationOptions: launch.initializationOptions,
@@ -557,13 +610,15 @@ export class ServerPool {
         kind: 'failed',
         why: { kind: 'error', message: clip(describe(error)) },
       });
-      return;
+      return false;
     }
+    this.#holds.set(server, release);
     entry.server = server;
     entry.version = launch.version;
     entry.phase = 'running';
     entry.stopListening = server.onState((state) => this.#heard(entry, server, state));
     this.#changed(entry);
+    return true;
   }
 
   /** Marks `entry` failed with `problem`, or, without one, for want of room. */

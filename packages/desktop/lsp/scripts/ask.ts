@@ -1,11 +1,21 @@
 // What the live check asks a server, at places in the sample projects: what `gd`, `gr`, `K`, `gh`
 // and `gO` ask (a definition, references, a hover, the file's inlay hints and its outline), printing
-// what came back, in short.
+// what came back, in short. Meanwhile it watches the server's family: the most memory it held, and
+// every network connection any of it had open, as `lsof` lists them.
 
+import { execFile } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { promisify } from 'node:util';
 
-import { type Answer, type Server, type ServerSpec, startServer } from '../src/index.ts';
+import {
+  type Answer,
+  type Member,
+  readFamily,
+  type Server,
+  type ServerSpec,
+  startServer,
+} from '../src/index.ts';
 
 /** A place to ask about: a file of the checkout, by its path there, and a place in it. */
 export interface Place {
@@ -20,6 +30,17 @@ export interface Ask {
   readonly places: readonly Place[];
   /** Files whose outline it's asked for besides the places', by their paths in the checkout. */
   readonly outlines?: readonly Omit<Place, 'position'>[] | undefined;
+  /** Files it opens besides, unasked, as a reader's view would: the hostile fixture's plants. */
+  readonly opened?: readonly Omit<Place, 'position'>[] | undefined;
+}
+
+/** What the server did while it was asked. */
+export interface Asked {
+  readonly log: readonly string[];
+  /** The most resident memory its family held at once, in bytes, as read every half second. */
+  readonly peak: number;
+  /** Each network connection any of its family had open, as `lsof` lists it. */
+  readonly connections: readonly string[];
 }
 
 /** How long a server has to answer, and to finish indexing before it's asked. */
@@ -28,18 +49,20 @@ const DEADLINE = 120_000;
 /**
  * Starts `ask.spec`, opens each place's file, waits for it to finish indexing, asks each place what
  * Lo asks, prints the answers, how long it took to start and what memory it held, and stops it. It
- * returns the server's log.
+ * says what the server did meanwhile.
  */
-export async function askServer(ask: Ask): Promise<readonly string[]> {
+export async function askServer(ask: Ask): Promise<Asked> {
   const started = performance.now();
   const server = startServer(ask.spec);
+  const watching = watch(server);
   try {
     if (!(await server.ready)) {
       throw new Error(`${ask.spec.name} didn't start (${server.state.kind})`);
     }
     console.log(`It answered initialize ${seconds(performance.now() - started)} after it started.`);
     const texts = new Map<string, string>();
-    for (const { file, languageId } of [...ask.places, ...(ask.outlines ?? [])]) {
+    const opened = [...(ask.opened ?? []), ...ask.places, ...(ask.outlines ?? [])];
+    for (const { file, languageId } of opened) {
       if (texts.has(file)) continue;
       const text = await readFile(join(ask.spec.root, ...file.split('/')), 'utf8');
       texts.set(file, text);
@@ -87,7 +110,53 @@ export async function askServer(ask: Ask): Promise<readonly string[]> {
     const log = server.log.slice(-30);
     if (log.length > 0) console.log(`\nThe last of its log:\n${log.join('\n')}`);
   }
-  return server.log;
+  return { log: server.log, ...(await watching.stop()) };
+}
+
+/**
+ * Reads `server`'s family every half second until stopped: the most resident memory it held, and
+ * every internet socket any member had open.
+ */
+function watch(server: Server): { stop: () => Promise<{ peak: number; connections: string[] }> } {
+  let peak = 0;
+  let known: readonly Member[] = [];
+  const connections = new Set<string>();
+  const stopped = new AbortController();
+  const read = async () => {
+    const pid = server.pid;
+    if (pid === undefined) return;
+    known = await readFamily(pid, known).catch(() => known);
+    const resident = known.reduce((sum, member) => sum + (member.resident ?? 0), 0);
+    peak = Math.max(peak, resident);
+    if (known.length === 0) return;
+    const pids = known.map((member) => member.pid).join(',');
+    const listed = await promisify(execFile)('/usr/sbin/lsof', ['-nP', '-a', '-i', '-p', pids], {
+      env: { PATH: '/usr/bin:/bin' },
+      // It exits 1 when it lists nothing.
+    }).catch((error: unknown) => ({ stdout: stdoutOf(error) }));
+    for (const line of listed.stdout.split('\n').slice(1)) {
+      if (line.trim() !== '') connections.add(line);
+    }
+  };
+  const looping = (async () => {
+    while (!stopped.signal.aborted) {
+      await read();
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    }
+  })();
+  return {
+    stop: async () => {
+      stopped.abort();
+      await looping;
+      return { peak, connections: [...connections] };
+    },
+  };
+}
+
+/** What a failed command wrote to stdout, as `execFile`'s error holds it. */
+function stdoutOf(error: unknown): string {
+  const holds = typeof error === 'object' && error !== null && 'stdout' in error;
+  return holds && typeof error.stdout === 'string' ? error.stdout : '';
 }
 
 /**
