@@ -76,6 +76,8 @@ import {
 import { DownloadSum } from './downloads.ts';
 import { ServerPool } from './servers.ts';
 import {
+  checkoutRefusal,
+  listedToolchain,
   listToolchains,
   removeToolchain,
   toolchainFailure,
@@ -481,7 +483,7 @@ async function installToolchain(
         progress(done, total);
       },
     });
-    return { installed, ...toolchainUse(id, installed) };
+    return { installed, ...toolchainUse(id, pinned.version, installed) };
   } catch (error) {
     throw signal.aborted ? error : toolchainFailure(id, error);
   } finally {
@@ -542,8 +544,9 @@ async function prepareServer(
   };
   return adapter.prepare({
     install: (id) => counted(`server:${id}`, (heard) => install(context, id, heard, signal)),
-    toolchain: (id) =>
+    toolchain: listedToolchain(adapter, (id) =>
       counted(`toolchain:${id}`, (heard) => installToolchain(context, id, heard, signal)),
+    ),
     findCopy: (candidates) => installedCopy(context, candidates),
     signal,
   });
@@ -571,6 +574,7 @@ function startServers(context: Context): void {
   if (file !== undefined) adapters = [...ADAPTERS, ...readTestServers(file)];
   const servers = new ServerPool({
     prepare: (adapter, progress, signal) => prepareServer(context, adapter, progress, signal),
+    checkout: checkoutRefusal,
     start: (spec) => startServer({ ...spec, version: app.getVersion() }),
     base(repo, adapter) {
       const cache = context.git.cache;

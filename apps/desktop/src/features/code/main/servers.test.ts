@@ -4,7 +4,7 @@
 // by themselves after a crash only once, after a minute's run. Lifetimes run on stand-in servers
 // under fake timers; the fake language server runs one for real.
 
-import { mkdirSync, mkdtempSync, realpathSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -13,8 +13,9 @@ import { fakeServer } from '@lo/testing/lsp';
 import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 
 import type { Adapter, Prepared } from './adapters.ts';
-import { noRoom, ServerPool, type PoolLimits, type PoolView } from './servers.ts';
+import { noRoom, ServerPool, type PoolLimits, type PoolOptions, type PoolView } from './servers.ts';
 import { StandIn } from './test/server.ts';
+import { checkoutRefusal } from './toolchains.ts';
 
 function adapter(id: string, prepare?: Adapter['prepare']): Adapter {
   return {
@@ -41,10 +42,11 @@ function view(
   return { id, repo, pull, trust, root: trust === 'trusted' ? root : undefined, wants };
 }
 
-/** A pool of stand-ins, and each one it started. */
-function standIns(limits: Partial<PoolLimits> = {}) {
+/** A pool of stand-ins, and each one it started, with `checkout` to look at each checkout. */
+function standIns(limits: Partial<PoolLimits> = {}, checkout?: PoolOptions['checkout']) {
   const started: StandIn[] = [];
   const pool = new ServerPool({
+    checkout,
     prepare: (each, progress, signal) =>
       each.prepare({
         install: () => Promise.reject(new Error('no downloads in tests')),
@@ -458,6 +460,96 @@ describe('halting', () => {
     await settle();
     expect(started).toEqual([]);
     expect(pool.shown('a/x', 'go')?.state.kind).toBe('failed');
+  });
+});
+
+describe('checkouts a server won’t run on', () => {
+  /** C#'s, which uses .NET. */
+  const CSHARP: Adapter = { ...adapter('csharp'), downloads: { toolchains: ['dotnet'] } };
+  const WHY = 'The checkout’s global.json names folders to look for an SDK in.';
+  /** Refuses C#'s server on pull request 2's checkout. */
+  const refusing: PoolOptions['checkout'] = (each, folder) =>
+    Promise.resolve(each === CSHARP && folder === '/cache/a/x/pull-2' ? WHY : undefined);
+
+  it('starts none on a checkout its toolchain refuses, and says why', async () => {
+    const { pool, started } = standIns({}, refusing);
+    pool.sync([view('v2', 'a/x', 2, [TS, CSHARP])], 'v2');
+    await settle();
+    expect(started.map((server) => server.spec.name)).toEqual(['TypeScript']);
+    expect(pool.shown('a/x', 'csharp')?.state).toEqual({
+      kind: 'failed',
+      why: { kind: 'error', message: WHY },
+    });
+  });
+
+  it('moves none to such a checkout: it stops there, and says why', async () => {
+    const { pool, started, live } = standIns({}, refusing);
+    const views = [view('v1', 'a/x', 1, [CSHARP]), view('v2', 'a/x', 2, [CSHARP])];
+    pool.sync(views, 'v1');
+    await settle();
+    started[0]?.set({ kind: 'ready' });
+    pool.sync(views, 'v2');
+    await settle();
+    expect(started[0]?.moved).toEqual([]);
+    expect(live()).toEqual([]);
+    expect(pool.shown('a/x', 'csharp')?.state).toEqual({
+      kind: 'failed',
+      why: { kind: 'error', message: WHY },
+    });
+  });
+
+  it('never runs the SDK a checkout’s global.json plants for dotnet to find', async () => {
+    const folder = realpathSync(mkdtempSync(join(tmpdir(), 'lo-planted-')));
+    onTestFinished(() => rmSync(folder, { recursive: true, force: true }));
+    const root = join(folder, 'pull-1');
+    const planted = join(root, 'evil', 'sdk', '10.0.404');
+    mkdirSync(planted, { recursive: true });
+    writeFileSync(join(planted, 'dotnet.dll'), 'an SDK of the checkout’s');
+    writeFileSync(join(root, 'global.json'), '{ "sdk": { "paths": ["evil"] } }');
+    const marker = join(folder, 'lo-hostile-dotnet');
+    const pool = new ServerPool({
+      prepare: (each, progress, signal) =>
+        each.prepare({
+          install: () => Promise.reject(new Error('no downloads in tests')),
+          toolchain: () => Promise.reject(new Error('no downloads in tests')),
+          findCopy: () => Promise.resolve(undefined),
+          signal,
+        }),
+      checkout: checkoutRefusal,
+      // Standing in for `dotnet` run in the checkout, which would find the planted SDK and run it.
+      start(spec) {
+        if (existsSync(join(spec.root, 'evil', 'sdk')))
+          writeFileSync(marker, 'the planted SDK ran');
+        return new StandIn(spec);
+      },
+      base: () => ({ home: '/home/lo', git: { GIT_CONFIG_COUNT: '0' }, path: [] }),
+      changed: () => undefined,
+      log: () => undefined,
+    });
+    onTestFinished(() => pool.stop());
+    pool.sync(
+      [
+        {
+          id: 'v1',
+          repo: 'a/x',
+          pull: 1,
+          trust: 'trusted',
+          root: { folder: root, pull: 1 },
+          wants: [CSHARP],
+        },
+      ],
+      'v1',
+    );
+    await vi.waitFor(() => expect(pool.shown('a/x', 'csharp')?.state.kind).toBe('failed'));
+    expect(existsSync(marker)).toBe(false);
+    expect(pool.shown('a/x', 'csharp')?.state).toEqual({
+      kind: 'failed',
+      why: {
+        kind: 'error',
+        message:
+          'The checkout’s global.json names folders to look for an SDK in, so it could choose a .NET SDK other than Lo’s.',
+      },
+    });
   });
 });
 

@@ -73,8 +73,8 @@ export interface Adapter {
   readonly definitionDeadline?: number | undefined;
   /**
    * What it downloads, by ID, named up front so its progress adds them all up from the start
-   * ("Java downloading · 40 of 186 MB"): servers and Node from the manifest, and toolchains, which
-   * Settings lists it as using.
+   * ("Java downloading · 38.1 MB of 177.4 MB"): servers and Node from the manifest, and
+   * toolchains, which Settings lists it as using and it may install alone.
    */
   readonly downloads?:
     { readonly servers?: readonly string[]; readonly toolchains?: readonly string[] } | undefined;

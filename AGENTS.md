@@ -446,7 +446,14 @@ toolchain and git's variables each server needs.
   and the dotnet/core repository list. Pins are renewed before each release. A server uses only Lo's
   copy, never the machine's, nor a version its checkout asks for: `toolchainUse` gives it the folder
   of programs for its `PATH` and the variables that hold the toolchain to Lo's copy
-  (`GOTOOLCHAIN=local`, an empty `RUSTC_WRAPPER`, `JAVA_HOME`, `DOTNET_ROOT`, and the rest).
+  (`GOTOOLCHAIN=local`, an empty `RUSTC_WRAPPER`, `JAVA_HOME`, `DOTNET_ROOT`, MSBuild's
+  `DOTNET_MSBUILD_SDK_RESOLVER_*`, and the rest).
+- A `global.json` can steer `dotnet` past those variables: since .NET 10 its `sdk.paths` names
+  folders to find an SDK in, the checkout's own among them, and the SDK's commands and MSBuild read
+  the one nearest where they run. So `dotnet` starts a server only as `dotnet exec`, which reads
+  none (`checkArguments`), and a server that uses .NET doesn't start on, or move to, a checkout with
+  a `global.json` that names `paths` or spells a key with an escape, in it or in a folder above it
+  (`checkoutProblem`, asked by the pool).
 - A download goes over `https` only, on the usual port, to its entry's hosts, following at most 5
   redirects itself, each held to the same rules, and refusing an answer its `fetch` was redirected
   to unseen, with no token or cookie. In the app it goes through `net.request` (`netFetch` with
@@ -1194,10 +1201,11 @@ its languages; Lo ships none yet.
   Lo's git's, then the system's, so a git from a folder of other programs, as Homebrew's is, can't
   bring that folder's `go` ahead of the toolchain's.
 - An adapter names what its server downloads up front, the server and the toolchains it uses, so the
-  status bar adds them up from the first byte ("Java downloading · 40 of 186 MB"), counting only
-  what isn't installed yet. A toolchain that can't download says which and why ("The Temurin JDK
-  couldn't download. …"). Toolchains are installed in `<cache>/toolchains/`, which the cache's cap
-  doesn't count, and as Lo starts, versions `toolchains.json` no longer pins are removed.
+  status bar adds them up from the first byte ("Java downloading · 38.1 MB of 177.4 MB"), counting
+  only what isn't installed yet, in the units Settings counts in (`formatBytes`). It gets only the
+  toolchains it names. A toolchain that can't download says which and why ("The Temurin JDK couldn't
+  download. …"). Toolchains are installed in `<cache>/toolchains/`, which the cache's cap doesn't
+  count, and as Lo starts, versions `toolchains.json` no longer pins are removed.
 - Settings' Toolchains section lists each toolchain pinned for the system, how much room it takes by
   its marker or that it isn't downloaded and how large it is, and the servers that use it. "Remove"
   stops those servers, which say "Go was removed. Restart downloads it again." until "Restart",

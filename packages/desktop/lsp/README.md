@@ -87,9 +87,15 @@ link is made, so nothing is written through one. A download in layers, as Rust's
 lays each tarball's component folder over the ones before it, leaving out the rest of the tarball
 and the `manifest.in` that lists the component's files; a file a layer before it wrote is refused.
 
-`remove` takes every version of an ID away, as Settings' "Remove" does a toolchain's: an install of
-it under way stops first, then its folder is renamed aside and deleted, so nothing finds it half
-gone.
+`remove` takes every version of an ID away, as Settings' "Remove" does a toolchain's: every install
+of it under way stops first, those nobody waits for any longer included, and once each has ended its
+folder is renamed aside and deleted, so nothing finds it half gone and nothing puts it back. An
+install of it asked for meanwhile fails with the removal's reason.
+
+A server that uses .NET runs only as `dotnet exec` (`checkArguments` in `src/process.ts`), and only
+on a checkout `checkoutProblem` finds no `global.json` in, nor above, that names `paths` or spells a
+key with an escape: that file can send the SDK's commands, and MSBuild, to an SDK in the checkout,
+whatever the variables say.
 
 Each file and folder unpacked is synced to the disk, then the marker, then the folder that holds
 them, and only then is it renamed into place. The marker records the fingerprint of the download and

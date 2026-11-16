@@ -49,6 +49,7 @@ export {
 } from './server.ts';
 export { failureMessage, type Failure, type Progress, type State } from './state.ts';
 export {
+  checkoutProblem,
   TOOLCHAIN_NAMES,
   toolchainUse,
   type ToolchainName,

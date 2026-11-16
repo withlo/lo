@@ -4,6 +4,7 @@
 // installer of their own. Nothing here calls Electron.
 
 import {
+  checkoutProblem,
   downloadFor,
   type Installer,
   type Manifest,
@@ -41,6 +42,37 @@ function named(id: string): { name: string; subject: string } {
 /** Whether `adapter`'s server uses toolchain `id`. */
 export function usesToolchain(adapter: Adapter, id: string): boolean {
   return adapter.downloads?.toolchains?.includes(id) ?? false;
+}
+
+/**
+ * `adapter`'s way to install a toolchain, by `install`: only one among those it names as its
+ * downloads, which Settings lists it as using and "Remove" stops it for.
+ */
+export function listedToolchain<T>(
+  adapter: Adapter,
+  install: (id: string) => Promise<T>,
+): (id: string) => Promise<T> {
+  return (id) =>
+    usesToolchain(adapter, id)
+      ? install(id)
+      : Promise.reject(
+          new Error(`${adapter.name} doesn’t name the toolchain ${id} among its downloads.`),
+        );
+}
+
+/**
+ * Why `adapter`'s server mustn't run on the checkout at `folder`, by what each toolchain it uses
+ * reads there, such as a `global.json` that could choose a .NET SDK other than Lo's.
+ */
+export async function checkoutRefusal(
+  adapter: Adapter,
+  folder: string,
+): Promise<string | undefined> {
+  for (const id of adapter.downloads?.toolchains ?? []) {
+    const problem = await checkoutProblem(id, folder);
+    if (problem !== undefined) return problem;
+  }
+  return undefined;
 }
 
 /** What a server says once toolchain `id` couldn't install, from why: "Go couldn’t download. …" */

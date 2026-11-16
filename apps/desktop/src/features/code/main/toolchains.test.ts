@@ -6,6 +6,7 @@ import { expect, it } from 'vitest';
 
 import type { Adapter } from './adapters.ts';
 import {
+  listedToolchain,
   listToolchains,
   removedMessage,
   removeToolchain,
@@ -94,6 +95,19 @@ it('stops the servers that use a toolchain, each saying so, before its files go'
   expect(removed).toEqual(['temurin']);
   expect(order).toEqual(['halt', 'remove temurin']);
   await expect(removeToolchain(given, 'ruby')).rejects.toThrow(/no toolchain ruby/);
+});
+
+it('gives a server only the toolchains its adapter names, which “Remove” stops it for', async () => {
+  const asked: string[] = [];
+  const toolchain = listedToolchain(ADAPTERS[0]!, (id) => {
+    asked.push(id);
+    return Promise.resolve(id);
+  });
+  expect(await toolchain('temurin')).toBe('temurin');
+  await expect(toolchain('dotnet')).rejects.toThrow(
+    'Java doesn’t name the toolchain dotnet among its downloads.',
+  );
+  expect(asked).toEqual(['temurin']);
 });
 
 it('names the toolchain and why, when one can’t download or was removed', () => {

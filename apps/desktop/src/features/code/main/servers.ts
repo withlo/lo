@@ -111,6 +111,13 @@ export interface PoolOptions {
         readonly path: readonly string[];
       }
     | undefined;
+  /**
+   * Why `adapter`'s server mustn't run on the checkout at `folder`, such as a `global.json` there
+   * that could choose a .NET SDK other than Lo's, or `undefined` when it may. Asked before it
+   * starts there and before it moves there.
+   */
+  readonly checkout?:
+    ((adapter: Adapter, folder: string) => Promise<string | undefined>) | undefined;
   /** A server of `repo` changed what its views show. */
   readonly changed: (repo: string) => void;
   readonly log: (line: string) => void;
@@ -492,11 +499,22 @@ export class ServerPool {
       return;
     }
     if (!this.#current(entry, run)) return;
-    // Trust, or the view on screen, may have changed while it got ready.
-    const root = entry.root;
-    if (!this.#allowed(entry.repo, root)) {
-      void this.#end(entry, 'no trusted view on screen shows its head');
-      return;
+    // Trust, or the view on screen, may have changed while it got ready, and the head it's on while
+    // its checkout was looked at.
+    let root = entry.root;
+    for (;;) {
+      if (!this.#allowed(entry.repo, root)) {
+        void this.#end(entry, 'no trusted view on screen shows its head');
+        return;
+      }
+      const refused = await this.#refusal(adapter, root);
+      if (!this.#current(entry, run)) return;
+      if (refused !== undefined) {
+        this.#refuse(entry, { kind: 'failed', why: { kind: 'error', message: clip(refused) } });
+        return;
+      }
+      if (entry.root === root) break;
+      root = entry.root;
     }
     const { launch } = prepared;
     let server: Running;
@@ -604,6 +622,13 @@ export class ServerPool {
     const still = () =>
       entry.server === server && entry.phase === 'running' && this.#allowed(entry.repo, root);
     if (!still()) return;
+    // One whose checkout it mustn't run on starts there again instead, and says why it can't.
+    const refused = await this.#refusal(entry.adapter, root);
+    if (!still()) return;
+    if (refused !== undefined) {
+      await this.#again(entry, root);
+      return;
+    }
     entry.moving = true;
     this.#changed(entry);
     const moved =
@@ -621,6 +646,15 @@ export class ServerPool {
       return;
     }
     await this.#again(entry, root);
+  }
+
+  /** Why `adapter`'s server mustn't run on `root`, if it mustn't: a look that fails says so too. */
+  async #refusal(adapter: Adapter, root: Root): Promise<string | undefined> {
+    try {
+      return await this.#options.checkout?.(adapter, root.folder);
+    } catch (error) {
+      return `Lo couldn’t look through the checkout: ${describe(error)}`;
+    }
   }
 
   /**

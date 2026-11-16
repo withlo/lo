@@ -34,7 +34,14 @@ import { serverEnvironment, temporaryFolder } from './environment.ts';
 import { FLOOD_BYTES, FLOOD_LINES, FLOOD_MESSAGES, FLOOD_WINDOW, FrameMeter } from './framing.ts';
 import { Log } from './log.ts';
 import { type Member, type ReadFamily, readFamily } from './family.ts';
-import { checkProgram, familyGone, signalFamily, sleep, startProcess } from './process.ts';
+import {
+  checkArguments,
+  checkProgram,
+  familyGone,
+  signalFamily,
+  sleep,
+  startProcess,
+} from './process.ts';
 import { type Answer, Queue } from './queue.ts';
 import { reply } from './requests.ts';
 import { type Failure, failureMessage, type Progress, type State } from './state.ts';
@@ -506,6 +513,7 @@ export class Server {
       this.#roots = [...new Set([root, spec.root])];
       // The program that runs is the one checked, by its real path.
       const program = await checkProgram(spec.program, this.#roots);
+      checkArguments(spec.program, program, spec.args);
       // The folders as given, then as the system resolves them, are each held to the same rules.
       const given = {
         roots: this.#roots,
