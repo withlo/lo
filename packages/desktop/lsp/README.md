@@ -60,13 +60,15 @@ own (`setsid`) is still found.
   same time. An ID that has since been taken by another process is left alone.
 - A service the system starts for a server is `launchd`'s child, not the server's, as
   `SourceKitService` is for SourceKit-LSP's `sourcekitd`. A server's spec names the services it
-  starts (`services`), and each read of the family takes in each process by one of those names whose
-  `HOME` is exactly the server's home, and what descends from it. A home is the folder of one
-  repository and one adapter, so no other server's environment names it. On macOS the read looks in
-  the environment `ps -E` lists after a process's command for `HOME=<home>` as a whole variable, so
-  a home that only begins with it doesn't match; on Linux it matches that exact entry in
-  `/proc/<pid>/environ`. So the service's memory counts against the cap, and a stop or a kill
-  signals it with the rest.
+  starts (`services`), and each read of the family takes in each process by one of those names that
+  has the server's home as its `HOME`, and what descends from it. A home is the folder of one
+  repository and one adapter, so no other server's environment names it. On Linux the read matches
+  that exact entry in `/proc/<pid>/environ`. On macOS it's a text search: `ps -E` lists a process's
+  program, arguments and environment as one line, and the read looks in it for ` HOME=<home>`
+  followed by another variable's ` NAME=` or the line's end, so an argument or another variable's
+  value could match too. Only processes named like a service are searched, so a false match is
+  unlikely, and it can only take in a process named like one of Lo's own services. So the service's
+  memory counts against the cap, and a stop or a kill signals it with the rest.
 
 ### What can't be found
 
@@ -88,12 +90,12 @@ own (`setsid`) is still found.
 
 ## Servers
 
-The servers Lo runs, each downloaded on first use for a trusted view, as `servers.json` pins it, and
-each with its adapter in `src/adapters/`. None needs anything installed but SourceKit-LSP, Swift's
-on macOS, which Lo doesn't download: it comes with Xcode and with Apple's Command Line Tools, and Lo
-runs the copy there (`src/adapters/sourcekit.ts`). What any other server needs is Lo's own copy,
-downloaded with it. The last column says what a server can't do, and a checkout one won't run on is
-under "Checkouts a server refuses".
+The servers Lo runs, each with its adapter in `src/adapters/`. All but one are downloaded on first
+use for a trusted view, as `servers.json` pins them. The exception is SourceKit-LSP, Swift's on
+macOS, which is Apple's: it comes with Xcode and with Apple's Command Line Tools, and Lo runs the
+copy there (`src/adapters/sourcekit.ts`). So no other server needs anything installed: what one
+needs is Lo's own copy, downloaded with it. The last column says what a server can't do, and a
+checkout one won't run on is under "Checkouts a server refuses".
 
 | Server         | Version    | For                    | From                                                                                        | License                                                       | Needs                               | Can't do                                                                                                                                                                                  |
 | -------------- | ---------- | ---------------------- | ------------------------------------------------------------------------------------------- | ------------------------------------------------------------- | ----------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
