@@ -24,11 +24,11 @@
  */
 
 import { createHash } from 'node:crypto';
-import { createReadStream } from 'node:fs';
 import {
   lstat,
   mkdir,
   mkdtemp,
+  open,
   readFile,
   readdir,
   readlink,
@@ -756,10 +756,20 @@ async function buildChecked(
   return program;
 }
 
-/** The SHA-256 of the file at `path`, in lowercase hex. */
+/** The SHA-256 of the file at `path`, in lowercase hex, read a megabyte at a time. */
 async function sha256Of(path: string): Promise<string> {
   const hash = createHash('sha256');
-  for await (const chunk of createReadStream(path)) hash.update(chunk as Buffer);
+  const buffer = Buffer.alloc(1024 * 1024);
+  const handle = await open(path, 'r');
+  try {
+    for (;;) {
+      const { bytesRead } = await handle.read(buffer, 0, buffer.length, null);
+      if (bytesRead === 0) break;
+      hash.update(buffer.subarray(0, bytesRead));
+    }
+  } finally {
+    await handle.close();
+  }
   return hash.digest('hex');
 }
 

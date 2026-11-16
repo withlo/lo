@@ -593,98 +593,101 @@ describe('a toolchain', () => {
   });
 });
 
-describe('a Go program, built from its modules with Lo’s Go', () => {
-  const PROXY = 'https://proxy.golang.org';
-  const MOD = Buffer.from('module example.com/tool\n\ngo 1.24\n');
-  const ZIP = Buffer.from('the module’s source');
-  /** What the stand-in for Go builds: the module's zip, as it is. */
-  const BUILT = ZIP;
+const GO_PROXY = 'https://proxy.golang.org';
+const GO_MOD = Buffer.from('module example.com/tool\n\ngo 1.24\n');
+const GO_ZIP = Buffer.from('the module’s source');
+/** What the stand-in for Go builds: the module's zip, as it is. */
+const GO_BUILT = GO_ZIP;
 
-  /**
-   * A stand-in for Lo's Go, `<root>/bin/go`: it records its arguments, its environment and the
-   * go.mod and go.sum it's given in `seen`, then writes the module's zip from its proxy as the
-   * program, or does what `script` says.
-   */
-  function fakeGo(script = ''): { go: string; seen: string; version: string } {
-    const folder = tempFolder();
-    const seen = join(folder, 'seen');
-    mkdirSync(join(folder, 'go', 'bin'), { recursive: true });
-    mkdirSync(seen);
-    const go = join(folder, 'go', 'bin', 'go');
-    writeFileSync(
-      go,
-      [
-        '#!/bin/sh',
-        `seen='${seen}'`,
-        'printf "%s\\n" "$@" > "$seen/args"',
-        '/usr/bin/env > "$seen/env"',
-        'cat go.mod > "$seen/go.mod"; cat go.sum > "$seen/go.sum"',
-        script,
-        'while [ "$1" != "-o" ]; do shift; done',
-        'cat "${GOPROXY#file://}/example.com/tool/@v/v1.0.0.zip" > "$2"',
-      ].join('\n'),
-      { mode: 0o755 },
-    );
-    return { go, seen, version: '1.27.4' };
-  }
+/**
+ * A stand-in for Lo's Go, `<root>/bin/go`: it records its arguments, its environment and the
+ * go.mod and go.sum it's given in `seen`, then writes the module's zip from its proxy as the
+ * program, or does what `script` says.
+ */
+function fakeGo(script = ''): { go: string; seen: string; version: string } {
+  const folder = tempFolder();
+  const seen = join(folder, 'seen');
+  mkdirSync(join(folder, 'go', 'bin'), { recursive: true });
+  mkdirSync(seen);
+  const go = join(folder, 'go', 'bin', 'go');
+  writeFileSync(
+    go,
+    [
+      '#!/bin/sh',
+      `seen='${seen}'`,
+      'printf "%s\\n" "$@" > "$seen/args"',
+      '/usr/bin/env > "$seen/env"',
+      'cat go.mod > "$seen/go.mod"; cat go.sum > "$seen/go.sum"',
+      script,
+      'while [ "$1" != "-o" ]; do shift; done',
+      'cat "${GOPROXY#file://}/example.com/tool/@v/v1.0.0.zip" > "$2"',
+    ].join('\n'),
+    { mode: 0o755 },
+  );
+  return { go, seen, version: '1.27.4' };
+}
 
-  function tool(builds: GoDownload['builds'] = { 'linux-x64': built(BUILT) }): Pinned {
-    const part = (path: string, data: Buffer) => ({
-      url: `${PROXY}/${path}`,
-      path,
-      size: data.length,
-      sha256: sha256(data),
-    });
-    return {
-      version: '1.0.0',
-      hosts: ['proxy.golang.org'],
-      platforms: {
-        any: {
-          kind: 'go',
-          entry: 'tool',
-          package: 'example.com/tool',
-          go: '1.27.4',
-          mod: ['module lo/tool', '', 'go 1.27.4', '', 'require example.com/tool v1.0.0'],
-          sum: [
-            `example.com/tool v1.0.0 h1:${'A'.repeat(43)}=`,
-            `example.com/tool v1.0.0/go.mod h1:${'B'.repeat(43)}=`,
-          ],
-          modules: [
-            part('example.com/tool/@v/v1.0.0.mod', MOD),
-            part('example.com/tool/@v/v1.0.0.zip', ZIP),
-          ],
-          builds,
-          room: 1024 * 1024,
-        },
+/** A module file of `data` at `path` in the Go module proxy, pinned. */
+function goPart(path: string, data: Buffer) {
+  return { url: `${GO_PROXY}/${path}`, path, size: data.length, sha256: sha256(data) };
+}
+
+/** A Go program pinned as built from one module, `example.com/tool`. */
+function goTool(builds: GoDownload['builds'] = { 'linux-x64': goBuilt(GO_BUILT) }): Pinned {
+  return {
+    version: '1.0.0',
+    hosts: ['proxy.golang.org'],
+    platforms: {
+      any: {
+        kind: 'go',
+        entry: 'tool',
+        package: 'example.com/tool',
+        go: '1.27.4',
+        mod: ['module lo/tool', '', 'go 1.27.4', '', 'require example.com/tool v1.0.0'],
+        sum: [
+          `example.com/tool v1.0.0 h1:${'A'.repeat(43)}=`,
+          `example.com/tool v1.0.0/go.mod h1:${'B'.repeat(43)}=`,
+        ],
+        modules: [
+          goPart('example.com/tool/@v/v1.0.0.mod', GO_MOD),
+          goPart('example.com/tool/@v/v1.0.0.zip', GO_ZIP),
+        ],
+        builds,
+        room: 1024 * 1024,
       },
-    };
-  }
-
-  function built(data: Buffer) {
-    return { size: data.length, sha256: sha256(data) };
-  }
-
-  const ROUTES = {
-    [`${PROXY}/example.com/tool/@v/v1.0.0.mod`]: { body: MOD },
-    [`${PROXY}/example.com/tool/@v/v1.0.0.zip`]: { body: ZIP },
+    },
   };
+}
 
-  /** Lo's Go as the installer is given it. */
-  function lo(fake: { go: string; version: string }) {
-    return {
-      version: fake.version,
-      installed: { folder: join(fake.go, '..', '..'), entry: fake.go },
-    };
-  }
+/** What a build of `data` is pinned as: its size and SHA-256. */
+function goBuilt(data: Buffer) {
+  return { size: data.length, sha256: sha256(data) };
+}
 
+const GO_ROUTES = {
+  [`${GO_PROXY}/example.com/tool/@v/v1.0.0.mod`]: { body: GO_MOD },
+  [`${GO_PROXY}/example.com/tool/@v/v1.0.0.zip`]: { body: GO_ZIP },
+};
+
+/** Lo's Go as the installer is given it. */
+function loGo(fake: { go: string; version: string }) {
+  return {
+    version: fake.version,
+    installed: { folder: join(fake.go, '..', '..'), entry: fake.go },
+  };
+}
+
+describe('a Go program, built from its modules with Lo’s Go', () => {
   test('is built once, offline, from Lo’s own module proxy, in an environment of its own', async () => {
     const fake = fakeGo();
-    const { installer, folder, asked } = await setUp(ROUTES, undefined, { platform: 'linux-x64' });
-    const installed = await installer.install('tool', tool(), { go: lo(fake) });
+    const { installer, folder, asked } = await setUp(GO_ROUTES, undefined, {
+      platform: 'linux-x64',
+    });
+    const installed = await installer.install('tool', goTool(), { go: loGo(fake) });
     expect(installed.entry).toBe(join(folder, 'tool', '1.0.0', 'files', 'tool'));
-    expect(readFileSync(installed.entry)).toEqual(BUILT);
+    expect(readFileSync(installed.entry)).toEqual(GO_BUILT);
     expect(lstatSync(installed.entry).mode & 0o111).not.toBe(0);
-    expect(await installer.install('tool', tool(), { go: lo(fake) })).toEqual(installed);
+    expect(await installer.install('tool', goTool(), { go: loGo(fake) })).toEqual(installed);
     expect(asked).toHaveLength(2);
 
     const read = (name: string) => readFileSync(join(fake.seen, name), 'utf8');
@@ -740,9 +743,9 @@ describe('a Go program, built from its modules with Lo’s Go', () => {
   });
 
   test('is refused, leaving nothing behind, when what’s built isn’t what was pinned', async () => {
-    const { installer, left } = await setUp(ROUTES, undefined, { platform: 'linux-x64' });
-    const pin = tool({ 'linux-x64': built(Buffer.from('another program')) });
-    const error = await failure(installer.install('tool', pin, { go: lo(fakeGo()) }));
+    const { installer, left } = await setUp(GO_ROUTES, undefined, { platform: 'linux-x64' });
+    const pin = goTool({ 'linux-x64': goBuilt(Buffer.from('another program')) });
+    const error = await failure(installer.install('tool', pin, { go: loGo(fakeGo()) }));
     expect(error.problem).toBe('mismatch');
     expect(error.message).toBe(
       'What Lo built isn’t the program it pinned: its SHA-256 is another.',
@@ -751,35 +754,35 @@ describe('a Go program, built from its modules with Lo’s Go', () => {
   });
 
   test('says why it didn’t build, leaving nothing behind', async () => {
-    const { installer, left } = await setUp(ROUTES, undefined, { platform: 'linux-x64' });
+    const { installer, left } = await setUp(GO_ROUTES, undefined, { platform: 'linux-x64' });
     const fake = fakeGo('echo "go: example.com/tool: missing go.sum entry" >&2; exit 1');
-    const error = await failure(installer.install('tool', tool(), { go: lo(fake) }));
+    const error = await failure(installer.install('tool', goTool(), { go: loGo(fake) }));
     expect(error.problem).toBe('build');
     expect(error.message).toBe('It didn’t build: go: example.com/tool: missing go.sum entry');
     expect(left()).toEqual([]);
   });
 
   test('is refused before anything downloads, with another Go or for a system it isn’t built for', async () => {
-    const { installer, asked } = await setUp(ROUTES, undefined, { platform: 'linux-x64' });
-    const other = { ...lo(fakeGo()), version: '1.28.0' };
-    const error = await failure(installer.install('tool', tool(), { go: other }));
+    const { installer, asked } = await setUp(GO_ROUTES, undefined, { platform: 'linux-x64' });
+    const other = { ...loGo(fakeGo()), version: '1.28.0' };
+    const error = await failure(installer.install('tool', goTool(), { go: other }));
     expect(error.problem).toBe('refused');
     expect(error.message).toBe('It’s pinned as Go 1.27.4 builds it, and Lo has Go 1.28.0.');
-    await expect(installer.install('tool', tool())).rejects.toThrow('which it wasn’t given');
-    const unbuilt = tool({ 'darwin-arm64': built(BUILT) });
-    expect((await failure(installer.install('tool', unbuilt, { go: lo(fakeGo()) }))).problem).toBe(
-      'unavailable',
-    );
+    await expect(installer.install('tool', goTool())).rejects.toThrow('which it wasn’t given');
+    const unbuilt = goTool({ 'darwin-arm64': goBuilt(GO_BUILT) });
+    expect(
+      (await failure(installer.install('tool', unbuilt, { go: loGo(fakeGo()) }))).problem,
+    ).toBe('unavailable');
     expect(asked).toEqual([]);
   });
 
   test('is stopped, with everything Go started, once it takes too long', async () => {
     const folder = tempFolder();
-    const pin = tool().platforms.any;
+    const pin = goTool().platforms.any;
     if (pin?.kind !== 'go') throw new Error('not a Go program');
     const files = pin.modules.map((part, index) => {
       const file = join(folder, `download-${index}`);
-      writeFileSync(file, part.path.endsWith('.zip') ? ZIP : MOD);
+      writeFileSync(file, part.path.endsWith('.zip') ? GO_ZIP : GO_MOD);
       return file;
     });
     const build = join(folder, 'build');

@@ -146,18 +146,24 @@ it('gives Lo’s own servers only the toolchains they name: Go’s Go, and the r
     'Go',
     'Terraform',
   ]);
+  expect(SHIPPED.map((each) => [each.id, each.downloads?.toolchains])).toEqual([
+    ['typescript', []],
+    ['python', []],
+    ['php', []],
+    ['go', ['go']],
+    ['terraform', []],
+  ]);
   for (const shipped of SHIPPED) {
     const toolchain = listedToolchain(shipped, (id) => Promise.resolve(id));
-    for (const id of Object.keys(TOOLCHAINS)) {
-      if (shipped.id === 'go' && id === 'go') {
-        expect(await toolchain(id)).toBe('go');
-        continue;
-      }
+    const named = shipped.downloads?.toolchains ?? [];
+    for (const id of Object.keys(TOOLCHAINS).filter((each) => !named.includes(each))) {
       await expect(toolchain(id)).rejects.toThrow(
         `${shipped.name} doesn’t name the toolchain ${id} among its downloads.`,
       );
     }
   }
+  const go = SHIPPED.find((each) => each.id === 'go');
+  expect(go && (await listedToolchain(go, (id) => Promise.resolve(id))('go'))).toBe('go');
   // So Settings lists Go's server alone as using one: Go.
   const listed = await listToolchains({ ...host().given, adapters: () => SHIPPED });
   expect(listed.map((each) => [each.id, each.uses])).toEqual([

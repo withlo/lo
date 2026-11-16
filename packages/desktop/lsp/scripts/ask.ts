@@ -115,7 +115,7 @@ function watch(server: Server): { stop: () => Promise<{ peak: number; connection
   let peak = 0;
   let known: readonly Member[] = [];
   const connections = new Set<string>();
-  let stopped = false;
+  const stopped = new AbortController();
   const read = async () => {
     const pid = server.pid;
     if (pid === undefined) return;
@@ -126,26 +126,31 @@ function watch(server: Server): { stop: () => Promise<{ peak: number; connection
     const pids = known.map((member) => member.pid).join(',');
     const listed = await promisify(execFile)('/usr/sbin/lsof', ['-nP', '-a', '-i', '-p', pids], {
       env: { PATH: '/usr/bin:/bin' },
-    }).catch((error: unknown) => ({
-      stdout: String((error as { stdout?: unknown }).stdout ?? ''),
-    }));
+      // It exits 1 when it lists nothing.
+    }).catch((error: unknown) => ({ stdout: stdoutOf(error) }));
     for (const line of listed.stdout.split('\n').slice(1)) {
       if (line.trim() !== '') connections.add(line);
     }
   };
   const looping = (async () => {
-    while (!stopped) {
+    while (!stopped.signal.aborted) {
       await read();
       await new Promise((resolve) => setTimeout(resolve, 500));
     }
   })();
   return {
     stop: async () => {
-      stopped = true;
+      stopped.abort();
       await looping;
       return { peak, connections: [...connections] };
     },
   };
+}
+
+/** What a failed command wrote to stdout, as `execFile`'s error holds it. */
+function stdoutOf(error: unknown): string {
+  const holds = typeof error === 'object' && error !== null && 'stdout' in error;
+  return holds && typeof error.stdout === 'string' ? error.stdout : '';
 }
 
 /**

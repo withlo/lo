@@ -174,11 +174,11 @@ export function serverEnvironment(options: EnvironmentOptions): Record<string, s
   }
   for (const name of Object.keys(homeFolders)) {
     checkName(name);
-    const inside = checkedValue(name, homeFolders[name]);
-    if (Object.hasOwn(variables, name) || !isPlainPath(inside)) {
+    const within = checkedValue(name, homeFolders[name]);
+    if (Object.hasOwn(variables, name) || !isPlainPath(within)) {
       throw new Error(`the variable ${name} must name one folder inside the server's home`);
     }
-    env[name] = join(home, ...inside.split('/'));
+    env[name] = join(home, ...within.split('/'));
   }
   return {
     ...env,

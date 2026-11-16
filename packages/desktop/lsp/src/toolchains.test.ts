@@ -102,7 +102,8 @@ test.each([
     homeFolders: use.homeFolders,
     git: GIT,
   });
-  const homes = 'homeFolders' in expected ? expected.homeFolders : {};
+  const homes: Readonly<Record<string, string>> =
+    'homeFolders' in expected ? expected.homeFolders : {};
   expect(env).toEqual({
     ...GIT,
     ...expected.variables,

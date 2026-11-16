@@ -195,8 +195,8 @@ function serverCheck(
     console.log(`${launched.version}: ${[launched.program, ...launched.args].join(' ')}`);
     const places = await placesFor(languages);
     const folder = await realpath(await mkdtemp(join(tmpdir(), `lo-live-${server.id}-`)));
-    const path = join(folder, 'path');
-    if (options.standIns === true) await standIns(path);
+    const stand = join(folder, 'path');
+    if (options.standIns === true) await standIns(stand);
     // How many files it says it indexed on each checkout, if it says.
     const indexed = new Map<string, string>();
     try {
@@ -216,7 +216,7 @@ function serverCheck(
             args: launched.args,
             root,
             home: join(folder, `home-${script}`),
-            path: [...(launched.path ?? []), ...(options.standIns === true ? [path] : [])],
+            path: [...(launched.path ?? []), ...(options.standIns === true ? [stand] : [])],
             variables: launched.variables,
             allowed: launched.allowed,
             homeFolders: launched.homeFolders,
@@ -261,7 +261,7 @@ function serverCheck(
         console.log(`\nIts home holds ${home.length} entries: ${top.join(', ')}`);
         const found = [
           ...(await markers(root)),
-          ...(options.standIns === true ? await markers(path) : []),
+          ...(options.standIns === true ? await markers(stand) : []),
         ];
         if (found.length > 0) throw new Error(`something ran what's planted: ${found.join(', ')}`);
         const changed = changes(before, await snapshot(root));

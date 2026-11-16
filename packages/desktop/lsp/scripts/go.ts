@@ -97,7 +97,12 @@ export function goProgram(pkg: string, entry: string, toolchains: Manifest = TOO
       go: pinned.version,
       mod,
       sum: kept.toSorted(),
-      modules: modules.map(({ file: _, ...part }) => part),
+      modules: modules.map((each) => ({
+        url: each.url,
+        path: each.path,
+        size: each.size,
+        sha256: each.sha256,
+      })),
     };
     const builds: GoDownload['builds'] = {};
     let room = 0;
@@ -240,9 +245,14 @@ async function run(
   try {
     await promisify(execFile)(program, args, { cwd, env, maxBuffer: 64 * 1024 ** 2 });
   } catch (error) {
-    const stderr = (error as { stderr?: string }).stderr ?? '';
-    throw new Error(`go ${args.join(' ')} failed: ${stderr.trim()}`, { cause: error });
+    throw new Error(`go ${args.join(' ')} failed: ${stderrOf(error).trim()}`, { cause: error });
   }
+}
+
+/** What a failed command wrote to stderr, as `execFile`'s error holds it. */
+function stderrOf(error: unknown): string {
+  const holds = typeof error === 'object' && error !== null && 'stderr' in error;
+  return holds && typeof error.stderr === 'string' ? error.stderr : '';
 }
 
 /** A `go.sum`'s lines, each by its module, its version and whether it's for the `go.mod` alone. */
