@@ -9,9 +9,13 @@ export { serverEnvironment, SYSTEM_PATH, type EnvironmentOptions } from './envir
 export { DownloadError, type DownloadProblem } from './errors.ts';
 export { MESSAGE_LIMIT, UNREAD_LIMIT } from './framing.ts';
 export {
+  fingerprint,
   Installer,
+  limitsFor,
   TRIES,
+  UNPACKED_MARGIN,
   unpackDownload,
+  unpackMeasured,
   type Installed,
   type InstallerOptions,
   type InstallOptions,
@@ -23,8 +27,10 @@ export {
   downloadFor,
   MANIFEST,
   parseManifest,
+  parseToolchains,
   partsOf,
   PLATFORMS,
+  TOOLCHAINS,
   type Download,
   type Manifest,
   type Part,
@@ -45,4 +51,11 @@ export {
   type Tuning,
 } from './server.ts';
 export { failureMessage, type Failure, type Progress, type State } from './state.ts';
+export {
+  checkoutProblem,
+  TOOLCHAIN_NAMES,
+  toolchainUse,
+  type ToolchainName,
+  type ToolchainUse,
+} from './toolchains.ts';
 export { type Placing, Unpacker, UNPACK_LIMITS, type UnpackLimits } from './unpack.ts';

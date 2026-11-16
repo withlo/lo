@@ -4,18 +4,26 @@
 // by themselves after a crash only once, after a minute's run. Lifetimes run on stand-in servers
 // under fake timers; the fake language server runs one for real.
 
-import { mkdirSync, mkdtempSync, realpathSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 
-import { type Server, startServer } from '@lo/lsp';
+import { type Server, serverEnvironment, type ServerSpec, startServer } from '@lo/lsp';
 import { fakeServer } from '@lo/testing/lsp';
 import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 
 import { cacheFolder } from '../../../main/git.ts';
-import type { Adapter, Prepared } from './adapters.ts';
-import { noRoom, ServerPool, serversFolder, type PoolLimits, type PoolView } from './servers.ts';
+import { ADAPTERS as SHIPPED, type Adapter, type Prepared } from './adapters.ts';
+import {
+  noRoom,
+  ServerPool,
+  serversFolder,
+  type PoolLimits,
+  type PoolOptions,
+  type PoolView,
+} from './servers.ts';
 import { StandIn } from './test/server.ts';
+import { checkoutRefusal, listedToolchain } from './toolchains.ts';
 
 /**
  * Where tsserver looks for a plugin above an install in `folder`: a `node_modules` in it and in
@@ -74,13 +82,15 @@ function view(
   return { id, repo, pull, trust, root: trust === 'trusted' ? root : undefined, wants };
 }
 
-/** A pool of stand-ins, and each one it started. */
-function standIns(limits: Partial<PoolLimits> = {}) {
+/** A pool of stand-ins, and each one it started, with `checkout` to look at each checkout. */
+function standIns(limits: Partial<PoolLimits> = {}, checkout?: PoolOptions['checkout']) {
   const started: StandIn[] = [];
   const pool = new ServerPool({
+    checkout,
     prepare: (each, progress, signal) =>
       each.prepare({
         install: () => Promise.reject(new Error('no downloads in tests')),
+        toolchain: () => Promise.reject(new Error('no downloads in tests')),
         findCopy: () => Promise.resolve(undefined),
         signal,
       }),
@@ -179,6 +189,7 @@ describe('which servers run', () => {
         progress.push(report);
         return each.prepare({
           install: () => Promise.reject(new Error('no downloads in tests')),
+          toolchain: () => Promise.reject(new Error('no downloads in tests')),
           findCopy: () => Promise.resolve(undefined),
           signal,
         });
@@ -447,7 +458,7 @@ describe('trust, then and there', () => {
     },
   );
 
-  it('puts Lo’s git first on a server’s PATH, before its toolchain’s folders', async () => {
+  it('puts a server’s toolchain first on its PATH, then Lo’s git', async () => {
     const { pool, started } = standIns();
     const tools = adapter('ts', () =>
       Promise.resolve({
@@ -457,7 +468,182 @@ describe('trust, then and there', () => {
     );
     pool.sync([view('v1', 'a/x', 1, [tools])], 'v1');
     await settle();
-    expect(started[0]?.spec.path).toEqual(['/lo/git/bin', '/toolchain/bin']);
+    // Homebrew's git, say, whose folder also holds Homebrew's `go`, comes after Lo's `go`.
+    expect(started[0]?.spec.path).toEqual(['/toolchain/bin', '/lo/git/bin']);
+  });
+});
+
+describe('halting', () => {
+  it('stops the servers that use a toolchain, each saying why until “Restart” starts it again', async () => {
+    const { pool, started, live } = standIns();
+    const views = [view('v1', 'a/x', 1, [TS, GO])];
+    pool.sync(views, 'v1');
+    await settle();
+    for (const server of started) server.set({ kind: 'ready' });
+    expect(live()).toHaveLength(2);
+
+    await pool.halt((each) => each.id === 'go', 'Go was removed. Restart downloads it again.');
+    expect(live().map((server) => server.spec.name)).toEqual(['TypeScript']);
+    expect(pool.shown('a/x', 'go')?.state).toEqual({
+      kind: 'failed',
+      why: { kind: 'error', message: 'Go was removed. Restart downloads it again.' },
+    });
+    expect(pool.find('a/x', 'go', '/cache/a/x/pull-1')).toEqual({ kind: 'failed' });
+    // Nothing starts it again by itself, even as the view on screen changes.
+    pool.sync(views, 'v1');
+    await settle();
+    expect(started).toHaveLength(2);
+
+    await pool.restart('a/x', GO, { folder: '/cache/a/x/pull-1', pull: 1 });
+    await settle();
+    expect(started).toHaveLength(3);
+    expect(live().map((server) => server.spec.name)).toEqual(['TypeScript', 'go']);
+  });
+
+  it('stops one getting ready, dropping what its download finds out late', async () => {
+    const { promise, resolve } = Promise.withResolvers<Prepared>();
+    let aborted = false;
+    const slow = adapter('go', ({ signal }) => {
+      signal.addEventListener('abort', () => {
+        aborted = true;
+      });
+      return promise;
+    });
+    const { pool, started } = standIns();
+    pool.sync([view('v1', 'a/x', 1, [slow])], 'v1');
+    await settle();
+    await pool.halt(() => true, 'Go was removed. Restart downloads it again.');
+    expect(aborted).toBe(true);
+    resolve({ kind: 'ready', launch: { program: '/bin/x', args: [] } });
+    await settle();
+    expect(started).toEqual([]);
+    expect(pool.shown('a/x', 'go')?.state.kind).toBe('failed');
+  });
+});
+
+describe('Lo’s own servers', () => {
+  it('get git’s folder, then the system’s, on their PATH, and no variable of their own', async () => {
+    const specs: ServerSpec[] = [];
+    const pool = new ServerPool({
+      prepare: (each, progress, signal) =>
+        each.prepare({
+          install: (id) =>
+            Promise.resolve({ folder: `/lo/servers/${id}`, entry: `/lo/servers/${id}/entry` }),
+          toolchain: listedToolchain(each, () => Promise.reject(new Error('no toolchain here'))),
+          findCopy: () => Promise.resolve(undefined),
+          signal,
+        }),
+      start(spec) {
+        specs.push(spec);
+        return new StandIn(spec);
+      },
+      base: () => ({ home: '/home/lo', git: { GIT_CONFIG_COUNT: '0' }, path: ['/lo/git/bin'] }),
+      changed: () => undefined,
+      log: () => undefined,
+    });
+    onTestFinished(() => pool.stop());
+    pool.sync([view('v1', 'a/x', 1, SHIPPED)], 'v1');
+    await settle();
+    expect(specs.map((spec) => spec.name)).toEqual(['TypeScript', 'Python']);
+    for (const spec of specs) {
+      expect(serverEnvironment({ ...spec, roots: [spec.root] })).toEqual({
+        GIT_CONFIG_COUNT: '0',
+        HOME: '/home/lo',
+        TMPDIR: '/home/lo/tmp',
+        PATH: '/lo/git/bin:/usr/bin:/bin',
+        LANG: 'C.UTF-8',
+      });
+    }
+  });
+});
+
+describe('checkouts a server won’t run on', () => {
+  /** C#'s, which uses .NET. */
+  const CSHARP: Adapter = { ...adapter('csharp'), downloads: { toolchains: ['dotnet'] } };
+  const WHY = 'The checkout’s global.json names folders to look for an SDK in.';
+  /** Refuses C#'s server on pull request 2's checkout. */
+  const refusing: PoolOptions['checkout'] = (each, folder) =>
+    Promise.resolve(each === CSHARP && folder === '/cache/a/x/pull-2' ? WHY : undefined);
+
+  it('starts none on a checkout its toolchain refuses, and says why', async () => {
+    const { pool, started } = standIns({}, refusing);
+    pool.sync([view('v2', 'a/x', 2, [TS, CSHARP])], 'v2');
+    await settle();
+    expect(started.map((server) => server.spec.name)).toEqual(['TypeScript']);
+    expect(pool.shown('a/x', 'csharp')?.state).toEqual({
+      kind: 'failed',
+      why: { kind: 'error', message: WHY },
+    });
+  });
+
+  it('moves none to such a checkout: it stops there, and says why', async () => {
+    const { pool, started, live } = standIns({}, refusing);
+    const views = [view('v1', 'a/x', 1, [CSHARP]), view('v2', 'a/x', 2, [CSHARP])];
+    pool.sync(views, 'v1');
+    await settle();
+    started[0]?.set({ kind: 'ready' });
+    pool.sync(views, 'v2');
+    await settle();
+    expect(started[0]?.moved).toEqual([]);
+    expect(live()).toEqual([]);
+    expect(pool.shown('a/x', 'csharp')?.state).toEqual({
+      kind: 'failed',
+      why: { kind: 'error', message: WHY },
+    });
+  });
+
+  it('never runs the SDK a checkout’s global.json plants for dotnet to find', async () => {
+    const folder = realpathSync(mkdtempSync(join(tmpdir(), 'lo-planted-')));
+    onTestFinished(() => rmSync(folder, { recursive: true, force: true }));
+    const root = join(folder, 'pull-1');
+    const planted = join(root, 'evil', 'sdk', '10.0.404');
+    mkdirSync(planted, { recursive: true });
+    writeFileSync(join(planted, 'dotnet.dll'), 'an SDK of the checkout’s');
+    writeFileSync(join(root, 'global.json'), '{ "sdk": { "paths": ["evil"] } }');
+    const marker = join(folder, 'lo-hostile-dotnet');
+    const pool = new ServerPool({
+      prepare: (each, progress, signal) =>
+        each.prepare({
+          install: () => Promise.reject(new Error('no downloads in tests')),
+          toolchain: () => Promise.reject(new Error('no downloads in tests')),
+          findCopy: () => Promise.resolve(undefined),
+          signal,
+        }),
+      checkout: checkoutRefusal,
+      // Standing in for `dotnet` run in the checkout, which would find the planted SDK and run it.
+      start(spec) {
+        if (existsSync(join(spec.root, 'evil', 'sdk')))
+          writeFileSync(marker, 'the planted SDK ran');
+        return new StandIn(spec);
+      },
+      base: () => ({ home: '/home/lo', git: { GIT_CONFIG_COUNT: '0' }, path: [] }),
+      changed: () => undefined,
+      log: () => undefined,
+    });
+    onTestFinished(() => pool.stop());
+    pool.sync(
+      [
+        {
+          id: 'v1',
+          repo: 'a/x',
+          pull: 1,
+          trust: 'trusted',
+          root: { folder: root, pull: 1 },
+          wants: [CSHARP],
+        },
+      ],
+      'v1',
+    );
+    await vi.waitFor(() => expect(pool.shown('a/x', 'csharp')?.state.kind).toBe('failed'));
+    expect(existsSync(marker)).toBe(false);
+    expect(pool.shown('a/x', 'csharp')?.state).toEqual({
+      kind: 'failed',
+      why: {
+        kind: 'error',
+        message:
+          'The checkout’s global.json names folders to look for an SDK in, so it could choose a .NET SDK other than Lo’s.',
+      },
+    });
   });
 });
 

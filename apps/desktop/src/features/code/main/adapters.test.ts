@@ -1,5 +1,5 @@
-// The adapters Lo ships: which files each reads, and what it downloads before it starts. What each
-// server runs as, and is told, is `@lo/lsp`'s, and tested there.
+// The adapters Lo ships: which files each reads, and what it downloads before it starts, which is
+// no toolchain. What each server runs as, and is told, is `@lo/lsp`'s, and tested there.
 
 import { type Installed, launchOnNode, PYRIGHT, VTSLS } from '@lo/lsp';
 import { describe, expect, it } from 'vitest';
@@ -30,17 +30,22 @@ describe('Lo’s adapters', () => {
     expect(readBy('lib/a.rb')).toBeUndefined();
   });
 
-  it('download Node, then their server, and start it on that Node', async () => {
+  it('download Node, then their server, and start it on that Node, with no toolchain', async () => {
     const servers = new Map([
       ['typescript', VTSLS],
       ['python', PYRIGHT],
     ]);
     for (const adapter of ADAPTERS) {
       const installs: string[] = [];
+      const toolchains: string[] = [];
       const prepared = await adapter.prepare({
         install: (id) => {
           installs.push(id);
           return Promise.resolve(installedAs(id));
+        },
+        toolchain: (id) => {
+          toolchains.push(id);
+          return Promise.reject(new Error('no toolchain is asked for'));
         },
         findCopy: () => Promise.reject(new Error('no copy is looked for')),
         signal: new AbortController().signal,
@@ -48,6 +53,9 @@ describe('Lo’s adapters', () => {
       const server = servers.get(adapter.id);
       if (!server) throw new Error(`${adapter.id} has no server here`);
       expect(installs).toEqual(['node', server.id]);
+      expect(toolchains).toEqual([]);
+      // Named up front, so the status bar adds them up from the first byte.
+      expect(adapter.downloads).toEqual({ servers: ['node', server.id], toolchains: [] });
       expect(prepared).toEqual({
         kind: 'ready',
         launch: launchOnNode(server, installedAs('node'), installedAs(server.id)),
@@ -69,6 +77,7 @@ describe('Lo’s adapters', () => {
       typescript?.prepare({
         install: (id) =>
           id === 'node' ? Promise.resolve(installedAs(id)) : Promise.reject(failed),
+        toolchain: () => Promise.reject(new Error('no toolchain is asked for')),
         findCopy: () => Promise.resolve(undefined),
         signal: new AbortController().signal,
       }),

@@ -450,6 +450,40 @@ test('it runs only a program of its own, outside the checkout', async () => {
   }
 });
 
+test('.NET’s dotnet runs only as dotnet exec, which reads no global.json', async () => {
+  const folder = tempFolder();
+  const root = join(folder, 'checkout');
+  mkdirSync(root);
+  const dotnet = join(folder, 'dotnet');
+  writeFileSync(dotnet, 'binary');
+  chmodSync(dotnet, 0o755);
+  const start = (args: string[]) => {
+    const server = startServer({
+      name: 'Fake',
+      program: dotnet,
+      args,
+      root,
+      home: join(folder, 'home'),
+      path: [],
+      git: GIT,
+    });
+    onTestFinished(() => server.stop());
+    return server;
+  };
+  const refused = start(['build']);
+  expect(await refused.ready).toBe(false);
+  expect(refused.state.kind === 'failed' && failureMessage(refused.state.failure)).toContain(
+    'only as `dotnet exec`',
+  );
+  expect(refused.pid).toBeUndefined();
+  // As `dotnet exec`, Lo starts it, and only what it is (not a program) stops it.
+  const exec = start(['exec', join(folder, 'server.dll')]);
+  expect(await exec.ready).toBe(false);
+  expect(exec.state.kind === 'failed' && failureMessage(exec.state.failure)).not.toContain(
+    'dotnet exec',
+  );
+});
+
 test('a bad answer to initialize, or a message too large, fails the server', async () => {
   const wrong = startFake({
     initialize: { result: { capabilities: { positionEncoding: 'utf-8' } } },

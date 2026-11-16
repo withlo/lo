@@ -1,0 +1,246 @@
+{
+  "dotnet": {
+    "version": "10.0.404",
+    "hosts": ["builds.dotnet.microsoft.com"],
+    "platforms": {
+      "darwin-arm64": {
+        "kind": "tar.gz",
+        "url": "https://builds.dotnet.microsoft.com/dotnet/Sdk/10.0.404/dotnet-sdk-10.0.404-osx-arm64.tar.gz",
+        "size": 233588093,
+        "sha256": "acf7ebe726a030fa3d2bd03b06196971bd9ef123c579b9345d380bc0ef0d4e44",
+        "entry": "dotnet",
+        "unpacked": 674743890
+      },
+      "darwin-x64": {
+        "kind": "tar.gz",
+        "url": "https://builds.dotnet.microsoft.com/dotnet/Sdk/10.0.404/dotnet-sdk-10.0.404-osx-x64.tar.gz",
+        "size": 241580911,
+        "sha256": "43975ff4e35960556072da9300f4a77bc8dfa2dbe688b8812af32861a47069d5",
+        "entry": "dotnet",
+        "unpacked": 641918684
+      },
+      "linux-x64": {
+        "kind": "tar.gz",
+        "url": "https://builds.dotnet.microsoft.com/dotnet/Sdk/10.0.404/dotnet-sdk-10.0.404-linux-x64.tar.gz",
+        "size": 243138887,
+        "sha256": "c0610757a818fde4b960d27a0ac421f273068a05dc5ec7abafc01dbf84e9cb4d",
+        "entry": "dotnet",
+        "unpacked": 644980579
+      },
+      "linux-arm64": {
+        "kind": "tar.gz",
+        "url": "https://builds.dotnet.microsoft.com/dotnet/Sdk/10.0.404/dotnet-sdk-10.0.404-linux-arm64.tar.gz",
+        "size": 235410674,
+        "sha256": "dcc820a4277ab6bb3f648c609d86f2a7912ba9a3d166545e7b95dff419c12f0f",
+        "entry": "dotnet",
+        "unpacked": 676941626
+      }
+    }
+  },
+  "go": {
+    "version": "1.27.4",
+    "hosts": ["dl.google.com"],
+    "platforms": {
+      "darwin-arm64": {
+        "url": "https://dl.google.com/go/go1.27.4.darwin-arm64.tar.gz",
+        "size": 68231011,
+        "sha256": "91a44a2b8a716600ad94a4f143e156116620db8828086a6e3602291be9bd0bb4",
+        "kind": "tar.gz",
+        "entry": "go/bin/go",
+        "unpacked": 240208599
+      },
+      "darwin-x64": {
+        "url": "https://dl.google.com/go/go1.27.4.darwin-amd64.tar.gz",
+        "size": 71756705,
+        "sha256": "2b799377704ef12db39bd254995d5c348c9cc8d86562ca817724390e56c38f43",
+        "kind": "tar.gz",
+        "entry": "go/bin/go",
+        "unpacked": 246357895
+      },
+      "linux-x64": {
+        "url": "https://dl.google.com/go/go1.27.4.linux-amd64.tar.gz",
+        "size": 70680823,
+        "sha256": "7226736c2339719cda28fbf3a54d71aa63bcefe376e98cef00034268dab24840",
+        "kind": "tar.gz",
+        "entry": "go/bin/go",
+        "unpacked": 244338457
+      },
+      "linux-arm64": {
+        "url": "https://dl.google.com/go/go1.27.4.linux-arm64.tar.gz",
+        "size": 67129258,
+        "sha256": "3392582988a273a87ab5043ee1b2c9c17a2c3c00580bf9326c47a2e0aaaeac92",
+        "kind": "tar.gz",
+        "entry": "go/bin/go",
+        "unpacked": 238841035
+      }
+    }
+  },
+  "rust": {
+    "version": "1.100.0",
+    "hosts": ["static.rust-lang.org"],
+    "platforms": {
+      "darwin-arm64": {
+        "kind": "layers",
+        "entry": "bin/cargo",
+        "layers": [
+          {
+            "url": "https://static.rust-lang.org/dist/2026-11-12/rustc-1.100.0-aarch64-apple-darwin.tar.gz",
+            "size": 87064841,
+            "sha256": "6781021dd0f71f0a3e2d72e2945ced97a925e4f513996d33a2550de187fe6d6c",
+            "from": "rustc-1.100.0-aarch64-apple-darwin/rustc"
+          },
+          {
+            "url": "https://static.rust-lang.org/dist/2026-11-12/cargo-1.100.0-aarch64-apple-darwin.tar.gz",
+            "size": 13019835,
+            "sha256": "b3bbd1d2c6a5c263b43ca0751fd6d25238bc88aac5b0fdd85d33d6275c41891e",
+            "from": "cargo-1.100.0-aarch64-apple-darwin/cargo"
+          },
+          {
+            "url": "https://static.rust-lang.org/dist/2026-11-12/rust-std-1.100.0-aarch64-apple-darwin.tar.gz",
+            "size": 48385420,
+            "sha256": "4709763e3033e3e31d219db1457b0f4d7251f77525f8c312df2867d2d617dea5",
+            "from": "rust-std-1.100.0-aarch64-apple-darwin/rust-std-aarch64-apple-darwin"
+          },
+          {
+            "url": "https://static.rust-lang.org/dist/2026-11-12/rust-src-1.100.0.tar.gz",
+            "size": 9520317,
+            "sha256": "f37ba90547b1075da3a0953742cab9f9e33b5c08bce747bb0ff8382537b2fa8c",
+            "from": "rust-src-1.100.0/rust-src"
+          }
+        ],
+        "unpacked": 545353868
+      },
+      "darwin-x64": {
+        "kind": "layers",
+        "entry": "bin/cargo",
+        "layers": [
+          {
+            "url": "https://static.rust-lang.org/dist/2026-11-12/rustc-1.100.0-x86_64-apple-darwin.tar.gz",
+            "size": 106543272,
+            "sha256": "7c3fece1d0e6e71c3cb59aaf273fde563bc14efcecdad51fd707d05a016c2341",
+            "from": "rustc-1.100.0-x86_64-apple-darwin/rustc"
+          },
+          {
+            "url": "https://static.rust-lang.org/dist/2026-11-12/cargo-1.100.0-x86_64-apple-darwin.tar.gz",
+            "size": 13369505,
+            "sha256": "639107fb67e9974402d07a162d67493d5f7b643f9904a725648c55f088e38001",
+            "from": "cargo-1.100.0-x86_64-apple-darwin/cargo"
+          },
+          {
+            "url": "https://static.rust-lang.org/dist/2026-11-12/rust-std-1.100.0-x86_64-apple-darwin.tar.gz",
+            "size": 48737051,
+            "sha256": "db80fa393d03e2d7f4ed08dc22cda9080c1a0d5e41d9a694435ae1e8f0691a1f",
+            "from": "rust-std-1.100.0-x86_64-apple-darwin/rust-std-x86_64-apple-darwin"
+          },
+          {
+            "url": "https://static.rust-lang.org/dist/2026-11-12/rust-src-1.100.0.tar.gz",
+            "size": 9520317,
+            "sha256": "f37ba90547b1075da3a0953742cab9f9e33b5c08bce747bb0ff8382537b2fa8c",
+            "from": "rust-src-1.100.0/rust-src"
+          }
+        ],
+        "unpacked": 620429084
+      },
+      "linux-x64": {
+        "kind": "layers",
+        "entry": "bin/cargo",
+        "layers": [
+          {
+            "url": "https://static.rust-lang.org/dist/2026-11-12/rustc-1.100.0-x86_64-unknown-linux-gnu.tar.gz",
+            "size": 143589524,
+            "sha256": "67b0e85ff4b3eee83c48b8ae1da10dd0bcd60b43d02cd0e7df78c59d19f6b960",
+            "from": "rustc-1.100.0-x86_64-unknown-linux-gnu/rustc"
+          },
+          {
+            "url": "https://static.rust-lang.org/dist/2026-11-12/cargo-1.100.0-x86_64-unknown-linux-gnu.tar.gz",
+            "size": 14503535,
+            "sha256": "4e7fc3cbe98e23c88a3c6ce37f834e3ffbc91536789782c4c4a9670df6b16a49",
+            "from": "cargo-1.100.0-x86_64-unknown-linux-gnu/cargo"
+          },
+          {
+            "url": "https://static.rust-lang.org/dist/2026-11-12/rust-std-1.100.0-x86_64-unknown-linux-gnu.tar.gz",
+            "size": 50206772,
+            "sha256": "61eb09d68b338e230d698716927bd4623049c9910ef4a4972e66d763d66ed9e1",
+            "from": "rust-std-1.100.0-x86_64-unknown-linux-gnu/rust-std-x86_64-unknown-linux-gnu"
+          },
+          {
+            "url": "https://static.rust-lang.org/dist/2026-11-12/rust-src-1.100.0.tar.gz",
+            "size": 9520317,
+            "sha256": "f37ba90547b1075da3a0953742cab9f9e33b5c08bce747bb0ff8382537b2fa8c",
+            "from": "rust-src-1.100.0/rust-src"
+          }
+        ],
+        "unpacked": 700553069
+      },
+      "linux-arm64": {
+        "kind": "layers",
+        "entry": "bin/cargo",
+        "layers": [
+          {
+            "url": "https://static.rust-lang.org/dist/2026-11-12/rustc-1.100.0-aarch64-unknown-linux-gnu.tar.gz",
+            "size": 108694255,
+            "sha256": "7ccc960846f81e016086f1931dedadd837a3317da80e0114df68651145c0f43b",
+            "from": "rustc-1.100.0-aarch64-unknown-linux-gnu/rustc"
+          },
+          {
+            "url": "https://static.rust-lang.org/dist/2026-11-12/cargo-1.100.0-aarch64-unknown-linux-gnu.tar.gz",
+            "size": 14688665,
+            "sha256": "b3acccbba065da7e97c20592442f104bd9554d54bf87a323bba8a1d6e61282eb",
+            "from": "cargo-1.100.0-aarch64-unknown-linux-gnu/cargo"
+          },
+          {
+            "url": "https://static.rust-lang.org/dist/2026-11-12/rust-std-1.100.0-aarch64-unknown-linux-gnu.tar.gz",
+            "size": 50334812,
+            "sha256": "89b01323a6611c9382a401282fb66eb80f1f3241df3e139d3df41afbd2da314b",
+            "from": "rust-std-1.100.0-aarch64-unknown-linux-gnu/rust-std-aarch64-unknown-linux-gnu"
+          },
+          {
+            "url": "https://static.rust-lang.org/dist/2026-11-12/rust-src-1.100.0.tar.gz",
+            "size": 9520317,
+            "sha256": "f37ba90547b1075da3a0953742cab9f9e33b5c08bce747bb0ff8382537b2fa8c",
+            "from": "rust-src-1.100.0/rust-src"
+          }
+        ],
+        "unpacked": 600910570
+      }
+    }
+  },
+  "temurin": {
+    "version": "25.0.5+8",
+    "hosts": ["github.com", "release-assets.githubusercontent.com"],
+    "platforms": {
+      "darwin-arm64": {
+        "url": "https://github.com/adoptium/temurin25-binaries/releases/download/jdk-25.0.5%2B8/OpenJDK25U-jdk_aarch64_mac_hotspot_25.0.5_8.tar.gz",
+        "size": 136446056,
+        "sha256": "36dc14d797aaff6d89aab302cd053fdba6207dfdcf772052fa7b023a94b0e857",
+        "kind": "tar.gz",
+        "entry": "jdk-25.0.5+8/Contents/Home/bin/java",
+        "unpacked": 307799523
+      },
+      "darwin-x64": {
+        "url": "https://github.com/adoptium/temurin25-binaries/releases/download/jdk-25.0.5%2B8/OpenJDK25U-jdk_x64_mac_hotspot_25.0.5_8.tar.gz",
+        "size": 120336964,
+        "sha256": "32cd4d2151c91aa00d0fc911edfd05245ed40fa6b1aa894d5f35c928cd67a59d",
+        "kind": "tar.gz",
+        "entry": "jdk-25.0.5+8/Contents/Home/bin/java",
+        "unpacked": 245688617
+      },
+      "linux-x64": {
+        "url": "https://github.com/adoptium/temurin25-binaries/releases/download/jdk-25.0.5%2B8/OpenJDK25U-jdk_x64_linux_hotspot_25.0.5_8.tar.gz",
+        "size": 141341188,
+        "sha256": "68982529869257d0ee6b824ec5aa270ff8b118bb438670da0b97ebdab178d7fb",
+        "kind": "tar.gz",
+        "entry": "jdk-25.0.5+8/bin/java",
+        "unpacked": 316636509
+      },
+      "linux-arm64": {
+        "url": "https://github.com/adoptium/temurin25-binaries/releases/download/jdk-25.0.5%2B8/OpenJDK25U-jdk_aarch64_linux_hotspot_25.0.5_8.tar.gz",
+        "size": 140178170,
+        "sha256": "bb5b2ded252f21c6090cf780b0a408ad0d83bbb557e702955643557f13231880",
+        "kind": "tar.gz",
+        "entry": "jdk-25.0.5+8/bin/java",
+        "unpacked": 316783668
+      }
+    }
+  }
+}

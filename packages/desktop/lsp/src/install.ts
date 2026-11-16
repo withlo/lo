@@ -15,6 +15,9 @@
  * - A download that fails on the way (the connection, a stall, or the server's trouble) is tried
  *   {@link TRIES} times in all, waiting longer each time. Anything else fails at once.
  * - One download per version at a time: an install asked for while one runs waits for it.
+ * - Before it downloads, the disk must have room for the download and what it unpacks to at once.
+ *   A download recorded with what it unpacks to may unpack to that and {@link UNPACKED_MARGIN} more;
+ *   the rest are held to the limits every download shares.
  */
 
 import { createHash } from 'node:crypto';
@@ -29,6 +32,7 @@ import {
   rename,
   rm,
   stat,
+  statfs,
   writeFile,
 } from 'node:fs/promises';
 import { dirname, isAbsolute, join, relative, sep } from 'node:path';
@@ -49,10 +53,19 @@ import {
   type Pinned,
   type Platform,
 } from './manifest.ts';
-import { type Unpacked, Unpacker, UNPACK_RULES, type UnpackLimits } from './unpack.ts';
+import {
+  type Unpacked,
+  Unpacker,
+  UNPACK_LIMITS,
+  UNPACK_RULES,
+  type UnpackLimits,
+} from './unpack.ts';
 
 /** How many times a download is tried before it fails. */
 export const TRIES = 3;
+
+/** How far past what it was recorded to unpack to a download may unpack: 5% more. */
+export const UNPACKED_MARGIN = 0.05;
 
 /** How long to wait before each try after the first, in milliseconds. */
 const BACKOFF = [2_000, 8_000] as const;
@@ -75,6 +88,9 @@ const markerSchema = z.object({
 /** How many of an install's files are checked against its marker at once. */
 const CHECKS = 64;
 
+/** An ID, as the manifest names one, which names its folder. */
+const NAME = /^[0-9A-Za-z][0-9A-Za-z._+-]*$/;
+
 export interface InstallerOptions {
   /** Lo's folder for servers, in its cache: never inside a checkout. */
   readonly folder: string;
@@ -87,6 +103,8 @@ export interface InstallerOptions {
   readonly backoff?: readonly number[] | undefined;
   /** What counts as a try that has stalled: `STALL` unless given. */
   readonly stall?: StallLimits | undefined;
+  /** How many bytes the disk holding `folder` has free, or `undefined` when it can't say. */
+  readonly free?: ((folder: string) => Promise<number | undefined>) | undefined;
 }
 
 export interface InstallOptions {
@@ -104,8 +122,16 @@ export interface Installed {
   readonly entry: string;
 }
 
+/** A removal under way, and why, which an install asked for meanwhile fails with. */
+interface Removal {
+  readonly reason: Error;
+  readonly done: Promise<void>;
+}
+
 /** A download running, and who waits for it. */
 interface Job {
+  /** The version it installs. */
+  readonly version: string;
   readonly done: Promise<Installed>;
   readonly controller: AbortController;
   readonly listeners: Set<(received: number, total: number) => void>;
@@ -121,7 +147,15 @@ export class Installer {
   readonly #limits: UnpackLimits | undefined;
   readonly #backoff: readonly number[];
   readonly #stall: StallLimits | undefined;
+  readonly #free: (folder: string) => Promise<number | undefined>;
   readonly #jobs = new Map<string, Job>();
+  /**
+   * Every job running for each ID until it ends, those nobody waits for any longer among them: one
+   * whose waiters left can still be putting its folder in place.
+   */
+  readonly #running = new Map<string, Set<Job>>();
+  /** The removals of each ID under way, in the order asked: installs of it fail meanwhile. */
+  readonly #removing = new Map<string, Removal[]>();
 
   constructor(options: InstallerOptions) {
     if (!isAbsolute(options.folder)) throw new Error(`${options.folder} isn't an absolute path`);
@@ -131,6 +165,7 @@ export class Installer {
     this.#limits = options.limits;
     this.#backoff = options.backoff ?? BACKOFF;
     this.#stall = options.stall;
+    this.#free = options.free ?? freeSpace;
   }
 
   /** The folder `id`'s `version` is installed in, whole or not. */
@@ -145,21 +180,36 @@ export class Installer {
   async install(id: string, pinned: Pinned, options: InstallOptions = {}): Promise<Installed> {
     const { signal, progress } = options;
     signal?.throwIfAborted();
+    // Nothing installs it while it's being removed, so nothing gets the folder that goes.
+    const removing = this.#removing.get(id)?.at(-1);
+    if (removing !== undefined) throw removing.reason;
     const key = `${id}/${pinned.version}`;
     let job = this.#jobs.get(key);
     if (job === undefined) {
       const controller = new AbortController();
       const created: Job = {
+        version: pinned.version,
         controller,
         listeners: new Set(),
         partial: new Set(),
         waiting: 0,
-        done: Promise.resolve().then(() => this.#run(id, pinned, created)),
+        // A job stopped once it's done gives no folder: a removal may be deleting it.
+        done: Promise.resolve()
+          .then(() => this.#run(id, pinned, created))
+          .then((installed) => {
+            controller.signal.throwIfAborted();
+            return installed;
+          }),
       };
       job = created;
       this.#jobs.set(key, job);
+      const running = this.#running.get(id) ?? new Set();
+      running.add(created);
+      this.#running.set(id, running);
       const forget = () => {
         if (this.#jobs.get(key) === created) this.#jobs.delete(key);
+        running.delete(created);
+        if (running.size === 0 && this.#running.get(id) === running) this.#running.delete(id);
       };
       job.done.then(forget, forget);
     }
@@ -196,13 +246,70 @@ export class Installer {
   }
 
   /**
+   * How many bytes `id`'s files take as `pinned` says, by what its marker records, or `undefined`
+   * when no marker says it holds them. It reads the marker alone, for Settings to show, and
+   * doesn't check the files against it, as an install does before it's used.
+   */
+  async recorded(id: string, pinned: Pinned): Promise<number | undefined> {
+    const download = this.#downloadOf(pinned);
+    const marker = await readMarker(this.folderOf(id, pinned.version));
+    if (marker?.fingerprint !== fingerprint(id, pinned, download)) return undefined;
+    return marker.files.reduce((sum, [, bytes]) => sum + bytes, 0);
+  }
+
+  /**
+   * Removes every version of `id`, as Settings' "Remove" asks. From the moment it's asked, an
+   * install of it fails with `reason`, and every install under way stops, those nobody waits for
+   * any longer included. Then `first` runs, such as stopping the servers that use it, and once it
+   * has and each install has ended, the folder is renamed aside, then deleted, so nothing finds it
+   * half gone.
+   */
+  async remove(
+    id: string,
+    reason: Error = new Error(`${id} was removed`),
+    first?: () => Promise<void>,
+  ): Promise<void> {
+    if (!NAME.test(id)) throw new Error(`${id} isn't an ID`);
+    const removals = this.#removing.get(id) ?? [];
+    this.#removing.set(id, removals);
+    const before = removals.at(-1)?.done;
+    for (const key of this.#jobs.keys()) if (key.startsWith(`${id}/`)) this.#jobs.delete(key);
+    const stopping = [...(this.#running.get(id) ?? [])];
+    for (const job of stopping) job.controller.abort(reason);
+    // Installs of it are refused before anything else runs, `first` included.
+    const { promise: done, resolve, reject } = Promise.withResolvers<void>();
+    const removal: Removal = { reason, done };
+    removals.push(removal);
+    (async () => {
+      await first?.();
+      // One removal of it at a time.
+      await before?.catch(() => undefined);
+      await Promise.all(stopping.map((job) => job.done.catch(() => undefined)));
+      const folder = join(this.#folder, id);
+      if (!(await lstat(folder).catch(() => undefined))) return;
+      await mkdir(join(this.#folder, PARTIAL), { recursive: true, mode: 0o700 });
+      const aside = await mkdtemp(join(this.#folder, PARTIAL, 'removed-'));
+      await rename(folder, join(aside, id));
+      await rm(aside, { recursive: true, force: true });
+    })().then(resolve, reject);
+    try {
+      await done;
+    } finally {
+      removals.splice(removals.indexOf(removal), 1);
+      if (removals.length === 0 && this.#removing.get(id) === removals) this.#removing.delete(id);
+    }
+  }
+
+  /**
    * Removes what `manifest` no longer pins: other versions, servers it doesn't list, and
    * downloads left by a Lo that stopped halfway. It keeps the versions `running` names, which
    * servers still run from, and anything an install is using.
    */
   async prune(manifest: Manifest, running: readonly Installed[] = []): Promise<void> {
     const kept = new Set(running.map((installed) => dirname(installed.folder)));
-    for (const job of this.#jobs.values()) for (const folder of job.partial) kept.add(folder);
+    for (const jobs of this.#running.values()) {
+      for (const job of jobs) for (const folder of job.partial) kept.add(folder);
+    }
     const remove = (folder: string) =>
       kept.has(folder) ? undefined : rm(folder, { recursive: true, force: true });
     for (const name of await readdir(this.#folder).catch(() => [])) {
@@ -215,7 +322,9 @@ export class Installer {
       }
       const pinned = manifest[name];
       for (const version of await readdir(folder).catch(() => [])) {
-        const installing = this.#jobs.has(`${name}/${version}`);
+        const installing = [...(this.#running.get(name) ?? [])].some(
+          (job) => job.version === version,
+        );
         if (version !== pinned?.version && !installing) await remove(join(folder, version));
       }
       if ((await readdir(folder).catch(() => [])).length === 0) {
@@ -231,6 +340,8 @@ export class Installer {
     const found = await this.#whole(target, print, download);
     if (found !== undefined) return found;
     const { signal } = job.controller;
+    await this.#checkRoom(download);
+    signal.throwIfAborted();
     for (let attempt = 1; ; attempt += 1) {
       try {
         return await this.#attempt(id, pinned, download, print, job);
@@ -298,7 +409,8 @@ export class Installer {
       }
       const into = join(work, FILES);
       await mkdir(into, { mode: 0o755 });
-      const unpacker = new Unpacker(into, { limits: this.#limits, signal });
+      const limits = this.#limits ?? limitsFor(download);
+      const unpacker = new Unpacker(into, { limits, signal });
       await unpack(unpacker, download, files, into);
       for (const file of files) await rm(file, { force: true });
       signal.throwIfAborted();
@@ -364,6 +476,22 @@ export class Installer {
   }
 
   /**
+   * Refuses `download` when the disk hasn't room for it: its files and what they unpack to, which
+   * are both there until the files are removed.
+   */
+  async #checkRoom(download: Download): Promise<void> {
+    const files = partsOf(download).reduce((sum, part) => sum + part.size, 0);
+    const needed = files + (download.unpacked ?? 0);
+    await mkdir(this.#folder, { recursive: true, mode: 0o755 });
+    const free = await this.#free(this.#folder).catch(() => undefined);
+    if (free === undefined || free >= needed) return;
+    throw new DownloadError(
+      'space',
+      `Lo needs ${megabytes(needed)} free for it, and the disk has ${megabytes(free)}.`,
+    );
+  }
+
+  /**
    * The install at `target`, if each folder from the installer's own down to it is a folder, not a
    * link, its marker says it holds `print`, each file, folder and link it records is there as it
    * says, and its entry point is there.
@@ -397,6 +525,38 @@ export class Installer {
     }
     return download;
   }
+}
+
+/** What the marker in the version's folder `target` says, if it's one Lo reads. */
+async function readMarker(target: string): Promise<z.output<typeof markerSchema> | undefined> {
+  const text = await readFile(join(target, MARKER), 'utf8').catch(() => undefined);
+  if (text === undefined) return undefined;
+  try {
+    const marker = markerSchema.safeParse(JSON.parse(text));
+    return marker.success ? marker.data : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * The limits `download` unpacks within: what it was recorded to unpack to and
+ * {@link UNPACKED_MARGIN} more, or, where that isn't recorded, those every download shares.
+ */
+export function limitsFor(download: Download): UnpackLimits {
+  if (download.unpacked === undefined) return UNPACK_LIMITS;
+  return { ...UNPACK_LIMITS, bytes: Math.ceil(download.unpacked * (1 + UNPACKED_MARGIN)) };
+}
+
+/** How many bytes the disk holding `folder` has free for Lo. */
+async function freeSpace(folder: string): Promise<number | undefined> {
+  const found = await statfs(folder).catch(() => undefined);
+  return found === undefined ? undefined : found.bavail * found.bsize;
+}
+
+/** `bytes` in MB, rounded up, in the binary units Settings and the status bar count in. */
+function megabytes(bytes: number): string {
+  return `${Math.ceil(bytes / 1024 ** 2).toLocaleString('en-US')} MB`;
 }
 
 /**
@@ -458,6 +618,22 @@ export async function unpackDownload(
 }
 
 /**
+ * {@link unpackDownload}, saying too how many bytes its files hold in all: what `pin.ts` records
+ * it unpacks to.
+ */
+export async function unpackMeasured(
+  download: Download,
+  files: readonly string[],
+  into: string,
+  options: { limits?: UnpackLimits | undefined; signal?: AbortSignal | undefined } = {},
+): Promise<{ entry: string; bytes: number }> {
+  const unpacker = new Unpacker(into, options);
+  const entry = await unpack(unpacker, download, files, into);
+  const bytes = unpacker.unpacked.files.reduce((sum, [, size]) => sum + size, 0);
+  return { entry, bytes };
+}
+
+/**
  * Unpacks `files`, the parts of `download` in order, with `unpacker`, which writes into `into`,
  * makes its links, and says where its entry point is.
  */
@@ -495,6 +671,11 @@ async function unpackAll(
     case 'npm':
       for (const [index, pkg] of download.packages.entries()) {
         await unpacker.tarGz(file(index), { at: pkg.path, strip: 1 });
+      }
+      return undefined;
+    case 'layers':
+      for (const [index, layer] of download.layers.entries()) {
+        await unpacker.tarGz(file(index), { from: layer.from });
       }
       return undefined;
     default:

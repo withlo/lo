@@ -7,8 +7,9 @@
  * - `unavailable`: the server answered with something other than the file, such as 404.
  * - `interrupted`: the connection failed, the file came short, or the server had trouble. Only
  *   this is worth trying again by itself.
+ * - `space`: the disk hasn't room for it.
  */
-export type DownloadProblem = 'refused' | 'mismatch' | 'unavailable' | 'interrupted';
+export type DownloadProblem = 'refused' | 'mismatch' | 'unavailable' | 'interrupted' | 'space';
 
 /** A download Lo couldn't make, or won't use. Its message says why, for the reader. */
 export class DownloadError extends Error {

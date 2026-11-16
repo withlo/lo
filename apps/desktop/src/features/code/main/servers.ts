@@ -112,7 +112,7 @@ export interface PoolOptions {
   readonly start: (spec: ServerSpec) => Running;
   /**
    * The rest of a server's spec, for `repo`: a `HOME` of its own, git's variables, and the folder of
-   * Lo's git, put first on its `PATH`. Nothing without git.
+   * Lo's git, put on its `PATH` after the toolchain's folders. Nothing without git.
    */
   readonly base: (
     repo: string,
@@ -124,6 +124,13 @@ export interface PoolOptions {
         readonly path: readonly string[];
       }
     | undefined;
+  /**
+   * Why `adapter`'s server mustn't run on the checkout at `folder`, such as a `global.json` there
+   * that could choose a .NET SDK other than Lo's, or `undefined` when it may. Asked before it
+   * starts there and before it moves there.
+   */
+  readonly checkout?:
+    ((adapter: Adapter, folder: string) => Promise<string | undefined>) | undefined;
   /** A server of `repo` changed what its views show. */
   readonly changed: (repo: string) => void;
   readonly log: (line: string) => void;
@@ -286,6 +293,35 @@ export class ServerPool {
     // And those still stopping on them, as one stopped for a restart elsewhere may be.
     const stopping = [...this.#stopping].filter((each) => each.repo === repo && stops(each.pull));
     await Promise.all([...ending, ...stopping.map((each) => each.done)]);
+  }
+
+  /**
+   * Stops every server whose adapter `uses` picks, as when the toolchain it runs on is removed, and
+   * marks each failed with `message`, to wait for "Restart", which gets it again. One getting ready
+   * stops waiting for its download. Resolves once they've stopped.
+   */
+  async halt(uses: (adapter: Adapter) => boolean, message: string): Promise<void> {
+    const stops: Promise<void>[] = [];
+    for (const entry of this.#entries.values()) {
+      if (entry.phase === 'ending' || !uses(entry.adapter)) continue;
+      // What the start before finds out late is dropped.
+      entry.run += 1;
+      entry.controller.abort();
+      entry.controller = new AbortController();
+      entry.stopListening?.();
+      entry.stopListening = undefined;
+      const { server, stopping } = entry;
+      entry.server = undefined;
+      entry.moving = undefined;
+      if (server) stops.push(this.#stopServer(entry, server, entry.root));
+      if (stopping) stops.push(stopping);
+      entry.phase = 'failed';
+      entry.full = false;
+      entry.progress = undefined;
+      entry.problem = { kind: 'failed', why: { kind: 'error', message: clip(message) } };
+      this.#changed(entry);
+    }
+    await Promise.all(stops);
   }
 
   /**
@@ -481,11 +517,22 @@ export class ServerPool {
       return;
     }
     if (!this.#current(entry, run)) return;
-    // Trust, or the view on screen, may have changed while it got ready.
-    const root = entry.root;
-    if (!this.#allowed(entry.repo, root)) {
-      void this.#end(entry, 'no trusted view on screen shows its head');
-      return;
+    // Trust, or the view on screen, may have changed while it got ready, and the head it's on while
+    // its checkout was looked at.
+    let root = entry.root;
+    for (;;) {
+      if (!this.#allowed(entry.repo, root)) {
+        void this.#end(entry, 'no trusted view on screen shows its head');
+        return;
+      }
+      const refused = await this.#refusal(adapter, root);
+      if (!this.#current(entry, run)) return;
+      if (refused !== undefined) {
+        this.#refuse(entry, { kind: 'failed', why: { kind: 'error', message: clip(refused) } });
+        return;
+      }
+      if (entry.root === root) break;
+      root = entry.root;
     }
     const { launch } = prepared;
     let server: Running;
@@ -496,8 +543,9 @@ export class ServerPool {
         args: launch.args,
         root: root.folder,
         home: base.home,
-        // Lo's git first, before the toolchain's folders.
-        path: [...base.path, ...(launch.path ?? [])],
+        // The toolchain's folders first, then Lo's git's, so a git from a folder that holds other
+        // programs, as Homebrew's does, can't bring that folder's `go` or `cargo` ahead of Lo's.
+        path: [...(launch.path ?? []), ...base.path],
         variables: launch.variables,
         allowed: launch.allowed,
         git: base.git,
@@ -592,6 +640,13 @@ export class ServerPool {
     const still = () =>
       entry.server === server && entry.phase === 'running' && this.#allowed(entry.repo, root);
     if (!still()) return;
+    // One whose checkout it mustn't run on starts there again instead, and says why it can't.
+    const refused = await this.#refusal(entry.adapter, root);
+    if (!still()) return;
+    if (refused !== undefined) {
+      await this.#again(entry, root);
+      return;
+    }
     entry.moving = root;
     this.#changed(entry);
     const moved =
@@ -609,6 +664,15 @@ export class ServerPool {
       return;
     }
     await this.#again(entry, root);
+  }
+
+  /** Why `adapter`'s server mustn't run on `root`, if it mustn't: a look that fails says so too. */
+  async #refusal(adapter: Adapter, root: Root): Promise<string | undefined> {
+    try {
+      return await this.#options.checkout?.(adapter, root.folder);
+    } catch (error) {
+      return `Lo couldn’t look through the checkout: ${describe(error)}`;
+    }
   }
 
   /**

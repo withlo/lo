@@ -6,6 +6,8 @@
  * - `checkouts/github.com/<owner>/<repo>/`: checkouts of pull requests' heads.
  * - `git-env/home`: the empty `HOME` git runs with.
  * - `tmp/`: clones being made, and whatever is being deleted.
+ * - `toolchains/`: the toolchains language servers use, which the app downloads. The cap doesn't
+ *   count them (`UNCAPPED`), nor does clearing the cache remove them.
  * - `lo-cache.lock`: the lock that keeps the cache to one process.
  *
  * Folder names are lowercase, since GitHub's owner and repository names aren't case-sensitive.
@@ -19,11 +21,11 @@ import { GitError } from './errors.ts';
 import { type Git, Runner, type TestSettings } from './git.ts';
 import { DEFAULT_FETCH_LIMITS, type FetchLimits } from './limits.ts';
 import {
+  cappedUsage,
   clear,
   collectReplays,
   DEFAULT_CAP,
   DEFAULT_MAINTENANCE,
-  diskUsage,
   GEOMETRIC_LIMIT,
   hasLooseObjects,
   keepUnder,
@@ -31,6 +33,7 @@ import {
   removeUnused,
   repack,
   repackClone,
+  TOOLCHAINS_FOLDER,
 } from './cleanup.ts';
 import { REPLAYS } from './compare.ts';
 import { CloneLock, lockCache, type Release, unlockCache } from './lock.ts';
@@ -215,9 +218,17 @@ export class Cache {
     this.#log?.(line);
   }
 
-  /** How much disk space the cache takes, in bytes, counting what each file takes on disk. */
+  /** The folder the toolchains language servers use go in, which the cap doesn't count. */
+  get toolchainsFolder(): string {
+    return join(this.root, TOOLCHAINS_FOLDER);
+  }
+
+  /**
+   * How much disk space the cache takes against its cap, in bytes, counting what each file takes on
+   * disk: all of it but the toolchains (`UNCAPPED`).
+   */
   size(): Promise<number> {
-    return diskUsage(this.root);
+    return cappedUsage(this.root);
   }
 
   /**
