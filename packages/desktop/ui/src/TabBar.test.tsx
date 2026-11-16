@@ -7,6 +7,7 @@ import {
   dragOffset,
   dragPlace,
   foldTabs,
+  labelOf,
   slideOf,
   TabBar,
   tabsThatFit,
@@ -169,6 +170,12 @@ describe('TabBar', () => {
     expect(queue).toContain('atlas-api');
     expect(queue).toContain('Merge queue · main<');
     expect(queue).toContain('aria-label="Close tab"');
+  });
+
+  it('types ahead to a merge queue in the menu of tabs that don’t fit by its words, without bidi controls', () => {
+    expect(labelOf({ kind: 'queue', id: 'q', repo: 'atlas-api', branch: 'rel\u202Eease' })).toBe(
+      'atlas-api Merge queue · release',
+    );
   });
 });
 

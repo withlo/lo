@@ -1,12 +1,11 @@
 // The merge queues' tabs in main. Each open one has a watch, which reads its branch's queue as the
 // tab's account while the tab is on screen. A queue opens as the account its pull request's tab
 // acts as, and each pull request it lists opens as the queue's account. While an account is signed
-// out, or once it's removed, its queues aren't read: a signed-out one's are read again once its
-// poller is signed in again, and a removed one's once a pull request's tab acting as it opens the
-// queue again. Nothing here calls Electron or reads GitHub itself.
+// out, or Lo doesn't have it, its queues aren't read; they're read again as soon as Lo's accounts
+// say it's signed in, whatever its poller saw. Nothing here calls Electron or reads GitHub itself.
 
 import { IpcError } from '../../../ipc/contract.ts';
-import type { GithubEvent } from '../../accounts/service.ts';
+import type { AccountState, GithubEvent } from '../../accounts/service.ts';
 import type { QueueTab, Tabs } from '../../tab/contract.ts';
 import type { PullTabInfo, TabService } from '../../tab/service.ts';
 import type { QueueState } from '../contract.ts';
@@ -23,12 +22,11 @@ export interface QueuesOptions {
     pull(id: string): Pick<PullTabInfo, 'repository' | 'acting'> | undefined;
   };
   readonly github: {
+    /** Lo's accounts, and which are signed out. */
+    accounts(): Promise<readonly Pick<AccountState, 'account' | 'signedOut'>[]>;
     onEvent(listener: (event: GithubEvent) => void): () => void;
-    /** The account's poller, for whether it's signed out, and when that changes. */
-    poller(login: string): Promise<{
-      status(): { readonly signedOut: boolean };
-      onChange(listener: () => void): () => void;
-    }>;
+    /** Hears each change to the accounts: one added, removed, signed out or signed in again. */
+    onChange(listener: () => void): () => void;
   };
   /** What the merge queue's tab `tab` reads from. */
   readonly sourceFor: (tab: QueueTab) => TabSource;
@@ -36,18 +34,19 @@ export interface QueuesOptions {
   readonly publish: (state: QueueState) => void;
 }
 
-/** Why an account's queues aren't read: it's signed out, or it was removed. */
-interface Away {
-  readonly kind: 'signedOut' | 'removed';
-  /** What the tab says. */
-  readonly why: string;
-  /** Stops waiting for it to come back. */
-  readonly stop: () => void;
-}
-
 /** `login` as accounts are told apart, whatever its case. */
 function keyOf(login: string): string {
   return login.toLowerCase();
+}
+
+/** Why a signed-out account's queues aren't read. */
+function signedOutWhy(login: string): string {
+  return `${login} is signed out. Lo reads the queue again once you sign in to it.`;
+}
+
+/** Why the queues of an account Lo doesn't have aren't read. */
+function goneWhy(login: string): string {
+  return `Lo isn’t signed in to ${login}, and reads the queue again once you sign in to it.`;
 }
 
 /** The merge queues' tabs, and what's read of each. */
@@ -55,9 +54,15 @@ export class Queues {
   readonly #options: QueuesOptions;
   /** Each merge queue's tab, by its id, while it's open: its watch, and what it reads from. */
   readonly #followed = new Map<string, { watch: QueueWatch; source: TabSource }>();
-  /** The accounts whose queues aren't read, by {@link keyOf}. */
-  readonly #away = new Map<string, Away>();
+  /** Why the queues of each account that's away aren't read, by {@link keyOf}. */
+  readonly #away = new Map<string, string>();
+  /**
+   * Bumped as an account is signed out or removed, so a check of the accounts begun before then
+   * is dropped.
+   */
+  #heardAway = 0;
   readonly #stops: (() => void)[] = [];
+  #stopped = false;
 
   constructor(options: QueuesOptions) {
     this.#options = options;
@@ -69,14 +74,16 @@ export class Queues {
     this.#stops.push(
       tabs.onTabs((value) => this.#follow(value)),
       github.onEvent((event) => this.#heard(event)),
+      github.onChange(() => void this.#check()),
     );
     this.#follow(tabs.list());
+    void this.#check();
   }
 
   /** Lo quits: nothing more is read. */
   stop(): void {
+    this.#stopped = true;
     for (const stop of this.#stops.splice(0)) stop();
-    for (const away of this.#away.values()) away.stop();
     this.#away.clear();
     for (const { watch } of this.#followed.values()) watch.stop();
     this.#followed.clear();
@@ -110,9 +117,6 @@ export class Queues {
         'Lo reads a merge queue as a signed-in account. This tab reads without signing in.',
       );
     }
-    // A pull request's tab acts only as an account Lo has: one removed is back.
-    const key = keyOf(acting.login);
-    if (this.#away.get(key)?.kind === 'removed') this.#back(key);
     return tabs.open({
       kind: 'queue',
       owner: repository.owner,
@@ -158,8 +162,8 @@ export class Queues {
         source,
         publish: this.#options.publish,
       });
-      const away = this.#away.get(keyOf(tab.login));
-      if (away) watch.hold(away.why);
+      const why = this.#away.get(keyOf(tab.login));
+      if (why !== undefined) watch.hold(why);
       this.#followed.set(tab.id, { watch, source });
     }
     for (const [id, { watch }] of this.#followed) {
@@ -171,9 +175,46 @@ export class Queues {
     }
   }
 
+  /** An account was signed out or removed: its queues stop being read at once. */
   #heard(event: GithubEvent): void {
-    if (event.kind === 'signedOut') this.#signedOut(event.login);
-    else if (event.kind === 'removed') this.#removed(event.login);
+    if (event.kind !== 'signedOut' && event.kind !== 'removed') return;
+    this.#heardAway += 1;
+    const key = keyOf(event.login);
+    if (event.kind === 'removed') {
+      for (const { source } of this.#of(key)) source.forget();
+      this.#hold(key, goneWhy(event.login));
+    } else {
+      this.#hold(key, signedOutWhy(event.login));
+    }
+  }
+
+  /**
+   * Checks Lo's accounts: the queues of one signed out, or of one Lo doesn't have, aren't read,
+   * and those of one signed in again are, at once.
+   */
+  async #check(): Promise<void> {
+    const heard = this.#heardAway;
+    let accounts: readonly Pick<AccountState, 'account' | 'signedOut'>[];
+    try {
+      accounts = await this.#options.github.accounts();
+    } catch {
+      // Lo couldn't read its accounts, which it logs: the next change checks again.
+      return;
+    }
+    // One was signed out or removed meanwhile, and the change that follows checks again.
+    if (this.#stopped || heard !== this.#heardAway) return;
+    const byKey = new Map(accounts.map((state) => [keyOf(state.account.login), state]));
+    for (const { account, signedOut } of accounts) {
+      if (signedOut !== undefined) this.#hold(keyOf(account.login), signedOutWhy(account.login));
+    }
+    for (const key of this.#away.keys()) {
+      const state = byKey.get(key);
+      if (state !== undefined && state.signedOut === undefined) this.#back(key);
+    }
+    for (const { watch } of this.#followed.values()) {
+      const key = keyOf(watch.login);
+      if (!byKey.has(key) && !this.#away.has(key)) this.#hold(key, goneWhy(watch.login));
+    }
   }
 
   /** The tabs that read as account `key`. */
@@ -183,60 +224,16 @@ export class Queues {
     }
   }
 
-  /**
-   * `login` is signed out: its queues aren't read until its poller, having said it's signed out,
-   * says it's signed in again.
-   */
-  #signedOut(login: string): void {
-    const key = keyOf(login);
-    if (this.#away.has(key)) return;
-    let stopped = false;
-    let unsubscribe: (() => void) | undefined;
-    this.#hold(key, {
-      kind: 'signedOut',
-      why: `${login} is signed out. Lo reads the queue again once you sign in to it.`,
-      stop: () => {
-        stopped = true;
-        unsubscribe?.();
-      },
-    });
-    this.#options.github.poller(login).then(
-      (poller) => {
-        if (stopped) return;
-        let saidOut = poller.status().signedOut;
-        unsubscribe = poller.onChange(() => {
-          if (poller.status().signedOut) saidOut = true;
-          else if (saidOut) this.#back(key);
-        });
-      },
-      // Lo has no such account any more, which `removed` says.
-      () => undefined,
-    );
-  }
-
-  /** `login` was removed: what was kept of its poller goes, and its queues aren't read. */
-  #removed(login: string): void {
-    const key = keyOf(login);
-    for (const { source } of this.#of(key)) source.forget();
-    this.#hold(key, {
-      kind: 'removed',
-      why: `You signed out of ${login}. Open the queue again from a pull request’s tab.`,
-      stop: () => undefined,
-    });
-  }
-
-  #hold(key: string, away: Away): void {
-    this.#away.get(key)?.stop();
-    this.#away.set(key, away);
-    for (const { watch } of this.#of(key)) watch.hold(away.why);
+  /** Account `key` is away for `why`: its queues aren't read, and say why. */
+  #hold(key: string, why: string): void {
+    if (this.#away.get(key) === why) return;
+    this.#away.set(key, why);
+    for (const { watch } of this.#of(key)) watch.hold(why);
   }
 
   /** Account `key` is back: its queues are read again. */
   #back(key: string): void {
-    const away = this.#away.get(key);
-    if (!away) return;
-    away.stop();
-    this.#away.delete(key);
+    if (!this.#away.delete(key)) return;
     for (const { watch } of this.#of(key)) watch.release();
   }
 }

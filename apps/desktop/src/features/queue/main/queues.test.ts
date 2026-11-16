@@ -1,11 +1,11 @@
 // The merge queues' tabs in main: a queue opens as the account its pull request's tab acts as, and
 // never from a tab that reads without signing in; its pull requests open as the queue's account;
 // only the tab on screen is read, and a tab stops being read as it closes; and an account's queues
-// aren't read while it's signed out or once it's removed, until it's back.
+// aren't read while it's signed out or Lo doesn't have it, and are again as soon as it's back.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { GithubEvent } from '../../accounts/service.ts';
+import type { AccountState, GithubEvent } from '../../accounts/service.ts';
 import type { Acting, Opening, QueueOpening, QueueTab, Tab, Tabs } from '../../tab/contract.ts';
 import { Queues, type QueuesOptions, type TabSource } from './queues.ts';
 
@@ -28,16 +28,25 @@ function emptyView(branch: string) {
   return { branch, viewerPermission: 'WRITE' as const, queue: undefined, leftOut: [] };
 }
 
+/** An account Lo has, signed in. */
+function account(login: string): Pick<AccountState, 'account' | 'signedOut'> {
+  return {
+    account: { login, userId: 1, source: 'deviceFlow', scopes: [], addedAt: 0 },
+    signedOut: undefined,
+  };
+}
+
 /**
  * Lo's tabs, its accounts and GitHub, as the merge queues see them: pull requests' tabs acting as
- * `pulls` says, tabs opened as the window would show them, and each read and poller change noted.
+ * `pulls` says, tabs opened as the window would show them, tess-okafor and rozed-bot signed in, and
+ * each read noted. No poller reads as either account: the queues are all that do.
  */
 function harness(pulls: Readonly<Record<string, Acting | undefined>> = {}) {
   let value: Tabs = { tabs: [RECENT], active: 'recent' };
   const tabListeners = new Set<(tabs: Tabs) => void>();
   const eventListeners = new Set<(event: GithubEvent) => void>();
-  const pollerListeners = new Set<() => void>();
-  const poller = { signedOut: false };
+  const changeListeners = new Set<() => void>();
+  let accounts = [account('tess-okafor'), account('rozed-bot')];
   const opened: [Opening | QueueOpening, { login: string } | undefined][] = [];
   const asked: string[] = [];
   let made = 0;
@@ -72,17 +81,15 @@ function harness(pulls: Readonly<Record<string, Acting | undefined>> = {}) {
       },
     },
     github: {
+      accounts: async () => accounts,
       onEvent(listener) {
         eventListeners.add(listener);
         return () => eventListeners.delete(listener);
       },
-      poller: async () => ({
-        status: () => ({ signedOut: poller.signedOut }),
-        onChange(listener) {
-          pollerListeners.add(listener);
-          return () => pollerListeners.delete(listener);
-        },
-      }),
+      onChange(listener) {
+        changeListeners.add(listener);
+        return () => changeListeners.delete(listener);
+      },
     },
     sourceFor: (tab): TabSource => ({
       async view(branch) {
@@ -104,13 +111,24 @@ function harness(pulls: Readonly<Record<string, Acting | undefined>> = {}) {
     opened,
     asked,
     setTabs,
-    emit: (event: GithubEvent) => {
-      for (const listener of eventListeners) listener(event);
+    /** Signs `login` out, as GitHub refusing its token does: the event, then the change. */
+    signOut: (login: string) => {
+      accounts = accounts.map((each) =>
+        each.account.login === login ? { ...each, signedOut: 'refused' } : each,
+      );
+      for (const listener of eventListeners) listener({ kind: 'signedOut', login, why: 'refused' });
+      for (const listener of changeListeners) listener();
     },
-    /** The account's poller says whether it's signed out. */
-    setSignedOut: (signedOut: boolean) => {
-      poller.signedOut = signedOut;
-      for (const listener of pollerListeners) listener();
+    /** Signs `login` in again, or adds it, which changes the accounts and sends no event. */
+    signIn: (login: string) => {
+      accounts = [...accounts.filter((each) => each.account.login !== login), account(login)];
+      for (const listener of changeListeners) listener();
+    },
+    /** Removes `login`, as signing out of it in Lo does: the change, then the event. */
+    remove: (login: string) => {
+      accounts = accounts.filter((each) => each.account.login !== login);
+      for (const listener of changeListeners) listener();
+      for (const listener of eventListeners) listener({ kind: 'removed', login });
     },
   };
 }
@@ -202,51 +220,79 @@ describe('reading the queues', () => {
 });
 
 describe('an account that goes away', () => {
-  it('isn’t read while it’s signed out, and is again once its poller says it’s signed in', async () => {
-    const { queues, asked, setTabs, emit, setSignedOut } = harness();
+  it('isn’t read while it’s signed out, and is again once it’s signed in, though only its queue read as it', async () => {
+    const { queues, asked, setTabs, signOut, signIn } = harness();
     setTabs({
       tabs: [RECENT, queueTab('q', 'main'), queueTab('r', 'main', 'rozed-bot')],
       active: 'q',
     });
     queues.start();
     await vi.advanceTimersByTimeAsync(0);
-    emit({ kind: 'signedOut', login: 'Tess-Okafor', why: 'refused' });
+    signOut('tess-okafor');
+    await vi.advanceTimersByTimeAsync(0);
     expect(queues.state('q')?.failure).toEqual({
-      message: 'Tess-Okafor is signed out. Lo reads the queue again once you sign in to it.',
+      message: 'tess-okafor is signed out. Lo reads the queue again once you sign in to it.',
       retryAt: null,
     });
     // Another account's queue isn't held.
     expect(queues.state('r')?.failure).toBeNull();
-    setSignedOut(true);
     asked.length = 0;
     await vi.advanceTimersByTimeAsync(10 * 60_000);
     expect(asked).toEqual([]);
 
-    setSignedOut(false);
+    // No poller saw it signed out: the accounts saying it's signed in again is enough.
+    signIn('tess-okafor');
     await vi.advanceTimersByTimeAsync(0);
     expect(asked).toEqual(['q view main', 'q waiting main']);
     expect(queues.state('q')?.failure).toBeNull();
   });
 
-  it('isn’t read once it’s removed, until a pull request’s tab acting as it opens the queue again', async () => {
-    const { queues, asked, setTabs, emit } = harness({
-      p: { kind: 'account', login: 'tess-okafor' },
-    });
+  it('isn’t read once it’s removed, and is again once it’s added back', async () => {
+    const { queues, asked, setTabs, remove, signIn } = harness();
     setTabs({ tabs: [RECENT, queueTab('q', 'main')], active: 'q' });
     queues.start();
     await vi.advanceTimersByTimeAsync(0);
     asked.length = 0;
-    emit({ kind: 'removed', login: 'tess-okafor' });
+    remove('tess-okafor');
     expect(asked).toEqual(['q forgets its poller']);
+    await vi.advanceTimersByTimeAsync(0);
     expect(queues.state('q')?.failure?.message).toBe(
-      'You signed out of tess-okafor. Open the queue again from a pull request’s tab.',
+      'Lo isn’t signed in to tess-okafor, and reads the queue again once you sign in to it.',
     );
     asked.length = 0;
     await vi.advanceTimersByTimeAsync(10 * 60_000);
     expect(asked).toEqual([]);
 
-    queues.show('p', 'main');
+    signIn('tess-okafor');
     await vi.advanceTimersByTimeAsync(0);
     expect(asked).toEqual(['q view main', 'q waiting main']);
+  });
+
+  it('isn’t read when its tab comes back with Lo while it’s signed out, or Lo doesn’t have it', async () => {
+    const { queues, asked, setTabs, signOut, signIn } = harness();
+    signOut('tess-okafor');
+    setTabs({
+      tabs: [RECENT, queueTab('q', 'main'), queueTab('s', 'main', 'sam-lee')],
+      active: 'q',
+    });
+    queues.start();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(asked).toEqual([]);
+    expect(queues.state('q')?.failure?.message).toBe(
+      'tess-okafor is signed out. Lo reads the queue again once you sign in to it.',
+    );
+
+    setTabs({
+      tabs: [RECENT, queueTab('q', 'main'), queueTab('s', 'main', 'sam-lee')],
+      active: 's',
+    });
+    await vi.advanceTimersByTimeAsync(10 * 60_000);
+    expect(asked).toEqual([]);
+    expect(queues.state('s')?.failure?.message).toBe(
+      'Lo isn’t signed in to sam-lee, and reads the queue again once you sign in to it.',
+    );
+    signIn('sam-lee');
+    await vi.advanceTimersByTimeAsync(0);
+    expect(asked).toEqual(['s view main', 's waiting main']);
   });
 });

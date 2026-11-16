@@ -681,7 +681,7 @@ function MoreTabs({
 }
 
 /** A tab as words, for typing ahead in the menu of tabs that don't fit. */
-function labelOf(item: Tab): string {
+export function labelOf(item: Tab): string {
   switch (item.kind) {
     case 'pull':
       return `${item.repo} #${item.number} ${item.title ?? ''}`.trim();
