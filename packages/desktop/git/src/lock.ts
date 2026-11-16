@@ -7,9 +7,11 @@
  *   pointed at the same cache.
  * - **A clone's lock** is held while writing to it: a fetch, then the pins it writes, or removing
  *   a checkout and adding it again. git locks single refs and files, not a sequence of commands.
- *   Each open repository also counts as a user of its clone, and cleanup takes a clone only when
- *   it has no users and nobody holds its lock. Maintenance, such as repacking, which can take
- *   many minutes, holds the lock giving way: it's told as soon as anyone waits for it, and stops.
+ *   Each open repository also counts as a user of its clone, and each language server running on
+ *   one of its checkouts, with a home of the repository's, is counted too. Cleanup takes nothing
+ *   of a repository, its clone, checkouts or homes, unless it has no users, no server runs on it
+ *   and nobody holds its lock. Maintenance, such as repacking, which can take many minutes, holds
+ *   the lock giving way: it's told as soon as anyone waits for it, and stops.
  */
 
 import { execFile } from 'node:child_process';
@@ -28,7 +30,10 @@ export type Release = () => void;
 /** How a holder that gives way hears that someone waits: what the waiter wants to do. */
 export type GiveWay = (waiter: string) => void;
 
-/** The lock on one clone: one writer at a time, and a count of the repositories open on it. */
+/**
+ * The lock on one clone: one writer at a time, a count of the repositories open on it, and a count
+ * of the language servers running on its checkouts.
+ */
 export class CloneLock {
   /** What the holder is doing, such as "fetching pull request #12", while one holds it. */
   #holder: string | undefined;
@@ -40,6 +45,7 @@ export class CloneLock {
   /** Those waiting only for a holder that removes to let go. */
   readonly #waitingForRemoval: (() => void)[] = [];
   #users = 0;
+  #servers = 0;
   readonly #onFree: (() => void) | undefined;
 
   /**
@@ -63,6 +69,11 @@ export class CloneLock {
   /** How many open repositories use the clone. */
   get users(): number {
     return this.#users;
+  }
+
+  /** How many language servers run on the clone's checkouts, with the repository's homes. */
+  get servers(): number {
+    return this.#servers;
   }
 
   /**
@@ -171,12 +182,26 @@ export class CloneLock {
   }
 
   /**
-   * Holds the lock for removing the clone, or what's in it, if it has no users and nobody holds
-   * it: cleanup never takes a clone that's open or being written to. With `giveWay`, as
-   * {@link CloneLock.tryAcquire}.
+   * Counts a language server running on one of the clone's checkouts, with a home of the
+   * repository's, until it lets go: cleanup removes none of them meanwhile.
+   */
+  serve(): Release {
+    this.#servers += 1;
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      this.#servers -= 1;
+    };
+  }
+
+  /**
+   * Holds the lock for removing the clone, or what's in it or kept for it, if it has no users, no
+   * language server runs on it and nobody holds it: cleanup never takes a clone that's open, being
+   * written to or served, nor anything of one. With `giveWay`, as {@link CloneLock.tryAcquire}.
    */
   tryRemove(what: string, giveWay?: GiveWay): Release | undefined {
-    if (this.#users > 0 || this.#holder !== undefined) return undefined;
+    if (this.#users > 0 || this.#servers > 0 || this.#holder !== undefined) return undefined;
     return this.#take(what, giveWay, true);
   }
 }

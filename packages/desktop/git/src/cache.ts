@@ -4,6 +4,8 @@
  * - `repos/github.com/<owner>/<repo>.git`: a bare partial clone of each repository, so file
  *   contents download only when asked for. Everything fetched goes under Lo's own refs.
  * - `checkouts/github.com/<owner>/<repo>/`: checkouts of pull requests' heads.
+ * - `code/homes/<owner>/<repo>/<server>/`: each language server's home, its `HOME`, where it keeps
+ *   its own caches. A repository's homes go with its clone, and the cap counts and trims them.
  * - `git-env/home`: the empty `HOME` git runs with.
  * - `tmp/`: clones being made, and whatever is being deleted.
  * - `toolchains/`: the toolchains language servers use, which the app downloads. The cap doesn't
@@ -14,7 +16,7 @@
  */
 
 import { randomUUID } from 'node:crypto';
-import { lstat, mkdir, readdir, rename, rm, rmdir, stat } from 'node:fs/promises';
+import { lstat, lutimes, mkdir, readdir, rename, rm, rmdir, stat } from 'node:fs/promises';
 import { dirname, isAbsolute, join, relative, sep } from 'node:path';
 
 import { GitError } from './errors.ts';
@@ -28,6 +30,7 @@ import {
   DEFAULT_MAINTENANCE,
   GEOMETRIC_LIMIT,
   hasLooseObjects,
+  HOMES_FOLDER,
   keepUnder,
   type MaintenanceTimes,
   removeUnused,
@@ -232,8 +235,9 @@ export class Cache {
   }
 
   /**
-   * Removes every clone and checkout that isn't open or being written to, for Settings' "Clear
-   * cache". Returns the `owner/name` of each clone it had to leave.
+   * Removes every clone, checkout and language server's home that isn't open, being written to or
+   * that a server runs on, for Settings' "Clear cache". Returns the `owner/name` of each clone it
+   * had to leave.
    */
   async clear(): Promise<string[]> {
     const left = await clear(this);
@@ -242,11 +246,13 @@ export class Cache {
   }
 
   /**
-   * Removes what nobody used for a while: clones for 30 days, checkouts for 14, what crashes and
-   * stopped fetches left a day or more ago, and from clones nobody has open, the trees comparisons
-   * replayed. Never a clone that's open or being written to. Returns the `owner/name` of each
-   * clone removed. It runs as maintenance, one at a time with the rest, and closing the cache waits
-   * for it, so no git it runs, such as a `prune` closing stopped, outlives the cache's lock.
+   * Removes what nobody used for a while: clones for 30 days, with their checkouts and language
+   * servers' homes, checkouts for 14, what crashes and stopped fetches left a day or more ago,
+   * checkouts and homes left without a clone, and from clones nobody has open, the trees
+   * comparisons replayed. Never anything of a clone that's open, being written to or that a
+   * language server runs on. Returns the `owner/name` of each clone removed. It runs as
+   * maintenance, one at a time with the rest, and closing the cache waits for it, so no git it
+   * runs, such as a `prune` closing stopped, outlives the cache's lock.
    */
   async removeUnused(now = Date.now()): Promise<string[]> {
     const removed = await this.#serially(() => removeUnused(this, now));
@@ -261,9 +267,10 @@ export class Cache {
 
   /**
    * Sets the size to keep the cache under, from Settings, and keeps it there: past it, the least
-   * recently used checkouts go, then the least recently used clones, only until it's under, and
-   * never a clone that's open or being written to, its checkouts, or the most recently used clone.
-   * What's being deleted doesn't count. Returns the `owner/name` of each clone removed.
+   * recently used checkouts and language servers' homes go, then the least recently used clones,
+   * only until it's under, and never anything of a clone that's open, being written to or that a
+   * server runs on, or the most recently used clone. What's being deleted doesn't count, and homes
+   * that stay never push a clone out. Returns the `owner/name` of each clone removed.
    */
   async setCap(bytes: number): Promise<string[]> {
     this.#cap = bytes;
@@ -356,6 +363,54 @@ export class Cache {
   /** Where the checkouts of `owner/name`'s pull requests live. */
   checkoutsFolder(owner: string, name: string): string {
     return join(this.root, 'checkouts', HOST, owner.toLowerCase(), name.toLowerCase());
+  }
+
+  /** Where the homes of `owner/name`'s language servers live, one folder each. */
+  homesFolder(owner: string, name: string): string {
+    return join(this.root, HOMES_FOLDER, owner.toLowerCase(), name.toLowerCase());
+  }
+
+  /**
+   * The home of `owner/name`'s language server `server`, its `HOME`, where it keeps its own
+   * caches. It's made when the server starts, and goes with the repository's clone, or past the
+   * cache's cap, but never while a server runs on the repository ({@link Cache.useForServer}).
+   */
+  homeFolder(owner: string, name: string, server: string): string {
+    checkName('repository owner', owner);
+    checkName('repository name', name);
+    checkName('language server', server);
+    return join(this.homesFolder(owner, name), server);
+  }
+
+  /**
+   * Counts `owner/name`'s language server `server` as running, on one of the repository's
+   * checkouts and with its home, until the release, which the server's caller lets go once it has
+   * stopped: meanwhile cleanup removes nothing of the repository, its clone, checkouts and homes
+   * included. It waits for cleanup that's removing any of it to finish first, and once
+   * `options.signal` aborts, it stops waiting and fails with its reason. The home's folder is
+   * stamped now and at the release, which is when cleanup takes it to have been used last.
+   */
+  async useForServer(
+    owner: string,
+    name: string,
+    server: string,
+    options: { signal?: AbortSignal | undefined } = {},
+  ): Promise<Release> {
+    const home = this.homeFolder(owner, name, server);
+    const lock = this.cloneLock(owner, name);
+    // Counted first, so no removal starts once it waits.
+    const done = lock.serve();
+    try {
+      await lock.passRemoval('running a language server', options.signal);
+    } catch (error) {
+      done();
+      throw error;
+    }
+    await stampTime(home);
+    return () => {
+      void stampTime(home);
+      done();
+    };
   }
 
   /**
@@ -686,6 +741,12 @@ export class Cache {
       await this.runner.command({ gitDir: folder }).arg('config', 'remote.origin.url', url).run();
     }
   }
+}
+
+/** Sets the time of the folder at `path`, never what a link there points at, if there's one. */
+async function stampTime(path: string): Promise<void> {
+  const now = new Date();
+  await lutimes(path, now, now).catch(() => undefined);
 }
 
 async function isFile(path: string): Promise<boolean> {

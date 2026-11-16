@@ -165,6 +165,23 @@ test('shared holders keep out anyone alone', () => {
   expect(lock.tryRemove('removing it')).toBeDefined();
 });
 
+test('a language server running on the clone keeps out removing it, and nothing else', () => {
+  const lock = new CloneLock();
+  const first = lock.serve();
+  const second = lock.serve();
+  expect(lock.tryRemove('removing it')).toBeUndefined();
+  // A fetch, say, still gets it.
+  const fetching = lock.tryAcquire('fetching pull request #1');
+  expect(fetching).toBeDefined();
+  fetching?.();
+  first();
+  // Letting go twice counts once.
+  first();
+  expect([lock.servers, lock.tryRemove('removing it')]).toEqual([1, undefined]);
+  second();
+  expect(lock.tryRemove('removing it')).toBeDefined();
+});
+
 test('says the clone is free when its holder or its last user lets go, and only then', () => {
   let free = 0;
   const lock = new CloneLock(() => (free += 1));

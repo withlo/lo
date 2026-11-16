@@ -1,4 +1,5 @@
-// The cache's size, clearing it, removing what nobody used for a while, its cap, and repacking.
+// The cache's size, clearing it, removing what nobody used for a while, its cap, language servers'
+// homes, and repacking.
 
 import { execFileSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
@@ -566,6 +567,124 @@ test('a fetch that makes a clone keeps the cache under its cap', async () => {
 
   expect(existsSync(old)).toBe(false);
   expect(existsSync(repo.folder)).toBe(true);
+});
+
+const MB = 1024 * 1024;
+
+/**
+ * Makes the home of `owner/name`'s language server `adapter`, holding `bytes` of what it caches,
+ * and has it look last used `days` ago.
+ */
+function homeOf(
+  cache: Cache,
+  name: string,
+  adapter: string,
+  { owner = 'owner', bytes = 4096, days = 0 } = {},
+): string {
+  const folder = cache.homeFolder(owner, name, adapter);
+  mkdirSync(join(folder, 'index'), { recursive: true });
+  writeFileSync(join(folder, 'index', 'data'), randomBytes(bytes));
+  writtenDaysAgo(folder, days);
+  return folder;
+}
+
+/** Whether each of `paths` is there. */
+function there(...paths: string[]): boolean[] {
+  return paths.map((path) => existsSync(path));
+}
+
+test('past its cap checkouts and servers’ homes go together, least recently used first, before any clone', async () => {
+  const cache = await cacheFor(server());
+  const [old, fresh] = [await useRepo(cache, 'old'), await useRepo(cache, 'new')];
+  const [oldCheckout, newCheckout] = [checkoutOf(cache, 'old'), checkoutOf(cache, 'new')];
+  stampDaysAgo(old, 10);
+  stampDaysAgo(fresh, 1);
+  checkoutUsedDaysAgo(oldCheckout, 10);
+  checkoutUsedDaysAgo(newCheckout, 3);
+  // A large home, used after one checkout and before the other.
+  const home = homeOf(cache, 'new', 'ts', { bytes: 4 * MB, days: 5 });
+
+  // Half the home under: the checkout used longest ago goes, then the home, and the cache is
+  // under, so the other checkout and both clones stay.
+  expect(await cache.setCap((await cache.size()) - 2 * MB)).toEqual([]);
+
+  expect(await cache.size()).toBeLessThanOrEqual(cache.cap);
+  expect(there(oldCheckout, home, newCheckout)).toEqual([false, false, true]);
+  expect(there(old, fresh)).toEqual([true, true]);
+  expect(existsSync(join(cache.root, 'code/homes/owner'))).toBe(false);
+});
+
+test('past its cap nothing of a repository a server runs on goes, and its home pushes no clone out', async () => {
+  const cache = await cacheFor(server());
+  const [old, fresh] = [await useRepo(cache, 'old'), await useRepo(cache, 'new')];
+  stampDaysAgo(old, 10);
+  stampDaysAgo(fresh, 1);
+  const [oldCheckout, newCheckout] = [checkoutOf(cache, 'old'), checkoutOf(cache, 'new')];
+  const home = homeOf(cache, 'new', 'ts', { bytes: 4 * MB });
+  const release = await cache.useForServer('owner', 'new', 'ts');
+
+  // The home is what puts the cache over, but it stays while the server runs, with the checkout it
+  // runs on, so only what's free goes: the other clone's checkout, and never that clone.
+  expect(await cache.setCap((await cache.size()) - 2 * MB)).toEqual([]);
+  expect(there(home, newCheckout, oldCheckout)).toEqual([true, true, false]);
+  expect(there(old, fresh)).toEqual([true, true]);
+
+  // Once the server has stopped, its home can go, and the clones still stay.
+  release();
+  expect(await cache.setCap(cache.cap)).toEqual([]);
+  expect(existsSync(home)).toBe(false);
+  expect(there(old, fresh)).toEqual([true, true]);
+});
+
+test('a clone’s homes go with it, but never while a server runs on it', async () => {
+  const cache = await cacheFor(server());
+  const [old, fresh] = [await useRepo(cache, 'old'), await useRepo(cache, 'new')];
+  stampDaysAgo(old, 31);
+  const homes = [homeOf(cache, 'old', 'ts'), homeOf(cache, 'old', 'go')];
+  const kept = homeOf(cache, 'new', 'ts');
+  const release = await cache.useForServer('owner', 'old', 'ts');
+
+  // Unused for a month, but a server runs on it: it stays, with its checkout and homes.
+  expect(await cache.removeUnused()).toEqual([]);
+  expect(there(old, checkoutOf(cache, 'old'), ...homes)).toEqual([true, true, true, true]);
+  // Nor does clearing the cache take any of it.
+  expect(await cache.clear()).toEqual(['owner/old']);
+  expect(there(old, ...homes)).toEqual([true, true, true]);
+  expect(existsSync(kept)).toBe(false);
+
+  // Once it has stopped, they all go together, moved aside then deleted.
+  release();
+  expect(await cache.removeUnused()).toEqual(['owner/old']);
+  expect(there(old, ...homes)).toEqual([false, false, false]);
+  expect(readdirSync(join(cache.root, 'code/homes'))).toEqual([]);
+  expect(readdirSync(join(cache.root, 'tmp'))).toEqual([]);
+  expect(existsSync(fresh)).toBe(false);
+});
+
+test('cleanup removes the homes of clones that are gone, but none past a link or a server runs with', async () => {
+  const cache = await cacheFor(server());
+  await useRepo(cache, 'new');
+  const kept = homeOf(cache, 'new', 'ts');
+  // Homes left from before homes went with their clones.
+  const left = [homeOf(cache, 'old', 'ts'), homeOf(cache, 'ghost', 'ts', { owner: 'someone' })];
+  const running = homeOf(cache, 'busy', 'ts', { owner: 'someone' });
+  const release = await cache.useForServer('someone', 'busy', 'ts');
+  // A link in place of a repository's homes, to a folder outside the cache.
+  const outside = outsideFolder();
+  symlinkSync(outside, join(cache.root, 'code/homes/someone/linked'));
+
+  expect(await cache.removeUnused()).toEqual([]);
+
+  expect(there(...left)).toEqual([false, false]);
+  expect(existsSync(join(cache.root, 'code/homes/owner/old'))).toBe(false);
+  expect(there(kept, running)).toEqual([true, true]);
+  expect(untouched(outside)).toBe(true);
+
+  // The server's goes once it has stopped.
+  release();
+  await cache.removeUnused();
+  expect(existsSync(running)).toBe(false);
+  expect(untouched(outside)).toBe(true);
 });
 
 /** Twenty numbered lines, with `edits` in place of some. */

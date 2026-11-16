@@ -210,8 +210,12 @@ and the whole-file view.
   request's files, and the status bar says the layers below are included. Whole-file context,
   navigation and rebase-aware comparison turn on when the copy arrives, with progress shown.
 - **Cleanup.** Settings shows how much space the cache uses and can clear it. Repos unused for 30
-  days are removed. The cache also has a size cap, 10 GB by default and changeable in Settings, and
-  past it the least recently used copies are removed.
+  days are removed, with their checkouts and what their language servers keep. The cache also has a
+  size cap, 10 GB by default and changeable in Settings, which counts all of it but the toolchains
+  language servers use. Past it, checkouts and what language servers keep go first, least recently
+  used first, since Lo gets them back without a fetch, then the least recently used copies, each
+  only while the cache is still over. Nothing of a repo a language server runs on goes, and what a
+  server keeps never pushes a copy out.
 
 ### When git is missing
 
