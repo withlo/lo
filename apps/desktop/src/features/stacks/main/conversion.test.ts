@@ -822,11 +822,13 @@ describe('while Lo merges', () => {
     expect(conversions.putBack(key).phase).toBe('puttingBack');
   });
 
-  it('says whether a conversion runs or waits on a rollback', async () => {
+  it('says whether a conversion sends its changes or puts base branches back', async () => {
     const found = await recorded('stacks_e2e', E2E, LAYERS);
     const poller = new FakePoller();
     const first = later<StepDone>();
     poller.steps.push(first.promise, { refusal: 'baseChanged', now: 'elsewhere' });
+    const back = later<PullSummary>();
+    poller.retargets.push(back.promise);
     const { conversions, last } = started(poller, found);
     expect(conversions.converting(E2E)).toBeUndefined();
     const { key } = planOf(await conversions.plan(tab(6)));
@@ -836,33 +838,13 @@ describe('while Lo merges', () => {
     expect(conversions.converting(E2E)).toEqual({ kind: 'running', prs: [2, 3, 4, 6] });
     first.resolve(doneFor({ kind: 'retarget', retarget: { pr: 6, from: 'main', to: 'e2/c' } }));
     await until(() => last()?.phase === 'failed');
-    // #6's base branch changed, and the reader may put it back.
-    expect(conversions.converting(E2E)).toEqual({ kind: 'rollback', prs: [2, 3, 4, 6] });
+    // The dialog offers to put #6's base branch back, but the reader may never ask.
+    expect(last()?.putBackLabel).toBe('Put the base branch back');
+    expect(conversions.converting(E2E)).toBeUndefined();
     conversions.putBack(key);
-    expect(conversions.converting(E2E)).toEqual({ kind: 'running', prs: [2, 3, 4, 6] });
+    expect(conversions.converting(E2E)).toEqual({ kind: 'rollback', prs: [2, 3, 4, 6] });
+    back.resolve(summary(6, 'main'));
     await until(() => last()?.phase === 'putBack');
-    expect(conversions.converting(E2E)).toBeUndefined();
-  });
-
-  it('says nothing waits on a rollback once the reader closes it, or nothing changed', async () => {
-    const found = await recorded('stacks_e2e', E2E, LAYERS);
-    const poller = new FakePoller();
-    poller.steps.push(
-      doneFor({ kind: 'retarget', retarget: { pr: 6, from: 'main', to: 'e2/c' } }),
-      { refusal: 'baseChanged', now: 'elsewhere' },
-      { refusal: 'baseChanged', now: 'elsewhere' },
-    );
-    const { conversions, last } = started(poller, found);
-    const { key } = planOf(await conversions.plan(tab(6)));
-    conversions.convert(key);
-    await until(() => last()?.phase === 'failed');
-    conversions.stop(key);
-    expect(conversions.converting(E2E)).toBeUndefined();
-    // Refused at its first change, it changed nothing to put back.
-    poller.listAgain(1_000_000);
-    const again = planOf(await conversions.plan(tab(6)));
-    conversions.convert(again.key);
-    await until(() => last()?.key === again.key && last()?.phase === 'failed');
     expect(conversions.converting(E2E)).toBeUndefined();
   });
 });

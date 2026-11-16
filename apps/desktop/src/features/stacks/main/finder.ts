@@ -24,6 +24,8 @@ import {
   planConversion,
   stackPullRequests,
   stacksOf,
+  trunksAmong,
+  trunksOf,
   type LayerStart,
   type PullRequest,
   type Stacks,
@@ -147,6 +149,8 @@ interface Forest {
   readonly stacks: Stacks;
   /** The pull requests they were found among, as `@lo/stacks` takes them. */
   readonly prs: readonly PullRequest[];
+  /** The trunks among the branches those pull requests use. */
+  readonly trunks: readonly string[];
 }
 
 /** An account's poller, once it's been got, or that it couldn't be. */
@@ -271,7 +275,7 @@ export class StackFinder {
     const listed = poller.openPullRequests(repo);
     const found = this.#forest(poller, repo);
     if (!listed || !found) return undefined;
-    const { list, stacks } = found;
+    const { list, stacks, trunks } = found;
     // Named as GitHub names it now, as the tabs in it have it.
     const repository =
       [...this.#followed.values()].find(
@@ -279,6 +283,7 @@ export class StackFinder {
       )?.tab.repository ?? repo.name;
     return {
       stacks,
+      trunks,
       listedAt: listed.fetchedAt,
       listEvery: poller.listSchedule().every,
       whole: !list.truncated,
@@ -558,12 +563,14 @@ export class StackFinder {
       return kept;
     }
     const merged = more.flatMap((read) => read.merged);
+    const prs = stackPullRequests(list, merged);
     const forest = {
       list,
       rules,
       more,
       stacks: stacksOf(list, rules, merged),
-      prs: stackPullRequests(list, merged),
+      prs,
+      trunks: trunksAmong(trunksOf(list, rules), prs),
     };
     this.#forests.set(key, forest);
     return forest;

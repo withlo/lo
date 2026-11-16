@@ -16,8 +16,15 @@ export interface Forest {
    */
   readonly stacks: Stacks;
   /**
+   * The repository's trunks among the branches its open and merged pull requests use: its default
+   * branch, and those its protection rules and rulesets cover. A stack sitting on one sits on a
+   * long-lived branch, never on a merged pull request's.
+   */
+  readonly trunks: readonly string[];
+  /**
    * When GitHub last confirmed the list of open pull requests the stacks were found among, in
-   * milliseconds since the Unix epoch: a list read again unchanged confirms it.
+   * milliseconds since the Unix epoch, as GitHub gave it, before the rulesets and merged pull
+   * requests read after it: a list read again unchanged confirms it.
    */
   readonly listedAt: number;
   /** The time between lists of the repository's open pull requests now, in milliseconds. */
@@ -56,10 +63,9 @@ export type ForestConversion =
     };
 
 /**
- * A conversion in a repository: `running` while it sends changes, putting base branches back
- * included; `rollback` once one that failed or stopped has changed base branches the reader may
- * still put back, until they do or close it. `prs` are the pull requests on its plan's path, bottom
- * to top.
+ * A conversion in a repository, while it changes base branches: `running` while it sends its
+ * changes, `rollback` while it puts base branches back, each waiting out a pause GitHub asked for
+ * included. `prs` are the pull requests on its plan's path, bottom to top.
  */
 export interface Converting {
   readonly kind: 'running' | 'rollback';
@@ -81,7 +87,11 @@ export interface ForestService {
    * requests' tabs are in, and nothing for an account no tab acts as.
    */
   forest(repo: RepoRef, login: string): Forest | undefined;
-  /** The conversion in `repo` that's sending changes or waits on a rollback, if there is one. */
+  /**
+   * The conversion in `repo` that's sending changes or putting base branches back, if there is one.
+   * One that failed or stopped holds nothing back while it waits for the reader to put base
+   * branches back.
+   */
   converting(repo: RepoRef): Converting | undefined;
   /**
    * Holds back conversions while `check` names any pull request on their path: planning one is

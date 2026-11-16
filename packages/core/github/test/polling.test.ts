@@ -644,3 +644,16 @@ test('rulesets are read with the repository and again every half hour', async ()
   await watched;
   expect(t.poller.trunkRules(PLAYGROUND)).toBeDefined();
 });
+
+test("a repository's open pull requests are stamped when GitHub gave them, before their rulesets", async () => {
+  const t = await Polling.start('first_poll', recorded(), {
+    delay: (what) => (what === 'TrunkRules' ? 5_000 : undefined),
+  });
+  void t.poller.watch(pr(2));
+  void t.poller.setOpen(pr(1));
+  await t.runUntil(10);
+  expect(t.requests().slice(-2)).toEqual(log([0, 'OpenPullRequests'], [0, 'TrunkRules']));
+  // The rulesets took 5 s: the list is as old as GitHub's answer, not as old as theirs.
+  expect(t.poller.openPullRequests(PLAYGROUND)?.fetchedAt).toBe(wall(0));
+  expect(t.poller.trunkRules(PLAYGROUND)?.fetchedAt).toBe(wall(5));
+});

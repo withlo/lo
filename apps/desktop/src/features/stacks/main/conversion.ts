@@ -346,19 +346,17 @@ export class Conversions {
   }
 
   /**
-   * The conversion in `repo` sending changes, putting base branches back included, or else one that
-   * waits on a rollback: it failed or stopped with base branches the reader may still put back, and
-   * the window hasn't forgotten it.
+   * The conversion in `repo` sending its changes, or putting base branches back, waiting out a pause
+   * GitHub asked for included. Nothing once it has settled, though its dialog may still offer to put
+   * base branches back: the reader may never ask.
    */
   converting(repo: RepoRef): Converting | undefined {
     const busy = this.#busy.get(repo.key);
-    if (busy) return { kind: 'running', prs: [...busy.plan.path] };
-    for (const run of this.#runs.values()) {
-      if (run.repo.equals(repo) && !run.controller && canPutBack(run)) {
-        return { kind: 'rollback', prs: [...run.plan.path] };
-      }
-    }
-    return undefined;
+    if (!busy) return undefined;
+    return {
+      kind: busy.phase === 'puttingBack' ? 'rollback' : 'running',
+      prs: [...busy.plan.path],
+    };
   }
 
   /** Forgets the plans of tabs that closed: the window can't confirm them any more. */
@@ -657,9 +655,11 @@ export class Conversions {
   /** What the window shows of `run`. */
   #view(run: Run): ConversionView {
     const { phase, plan } = run;
-    const moves = putBackOf(run)
-      .filter(toDo)
-      .filter((row) => row.change.kind === 'retarget').length;
+    const left = putBackOf(run).filter(toDo);
+    const canPutBack =
+      (phase === 'failed' || phase === 'stopped' || (phase === 'putBack' && run.again)) &&
+      left.length > 0;
+    const moves = left.filter((row) => row.change.kind === 'retarget').length;
     return {
       key: run.key,
       tab: run.tab,
@@ -670,7 +670,7 @@ export class Conversions {
       stopping: run.stopping,
       changes: run.changes,
       putBack: run.putBack,
-      putBackLabel: canPutBack(run)
+      putBackLabel: canPutBack
         ? moves === 1
           ? 'Put the base branch back'
           : 'Put the base branches back'
@@ -734,16 +734,6 @@ function unsureUnstack(row: ChangeRow): boolean {
 /** Whether putting back has `row` still to do: to send, or to read again first. */
 function toDo(row: ChangeRow): boolean {
   return row.status === 'todo' || unsureUnstack(row);
-}
-
-/**
- * Whether the reader may put back what `run` changed: it failed or stopped, or stopped putting back
- * before it was over, with something still to put back.
- */
-function canPutBack(run: Run): boolean {
-  const { phase } = run;
-  const settled = phase === 'failed' || phase === 'stopped' || (phase === 'putBack' && run.again);
-  return settled && putBackOf(run).some(toDo);
 }
 
 /** What a plan shows of each pull request it changes: every one in the path, or those added. */

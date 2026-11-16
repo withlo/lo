@@ -1,19 +1,39 @@
-// Where a pull request sits before it merges, among stacks found from pull requests made up here:
+// Where a pull request sits before it merges, among stacks found from pull requests made up here,
+// on `main`, the only trunk:
 //
-// - #1 alone on main;
+// - #1 alone;
 // - a chain by base branch: #2 on main, #3 on #2, #4 on #3;
 // - GitHub stack #90: #10 on main, #11 and #12 above it, and #13 on #11 by its base branch;
 // - GitHub stack #95, #21 and #22, sitting on #20, which is on main;
 // - GitHub stack #96: #41 on main and #43, whose layer between them closed;
 // - #31 on the branch of #30, which was squash-merged into main.
+//
+// Others below make up a pull request opened below one since the list, merged pull requests that
+// weren't looked up, and pull requests that sit on each other in a loop.
 
-import { findStacks, layerOf, type NativeStackEntry, type PullRequest } from '@lo/stacks';
+import {
+  findStacks,
+  layerOf,
+  type Gap,
+  type Layer,
+  type NativeStackEntry,
+  type PullRequest,
+  type Stacks,
+} from '@lo/stacks';
 import { describe, expect, it } from 'vitest';
 
-import { LIST_SLACK, where, type Placed, type Where, type WhereView } from './where.ts';
+import {
+  LIST_SLACK,
+  where,
+  type FromBranch,
+  type Placed,
+  type Where,
+  type WhereView,
+} from './where.ts';
 
 const NOW = 1_800_000_000_000;
 const EVERY = 120_000;
+const TRUNKS = ['main'];
 
 /** An open pull request from `head` into `base`. */
 function pull(
@@ -41,56 +61,95 @@ function inStack(stack: number, position: number): { nativeStack: NativeStackEnt
   return { nativeStack: { stack, position } };
 }
 
-const squashed = pull(30, 'main', 'm30', { state: { kind: 'merged', headInBase: false } });
-
-const STACKS = findStacks(
-  [
-    pull(1, 'main', 'a1'),
-    pull(2, 'main', 'b2'),
-    pull(3, 'b2', 'b3'),
-    pull(4, 'b3', 'b4'),
-    pull(10, 'main', 's10', inStack(90, 1)),
-    pull(11, 's10', 's11', inStack(90, 2)),
-    pull(12, 's11', 's12', inStack(90, 3)),
-    pull(13, 's11', 'c13'),
-    pull(20, 'main', 'c20'),
-    pull(21, 'c20', 'c21', inStack(95, 1)),
-    pull(22, 'c21', 'c22', inStack(95, 2)),
-    pull(41, 'main', 'g41', inStack(96, 1)),
-    pull(43, 'g42', 'g43', inStack(96, 3)),
-    squashed,
-    // Its base branch still points at #30's head, as GitHub left it.
-    pull(31, 'm30', 'c31', { baseTip: squashed.headOid, commits: [squashed.headOid] }),
-  ],
-  ['main'],
-);
-
-/** Where the list puts pull request `number`, as GitHub's merge facts would agree. */
-function listed(number: number): Placed {
-  const layer = layerOf(STACKS, number);
-  if (!layer) throw new Error(`#${number} isn't listed`);
-  return { base: layer.baseRef, stack: layer.nativeStack?.stack };
+/** Pull requests as GitHub has them, and the stacks Lo's list finds among them. */
+interface Repository {
+  readonly pulls: readonly PullRequest[];
+  readonly stacks: Stacks;
 }
 
-/** Pull request `number`'s view, with a list confirmed a second ago that agrees with its facts. */
-function view(number: number, more: Partial<WhereView> = {}): WhereView {
+/** The stacks among `pulls`, with what the reads left out. */
+function repository(pulls: readonly PullRequest[], gaps: readonly Gap[] = []): Repository {
+  return { pulls, stacks: { ...findStacks(pulls, TRUNKS), gaps } };
+}
+
+const squashed = pull(30, 'main', 'm30', { state: { kind: 'merged', headInBase: false } });
+
+const MAIN = repository([
+  pull(1, 'main', 'a1'),
+  pull(2, 'main', 'b2'),
+  pull(3, 'b2', 'b3'),
+  pull(4, 'b3', 'b4'),
+  pull(10, 'main', 's10', inStack(90, 1)),
+  pull(11, 's10', 's11', inStack(90, 2)),
+  pull(12, 's11', 's12', inStack(90, 3)),
+  pull(13, 's11', 'c13'),
+  pull(20, 'main', 'c20'),
+  pull(21, 'c20', 'c21', inStack(95, 1)),
+  pull(22, 'c21', 'c22', inStack(95, 2)),
+  pull(41, 'main', 'g41', inStack(96, 1)),
+  pull(43, 'g42', 'g43', inStack(96, 3)),
+  squashed,
+  // Its base branch still points at #30's head, as GitHub left it.
+  pull(31, 'm30', 'c31', { baseTip: squashed.headOid, commits: [squashed.headOid] }),
+]);
+
+/** Where `layer` sits as the list has it, as GitHub's merge facts would agree. */
+function placedIn(layer: Layer): Placed {
+  const entry = layer.nativeStack;
+  return {
+    base: layer.baseRef,
+    stack: entry && { number: entry.stack, position: entry.position },
+  };
+}
+
+/** The open pull requests in `at` from `branch`, as GitHub would answer at the press. */
+function fromBranch(at: Repository, branch: string): FromBranch[] {
+  return at.pulls
+    .filter((pr) => pr.state.kind === 'open' && pr.headRef === branch)
+    .map((pr) => ({ number: pr.number, isCrossRepository: !pr.headInBaseRepo }));
+}
+
+/** `at`'s stacks as the stacks feature gives them, listed a second ago, with `change` made. */
+function forest(
+  change: Partial<NonNullable<WhereView['forest']>> = {},
+  at: Repository = MAIN,
+): WhereView['forest'] {
+  return {
+    stacks: at.stacks,
+    trunks: TRUNKS,
+    listedAt: NOW - 1000,
+    listEvery: EVERY,
+    whole: true,
+    ...change,
+  };
+}
+
+/**
+ * Pull request `number`'s view in `at`: a list confirmed a second ago, merge facts that agree with
+ * it, and the open pull requests from its base branch read afresh.
+ */
+function view(number: number, more: Partial<WhereView> = {}, at: Repository = MAIN): WhereView {
+  const layer = layerOf(at.stacks, number);
   return {
     number,
-    facts: layerOf(STACKS, number) ? listed(number) : { base: 'main', stack: undefined },
-    forest: forest({}),
+    facts: layer ? placedIn(layer) : { base: 'main', stack: undefined },
+    forest: forest({}, at),
+    openFromBase: layer ? fromBranch(at, layer.baseRef) : [],
     now: NOW,
     ...more,
   };
 }
 
-/** The forest of {@link view}, with `change` made to it. */
-function forest(change: Partial<NonNullable<WhereView['forest']>>): WhereView['forest'] {
-  return { stacks: STACKS, listedAt: NOW - 1000, listEvery: EVERY, whole: true, ...change };
+/** Where pull request `number` sits when GitHub's merge facts put it in `stack`. */
+function stackSaid(number: number, stack: Placed['stack']): Where {
+  const layer = layerOf(MAIN.stacks, number);
+  if (!layer) throw new Error(`#${number} isn't listed`);
+  return where(view(number, { facts: { ...placedIn(layer), stack } }));
 }
 
-/** Where pull request `number` sits when GitHub's merge facts say it's in GitHub stack `stack`. */
-function inStackSaid(stack: number | undefined, number: number): Where {
-  return where(view(number, { facts: { ...listed(number), stack } }));
+/** Pull request `number`, from a branch in the repository itself, as GitHub gives it. */
+function ours(number: number): FromBranch[] {
+  return [{ number, isCrossRepository: false }];
 }
 
 function unsure(answer: Where) {
@@ -101,6 +160,8 @@ function unsure(answer: Where) {
 describe('where a pull request sits', () => {
   it('is alone on its own base branch', () => {
     expect(where(view(1))).toEqual({ kind: 'alone' });
+    // Nothing sits below a pull request into a trunk, so nothing need be read for it.
+    expect(where(view(1, { openFromBase: undefined }))).toEqual({ kind: 'alone' });
   });
 
   it("is a GitHub stack's layer, with its open layers below", () => {
@@ -127,6 +188,45 @@ describe('where a pull request sits', () => {
     // A layer of a GitHub stack that sits on another pull request.
     expect(where(view(21))).toEqual({ kind: 'chainAbove', bottom: 20 });
     expect(where(view(22))).toEqual({ kind: 'chainAbove', bottom: 20 });
+  });
+
+  it('sits on a pull request opened from its base branch since the list was read', () => {
+    const before = repository([pull(70, 'feat', 'c70')]);
+    expect(where(view(70, {}, before))).toEqual({ kind: 'alone' });
+    // #71, from feat into main, opened since: the list doesn't have it.
+    const opened = ours(71);
+    expect(where(view(70, { openFromBase: opened }, before))).toEqual({
+      kind: 'unknown',
+      why: { kind: 'unlistedBelow', pr: 71, base: 'feat' },
+      text: "#71 comes from feat, the branch #70 merges into, but isn't in Lo's list yet. Lo is listing the open pull requests again.",
+      listAgain: true,
+    });
+    // Listed again, it's below.
+    const after = repository([pull(70, 'feat', 'c70'), pull(71, 'main', 'feat')]);
+    expect(where(view(70, { openFromBase: opened }, after))).toEqual({
+      kind: 'chainAbove',
+      bottom: 71,
+    });
+    // A fork's branch of the same name is never a base.
+    const fork = [{ number: 71, isCrossRepository: true }];
+    expect(where(view(70, { openFromBase: fork }, before))).toEqual({ kind: 'alone' });
+  });
+
+  it('sits on a pull request from its base branch the list has but doesn’t put below it', () => {
+    // As GitHub has them now, #72 comes from feat, and #73 sits on #70.
+    const at = repository([
+      pull(70, 'feat', 'c70'),
+      pull(72, 'main', 'x72'),
+      pull(73, 'c70', 'c73'),
+    ]);
+    expect(where(view(70, { openFromBase: ours(72) }, at))).toEqual({
+      kind: 'chainAbove',
+      bottom: 72,
+    });
+    expect(unsure(where(view(70, { openFromBase: ours(73) }, at))).why).toEqual({
+      kind: 'cycle',
+      prs: [70, 73],
+    });
   });
 });
 
@@ -158,22 +258,22 @@ describe('where a pull request sits is unknown', () => {
     expect(where(view(1, { forest: forest({ listedAt: listedAt - 1 }) }))).toEqual({
       kind: 'unknown',
       why: { kind: 'stale', listedAt: listedAt - 1 },
-      text: "Lo's list of this repository's open pull requests is 3 minutes old. Lo is listing them again.",
+      text: "Lo's list of this repository's open pull requests is 3 minutes old. Lo is listing the open pull requests again.",
       listAgain: true,
     });
     // Listed every 5 minutes, as in the background, it's still recent.
     const background = forest({ listedAt: NOW - 5.5 * 60_000, listEvery: 5 * 60_000 });
     expect(where(view(1, { forest: background }))).toEqual({ kind: 'alone' });
-    expect(unsure(where(view(1, { forest: forest({ listedAt: NOW - 2 * 3_600_000 }) }))).text).toBe(
-      "Lo's list of this repository's open pull requests is 2 hours old. Lo is listing them again.",
-    );
+    expect(
+      unsure(where(view(1, { forest: forest({ listedAt: NOW - 2 * 3_600_000 }) }))).text,
+    ).toMatch(/ is 2 hours old\. /);
   });
 
   it("while the list doesn't hold the pull request", () => {
     expect(where(view(99))).toEqual({
       kind: 'unknown',
       why: { kind: 'missing' },
-      text: "#99 isn't in Lo's list of this repository's open pull requests yet. Lo is listing them again.",
+      text: "#99 isn't in Lo's list of this repository's open pull requests yet. Lo is listing the open pull requests again.",
       listAgain: true,
     });
   });
@@ -188,16 +288,73 @@ describe('where a pull request sits is unknown', () => {
   });
 
   it('while the list has it in another GitHub stack than the merge facts, or none', () => {
-    expect(unsure(inStackSaid(90, 2))).toMatchObject({
+    expect(unsure(stackSaid(2, { number: 90, position: 1 }))).toMatchObject({
       why: { kind: 'moved', listed: { base: 'main', stack: undefined } },
       text: "GitHub says #2 is in GitHub stack #90, but Lo's list has it in none. Lo is listing the open pull requests again.",
       listAgain: true,
     });
-    expect(unsure(inStackSaid(undefined, 11)).text).toBe(
+    expect(unsure(stackSaid(11, undefined)).text).toBe(
       "GitHub says #11 is in no GitHub stack, but Lo's list has it in #90. Lo is listing the open pull requests again.",
     );
-    expect(unsure(inStackSaid(97, 11)).text).toBe(
+    expect(unsure(stackSaid(11, { number: 97, position: 2 })).text).toBe(
       "GitHub says #11 is in GitHub stack #97, but Lo's list has it in #90. Lo is listing the open pull requests again.",
     );
+  });
+
+  it('while the list has it at another place in its GitHub stack than the merge facts', () => {
+    expect(unsure(stackSaid(11, { number: 90, position: 1 }))).toMatchObject({
+      why: { kind: 'moved', listed: { stack: { number: 90, position: 2 } } },
+      text: "GitHub says #11 is layer 1 of GitHub stack #90, but Lo's list has it as layer 2. Lo is listing the open pull requests again.",
+      listAgain: true,
+    });
+    // Never the bottom of the stack, with nothing below, while they disagree.
+    expect(unsure(stackSaid(10, { number: 90, position: 2 })).why.kind).toBe('moved');
+  });
+
+  it('while pull requests in its stack sit on each other in a loop', () => {
+    const at = repository([
+      pull(50, 'c51', 'c50'),
+      pull(51, 'c50', 'c51'),
+      pull(60, 'c62', 'c60'),
+      pull(61, 'c60', 'c61'),
+      pull(62, 'c61', 'c62'),
+      pull(63, 'c62', 'c63'),
+    ]);
+    expect(where(view(51, {}, at))).toEqual({
+      kind: 'unknown',
+      why: { kind: 'cycle', prs: [50, 51] },
+      text: "#50 and #51 each sit on the other, so Lo can't tell what this one sits on. Merge it on GitHub.",
+      listAgain: false,
+    });
+    // A layer on the loop is unsure too. The loop is named in the order each sits on the next.
+    expect(unsure(where(view(63, {}, at))).text).toBe(
+      "#60, #62 and #61 sit on each other in a loop, so Lo can't tell what this one sits on. Merge it on GitHub.",
+    );
+  });
+
+  it('while merged pull requests its stack may sit on weren’t looked up', () => {
+    // #30 was squash-merged into b29, #29's branch, and wasn't looked up: #31 sits on its branch.
+    const pulls = [pull(29, 'main', 'b29'), pull(31, 'm30', 'c31')];
+    const unlooked = repository(pulls, [{ kind: 'mergedPullRequests' }]);
+    expect(where(view(31, {}, unlooked))).toEqual({
+      kind: 'unknown',
+      why: { kind: 'lookups' },
+      text: "Some merged pull requests weren't looked up yet, so Lo can't tell what #31 sits on. Lo is listing the open pull requests again.",
+      listAgain: true,
+    });
+    // A stack on a trunk sits on no merged pull request's branch.
+    expect(where(view(29, {}, unlooked))).toEqual({ kind: 'alone' });
+    // Rulesets that weren't read only add links, which never makes a layer look alone.
+    const unruled = repository(pulls, [{ kind: 'rulesets', why: 'Forbidden' }]);
+    expect(where(view(31, {}, unruled))).toEqual({ kind: 'alone' });
+  });
+
+  it('until the open pull requests from its base branch are read, unless that’s a trunk', () => {
+    expect(where(view(3, { openFromBase: undefined }))).toEqual({
+      kind: 'unknown',
+      why: { kind: 'unconfirmed', base: 'b2' },
+      text: "Lo hasn't asked GitHub yet whether an open pull request comes from b2, the branch #3 merges into.",
+      listAgain: false,
+    });
   });
 });

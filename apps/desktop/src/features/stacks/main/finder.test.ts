@@ -565,6 +565,7 @@ describe("a repository's stacks, for the features that merge", () => {
       listEvery: 240_000,
       whole: true,
     });
+    expect(forest?.trunks[0]).toBe('main');
     expect(forest?.stacks.stackIndex[4]).toEqual(forest?.stacks.stackIndex[2]);
     // By any case of the account's login, and for no account Lo has no poller for.
     expect(finder.forest(E2E, LOGIN.toUpperCase())?.stacks).toBe(forest?.stacks);
