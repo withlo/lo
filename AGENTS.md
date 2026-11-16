@@ -1143,6 +1143,14 @@ parse them under `@lo/syntax`'s limits.
   found goes to every one of them, 5,000 uses at most, "By name"; the hover is the top definition's
   line; the outline is the file's definitions, nested. An answer names its file by the side's commit
   and path, and the first 10 come with 30 lines around them.
+- The window asks from the diff and the whole file, on either side, through the diff feature's
+  `codeViews` (`code/window/navigate.ts`), and a new question cancels the last of its kind. `gd`
+  opens a peek under the line, which comes on screen whole by the least scroll; `j` and `k` pick an
+  answer and `⏎` goes there, in the diff on its side, or the file whole, as a jump. `gr` lists the
+  references in the right panel, which shows one view at a time; `K`, or the pointer resting on a
+  word, shows a card over it that never takes focus and closes at the next input; `gO` opens the
+  outline. With no answer, the status bar says why and nothing opens. `gh` says type hints need a
+  language server.
 
 ## The interface
 
