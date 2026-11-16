@@ -119,6 +119,16 @@ export interface PeekHeadProps {
   goLabel?: string | undefined;
   /** Whether the answer shown can be gone to: one outside the repository can't. */
   goes: boolean;
+  /**
+   * Where the answers came from, when no list beside them says: a single answer's source, or the
+   * syntax index's when it answered in a language server's place.
+   */
+  source?: AnswerSource | undefined;
+  /**
+   * What the source says after its name: what sets the single answer apart, or why the language
+   * server didn't answer ("TypeScript is starting.").
+   */
+  note?: string | undefined;
   keys?: PeekKeys | undefined;
   onGo?: (() => void) | undefined;
   onClose?: (() => void) | undefined;
@@ -126,7 +136,8 @@ export interface PeekHeadProps {
 
 /**
  * The head of a peek, in a row its caller lays out: an eye, the word and how many answers it has,
- * at which revision, the way to go to the one shown, and the way to close it.
+ * at which revision, where they came from when no list says, the way to go to the one shown, and
+ * the way to close it.
  */
 export function PeekHead({
   name,
@@ -134,6 +145,8 @@ export function PeekHead({
   at,
   goLabel = 'Open the whole file',
   goes,
+  source,
+  note,
   keys,
   onGo,
   onClose,
@@ -151,6 +164,14 @@ export function PeekHead({
       {at !== undefined && (
         <span className="flex-none">
           at <ShownText text={at} />
+        </span>
+      )}
+      {source !== undefined && (
+        <span className="flex min-w-0 items-baseline gap-6">
+          <span className="flex-none" aria-hidden="true">
+            ·
+          </span>
+          <SourceMark source={source} note={note} />
         </span>
       )}
       <span className="flex-1" />

@@ -74,6 +74,43 @@ describe('ReferencesHead', () => {
     );
     expect(host.textContent).toBe('RateLimitedError1 in 1 file · Syntax index');
   });
+
+  it('says why a language server didn’t answer, or how many more it found outside the repository', () => {
+    const fallback = render(
+      <ReferencesHead
+        name={WORD}
+        count={2}
+        files={1}
+        source={{ kind: 'syntax' }}
+        fallback="TypeScript is starting."
+      />,
+    );
+    expect(fallback.textContent).toBe(
+      'RateLimitedError2 in 1 file · Syntax indexTypeScript is starting.',
+    );
+    const outside = render(
+      <ReferencesHead
+        name={WORD}
+        count={14}
+        files={6}
+        source={{ kind: 'server', name: 'TypeScript' }}
+        outside={3}
+      />,
+    );
+    expect(outside.textContent).toBe(
+      'RateLimitedError14 in 6 files · TypeScript3 more are outside this repository.',
+    );
+    const one = render(
+      <ReferencesHead
+        name={WORD}
+        count={1}
+        files={1}
+        source={{ kind: 'server', name: 'TypeScript' }}
+        outside={1}
+      />,
+    );
+    expect(one.textContent).toContain('1 more is outside this repository.');
+  });
 });
 
 describe('format characters', () => {

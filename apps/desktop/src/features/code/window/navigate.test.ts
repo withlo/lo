@@ -7,10 +7,12 @@ import type { LineTarget, Place } from '@lo/ui/code';
 import { KEY_EVENT } from '@lo/ui/commands';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { markdownTree } from '@lo/markdown';
+
 import { IpcError } from '../../../ipc/contract.ts';
 import type * as TabShared from '../../tab/window/shared.ts';
 import type { RightKept } from '../../tab/window/shared.ts';
-import type { CodeAnswer, Definitions, Hover, Outline, References } from '../port.ts';
+import type { CodeAnswer, Definitions, Hints, Hover, Outline, References } from '../port.ts';
 import {
   closePeek,
   closeReferences,
@@ -29,6 +31,8 @@ import {
   typeOutline,
 } from './navigate.ts';
 import { said } from './said.ts';
+import { servers } from './servers.ts';
+import { statuses } from './status.ts';
 
 const HEAD = 'a'.repeat(40);
 
@@ -37,7 +41,12 @@ const seen = vi.hoisted(() => ({
   commit: 'a'.repeat(40) as string | undefined,
   asked: [] as { job: string; input: unknown; signal: AbortSignal | undefined }[],
   answers: new Map<string, (input: unknown) => unknown>(),
-  peeks: [] as { at: unknown; shown: number | undefined; lines: readonly string[] | undefined }[],
+  peeks: [] as {
+    at: unknown;
+    shown: number | undefined;
+    lines: readonly string[] | undefined;
+    waiting?: boolean | undefined;
+  }[],
   places: [] as unknown[],
   right: [] as { id: string | undefined; focus: boolean }[],
   rightShown: undefined as string | undefined,
@@ -79,10 +88,15 @@ vi.mock('../../diff/window/shared.ts', () => ({
     peek(
       _view: string,
       at: Place,
-      peek: { shown: number; code?: { lines: readonly string[] } } | undefined,
+      peek: { shown: number; code?: { lines: readonly string[] }; waiting?: boolean } | undefined,
       frame?: (parts: unknown, peek: unknown) => { destroy(): void },
     ) {
-      seen.peeks.push({ at, shown: peek?.shown, lines: peek?.code?.lines });
+      seen.peeks.push({
+        at,
+        shown: peek?.shown,
+        lines: peek?.code?.lines,
+        ...(peek?.waiting ? { waiting: true } : {}),
+      });
       if (peek && frame && seen.peeks.filter((each) => each.shown !== undefined).length === 1) {
         frame({ head: 'head', list: 'list', foot: 'foot' }, peek);
       }
@@ -169,6 +183,8 @@ beforeEach(() => {
   seen.hints.length = 0;
   closePeek(peekIn('t1') ?? '');
   said.set('t1', undefined);
+  statuses.set('t1', null);
+  servers.set('t1', null);
 });
 
 describe('gd', () => {
@@ -255,6 +271,33 @@ describe('gd', () => {
     expect(seen.places).toEqual([['t1', 'src/parse.ts', 2, { from: 2, to: 2 }, 'old']]);
   });
 
+  it('draws an answer picked the first time as tall as the code it came with', async () => {
+    const lines = { from: 1, text: ['export interface Line {'] };
+    seen.answers.set('definitions', (): Definitions => ({
+      name: 'Line',
+      answers: [answer({ lines }), answer({ path: 'src/parse.ts', lines })],
+      more: false,
+    }));
+    await definition(AT);
+    pick(1);
+    // Its code is there from the first draw: nothing waits for it, so the peek is its height.
+    expect(seen.peeks.at(-1)).toEqual({ at: AT.at, shown: 1, lines: lines.text });
+    expect(seen.peeks.some((each) => each.waiting)).toBe(false);
+    await settle();
+    expect(seen.asked.map((each) => each.job)).toEqual(['definitions']);
+  });
+
+  it('says why the index answered when a language server didn’t, with nothing found', async () => {
+    seen.answers.set('definitions', (): Definitions => ({
+      name: 'parse',
+      answers: [],
+      more: false,
+      fallback: 'TypeScript is starting.',
+    }));
+    await definition(AT);
+    expect(said.get('t1')?.text).toBe('No definition of `parse` found. TypeScript is starting.');
+  });
+
   it('closes the peek on Esc, back on its line', async () => {
     seen.answers.set('definitions', (): Definitions => ({
       name: 'Line',
@@ -316,18 +359,68 @@ describe('gr', () => {
   });
 });
 
+describe('gr with every reference outside the repository', () => {
+  it('says how many there are, and lists none', async () => {
+    seen.answers.set('references', (): References => ({
+      name: 'parse',
+      answers: [],
+      more: false,
+      outside: 3,
+    }));
+    await references(AT);
+    expect(said.get('t1')?.text).toBe('`parse` has 3 references, all outside this repository.');
+    expect(seen.right).toEqual([]);
+  });
+});
+
 describe('gh', () => {
-  it('asks for the hints on screen, and says they need a language server when none come', async () => {
-    seen.answers.set('hints', () => []);
+  it('asks for the hints on screen, and says why none came', async () => {
+    seen.answers.set('hints', (): Hints => ({ hints: [] }));
+    statuses.set('t1', {
+      view: 't1',
+      repo: 'rozed-dev/e2e',
+      pull: 80,
+      head: { kind: 'base' },
+      trust: { kind: 'untrusted', why: 'unnamed' },
+      dismissed: false,
+    });
     await toggleHints();
     expect(seen.asked[0]).toMatchObject({
       job: 'hints',
       input: { view: 't1', key: HEAD, path: 'src/format.ts', from: 1, to: 9 },
     });
-    expect(said.get('t1')?.text).toBe('Type hints need a language server');
+    expect(said.get('t1')?.text).toBe(
+      'Type hints need a language server, which Lo runs only on repos you trust.',
+    );
     // Off again: the hints go.
     await toggleHints();
     expect(seen.hints.at(-1)).toEqual([]);
+  });
+
+  it('draws a server’s hints with the room it asks for, and says what a server says', async () => {
+    seen.answers.set('hints', (): Hints => ({
+      hints: [{ line: 2, column: 5, label: ': string', paddingLeft: true }],
+      label: 'TypeScript',
+    }));
+    await toggleHints();
+    expect(seen.hints[0]).toEqual([
+      {
+        kind: 'hint',
+        at: { file: 'f1', side: 'new', line: 2, column: 5 },
+        label: ': string',
+        padding: { before: true, after: false },
+      },
+    ]);
+    expect(said.get('t1')).toBeUndefined();
+    await toggleHints();
+    seen.answers.set('hints', (): Hints => ({
+      hints: [],
+      label: 'Python',
+      none: 'Python has no type hints.',
+    }));
+    await toggleHints();
+    expect(said.get('t1')?.text).toBe('Python has no type hints.');
+    await toggleHints();
   });
 });
 
@@ -350,10 +443,35 @@ describe('K and the pointer resting', () => {
     expect(hovers.getState()).toBeUndefined();
   });
 
+  it('shows a server’s Markdown as it was read, and takes one with nothing to draw as none', async () => {
+    const text = 'The **input**, a line at a time.';
+    const read: Hover = {
+      name: 'Line',
+      kind: undefined,
+      text,
+      markdown: true,
+      tree: markdownTree(text, { breaks: false }),
+      source: 'server',
+      label: 'TypeScript',
+    };
+    seen.answers.set('hover', () => read);
+    await typeOf(AT);
+    expect(hovers.getState()?.hover).toBe(read);
+    window.dispatchEvent(new Event(KEY_EVENT));
+    seen.answers.set('hover', (): Hover => ({ ...read, tree: undefined }));
+    await typeOf(AT);
+    expect(hovers.getState()).toBeUndefined();
+    expect(said.get('t1')?.text).toBe('No definition found at the cursor.');
+  });
+
   it('says so when K finds nothing, but a rest that finds nothing says nothing', async () => {
-    seen.answers.set('hover', () => null);
+    seen.answers.set('hover', () => ({ none: true }));
     await typeOf(AT);
     expect(said.get('t1')?.text).toBe('No definition found at the cursor.');
+    // With why the server didn't answer, when one could have.
+    seen.answers.set('hover', () => ({ none: true, fallback: 'TypeScript is starting.' }));
+    await typeOf(AT);
+    expect(said.get('t1')?.text).toBe('No definition found at the cursor. TypeScript is starting.');
     said.set('t1', undefined);
     rested('t1', 'diff', PLACE);
     await settle();

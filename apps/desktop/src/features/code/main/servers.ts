@@ -25,6 +25,7 @@ import type { Adapter, Prepared } from './adapters.ts';
 /** What the pool uses of a running server: `@lo/lsp`'s. */
 export type Running = Pick<
   Server,
+  | 'capabilities'
   | 'state'
   | 'onState'
   | 'uptime'
