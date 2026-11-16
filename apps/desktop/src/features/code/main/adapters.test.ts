@@ -1,8 +1,9 @@
-// The adapters Lo ships: which files each reads, and what it downloads before it starts, which is
-// no toolchain but for C#'s, which runs on Lo's .NET SDK. What each server runs as, and is told,
-// is `@lo/lsp`'s, and tested there.
+// The adapters Lo ships: which files each reads, and what it downloads before it starts: Node for
+// the servers that run on it, Go for gopls, which Lo builds with it, and the .NET SDK for Roslyn,
+// which runs on it. What each server runs as, and is told, is `@lo/lsp`'s, and tested there.
 
 import {
+  GOPLS,
   type Installed,
   launchNative,
   launchOnNode,
@@ -10,12 +11,19 @@ import {
   PHP_LSP,
   PYRIGHT,
   ROSLYN,
+  TERRAFORM_LS,
   toolchainUse,
   VTSLS,
 } from '@lo/lsp';
 import { describe, expect, it } from 'vitest';
 
-import { type Adapter, ADAPTERS, adapterFor, type Toolchain } from './adapters.ts';
+import {
+  type Adapter,
+  ADAPTERS,
+  adapterFor,
+  type PrepareContext,
+  type Toolchain,
+} from './adapters.ts';
 
 function installedAs(id: string): Installed {
   return { folder: `/lo/cache/servers/${id}`, entry: `/lo/cache/servers/${id}/entry` };
@@ -57,7 +65,7 @@ async function prepared(adapter: Adapter) {
 }
 
 describe('Lo’s adapters', () => {
-  it('read TypeScript and JavaScript, Python, PHP and C#', () => {
+  it('read TypeScript and JavaScript, Python, PHP, Go, Terraform and C#', () => {
     expect(readBy('src/a.ts')).toEqual(['TypeScript', 'typescript']);
     expect(readBy('src/a.mts')).toEqual(['TypeScript', 'typescript']);
     expect(readBy('src/A.tsx')).toEqual(['TypeScript', 'typescriptreact']);
@@ -67,6 +75,11 @@ describe('Lo’s adapters', () => {
     expect(readBy('pkg/a.pyi')).toEqual(['Python', 'python']);
     expect(readBy('src/A.php')).toEqual(['PHP', 'php']);
     expect(readBy('views/a.phtml')).toEqual(['PHP', 'php']);
+    expect(readBy('cmd/main.go')).toEqual(['Go', 'go']);
+    expect(readBy('infra/main.tf')).toEqual(['Terraform', 'terraform']);
+    // terraform-ls reads a file of variables as one, by its own id.
+    expect(readBy('infra/prod.tfvars')).toEqual(['Terraform', 'terraform-vars']);
+    expect(readBy('infra/PROD.TFVARS')).toEqual(['Terraform', 'terraform-vars']);
     expect(readBy('src/App/Program.cs')).toEqual(['C#', 'csharp']);
     // Ruby has none.
     expect(readBy('lib/a.rb')).toBeUndefined();
@@ -100,11 +113,61 @@ describe('Lo’s adapters', () => {
     expect(ready.kind === 'ready' && ready.launch.program).toBe(installedAs('php-lsp').entry);
   });
 
+  it('install Go, then build gopls with it, and start gopls with that Go', async () => {
+    const asked: string[] = [];
+    let builtWith: Toolchain | undefined;
+    const go: Toolchain = {
+      ...toolchainUse('go', '1.27.4', installedAs('go')),
+      version: '1.27.4',
+      installed: installedAs('go'),
+    };
+    const context: PrepareContext = {
+      install: (id, options) => {
+        asked.push(id);
+        builtWith = options?.go;
+        return Promise.resolve(installedAs(id));
+      },
+      toolchain: (id) => {
+        asked.push(`toolchain ${id}`);
+        return id === 'go' ? Promise.resolve(go) : Promise.reject(new Error(`no ${id}`));
+      },
+      findCopy: () => Promise.reject(new Error('no copy is looked for')),
+      signal: new AbortController().signal,
+    };
+    const adapter = shipped('go');
+    expect(adapter.downloads).toEqual({ servers: ['gopls'], toolchains: ['go'] });
+    expect(await adapter.prepare(context)).toEqual({
+      kind: 'ready',
+      launch: launchNative(GOPLS, installedAs('gopls'), [go]),
+    });
+    expect(asked).toEqual(['toolchain go', 'gopls']);
+    expect(builtWith).toBe(go);
+  });
+
+  it('download terraform-ls alone, with no toolchain, and start it as its own program', async () => {
+    const adapter = shipped('terraform');
+    const { installs, toolchains, ready } = await prepared(adapter);
+    expect(installs).toEqual(['terraform-ls']);
+    expect(toolchains).toEqual([]);
+    expect(adapter.downloads).toEqual({ servers: ['terraform-ls'], toolchains: [] });
+    expect(ready).toEqual({
+      kind: 'ready',
+      launch: launchNative(TERRAFORM_LS, installedAs('terraform-ls')),
+    });
+  });
+
+  it('ask terraform-ls for references from a definition, as it finds them only there', () => {
+    expect(ADAPTERS.filter((each) => each.referencesFromDefinition).map((each) => each.id)).toEqual(
+      ['terraform'],
+    );
+  });
+
   it('download .NET’s SDK and Roslyn, and start Roslyn as `dotnet exec` on that SDK', async () => {
     const adapter = shipped('csharp');
     const installs: string[] = [];
     const toolchains: string[] = [];
     const dotnet: Toolchain = {
+      version: '10.0.404',
       installed: installedAs('dotnet'),
       ...toolchainUse('dotnet', '10.0.404', installedAs('dotnet'), 'darwin'),
     };
@@ -133,11 +196,13 @@ describe('Lo’s adapters', () => {
     expect(adapter.definitionDeadline).toBe(5000);
   });
 
-  it('say which servers give no inline type hints, as Pyright gives none', () => {
+  it('say which servers give no inline type hints, as Pyright and terraform-ls give none', () => {
     expect(ADAPTERS.map((adapter) => [adapter.id, adapter.noHints])).toEqual([
       ['typescript', undefined],
       ['python', 'Pyright has no type hints.'],
       ['php', undefined],
+      ['go', undefined],
+      ['terraform', 'terraform-ls has no type hints.'],
       ['csharp', undefined],
     ]);
   });

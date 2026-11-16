@@ -17,8 +17,9 @@ import { join } from 'node:path';
 import { format, resolveConfig } from 'prettier';
 
 import { parseManifest, parseToolchains } from '../src/index.ts';
+import { goProgram } from './go.ts';
 import { DIGICERT_G4, nuget } from './nuget.ts';
-import { githubRelease, node, npm, type Source } from './sources.ts';
+import { githubRelease, hashicorp, node, npm, type Source } from './sources.ts';
 import { dotnet, go, rust, temurin } from './toolchains.ts';
 
 /** .NET's names for the platforms, its runtime identifiers. */
@@ -56,6 +57,9 @@ const SOURCES: Record<string, Source> = {
     },
     'php-lsp',
   ),
+  // Built from its modules with Lo's Go, which toolchains.json pins: pin it again when Go is.
+  gopls: goProgram('golang.org/x/tools/gopls', 'gopls'),
+  'terraform-ls': hashicorp('terraform-ls', keys('hashicorp')),
   // Roslyn's server, a package for each platform, signed by Microsoft. It starts from its own
   // program's assembly, under `dotnet exec`, never the launcher the package's tool runs.
   roslyn: nuget(

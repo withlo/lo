@@ -72,3 +72,70 @@ function layerOf() {
   if (download?.kind !== 'layers') throw new Error('Rust has no layers');
   return download.layers[0];
 }
+
+/** gopls's download, which Lo builds from its modules. */
+function goplsOf() {
+  const download = MANIFEST.gopls?.platforms.any;
+  if (download?.kind !== 'go') throw new Error('gopls isn’t built from its modules');
+  return download;
+}
+
+/** A module path as the proxy protocol escapes it, unescaped: `!burnt!sushi` is `BurntSushi`. */
+function unescaped(path: string): string {
+  return path.replaceAll(/!([a-z])/g, (_, letter: string) => letter.toUpperCase());
+}
+
+test('gopls is built with Lo’s Go, from modules from the Go module proxy, on every platform', () => {
+  const gopls = goplsOf();
+  expect(MANIFEST.gopls?.hosts).toEqual(['proxy.golang.org', 'storage.googleapis.com']);
+  expect(gopls).toMatchObject({ entry: 'gopls', package: 'golang.org/x/tools/gopls' });
+  // Its binary's hash holds only for the Go it's pinned with.
+  expect(gopls.go).toBe(TOOLCHAINS.go?.version);
+  expect(Object.keys(gopls.builds).toSorted()).toEqual([...PLATFORMS].toSorted());
+  expect(gopls.mod).toContain('tool golang.org/x/tools/gopls');
+  expect(gopls.mod).toContain(`\tgolang.org/x/tools/gopls v${MANIFEST.gopls?.version} // indirect`);
+  // Each module file is one the go.sum holds a line for.
+  const sums = new Set(gopls.sum.map((line) => line.split(' ').slice(0, 2).join(' ')));
+  for (const module of gopls.modules) {
+    expect(module.url).toBe(`https://proxy.golang.org/${module.path}`);
+    const [, name, version, kind] = /^(.+)\/@v\/(.+)\.(mod|zip)$/.exec(module.path) ?? [];
+    const key = `${unescaped(name ?? '')} ${unescaped(version ?? '')}`;
+    expect(sums).toContain(kind === 'mod' ? `${key}/go.mod` : key);
+  }
+});
+
+test('terraform-ls is pinned for every platform, from HashiCorp’s releases', () => {
+  const pinned = MANIFEST['terraform-ls'];
+  expect(pinned?.hosts).toEqual(['releases.hashicorp.com']);
+  for (const platform of PLATFORMS) {
+    const [os, arch] = platform.replace('x64', 'amd64').split('-');
+    expect(pinned?.platforms[platform]).toMatchObject({
+      kind: 'zip',
+      entry: 'terraform-ls',
+      url: `https://releases.hashicorp.com/terraform-ls/${pinned?.version}/terraform-ls_${pinned?.version}_${os}_${arch}.zip`,
+    });
+  }
+});
+
+test.each([
+  ['no build', { builds: {} }],
+  [
+    'a module from another path',
+    { modules: [{ ...moduleOf(), url: 'https://proxy.golang.org/x' }] },
+  ],
+  ['a module path outside the proxy', { modules: [{ ...moduleOf(), path: '../@v/v1.0.0.zip' }] }],
+  ['a module file twice', { modules: [moduleOf(), moduleOf()] }],
+  ['a go.mod line that ends another', { mod: ['module lo/gopls\nreplace x => ../x'] }],
+  ['a go.sum line that isn’t one', { sum: ['golang.org/x/tools v0.1.0 h1:short='] }],
+  ['a package that isn’t one', { package: 'golang.org/x/tools/gopls@latest' }],
+])('refuses a Go program with %s', (_, change) => {
+  const changed = { ...MANIFEST.gopls, platforms: { any: { ...goplsOf(), ...change } } };
+  expect(() => parseManifest({ gopls: changed })).toThrow(/the manifest is invalid/);
+});
+
+/** The first module file gopls is built from. */
+function moduleOf() {
+  const [module] = goplsOf().modules;
+  if (module === undefined) throw new Error('gopls has no modules');
+  return module;
+}

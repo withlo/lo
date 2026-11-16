@@ -295,7 +295,7 @@ test(
       'lo-hostile-php-lsp-cache',
     ];
     expect([...markers, ...written].toSorted()).toEqual([...said].toSorted());
-    expect(markers.size).toBe(26);
+    expect(markers.size).toBe(29);
   },
 );
 
@@ -306,8 +306,9 @@ test("Lo's own repository holds nothing a tool would pick up from what the hosti
   const named = new Set([
     '.cargo',
     '.editorconfig',
-    '.globalconfig',
+    '.envrc',
     '.gitmodules',
+    '.globalconfig',
     '.mvn',
     '.npmrc',
     '.nvmrc',
@@ -325,6 +326,7 @@ test("Lo's own repository holds nothing a tool would pick up from what the hosti
     'gradle',
     'gradlew',
     'global.json',
+    'go.work',
     'mise.toml',
     'mvnw',
     'node_modules',

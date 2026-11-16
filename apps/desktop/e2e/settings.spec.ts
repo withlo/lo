@@ -343,9 +343,9 @@ test('Settings lists the toolchains, and removes one that’s downloaded', async
     const rows = section.getByRole('listitem');
     await expect(rows).toHaveText(
       [
-        // C#'s server runs on the .NET SDK.
+        // C#'s server runs on the .NET SDK, and Go's on Go.
         /^\.NET SDK 10\.0\.404Not downloaded · [\d.]+ MB · For C#$/,
-        'Go 1.27.42 KB · No language server uses it yetRemove',
+        'Go 1.27.42 KB · For GoRemove',
         /^Rust 1\.100\.0Not downloaded · [\d.]+ MB/,
         /^Temurin JDK 25\.0\.5\+8Not downloaded · [\d.]+ MB/,
       ],

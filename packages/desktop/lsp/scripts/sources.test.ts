@@ -7,9 +7,10 @@ import * as openpgp from 'openpgp';
 import { expect, test } from 'vitest';
 
 import { type Platform, PLATFORMS } from '../src/index.ts';
-import { serve, sha256, tarGz } from '../test/downloads.ts';
+import { serve, sha256, tarGz, zip } from '../test/downloads.ts';
 import { tempFolder } from '../test/support.ts';
-import { githubRelease, node, type RegistryKey, verifyRegistry } from './sources.ts';
+import { modHash, sumKey } from './go.ts';
+import { githubRelease, hashicorp, node, type RegistryKey, verifyRegistry } from './sources.ts';
 
 /** A key that signs as one of Node's releasers would, and its armored public key. */
 async function releaser() {
@@ -83,6 +84,61 @@ test('refuses checksums signed by anyone else, or a tarball they don’t list', 
   );
 });
 
+/** A release of HashiCorp's `product`, served as releases.hashicorp.com would, signed by `signer`. */
+async function hashicorpRelease(
+  product: string,
+  version: string,
+  signer: (data: Buffer) => Promise<Buffer>,
+  options: { tamper?: string } = {},
+) {
+  const base = `https://releases.hashicorp.com/${product}/${version}/`;
+  const routes: Record<string, { body: Buffer }> = {};
+  const lines: string[] = [];
+  for (const target of ['darwin_arm64', 'darwin_amd64', 'linux_amd64', 'linux_arm64']) {
+    const name = `${product}_${version}_${target}.zip`;
+    const archive = zip([{ path: product, data: `${product} for ${target}`, mode: 0o100755 }]);
+    lines.push(`${sha256(archive)}  ${name}`);
+    routes[`${base}${name}`] = {
+      body: target === options.tamper ? Buffer.concat([archive, Buffer.from('x')]) : archive,
+    };
+  }
+  const sums = Buffer.from(`${lines.join('\n')}\n`);
+  routes[`${base}${product}_${version}_SHA256SUMS`] = { body: sums };
+  routes[`${base}${product}_${version}_SHA256SUMS.sig`] = { body: await signer(sums) };
+  const served = await serve(routes);
+  return { ...served, tools: { fetch: served.fetch, folder: tempFolder(), log: () => undefined } };
+}
+
+test('records a HashiCorp program from the checksums HashiCorp signed', async () => {
+  const signer = await releaser();
+  const { tools } = await hashicorpRelease('terraform-ls', '0.39.1', signer.signDetached);
+  const pinned = await hashicorp('terraform-ls', [signer.publicKey])('0.39.1', tools);
+  expect(pinned.hosts).toEqual(['releases.hashicorp.com']);
+  expect(Object.keys(pinned.platforms).toSorted()).toEqual([...PLATFORMS].toSorted());
+  expect(pinned.platforms['darwin-x64']).toMatchObject({
+    kind: 'zip',
+    url: 'https://releases.hashicorp.com/terraform-ls/0.39.1/terraform-ls_0.39.1_darwin_amd64.zip',
+    entry: 'terraform-ls',
+  });
+});
+
+test('refuses HashiCorp’s checksums signed by anyone else, or a zip they don’t list', async () => {
+  const signer = await releaser();
+  const stranger = await releaser();
+  const forged = await hashicorpRelease('terraform-ls', '0.39.1', stranger.signDetached);
+  await expect(
+    hashicorp('terraform-ls', [signer.publicKey])('0.39.1', forged.tools),
+  ).rejects.toThrow(/isn't signed with one of the keys/);
+  const tampered = await hashicorpRelease('terraform-ls', '0.39.1', signer.signDetached, {
+    tamper: 'linux_arm64',
+  });
+  await expect(
+    hashicorp('terraform-ls', [signer.publicKey])('0.39.1', tampered.tools),
+  ).rejects.toThrow(
+    /terraform-ls_0\.39\.1_linux_arm64\.zip isn’t what terraform-ls_0\.39\.1_SHA256SUMS lists/,
+  );
+});
+
 test('takes a package only with its integrity signed by npm’s registry', async () => {
   const { privateKey, publicKey } = generateKeyPairSync('ec', { namedCurve: 'P-256' });
   const der = publicKey.export({ format: 'der', type: 'spki' }).toString('base64');
@@ -117,6 +173,20 @@ test('takes a package only with its integrity signed by npm’s registry', async
   await expect(
     verifyRegistry('pkg', '1.0.0', integrity, [{ keyid: 'SHA256:else', sig }], keys, tools),
   ).rejects.toThrow(/didn't sign pkg@1\.0\.0/);
+});
+
+test('finds the go.sum line that checks each file of a module proxy, and a go.mod’s hash', () => {
+  expect(sumKey('github.com/!burnt!sushi/toml/@v/v1.6.0.mod')).toBe(
+    'github.com/BurntSushi/toml v1.6.0/go.mod',
+  );
+  expect(sumKey('golang.org/x/tools/gopls/@v/v0.24.0.zip')).toBe(
+    'golang.org/x/tools/gopls v0.24.0',
+  );
+  expect(() => sumKey('golang.org/x/tools/gopls.zip')).toThrow('isn’t a module proxy’s path');
+  // As BurntSushi/toml's go.sum line has it.
+  expect(modHash(Buffer.from('module github.com/BurntSushi/toml\n\ngo 1.18\n'))).toBe(
+    'h1:ukJfTF/6rtPPRCnwkur4qwRxa8vTRFBF0uk2lLoLwho=',
+  );
 });
 
 /**

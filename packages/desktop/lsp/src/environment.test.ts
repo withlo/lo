@@ -1,11 +1,19 @@
 import { expect, test } from 'vitest';
 
-import { serverEnvironment } from './environment.ts';
+import { NO_NETWORK, serverEnvironment } from './environment.ts';
 
 const GIT = {
   GIT_CONFIG_COUNT: '1',
   GIT_CONFIG_KEY_0: 'core.fsmonitor',
   GIT_CONFIG_VALUE_0: 'false',
+};
+const PROXIES = {
+  HTTPS_PROXY: NO_NETWORK,
+  https_proxy: NO_NETWORK,
+  HTTP_PROXY: NO_NETWORK,
+  http_proxy: NO_NETWORK,
+  ALL_PROXY: NO_NETWORK,
+  all_proxy: NO_NETWORK,
 };
 const BASE = {
   home: '/lo/servers/home',
@@ -28,9 +36,38 @@ test('a server gets only its home, its toolchain, git’s variables and its adap
     HOME: '/lo/servers/home',
     TMPDIR: '/lo/servers/home/tmp',
     PATH: '/opt/go/bin:/usr/bin:/bin',
+    ...PROXIES,
     LANG: 'C.UTF-8',
   });
   expect(serverEnvironment(BASE).PATH).toBe('/usr/bin:/bin');
+});
+
+test('a server’s proxy leads nowhere, so a program that takes it reaches no host', () => {
+  expect(NO_NETWORK).toBe('http://127.0.0.1:0');
+  expect(serverEnvironment(BASE)).toMatchObject(PROXIES);
+});
+
+test('an adapter’s folders are in the server’s home, wherever that is', () => {
+  const env = serverEnvironment({
+    ...BASE,
+    homeFolders: { GOMODCACHE: 'go/pkg/mod', GOCACHE: 'cache/go-build' },
+  });
+  expect(env.GOMODCACHE).toBe('/lo/servers/home/go/pkg/mod');
+  expect(env.GOCACHE).toBe('/lo/servers/home/cache/go-build');
+  for (const folder of ['', '/elsewhere', '../elsewhere', 'go/../..', 'go//mod', 'go\\mod']) {
+    expect(() => serverEnvironment({ ...BASE, homeFolders: { GOMODCACHE: folder } })).toThrow(
+      'one folder inside the server',
+    );
+  }
+  // A folder is the adapter's variable too, and held to the same rules.
+  expect(() =>
+    serverEnvironment({ ...BASE, variables: { GOCACHE: '/x' }, homeFolders: { GOCACHE: 'c' } }),
+  ).toThrow('one folder inside');
+  for (const name of ['HOME', 'HTTPS_PROXY', 'GIT_DIR', 'LD_PRELOAD']) {
+    expect(() => serverEnvironment({ ...BASE, homeFolders: { [name]: 'x' } })).toThrow(
+      `the variable ${name}`,
+    );
+  }
 });
 
 test('nothing in the checkout goes on PATH, and no folder is relative or empty', () => {
@@ -100,6 +137,7 @@ test('no adapter loads code into a server or its shell unless it says it means t
     'npm_config_script_shell',
     'RUSTC_WRAPPER',
     'GOFLAGS',
+    'GOPACKAGESDRIVER',
     'DOTNET_STARTUP_HOOKS',
     'CORECLR_PROFILER_PATH',
     'CLASSPATH',

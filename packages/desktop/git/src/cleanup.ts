@@ -1,8 +1,8 @@
 /**
  * Keeping the cache in bounds: removing what nobody used for a while, past a cap on its size the
- * least recently used checkouts and clones, and repacking busy clones. Nothing follows a symlink,
- * so nothing outside the cache is ever measured or removed, and a clone that's open or being
- * written to is never taken.
+ * least recently used checkouts, language servers' homes and clones, and repacking busy clones.
+ * Nothing follows a symlink, so nothing outside the cache is ever measured or removed, and nothing
+ * of a clone that's open, being written to or that a language server runs on is ever taken.
  *
  * Maintenance that can take minutes, repacking and collecting what comparisons replayed, holds
  * the clone's lock giving way: anyone who then waits for the clone gives it a few seconds to
@@ -26,7 +26,7 @@ import {
   rmdir,
   writeFile,
 } from 'node:fs/promises';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 
 import { REPLAYS } from './compare.ts';
 import type { Runner } from './git.ts';
@@ -70,7 +70,10 @@ export const REPACK_LIMIT = 30 * 60 * 1000;
 
 /** When maintenance runs besides at launch, and how it gives way. */
 export interface MaintenanceTimes {
-  /** How long a clone's lock goes unheld before the clone is looked at again, in milliseconds. */
+  /**
+   * How long a clone's lock goes unheld before the clone is looked at again, and how long after
+   * nothing uses a clone any more the cache is kept under its cap again, in milliseconds.
+   */
   readonly idleFor: number;
   /** How long maintenance has to finish once someone waits for the clone, in milliseconds. */
   readonly grace: number;
@@ -106,6 +109,8 @@ export interface CleanupHost {
   readonly runner: Runner;
   repoFolder(owner: string, name: string): string;
   checkoutsFolder(owner: string, name: string): string;
+  /** The folder of the homes of `owner/name`'s language servers, one each. */
+  homesFolder(owner: string, name: string): string;
   cloneLock(owner: string, name: string): CloneLock;
   trash(path: string): Promise<boolean>;
   note(line: string): void;
@@ -128,9 +133,11 @@ class GaveWay extends Error {
 
 /**
  * Holds `clone`'s lock to do `what`, maintenance that can stop part way and be done again later,
- * if nobody holds it, and with `remove`, if nobody has it open. Once anyone waits for the clone,
- * the maintenance has {@link MaintenanceTimes.grace} to finish; then `signal` aborts, with a
- * {@link GaveWay} as its reason, which stops its gits. `users` is how many have the clone open.
+ * if nobody holds it, and with `remove`, which removes only objects in the clone, if nobody has it
+ * open: a language server running on one of its checkouts doesn't keep it out. Once anyone waits
+ * for the clone, the maintenance has {@link MaintenanceTimes.grace} to finish; then `signal`
+ * aborts, with a {@link GaveWay} as its reason, which stops its gits. `users` is how many have the
+ * clone open.
  */
 function maintain(
   host: CleanupHost,
@@ -145,7 +152,9 @@ function maintain(
   const giveWay = (waiter: string) => {
     timer = setTimeout(() => controller.abort(new GaveWay(waiter)), host.maintenance.grace);
   };
-  const release = remove ? lock.tryRemove(what, giveWay) : lock.tryAcquire(what, giveWay);
+  const release = remove
+    ? lock.tryRemove(what, giveWay, 'objects')
+    : lock.tryAcquire(what, giveWay);
   if (release === undefined) return undefined;
   // Closing the cache stops it at once.
   const close = () => controller.abort(new GaveWay('closing the cache'));
@@ -248,6 +257,12 @@ export async function cappedUsage(root: string): Promise<number> {
   return total;
 }
 
+/**
+ * The cache's folder for language servers' homes, `<owner>/<name>/<server>`: each server's `HOME`,
+ * where it keeps its own caches, such as an index, which it builds again when they're gone.
+ */
+export const HOMES_FOLDER = join('code', 'homes');
+
 /** Every clone in the cache, by owner and name. */
 export async function clones(host: CleanupHost): Promise<CloneName[]> {
   const repos = join(host.root, 'repos', 'github.com');
@@ -308,24 +323,81 @@ async function checkoutsOf(host: CleanupHost, clone: CloneName) {
   return found;
 }
 
-/** Removes a clone and its checkouts, each moved aside first. Its lock is held. */
-async function removeClone(host: CleanupHost, clone: CloneName): Promise<void> {
+/** A language server's home in the cache, the repository it's for, and when it was last used. */
+interface Home {
+  readonly clone: CloneName;
+  readonly path: string;
+  readonly used: number | undefined;
+}
+
+/**
+ * Every language server's home in the cache, whether its repository's clone is there or not. When
+ * one was last used is its folder's time, which the cache sets as each server using it starts and
+ * stops.
+ */
+async function homesIn(host: CleanupHost): Promise<Home[]> {
+  const root = join(host.root, HOMES_FOLDER);
+  const found: Home[] = [];
+  for (const owner of await folders(root)) {
+    if (!validName('repository owner', owner)) continue;
+    for (const name of await folders(join(root, owner))) {
+      if (!validName('repository name', name)) continue;
+      const repo = join(root, owner, name);
+      for (const server of await folders(repo)) {
+        if (!validName('language server', server)) continue;
+        const path = join(repo, server);
+        found.push({ clone: { owner, name }, path, used: await folderTime(path) });
+      }
+    }
+  }
+  return found;
+}
+
+/** When the folder at `path` was last written, or its time last set. */
+async function folderTime(path: string): Promise<number | undefined> {
+  return (await lstat(path).catch(() => undefined))?.mtimeMs;
+}
+
+/**
+ * Removes the home at `path`, and the folders above it once they hold nothing else. Returns
+ * whether it went: one past a link stays, and so does every folder above it.
+ */
+async function removeHome(host: CleanupHost, path: string): Promise<boolean> {
+  if (!(await host.trash(path))) return false;
+  await rmdir(dirname(path)).catch(() => undefined);
+  await rmdir(dirname(dirname(path))).catch(() => undefined);
+  return true;
+}
+
+/**
+ * Removes a clone, its checkouts and its language servers' homes, each moved aside first. Its lock
+ * is held for removing, so no server runs on it. Returns whether the homes went: past a link,
+ * they stay.
+ */
+async function removeClone(host: CleanupHost, clone: CloneName): Promise<boolean> {
   await host.trash(host.checkoutsFolder(clone.owner, clone.name));
   await host.trash(host.repoFolder(clone.owner, clone.name));
+  const homes = host.homesFolder(clone.owner, clone.name);
+  const homesGone = await host.trash(homes);
   for (const folder of ['repos', 'checkouts']) {
     await rmdir(join(host.root, folder, 'github.com', clone.owner)).catch(() => undefined);
   }
+  if (homesGone) await rmdir(dirname(homes)).catch(() => undefined);
+  return homesGone;
 }
 
 /**
  * Removes the clones nobody opened, fetched into or checked out from for {@link UNUSED_FOR},
- * with their checkouts, and checkouts left without a clone. Of the clones kept, it removes the
- * checkouts unused for {@link CHECKOUTS_UNUSED_FOR}, the partial packs left a day or more ago and,
- * from those nobody has open, the trees comparisons replayed; and from the cache's `tmp/`,
- * whatever was left there a day or more ago. A clone open or being written to is left alone.
- * Returns the `owner/name` of each clone removed.
+ * with their checkouts and homes, and the checkouts and homes left without a clone, as homes of a
+ * clone removed before they went with it are. Of the clones kept, it removes the checkouts unused
+ * for {@link CHECKOUTS_UNUSED_FOR}, the partial packs left a day or more ago and, from those nobody
+ * has open, the trees comparisons replayed; and from the cache's `tmp/`, whatever was left there a
+ * day or more ago. A clone open, being written to or that a language server runs on is left
+ * alone, with all of it. Returns the `owner/name` of each clone removed.
  */
 export async function removeUnused(host: CleanupHost, now: number): Promise<string[]> {
+  // Those left first: the homes of clones removed from here on go with them.
+  await removeOrphanedHomes(host);
   const removed: string[] = [];
   for (const clone of await clones(host)) {
     const folder = host.repoFolder(clone.owner, clone.name);
@@ -480,6 +552,38 @@ async function removeOrphanedCheckouts(host: CleanupHost): Promise<void> {
 }
 
 /**
+ * Removes the homes of repositories whose clone is gone, but for those a language server runs with,
+ * which go once it has stopped, at a later cleanup.
+ */
+async function removeOrphanedHomes(host: CleanupHost): Promise<void> {
+  const root = join(host.root, HOMES_FOLDER);
+  for (const owner of await folders(root)) {
+    if (!validName('repository owner', owner)) continue;
+    // Only a folder the cache could move something out of, never one past a link, is removed.
+    let moved = false;
+    for (const name of await folders(join(root, owner))) {
+      if (!validName('repository name', name)) continue;
+      if (await exists(host.repoFolder(owner, name))) continue;
+      const release = host.cloneLock(owner, name).tryRemove('removing homes left without a clone');
+      if (release === undefined) continue;
+      try {
+        // Nobody makes the clone while this holds its lock, but someone may have just made it.
+        if (await exists(host.repoFolder(owner, name))) continue;
+        if (await host.trash(join(root, owner, name))) moved = true;
+      } finally {
+        release();
+      }
+    }
+    if (moved) await rmdir(join(root, owner)).catch(() => undefined);
+  }
+}
+
+/** Whether anything is at `path`, a link included. */
+async function exists(path: string): Promise<boolean> {
+  return (await lstat(path).catch(() => undefined)) !== undefined;
+}
+
+/**
  * Removes what was left in the cache's `tmp/` a day or more ago: clones a crash left half made,
  * trash, and fetches' traces. One that can't be removed is noted and left.
  */
@@ -498,11 +602,12 @@ async function removeOldTemporaries(host: CleanupHost, now: number): Promise<voi
 }
 
 /**
- * Removes every clone and checkout that isn't open or being written to, for Settings' "Clear
- * cache", each moved aside before it's deleted. Clones being made, in `tmp/`, are left alone.
- * Returns the `owner/name` of each clone it had to leave.
+ * Removes every clone, checkout and language server's home that isn't open, being written to or
+ * that a server runs on, for Settings' "Clear cache", each moved aside before it's deleted. Clones
+ * being made, in `tmp/`, are left alone. Returns the `owner/name` of each clone it had to leave.
  */
 export async function clear(host: CleanupHost): Promise<string[]> {
+  await removeOrphanedHomes(host);
   const left: string[] = [];
   for (const clone of await clones(host)) {
     const release = host.cloneLock(clone.owner, clone.name).tryRemove('clearing the cache');
@@ -535,13 +640,24 @@ async function counted(host: CleanupHost): Promise<number> {
 
 /**
  * Keeps the cache under `cap` bytes, as {@link counted} counts them, removing only as much as gets
- * it there: first the checkouts of clones nobody has open, least recently used first, then those
- * clones themselves, least recently used first, each only while the cache is still over. A clone
- * that's open or being written to is never touched, nor are its checkouts, and the most recently
- * used clone always stays, so the cache is never emptied: a clone over the cap alone loses its
- * checkouts and stays. Returns the `owner/name` of each clone removed.
+ * it there, each piece only while the cache is still over:
+ *
+ * 1. Checkouts and language servers' homes, together, least recently used first. Lo makes a
+ *    checkout again from its clone, and a server builds its home again as it indexes, so neither
+ *    costs a fetch, and the one used longest ago is the one least likely to be needed.
+ * 2. Then those clones, least recently used first, each with its checkouts and homes, since a
+ *    clone costs a fetch to get back.
+ *
+ * Nothing of a clone that's open, being written to or that a language server runs on is touched,
+ * its checkouts and homes included, and those don't count toward removing anything else either:
+ * removing the rest for them would never get the cache under, and a large home of a server that
+ * runs never pushes a clone out. The most recently used clone always stays, so the cache is never
+ * emptied: a clone over the cap alone loses its checkouts and homes and stays. Nothing more goes
+ * once the cache is closing. Run one at a time: two at once would remove for the same bytes.
+ * Returns the `owner/name` of each clone removed.
  */
 export async function keepUnder(host: CleanupHost, cap: number): Promise<string[]> {
+  if (host.closing.aborted) return [];
   let total = await counted(host);
   if (total <= cap) return [];
   const byUse = (
@@ -556,50 +672,109 @@ export async function keepUnder(host: CleanupHost, cap: number): Promise<string[
   const checkouts = (
     await Promise.all(
       byUse.map(async ({ clone }) =>
-        (await checkoutsOf(host, clone)).map((checkout) => ({ clone, ...checkout })),
+        (await checkoutsOf(host, clone)).map((checkout) => ({
+          kind: 'checkout' as const,
+          clone,
+          ...checkout,
+        })),
       ),
     )
-  )
-    .flat()
-    .toSorted((a, b) => (a.used ?? 0) - (b.used ?? 0));
+  ).flat();
+  const homes = (await homesIn(host)).map((home) => ({ kind: 'home' as const, ...home }));
+  // A checkout's stamp holds whole seconds, so times are compared to the second, and what was
+  // used in the same second goes in its clone's order, a home left without one first, then by
+  // path.
+  const rank = new Map(byUse.map(({ clone }, index) => [keyOf(clone), index]));
+  const spares = [...checkouts, ...homes].toSorted(
+    (a, b) =>
+      second(a.used) - second(b.used) ||
+      (rank.get(keyOf(a.clone)) ?? -1) - (rank.get(keyOf(b.clone)) ?? -1) ||
+      a.path.localeCompare(b.path),
+  );
+  // What's in use, looked at all at once: a server stopping while what it used is measured mustn't
+  // leave some of it kept and the rest free.
+  const busy = new Set(
+    spares.filter(({ clone }) => inUse(host, clone)).map(({ clone }) => keyOf(clone)),
+  );
+  // What can't go now, by repository, which nothing is removed for.
+  const keptBy = new Map<string, number>();
+  let kept = 0;
+  const free: typeof spares = [];
+  for (const spare of spares) {
+    const key = keyOf(spare.clone);
+    if (!busy.has(key)) {
+      free.push(spare);
+      continue;
+    }
+    const size = await diskUsage(spare.path);
+    keptBy.set(key, (keptBy.get(key) ?? 0) + size);
+    kept += size;
+  }
   let trimmed = 0;
-  for (const checkout of checkouts) {
-    if (total <= cap) break;
-    const { owner, name } = checkout.clone;
+  let emptied = 0;
+  for (const spare of free) {
+    if (host.closing.aborted || total - kept <= cap) break;
+    const { owner, name } = spare.clone;
     const release = host.cloneLock(owner, name).tryRemove('keeping the cache small');
     if (release === undefined) continue;
     try {
-      const size = await diskUsage(checkout.path);
-      await removeCheckouts(host, checkout.clone, [checkout]);
-      total -= size;
-      trimmed += 1;
+      const size = await diskUsage(spare.path);
+      if (spare.kind === 'checkout') {
+        await removeCheckouts(host, spare.clone, [spare]);
+        trimmed += 1;
+        total -= size;
+      } else if (await removeHome(host, spare.path)) {
+        emptied += 1;
+        total -= size;
+      }
     } finally {
       release();
     }
   }
   const removed: string[] = [];
   for (const { clone } of byUse) {
-    if (total <= cap) break;
+    if (host.closing.aborted || total - kept <= cap) break;
     if (clone === newest) continue;
     const release = host.cloneLock(clone.owner, clone.name).tryRemove('keeping the cache small');
     if (release === undefined) continue;
     try {
+      const key = keyOf(clone);
       const size =
         (await diskUsage(host.repoFolder(clone.owner, clone.name))) +
         (await diskUsage(host.checkoutsFolder(clone.owner, clone.name)));
-      await removeClone(host, clone);
-      total -= size;
-      removed.push(`${clone.owner}/${clone.name}`);
+      const homesSize = await diskUsage(host.homesFolder(clone.owner, clone.name));
+      const homesGone = await removeClone(host, clone);
+      total -= size + (homesGone ? homesSize : 0);
+      // What was in use when the cache was looked at, and is free now, went with it.
+      kept -= keptBy.get(key) ?? 0;
+      removed.push(key);
     } finally {
       release();
     }
   }
   if (trimmed > 0) host.note(`removed ${trimmed} checkouts past the cache's cap`);
+  if (emptied > 0) host.note(`removed ${emptied} language servers' homes past the cache's cap`);
   if (removed.length > 0) {
     host.note(`removed the least recently used clones past the cache's cap: ${removed.join(', ')}`);
   }
   if (total > cap) host.note(`the cache is still over its cap of ${cap} bytes, at ${total}`);
   return removed;
+}
+
+/** Whether `clone` is open, being written to or has a language server running on it. */
+function inUse(host: CleanupHost, clone: CloneName): boolean {
+  const lock = host.cloneLock(clone.owner, clone.name);
+  return lock.users > 0 || lock.servers > 0 || lock.holder !== undefined;
+}
+
+/** The whole second of `used`, a time in milliseconds, or 0 without one. */
+function second(used: number | undefined): number {
+  return Math.floor((used ?? 0) / 1000);
+}
+
+/** `clone`'s `owner/name`. */
+function keyOf(clone: CloneName): string {
+  return `${clone.owner}/${clone.name}`;
 }
 
 /**

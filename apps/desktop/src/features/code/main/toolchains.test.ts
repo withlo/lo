@@ -138,8 +138,23 @@ it('gives a server only the toolchains its adapter names, which “Remove” sto
   expect(asked).toEqual(['temurin']);
 });
 
-it('gives Lo’s own servers no toolchain but C#’s, which gets the .NET SDK alone', async () => {
-  expect(SHIPPED.map((each) => each.name)).toEqual(['TypeScript', 'Python', 'PHP', 'C#']);
+it('gives Lo’s own servers only the toolchains they name: Go’s Go, C#’s .NET SDK, and the rest none', async () => {
+  expect(SHIPPED.map((each) => each.name)).toEqual([
+    'TypeScript',
+    'Python',
+    'PHP',
+    'Go',
+    'Terraform',
+    'C#',
+  ]);
+  expect(SHIPPED.map((each) => [each.id, each.downloads?.toolchains])).toEqual([
+    ['typescript', []],
+    ['python', []],
+    ['php', []],
+    ['go', ['go']],
+    ['terraform', []],
+    ['csharp', ['dotnet']],
+  ]);
   for (const shipped of SHIPPED) {
     const toolchain = listedToolchain(shipped, (id) => Promise.resolve(id));
     const named = shipped.downloads?.toolchains ?? [];
@@ -149,15 +164,20 @@ it('gives Lo’s own servers no toolchain but C#’s, which gets the .NET SDK al
       );
     }
   }
-  const csharp = SHIPPED.find((each) => each.name === 'C#');
-  if (csharp === undefined) throw new Error('Lo ships no adapter for C#');
-  expect(csharp.downloads?.toolchains).toEqual(['dotnet']);
-  expect(await listedToolchain(csharp, (id) => Promise.resolve(id))('dotnet')).toBe('dotnet');
-  // So Settings lists C# as using the .NET SDK, and nothing as using another.
-  const listed = await listToolchains({ ...host().given, adapters: () => SHIPPED });
-  expect(listed.filter((each) => each.uses.length > 0).map((each) => [each.id, each.uses])).toEqual(
-    [['dotnet', ['C#']]],
+  const go = SHIPPED.find((each) => each.id === 'go');
+  expect(go && (await listedToolchain(go, (id) => Promise.resolve(id))('go'))).toBe('go');
+  const csharp = SHIPPED.find((each) => each.id === 'csharp');
+  expect(csharp && (await listedToolchain(csharp, (id) => Promise.resolve(id))('dotnet'))).toBe(
+    'dotnet',
   );
+  // So Settings lists Go's server as using Go, and C#'s as using the .NET SDK.
+  const listed = await listToolchains({ ...host().given, adapters: () => SHIPPED });
+  expect(listed.map((each) => [each.id, each.uses])).toEqual([
+    ['dotnet', ['C#']],
+    ['go', ['Go']],
+    ['rust', []],
+    ['temurin', []],
+  ]);
 });
 
 it('names the toolchain and why, when one can’t download or was removed', () => {

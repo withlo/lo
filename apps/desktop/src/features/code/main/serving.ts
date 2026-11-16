@@ -196,9 +196,9 @@ export class ServingViews {
     const followed = this.#views.get(id);
     const input = followed?.input;
     if (!followed || !input || input.trust !== 'trusted' || input.head !== commit) return undefined;
-    const match = adapterFor(this.#options.adapters(), path);
-    if (!match) return undefined;
-    const { adapter, languageId } = match;
+    const adapters = this.#options.adapters();
+    const adapter = adapterFor(adapters, path)?.adapter;
+    if (!adapter) return undefined;
     const name = adapter.name;
     const onScreen = this.#options.onScreen() === id;
     if (!this.#wants(followed).has(adapter.id)) {
@@ -225,8 +225,13 @@ export class ServingViews {
         return {
           kind: 'ready',
           name,
-          languageId,
+          // Each file by its own path: the one asked about may lead to another of the server's.
+          languageOf(file) {
+            const reads = adapterFor(adapters, file);
+            return reads?.adapter.id === adapter.id ? reads.languageId : undefined;
+          },
           definitionDeadline: adapter.definitionDeadline,
+          referencesFromDefinition: adapter.referencesFromDefinition,
           noHints: adapter.noHints,
           server: found.server,
           async matches(file, oid) {

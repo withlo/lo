@@ -24,6 +24,7 @@ import { expect, onTestFinished, test, vi } from 'vitest';
 import {
   failureMessage,
   LIMITS,
+  NO_NETWORK,
   OPEN_LIMIT,
   readFamily,
   type RequestOptions,
@@ -402,6 +403,7 @@ test('its environment is built from nothing', async () => {
     'GOPROXY=off',
     'LANG=C.UTF-8',
     'GIT_CONFIG_COUNT=1',
+    `HTTPS_PROXY=${NO_NETWORK}`,
   ]) {
     expect(text).toContain(own);
   }
@@ -415,9 +417,15 @@ test('its environment is built from nothing', async () => {
   ]) {
     expect(text).not.toContain(planted);
   }
-  // Where the system lists them one by one: nothing but what Lo set.
-  const set = 'GIT_CONFIG_COUNT GIT_CONFIG_KEY_0 GIT_CONFIG_VALUE_0 GOPROXY HOME LANG PATH TMPDIR';
-  expect(names?.toSorted() ?? set.split(' ')).toEqual(set.split(' '));
+  // Where the system lists them one by one: nothing but what Lo set, its proxy that leads nowhere
+  // among them.
+  const set = [
+    ...'GIT_CONFIG_COUNT GIT_CONFIG_KEY_0 GIT_CONFIG_VALUE_0 GOPROXY HOME LANG PATH TMPDIR'.split(
+      ' ',
+    ),
+    ...'HTTPS_PROXY https_proxy HTTP_PROXY http_proxy ALL_PROXY all_proxy'.split(' '),
+  ].toSorted();
+  expect(names?.toSorted() ?? set).toEqual(set);
   const started = seen().find((event) => event.event === 'started');
   expect(started).toMatchObject({ cwd: root, env: { HOME: home, PATH: `${tools}:/usr/bin:/bin` } });
   expect(existsSync(join(home, 'tmp'))).toBe(true);

@@ -12,8 +12,9 @@
  * - per platform (`darwin-arm64`, `darwin-x64`, `linux-x64`, `linux-arm64`), or `any` for one
  *   that runs everywhere, what to download: an archive (`tar.gz` or `zip`), a gzipped program
  *   (`gz`), a program as it is (`file`), an npm package with its dependencies (`npm`), each
- *   of its tarballs pinned the same way, or gzipped tars laid one over another in one folder
- *   (`layers`), as Rust's components make one sysroot;
+ *   of its tarballs pinned the same way, gzipped tars laid one over another in one folder
+ *   (`layers`), as Rust's components make one sysroot, or a Go program's modules, which Lo builds
+ *   the program from with its own Go (`go`), as it does gopls;
  * - its `entry`: the file the server starts from, inside what's installed;
  * - where it's recorded, what it `unpacked` to, in bytes, which caps its install at that and 5%
  *   more, in place of the limit every download shares.
@@ -116,7 +117,60 @@ const layers = z.strictObject({
   unpacked,
 });
 
-const anyDownload = z.discriminatedUnion('kind', [archive, program, npm, layers]);
+/** A Go package's import path: `golang.org/x/tools/gopls`. */
+const GO_PACKAGE = /^[A-Za-z0-9._~-]+(?:\/[A-Za-z0-9._~+-]+)*$/;
+
+/**
+ * Where a module's `go.mod` or zip is in a Go module proxy, as the proxy protocol escapes it, each
+ * capital letter a `!` and the letter: `github.com/!burnt!sushi/toml/@v/v1.6.0.zip`.
+ */
+const PROXY_PATH = /^(?:[a-z0-9._~!-]+\/)+@v\/v[a-z0-9.!+_-]+\.(?:mod|zip)$/;
+
+/** A line of a `go.sum`: a module, its version, perhaps for its `go.mod` alone, and its hash. */
+const GO_SUM = /^[A-Za-z0-9._~/+-]+ v[A-Za-z0-9.+_-]+(?:\/go\.mod)? h1:[A-Za-z0-9+/]{43}=$/;
+
+/** A line of text, its tabs aside with nothing that would end or hide it. */
+const LINE = /^(?:\t|[^\p{Cc}])*$/u;
+
+/** A program's size and SHA-256, as it's built. */
+const built = z.strictObject({ size, sha256 });
+
+/**
+ * A Go program Lo builds from source, as it does gopls, rather than downloading a binary: each
+ * module file the build reads (`modules`), fetched from the module proxy at its `path` there and
+ * pinned as any file is, laid out as a proxy of Lo's own; a `go.mod` and `go.sum` of Lo's (`mod`
+ * and `sum`, a line each) that require exactly those modules; and the program `entry`, built from
+ * `package` with Lo's Go, the version `go` names, offline, whose size and SHA-256 on each
+ * platform `builds` pins, refusing any other. `room` is the most its build holds on the disk, the
+ * module files moved into it among them; all of it but the program goes once it's built.
+ */
+const goProgram = z
+  .strictObject({
+    kind: z.literal('go'),
+    entry: z.string().regex(NAME, 'a file name'),
+    package: z.string().regex(GO_PACKAGE, 'a Go package'),
+    go: z.string().regex(NAME, 'a Go version'),
+    mod: z.array(z.string().regex(LINE, 'a line')).min(1),
+    sum: z.array(z.string().regex(GO_SUM, 'a line of a go.sum')).min(1),
+    modules: z
+      .array(file.extend({ path: z.string().regex(PROXY_PATH).refine(isPlainPath) }))
+      .min(1)
+      .refine((modules) => new Set(modules.map((each) => each.path)).size === modules.length, {
+        message: 'each module file once',
+      })
+      .refine(
+        (modules) => modules.every((each) => new URL(each.url).pathname === `/${each.path}`),
+        {
+          message: 'each module file from its own path in the proxy',
+        },
+      ),
+    builds: z.partialRecord(z.enum(PLATFORMS), built),
+    room: size,
+    unpacked,
+  })
+  .refine((download) => Object.keys(download.builds).length > 0, 'it builds for no platform');
+
+const anyDownload = z.discriminatedUnion('kind', [archive, program, npm, layers, goProgram]);
 
 const pinned = z
   .strictObject({
@@ -149,13 +203,15 @@ export interface Part {
   readonly sha256: string;
 }
 
-/** The files `download` fetches: its own, or each of its npm packages' or layers'. */
+/** The files `download` fetches: its own, or each of its npm packages', layers' or modules'. */
 export function partsOf(download: Download): readonly Part[] {
   switch (download.kind) {
     case 'npm':
       return download.packages;
     case 'layers':
       return download.layers;
+    case 'go':
+      return download.modules;
     case 'tar.gz':
     case 'zip':
     case 'gz':

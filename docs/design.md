@@ -210,8 +210,13 @@ and the whole-file view.
   request's files, and the status bar says the layers below are included. Whole-file context,
   navigation and rebase-aware comparison turn on when the copy arrives, with progress shown.
 - **Cleanup.** Settings shows how much space the cache uses and can clear it. Repos unused for 30
-  days are removed. The cache also has a size cap, 10 GB by default and changeable in Settings, and
-  past it the least recently used copies are removed.
+  days are removed, with their checkouts and what their language servers keep. The cache also has a
+  size cap, 10 GB by default and changeable in Settings, which counts all of it but the toolchains
+  language servers use. Past it, checkouts and what language servers keep go first, least recently
+  used first, since Lo gets them back without a fetch, then the least recently used copies, each
+  only while the cache is still over. Nothing of a repo that's open or that a language server runs
+  on goes, and its checkouts and what its language servers keep don't count toward removing anything
+  else.
 
 ### When git is missing
 
@@ -594,8 +599,9 @@ repo. The right side of a diff navigates the new commit, and the left side the o
 - **Toolchains.** The toolchains servers need are Lo's own too: Go, Rust, a Temurin JDK and the .NET
   SDK, one version each, pinned and downloaded like the servers on first use of their language.
   Servers never use the machine's, nor a version a repo asks for. A repo whose `global.json` names
-  other folders to find a .NET SDK in gets no .NET server, which says why. Settings lists them with
-  their sizes, and removes them.
+  other folders to find a .NET SDK in gets no .NET server, and one whose `go.work` names folders
+  outside it, or that sits below a `go.work`, no Go server, each saying why. Settings lists them
+  with their sizes, and removes them.
 - **Java and Kotlin.** Their servers read the project's Gradle or Maven build to understand it,
   which is one reason language servers need trust.
 
