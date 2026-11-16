@@ -152,8 +152,14 @@ test('⌘, opens Settings in one tab, and shows it again from anywhere; and Pull
 test('a change in Settings is written to the file, applied at once, and kept across a restart', async () => {
   // Not the theme the system is in, so the change shows.
   let other = 'dark';
-  // Whatever the file already holds that Lo doesn't know stays.
-  edit('{ "from.a.newer.lo": [1, { "a": true }] }\n');
+  // Whatever the file already holds stays as it is: its comments, and what Lo doesn't know.
+  const kept = `// Kept by hand.
+// Lo reads comments,
+// and a comma after the last key.
+{
+  "from.a.newer.lo": [1, { "a": true }], // A newer Lo's.
+`;
+  edit(`${kept}}\n`);
   const first = await launch();
   try {
     const { page } = first;
@@ -163,21 +169,14 @@ test('a change in Settings is written to the file, applied at once, and kept acr
     await theme(page, other === 'dark' ? 'Dark' : 'Light').click();
     await wears(page, other);
     await expect(theme(page, other === 'dark' ? 'Dark' : 'Light')).toBeChecked();
-    expect(saved()).toEqual({ 'from.a.newer.lo': [1, { a: true }], theme: other });
+    // Each setting is added after the last key, as a person would add it.
+    expect(file()).toBe(`${kept}  "theme": "${other}",\n}\n`);
 
     await expect(sizeLimit(page)).toHaveValue('10');
     await sizeLimit(page).fill('20');
     await page.keyboard.press('Enter');
-    await expect.poll(saved).toEqual({
-      'from.a.newer.lo': [1, { a: true }],
-      theme: other,
-      'cache.cap': 20,
-    });
+    await expect.poll(file).toBe(`${kept}  "theme": "${other}",\n  "cache.cap": 20,\n}\n`);
     await expect(problems(page)).toHaveCount(0);
-    // Written whole, as JSON a person can read.
-    expect(file()).toBe(
-      `${JSON.stringify({ 'from.a.newer.lo': [1, { a: true }], theme: other, 'cache.cap': 20 }, null, 2)}\n`,
-    );
   } finally {
     await first.app.close();
   }

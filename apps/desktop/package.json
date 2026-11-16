@@ -29,6 +29,7 @@
     "@lo/syntax": "workspace:*",
     "@lo/ui": "workspace:*",
     "@withlo/overview": "workspace:*",
+    "jsonc-parser": "3.3.1",
     "react": "19.3.1",
     "react-dom": "19.3.1",
     "undici": "8.12.4",

@@ -285,13 +285,15 @@ the window find them with `import.meta.glob`.
 - `settings.ts` declares the settings the feature has, each with
   `defineSetting(key, schema, default, accepts)` from `settings/contract.ts`: a flat key
   (`diff.layout`), what its value may be as a Zod schema, the value without one, and what it accepts
-  in words. The settings feature reads `settings.json` from the config folder, watches it, reports a
-  value a schema refuses and uses the default, keeps every key no feature declared, and writes the
-  file whole, atomically, only after main has checked the value again. Main reaches the values
-  through the settings feature's `service.ts` (`use(settings).watch(setting, listener)`, which also
-  declares the setting), the window through its `window/shared.ts` (`useSetting`, `changeSetting`),
-  where a feature puts its section of Settings in the `settings.sections` slot with `defineSection`.
-  A setting declared with `{ window: 'read' }`, such as which repositories are trusted, the window
+  in words. The settings feature reads `settings.json` from the config folder as JSON with comments
+  and trailing commas (`jsonc-parser`), watches it, reports a value a schema refuses and uses the
+  default, and keeps every key no feature declared. To change a setting, only after main has checked
+  the value again, it edits that key's value in the file's text, keeping every comment and space
+  around it, and writes the file whole, atomically. Main reaches the values through the settings
+  feature's `service.ts` (`use(settings).watch(setting, listener)`, which also declares the
+  setting), the window through its `window/shared.ts` (`useSetting`, `changeSetting`), where a
+  feature puts its section of Settings in the `settings.sections` slot with `defineSection`. A
+  setting declared with `{ window: 'read' }`, such as which repositories are trusted, the window
   shows but can't change: `settings.set` refuses it as `unwritable`, and only main writes it, with
   `use(settings).update(setting, change)`. `docs/settings.md` lists every setting; a test fails when
   one is missing.

@@ -10,12 +10,15 @@ Lo's.
 ## The file
 
 The file is one JSON object, with each setting's key written out whole: `"diff.layout": "inline"`,
-not a `diff` object holding `layout`.
+not a `diff` object holding `layout`. As in most editors' settings files, it can have comments, `//`
+to the end of a line and `/* */` around any text, and a comma after the last entry of an object or a
+list.
 
-```json
+```jsonc
+// Lo's settings.
 {
-  "theme": "dark",
-  "cache.cap": 20
+  "theme": "dark", // Easier at night.
+  "cache.cap": 20,
 }
 ```
 
@@ -23,17 +26,25 @@ not a `diff` object holding `layout`.
 - **A value Lo can't use is reported and ignored.** Settings says which setting, what it takes and
   what Lo uses instead, and the rest of the file applies as it is. The value stays in the file for
   you to fix.
-- **A file that isn't JSON** (a missing comma, a comment) is reported, and Lo goes on with the
-  settings it had. It changes nothing in the file until it's fixed, so Settings never writes over
-  what you typed.
-- **Keys Lo doesn't know are kept** when Settings changes a setting, so a file shared with another
-  version of Lo stays whole. Settings writes the file whole, as JSON with two-space indents.
+- **A file Lo can't read as JSON** (a missing comma, say, or a comment that isn't closed) is
+  reported, with the line and column where Lo found the problem, and Lo goes on with the settings it
+  had. It changes nothing in the file until it's fixed, so Settings never writes over what you
+  typed.
+- **Settings changes only the setting's value.** Your comments, the order of the keys, the spacing,
+  a byte order mark and the keys Lo doesn't know stay as they are, so a file shared with another
+  version of Lo stays whole. A setting the file doesn't have yet goes after the last: on a line of
+  its own, indented as the others are (two spaces in a new file), or on the same line in an object
+  written on one, with a comma after it if the last one has one. Lo writes the new value whole, so a
+  comment inside the old one, as in `code.trusted`'s list, goes with it.
+- **A setting given more than once** is read as the last one says, as JavaScript and VS Code read
+  JSON, and Settings reports it. Lo won't change that setting until the file has it once, since with
+  two the file says one thing where you might read another. It changes the others as usual.
 - **A save of yours is never written over.** Settings reads the file as it is when you change a
   setting, and if you save it again before the change is written, it reads it again and makes the
   change on top of your save.
 - **A link to a file is followed.** A settings file kept with other dotfiles stays a link, and the
   file it leads to is the one Lo reads, watches and replaces.
-- The file is read up to 1 MiB.
+- The file is read up to 1 MiB, with objects and lists nested up to 100 levels deep.
 - **Which repos you trust changes only through Lo's own dialog.** Lo adds one to `code.trusted` once
   you say "Trust" there, and takes one out once you remove it in Settings. You can still edit the
   file.
