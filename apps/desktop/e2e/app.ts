@@ -2,6 +2,7 @@ import { chmodSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { createServer as createHttpServer } from 'node:http';
 import { createServer } from 'node:net';
 import { createRequire } from 'node:module';
+import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { buffer } from 'node:stream/consumers';
 import { fileURLToPath } from 'node:url';
@@ -17,6 +18,8 @@ import {
   type Locator,
   type Page,
 } from '@playwright/test';
+
+import { liveArgs, liveDataFolder } from './live.ts';
 
 /**
  * How long the window holds back what a tab shows first, in a test that isn't about that bound:
@@ -42,7 +45,8 @@ function binary(path: unknown): string {
 
 /**
  * Chromium's stand-ins for the system's keychain, so tests never touch a real one: the Mac's
- * stand-in keychain, and Linux's fallback store. Lo takes either only in a test run.
+ * stand-in keychain, and Linux's fallback store. Lo takes either only in a test run. Playwright
+ * adds both to every Electron it starts as well, and a live run takes them off (`live`).
  */
 export const KEYCHAIN =
   process.platform === 'darwin' ? ['--use-mock-keychain'] : ['--password-store=basic'];
@@ -178,7 +182,14 @@ interface Fixtures {
    * the page's frames, which recording slows.
    */
   traced: boolean;
-  /** Lo, started on an empty data folder with Chromium's sandbox on. */
+  /**
+   * Whether Lo runs live, for a run on GitHub itself that no test in the suite makes: with the
+   * system's keychain rather than Chromium's stand-in for it, and its data in the folder
+   * `LO_USER_DATA_DIR` names, which the run must set, outside the data of any Lo someone uses
+   * (`liveDataFolder`). `testing/README.md` says how.
+   */
+  live: boolean;
+  /** Lo, started on the test's own empty data folder, or a live run's, with Chromium's sandbox on. */
   app: ElectronApplication;
   /** Lo's window, once its page has loaded and the window has drawn. */
   page: Page;
@@ -190,9 +201,12 @@ export const test = base.extend<Fixtures>({
   traced: [true, { option: true }],
   keymap: [undefined, { option: true }],
   settings: [undefined, { option: true }],
-  app: async ({ launch, keymap, settings, traced, holdLimit }, use, testInfo) => {
-    const { env, ...options } = launch;
-    const data = dataFolder();
+  live: [false, { option: true }],
+  app: async ({ launch, keymap, settings, traced, holdLimit, live }, use, testInfo) => {
+    const { env, args = [appFolder], ...options } = launch;
+    const data = live
+      ? liveDataFolder({ platform: process.platform, home: homedir(), env: process.env })
+      : dataFolder();
     writeEditor(data);
     writeBrowser(data);
     if (keymap !== undefined) {
@@ -204,8 +218,14 @@ export const test = base.extend<Fixtures>({
       writeFileSync(settingsPath(data), settings);
     }
     const app = await electron.launch({
-      args: [appFolder],
-      env: { ...appEnvironment(data), LO_HOLD_LIMIT_MS: String(holdLimit), ...env },
+      args: live ? liveArgs(args) : args,
+      env: {
+        ...appEnvironment(data),
+        LO_HOLD_LIMIT_MS: String(holdLimit),
+        ...env,
+        // A live run's data stays in its own folder, whatever else it's started with.
+        ...(live ? { LO_USER_DATA_DIR: data } : {}),
+      },
       // Playwright turns the sandbox off on Linux unless asked; Lo must run with it.
       chromiumSandbox: true,
       ...options,

@@ -272,6 +272,52 @@ each request and cancel, Lo's replies to its requests, and each sleeper started.
 arguments and report to start it with, and `readReport` reads what it saw. It's the only server
 tests start.
 
+## Running the app on GitHub itself
+
+The app's tests (`apps/desktop/e2e/`) start Lo through Playwright, which adds Chromium's stand-ins
+for the system's keychain to every Electron it starts: `--use-mock-keychain` on a Mac, and
+`--password-store=basic` on Linux. Both encrypt with a key every copy of Chromium knows, so a token
+kept with them is as good as plain text, and Lo keeps or reads one with them only in a test run, one
+on `LO_GITHUB`. On GitHub itself, Lo started with a stand-in refuses to sign in, and can't read a
+token it kept with the system's keychain.
+
+A run on GitHub itself is a spec of its own that asks for the harness's `live` option:
+
+```ts
+import { test } from './app.ts';
+
+test.use({ live: true });
+```
+
+Lo then starts with the system's keychain: `e2e/keychain.cjs`, preloaded after Playwright's own
+preload, takes the stand-ins off again. It keeps its data in the folder `LO_USER_DATA_DIR` names,
+which the run must set to an absolute path outside the data of any Lo you use: the harness refuses
+to start Lo without one, or in the installed Lo's folder, `Lo Dev`'s or `~/.config/lo`. Sign in
+there first with a build run from source, which keeps its data in the same folder, then run the spec
+by its name:
+
+```sh
+LO_USER_DATA_DIR=<folder> pnpm nx run desktop:start
+LO_USER_DATA_DIR=<folder> pnpm nx run desktop:e2e -- <spec>
+```
+
+Keep the spec out of the suite: CI runs every spec in `e2e/`, and a live one refuses to start there.
+The rest is as in a test, unless the spec's `launch` says otherwise: the stand-ins for the editor
+and the browser, and no gh.
+
+On a Mac, the key Lo encrypts tokens with is the item `Lo Dev Safe Storage` in your login keychain,
+which Chromium makes the first time it needs it, and which every build run from source shares,
+`desktop:dev` and `desktop:start` too. Once you're done, delete the run's data folder, which holds
+its tokens, encrypted with that key. Delete the item too, unless another build run from source keeps
+tokens with it, since that build then can't read them:
+
+```sh
+security delete-generic-password -s 'Lo Dev Safe Storage'
+```
+
+On Linux, the desktop's keyring, such as GNOME Keyring or KWallet, keeps the key instead. Remove it
+with the keyring's own tool.
+
 ## The credential scan
 
 `test/fixtures.test.ts` checks every file under `fixtures/` the way the recorder checks a new one,
