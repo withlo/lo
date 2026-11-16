@@ -157,6 +157,19 @@ describe('TabBar', () => {
     expect(settings).toContain('Settings');
     expect(settings).toContain('aria-label="Close tab"');
   });
+
+  it('names a merge queue by its repository and branch, the branch without bidi controls', () => {
+    const markup = renderToStaticMarkup(
+      <TabBar
+        tabs={[{ kind: 'queue', id: 'q', repo: 'atlas-api', branch: 'main\u202E' }]}
+        selected="q"
+      />,
+    );
+    const [queue] = tabsIn(markup);
+    expect(queue).toContain('atlas-api');
+    expect(queue).toContain('Merge queue · main<');
+    expect(queue).toContain('aria-label="Close tab"');
+  });
 });
 
 /** The ids of `list`, in order. */

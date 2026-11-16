@@ -40,9 +40,16 @@ const fd = { kind: 'pull', owner: 'sharkdp', repo: 'fd', number: 2212 } as const
 const bat = { kind: 'pull', owner: 'sharkdp', repo: 'bat', number: 7 } as const;
 const lo = { kind: 'pull', owner: 'withlo', repo: 'lo', number: 1 } as const;
 
-/** A tab as a short name: `fd#2212`, `settings` or `recent`. */
+/** A tab as a short name: `fd#2212`, `settings`, `recent` or `fd queue main as tess`. */
 function nameOf(tab: Tab): string {
-  return tab.kind === 'pull' ? `${tab.repo}#${tab.number}` : tab.kind;
+  if (tab.kind === 'pull') return `${tab.repo}#${tab.number}`;
+  if (tab.kind === 'queue') return `${tab.repo} queue ${tab.branch} as ${tab.login}`;
+  return tab.kind;
+}
+
+/** fd's merge queues for `branch`, as `login` reads them. */
+function queue(branch: string, login = 'tess') {
+  return { kind: 'queue', owner: 'sharkdp', repo: 'fd', branch, login } as const;
 }
 
 /** Each tab's short name, the one on screen starred. */
@@ -391,6 +398,104 @@ describe('restoring the tabs', () => {
     expect(() => tabs.open(bat)).toThrow('no such table: tab_tabs');
     expect(names(tabs.list())).toEqual(['*fd#2212']);
     expect(heard).toEqual([]);
+  });
+});
+
+describe('a repository’s merge queues', () => {
+  it('open in one tab for each repository and account, at the branch asked for', () => {
+    const { tabs } = tabsOn(database());
+    expect(tabs.open(queue('main'))).toBe('t1');
+    tabs.open(fd);
+    expect(tabs.open(queue('release/2.8'))).toBe('t1');
+    expect(tabs.open({ ...queue('main', 'TESS'), owner: 'SharkDP' })).toBe('t1');
+    expect(tabs.open(queue('main', 'ravi'))).toBe('t3');
+    expect(names(tabs.list())).toEqual([
+      'fd queue main as tess',
+      'fd#2212',
+      '*fd queue main as ravi',
+    ]);
+  });
+
+  it('come back after a restart at the branch they showed, one tab for each', () => {
+    const on = database();
+    const before = tabsOn(on).tabs;
+    before.open(queue('main'));
+    before.open(fd);
+    before.open(queue('release/2.8'));
+    const after = tabsOn(on).tabs;
+    expect(after.list()).toEqual(before.list());
+    expect(names(after.list())).toEqual(['*fd queue release/2.8 as tess', 'fd#2212']);
+
+    on.prepare(
+      'INSERT INTO tab_tabs (id, position, kind, owner, repo, active, login, branch) VALUES (?, ?, ?, ?, ?, 0, ?, ?)',
+    ).run('again', 5, 'queue', 'SHARKDP', 'fd', 'tess', 'main');
+    const logged: string[] = [];
+    const again = createTabs({ database: on, changed: () => {}, log: (line) => logged.push(line) });
+    expect(names(again.list())).toEqual(['*fd queue release/2.8 as tess', 'fd#2212']);
+    expect(logged).toEqual(['Lo left out a second tab for what t1 shows (again).']);
+  });
+
+  it('are read back as carefully as any outside value', () => {
+    const on = database();
+    const insert = on.prepare(
+      'INSERT INTO tab_tabs (id, position, kind, owner, repo, active, login, branch) VALUES (?, ?, ?, ?, ?, 0, ?, ?)',
+    );
+    insert.run('branch', 0, 'queue', 'sharkdp', 'fd', 'tess', 'no..branch');
+    insert.run('login', 1, 'queue', 'sharkdp', 'fd', 'not a login!', 'main');
+    insert.run('repo', 2, 'queue', 'sharkdp', '..', 'tess', 'main');
+    const logged: string[] = [];
+    const tabs = createTabs({ database: on, changed: () => {}, log: (line) => logged.push(line) });
+    expect(names(tabs.list())).toEqual(['*recent']);
+    expect(logged).toHaveLength(3);
+  });
+
+  it('need their branch and account kept, and keep no pull request', () => {
+    const on = database();
+    const insert = (values: (string | number | null)[]) =>
+      on
+        .prepare(
+          'INSERT INTO tab_tabs (id, position, kind, owner, repo, number, login, branch) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+        )
+        .run(...values);
+    const refused = 'CHECK constraint failed';
+    expect(() => insert(['a', 0, 'queue', 'sharkdp', 'fd', null, 'tess', null])).toThrow(refused);
+    expect(() => insert(['b', 0, 'queue', 'sharkdp', 'fd', null, null, 'main'])).toThrow(refused);
+    expect(() => insert(['c', 0, 'queue', 'sharkdp', 'fd', 1, 'tess', 'main'])).toThrow(refused);
+    expect(() => insert(['d', 0, 'pull', 'sharkdp', 'fd', 1, null, 'main'])).toThrow(refused);
+    expect(() => insert(['e', 0, 'settings', 'sharkdp', 'fd', null, null, null])).toThrow(refused);
+  });
+});
+
+describe('the migration that adds merge queues’ tabs', () => {
+  it('keeps every tab kept before it as it was', () => {
+    const before = Object.fromEntries(
+      Object.entries(migrations).filter(([path]) => !path.endsWith('004-queue.sql')),
+    );
+    const on = openDatabase(':memory:');
+    migrate(on, before);
+    const insert = on.prepare(
+      'INSERT INTO tab_tabs (id, position, kind, owner, repo, number, title, state, active, login, repository, layer) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    );
+    insert.run(
+      'fd',
+      0,
+      'pull',
+      'sharkdp',
+      'fd',
+      2212,
+      'Honor jemalloc',
+      'open',
+      0,
+      'tess',
+      'sharkdp/fd',
+      2213,
+    );
+    insert.run('s', 1, 'settings', null, null, null, null, null, 1, null, null, null);
+    const rows = on.prepare('SELECT * FROM tab_tabs ORDER BY position').all();
+    migrate(on, migrations);
+    expect(on.prepare('SELECT * FROM tab_tabs ORDER BY position').all()).toEqual(
+      rows.map((row) => ({ ...row, branch: null })),
+    );
   });
 });
 

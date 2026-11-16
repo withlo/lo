@@ -22,6 +22,8 @@ function nameOf(tab: Tab): string {
       return 'Recent pull requests';
     case 'settings':
       return 'Settings';
+    case 'queue':
+      return `${tab.repo} merge queue for ${tab.branch}`;
     default:
       tab satisfies never;
       throw new Error(`A tab of an unknown kind: ${JSON.stringify(tab)}.`);

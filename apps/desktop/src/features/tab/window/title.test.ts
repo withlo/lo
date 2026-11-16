@@ -70,7 +70,7 @@ describe("the window's title", () => {
     expect(withoutBidi('שלום \u200F1\u061C')).toBe('שלום \u200F1\u061C');
   });
 
-  it('is the pull request on screen’s, and Lo’s name while another kind of tab is', () => {
+  it('is the pull request or merge queue on screen’s, and Lo’s name while another kind of tab is', () => {
     expect(windowTitle({ id: 'a', kind: 'pull', owner: 'sharkdp', repo: 'fd', number: 2212 })).toBe(
       'sharkdp/fd#2212',
     );
@@ -85,6 +85,16 @@ describe("the window's title", () => {
         state: 'open',
       }),
     ).toBe('sharkdp/fd#2212 — Honor explicit use-jemalloc requests');
+    expect(
+      windowTitle({
+        id: 'q',
+        kind: 'queue',
+        owner: 'rozed-dev',
+        repo: 'e2e',
+        branch: 'e4/queued\u202E',
+        login: 'rozed-bot',
+      }),
+    ).toBe('rozed-dev/e2e — Merge queue · e4/queued');
     expect(windowTitle({ id: 'recent', kind: 'recent' })).toBe('Lo');
     expect(windowTitle({ id: 's', kind: 'settings' })).toBe('Lo');
     expect(windowTitle(undefined)).toBe('Lo');

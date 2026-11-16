@@ -4,10 +4,12 @@ import {
   choice,
   COPY_LIMIT,
   contract,
+  isBranchName,
   isGithubPage,
   onScreen,
   opening,
   pull,
+  queueOpening,
   tab,
   viewIds,
   viewsOnScreen,
@@ -37,6 +39,50 @@ describe("the tab feature's contract", () => {
       { kind: 'settings', section: 'keys' },
     ];
     expect(refused.filter((input) => opening.safeParse(input).success)).toEqual([]);
+  });
+
+  it('opens a merge queue only from main, for a branch git allows', () => {
+    const queue = {
+      kind: 'queue',
+      owner: 'sharkdp',
+      repo: 'fd',
+      branch: 'release/2.8',
+      login: 'tess-okafor',
+    };
+    // The window opens no merge queue itself: main chooses the account it reads as.
+    expect(opening.safeParse(queue).success).toBe(false);
+    expect(queueOpening.parse(queue)).toEqual(queue);
+    expect(queueOpening.safeParse({ ...queue, repo: '..' }).success).toBe(false);
+    expect(
+      ['main', 'release/2.8', 'feat/ünïcode', 'a@b', 'e4/queued'].filter(
+        (name) => !isBranchName(name),
+      ),
+    ).toEqual([]);
+    expect(
+      [
+        '',
+        '@',
+        '/main',
+        'main/',
+        'a..b',
+        'a//b',
+        'a b',
+        'a~1',
+        'a^',
+        'a:b',
+        'a?',
+        'a*',
+        'a[b',
+        'a\\b',
+        'a@{1}',
+        '.hidden',
+        'x/.hidden',
+        'main.lock',
+        'main.',
+        'tab\there',
+        'nul\u0000',
+      ].filter(isBranchName),
+    ).toEqual([]);
   });
 
   it('shows a tab by its id, its place, the last or a step, one at a time', () => {
