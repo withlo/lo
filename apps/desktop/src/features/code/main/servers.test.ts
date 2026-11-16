@@ -544,7 +544,8 @@ describe('Lo’s own servers', () => {
     onTestFinished(() => pool.stop());
     pool.sync([view('v1', 'a/x', 1, SHIPPED)], 'v1');
     await settle();
-    expect(specs.map((spec) => spec.name)).toEqual(['TypeScript', 'Python']);
+    // PHP's starts first, since it waits for one download, not Node's as well.
+    expect(specs.map((spec) => spec.name)).toEqual(['PHP', 'TypeScript', 'Python']);
     for (const spec of specs) {
       expect(serverEnvironment({ ...spec, roots: [spec.root] })).toEqual({
         GIT_CONFIG_COUNT: '0',
