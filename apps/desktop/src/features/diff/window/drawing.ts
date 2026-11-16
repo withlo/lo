@@ -370,12 +370,12 @@ export function draw(options: DrawOptions): Drawing {
 
   /**
    * The reader goes into a file, as from moved code: acted on, and kept out with its lines come, as
-   * the local copy's do while it's on screen, brought in now, as `za` brings it.
+   * the local copy's do, brought in now and shown, as `za` brings it: whether it waits to come in,
+   * while it's on screen, or stays out, as one the reader marked viewed here does.
    */
   const enter = (id: string) => {
-    const waiting = pending.get(id);
     acted(id);
-    if (waiting?.change === 'bring') apply(id, 'bring', waiting.start, true);
+    if (drawn.get(id) === 'out' && loader.shown(id)) apply(id, 'bring', 'shown', true);
   };
 
   /** Makes a change to a file now, `onScreen` or not. Returns whether it could. */
