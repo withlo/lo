@@ -149,8 +149,7 @@ type Pace = 'run' | 'alone' | 'first';
  * measures what it changed before the next one is.
  */
 export class Pacer {
-  readonly #tasks: { readonly task: () => void; readonly pace: Pace; readonly label: string }[] =
-    [];
+  readonly #tasks: { readonly task: () => void; readonly pace: Pace }[] = [];
   #frame: number | undefined;
   #timer: ReturnType<typeof setTimeout> | undefined;
   #stopped = false;
@@ -179,23 +178,12 @@ export class Pacer {
 
   #add(task: () => void, pace: Pace): void {
     if (this.#stopped) return;
-    const label = (new Error().stack ?? '')
-      .split('\n')
-      .slice(3, 5)
-      .map((line) =>
-        line
-          .trim()
-          .replace(/^at /, '')
-          .replace(/ \(.*$/, '')
-          .replace(/lo-app:\/\/app\/assets\/[^:]+:/, ''),
-      )
-      .join('<');
     let at = this.#tasks.length;
     if (pace === 'first') {
       at = this.#tasks.findIndex((waiting) => waiting.pace !== 'first');
       if (at === -1) at = this.#tasks.length;
     }
-    this.#tasks.splice(at, 0, { task, pace, label });
+    this.#tasks.splice(at, 0, { task, pace });
     this.#next();
   }
 
@@ -217,24 +205,14 @@ export class Pacer {
 
   readonly #pump = (): void => {
     this.#timer = undefined;
-    const t0 = performance.now();
-    const until = t0 + 4;
-    const ran: string[] = [];
-    for (let count = 0; this.#tasks.length > 0 && performance.now() < until; count++) {
-      const { task, pace, label } = this.#tasks[0]!;
-      if (pace === 'alone' && count > 0) break;
+    const until = performance.now() + 4;
+    for (let ran = 0; this.#tasks.length > 0 && performance.now() < until; ran++) {
+      const { task, pace } = this.#tasks[0]!;
+      if (pace === 'alone' && ran > 0) break;
       this.#tasks.shift();
       task();
-      ran.push(`${pace}:${label}`);
       if (pace === 'alone') break;
     }
-    const t1 = performance.now();
-    queueMicrotask(() => {
-      const existing: unknown = Reflect.get(window, 'loShares');
-      const log: unknown[] = Array.isArray(existing) ? existing : [];
-      Reflect.set(window, 'loShares', log);
-      log.push({ at: t0, tasks: t1 - t0, total: performance.now() - t0, ran });
-    });
     if (this.#tasks.length > 0) this.#next();
   };
 }
