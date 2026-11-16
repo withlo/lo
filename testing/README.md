@@ -248,10 +248,64 @@ has it, and only once `GET /user` says the token is rozed-bot's:
   request that was closed, puts back each one's title, description and base, and deletes the
   comments and pending reviews a test wrote on them.
 
-The three share `fixtures/code-lib.sh`. `code.sh` and `code-hostile.sh` take `--local <folder>`,
-which builds the same commits, with the IDs GitHub has, into `<folder>/rozed-dev/e2e.git` and
-`<folder>/work` and reads no network, as the other fixtures do. Run again, they put the branches
-back and open a closed pull request.
+The three share `fixtures/code-lib.sh`, as does `merge.sh` below. `code.sh` and `code-hostile.sh`
+take `--local <folder>`, which builds the same commits, with the IDs GitHub has, into
+`<folder>/rozed-dev/e2e.git` and `<folder>/work` and reads no network, as the other fixtures do. Run
+again, they put the branches back and open a closed pull request.
+
+The pull requests the merging features are tried on come from `fixtures/merge.sh`. A merge can't be
+undone, so it makes them in numbered generations, `merge.sh <generation>`, and what merges, queues
+or removes one uses it up: make the next generation for the next recording or check, and name the
+one a recording used in its `cassette.json`. It runs as rozed-bot with `LO_FIXTURE_TOKEN_FILE`, as
+`code.sh` does, and writes only to rozed-dev/e2e. A generation has branches under
+`merge/<generation>/`, pull requests titled `Fixture M<generation>: …`, and every file it adds in a
+folder of that name, so a merge into another fixture's base never makes its pull requests conflict,
+and each generation's commits differ from the last. Its pull requests:
+
+- on `merge/<generation>/base`, which no ruleset covers: `squash`, `merge` and `rebase`, ready, one
+  for each way to merge (the first and last have two commits); `conflict`; `draft`; `stack-1` and
+  `stack-2`, which it makes a GitHub stack; `chain-1` and `chain-2`, which sit on each other by
+  their base branch alone; and `moved`, the one `merge.sh <generation> --push` adds a commit to,
+  once, for a merge whose head moved after it was shown;
+- on `e4/gated`, which E4's ruleset gives a required `ci`, an approval from a code owner and every
+  conversation resolved: `gated-failing`, with `ci` failing and an unresolved conversation, and
+  `gated-passing`, with `ci` passing, so it waits only for an approval;
+- on `e4/queued`, which E4's ruleset gives a required `ci` and a merge queue: `queued-pass`, two
+  slow ones (`ci` passes after ten minutes) and `queued-fail`, which passes on the pull request and
+  fails in the queue. Each picks `ci`'s result with its `ci-result` file;
+- on `merge/<generation>/override`: `overridden`, under the "Merge override" ruleset, which requires
+  an approval and lets the repository's admins bypass it, so rozed-bot, an admin, can merge it past
+  the rule. Its one target is `refs/heads/merge/*/override`, so no other branch has a rule because
+  of it. The script makes it once, if the repository has none by that name.
+
+It reads before it writes, and stops unless the repository is as it expects: rozed-bot is an admin
+of it, merge commits, squashes and rebases are all allowed, "Automatically delete head branches" is
+off (with it on, GitHub moves a chain's upper layer itself when the layer below merges, and a merged
+pull request's branch is gone), the `ci` workflow is active on `main`, E4's two rulesets are as they
+were recorded, the repository has no other ruleset, and `e4/gated` and `e4/queued` still hold the
+commit its pull requests into them are cut from. It says whether "Allow auto-merge" is on, which a
+repository's owner turns on and it never does. `--check` stops after those reads.
+
+It never replaces or deletes a branch: a branch that isn't as it makes it, or a pull request that
+was closed or merged, is said and left alone, and run again for a generation it adds only what's
+missing. It never touches `main`, `code/*`, rozed-bot's fork or another fixture's branches or pull
+requests, and never changes E4's rulesets.
+
+`merge.sh --local <folder> <generation> [--push]` builds the same commits into
+`<folder>/rozed-dev/e2e.git` and `<folder>/work` and reads no network, for a generation whose
+numbers the script has. `writeMergeRemote(folder, generation, { pushed })` from `@lo/testing/git`
+builds it as a remote for `LO_GIT_REMOTE`, `MERGE_PULLS` names each recorded generation's pull
+requests, with their numbers, heads and bases, and `pushed` adds the commit `--push` does. A base
+GitHub merged into can't be rebuilt with its ID, so the remote keeps `merge/<generation>/base` as it
+was made, and no spec fetches what GitHub built. The pull requests into `e4/gated` and `e4/queued`
+are cut from commits GitHub made, which can't be built, so in the remote they sit on a stand-in
+commit and have other IDs than `MERGE_PULLS` gives, which are GitHub's; every other head is the
+commit GitHub has.
+
+To record a generation: run `merge.sh <generation>`, which prints each pull request's number and
+head, add them to `recorded_numbers` in the script and to `MERGE_PULLS`, and take `pushed` from
+`merge.sh --local <folder> <generation> --push`. Generation 1 is rozed-dev/e2e#101 to #117, with
+GitHub stack #118. Its repository didn't allow auto-merge when it was made.
 
 ## The fake language server
 

@@ -1,8 +1,8 @@
 # shellcheck shell=bash
-# What the code features' fixture scripts share: `code.sh`, `code-hostile.sh` and `code-reset.sh`
-# source it. It has git's environment for building commits that come out the same on any machine,
-# the helpers that write files and commits, and what talks to GitHub as rozed-bot: its API, a push,
-# and opening a pull request.
+# What the fixture scripts that write to GitHub share: `code.sh`, `code-hostile.sh`,
+# `code-reset.sh` and `merge.sh` source it. It has git's environment for building commits that come
+# out the same on any machine, the helpers that write files and commits, and what talks to GitHub as
+# rozed-bot: its API, a push, and opening a pull request.
 #
 # Everything that writes to GitHub goes to rozed-dev/e2e, or to rozed-bot's fork of it, and only
 # once GET /user has said the token is rozed-bot's. The token is read from the file
