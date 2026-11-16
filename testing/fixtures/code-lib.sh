@@ -36,8 +36,41 @@ code_setup() {
   umask 022
 }
 
-# Runs git in the working copy, `work`. Nothing here runs git anywhere else, so a repository
-# planted in a folder of it is never opened.
+# Fails, saying why, when <folder>, which `--local` builds in, is inside a git work tree: the tools
+# run there, git and Nx among them, would take what's built for the repository's own, and load what
+# the hostile fixture plants. git is asked in the nearest folder that exists, and each folder above
+# <folder> is looked at for a `.git`, so one that doesn't exist yet is covered. Run before anything
+# is made there.
+check_local_folder() {
+  local script=$1 folder=$2 dir top
+  case $folder in
+    /*) ;;
+    *) folder=$PWD/$folder ;;
+  esac
+  dir=$folder
+  while [ ! -d "$dir" ]; do dir=$(dirname "$dir"); done
+  top=$(
+    unset GIT_DIR GIT_WORK_TREE GIT_CEILING_DIRECTORIES
+    if [ "$(git -C "$dir" rev-parse --is-inside-work-tree 2>/dev/null)" = true ]; then
+      git -C "$dir" rev-parse --show-toplevel
+    fi
+  )
+  dir=$folder
+  while [ -z "$top" ]; do
+    if [ -e "$dir/.git" ]; then top=$dir; fi
+    if [ "$dir" = / ]; then break; fi
+    dir=$(dirname "$dir")
+  done
+  if [ -n "$top" ]; then
+    echo "$script: $2 is inside the git work tree $top, whose tools would load what's built there." >&2
+    echo "$script: build it in a folder of its own, outside every repository, such as \"\$(mktemp -d)\"." >&2
+    return 1
+  fi
+}
+
+# Runs git in the working copy, `work`. Nothing here runs git anywhere else but in the folder
+# `--local` builds in and those above it, before anything is built, so a repository planted in a
+# folder of the working copy is never opened.
 g() { git -C "$work" -c core.autocrlf=false -c core.fileMode=true -c commit.gpgSign=false "$@"; }
 
 # Writes stdin to <path> in the working copy, making its folder.

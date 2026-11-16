@@ -251,7 +251,9 @@ has it, and only once `GET /user` says the token is rozed-bot's:
 The three share `fixtures/code-lib.sh`. `code.sh` and `code-hostile.sh` take `--local <folder>`,
 which builds the same commits, with the IDs GitHub has, into `<folder>/rozed-dev/e2e.git` and
 `<folder>/work` and reads no network, as the other fixtures do. Run again, they put the branches
-back and open a closed pull request.
+back and open a closed pull request. They refuse a folder inside a git work tree, whether it exists
+yet or not, since git, Nx and the other tools run there would load what they build, the hostile
+fixture's plants among it: build them in a folder of their own, such as `"$(mktemp -d)"`.
 
 ## The fake language server
 
