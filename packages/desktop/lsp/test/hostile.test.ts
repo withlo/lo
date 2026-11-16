@@ -614,7 +614,7 @@ test('SourceKit-LSP refuses the checkout for its build servers and settings, and
     'lo-hostile-swift-build-plugin',
   );
   expect(await sourceKitCheckoutProblem(checkout)).toBe(
-    'The checkout’s .bsp names a build server to run, so Lo won’t run SourceKit-LSP on it.',
+    'The checkout’s .bsp names a build server to run.',
   );
 
   // Started on it all the same, with the fake server in its place, it's told of no workspace, runs

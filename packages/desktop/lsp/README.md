@@ -300,8 +300,9 @@ bar show its name, version and license, "Pyright 1.1.414 · MIT".
 
 Some files in a checkout steer a server's tools past the variables and settings Lo gives them, so a
 server doesn't start on, or move to, a checkout that holds one (`checkoutProblem` in
-`src/toolchains.ts`, and an adapter's `checkout`), and says why. Each walk of a checkout looks
-through its own folders, never through a link to one, which could lead anywhere on the disk.
+`src/toolchains.ts`, and an adapter's `checkout`), and says why: each gives the reason alone, and
+whoever shows it says first that Lo won't run the server. Each walk of a checkout looks through its
+own folders, never through a link to one, which could lead anywhere on the disk.
 
 - **.NET** (Roslyn). A `global.json` can send the SDK's commands, and MSBuild, to an SDK in the
   checkout, whatever the variables say: since .NET 10 its `sdk.paths` names folders to find an SDK

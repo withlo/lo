@@ -190,7 +190,8 @@ const READ_LIMIT = 1024 * 1024;
 
 /**
  * Why a server that uses toolchain `id` mustn't run on the checkout at `root`, or `undefined`
- * when it may:
+ * when it may. It's the reason alone, which never says Lo won't run the server: whoever shows it
+ * says that first. A server mustn't run on such a checkout:
  *
  * - for .NET, a `global.json` in the checkout, or in a folder above it, that could choose an SDK
  *   other than Lo's: one that names folders to look for an SDK in (`sdk.paths`), or that spells a
@@ -232,9 +233,9 @@ export async function checkoutProblem(
  */
 export const WALK_LIMIT = 100_000;
 
-/** Why a checkout with more than `limit` files and folders is refused, for `server`. */
-export function tooManyEntries(limit: number, server: string): string {
-  return `The checkout has more than ${limit.toLocaleString('en-US')} files and folders, more than Lo looks through, so Lo won’t run ${server} on it.`;
+/** Why a checkout with more than `limit` files and folders is refused. */
+export function tooManyEntries(limit: number): string {
+  return `The checkout has more than ${limit.toLocaleString('en-US')} files and folders, more than Lo looks through.`;
 }
 
 /**
@@ -319,7 +320,7 @@ function nameOf(root: string, file: string): string {
 
 async function dotnetProblem(root: string, limit: number): Promise<string | undefined> {
   const named = await filesNamed(root, 'global.json', limit);
-  if (named === undefined) return tooManyEntries(limit, 'a server that uses the .NET SDK');
+  if (named === undefined) return tooManyEntries(limit);
   for (const file of named.inside) {
     const why = await steers(file);
     if (why === undefined) continue;
@@ -399,18 +400,17 @@ const CARGO_CONFIGS = ['config.toml', 'config'];
  * reads, following a link, and Lo can't vet.
  */
 async function rustProblem(root: string, limit: number): Promise<string | undefined> {
-  const won = 'so Lo won’t run rust-analyzer on it.';
   const entries = await entriesOf(root, limit);
-  if (entries === undefined) return tooManyEntries(limit, 'rust-analyzer');
+  if (entries === undefined) return tooManyEntries(limit);
   for (const { path, folder } of entries) {
     const name = foldName(basename(path));
     if (name === 'rust-analyzer.toml' && !folder) {
-      return `${nameOf(root, path)} is a rust-analyzer.toml, whose settings win over Lo’s and could run a program, ${won}`;
+      return `${nameOf(root, path)} is a rust-analyzer.toml, whose settings win over Lo’s and could run a program.`;
     }
-    if (name === '.cargo' && !folder) return `${nameOf(root, path)} isn’t a plain folder, ${won}`;
+    if (name === '.cargo' && !folder) return `${nameOf(root, path)} isn’t a plain folder.`;
     if (CARGO_CONFIGS.includes(name) && foldName(basename(dirname(path))) === '.cargo') {
       const why = await cargoConfigProblem(path);
-      if (why !== undefined) return `${nameOf(root, path)} ${why}, ${won}`;
+      if (why !== undefined) return `${nameOf(root, path)} ${why}.`;
     }
   }
   for (let folder = dirname(root); ; folder = dirname(folder)) {
@@ -418,7 +418,7 @@ async function rustProblem(root: string, limit: number): Promise<string | undefi
       const file = join(folder, '.cargo', name);
       // Anything there, a link to a dotfile or a file Lo can't read included.
       if ((await lstat(file).catch(() => undefined)) !== undefined) {
-        return `${file} is a Cargo config above the checkout, which cargo reads, so Lo won’t run rust-analyzer on this checkout.`;
+        return `${file} is a Cargo config above the checkout, which cargo reads.`;
       }
     }
     if (dirname(folder) === folder) break;
@@ -459,7 +459,7 @@ async function cargoConfigProblem(file: string): Promise<string | undefined> {
 
 async function goProblem(root: string, limit: number): Promise<string | undefined> {
   const works = await filesNamed(root, 'go.work', limit);
-  if (works === undefined) return tooManyEntries(limit, 'a server that uses Go');
+  if (works === undefined) return tooManyEntries(limit);
   const { inside, above } = works;
   // Go takes a `go.work` above as it finds one, by `stat`, a link to a file included.
   for (const file of above) {

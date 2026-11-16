@@ -141,7 +141,8 @@ export interface Adapter {
   /**
    * Why its server mustn't run on the checkout at `folder`, by what it alone reads there, such as
    * the `.settings` at a checkout's root that Java's server would take as its own, or `undefined`
-   * when it may. What the toolchains it uses read there is asked besides.
+   * when it may. It's the reason alone: the status says first that Lo won't run the server. What
+   * the toolchains it uses read there is asked besides.
    */
   readonly checkout?: ((folder: string) => Promise<string | undefined>) | undefined;
   /** The toolchain of the system's it comes with, for one Lo doesn't download. */

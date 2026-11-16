@@ -442,11 +442,11 @@ export function declaredPackage(text: string): string | undefined {
  * Why JDT LS mustn't run on the checkout at `root`, or `undefined` when it may: a `.settings` at
  * its root, which JDT LS would link its project's settings to, so that it read them as its own and
  * wrote its own there. The disk may not tell names apart by case or Unicode form, so neither does
- * this ({@link foldName}).
+ * this ({@link foldName}). It's the reason alone, as `checkoutProblem`'s is.
  */
 export async function jdtlsCheckoutProblem(root: string): Promise<string | undefined> {
   const names = await readdir(root);
   const settings = names.find((name) => foldName(name) === '.settings');
   if (settings === undefined) return undefined;
-  return `Java isn’t available for a repository that commits Eclipse’s ${settings} folder at its root. Java’s server would read its settings from that folder, and write to it.`;
+  return `The repository commits Eclipse’s ${settings} folder at its root. Java’s server would read its settings from that folder, and write to it.`;
 }

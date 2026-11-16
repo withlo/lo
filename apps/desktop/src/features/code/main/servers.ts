@@ -17,9 +17,14 @@
 // - One on screen with no room waits in line, and the first in line starts as soon as a server
 //   stops, fails or is refused. "Restart" starts one if there's room, else puts it first in line.
 //   Room is held from the moment it's found until the server fails or stops, so one that waits,
-//   failed or was refused never holds any, and one started again keeps only the room it held.
-// - One refused on a checkout, as its toolchain's files there would steer it, holds and waits for
-//   no room, and is looked at again on its own once another head of its repository is on screen.
+//   failed or was refused never holds any, and one started again keeps only the room it held. A
+//   failed server's process holds none while it's stopped either, though the server starts again
+//   only once it's gone.
+// - Each is looked at as it's first wanted on a checkout, before it waits in line, and again just
+//   before it starts or moves there. One refused on a checkout, as its toolchain's files there
+//   would steer it, holds and waits for no room, and is looked at again on its own once another
+//   head of its repository is on screen. A look that fails refuses nothing: the server fails, and
+//   waits for "Restart".
 // - Each holds its repository in the cache from just before it starts until it has stopped, so
 //   cleanup removes nothing of it meanwhile: not the checkout it runs on, nor its home.
 //
@@ -152,8 +157,10 @@ export interface PoolOptions {
     ((repo: string, adapter: Adapter, signal: AbortSignal) => Promise<() => void>) | undefined;
   /**
    * Why `adapter`'s server mustn't run on the checkout at `folder`, such as a `global.json` there
-   * that could choose a .NET SDK other than Lo's, or `undefined` when it may. Asked before it
-   * starts there and before it moves there.
+   * that could choose a .NET SDK other than Lo's, or `undefined` when it may. It's the reason
+   * alone: the status says first that Lo won't run the server ({@link whyRefused}). Asked as the
+   * server is first wanted there, before it waits in line, and again before it starts there and
+   * before it moves there. One that throws couldn't look, which refuses nothing.
    */
   readonly checkout?:
     ((adapter: Adapter, folder: string) => Promise<string | undefined>) | undefined;
@@ -166,7 +173,10 @@ export interface PoolOptions {
 /** What a question finds of a view's server for a language: ready, or where it is instead. */
 export type Found =
   | { readonly kind: 'ready'; readonly server: Running }
-  /** It's on its way: downloading, unpacking, building, starting, or moving to this head. */
+  /**
+   * It's on its way: its checkout looked at, downloading, unpacking, building, starting, or moving
+   * to this head.
+   */
   | { readonly kind: 'starting' }
   /** It waits in line for room, as Lo runs `count` at once at most. */
   | { readonly kind: 'waiting'; readonly count: number }
@@ -180,6 +190,8 @@ export type Found =
   | { readonly kind: 'stopped' };
 
 type Phase =
+  /** Its checkout is looked at, before it waits in line there: it holds no room. */
+  | 'checking'
   /** Waiting in line for room: it holds none. */
   | 'waiting'
   /** Holding room while it gets what it starts as, or while an earlier server stops. */
@@ -200,7 +212,9 @@ interface Entry {
   server: Running | undefined;
   stopListening: (() => void) | undefined;
   /** The checkout it runs on, or will. */
-  root: Root | undefined;
+  root: Root;
+  /** The folder of the last checkout a look found it may run on: none once a look doesn't. */
+  checked: string | undefined;
   /** The checkout it's moving to, while it is, so it's asked nothing meanwhile. */
   moving: Root | undefined;
   /** Its download's progress, while there's one, and what's being done with what came. */
@@ -229,14 +243,27 @@ interface Entry {
 }
 
 /**
- * What a server's status says when Lo won't run it on a checkout, from what refused it: `reason`,
- * as is, when it says so itself ("…, so Lo won't run rust-analyzer on it."), else after a sentence
- * that does.
+ * What a server's status says when Lo won't run it on a checkout: that it won't, then why, as
+ * `reason`. What refused it gives the reason alone, so the first sentence is always said once.
  */
 export function whyRefused(name: string, reason: string): string {
-  const says = /\b(?:won[’']t run|isn[’']t available)\b/.test(reason);
-  return clip(says ? reason : `Lo won’t run ${name} on this checkout. ${reason}`);
+  return clip(`Lo won’t run ${name} on this checkout. ${reason}`);
 }
+
+/** What a failed server's status says when Lo couldn't look at its checkout. */
+function lookFailed(error: unknown): ServerState {
+  return {
+    kind: 'failed',
+    why: { kind: 'error', message: clip(`Lo couldn’t check this checkout (${describe(error)}).`) },
+  };
+}
+
+/** What a look at a checkout found: that the server may run there, why it mustn't, or neither. */
+type Look =
+  | { readonly kind: 'may' }
+  | { readonly kind: 'refused'; readonly reason: string }
+  /** Lo couldn't look, as for a read that failed: that refuses nothing. */
+  | { readonly kind: 'failed'; readonly error: unknown };
 
 export class ServerPool {
   readonly #options: PoolOptions;
@@ -293,7 +320,7 @@ export class ServerPool {
     const failed =
       entry.phase === 'failed' ||
       (entry.phase === 'running' && entry.server?.state.kind === 'failed');
-    if (entry.root?.folder !== folder && !failed) return undefined;
+    if (entry.root.folder !== folder && !failed) return undefined;
     entry.used = Date.now();
     switch (entry.phase) {
       case 'waiting':
@@ -304,6 +331,7 @@ export class ServerPool {
         return entry.problem?.kind === 'missing'
           ? { kind: 'missing', needs: entry.problem.needs }
           : { kind: 'failed' };
+      case 'checking':
       case 'preparing':
         return { kind: 'starting' };
       case 'running':
@@ -341,7 +369,8 @@ export class ServerPool {
   /**
    * Starts `repo`'s server `adapter` again, on `root`, as "Restart" asks: stopped first if it
    * runs, and able to start again by itself after a crash once more. Without room, it goes first in
-   * line. One refused is only looked at again, and goes first in line only if it may run there now.
+   * line. One refused, or not yet looked at there, is looked at first, and goes first in line only
+   * if it may run there.
    */
   async restart(repo: string, adapter: Adapter, root: Root): Promise<void> {
     if (!this.#allowed(repo, root)) return;
@@ -353,8 +382,8 @@ export class ServerPool {
     const entry = this.#entries.get(key) ?? this.#added(repo, adapter, root);
     if (entry.phase === 'ending') return;
     entry.restarted = false;
-    if (entry.phase === 'refused') {
-      await this.#lookAgain(entry, root, true);
+    if (entry.phase === 'checking' || entry.phase === 'refused') {
+      await this.#queue(entry, root, true);
       return;
     }
     this.#ends.first -= 1;
@@ -368,7 +397,7 @@ export class ServerPool {
    */
   async stopWhere(repo: string, stops: (pull: number | undefined) => boolean): Promise<void> {
     const ending = [...this.#entries.values()]
-      .filter((entry) => entry.repo === repo && stops(entry.root?.pull))
+      .filter((entry) => entry.repo === repo && stops(entry.root.pull))
       .map((entry) => this.#end(entry, 'trust in it went'));
     // And those still stopping on them, as one stopped for a restart elsewhere may be.
     const stopping = [...this.#stopping].filter((each) => each.repo === repo && stops(each.pull));
@@ -394,8 +423,12 @@ export class ServerPool {
       const { server, stopping } = entry;
       entry.server = undefined;
       entry.moving = undefined;
-      if (server) stops.push(this.#stopServer(entry, server, entry.root));
       if (stopping) stops.push(stopping);
+      if (server) {
+        // Kept, so "Restart" starts it again only once it has stopped.
+        entry.stopping = this.#stopServer(entry, server, entry.root);
+        stops.push(entry.stopping);
+      }
       entry.phase = 'failed';
       entry.progress = undefined;
       entry.problem = { kind: 'failed', why: { kind: 'error', message: clip(message) } };
@@ -435,9 +468,10 @@ export class ServerPool {
     if (screen?.trust === 'trusted' && root) {
       for (const adapter of screen.wants) {
         const entry = this.#entries.get(keyOf(screen.repo, adapter.id));
-        // One new joins the end of the line, and starts below if it's its turn.
-        if (!entry) this.#added(screen.repo, adapter, root);
-        else if (entry.phase !== 'ending' && entry.root?.folder !== root.folder) {
+        // One new is looked at, then joins the line, where it was put as it was first wanted, and
+        // starts if it's its turn.
+        if (!entry) void this.#queue(this.#added(screen.repo, adapter, root), root);
+        else if (entry.phase !== 'ending' && entry.root.folder !== root.folder) {
           void this.#move(entry, root);
         }
       }
@@ -469,7 +503,7 @@ export class ServerPool {
     return (
       screen !== undefined &&
       entry.repo === screen.repo &&
-      (entry.root?.pull === screen.pull || entry.moving?.pull === screen.pull)
+      (entry.root.pull === screen.pull || entry.moving?.pull === screen.pull)
     );
   }
 
@@ -496,32 +530,35 @@ export class ServerPool {
 
   /**
    * Starts those waiting for room on screen, first in line first, while there's room: once one
-   * finds none, nor would any after it. Each starts on the head on screen, once its old server, if
-   * it's waiting for one to stop, has.
+   * finds none, nor would any after it. Each starts on the head on screen. One whose old server is
+   * still stopping takes its turn all the same, and starts once that one has.
    */
   #handOn(): void {
     if (this.#stopped) return;
     const root = this.#screenView()?.root;
     if (!root) return;
     for (const entry of this.#inLine()) {
-      if (entry.stopping !== undefined) continue;
       entry.root = root;
       this.#launch(entry);
       if (entry.phase === 'waiting') return;
     }
   }
 
-  /** A server for `repo`'s `adapter`, on `root`, at the end of the line for room. */
+  /**
+   * A server for `repo`'s `adapter`, on `root`, given its place at the end of the line for room,
+   * which it takes once its checkout has been looked at.
+   */
   #added(repo: string, adapter: Adapter, root: Root): Entry {
     this.#ends.last += 1;
     const entry: Entry = {
       key: keyOf(repo, adapter.id),
       repo,
       adapter,
-      phase: 'waiting',
+      phase: 'checking',
       server: undefined,
       stopListening: undefined,
       root,
+      checked: undefined,
       moving: undefined,
       progress: undefined,
       problem: undefined,
@@ -558,11 +595,13 @@ export class ServerPool {
    * Stops `entry`'s `server`, on `root`, kept among those stopping until it has, and lets go of its
    * hold on its repository then, and of its room.
    */
-  #stopServer(entry: Entry, server: Running, root: Root | undefined): Promise<void> {
+  #stopServer(entry: Entry, server: Running, root: Root): Promise<void> {
+    // One that failed let its room go then.
+    const failed = server.state.kind === 'failed';
     const done = server.stop().catch((error: unknown) => {
       this.#options.log(`a language server's stop failed: ${describe(error)}`);
     });
-    const stopping: Stopping = { repo: entry.repo, pull: root?.pull, done };
+    const stopping: Stopping = { repo: entry.repo, pull: root.pull, failed, done };
     this.#stopping.add(stopping);
     void done.finally(() => {
       this.#stopping.delete(stopping);
@@ -609,6 +648,12 @@ export class ServerPool {
       return;
     }
     if (!(await this.#room(entry, run))) return;
+    // It starts once its server before has stopped, so two never run at once.
+    const { stopping } = entry;
+    if (stopping !== undefined) {
+      await stopping;
+      if (!this.#current(entry, run)) return;
+    }
     let prepared: Prepared;
     try {
       prepared = await this.#options.prepare(
@@ -689,12 +734,17 @@ export class ServerPool {
         void this.#end(entry, 'no trusted view on screen shows its head');
         return false;
       }
-      const refused = await this.#refusal(adapter, root);
+      const look = await this.#look(adapter, root);
       if (!this.#current(entry, run)) return false;
-      if (refused !== undefined) {
-        this.#refuse(entry, refused);
+      if (look.kind === 'refused') {
+        this.#refuse(entry, look.reason);
         return false;
       }
+      if (look.kind === 'failed') {
+        this.#couldNotLook(entry, root, look.error);
+        return false;
+      }
+      entry.checked = root.folder;
       if (entry.root === root && this.#allowed(entry.repo, root)) break;
       root = entry.root;
     }
@@ -749,36 +799,75 @@ export class ServerPool {
 
   /**
    * Marks `entry` refused on its checkout, for `reason`. It holds no room, so the next in line may
-   * start.
+   * start, and it gives up its place in line.
    */
   #refuse(entry: Entry, reason: string): void {
     entry.phase = 'refused';
     entry.problem = undefined;
     entry.refused = whyRefused(entry.adapter.name, reason);
     entry.progress = undefined;
+    entry.checked = undefined;
+    entry.line = undefined;
     this.#changed(entry);
     this.#handOn();
   }
 
   /**
-   * Looks again at whether `entry`, refused, may run on `root`, holding no room meanwhile, as once
-   * another head is on screen: still refused, it says why there; else it takes its turn in line,
-   * `first` for a restart.
+   * Marks `entry` failed, as Lo couldn't look at whether it may run on `root`, for `error`, which
+   * may pass, as a read that failed while the checkout was being cleaned up. That refuses nothing:
+   * it waits for "Restart".
    */
-  async #lookAgain(entry: Entry, root: Root, first = false): Promise<void> {
+  #couldNotLook(entry: Entry, root: Root, error: unknown): void {
+    this.#options.log(
+      `${entry.adapter.name} for ${entry.repo}: couldn't check ${root.folder}: ${describe(error)}`,
+    );
+    entry.checked = undefined;
+    this.#fail(entry, lookFailed(error));
+  }
+
+  /**
+   * Puts `entry` in line for room on `root`, `first` for a restart, else where it was if it had a
+   * place, else at the end: at once when a look there found it may run there, else once one has,
+   * and then it starts if it's its turn. Meanwhile it holds no room and isn't in line, so one
+   * refused there never waits; one refused before stays so, to say why, until the look ends. A
+   * look that fails leaves it failed.
+   */
+  async #queue(entry: Entry, root: Root, first = false): Promise<void> {
     entry.root = root;
-    entry.run += 1;
-    const { run } = entry;
-    const refused = await this.#refusal(entry.adapter, root);
-    if (!this.#current(entry, run) || entry.phase !== 'refused' || entry.root !== root) return;
-    if (refused !== undefined) {
-      this.#refuse(entry, refused);
+    if (first) {
+      this.#ends.first -= 1;
+      entry.line = this.#ends.first;
+    }
+    if (entry.checked === root.folder) {
+      this.#wait(entry);
       return;
     }
-    if (first) this.#ends.first -= 1;
-    entry.line = first ? this.#ends.first : undefined;
-    this.#wait(entry);
-    this.#handOn();
+    entry.run += 1;
+    const { run } = entry;
+    if (entry.phase !== 'refused') {
+      entry.phase = 'checking';
+      entry.problem = undefined;
+      entry.progress = undefined;
+      this.#changed(entry);
+    }
+    const look = await this.#look(entry.adapter, root);
+    if (!this.#current(entry, run) || entry.root !== root) return;
+    switch (look.kind) {
+      case 'refused':
+        this.#refuse(entry, look.reason);
+        return;
+      case 'failed':
+        this.#couldNotLook(entry, root, look.error);
+        return;
+      case 'may':
+        entry.checked = root.folder;
+        this.#wait(entry);
+        this.#handOn();
+        return;
+      default:
+        look satisfies never;
+        throw new Error(`a look Lo doesn't know: ${JSON.stringify(look)}`);
+    }
   }
 
   /** Puts `entry` in line for room, where it was if it had a place, else at the end. */
@@ -819,7 +908,9 @@ export class ServerPool {
    * Stops `entry`'s server, if it runs, and starts it again on `root`, if it may run there once the
    * old one has stopped. One that `held` room keeps it meanwhile, in the old one's place, and so
    * does one that finds room free; any other, such as one whose crash let its room go to the next
-   * in line, waits its turn, and takes it only once the old one has stopped.
+   * in line, waits its turn, and takes it only once the old one has stopped. One that held none and
+   * wasn't looked at on `root` yet, as one whose look failed, is looked at first, before it gets
+   * ready or takes room, and waits its turn only if it may run there.
    */
   async #again(
     entry: Entry,
@@ -836,16 +927,18 @@ export class ServerPool {
     if (root) entry.root = root;
     entry.controller.abort();
     entry.controller = new AbortController();
-    // The server before, or the one an earlier restart is still stopping.
+    // The server before, or the one an earlier restart or a halt is still stopping.
     const stopping = old ? this.#stopServer(entry, old, was) : entry.stopping;
+    const looks = !held && entry.checked !== entry.root.folder;
     if (!stopping) {
-      this.#launch(entry);
+      if (looks) await this.#queue(entry, entry.root);
+      else this.#launch(entry);
       return;
     }
     entry.run += 1;
     const { run } = entry;
     entry.stopping = stopping;
-    if (keeps) {
+    if (keeps && !looks) {
       entry.phase = 'preparing';
       entry.problem = undefined;
       entry.refused = undefined;
@@ -853,7 +946,7 @@ export class ServerPool {
       entry.line = undefined;
       this.#changed(entry);
     } else {
-      this.#wait(entry);
+      void this.#queue(entry, entry.root);
     }
     await stopping;
     if (entry.stopping === stopping) entry.stopping = undefined;
@@ -867,10 +960,12 @@ export class ServerPool {
   async #move(entry: Entry, root: Root): Promise<void> {
     const { server } = entry;
     if (entry.phase !== 'running' || !server) {
-      // It starts there, once it's ready to; one that failed starts there on "Restart", and one
-      // refused is looked at again there.
-      if (entry.phase === 'preparing' || entry.phase === 'waiting') entry.root = root;
-      if (entry.phase === 'refused') await this.#lookAgain(entry, root);
+      // One getting ready starts there, once it's looked at there; one that failed starts there on
+      // "Restart"; and any other is looked at there, then waits in line there.
+      if (entry.phase === 'preparing') entry.root = root;
+      else if (entry.phase !== 'failed' && entry.phase !== 'ending') {
+        await this.#queue(entry, root);
+      }
       return;
     }
     const kind = server.state.kind;
@@ -879,13 +974,15 @@ export class ServerPool {
     const still = () =>
       entry.server === server && entry.phase === 'running' && this.#allowed(entry.repo, root);
     if (!still()) return;
-    // One whose checkout it mustn't run on starts there again instead, and says why it can't.
-    const refused = await this.#refusal(entry.adapter, root);
+    // One whose checkout it mustn't run on, or that couldn't be looked at, starts there again
+    // instead, and says why it can't.
+    const look = await this.#look(entry.adapter, root);
     if (!still()) return;
-    if (refused !== undefined) {
+    if (look.kind !== 'may') {
       await this.#again(entry, root);
       return;
     }
+    entry.checked = root.folder;
     entry.moving = root;
     this.#changed(entry);
     const moved =
@@ -905,12 +1002,16 @@ export class ServerPool {
     await this.#again(entry, root);
   }
 
-  /** Why `adapter`'s server mustn't run on `root`, if it mustn't: a look that fails says so too. */
-  async #refusal(adapter: Adapter, root: Root): Promise<string | undefined> {
+  /**
+   * Whether `adapter`'s server may run on `root`, why it mustn't, or that Lo couldn't look, which
+   * refuses nothing.
+   */
+  async #look(adapter: Adapter, root: Root): Promise<Look> {
     try {
-      return await this.#options.checkout?.(adapter, root.folder);
+      const reason = await this.#options.checkout?.(adapter, root.folder);
+      return reason === undefined ? { kind: 'may' } : { kind: 'refused', reason };
     } catch (error) {
-      return `Lo couldn’t look through the checkout: ${describe(error)}`;
+      return { kind: 'failed', error };
     }
   }
 
@@ -930,12 +1031,12 @@ export class ServerPool {
       }
       const others = this.#live().filter((each) => each !== entry);
       if (others.length < count) {
-        await Promise.race([...this.#stopping].map((each) => each.done));
+        await Promise.race(this.#holding().map((each) => each.done));
         continue;
       }
       const victim = this.#leastUsedOffScreen(others);
       if (!victim) {
-        this.#wait(entry);
+        void this.#queue(entry, entry.root);
         return false;
       }
       await this.#end(victim, `Lo runs ${count} language servers at most`);
@@ -953,14 +1054,19 @@ export class ServerPool {
 
   /**
    * How much room is held, `entry`'s aside: one for each server running or about to, and one for
-   * each still stopping, but those stopping for one to start again in their place, which hold
-   * that one's.
+   * each still stopping that holds room ({@link ServerPool.#holding}).
    */
   #held(entry: Entry): number {
-    const live = this.#live();
-    const replaced = new Set(live.map((each) => each.stopping));
-    const stopping = [...this.#stopping].filter((each) => !replaced.has(each.done));
-    return live.filter((each) => each !== entry).length + stopping.length;
+    return this.#live().filter((each) => each !== entry).length + this.#holding().length;
+  }
+
+  /**
+   * The servers still stopping that hold room: not one that failed, which let its room go then,
+   * nor one stopping for a server to start again in its place, which holds that one's.
+   */
+  #holding(): Stopping[] {
+    const replaced = new Set(this.#live().map((each) => each.stopping));
+    return [...this.#stopping].filter((each) => !each.failed && !replaced.has(each.done));
   }
 
   #leastUsedOffScreen(entries: readonly Entry[]): Entry | undefined {
@@ -1032,7 +1138,9 @@ export class ServerPool {
 /** A server stopping, and the checkout it ran on, by repository and pull request. */
 interface Stopping {
   readonly repo: string;
-  readonly pull: number | undefined;
+  readonly pull: number;
+  /** Whether it had failed already, its process gone or on its way out. */
+  readonly failed: boolean;
   readonly done: Promise<void>;
 }
 
@@ -1044,6 +1152,8 @@ function keyOf(repo: string, adapter: string): string {
 function stateOf(entry: Entry, waiting: () => ServerState): ServerState {
   if (entry.moving !== undefined) return { kind: 'starting' };
   switch (entry.phase) {
+    case 'checking':
+      return { kind: 'starting' };
     case 'waiting':
       return waiting();
     case 'preparing': {
