@@ -389,7 +389,28 @@ Only main runs git, through `@lo/git`, and the background process never sees git
 - With git, main opens the cache, as `git.cache`, and cleans it up without anyone waiting.
   `git.setCap()` sets the size it's kept under, which counts all of it but the toolchains language
   servers use (`toolchains/`), since Settings removes those and their gigabytes would otherwise
-  evict clones, and what's being deleted (`tmp/*.trash`).
+  evict clones, and what's being deleted (`tmp/*.trash`). Language servers' homes (`code/homes/`)
+  count.
+- Past the cap, what Lo gets back without a fetch goes first: checkouts and language servers' homes,
+  together, least recently used first, by a checkout's stamp and a home's folder time, which the
+  cache sets as each server using it starts, every 5 minutes while it runs, and as it stops, before
+  letting go. Then clones go, a fetch each to get back, least recently used first, each with its
+  checkouts and homes, but never the one used last. Each goes only while the cache is still over. A
+  checkout's stamp holds whole seconds, so times are compared to the second, and what was used in
+  the same second goes in the order its clone was used, a home left without one first, then by path.
+- Nothing of a clone that's open, being written to or that a language server runs on goes, its
+  checkouts and homes included. Those checkouts and homes count toward removing nothing else, so a
+  running server's large home never pushes out another's checkouts or clone, though the clone's own
+  folder counts as any clone's does. Each run looks at what's in use all at once, so a server that
+  stops during it has its checkouts and homes kept alike, never one removed without the other. A
+  server holds its repository (`cache.useForServer`) from just before it starts until it has
+  stopped, and one starting waits for cleanup that's removing any of it, but not for collecting the
+  trees comparisons replayed, which takes nothing a server reads and so runs alongside servers. A
+  minute after nothing has a clone open or runs on it any more, the cache is kept under its cap
+  again. Runs keeping the cache under its cap go one at a time, and stop once the cache closes.
+- A repository's homes go with its clone, unused for 30 days, past the cap or cleared, through
+  `Cache.trash`, and cleanup removes homes left without a clone. A home past a link stays, and frees
+  nothing.
 - The cache is `Lo` (`Lo Dev` for a build run from source, or `cache` in `LO_USER_DATA_DIR`) in the
   system's folder for this user's caches: `$XDG_CACHE_HOME` or `~/.cache` on Linux, and on a Mac the
   one macOS keeps outside the home folder, `DARWIN_USER_CACHE_DIR`
@@ -1270,9 +1291,11 @@ variables.
 - One server runs per repository and adapter, on the checkout of the head on screen, and moves with
   it: by `workspace/didChangeWorkspaceFolders`, sent only once trust is checked again, where it
   takes that, else by starting again (`main/servers.ts`). Its `HOME` is
-  `<cache>/code/homes/<owner>/<name>/<adapter>`, and its `PATH` is its toolchain's folders, then
-  Lo's git's, then the system's, so a git from a folder of other programs, as Homebrew's is, can't
-  bring that folder's `go` ahead of the toolchain's.
+  `<cache>/code/homes/<owner>/<name>/<adapter>` (`Cache.homeFolder`), which the cache's cap counts
+  and trims and which goes with the repository's clone, but never while a server of the repository
+  runs (see Git). Its `PATH` is its toolchain's folders, then Lo's git's, then the system's, so a
+  git from a folder of other programs, as Homebrew's is, can't bring that folder's `go` ahead of the
+  toolchain's.
 - An adapter names what its server downloads up front, the server and the toolchains it uses, so the
   status bar adds them up from the first byte ("Java downloading · 38.1 MB of 177.4 MB"), counting
   only what isn't installed yet, in the units Settings counts in (`formatBytes`). It gets only the

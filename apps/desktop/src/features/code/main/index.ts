@@ -20,7 +20,7 @@ import { stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 
-import { defaultPlaces, parseOid, serverGitEnvironment, whyDistrusted } from '@lo/git';
+import { type Cache, defaultPlaces, parseOid, serverGitEnvironment, whyDistrusted } from '@lo/git';
 import { PullRef, readPullRequestRepositories, type PullRequestRepositories } from '@lo/github';
 import {
   currentPlatform,
@@ -420,16 +420,24 @@ function servingInput(context: Context, id: string): ServingInput | undefined {
   };
 }
 
-/** Whether `part` of a repository's name is a plain folder's name. */
-function plainName(part: string): boolean {
-  return /^[\w.-]{1,100}$/.test(part) && part !== '.' && part !== '..';
+/** `owner/name`'s owner and name, or nothing unless it's two parts. */
+function ownerAndName(repo: string): { owner: string; name: string } | undefined {
+  const [owner, name, ...rest] = repo.split('/');
+  return owner === undefined || name === undefined || rest.length > 0 ? undefined : { owner, name };
 }
 
-/** A server's `HOME`, under the cache: `code/homes/<owner>/<name>/<adapter>`. */
-function homeOf(root: string, repo: string, adapter: Adapter): string | undefined {
-  const parts = repo.split('/');
-  if (parts.length !== 2 || !parts.every(plainName)) return undefined;
-  return join(root, 'code', 'homes', ...parts, adapter.id);
+/**
+ * A server's `HOME`, the cache's home for it (`code/homes/<owner>/<name>/<adapter>`), or nothing
+ * for a name that can't be a folder's.
+ */
+function homeOf(cache: Cache, repo: string, adapter: Adapter): string | undefined {
+  const parts = ownerAndName(repo);
+  if (!parts) return undefined;
+  try {
+    return cache.homeFolder(parts.owner, parts.name, adapter.id);
+  } catch {
+    return undefined;
+  }
 }
 
 /** How downloads go: through Chromium's network stack, with the system's proxy, as every read Lo makes. */
@@ -603,11 +611,18 @@ function startServers(context: Context): void {
       const cache = context.git.cache;
       const found = context.git.status;
       if (!cache || found?.status !== 'found') return undefined;
-      const home = homeOf(cache.root, repo, adapter);
+      const home = homeOf(cache, repo, adapter);
       if (home === undefined) return undefined;
       // Lo's own git, after the toolchain's folders: it's new enough for the settings git's
       // variables give it.
       return { home, git: serverGitEnvironment(), path: [dirname(found.git.program)] };
+    },
+    // Cleanup takes nothing of the repository while its server runs, its home included.
+    async hold(repo, adapter, signal) {
+      const cache = context.git.cache;
+      const parts = ownerAndName(repo);
+      if (!cache || !parts) return () => undefined;
+      return cache.useForServer(parts.owner, parts.name, adapter.id, { signal });
     },
     changed: (repo) => serving?.changed(repo),
     log,

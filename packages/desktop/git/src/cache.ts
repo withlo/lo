@@ -4,6 +4,8 @@
  * - `repos/github.com/<owner>/<repo>.git`: a bare partial clone of each repository, so file
  *   contents download only when asked for. Everything fetched goes under Lo's own refs.
  * - `checkouts/github.com/<owner>/<repo>/`: checkouts of pull requests' heads.
+ * - `code/homes/<owner>/<repo>/<server>/`: each language server's home, its `HOME`, where it keeps
+ *   its own caches. A repository's homes go with its clone, and the cap counts and trims them.
  * - `git-env/home`: the empty `HOME` git runs with.
  * - `tmp/`: clones being made, and whatever is being deleted.
  * - `toolchains/`: the toolchains language servers use, which the app downloads. The cap doesn't
@@ -14,7 +16,7 @@
  */
 
 import { randomUUID } from 'node:crypto';
-import { lstat, mkdir, readdir, rename, rm, rmdir, stat } from 'node:fs/promises';
+import { lstat, lutimes, mkdir, readdir, rename, rm, rmdir, stat } from 'node:fs/promises';
 import { dirname, isAbsolute, join, relative, sep } from 'node:path';
 
 import { GitError } from './errors.ts';
@@ -28,6 +30,7 @@ import {
   DEFAULT_MAINTENANCE,
   GEOMETRIC_LIMIT,
   hasLooseObjects,
+  HOMES_FOLDER,
   keepUnder,
   type MaintenanceTimes,
   removeUnused,
@@ -60,6 +63,9 @@ export type ProxySource = (address: string) => Promise<string | undefined>;
  * as a stopped fetch removes what it left.
  */
 const SETTLE_LIMIT = 2000;
+
+/** How often the home of a language server that runs is stamped as used, in milliseconds. */
+export const STAMP_EVERY = 5 * 60 * 1000;
 
 export interface CacheOptions {
   /** The cache's folder. It's made if it's missing. */
@@ -124,6 +130,10 @@ export class Cache {
   readonly #deleting = new Set<Promise<void>>();
   /** Aborted as the cache closes, which stops maintenance. */
   readonly #closing = new AbortController();
+  /** The wait to keep the cache under its cap again, once what kept it over may have let go. */
+  #capCheck: ReturnType<typeof setTimeout> | undefined;
+  /** The run keeping the cache under its cap, or waiting to: one at a time. */
+  #capping: Promise<unknown> = Promise.resolve();
   #closed = false;
 
   private constructor(
@@ -173,8 +183,11 @@ export class Cache {
     this.#closed = true;
     for (const timer of this.#idle.values()) clearTimeout(timer);
     this.#idle.clear();
+    clearTimeout(this.#capCheck);
+    this.#capCheck = undefined;
     this.#closing.abort();
     await this.#maintaining;
+    await this.#capping;
     await this.#deleted();
     await unlockCache(join(this.root, 'lo-cache.lock'), this.#release);
   }
@@ -232,8 +245,9 @@ export class Cache {
   }
 
   /**
-   * Removes every clone and checkout that isn't open or being written to, for Settings' "Clear
-   * cache". Returns the `owner/name` of each clone it had to leave.
+   * Removes every clone, checkout and language server's home that isn't open, being written to or
+   * that a server runs on, for Settings' "Clear cache". Returns the `owner/name` of each clone it
+   * had to leave.
    */
   async clear(): Promise<string[]> {
     const left = await clear(this);
@@ -242,11 +256,13 @@ export class Cache {
   }
 
   /**
-   * Removes what nobody used for a while: clones for 30 days, checkouts for 14, what crashes and
-   * stopped fetches left a day or more ago, and from clones nobody has open, the trees comparisons
-   * replayed. Never a clone that's open or being written to. Returns the `owner/name` of each
-   * clone removed. It runs as maintenance, one at a time with the rest, and closing the cache waits
-   * for it, so no git it runs, such as a `prune` closing stopped, outlives the cache's lock.
+   * Removes what nobody used for a while: clones for 30 days, with their checkouts and language
+   * servers' homes, checkouts for 14, what crashes and stopped fetches left a day or more ago,
+   * checkouts and homes left without a clone, and from clones nobody has open, the trees
+   * comparisons replayed. Never anything of a clone that's open, being written to or that a
+   * language server runs on. Returns the `owner/name` of each clone removed. It runs as
+   * maintenance, one at a time with the rest, and closing the cache waits for it, so no git it
+   * runs, such as a `prune` closing stopped, outlives the cache's lock.
    */
   async removeUnused(now = Date.now()): Promise<string[]> {
     const removed = await this.#serially(() => removeUnused(this, now));
@@ -261,13 +277,14 @@ export class Cache {
 
   /**
    * Sets the size to keep the cache under, from Settings, and keeps it there: past it, the least
-   * recently used checkouts go, then the least recently used clones, only until it's under, and
-   * never a clone that's open or being written to, its checkouts, or the most recently used clone.
-   * What's being deleted doesn't count. Returns the `owner/name` of each clone removed.
+   * recently used checkouts and language servers' homes go, then the least recently used clones,
+   * only until it's under, and never anything of a clone that's open, being written to or that a
+   * server runs on, or the most recently used clone. What's being deleted doesn't count, and what
+   * can't go counts toward removing nothing else. Returns the `owner/name` of each clone removed.
    */
   async setCap(bytes: number): Promise<string[]> {
     this.#cap = bytes;
-    const removed = await keepUnder(this, bytes);
+    const removed = await this.#keepUnder();
     await this.#deleted();
     return removed;
   }
@@ -297,9 +314,19 @@ export class Cache {
   /** Keeps the cache under its cap once a fetch has made a clone, which may have grown it most. */
   async madeClone(): Promise<void> {
     if (this.#closing.signal.aborted) return;
-    await keepUnder(this, this.#cap).catch((error: unknown) => {
+    await this.#keepUnder().catch((error: unknown) => {
       this.note(`can't keep the cache under its cap: ${String(error)}`);
     });
+  }
+
+  /**
+   * Keeps the cache under its cap, once the run before is done, so no two runs remove for the same
+   * bytes, and none once the cache is closing. Closing the cache waits for the one running.
+   */
+  #keepUnder(): Promise<string[]> {
+    const run = this.#capping.then(() => keepUnder(this, this.#cap));
+    this.#capping = run.catch(() => undefined);
+    return run;
   }
 
   /** Runs `work` once the maintenance before it is done. */
@@ -356,6 +383,86 @@ export class Cache {
   /** Where the checkouts of `owner/name`'s pull requests live. */
   checkoutsFolder(owner: string, name: string): string {
     return join(this.root, 'checkouts', HOST, owner.toLowerCase(), name.toLowerCase());
+  }
+
+  /** Where the homes of `owner/name`'s language servers live, one folder each. */
+  homesFolder(owner: string, name: string): string {
+    return join(this.root, HOMES_FOLDER, owner.toLowerCase(), name.toLowerCase());
+  }
+
+  /**
+   * The home of `owner/name`'s language server `server`, its `HOME`, where it keeps its own
+   * caches. It's made when the server starts, and goes with the repository's clone, or past the
+   * cache's cap, but never while a server runs on the repository ({@link Cache.useForServer}).
+   */
+  homeFolder(owner: string, name: string, server: string): string {
+    checkName('repository owner', owner);
+    checkName('repository name', name);
+    checkName('language server', server);
+    return join(this.homesFolder(owner, name), server);
+  }
+
+  /**
+   * Counts `owner/name`'s language server `server` as running, on one of the repository's
+   * checkouts and with its home, until the release, which the server's caller lets go once it has
+   * stopped: meanwhile cleanup removes nothing of the repository, its clone, checkouts and homes
+   * included. It waits for cleanup that's removing any of it to finish first, and once
+   * `options.signal` aborts, it stops waiting and fails with its reason. The home's folder's time,
+   * which cleanup takes as when it was last used, is set now, every {@link STAMP_EVERY} while the
+   * server runs, and at the release, which lets go of the repository once that's written. Once
+   * nothing uses the repository, the cache is kept under its cap again.
+   */
+  async useForServer(
+    owner: string,
+    name: string,
+    server: string,
+    options: { signal?: AbortSignal | undefined } = {},
+  ): Promise<Release> {
+    const home = this.homeFolder(owner, name, server);
+    const lock = this.cloneLock(owner, name);
+    // Counted first, so no removal starts once it waits. Removing objects in the clone, as
+    // collecting replayed trees does, takes nothing a server reads, so it isn't waited for.
+    const done = lock.serve();
+    try {
+      await lock.passRemoval('running a language server', options.signal, 'repository');
+    } catch (error) {
+      done();
+      throw error;
+    }
+    await stampTime(home);
+    // Stamped while it runs too, so after a crash it doesn't look last used when it started.
+    const stamping = setInterval(() => void stampTime(home), STAMP_EVERY);
+    stamping.unref();
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      clearInterval(stamping);
+      // Held until it's stamped, so cleanup straight after finds when it stopped.
+      void stampTime(home).finally(() => {
+        done();
+        this.#freed(lock);
+      });
+    };
+  }
+
+  /**
+   * Keeps the cache under its cap again a while after `lock`'s clone has nothing left using it:
+   * no repository open on it and no language server running on it. What they used can't go while
+   * they do, and nothing else would look again until the next clone, cap or launch.
+   */
+  #freed(lock: CloneLock): void {
+    if (lock.users > 0 || lock.servers > 0) return;
+    if (this.#closed || this.#capCheck !== undefined) return;
+    this.#capCheck = setTimeout(() => {
+      this.#capCheck = undefined;
+      void this.#keepUnder()
+        .then(() => this.#deleted())
+        .catch((error: unknown) => {
+          this.note(`can't keep the cache under its cap: ${String(error)}`);
+        });
+    }, this.maintenance.idleFor);
+    this.#capCheck.unref();
   }
 
   /**
@@ -477,13 +584,16 @@ export class Cache {
         if (reason === undefined) {
           await this.#pointAt(folder, url);
         } else {
-          // Never pulled out from under a repository that's still reading it.
-          if (lock.users > 0) {
+          // Never pulled out from under a repository that's still reading it, nor a language
+          // server still running on one of its checkouts, as one stopping may be.
+          if (lock.users > 0 || lock.servers > 0) {
+            const still =
+              lock.users > 0
+                ? 'is still open, so it can be made again only once it closes'
+                : 'a language server still runs on it, so it can be made again only once that stops';
             throw new GitError({
               kind: 'busy',
-              message:
-                `${owner}/${name}'s local copy can't be trusted, since ${reason}, and is still ` +
-                'open, so it can be made again only once it closes',
+              message: `${owner}/${name}'s local copy can't be trusted, since ${reason}, and ${still}`,
             });
           }
           this.#log?.(`${owner}/${name}: making its local copy again, since ${reason}`);
@@ -514,6 +624,7 @@ export class Cache {
       done: () => {
         reader.release();
         done();
+        this.#freed(lock);
       },
       reader: reader.reader,
       token: options.token,
@@ -571,6 +682,7 @@ export class Cache {
       done: () => {
         reader.release();
         done();
+        this.#freed(lock);
       },
       reader: reader.reader,
       replays: this.#replaysOf(owner, name),
@@ -686,6 +798,12 @@ export class Cache {
       await this.runner.command({ gitDir: folder }).arg('config', 'remote.origin.url', url).run();
     }
   }
+}
+
+/** Sets the time of the folder at `path`, never what a link there points at, if there's one. */
+async function stampTime(path: string): Promise<void> {
+  const now = new Date();
+  await lutimes(path, now, now).catch(() => undefined);
 }
 
 async function isFile(path: string): Promise<boolean> {
