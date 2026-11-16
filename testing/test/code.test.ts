@@ -275,8 +275,9 @@ test(
     }
     expect(wrong).toEqual([]);
 
-    // The script says each marker, so whoever checks knows what to look for, and the folder
-    // php-lsp's planted settings would put its cache in, which it would make in the checkout.
+    // The script says each marker, so whoever checks knows what to look for, and each folder or
+    // file planted settings would make in the checkout: php-lsp's cache, Maven's local repository
+    // and its JVM's log, Eclipse's output and generated sources, and a JVM's log.
     const settings: unknown = JSON.parse(contents.get('.php-lsp.json') ?? '{}');
     const cache = typeof settings === 'object' && settings !== null && 'cachePath' in settings;
     expect(cache && settings.cachePath).toBe('lo-hostile-php-lsp-cache');
@@ -288,14 +289,22 @@ test(
     expect(contents.get('NuGet.config')).toContain(
       '<add key="globalPackagesFolder" value="lo-hostile-nuget-packages" />',
     );
+    const made = {
+      'lo-hostile-php-lsp-cache': '.php-lsp.json',
+      'lo-hostile-msbuild-inline': 'Directory.Build.props',
+      'lo-hostile-nuget-packages': 'NuGet.config',
+      'lo-hostile-maven-repository': 'java/.mvn/maven.config',
+      'lo-hostile-maven-jvm': 'java/.mvn/jvm.config',
+      'lo-hostile-eclipse-output': 'java/.classpath',
+      'lo-hostile-apt-generated': 'java/.settings/org.eclipse.jdt.apt.core.prefs',
+      'lo-hostile-hotspotrc': '.hotspotrc',
+    };
+    for (const [name, path] of Object.entries(made)) {
+      expect({ [path]: contents.get(path) }).toEqual({ [path]: expect.stringContaining(name) });
+    }
     const said = new Set(script.match(/lo-hostile-[a-z]+(?:-[a-z]+)*/g));
-    const written = [
-      'lo-hostile-msbuild-inline',
-      'lo-hostile-nuget-packages',
-      'lo-hostile-php-lsp-cache',
-    ];
-    expect([...markers, ...written].toSorted()).toEqual([...said].toSorted());
-    expect(markers.size).toBe(34);
+    expect([...markers, ...Object.keys(made)].toSorted()).toEqual([...said].toSorted());
+    expect(markers.size).toBe(37);
   },
 );
 
@@ -305,17 +314,25 @@ test("Lo's own repository holds nothing a tool would pick up from what the hosti
   // settings or package scripts.
   const named = new Set([
     '.cargo',
+    '.classpath',
     '.editorconfig',
     '.envrc',
+    '.externalToolBuilders',
+    '.factorypath',
     '.gitmodules',
     '.globalconfig',
+    '.hotspotrc',
+    '.java-version',
     '.mvn',
     '.npmrc',
     '.nvmrc',
     '.php-lsp.json',
     '.phpactor.json',
+    '.project',
     '.python-version',
     '.ruby-version',
+    '.sdkmanrc',
+    '.settings',
     '.terraform',
     '.tool-versions',
     '.vscode',
@@ -323,16 +340,21 @@ test("Lo's own repository holds nothing a tool would pick up from what the hosti
     'Directory.Build.targets',
     'Directory.Packages.props',
     'NuGet.config',
+    'build.gradle',
     'gradle',
+    'gradle.properties',
     'gradlew',
     'global.json',
     'go.work',
+    'jdk',
     'mise.toml',
     'mvnw',
     'node_modules',
     'package.json',
+    'pom.xml',
     'rust-analyzer.toml',
     'rust-toolchain.toml',
+    'settings.gradle',
     'vendor',
   ]);
   const files = filesUnder(samples);

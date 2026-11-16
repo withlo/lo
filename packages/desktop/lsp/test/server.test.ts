@@ -12,6 +12,7 @@ import {
   readFileSync,
   realpathSync,
   rmSync,
+  statSync,
   symlinkSync,
   writeFileSync,
 } from 'node:fs';
@@ -26,6 +27,7 @@ import {
   LIMITS,
   NO_NETWORK,
   OPEN_LIMIT,
+  type Placed,
   readFamily,
   type RequestOptions,
   type Server,
@@ -429,6 +431,91 @@ test('its environment is built from nothing', async () => {
   const started = seen().find((event) => event.event === 'started');
   expect(started).toMatchObject({ cwd: root, env: { HOME: home, PATH: `${tools}:/usr/bin:/bin` } });
   expect(existsSync(join(home, 'tmp'))).toBe(true);
+});
+
+test('where it runs adds to what it’s given: flags first, variables, files in its home and settings', async () => {
+  const asked: unknown[] = [];
+  const { server, home, root, seen } = startFake(
+    {
+      requests: [
+        { method: 'workspace/configuration', params: { items: [{ section: 'fake.root' }] } },
+      ],
+    },
+    {
+      spec: {
+        variables: { GOPROXY: 'off' },
+        settings: { fake: { root: 'none' } },
+        initializationOptions: { root: 'none' },
+        place: (where) => {
+          asked.push(where);
+          return Promise.resolve({
+            args: ['--no-deprecation'],
+            variables: { FAKE_ROOT: where.root },
+            files: { 'conf/fake.properties': `root=${where.root}\n` },
+            settings: { fake: { root: where.root } },
+            initializationOptions: { root: where.root },
+          });
+        },
+      },
+    },
+  );
+  await server.ready;
+  // Each folder as the system resolves it, its home made.
+  expect(asked).toEqual([{ root: realpathSync(root), home: realpathSync(home) }]);
+  const started = seen().find((event) => event.event === 'started');
+  // Its flags go before the spec's, which start with the program's script.
+  expect(started).toMatchObject({
+    execArgv: ['--no-deprecation'],
+    env: { GOPROXY: 'off', FAKE_ROOT: realpathSync(root) },
+  });
+  const file = join(home, 'conf', 'fake.properties');
+  expect(readFileSync(file, 'utf8')).toBe(`root=${realpathSync(root)}\n`);
+  expect(statSync(file).mode & 0o777).toBe(0o600);
+  const initialize = seen().find((event) => event.event === 'initialize');
+  expect(initialize?.event === 'initialize' && initialize.params.initializationOptions).toEqual({
+    root: realpathSync(root),
+  });
+  await eventually(() => seen().some((event) => event.event === 'reply'));
+  expect(seen().find((event) => event.event === 'reply')).toMatchObject({
+    result: [realpathSync(root)],
+  });
+});
+
+test('what where it runs adds is held to the rules the rest is', async () => {
+  const outside = tempFolder();
+  const cases: [Placed, string][] = [
+    [{ files: { '../planted': '' } }, 'must be a path in its home'],
+    [{ files: { '/etc/planted': '' } }, 'must be a path in its home'],
+    [{ files: { 'linked/planted': '' } }, 'must stay in its home'],
+    [{ variables: { NODE_OPTIONS: '--require=planted' } }, 'may not be given the variable'],
+  ];
+  for (const [placed, why] of cases) {
+    const { server, home } = startFake(
+      {},
+      {
+        spec: {
+          place: ({ home: made }) => {
+            symlinkSync(outside, join(made, 'linked'));
+            return Promise.resolve(placed);
+          },
+        },
+      },
+    );
+    expect(await server.ready).toBe(false);
+    expect(server.state.kind === 'failed' && failureMessage(server.state.failure)).toContain(why);
+    expect(server.pid).toBeUndefined();
+    expect(readdirSync(outside)).toEqual([]);
+    expect(existsSync(join(home, '..', 'planted'))).toBe(false);
+  }
+});
+
+test('a server that stays where it started never moves, so it starts again', async () => {
+  const { server, root } = startFake({}, { spec: { stays: true } });
+  await server.ready;
+  const next = join(root, '..', 'next');
+  mkdirSync(next);
+  expect(await server.moveTo(next)).toBe(false);
+  expect(server.pathOf(pathToFileURL(join(root, 'src/c.ts')).href)).toBe('src/c.ts');
 });
 
 test('a stop answers what was asked, asks the server to exit, and ends its group', async () => {

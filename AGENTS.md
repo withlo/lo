@@ -589,6 +589,27 @@ toolchain and git's variables each server needs.
   for Terraform, from releases.hashicorp.com, given `/dev/null` as Terraform so it runs neither
   `terraform` nor a provider's plugin, and so reads only the provider schemas it carries. Each
   adapter's comment says what in a checkout can reach its server and what can't.
+- Java's server, Eclipse JDT LS, runs on Lo's Temurin JDK: one archive for every platform from
+  download.eclipse.org, which `lsp:pin` checks against the SHA-256 Eclipse lists beside it, since
+  only some of its jars are signed. It starts as the JDK's `java` with `-jar` and Equinox's
+  launcher, with `JAVA_HOME` the JDK's. It imports nothing: Gradle's and Maven's imports are off,
+  and every folder is left out of its search for build files, so it reads no `build.gradle`,
+  `pom.xml` or `.project`, and runs no build script, wrapper, plugin or annotation processor. Lo
+  finds the checkout's source folders from each `.java` file's package, read past comments and
+  annotations by a small scanner that leaves out any file it can't read (`sourcePaths`, in the
+  20,000 folders and files nearest the root), and JDT LS makes a project of them in its home,
+  compiling nothing. What a server is told can depend on where it runs: an adapter's `place` gives
+  it, as it starts, arguments, variables, files written in its home and settings. JDT LS's `place`
+  names its home as the JVM's home and temporary folder, Equinox's configuration and its workspace,
+  writes a `gradle.properties` that holds a Gradle to Lo's JDK in Gradle's home (`GRADLE_USER_HOME`,
+  one of its `homeFolders`), and has its JVM look names up only in an empty hosts file there. It
+  uses no proxy, which would look names up itself (`jdt.ls.disableProxies`,
+  `java.net.useSystemProxies=false`), so Buildship's look for Gradle's versions and the
+  search.maven.org lookup of a `lib/` jar's sources, which no setting stops, reach no host. Java
+  isn't available for a repository that commits Eclipse's `.settings` folder at its root, which
+  Java's server would read and write as its project's (the adapter's `checkout`, asked after the
+  toolchains' `checkoutProblem`). It finds its folders only as it starts, so it starts again rather
+  than moving (`stays`).
 - C#'s server, Roslyn, is a package per platform from nuget.org, which `lsp:pin` takes only signed
   by Microsoft. It starts as Lo's `dotnet exec` on its own assembly, with the SDK's variables and
   `DOTNET_GCHeapHardLimit`. It never loads a project of the checkout's, since MSBuild runs what a
@@ -601,11 +622,11 @@ toolchain and git's variables each server needs.
 - Tests start only the fake server, `testing/lsp/fake-server.ts`, at most two at once in a test
   file, each killed with its group when the test ends. No test starts a real server or downloads
   one: download tests serve archives they build from a server on this machine. The live check,
-  `pnpm nx run lsp:live`, by hand only, installs what's pinned, and the toolchains a server runs on,
-  into `~/.cache/lo-live/` or the folder `LO_LIVE_CACHE` names, starts each server as its adapter
-  does on the checkouts the code fixtures build with `--local`, asks what `gd`, `gr`, `K`, `gh` and
-  `gO` ask at the places `testing/fixtures/code/cases.json` names, and fails if anything ran what
-  the hostile fixture plants.
+  `pnpm nx run lsp:live`, by hand only, installs what's pinned, toolchains included, into
+  `~/.cache/lo-live/`, or the folder `LO_LIVE_CACHE` names, starts each server as its adapter does
+  on the checkouts the code fixtures build with `--local`, asks what `gd`, `gr`, `K`, `gh` and `gO`
+  ask at the places `testing/fixtures/code/cases.json` names, and fails if anything ran what the
+  hostile fixture plants, wrote in a checkout or held an internet socket.
 
 ### Accounts
 
@@ -1312,7 +1333,7 @@ before the syntax index's. A server is whatever an adapter (`main/adapters.ts`) 
 its languages: Lo ships those for TypeScript and JavaScript, and Python, each downloaded with the
 Node it runs on; PHP, whose server is a program of its own; Go, gopls, which Lo builds with the Go
 it then runs with; Terraform, terraform-ls, which reads a `.tfvars` file as Terraform's variables;
-and C#, Roslyn, which runs on Lo's .NET SDK.
+Java, JDT LS, which runs on Lo's Temurin JDK; and C#, Roslyn, which runs on Lo's .NET SDK.
 
 - Nothing starts for a view nothing trusts: no download, no checkout, no server. Once a trusted view
   is on screen and a file its pull request adds or changes on the new side, or one asked about, is
@@ -1327,7 +1348,10 @@ and C#, Roslyn, which runs on Lo's .NET SDK.
   runs stops and its checkouts stay.
 - One server runs per repository and adapter, on the checkout of the head on screen, and moves with
   it: by `workspace/didChangeWorkspaceFolders`, sent only once trust is checked again, where it
-  takes that, else by starting again (`main/servers.ts`). Its `HOME` is
+  takes that and its adapter doesn't say it `stays`, as Java's does, else by starting again
+  (`main/servers.ts`). It doesn't start on, or move to, a checkout its toolchains or its adapter
+  refuse (`checkoutRefusal` in `main/toolchains.ts`): .NET's for a `global.json` that steers it,
+  Go's for a `go.work` that reaches outside it, Java's for a `.settings` at the root. Its `HOME` is
   `<cache>/code/homes/<owner>/<name>/<adapter>` (`Cache.homeFolder`), which the cache's cap counts
   and trims and which goes with the repository's clone, but never while a server of the repository
   runs (see Git). Its `PATH` is its toolchain's folders, then Lo's git's, then the system's, so a

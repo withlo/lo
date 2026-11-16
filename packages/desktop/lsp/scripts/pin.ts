@@ -19,7 +19,15 @@ import { format, resolveConfig } from 'prettier';
 import { parseManifest, parseToolchains } from '../src/index.ts';
 import { goProgram } from './go.ts';
 import { DIGICERT_G4, nuget } from './nuget.ts';
-import { githubRelease, hashicorp, node, npm, rustAnalyzer, type Source } from './sources.ts';
+import {
+  githubRelease,
+  hashicorp,
+  jdtls,
+  node,
+  npm,
+  rustAnalyzer,
+  type Source,
+} from './sources.ts';
 import { dotnet, go, rust, temurin } from './toolchains.ts';
 
 /** .NET's names for the platforms, its runtime identifiers. */
@@ -41,6 +49,8 @@ function keys(publisher: string): string[] {
 /** Where each ID's files come from. */
 const SOURCES: Record<string, Source> = {
   node: node(keys('node')),
+  // Eclipse's one archive for every platform, which starts from Equinox's launcher in it.
+  jdtls: jdtls(),
   // Its own entry point, not `bin/vtsls.js`, the launcher that loads it.
   vtsls: npm('@vtsls/language-server', 'node_modules/@vtsls/language-server/dist/main.js'),
   // Its own entry point, which says where its files are and loads the server.
