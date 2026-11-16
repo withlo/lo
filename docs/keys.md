@@ -115,10 +115,20 @@ Each command's id is what [the keymap file](#the-keymap-file) binds keys to.
 
 ## Review
 
-| Action                   | Keys  | Where                                                                                  | Command          |
-| ------------------------ | ----- | -------------------------------------------------------------------------------------- | ---------------- |
-| Submit review            | `⌘⏎`  | Anywhere but `box`, `dialog`, `palette` and `menu`                                     | `review.submit`  |
-| Make this a GitHub stack | `g S` | Anywhere but `menu`, `dialog`, `palette` and `box`; in code views, only in normal mode | `stacks.convert` |
+| Action                              | Keys     | Where                                                                                                     | Command                |
+| ----------------------------------- | -------- | --------------------------------------------------------------------------------------------------------- | ---------------------- |
+| Merge panel                         | `m`      | Anywhere but `menu`, `dialog`, `palette`, `box`, `merge` and `commit`; in code views, only in normal mode | `merge.panel`          |
+| Next reason                         | `j`, `↓` | In `merge`                                                                                                | `merge.down`           |
+| Previous reason                     | `k`, `↑` | In `merge`                                                                                                | `merge.up`             |
+| Open the reason’s page              | `o`      | In `merge`                                                                                                | `merge.open`           |
+| Next merge method                   | `Tab`    | In `merge`                                                                                                | `merge.nextMethod`     |
+| Previous merge method               | `⇧Tab`   | In `merge`                                                                                                | `merge.previousMethod` |
+| Edit the commit’s title and message | `e`      | In `merge`                                                                                                | `merge.edit`           |
+| Next unresolved conversation        | `] t`    | In `merge`                                                                                                | `merge.nextThread`     |
+| Close the merge panel               | `Esc`    | In `merge`                                                                                                | `merge.close`          |
+| Back to the merge panel             | `Esc`    | In `commit`                                                                                               | `merge.leaveCommit`    |
+| Submit review                       | `⌘⏎`     | Anywhere but `box`, `dialog`, `palette` and `menu`                                                        | `review.submit`        |
+| Make this a GitHub stack            | `g S`    | Anywhere but `menu`, `dialog`, `palette` and `box`; in code views, only in normal mode                    | `stacks.convert`       |
 
 ## Find
 
@@ -315,6 +325,8 @@ comment box and another elsewhere.
 | `box`        | A comment box, a code view with an insert mode.                                       |
 | `references` | Named by `code`.                                                                      |
 | `threads`    | Named by `comments`.                                                                  |
+| `merge`      | Named by `merge`.                                                                     |
+| `commit`     | Named by `merge`.                                                                     |
 | `recent`     | Named by `open`.                                                                      |
 | `overview`   | Named by `overview`.                                                                  |
 | `revisions`  | Named by `revisions`.                                                                 |
@@ -400,6 +412,7 @@ these, which run Lo's command in place of Vim's key:
 | `?`              | Every key                       | `?`       | `diff`, `file`, `peek` and `box` (normal and visual)                 | `keys.help`               |
 | `⌃o`             | Back                            | `⌃o`      | `diff`, `file` and `peek`                                            | `keys.back`               |
 | `⌃i`             | Forward                         | `⌃i`      | `diff`, `file` and `peek`                                            | `keys.forward`            |
+| `m`              | Merge panel                     | `m`       | `diff` (normal), `file` (normal) and `peek` (normal)                 | `merge.panel`             |
 | `y a`            | Copy prompt for an agent        | `y`       | `diff` (normal), `file` (normal) and `peek` (normal)                 | `overview.copyPrompt`     |
 | `g v`            | Compare revisions               | `g v`     | `diff` (normal), `file` (normal) and `peek` (normal)                 | `revisions.picker`        |
 | `` ` ``          | Next middle view                | `` ` ``   | `diff` (normal), `file` (normal) and `peek` (normal)                 | `tab.nextView`            |
