@@ -12,8 +12,10 @@
 // the places in its languages' sample projects that `testing/fixtures/code/cases.json` names,
 // printing what came back, how long it took to start and what memory it held. Then the hostile
 // checkout is searched for the markers its plants write if anything runs them, and the check fails
-// if there's one, or if anything in either checkout changed. Check the machine has memory to spare
-// before running it.
+// if there's one, or if anything in either checkout changed. It fails too if a server took the
+// hostile checkout's settings: if it says it read code as the PHP its `.php-lsp.json` names, or
+// indexed a different number of files there than on the code fixture's checkout. Check the
+// machine has memory to spare before running it.
 
 import { execFile } from 'node:child_process';
 import { lstat, mkdtemp, readdir, readFile, realpath, rm } from 'node:fs/promises';
@@ -98,6 +100,21 @@ async function snapshot(folder: string): Promise<Map<string, string>> {
   return new Map(entries.map((path, at) => [path, `${stats[at]?.size}:${stats[at]?.mtimeMs}`]));
 }
 
+/** What a server's log says it indexed, as php-lsp's "indexed 2 files in 0.1 s" does. */
+const INDEXED = /\bindexed (\d+) files?\b/;
+
+/** The PHP the checkout's `.php-lsp.json` names, if it names one. */
+async function plantedPhp(root: string): Promise<string | undefined> {
+  let text: string;
+  try {
+    text = await readFile(join(root, '.php-lsp.json'), 'utf8');
+  } catch {
+    return undefined;
+  }
+  const settings = z.object({ phpVersion: z.string() }).safeParse(JSON.parse(text));
+  return settings.success ? settings.data.phpVersion : undefined;
+}
+
 /** What changed under a folder between snapshots `before` and `after`. */
 function changes(before: Map<string, string>, after: Map<string, string>): string[] {
   const paths = new Set([...before.keys(), ...after.keys()]);
@@ -119,6 +136,8 @@ function serverCheck(
     console.log(`${launched.version}: ${[launched.program, ...launched.args].join(' ')}`);
     const places = await placesFor(languages);
     const folder = await realpath(await mkdtemp(join(tmpdir(), `lo-live-${server.id}-`)));
+    // How many files it says it indexed on each checkout, if it says.
+    const indexed = new Map<string, string>();
     try {
       for (const script of ['code.sh', 'code-hostile.sh']) {
         const root = await checkout(script, join(folder, script));
@@ -139,14 +158,20 @@ function serverCheck(
           places,
           outlines,
         });
-        // What it says of plugins, interpreters and settings it ignored, the folders' own names
-        // aside.
+        // What it says of plugins, interpreters, settings it ignored and what it indexed, the
+        // folders' own names aside.
         const said = log.filter((line) =>
-          /hostile|plugin|interpreter|pythonPath|ignoring|using PHP/i.test(
+          /hostile|plugin|interpreter|pythonPath|ignoring|using PHP|indexed/i.test(
             line.replaceAll(folder, '').replaceAll(script, 'the fixture'),
           ),
         );
         if (said.length > 0) console.log(`\nIts log, on those:\n${said.join('\n')}`);
+        const php = await plantedPhp(root);
+        if (php !== undefined && log.some((line) => line.includes(`using PHP ${php} (`))) {
+          throw new Error(`it read code as PHP ${php}, which the checkout's .php-lsp.json names`);
+        }
+        const count = log.map((line) => INDEXED.exec(line)?.[1]).findLast((n) => n !== undefined);
+        if (count !== undefined) indexed.set(script, count);
         const home = await readdir(join(folder, `home-${script}`), { recursive: true });
         const top = home.filter((path) => path.split('/').length <= 3);
         console.log(`\nIts home holds ${home.length} entries: ${top.join(', ')}`);
@@ -154,6 +179,15 @@ function serverCheck(
         if (found.length > 0) throw new Error(`something ran what's planted: ${found.join(', ')}`);
         const changed = changes(before, await snapshot(root));
         if (changed.length > 0) throw new Error(`the checkout changed: ${changed.join(', ')}`);
+      }
+      // The hostile checkout is the code fixture's with a package's class in `vendor/`, and
+      // settings that index it, so a server that took them indexes one more file there.
+      const [code, hostile] = [indexed.get('code.sh'), indexed.get('code-hostile.sh')];
+      if (code !== hostile) {
+        throw new Error(
+          `it indexed ${hostile ?? 'no'} files on the hostile checkout, and ${code ?? 'no'} on ` +
+            "the code fixture's: it indexed what the hostile checkout's settings asked for",
+        );
       }
       console.log(
         `\nNo marker was written, and neither checkout changed: ${server.name} ran nothing ` +
