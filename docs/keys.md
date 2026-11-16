@@ -73,14 +73,23 @@ Each command's id is what [the keymap file](#the-keymap-file) binds keys to.
 
 ## Code
 
-| Action                                    | Keys                                  | Where              | Command          |
-| ----------------------------------------- | ------------------------------------- | ------------------ | ---------------- |
-| Trust this repo…                          | None: in the app menu and the palette | Anywhere           | `code.trust`     |
-| Trust this PR…                            | None: in the app menu and the palette | Anywhere           | `code.trustPull` |
-| Stop trusting this repo                   | None: in the app menu and the palette | Anywhere           | `code.untrust`   |
-| Dismiss the banner about language servers | None: in the app menu and the palette | Anywhere           | `code.dismiss`   |
-| Back                                      | `⌃o`                                  | Anywhere but `box` | `keys.back`      |
-| Forward                                   | `⌃i`                                  | Anywhere but `box` | `keys.forward`   |
+| Action                                    | Keys                                  | Where                                                            | Command               |
+| ----------------------------------------- | ------------------------------------- | ---------------------------------------------------------------- | --------------------- |
+| Definition                                | `g d`                                 | In `diff` and `file`; in code views, only in normal mode         | `code.definition`     |
+| References                                | `g r`                                 | In `diff`, `file` and `peek`; in code views, only in normal mode | `code.references`     |
+| Type                                      | `K`                                   | In `diff` and `file`; in code views, only in normal mode         | `code.type`           |
+| Type hints                                | `g h`                                 | In `diff` and `file`; in code views, only in normal mode         | `code.hints`          |
+| Outline                                   | `g O`                                 | In `diff` and `file`; in code views, only in normal mode         | `code.outline`        |
+| Next answer in the peek                   | `j`, `↓`                              | In `peek`; in code views, only in normal mode                    | `code.nextAnswer`     |
+| Previous answer in the peek               | `k`, `↑`                              | In `peek`; in code views, only in normal mode                    | `code.previousAnswer` |
+| Go to the answer                          | `⏎`                                   | In `peek`; in code views, only in normal mode                    | `code.goAnswer`       |
+| Close the peek                            | `Esc`                                 | In `peek`; in code views, only in normal mode                    | `code.closePeek`      |
+| Trust this repo…                          | None: in the app menu and the palette | Anywhere                                                         | `code.trust`          |
+| Trust this PR…                            | None: in the app menu and the palette | Anywhere                                                         | `code.trustPull`      |
+| Stop trusting this repo                   | None: in the app menu and the palette | Anywhere                                                         | `code.untrust`        |
+| Dismiss the banner about language servers | None: in the app menu and the palette | Anywhere                                                         | `code.dismiss`        |
+| Back                                      | `⌃o`                                  | Anywhere but `box`                                               | `keys.back`           |
+| Forward                                   | `⌃i`                                  | Anywhere but `box`                                               | `keys.forward`        |
 
 ## Copy and open
 
@@ -177,6 +186,10 @@ Each command's id is what [the keymap file](#the-keymap-file) binds keys to.
 
 | Action                                          | Keys                              | Where                               | Command                   |
 | ----------------------------------------------- | --------------------------------- | ----------------------------------- | ------------------------- |
+| Next reference in the panel                     | `j`, `↓`                          | In `references`                     | `code.nextReference`      |
+| Previous reference in the panel                 | `k`, `↑`                          | In `references`                     | `code.previousReference`  |
+| Go to the reference                             | `⏎`                               | In `references`                     | `code.goReference`        |
+| Close the references                            | `Esc`                             | In `references`                     | `code.closeReferences`    |
 | Next thread in the panel                        | `j`, `↓`                          | In `threads`                        | `comments.nextThread`     |
 | Previous thread in the panel                    | `k`, `↑`                          | In `threads`                        | `comments.previousThread` |
 | Show the thread in the diff                     | `⏎`                               | In `threads`                        | `comments.showThread`     |
@@ -287,25 +300,26 @@ A key applies in a scope: the nearest part of the window around the focused elem
 or `window`. A key for a scope beats one for anywhere, so the same chord can mean one thing in a
 comment box and another elsewhere.
 
-| Scope       | What it is                                                                            |
-| ----------- | ------------------------------------------------------------------------------------- |
-| `window`    | Anywhere no other scope has focus.                                                    |
-| `menu`      | A menu. Only commands that name it run there, and `j` and `k` move as `↓` and `↑` do. |
-| `dialog`    | A dialog, which keeps the browser's `Tab`.                                            |
-| `palette`   | A palette, such as the command palette.                                               |
-| `diff`      | The diff, a code view.                                                                |
-| `file`      | A whole file, a code view.                                                            |
-| `peek`      | A peek at code elsewhere, such as a definition, a code view.                          |
-| `box`       | A comment box, a code view with an insert mode.                                       |
-| `threads`   | Named by `comments`.                                                                  |
-| `recent`    | Named by `open`.                                                                      |
-| `overview`  | Named by `overview`.                                                                  |
-| `revisions` | Named by `revisions`.                                                                 |
-| `settings`  | Named by `settings`.                                                                  |
-| `stack`     | Named by `stacks`.                                                                    |
-| `timeline`  | Named by `timeline`.                                                                  |
-| `tree`      | Named by `tree`.                                                                      |
-| `welcome`   | Named by `welcome`.                                                                   |
+| Scope        | What it is                                                                            |
+| ------------ | ------------------------------------------------------------------------------------- |
+| `window`     | Anywhere no other scope has focus.                                                    |
+| `menu`       | A menu. Only commands that name it run there, and `j` and `k` move as `↓` and `↑` do. |
+| `dialog`     | A dialog, which keeps the browser's `Tab`.                                            |
+| `palette`    | A palette, such as the command palette.                                               |
+| `diff`       | The diff, a code view.                                                                |
+| `file`       | A whole file, a code view.                                                            |
+| `peek`       | A peek at code elsewhere, such as a definition, a code view.                          |
+| `box`        | A comment box, a code view with an insert mode.                                       |
+| `references` | Named by `code`.                                                                      |
+| `threads`    | Named by `comments`.                                                                  |
+| `recent`     | Named by `open`.                                                                      |
+| `overview`   | Named by `overview`.                                                                  |
+| `revisions`  | Named by `revisions`.                                                                 |
+| `settings`   | Named by `settings`.                                                                  |
+| `stack`      | Named by `stacks`.                                                                    |
+| `timeline`   | Named by `timeline`.                                                                  |
+| `tree`       | Named by `tree`.                                                                      |
+| `welcome`    | Named by `welcome`.                                                                   |
 
 In a code view, keys follow Vim's mode. In insert mode, and while Vim waits for the rest of a
 command (after a count or an operator), only chords are Lo's, and other keys go to Vim, but for the
@@ -389,6 +403,11 @@ these, which run Lo's command in place of Vim's key:
 | `~`              | Previous middle view            | `~`       | `diff` (normal), `file` (normal) and `peek` (normal)                 | `tab.previousView`        |
 | `-`              | Go to the file tree             | `-`       | `diff` (normal), `file` (normal) and `peek` (normal)                 | `tree.focus`              |
 | `c`              | Comment on these lines          | `c`       | `file`                                                               | `comments.commentOnBlock` |
+| `j`              | Next answer in the peek         | `j`       | `peek` (normal)                                                      | `code.nextAnswer`         |
+| `↓`              | Next answer in the peek         | `↓`       | `peek` (normal)                                                      | `code.nextAnswer`         |
+| `k`              | Previous answer in the peek     | `k`       | `peek` (normal)                                                      | `code.previousAnswer`     |
+| `↑`              | Previous answer in the peek     | `↑`       | `peek` (normal)                                                      | `code.previousAnswer`     |
+| `⏎`              | Go to the answer                | `⏎`       | `peek` (normal)                                                      | `code.goAnswer`           |
 | `Ctrl+Q` (Linux) | Quit Lo                         | `Ctrl+Q`  | `diff`, `file`, `peek` and `box` (normal and visual)                 | `app.quit`                |
 | `Ctrl+W` (Linux) | Close tab                       | `Ctrl+W`  | `diff` (normal), `file` (normal), `peek` (normal) and `box` (normal) | `tab.close`               |
 | `Ctrl+P` (Linux) | Go to a file                    | `Ctrl+P`  | `diff`, `file`, `peek` and `box` (normal and visual)                 | `tree.find`               |

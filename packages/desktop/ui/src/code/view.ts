@@ -2958,7 +2958,9 @@ class View implements DiffView {
       const view = this.#viewOf(pane);
       const pos = view.posAtCoords({ x: event.clientX, y: event.clientY });
       if (pos === null) return;
-      clicked = this.#lineTarget(this.#placeAt(pane, view.state.doc.lineAt(pos).number));
+      // At the column clicked, so what acts on a word, as `gd` does, acts on the one clicked.
+      const line = view.state.doc.lineAt(pos);
+      clicked = this.#lineTarget(this.#placeAt(pane, line.number), pos - line.from);
     }
     event.preventDefault();
     this.#on.menu(clicked, event.clientX, event.clientY);

@@ -107,11 +107,163 @@ function EyeIcon() {
   );
 }
 
+/** What a peek's head shows: the word, how many answers, and its two buttons. */
+export interface PeekHeadProps {
+  /** The word the peek answers for. */
+  name: string;
+  /** How many answers it has. */
+  count: number;
+  /** The revision the answers are read at: "r5". */
+  at?: string | undefined;
+  /** What the button that goes to the answer says. Defaults to opening the file whole. */
+  goLabel?: string | undefined;
+  /** Whether the answer shown can be gone to: one outside the repository can't. */
+  goes: boolean;
+  keys?: PeekKeys | undefined;
+  onGo?: (() => void) | undefined;
+  onClose?: (() => void) | undefined;
+}
+
+/**
+ * The head of a peek, in a row its caller lays out: an eye, the word and how many answers it has,
+ * at which revision, the way to go to the one shown, and the way to close it.
+ */
+export function PeekHead({
+  name,
+  count,
+  at,
+  goLabel = 'Open the whole file',
+  goes,
+  keys,
+  onGo,
+  onClose,
+}: PeekHeadProps) {
+  const closeLabel = keys?.close ? `Close (${keys.close.join(' ')})` : 'Close';
+  return (
+    <>
+      <EyeIcon />
+      <span className="max-w-full min-w-0 truncate">
+        <strong className="font-semibold text-fg">
+          <ShownText text={name} />
+        </strong>{' '}
+        · <span className="lo-num">{definitions(count)}</span>
+      </span>
+      {at !== undefined && (
+        <span className="flex-none">
+          at <ShownText text={at} />
+        </span>
+      )}
+      <span className="flex-1" />
+      <span className="peek-go">
+        <Button variant="ghost" size="sm" disabled={!goes} onClick={() => onGo?.()}>
+          {goLabel}
+          {keys?.go && <Key keys={keys.go} quiet />}
+        </Button>
+      </span>
+      <span className="peek-close">
+        <Button variant="ghost" size="sm" icon aria-label={closeLabel} onClick={() => onClose?.()}>
+          <svg className="lo-i lo-i--sm" viewBox="0 0 16 16" aria-hidden="true">
+            <path d="M4 4l8 8M12 4l-8 8" />
+          </svg>
+        </Button>
+      </span>
+    </>
+  );
+}
+
+export interface PeekListProps {
+  candidates: readonly PeekCandidate[];
+  /** The answer whose code shows, by key. */
+  selected: string | undefined;
+  onPick?: ((key: string) => void) | undefined;
+  listRef?: Ref<HTMLDivElement> | undefined;
+  className?: string | undefined;
+}
+
+/**
+ * A peek's answers: one focusable list, as the threads panel's is, whose active descendant is the
+ * answer the keyboard is on, the one whose code shows. Each says where it is and where it came
+ * from.
+ */
+export function PeekList({ candidates, selected, onPick, listRef, className = '' }: PeekListProps) {
+  const prefix = useId();
+  const index = candidates.findIndex((each) => each.key === selected);
+  return (
+    <div
+      ref={listRef}
+      role="listbox"
+      aria-label="Candidates"
+      tabIndex={0}
+      aria-activedescendant={index === -1 ? undefined : `${prefix}-${index}`}
+      className={`group/list flex flex-col gap-2 p-6 ${className}`}
+    >
+      {candidates.map((each, place) => (
+        <div
+          key={each.key}
+          id={`${prefix}-${place}`}
+          role="option"
+          aria-selected={each.key === selected}
+          data-key={each.key}
+          className={`peek-answer cursor-default gap-x-8 gap-y-2 rounded-sm px-8 py-6 hover:bg-hover ${each.key === selected ? 'bg-current-strong group-focus-visible/list:shadow-ring-inset' : ''}`}
+          onClick={() => onPick?.(each.key)}
+        >
+          {each.outside === true ? (
+            <span className="col-span-full min-w-0 truncate text-fg-muted text-small">
+              Outside this repository
+            </span>
+          ) : (
+            <>
+              <span className="min-w-0 code-small">
+                <PathName path={each.path} strong />
+              </span>
+              <span className="lo-num text-fg-muted text-small">{each.line}</span>
+            </>
+          )}
+          <span className="col-span-full min-w-0 text-fg-muted text-small">
+            <SourceMark
+              wrap
+              source={each.source}
+              note={
+                each.outside !== true && each.from !== undefined
+                  ? `From ${each.from}, which Lo doesn't install`
+                  : each.note
+              }
+            />
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+export interface PeekFootProps {
+  /** What it says of the answer shown: its path, its revision, and whether the PR added it. */
+  meta?: string | undefined;
+  /** Whether there's more than one answer to move between. */
+  several: boolean;
+  keys?: PeekKeys | undefined;
+}
+
+/** The foot of a peek, in a row its caller lays out: where the answer shown is, and the keys. */
+export function PeekFoot({ meta, several, keys }: PeekFootProps) {
+  return (
+    <>
+      <span className="lo-num min-w-0 truncate">
+        {meta !== undefined && <ShownText text={meta} />}
+      </span>
+      <span className="flex-1" />
+      {keys?.move && several && <PaletteHint keys={keys.move}>Candidate</PaletteHint>}
+      {keys?.references && <PaletteHint keys={keys.references}>References</PaletteHint>}
+      {keys?.back && <PaletteHint keys={keys.back}>Back</PaletteHint>}
+    </>
+  );
+}
+
 /**
  * The frame around a peek's code, under the line the reader asked about: what was asked, how many
  * answers there are, the way to go to the one shown, the list of answers with where each came from,
  * and the keys. The code is what the diff view draws for the answer shown, so the frame takes it as
- * its child.
+ * its child. A code view's peek draws the head, the list and the foot in parts of its own.
  *
  * The list is one focusable element, as the threads panel's is: the answer the keyboard is on is its
  * active descendant, and is the one whose code shows. With a single answer the list is one row
@@ -123,7 +275,7 @@ export function Peek({
   selected,
   at,
   meta,
-  goLabel = 'Open the whole file',
+  goLabel,
   keys,
   onPick,
   onGo,
@@ -133,12 +285,9 @@ export function Peek({
   className = '',
   ...rest
 }: PeekProps) {
-  const prefix = useId();
   const single = candidates.length === 1;
-  const index = candidates.findIndex((each) => each.key === selected);
-  const closeLabel = keys?.close ? `Close (${keys.close.join(' ')})` : 'Close';
   // An answer outside the repository has no file to go to.
-  const shown = candidates[index];
+  const shown = candidates.find((each) => each.key === selected);
   const goes = shown !== undefined && shown.outside !== true;
   return (
     <div
@@ -151,83 +300,24 @@ export function Peek({
     >
       <div className={`peek ${single ? 'peek-single' : ''}`}>
         <div className="col-span-full flex min-h-32 min-w-0 flex-wrap items-center gap-x-8 gap-y-2 border-b border-border-subtle py-2 ps-12 pe-8 text-fg-muted text-small">
-          <EyeIcon />
-          <span className="max-w-full min-w-0 truncate">
-            <strong className="font-semibold text-fg">
-              <ShownText text={name} />
-            </strong>{' '}
-            · <span className="lo-num">{definitions(candidates.length)}</span>
-          </span>
-          {at !== undefined && (
-            <span className="flex-none">
-              at <ShownText text={at} />
-            </span>
-          )}
-          <span className="flex-1" />
-          <span className="peek-go">
-            <Button variant="ghost" size="sm" disabled={!goes} onClick={() => onGo?.()}>
-              {goLabel}
-              {keys?.go && <Key keys={keys.go} quiet />}
-            </Button>
-          </span>
-          <span className="peek-close">
-            <Button
-              variant="ghost"
-              size="sm"
-              icon
-              aria-label={closeLabel}
-              onClick={() => onClose?.()}
-            >
-              <svg className="lo-i lo-i--sm" viewBox="0 0 16 16" aria-hidden="true">
-                <path d="M4 4l8 8M12 4l-8 8" />
-              </svg>
-            </Button>
-          </span>
+          <PeekHead
+            name={name}
+            count={candidates.length}
+            at={at}
+            goLabel={goLabel}
+            goes={goes}
+            keys={keys}
+            onGo={onGo}
+            onClose={onClose}
+          />
         </div>
-        <div
-          ref={listRef}
-          role="listbox"
-          aria-label="Candidates"
-          tabIndex={0}
-          aria-activedescendant={index === -1 ? undefined : `${prefix}-${index}`}
-          className={`group/list flex peek-list flex-col gap-2 overflow-auto p-6 ${single ? 'border-b border-border-subtle' : 'peek-rule'}`}
-        >
-          {candidates.map((each, place) => (
-            <div
-              key={each.key}
-              id={`${prefix}-${place}`}
-              role="option"
-              aria-selected={each.key === selected}
-              data-key={each.key}
-              className={`peek-answer cursor-default gap-x-8 gap-y-2 rounded-sm px-8 py-6 hover:bg-hover ${each.key === selected ? 'bg-current-strong group-focus-visible/list:shadow-ring-inset' : ''}`}
-              onClick={() => onPick?.(each.key)}
-            >
-              {each.outside === true ? (
-                <span className="col-span-full min-w-0 truncate text-fg-muted text-small">
-                  Outside this repository
-                </span>
-              ) : (
-                <>
-                  <span className="min-w-0 code-small">
-                    <PathName path={each.path} strong />
-                  </span>
-                  <span className="lo-num text-fg-muted text-small">{each.line}</span>
-                </>
-              )}
-              <span className="col-span-full min-w-0 text-fg-muted text-small">
-                <SourceMark
-                  wrap
-                  source={each.source}
-                  note={
-                    each.outside !== true && each.from !== undefined
-                      ? `From ${each.from}, which Lo doesn't install`
-                      : each.note
-                  }
-                />
-              </span>
-            </div>
-          ))}
-        </div>
+        <PeekList
+          candidates={candidates}
+          selected={selected}
+          onPick={onPick}
+          listRef={listRef}
+          className={`peek-list overflow-auto ${single ? 'border-b border-border-subtle' : 'peek-rule'}`}
+        />
         <div className="min-w-0 bg-code-bg">
           {children ??
             (shown?.outside === true && (
@@ -237,13 +327,7 @@ export function Peek({
             ))}
         </div>
         <div className="col-span-full flex min-h-32 min-w-0 flex-wrap items-center gap-x-12 gap-y-2 border-t border-border-subtle py-2 ps-12 pe-8 text-fg-muted text-small">
-          <span className="lo-num min-w-0 truncate">
-            {meta !== undefined && <ShownText text={meta} />}
-          </span>
-          <span className="flex-1" />
-          {keys?.move && !single && <PaletteHint keys={keys.move}>Candidate</PaletteHint>}
-          {keys?.references && <PaletteHint keys={keys.references}>References</PaletteHint>}
-          {keys?.back && <PaletteHint keys={keys.back}>Back</PaletteHint>}
+          <PeekFoot meta={meta} several={!single} keys={keys} />
         </div>
       </div>
     </div>

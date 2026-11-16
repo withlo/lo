@@ -1,6 +1,7 @@
 // Each pull request's tab's panels, for each of its views, kept while the tab is open: whether its
-// left panel is open, and which of the middle views it shows. And the right panel, the threads,
-// whose open state is the window's: it stays open or closed from tab to tab and layer to layer.
+// left panel is open, which of the middle views it shows, and which of the right panel's. And the
+// right panel's open state, which is the window's: it stays open or closed from tab to tab and
+// layer to layer.
 
 import { useStore } from 'zustand';
 import { createStore } from 'zustand/vanilla';
@@ -12,6 +13,11 @@ export interface Panels {
   readonly leftOpen: boolean;
   /** Which middle view is on screen, by its place among them. */
   readonly middle: number;
+  /**
+   * Which of the right panel's views it shows, by id: the one shown last, which `⌘⇧\` opens it on.
+   * None for the first, the threads.
+   */
+  readonly right?: string | undefined;
 }
 
 export const panels = makeTabState<Panels>(() => ({ leftOpen: true, middle: 0 }));
@@ -36,6 +42,9 @@ export const middleIds: { ids: readonly string[]; labeled: readonly boolean[] } 
   ids: [],
   labeled: [],
 };
+
+/** The right panel's views' ids, in their order, as the tab last drew them, the threads first. */
+export const rightIds: string[] = [];
 
 /**
  * The middle view `step` on from view `at` among those `labeled` says have a label, round the ends,
@@ -80,6 +89,20 @@ export function toggleRight(): void {
   const had = document.querySelector(RIGHT)?.contains(document.activeElement) ?? false;
   rightPanel.setState({ open: false, focus: false });
   if (had) focusMiddle();
+}
+
+/**
+ * Shows view `id` in tab `tab`'s right panel, opening it if it's closed, and gives it focus as it's
+ * drawn, unless `focus` is false; or, with none, closes the panel, giving focus in it back to the
+ * middle view.
+ */
+export function showRightView(tab: string, id: string | undefined, focus = true): void {
+  if (id === undefined) {
+    if (rightPanel.getState().open) toggleRight();
+    return;
+  }
+  panels.update(tab, (current) => ({ ...current, right: id }));
+  rightPanel.setState({ open: true, focus });
 }
 
 /**

@@ -534,7 +534,8 @@ class WholeFile implements FileView {
     const pos = this.#view.posAtCoords({ x: event.clientX, y: event.clientY });
     if (pos === null) return;
     event.preventDefault();
-    const line = this.#view.state.doc.lineAt(pos).number;
-    this.#on.menu(this.#targetAt(line), event.clientX, event.clientY);
+    // At the column clicked, so what acts on a word, as `gd` does, acts on the one clicked.
+    const line = this.#view.state.doc.lineAt(pos);
+    this.#on.menu(this.#targetAt(line.number, pos - line.from), event.clientX, event.clientY);
   }
 }

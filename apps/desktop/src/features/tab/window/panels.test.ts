@@ -1,6 +1,8 @@
-import { describe, expect, it } from 'vitest';
+// @vitest-environment jsdom
+import { afterEach, describe, expect, it } from 'vitest';
 
-import { stepAmong } from './panels.ts';
+import { panels, rightIds, rightPanel, showRightView, stepAmong, toggleRight } from './panels.ts';
+import { rightShown } from './shared.ts';
 
 describe('stepping through the middle views', () => {
   // The overview, the diff, a file whole, which has no label, and a fourth view.
@@ -22,5 +24,39 @@ describe('stepping through the middle views', () => {
   it('stays where it is with no other view to go to', () => {
     expect(stepAmong(0, 1, [true, false])).toBe(0);
     expect(stepAmong(0, -1, [])).toBe(0);
+  });
+});
+
+describe('the right panel’s views', () => {
+  afterEach(() => {
+    rightPanel.setState({ open: false, focus: false });
+    rightIds.splice(0, Infinity);
+  });
+
+  it('shows the threads first, another view once asked, and that one again as it opens', () => {
+    rightIds.push('comments.panel', 'code.references');
+    expect(rightShown('t1')).toBeUndefined();
+    toggleRight();
+    expect(rightShown('t1')).toBe('comments.panel');
+    toggleRight();
+    showRightView('t1', 'code.references');
+    expect(rightPanel.getState()).toEqual({ open: true, focus: true });
+    expect(rightShown('t1')).toBe('code.references');
+    // Another tab shows its own.
+    expect(rightShown('t2')).toBe('comments.panel');
+    // Closed and opened again, it shows the view shown last.
+    toggleRight();
+    expect(rightShown('t1')).toBeUndefined();
+    toggleRight();
+    expect(rightShown('t1')).toBe('code.references');
+    expect(panels.get('t1').right).toBe('code.references');
+  });
+
+  it('shows a view without taking focus when asked, and closes with none', () => {
+    rightIds.push('comments.panel', 'code.references');
+    showRightView('t1', 'comments.panel', false);
+    expect(rightPanel.getState()).toEqual({ open: true, focus: false });
+    showRightView('t1', undefined);
+    expect(rightPanel.getState().open).toBe(false);
   });
 });
