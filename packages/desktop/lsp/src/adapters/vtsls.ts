@@ -3,13 +3,17 @@
  * with the TypeScript it depends on, pinned with it in the manifest. vtsls starts TypeScript's
  * server, `tsserver`, as a child of its own, on the same Node.
  *
- * Nothing in the checkout chooses what runs:
+ * Nothing in the checkout brings code to run:
  *
  * - its own TypeScript, never the workspace's: no `typescript.tsdk`, and `vtsls.autoUseWorkspaceTsdk`
  *   off, so a `node_modules/typescript` in the checkout is never loaded;
- * - no plugins beyond those `tsserver` finds beside itself, in Lo's install: no plugin paths and
- *   no global plugins, so a plugin a `tsconfig.json` names is looked for there, and never in the
- *   checkout's `node_modules`;
+ * - no plugin from the checkout: no plugin paths, no global plugins and no local plugin loads, so a
+ *   plugin a `tsconfig.json` names is looked for by its package's name alone, never by a path, from
+ *   the `node_modules` beside Lo's TypeScript, and, as Node finds packages, from each `node_modules`
+ *   above Lo's install, such as `~/node_modules`: never from the checkout's own. A checkout can so
+ *   load a package the user already has in one of those folders, though it can't add one, and
+ *   neither vtsls nor `tsserver` has a way to turn a `tsconfig.json`'s plugins off. Which folders
+ *   those are follows from where Lo installs servers (`test/plugins.test.ts`);
  * - no automatic type acquisition, so `tsserver` runs no npm and fetches nothing, whatever a
  *   `package.json` or `.npmrc` says;
  * - `tsserver` on vtsls's own Node: no `typescript.tsserver.nodePath`, and no TypeScript written in

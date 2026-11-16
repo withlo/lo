@@ -78,14 +78,22 @@ Each starts as Node, by its absolute path, with a cap on its heap, then its own 
 its install, never the launcher npm would link, with no shell and an environment built from nothing.
 What it's told is its adapter's alone, and the adapter says why each setting is as it is:
 
-- **vtsls** runs its own TypeScript, never a workspace's (`node_modules/typescript`), loads no
-  `tsserver` plugin but those beside its own TypeScript, and has automatic type acquisition off, so
-  it runs no npm. `tsserver`'s heap is capped at 3 GB and vtsls's at 512 MB, under Lo's 4 GB for the
-  group.
+- **vtsls** runs its own TypeScript, never a workspace's (`node_modules/typescript`), and has
+  automatic type acquisition off, so it runs no npm. It loads no `tsserver` plugin from the
+  checkout. A plugin a checkout's `tsconfig.json` names is looked for by its package's name alone,
+  in the `node_modules` beside Lo's TypeScript and, as Node finds packages, in each `node_modules`
+  above Lo's install, such as `~/node_modules`, so a checkout can load a package you already have
+  there, though it can't add one. Neither vtsls nor `tsserver` can turn those plugins off.
+  `tsserver`'s heap is capped at 3 GB and vtsls's at 512 MB, under Lo's 4 GB for the group.
 - **Pyright** is given `/dev/null` as its Python, which can't run, so it runs no interpreter: not
   the machine's, nor one a checkout's virtual environment or `.python-version` would pick. It
-  answers from the checkout and the standard library's stubs it carries. It answers no inlay hints,
-  so its adapter says it has none (`hints: false`).
+  carries the standard library's stubs itself. It answers no inlay hints, so its adapter says it has
+  none (`hints: false`).
+
+Neither runs in a sandbox: each reads what you can, so an absolute import, or Pyright's
+`extraPaths`, leads it to files outside the checkout, and a hover can show what's in one. Nothing
+can send what it reads anywhere, and Lo never opens a place outside the checkout an answer names: it
+shows as outside the repository.
 
 Lo names each server's license wherever it says what the server is: a server's details in the status
 bar show its name, version and license, "Pyright 1.1.414 · MIT".

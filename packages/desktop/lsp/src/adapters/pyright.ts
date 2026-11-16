@@ -5,8 +5,8 @@
  * Pyright runs a Python interpreter to learn where its packages are installed: the one its
  * `python.pythonPath` setting names, or else the first `python3` or `python` on its `PATH`. Lo has
  * no Python of its own to give it, and gives it none of the machine's: its interpreter is
- * `/dev/null`, a device and not a program, which fails to run, so Pyright runs nothing and answers
- * from the checkout and its own stubs. No file of the checkout can name another:
+ * `/dev/null`, a device and not a program, which fails to run, so Pyright runs nothing. No file of
+ * the checkout can name another:
  *
  * - `pyrightconfig.json` and `pyproject.toml` can name a virtual environment, whose packages
  *   Pyright reads, but never an interpreter, so that environment's `python` never runs;
@@ -16,7 +16,10 @@
  *   `workspace/configuration`.
  *
  * Pyright uses no network. Without a client's cancellation folder it runs no background workers,
- * so it's one process.
+ * so it's one process. Like every server Lo runs, it has no sandbox: it reads what the user can,
+ * so an absolute import, or the `extraPaths` a `pyrightconfig.json` names, leads it to files
+ * outside the checkout, whose text a hover can show. Lo never opens a place outside the checkout an
+ * answer names: it shows as outside the repository.
  */
 
 import { heapCap, type NodeServer } from './node.ts';

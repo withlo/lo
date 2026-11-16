@@ -458,8 +458,12 @@ toolchain and git's variables each server needs.
   JavaScript, and Pyright for Python, each from npm. Each starts as Node, by its absolute path, with
   a cap on its heap, then the server's own entry point, never npm's launcher. What it's told is the
   adapter's alone, and nothing in the checkout picks what runs: vtsls runs its own TypeScript, loads
-  no `tsserver` plugin but those beside it in Lo's install, and acquires no types; Pyright's Python
-  is `/dev/null`, so it runs no interpreter. Each says whether it gives inlay hints (`hints`):
+  no `tsserver` plugin from the checkout, and acquires no types; Pyright's Python is `/dev/null`, so
+  it runs no interpreter. A plugin a `tsconfig.json` names is still looked for by its package's
+  name, beside Lo's TypeScript and in each `node_modules` above Lo's install, such as
+  `~/node_modules`, which neither vtsls nor `tsserver` can turn off (`test/plugins.test.ts`). No
+  server has a sandbox: each reads what the user can, outside the checkout too, and Lo never opens a
+  place outside the checkout an answer names. Each says whether it gives inlay hints (`hints`):
   Pyright gives none. The package's README lists each with its source, version and license, and a
   server's details name its license beside its version.
 - Tests start only the fake server, `testing/lsp/fake-server.ts`, at most two at once in a test
