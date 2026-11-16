@@ -1,6 +1,7 @@
 // The code feature in the window: trust, the syntax index and language servers. The banner on a
 // view nothing trusts, Settings' Trust section, and the palette's trust commands, each of which
-// only asks main; the index's item in the status bar; and each language server's, with its log.
+// only asks main; the index's item in the status bar; each language server's, with its log; and
+// Settings' Toolchains section.
 
 import { handlers } from '@lo/ui/commands';
 import { createElement } from 'react';
@@ -26,6 +27,7 @@ import {
   trustSwitch,
   untrustable,
 } from './status.ts';
+import Toolchains from './Toolchains.tsx';
 import Trusted from './Trusted.tsx';
 import { TrustBanner } from './TrustBanner.tsx';
 
@@ -96,6 +98,7 @@ export default {
       ...trustSwitch,
     }),
     Trusted,
+    Toolchains,
     // After the diff's (20) and the overview's (30).
     defineView(statusBar, {
       id: 'code.index',

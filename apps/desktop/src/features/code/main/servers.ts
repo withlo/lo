@@ -274,6 +274,35 @@ export class ServerPool {
   }
 
   /**
+   * Stops every server whose adapter `uses` picks, as when the toolchain it runs on is removed, and
+   * marks each failed with `message`, to wait for "Restart", which gets it again. One getting ready
+   * stops waiting for its download. Resolves once they've stopped.
+   */
+  async halt(uses: (adapter: Adapter) => boolean, message: string): Promise<void> {
+    const stops: Promise<void>[] = [];
+    for (const entry of this.#entries.values()) {
+      if (entry.phase === 'ending' || !uses(entry.adapter)) continue;
+      // What the start before finds out late is dropped.
+      entry.run += 1;
+      entry.controller.abort();
+      entry.controller = new AbortController();
+      entry.stopListening?.();
+      entry.stopListening = undefined;
+      const { server, stopping } = entry;
+      entry.server = undefined;
+      entry.moving = false;
+      if (server) stops.push(this.#stopServer(entry, server, entry.root));
+      if (stopping) stops.push(stopping);
+      entry.phase = 'failed';
+      entry.full = false;
+      entry.progress = undefined;
+      entry.problem = { kind: 'failed', why: { kind: 'error', message: clip(message) } };
+      this.#changed(entry);
+    }
+    await Promise.all(stops);
+  }
+
+  /**
    * Stops every server, as Lo quits, within `@lo/lsp`'s limit for a stop, and resolves once every
    * one has, those stopping already included.
    */

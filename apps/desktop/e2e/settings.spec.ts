@@ -1,6 +1,7 @@
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { dirname } from 'node:path';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 
+import { currentPlatform, downloadFor, fingerprint, TOOLCHAINS } from '@lo/lsp';
 import { gitProgram } from '@lo/testing/git';
 import { _electron as electron, type ElectronApplication, type Page } from '@playwright/test';
 
@@ -302,6 +303,60 @@ test('main refuses a setting the window sends that no feature declared, or its s
   ]);
   // Nothing was written, not even the file.
   expect(saved()).toBeUndefined();
+});
+
+/**
+ * Puts Go in the test's cache as Lo would have installed it, as a program of `bytes` bytes, and
+ * says where its version's folder is.
+ */
+function installGo(bytes: number): string {
+  const pinned = TOOLCHAINS.go;
+  const platform = currentPlatform();
+  const download = pinned && platform && downloadFor(pinned, platform);
+  if (!pinned || !download) throw new Error('Lo pins no Go for this system');
+  const folder = join(dataFolder(), 'cache', 'toolchains', 'go', pinned.version);
+  mkdirSync(join(folder, 'files', 'go', 'bin'), { recursive: true });
+  writeFileSync(join(folder, 'files', 'go', 'bin', 'go'), Buffer.alloc(bytes));
+  const marker = {
+    id: 'go',
+    version: pinned.version,
+    fingerprint: fingerprint('go', pinned, download),
+    files: [['go/bin/go', bytes]],
+    links: [],
+  };
+  writeFileSync(join(folder, 'installed.json'), JSON.stringify(marker));
+  return folder;
+}
+
+test('Settings lists the toolchains, and removes one that’s downloaded', async () => {
+  const go = installGo(2048);
+  const app = await electron.launch({
+    args: [appFolder],
+    env: { ...appEnvironment(dataFolder()), LO_GIT: gitProgram() },
+    chromiumSandbox: true,
+  });
+  try {
+    const page = await drawnWindow(app);
+    await openSettings(page);
+    const section = page.locator('section[data-settings-section="code.toolchains"]');
+    const rows = section.getByRole('listitem');
+    await expect(rows).toHaveText(
+      [
+        /^\.NET SDK 10\.0\.404Not downloaded · [\d.]+ MB · No language server uses it yet$/,
+        'Go 1.27.42 KB · No language server uses it yetRemove',
+        /^Rust 1\.100\.0Not downloaded · [\d.]+ MB/,
+        /^Temurin JDK 25\.0\.5\+8Not downloaded · [\d.]+ MB/,
+      ],
+      { timeout: 15_000 },
+    );
+    await section.getByRole('button', { name: 'Remove Go' }).click();
+    await expect(rows.nth(1)).toHaveText(/^Go 1\.27\.4Not downloaded · [\d.]+ MB/);
+    expect(existsSync(go)).toBe(false);
+    // Focus doesn't fall to the page with the button: nothing else is downloaded, so the list has it.
+    await expect(section.getByRole('list', { name: 'Toolchains' })).toBeFocused();
+  } finally {
+    await app.close();
+  }
 });
 
 test.describe('with git', () => {

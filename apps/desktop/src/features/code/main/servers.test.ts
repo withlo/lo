@@ -48,6 +48,7 @@ function standIns(limits: Partial<PoolLimits> = {}) {
     prepare: (each, progress, signal) =>
       each.prepare({
         install: () => Promise.reject(new Error('no downloads in tests')),
+        toolchain: () => Promise.reject(new Error('no downloads in tests')),
         findCopy: () => Promise.resolve(undefined),
         signal,
       }),
@@ -146,6 +147,7 @@ describe('which servers run', () => {
         progress.push(report);
         return each.prepare({
           install: () => Promise.reject(new Error('no downloads in tests')),
+          toolchain: () => Promise.reject(new Error('no downloads in tests')),
           findCopy: () => Promise.resolve(undefined),
           signal,
         });
@@ -408,6 +410,54 @@ describe('trust, then and there', () => {
     await settle();
     // Homebrew's git, say, whose folder also holds Homebrew's `go`, comes after Lo's `go`.
     expect(started[0]?.spec.path).toEqual(['/toolchain/bin', '/lo/git/bin']);
+  });
+});
+
+describe('halting', () => {
+  it('stops the servers that use a toolchain, each saying why until “Restart” starts it again', async () => {
+    const { pool, started, live } = standIns();
+    const views = [view('v1', 'a/x', 1, [TS, GO])];
+    pool.sync(views, 'v1');
+    await settle();
+    for (const server of started) server.set({ kind: 'ready' });
+    expect(live()).toHaveLength(2);
+
+    await pool.halt((each) => each.id === 'go', 'Go was removed. Restart downloads it again.');
+    expect(live().map((server) => server.spec.name)).toEqual(['TypeScript']);
+    expect(pool.shown('a/x', 'go')?.state).toEqual({
+      kind: 'failed',
+      why: { kind: 'error', message: 'Go was removed. Restart downloads it again.' },
+    });
+    expect(pool.find('a/x', 'go', '/cache/a/x/pull-1')).toEqual({ kind: 'failed' });
+    // Nothing starts it again by itself, even as the view on screen changes.
+    pool.sync(views, 'v1');
+    await settle();
+    expect(started).toHaveLength(2);
+
+    await pool.restart('a/x', GO, { folder: '/cache/a/x/pull-1', pull: 1 });
+    await settle();
+    expect(started).toHaveLength(3);
+    expect(live().map((server) => server.spec.name)).toEqual(['TypeScript', 'go']);
+  });
+
+  it('stops one getting ready, dropping what its download finds out late', async () => {
+    const { promise, resolve } = Promise.withResolvers<Prepared>();
+    let aborted = false;
+    const slow = adapter('go', ({ signal }) => {
+      signal.addEventListener('abort', () => {
+        aborted = true;
+      });
+      return promise;
+    });
+    const { pool, started } = standIns();
+    pool.sync([view('v1', 'a/x', 1, [slow])], 'v1');
+    await settle();
+    await pool.halt(() => true, 'Go was removed. Restart downloads it again.');
+    expect(aborted).toBe(true);
+    resolve({ kind: 'ready', launch: { program: '/bin/x', args: [] } });
+    await settle();
+    expect(started).toEqual([]);
+    expect(pool.shown('a/x', 'go')?.state.kind).toBe('failed');
   });
 });
 
