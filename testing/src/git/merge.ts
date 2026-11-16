@@ -1,7 +1,9 @@
 /**
  * The pull requests the merging features are tried on, in rozed-dev/e2e, as a git remote on this
  * machine: `testing/fixtures/merge.sh` makes every commit with the ID GitHub has for it, so Lo can
- * fetch them from here while the replay server answers for GitHub's API.
+ * fetch them from here while the replay server answers for GitHub's API. The commits GitHub made
+ * itself, the history of the two E4 bases the pull requests into them are cut from, come from
+ * `testing/fixtures/merge-e4.bundle`.
  *
  * A merge can't be undone, so the pull requests come in numbered generations, and what merges one
  * uses it up. `MERGE_PULLS` has each recorded generation, with each pull request's number and head.
@@ -78,11 +80,19 @@ export interface MergeGeneration {
 }
 
 /**
- * The generations recorded, by number. The heads of the pull requests into `e4/gated` and
- * `e4/queued` are GitHub's: they sit on commits GitHub made, which no script can build, so the
- * remote {@link writeMergeRemote} makes has pull requests there with the same changes, on a
- * stand-in commit, and other IDs. Every other head, and the bases, are the same commits.
+ * E4's two bases, which the pull requests into them are cut from, as `merge-e4.bundle` has them:
+ * the commit both share, and each branch's tip when the bundle was made. GitHub made these commits.
+ * The tips have moved on since, as pull requests merged into them, and a cassette recorded then
+ * names a later one, which the remote lacks until the bundle is made again.
  */
+export const MERGE_E4 = {
+  /** The commit `e4/gated` and `e4/queued` share, and every pull request into them is cut from. */
+  ancestor: '1f54e3f8f371da4c4fa8a3dbdeeed241e361e9a9',
+  gated: 'f8fd826d4615edfc580009f2aaf9ddc55f514ee2',
+  queued: 'be76197734f8ee252a269294e7be44c1c5fb8295',
+} as const;
+
+/** The generations recorded, by number: every commit is the one GitHub has. */
 export const MERGE_PULLS = {
   1: {
     owner: 'rozed-dev',

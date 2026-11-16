@@ -295,12 +295,26 @@ requests, and never changes E4's rulesets.
 `<folder>/rozed-dev/e2e.git` and `<folder>/work` and reads no network, for a generation whose
 numbers the script has. `writeMergeRemote(folder, generation, { pushed })` from `@lo/testing/git`
 builds it as a remote for `LO_GIT_REMOTE`, `MERGE_PULLS` names each recorded generation's pull
-requests, with their numbers, heads and bases, and `pushed` adds the commit `--push` does. A base
+requests, with their numbers, heads and bases, and `pushed` adds the commit `--push` does. Every
+commit has the ID GitHub has for it, so Lo can fetch any head or base tip a cassette names. A base
 GitHub merged into can't be rebuilt with its ID, so the remote keeps `merge/<generation>/base` as it
-was made, and no spec fetches what GitHub built. The pull requests into `e4/gated` and `e4/queued`
-are cut from commits GitHub made, which can't be built, so in the remote they sit on a stand-in
-commit and have other IDs than `MERGE_PULLS` gives, which are GitHub's; every other head is the
-commit GitHub has.
+was made, and no spec fetches what GitHub built there.
+
+The pull requests into `e4/gated` and `e4/queued` are cut from a commit GitHub made, which no script
+can build with its ID, so `fixtures/merge-e4.bundle` holds it: a git bundle of both branches'
+history as GitHub had it when the bundle was made, which `merge.sh` unbundles (`MERGE_E4` names its
+commits). Pull requests merge into those branches, so a cassette recorded later names a tip the
+bundle lacks, and the remote can't serve it. Make the bundle again from GitHub's history, which
+reads the public repository and needs no token:
+
+```sh
+git init --bare e2e.git
+git -C e2e.git fetch --no-tags https://github.com/rozed-dev/e2e.git \
+  +refs/heads/e4/gated:refs/heads/e4/gated +refs/heads/e4/queued:refs/heads/e4/queued
+git -C e2e.git bundle create <this repository>/testing/fixtures/merge-e4.bundle e4/gated e4/queued
+```
+
+and update the tips in `MERGE_E4`. The commits stay the same, so no generation's IDs change.
 
 To record a generation: run `merge.sh <generation>`, which prints each pull request's number and
 head, add them to `recorded_numbers` in the script and to `MERGE_PULLS`, and take `pushed` from

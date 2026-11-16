@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { expect, onTestFinished, test } from 'vitest';
 
 import { git, testGitEnvironment } from './git.ts';
-import { MERGE_PULLS, mergeScript, writeMergeRemote } from './merge.ts';
+import { MERGE_E4, MERGE_PULLS, mergeScript, writeMergeRemote } from './merge.ts';
 
 const generation = MERGE_PULLS[1];
 const { pulls } = generation;
@@ -34,7 +34,7 @@ const BRANCHES = {
 
 type Name = keyof typeof pulls;
 
-/** The pull requests cut from commits GitHub made, which a script can't build with their IDs. */
+/** The pull requests into E4's bases, which are cut from commits the bundle has. */
 const E4_NAMES = [
   'gatedFailing',
   'gatedPassing',
@@ -44,7 +44,7 @@ const E4_NAMES = [
   'queuedFail',
 ] as const satisfies readonly Name[];
 
-/** The rest, which are the commits GitHub has. */
+/** The rest, which sit on the generation's own base. */
 const NAMES = [
   'squash',
   'merge',
@@ -83,7 +83,7 @@ function merges(bare: string, a: string, b: string): boolean {
 }
 
 test(
-  'merge.sh makes the pull requests with the commit IDs GitHub has for them',
+  'merge.sh makes every pull request with the commit ID GitHub has for it, the ones into E4 included',
   { timeout: 60_000 },
   () => {
     const bare = built();
@@ -91,12 +91,16 @@ test(
     expect(git(bare, 'rev-parse', 'refs/heads/merge/1/base')).toBe(base.tip);
     expect(git(bare, 'rev-parse', `${base.tip}^`)).toBe(base.first);
     expect(git(bare, 'rev-parse', 'refs/heads/merge/1/override')).toBe(overrideBase);
-    for (const name of NAMES) {
+    for (const name of [...NAMES, ...E4_NAMES]) {
       const { number, head } = pulls[name];
       expect(
         git(bare, 'rev-parse', `refs/heads/merge/1/${BRANCHES[name]}`, `refs/pull/${number}/head`),
       ).toBe(`${head}\n${head}`);
     }
+    // E4's bases are as GitHub had them when the bundle was made.
+    expect(git(bare, 'rev-parse', 'refs/heads/e4/gated', 'refs/heads/e4/queued')).toBe(
+      `${MERGE_E4.gated}\n${MERGE_E4.queued}`,
+    );
     // Clients may filter, and fetch any commit by ID, as from GitHub.
     expect(git(bare, 'config', 'uploadpack.allowFilter')).toBe('true');
     expect(git(bare, 'config', 'uploadpack.allowAnySHA1InWant')).toBe('true');
@@ -139,8 +143,10 @@ test(
   { timeout: 60_000 },
   () => {
     const bare = built();
-    const stand = git(bare, 'rev-parse', 'refs/heads/e4/gated');
-    expect(git(bare, 'rev-parse', 'refs/heads/e4/queued')).toBe(stand);
+    // Both bases hold the commit every pull request into them is cut from.
+    for (const base of [MERGE_E4.gated, MERGE_E4.queued]) {
+      expect(git(bare, 'merge-base', '--is-ancestor', MERGE_E4.ancestor, base)).toBe('');
+    }
     const results = {
       gatedFailing: 'fail',
       gatedPassing: 'pass',
@@ -150,20 +156,15 @@ test(
       queuedFail: 'fail-in-queue',
     } as const satisfies Record<(typeof E4_NAMES)[number], string>;
     for (const name of E4_NAMES) {
-      const { number, base } = pulls[name];
-      const branch = `refs/heads/merge/1/${BRANCHES[name]}`;
-      // One commit on the stand-in, which adds its own folder and no other.
-      expect(git(bare, 'rev-parse', `refs/pull/${number}/head`)).toBe(
-        git(bare, 'rev-parse', branch),
-      );
-      expect(git(bare, 'rev-parse', `${branch}^`)).toBe(stand);
-      expect(git(bare, 'diff', '--name-status', stand, branch).split('\n')).toEqual([
-        `A\tmerge/1/${BRANCHES[name]}/ci-result`,
-        `A\tmerge/1/${BRANCHES[name]}/notes.md`,
+      const { head, base } = pulls[name];
+      const folder = `merge/1/${BRANCHES[name]}`;
+      // One commit on that commit, which adds its own folder and no other.
+      expect(git(bare, 'rev-parse', `${head}^`)).toBe(MERGE_E4.ancestor);
+      expect(git(bare, 'diff', '--name-status', MERGE_E4.ancestor, head).split('\n')).toEqual([
+        `A\t${folder}/ci-result`,
+        `A\t${folder}/notes.md`,
       ]);
-      expect(git(bare, 'show', `${branch}:merge/1/${BRANCHES[name]}/ci-result`)).toBe(
-        results[name],
-      );
+      expect(git(bare, 'show', `${head}:${folder}/ci-result`)).toBe(results[name]);
       expect(base).toBe(name.startsWith('gated') ? 'e4/gated' : 'e4/queued');
     }
   },
@@ -171,8 +172,8 @@ test(
 
 test('every file the fixture adds is under merge/1/', { timeout: 60_000 }, () => {
   const bare = built();
-  // Everything the generation's branches reach, but the stand-in for E4's commit the pull requests
-  // into its branches are cut from, which GitHub holds as it is.
+  // Everything the generation's branches reach, but the history of E4's bases that the pull
+  // requests into them are cut from, which GitHub made.
   const added = git(
     bare,
     'log',
@@ -214,7 +215,7 @@ test(
       'A\tmerge/1/moved/pushed.md',
     );
     // The other pull requests' heads are as they were.
-    for (const name of NAMES.filter((each) => each !== 'moved')) {
+    for (const name of [...NAMES, ...E4_NAMES].filter((each) => each !== 'moved')) {
       const { number, head } = pulls[name];
       expect(git(after, 'rev-parse', `refs/pull/${number}/head`)).toBe(head);
     }
@@ -266,4 +267,30 @@ test('merge.sh pushes only branches under merge/<generation>/, and never replace
   expect(refusedPush('+merge/1/squash:refs/heads/merge/1/squash')).toContain(
     'would replace a branch',
   );
+  // Nor deletes one, even one of the generation's own.
+  expect(refusedPush(':refs/heads/merge/1/squash')).toContain('would delete a branch');
+  expect(refusedPush(':refs/heads/main')).toContain('would delete a branch');
+  expect(refusedPush('merge/1/squash:refs/heads/merge/1/squash:refs/heads/main')).toContain(
+    'refusing to push',
+  );
+});
+
+test('the one ruleset merge.sh makes covers only the override bases, and an admin may always bypass it', () => {
+  const run = spawnSync(
+    'bash',
+    ['-c', '. "$1"; printf %s "$OVERRIDE_RULESET_JSON"', '_', mergeScript],
+    { env: testGitEnvironment(), encoding: 'utf8' },
+  );
+  expect(run.status).toBe(0);
+  const ruleset: unknown = JSON.parse(run.stdout);
+  expect(ruleset).toMatchObject({
+    name: 'Merge override',
+    target: 'branch',
+    enforcement: 'active',
+    // Only the branches `merge/<generation>/override`, and no exception.
+    conditions: { ref_name: { include: ['refs/heads/merge/*/override'], exclude: [] } },
+    // GitHub offers an admin the merge past a rule only when it's always theirs to bypass.
+    bypass_actors: [{ actor_type: 'RepositoryRole', actor_id: 5, bypass_mode: 'always' }],
+    rules: [{ type: 'pull_request', parameters: { required_approving_review_count: 1 } }],
+  });
 });

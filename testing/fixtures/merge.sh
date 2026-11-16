@@ -69,7 +69,9 @@
 # Pull requests into `e4/gated` and `e4/queued` are cut from the commit both branches share,
 # `E4_ANCESTOR` below, not from their tips, which merges move: a commit never changes, so the
 # generation's commits come out with the same IDs after something merges there. GitHub made that
-# commit and the ones before it, so a script can't build them with their IDs.
+# commit and the ones before it, which a script can't build with their IDs, so
+# `testing/fixtures/merge-e4.bundle` holds them: both branches' history as GitHub had it when
+# the bundle was made, which the script unbundles, with no network, as `--local` does too.
 #
 # With `--local`, it reads no network and needs no token. It makes, in <folder>:
 #
@@ -78,10 +80,9 @@
 #   clients filter and fetch any commit by ID, as GitHub does, so Lo can fetch from it with
 #   `LO_GIT_REMOTE=file://<folder>`. It's for a generation whose numbers `recorded_numbers`
 #   below has. With `--push`, it has the commit that adds. A base GitHub merged into can't be
-#   rebuilt with its ID, so it keeps `merge/<generation>/base` as it was before, and no test fetches
-#   what GitHub built. `e4/gated` and `e4/queued` are a stand-in for what the commit E4_ANCESTOR
-#   began, which can't be built, so the commits of the pull requests into them differ from
-#   GitHub's, and every other commit is the same;
+#   rebuilt with its ID, so it keeps `merge/<generation>/base` as it was before, and `e4/gated` and
+#   `e4/queued` as the bundle has them: what GitHub merged into any of them since isn't there. Every
+#   commit has the ID GitHub has for it, the pull requests into the E4 branches' included;
 # - `work`, a working copy with every branch, and `merge/<generation>/moved-pushed`, the commit
 #   `--push` adds.
 #
@@ -101,6 +102,9 @@ here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # The commit `e4/gated` and `e4/queued` share, "Add the workflows E4 and E5 run": the one every pull
 # request into either is cut from.
 E4_ANCESTOR=1f54e3f8f371da4c4fa8a3dbdeeed241e361e9a9
+# Both branches' history as GitHub has it, made with `git bundle create` (testing/README.md says
+# how to make it again): the commits every pull request into them is built on.
+E4_BUNDLE=$here/merge-e4.bundle
 # The ruleset this fixture makes, and the only one of its kind.
 OVERRIDE_RULESET='Merge override'
 
@@ -205,8 +209,8 @@ ci_pull() {
 }
 
 # Makes every branch of the generation in the working copy, `work`, from fixed names, dates and
-# contents. Without `--local`, the pull requests into `e4/gated` and `e4/queued` are cut from
-# E4_ANCESTOR, which it fetches; with it, from a stand-in commit of the branches of those names.
+# contents. The pull requests into `e4/gated` and `e4/queued` are cut from E4_ANCESTOR, in the
+# history of those branches that it unbundles into `e4/gated` and `e4/queued`.
 build_merge() {
   local base=merge/$generation/base root tip e4_parent
   rm -rf "$work"
@@ -305,25 +309,13 @@ A commit pushed after the pull request was opened, as anyone with write access m
 EOF
   commit 'Add what a later push says' 2026-11-16T10:00:00Z
 
-  # The pull requests into `e4/gated` and `e4/queued`.
-  if [ "${local_mode-}" = true ]; then
-    g switch -q --orphan e4/gated
-    put README.md <<'EOF'
-# E4 stand-in
-
-What the branches `e4/gated` and `e4/queued` of rozed-dev/e2e hold, as far as a pull request into
-them needs. `testing/fixtures/merge.sh --local` makes it, since GitHub's commits can't be built.
-EOF
-    commit 'Stand in for the history E4 made' 2026-11-16T08:50:00Z
-    g branch e4/queued
-    e4_parent=$(g rev-parse HEAD)
-  else
-    g fetch -q --no-tags "https://github.com/$E2E_REPO.git" "$E4_ANCESTOR"
-    e4_parent=$(g rev-parse "$E4_ANCESTOR^{commit}")
-    if [ "$e4_parent" != "$E4_ANCESTOR" ]; then
-      echo "merge.sh: fetched $e4_parent, not $E4_ANCESTOR" >&2
-      return 1
-    fi
+  # The pull requests into `e4/gated` and `e4/queued`, on the history GitHub made.
+  g fetch -q --no-tags "$E4_BUNDLE" +refs/heads/e4/gated:refs/heads/e4/gated \
+    +refs/heads/e4/queued:refs/heads/e4/queued
+  e4_parent=$(g rev-parse "$E4_ANCESTOR^{commit}")
+  if [ "$e4_parent" != "$E4_ANCESTOR" ]; then
+    echo "merge.sh: $E4_BUNDLE doesn't hold $E4_ANCESTOR" >&2
+    return 1
   fi
   ci_pull gated-failing fail 'Into e4/gated: ci fails, and a conversation on this line is open.' "$e4_parent"
   ci_pull gated-passing pass 'Into e4/gated: ci passes, so it waits only for an approval.' "$e4_parent"
@@ -347,16 +339,24 @@ EOF
 
 # --- GitHub, as rozed-bot ---------------------------------------------------------------------
 
-# Pushes <refspec>... from the working copy to rozed-dev/e2e as they are, without replacing a
-# branch: `<branch>:refs/heads/merge/<generation>/<name>`, all or none. Nothing else takes a push,
-# and git is given the token by a credential helper that reads the file, so it's in no argument or
-# variable.
+# Pushes <refspec>... from the working copy to rozed-dev/e2e as they are, without replacing or
+# deleting a branch: `<branch>:refs/heads/merge/<generation>/<name>`, all or none. Nothing else
+# takes a push, and git is given the token by a credential helper that reads the file, so it's in
+# no argument or variable.
 push_new() {
   local spec helper
   for spec in "$@"; do
     case $spec in
       +*)
         echo "merge.sh: refusing to push $spec, which would replace a branch" >&2
+        return 1
+        ;;
+      :*)
+        echo "merge.sh: refusing to push $spec, which would delete a branch" >&2
+        return 1
+        ;;
+      *:*:*)
+        echo "merge.sh: refusing to push $spec" >&2
         return 1
         ;;
     esac
