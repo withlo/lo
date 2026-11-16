@@ -136,7 +136,10 @@ Everything a PR contains is untrusted: code, Markdown, images and artifacts.
 - **Tokens** are encrypted with a key kept in the system keychain, and stored in the database, one
   per account. On Linux that's a keyring, such as GNOME Keyring or KWallet: when none answers, Lo
   asks for one rather than keep a token as good as unencrypted.
-- **Repo copies.** Each repo gets a bare partial clone in Lo's cache folder.
+- **Repo copies.** Each repo gets a bare partial clone in Lo's cache folder. On a Mac that's the
+  folder macOS keeps for the user's caches outside the home folder (`/var/folders/…/C/Lo`), so no
+  settings a tool reads from the folders above its own, such as `~/.cargo/config.toml`, reach the
+  language servers Lo runs there.
 
 ### Per-system code
 
@@ -588,6 +591,11 @@ repo. The right side of a diff navigates the new commit, and the left side the o
   JavaScript, Python, Rust, Go, Swift, Kotlin, Terraform, Ruby, Java, C# and PHP. Each is downloaded
   on first use from its official source, only for trusted repos, and Lo uses an installed copy when
   it finds one.
+- **Toolchains.** The toolchains servers need are Lo's own too: Go, Rust, a Temurin JDK and the .NET
+  SDK, one version each, pinned and downloaded like the servers on first use of their language.
+  Servers never use the machine's, nor a version a repo asks for. A repo whose `global.json` names
+  other folders to find a .NET SDK in gets no .NET server, which says why. Settings lists them with
+  their sizes, and removes them.
 - **Java and Kotlin.** Their servers read the project's Gradle or Maven build to understand it,
   which is one reason language servers need trust.
 

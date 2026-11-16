@@ -55,12 +55,12 @@ test('opens a bare partial clone on first use', async () => {
 test('git never uses a repository above the cache', async () => {
   const server = repoServer();
   pullRequest(server);
-  // The user's own repository around the cache, such as dotfiles kept in the home folder. Its
-  // origin has pull request #1; the clone's own remote doesn't exist.
+  // The user's own repository around the cache, such as dotfiles kept in the home folder, which
+  // holds the cache on Linux. Its origin has pull request #1; the clone's own remote doesn't exist.
   const home = tempFolder();
   git(home, 'init', '-q');
   git(home, 'config', 'remote.origin.url', `${server.baseUrl}/owner/repo.git`);
-  const cache = await cacheFor(server, { root: join(home, 'Library/Caches/Lo') });
+  const cache = await cacheFor(server, { root: join(home, '.cache/Lo') });
   const repo = await cache.open('owner', 'not-on-the-server');
   // Half deleted, as by a cleanup that was interrupted.
   rmSync(join(repo.folder, 'HEAD'));

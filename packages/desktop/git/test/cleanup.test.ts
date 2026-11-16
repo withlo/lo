@@ -1,6 +1,7 @@
 // The cache's size, clearing it, removing what nobody used for a while, its cap, and repacking.
 
 import { execFileSync } from 'node:child_process';
+import { randomBytes } from 'node:crypto';
 import {
   chmodSync,
   existsSync,
@@ -128,6 +129,24 @@ test('size counts clones and checkouts', async () => {
   expect(used).toBeGreaterThan(empty);
   // At least the checkout's files and the clone's packs.
   expect(used).toBeGreaterThan(8 * 1024);
+});
+
+test('size and the cap leave out the toolchains, so a large one evicts no clone', async () => {
+  const cache = await cacheFor(server());
+  const old = await useRepo(cache, 'old');
+  const used = await cache.size();
+  // A toolchain far larger than the clone, in the folder the cap leaves out.
+  const toolchain = join(cache.toolchainsFolder, 'go', '1.0.0');
+  mkdirSync(toolchain, { recursive: true });
+  writeFileSync(join(toolchain, 'go'), Buffer.alloc(4 * 1024 * 1024, 1));
+
+  expect(await cache.size()).toBe(used);
+  expect(await cache.setCap(used)).toEqual([]);
+  expect(existsSync(old)).toBe(true);
+  expect(existsSync(checkoutOf(cache, 'old'))).toBe(true);
+  // Clearing the cache leaves it too.
+  await cache.clear();
+  expect(existsSync(join(toolchain, 'go'))).toBe(true);
 });
 
 test('clear removes every clone and checkout', async () => {
@@ -516,6 +535,23 @@ test('a clone over the cap alone loses its checkouts, least recently used first,
     expect(await cache.setCap(1)).toEqual([]);
     expect([existsSync(second), existsSync(repo.folder)]).toEqual([false, true]);
   }
+});
+
+test('what’s being deleted doesn’t count against the cap', async () => {
+  const cache = await cacheFor(server());
+  const old = await useRepo(cache, 'old');
+  stampDaysAgo(old, 2);
+  const recent = await useRepo(cache, 'new');
+  stampDaysAgo(recent, 1);
+  const cap = await cache.size();
+  // Something moved aside to delete, as a quit in the middle of it leaves, and as big as the rest.
+  const trash = join(cache.root, 'tmp', '1-0.trash');
+  mkdirSync(trash);
+  writeFileSync(join(trash, 'pack'), randomBytes(cap));
+
+  expect(await cache.setCap(cap)).toEqual([]);
+
+  expect([existsSync(old), existsSync(recent), existsSync(trash)]).toEqual([true, true, true]);
 });
 
 test('a fetch that makes a clone keeps the cache under its cap', async () => {

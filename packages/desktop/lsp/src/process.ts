@@ -3,7 +3,7 @@
  *
  * - No shell: the server's own program, by absolute path, with an argument list. The program is a
  *   compiled program, never a script (a launcher such as `bin/jdtls` is Python, and Kotlin's is a
- *   shell script), and it isn't inside the checkout.
+ *   shell script), and it isn't inside the checkout. .NET's `dotnet` runs only as `dotnet exec`.
  * - A process group of its own (`detached`), so a signal to the group reaches whatever the server
  *   started, and a terminal's Ctrl-C, which goes to the terminal's group, never reaches it. What
  *   left the group, by a session of its own, is found by its parent (`family.ts`) and signalled
@@ -15,7 +15,7 @@
 import { type ChildProcess, spawn } from 'node:child_process';
 import { constants } from 'node:fs';
 import { access, open, realpath, stat } from 'node:fs/promises';
-import { isAbsolute } from 'node:path';
+import { basename, isAbsolute } from 'node:path';
 
 import { isInside } from './environment.ts';
 
@@ -47,6 +47,19 @@ export async function checkProgram(program: string, roots: readonly string[]): P
     await file.close();
   }
   return real;
+}
+
+/**
+ * Checks that `args` are ones a server's `program`, at `real`, may run with: .NET's `dotnet` only
+ * as `dotnet exec <program>`, which reads no `global.json`. Its other commands run an SDK that the
+ * `global.json` nearest the folder it runs in, the checkout, may choose. It throws if not.
+ */
+export function checkArguments(program: string, real: string, args: readonly string[]): void {
+  if ((basename(program) === 'dotnet' || basename(real) === 'dotnet') && args[0] !== 'exec') {
+    throw new Error(
+      `${program} runs a server only as \`dotnet exec\`, since its other commands read the checkout’s global.json.`,
+    );
+  }
 }
 
 /** Starts `program` in a process group of its own, with pipes for its stdio. */

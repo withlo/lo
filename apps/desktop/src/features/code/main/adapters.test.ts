@@ -1,5 +1,5 @@
-// The adapters Lo ships: which files each reads, and what it downloads before it starts. What each
-// server runs as, and is told, is `@lo/lsp`'s, and tested there.
+// The adapters Lo ships: which files each reads, and what it downloads before it starts, which is
+// no toolchain. What each server runs as, and is told, is `@lo/lsp`'s, and tested there.
 
 import { type Installed, launchNative, launchOnNode, PHP_LSP, PYRIGHT, VTSLS } from '@lo/lsp';
 import { describe, expect, it } from 'vitest';
@@ -23,18 +23,26 @@ function shipped(id: string): Adapter {
   return found;
 }
 
-/** What `adapter` installs, in order, and what it says to start, with every install there. */
+/**
+ * What `adapter` installs, in order, the toolchains it asks for, and what it says to start, with
+ * every install there.
+ */
 async function prepared(adapter: Adapter) {
   const installs: string[] = [];
+  const toolchains: string[] = [];
   const ready = await adapter.prepare({
     install: (id) => {
       installs.push(id);
       return Promise.resolve(installedAs(id));
     },
+    toolchain: (id) => {
+      toolchains.push(id);
+      return Promise.reject(new Error('no toolchain is asked for'));
+    },
     findCopy: () => Promise.reject(new Error('no copy is looked for')),
     signal: new AbortController().signal,
   });
-  return { installs, ready };
+  return { installs, toolchains, ready };
 }
 
 describe('Lo’s adapters', () => {
@@ -52,13 +60,17 @@ describe('Lo’s adapters', () => {
     expect(readBy('lib/a.rb')).toBeUndefined();
   });
 
-  it('download Node, then their server, and start it on that Node', async () => {
+  it('download Node, then their server, and start it on that Node, with no toolchain', async () => {
     for (const [id, server] of [
       ['typescript', VTSLS],
       ['python', PYRIGHT],
     ] as const) {
-      const { installs, ready } = await prepared(shipped(id));
+      const adapter = shipped(id);
+      const { installs, toolchains, ready } = await prepared(adapter);
       expect(installs).toEqual(['node', server.id]);
+      expect(toolchains).toEqual([]);
+      // Named up front, so the status bar adds them up from the first byte.
+      expect(adapter.downloads).toEqual({ servers: ['node', server.id], toolchains: [] });
       expect(ready).toEqual({
         kind: 'ready',
         launch: launchOnNode(server, installedAs('node'), installedAs(server.id)),
@@ -66,9 +78,12 @@ describe('Lo’s adapters', () => {
     }
   });
 
-  it('download php-lsp alone, and start it as its own program', async () => {
-    const { installs, ready } = await prepared(shipped('php'));
+  it('download php-lsp alone, with no toolchain, and start it as its own program', async () => {
+    const adapter = shipped('php');
+    const { installs, toolchains, ready } = await prepared(adapter);
     expect(installs).toEqual(['php-lsp']);
+    expect(toolchains).toEqual([]);
+    expect(adapter.downloads).toEqual({ servers: ['php-lsp'], toolchains: [] });
     expect(ready).toEqual({ kind: 'ready', launch: launchNative(PHP_LSP, installedAs('php-lsp')) });
     expect(ready.kind === 'ready' && ready.launch.program).toBe(installedAs('php-lsp').entry);
   });
@@ -87,6 +102,7 @@ describe('Lo’s adapters', () => {
       shipped('typescript').prepare({
         install: (id) =>
           id === 'node' ? Promise.resolve(installedAs(id)) : Promise.reject(failed),
+        toolchain: () => Promise.reject(new Error('no toolchain is asked for')),
         findCopy: () => Promise.resolve(undefined),
         signal: new AbortController().signal,
       }),
@@ -95,6 +111,7 @@ describe('Lo’s adapters', () => {
     await expect(
       shipped('php').prepare({
         install: () => Promise.reject(missing),
+        toolchain: () => Promise.reject(new Error('no toolchain is asked for')),
         findCopy: () => Promise.resolve(undefined),
         signal: new AbortController().signal,
       }),

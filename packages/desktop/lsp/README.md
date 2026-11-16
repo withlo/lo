@@ -99,8 +99,9 @@ each setting is as it is:
   automatic type acquisition off, so it runs no npm. It loads no `tsserver` plugin from the
   checkout. A plugin a checkout's `tsconfig.json` names is looked for by its package's name alone,
   in the `node_modules` beside Lo's TypeScript and, as Node finds packages, in each `node_modules`
-  above Lo's install, such as `~/node_modules`, so a checkout can load a package you already have
-  there, though it can't add one. Neither vtsls nor `tsserver` can turn those plugins off.
+  above Lo's install, so a checkout can load a package you already have there, though it can't add
+  one. Neither vtsls nor `tsserver` can turn those plugins off. On a Mac, Lo's cache is outside your
+  home folder, so those never include `~/node_modules`; on Linux it's in `~/.cache`, so they do.
   `tsserver`'s heap is capped at 3 GB and vtsls's at 512 MB, under Lo's 4 GB for the group.
 - **Pyright** is given `/dev/null` as its Python, which can't run, so it runs no interpreter: not
   the machine's, nor one a checkout's virtual environment or `.python-version` would pick. It
@@ -132,18 +133,22 @@ bar show its name, version and license, "Pyright 1.1.414 · MIT".
 
 ## Downloads
 
-`servers.json` pins what Lo downloads, and `scripts/pin.ts` writes it (see `AGENTS.md`). An
-`Installer` puts each version in `<cache>/servers/<id>/<version>/`, holding a download to these:
+`servers.json` pins what Lo downloads, and `scripts/pin.ts` writes it (see `AGENTS.md`).
+`toolchains.json` pins the toolchains language servers use, Go, Rust, a Temurin JDK and the .NET
+SDK, the same way, with what each unpacks to on each platform; `src/toolchains.ts` says what a
+server gets of each. An `Installer` puts each version in `<folder>/<id>/<version>/`, the servers' in
+`<cache>/servers/` and the toolchains' in `<cache>/toolchains/`, holding a download to these:
 
-| What                       | Limit                                                       |
-| -------------------------- | ----------------------------------------------------------- |
-| Addresses                  | `https`, the usual port, the entry's hosts by exact name    |
-| Redirects                  | 5, each held to the same rules, and none followed unseen    |
-| A file                     | the size the manifest pins, then its SHA-256                |
-| Tries                      | 3, when the connection fails, the file comes short or a 5xx |
-| A stall                    | nothing for 30 s, or under 16 KB in any 5 minutes           |
-| What an archive unpacks to | 100,000 entries and 2 GB                                    |
-| A symbolic link's target   | 1 KB, relative, resolving inside                            |
+| What                       | Limit                                                                                    |
+| -------------------------- | ---------------------------------------------------------------------------------------- |
+| Addresses                  | `https`, the usual port, the entry's hosts by exact name                                 |
+| Redirects                  | 5, each held to the same rules, and none followed unseen                                 |
+| Room on the disk           | its files and what they unpack to, before it starts                                      |
+| A file                     | the size the manifest pins, then its SHA-256                                             |
+| Tries                      | 3, when the connection fails, the file comes short or a 5xx                              |
+| A stall                    | nothing for 30 s, or under 16 KB in any 5 minutes                                        |
+| What an archive unpacks to | 100,000 entries, and what it's recorded to unpack to and 5% more, or 2 GB where it isn't |
+| A symbolic link's target   | 1 KB, relative, resolving inside                                                         |
 
 A stall counts as a failed connection, and is either of two things, in the time Lo waits for the
 network: nothing at all for 30 s, or less than 16 KB in any 5 minutes. The first gives up on a host
@@ -157,7 +162,20 @@ counts start again from it. Lo's own time between waits, such as writing what ca
 
 Nothing is unpacked before its hash matches, and nothing is used before its marker says it's whole.
 Absolute paths, `..`, hard links, devices and pipes are refused, and files are written before any
-link is made, so nothing is written through one.
+link is made, so nothing is written through one. A download in layers, as Rust's components are,
+lays each tarball's component folder over the ones before it, leaving out the rest of the tarball
+and the `manifest.in` that lists the component's files; a file a layer before it wrote is refused.
+
+`remove` takes every version of an ID away, as Settings' "Remove" does a toolchain's. From the
+moment it's asked, an install of it fails with the removal's reason, and every install under way
+stops, those nobody waits for any longer included. What it's given to run first, such as stopping
+the servers that use it, runs next, and once that and each install have ended, its folder is renamed
+aside and deleted, so nothing finds it half gone and nothing puts it back.
+
+A server that uses .NET runs only as `dotnet exec` (`checkArguments` in `src/process.ts`), and only
+on a checkout `checkoutProblem` finds no `global.json` in, nor above, that names `paths` or spells a
+key with an escape: that file can send the SDK's commands, and MSBuild, to an SDK in the checkout,
+whatever the variables say.
 
 Each file and folder unpacked is synced to the disk, then the marker, then the folder that holds
 them, and only then is it renamed into place. The marker records the fingerprint of the download and

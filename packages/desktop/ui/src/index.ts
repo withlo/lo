@@ -24,6 +24,7 @@ export { StatusBar, StatusItem, StatusKeys, StatusMode } from './StatusBar.tsx';
 export { Button, type ButtonProps } from './Button.tsx';
 export { Input, type InputProps } from './Input.tsx';
 export { Meter, type MeterProps } from './Meter.tsx';
+export { formatBytes } from './bytes.ts';
 export {
   Setting,
   SettingsPage,
@@ -188,6 +189,13 @@ export {
   type ServerStatusProps,
   type ServerTrust,
 } from './ServerStatus.tsx';
+export {
+  ToolchainList,
+  ToolchainRow,
+  type ToolchainEntry,
+  type ToolchainListProps,
+  type ToolchainRowProps,
+} from './Toolchains.tsx';
 export {
   TrustList,
   TrustRow,

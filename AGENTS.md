@@ -384,9 +384,23 @@ Only main runs git, through `@lo/git`, and the background process never sees git
   system's usual folders, and the newest new enough wins. `app.info` says what it found, `checking`
   until it has, and `app.git` pushes each answer. Asking again (`git.check()`) finds a git installed
   since.
-- With git, main opens the cache, `Lo` in the system's folder for caches (`Lo Dev` for a build run
-  from source, or `cache` in `LO_USER_DATA_DIR`), as `git.cache`, and cleans it up without anyone
-  waiting. `git.setCap()` sets the size it's kept under.
+- With git, main opens the cache, as `git.cache`, and cleans it up without anyone waiting.
+  `git.setCap()` sets the size it's kept under, which counts all of it but the toolchains language
+  servers use (`toolchains/`), since Settings removes those and their gigabytes would otherwise
+  evict clones, and what's being deleted (`tmp/*.trash`).
+- The cache is `Lo` (`Lo Dev` for a build run from source, or `cache` in `LO_USER_DATA_DIR`) in the
+  system's folder for this user's caches: `$XDG_CACHE_HOME` or `~/.cache` on Linux, and on a Mac the
+  one macOS keeps outside the home folder, `DARWIN_USER_CACHE_DIR`
+  (`/var/folders/<xx>/<random>/C/`), as `/usr/bin/getconf` names it. Tools that language servers run
+  read settings from every folder above their own, such as Cargo's `.cargo/config.toml`, and
+  tsserver loads plugins from every `node_modules` above its install, so the home folder is none of
+  them. Lo won't start unless that folder, as named and as it resolves, is a folder, not a link, of
+  the user's own that nobody else can change, and never falls back to the home folder.
+- Once the cache opens, the one an earlier Lo kept in `~/Library/Caches` goes, as the cache removes
+  its own: moved into its `tmp/` and deleted with the cache's other deletions, or deleted where it
+  is when it's on another volume. Only a folder, never a link, that holds a cache's folders goes,
+  never the open cache or a folder holding it, whatever links lead there, and only under its lock,
+  never while another Lo has it open.
 - Every git gets an environment of Lo's own making, never main's, and only a fetch gets the
   account's token, from a source read as each fetch starts. Fetches take the proxy Lo's own requests
   take.
@@ -440,6 +454,22 @@ toolchain and git's variables each server needs.
   platform. `pnpm nx run lsp:pin -- <id> <version>` records one, by hand and never in CI: it checks
   each file against its publisher's signature first (Node's releasers' keys, in `scripts/keys/`, and
   npm's registry keys), and that it unpacks as Lo would. Lo trusts only the manifest's hashes.
+- The toolchains language servers use are pinned the same way, in `toolchains.json`: Go, Rust
+  (rustc, cargo, the standard library and its sources, as layers of one sysroot), a Temurin JDK and
+  the .NET SDK, each with what it unpacks to per platform. `lsp:pin` checks Go against Google's
+  signature and go.dev's list, Rust against its signed channel file, the JDK against Adoptium's
+  signature, and .NET, which publishes none, against the SHA-512 that both Microsoft's download site
+  and the dotnet/core repository list. Pins are renewed before each release. A server uses only Lo's
+  copy, never the machine's, nor a version its checkout asks for: `toolchainUse` gives it the folder
+  of programs for its `PATH` and the variables that hold the toolchain to Lo's copy
+  (`GOTOOLCHAIN=local`, an empty `RUSTC_WRAPPER`, `JAVA_HOME`, `DOTNET_ROOT`, MSBuild's
+  `DOTNET_MSBUILD_SDK_RESOLVER_*`, and the rest).
+- A `global.json` can steer `dotnet` past those variables: since .NET 10 its `sdk.paths` names
+  folders to find an SDK in, the checkout's own among them, and the SDK's commands and MSBuild read
+  the one nearest where they run. So `dotnet` starts a server only as `dotnet exec`, which reads
+  none (`checkArguments`), and a server that uses .NET doesn't start on, or move to, a checkout with
+  a `global.json` that names `paths` or spells a key with an escape, in it or in a folder above it
+  (`checkoutProblem`, asked by the pool).
 - A download goes over `https` only, on the usual port, to its entry's hosts, following at most 5
   redirects itself, each held to the same rules, and refusing an answer its `fetch` was redirected
   to unseen, with no token or cookie. In the app it goes through `net.request` (`netFetch` with
@@ -449,14 +479,18 @@ toolchain and git's variables each server needs.
   answer's headers included, or brings less than 16 KB in any 5 minutes, is tried 3 times in all,
   and a download as a whole has no deadline.
 - Then it's unpacked there: a `tar.gz` (npm's `tar`), a `zip` (`yauzl`), a gzipped program, a
-  program as it is, or an npm package's tarballs laid out as `node_modules`, with nothing run.
-  Absolute paths, `..`, hard links, devices and links that resolve outside are refused, and so is
-  more than 100,000 entries or 2 GB. Everything is synced to the disk, a marker last, before the
-  folder is renamed into `<cache>/servers/<id>/<version>/`. The marker names what it holds, the
-  version of the rules it was unpacked under, each file's size, each folder and each link's target;
-  a folder whose marker doesn't match, or whose files, folders or links don't match its marker, any
-  folder below `<cache>/servers/` that's become a link included, is removed and fetched again. Two
-  installs of a version at once make one download.
+  program as it is, an npm package's tarballs laid out as `node_modules`, or layers, each tarball's
+  component folder laid over the one before, with nothing run. Absolute paths, `..`, hard links,
+  devices, links that resolve outside and a path two layers both write are refused, and so is more
+  than 100,000 entries or 2 GB, or, for a download recorded with what it unpacks to, more than that
+  and 5%. Before a download starts, the disk must have room for it and what it unpacks to.
+  Everything is synced to the disk, a marker last, before the folder is renamed into
+  `<cache>/servers/<id>/<version>/`, or a toolchain's into `<cache>/toolchains/<id>/<version>/`. The
+  marker names what it holds, the version of the rules it was unpacked under, each file's size, each
+  folder and each link's target; a folder whose marker doesn't match, or whose files, folders or
+  links don't match its marker, any folder below `<cache>/servers/` or `<cache>/toolchains/` that's
+  become a link included, is removed and fetched again. Two installs of a version at once make one
+  download.
 - A server installed by the user is used only from where its adapter says it may be, when the app's
   folder check passes it (the one git is held to), it isn't in Lo's cache, and it isn't a version
   manager's shim, which picks a program from the checkout.
@@ -466,12 +500,13 @@ toolchain and git's variables each server needs.
   adapter's alone, and nothing in the checkout picks what runs: vtsls runs its own TypeScript, loads
   no `tsserver` plugin from the checkout, and acquires no types; Pyright's Python is `/dev/null`, so
   it runs no interpreter. A plugin a `tsconfig.json` names is still looked for by its package's
-  name, beside Lo's TypeScript and in each `node_modules` above Lo's install, such as
-  `~/node_modules`, which neither vtsls nor `tsserver` can turn off (`test/plugins.test.ts`). No
-  server has a sandbox: each reads what the user can, outside the checkout too, and Lo never opens a
-  place outside the checkout an answer names. Each says whether it gives inlay hints (`hints`):
-  Pyright gives none. The package's README lists each with its source, version and license, and a
-  server's details name its license beside its version.
+  name, beside Lo's TypeScript and in each `node_modules` above Lo's install, which neither vtsls
+  nor `tsserver` can turn off (`test/plugins.test.ts`): on a Mac, where the cache is outside the
+  home folder, that's never `~/node_modules`; on Linux it can be. No server has a sandbox: each
+  reads what the user can, outside the checkout too, and Lo never opens a place outside the checkout
+  an answer names. Each says whether it gives inlay hints (`hints`): Pyright gives none. The
+  package's README lists each with its source, version and license, and a server's details name its
+  license beside its version.
 - PHP's server, php-lsp, is a program of its own, with its adapter in `src/adapters/` too: an
   archive per platform from its GitHub releases, which nobody signs, so `lsp:pin` checks each
   against the checksum its release lists beside it. It starts as its program, by its absolute path,
@@ -1208,7 +1243,23 @@ Node it runs on, and PHP, whose server is a program of its own.
 - One server runs per repository and adapter, on the checkout of the head on screen, and moves with
   it: by `workspace/didChangeWorkspaceFolders`, sent only once trust is checked again, where it
   takes that, else by starting again (`main/servers.ts`). Its `HOME` is
-  `<cache>/code/homes/<owner>/<name>/<adapter>`, and Lo's git is first on its `PATH`.
+  `<cache>/code/homes/<owner>/<name>/<adapter>`, and its `PATH` is its toolchain's folders, then
+  Lo's git's, then the system's, so a git from a folder of other programs, as Homebrew's is, can't
+  bring that folder's `go` ahead of the toolchain's.
+- An adapter names what its server downloads up front, the server and the toolchains it uses, so the
+  status bar adds them up from the first byte ("Java downloading · 38.1 MB of 177.4 MB"), counting
+  only what isn't installed yet, in the units Settings counts in (`formatBytes`). It gets only the
+  toolchains it names. A toolchain that can't download says which and why ("The Temurin JDK couldn't
+  download. …"). Toolchains are installed in `<cache>/toolchains/`, which the cache's cap doesn't
+  count, and as Lo starts, versions `toolchains.json` no longer pins are removed.
+- Settings' Toolchains section lists each toolchain pinned for the system, how much room it takes by
+  its marker or that it isn't downloaded and how large it is, and the servers that use it. "Remove"
+  refuses installs of it from the start, with the message its servers then show ("Go was removed.
+  Restart downloads it again."), so nothing that starts meanwhile, "Restart" included, gets the
+  folder that's going. Then it stops those servers and every install of it under way, those nobody
+  waits for any longer included, and once each has ended, renames its folder aside before deleting
+  it. Its button waits while it runs, and a notice says why one wasn't removed
+  (`main/toolchains.ts`).
 - It stops 10 minutes after the pull request whose checkout it runs on was last on screen, once no
   tab of its repository is open, once its repository or pull request isn't trusted, and as Lo quits,
   each within 5 s; Lo's quitting waits for each one stopping. After a crash it starts again by
