@@ -623,17 +623,23 @@ test('SourceKit-LSP refuses the checkout for its build servers and settings, and
   const fake = fakeServer(own, {});
   const sdk = join(own, 'MacOSX.sdk');
   const launch = launchSourceKit({ program: process.execPath, sdk, from: 'Xcode' });
+  // Node takes the fake server's script first, then the arguments SourceKit-LSP would get.
+  let placed: readonly string[] = [];
   const running = startServer({
     name: 'SourceKit-LSP',
     program: launch.program,
-    args: [FAKE_SERVER, fake.args.at(-1) ?? ''],
+    args: [],
     root: checkout,
     rootless: launch.rootless,
     home: join(own, 'home'),
     path: launch.path ?? [],
     variables: launch.variables,
     git: GIT,
-    place: launch.place,
+    place: async (where) => {
+      const given = (await launch.place?.(where)) ?? {};
+      placed = given.args ?? [];
+      return { ...given, args: [FAKE_SERVER, fake.args.at(-1) ?? '', ...placed] };
+    },
   });
   onTestFinished(async () => {
     if (running.pid !== undefined) {
@@ -663,4 +669,13 @@ test('SourceKit-LSP refuses the checkout for its build servers and settings, and
     },
   });
   expect(JSON.stringify(initialize)).not.toContain(checkout);
+  // Its arguments put the same folders in its home, should it drop its options.
+  expect(placed).toEqual([
+    '--generated-files-path',
+    join(home, 'generated'),
+    '-Xswiftc',
+    '-module-cache-path',
+    '-Xswiftc',
+    join(home, 'cache', 'modules'),
+  ]);
 });
