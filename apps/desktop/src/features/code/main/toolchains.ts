@@ -124,13 +124,16 @@ export function removalFailure(error: unknown): string {
 }
 
 /**
- * Removes toolchain `id`, as Settings' "Remove" asks: the servers that use it stop first, each
- * saying so until "Restart" downloads it again, then an install of it under way stops, and its
- * folder is renamed aside and deleted.
+ * Removes toolchain `id`, as Settings' "Remove" asks. Installs of it are refused from the start,
+ * so a server starting meanwhile, or "Restart" pressed, can't get the folder that's going. Then
+ * the servers that use it stop, each saying so until "Restart" downloads it again, and once they
+ * have, its folder is renamed aside and deleted.
  */
 export async function removeToolchain(host: ToolchainHost, id: string): Promise<void> {
   if (!Object.hasOwn(host.manifest, id)) throw new Error(`Lo has no toolchain ${id}`);
   const message = removedMessage(id);
-  await host.halt((adapter) => usesToolchain(adapter, id), message);
-  await host.installer()?.remove(id, new Error(message));
+  const halt = () => host.halt((adapter) => usesToolchain(adapter, id), message);
+  const installer = host.installer();
+  if (installer === undefined) await halt();
+  else await installer.remove(id, new Error(message), halt);
 }

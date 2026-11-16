@@ -258,12 +258,17 @@ export class Installer {
   }
 
   /**
-   * Removes every version of `id`, as Settings' "Remove" asks. Every install of it under way
-   * stops, those nobody waits for any longer included, and once each has ended, the folder is
-   * renamed aside, then deleted, so nothing finds it half gone. Whoever waits for those installs
-   * gets `reason`, and so does an install of it asked for before the removal is done.
+   * Removes every version of `id`, as Settings' "Remove" asks. From the moment it's asked, an
+   * install of it fails with `reason`, and every install under way stops, those nobody waits for
+   * any longer included. Then `first` runs, such as stopping the servers that use it, and once it
+   * has and each install has ended, the folder is renamed aside, then deleted, so nothing finds it
+   * half gone.
    */
-  async remove(id: string, reason: Error = new Error(`${id} was removed`)): Promise<void> {
+  async remove(
+    id: string,
+    reason: Error = new Error(`${id} was removed`),
+    first?: () => Promise<void>,
+  ): Promise<void> {
     if (!NAME.test(id)) throw new Error(`${id} isn't an ID`);
     const removals = this.#removing.get(id) ?? [];
     this.#removing.set(id, removals);
@@ -271,7 +276,12 @@ export class Installer {
     for (const key of this.#jobs.keys()) if (key.startsWith(`${id}/`)) this.#jobs.delete(key);
     const stopping = [...(this.#running.get(id) ?? [])];
     for (const job of stopping) job.controller.abort(reason);
-    const done = (async () => {
+    // Installs of it are refused before anything else runs, `first` included.
+    const { promise: done, resolve, reject } = Promise.withResolvers<void>();
+    const removal: Removal = { reason, done };
+    removals.push(removal);
+    (async () => {
+      await first?.();
       // One removal of it at a time.
       await before?.catch(() => undefined);
       await Promise.all(stopping.map((job) => job.done.catch(() => undefined)));
@@ -281,9 +291,7 @@ export class Installer {
       const aside = await mkdtemp(join(this.#folder, PARTIAL, 'removed-'));
       await rename(folder, join(aside, id));
       await rm(aside, { recursive: true, force: true });
-    })();
-    const removal: Removal = { reason, done };
-    removals.push(removal);
+    })().then(resolve, reject);
     try {
       await done;
     } finally {

@@ -1217,10 +1217,11 @@ its languages; Lo ships none yet.
   count, and as Lo starts, versions `toolchains.json` no longer pins are removed.
 - Settings' Toolchains section lists each toolchain pinned for the system, how much room it takes by
   its marker or that it isn't downloaded and how large it is, and the servers that use it. "Remove"
-  stops those servers, which say "Go was removed. Restart downloads it again." until "Restart",
-  stops every install of it under way and waits for each to end, those nobody waits for any longer
-  included, then renames its folder aside before deleting it. An install asked for meanwhile fails
-  with the same message. Its button waits while it runs, and a notice says why one wasn't removed
+  refuses installs of it from the start, with the message its servers then show ("Go was removed.
+  Restart downloads it again."), so nothing that starts meanwhile, "Restart" included, gets the
+  folder that's going. Then it stops those servers and every install of it under way, those nobody
+  waits for any longer included, and once each has ended, renames its folder aside before deleting
+  it. Its button waits while it runs, and a notice says why one wasn't removed
   (`main/toolchains.ts`).
 - It stops 10 minutes after the pull request whose checkout it runs on was last on screen, once no
   tab of its repository is open, once its repository or pull request isn't trusted, and as Lo quits,

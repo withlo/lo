@@ -1,8 +1,12 @@
 // What Settings lists of the toolchains, removing one, and what a server says when its toolchain
 // can't download or was removed, against a stand-in installer and pool.
 
-import { DownloadError, partsOf, TOOLCHAINS } from '@lo/lsp';
-import { expect, it } from 'vitest';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
+import { DownloadError, Installer, partsOf, TOOLCHAINS } from '@lo/lsp';
+import { expect, it, onTestFinished } from 'vitest';
 
 import type { Adapter } from './adapters.ts';
 import {
@@ -41,10 +45,11 @@ function host(installed: Record<string, number> = {}) {
     platform: 'darwin-arm64',
     installer: () => ({
       recorded: (id) => Promise.resolve(installed[id]),
-      remove: (id) => {
-        order.push(`remove ${id}`);
+      remove: async (id, _reason, first) => {
+        order.push(`refuse ${id}`);
+        await first?.();
+        order.push(`delete ${id}`);
         removed.push(id);
-        return Promise.resolve();
       },
     }),
     adapters: () => ADAPTERS,
@@ -94,8 +99,30 @@ it('stops the servers that use a toolchain, each saying so, before its files go'
     },
   ]);
   expect(removed).toEqual(['temurin']);
-  expect(order).toEqual(['halt', 'remove temurin']);
+  expect(order).toEqual(['refuse temurin', 'halt', 'delete temurin']);
   await expect(removeToolchain(given, 'ruby')).rejects.toThrow(/no toolchain ruby/);
+});
+
+it('refuses an install of a toolchain from the moment Remove starts, while its servers stop', async () => {
+  const folder = mkdtempSync(join(tmpdir(), 'lo-toolchains-'));
+  onTestFinished(() => rmSync(folder, { recursive: true, force: true }));
+  const installer = new Installer({
+    folder,
+    fetch: () => Promise.reject(new Error('no downloads in tests')),
+    platform: 'darwin-arm64',
+    backoff: [0, 0],
+  });
+  let during: unknown;
+  const given: ToolchainHost = {
+    ...host().given,
+    installer: () => installer,
+    // A server starting while the others stop, or "Restart" pressed then.
+    halt: async () => {
+      during = await installer.install('go', TOOLCHAINS.go!).catch((error: unknown) => error);
+    },
+  };
+  await removeToolchain(given, 'go');
+  expect(during).toEqual(new Error('Go was removed. Restart downloads it again.'));
 });
 
 it('gives a server only the toolchains its adapter names, which “Remove” stops it for', async () => {

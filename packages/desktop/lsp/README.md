@@ -111,10 +111,11 @@ link is made, so nothing is written through one. A download in layers, as Rust's
 lays each tarball's component folder over the ones before it, leaving out the rest of the tarball
 and the `manifest.in` that lists the component's files; a file a layer before it wrote is refused.
 
-`remove` takes every version of an ID away, as Settings' "Remove" does a toolchain's: every install
-of it under way stops first, those nobody waits for any longer included, and once each has ended its
-folder is renamed aside and deleted, so nothing finds it half gone and nothing puts it back. An
-install of it asked for meanwhile fails with the removal's reason.
+`remove` takes every version of an ID away, as Settings' "Remove" does a toolchain's. From the
+moment it's asked, an install of it fails with the removal's reason, and every install under way
+stops, those nobody waits for any longer included. What it's given to run first, such as stopping
+the servers that use it, runs next, and once that and each install have ended, its folder is renamed
+aside and deleted, so nothing finds it half gone and nothing puts it back.
 
 A server that uses .NET runs only as `dotnet exec` (`checkArguments` in `src/process.ts`), and only
 on a checkout `checkoutProblem` finds no `global.json` in, nor above, that names `paths` or spells a
