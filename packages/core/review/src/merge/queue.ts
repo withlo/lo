@@ -20,11 +20,9 @@ import { knownGithubValue, outsideCase } from '../enums.ts';
 import type { RequiredCheck } from '../merge.ts';
 import { requiredCheck } from './facts.ts';
 import {
-  MERGE_METHODS,
   MERGE_QUEUE_ENTRY_STATES,
   REVIEW_DECISIONS,
   STATUS_STATES,
-  type MergeMethod,
   type QueueEntryState,
   type ReviewDecision,
 } from './github.ts';
@@ -51,7 +49,8 @@ export interface QueueRows {
   readonly leftOut: boolean;
   /**
    * The open pull requests into the branch with auto-merge on that aren't in the queue yet: they
-   * join it once they're ready. Updated most recently first.
+   * join it once they're ready, and merge with the queue's own method, which the view names from
+   * the queue's settings (`queueView`). Updated most recently first.
    */
   readonly waiting: readonly WaitingRow[];
   /**
@@ -117,12 +116,6 @@ export interface WaitingRow {
   readonly author: string | undefined;
   /** Whether you opened it. */
   readonly yours: boolean;
-  /**
-   * The method auto-merge was turned on with, as GitHub gives it: on a branch with a merge queue,
-   * always a merge commit, as the queue's own method applies once it joins, so the view shows the
-   * queue's. A method newer than Lo reads as a merge commit.
-   */
-  readonly method: MergeMethod;
   /** Who turned auto-merge on. */
   readonly enabledBy: string | undefined;
   /** When auto-merge was turned on, when GitHub says. */
@@ -196,7 +189,6 @@ function waitingRow(pull: WaitingPullRequest, login: string): WaitingRow[] {
       head: pull.head,
       author: pull.author,
       yours: isYou(pull.author, login),
-      method: knownGithubValue(MERGE_METHODS, autoMerge.method) ?? 'MERGE',
       enabledBy: autoMerge.enabledBy,
       enabledAt: autoMerge.enabledAt,
       reviewDecision:

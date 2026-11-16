@@ -341,31 +341,43 @@ test('a ruleset that requires a merge queue gives the branches it covers one', a
   });
 });
 
-test('a ruleset whose rules github left out may require a queue', async () => {
-  const e2e = new RepoRef('rozed-dev', 'e2e');
-  const answers = cassette('app_stack').interactions.map(({ interaction }) => {
+/**
+ * `app_stack`, with its `TrunkRules` answer's e4/queued ruleset, the second, edited by `edit`, and
+ * an error naming `path` from it, as GitHub gives for a timeout.
+ */
+function rulesetEdited(path: readonly (string | number)[], edit: (nodes: Json[]) => void) {
+  return cassette('app_stack').interactions.map(({ interaction }) => {
     const copy = structuredClone(interaction);
     if (copy.request.operation !== 'TrunkRules') return copy;
-    // e4/queued's rules, null with an error naming them, as for a timeout.
     const body = copy.response.body;
     if (!isObject(body) || !isObject(body['data']) || !isObject(body['data']['repository'])) {
       throw new Error('the rulesets answer had no repository');
     }
     const rulesets = body['data']['repository']['rulesets'];
     const nodes = isObject(rulesets) ? rulesets['nodes'] : undefined;
-    const queued = Array.isArray(nodes) ? nodes[1] : undefined;
-    if (!isObject(queued)) throw new Error('the rulesets answer had no second ruleset');
-    queued['rules'] = null;
+    if (!Array.isArray(nodes) || !isObject(nodes[1])) {
+      throw new Error('the rulesets answer had no second ruleset');
+    }
+    edit(nodes);
     body['errors'] = [
       {
         type: null,
-        path: ['repository', 'rulesets', 'nodes', 1, 'rules'],
+        path: ['repository', 'rulesets', 'nodes', 1, ...path],
         message: 'Something went wrong while executing your query.',
       },
     ];
     return copy;
   });
+}
+
+test('a ruleset whose rules github left out may require a queue', async () => {
+  const e2e = new RepoRef('rozed-dev', 'e2e');
+  const answers = rulesetEdited(['rules'], (nodes) => {
+    const queued = nodes[1];
+    if (isObject(queued)) queued['rules'] = null;
+  });
   const rules = await readTrunkRules(client(replay(answers)), e2e, undefined, []);
+  expect(rules.leftOut).toBe(false);
   expect(rules.rulesets.map((ruleset) => [ruleset.include, ruleset.queue])).toEqual([
     [['refs/heads/e4/gated'], false],
     [['refs/heads/e4/queued'], undefined],
@@ -373,6 +385,21 @@ test('a ruleset whose rules github left out may require a queue', async () => {
   expect(queueBranches(rules, ['main', 'e4/gated', 'e4/queued'], 'main')).toEqual({
     queued: [],
     unknown: ['e4/queued'],
+  });
+});
+
+test('a ruleset github left out may give any branch a queue, and names no trunk', async () => {
+  const e2e = new RepoRef('rozed-dev', 'e2e');
+  // Its enforcement can't be null: its error nulls the whole ruleset.
+  const answers = rulesetEdited(['enforcement'], (nodes) => {
+    nodes[1] = null;
+  });
+  const rules = await readTrunkRules(client(replay(answers)), e2e, undefined, []);
+  expect(rules.leftOut).toBe(true);
+  expect(rules.rulesets.map((ruleset) => ruleset.include)).toEqual([['refs/heads/e4/gated']]);
+  expect(queueBranches(rules, ['main', 'e4/gated', 'e4/queued'], 'main')).toEqual({
+    queued: [],
+    unknown: ['main', 'e4/gated', 'e4/queued'],
   });
 });
 
@@ -806,6 +833,7 @@ test('rulesets that cant be read leave the trunks to the rest', async () => {
   const known: TrunkRuleList = {
     rulesets: [{ include: ['refs/heads/develop'], exclude: [], gatesMerging: true, queue: false }],
     unavailable: undefined,
+    leftOut: false,
   };
   const again = await readTrunkRules(github, REPO, known, []);
   expect(again.rulesets).toEqual(known.rulesets);

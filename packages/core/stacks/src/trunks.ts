@@ -81,8 +81,9 @@ export interface QueueBranches {
   queued: string[];
   /**
    * Those Lo can't tell of: no ruleset that requires a queue covers them, but one whose rules GitHub
-   * left out does, or the rulesets couldn't be read ({@link TrunkRuleList.unavailable}), so those
-   * read before may be out of date.
+   * left out does, GitHub left a whole ruleset out ({@link TrunkRuleList.leftOut}), which may cover
+   * any branch, or the rulesets couldn't be read ({@link TrunkRuleList.unavailable}), so those read
+   * before may be out of date.
    */
   unknown: string[];
 }
@@ -105,6 +106,7 @@ export function queueBranches(
     if (covering.some((ruleset) => ruleset.queue === true)) found.queued.push(branch);
     else if (
       rules.unavailable !== undefined ||
+      rules.leftOut ||
       covering.some((ruleset) => ruleset.queue !== false)
     ) {
       found.unknown.push(branch);

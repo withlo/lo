@@ -224,6 +224,7 @@ test('the branches a merge queue ruleset covers have a queue', () => {
       refs(['refs/heads/develop'], []),
     ],
     unavailable: undefined,
+    leftOut: false,
   };
   const branches = ['trunk', 'release/2.0', 'release/old-1', 'develop', 'feature', 'release/2.0'];
   expect(queueBranches(rules, branches, 'trunk')).toEqual({
@@ -233,7 +234,11 @@ test('the branches a merge queue ruleset covers have a queue', () => {
   // Without a default branch, ~DEFAULT_BRANCH covers nothing.
   expect(queueBranches(rules, ['trunk'], undefined)).toEqual({ queued: [], unknown: [] });
   expect(
-    queueBranches({ rulesets: [queued(['~ALL'])], unavailable: undefined }, ['x'], 'main'),
+    queueBranches(
+      { rulesets: [queued(['~ALL'])], unavailable: undefined, leftOut: false },
+      ['x'],
+      'main',
+    ),
   ).toEqual({ queued: ['x'], unknown: [] });
 });
 
@@ -245,6 +250,7 @@ test('a ruleset whose rules github left out may give the branches it covers a qu
       refs(['refs/heads/develop'], []),
     ],
     unavailable: undefined,
+    leftOut: false,
   };
   // One that requires a queue wins over one Lo can't tell of.
   expect(queueBranches(rules, ['release/1.0', 'release/2.0', 'develop'], 'main')).toEqual({
@@ -255,4 +261,9 @@ test('a ruleset whose rules github left out may give the branches it covers a qu
   expect(
     queueBranches({ ...rules, unavailable: 'No' }, ['develop', 'release/2.0'], 'main'),
   ).toEqual({ queued: ['release/2.0'], unknown: ['develop'] });
+  // So does a whole ruleset left out, which may cover any branch.
+  expect(queueBranches({ ...rules, leftOut: true }, ['develop', 'release/2.0'], 'main')).toEqual({
+    queued: ['release/2.0'],
+    unknown: ['develop'],
+  });
 });

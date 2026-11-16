@@ -160,8 +160,7 @@ test('a pull request with auto-merge on waits to join until it is in the queue',
   const enabledAt = waiting.pullRequests.find((pull) => pull.number === slow)?.autoMerge?.enabledAt;
   expect(enabledAt).toMatch(/^\d{4}-\d\d-\d\dT/);
 
-  // With the queue empty, queued-slow-2 waits, its ci running and no review required. The method
-  // is GitHub's merge commit, which it gives on a branch with a queue whatever was asked.
+  // With the queue empty, queued-slow-2 waits, its ci running and no review required.
   const empty: QueueView = { ...joined!, queue: { ...joined!.queue!, entries: [], total: 0 } };
   const before = queueRows(empty, waiting, BOT);
   expect(before.entries).toEqual([]);
@@ -174,7 +173,6 @@ test('a pull request with auto-merge on waits to join until it is in the queue',
       head: expect.stringMatching(/^[0-9a-f]{40}$/),
       author: BOT,
       yours: true,
-      method: 'MERGE',
       enabledBy: BOT,
       enabledAt,
       reviewDecision: undefined,

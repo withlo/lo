@@ -66,26 +66,34 @@ export interface TrunkRuleList {
    * gating rule covers.
    */
   unavailable: string | undefined;
+  /**
+   * Whether GitHub left a ruleset, or the list of them, out with an error. Which branches it covers
+   * isn't known, so any may merge through a queue it requires ({@link RefNames.queue}); trunks are
+   * named without it.
+   */
+  leftOut: boolean;
 }
 
 /** A repository without rulesets. */
 export function noTrunkRules(): TrunkRuleList {
-  return { rulesets: [], unavailable: undefined };
+  return { rulesets: [], unavailable: undefined, leftOut: false };
 }
 
 /** The active rulesets in the query's answer, or nothing when it has no repository or rulesets. */
 function fromData(data: TrunkRulesQuery): TrunkRuleList | undefined {
   const rulesets = data.repository?.rulesets;
   if (!rulesets) return undefined;
+  // An error on a ruleset's part that can't be null, such as its enforcement, nulls the ruleset.
+  const nodes = rulesets.nodes;
   return {
-    rulesets: (rulesets.nodes ?? []).flatMap((ruleset) => {
+    rulesets: (nodes ?? []).flatMap((ruleset) => {
       if (ruleset?.enforcement !== 'ACTIVE') return [];
       const refName = ruleset.conditions.refName;
       if (!refName) return [];
-      const nodes = ruleset.rules?.nodes;
-      const types = (nodes ?? []).flatMap((rule) => (rule ? [rule.type] : []));
+      const rules = ruleset.rules?.nodes;
+      const types = (rules ?? []).flatMap((rule) => (rule ? [rule.type] : []));
       // An error on the rules, or on one, nulls it: what's left can't say there's no queue.
-      const leftOut = !nodes || types.length < nodes.length;
+      const leftOut = !rules || types.length < rules.length;
       return [
         {
           include: refName.include,
@@ -96,6 +104,7 @@ function fromData(data: TrunkRulesQuery): TrunkRuleList | undefined {
       ];
     }),
     unavailable: undefined,
+    leftOut: !nodes || nodes.includes(null),
   };
 }
 
@@ -139,6 +148,7 @@ export async function readTrunkRules(
   const rules: TrunkRuleList = {
     rulesets: structuredClone(known?.rulesets ?? []),
     unavailable: failure.message,
+    leftOut: known?.leftOut ?? false,
   };
   for (const branch of branches.slice(0, MAX_BRANCHES_CHECKED)) {
     const include = `refs/heads/${branch}`;
