@@ -350,13 +350,14 @@ export class Server {
   /**
    * Moves the server to the checkout at `root`, another head of the same repository, when it says
    * it takes changes to its workspace's folders. Its files are closed. It says whether it moved;
-   * if it didn't, the server is as it was, and a new one is needed for `root`.
+   * if it didn't, the server is as it was, and a new one is needed for `root`. `still`, asked once
+   * `root` is resolved, just before the server is told, keeps it where it is when it says no.
    */
-  async moveTo(root: string): Promise<boolean> {
+  async moveTo(root: string, still: () => boolean = () => true): Promise<boolean> {
     const changes = this.#capabilities?.workspace?.workspaceFolders?.changeNotifications;
     if (!this.#answering() || (changes !== true && typeof changes !== 'string')) return false;
     const real = await realpath(root);
-    if (!this.#answering()) return false;
+    if (!this.#answering() || !still()) return false;
     for (const uri of this.#documents.clear()) {
       this.#notify('textDocument/didClose', { textDocument: { uri } });
     }

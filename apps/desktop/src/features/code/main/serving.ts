@@ -8,8 +8,10 @@
 //   for a view nothing trusts.
 // - A view checked again after a push holds what runs for its repository, and starts nothing,
 //   until it's trusted again.
-// - Once no view of a pull request is trusted, for whatever reason, what runs on its checkouts
-//   stops and they go: one finished after that goes as it's made.
+// - Once a view of a pull request is decided untrusted, for whatever reason and whatever it was
+//   before, and no other view of it is trusted, what runs on its checkouts stops and they go: one
+//   finished after that goes as it's made. While its trust can't be worked out, as when GitHub
+//   can't be reached after a push, what runs stops, and its checkouts stay.
 // - A server answers only about the head it runs on: a view of another head, or the old side, gets
 //   the syntax index's answers.
 //
@@ -38,9 +40,10 @@ export interface ServingInput {
   readonly number: number;
   /**
    * `trusted`; `checking` while trust is worked out, as after a push, which holds what runs if it
-   * was trusted; or `none`.
+   * was trusted; `none`, decided untrusted; or `unknown`, undecided, as when its repositories
+   * couldn't be read, or there's no git: nothing runs, and its checkouts stay.
    */
-  readonly trust: 'trusted' | 'checking' | 'none';
+  readonly trust: 'trusted' | 'checking' | 'none' | 'unknown';
   /** Whether language servers are off on it because nothing trusts it. */
   readonly off: boolean;
   /** The head on screen, once the local copy is ready at it. */
@@ -59,8 +62,13 @@ export interface ServingOptions {
   readonly onScreen: () => string | undefined;
   readonly publish: (servers: Servers) => void;
   /**
-   * Stops what runs on pull request `pull` of `repo`'s checkouts, and removes them, as when no view
-   * of it is trusted any longer.
+   * Stops what runs on pull request `pull` of `repo`'s checkouts, stopping ones included, and
+   * resolves once it has.
+   */
+  readonly stopOn: (repo: string, pull: number) => Promise<void>;
+  /**
+   * Stops what runs on pull request `pull` of `repo`'s checkouts, then removes them, as once it's
+   * decided untrusted.
    */
   readonly letGo: (repo: string, pull: number) => Promise<void>;
   readonly log: (line: string) => void;
@@ -68,6 +76,8 @@ export interface ServingOptions {
 
 interface Followed {
   input: ServingInput;
+  /** Its trust as last followed, which a change of lets go of what it held. */
+  decided: ServingInput['trust'] | undefined;
   /** Whether it was trusted when last decided, which holds what runs while it's checked again. */
   trusted: boolean;
   /** The servers the files it changes need, by adapter, for the sides they were read at. */
@@ -142,6 +152,7 @@ export class ServingViews {
       followed = {
         input,
         trusted: false,
+        decided: undefined,
         changes: undefined,
         asked: new Set(),
         sent: '',
@@ -149,17 +160,19 @@ export class ServingViews {
       this.#views.set(id, followed);
     }
     followed.input = input;
-    const was = followed.trusted;
+    const before = followed.decided;
+    followed.decided = input.trust;
     if (input.trust === 'trusted') followed.trusted = true;
-    else if (input.trust === 'none') {
-      followed.trusted = false;
-      followed.asked.clear();
-    }
+    else if (input.trust === 'none' || input.trust === 'unknown') followed.trusted = false;
+    if (input.trust === 'none') followed.asked.clear();
     if (input.trust === 'trusted') this.#readChanges(followed);
     this.#checkOut(followed);
     this.#sync();
-    // Trust went, whatever took it: what ran on its checkouts stops, and they go.
-    if (was && !followed.trusted) this.#letGo(input);
+    if (input.trust === before) return;
+    // Decided untrusted, whatever it was before, a tab opened again included: what runs on its
+    // checkouts stops, and they go. Undecided, what runs stops.
+    if (input.trust === 'none') this.#letGo(input);
+    else if (input.trust === 'unknown') this.#stopOn(input);
   }
 
   /** Follows every view again, as when git changes. */
@@ -387,6 +400,15 @@ export class ServingViews {
     return false;
   }
 
+  /** Once no view of `pull`'s pull request is trusted, stops what runs on its checkouts. */
+  #stopOn(pull: Pick<ServingInput, 'repo' | 'number'>): void {
+    if (this.#stopped || this.#trustedNow(pull)) return;
+    const { repo, number } = pull;
+    this.#options.stopOn(repo, number).catch((error: unknown) => {
+      this.#options.log(`${repo}#${number}: couldn't stop its servers (${describe(error)}).`);
+    });
+  }
+
   /**
    * Once no view of `pull`'s pull request is trusted, stops what runs on its checkouts and removes
    * them, then forgets them, so a view trusted again checks out afresh. `again`, for a checkout
@@ -437,6 +459,7 @@ export class ServingViews {
       views.push({
         id: input.id,
         repo: repoKey(input.repo),
+        pull: input.number,
         trust: input.trust === 'trusted' ? 'trusted' : 'held',
         root: folder === undefined ? undefined : { folder, pull: input.number },
         wants: adapters.filter((adapter) => wants.has(adapter.id)),

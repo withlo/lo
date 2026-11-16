@@ -80,6 +80,7 @@ function follow(current: () => ServingInput | undefined, adapters: readonly Adap
     view: (id) => (id === 'v1' ? current() : undefined),
     onScreen: () => screen,
     publish: (servers) => published.push(servers),
+    stopOn: () => Promise.resolve(),
     letGo: () => Promise.resolve(),
     log: () => undefined,
   });
@@ -125,7 +126,7 @@ async function drain(): Promise<void> {
  * The views `shown` holds, followed on a pool of stand-in servers, with `v1` on screen: the servers
  * it started, those whose process is still there, and each pull request let go of.
  */
-function onPool(shown: ReadonlyMap<string, ServingInput>) {
+function onPool(shown: ReadonlyMap<string, ServingInput>, screen: () => string = () => 'v1') {
   const started: StandIn[] = [];
   const lets: string[] = [];
   let serving: ServingViews | undefined;
@@ -150,10 +151,14 @@ function onPool(shown: ReadonlyMap<string, ServingInput>) {
     pool,
     adapters: () => [TS],
     view: (id) => shown.get(id),
-    onScreen: () => 'v1',
+    onScreen: screen,
     publish: () => undefined,
+    async stopOn(repo, pull) {
+      lets.push(`stop ${repo}#${pull}`);
+      await pool.stopWhere(repoKey(repo), (each) => each === pull);
+    },
     async letGo(repo, pull) {
-      lets.push(`${repo}#${pull}`);
+      lets.push(`let go ${repo}#${pull}`);
       await pool.stopWhere(repoKey(repo), (each) => each === pull);
     },
     log: () => undefined,
@@ -205,6 +210,7 @@ describe('following views for servers', () => {
       {
         id: 'v1',
         repo: 'rozed-dev/e2e',
+        pull: 80,
         trust: 'trusted',
         root: { folder: `/cache/checkouts/pull-80/${head}`, pull: 80 },
         wants: [TS],
@@ -288,7 +294,55 @@ describe('following views for servers', () => {
     serving.update('v1');
     await drain();
     expect(alive()).toEqual([]);
-    expect(lets).toEqual(['Rozed-Dev/E2E#81']);
+    expect(lets).toEqual(['let go Rozed-Dev/E2E#81']);
+  });
+
+  it('lets go of what runs on a PR’s head once its tab, opened again, is decided untrusted', async () => {
+    const { repo } = repoOf(['src/a.ts']);
+    const { repo: docs } = repoOf(['docs/b.md']);
+    let screen = 'v1';
+    const shown = new Map([
+      ['v1', input(repo, { number: 81 })],
+      ['v2', input(docs, { id: 'v2' })],
+    ]);
+    const { serving, started, alive, lets } = onPool(shown, () => screen);
+    serving.update('v1');
+    serving.update('v2');
+    await drain();
+    expect(started.map((server) => server.spec.root)).toEqual([`/cache/checkouts/pull-81/${head}`]);
+    // #81's tab closes, and #80, which needs no server, is on screen: what runs on #81 runs on.
+    shown.delete('v1');
+    screen = 'v2';
+    serving.update('v1');
+    serving.update('v2');
+    await drain();
+    expect(alive()).toHaveLength(1);
+    // Its fork renamed, #81 is opened again, and decided untrusted.
+    shown.set('v3', input(repo, { id: 'v3', number: 81, trust: 'none', off: true }));
+    serving.update('v3');
+    await drain();
+    expect(alive()).toEqual([]);
+    expect(lets).toEqual(['let go Rozed-Dev/E2E#81']);
+  });
+
+  it('stops what runs, and keeps its checkouts, while trust can’t be worked out after a push', async () => {
+    const { repo } = repoOf(['src/a.ts']);
+    const shown = new Map([['v1', input(repo)]]);
+    const { serving, alive, lets } = onPool(shown);
+    serving.update('v1');
+    await drain();
+    expect(alive()).toHaveLength(1);
+    // GitHub can't be reached to check it again.
+    shown.set('v1', input(repo, { trust: 'unknown', off: true }));
+    serving.update('v1');
+    await drain();
+    expect(alive()).toEqual([]);
+    expect(lets).toEqual(['stop Rozed-Dev/E2E#80']);
+    // Decided at last.
+    shown.set('v1', input(repo, { trust: 'none', off: true }));
+    serving.update('v1');
+    await drain();
+    expect(lets).toEqual(['stop Rozed-Dev/E2E#80', 'let go Rozed-Dev/E2E#80']);
   });
 
   it('starts nothing on Restart once trust goes while the head is checked out, and lets go of that checkout', async () => {
@@ -315,13 +369,13 @@ describe('following views for servers', () => {
     // Trust goes meanwhile: what ran is let go of.
     shown.set('v1', input(slow, { trust: 'none', off: true }));
     serving.update('v1');
-    expect(lets).toEqual(['Rozed-Dev/E2E#80']);
+    expect(lets).toEqual(['let go Rozed-Dev/E2E#80']);
     made?.();
     await restarting;
     await drain();
     expect(started).toEqual([]);
     expect(alive()).toEqual([]);
     // The checkout, finished after trust went, is let go of too.
-    expect(lets).toEqual(['Rozed-Dev/E2E#80', 'Rozed-Dev/E2E#80']);
+    expect(lets).toEqual(['let go Rozed-Dev/E2E#80', 'let go Rozed-Dev/E2E#80']);
   });
 });

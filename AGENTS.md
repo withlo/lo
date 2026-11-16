@@ -1158,18 +1158,22 @@ its languages; Lo ships none yet.
   there (`main/serving.ts`). A view checked again after a push keeps what runs, but nothing starts
   or moves for it until it's trusted again. Each start, restart, crash's restart and move checks,
   after whatever it waited for, that the view on screen is trusted then and shows the head of its
-  checkout. Once no view of a pull request is trusted, for whatever reason, what runs on its
-  checkouts stops and they go; one finished after that goes as it's made.
+  checkout. Once a view of a pull request is decided untrusted, for whatever reason, a tab opened
+  again included, and no other view of it is trusted, what runs on its checkouts stops, those
+  stopping waited for, and they go; one finished after that goes as it's made. While its trust can't
+  be worked out, as when GitHub can't be reached after a push, what runs stops and its checkouts
+  stay.
 - One server runs per repository and adapter, on the checkout of the head on screen, and moves with
-  it: by `workspace/didChangeWorkspaceFolders` where it takes that, else by starting again
-  (`main/servers.ts`). Its `HOME` is `<cache>/code/homes/<owner>/<name>/<adapter>`, and Lo's git is
-  first on its `PATH`.
-- It stops 10 minutes after a view of its repository was last on screen, once no tab of its
-  repository is open, once its repository or pull request isn't trusted, and as Lo quits, each
-  within 5 s; Lo's quitting waits for each one stopping. After a crash it starts again by itself
-  once, if it had run for a minute; otherwise it waits for "Restart". At most 4 run, those stopping
-  included, holding 8 GB in all, read every 5 s: past either, the one used longest ago that isn't on
-  screen stops, and the next starts once it has; one on screen is never stopped for another.
+  it: by `workspace/didChangeWorkspaceFolders`, sent only once trust is checked again, where it
+  takes that, else by starting again (`main/servers.ts`). Its `HOME` is
+  `<cache>/code/homes/<owner>/<name>/<adapter>`, and Lo's git is first on its `PATH`.
+- It stops 10 minutes after the pull request whose checkout it runs on was last on screen, once no
+  tab of its repository is open, once its repository or pull request isn't trusted, and as Lo quits,
+  each within 5 s; Lo's quitting waits for each one stopping. After a crash it starts again by
+  itself once, if it had run for a minute; otherwise it waits for "Restart". At most 4 run, those
+  stopping included, holding 8 GB in all, read every 5 s: past either, the one used longest ago that
+  isn't on screen stops, and the next starts once it has; one on screen is never stopped for
+  another.
 - A server's answer comes first, labelled with its name, and the index answers in its place when it
   can't (`main/served.ts`): a definition in 2 s (an adapter may allow longer), references in 10 s, a
   hover in 1.5 s, inlay hints and the outline in 3 s. An empty definition falls back to the file's

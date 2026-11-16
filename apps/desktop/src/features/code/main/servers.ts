@@ -8,8 +8,8 @@
 // - Each server stopping is kept until it has, so a stop, and Lo's quitting, waits for all of them.
 // - A server moves to another head of its repository when that comes on screen: by
 //   `workspace/didChangeWorkspaceFolders` where it says it takes that, else by starting again.
-// - It stops 10 minutes after no view of its repository was last on screen, as soon as no tab of
-//   its repository is open, when trust goes, and as Lo quits.
+// - It stops 10 minutes after the pull request whose checkout it runs on was last on screen, as
+//   soon as no tab of its repository is open, when trust goes, and as Lo quits.
 // - After a crash it starts again by itself once, if it had run for a minute; otherwise it waits
 //   for "Restart".
 // - At most 4 run, holding 8 GB in all. Past either, the one used longest ago that isn't on screen
@@ -38,7 +38,10 @@ export type Running = Pick<
 >;
 
 export interface PoolLimits {
-  /** How long a server runs on once no view of its repository is on screen, in milliseconds. */
+  /**
+   * How long a server runs on once the pull request whose checkout it runs on isn't on screen, in
+   * milliseconds.
+   */
   readonly idle: number;
   /** The most servers that run at once. */
   readonly count: number;
@@ -69,6 +72,8 @@ export interface PoolView {
   readonly id: string;
   /** Its repository, as servers are kept by it: `owner/name`, in lowercase. */
   readonly repo: string;
+  /** Its pull request's number. */
+  readonly pull: number;
   /**
    * `trusted`: a server may start for it and move to it. `held`: it was trusted, and is checked
    * again, as after a push: what runs for its repository keeps running, and nothing new starts.
@@ -172,8 +177,8 @@ export class ServerPool {
   #views: readonly PoolView[] = [];
   #screen: string | undefined;
   #budget: ReturnType<typeof setInterval> | undefined;
-  /** Every server's stop, until it has stopped. */
-  readonly #stopping = new Set<Promise<void>>();
+  /** Every server stopping, with the checkout it ran on, until it has stopped. */
+  readonly #stopping = new Set<Stopping>();
   #stopped = false;
 
   constructor(options: PoolOptions) {
@@ -260,10 +265,12 @@ export class ServerPool {
    * on (`undefined` for one with no checkout yet), as when trust goes, and resolves once they have.
    */
   async stopWhere(repo: string, stops: (pull: number | undefined) => boolean): Promise<void> {
-    const ending = [...this.#entries.values()].filter(
-      (entry) => entry.repo === repo && stops(entry.root?.pull),
-    );
-    await Promise.all(ending.map((entry) => this.#end(entry, 'trust in it went')));
+    const ending = [...this.#entries.values()]
+      .filter((entry) => entry.repo === repo && stops(entry.root?.pull))
+      .map((entry) => this.#end(entry, 'trust in it went'));
+    // And those still stopping on them, as one stopped for a restart elsewhere may be.
+    const stopping = [...this.#stopping].filter((each) => each.repo === repo && stops(each.pull));
+    await Promise.all([...ending, ...stopping.map((each) => each.done)]);
   }
 
   /**
@@ -277,7 +284,9 @@ export class ServerPool {
     await Promise.all(
       [...this.#entries.values()].map((entry) => this.#end(entry, 'Lo is quitting')),
     );
-    while (this.#stopping.size > 0) await Promise.all(this.#stopping);
+    while (this.#stopping.size > 0) {
+      await Promise.all([...this.#stopping].map((each) => each.done));
+    }
   }
 
   /** What the views need now. */
@@ -289,32 +298,44 @@ export class ServerPool {
       if (!repos.has(entry.repo)) void this.#end(entry, `no trusted tab of ${entry.repo} is open`);
     }
     const screen = views.find((view) => view.id === this.#screen);
+    const root = screen?.root;
+    if (screen?.trust === 'trusted' && root) {
+      for (const adapter of screen.wants) {
+        const entry = this.#entries.get(keyOf(screen.repo, adapter.id));
+        if (!entry) {
+          this.#launch(this.#added(screen.repo, adapter, root));
+        } else if (entry.phase === 'failed' && entry.full) {
+          // There was no room for it: there may be now.
+          this.#launch(entry);
+        } else if (entry.phase !== 'ending' && entry.root?.folder !== root.folder) {
+          void this.#move(entry, root);
+        }
+      }
+    }
+    // Once what's on screen has started or is moving there, the rest count down.
     for (const entry of this.#entries.values()) {
       if (entry.phase === 'ending') continue;
-      if (entry.repo === screen?.repo) {
+      if (this.#onScreen(entry)) {
         clearTimeout(entry.idle);
         entry.idle = undefined;
         entry.used = Date.now();
       } else if (entry.idle === undefined) {
         entry.idle = setTimeout(
-          () => void this.#end(entry, `${entry.repo} wasn't on screen for a while`),
+          () => void this.#end(entry, `its pull request wasn't on screen for a while`),
           this.#limits.idle,
         );
       }
     }
-    const root = screen?.root;
-    if (screen?.trust !== 'trusted' || !root) return;
-    for (const adapter of screen.wants) {
-      const entry = this.#entries.get(keyOf(screen.repo, adapter.id));
-      if (!entry) {
-        this.#launch(this.#added(screen.repo, adapter, root));
-      } else if (entry.phase === 'failed' && entry.full) {
-        // There was no room for it: there may be now.
-        this.#launch(entry);
-      } else if (entry.phase !== 'ending' && entry.root?.folder !== root.folder) {
-        void this.#move(entry, root);
-      }
-    }
+  }
+
+  /** Whether `entry` runs, or is moving, on the pull request on screen. */
+  #onScreen(entry: Entry): boolean {
+    const screen = this.#views.find((view) => view.id === this.#screen);
+    return (
+      screen !== undefined &&
+      entry.repo === screen.repo &&
+      (entry.moving || entry.root?.pull === screen.pull)
+    );
   }
 
   #added(repo: string, adapter: Adapter, root: Root): Entry {
@@ -357,14 +378,15 @@ export class ServerPool {
     );
   }
 
-  /** Stops `server`, kept among those stopping until it has. */
-  #stopServer(server: Running): Promise<void> {
-    const stopping = server.stop().catch((error: unknown) => {
+  /** Stops `entry`'s `server`, on `root`, kept among those stopping until it has. */
+  #stopServer(entry: Entry, server: Running, root: Root | undefined): Promise<void> {
+    const done = server.stop().catch((error: unknown) => {
       this.#options.log(`a language server's stop failed: ${describe(error)}`);
     });
+    const stopping: Stopping = { repo: entry.repo, pull: root?.pull, done };
     this.#stopping.add(stopping);
-    void stopping.finally(() => this.#stopping.delete(stopping));
-    return stopping;
+    void done.finally(() => this.#stopping.delete(stopping));
+    return done;
   }
 
   /** Whether `entry` is the one kept for its key, and not stopping for good. */
@@ -515,6 +537,7 @@ export class ServerPool {
    */
   async #again(entry: Entry, root: Root | undefined): Promise<void> {
     const old = entry.server;
+    const was = entry.root;
     entry.stopListening?.();
     entry.stopListening = undefined;
     entry.server = undefined;
@@ -528,7 +551,7 @@ export class ServerPool {
     entry.problem = undefined;
     this.#changed(entry);
     // The server before, or the one an earlier restart is still stopping.
-    const stopping = old ? this.#stopServer(old) : entry.stopping;
+    const stopping = old ? this.#stopServer(entry, old, was) : entry.stopping;
     if (stopping) {
       entry.stopping = stopping;
       await stopping;
@@ -547,18 +570,23 @@ export class ServerPool {
     }
     const kind = server.state.kind;
     if (kind === 'failed' || kind === 'stopping' || kind === 'stopped') return;
+    // Asked again just before the server is told, after whatever moving it waited for.
+    const still = () =>
+      entry.server === server && entry.phase === 'running' && this.#allowed(entry.repo, root);
+    if (!still()) return;
     entry.moving = true;
     this.#changed(entry);
-    const moved = kind === 'starting' ? false : await server.moveTo(root.folder).catch(() => false);
+    const moved =
+      kind === 'starting' ? false : await server.moveTo(root.folder, still).catch(() => false);
     if (entry.server !== server || entry.phase !== 'running') return;
     entry.moving = false;
     if (moved) {
       entry.root = root;
-      // Trust, or the view on screen, may have changed while it moved.
-      if (!this.#allowed(entry.repo, root)) {
-        void this.#end(entry, 'no trusted view on screen shows its head');
-        return;
-      }
+      this.#changed(entry);
+      return;
+    }
+    // It stays where it was when it's no longer wanted there.
+    if (!this.#allowed(entry.repo, root)) {
       this.#changed(entry);
       return;
     }
@@ -577,7 +605,7 @@ export class ServerPool {
       const { count } = this.#limits;
       if (others.length + this.#stopping.size < count) return true;
       if (others.length < count) {
-        await Promise.race(this.#stopping);
+        await Promise.race([...this.#stopping].map((each) => each.done));
         continue;
       }
       const victim = this.#leastUsedOffScreen(others);
@@ -596,9 +624,8 @@ export class ServerPool {
   }
 
   #leastUsedOffScreen(entries: readonly Entry[]): Entry | undefined {
-    const repo = this.#views.find((view) => view.id === this.#screen)?.repo;
     return entries
-      .filter((entry) => entry.repo !== repo)
+      .filter((entry) => !this.#onScreen(entry))
       .toSorted((one, other) => one.used - other.used)[0];
   }
 
@@ -645,7 +672,7 @@ export class ServerPool {
     entry.ended = (async () => {
       try {
         // And the one before it, if it's still stopping for this one to start.
-        await Promise.all([server && this.#stopServer(server), stopping]);
+        await Promise.all([server && this.#stopServer(entry, server, entry.root), stopping]);
       } finally {
         if (this.#entries.get(entry.key) === entry) this.#entries.delete(entry.key);
         this.#options.changed(entry.repo);
@@ -660,6 +687,13 @@ export class ServerPool {
   #changed(entry: Entry): void {
     this.#options.changed(entry.repo);
   }
+}
+
+/** A server stopping, and the checkout it ran on, by repository and pull request. */
+interface Stopping {
+  readonly repo: string;
+  readonly pull: number | undefined;
+  readonly done: Promise<void>;
 }
 
 function keyOf(repo: string, adapter: string): string {

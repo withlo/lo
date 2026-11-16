@@ -152,6 +152,9 @@ test('it starts with Lo’s capabilities, and answers about the files Lo opened'
   // Another head's checkout: the server moves there, with its files closed.
   const next = join(root, '..', 'next');
   mkdirSync(next);
+  // Not if it's no longer wanted there once the folder is resolved.
+  expect(await server.moveTo(next, () => false)).toBe(false);
+  expect(server.pathOf(pathToFileURL(join(root, 'src/c.ts')).href)).toBe('src/c.ts');
   expect(await server.moveTo(next)).toBe(true);
   expect(server.pathOf(pathToFileURL(join(next, 'src/c.ts')).href)).toBe('src/c.ts');
   expect(server.pathOf(pathToFileURL(join(root, 'src/c.ts')).href)).toBeUndefined();

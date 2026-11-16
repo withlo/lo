@@ -18,12 +18,15 @@ export class StandIn implements Running {
   stopped = false;
   /** Whether a stop waits for {@link StandIn.exit}. */
   slow = false;
+  /** Whether a move waits for {@link StandIn.resolved}, as a real one resolves the folder first. */
+  slowMoves = false;
   /** Whether its process has gone, once a stop it was asked for finished. */
   exited = false;
   readonly spec: ServerSpec;
   readonly #listeners = new Set<(state: State) => void>();
   #stopping: Promise<void> | undefined;
   #exit: (() => void) | undefined;
+  #resolve: (() => void) | undefined;
 
   constructor(spec: ServerSpec) {
     this.spec = spec;
@@ -51,9 +54,23 @@ export class StandIn implements Running {
     return undefined;
   }
 
-  moveTo(root: string): Promise<boolean> {
-    if (this.moves) this.moved.push(root);
-    return Promise.resolve(this.moves);
+  /** Moves to `root`, as `@lo/lsp`'s does: told, into `moved`, only if `still` says so then. */
+  moveTo(root: string, still: () => boolean = () => true): Promise<boolean> {
+    const move = () => {
+      if (!this.moves || !still()) return false;
+      this.moved.push(root);
+      return true;
+    };
+    if (!this.slowMoves) return Promise.resolve(move());
+    return new Promise((resolve) => {
+      this.#resolve = () => resolve(move());
+    });
+  }
+
+  /** Lets a slow move go on, once the folder it's moving to is resolved. */
+  resolved(): void {
+    this.#resolve?.();
+    this.#resolve = undefined;
   }
 
   stop(): Promise<void> {

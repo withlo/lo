@@ -15,6 +15,7 @@
 // for each repository and language (`servers.ts`, `serving.ts`). On the new side, a server's
 // answer within its deadline wins over the index's (`served.ts`).
 
+import { stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 
@@ -354,19 +355,23 @@ function startIndex(context: Context): void {
 function servingInput(context: Context, id: string): ServingInput | undefined {
   const info = context.use(tabs).pull(id);
   if (!info) return undefined;
-  const kind = views?.decision(id)?.trust.kind;
+  const trust = views?.decision(id)?.trust;
+  const kind = trust?.kind;
   const { local, shown } = info;
   const compared = indexInput(context, id);
   return {
     id,
     repo: `${info.repository.owner}/${info.repository.name}`,
     number: info.number,
+    // A read that failed, as offline, or no git, decides nothing.
     trust:
       kind === 'trusted'
         ? 'trusted'
         : kind === 'checking' || kind === 'waiting'
           ? 'checking'
-          : 'none',
+          : trust?.kind === 'untrusted' && trust.why !== 'unread'
+            ? 'none'
+            : 'unknown',
     off: kind === 'untrusted',
     head:
       local.kind === 'ready' && shown !== undefined && local.head === shown
@@ -456,10 +461,15 @@ function startServers(context: Context): void {
     view: (id) => servingInput(context, id),
     onScreen: () => service.list().active,
     publish: (shown) => context.publish('served', shown),
+    stopOn: (repo, pull) => servers.stopWhere(repoKey(repo), (each) => each === pull),
     async letGo(repo, pull) {
       await servers.stopWhere(repoKey(repo), (each) => each === pull);
       const cache = context.git.cache;
-      if (cache) await letGo(cache, { repo, pull });
+      const [owner = '', name = ''] = repo.split('/');
+      // Only a pull request that has checkouts, as most decided untrusted have none.
+      if (cache && (await isFolder(join(cache.checkoutsFolder(owner, name), `pull-${pull}`)))) {
+        await letGo(cache, { repo, pull });
+      }
     },
     log,
   });
@@ -475,6 +485,15 @@ function startServers(context: Context): void {
   );
   context.git.onStatus(() => all());
   all();
+}
+
+/** Whether there's a folder at `path`. */
+async function isFolder(path: string): Promise<boolean> {
+  try {
+    return (await stat(path)).isDirectory();
+  } catch {
+    return false;
+  }
 }
 
 /** The servers to stop for `drop`, by the pull request each runs on. */

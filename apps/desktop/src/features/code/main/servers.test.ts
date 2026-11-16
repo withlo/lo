@@ -38,7 +38,7 @@ function view(
   trust: PoolView['trust'] = 'trusted',
 ): PoolView {
   const root = { folder: `/cache/${repo}/pull-${pull}`, pull };
-  return { id, repo, trust, root: trust === 'trusted' ? root : undefined, wants };
+  return { id, repo, pull, trust, root: trust === 'trusted' ? root : undefined, wants };
 }
 
 /** A pool of stand-ins, and each one it started. */
@@ -197,6 +197,20 @@ describe('how long they run', () => {
     expect(started[1]?.stopped).toBe(false);
   });
 
+  it('stops one 10 minutes after its own pull request was last on screen, while another of the repo is', async () => {
+    vi.useFakeTimers();
+    const { pool, alive } = standIns();
+    const views = [view('v1', 'a/x', 1), view('v2', 'a/x', 2, [])];
+    pool.sync(views, 'v1');
+    await settle();
+    // #1's tab closes, and #2, which needs no server, is on screen: it runs on, for a while.
+    pool.sync(views.slice(1), 'v2');
+    await vi.advanceTimersByTimeAsync(10 * 60_000 - 1);
+    expect(alive()).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(alive()).toEqual([]);
+  });
+
   it('stops one at once when its repository’s last tab closes', async () => {
     vi.useFakeTimers();
     const { pool, started } = standIns();
@@ -300,6 +314,52 @@ describe('trust, then and there', () => {
     await settle();
     expect(started).toHaveLength(1);
     expect(alive()).toEqual([]);
+  });
+
+  it('tells a server nothing of a move once trust went while it resolved the folder', async () => {
+    const { pool, started } = standIns();
+    const views = [view('v1', 'a/x', 1), view('v2', 'a/x', 2)];
+    pool.sync(views, 'v1');
+    await settle();
+    const first = started[0];
+    if (!first) throw new Error('nothing started');
+    first.set({ kind: 'ready' });
+    first.slowMoves = true;
+    pool.sync(views, 'v2');
+    await settle();
+    // #2 isn't trusted any longer by the time the folder is resolved.
+    pool.sync(views.slice(0, 1), 'v2');
+    first.resolved();
+    await settle();
+    expect(first.moved).toEqual([]);
+    expect(started).toHaveLength(1);
+  });
+
+  it('waits, when trust goes from a pull request, for a server still stopping on its checkout', async () => {
+    const { pool, started } = standIns();
+    const views = [view('v1', 'a/x', 1), view('v2', 'a/x', 2)];
+    pool.sync(views, 'v1');
+    await settle();
+    const first = started[0];
+    if (!first) throw new Error('nothing started');
+    first.set({ kind: 'ready' });
+    first.slow = true;
+    // It can't move to #2, so it stops there to start again.
+    first.moves = false;
+    pool.sync(views, 'v2');
+    await settle();
+    expect(first.stopped).toBe(true);
+    let stopped = false;
+    void pool
+      .stopWhere('a/x', (pull) => pull === 1)
+      .then(() => {
+        stopped = true;
+      });
+    await settle();
+    expect(stopped).toBe(false);
+    first.exit();
+    await settle();
+    expect(stopped).toBe(true);
   });
 
   it.each(['a move', 'Restart', 'a crash'])(
@@ -464,6 +524,7 @@ describe('a real server', () => {
         {
           id: 'v1',
           repo: 'a/x',
+          pull: 1,
           trust: 'trusted',
           root: { folder: checkout, pull: 1 },
           wants: [TS],
