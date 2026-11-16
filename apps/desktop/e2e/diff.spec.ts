@@ -41,7 +41,10 @@ declare global {
           threads(): readonly ThreadView[];
         }
       | undefined;
-    /** When each frame started while a test timed them, on the page's clock, in milliseconds. */
+    /**
+     * When each frame's animation callbacks ran while a test timed them, on the page's clock, in
+     * milliseconds.
+     */
     loFrames?: number[];
     /** Where the diff was scrolled to at each frame while a test timed them. */
     loTops?: number[];
@@ -996,9 +999,13 @@ test.describe('while the local copy takes GitHub’s place', () => {
   }
 });
 
-/** A task the page's main thread ran: when it started, on the page's clock, and its CPU time. */
+/**
+ * A task the page's main thread ran: when it started, on the page's clock, how long it took, and
+ * its CPU time, in milliseconds.
+ */
 interface Task {
   start: number;
+  wall: number;
   cpu: number;
 }
 
@@ -1015,9 +1022,10 @@ interface TraceEvent {
 
 /**
  * Traces the page's main thread, from a trace of the page's timeline: the tasks it runs from now
- * until the returned function is called, which gives them. Each task's CPU time leaves out time
- * the machine gave other processes while it ran. A mark the page makes as the trace starts sets
- * the trace's clock against the page's, and names the page's main thread.
+ * until the returned function is called, which gives them in order. Each task's CPU time leaves
+ * out time the machine gave other processes while it ran. A mark the page makes as the trace
+ * starts sets the trace's clock against the page's, and names the page's main thread. A trace
+ * that lost some of its events fails, since what it lost would read as no work.
  */
 async function traceMainThread(page: Page): Promise<() => Promise<Task[]>> {
   const devtools = await page.context().newCDPSession(page);
@@ -1027,11 +1035,12 @@ async function traceMainThread(page: Page): Promise<() => Promise<Task[]>> {
   });
   const mark = await page.evaluate(() => performance.mark('lo-main-thread').startTime);
   return async () => {
-    const complete = new Promise<{ stream?: string }>((resolve) =>
+    const complete = new Promise<{ stream?: string; dataLossOccurred: boolean }>((resolve) =>
       devtools.once('Tracing.tracingComplete', resolve),
     );
     await devtools.send('Tracing.end');
-    const { stream } = await complete;
+    const { stream, dataLossOccurred } = await complete;
+    if (dataLossOccurred) throw new Error('the trace lost some of its events');
     if (!stream) throw new Error('the trace came without its stream');
     let text = '';
     for (;;) {
@@ -1050,23 +1059,29 @@ async function traceMainThread(page: Page): Promise<() => Promise<Task[]>> {
     if (marked?.ts === undefined) throw new Error('the trace has no mark from the page');
     // The trace's clock, in milliseconds, less the page's.
     const offset = marked.ts / 1000 - mark;
+    const ran = events
+      .flatMap((event) =>
+        event.pid === marked.pid &&
+        event.tid === marked.tid &&
+        event.ph === 'X' &&
+        event.name === 'ThreadControllerImpl::RunTask' &&
+        event.ts !== undefined
+          ? [{ ts: event.ts, dur: event.dur ?? 0, tdur: event.tdur }]
+          : [],
+      )
+      .toSorted((a, b) => a.ts - b.ts);
     const tasks: Task[] = [];
     let busyUntil = -Infinity;
-    for (const event of events) {
-      if (
-        event.pid !== marked.pid ||
-        event.tid !== marked.tid ||
-        event.ph !== 'X' ||
-        event.name !== 'ThreadControllerImpl::RunTask' ||
-        event.ts === undefined
-      ) {
-        continue;
-      }
+    for (const event of ran) {
       // A task run inside another is counted in that one's time.
       if (event.ts < busyUntil) continue;
-      busyUntil = event.ts + (event.dur ?? 0);
-      // A task too short to measure comes without its CPU time: its length stands in.
-      tasks.push({ start: event.ts / 1000 - offset, cpu: (event.tdur ?? event.dur ?? 0) / 1000 });
+      busyUntil = event.ts + event.dur;
+      tasks.push({
+        start: event.ts / 1000 - offset,
+        wall: event.dur / 1000,
+        // A task too short to measure comes without its CPU time: its length stands in.
+        cpu: (event.tdur ?? event.dur) / 1000,
+      });
     }
     if (tasks.length === 0) throw new Error('the trace has none of the page’s tasks');
     return tasks;
@@ -1153,8 +1168,8 @@ test.describe('when the local copy comes after GitHub’s diff', () => {
         if (state !== seen) trace.push(`${when} ${Math.round(performance.now())} ${state}`);
         seen = state;
       };
-      const tick = (now: number) => {
-        frames.push(now);
+      const tick = () => {
+        frames.push(performance.now());
         window.loTops?.push(document.querySelector('.lo-diffview')?.scrollTop ?? 0);
         sample('frame');
         setTimeout(() => sample('painted'), 0);
@@ -1185,14 +1200,24 @@ test.describe('when the local copy comes after GitHub’s diff', () => {
       return timed;
     });
     const tasks = await traced();
-    // Each frame, from its start to the next one's, with the CPU time of the page's tasks that
-    // started in it: its own work, without the time the machine gave other processes meanwhile.
-    const timed = frames.slice(0, -1).map((start, index) => {
-      const end = frames[index + 1]!;
-      const own = tasks
-        .filter((task) => task.start >= start && task.start < end)
-        .reduce((sum, task) => sum + task.cpu, 0);
-      return { start, length: end - start, own };
+    // Each frame ends with the task that ran its animation callbacks, which lays out and paints
+    // what changed since the frame before. So from one such task's end to the next's, a frame
+    // holds the pacer's share, which runs once the frame before is painted, and its own layout.
+    // The page's clock and the trace's differ by the mark's rounding, a tenth of a millisecond.
+    const ends = frames.map((at) => {
+      const within = (slack: number) => (task: Task) =>
+        task.start - slack <= at && at <= task.start + task.wall + slack;
+      const ran = tasks.find(within(0)) ?? tasks.find(within(0.2));
+      if (!ran) throw new Error(`no task in the trace ran the frame at ${at.toFixed(1)} ms`);
+      return ran.start + ran.wall;
+    });
+    // Each frame with the CPU time of the page's tasks in it: its own work, without the time the
+    // machine gave other processes meanwhile.
+    const timed = ends.slice(1).map((end, index) => {
+      const start = ends[index]!;
+      const held = tasks.filter((task) => task.start >= start && task.start < end);
+      if (held.length === 0) throw new Error(`the frame at ${start.toFixed(1)} ms holds no task`);
+      return { start, length: end - start, own: held.reduce((sum, task) => sum + task.cpu, 0) };
     });
 
     // The same view, and the row that was at the top of the screen where it was on the page,
@@ -1216,9 +1241,11 @@ test.describe('when the local copy comes after GitHub’s diff', () => {
     // No frame runs long: none takes 50 ms of the page's main thread. The time from one frame to
     // the next also counts the time the machine gave its other processes, which on a CI runner
     // shared with another copy of Lo and other suites has stretched frames to two or three times
-    // the page's own work, past 80 ms.
+    // the page's own work, past 80 ms. A frame that waits, as on a synchronous call or the GPU,
+    // takes no CPU time while it does, so none may take long however its time went.
     expect(timed.length).toBeGreaterThan(0);
     expect(Math.max(...timed.map((frame) => frame.own))).toBeLessThan(50);
+    expect(Math.max(...timed.map((frame) => frame.length))).toBeLessThan(200);
     // One view from the tab's opening on: the panel's order came with the first, and the local
     // copy's files went into it. No frame went back to the top.
     expect(await page.evaluate(() => window.loDiff?.draws)).toBe(1);
