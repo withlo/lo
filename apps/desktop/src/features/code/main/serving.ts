@@ -233,6 +233,7 @@ export class ServingViews {
           definitionDeadline: adapter.definitionDeadline,
           referencesFromDefinition: adapter.referencesFromDefinition,
           noHints: adapter.noHints,
+          noReferences: adapter.noReferences,
           server: found.server,
           async matches(file, oid) {
             const repo = await clone();

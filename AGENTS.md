@@ -586,6 +586,22 @@ toolchain and git's variables each server needs.
   for Terraform, from releases.hashicorp.com, given `/dev/null` as Terraform so it runs neither
   `terraform` nor a provider's plugin, and so reads only the provider schemas it carries. Each
   adapter's comment says what in a checkout can reach its server and what can't.
+- Swift's server on macOS, SourceKit-LSP, is the one Lo doesn't download: it comes with Xcode and
+  with Apple's Command Line Tools, and Lo runs the copy in the developer folder that
+  `/usr/bin/xcode-select -p` names when run with only the system's `PATH` (`developerFolder`), never
+  the `/usr/bin` shim, one on `PATH` or what `xcrun` finds, which read `DEVELOPER_DIR` and the like.
+  Given a workspace it would run what a checkout's build files name (a build server, SwiftPM's
+  manifest and plugins, a compile database's flags) and read its `.sourcekit-lsp` settings, which no
+  option turns off, so it runs rootless: told of no workspace (`rootUri` and `workspaceFolders`
+  `null`), in its home, each file Lo opens built only by the fallback settings Lo gives it and the
+  macOS SDK. What depends on where it runs comes from its adapter's `place`, once its home is made:
+  its generated files and module cache in its home, by its options, and `CFFIXED_USER_HOME`, so
+  Foundation's home folder is its home too. A checkout with a `buildServer.json`, a `.bsp` or a
+  `.sourcekit-lsp` anywhere in it is refused all the same (`sourceKitCheckoutProblem`, asked through
+  the adapter's `checkout`), against a later SourceKit-LSP that looked for them beside a file. Its
+  answers are each file's own, and it finds references only in a build's index, so `gr` answers from
+  the syntax index (`noReferences`). Its `SourceKitService` runs as an XPC service outside the
+  server's family, so the cap doesn't count it; it ends with the server.
 - Tests start only the fake server, `testing/lsp/fake-server.ts`, at most two at once in a test
   file, each killed with its group when the test ends. No test starts a real server or downloads
   one: download tests serve archives they build from a server on this machine. The live check,
@@ -1298,8 +1314,10 @@ The `code` feature runs language servers on the views the reader trusts, and the
 before the syntax index's. A server is whatever an adapter (`main/adapters.ts`) says to start for
 its languages: Lo ships those for TypeScript and JavaScript, and Python, each downloaded with the
 Node it runs on; PHP, whose server is a program of its own; Go, gopls, which Lo builds with the Go
-it then runs with; and Terraform, terraform-ls, which reads a `.tfvars` file as Terraform's
-variables.
+it then runs with; Terraform, terraform-ls, which reads a `.tfvars` file as Terraform's variables;
+and, on macOS, Swift, the SourceKit-LSP that comes with Xcode or Apple's Command Line Tools, which
+Lo doesn't download. Without either, Swift's item says it needs Apple's Command Line Tools, and to
+install them with `xcode-select --install`.
 
 - Nothing starts for a view nothing trusts: no download, no checkout, no server. Once a trusted view
   is on screen and a file its pull request adds or changes on the new side, or one asked about, is
@@ -1314,7 +1332,9 @@ variables.
   runs stops and its checkouts stay.
 - One server runs per repository and adapter, on the checkout of the head on screen, and moves with
   it: by `workspace/didChangeWorkspaceFolders`, sent only once trust is checked again, where it
-  takes that, else by starting again (`main/servers.ts`). Its `HOME` is
+  takes that, else by starting again (`main/servers.ts`). A rootless server, told of no workspace,
+  moves with only its files closed. A server doesn't start on, or move to, a checkout its adapter or
+  a toolchain it uses refuses (`checkoutRefusal`), and says why. Its `HOME` is
   `<cache>/code/homes/<owner>/<name>/<adapter>` (`Cache.homeFolder`), which the cache's cap counts
   and trims and which goes with the repository's clone, but never while a server of the repository
   runs (see Git). Its `PATH` is its toolchain's folders, then Lo's git's, then the system's, so a
@@ -1333,7 +1353,9 @@ variables.
   folder that's going. Then it stops those servers and every install of it under way, those nobody
   waits for any longer included, and once each has ended, renames its folder aside before deleting
   it. Its button waits while it runs, and a notice says why one wasn't removed
-  (`main/toolchains.ts`).
+  (`main/toolchains.ts`). On macOS it lists Swift too, the system's (`system` on its adapter), with
+  where the SourceKit-LSP Lo would run is from ("From Xcode") or what it needs, and nothing to
+  remove.
 - It stops 10 minutes after the pull request whose checkout it runs on was last on screen, once no
   tab of its repository is open, once its repository or pull request isn't trusted, and as Lo quits,
   each within 5 s; Lo's quitting waits for each one stopping. After a crash it starts again by
@@ -1345,15 +1367,17 @@ variables.
   can't (`main/served.ts`): a definition in 2 s (an adapter may allow longer), references in 10 s, a
   hover in 1.5 s, inlay hints and the outline in 3 s. An empty definition falls back to the file's
   import and the index, and an empty hover to the index; empty references or an empty outline are
-  the server's answer. A server whose adapter says it finds references only from a declaration
-  (`referencesFromDefinition`, terraform-ls) and finds none where the reader is, as at a use, is
-  asked for the definition, then for the references there, all within the 10 s; with no definition
-  in the repository the index answers, saying why, and with none at all, that the server found no
-  references there, as at a declaration nothing uses. Each file is opened on a server as its own
-  language, by its path (`languageOf`), so a `.tf` file reached from a `.tfvars` file is still
-  `terraform`. A place outside the checkout shows as "Outside this repository" and is never read;
-  the references panel counts those it doesn't list. The old side always answers from the index, and
-  a server answers only about the head it runs on, for a file whose checkout matches git's.
+  the server's answer. One whose adapter says its references can't be used (`noReferences`,
+  SourceKit-LSP's) is never asked: the index answers, saying why. A server whose adapter says it
+  finds references only from a declaration (`referencesFromDefinition`, terraform-ls) and finds none
+  where the reader is, as at a use, is asked for the definition, then for the references there, all
+  within the 10 s; with no definition in the repository the index answers, saying why, and with none
+  at all, that the server found no references there, as at a declaration nothing uses. Each file is
+  opened on a server as its own language, by its path (`languageOf`), so a `.tf` file reached from a
+  `.tfvars` file is still `terraform`. A place outside the checkout shows as "Outside this
+  repository" and is never read; the references panel counts those it doesn't list. The old side
+  always answers from the index, and a server answers only about the head it runs on, for a file
+  whose checkout matches git's.
 - A hover in Markdown is read into `@lo/markdown`'s tree by the background process (`code.render`,
   main's own job), as any text from anyone is, and the card never draws the Markdown as text: the
   code blocks it starts with, in order, are the declaration (rust-analyzer's module path, then the

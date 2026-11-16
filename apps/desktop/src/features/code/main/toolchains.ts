@@ -1,7 +1,8 @@
 // The toolchains language servers use, in main: what Settings lists of each (whether it's
 // downloaded, how large it is and what uses it), removing one, and what a server says when its
 // toolchain can't download or was removed. Lo's copies are in the cache's `toolchains/`, with an
-// installer of their own. Nothing here calls Electron.
+// installer of their own. Settings lists the system's toolchains servers come with too, as Swift's
+// comes with Xcode, with where each is from. Nothing here calls Electron.
 
 import {
   checkoutProblem,
@@ -14,7 +15,7 @@ import {
 } from '@lo/lsp';
 
 import type { Toolchain as Listed } from '../contract.ts';
-import type { Adapter } from './adapters.ts';
+import type { Adapter, FindContext } from './adapters.ts';
 
 /** What these need: the toolchains pinned, where they go, and the servers that use them. */
 export interface ToolchainHost {
@@ -27,6 +28,8 @@ export interface ToolchainHost {
   readonly adapters: () => readonly Adapter[];
   /** Stops the servers whose adapters `uses` picks, each saying `message`, once they have. */
   readonly halt: (uses: (adapter: Adapter) => boolean, message: string) => Promise<void>;
+  /** How an adapter finds the system's toolchain its server comes with, for its row. */
+  readonly find?: FindContext | undefined;
 }
 
 /** What Lo calls toolchain `id`, in a row and at the start of a sentence. */
@@ -62,7 +65,8 @@ export function listedToolchain<T>(
 
 /**
  * Why `adapter`'s server mustn't run on the checkout at `folder`, by what each toolchain it uses
- * reads there, such as a `global.json` that could choose a .NET SDK other than Lo's.
+ * reads there, such as a `global.json` that could choose a .NET SDK other than Lo's, then by what
+ * the server itself reads there, such as the build servers SourceKit-LSP would run.
  */
 export async function checkoutRefusal(
   adapter: Adapter,
@@ -72,7 +76,7 @@ export async function checkoutRefusal(
     const problem = await checkoutProblem(id, folder);
     if (problem !== undefined) return problem;
   }
-  return undefined;
+  return adapter.checkout?.(folder);
 }
 
 /** What a server says once toolchain `id` couldn't install, from why: "Go couldn’t download. …" */
@@ -88,7 +92,9 @@ export function removedMessage(id: string): string {
 
 /**
  * The toolchains pinned for this system, in the manifest's order, each with the bytes its files
- * take by its marker, or `null` while it isn't downloaded, and the servers that use it.
+ * take by its marker, or `null` while it isn't downloaded, and the servers that use it; then the
+ * system's toolchains Lo's servers come with, each with where the copy Lo would run is from, or
+ * `null` while there's none.
  */
 export async function listToolchains(host: ToolchainHost): Promise<Listed[]> {
   const { platform } = host;
@@ -107,6 +113,21 @@ export async function listToolchains(host: ToolchainHost): Promise<Listed[]> {
       installed,
       download: partsOf(download).reduce((sum, part) => sum + part.size, 0),
       uses: adapters.filter((adapter) => usesToolchain(adapter, id)).map((adapter) => adapter.name),
+    });
+  }
+  const { find } = host;
+  for (const { system } of adapters) {
+    if (system === undefined || find === undefined) continue;
+    if (listed.some((each) => each.id === system.id)) continue;
+    const from = await system.from(find).catch(() => undefined);
+    listed.push({
+      id: system.id,
+      name: system.name,
+      from: from ?? null,
+      needs: system.needs,
+      uses: adapters
+        .filter((adapter) => adapter.system?.id === system.id)
+        .map((adapter) => adapter.name),
     });
   }
   return listed;

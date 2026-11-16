@@ -34,6 +34,7 @@ import { serverEnvironment, temporaryFolder } from './environment.ts';
 import { FLOOD_BYTES, FLOOD_LINES, FLOOD_MESSAGES, FLOOD_WINDOW, FrameMeter } from './framing.ts';
 import { Log } from './log.ts';
 import { type Member, type ReadFamily, readFamily, stillRunning } from './family.ts';
+import type { Place } from './place.ts';
 import {
   checkArguments,
   checkProgram,
@@ -54,8 +55,15 @@ export interface ServerSpec {
   /** The server's own program, by absolute path: a compiled program, never a launcher script. */
   readonly program: string;
   readonly args: readonly string[];
-  /** The checkout it runs on: its workspace's one folder, and where it runs. */
+  /** The checkout it runs on: its workspace's one folder, and where it runs, unless it's rootless. */
   readonly root: string;
+  /**
+   * Whether it's told of no workspace, only of the files Lo opens, for a server that would read a
+   * workspace's build files and run what they name, as SourceKit-LSP would: it answers from the
+   * files Lo opens alone. It runs in its home, not the checkout, and moves to another checkout
+   * without being told, since it was told of none.
+   */
+  readonly rootless?: boolean | undefined;
   /** A folder of its own, its `HOME`, made if it isn't there. */
   readonly home: string;
   /** The folders of the toolchain it needs, first on its `PATH`. */
@@ -72,6 +80,11 @@ export interface ServerSpec {
   readonly settings?: unknown;
   /** Its `initializationOptions`. */
   readonly initializationOptions?: unknown;
+  /**
+   * What it's given that depends on its checkout and home, worked out once its home is made, just
+   * before it starts: more variables, and initialization options in place of these.
+   */
+  readonly place?: Place | undefined;
   /** The most resident memory its process group may hold, in bytes. */
   readonly memoryCap?: number | undefined;
   /** Lo's version, which it hears in `clientInfo`. */
@@ -221,6 +234,8 @@ export class Server {
   readonly #queue: Queue;
   /** The checkout's folder, as the system resolves it and as given. */
   #roots: string[] = [];
+  /** Its `initializationOptions`, from its spec or where it runs. */
+  #initializationOptions: unknown;
   #child: ChildProcess | undefined;
   #connection: MessageConnection | undefined;
   #capabilities: ServerCapabilities | undefined;
@@ -261,6 +276,7 @@ export class Server {
   constructor(spec: ServerSpec, limits: Limits, read: ReadFamily) {
     this.name = spec.name;
     this.#spec = spec;
+    this.#initializationOptions = spec.initializationOptions;
     this.#limits = limits;
     this.#readFamily = read;
     this.ready = new Promise((resolve) => {
@@ -369,11 +385,14 @@ export class Server {
    * Moves the server to the checkout at `root`, another head of the same repository, when it says
    * it takes changes to its workspace's folders. Its files are closed. It says whether it moved;
    * if it didn't, the server is as it was, and a new one is needed for `root`. `still`, asked once
-   * `root` is resolved, just before the server is told, keeps it where it is when it says no.
+   * `root` is resolved, just before the server is told, keeps it where it is when it says no. A
+   * rootless server, told of no workspace, moves without being told: only its files change.
    */
   async moveTo(root: string, still: () => boolean = () => true): Promise<boolean> {
+    const rootless = this.#spec.rootless === true;
     const changes = this.#capabilities?.workspace?.workspaceFolders?.changeNotifications;
-    if (!this.#answering() || (changes !== true && typeof changes !== 'string')) return false;
+    const takes = rootless || changes === true || typeof changes === 'string';
+    if (!this.#answering() || !takes) return false;
     const real = await realpath(root);
     if (!this.#answering() || !still()) return false;
     for (const uri of this.#documents.clear()) {
@@ -381,9 +400,11 @@ export class Server {
     }
     const removed = this.#folders();
     this.#roots = [...new Set([real, root])];
-    this.#notify('workspace/didChangeWorkspaceFolders', {
-      event: { added: this.#folders(), removed },
-    });
+    if (!rootless) {
+      this.#notify('workspace/didChangeWorkspaceFolders', {
+        event: { added: this.#folders(), removed },
+      });
+    }
     return true;
   }
 
@@ -558,10 +579,20 @@ export class Server {
       serverEnvironment({ ...given, home: await resolvedAhead(spec.home), path });
       await mkdir(spec.home, { recursive: true, mode: 0o700 });
       const home = await realpath(spec.home);
-      const env = serverEnvironment({ ...given, home, path });
+      serverEnvironment({ ...given, home, path });
       await mkdir(temporaryFolder(home), { recursive: true, mode: 0o700 });
+      // What depends on where it runs, held to the same rules.
+      const placed = spec.place === undefined ? {} : await spec.place({ root, home });
       if (this.#stopRequested) return;
-      const child = startProcess(program, spec.args, { env, cwd: root });
+      const variables = { ...spec.variables, ...placed.variables };
+      const env = serverEnvironment({ ...given, variables, home, path });
+      if (placed.initializationOptions !== undefined) {
+        this.#initializationOptions = placed.initializationOptions;
+      }
+      // A rootless server runs in its home, so nothing it starts begins in the checkout, and a
+      // folder its options name by a relative path is one of its home's.
+      const cwd = spec.rootless === true ? home : root;
+      const child = startProcess(program, spec.args, { env, cwd });
       this.#child = child;
       child.on('error', (error) => {
         // An error once it runs, such as a signal it can't be sent, changes nothing: its exit
@@ -672,7 +703,7 @@ export class Server {
     connection.onRequest((method: string, params: unknown) => {
       const answer = reply(method, params, {
         settings: this.#spec.settings ?? null,
-        folders: this.#folders(),
+        folders: this.#spec.rootless === true ? null : this.#folders(),
       });
       if (!answer.accepted) {
         note(`refused the server’s ${method}: ${answer.message}`);
@@ -704,15 +735,17 @@ export class Server {
     connection.listen();
   }
 
-  /** Sends `initialize`, then `initialized` once it's answered. */
+  /**
+   * Sends `initialize`, then `initialized` once it's answered. A rootless server hears of no root.
+   */
   async #initialize(root: string): Promise<void> {
     const connection = this.#connection;
     if (connection === undefined) return;
     const params = initializeParams({
-      rootUri: folderUri(root),
+      rootUri: this.#spec.rootless === true ? null : folderUri(root),
       name: basename(root),
       version: this.#spec.version,
-      initializationOptions: this.#spec.initializationOptions,
+      initializationOptions: this.#initializationOptions,
     });
     let answer: unknown;
     const late = Symbol('late');

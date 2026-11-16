@@ -18,6 +18,7 @@ import { isAbsolute } from 'node:path';
 
 import type { Installed } from '../install.ts';
 import { MANIFEST, type Manifest } from '../manifest.ts';
+import type { Place } from '../place.ts';
 
 /** How a server Lo has installed starts, and what it's told. */
 export interface Launch {
@@ -35,6 +36,10 @@ export interface Launch {
   /** What it gets for `workspace/configuration`, by section. */
   readonly settings?: unknown;
   readonly initializationOptions?: unknown;
+  /** What it's given that depends on its checkout and its home, as SourceKit-LSP needs. */
+  readonly place?: Place | undefined;
+  /** Whether it's told of no workspace, only of the files Lo opens, as SourceKit-LSP is. */
+  readonly rootless?: boolean | undefined;
   /** What it is, for its details: its name, version and license, "vtsls 0.3.0 · MIT". */
   readonly version?: string | undefined;
 }

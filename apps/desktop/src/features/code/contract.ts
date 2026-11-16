@@ -123,7 +123,7 @@ const serverId = z.string().regex(/^[a-z][a-z0-9-]{0,39}$/);
  * - `ready`, or `notAnswering` once it has missed several deadlines in a short while;
  * - `failed`: out of memory at `cap` bytes, a download that failed, or anything else, in a
  *   sentence; it waits for "Restart";
- * - `missing`: the toolchain it needs isn't installed.
+ * - `missing`: the toolchain it needs isn't installed; `plural` when `needs` names them, not it.
  */
 export const serverState = z.discriminatedUnion('kind', [
   z.strictObject({
@@ -150,6 +150,7 @@ export const serverState = z.discriminatedUnion('kind', [
     kind: z.literal('missing'),
     needs: z.string().max(200),
     install: z.string().max(200).optional(),
+    plural: z.boolean().optional(),
   }),
 ]);
 export type ServerState = z.output<typeof serverState>;
@@ -177,18 +178,29 @@ export type Servers = z.output<typeof servers>;
 const toolchainId = z.string().regex(/^[a-z][a-z0-9-]{0,39}$/);
 
 /**
- * A toolchain language servers use, as Settings lists it: what it is, how many bytes its files
- * take by its marker (`null` while it isn't downloaded), how large its download is, and the
- * servers that use it, by name.
+ * A toolchain language servers use, as Settings lists it: one Lo downloads, with what it is, how
+ * many bytes its files take by its marker (`null` while it isn't downloaded), how large its download
+ * is, and the servers that use it, by name; or one of the system's, which Lo doesn't download, as
+ * Swift's comes with Xcode, with where the copy Lo runs is from (`null` while there's none) and
+ * what it needs then.
  */
-export const toolchain = z.strictObject({
-  id: toolchainId,
-  name: z.string().max(40),
-  version: z.string().max(80),
-  installed: z.number().int().nonnegative().nullable(),
-  download: z.number().int().positive(),
-  uses: z.array(z.string().max(40)).max(32),
-});
+export const toolchain = z.union([
+  z.strictObject({
+    id: toolchainId,
+    name: z.string().max(40),
+    version: z.string().max(80),
+    installed: z.number().int().nonnegative().nullable(),
+    download: z.number().int().positive(),
+    uses: z.array(z.string().max(40)).max(32),
+  }),
+  z.strictObject({
+    id: toolchainId,
+    name: z.string().max(40),
+    from: z.string().max(80).nullable(),
+    needs: z.string().max(200),
+    uses: z.array(z.string().max(40)).max(32),
+  }),
+]);
 export type Toolchain = z.output<typeof toolchain>;
 
 /** The toolchains Lo pins for this system, sent each time one is downloaded or removed. */

@@ -275,14 +275,20 @@ test(
     }
     expect(wrong).toEqual([]);
 
-    // The script says each marker, so whoever checks knows what to look for, and the folder
-    // php-lsp's planted settings would put its cache in, which it would make in the checkout.
+    // The script says each marker, so whoever checks knows what to look for, and the folders
+    // php-lsp's and SourceKit-LSP's planted settings would put their files in, which each would
+    // make in the checkout.
     const settings: unknown = JSON.parse(contents.get('.php-lsp.json') ?? '{}');
     const cache = typeof settings === 'object' && settings !== null && 'cachePath' in settings;
     expect(cache && settings.cachePath).toBe('lo-hostile-php-lsp-cache');
+    const sourceKit: unknown = JSON.parse(contents.get('.sourcekit-lsp/config.json') ?? '{}');
+    const generated =
+      typeof sourceKit === 'object' && sourceKit !== null && 'generatedFilesPath' in sourceKit;
+    expect(generated && sourceKit.generatedFilesPath).toBe('lo-hostile-sourcekit-lsp');
     const said = new Set(script.match(/lo-hostile-[a-z]+(?:-[a-z]+)*/g));
-    expect([...markers, 'lo-hostile-php-lsp-cache'].toSorted()).toEqual([...said].toSorted());
-    expect(markers.size).toBe(31);
+    const folders = ['lo-hostile-php-lsp-cache', 'lo-hostile-sourcekit-lsp'];
+    expect([...markers, ...folders].toSorted()).toEqual([...said].toSorted());
+    expect(markers.size).toBe(34);
   },
 );
 
@@ -291,6 +297,7 @@ test("Lo's own repository holds nothing a tool would pick up from what the hosti
   // or a version manager would pick: no wrappers, node_modules or vendor, version files, tool
   // settings or package scripts.
   const named = new Set([
+    '.bsp',
     '.cargo',
     '.envrc',
     '.gitmodules',
@@ -301,9 +308,12 @@ test("Lo's own repository holds nothing a tool would pick up from what the hosti
     '.phpactor.json',
     '.python-version',
     '.ruby-version',
+    '.sourcekit-lsp',
     '.terraform',
     '.tool-versions',
     '.vscode',
+    'buildServer.json',
+    'compile_commands.json',
     'gradle',
     'gradlew',
     'global.json',

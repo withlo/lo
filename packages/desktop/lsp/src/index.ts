@@ -9,6 +9,19 @@ export {
   RUST_ANALYZER,
   rustAnalyzerSettings,
 } from './adapters/rust.ts';
+export {
+  developerFolder,
+  findSourceKit,
+  launchSourceKit,
+  NO_SOURCEKIT,
+  placeSourceKit,
+  SOURCEKIT_LSP,
+  sourceKitCandidates,
+  sourceKitCheckoutProblem,
+  sourceKitOptions,
+  type SourceKit,
+  XCODE_SELECT,
+} from './adapters/sourcekit.ts';
 export { NO_TERRAFORM, TERRAFORM_LS } from './adapters/terraform.ts';
 export { VTSLS } from './adapters/vtsls.ts';
 export { BUILD_TIME, buildGo, GO_TARGETS, type GoBuild, type GoDownload } from './build.ts';
@@ -53,6 +66,7 @@ export {
   type Pinned,
   type Platform,
 } from './manifest.ts';
+export { type Place, type Placed, type Where } from './place.ts';
 export { GIVEN_UP, IN_FLIGHT, UNANSWERED, WAITING, type Answer, type NoAnswer } from './queue.ts';
 export {
   LIMITS,

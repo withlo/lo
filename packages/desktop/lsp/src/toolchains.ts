@@ -212,7 +212,7 @@ export async function checkoutProblem(id: string, root: string): Promise<string 
  * checkout's own folders, never through a link to one, which may lead anywhere on the disk, or
  * back into the checkout without end; a link is listed as an entry that's no folder.
  */
-async function entriesOf(root: string): Promise<{ path: string; folder: boolean }[]> {
+export async function entriesOf(root: string): Promise<{ path: string; folder: boolean }[]> {
   const entries: { path: string; folder: boolean }[] = [];
   const folders = [root];
   for (let folder = folders.pop(); folder !== undefined; folder = folders.pop()) {

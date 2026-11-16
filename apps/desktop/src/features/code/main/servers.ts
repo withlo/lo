@@ -519,7 +519,8 @@ export class ServerPool {
     entry.progress = undefined;
     if (prepared.kind === 'missing') {
       const install = prepared.install === undefined ? {} : { install: prepared.install };
-      this.#refuse(entry, { kind: 'missing', needs: prepared.needs, ...install });
+      const plural = prepared.plural === true ? { plural: true } : {};
+      this.#refuse(entry, { kind: 'missing', needs: prepared.needs, ...install, ...plural });
       return;
     }
     const base = this.#options.base(entry.repo, adapter);
@@ -604,6 +605,8 @@ export class ServerPool {
         git: base.git,
         settings: launch.settings,
         initializationOptions: launch.initializationOptions,
+        place: launch.place,
+        rootless: launch.rootless,
       });
     } catch (error) {
       this.#refuse(entry, {

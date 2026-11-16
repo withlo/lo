@@ -31,6 +31,7 @@ import {
   type Server,
   type State,
   startServer,
+  type Where,
 } from '../src/index.ts';
 import { longestStop } from '../src/server.ts';
 import { fakeServer } from '@lo/testing/lsp';
@@ -165,6 +166,61 @@ test('it starts with Lo’s capabilities, and answers about the files Lo opened'
         event.event === 'notification' && event.method === 'workspace/didChangeWorkspaceFolders',
     ),
   );
+});
+
+test('a rootless server hears of no workspace, runs in its home, and moves without being told', async () => {
+  const places: Where[] = [];
+  const { server, root, home, seen } = startFake(
+    { requests: [{ method: 'workspace/workspaceFolders' }] },
+    {
+      spec: {
+        rootless: true,
+        variables: { LO_SPEC: 'spec' },
+        initializationOptions: { from: 'spec' },
+        async place(where) {
+          places.push(where);
+          return {
+            variables: { LO_PLACED: where.home },
+            initializationOptions: { from: 'place', home: where.home },
+          };
+        },
+      },
+    },
+  );
+  expect(await server.ready).toBe(true);
+  // What it's given where it runs, each folder as the system resolves it.
+  const real = { root: realpathSync(root), home: realpathSync(home) };
+  expect(places).toEqual([real]);
+  expect(seen().find((event) => event.event === 'initialize')?.params).toMatchObject({
+    rootUri: null,
+    workspaceFolders: null,
+    initializationOptions: { from: 'place', home: real.home },
+  });
+  expect(seen().find((event) => event.event === 'started')).toMatchObject({
+    cwd: real.home,
+    env: { HOME: real.home, LO_SPEC: 'spec', LO_PLACED: real.home },
+  });
+  await eventually(() => seen().some((event) => event.event === 'reply'));
+  expect(seen()).toContainEqual({
+    event: 'reply',
+    method: 'workspace/workspaceFolders',
+    result: null,
+  });
+
+  // Its files are still the checkout's, and it moves with them, told only of the files.
+  expect(server.open('src/a.swift', 'swift', 'let a = 1')).toBe(true);
+  expect(server.pathOf(pathToFileURL(join(root, 'src/a.swift')).href)).toBe('src/a.swift');
+  const next = join(root, '..', 'next');
+  mkdirSync(next);
+  expect(await server.moveTo(next)).toBe(true);
+  expect(server.pathOf(pathToFileURL(join(next, 'src/a.swift')).href)).toBe('src/a.swift');
+  await eventually(() => seen().some((event) => event.event === 'closed'));
+  expect(
+    seen().some(
+      (event) =>
+        event.event === 'notification' && event.method === 'workspace/didChangeWorkspaceFolders',
+    ),
+  ).toBe(false);
 });
 
 test('a request past its deadline, given up or replaced is cancelled on the server', async () => {

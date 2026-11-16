@@ -129,6 +129,24 @@
 #     terraform-ls, asking Terraform for the providers' schemas; marker
 #     hostile/terraform-provider/.terraform/providers/registry.terraform.io/hashicorp/null/9.9.9/
 #     <platform>/lo-hostile-terraform-provider
+#   SourceKit-LSP's build servers and settings
+#     .bsp/lo-hostile.json and buildServer.json, each naming hostile/swift-bsp/lo-bsp.sh as a build
+#     server; .sourcekit-lsp/config.json, which keeps SourceKit-LSP's generated files in the
+#     checkout's lo-hostile-sourcekit-lsp, takes compile commands from hostile/swift-commands, and
+#     builds packages as it indexes, outside SwiftPM's sandbox
+#     SourceKit-LSP, opening the checkout as its workspace; marker
+#     hostile/swift-bsp/lo-hostile-bsp, and the folder lo-hostile-sourcekit-lsp. Lo refuses a
+#     checkout with any of these, and the live check runs SourceKit-LSP on it anyway
+#   compile commands that load code into the compiler
+#     hostile/swift-commands/compile_commands.json: for Lo.swift, a macro whose plugin is
+#     lo-swift-macro.sh (`-load-plugin-executable`), and for lo.c, clang's `-Xclang -load` and
+#     `-fplugin` of a library that isn't there
+#     the Swift compiler expanding the macro; marker hostile/swift-commands/lo-hostile-swift-macro
+#   a Swift package's build tool plugin
+#     hostile/swift-plugin/Package.swift and Plugins/plugin.swift, a plugin that runs
+#     lo-swift-plugin.sh before each build, and hostile/swift-plugin/.sourcekit-lsp/config.json,
+#     which builds the package as SourceKit-LSP indexes, outside SwiftPM's sandbox
+#     SwiftPM, building the package; marker hostile/swift-plugin/lo-hostile-swift-plugin
 #   git, in folders of git/ that look like bare repositories, which git opens when a tool runs it
 #   inside one, unless `safe.bareRepository` is `explicit`
 #     git/fsmonitor, `core.fsmonitor` naming lo-fsmonitor.sh; run by `git status`; marker
@@ -174,7 +192,7 @@ IFS= read -r -d '' HOSTILE_BODY <<'EOF' || true
 
 It's the code fixture's pull request, with one more commit. That commit's files try to run code, steer a language server or a version manager, or fetch from the network, when the pull request is checked out and its servers start:
 
-- programs a tool might run: a workspace TypeScript in `node_modules`, a tsserver plugin in `typescript/node_modules`, an npm `postinstall`, `.vscode/settings.json`, a `rust/.cargo/config.toml` naming programs for `build.rustc`, its wrappers, a target's runner and linker, and a registry credential provider, and flags for rustc, a `.cargo/config.toml` with an `[env]` table, an `[unstable]` table and an `include`, the workspace settings `rust/rust-analyzer.toml` names, the Gradle and Maven wrappers, `php/.phpactor.json`'s tools, PHP's tools in `vendor/bin` and the `.php-lsp.json` that turns two of them on, `mise.toml`, a Terraform provider's plugin committed in `hostile/terraform-provider/.terraform`, a `//go:generate` line and a cgo file in `go/`, and a `terraform` and a `gopackagesdriver` in `hostile/bin`, which `.envrc` puts on `PATH`;
+- programs a tool might run: a workspace TypeScript in `node_modules`, a tsserver plugin in `typescript/node_modules`, an npm `postinstall`, `.vscode/settings.json`, a `rust/.cargo/config.toml` naming programs for `build.rustc`, its wrappers, a target's runner and linker, and a registry credential provider, and flags for rustc, a `.cargo/config.toml` with an `[env]` table, an `[unstable]` table and an `include`, the workspace settings `rust/rust-analyzer.toml` names, the Gradle and Maven wrappers, `php/.phpactor.json`'s tools, PHP's tools in `vendor/bin` and the `.php-lsp.json` that turns two of them on, build servers in `.bsp/` and `buildServer.json`, SourceKit-LSP's settings in `.sourcekit-lsp/config.json`, compile commands that load a Swift macro's plugin and clang plugins, a Swift package's build tool plugin, `mise.toml`, a Terraform provider's plugin committed in `hostile/terraform-provider/.terraform`, a `//go:generate` line and a cgo file in `go/`, and a `terraform` and a `gopackagesdriver` in `hostile/bin`, which `.envrc` puts on `PATH`;
 - versions that don't exist: `.tool-versions`, `.nvmrc`, `python/.python-version`, `ruby/.ruby-version`, `rust-toolchain.toml`, the `toolchain` lines of `go.mod` and `go.work`, and a `global.json` that pins an MSBuild SDK;
 - git's own settings, in folders of `git/` that look like bare repositories: a `core.fsmonitor` program, hooks, a clean and smudge filter, and a promisor remote that makes git fetch a commit it lacks; and a `.gitmodules` that points a submodule at a host that doesn't exist;
 - projects in `hostile/` whose dependencies or registries are on hosts ending `.lo-hostile.invalid`, which never resolve, and a Terraform module from the Terraform Registry that doesn't exist.

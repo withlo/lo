@@ -296,18 +296,30 @@ describe('ServerStatus', () => {
   });
 
   it('says only what is needed when there is no command to install it', async () => {
+    const host = render(<ServerStatus name="Java" state={{ kind: 'missing', needs: 'a JDK' }} />);
+    click(item(host));
+    await settle();
+    expect(details()?.textContent).toContain('Java needs a JDK. Until then, peek,');
+    expect(details()?.querySelector('code')).toBeNull();
+  });
+
+  it('says to install them, for what it needs that is named as more than one', async () => {
     const host = render(
       <ServerStatus
         name="Swift"
-        state={{ kind: 'missing', needs: 'Xcode or a Swift toolchain' }}
+        state={{
+          kind: 'missing',
+          needs: 'Apple’s Command Line Tools',
+          install: 'xcode-select --install',
+          plural: true,
+        }}
       />,
     );
     click(item(host));
     await settle();
     expect(details()?.textContent).toContain(
-      'Swift needs Xcode or a Swift toolchain. Until then, peek,',
+      'Swift needs Apple’s Command Line Tools. Install them with xcode-select --install. Until then,',
     );
-    expect(details()?.querySelector('code')).toBeNull();
   });
 
   it('offers to retry a download that failed, in place of restarting', async () => {

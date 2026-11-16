@@ -24,6 +24,7 @@ import { type Cache, defaultPlaces, parseOid, serverGitEnvironment, whyDistruste
 import { PullRef, readPullRequestRepositories, type PullRequestRepositories } from '@lo/github';
 import {
   currentPlatform,
+  developerFolder,
   downloadFor,
   findCopy,
   Installer,
@@ -578,6 +579,7 @@ async function prepareServer(
       counted(`toolchain:${id}`, (heard) => installToolchain(context, id, heard, signal)),
     ),
     findCopy: (candidates) => installedCopy(context, candidates),
+    developerFolder,
     signal,
   });
 }
@@ -634,6 +636,7 @@ function startServers(context: Context): void {
     installer: () => toolchainsInstaller(context),
     adapters: () => adapters,
     halt: (uses, message) => servers.halt(uses, message),
+    find: { findCopy: (candidates) => installedCopy(context, candidates), developerFolder },
   };
   // As Lo starts, before any server can use one, what toolchains.json no longer pins goes, as do
   // downloads a Lo that stopped halfway left.

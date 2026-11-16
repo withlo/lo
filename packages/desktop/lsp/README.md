@@ -63,6 +63,9 @@ own (`setsid`) is still found.
 - A process whose parent exits before Lo reads it, such as a daemon that forks twice, is taken in by
   the system's first process, or a subreaper, and nothing ties it to the server any longer. It
   outlives the stop.
+- An XPC service the system starts for a server, as it starts `SourceKitService` for SourceKit-LSP's
+  `sourcekitd`, is `launchd`'s child, not the server's. Its memory isn't counted against the cap,
+  and Lo doesn't signal it; it ends as the server does.
 - Once a server has exited on its own, by crashing, what it left behind is found only if a stop read
   it first.
 - What has left the group isn't frozen for the read before `SIGTERM`, so a process one of those
@@ -82,7 +85,9 @@ The servers Lo runs, each installed on first use for a trusted view, as `servers
 each with its adapter in `src/adapters/`. vtsls and Pyright run on Lo's own Node, which downloads
 first; rust-analyzer is a compiled program that runs on Lo's Rust toolchain, which downloads with
 it; php-lsp and terraform-ls are programs of their own; gopls runs with Lo's Go, which Lo builds it
-with. None needs anything installed.
+with. None needs anything installed but SourceKit-LSP, Swift's on macOS, which Lo doesn't download:
+it comes with Xcode and with Apple's Command Line Tools, and Lo runs the copy there
+(`src/adapters/sourcekit.ts`).
 
 | Server        | Version    | For                    | From                                                                                        | License                                                       |
 | ------------- | ---------- | ---------------------- | ------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
@@ -93,13 +98,15 @@ with. None needs anything installed.
 | php-lsp       | 0.33.0     | PHP                    | GitHub: the releases of [jorgsowa/php-lsp](https://github.com/jorgsowa/php-lsp)             | MIT                                                           |
 | gopls         | 0.24.0     | Go                     | proxy.golang.org: `golang.org/x/tools/gopls` and the 23 modules it builds with, built by Lo | BSD-3-Clause; the rest BSD-3-Clause, MIT, MIT-0 or Apache-2.0 |
 | terraform-ls  | 0.39.1     | Terraform              | releases.hashicorp.com                                                                      | MPL-2.0                                                       |
+| SourceKit-LSP | Apple's    | Swift, on macOS        | Xcode or Apple's Command Line Tools, in the developer folder `xcode-select -p` names        | Apache-2.0                                                    |
 
 vtsls and Pyright each start as Node, by its absolute path, with a cap on its heap, then the
 server's own entry point inside its install, never the launcher npm would link. rust-analyzer,
-php-lsp, gopls and terraform-ls each start as its program, by its absolute path inside its install.
-None runs through a shell, and each has an environment built from nothing, whose proxy leads nowhere
-(`NO_NETWORK` in `src/environment.ts`). What each is told is its adapter's alone, and the adapter
-says why each setting is as it is:
+php-lsp, gopls and terraform-ls each start as its program, by its absolute path inside its install,
+and SourceKit-LSP by its absolute path in Xcode or the Command Line Tools. None runs through a
+shell, and each has an environment built from nothing, whose proxy leads nowhere (`NO_NETWORK` in
+`src/environment.ts`). What each is told is its adapter's alone, and the adapter says why each
+setting is as it is:
 
 - **vtsls** runs its own TypeScript, never a workspace's (`node_modules/typescript`), and has
   automatic type acquisition off, so it runs no npm. It loads no `tsserver` plugin from the
@@ -177,6 +184,26 @@ says why each setting is as it is:
   references there. It asks registry.terraform.io about each module a configuration calls from the
   Registry, which no setting turns off, and the dead proxy fails each request before anything is
   sent. It answers no inlay hints (`hints: false`).
+- **SourceKit-LSP** is the copy in the developer folder the system has chosen, which
+  `/usr/bin/xcode-select -p` names when it's run with nothing of Lo's environment: Xcode's
+  `Toolchains/XcodeDefault.xctoolchain/usr/bin/sourcekit-lsp`, or the Command Line Tools'
+  `usr/bin/sourcekit-lsp`. Never the shim in `/usr/bin`, one on `PATH` or what `xcrun` finds, which
+  read `DEVELOPER_DIR` and the like, nor a version manager's shim, which reads a checkout's
+  `.swift-version`. It's Apple's, updated with Xcode or the tools, so Lo pins no version of it.
+  Given a workspace, it runs what its build files name: a build server from `buildServer.json` or
+  `.bsp/`, SwiftPM on a `Package.swift`, which compiles and runs the manifest and its plugins and
+  fetches its dependencies, and the flags of a `compile_commands.json`, which can load code into the
+  compiler; and it reads `.sourcekit-lsp/config.json`, which can turn those on. No option turns that
+  off, so it's told of no workspace (`rootless`: `rootUri` and `workspaceFolders` are `null`) and
+  runs in its home: it reads no build files and no workspace settings, and each file Lo opens gets
+  fallback build settings, the macOS SDK and Lo's flags. So answers are each file's own and the
+  SDK's: `gd`, `K` and `gh` answer within the file and into the SDK, a use of what another file
+  declares isn't resolved, and `gr`, which needs a build's index, comes from the syntax index. Its
+  generated files and its compiler's module cache are in its home, by its options, and Foundation's
+  home folder, where it reads its own settings, is too, by `CFFIXED_USER_HOME`. Lo still refuses a
+  checkout with a `buildServer.json`, a `.bsp` or a `.sourcekit-lsp` anywhere in it, so a later
+  SourceKit-LSP that looked for them beside a file finds none. Expanding a macro of the SDK's runs
+  Apple's `swift-plugin-server`; a checkout's macros are never built.
 
 None runs in a sandbox: each reads what you can, so an absolute import, Pyright's `extraPaths`, a
 Rust sysroot's sources, the folders of stubs a `.php-lsp.json` names, the paths a `composer.json`'s

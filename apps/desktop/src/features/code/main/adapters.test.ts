@@ -1,7 +1,11 @@
 // The adapters Lo ships: which files each reads, and what it downloads before it starts: Node for
 // the servers that run on it, Go for gopls, which Lo builds with it, and Lo's Rust for
-// rust-analyzer, which runs on it. What each server runs as, and is told, is `@lo/lsp`'s, and
-// tested there.
+// rust-analyzer, which runs on it; and, on macOS, the SourceKit-LSP it finds in Xcode or Apple's
+// Command Line Tools. What each server runs as, and is told, is `@lo/lsp`'s, and tested there.
+
+import { mkdirSync, mkdtempSync, realpathSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 import {
   GOPLS,
@@ -12,19 +16,24 @@ import {
   PHP_LSP,
   PYRIGHT,
   RUST_ANALYZER,
+  sourceKitCandidates,
+  sourceKitCheckoutProblem,
   TERRAFORM_LS,
   toolchainUse,
   VTSLS,
 } from '@lo/lsp';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, onTestFinished } from 'vitest';
 
 import {
   type Adapter,
-  ADAPTERS,
   adapterFor,
   type PrepareContext,
+  shippedAdapters,
   type Toolchain,
 } from './adapters.ts';
+
+/** The adapters Lo ships on macOS, Swift's among them. */
+const ADAPTERS = shippedAdapters('darwin');
 
 function installedAs(id: string): Installed {
   return { folder: `/lo/cache/servers/${id}`, entry: `/lo/cache/servers/${id}/entry` };
@@ -69,13 +78,14 @@ async function prepared(adapter: Adapter) {
       return Promise.reject(new Error('no toolchain is asked for'));
     },
     findCopy: () => Promise.reject(new Error('no copy is looked for')),
+    developerFolder: () => Promise.reject(new Error('no developer folder is looked for')),
     signal: new AbortController().signal,
   });
   return { installs, toolchains, ready };
 }
 
 describe('Lo’s adapters', () => {
-  it('read TypeScript and JavaScript, Python, Rust, PHP, Go and Terraform', () => {
+  it('read TypeScript and JavaScript, Python, Rust, PHP, Go, Terraform and, on macOS, Swift', () => {
     expect(readBy('src/a.ts')).toEqual(['TypeScript', 'typescript']);
     expect(readBy('src/a.mts')).toEqual(['TypeScript', 'typescript']);
     expect(readBy('src/A.tsx')).toEqual(['TypeScript', 'typescriptreact']);
@@ -91,6 +101,8 @@ describe('Lo’s adapters', () => {
     // terraform-ls reads a file of variables as one, by its own id.
     expect(readBy('infra/prod.tfvars')).toEqual(['Terraform', 'terraform-vars']);
     expect(readBy('infra/PROD.TFVARS')).toEqual(['Terraform', 'terraform-vars']);
+    expect(readBy('Sources/App/main.swift')).toEqual(['Swift', 'swift']);
+    expect(adapterFor(shippedAdapters('linux'), 'Sources/App/main.swift')).toBeUndefined();
     // Ruby has none.
     expect(readBy('lib/a.rb')).toBeUndefined();
   });
@@ -128,6 +140,7 @@ describe('Lo’s adapters', () => {
         return Promise.resolve(toolchain);
       },
       findCopy: () => Promise.reject(new Error('no copy is looked for')),
+      developerFolder: () => Promise.reject(new Error('no developer folder is looked for')),
       signal: new AbortController().signal,
     });
     expect(installs).toEqual([RUST_ANALYZER.id]);
@@ -169,6 +182,7 @@ describe('Lo’s adapters', () => {
         return id === 'go' ? Promise.resolve(go) : Promise.reject(new Error(`no ${id}`));
       },
       findCopy: () => Promise.reject(new Error('no copy is looked for')),
+      developerFolder: () => Promise.reject(new Error('no developer folder is looked for')),
       signal: new AbortController().signal,
     };
     const adapter = shipped('go');
@@ -207,7 +221,72 @@ describe('Lo’s adapters', () => {
       ['php', undefined],
       ['go', undefined],
       ['terraform', 'terraform-ls has no type hints.'],
+      ['swift', undefined],
     ]);
+  });
+
+  it('answer Swift’s references from the syntax index, as SourceKit-LSP finds them from a build', () => {
+    expect(ADAPTERS.map((adapter) => [adapter.id, adapter.noReferences])).toEqual([
+      ['typescript', undefined],
+      ['python', undefined],
+      ['rust', undefined],
+      ['php', undefined],
+      ['go', undefined],
+      ['terraform', undefined],
+      ['swift', 'SourceKit-LSP finds references only from a build, which Lo never runs.'],
+    ]);
+  });
+
+  it('start the SourceKit-LSP in the developer folder, downloading nothing, or say what Swift needs', async () => {
+    const developer = realpathSync(mkdtempSync(join(tmpdir(), 'lo-developer-')));
+    onTestFinished(() => rmSync(developer, { recursive: true, force: true }));
+    const [xcode, tools] = sourceKitCandidates(developer);
+    // Only Xcode's SDK is there.
+    mkdirSync(xcode?.sdk ?? '', { recursive: true });
+    const asked: (readonly string[])[] = [];
+    /** A context whose `findCopy` takes `found` as a copy that may run; nothing installs. */
+    const context = (found: string | undefined, folder: string | undefined = developer) => ({
+      install: () => Promise.reject(new Error('nothing is installed')),
+      toolchain: () => Promise.reject(new Error('no toolchain is asked for')),
+      findCopy: (candidates: readonly string[]) => {
+        asked.push(candidates);
+        return Promise.resolve(candidates.find((candidate) => candidate === found));
+      },
+      developerFolder: () => Promise.resolve(folder),
+      signal: new AbortController().signal,
+    });
+    const adapter = shipped('swift');
+    expect(adapter.downloads).toBeUndefined();
+    expect(adapter.checkout).toBe(sourceKitCheckoutProblem);
+    expect(adapter.system).toMatchObject({
+      id: 'swift',
+      name: 'Swift',
+      needs: 'Apple’s Command Line Tools',
+    });
+
+    // Xcode's, with its SDK, starts as `@lo/lsp` starts it.
+    expect(await adapter.prepare(context(xcode?.program))).toMatchObject({
+      kind: 'ready',
+      launch: {
+        program: xcode?.program,
+        rootless: true,
+        version: 'SourceKit-LSP from Xcode · Apache-2.0',
+      },
+    });
+    expect(await adapter.system?.from(context(xcode?.program))).toBe('Xcode');
+
+    // The Command Line Tools' without its SDK, or no developer folder, and Swift needs the tools.
+    const missing = {
+      kind: 'missing',
+      needs: 'Apple’s Command Line Tools',
+      install: 'xcode-select --install',
+      plural: true,
+    };
+    asked.length = 0;
+    expect(await adapter.prepare(context(tools?.program))).toEqual(missing);
+    expect(asked).toEqual([[xcode?.program], [tools?.program]]);
+    expect(await adapter.prepare(context(undefined, undefined))).toEqual(missing);
+    expect(await adapter.system?.from(context(tools?.program))).toBeUndefined();
   });
 
   it('start nothing when a download fails', async () => {
@@ -218,6 +297,7 @@ describe('Lo’s adapters', () => {
           id === 'node' ? Promise.resolve(installedAs(id)) : Promise.reject(failed),
         toolchain: () => Promise.reject(new Error('no toolchain is asked for')),
         findCopy: () => Promise.resolve(undefined),
+        developerFolder: () => Promise.resolve(undefined),
         signal: new AbortController().signal,
       }),
     ).rejects.toBe(failed);
@@ -227,6 +307,7 @@ describe('Lo’s adapters', () => {
         install: () => Promise.reject(missing),
         toolchain: () => Promise.reject(new Error('no toolchain is asked for')),
         findCopy: () => Promise.resolve(undefined),
+        developerFolder: () => Promise.resolve(undefined),
         signal: new AbortController().signal,
       }),
     ).rejects.toBe(missing);
