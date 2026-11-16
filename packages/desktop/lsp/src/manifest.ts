@@ -141,7 +141,8 @@ const built = z.strictObject({ size, sha256 });
  * pinned as any file is, laid out as a proxy of Lo's own; a `go.mod` and `go.sum` of Lo's (`mod`
  * and `sum`, a line each) that require exactly those modules; and the program `entry`, built from
  * `package` with Lo's Go, the version `go` names, offline, whose size and SHA-256 on each
- * platform `builds` pins, refusing any other. `room` is the most its build holds on the disk.
+ * platform `builds` pins, refusing any other. `room` is the most its build holds on the disk, the
+ * module files moved into it among them; all of it but the program goes once it's built.
  */
 const goProgram = z
   .strictObject({

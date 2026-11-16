@@ -82,6 +82,12 @@ const PARTIAL = '.partial';
 const FILES = 'files';
 const MARKER = 'installed.json';
 
+/**
+ * Inside a download's folder, while a Go program builds: its module proxy, caches and home, removed
+ * once the program is out of it, before the version is put in place.
+ */
+const BUILD = 'build';
+
 /** What a marker holds. */
 const markerSchema = z.object({
   fingerprint: z.string(),
@@ -424,14 +430,17 @@ export class Installer {
       const limits = this.#limits ?? limitsFor(download);
       const unpacker = new Unpacker(into, { limits, signal });
       const platform = this.#platform;
+      const build = join(work, BUILD);
       await unpack(unpacker, download, files, into, async (program) => {
         if (platform === undefined) throw new Error('there’s no platform to build for');
-        const folder = join(work, 'build');
-        await mkdir(folder, { mode: 0o700 });
+        await mkdir(build, { mode: 0o700 });
         const lo = checkGo(program, go);
-        return buildChecked(program, { files, folder, platform, go: lo, signal });
+        return buildChecked(program, { files, folder: build, platform, go: lo, signal });
       });
       for (const file of files) await rm(file, { force: true });
+      // A build's folder, its module proxy, caches and home, goes once the program is out of it,
+      // before anything is put in place: only the program and the marker stay.
+      if (download.kind === 'go') await this.#discard(build);
       signal.throwIfAborted();
       // What was unpacked is on the disk before the marker says so, and the marker before the
       // folder is in place, so a power loss leaves no folder that looks whole and isn't.
@@ -496,11 +505,13 @@ export class Installer {
 
   /**
    * Refuses `download` when the disk hasn't room for it: its files and what they unpack to, which
-   * are both there until the files are removed.
+   * are both there until the files are removed, or for a Go program, the most its build holds,
+   * which counts the module files moved into it.
    */
   async #checkRoom(download: Download): Promise<void> {
     const files = partsOf(download).reduce((sum, part) => sum + part.size, 0);
-    const needed = files + (download.unpacked ?? 0) + (download.kind === 'go' ? download.room : 0);
+    const needed =
+      download.kind === 'go' ? Math.max(files, download.room) : files + (download.unpacked ?? 0);
     await mkdir(this.#folder, { recursive: true, mode: 0o755 });
     const free = await this.#free(this.#folder).catch(() => undefined);
     if (free === undefined || free >= needed) return;

@@ -686,6 +686,14 @@ describe('a Go program, built from its modules with Lo’s Go', () => {
     const installed = await installer.install('tool', goTool(), { go: loGo(fake) });
     expect(installed.entry).toBe(join(folder, 'tool', '1.0.0', 'files', 'tool'));
     expect(readFileSync(installed.entry)).toEqual(GO_BUILT);
+    // The build's folder, with its proxy, caches and home, is gone: the version holds only the
+    // program and its marker, and nothing is left of the download.
+    expect(readdirSync(join(folder, 'tool', '1.0.0')).toSorted()).toEqual([
+      'files',
+      'installed.json',
+    ]);
+    expect(readdirSync(join(folder, 'tool', '1.0.0', 'files'))).toEqual(['tool']);
+    expect(readdirSync(join(folder, '.partial'))).toEqual([]);
     expect(lstatSync(installed.entry).mode & 0o111).not.toBe(0);
     expect(await installer.install('tool', goTool(), { go: loGo(fake) })).toEqual(installed);
     expect(asked).toHaveLength(2);
@@ -740,6 +748,16 @@ describe('a Go program, built from its modules with Lo’s Go', () => {
       HTTPS_PROXY: NO_NETWORK,
       HTTP_PROXY: NO_NETWORK,
     });
+  });
+
+  test('asks the disk for the most its build holds, which counts the module files once', async () => {
+    const room = 1024 * 1024;
+    const fits = await setUp(GO_ROUTES, undefined, { platform: 'linux-x64', free: room + 10 });
+    await fits.installer.install('tool', goTool(), { go: loGo(fakeGo()) });
+    const short = await setUp(GO_ROUTES, undefined, { platform: 'linux-x64', free: room - 1 });
+    const error = await failure(short.installer.install('tool', goTool(), { go: loGo(fakeGo()) }));
+    expect(error.problem).toBe('space');
+    expect(short.asked).toEqual([]);
   });
 
   test('is refused, leaving nothing behind, when what’s built isn’t what was pinned', async () => {

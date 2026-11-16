@@ -58,7 +58,10 @@ export interface GoBuild {
    * the build's proxy.
    */
   readonly files: readonly string[];
-  /** An empty folder for the build, which the caller removes once it's done. */
+  /**
+   * An empty folder for the build, which the caller removes once it's done, and the installer
+   * before it puts the version in place.
+   */
   readonly folder: string;
   /** What it's built for. */
   readonly platform: Platform;

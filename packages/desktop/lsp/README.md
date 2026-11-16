@@ -215,7 +215,9 @@ once with its Go, offline (`GOPROXY=file://…`, `GOSUMDB=off`, `-mod=readonly` 
 no `go.work`, and an environment built from nothing). Go's builds are reproducible, so what it
 builds is the file pinned, byte for byte: Lo refuses one whose hash is another, and a Go other than
 the one gopls was pinned with. A build has 20 minutes, and gopls takes about one. `room` is the most
-a build holds on the disk, counted before it starts.
+a build holds on the disk, the module files among them, counted before it starts. Once gopls is
+built, the build's folder, about 640 MB of module proxy, module cache, build cache and home, is
+removed before the version is put in place, which then holds only the program and its marker.
 
 Each file and folder unpacked is synced to the disk, then the marker, then the folder that holds
 them, and only then is it renamed into place. The marker records the fingerprint of the download and
