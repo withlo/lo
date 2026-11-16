@@ -33,7 +33,7 @@ import { Documents } from './documents.ts';
 import { serverEnvironment, temporaryFolder } from './environment.ts';
 import { FLOOD_BYTES, FLOOD_LINES, FLOOD_MESSAGES, FLOOD_WINDOW, FrameMeter } from './framing.ts';
 import { Log } from './log.ts';
-import { type Member, type ReadFamily, readFamily } from './family.ts';
+import { type Member, type ReadFamily, readFamily, stillRunning } from './family.ts';
 import { checkProgram, familyGone, signalFamily, sleep, startProcess } from './process.ts';
 import { type Answer, Queue } from './queue.ts';
 import { reply } from './requests.ts';
@@ -501,8 +501,9 @@ export class Server {
   /**
    * The processes descended from the server's group that have left it, such as a daemon in a
    * session of its own, and each of `known` that's still the same process, with what descends from
-   * it, as read within `within`. Once the group is empty, only `known` leads anywhere. A read that
-   * fails or takes longer gives `known` as it is, so what was found before is still signalled.
+   * it, as read within `within`. Once the group is empty, only `known` leads anywhere. Beside the
+   * read, each of `known` is read again by its ID alone, so a read that fails or takes longer still
+   * gives what was found before that's still the same process, as far as that's known in time.
    */
   async #others(
     group: number,
@@ -514,8 +515,13 @@ export class Server {
       (family) => family.filter((member) => member.group !== group),
       () => undefined,
     );
-    const found = await Promise.race([read, sleep(within).then(() => undefined)]);
-    if (found === undefined) return known;
+    const checked = stillRunning(known).catch(() => []);
+    const timeUp = sleep(within).then(() => undefined);
+    const found = await Promise.race([read, timeUp]);
+    if (found === undefined) {
+      // An ID that can't be told, in time, to be the same process is left alone.
+      return Promise.race([checked, timeUp.then(() => [])]);
+    }
     for (const member of found) this.#outside.set(member.pid, member);
     return found;
   }

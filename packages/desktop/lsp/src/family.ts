@@ -33,6 +33,18 @@ export interface Member {
  */
 export type ReadFamily = (group: number, also?: readonly Member[]) => Promise<readonly Member[]>;
 
+/**
+ * Each of `members`, read before, that's still the same process, read again by its ID alone: from
+ * its `/proc/<pid>/stat` on Linux, and one run of `ps` for them all elsewhere.
+ */
+export async function stillRunning(members: readonly Member[]): Promise<Member[]> {
+  if (members.length === 0) return [];
+  const pids = members.map((member) => member.pid);
+  const now = process.platform === 'linux' ? await fromProcIds(pids) : await fromPsIds(pids);
+  const known = new Map(members.map((member) => [member.pid, member]));
+  return now.filter((member) => sameProcess(member, known.get(member.pid)));
+}
+
 /** The family of the group `group`, and of each of `also`, with each member's resident memory. */
 export const readFamily: ReadFamily = async (group, also = []) => {
   if (process.platform !== 'linux') return familyOf(await fromPs(), group, also);
@@ -90,7 +102,11 @@ export function sameProcess(member: Member, known: Member | undefined): boolean 
 
 /** Every process but a zombie, from its `/proc/<pid>/stat`. */
 async function fromProc(): Promise<Member[]> {
-  const pids = (await readdir('/proc')).filter((name) => /^\d+$/.test(name));
+  return fromProcIds((await readdir('/proc')).filter((name) => /^\d+$/.test(name)));
+}
+
+/** Each of `pids` that's running and not a zombie, from its `/proc/<pid>/stat`. */
+async function fromProcIds(pids: readonly (number | string)[]): Promise<Member[]> {
   const table: Member[] = [];
   for (let start = 0; start < pids.length; start += READS_AT_ONCE) {
     await Promise.all(
@@ -136,15 +152,33 @@ export function residentOfStatus(status: string): number | undefined {
   return match ? Number(match[1]) * 1024 : undefined;
 }
 
+/** What `ps` is asked for, and how it runs. */
+const PS_COLUMNS = 'pid=,ppid=,pgid=,rss=,lstart=';
+const PS_OPTIONS = {
+  env: { PATH: '/usr/bin:/bin', LC_ALL: 'C' },
+  encoding: 'utf8',
+  maxBuffer: 16 * 1024 * 1024,
+  timeout: 2000,
+} as const;
+
 /** Every process, with its resident memory, from one run of `ps`. */
 async function fromPs(): Promise<Member[]> {
-  const columns = 'pid=,ppid=,pgid=,rss=,lstart=';
-  const { stdout } = await promisify(execFile)('/bin/ps', ['-A', '-o', columns], {
-    env: { PATH: '/usr/bin:/bin', LC_ALL: 'C' },
-    encoding: 'utf8',
-    maxBuffer: 16 * 1024 * 1024,
-    timeout: 2000,
-  });
+  const { stdout } = await promisify(execFile)('/bin/ps', ['-A', '-o', PS_COLUMNS], PS_OPTIONS);
+  return membersOfPs(stdout);
+}
+
+/** Each of `pids` that's running, from one run of `ps`. */
+async function fromPsIds(pids: readonly number[]): Promise<Member[]> {
+  const args = ['-o', PS_COLUMNS, '-p', pids.join(',')];
+  const { stdout } = await promisify(execFile)('/bin/ps', args, PS_OPTIONS).catch(
+    (error: unknown) => {
+      // `ps` fails when any of them has gone, and still lists the rest.
+      if (error instanceof Error && 'stdout' in error && typeof error.stdout === 'string') {
+        return { stdout: error.stdout };
+      }
+      throw error;
+    },
+  );
   return membersOfPs(stdout);
 }
 

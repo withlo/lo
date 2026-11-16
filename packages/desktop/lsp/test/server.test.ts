@@ -752,6 +752,41 @@ test('a stop whose last read of the family takes too long still signals what it 
   await eventually(() => !running(escapee.pid), 1000);
 });
 
+test('a stop whose last read of the family fails leaves alone an ID found before that another process has taken since', async () => {
+  const other = spawn('/bin/sleep', ['30'], { stdio: 'ignore' });
+  onTestFinished(() => {
+    other.kill('SIGKILL');
+  });
+  const pid = other.pid ?? 0;
+  // The read as the server shuts down finds a process outside its group with the other's ID,
+  // started before it: the server's, which has since ended, and the ID taken again. Each read
+  // after fails.
+  let reads = 0;
+  const { server } = startFake(
+    {},
+    {
+      tuning: {
+        memoryEvery: 60_000,
+        readFamily: async (group, also) => {
+          if (also === undefined) return readFamily(group, also);
+          reads += 1;
+          if (reads > 1) throw new Error('ps failed');
+          return [
+            ...(await readFamily(group, also)),
+            { pid, parent: group, group: pid, started: 'Thu Jan  1 00:00:00 1970' },
+          ];
+        },
+      },
+    },
+  );
+  expect(await server.ready).toBe(true);
+  await server.stop();
+  expect(reads).toBe(2);
+  await sleep(200);
+  expect(running(pid)).toBe(true);
+  expect(other.signalCode).toBeNull();
+});
+
 test('what a server started in a session of its own is stopped with it', async () => {
   const { server, seen } = startFake({ escapee: true });
   await server.ready;

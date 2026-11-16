@@ -72,7 +72,9 @@ own (`setsid`) is still found.
   process started in the last round isn't. Only processes not yet frozen can start one, and each
   round freezes all it finds, so this takes a process that starts others faster than Lo can read.
 - A read of the family has 250 ms. If it takes longer, or fails, only the group, and what was found
-  before, is signalled.
+  before that's still the same process, is signalled. Beside each read, what was found before is
+  read again by its ID alone, and an ID that can't be told in that time to be the same process is
+  left alone.
 
 ## Downloads
 
