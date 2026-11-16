@@ -1,4 +1,5 @@
 import { execFileSync } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import {
   chmodSync,
   existsSync,
@@ -8,24 +9,30 @@ import {
   readFileSync,
   realpathSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { type Cache, DEFAULT_CAP, type GitStatus } from '@lo/git';
+import { type Cache, DEFAULT_CAP, type GitStatus, lockCache, unlockCache } from '@lo/git';
 import { gitProgram } from '@lo/testing/git';
 import { describe, expect, it, onTestFinished, vi } from 'vitest';
 
 import {
   cacheFolder,
+  clearFormerCache,
   createGit,
   curlProxy,
+  formerCacheFolder,
   type GitOptions,
   gitSettings,
   GitStopped,
+  macCaches,
   onceUp,
+  whyNotCaches,
 } from './git.ts';
+import { StartupError } from './startup.ts';
 
 /** A new folder, removed when the test ends. */
 function folder(): string {
@@ -92,15 +99,26 @@ describe('gitSettings', () => {
   });
 });
 
+/** The Mac's folder for caches, in a test that asks for it. */
+const mac = () => '/private/var/folders/ab/cd/C';
+
+/** The Mac's folder for caches, in a test that never asks for it. */
+function never(): string {
+  throw new Error('macOS was asked');
+}
+
 describe('cacheFolder', () => {
   const home = '/home/me';
 
   it('is Lo in the system’s caches, wherever a packaged build is told to keep its data', () => {
     const env = { LO_USER_DATA_DIR: '/tmp/lo', XDG_CACHE_HOME: '/var/cache/me' };
-    expect(cacheFolder({ packaged: true, platform: 'darwin', home: '/Users/me', env })).toBe(
-      '/Users/me/Library/Caches/Lo',
+    // Never in the home folder on a Mac, whatever the environment says.
+    expect(
+      cacheFolder({ packaged: true, platform: 'darwin', home: '/Users/me', env, macFolder: mac }),
+    ).toBe('/private/var/folders/ab/cd/C/Lo');
+    expect(cacheFolder({ packaged: true, platform: 'linux', home, env, macFolder: never })).toBe(
+      '/var/cache/me/Lo',
     );
-    expect(cacheFolder({ packaged: true, platform: 'linux', home, env })).toBe('/var/cache/me/Lo');
     expect(cacheFolder({ packaged: true, platform: 'linux', home, env: {} })).toBe(
       '/home/me/.cache/Lo',
     );
@@ -116,13 +134,215 @@ describe('cacheFolder', () => {
       '/home/me/.cache/Lo Dev',
     );
     expect(
+      cacheFolder({ packaged: false, platform: 'darwin', home, env: {}, macFolder: mac }),
+    ).toBe('/private/var/folders/ab/cd/C/Lo Dev');
+    expect(
       cacheFolder({
         packaged: false,
         platform: 'darwin',
         home,
         env: { LO_USER_DATA_DIR: '/tmp/lo' },
+        macFolder: never,
       }),
     ).toBe('/tmp/lo/cache');
+  });
+});
+
+/** This test's user. */
+const uid = process.getuid?.() ?? -1;
+
+/** A folder for caches as macOS makes it, reached through a link as `/var` is. */
+function userCaches() {
+  const dir = folder();
+  mkdirSync(join(dir, 'private', 'C'), { recursive: true, mode: 0o700 });
+  symlinkSync('private', join(dir, 'var'));
+  const given = join(dir, 'var', 'C');
+  return { said: `${given}/\n`, given, real: join(dir, 'private', 'C') };
+}
+
+/** A `getconf` that fails. */
+function broken(): string {
+  throw new Error('getconf: no such variable');
+}
+
+describe('macCaches', () => {
+  it('asks getconf, by its path, and gives the folder’s real path', () => {
+    const { said, real } = userCaches();
+    const asked: string[][] = [];
+    const run = (program: string, args: readonly string[]) => {
+      asked.push([program, ...args]);
+      return said;
+    };
+    expect(macCaches({ run, uid })).toBe(real);
+    expect(asked).toEqual([['/usr/bin/getconf', 'DARWIN_USER_CACHE_DIR']]);
+  });
+
+  it('refuses a folder that won’t do, and an answer it can’t get, rather than go elsewhere', () => {
+    const { said, given, real } = userCaches();
+    chmodSync(real, 0o777);
+    expect(() => macCaches({ run: () => said, uid })).toThrow(StartupError);
+    expect(() => macCaches({ run: () => said, uid })).toThrow(
+      `Lo keeps its cache in the folder macOS keeps for this user's caches, but other users can change ${given}, so Lo won't use it.`,
+    );
+    expect(() => macCaches({ run: broken, uid })).toThrow(
+      "macOS didn't say where that is (getconf: no such variable)",
+    );
+  });
+
+  it.runIf(process.platform === 'darwin')('finds this user’s folder for caches', () => {
+    // Only reads: it looks at the folder, and nothing in it.
+    expect(macCaches()).toMatch(/^\/private\/var\/folders\/[^/]+\/[^/]+\/C$/);
+  });
+});
+
+describe('whyNotCaches', () => {
+  it('takes a folder of the user’s own that nobody else can change', () => {
+    const dir = folder();
+    for (const mode of [0o700, 0o755]) {
+      chmodSync(dir, mode);
+      expect(whyNotCaches(dir, uid)).toBe(undefined);
+      expect(whyNotCaches(`${dir}/`, uid)).toBe(undefined);
+    }
+  });
+
+  it('refuses anything else', () => {
+    const dir = folder();
+    const file = join(dir, 'file');
+    writeFileSync(file, '');
+    const link = join(dir, 'link');
+    symlinkSync(dir, link);
+    for (const path of ['cache', '', '/Users/me/../other']) {
+      expect(whyNotCaches(path, uid)).toBe(
+        `macOS named ${JSON.stringify(path)}, which isn't an absolute path`,
+      );
+    }
+    expect(whyNotCaches(join(dir, 'missing'), uid)).toMatch(/^Lo can't find .*missing \(ENOENT/);
+    expect(whyNotCaches(file, uid)).toBe(`${file} isn't a folder`);
+    // Even with the slash that would have the link followed.
+    expect(whyNotCaches(link, uid)).toBe(`${link} is a link`);
+    expect(whyNotCaches(`${link}/`, uid)).toBe(`${link} is a link`);
+    expect(whyNotCaches(dir, uid + 1)).toBe(`another user owns ${dir}`);
+    for (const mode of [0o770, 0o702]) {
+      chmodSync(dir, mode);
+      expect(whyNotCaches(dir, uid)).toBe(`other users can change ${dir}`);
+    }
+  });
+});
+
+describe('formerCacheFolder', () => {
+  const home = '/Users/me';
+
+  it('is where a Mac’s cache was, in Library/Caches', () => {
+    const env = { LO_USER_DATA_DIR: '/tmp/lo' };
+    expect(formerCacheFolder({ packaged: true, platform: 'darwin', home, env })).toBe(
+      '/Users/me/Library/Caches/Lo',
+    );
+    expect(formerCacheFolder({ packaged: false, platform: 'darwin', home, env: {} })).toBe(
+      '/Users/me/Library/Caches/Lo Dev',
+    );
+  });
+
+  it('is none where the cache hasn’t moved', () => {
+    expect(formerCacheFolder({ packaged: true, platform: 'linux', home, env: {} })).toBe(undefined);
+    const env = { LO_USER_DATA_DIR: '/tmp/lo' };
+    expect(formerCacheFolder({ packaged: false, platform: 'darwin', home, env })).toBe(undefined);
+  });
+});
+
+/** A cache an earlier Lo left in a home folder, and the new cache, elsewhere. */
+function earlier() {
+  const home = folder();
+  const former = join(home, 'Library', 'Caches', 'Lo');
+  for (const name of ['git-env/home', 'tmp', 'repos/github.com/owner/repo.git', 'servers/x/1']) {
+    mkdirSync(join(former, name), { recursive: true });
+  }
+  writeFileSync(join(former, 'repos/github.com/owner/repo.git/HEAD'), 'ref: refs/heads/main\n');
+  const root = join(folder(), 'C', 'Lo');
+  mkdirSync(join(root, 'tmp'), { recursive: true });
+  const aside: string[] = [];
+  const cache = {
+    root,
+    temporaryPath: (extension: string) => {
+      const path = join(root, 'tmp', `${randomUUID()}${extension}`);
+      aside.push(path);
+      return path;
+    },
+  };
+  const lines: string[] = [];
+  const clear = (path = former, user?: number) =>
+    clearFormerCache(cache, path, { log: (line) => lines.push(line), uid: user });
+  return { home, former, root, aside, lines, clear };
+}
+
+describe('clearFormerCache', () => {
+  it('moves it into the cache’s tmp, then deletes it', async () => {
+    const { home, former, root, aside, lines, clear } = earlier();
+
+    expect(await clear()).toBe(true);
+
+    expect(existsSync(former)).toBe(false);
+    expect(aside).toHaveLength(1);
+    expect(readdirSync(join(root, 'tmp'))).toEqual([]);
+    expect(readdirSync(join(home, 'Library', 'Caches'))).toEqual([]);
+    expect(lines).toEqual([`removed the cache an earlier Lo kept at ${former}`]);
+    // With nothing there, there's nothing to do.
+    expect(await clear()).toBe(true);
+    expect(lines).toHaveLength(1);
+  });
+
+  it('leaves it while another Lo has it open, and takes it once that Lo is done', async () => {
+    const { former, lines, clear } = earlier();
+    const lock = join(former, 'lo-cache.lock');
+    const release = await lockCache(lock);
+
+    expect(await clear()).toBe(false);
+    expect(existsSync(join(former, 'repos/github.com/owner/repo.git/HEAD'))).toBe(true);
+    expect(lines).toEqual([`leaving ${former} for now: ${lock} is already open in this process`]);
+
+    await unlockCache(lock, release);
+    // A lock a crash left, which names nobody running, is no one's.
+    writeFileSync(lock, '');
+    expect(await clear()).toBe(true);
+    expect(existsSync(former)).toBe(false);
+  });
+
+  it('never follows a link, nor removes what isn’t a cache Lo left', async () => {
+    const { home, former, aside, clear } = earlier();
+    const caches = join(home, 'Library', 'Caches');
+    // A cache moved elsewhere, with a link left in its place.
+    const moved = join(home, 'moved');
+    rmSync(former, { recursive: true });
+    mkdirSync(join(moved, 'git-env'), { recursive: true });
+    mkdirSync(join(moved, 'tmp'));
+    symlinkSync(moved, former);
+    expect(await clear()).toBe(false);
+    expect(existsSync(join(moved, 'git-env'))).toBe(true);
+    rmSync(former);
+
+    // Something else of the same name, a file or a folder without a cache's folders, or with a
+    // link for one.
+    writeFileSync(former, 'notes');
+    expect(await clear()).toBe(false);
+    rmSync(former);
+    mkdirSync(join(former, 'tmp'), { recursive: true });
+    writeFileSync(join(former, 'notes.txt'), 'mine');
+    expect(await clear()).toBe(false);
+    symlinkSync(moved, join(former, 'git-env'));
+    expect(await clear()).toBe(false);
+    expect(readdirSync(former).toSorted()).toEqual(['git-env', 'notes.txt', 'tmp']);
+    expect(existsSync(join(moved, 'git-env'))).toBe(true);
+    expect(aside).toEqual([]);
+    expect(readdirSync(caches)).toEqual(['Lo']);
+  });
+
+  it('never removes another user’s folder, the cache itself or a folder holding it', async () => {
+    const { former, root, clear } = earlier();
+    expect(await clear(former, uid + 1)).toBe(false);
+    expect(existsSync(join(former, 'git-env'))).toBe(true);
+    mkdirSync(join(root, 'git-env'));
+    expect(await clear(root)).toBe(false);
+    expect(await clear(join(root, '..'))).toBe(false);
+    expect(existsSync(join(root, 'tmp'))).toBe(true);
   });
 });
 
@@ -223,6 +443,19 @@ describe('createGit', () => {
     // Looking again opens nothing new.
     await git.check();
     expect(early).toHaveLength(1);
+  });
+
+  it('removes the cache an earlier Lo kept once the cache opens', async () => {
+    const former = join(folder(), 'Library', 'Caches', 'Lo');
+    mkdirSync(join(former, 'git-env', 'home'), { recursive: true });
+    mkdirSync(join(former, 'tmp'));
+    const { git, lines } = testGit({ former });
+    expect(existsSync(former)).toBe(true);
+
+    await git.check();
+
+    await expect.poll(() => existsSync(former)).toBe(false);
+    expect(lines).toContain(`removed the cache an earlier Lo kept at ${former}`);
   });
 
   it('runs no git with LO_GIT=none, and opens no cache', async () => {

@@ -10,7 +10,15 @@ import { startBackground, type Background } from './background.ts';
 import { openDatabase, type Database } from './database.ts';
 import { appName, backgroundSettings, dataFolder, devServer } from './environment.ts';
 import { loadFeatures, type Feature } from './features.ts';
-import { cacheFolder, createGit, curlProxy, GitStopped, gitSettings, onceUp } from './git.ts';
+import {
+  cacheFolder,
+  createGit,
+  curlProxy,
+  formerCacheFolder,
+  GitStopped,
+  gitSettings,
+  onceUp,
+} from './git.ts';
 import { serveFeatures } from './ipc.ts';
 import { incomingLinks, linksIn } from './links.ts';
 import { migrate } from './migrations.ts';
@@ -76,12 +84,12 @@ const backgroundOptions = backgroundSettings({
   warn: (message) => console.warn(message),
 });
 const gitOptions = gitSettings({ packaged: app.isPackaged, env });
-const cacheRoot = cacheFolder({
+const placing = {
   packaged: app.isPackaged,
   platform: process.platform,
   home: app.getPath('home'),
   env,
-});
+};
 
 // One Lo per data folder. A second launch hands its command line over to the first and quits; one
 // that refused its command line, and is quitting, hands over nothing.
@@ -96,7 +104,28 @@ if (!refusing) {
   }
 }
 
+/**
+ * Says why Lo couldn't start, in a dialog too for someone who opened it from the Dock or a menu
+ * and sees no terminal, and quits.
+ */
+function couldNotStart(error: unknown): void {
+  if (error instanceof StartupError) {
+    console.error(`Lo couldn't start. ${error.message}`);
+    if (app.isPackaged) dialog.showErrorBox("Lo couldn't start", error.message);
+  } else {
+    console.error("Lo couldn't start:", error);
+  }
+  app.exit(1);
+}
+
 function start(): void {
+  let cacheRoot: string;
+  try {
+    cacheRoot = cacheFolder(placing);
+  } catch (error) {
+    couldNotStart(error);
+    return;
+  }
   let windowSession: Session | undefined;
   let background: Background | undefined;
   let window: BrowserWindow | undefined;
@@ -106,6 +135,7 @@ function start(): void {
   const git = createGit({
     settings: gitOptions,
     root: cacheRoot,
+    former: formerCacheFolder(placing),
     env,
     platform: process.platform,
     // The route Lo's own requests take: `net.request`'s, in the default session.
@@ -196,14 +226,5 @@ function start(): void {
         },
       );
     })
-    .catch((error: unknown) => {
-      if (error instanceof StartupError) {
-        console.error(`Lo couldn't start. ${error.message}`);
-        // Someone who opened Lo from the Dock or a menu sees no terminal.
-        if (app.isPackaged) dialog.showErrorBox("Lo couldn't start", error.message);
-      } else {
-        console.error("Lo couldn't start:", error);
-      }
-      app.exit(1);
-    });
+    .catch(couldNotStart);
 }

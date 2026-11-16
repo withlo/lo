@@ -384,9 +384,19 @@ Only main runs git, through `@lo/git`, and the background process never sees git
   system's usual folders, and the newest new enough wins. `app.info` says what it found, `checking`
   until it has, and `app.git` pushes each answer. Asking again (`git.check()`) finds a git installed
   since.
-- With git, main opens the cache, `Lo` in the system's folder for caches (`Lo Dev` for a build run
-  from source, or `cache` in `LO_USER_DATA_DIR`), as `git.cache`, and cleans it up without anyone
-  waiting. `git.setCap()` sets the size it's kept under.
+- With git, main opens the cache, as `git.cache`, and cleans it up without anyone waiting.
+  `git.setCap()` sets the size it's kept under.
+- The cache is `Lo` (`Lo Dev` for a build run from source, or `cache` in `LO_USER_DATA_DIR`) in the
+  system's folder for this user's caches: `$XDG_CACHE_HOME` or `~/.cache` on Linux, and on a Mac the
+  one macOS keeps outside the home folder, `DARWIN_USER_CACHE_DIR`
+  (`/var/folders/<xx>/<random>/C/`), as `/usr/bin/getconf` names it. Tools that language servers run
+  read settings from every folder above their own, such as Cargo's `.cargo/config.toml`, and
+  tsserver loads plugins from every `node_modules` above its install, so the home folder is none of
+  them. Lo won't start unless that folder is a folder, not a link, of the user's own that nobody
+  else can change, and never falls back to the home folder.
+- Once the cache opens, the one an earlier Lo kept in `~/Library/Caches` goes, as the cache removes
+  its own: moved into its `tmp/`, then deleted. Only a folder, never a link, that holds a cache's
+  folders goes, and only under its lock, never while another Lo has it open.
 - Every git gets an environment of Lo's own making, never main's, and only a fetch gets the
   account's token, from a source read as each fetch starts. Fetches take the proxy Lo's own requests
   take.

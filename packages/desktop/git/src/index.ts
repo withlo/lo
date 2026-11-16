@@ -43,6 +43,7 @@ export {
 } from './find.ts';
 export { Git, type TestSettings } from './git.ts';
 export * from './limits.ts';
+export { lockCache, unlockCache } from './lock.ts';
 export * from './oid.ts';
 export { type FilePatch, MAX_PATCH_LINES } from './patch.ts';
 export * from './progress.ts';

@@ -1,8 +1,12 @@
-// Git in main, the only process that runs it: finding git, the cache it works in, what Lo found,
-// for the window, cleanup once the window is up, and stopping every git as Lo quits. Nothing here
-// calls Electron, so it runs under unit tests; `index.ts` hands it what it needs of Electron.
+// Git in main, the only process that runs it: finding git, the cache it works in and where that
+// is, what Lo found, for the window, cleanup once the window is up, and stopping every git as Lo
+// quits. Nothing here calls Electron, so it runs under unit tests; `index.ts` hands it what it
+// needs of Electron.
 
-import { isAbsolute, join } from 'node:path';
+import { execFileSync } from 'node:child_process';
+import { lstatSync, realpathSync, type Stats } from 'node:fs';
+import { lstat, rename, rm } from 'node:fs/promises';
+import { isAbsolute, join, normalize, relative } from 'node:path';
 
 import {
   Cache,
@@ -12,9 +16,13 @@ import {
   gitAt,
   type GitStatus,
   installAdvice,
+  lockCache,
   type ProxySource,
   type TestSettings,
+  unlockCache,
 } from '@lo/git';
+
+import { StartupError } from './startup.ts';
 
 type Environment = Readonly<Record<string, string | undefined>>;
 
@@ -45,28 +53,194 @@ export function gitSettings(options: { packaged: boolean; env: Environment }): G
   return { program, test: remote === undefined ? undefined : { remote } };
 }
 
+/** What decides where Lo keeps its cache. */
+export interface Placing {
+  readonly packaged: boolean;
+  readonly platform: NodeJS.Platform;
+  readonly home: string;
+  readonly env: Environment;
+}
+
 /**
- * Where Lo keeps its local copies of repositories: `Lo` in the system's folder for caches
- * (`~/Library/Caches` on a Mac, `$XDG_CACHE_HOME` or `~/.cache` on Linux), and `Lo Dev` for a
- * build run from source, so it never touches an installed Lo's. A build run from source with
- * `LO_USER_DATA_DIR` keeps it there, in `cache`, so each test starts empty.
+ * Where Lo keeps its cache, which holds its local copies of repositories, their checkouts and the
+ * language servers it installs: `Lo` in the system's folder for this user's caches, and `Lo Dev`
+ * for a build run from source, so it never touches an installed Lo's. On a Mac that's the folder
+ * macOS keeps outside the home folder ({@link macCaches}), since tools a language server runs read
+ * settings from every folder above their own, such as Cargo's `.cargo/config.toml`, and none the
+ * home folder holds may reach them. On Linux it's `$XDG_CACHE_HOME` or `~/.cache`. A build run
+ * from source with `LO_USER_DATA_DIR` keeps it there, in `cache`, so each test starts empty.
  */
-export function cacheFolder(options: {
-  packaged: boolean;
-  platform: NodeJS.Platform;
-  home: string;
-  env: Environment;
-}): string {
+export function cacheFolder(
+  options: Placing & {
+    /** The Mac's folder for this user's caches: {@link macCaches}, unless a test says. */
+    readonly macFolder?: (() => string) | undefined;
+  },
+): string {
   const { env } = options;
   if (!options.packaged && env.LO_USER_DATA_DIR) return join(env.LO_USER_DATA_DIR, 'cache');
+  const name = options.packaged ? 'Lo' : 'Lo Dev';
+  if (options.platform === 'darwin') return join((options.macFolder ?? macCaches)(), name);
   const xdg = env.XDG_CACHE_HOME;
-  const caches =
-    options.platform === 'darwin'
-      ? join(options.home, 'Library', 'Caches')
-      : xdg !== undefined && isAbsolute(xdg)
-        ? xdg
-        : join(options.home, '.cache');
-  return join(caches, options.packaged ? 'Lo' : 'Lo Dev');
+  return join(xdg !== undefined && isAbsolute(xdg) ? xdg : join(options.home, '.cache'), name);
+}
+
+/** Runs `program`, an absolute path, with `args` and no environment, and returns what it wrote. */
+export type Run = (program: string, args: readonly string[]) => string;
+
+const runBare: Run = (program, args) =>
+  execFileSync(program, args, {
+    env: {},
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+    timeout: 10_000,
+  });
+
+/**
+ * The folder macOS keeps for this user's caches, `DARWIN_USER_CACHE_DIR`, by its real path
+ * (`/private/var/folders/<xx>/<random>/C`): the user's own, closed to everyone else, kept across
+ * restarts, and inside folders only root can change. `/usr/bin/getconf` names it, run by its path
+ * with no environment, so nothing Lo was started with can move it. A folder that fails
+ * {@link whyNotCaches} is a {@link StartupError}: Lo never falls back to the home folder.
+ */
+export function macCaches(options: { run?: Run; uid?: number } = {}): string {
+  const { run = runBare, uid = process.getuid?.() ?? -1 } = options;
+  let said: string;
+  try {
+    said = run('/usr/bin/getconf', ['DARWIN_USER_CACHE_DIR']);
+  } catch (error) {
+    throw refuse(`macOS didn't say where that is (${describe(error)})`);
+  }
+  const folder = said.endsWith('\n') ? said.slice(0, -1) : said;
+  const why = whyNotCaches(folder, uid);
+  if (why !== undefined) throw refuse(why);
+  try {
+    return realpathSync(folder);
+  } catch (error) {
+    throw refuse(`Lo can't find ${folder} (${describe(error)})`);
+  }
+}
+
+/** Lo's refusal of the Mac's folder for this user's caches, for `why`. */
+function refuse(why: string): StartupError {
+  return new StartupError(
+    `Lo keeps its cache in the folder macOS keeps for this user's caches, but ${why}, so Lo won't use it.`,
+  );
+}
+
+/**
+ * Why Lo won't keep its cache in `folder`, or `undefined` when it will: it must be an absolute
+ * path, a folder rather than a link to one, owned by the user `uid`, and closed to changes by
+ * anyone else.
+ */
+export function whyNotCaches(folder: string, uid: number): string | undefined {
+  // Without the slash that ends it, which would have a link followed.
+  const path = folder.length > 1 ? folder.replace(/\/+$/, '') : folder;
+  if (!isAbsolute(path) || normalize(path) !== path || path.includes('\n')) {
+    return `macOS named ${JSON.stringify(folder)}, which isn't an absolute path`;
+  }
+  let found: Stats;
+  try {
+    found = lstatSync(path);
+  } catch (error) {
+    return `Lo can't find ${path} (${describe(error)})`;
+  }
+  if (found.isSymbolicLink()) return `${path} is a link`;
+  if (!found.isDirectory()) return `${path} isn't a folder`;
+  if (found.uid !== uid) return `another user owns ${path}`;
+  if ((found.mode & 0o022) !== 0) return `other users can change ${path}`;
+  return undefined;
+}
+
+/**
+ * Where Lo kept its cache on a Mac before it moved out of the home folder: `Lo` (`Lo Dev` for a
+ * build run from source) in `~/Library/Caches`, which goes once the cache opens
+ * ({@link clearFormerCache}). There's none on Linux, or in `LO_USER_DATA_DIR`, where the cache
+ * hasn't moved.
+ */
+export function formerCacheFolder(options: Placing): string | undefined {
+  if (options.platform !== 'darwin') return undefined;
+  if (!options.packaged && options.env.LO_USER_DATA_DIR) return undefined;
+  return join(options.home, 'Library', 'Caches', options.packaged ? 'Lo' : 'Lo Dev');
+}
+
+/**
+ * Removes the cache an earlier Lo kept at `former`, as the cache removes its own: moved into
+ * `cache`'s `tmp/` in one rename, then deleted, so nobody finds it half deleted, and what a crash
+ * leaves goes with the cache's other leftovers. Only a folder of this user's, never a link, that
+ * holds the folders a cache always has, `git-env` and `tmp`, goes. It goes only under its lock:
+ * while another Lo has it open, as an older one still running can, it stays, for a later start.
+ * Returns whether nothing is left at `former`, and notes why when something is.
+ */
+export async function clearFormerCache(
+  cache: Pick<Cache, 'root' | 'temporaryPath'>,
+  former: string,
+  options: { log: (line: string) => void; uid?: number },
+): Promise<boolean> {
+  const { log, uid = process.getuid?.() ?? -1 } = options;
+  if (contains(former, cache.root) || contains(cache.root, former)) return false;
+  let found: Stats;
+  try {
+    found = await lstat(former);
+  } catch (error) {
+    if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return true;
+    log(`can't look at ${former}: ${describe(error)}`);
+    return false;
+  }
+  if (!(await isCache(former, found, uid))) {
+    log(`not removing ${former}, which isn't a cache Lo left`);
+    return false;
+  }
+  const lockFile = join(former, 'lo-cache.lock');
+  let release: () => void;
+  try {
+    release = await lockCache(lockFile);
+  } catch (error) {
+    log(`leaving ${former} for now: ${describe(error)}`);
+    return false;
+  }
+  const aside = cache.temporaryPath('.trash');
+  try {
+    // Still the folder Lo looked at, now that no other Lo can open it.
+    if (!same(await lstat(former), found)) throw new Error('it changed while Lo looked at it');
+    await rename(former, aside);
+  } catch (error) {
+    await unlockCache(lockFile, release).catch(() => undefined);
+    log(`can't remove ${former}: ${describe(error)}`);
+    return false;
+  }
+  // Its lock moved with it.
+  release();
+  if (!same(await lstat(aside).catch(() => undefined), found)) {
+    // Something took its place just before the rename, and goes back.
+    await rename(aside, former).catch(() => undefined);
+    log(`not removing ${former}, which changed while Lo looked at it`);
+    return false;
+  }
+  await rm(aside, { recursive: true, force: true }).catch((error: unknown) => {
+    log(`can't remove ${aside}: ${describe(error)}`);
+  });
+  log(`removed the cache an earlier Lo kept at ${former}`);
+  return true;
+}
+
+/** Whether `path` is `folder` or inside it. */
+function contains(folder: string, path: string): boolean {
+  const inside = relative(folder, path);
+  return inside === '' || (!inside.startsWith('..') && !isAbsolute(inside));
+}
+
+/** Whether `found`, at `folder`, is a cache Lo made: a folder of `uid`'s with what each holds. */
+async function isCache(folder: string, found: Stats, uid: number): Promise<boolean> {
+  if (!found.isDirectory() || found.uid !== uid) return false;
+  for (const name of ['git-env', 'tmp']) {
+    if (!(await lstat(join(folder, name)).catch(() => undefined))?.isDirectory()) return false;
+  }
+  return true;
+}
+
+/** Whether `found` is the folder `was` is. */
+function same(found: Stats | undefined, was: Stats): boolean {
+  return found?.isDirectory() === true && found.dev === was.dev && found.ino === was.ino;
 }
 
 /** curl's scheme for each kind of proxy Chromium names. */
@@ -148,6 +322,8 @@ export interface GitOptions {
   readonly settings: GitSettings;
   /** The cache's folder, made when the cache first opens. */
   readonly root: string;
+  /** Where an earlier Lo kept its cache, which goes once the cache opens. */
+  readonly former?: string | undefined;
   /** Lo's environment: where git is looked for, and the few variables git keeps from it. */
   readonly env: Environment;
   readonly platform: NodeJS.Platform;
@@ -319,6 +495,13 @@ class GitHost implements MainGit {
   }
 
   async #cleanUp(cache: Cache): Promise<void> {
+    const { former, log } = this.#options;
+    // First, so the cap counts none of the earlier cache while it's deleted.
+    if (former !== undefined) {
+      await clearFormerCache(cache, former, { log }).catch((error: unknown) => {
+        log(`can't remove ${former}: ${describe(error)}`);
+      });
+    }
     try {
       // A cap set while the cache was opening.
       if (cache.cap !== this.#cap) await cache.setCap(this.#cap);
