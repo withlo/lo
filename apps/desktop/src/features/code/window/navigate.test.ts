@@ -9,7 +9,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { IpcError } from '../../../ipc/contract.ts';
 import type * as TabShared from '../../tab/window/shared.ts';
-import type { CodeAnswer, Definitions, Hover, References } from '../port.ts';
+import type { RightKept } from '../../tab/window/shared.ts';
+import type { CodeAnswer, Definitions, Hover, Outline, References } from '../port.ts';
 import {
   closePeek,
   closeReferences,
@@ -17,12 +18,15 @@ import {
   goToAnswer,
   hovers,
   listed,
+  outline,
+  outlines,
   peekIn,
   pick,
   references,
   rested,
   toggleHints,
   typeOf,
+  typeOutline,
 } from './navigate.ts';
 import { said } from './said.ts';
 
@@ -37,6 +41,9 @@ const seen = vi.hoisted(() => ({
   places: [] as unknown[],
   right: [] as { id: string | undefined; focus: boolean }[],
   rightShown: undefined as string | undefined,
+  /** How the right panel stands, and each time it was put back. */
+  kept: { open: false, right: undefined } as RightKept,
+  put: [] as RightKept[],
   middle: 0,
   hints: [] as unknown[],
 }));
@@ -109,9 +116,16 @@ vi.mock('../../tab/window/shared.ts', async (original) => ({
   activeTab: () => ({ id: 't1', kind: 'pull', owner: 'rozed-dev', repo: 'e2e', number: 80 }),
   localCopyOf: () => seen.local,
   rightShown: () => seen.rightShown,
+  rightKept: () => seen.kept,
+  putRight: (_tab: string, kept: RightKept) => {
+    seen.put.push(kept);
+    seen.kept = kept;
+    seen.rightShown = kept.open ? (kept.right ?? 'comments.panel') : undefined;
+  },
   showRight: (_tab: string, id: string | undefined, focus = true) => {
     seen.right.push({ id, focus });
     seen.rightShown = id;
+    if (id !== undefined) seen.kept = { open: true, right: id };
   },
 }));
 
@@ -149,6 +163,8 @@ beforeEach(() => {
   seen.places.length = 0;
   seen.right.length = 0;
   seen.rightShown = undefined;
+  seen.kept = { open: false, right: undefined };
+  seen.put.length = 0;
   seen.middle = 0;
   seen.hints.length = 0;
   closePeek(peekIn('t1') ?? '');
@@ -255,6 +271,7 @@ describe('gd', () => {
 describe('gr', () => {
   it('lists the references in the right panel, and Esc goes back to the threads', async () => {
     seen.rightShown = 'comments.panel';
+    seen.kept = { open: true, right: undefined };
     seen.answers.set('references', (): References => ({
       name: 'Line',
       answers: [answer(), answer({ line: 9 })],
@@ -265,7 +282,7 @@ describe('gr', () => {
     await references(AT);
     expect(seen.right).toEqual([{ id: 'code.references', focus: true }]);
     expect(listed.get('t1')).toMatchObject({
-      before: 'comments.panel',
+      before: { open: true, right: undefined },
       focused: 0,
       revision: 'r2',
     });
@@ -274,20 +291,28 @@ describe('gr', () => {
     expect(listed.get('t1')?.texts.get(0)).toBe('export interface Line {');
 
     closeReferences();
-    expect(seen.right.at(-1)).toEqual({ id: 'comments.panel', focus: false });
+    expect(seen.put).toEqual([{ open: true, right: undefined }]);
     expect(seen.middle).toBe(1);
   });
 
-  it('closes the panel on Esc when nothing was showing in it', async () => {
+  it('closes the panel on Esc when it was closed, on the threads, which it opens on next', async () => {
     seen.answers.set('references', (): References => ({
       name: 'Line',
       answers: [answer()],
       more: false,
       note: '',
     }));
+    // Closed last on the references, which another `gr` showed.
+    seen.kept = { open: false, right: 'code.references' };
     await references(AT);
+    // Asked again while they show: focus goes to them again, and Esc still puts back the first.
+    await references(AT);
+    expect(seen.right).toEqual([
+      { id: 'code.references', focus: true },
+      { id: 'code.references', focus: true },
+    ]);
     closeReferences();
-    expect(seen.right.at(-1)).toEqual({ id: undefined, focus: false });
+    expect(seen.put).toEqual([{ open: false, right: undefined }]);
   });
 });
 
@@ -334,6 +359,18 @@ describe('K and the pointer resting', () => {
     expect(said.get('t1')).toBeUndefined();
   });
 
+  it('shows no card when the reader presses a key while K asks', async () => {
+    let answerHover: ((found: Hover) => void) | undefined;
+    seen.answers.set('hover', () => new Promise<Hover>((resolve) => (answerHover = resolve)));
+    const asked = typeOf(AT);
+    await settle();
+    window.dispatchEvent(new Event(KEY_EVENT));
+    expect(seen.asked.at(-1)?.signal?.aborted).toBe(true);
+    answerHover?.(hover);
+    await asked;
+    expect(hovers.getState()).toBeUndefined();
+  });
+
   it('cancels the question before as the pointer rests elsewhere, and closes as it leaves', async () => {
     rested('t1', 'diff', { file: 'f1', side: 'new', line: 1, column: 3 });
     rested('t1', 'diff', { file: 'f1', side: 'new', line: 1, column: 14 });
@@ -344,5 +381,26 @@ describe('K and the pointer resting', () => {
     expect(hovers.getState()).toBeDefined();
     rested('t1', 'diff', undefined);
     expect(hovers.getState()).toBeUndefined();
+  });
+});
+
+describe('gO', () => {
+  it('shows the symbols as they come, found by what was typed while they were on their way', async () => {
+    let answerOutline: ((found: Outline) => void) | undefined;
+    seen.answers.set('outline', () => new Promise<Outline>((resolve) => (answerOutline = resolve)));
+    const asked = outline(AT);
+    await settle();
+    typeOutline('form');
+    answerOutline?.({
+      symbols: [{ name: 'format', kind: 'function', line: 6, column: 16, lastLine: 8 }],
+      more: false,
+      source: 'syntax',
+    });
+    await asked;
+    expect(outlines.getState()).toMatchObject({
+      open: true,
+      query: 'form',
+      outline: { symbols: [{ name: 'format' }] },
+    });
   });
 });

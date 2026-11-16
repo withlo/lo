@@ -176,6 +176,59 @@ describe('a peek', () => {
     expect(body.style.getPropertyValue('--lo-diffpeek-lines')).toBe('15');
   });
 
+  test('opened before its code comes, it’s as tall as code gets, and stays so as shorter code comes', () => {
+    expect(peekLines(definitions({ code: undefined, waiting: true }))).toBe(15);
+    const block = new PeekBlock(at, definitions({ code: undefined, waiting: true }), undefined);
+    const body = block.dom.querySelector<HTMLElement>('.lo-diffpeek__body')!;
+    const rows = () => body.style.getPropertyValue('--lo-diffpeek-lines');
+    expect(rows()).toBe('15');
+    const height = block.height;
+    // Its code comes, 3 lines: nothing under it moves.
+    expect(block.update(definitions({ code: lines(3) }))).toBe(false);
+    expect(rows()).toBe('15');
+    expect(block.height).toBe(height);
+    // Another answer, which the reader picks, is as tall as its own code.
+    expect(block.update(definitions({ shown: 1, code: lines(3) }))).toBe(true);
+    expect(rows()).toBe('6');
+    block.destroy();
+  });
+
+  test('takes focus in the list its frame draws beside more than one answer, drawn then or after', async () => {
+    let drawList: (() => void) | undefined;
+    // The list, which takes focus, comes a frame after the rest, as a component draws it.
+    const frame: PeekFrame = (parts) => {
+      drawList = () => {
+        const list = document.createElement('div');
+        list.setAttribute('role', 'listbox');
+        list.tabIndex = 0;
+        parts.list.append(list);
+      };
+      return { update() {}, destroy() {} };
+    };
+    const block = new PeekBlock(at, definitions(), frame);
+    document.body.append(block.dom);
+    block.focus();
+    expect(document.activeElement).toBe(block.dom);
+    drawList!();
+    await Promise.resolve();
+    expect(document.activeElement?.getAttribute('role')).toBe('listbox');
+    block.dom.focus();
+    block.focus();
+    expect(document.activeElement?.getAttribute('role')).toBe('listbox');
+    block.destroy();
+    // Beside one answer, the peek itself.
+    const one = new PeekBlock(
+      at,
+      definitions({ answers: definitions().answers.slice(0, 1) }),
+      frame,
+    );
+    document.body.append(one.dom);
+    drawList!();
+    one.focus();
+    expect(document.activeElement).toBe(one.dom);
+    one.destroy();
+  });
+
   test('is a scope of its own, with no Vim, whose keys act on the line it’s under', () => {
     const block = new PeekBlock(at, definitions(), undefined);
     document.body.append(block.dom);

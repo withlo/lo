@@ -2,8 +2,8 @@
 // opens rozed-dev/e2e#80, which nothing trusts, and once its index is built, `gd` on a name opens a
 // peek of its definition under the line, `⏎` goes there in the diff, on the side it's on, and `⌃o`
 // comes back; `K` shows its line in a card over the word; `gr` lists where it's used in the right
-// panel, and `⏎` goes to one; `gO` lists the file's symbols; and `gh` says type hints need a
-// language server. GitHub answers from `app_e2e`.
+// panel, and `⏎` goes to one, and `Esc` puts the panel back as it was; `gO` lists the file's
+// symbols; and `gh` says type hints need a language server. GitHub answers from `app_e2e`.
 
 import { writeFileSync } from 'node:fs';
 
@@ -87,6 +87,9 @@ async function press(page: Page, ...keys: string[]): Promise<void> {
   for (const key of keys) await page.keyboard.press(key);
 }
 
+/** The key that opens and closes the right panel, on the threads unless another view showed last. */
+const PANEL = `${process.platform === 'darwin' ? 'Meta' : 'Control'}+Shift+Backslash`;
+
 const peek = (page: Page) => page.locator('.lo-diffpeek');
 const status = (page: Page) => page.locator('footer[aria-label="Status"]');
 
@@ -153,13 +156,27 @@ test('gd, K, gr, gO and gh answer from the syntax index of a PR nothing trusts',
     await expect.poll(() => cursor(page)).toEqual({ path: 'src/format.ts', side: 'new', line: 6 });
     await press(page, 'Control+o');
     await expect.poll(() => cursor(page)).toEqual({ path: 'src/format.ts', side: 'new', line: 1 });
+    // Asked again from the code while they show, the references take focus again.
+    await press(page, 'g', 'r');
+    await expect(panel.locator('[data-lo-scope="references"]')).toBeFocused();
+  });
+
+  await test.step('Esc puts the panel back as it was, closed, on the threads it opens on next', async () => {
+    await press(page, 'Escape');
+    await expect(page.locator('aside[data-lo-right]')).toHaveCount(0);
+    await press(page, PANEL);
+    await expect(page.locator('aside[data-lo-right="comments.panel"]')).toBeVisible();
+    await press(page, PANEL);
+    await expect(page.locator('aside[data-lo-right]')).toHaveCount(0);
+    await page.locator('.lo-diffview .cm-editor').nth(1).locator('.cm-content').focus();
   });
 
   await test.step('gO lists the file’s symbols, and ⏎ goes to one', async () => {
+    // Typed at once, perhaps before the symbols come, which the palette finds by it as they do.
     await press(page, 'g', 'Shift+O');
+    await page.keyboard.type('form');
     const outline = page.getByRole('dialog', { name: 'Outline' });
     await expect(outline.getByRole('option', { name: /format/ })).toBeVisible();
-    await page.keyboard.type('form');
     await press(page, 'Enter');
     await expect(outline).toHaveCount(0);
     await expect.poll(() => cursor(page)).toEqual({ path: 'src/format.ts', side: 'new', line: 6 });

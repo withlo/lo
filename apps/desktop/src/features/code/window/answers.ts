@@ -25,9 +25,15 @@ export const NO_NAME = 'There’s no name at the cursor.';
 /** What `gh` says while type hints come only from a language server, which none gives yet. */
 export const HINTS_NEED_SERVER = 'Type hints need a language server';
 
-/** Why code features can't answer about a view yet, from its local copy, if they can't. */
+/**
+ * Why code features can't answer about a view yet, from its local copy, if they can't: what failed,
+ * when fetching it did and Lo won't try again unless asked.
+ */
 export function notYet(local: LocalState | undefined): string | undefined {
   if (local?.kind === 'noGit') return 'Code features need git.';
+  if (local?.kind === 'failed') {
+    return `Code features need the local copy, which Lo couldn’t fetch: ${local.message}.`;
+  }
   if (local?.kind !== 'ready') return 'The syntax index waits for the local copy.';
   return undefined;
 }
@@ -78,7 +84,10 @@ export function codeOf(lines: Lines | undefined, tokens?: Uint32Array): PeekCode
   return { first: lines.from, lines: lines.text, tokens };
 }
 
-/** What a peek under a line shows of a name's definitions, answer `shown` with its code. */
+/**
+ * What a peek under a line shows of a name's definitions, answer `shown` with its code, or waiting
+ * for it: the window reads the code of every answer it shows.
+ */
 export function peekOf(found: Definitions, shown: number, code: PeekCode | undefined): PeekView {
   const answers = found.answers.map((answer): PeekAnswer => ({
     path: answer.path,
@@ -87,7 +96,13 @@ export function peekOf(found: Definitions, shown: number, code: PeekCode | undef
     source: answer.source,
     label: answer.label,
   }));
-  return { answers, shown, code, label: `Definitions of ${found.name ?? ''}` };
+  return {
+    answers,
+    shown,
+    code,
+    waiting: code === undefined,
+    label: `Definitions of ${found.name ?? ''}`,
+  };
 }
 
 /** What a peek's foot says of its answer shown: its path, its revision, and whether the PR changes it. */

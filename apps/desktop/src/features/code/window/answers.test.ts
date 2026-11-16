@@ -52,6 +52,9 @@ describe('what the status bar says', () => {
     expect(notYet({ kind: 'noGit', message: 'No git.', install: '' })).toBe(
       'Code features need git.',
     );
+    expect(notYet({ kind: 'failed', failure: 'diskFull', message: 'the disk is full' })).toBe(
+      'Code features need the local copy, which Lo couldn’t fetch: the disk is full.',
+    );
     expect(
       notYet({ kind: 'ready', head: HEAD, base: HEAD, mergeBase: HEAD, offline: false }),
     ).toBeUndefined();
@@ -108,9 +111,12 @@ describe('a peek', () => {
       ],
       shown: 1,
       code,
+      waiting: false,
       label: 'Definitions of Line',
     });
     expect(codeOf(undefined)).toBeUndefined();
+    // Before its code comes, the peek waits for it, as tall as code gets.
+    expect(peekOf({ name: 'Line', answers, more: false }, 0, undefined).waiting).toBe(true);
   });
 
   it('says where the answer shown is, at which revision, and whether the PR changes it', () => {

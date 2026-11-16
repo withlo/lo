@@ -2,7 +2,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { panels, rightIds, rightPanel, showRightView, stepAmong, toggleRight } from './panels.ts';
-import { rightShown } from './shared.ts';
+import { putRight, rightKept, rightShown } from './shared.ts';
 
 describe('stepping through the middle views', () => {
   // The overview, the diff, a file whole, which has no label, and a fourth view.
@@ -58,5 +58,40 @@ describe('the right panel’s views', () => {
     expect(rightPanel.getState()).toEqual({ open: true, focus: false });
     showRightView('t1', undefined);
     expect(rightPanel.getState().open).toBe(false);
+  });
+
+  it('goes back to how it stood: closed, on the threads, which it opens on next', () => {
+    rightIds.push('comments.panel', 'code.references');
+    const before = rightKept('t3');
+    expect(before).toEqual({ open: false, right: undefined });
+    showRightView('t3', 'code.references');
+    putRight('t3', before);
+    expect(rightPanel.getState().open).toBe(false);
+    toggleRight();
+    expect(rightShown('t3')).toBe('comments.panel');
+    // Or open on what it showed.
+    showRightView('t3', 'code.references');
+    putRight('t3', { open: true, right: undefined });
+    expect(rightPanel.getState()).toEqual({ open: true, focus: false });
+    expect(rightShown('t3')).toBe('comments.panel');
+  });
+
+  it('takes focus at once, asked to show the view it’s drawn on already', () => {
+    rightIds.push('comments.panel', 'code.references');
+    const aside = document.createElement('aside');
+    aside.dataset.loRight = 'code.references';
+    const list = document.createElement('div');
+    list.dataset.loScope = 'references';
+    list.tabIndex = 0;
+    aside.append(list);
+    document.body.append(aside);
+    showRightView('t4', 'code.references');
+    // Drawn, it took focus then; the reader went back to the code.
+    rightPanel.setState({ focus: false });
+    expect(document.activeElement).not.toBe(list);
+    showRightView('t4', 'code.references');
+    expect(document.activeElement).toBe(list);
+    expect(rightPanel.getState().focus).toBe(false);
+    aside.remove();
   });
 });

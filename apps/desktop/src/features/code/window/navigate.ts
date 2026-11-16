@@ -21,9 +21,12 @@ import { revisionLabel, revisionsOf } from '../../revisions/window/shared.ts';
 import {
   activeTab,
   localCopyOf,
+  putRight,
+  rightKept,
   rightShown,
   showRight,
   tabState,
+  type RightKept,
 } from '../../tab/window/shared.ts';
 import type { Definitions, Hover, Lines, Outline, References } from '../port.ts';
 import {
@@ -342,8 +345,8 @@ export interface ListedReferences {
   readonly current: number | undefined;
   /** Lines read for references that came without theirs, by their places in the list. */
   readonly texts: ReadonlyMap<number, string>;
-  /** The right panel's view as the references came, which `Esc` goes back to. */
-  readonly before: string | undefined;
+  /** How the right panel stood as the references came, which `Esc` puts back. */
+  readonly before: RightKept | undefined;
   readonly revision: string | undefined;
 }
 
@@ -408,8 +411,8 @@ export async function references(target: LineTarget): Promise<void> {
   }
   const open = peekIn(tab);
   if (open) closePeek(open);
-  const shown = rightShown(tab);
-  const before = shown === REFERENCES ? listed.get(tab)?.before : shown;
+  // How the panel stood before the references came, to put back as they go.
+  const before = rightShown(tab) === REFERENCES ? listed.get(tab)?.before : rightKept(tab);
   const list: ListedReferences = {
     view,
     side: at.side,
@@ -464,14 +467,18 @@ export function goToFocused(): void {
 }
 
 /**
- * `Esc` in the references panel: the threads again, if they were showing as the references came,
- * or else the panel closes; focus goes back to the middle view either way.
+ * `Esc` in the references panel: the panel as it was before the references came, open on what it
+ * showed, or closed and on the threads, as `⌘⇧\` opens it next; focus goes back to the middle view
+ * either way.
  */
 export function closeReferences(): void {
   const tab = activeTab();
   if (tab?.kind !== 'pull') return;
-  const before = listed.get(tab.id)?.before;
-  showRight(tab.id, before === REFERENCES ? undefined : before, false);
+  const before = listed.get(tab.id)?.before ?? { open: false, right: undefined };
+  putRight(tab.id, {
+    open: before.open,
+    right: before.right === REFERENCES ? undefined : before.right,
+  });
   focusMiddle();
 }
 
@@ -514,16 +521,26 @@ export function closeHover(): void {
   if (shown) hovers.setState(undefined, true);
 }
 
-/** Asks what the word at `at` is, and shows the card over it; `byKey` says so when it's nothing. */
+/**
+ * Asks what the word at `at` is, and shows the card over it; `byKey` says so when it's nothing.
+ * The reader's input while it asks, which would take the card away, stops it coming.
+ */
 async function showHover(asked: Asked, byKey: boolean): Promise<void> {
   const { tab, view, at } = asked;
   const signal = fresh('hover', tab);
+  const stop = (): void => {
+    const controller = asking.get(`hover:${tab}`);
+    if (controller?.signal === signal) controller.abort();
+  };
+  for (const kind of INPUT) window.addEventListener(kind, stop, true);
   let hover: Hover | null;
   try {
     hover = await port().hover(asked.input, { signal });
   } catch (error) {
     if (byKey) failed(tab, error);
     return;
+  } finally {
+    for (const kind of INPUT) window.removeEventListener(kind, stop, true);
   }
   if (signal.aborted) return;
   if (!hover) {
@@ -687,11 +704,14 @@ export async function outline(target: LineTarget | HeaderTarget): Promise<void> 
       { view: tab, key: file.commit, path: file.path },
       { signal },
     );
-    if (outlines.getState() === open) outlines.setState({ ...open, outline: answer }, true);
+    // Into the palette as it is now, with what's typed meanwhile, unless it closed or another
+    // took its place.
+    const now = outlines.getState();
+    if (!signal.aborted && now?.open === true) outlines.setState({ ...now, outline: answer }, true);
   } catch (error) {
     const problem = failureOf(error);
     const now = outlines.getState();
-    if (problem !== undefined && now?.tab === tab && now.outline === undefined) {
+    if (problem !== undefined && !signal.aborted && now?.open === true) {
       outlines.setState({ ...now, problem }, true);
     }
   }

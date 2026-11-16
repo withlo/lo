@@ -17,7 +17,17 @@ import {
   type Tab,
 } from '../contract.ts';
 import { makeTabState, type TabState, useKept } from './kept.ts';
-import { middleIds, panels, rightIds, rightPanel, showRightView, type Panels } from './panels.ts';
+import {
+  keptRight,
+  middleIds,
+  panels,
+  putRightBack,
+  rightIds,
+  rightPanel,
+  showRightView,
+  type Panels,
+  type RightKept,
+} from './panels.ts';
 import { Placeholder } from './Placeholder.tsx';
 import { activeOf, pullsStore, tabsStore, type TabsState } from './store.ts';
 
@@ -33,6 +43,7 @@ export type {
   Run,
   Tab,
 } from '../contract.ts';
+export type { RightKept } from './panels.ts';
 export type { TabsState } from './store.ts';
 
 /**
@@ -171,6 +182,19 @@ export const right = defineSlot<{ tab: PullTab }, RightToggle>('tab.right');
  */
 export function showRight(tab: string, id: string | undefined, focus = true): void {
   showRightView(tab, id, focus);
+}
+
+/** How pull request's tab `tab`'s right panel stands now, for `putRight` to put back. */
+export function rightKept(tab: string): RightKept {
+  return keptRight(tab);
+}
+
+/**
+ * Puts pull request's tab `tab`'s right panel back as `kept` had it, on its view, open or closed,
+ * without taking focus; closing, focus in it goes back to the middle view.
+ */
+export function putRight(tab: string, kept: RightKept): void {
+  putRightBack(tab, kept);
 }
 
 /** The view pull request's tab `tab`'s right panel shows, by id, or none while it's closed. */

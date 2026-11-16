@@ -44,6 +44,7 @@ import {
   type PullTab,
 } from './shared.ts';
 import {
+  focusPanel,
   middleIds,
   panels,
   rightIds,
@@ -62,7 +63,7 @@ import { ViewSwitch } from './ViewSwitch.tsx';
  */
 function focusRight(panel: HTMLElement | null): void {
   if (!panel || !takeRightFocus()) return;
-  panel.querySelector<HTMLElement>('[data-lo-scope]')?.focus({ preventScroll: true });
+  focusPanel(panel);
 }
 
 /** The time now, ticking each second while `ticking`, for what counts down. */

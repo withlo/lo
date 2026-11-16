@@ -91,18 +91,48 @@ export function toggleRight(): void {
   if (had) focusMiddle();
 }
 
+/** Gives focus to the scope drawn in right panel `panel`, so its keys work at once. */
+export function focusPanel(panel: HTMLElement): void {
+  panel.querySelector<HTMLElement>('[data-lo-scope]')?.focus({ preventScroll: true });
+}
+
 /**
- * Shows view `id` in tab `tab`'s right panel, opening it if it's closed, and gives it focus as it's
- * drawn, unless `focus` is false; or, with none, closes the panel, giving focus in it back to the
- * middle view.
+ * Shows view `id` in tab `tab`'s right panel, opening it if it's closed, and gives it focus, as
+ * it's drawn or at once if it's drawn already, unless `focus` is false; or, with none, closes the
+ * panel, giving focus in it back to the middle view.
  */
 export function showRightView(tab: string, id: string | undefined, focus = true): void {
   if (id === undefined) {
     if (rightPanel.getState().open) toggleRight();
     return;
   }
+  const drawn = document.querySelector<HTMLElement>(RIGHT);
+  const shown = rightPanel.getState().open && drawn?.dataset.loRight === id;
   panels.update(tab, (current) => ({ ...current, right: id }));
   rightPanel.setState({ open: true, focus });
+  // Drawn already, it isn't drawn again to take it.
+  if (shown && drawn && takeRightFocus()) focusPanel(drawn);
+}
+
+/** How a tab's right panel stands: open or closed, and on which view (none for the first). */
+export interface RightKept {
+  readonly open: boolean;
+  readonly right: string | undefined;
+}
+
+/** How tab `tab`'s right panel stands now. */
+export function keptRight(tab: string): RightKept {
+  return { open: rightPanel.getState().open, right: panels.get(tab).right };
+}
+
+/**
+ * Puts tab `tab`'s right panel back as `kept` had it, on its view, open or closed, without taking
+ * focus; closing, focus in it goes back to the middle view.
+ */
+export function putRightBack(tab: string, kept: RightKept): void {
+  panels.update(tab, (current) => ({ ...current, right: kept.right }));
+  if (kept.open) rightPanel.setState({ open: true, focus: false });
+  else if (rightPanel.getState().open) toggleRight();
 }
 
 /**

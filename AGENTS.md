@@ -1145,10 +1145,12 @@ parse them under `@lo/syntax`'s limits.
   and path, and the first 10 come with 30 lines around them.
 - The window asks from the diff and the whole file, on either side, through the diff feature's
   `codeViews` (`code/window/navigate.ts`), and a new question cancels the last of its kind. `gd`
-  opens a peek under the line, which comes on screen whole by the least scroll; `j` and `k` pick an
-  answer and `⏎` goes there, in the diff on its side, or the file whole, as a jump. `gr` lists the
-  references in the right panel, which shows one view at a time; `K`, or the pointer resting on a
-  word, shows a card over it that never takes focus and closes at the next input; `gO` opens the
+  opens a peek under the line, which comes on screen whole by the least scroll; one whose code is
+  still to come is as tall as code gets, and stays so as it comes, so nothing moves without the
+  reader. `j` and `k` pick an answer and `⏎` goes there, in the diff on its side, or the file whole,
+  as a jump. `gr` lists the references in the right panel, which shows one view at a time, and `Esc`
+  puts the panel back as it stood. `K`, or the pointer resting on a word, shows a card over it that
+  never takes focus and closes at the next input, which stops one still coming too. `gO` opens the
   outline. With no answer, the status bar says why and nothing opens. `gh` says type hints need a
   language server.
 

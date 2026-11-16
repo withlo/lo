@@ -42,8 +42,9 @@ const PADDING = 8;
 /** The room around a peek in the whole-file view, above and below it. */
 const HOLDER = 16;
 
-/** How many lines tall the code of `peek` is. */
+/** How many lines tall the code of `peek` is: the most there can be while it's still to come. */
 export function peekLines(peek: PeekView): number {
+  if (peek.waiting === true) return PEEK_LINES;
   const lines = peek.code?.lines.length ?? 0;
   return Math.min(PEEK_LINES, Math.max(1, lines, peek.answers.length > 1 ? LISTED : 0));
 }
@@ -69,6 +70,8 @@ export class PeekBlock {
   /** The line it's under, as the caller gave it, which a key in it acts on. */
   readonly at: Place;
   #peek: PeekView;
+  /** How many lines tall its code is. */
+  #rows: number;
   #frame: { update(peek: PeekView): void; destroy(): void } | undefined;
   readonly #stops: (() => void)[] = [];
   /** Focus left it as it moved into another block, and is on its way back. */
@@ -82,6 +85,7 @@ export class PeekBlock {
   constructor(at: Place, peek: PeekView, frame: PeekFrame | undefined) {
     this.at = at;
     this.#peek = peek;
+    this.#rows = peekLines(peek);
     this.dom = element('div', 'lo-diffpeek');
     this.dom.setAttribute(SCOPE_ATTRIBUTE, 'peek');
     this.dom.setAttribute('role', 'dialog');
@@ -99,6 +103,12 @@ export class PeekBlock {
     for (const part of Object.values(this.#parts)) part.hidden = frame === undefined;
     this.#show(peek);
     this.#stops.push(setScopeSource(this.dom, this));
+    // A list the frame draws after the peek took focus takes it from the peek as it comes.
+    const listed = new MutationObserver(() => {
+      if (this.dom.ownerDocument.activeElement === this.dom) this.focus();
+    });
+    listed.observe(this.#parts.list, { childList: true, subtree: true });
+    this.#stops.push(() => listed.disconnect());
     this.dom.addEventListener('keydown', this.#scrollKey);
     // The code is scrolled to its answer once it has a size: not before it's in the page. Moved,
     // it's scrolled back where it was.
@@ -115,14 +125,20 @@ export class PeekBlock {
     return this.#peek;
   }
 
-  /** Shows what `peek` shows. Says whether the peek's height changes. */
+  /**
+   * Shows what `peek` shows. What comes for the answer shown, as its code, never makes it shorter,
+   * so a peek that opened before its code came keeps its height, and nothing under it moves without
+   * the reader. Says whether the peek's height changes.
+   */
   update(peek: PeekView): boolean {
-    const before = peekLines(this.#peek);
+    const before = this.#rows;
+    this.#rows =
+      peek.shown === this.#peek.shown ? Math.max(before, peekLines(peek)) : peekLines(peek);
     const scroll = peek.shown !== this.#peek.shown || peek.code !== this.#peek.code;
     this.#peek = peek;
     this.#show(peek, scroll);
     this.#frame?.update(peek);
-    return peekLines(peek) !== before;
+    return this.#rows !== before;
   }
 
   /** How tall it is, drawn, or as tall as it comes before it is. */
@@ -130,7 +146,7 @@ export class PeekBlock {
     const drawn = this.dom.offsetHeight;
     if (drawn > 0) return drawn;
     const framed = this.#parts.head.hidden ? 0 : HEAD + FOOT;
-    return framed + peekLines(this.#peek) * LINE + PADDING;
+    return framed + this.#rows * LINE + PADDING;
   }
 
   /** Whether focus is in it, or on its way back to it after it moved. */
@@ -165,9 +181,19 @@ export class PeekBlock {
     this.#parts.list.scrollTop = scrolled.list;
   }
 
-  /** Takes focus, where it's drawn, without scrolling anything to it. */
+  /**
+   * Takes focus, where it's drawn, without scrolling anything to it: in the list of answers the
+   * frame draws beside more than one, so a screen reader tells of each the keys pick, or else in
+   * the peek itself.
+   */
   focus(): void {
-    this.dom.focus({ preventScroll: true });
+    (this.#listFocus() ?? this.dom).focus({ preventScroll: true });
+  }
+
+  /** What takes focus in the list the frame drew, beside more than one answer, if it drew one. */
+  #listFocus(): HTMLElement | undefined {
+    if (this.#peek.answers.length <= 1 || this.#parts.list.hidden) return undefined;
+    return this.#parts.list.querySelector<HTMLElement>('[tabindex]') ?? undefined;
   }
 
   destroy(): void {
@@ -223,7 +249,7 @@ export class PeekBlock {
   #show(peek: PeekView, scroll = true): void {
     this.dom.setAttribute('aria-label', peek.label);
     this.dom.classList.toggle('lo-diffpeek--single', peek.answers.length <= 1);
-    this.#body.style.setProperty('--lo-diffpeek-lines', String(peekLines(peek)));
+    this.#body.style.setProperty('--lo-diffpeek-lines', String(this.#rows));
     const answer = peek.answers[peek.shown];
     this.#code.replaceChildren(...(peek.code ? [codeElement(peek.code, answer)] : []));
     if (!scroll) return;

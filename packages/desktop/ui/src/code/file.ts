@@ -60,7 +60,7 @@ import {
   vimPending,
 } from './keys.ts';
 import { marking, marksChanged } from './marks.ts';
-import { PeekBlock, PeekWidget, peekLines, peekShownAt } from './peek.ts';
+import { PeekBlock, PeekWidget, peekShownAt } from './peek.ts';
 import { watchRests, type Word, wordAnchor, wordUnder } from './words.ts';
 
 /** Opens a whole-file view of `init`'s file in `parent`, which tells `on` what happens in it. */
@@ -339,10 +339,7 @@ class WholeFile implements FileView {
     if (open?.line === at.line) {
       const { block } = open;
       if (peek) {
-        const before = peekLines(block.peek);
-        const shown = this.#keepPeek(at.line, () => block.update(peek));
-        // Grown or shrunk as the reader reads it, as when its code comes, it shows whole again.
-        if (shown && block.hasFocus && peekLines(peek) !== before) this.#showPeek(open);
+        this.#keepPeek(at.line, () => block.update(peek));
         return true;
       }
       const focused = block.hasFocus;
@@ -432,19 +429,21 @@ class WholeFile implements FileView {
       const view = this.#view;
       view.lineBlockAtHeight(0);
       const line = view.state.doc.line(opened.line);
-      // Where the editor finds the line as it scrolls to it.
-      const drawn = view.coordsAtPos(line.from, 1);
+      // The line's box, which goes where the peek wants it, and its text, which the editor scrolls
+      // to, a little under the box's top.
+      const top = drawnTop(view, line.from);
+      const text = view.coordsAtPos(line.from, 1);
       const { block } = opened;
-      if (!drawn || !this.#showing() || !block.dom.isConnected) return;
+      if (top === undefined || !text || !this.#showing() || !block.dom.isConnected) return;
       const bottom = block.dom.getBoundingClientRect().bottom;
       const screen = this.dom.getBoundingClientRect().top;
-      const to = peekShownAt(drawn.top - screen, bottom - drawn.top, this.dom.clientHeight);
+      const to = peekShownAt(top - screen, bottom - top, this.dom.clientHeight);
       if (to === undefined) return;
       // Its scroll is the editor's own, as a jump's, whatever `showLine` asked for before it.
       this.#ownScroll = false;
       view.dispatch({
         selection: { anchor: line.from + Math.min(block.at.column ?? 0, line.length) },
-        effects: EditorView.scrollIntoView(line.from, { y: 'start', yMargin: to }),
+        effects: EditorView.scrollIntoView(line.from, { y: 'start', yMargin: to + text.top - top }),
       });
     });
   }

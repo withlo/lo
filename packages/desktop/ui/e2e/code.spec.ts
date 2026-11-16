@@ -35,22 +35,36 @@ test.afterEach(async () => {
 
 /**
  * The page, its view in `layout`, new line 20 at the top of the screen or `below` pixels below it,
- * and the first `wrapped` lines long enough to wrap.
+ * and the first `wrapped` lines long enough to wrap; with `height`, in a box that tall.
  */
 async function open(
   layout: DiffLayout,
-  { wrapped = 0, below = 0 }: { wrapped?: number; below?: number } = {},
+  { wrapped = 0, below = 0, height }: { wrapped?: number; below?: number; height?: number } = {},
 ): Promise<Page> {
   app = await launch(harness);
   const page = await app.firstWindow();
   await page.waitForFunction(() => 'harness' in window);
   await page.evaluate(
-    ({ shown, lines, under }) => {
+    ({ shown, lines, under, tall }) => {
+      if (tall !== undefined) window.harness.setHeight(tall);
       window.harness.open(shown, lines);
       window.harness.scrollTo(20, under);
     },
-    { shown: layout, lines: wrapped, under: below },
+    { shown: layout, lines: wrapped, under: below, tall: height },
   );
+  await frames(page);
+  return page;
+}
+
+/** The page, the file's new version whole, line 20 at the top; with `height`, in a box that tall. */
+async function openWhole(height?: number): Promise<Page> {
+  app = await launch(harness);
+  const page = await app.firstWindow();
+  await page.waitForFunction(() => 'harness' in window);
+  await page.evaluate((tall) => {
+    if (tall !== undefined) window.harness.setHeight(tall);
+    window.harness.openFile(20);
+  }, height);
   await frames(page);
   return page;
 }
@@ -288,6 +302,52 @@ for (const layout of ['split', 'inline'] as const) {
         near([await lineTop(page, 40)], [top]);
       });
     }
+
+    test('a peek under the last line on screen, opened before its code comes, moves nothing as it comes, the wheel’s scroll kept', async () => {
+      const page = await open(layout);
+      const height = await screenHeight(page);
+      const below = height - (await rowHeight(page));
+      await page.evaluate((at) => {
+        window.harness.cursor(40);
+        window.harness.scrollTo(40, at);
+      }, below);
+      await frames(page);
+
+      expect(await page.evaluate(() => window.harness.peekWaiting(40))).toBe(true);
+      await frames(page);
+      // On screen whole, as tall as its code can be.
+      expect(Math.abs((await peekEnd(page)) - height)).toBeLessThan(1);
+      // The reader wheels while the code loads.
+      await page.mouse.move(300, 100);
+      await page.mouse.wheel(0, -40);
+      await frames(page);
+      const before = await onScreen(page);
+      const end = await peekEnd(page);
+
+      // Its code comes, 12 lines: shorter than the peek, which keeps its height.
+      expect(await page.evaluate(() => window.harness.peek(40, 12))).toBe(true);
+      await page.evaluate(() => window.harness.frames(10));
+      await still(page, before);
+      near([await peekEnd(page)], [end]);
+    });
+
+    test('a peek taller than the room under its line puts the line at the very top', async () => {
+      const page = await open(layout, { height: 300 });
+      const below = 300 - (await rowHeight(page));
+      await page.evaluate((at) => {
+        window.harness.cursor(40);
+        window.harness.scrollTo(40, at);
+      }, below);
+      await frames(page);
+
+      expect(await page.evaluate(() => window.harness.peek(40, 15))).toBe(true);
+      await frames(page);
+      expect(Math.abs((await lineTop(page, 40))!)).toBeLessThan(0.5);
+      expect(await peekEnd(page)).toBeGreaterThan(300);
+      const shown = await onScreen(page);
+      await page.evaluate(() => window.harness.frames(10));
+      await still(page, shown);
+    });
 
     test('a peek opened and shown again in one go, under a line partly above the top, opens under it, the line staying where it is', async () => {
       const page = await open(layout);
@@ -728,6 +788,50 @@ for (const { name, rows } of FOOT) {
     near([await lineTop(page, 40)], [top]);
   });
 }
+
+test('in the whole file, a peek under the last line on screen, opened before its code comes, moves nothing as it comes, the wheel’s scroll kept', async () => {
+  const page = await openWhole();
+  const height = await screenHeight(page);
+  const below = height - (await rowHeight(page));
+  await page.evaluate((at) => {
+    window.harness.fileCursor(38);
+    window.harness.fileScrollTo(40, at);
+  }, below);
+  await frames(page);
+
+  expect(await page.evaluate(() => window.harness.filePeekWaiting(40))).toBe(true);
+  await frames(page);
+  expect(Math.abs((await peekEnd(page)) - height)).toBeLessThan(1);
+  await page.mouse.move(300, 100);
+  await page.mouse.wheel(0, -40);
+  await frames(page);
+  const before = await onScreen(page);
+  const end = await peekEnd(page);
+
+  // Its code comes, 9 lines.
+  expect(await page.evaluate(() => window.harness.filePeek(40))).toBe(true);
+  await page.evaluate(() => window.harness.frames(10));
+  await still(page, before);
+  near([await peekEnd(page)], [end]);
+});
+
+test('in the whole file, a peek taller than the room under its line puts the line at the very top', async () => {
+  const page = await openWhole(200);
+  const below = 200 - (await rowHeight(page));
+  await page.evaluate((at) => {
+    window.harness.fileCursor(38);
+    window.harness.fileScrollTo(40, at);
+  }, below);
+  await frames(page);
+
+  expect(await page.evaluate(() => window.harness.filePeek(40))).toBe(true);
+  await frames(page);
+  expect(Math.abs((await lineTop(page, 40))!)).toBeLessThan(0.5);
+  expect(await peekEnd(page)).toBeGreaterThan(200);
+  const shown = await onScreen(page);
+  await page.evaluate(() => window.harness.frames(10));
+  await still(page, shown);
+});
 
 test('closing a comment box with `Esc` leaves its line where it is, above the screen', async () => {
   const page = await open('split');

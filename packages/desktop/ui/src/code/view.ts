@@ -123,7 +123,7 @@ import {
 } from './markers.ts';
 import { lineKey, marking, marksChanged, rowKey } from './marks.ts';
 import { otherLine } from './moves.ts';
-import { PeekBlock, peekLines, peekShownAt } from './peek.ts';
+import { PeekBlock, peekShownAt } from './peek.ts';
 import {
   collapsedRuns,
   type FileRows,
@@ -2659,10 +2659,7 @@ class View implements DiffView {
     if (!place || !this.#drawable(place) || this.#collapsedAt(place)) return false;
     if (here) {
       const { block } = open;
-      const before = peekLines(block.peek);
-      const shown = this.#keepPeek(place, () => block.update(peek));
-      // Grown or shrunk as the reader reads it, as when its code comes, it shows whole again.
-      if (shown && block.hasFocus && peekLines(peek) !== before) this.#showPeek(open);
+      this.#keepPeek(place, () => block.update(peek));
       return true;
     }
     // Focus in the view's code, or in the peek this one takes the place of, goes into it.
@@ -2713,12 +2710,14 @@ class View implements DiffView {
       const view = this.#viewOf(pane);
       view.lineBlockAtHeight(0);
       const line = view.state.doc.line(this.#docLine(pane, place));
-      // Where the editor finds the line as it scrolls to it.
-      const drawn = view.coordsAtPos(line.from, 1);
+      // The line's box, which goes where the peek wants it, and its text, which the editor scrolls
+      // to, a little under the box's top.
+      const top = drawnTop(view, line.from);
+      const text = view.coordsAtPos(line.from, 1);
       const span = this.#spanOf(block.dom);
-      if (!drawn || !span) return;
+      if (top === undefined || !text || !span) return;
       const screen = this.dom.getBoundingClientRect().top;
-      const to = peekShownAt(drawn.top - screen, span.bottom - drawn.top, this.dom.clientHeight);
+      const to = peekShownAt(top - screen, span.bottom - top, this.dom.clientHeight);
       if (to === undefined) return;
       this.#holding = undefined;
       this.#jumped = undefined;
@@ -2727,7 +2726,7 @@ class View implements DiffView {
       this.#aligner.follow(pane === 'inline' ? undefined : pane);
       view.dispatch({
         selection: { anchor: line.from + Math.min(block.at.column ?? 0, line.length) },
-        effects: EditorView.scrollIntoView(line.from, { y: 'start', yMargin: to }),
+        effects: EditorView.scrollIntoView(line.from, { y: 'start', yMargin: to + text.top - top }),
       });
     });
   }
