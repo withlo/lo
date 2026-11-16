@@ -224,7 +224,10 @@ pnpm nx run desktop:package  # build it, then make the Mac zip in apps/desktop/r
   shows one that then passes as flaky. A test drives Lo's window only once it has drawn, through the
   `page` fixture or, for a copy of Lo it starts itself, `drawnWindow`: the page runs before
   Electron's GPU process has started, which in CI has taken up to half a minute, and until it has,
-  nothing that waits on a frame happens, such as a closed dialog leaving.
+  nothing that waits on a frame happens, such as a closed dialog leaving. Its specs are
+  `e2e/*.spec.ts`, and a `*.test.ts` beside them is a unit test of what they use. A run on GitHub
+  itself, with the system's keychain, is a `*.live.ts` spec, which only `nx run desktop:live` runs,
+  one at a time, as `testing/README.md` describes.
 
 The window shows untrusted content, so it's locked down, and the smoke test shows each guard
 holding:

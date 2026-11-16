@@ -4,20 +4,27 @@
 // and where the layer on screen's diff starts: with the layer below it, set before the diff is
 // drawn, or offered once it is. Only the tab on screen reads its layers' state. A run of layers the
 // window chose shows as one diff, in a view the tab makes of it. And making a chain a GitHub stack:
-// planned here from what GitHub says, and run here once the reader confirms the plan.
+// planned here from what GitHub says, and run here once the reader confirms the plan, unless Lo is
+// merging a pull request on its path. Each repository's stacks and conversions are offered to the
+// features that merge.
 
 import { PullRef } from '@lo/github';
 
 import { IpcError } from '../../../ipc/contract.ts';
 import { defineFeature } from '../../../main/features.ts';
+import { provides } from '../../../main/services.ts';
 import { github } from '../../accounts/service.ts';
 import { tabs, type TabService } from '../../tab/service.ts';
 import { contract, type StackState } from '../contract.ts';
+import { forest } from '../service.ts';
 import { Conversions } from './conversion.ts';
 import { StackFinder, type FinderTab } from './finder.ts';
+import { Holds } from './holds.ts';
 
 let finder: StackFinder | undefined;
 let conversions: Conversions | undefined;
+/** What the features that merge hold conversions back with. */
+const holds = new Holds();
 const stops: (() => void)[] = [];
 
 const log = (line: string) => console.error(`stacks: ${line}`);
@@ -80,6 +87,13 @@ function converting(): Conversions {
 
 export default defineFeature(contract, {
   uses: [tabs, github],
+  provide: () => [
+    provides(forest, {
+      forest: (repo, login) => finder?.forest(repo, login),
+      converting: (repo) => conversions?.converting(repo),
+      holdConversions: (check) => holds.add(check),
+    }),
+  ],
   handlers: {
     state: ({ id }) => finder?.state(id),
     useStart({ id, commit }) {
@@ -132,6 +146,7 @@ export default defineFeature(contract, {
       poller: (login) => access.poller(login),
       found: (id) => found.found(id),
       publish: (view) => context.publish('conversion', view),
+      held: (repo, prs) => holds.held(repo, prs),
       log,
     });
     finder = found;

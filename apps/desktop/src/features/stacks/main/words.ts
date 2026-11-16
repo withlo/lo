@@ -107,6 +107,7 @@ export const OWN = {
   noAccountYet: 'Lo is still working out which account this tab acts as.',
   running: (repository: string) =>
     `Lo is already changing ${repository}'s base branches. Wait for that to finish.`,
+  merging: (prs: readonly number[]) => `Lo is merging ${numbers(prs)}. Wait for that to finish.`,
   unread: (repository: string) => `Lo is still reading ${repository}'s open PRs.`,
   stale: (repository: string) =>
     `Lo couldn't list ${repository}'s open PRs again since its last changes. Try again in a moment.`,

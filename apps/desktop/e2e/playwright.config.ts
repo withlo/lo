@@ -3,6 +3,8 @@ import { defineConfig } from '@playwright/test';
 // The smoke test drives the built, unpackaged app: `nx run desktop:e2e` builds it first.
 export default defineConfig({
   testDir: '.',
+  // Only the specs: a `*.test.ts` beside them is a unit test, which Vitest runs.
+  testMatch: '**/*.spec.ts',
   outputDir: '../test-results',
   fullyParallel: true,
   // Each test starts its own copy of Lo, so two at a time.
