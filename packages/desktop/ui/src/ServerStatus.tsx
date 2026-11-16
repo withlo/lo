@@ -63,11 +63,26 @@ export type ServerState =
 /** What the details offer to do about trust. */
 export interface ServerTrust {
   /**
-   * "Trust this repo…" and "Trust this PR…" ask in a dialog of main's, so they end in an ellipsis;
-   * "Stop trusting this repo" takes it away at once.
+   * "Trust this repo…" and "Trust this PR…" ask in a dialog of main's, so they end in an ellipsis,
+   * and the details stay open while Lo asks; "Stop trusting this repo" takes it away at once, and
+   * closes them.
    */
   action: 'repo' | 'pr' | 'stop';
   onChoose: () => void;
+  /**
+   * What Lo is doing about it, while it does: "Checking with GitHub", "Trusting". The button says
+   * so, with a ring turning, in place of its label, and pressing it does nothing until it's done.
+   */
+  busy?: string | undefined;
+  /** Why trusting didn't happen, which the details say under what they said, until it's asked again. */
+  failure?: ServerTrustFailure | undefined;
+}
+
+/** Why trusting didn't happen, in a sentence or two, and what to do about it, if anything. */
+export interface ServerTrustFailure {
+  message: string;
+  /** A button that helps: "Open the settings file". */
+  fix?: { label: string; onChoose: () => void } | undefined;
 }
 
 export interface ServerStatusProps {
@@ -457,6 +472,11 @@ export function ServerStatus({
                   {says}
                 </Popover.Description>
               )}
+              {trust?.failure && (
+                <p role="alert" className="m-0 text-danger text-small">
+                  <ShownText text={trust.failure.message} />
+                </p>
+              )}
               {(again || onShowLog || trust) && (
                 <div className="flex flex-wrap gap-6">
                   {again && (
@@ -490,12 +510,28 @@ export function ServerStatus({
                       ref={again || onShowLog ? undefined : first}
                       variant={state.kind === 'off' ? 'secondary' : 'ghost'}
                       size="sm"
+                      // Not `disabled`, which would drop focus from it.
+                      aria-disabled={trust.busy === undefined ? undefined : true}
                       onClick={() => {
-                        change(false);
+                        if (trust.busy !== undefined) return;
+                        // Trusting asks first, and says here how that goes.
+                        if (trust.action === 'stop') change(false);
                         trust.onChoose();
                       }}
                     >
-                      {trustLabel(trust.action)}
+                      {trust.busy === undefined ? (
+                        trustLabel(trust.action)
+                      ) : (
+                        <span className="inline-flex items-center gap-6">
+                          <Spinner size="xs" />
+                          <ShownText text={trust.busy} />
+                        </span>
+                      )}
+                    </Button>
+                  )}
+                  {trust?.failure?.fix && (
+                    <Button variant="ghost" size="sm" onClick={trust.failure.fix.onChoose}>
+                      {trust.failure.fix.label}
                     </Button>
                   )}
                 </div>

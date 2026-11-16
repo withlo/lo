@@ -1,5 +1,6 @@
 // What the settings feature shares with other features' window code: the slot they put their
-// sections of Settings in, and the settings themselves, read and changed.
+// sections of Settings in, the settings themselves, read, changed and followed, and the file, to
+// open.
 
 import type { ReactNode } from 'react';
 import { useStore } from 'zustand';
@@ -78,6 +79,32 @@ export async function changeSetting<T>(setting: Setting<T>, value: T): Promise<b
     );
     return false;
   }
+}
+
+/**
+ * Opens the settings file in the system's text editor, so the person can fix what's wrong in it,
+ * and says why in a note when Lo can't.
+ */
+export async function openSettingsFile(): Promise<void> {
+  try {
+    await client(contract).openFile();
+  } catch (error) {
+    console.error("Lo couldn't open the settings file:", error);
+    notify(
+      'Open the settings file',
+      error instanceof IpcError && error.code === 'unopened'
+        ? error.message
+        : "Lo couldn't open the settings file.",
+    );
+  }
+}
+
+/**
+ * Calls `listener` each time main says the settings changed: the file was saved, by a person or by
+ * Lo, and a value, a problem in it, or where it is changed. Returns a function that stops it.
+ */
+export function onSettingsChange(listener: () => void): () => void {
+  return client(contract).subscribe('state', () => listener());
 }
 
 /** What is wrong in the settings file now: the whole file's problem, or a setting's. */

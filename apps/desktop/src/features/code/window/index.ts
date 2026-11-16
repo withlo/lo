@@ -11,6 +11,7 @@ import { createElement } from 'react';
 import type { WindowFeature } from '../../../window/features.ts';
 import { defineView } from '../../../window/slots.tsx';
 import { onCodeRest, onDiffDrawn } from '../../diff/window/shared.ts';
+import { onSettingsChange } from '../../settings/window/shared.ts';
 import { banners, dialogs, onClosed, right, status as statusBar } from '../../tab/window/shared.ts';
 import keys from '../keys.ts';
 import { CodeOverlays, ReferencesPanel, SaidStatus } from './Code.tsx';
@@ -41,13 +42,14 @@ import {
   viewClosed,
 } from './navigate.ts';
 import {
+  askable,
   askToTrust,
   bannerOf,
   dismissBanner,
   onScreen,
+  settingsChanged,
   stopTrusting,
   takeStatus,
-  trustable,
   trustSwitch,
   untrustable,
 } from './status.ts';
@@ -80,12 +82,12 @@ export default {
     goReference: { run: goToFocused, enabled: listedNow },
     closeReferences: { run: closeReferences },
     trust: {
-      run: onView((status) => askToTrust(status, false)),
-      enabled: () => trustable(onScreen(), false),
+      run: onView((status) => askToTrust(status, false, { elsewhere: true })),
+      enabled: () => askable(onScreen(), false),
     },
     trustPull: {
-      run: onView((status) => askToTrust(status, true)),
-      enabled: () => trustable(onScreen(), true),
+      run: onView((status) => askToTrust(status, true, { elsewhere: true })),
+      enabled: () => askable(onScreen(), true),
     },
     untrust: {
       run: onView(stopTrusting),
@@ -169,6 +171,8 @@ export default {
   ],
   start() {
     main().subscribe('status', takeStatus);
+    // Fixed, the settings file no longer keeps Lo from trusting, so the banner stops saying it does.
+    onSettingsChange(settingsChanged);
     main().subscribe('indexed', takeIndex);
     main().subscribe('served', takeServers);
     onCodeRest(rested);

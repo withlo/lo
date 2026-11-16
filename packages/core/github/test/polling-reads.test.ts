@@ -642,6 +642,38 @@ test('the first run of a read someone waits on goes ahead of polls and waiting r
   expect(finished).toEqual(['tree', 'files', 'waited']);
 });
 
+/**
+ * A single read someone at the screen waits on, as asking whether to trust a repo does, goes ahead
+ * of the reads waiting in the account's queue, once the request in flight is done. Without saying
+ * so, it waits its turn behind them.
+ */
+test('a read once someone waits on goes ahead of waiting reads', async () => {
+  for (const [priority, answered] of [
+    ['foreground', 4],
+    ['background', 6],
+  ] as const) {
+    const t = await Polling.start(`read_once_${priority}`, recorded(), { delay: 1000 });
+    const client = await t.accounts.client(LOGIN);
+    const waiting = () =>
+      void t.poller.queue.read(() => client.get(pr(1).restPath(), readPullSummary));
+    void t.poller.setOpen(pr(1));
+    await t.run();
+    // While the open pull request's poll holds the queue, from 0 to 3, a tab's two reads wait.
+    waiting();
+    waiting();
+    await t.runUntil(1);
+    const read = t.poller.readOnce(
+      async (github) => {
+        await github.get(pr(1).restPath(), readPullSummary);
+        return t.now();
+      },
+      undefined,
+      priority,
+    );
+    expect(await t.finish(read)).toBe(answered);
+  }
+});
+
 /** `stacks_playground`'s recorded StackLayers answer, for PR #1 and #2, and the IDs it asked for. */
 function stackLayersAnswer(): { both: Interaction; ids: string[] } {
   const found = cassette('stacks_playground').interactions.find(

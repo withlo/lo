@@ -6,13 +6,14 @@ import { join } from 'node:path';
 
 import { app, Menu } from 'electron';
 
+import { launch, query } from '../../../main/editor.ts';
 import { configFolder, devTools, keymapEditor } from '../../../main/environment.ts';
 import { defineFeature } from '../../../main/features.ts';
 import { appMenu } from '../../../platform/index.ts';
 import { IpcError } from '../../../ipc/contract.ts';
 import { contract, keymapFile, type BarItem } from '../contract.ts';
 import { watchKeymap, type KeymapWatch } from './keymap.ts';
-import { launch, openKeymapFile, query } from './open.ts';
+import { openKeymapFile } from './open.ts';
 
 const tools = devTools({ packaged: app.isPackaged, env: process.env });
 

@@ -21,7 +21,6 @@ import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 
 import { type Cache, defaultPlaces, parseOid, serverGitEnvironment, whyDistrusted } from '@lo/git';
-import { PullRef, readPullRequestRepositories, type PullRequestRepositories } from '@lo/github';
 import {
   currentPlatform,
   developerFolder,
@@ -54,6 +53,7 @@ import { readTrusted, trusted, type TrustEntry } from '../settings.ts';
 import { ADAPTERS, type Adapter, type Toolchain } from './adapters.ts';
 import { letGo, letGoUntrusted } from './checkouts.ts';
 import { TrustAsker, type AskWindow } from './confirm.ts';
+import { readRepositories, type RepositoryReading } from './repositories.ts';
 import { Dismissed } from './dismissed.ts';
 import {
   dropsFor,
@@ -181,20 +181,6 @@ function viewInfo(context: Context, id: string): ViewInfo | undefined {
     canRead: info.acting !== undefined,
     heads: `${info.latest ?? ''} ${info.shown ?? ''}`,
   };
-}
-
-/**
- * The repositories view `id`'s pull request joins, read from GitHub as the view acts: in its
- * account's queue, or without signing in for a public repository.
- */
-async function readRepositories(context: Context, id: string): Promise<PullRequestRepositories> {
-  const info = context.use(tabs).pull(id);
-  if (!info?.acting) throw new Error("The view is closed, or doesn't know who it acts as yet.");
-  const pull = new PullRef(info.repository.owner, info.repository.name, info.number);
-  const access = context.use(github);
-  if (info.acting.kind === 'anonymous') return readPullRequestRepositories(access.anonymous, pull);
-  const poller = await access.poller(info.acting.login);
-  return poller.readOnce((client) => readPullRequestRepositories(client, pull));
 }
 
 /**
@@ -751,9 +737,15 @@ export default defineFeature(contract, {
     const service = context.use(tabs);
     const kept = new Dismissed(context.database);
     dismissed = kept;
+    const access = context.use(github);
+    const reading: RepositoryReading = {
+      pull: (id) => service.pull(id),
+      anonymous: access.anonymous,
+      poller: (login) => access.poller(login),
+    };
     const followed = new TrustViews({
       view: (id) => viewInfo(context, id),
-      read: (view) => readRepositories(context, view.id),
+      read: (view, priority, signal) => readRepositories(reading, view.id, priority, signal),
       dismissed: (repo) => kept.has(repo),
       publish(status) {
         context.publish('status', status);
@@ -769,7 +761,7 @@ export default defineFeature(contract, {
         const view = viewInfo(context, id);
         return view && { id, repo: view.repo, number: view.number };
       },
-      read: (view) => followed.readNow(view.id),
+      read: (view, signal) => followed.readNow(view.id, signal),
       confirm: async ({ browser }, question, signal) => {
         const { response } = await dialog.showMessageBox(browser, {
           ...question,
@@ -779,6 +771,13 @@ export default defineFeature(contract, {
         return response;
       },
       write: (entry) => context.use(settings).update(trusted, (list) => withEntry(list, entry)),
+      // The view's status says how far it has got, so its banner and status item show it.
+      progress: (view, step) => followed.setTrusting(view, step),
+      focus({ browser }) {
+        if (browser.isDestroyed()) return;
+        if (browser.isMinimized()) browser.restore();
+        browser.focus();
+      },
     });
     // What ran on them stops first, then the checkouts go.
     untrusted.add(async (drop) => {
@@ -809,7 +808,11 @@ export default defineFeature(contract, {
         letGoOf(dropsFor(gone, entries));
         sweep();
       }),
-      service.onPull((id) => followed.update(id)),
+      service.onPull((id) => {
+        followed.update(id);
+        // An ask about a view whose tab closed ends, giving up on what it waits for.
+        asker?.update(id);
+      }),
       context.git.onCache(() => sweep()),
     );
     context.git.onStatus(() => followed.updateAll());
