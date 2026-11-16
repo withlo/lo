@@ -9,6 +9,7 @@ import { draw, type Drawing, Pacer, samePlace } from './drawing.ts';
 import { setThreader, threadsChanged } from './shared.ts';
 import type { DrawnDiff, ThreadCounts } from './threads.ts';
 import { Loader, type LoaderWork } from './loader.ts';
+import { followLabel } from './moved.ts';
 import { drawnFor, revealWhenDrawn } from './tabs.ts';
 
 /** What the stand-in view was told, in order, and the files it says are on screen. */
@@ -84,6 +85,7 @@ vi.mock('@lo/ui/code', () => ({
       moved.push(`top ${target.kind === 'file' ? target.file : target.kind}`);
       return true;
     },
+    otherEnd: () => undefined,
     setVimKeys: () => undefined,
     destroy: () => undefined,
   }),
@@ -507,6 +509,29 @@ describe('a file the reader acts on', () => {
 
     drawnFor(TAB.id)?.enter('d1');
     expect(linesOf('d1')).toEqual(['lines d1 local shown']);
+  });
+
+  it('kept out and viewed, opens as the reader goes into it, and a new list leaves it open', async () => {
+    const loader = await drawKeptOut();
+    drawing?.setMarks(marksOf([['src/b.ts', 'viewed']]));
+    // The reader is on it, so its lines wait for it to go off screen.
+    onScreen = ['d1'];
+    await takeLocal(loader);
+    expect(linesOf('d1')).toEqual([]);
+
+    // A moved label's click into it.
+    followLabel(drawnFor(TAB.id)!, { file: 'd1', side: 'new', line: 1 }, () => {});
+    expect(linesOf('d1')).toEqual(['lines d1 local shown']);
+    expect(told.filter((each) => each.startsWith('collapsed d1')).at(-1)).toBe(
+      'collapsed d1 false',
+    );
+
+    // Off screen, the same list again: it stays open.
+    onScreen = ['d0'];
+    told.length = 0;
+    drawing?.update(loader.snapshot().ready?.entries ?? []);
+    await frames();
+    expect(told.filter((each) => each.startsWith('collapsed d1'))).toEqual([]);
   });
 });
 
