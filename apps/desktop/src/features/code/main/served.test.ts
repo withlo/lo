@@ -5,9 +5,11 @@
 // here stands in, answering what each test says.
 
 import type { Answer, Method } from '@lo/lsp';
+import { markdownTree } from '@lo/markdown';
 import { describe, expect, it } from 'vitest';
 
-import type { Answering } from './answers.ts';
+import { IpcError } from '../../../ipc/contract.ts';
+import type { Answering, RenderHover } from './answers.ts';
 import { buildTree } from './build.ts';
 import type { ViewSides } from './indexer.ts';
 import {
@@ -37,8 +39,12 @@ const OTHER = `export function parse() { return 'another' }
 const head = commitOf('head');
 const base = commitOf('base');
 
-/** A view comparing `base` with `head`, both indexed. */
-async function view() {
+/** A hover's Markdown read as the background process reads it. */
+const READ: RenderHover = (_view, markdown) =>
+  Promise.resolve(markdownTree(markdown, { breaks: false }));
+
+/** A view comparing `base` with `head`, both indexed, whose hovers `render` reads. */
+async function view(render: RenderHover = READ) {
   const repo = fakeRepo({
     commits: {
       base: { 'src/parse.ts': PARSE, 'src/format.ts': FORMAT },
@@ -74,21 +80,31 @@ async function view() {
     version: async () => 'v1',
     read: (files) => background.symbols(files),
     find: (name, files) => background.find(name, files),
+    render,
   };
   return { sides, answering };
 }
 
 const CHECKOUT = 'file:///cache/checkouts/pull-1/head';
 
-/** A ready server that answers each method as `answers` says, noting what it's asked. */
-function standIn(answers: Partial<Record<Method, Answer>>, matches = true) {
+/**
+ * A ready server that answers each method as `answers` says, noting what it's asked, and offering
+ * type hints unless `hints` says otherwise.
+ */
+function standIn(
+  answers: Partial<Record<Method, Answer>>,
+  matches = true,
+  hints: { offered?: boolean; none?: string } = {},
+) {
   const asked: Method[] = [];
   const opened: string[] = [];
   const serving: Serving = {
     kind: 'ready',
     name: 'TypeScript',
     languageId: 'typescript',
+    noHints: hints.none,
     server: {
+      capabilities: { hoverProvider: true, inlayHintProvider: hints.offered ?? true },
       open(path) {
         opened.push(path);
         return true;
@@ -263,13 +279,69 @@ describe('the other questions', () => {
     ]);
     expect(references.note).toBeUndefined();
     const hovered = await servedHover(answering, sides, PARSE_CALL, undefined, serverOf);
-    expect(hovered).toEqual({
+    expect(hovered).toMatchObject({
       name: 'parse',
       kind: undefined,
       text: '```ts\nfunction parse(input: string)\n```',
       markdown: true,
       source: 'server',
       label: 'TypeScript',
+      // Read as Lo's tree, which is what the card draws.
+      tree: { blocks: [{ kind: 'code', language: 'ts', text: 'function parse(input: string)' }] },
+    });
+  });
+
+  it('falls back to the index’s hover, saying why, when its Markdown can’t be read', async () => {
+    const { sides, answering } = await view(() =>
+      Promise.reject(new IpcError('restarted', 'The background process stopped.')),
+    );
+    const { serverOf } = standIn({
+      'textDocument/hover': { ok: true, value: { contents: { kind: 'markdown', value: '**x**' } } },
+    });
+    const hovered = await servedHover(answering, sides, PARSE_CALL, undefined, serverOf);
+    expect(hovered).toMatchObject({
+      source: 'syntax',
+      markdown: false,
+      fallback: "Lo couldn't read TypeScript's hover.",
+    });
+    // Markdown that draws nothing is no hover.
+    const { answering: reading } = await view();
+    const blank = standIn({
+      'textDocument/hover': {
+        ok: true,
+        value: { contents: { kind: 'markdown', value: '<!-- nothing -->' } },
+      },
+    });
+    const none = await servedHover(reading, sides, PARSE_CALL, undefined, blank.serverOf);
+    expect(none).toMatchObject({ source: 'syntax' });
+    expect(none.fallback).toBeUndefined();
+  });
+
+  it('says it took too long when its Markdown isn’t read in time', async () => {
+    const { sides, answering } = await view(() =>
+      Promise.reject(new IpcError('unanswered', 'The background process didn’t answer in time.')),
+    );
+    const { serverOf } = standIn({
+      'textDocument/hover': { ok: true, value: { contents: { kind: 'markdown', value: '**x**' } } },
+    });
+    const hovered = await servedHover(answering, sides, PARSE_CALL, undefined, serverOf);
+    expect(hovered).toMatchObject({
+      source: 'syntax',
+      fallback: "Lo took too long to read TypeScript's hover.",
+    });
+  });
+
+  it('says why a server didn’t answer when the index knows nothing of the name either', async () => {
+    const { sides, answering } = await view();
+    const join = { ...PARSE_CALL, column: FORMAT.split('\n')[1]?.indexOf('join') ?? 0 };
+    const starting: NotServing = { kind: 'starting', name: 'TypeScript' };
+    expect(await servedHover(answering, sides, join, undefined, () => starting)).toEqual({
+      none: true,
+      fallback: 'TypeScript is starting.',
+    });
+    // No server reads the file, so there's nothing to say why.
+    expect(await servedHover(answering, sides, join, undefined, () => undefined)).toEqual({
+      none: true,
     });
   });
 
@@ -311,10 +383,13 @@ describe('the other questions', () => {
       },
     });
     const file = { view: 'v1', key: head, path: 'src/format.ts', from: 1, to: 2 };
-    expect(await servedHints(sides, file, undefined, serverOf)).toEqual([
-      { line: 2, column: 37, label: ': string[]', paddingLeft: true },
-    ]);
-    expect(await servedHints(sides, { ...file, key: base }, undefined, serverOf)).toEqual([]);
+    expect(await servedHints(sides, file, undefined, serverOf)).toEqual({
+      hints: [{ line: 2, column: 37, label: ': string[]', paddingLeft: true }],
+      label: 'TypeScript',
+    });
+    expect(await servedHints(sides, { ...file, key: base }, undefined, serverOf)).toEqual({
+      hints: [],
+    });
     expect(await servedOutline(answering, sides, file, undefined, serverOf)).toEqual({
       symbols: [
         { name: 'format', kind: 'function', line: 2, column: 0, lastLine: 2 },
@@ -324,6 +399,45 @@ describe('the other questions', () => {
       source: 'server',
       label: 'TypeScript',
     });
+  });
+});
+
+describe('type hints', () => {
+  const file = { view: 'v1', key: head, path: 'src/format.ts', from: 1, to: 2 };
+
+  it('asks a server with no type hints for none, and says why', async () => {
+    const { sides } = await view();
+    const unoffered = standIn({}, true, { offered: false });
+    expect(await servedHints(sides, file, undefined, unoffered.serverOf)).toEqual({
+      hints: [],
+      label: 'TypeScript',
+      none: 'TypeScript has no type hints.',
+    });
+    // Its adapter's word comes first, as for a paid feature the server would refuse.
+    const paid = standIn({}, true, { none: 'Its free version has no type hints.' });
+    expect(await servedHints(sides, file, undefined, paid.serverOf)).toEqual({
+      hints: [],
+      label: 'TypeScript',
+      none: 'Its free version has no type hints.',
+    });
+    expect([...unoffered.asked, ...paid.asked]).toEqual([]);
+  });
+
+  it('says why a server that reads the file gave none, and names none where none reads it', async () => {
+    const { sides } = await view();
+    const starting: NotServing = { kind: 'starting', name: 'TypeScript' };
+    expect(await servedHints(sides, file, undefined, () => starting)).toEqual({
+      hints: [],
+      label: 'TypeScript',
+      fallback: 'TypeScript is starting.',
+    });
+    const slow = standIn({ 'textDocument/inlayHint': { ok: false, why: 'deadline' } });
+    expect(await servedHints(sides, file, undefined, slow.serverOf)).toEqual({
+      hints: [],
+      label: 'TypeScript',
+      fallback: "TypeScript didn't answer in time.",
+    });
+    expect(await servedHints(sides, file, undefined, () => undefined)).toEqual({ hints: [] });
   });
 });
 

@@ -1,38 +1,57 @@
 // Jobs wait their turn for a worker, so however many arrive at once, no more run than the machine
 // has cores, and each one's deadline starts when it does. The window's jobs come first: main's own,
 // such as indexing a pull request's files, go one at a time, only when a worker is free and no job
-// of the window's is waiting for one.
+// of the window's is waiting for one. Main's jobs that answer a question the reader is waiting on,
+// such as reading a hover's Markdown, have a queue of their own: one at a time too, ahead of main's
+// other jobs, and starting while one of those runs.
 
 import type { Result } from '../ipc/contract.ts';
 import type { Execute } from './host.ts';
 
-/** A pool's two ways in: the window's jobs, and main's, which wait behind them. */
+/** A pool's ways in: the window's jobs, and main's, which wait behind them. */
 export interface Pool {
   readonly window: Execute;
   /** Main's: one at a time, starting only once no job of the window's is waiting. */
   readonly main: Execute;
+  /**
+   * Main's that answer the reader: one at a time, starting only once no job of the window's is
+   * waiting, ahead of main's others and whether or not one of those runs.
+   */
+  readonly asked: Execute;
 }
+
+/** One of the pool's queues: what waits in it, and whether it runs only one job at a time. */
+interface Queue {
+  readonly waiting: (() => void)[];
+  readonly single: boolean;
+  running: number;
+}
+
+const queueOf = (single: boolean): Queue => ({ waiting: [], single, running: 0 });
 
 export function pool(execute: Execute, size: number, waitingLimit = 1000): Pool {
   let running = 0;
-  let mainRunning = false;
-  const waiting: (() => void)[] = [];
-  const mainWaiting: (() => void)[] = [];
+  // In the order a free worker goes to them.
+  const window = queueOf(false);
+  const asked = queueOf(true);
+  const main = queueOf(true);
+  const queues = [window, asked, main];
 
-  /** Starts what may start now: the window's first, then one of main's. */
+  /** Starts what may start now: the window's first, then one of main's that answer the reader. */
   const next = () => {
     for (;;) {
       if (running >= size) return;
-      const start = waiting.shift() ?? (mainRunning ? undefined : mainWaiting.shift());
+      const ready = queues.find((each) => !(each.single && each.running > 0) && each.waiting[0]);
+      const start = ready?.waiting.shift();
       if (!start) return;
       start();
     }
   };
 
   const way =
-    (main: boolean): Execute =>
+    (on: Queue): Execute =>
     (job, input, limits, signal) => {
-      const queue = main ? mainWaiting : waiting;
+      const queue = on.waiting;
       if (queue.length >= waitingLimit) {
         return Promise.resolve({
           ok: false,
@@ -43,7 +62,7 @@ export function pool(execute: Execute, size: number, waitingLimit = 1000): Pool 
         const start = () => {
           signal?.removeEventListener('abort', leave);
           running += 1;
-          if (main) mainRunning = true;
+          on.running += 1;
           void execute(job, input, limits, signal)
             .catch((): Result<unknown> => ({
               ok: false,
@@ -52,7 +71,7 @@ export function pool(execute: Execute, size: number, waitingLimit = 1000): Pool 
             .then(resolve)
             .finally(() => {
               running -= 1;
-              if (main) mainRunning = false;
+              on.running -= 1;
               next();
             });
         };
@@ -69,7 +88,12 @@ export function pool(execute: Execute, size: number, waitingLimit = 1000): Pool 
       });
     };
 
-  return { window: way(false), main: way(true) };
+  return { window: way(window), main: way(main), asked: way(asked) };
+}
+
+/** Main's way into `jobs`: those `isAsked` names, which the reader waits on, ahead of the rest. */
+export function mainWay(jobs: Pool, isAsked: (job: string) => boolean): Execute {
+  return (job, ...rest) => (isAsked(job) ? jobs.asked : jobs.main)(job, ...rest);
 }
 
 /**

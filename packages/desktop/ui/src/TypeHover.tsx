@@ -48,9 +48,10 @@ export type HighlightCode = (code: {
 export interface TypeHoverProps extends Omit<HTMLAttributes<HTMLDivElement>, 'children' | 'role'> {
   /**
    * The word's declaration, drawn as code: a string, or its stretches, to highlight it. It sets its
-   * own line breaks, and a word too long for the card breaks to fit it.
+   * own line breaks, and a word too long for the card breaks to fit it. A hover with none, as a
+   * language server's that's only prose, shows its docs alone.
    */
-  signature: string | readonly SignatureRun[];
+  signature?: string | readonly SignatureRun[] | undefined;
   /**
    * The documentation, as `@lo/markdown`'s tree. A link or an image in it shows as its words with
    * the address it goes to after them, and a fold as its title over what's in it: a hover loads
@@ -61,6 +62,11 @@ export interface TypeHoverProps extends Omit<HTMLAttributes<HTMLDivElement>, 'ch
   highlight?: HighlightCode | undefined;
   /** Where the answer came from. */
   source: AnswerSource;
+  /**
+   * Why a language server didn't answer, when the syntax index answered in its place: "TypeScript
+   * is starting."
+   */
+  fallback?: string | undefined;
   /** Where the word is declared. */
   location?: { path: string; line: number } | undefined;
   keys?: TypeHoverKeys | undefined;
@@ -77,6 +83,7 @@ export function TypeHover({
   docs,
   highlight,
   source,
+  fallback,
   location,
   keys,
   className = '',
@@ -84,6 +91,7 @@ export function TypeHover({
   ...rest
 }: TypeHoverProps) {
   const documented = docs !== undefined && docs.blocks.length > 0;
+  const signed = signature !== undefined && signature.length > 0;
   return (
     <div
       role="tooltip"
@@ -95,19 +103,21 @@ export function TypeHover({
       {...rest}
     >
       {/* Its parts scroll by the wheel alone: they take no focus, by `Tab` or by a click. */}
-      <div
-        ref={scrollByWheel}
-        className={`typehover-part bg-code-bg px-12 py-8 wrap-anywhere whitespace-pre-wrap code-small ${documented ? 'border-b border-border-subtle' : ''}`}
-      >
-        <CodeRuns value={signature} />
-      </div>
+      {signed && (
+        <div
+          ref={scrollByWheel}
+          className={`typehover-part bg-code-bg px-12 py-8 wrap-anywhere whitespace-pre-wrap code-small ${documented ? 'border-b border-border-subtle' : ''}`}
+        >
+          <CodeRuns value={signature} />
+        </div>
+      )}
       {documented && <Docs tree={docs} highlight={highlight} />}
       <div
-        className={`flex flex-wrap items-baseline gap-x-12 gap-y-2 px-12 pt-6 pb-8 text-fg-muted text-small ${documented ? '' : 'border-t border-border-subtle'}`}
+        className={`flex flex-wrap items-baseline gap-x-12 gap-y-2 px-12 pt-6 pb-8 text-fg-muted text-small ${documented || !signed ? '' : 'border-t border-border-subtle'}`}
       >
         <SourceMark
           source={source}
-          note={source.kind === 'server' && !documented ? 'No doc comment' : undefined}
+          note={source.kind === 'server' && !documented ? 'No doc comment' : fallback}
         />
         <span className="flex-1" />
         {location !== undefined && (

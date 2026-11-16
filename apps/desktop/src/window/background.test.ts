@@ -132,16 +132,25 @@ describe('the background connection, when things go wrong', () => {
     expect(await later).toBe(12);
   });
 
-  it('gives up on a job that gets no answer', async () => {
+  it('gives up on a job that gets no answer, and asks the process to stop it', async () => {
     vi.useFakeTimers();
     try {
       const connection = createConnection();
-      connection.connect(process());
+      const port = process();
+      const sent: unknown[] = [];
+      connection.connect({
+        ...port,
+        postMessage: (message) => {
+          sent.push(message);
+          port.postMessage(message);
+        },
+      });
       const stalled = connection
         .run('sample.stall', undefined, { timeout: 5000 })
         .catch((error: unknown) => error);
       await vi.advanceTimersByTimeAsync(5000);
       expect(await stalled).toMatchObject({ code: 'unanswered' });
+      expect(sent).toEqual([{ id: 1, job: 'sample.stall', input: undefined }, { cancel: 1 }]);
     } finally {
       vi.useRealTimers();
     }
