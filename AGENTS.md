@@ -209,8 +209,8 @@ pnpm nx run desktop:package  # build it, then make the Mac zip in apps/desktop/r
   when that's set, and its key under "Lo Dev Safe Storage". A packaged build is `Lo`, and ignores
   `LO_USER_DATA_DIR`. Such a build reads the keymap file from `config/keymap` in that folder, rather
   than from `~/.config/lo`, and the settings file from `config/settings.json` the same way, and
-  opens the keymap file with the program `LO_KEYMAP_EDITOR` names (an absolute path), if set, in
-  place of the system's text editor, so a test starts no editor.
+  opens the keymap and settings files with the program `LO_KEYMAP_EDITOR` names (an absolute path),
+  if set, in place of the system's text editor (`src/main/editor.ts`), so a test starts no editor.
 - Code that doesn't call Electron goes in its own module, with unit tests beside it. The smoke test
   in `e2e/` drives the built app with Playwright, each test on an empty data folder, and covers what
   needs Electron. On Linux it needs a display: CI runs it under `xvfb-run`, in four shards, one job
@@ -1302,6 +1302,16 @@ with trust: highlighting, the diff, comments and the syntax index work the same 
   "Trust" (`main/confirm.ts`); `code.trust` only asks main to ask. "Cancel" is the dialog's default
   and its `Esc`, one dialog asks at a time, and closing the window meanwhile trusts nothing. A test
   answers it with `answerDialogs` in `e2e/app.ts`.
+- While main trusts a view, the view's status says how far it has got (`trusting`: reading the
+  repository's IDs, asking, saving), and the banner's and the status item's buttons show it, so a
+  second press does nothing. Main clears it however the ask ends, giving up on the read after 30 s
+  and the save after 10 s, so a window reloaded meanwhile never waits on an answer. That read, which
+  the reader waits on, goes ahead of the poller's waiting reads (`readOnce`'s `foreground`).
+- A failed ask is said where it was asked, in the banner or the status item's details, and the
+  button comes back: `settingsFile` when what the settings file holds kept Lo from writing it, with
+  "Open the settings file", which opens it as text as the keymap file is opened
+  (`settings/main/open.ts`), and `unsaved` when the disk did. Asked from the palette with the banner
+  gone, it's said in a note.
 - An untrusted view's banner shows until it's dismissed for its repository (`code_dismissed`).
   Settings' Trust section lists the entries; its "Remove", or "Stop trusting this repo", takes one
   out: the entry that trusts the view, by the newest read, while it's checked again after a push

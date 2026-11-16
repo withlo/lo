@@ -55,9 +55,17 @@ export const trust = z.discriminatedUnion('kind', [
 export type Trust = z.output<typeof trust>;
 
 /**
+ * How far main has got with trusting a view, once the reader asked: reading from GitHub which repo
+ * it is (`reading`), asking in its own dialog (`asking`), then writing the entry (`saving`).
+ */
+export const trusting = z.enum(['reading', 'asking', 'saving']);
+export type Trusting = z.output<typeof trusting>;
+
+/**
  * Where a view of a pull request's tab stands, sent each time it changes: its repository and pull
- * request as the tab names them, where its head is (`null` until GitHub has said), its trust, and
- * whether the reader dismissed the banner for its repository.
+ * request as the tab names them, where its head is (`null` until GitHub has said), its trust,
+ * whether the reader dismissed the banner for its repository, and, while main is trusting it, how
+ * far that has got.
  */
 export const status = z.strictObject({
   view: tabId,
@@ -66,6 +74,7 @@ export const status = z.strictObject({
   head: head.nullable(),
   trust,
   dismissed: z.boolean(),
+  trusting: trusting.optional(),
 });
 export type Status = z.output<typeof status>;
 
@@ -235,10 +244,13 @@ export const contract = defineContract('code', {
      * Asks main to ask the reader, in a dialog of its own, whether to trust the repository view
      * `view`'s pull request is in, named `repo` as the window shows it, or with `pull`, that pull
      * request alone, from its fork. Main reads from GitHub what the pull request joins first, and
-     * trusts what its dialog named only once the reader says "Trust" there. It refuses a view
-     * that isn't open (`missing`), a `repo` or `pull` that isn't the view's (`invalid`), a pull
-     * request whose head isn't in a fork GitHub has (`refused`), and a request while another is
-     * asking (`busy`).
+     * trusts what its dialog named only once the reader says "Trust" there. The view's `status`
+     * says how far it has got meanwhile. It refuses a view that isn't open (`missing`), a `repo`
+     * or `pull` that isn't the view's (`invalid`), a pull request whose head isn't in a fork GitHub
+     * has (`refused`), and a request while another is asking (`busy`). Once the reader said
+     * "Trust", it fails, saying why, when what the settings file holds keeps Lo from writing the
+     * entry, which editing the file fixes (`settingsFile`), or when the file couldn't be written
+     * otherwise (`unsaved`).
      */
     trust: {
       input: z.strictObject({ view: tabId, repo: named, pull: pullNumber.nullable() }),

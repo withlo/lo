@@ -41,13 +41,13 @@ import {
   viewClosed,
 } from './navigate.ts';
 import {
+  askable,
   askToTrust,
   bannerOf,
   dismissBanner,
   onScreen,
   stopTrusting,
   takeStatus,
-  trustable,
   trustSwitch,
   untrustable,
 } from './status.ts';
@@ -80,12 +80,12 @@ export default {
     goReference: { run: goToFocused, enabled: listedNow },
     closeReferences: { run: closeReferences },
     trust: {
-      run: onView((status) => askToTrust(status, false)),
-      enabled: () => trustable(onScreen(), false),
+      run: onView((status) => askToTrust(status, false, { elsewhere: true })),
+      enabled: () => askable(onScreen(), false),
     },
     trustPull: {
-      run: onView((status) => askToTrust(status, true)),
-      enabled: () => trustable(onScreen(), true),
+      run: onView((status) => askToTrust(status, true, { elsewhere: true })),
+      enabled: () => askable(onScreen(), true),
     },
     untrust: {
       run: onView(stopTrusting),

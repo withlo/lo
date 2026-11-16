@@ -5,6 +5,8 @@ import type { PullRequestRepositories } from '@lo/github';
 import { describe, expect, it, vi } from 'vitest';
 
 import { IpcError } from '../../../ipc/contract.ts';
+import { Unwritten } from '../../settings/service.ts';
+import type { Trusting } from '../contract.ts';
 import type { TrustEntry } from '../settings.ts';
 import {
   BUTTONS,
@@ -61,6 +63,8 @@ function asker(
   const write = vi.fn<(entry: TrustEntry) => Promise<void>>(async (entry) => {
     written.push(entry);
   });
+  /** Each step it said it took, by view, and `over` once it was. */
+  const steps: string[] = [];
   const real = new TrustAsker<TestWindow>({
     view: (id) => views[id],
     read,
@@ -69,6 +73,7 @@ function asker(
         dialogs.push({ window: at, question, signal, answer: resolve });
       }),
     write,
+    progress: (view: string, step: Trusting | undefined) => steps.push(`${view} ${step ?? 'over'}`),
     now: () => NOW,
     ...change,
   });
@@ -79,7 +84,7 @@ function asker(
       return real.asking;
     },
   };
-  return { real, trust, window, dialogs, written, write };
+  return { real, trust, window, dialogs, written, write, steps };
 }
 
 const views: Record<string, AskedView> = {
@@ -342,5 +347,96 @@ describe('asking to trust', () => {
     expect(windowless.write).not.toHaveBeenCalled();
     // Neither leaves it asking.
     expect(failing.trust.asking).toBe(false);
+  });
+});
+
+describe('saying how it goes', () => {
+  it('says each step, reading, asking, then saving, and that it’s over, however it ends', async () => {
+    const { trust, dialogs, steps } = asker(views);
+    const asking = trust.ask({ view: 't1', repo: 'rozed-dev/e2e', pull: null });
+    await until(() => dialogs.length === 1);
+    expect(steps).toEqual(['t1 reading', 't1 asking']);
+    dialogs[0]?.answer(TRUST);
+    expect(await asking).toBe('trusted');
+    expect(steps).toEqual(['t1 reading', 't1 asking', 't1 saving', 't1 over']);
+
+    steps.length = 0;
+    const cancelled = trust.ask({ view: 't1', repo: 'rozed-dev/e2e', pull: null });
+    await until(() => dialogs.length === 2);
+    dialogs[1]?.answer(CANCEL);
+    expect(await cancelled).toBe('cancelled');
+    expect(steps).toEqual(['t1 reading', 't1 asking', 't1 over']);
+
+    // Refused before it starts, it says nothing; refused once it has, it says it's over.
+    steps.length = 0;
+    await refusal(trust.ask({ view: 't9', repo: 'rozed-dev/e2e', pull: null }));
+    expect(steps).toEqual([]);
+    await refusal(trust.ask({ view: 't3', repo: 'rozed-dev/other', pull: null }));
+    expect(steps).toEqual(['t3 reading', 't3 over']);
+  });
+
+  it('says why the entry wasn’t written, and whether the settings file is the cause', async () => {
+    for (const [thrown, code, message] of [
+      [
+        new Unwritten(
+          "Lo didn't change code.trusted, since the settings file has a problem. The settings file isn't valid JSON (x).",
+          "The settings file isn't valid JSON (x).",
+          true,
+        ),
+        'settingsFile',
+        "The settings file isn't valid JSON (x).",
+      ],
+      [
+        new Unwritten(
+          "Lo couldn't save code.trusted to the settings file (ENOSPC).",
+          "Lo couldn't write the settings file (ENOSPC).",
+          false,
+        ),
+        'unsaved',
+        "Lo couldn't write the settings file (ENOSPC).",
+      ],
+      [new Error('anything else'), 'unsaved', "Lo couldn't write the settings file."],
+    ] as const) {
+      const { trust, dialogs, steps } = asker(views, undefined, {
+        write: () => Promise.reject(thrown),
+      });
+      const asking = trust.ask({ view: 't1', repo: 'rozed-dev/e2e', pull: null });
+      await until(() => dialogs.length === 1);
+      dialogs[0]?.answer(TRUST);
+      const refused = await refusal(asking);
+      expect({ code: refused?.code, message: refused?.message }).toEqual({ code, message });
+      expect(steps.at(-1)).toBe('t1 over');
+      expect(trust.asking).toBe(false);
+    }
+  });
+
+  it('ends, saying so, when GitHub or the settings file takes too long', async () => {
+    vi.useFakeTimers();
+    try {
+      const reading = asker(views, () => new Promise(() => undefined), { readLimit: 1000 });
+      const unread = refusal(reading.trust.ask({ view: 't1', repo: 'rozed-dev/e2e', pull: null }));
+      await vi.advanceTimersByTimeAsync(1000);
+      expect((await unread)?.code).toBe('unread');
+      expect(reading.dialogs).toEqual([]);
+      expect(reading.steps).toEqual(['t1 reading', 't1 over']);
+
+      const saving = asker(views, undefined, {
+        write: () => new Promise(() => undefined),
+        saveLimit: 10_000,
+      });
+      const asking = saving.trust.ask({ view: 't1', repo: 'rozed-dev/e2e', pull: null });
+      await vi.advanceTimersByTimeAsync(0);
+      saving.dialogs[0]?.answer(TRUST);
+      const unsaved = refusal(asking);
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(await unsaved).toMatchObject({
+        code: 'unsaved',
+        message: "Lo couldn't write the settings file within 10 s.",
+      });
+      expect(saving.steps.at(-1)).toBe('t1 over');
+      expect(saving.trust.asking).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

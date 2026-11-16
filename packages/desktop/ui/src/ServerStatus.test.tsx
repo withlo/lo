@@ -499,7 +499,52 @@ describe('ServerStatus', () => {
     click(buttons[0]!);
     expect(onChoose).toHaveBeenCalledTimes(1);
     await settle();
-    expect(item(host).getAttribute('aria-expanded')).toBe('false');
+    // The details stay open, to say how asking goes.
+    expect(item(host).getAttribute('aria-expanded')).toBe('true');
+  });
+
+  it('waits while Lo trusts, keeping focus, then says why it didn’t, with what helps', async () => {
+    const onChoose = vi.fn<() => void>();
+    const fix = vi.fn<() => void>();
+    const drawn = (trust: ServerTrust) => (
+      <ServerStatus name="TypeScript" state={{ kind: 'off' }} trust={trust} />
+    );
+    const host = render(drawn({ action: 'repo', onChoose, busy: 'Trusting' }));
+    click(item(host));
+    await settle();
+    const [button] = details()!.querySelectorAll('button');
+    expect(button?.textContent).toBe('Trusting');
+    expect(button?.getAttribute('aria-disabled')).toBe('true');
+    expect(button?.querySelector('.spinner')).not.toBeNull();
+    expect(document.activeElement).toBe(button);
+    // Pressed again, it does nothing until it's done.
+    click(button!);
+    expect(onChoose).not.toHaveBeenCalled();
+    const message = "Lo couldn't trust rozed-dev/e2e. The settings file isn't valid JSON.";
+    rerender(
+      host,
+      drawn({
+        action: 'repo',
+        onChoose,
+        failure: { message, fix: { label: 'Open the settings file', onChoose: fix } },
+      }),
+    );
+    await settle();
+    const open = details()!;
+    expect(open.querySelector('[role="alert"]')?.textContent).toBe(message);
+    const buttons = [...open.querySelectorAll('button')];
+    expect(buttons.map((each) => each.textContent)).toEqual([
+      'Trust this repo…',
+      'Open the settings file',
+    ]);
+    // The button is back, and still has focus.
+    expect(buttons[0]).toBe(button);
+    expect(document.activeElement).toBe(button);
+    expect(button?.getAttribute('aria-disabled')).toBeNull();
+    click(buttons[1]!);
+    expect(fix).toHaveBeenCalledTimes(1);
+    click(buttons[0]!);
+    expect(onChoose).toHaveBeenCalledTimes(1);
   });
 
   it('puts the trust choice after Restart and the log', async () => {

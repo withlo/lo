@@ -21,7 +21,12 @@ import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 
 import { type Cache, defaultPlaces, parseOid, serverGitEnvironment, whyDistrusted } from '@lo/git';
-import { PullRef, readPullRequestRepositories, type PullRequestRepositories } from '@lo/github';
+import {
+  PullRef,
+  readPullRequestRepositories,
+  type PullRequestRepositories,
+  type ReadPriority,
+} from '@lo/github';
 import {
   currentPlatform,
   developerFolder,
@@ -185,16 +190,25 @@ function viewInfo(context: Context, id: string): ViewInfo | undefined {
 
 /**
  * The repositories view `id`'s pull request joins, read from GitHub as the view acts: in its
- * account's queue, or without signing in for a public repository.
+ * account's queue, ahead of polls when someone waits on it (`foreground`), or without signing in
+ * for a public repository.
  */
-async function readRepositories(context: Context, id: string): Promise<PullRequestRepositories> {
+async function readRepositories(
+  context: Context,
+  id: string,
+  priority: ReadPriority,
+): Promise<PullRequestRepositories> {
   const info = context.use(tabs).pull(id);
   if (!info?.acting) throw new Error("The view is closed, or doesn't know who it acts as yet.");
   const pull = new PullRef(info.repository.owner, info.repository.name, info.number);
   const access = context.use(github);
   if (info.acting.kind === 'anonymous') return readPullRequestRepositories(access.anonymous, pull);
   const poller = await access.poller(info.acting.login);
-  return poller.readOnce((client) => readPullRequestRepositories(client, pull));
+  return poller.readOnce(
+    (client) => readPullRequestRepositories(client, pull),
+    undefined,
+    priority,
+  );
 }
 
 /**
@@ -753,7 +767,7 @@ export default defineFeature(contract, {
     dismissed = kept;
     const followed = new TrustViews({
       view: (id) => viewInfo(context, id),
-      read: (view) => readRepositories(context, view.id),
+      read: (view, priority) => readRepositories(context, view.id, priority),
       dismissed: (repo) => kept.has(repo),
       publish(status) {
         context.publish('status', status);
@@ -779,6 +793,8 @@ export default defineFeature(contract, {
         return response;
       },
       write: (entry) => context.use(settings).update(trusted, (list) => withEntry(list, entry)),
+      // The view's status says how far it has got, so its banner and status item show it.
+      progress: (view, step) => followed.setTrusting(view, step),
     });
     // What ran on them stops first, then the checkouts go.
     untrusted.add(async (drop) => {

@@ -36,7 +36,8 @@ not a `diff` object holding `layout`.
 - The file is read up to 1 MiB.
 - **Which repos you trust changes only through Lo's own dialog.** Lo adds one to `code.trusted` once
   you say "Trust" there, and takes one out once you remove it in Settings. You can still edit the
-  file.
+  file. If the file has a problem when you say "Trust", Lo says so where you asked, and offers to
+  open the file.
 
 ## The settings
 

@@ -228,6 +228,7 @@ export {
   type ServerState,
   type ServerStatusProps,
   type ServerTrust,
+  type ServerTrustFailure,
 } from './ServerStatus.tsx';
 export {
   ToolchainList,

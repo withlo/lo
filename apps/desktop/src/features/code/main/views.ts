@@ -8,9 +8,9 @@
 // doubling to 5 minutes, while a view still needs it. Nothing here calls Electron, so it runs under
 // unit tests.
 
-import type { PullRequestRepositories } from '@lo/github';
+import type { PullRequestRepositories, ReadPriority } from '@lo/github';
 
-import type { Status } from '../contract.ts';
+import type { Status, Trusting } from '../contract.ts';
 import { decide, needsRead, type Decision, type DecidedView, type Read } from './decide.ts';
 import type { TrustEntry } from '../settings.ts';
 
@@ -29,8 +29,11 @@ export interface ViewInfo extends DecidedView {
 export interface ViewsOptions {
   /** A view as the tab has it now, or nothing once it's closed. */
   readonly view: (id: string) => ViewInfo | undefined;
-  /** Reads the repositories view `view`'s pull request joins, from GitHub. */
-  readonly read: (view: ViewInfo) => Promise<PullRequestRepositories>;
+  /**
+   * Reads the repositories view `view`'s pull request joins, from GitHub: as one someone at the
+   * screen waits on (`foreground`), or not.
+   */
+  readonly read: (view: ViewInfo, priority: ReadPriority) => Promise<PullRequestRepositories>;
   /** Whether the banner was dismissed for a repository, by its name. */
   readonly dismissed: (repo: string) => boolean;
   readonly publish: (status: Status) => void;
@@ -86,6 +89,8 @@ export class TrustViews {
   readonly #views = new Map<string, Followed>();
   /** Each pull request's reads, by {@link keyOf}, while a view of it is followed. */
   readonly #reads = new Map<string, Reads>();
+  /** How far trusting each view has got, by id, while main is trusting it. */
+  readonly #trusting = new Map<string, Trusting>();
   /** The entries, once the settings file has been read. */
   #entries: readonly TrustEntry[] | undefined;
   /** The tracker's clock, which only goes forward: each view and read is stamped from it. */
@@ -127,6 +132,7 @@ export class TrustViews {
       this.#startRead(view);
     }
     const decision = decide(view, this.#entries, this.#readFor(key, since));
+    const trusting = this.#trusting.get(id);
     const status: Status = {
       view: id,
       repo: view.repo,
@@ -134,11 +140,22 @@ export class TrustViews {
       head: decision.head,
       trust: decision.trust,
       dismissed: this.#options.dismissed(view.repo),
+      ...(trusting === undefined ? {} : { trusting }),
     };
     const sent = JSON.stringify(status);
     this.#views.set(id, { key, heads: view.heads, since, decision, status, sent });
     if (followed && followed.key !== key) this.#release(followed.key);
     if (followed?.sent !== sent) this.#options.publish(status);
+  }
+
+  /**
+   * How far trusting view `id` has got, as main asks the reader and writes what they said, or, with
+   * nothing, that it's over: its status says so.
+   */
+  setTrusting(id: string, step: Trusting | undefined): void {
+    if (step === undefined) this.#trusting.delete(id);
+    else this.#trusting.set(id, step);
+    this.update(id);
   }
 
   /** Decides every view followed again. */
@@ -180,7 +197,7 @@ export class TrustViews {
 
   /**
    * Reads afresh the repositories view `id`'s pull request joins, as when the reader asks to
-   * trust it, and decides its views again with them.
+   * trust it, ahead of polls, since the reader waits on it, and decides its views again with them.
    */
   async readNow(id: string): Promise<PullRequestRepositories> {
     const view = this.#options.view(id);
@@ -188,7 +205,7 @@ export class TrustViews {
     this.update(id);
     const key = keyOf(view);
     const started = this.#tick();
-    const repositories = await this.#options.read(view);
+    const repositories = await this.#options.read(view, 'foreground');
     this.#landed(key, started, repositories);
     return repositories;
   }
@@ -198,6 +215,7 @@ export class TrustViews {
     this.#stopped = true;
     for (const key of this.#reads.keys()) this.#forget(key);
     this.#views.clear();
+    this.#trusting.clear();
   }
 
   #tick(): number {
@@ -277,7 +295,7 @@ export class TrustViews {
     const started = this.#tick();
     kept.pending = { started };
     Promise.resolve()
-      .then(() => this.#options.read(view))
+      .then(() => this.#options.read(view, 'background'))
       .then(
         (repositories) => this.#landed(key, started, repositories),
         (error: unknown) => {

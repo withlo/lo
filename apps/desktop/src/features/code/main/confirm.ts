@@ -4,14 +4,22 @@
 // for the reader, and writes what that dialog named only once the reader says "Trust" there. It
 // names only what GitHub calls by a name GitHub allows, so no line break or direction mark ever
 // reaches it. "Cancel" is the dialog's default and its `Esc`, so a key held down from the banner
-// never trusts anything. One dialog at a time, for all of Lo. Nothing here calls Electron, so it
-// runs under unit tests.
+// never trusts anything. One dialog at a time, for all of Lo. Meanwhile it says how far it has got,
+// for the window to show, and it waits a while at most for GitHub and for the settings file, so it
+// always ends, and says so. Nothing here calls Electron, so it runs under unit tests.
 
 import type { PullRequestRepositories } from '@lo/github';
 
 import { IpcError } from '../../../ipc/contract.ts';
-import type { Asked } from '../contract.ts';
+import { Unwritten } from '../../settings/service.ts';
+import type { Asked, Trusting } from '../contract.ts';
 import { repoName, sameName, type TrustEntry } from '../settings.ts';
+
+/** How long Lo waits for GitHub to say which repo a view's is, in ms, before it says it couldn't. */
+export const READ_LIMIT = 30_000;
+
+/** How long Lo waits for the settings file to take an entry, in ms, before it says it couldn't. */
+export const SAVE_LIMIT = 10_000;
 
 /** What the reader is asked to trust: a repository, or one pull request from a fork. */
 export type Subject =
@@ -99,9 +107,18 @@ export interface AskOptions<W extends AskWindow> {
    * the reader pressed. Once `signal` aborts, the dialog closes as if cancelled.
    */
   readonly confirm: (window: W, question: Question, signal: AbortSignal) => Promise<number>;
-  /** Trusts `entry`: writes it in the settings file. */
+  /**
+   * Trusts `entry`: writes it in the settings file. Fails with an {@link Unwritten} that says why it
+   * couldn't.
+   */
   readonly write: (entry: TrustEntry) => Promise<void>;
+  /** Hears how far trusting view `view` has got, and, with nothing, that it's over. */
+  readonly progress?: (view: string, step: Trusting | undefined) => void;
   readonly now?: () => Date;
+  /** How long GitHub's read may take, in ms: {@link READ_LIMIT}. */
+  readonly readLimit?: number;
+  /** How long writing the entry may take, in ms: {@link SAVE_LIMIT}. */
+  readonly saveLimit?: number;
 }
 
 /** What the window asks: to trust view `view`'s repository, named `repo`, or its pull request. */
@@ -159,6 +176,27 @@ export function subjectOf(
   };
 }
 
+/** Settles as `work` does, or rejects with `late` once `limit` ms have gone by first. */
+function within<T>(work: Promise<T>, limit: number, late: () => Error): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(late()), limit);
+  });
+  return Promise.race([work, timeout]).finally(() => clearTimeout(timer));
+}
+
+/**
+ * Why the entry wasn't written, for the window: what the settings file holds, which editing it
+ * fixes (`settingsFile`), or anything else (`unsaved`), each with why in a sentence or two.
+ */
+export function unsaved(error: unknown): IpcError {
+  if (error instanceof Unwritten) {
+    return new IpcError(error.inFile ? 'settingsFile' : 'unsaved', error.why);
+  }
+  if (error instanceof IpcError && error.code === 'unsaved') return error;
+  return new IpcError('unsaved', "Lo couldn't write the settings file.");
+}
+
 /** Asks the reader to trust what the window names, one dialog at a time. */
 export class TrustAsker<W extends AskWindow = AskWindow> {
   readonly #options: AskOptions<W>;
@@ -177,7 +215,9 @@ export class TrustAsker<W extends AskWindow = AskWindow> {
    * Asks in `window`, the window that sent `request`, and answers how it went: `trusted` once the
    * reader said "Trust" and the entry is written, `cancelled` for any other answer, or once that
    * window closed meanwhile. Throws an `IpcError` for a request it won't ask, with no window to ask
-   * in, and while it's asking already (`busy`), so two requests never share a dialog.
+   * in, and while it's asking already (`busy`), so two requests never share a dialog; for GitHub's
+   * read failing or taking too long (`unread`); and, once the reader said "Trust", for an entry it
+   * couldn't write ({@link unsaved}). Meanwhile `progress` hears each step, and that it's over.
    */
   async ask(request: TrustRequest, window: W | undefined): Promise<Asked> {
     if (this.#asking) {
@@ -204,10 +244,16 @@ export class TrustAsker<W extends AskWindow = AskWindow> {
     if (!window) throw new IpcError('unavailable', 'Lo has no window to ask in.');
     const closed = new AbortController();
     const stop = window.onClosed(() => closed.abort());
+    const step = (now: Trusting | undefined) => options.progress?.(request.view, now);
     try {
+      step('reading');
       let repositories: PullRequestRepositories;
       try {
-        repositories = await options.read(view);
+        repositories = await within(
+          options.read(view),
+          options.readLimit ?? READ_LIMIT,
+          () => new Error('GitHub took too long'),
+        );
       } catch {
         throw new IpcError(
           'unread',
@@ -216,13 +262,29 @@ export class TrustAsker<W extends AskWindow = AskWindow> {
       }
       if (closed.signal.aborted) return 'cancelled';
       const subject = subjectOf(request, view, repositories);
+      step('asking');
       const answer = await options.confirm(window, questionFor(subject), closed.signal);
       // Only "Trust", pressed while the window was there to ask in, trusts anything.
       if (closed.signal.aborted || answer !== TRUST) return 'cancelled';
-      await options.write(entryFor(subject, options.now?.() ?? new Date()));
+      step('saving');
+      const limit = options.saveLimit ?? SAVE_LIMIT;
+      try {
+        await within(
+          options.write(entryFor(subject, options.now?.() ?? new Date())),
+          limit,
+          () =>
+            new IpcError(
+              'unsaved',
+              `Lo couldn't write the settings file within ${Math.round(limit / 1000)} s.`,
+            ),
+        );
+      } catch (error) {
+        throw unsaved(error);
+      }
       return 'trusted';
     } finally {
       stop();
+      step(undefined);
     }
   }
 }

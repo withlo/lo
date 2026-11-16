@@ -43,7 +43,9 @@ function follow(
 ) {
   const published: Status[] = [];
   const dismissed = new Set<string>();
-  const reads = vi.fn<(view: ViewInfo) => Promise<PullRequestRepositories>>(read);
+  const reads = vi.fn<
+    (view: ViewInfo, priority: 'foreground' | 'background') => Promise<PullRequestRepositories>
+  >((view) => read(view));
   const views = new TrustViews({
     view: (id) => open.get(id),
     read: reads,
@@ -261,9 +263,33 @@ describe('following views', () => {
     views.update('t1');
     expect(reads).not.toHaveBeenCalled();
     await views.readNow('t1');
+    // The reader waits on it, so it goes ahead of polls.
+    expect(reads).toHaveBeenLastCalledWith(open.get('t1'), 'foreground');
     views.setEntries([ENTRY]);
     expect(views.status('t1')?.trust).toEqual({ kind: 'trusted', by: 'repo' });
     expect(reads).toHaveBeenCalledTimes(1);
+  });
+
+  it('reads for an entry that names a view as polls do, since nobody waits on it', async () => {
+    const open = new Map([['t1', info('t1', 80)]]);
+    const { views, reads } = follow(open, () => Promise.resolve(OWN));
+    views.setEntries([ENTRY]);
+    views.update('t1');
+    await settle();
+    expect(reads).toHaveBeenLastCalledWith(open.get('t1'), 'background');
+  });
+
+  it('says how far trusting a view has got, until it’s over', () => {
+    const open = new Map([['t1', info('t1', 80)]]);
+    const { views, published } = follow(open, () => Promise.resolve(OWN));
+    views.setEntries([]);
+    views.setTrusting('t1', 'reading');
+    expect(published.at(-1)).toMatchObject({ view: 't1', trusting: 'reading' });
+    views.setTrusting('t1', 'saving');
+    expect(published.at(-1)).toMatchObject({ trusting: 'saving' });
+    views.setTrusting('t1', undefined);
+    expect(published.at(-1)).not.toHaveProperty('trusting');
+    expect(views.status('t1')).not.toHaveProperty('trusting');
   });
 
   it('forgets a view once its tab closes', () => {

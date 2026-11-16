@@ -1551,15 +1551,18 @@ export class Poller {
 
   /**
    * Runs a read that isn't a poll, such as asking how an async merge went, with the account's
-   * client, in the account's queue: after any request in flight, and behind waiting writes. Its rate
-   * limit is recorded as a poll's is. One given up on through `signal` while it waits is never made.
+   * client, in the account's queue: after any request in flight, and behind waiting writes. One
+   * someone at the screen waits on (`foreground`), as asking whether to trust a repo does, goes
+   * ahead of waiting background reads and polls too. Its rate limit is recorded as a poll's is. One
+   * given up on through `signal` while it waits is never made.
    */
   async readOnce<T>(
     request: (client: GithubClient) => Promise<T>,
     signal?: AbortSignal,
+    priority: ReadPriority = 'background',
   ): Promise<T> {
     const client = await this.#client();
-    const result = await settle(this.#queue.read(() => request(client), signal));
+    const result = await settle(this.#queue.read(() => request(client), signal, priority));
     this.#answeredWith(client, result);
     if (result.ok) return result.value;
     throw result.error;

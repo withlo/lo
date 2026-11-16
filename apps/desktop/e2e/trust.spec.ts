@@ -1,12 +1,13 @@
 // Trust in the app, on rozed-dev/e2e#80, which nothing trusts: its tab says language servers are
 // off, and a dismissal holds after Lo starts again; "Trust this repo" trusts it only once main's
 // own dialog, answered here as the reader would, says "Trust", and Settings lists it until it's
-// removed there; taken out of the file by hand, its checkouts go too. GitHub answers from
-// `app_e2e`, and the repository's IDs, which Lo reads only once the reader asks to trust it, from
-// `pull_request_repositories_e2e`.
+// removed there; taken out of the file by hand, its checkouts go too. With a settings file Lo can't
+// read, the banner says why Lo couldn't trust it, offers to open the file, and trusts it once the
+// file's fixed. GitHub answers from `app_e2e`, and the repository's IDs, which Lo reads only once
+// the reader asks to trust it, from `pull_request_repositories_e2e`.
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 
 import { cassette, Replay } from '@lo/testing';
 import { APP_PULL, writeAppRemote } from '@lo/testing/git';
@@ -23,6 +24,7 @@ import {
   drawnWindow,
   expect,
   KEYCHAIN,
+  opened,
   settingsPath,
   test as base,
 } from './app.ts';
@@ -209,4 +211,46 @@ test('trusts the repo only once main’s own dialog says Trust, and Settings lis
   await expect
     .poll(() => status(page, id))
     .toMatchObject({ trust: { kind: 'untrusted', why: 'unnamed' } });
+});
+
+test('says in the banner why it couldn’t trust the repo, offers the settings file, and trusts once that’s fixed', async ({
+  app,
+  page,
+}) => {
+  test.setTimeout(90_000);
+  const id = await open(page);
+  // Left mid-edit, so Lo can't read it, and won't write it.
+  const path = settingsPath(dataFolder());
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, '{ "code.trusted": [\n');
+
+  await answerDialogs(app, 'Trust');
+  await banner(page).getByRole('button', { name: 'Trust this repo' }).click();
+  const failed = page
+    .locator('[data-lo-banners]')
+    .getByRole('alert')
+    .filter({ hasText: "Lo couldn't trust rozed-dev/e2e." });
+  await expect(failed).toContainText("The settings file isn't valid JSON");
+  expect(await dialogsAsked(app)).toHaveLength(1);
+  // Said there, and not again in a note in the corner.
+  await expect(page.getByText("Lo didn't change code.trusted")).toHaveCount(0);
+  expect(readFileSync(path, 'utf8')).toBe('{ "code.trusted": [\n');
+  await expect(status(page, id)).resolves.toMatchObject({ trust: { kind: 'untrusted' } });
+
+  await failed.getByRole('button', { name: 'Open the settings file' }).click();
+  await expect.poll(opened).toEqual([realpathSync(path)]);
+
+  // Fixed, and asked again: trusted, and the banner goes.
+  writeFileSync(path, '{}\n');
+  const again = failed.getByRole('button', { name: 'Trust this repo' });
+  await expect(again).not.toHaveAttribute('aria-disabled', 'true');
+  await again.click();
+  await expect
+    .poll(() => status(page, id), { timeout: 20_000 })
+    .toMatchObject({ trust: { kind: 'trusted', by: 'repo' } });
+  await expect(page.locator('[data-lo-banners]').getByRole('alert')).toHaveCount(0);
+  await expect(banner(page)).toHaveCount(0);
+  expect(trustedInFile()).toEqual([
+    { repo: 'rozed-dev/e2e', id: E2E, at: expect.stringMatching(/^\d{4}-\d\d-\d\dT/) },
+  ]);
 });
