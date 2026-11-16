@@ -233,6 +233,21 @@ describe('sourcePaths', () => {
     expect(await sourcePaths(root)).toEqual([]);
   });
 
+  test('takes no folder of a file in no package from inside another source folder', async () => {
+    const root = tempFolder();
+    write(root, {
+      'src/main/java/com/example/A.java': 'package com.example;\nclass A {}\n',
+      // JDT LS would leave this folder out of the one around it, and com.example with it.
+      'src/main/java/com/example/Scratch.java': 'class Scratch {}\n',
+      'tools/Tool.java': 'class Tool {}\n',
+      'tools/more/Other.java': 'class Other {}\n',
+      // Around another source folder, it's one JDT LS leaves the inner one out of, as it should.
+      'scripts/Run.java': 'class Run {}\n',
+      'scripts/lib/x/Y.java': 'package x;\n',
+    });
+    expect(await sourcePaths(root)).toEqual(['scripts', 'scripts/lib', 'src/main/java', 'tools']);
+  });
+
   test('reads past annotations whatever they hold, and takes no folder from a file it can’t read', async () => {
     const root = tempFolder();
     write(root, {

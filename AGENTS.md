@@ -572,11 +572,11 @@ toolchain and git's variables each server needs.
   annotations by a small scanner that leaves out any file it can't read (`sourcePaths`, in the
   20,000 folders and files nearest the root), and JDT LS makes a project of them in its home,
   compiling nothing. What a server is told can depend on where it runs: an adapter's `place` gives
-  it, as it starts, arguments, variables, files written in its home and settings. JDT LS's names its
-  home as the JVM's home and temporary folder, Equinox's configuration and its workspace, writes a
-  `gradle.properties` that holds a Gradle to Lo's JDK in Gradle's home (`GRADLE_USER_HOME`, one of
-  its `homeFolders`), and has its JVM look names up only in an empty hosts file there. It uses no
-  proxy, which would look names up itself (`jdt.ls.disableProxies`,
+  it, as it starts, arguments, variables, files written in its home and settings. JDT LS's `place`
+  names its home as the JVM's home and temporary folder, Equinox's configuration and its workspace,
+  writes a `gradle.properties` that holds a Gradle to Lo's JDK in Gradle's home (`GRADLE_USER_HOME`,
+  one of its `homeFolders`), and has its JVM look names up only in an empty hosts file there. It
+  uses no proxy, which would look names up itself (`jdt.ls.disableProxies`,
   `java.net.useSystemProxies=false`), so Buildship's look for Gradle's versions and the
   search.maven.org lookup of a `lib/` jar's sources, which no setting stops, reach no host. Java
   isn't available for a repository that commits Eclipse's `.settings` folder at its root, which

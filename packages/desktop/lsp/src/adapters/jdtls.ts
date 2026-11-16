@@ -262,7 +262,9 @@ const HEAD = 16 * 1024;
  * The checkout's source folders, by their paths in it: for each `.java` file, the folder its
  * package starts from, as its path says, so `src/main/java` for `src/main/java/a/B.java` in package
  * `a`. A file whose path doesn't end with its package names none, as JDT LS would take it, and nor
- * does a file at the checkout's root: everything there would be code. Hidden folders and
+ * does a file at the checkout's root: everything there would be code. A file in no package names
+ * its own folder only when that isn't inside another source folder: JDT LS would make it a source
+ * folder within that one, and read none of the outer folder's package there. Hidden folders and
  * `node_modules` aren't looked in, and no link is followed.
  *
  * It looks in {@link SOURCE_FOLDERS} folders and reads {@link SOURCE_FILES} files at most, or
@@ -275,6 +277,8 @@ export async function sourcePaths(
   limits: { folders: number; files: number } = { folders: SOURCE_FOLDERS, files: SOURCE_FILES },
 ): Promise<string[]> {
   const found = new Set<string>();
+  // The folders of files in no package.
+  const loose = new Set<string>();
   const folders = [''];
   let read = 0;
   for (let at = 0; at < folders.length && read < limits.files; at += 1) {
@@ -287,10 +291,15 @@ export async function sourcePaths(
         if (looked && folders.length < limits.folders) folders.push(path);
       } else if (entry.isFile() && entry.name.endsWith('.java') && read < limits.files) {
         read += 1;
-        const source = sourceFolder(path, await packageOf(join(root, path)));
-        if (source !== undefined) found.add(source);
+        const name = await packageOf(join(root, path));
+        const source = sourceFolder(path, name);
+        if (source !== undefined) (name === '' ? loose : found).add(source);
       }
     }
+  }
+  const all = [...found, ...loose];
+  for (const source of loose) {
+    if (!all.some((other) => source.startsWith(`${other}/`))) found.add(source);
   }
   return [...found].toSorted();
 }
