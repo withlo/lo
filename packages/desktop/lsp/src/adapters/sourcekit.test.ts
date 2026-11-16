@@ -188,8 +188,8 @@ describe('starting SourceKit-LSP', () => {
           cxxCompilerFlags: [],
         },
         clangdOptions: [],
-        sourcekitdRequestTimeout: 10,
-        semanticServiceRestartTimeout: 30,
+        sourcekitdRequestTimeout: 10.5,
+        semanticServiceRestartTimeout: 30.5,
       },
     });
     expect(sourceKitOptions(where.home, found.sdk)).toEqual(placed.initializationOptions);
@@ -204,6 +204,16 @@ describe('starting SourceKit-LSP', () => {
       git: GIT,
     });
     expect(env.CFFIXED_USER_HOME).toBe(where.home);
+  });
+
+  test('gives each time with a fraction, since a whole number makes it drop every option', () => {
+    // It reads a whole number as an integer, which an option that takes a `Double` refuses.
+    const options = sourceKitOptions('/lo/home', '/lo/MacOSX.sdk');
+    const times = [options.sourcekitdRequestTimeout, options.semanticServiceRestartTimeout];
+    for (const time of times) {
+      expect(typeof time).toBe('number');
+      expect(Number.isInteger(time)).toBe(false);
+    }
   });
 });
 

@@ -232,12 +232,14 @@ adapter says why each setting is as it is:
   home folder, where it reads its own settings, is too, by `CFFIXED_USER_HOME`. It also reads the
   machine's settings, in `/Library/Application Support/org.swift.sourcekit-lsp/config.json`, which
   only an administrator can write, and no option turns that off; Lo's options win over it, key by
-  key. A request to `sourcekitd` gives up after 10 s, not 120 s, and a crashed `SourceKitService` is
-  waited for 30 s, not 300 s. `SourceKitService` is counted against the cap and stopped with the
-  server, by its name and home (`services`). Lo still refuses a checkout with a `buildServer.json`,
-  a `.bsp` or a `.sourcekit-lsp` anywhere in it, so a later SourceKit-LSP that looked for them
-  beside a file finds none. Expanding a macro of the SDK's runs Apple's `swift-plugin-server`; a
-  checkout's macros are never built.
+  key. A request to `sourcekitd` gives up after 10.5 s, not 120 s, and one that hangs for 30.5 s,
+  not 300 s, has SourceKit-LSP restart `sourcekitd`. Each is given with a fraction: SourceKit-LSP
+  reads a whole number in its initialization options as an integer, which those options refuse, and
+  then drops every option Lo gives it. `SourceKitService` is counted against the cap and stopped
+  with the server, by its name and home (`services`). Lo still refuses a checkout with a
+  `buildServer.json`, a `.bsp` or a `.sourcekit-lsp` anywhere in it, so a later SourceKit-LSP that
+  looked for them beside a file finds none. Expanding a macro of the SDK's runs Apple's
+  `swift-plugin-server`; a checkout's macros are never built.
 
 None runs in a sandbox: each reads what you can, so an absolute import, Pyright's `extraPaths`, a
 Rust sysroot's sources, the folders of stubs a `.php-lsp.json` names, the paths a `composer.json`'s

@@ -161,19 +161,24 @@ export async function findSourceKit(
   return undefined;
 }
 
-/** How long a request of SourceKit-LSP's to `sourcekitd` may take, in seconds: Lo's longest wait. */
-const REQUEST_TIMEOUT = 10;
+/**
+ * How long a request of SourceKit-LSP's to `sourcekitd` may take, in seconds: just past Lo's
+ * longest wait. Each time is given with a fraction: SourceKit-LSP reads a whole number in its
+ * `initializationOptions` as an integer, which an option that takes a `Double` refuses, and then it
+ * drops every option Lo gives it.
+ */
+const REQUEST_TIMEOUT = 10.5;
 
 /** How long a request may take before SourceKit-LSP takes `sourcekitd` as hung and restarts it. */
-const RESTART_TIMEOUT = 30;
+const RESTART_TIMEOUT = 30.5;
 
 /**
  * What SourceKit-LSP is told, as its `initializationOptions`, with `home` its home and `sdk` the
  * macOS SDK: no background indexing, which would build the package; its generated files, and its
  * compiler's module cache, in its home; a file's fallback build settings with Lo's flags and the
  * SDK, so it never asks `xcrun` for one; nothing more for clangd; and `sourcekitd`'s requests held
- * to Lo's longest wait, 10 s, not 2 minutes, and `sourcekitd` restarted once one hangs for 30 s,
- * not 5 minutes, since Lo has given up on any request by then.
+ * to Lo's longest wait, about 10 s, not 2 minutes, and `sourcekitd` restarted once one hangs for
+ * about 30 s, not 5 minutes, since Lo has given up on any request by then.
  */
 export function sourceKitOptions(home: string, sdk: string): Record<string, unknown> {
   return {
