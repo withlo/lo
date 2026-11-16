@@ -302,7 +302,7 @@ export function parseSums(text: string): Map<string, string> {
 }
 
 /** Downloads `url` into the tools' folder, as Lo would, and says what came. */
-async function fetchPart(
+export async function fetchPart(
   url: string,
   hosts: readonly string[],
   tools: Pick<Tools, 'fetch' | 'folder' | 'log'>,
@@ -318,7 +318,7 @@ async function fetchPart(
   return { part: { url, size, sha256 }, file };
 }
 
-async function fetchBytes(
+export async function fetchBytes(
   url: string,
   hosts: readonly string[],
   tools: Pick<Tools, 'fetch' | 'folder'>,
@@ -330,7 +330,7 @@ async function fetchBytes(
 }
 
 /** The JSON at `url`, as `schema` reads it. */
-async function fetchJson<T>(
+export async function fetchJson<T>(
   url: string,
   schema: z.ZodType<T>,
   hosts: readonly string[],

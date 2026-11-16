@@ -130,6 +130,24 @@ test('size counts clones and checkouts', async () => {
   expect(used).toBeGreaterThan(8 * 1024);
 });
 
+test('size and the cap leave out the toolchains, so a large one evicts no clone', async () => {
+  const cache = await cacheFor(server());
+  const old = await useRepo(cache, 'old');
+  const used = await cache.size();
+  // A toolchain far larger than the clone, in the folder the cap leaves out.
+  const toolchain = join(cache.toolchainsFolder, 'go', '1.0.0');
+  mkdirSync(toolchain, { recursive: true });
+  writeFileSync(join(toolchain, 'go'), Buffer.alloc(4 * 1024 * 1024, 1));
+
+  expect(await cache.size()).toBe(used);
+  expect(await cache.setCap(used)).toEqual([]);
+  expect(existsSync(old)).toBe(true);
+  expect(existsSync(checkoutOf(cache, 'old'))).toBe(true);
+  // Clearing the cache leaves it too.
+  await cache.clear();
+  expect(existsSync(join(toolchain, 'go'))).toBe(true);
+});
+
 test('clear removes every clone and checkout', async () => {
   const cache = await cacheFor(server());
   await useRepo(cache, 'old');

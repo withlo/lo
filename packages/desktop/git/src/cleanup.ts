@@ -223,6 +223,31 @@ export async function diskUsage(path: string): Promise<number> {
   return total;
 }
 
+/** The cache's folder for the toolchains language servers use, which the app downloads into. */
+export const TOOLCHAINS_FOLDER = 'toolchains';
+
+/**
+ * The folders in the cache its cap doesn't count, by name: the toolchains, a few large installs
+ * that Settings removes. Were they counted, their gigabytes would evict the clones the cap is there
+ * to keep.
+ */
+export const UNCAPPED: ReadonlySet<string> = new Set([TOOLCHAINS_FOLDER]);
+
+/**
+ * How much disk space the cache at `root` takes against its cap: everything in it but the folders
+ * {@link UNCAPPED} names.
+ */
+export async function cappedUsage(root: string): Promise<number> {
+  const found = await lstat(root).catch(() => undefined);
+  if (found === undefined) return 0;
+  let total = found.blocks * 512;
+  if (!found.isDirectory()) return total;
+  for (const name of await readdir(root).catch(() => [])) {
+    if (!UNCAPPED.has(name)) total += await diskUsage(join(root, name));
+  }
+  return total;
+}
+
 /** Every clone in the cache, by owner and name. */
 export async function clones(host: CleanupHost): Promise<CloneName[]> {
   const repos = join(host.root, 'repos', 'github.com');
@@ -496,7 +521,8 @@ export async function clear(host: CleanupHost): Promise<string[]> {
 }
 
 /**
- * Keeps the cache under `cap` bytes, removing only as much as gets it there: first the checkouts
+ * Keeps the cache under `cap` bytes, as {@link cappedUsage} counts them, removing only as much as
+ * gets it there: first the checkouts
  * of clones nobody has open, least recently used first, then those clones themselves, least
  * recently used first, each only while the cache is still over. A clone that's open or being
  * written to is never touched, nor are its checkouts, and the most recently used clone always
@@ -504,7 +530,7 @@ export async function clear(host: CleanupHost): Promise<string[]> {
  * Returns the `owner/name` of each clone removed.
  */
 export async function keepUnder(host: CleanupHost, cap: number): Promise<string[]> {
-  let total = await diskUsage(host.root);
+  let total = await cappedUsage(host.root);
   if (total <= cap) return [];
   const byUse = (
     await Promise.all(

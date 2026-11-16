@@ -50,6 +50,7 @@ const STALL: StallLimits = { quiet: 300, window: 1500, least: 256 };
 async function setUp(
   routes: Routes,
   fetch?: (served: typeof globalThis.fetch) => typeof globalThis.fetch,
+  options: { free?: number } = {},
 ) {
   const served = await serve(routes);
   const folder = join(tempFolder(), 'servers');
@@ -59,6 +60,7 @@ async function setUp(
     fetch: fetch?.(served.fetch) ?? served.fetch,
     backoff: [0, 0],
     stall: STALL,
+    ...(options.free === undefined ? {} : { free: () => Promise.resolve(options.free) }),
   });
   /** What's in the installer's folder, but for empty folders it keeps for downloads. */
   const left = () =>
@@ -419,4 +421,164 @@ test('pruning removes other versions and half-done downloads, but not one in use
   expect(existsSync(join(folder, 'gone'))).toBe(false);
   expect(readdirSync(join(folder, '.partial'))).toEqual([]);
   expect(existsSync(installed.entry)).toBe(true);
+});
+
+/** A layer of rust-installer's, its component's files in `<package>/<component>/`. */
+function layer(component: string, path: string, data: string): Buffer {
+  return tarGz([
+    { path: `${component}-1.0.0/components`, data: component },
+    { path: `${component}-1.0.0/${component}/manifest.in`, data: `file:${path}` },
+    { path: `${component}-1.0.0/${component}/${path}`, data, mode: 0o755 },
+  ]);
+}
+
+describe('a toolchain', () => {
+  const base = 'https://static.rust-lang.test/dist/';
+  const RUSTC = layer('rustc', 'bin/rustc', 'rustc');
+  const CARGO = layer('cargo', 'bin/cargo', 'cargo');
+
+  /** Rust's sysroot from `layers`, recorded to unpack to `unpacked` bytes. */
+  function rust(layers: readonly [string, Buffer][], unpacked = 10): Pinned {
+    return {
+      version: '1.0.0',
+      hosts: ['static.rust-lang.test'],
+      platforms: {
+        any: {
+          kind: 'layers',
+          entry: 'bin/cargo',
+          unpacked,
+          layers: layers.map(([component, data]) => ({
+            url: `${base}${component}.tar.gz`,
+            size: data.length,
+            sha256: sha256(data),
+            from: `${component}-1.0.0/${component}`,
+          })),
+        },
+      },
+    };
+  }
+  const routes = (layers: readonly [string, Buffer][]) =>
+    Object.fromEntries(
+      layers.map(([component, data]) => [`${base}${component}.tar.gz`, { body: data }]),
+    );
+  const LAYERS: [string, Buffer][] = [
+    ['rustc', RUSTC],
+    ['cargo', CARGO],
+  ];
+
+  test('installs layers into one folder, and says what its files hold', async () => {
+    const { installer, asked } = await setUp(routes(LAYERS));
+    const progress: [number, number][] = [];
+    const installed = await installer.install('rust', rust(LAYERS), {
+      progress: (received, total) => progress.push([received, total]),
+    });
+    expect(readFileSync(installed.entry, 'utf8')).toBe('cargo');
+    expect(readFileSync(join(installed.folder, 'bin', 'rustc'), 'utf8')).toBe('rustc');
+    expect(existsSync(join(installed.folder, 'manifest.in'))).toBe(false);
+    // Both layers count toward one download.
+    expect(progress.at(-1)).toEqual([RUSTC.length + CARGO.length, RUSTC.length + CARGO.length]);
+    expect(asked).toHaveLength(2);
+    expect(await installer.recorded('rust', rust(LAYERS))).toBe(10);
+  });
+
+  test.each<[string, [string, Buffer][], number, RegExp]>([
+    [
+      'a layer that writes a file another wrote',
+      [
+        ['rustc', RUSTC],
+        ['cargo', layer('cargo', 'bin/rustc', 'not rustc')],
+      ],
+      100,
+      /in the archive twice/,
+    ],
+    [
+      'an archive past what it was recorded to unpack to, and 5% more',
+      LAYERS,
+      // Its files hold 10 bytes, and 8 and 5% more is 8.4.
+      8,
+      /unpacks to more than Lo allows/,
+    ],
+  ])('refuses %s, leaving nothing behind', async (_, layers, unpacked, message) => {
+    const { installer, left } = await setUp(routes(layers));
+    const error = await failure(installer.install('rust', rust(layers, unpacked)));
+    expect(error.message).toMatch(message);
+    expect(left()).toEqual([]);
+  });
+
+  test('is refused before it downloads when the disk hasn’t room for it unpacked too', async () => {
+    const total = RUSTC.length + CARGO.length;
+    const { installer, asked, left } = await setUp(routes(LAYERS), undefined, {
+      free: total + 9,
+    });
+    const error = await failure(installer.install('rust', rust(LAYERS)));
+    expect(error.problem).toBe('space');
+    expect(error.message).toBe('Lo needs 1 MB free for it, and the disk has 1 MB.');
+    expect(asked).toEqual([]);
+    expect(left()).toEqual([]);
+  });
+
+  test('is removed, an install of it under way stopping first, leaving nothing', async () => {
+    const sysroot = rust(LAYERS);
+    const { installer, folder, asked, left } = await setUp({
+      ...routes(LAYERS),
+      // The second layer holds the install up halfway.
+      [`${base}cargo.tar.gz`]: [{ body: CARGO }, { body: CARGO, cut: 10, hold: true }],
+    });
+    await installer.install('rust', sysroot);
+    expect(await installer.recorded('rust', sysroot)).toBe(10);
+    await installer.remove('rust');
+    expect(existsSync(join(folder, 'rust'))).toBe(false);
+    expect(await installer.recorded('rust', sysroot)).toBeUndefined();
+
+    const again = installer.install('rust', sysroot).then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+    await expect.poll(() => asked.length).toBe(4);
+    await installer.remove('rust', new Error('Rust was removed.'));
+    expect(await again).toEqual(new Error('Rust was removed.'));
+    expect(left()).toEqual([]);
+  });
+
+  test('isn’t installed while it’s being removed, so nothing gets the folder that goes', async () => {
+    const sysroot = rust(LAYERS);
+    const { installer, folder, asked } = await setUp(routes(LAYERS));
+    await installer.install('rust', sysroot);
+    const removing = installer.remove('rust', new Error('Rust was removed.'));
+    // Asked for once the removal has started, as a server starting again would.
+    await expect(installer.install('rust', sysroot)).rejects.toThrow('Rust was removed.');
+    await removing;
+    expect(existsSync(join(folder, 'rust'))).toBe(false);
+    // Once it's removed, it downloads again.
+    const installed = await installer.install('rust', sysroot);
+    expect(readFileSync(installed.entry, 'utf8')).toBe('cargo');
+    expect(asked).toHaveLength(4);
+  });
+
+  test('is removed once an install nobody waits for any longer has ended', async () => {
+    const { promise: held, resolve: release } = Promise.withResolvers<void>();
+    let asked = 0;
+    const { installer, left } = await setUp(
+      routes(LAYERS),
+      // The first layer's download is held until the removal has started, whatever stops it.
+      (served) => async (input, init) => {
+        asked += 1;
+        await held;
+        return served(input, init);
+      },
+    );
+    const halted = new AbortController();
+    const installing = installer
+      .install('rust', rust(LAYERS), { signal: halted.signal })
+      .catch((error: unknown) => error);
+    await expect.poll(() => asked).toBe(1);
+    // A server's start stops, as Settings' "Remove" stops the servers that use it first.
+    halted.abort(new Error('The server stopped.'));
+    expect(await installing).toEqual(new Error('The server stopped.'));
+    const removing = installer.remove('rust');
+    release();
+    await removing;
+    // The install had ended, its download folder gone with it, before the removal was done.
+    expect(left()).toEqual([]);
+  });
 });

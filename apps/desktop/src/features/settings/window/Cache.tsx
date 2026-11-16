@@ -1,11 +1,11 @@
-import { Button, Input, Meter, Setting } from '@lo/ui';
+import { Button, formatBytes, Input, Meter, Setting } from '@lo/ui';
 import { useCallback, useEffect, useId, useState, type ReactNode } from 'react';
 
 import { notify } from '../../../window/commands/notices.tsx';
 import { client } from '../../../window/ipc.ts';
 import { contract, type CacheUsage } from '../contract.ts';
 import { cacheCap, CACHE_CAP_MAX, GB } from '../settings.ts';
-import { formatBytes, wholeNumber } from './format.ts';
+import { wholeNumber } from './format.ts';
 import { changeSetting, defineSection, useSetting } from './shared.ts';
 
 /** The size limit, in GB, as a field: what's typed counts when the field is left or `⏎` is pressed. */

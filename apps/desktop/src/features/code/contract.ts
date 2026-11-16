@@ -3,7 +3,8 @@
 // window asks main to ask the reader in a dialog of main's own, and nothing the window sends trusts
 // anything by itself. Main tells the window where each view of a pull request's tab stands, for the
 // banner, the palette and Settings, how far its syntax index has got and where its language
-// servers are, for the status bar. What code features ask goes over the code port (`port.ts`).
+// servers are, for the status bar, and lists the toolchains servers use for Settings. What code
+// features ask goes over the code port (`port.ts`).
 
 import { z } from 'zod';
 
@@ -172,6 +173,27 @@ export const servers = z.strictObject({
 });
 export type Servers = z.output<typeof servers>;
 
+/** A toolchain's ID in `toolchains.json`: `go`. */
+const toolchainId = z.string().regex(/^[a-z][a-z0-9-]{0,39}$/);
+
+/**
+ * A toolchain language servers use, as Settings lists it: what it is, how many bytes its files
+ * take by its marker (`null` while it isn't downloaded), how large its download is, and the
+ * servers that use it, by name.
+ */
+export const toolchain = z.strictObject({
+  id: toolchainId,
+  name: z.string().max(40),
+  version: z.string().max(80),
+  installed: z.number().int().nonnegative().nullable(),
+  download: z.number().int().positive(),
+  uses: z.array(z.string().max(40)).max(32),
+});
+export type Toolchain = z.output<typeof toolchain>;
+
+/** The toolchains Lo pins for this system, sent each time one is downloaded or removed. */
+export const toolchains = z.array(toolchain).max(32);
+
 /** A language server's log, oldest line first, as main keeps it: in memory, plain text. */
 export interface ServerLog {
   name: string;
@@ -229,6 +251,13 @@ export const contract = defineContract('code', {
       input: z.strictObject({ view: tabId, server: serverId }),
       reply: reply<ServerLog | null>(),
     },
+    /** The toolchains Lo pins for this system, for Settings. The `downloaded` topic follows them. */
+    toolchains: { input: z.undefined(), reply: reply<Toolchain[]>() },
+    /**
+     * Removes toolchain `id`, as Settings' "Remove" asks: the servers that use it stop, each saying
+     * so until "Restart" downloads it again, and its files go.
+     */
+    removeToolchain: { input: z.strictObject({ id: toolchainId }), reply: reply<void>() },
   },
   topics: {
     /** Where a view stands, each time that changes. */
@@ -237,5 +266,7 @@ export const contract = defineContract('code', {
     indexed,
     /** A view's language servers, each time they change. */
     served: servers,
+    /** The toolchains, each time one is downloaded or removed. */
+    downloaded: toolchains,
   },
 });

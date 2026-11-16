@@ -167,6 +167,96 @@ describe('a tar', () => {
   });
 });
 
+/** A layer of rust-installer's: its component's files, a list of them, and the installer's own. */
+function layer(component: string, files: readonly TarEntry[]): Buffer {
+  const top = `${component}-1.0.0-target`;
+  return tarGz([
+    { path: `${top}/install.sh`, data: 'installer', mode: 0o755 },
+    { path: `${top}/components`, data: component },
+    { path: `${top}/${component}/manifest.in`, data: 'file:bin/x' },
+    ...files.map((file) => ({ ...file, path: `${top}/${component}/${file.path}` })),
+  ]);
+}
+
+/** Unpacks `layers`, each a component and its archive, one over another in one folder. */
+async function unpackLayers(layers: readonly [string, Buffer][]) {
+  const { folder, root, outside } = setUp();
+  const unpacker = new Unpacker(root);
+  const error = await (async () => {
+    for (const [index, [component, archive]] of layers.entries()) {
+      const file = join(folder, `layer-${index}.tar.gz`);
+      writeFileSync(file, archive);
+      await unpacker.tarGz(file, { from: `${component}-1.0.0-target/${component}` });
+    }
+    await unpacker.finish();
+  })().then(
+    () => undefined,
+    (thrown: unknown) => thrown,
+  );
+  return { root, outside, error };
+}
+
+describe('layers', () => {
+  test('lays each layer’s folder over the one before, leaving out the rest and its list', async () => {
+    const { root, error } = await unpackLayers([
+      [
+        'rustc',
+        layer('rustc', [
+          { path: 'bin/rustc', data: 'rustc', mode: 0o755 },
+          { path: 'lib/rustlib/target/bin/lld', data: 'lld', mode: 0o755 },
+        ]),
+      ],
+      ['std', layer('std', [{ path: 'lib/rustlib/target/lib/libstd.rlib', data: 'std' }])],
+    ]);
+    expect(error).toBeUndefined();
+    expect(readdirSync(root, { recursive: true, encoding: 'utf8' }).toSorted()).toEqual([
+      'bin',
+      'bin/rustc',
+      'lib',
+      'lib/rustlib',
+      'lib/rustlib/target',
+      'lib/rustlib/target/bin',
+      'lib/rustlib/target/bin/lld',
+      'lib/rustlib/target/lib',
+      'lib/rustlib/target/lib/libstd.rlib',
+    ]);
+    expect(statSync(join(root, 'bin/rustc')).mode & 0o777).toBe(0o755);
+  });
+
+  test.each<[string, [string, Buffer][], RegExp]>([
+    [
+      'a file a layer before it wrote',
+      [
+        ['rustc', layer('rustc', [{ path: 'lib/libz.so', data: 'one' }])],
+        ['std', layer('std', [{ path: 'lib/libz.so', data: 'two' }])],
+      ],
+      /"lib\/libz\.so" is in the archive twice/,
+    ],
+    [
+      'a link where a layer before it wrote a file',
+      [
+        ['rustc', layer('rustc', [{ path: 'bin/x', data: 'one' }])],
+        ['std', layer('std', [{ path: 'bin/x', type: 'SymbolicLink', linkpath: 'y' }])],
+      ],
+      /"bin\/x" is in the archive twice/,
+    ],
+    [
+      'a layer with nothing in its folder',
+      [['rustc', tarGz([{ path: 'other/bin/rustc', data: 'rustc' }])]],
+      /nothing in "rustc-1\.0\.0-target\/rustc"/,
+    ],
+    [
+      'a hard link outside its folder',
+      [['rustc', tarGz([{ path: 'elsewhere', type: 'Link', linkpath: 'x' }])]],
+      /hard link/,
+    ],
+  ])('refuses %s', async (_, layers, message) => {
+    const { outside, error } = await unpackLayers(layers);
+    expect(refusal(error)).toMatch(message);
+    expect(readdirSync(outside)).toEqual([]);
+  });
+});
+
 describe('a zip', () => {
   test('unpacks its files, folders and links inside', async () => {
     const { root, error } = await unpackZip([

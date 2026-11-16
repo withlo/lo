@@ -387,7 +387,9 @@ Only main runs git, through `@lo/git`, and the background process never sees git
   since.
 - With git, main opens the cache, `Lo` in the system's folder for caches (`Lo Dev` for a build run
   from source, or `cache` in `LO_USER_DATA_DIR`), as `git.cache`, and cleans it up without anyone
-  waiting. `git.setCap()` sets the size it's kept under.
+  waiting. `git.setCap()` sets the size it's kept under, which counts all of it but the toolchains
+  language servers use (`toolchains/`): Settings removes those, and their gigabytes would otherwise
+  evict clones.
 - Every git gets an environment of Lo's own making, never main's, and only a fetch gets the
   account's token, from a source read as each fetch starts. Fetches take the proxy Lo's own requests
   take.
@@ -441,6 +443,22 @@ toolchain and git's variables each server needs.
   platform. `pnpm nx run lsp:pin -- <id> <version>` records one, by hand and never in CI: it checks
   each file against its publisher's signature first (Node's releasers' keys, in `scripts/keys/`, and
   npm's registry keys), and that it unpacks as Lo would. Lo trusts only the manifest's hashes.
+- The toolchains language servers use are pinned the same way, in `toolchains.json`: Go, Rust
+  (rustc, cargo, the standard library and its sources, as layers of one sysroot), a Temurin JDK and
+  the .NET SDK, each with what it unpacks to per platform. `lsp:pin` checks Go against Google's
+  signature and go.dev's list, Rust against its signed channel file, the JDK against Adoptium's
+  signature, and .NET, which publishes none, against the SHA-512 that both Microsoft's download site
+  and the dotnet/core repository list. Pins are renewed before each release. A server uses only Lo's
+  copy, never the machine's, nor a version its checkout asks for: `toolchainUse` gives it the folder
+  of programs for its `PATH` and the variables that hold the toolchain to Lo's copy
+  (`GOTOOLCHAIN=local`, an empty `RUSTC_WRAPPER`, `JAVA_HOME`, `DOTNET_ROOT`, MSBuild's
+  `DOTNET_MSBUILD_SDK_RESOLVER_*`, and the rest).
+- A `global.json` can steer `dotnet` past those variables: since .NET 10 its `sdk.paths` names
+  folders to find an SDK in, the checkout's own among them, and the SDK's commands and MSBuild read
+  the one nearest where they run. So `dotnet` starts a server only as `dotnet exec`, which reads
+  none (`checkArguments`), and a server that uses .NET doesn't start on, or move to, a checkout with
+  a `global.json` that names `paths` or spells a key with an escape, in it or in a folder above it
+  (`checkoutProblem`, asked by the pool).
 - A download goes over `https` only, on the usual port, to its entry's hosts, following at most 5
   redirects itself, each held to the same rules, and refusing an answer its `fetch` was redirected
   to unseen, with no token or cookie. In the app it goes through `net.request` (`netFetch` with
@@ -450,22 +468,40 @@ toolchain and git's variables each server needs.
   answer's headers included, or brings less than 16 KB in any 5 minutes, is tried 3 times in all,
   and a download as a whole has no deadline.
 - Then it's unpacked there: a `tar.gz` (npm's `tar`), a `zip` (`yauzl`), a gzipped program, a
-  program as it is, or an npm package's tarballs laid out as `node_modules`, with nothing run.
-  Absolute paths, `..`, hard links, devices and links that resolve outside are refused, and so is
-  more than 100,000 entries or 2 GB. Everything is synced to the disk, a marker last, before the
-  folder is renamed into `<cache>/servers/<id>/<version>/`. The marker names what it holds, the
-  version of the rules it was unpacked under, each file's size, each folder and each link's target;
-  a folder whose marker doesn't match, or whose files, folders or links don't match its marker, any
-  folder below `<cache>/servers/` that's become a link included, is removed and fetched again. Two
-  installs of a version at once make one download.
+  program as it is, an npm package's tarballs laid out as `node_modules`, or layers, each tarball's
+  component folder laid over the one before, with nothing run. Absolute paths, `..`, hard links,
+  devices, links that resolve outside and a path two layers both write are refused, and so is more
+  than 100,000 entries or 2 GB, or, for a download recorded with what it unpacks to, more than that
+  and 5%. Before a download starts, the disk must have room for it and what it unpacks to.
+  Everything is synced to the disk, a marker last, before the folder is renamed into
+  `<cache>/servers/<id>/<version>/`, or a toolchain's into `<cache>/toolchains/<id>/<version>/`. The
+  marker names what it holds, the version of the rules it was unpacked under, each file's size, each
+  folder and each link's target; a folder whose marker doesn't match, or whose files, folders or
+  links don't match its marker, any folder below `<cache>/servers/` or `<cache>/toolchains/` that's
+  become a link included, is removed and fetched again. Two installs of a version at once make one
+  download.
 - A server installed by the user is used only from where its adapter says it may be, when the app's
   folder check passes it (the one git is held to), it isn't in Lo's cache, and it isn't a version
   manager's shim, which picks a program from the checkout.
+- The servers that run on Lo's Node have their adapters in `src/adapters/`: vtsls for TypeScript and
+  JavaScript, and Pyright for Python, each from npm. Each starts as Node, by its absolute path, with
+  a cap on its heap, then the server's own entry point, never npm's launcher. What it's told is the
+  adapter's alone, and nothing in the checkout picks what runs: vtsls runs its own TypeScript, loads
+  no `tsserver` plugin from the checkout, and acquires no types; Pyright's Python is `/dev/null`, so
+  it runs no interpreter. A plugin a `tsconfig.json` names is still looked for by its package's
+  name, beside Lo's TypeScript and in each `node_modules` above Lo's install, such as
+  `~/node_modules`, which neither vtsls nor `tsserver` can turn off (`test/plugins.test.ts`). No
+  server has a sandbox: each reads what the user can, outside the checkout too, and Lo never opens a
+  place outside the checkout an answer names. Each says whether it gives inlay hints (`hints`):
+  Pyright gives none. The package's README lists each with its source, version and license, and a
+  server's details name its license beside its version.
 - Tests start only the fake server, `testing/lsp/fake-server.ts`, at most two at once in a test
   file, each killed with its group when the test ends. No test starts a real server or downloads
   one: download tests serve archives they build from a server on this machine. The live check,
-  `pnpm nx run lsp:live`, installs what's pinned into `~/.cache/lo-live/` and asks each server a
-  hover and a definition, by hand only.
+  `pnpm nx run lsp:live`, by hand only, installs what's pinned into `~/.cache/lo-live/`, starts each
+  server as its adapter does on the checkouts the code fixtures build with `--local`, asks what
+  `gd`, `gr`, `K`, `gh` and `gO` ask at the places `testing/fixtures/code/cases.json` names, and
+  fails if anything ran what the hostile fixture plants.
 
 ### Accounts
 
@@ -1169,7 +1205,8 @@ parse them under `@lo/syntax`'s limits.
 
 The `code` feature runs language servers on the views the reader trusts, and their answers come
 before the syntax index's. A server is whatever an adapter (`main/adapters.ts`) says to start for
-its languages; Lo ships none yet.
+its languages: Lo ships those for TypeScript and JavaScript, and Python, each downloaded with the
+Node it runs on.
 
 - Nothing starts for a view nothing trusts: no download, no checkout, no server. Once a trusted view
   is on screen and a file its pull request adds or changes on the new side, or one asked about, is
@@ -1185,7 +1222,23 @@ its languages; Lo ships none yet.
 - One server runs per repository and adapter, on the checkout of the head on screen, and moves with
   it: by `workspace/didChangeWorkspaceFolders`, sent only once trust is checked again, where it
   takes that, else by starting again (`main/servers.ts`). Its `HOME` is
-  `<cache>/code/homes/<owner>/<name>/<adapter>`, and Lo's git is first on its `PATH`.
+  `<cache>/code/homes/<owner>/<name>/<adapter>`, and its `PATH` is its toolchain's folders, then
+  Lo's git's, then the system's, so a git from a folder of other programs, as Homebrew's is, can't
+  bring that folder's `go` ahead of the toolchain's.
+- An adapter names what its server downloads up front, the server and the toolchains it uses, so the
+  status bar adds them up from the first byte ("Java downloading · 38.1 MB of 177.4 MB"), counting
+  only what isn't installed yet, in the units Settings counts in (`formatBytes`). It gets only the
+  toolchains it names. A toolchain that can't download says which and why ("The Temurin JDK couldn't
+  download. …"). Toolchains are installed in `<cache>/toolchains/`, which the cache's cap doesn't
+  count, and as Lo starts, versions `toolchains.json` no longer pins are removed.
+- Settings' Toolchains section lists each toolchain pinned for the system, how much room it takes by
+  its marker or that it isn't downloaded and how large it is, and the servers that use it. "Remove"
+  refuses installs of it from the start, with the message its servers then show ("Go was removed.
+  Restart downloads it again."), so nothing that starts meanwhile, "Restart" included, gets the
+  folder that's going. Then it stops those servers and every install of it under way, those nobody
+  waits for any longer included, and once each has ended, renames its folder aside before deleting
+  it. Its button waits while it runs, and a notice says why one wasn't removed
+  (`main/toolchains.ts`).
 - It stops 10 minutes after the pull request whose checkout it runs on was last on screen, once no
   tab of its repository is open, once its repository or pull request isn't trusted, and as Lo quits,
   each within 5 s; Lo's quitting waits for each one stopping. After a crash it starts again by
@@ -1210,15 +1263,16 @@ its languages; Lo ships none yet.
 - `gh` shows a server's inlay hints, held until the reader's next input. With none, the status bar
   says why: the server is starting, failed, needs a toolchain or gave none, no server reads the code
   on screen, or the repo isn't trusted. A server that doesn't offer inlay hints, or whose adapter
-  says it has none, isn't asked for them, and `gh` says so ("Python has no type hints.").
+  says it has none, isn't asked for them, and `gh` says so ("Pyright has no type hints.").
 - The status bar has an item for each server, its details offering "Restart", "Show the log" and
   "Stop trusting this repo"; on an untrusted view, "Language servers off" offers to trust it
   (`code.servers`, the `served` topic). The log dialog shows the last 1,000 lines, and copies as
   many of the newest as fit in 1 MB.
 - In a build run from source, `LO_TEST_SERVERS` names a manifest of servers to run for tests
   (`main/tests.ts`), each by absolute path with its arguments and nothing downloaded; `testServers`
-  in `e2e/app.ts` writes one for the fake server. A packaged build never reads it, which
-  `scripts/check-package.sh` checks.
+  in `e2e/app.ts` writes one for the fake server. They run in place of Lo's own, and a test run
+  without them runs none, so no test starts or downloads a real server. A packaged build never reads
+  it, which `scripts/check-package.sh` checks.
 
 ## The interface
 

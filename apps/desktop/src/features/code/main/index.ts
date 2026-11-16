@@ -13,7 +13,8 @@
 //
 // Language servers run only on views the reader trusts, on a checkout of the head on screen, one
 // for each repository and language (`servers.ts`, `serving.ts`). On the new side, a server's
-// answer within its deadline wins over the index's (`served.ts`).
+// answer within its deadline wins over the index's (`served.ts`). The toolchains they use, Lo's own
+// copies, are in the cache's `toolchains/`, which Settings lists and removes (`toolchains.ts`).
 
 import { stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
@@ -21,12 +22,24 @@ import { dirname, join } from 'node:path';
 
 import { defaultPlaces, parseOid, serverGitEnvironment, whyDistrusted } from '@lo/git';
 import { PullRef, readPullRequestRepositories, type PullRequestRepositories } from '@lo/github';
-import { findCopy, Installer, MANIFEST, startServer } from '@lo/lsp';
+import {
+  currentPlatform,
+  downloadFor,
+  findCopy,
+  Installer,
+  MANIFEST,
+  type Manifest,
+  partsOf,
+  startServer,
+  TOOLCHAINS,
+  toolchainUse,
+} from '@lo/lsp';
 import { app, BrowserWindow, dialog, MessageChannelMain, net } from 'electron';
 
 import { IpcError } from '../../../ipc/contract.ts';
 import { codeHandOver, jobs, type CodeHandOver } from '../../../ipc/jobs.ts';
 import { mainJobs, portOf } from '../../../main/background.ts';
+import { githubSettings } from '../../../main/environment.ts';
 import { defineFeature, type FeatureContext } from '../../../main/features.ts';
 import { netFetch } from '../../../main/fetch.ts';
 import { github } from '../../accounts/service.ts';
@@ -36,7 +49,7 @@ import { tabs } from '../../tab/service.ts';
 import { contract } from '../contract.ts';
 import { contract as codeJobs } from '../jobs.ts';
 import { readTrusted, trusted, type TrustEntry } from '../settings.ts';
-import { ADAPTERS, type Adapter } from './adapters.ts';
+import { ADAPTERS, type Adapter, type Toolchain } from './adapters.ts';
 import { letGo, letGoUntrusted } from './checkouts.ts';
 import { TrustAsker, type AskWindow } from './confirm.ts';
 import { Dismissed } from './dismissed.ts';
@@ -61,9 +74,19 @@ import {
   servedReferences,
   type ServerOf,
 } from './served.ts';
+import { DownloadSum } from './downloads.ts';
 import { ServerPool } from './servers.ts';
+import {
+  checkoutRefusal,
+  listedToolchain,
+  listToolchains,
+  removalFailure,
+  removeToolchain,
+  toolchainFailure,
+  type ToolchainHost,
+} from './toolchains.ts';
 import { repoKey, ServingViews, type ServingInput } from './serving.ts';
-import { readTestServers, testServersFile } from './tests.ts';
+import { adaptersFor } from './tests.ts';
 import { storeWorker, type SymbolStore } from './store/client.ts';
 // electron-vite builds the store's worker and gives its path as this import's default.
 // oxlint-disable-next-line import/default
@@ -93,10 +116,14 @@ let index: CodeIndex | undefined;
 let store: SymbolStore | undefined;
 let pool: ServerPool | undefined;
 let serving: ServingViews | undefined;
-/** The language servers Lo can run: its own, and in a build run from source, a test's. */
-let adapters: readonly Adapter[] = ADAPTERS;
+/** The language servers Lo can run, once servers start: its own, or in a test run, a test's. */
+let adapters: readonly Adapter[] = [];
 /** What downloads language servers, once the first one is needed. */
 let installer: Installer | undefined;
+/** What downloads the toolchains they use, once the cache is open. */
+let toolchainInstaller: Installer | undefined;
+/** Settings' view of the toolchains, once servers are followed. */
+let toolchainHost: ToolchainHost | undefined;
 /** The code port of each window's page, by its contents' id, while it's loaded. */
 const ports = new Map<number, () => void>();
 
@@ -405,6 +432,32 @@ function homeOf(root: string, repo: string, adapter: Adapter): string | undefine
   return join(root, 'code', 'homes', ...parts, adapter.id);
 }
 
+/** How downloads go: through Chromium's network stack, with the system's proxy, as every read Lo makes. */
+function downloadFetch(): typeof globalThis.fetch {
+  return netFetch((options) => net.request(options), { stream: true });
+}
+
+/** What installs language servers, once the cache is open. */
+function serverInstaller(context: Context): Installer | undefined {
+  const cache = context.git.cache;
+  if (!cache) return undefined;
+  installer ??= new Installer({ folder: join(cache.root, 'servers'), fetch: downloadFetch() });
+  return installer;
+}
+
+/** What installs the toolchains, once the cache is open: in its folder the cap doesn't count. */
+function toolchainsInstaller(context: Context): Installer | undefined {
+  const cache = context.git.cache;
+  if (!cache) return undefined;
+  toolchainInstaller ??= new Installer({ folder: cache.toolchainsFolder, fetch: downloadFetch() });
+  return toolchainInstaller;
+}
+
+/** What `manifest` pins as `id`, if it does. */
+function pinnedIn(manifest: Manifest, id: string) {
+  return Object.hasOwn(manifest, id) ? manifest[id] : undefined;
+}
+
 /** Installs what Lo's manifest pins as `id`, in the cache, reporting the download's progress. */
 function install(
   context: Context,
@@ -412,16 +465,104 @@ function install(
   progress: (done: number, total: number) => void,
   signal: AbortSignal,
 ) {
-  const cache = context.git.cache;
-  if (!cache) throw new Error('Lo has no cache to download language servers into.');
-  const pinned = Object.hasOwn(MANIFEST, id) ? MANIFEST[id] : undefined;
+  const installing = serverInstaller(context);
+  if (!installing) throw new Error('Lo has no cache to download language servers into.');
+  const pinned = pinnedIn(MANIFEST, id);
   if (!pinned) throw new Error(`Lo's list of language servers has no ${id}.`);
-  installer ??= new Installer({
-    folder: join(cache.root, 'servers'),
-    // Through Chromium's network stack, with the system's proxy, as every read Lo makes.
-    fetch: netFetch((options) => net.request(options), { stream: true }),
+  return installing.install(id, pinned, { signal, progress });
+}
+
+/**
+ * Installs the toolchain `toolchains.json` pins as `id`, reporting the download's progress, and
+ * says what a server gets of it. A failure names it, and Settings hears once one it downloaded is
+ * there, or isn't.
+ */
+async function installToolchain(
+  context: Context,
+  id: string,
+  progress: (done: number, total: number) => void,
+  signal: AbortSignal,
+): Promise<Toolchain> {
+  const installing = toolchainsInstaller(context);
+  if (!installing) throw new Error('Lo has no cache to download toolchains into.');
+  const pinned = pinnedIn(TOOLCHAINS, id);
+  if (!pinned) throw new Error(`Lo's list of toolchains has no ${id}.`);
+  let downloaded = false;
+  try {
+    const installed = await installing.install(id, pinned, {
+      signal,
+      progress: (done, total) => {
+        downloaded = true;
+        progress(done, total);
+      },
+    });
+    return { installed, ...toolchainUse(id, pinned.version, installed) };
+  } catch (error) {
+    throw signal.aborted ? error : toolchainFailure(id, error);
+  } finally {
+    if (downloaded) publishToolchains(context);
+  }
+}
+
+/** Tells Settings what the toolchains are now. */
+function publishToolchains(context: Context): void {
+  if (!toolchainHost) return;
+  listToolchains(toolchainHost).then(
+    (listed) => context.publish('downloaded', listed),
+    (error: unknown) => log(`couldn't list the toolchains: ${String(error)}`),
+  );
+}
+
+/**
+ * Gets `adapter`'s server ready, its downloads added up from the start: each it names that isn't
+ * installed yet counts its whole size from the first byte.
+ */
+async function prepareServer(
+  context: Context,
+  adapter: Adapter,
+  progress: (done: number, total: number) => void,
+  signal: AbortSignal,
+) {
+  const sum = new DownloadSum(progress);
+  const platform = currentPlatform();
+  const expect = async (
+    kind: 'server' | 'toolchain',
+    ids: readonly string[] | undefined,
+    manifest: Manifest,
+    installing: Installer | undefined,
+  ) => {
+    for (const id of ids ?? []) {
+      const pinned = pinnedIn(manifest, id);
+      const download = pinned && platform && downloadFor(pinned, platform);
+      if (!pinned || !download || !installing) continue;
+      if (await installing.installed(id, pinned).catch(() => undefined)) continue;
+      sum.expect(
+        `${kind}:${id}`,
+        partsOf(download).reduce((total, part) => total + part.size, 0),
+      );
+    }
+  };
+  await expect('server', adapter.downloads?.servers, MANIFEST, serverInstaller(context));
+  await expect(
+    'toolchain',
+    adapter.downloads?.toolchains,
+    TOOLCHAINS,
+    toolchainsInstaller(context),
+  );
+  const counted = async <T>(key: string, start: (heard: typeof progress) => Promise<T>) => {
+    const part = sum.part(key);
+    const done = await start(part.progress);
+    part.done();
+    return done;
+  };
+  return adapter.prepare({
+    install: (id) => counted(`server:${id}`, (heard) => install(context, id, heard, signal)),
+    toolchain: listedToolchain(adapter, (id) =>
+      counted(`toolchain:${id}`, (heard) => installToolchain(context, id, heard, signal)),
+    ),
+    findCopy: (candidates) => installedCopy(context, candidates),
+    signal,
   });
-  return installer.install(id, pinned, { signal, progress });
 }
 
 /** The first of `candidates` that may run as a server: a copy the user installed. */
@@ -437,20 +578,17 @@ async function installedCopy(context: Context, candidates: readonly string[]) {
 }
 
 /**
- * Starts following views for their language servers: the servers a build run from source's test
- * names, the pool they run in, and each view's needs, as its tab, its comparison, its trust, git
- * and the view on screen change.
+ * Starts following views for their language servers: Lo's own, or the servers a test names, the
+ * pool they run in, and each view's needs, as its tab, its comparison, its trust, git and the view
+ * on screen change.
  */
 function startServers(context: Context): void {
-  const file = testServersFile({ packaged: app.isPackaged, env: process.env });
-  if (file !== undefined) adapters = [...ADAPTERS, ...readTestServers(file)];
+  const packaged = app.isPackaged;
+  const { testRun } = githubSettings({ packaged, env: process.env });
+  adapters = adaptersFor({ packaged, env: process.env, testRun, shipped: ADAPTERS });
   const servers = new ServerPool({
-    prepare: (adapter, progress, signal) =>
-      adapter.prepare({
-        install: (id) => install(context, id, progress, signal),
-        findCopy: (candidates) => installedCopy(context, candidates),
-        signal,
-      }),
+    prepare: (adapter, progress, signal) => prepareServer(context, adapter, progress, signal),
+    checkout: checkoutRefusal,
     start: (spec) => startServer({ ...spec, version: app.getVersion() }),
     base(repo, adapter) {
       const cache = context.git.cache;
@@ -458,13 +596,31 @@ function startServers(context: Context): void {
       if (!cache || found?.status !== 'found') return undefined;
       const home = homeOf(cache.root, repo, adapter);
       if (home === undefined) return undefined;
-      // Lo's own git first, which is new enough for the settings git's variables give it.
+      // Lo's own git, after the toolchain's folders: it's new enough for the settings git's
+      // variables give it.
       return { home, git: serverGitEnvironment(), path: [dirname(found.git.program)] };
     },
     changed: (repo) => serving?.changed(repo),
     log,
   });
   pool = servers;
+  toolchainHost = {
+    manifest: TOOLCHAINS,
+    platform: currentPlatform(),
+    installer: () => toolchainsInstaller(context),
+    adapters: () => adapters,
+    halt: (uses, message) => servers.halt(uses, message),
+  };
+  // As Lo starts, before any server can use one, what toolchains.json no longer pins goes, as do
+  // downloads a Lo that stopped halfway left.
+  stops.push(
+    context.git.onCache(() => {
+      toolchainsInstaller(context)
+        ?.prune(TOOLCHAINS)
+        .catch((error: unknown) => log(`couldn't remove old toolchains: ${String(error)}`))
+        .finally(() => publishToolchains(context));
+    }),
+  );
   const service = context.use(tabs);
   const followed = new ServingViews({
     pool: servers,
@@ -547,6 +703,21 @@ export default defineFeature(contract, {
       await serving.restart(view, server);
     },
     log: ({ view, server }) => serving?.log(view, server) ?? null,
+    toolchains: () => (toolchainHost ? listToolchains(toolchainHost) : []),
+    async removeToolchain({ id }, context) {
+      if (!toolchainHost) throw new IpcError('unavailable', 'Lo is starting, or quitting.');
+      if (!Object.hasOwn(TOOLCHAINS, id)) {
+        throw new IpcError('missing', 'Lo has no toolchain with that id.');
+      }
+      try {
+        await removeToolchain(toolchainHost, id);
+      } catch (error) {
+        log(`couldn't remove the toolchain ${id}: ${String(error)}`);
+        throw new IpcError('failed', removalFailure(error));
+      } finally {
+        publishToolchains(context);
+      }
+    },
   },
   start(context) {
     const service = context.use(tabs);
@@ -627,6 +798,7 @@ export default defineFeature(contract, {
     asker = undefined;
     serving?.stop();
     serving = undefined;
+    toolchainHost = undefined;
     const servers = pool;
     pool = undefined;
     index?.stop();
