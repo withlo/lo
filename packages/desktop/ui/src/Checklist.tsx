@@ -1,7 +1,7 @@
 import { cva } from 'class-variance-authority';
 import type { ReactNode } from 'react';
 
-import { withoutBidi } from './controls.ts';
+import { withoutBidi, withoutBidiNode } from './controls.ts';
 import { LinkButton } from './LinkButton.tsx';
 import { Spinner } from './Spinner.tsx';
 import { StateIcon } from './StatePill.tsx';
@@ -49,14 +49,22 @@ export interface CheckSub {
 
 /** One reason, step or result. */
 export interface CheckItem {
-  /** What tells it from the others, for React. */
+  /** What tells it from the others, and names its id: see {@link checkRowId}. */
   key: string;
   kind: CheckKind;
   glyph: CheckGlyph;
-  /** What it is, in a few words: "Review required", "2 checks running". */
+  /**
+   * What it is, in a few words: "Review required", "2 checks running". Text is drawn without the
+   * characters that turn text around; what's built from elements is the caller's to clean.
+   */
   title: ReactNode;
-  /** More: who or what is involved, and what fixes it. */
+  /** More: who or what is involved, and what fixes it. Cleaned as the title is. */
   detail?: ReactNode;
+  /**
+   * The page where it's mended, as a link of its own under the detail: "See it on GitHub ↗". It's
+   * what a key that opens the row's page opens.
+   */
+  link?: CheckLink | undefined;
   /** The checks or reasons it holds, one under another, each linked to where it's fixed. */
   subs?: readonly CheckSub[] | undefined;
   /** At its end: people, or a button for what to do about it, with its key. */
@@ -66,14 +74,27 @@ export interface CheckItem {
 export interface ChecklistProps {
   /** What the list is, for screen readers: "Why it can't merge". */
   label: string;
+  /**
+   * What its rows' ids start with, so that whatever holds focus, such as the merge panel, can name
+   * the row the keyboard is on as its active descendant with {@link checkRowId}.
+   */
+  id: string;
   rows: readonly CheckItem[];
-  /** The row the keyboard is on, by key, which takes a ring. */
+  /**
+   * The row the keyboard is on, by key. It takes a ring while what holds focus, which is not the
+   * list, has keyboard focus: that element is inside a `group/list`.
+   */
   focused?: string | undefined;
+}
+
+/** The id of the row with this key in the list with this `id`, for an `aria-activedescendant`. */
+export function checkRowId(list: string, key: string): string {
+  return `${list}-row-${key}`;
 }
 
 const row = cva('check-row grid items-start', {
   variants: {
-    focused: { true: 'shadow-ring-inset', false: '' },
+    focused: { true: 'group-focus-visible/list:shadow-ring-inset', false: '' },
   },
 });
 
@@ -191,24 +212,45 @@ function Sub({ sub }: { sub: CheckSub }) {
  * Rows of reasons, steps or progress, one thing each: why a pull request can't merge, what a
  * merge waits for. A row has an icon in the color of how it stands, a title, a line of detail,
  * the checks it holds as sub-rows, each linked to where it's fixed, and an action at its end.
+ *
+ * The list never takes focus: the element that does, such as the merge panel, is told which row
+ * the keyboard is on by its `aria-activedescendant`, and the list draws that row's ring. Focus is
+ * where the keyboard is, not what's current, so no row says it's current.
  */
-export function Checklist({ label, rows, focused }: ChecklistProps) {
+export function Checklist({ label, id, rows, focused }: ChecklistProps) {
   return (
     <ul aria-label={label} className="m-0 flex list-none flex-col p-0">
       {rows.map((item) => (
         <li
           key={item.key}
+          id={checkRowId(id, item.key)}
           data-key={item.key}
           data-kind={item.kind}
-          aria-current={item.key === focused ? 'true' : undefined}
+          data-focused={item.key === focused ? '' : undefined}
           className={row({ focused: item.key === focused })}
         >
           <span className={icon({ kind: item.kind })}>
             <CheckIcon glyph={item.glyph} />
           </span>
-          <span className="min-w-0 text-fg text-ui-strong">{item.title}</span>
+          <span className="min-w-0 text-fg text-ui-strong">{withoutBidiNode(item.title)}</span>
           {item.detail !== undefined && (
-            <span className="col-start-2 min-w-0 text-fg-muted text-small">{item.detail}</span>
+            <span className="col-start-2 min-w-0 text-fg-muted text-small">
+              {withoutBidiNode(item.detail)}
+            </span>
+          )}
+          {item.link !== undefined && (
+            <span className="col-start-2 flex min-w-0">
+              <LinkButton
+                onClick={item.link.onOpen}
+                label={
+                  typeof item.title === 'string'
+                    ? said(item.link, item.title)
+                    : item.link.label.replace(/\s*↗$/, '')
+                }
+              >
+                {item.link.label}
+              </LinkButton>
+            </span>
           )}
           {item.subs !== undefined && item.subs.length > 0 && (
             <ul className="col-start-2 m-0 mt-6 flex list-none flex-col gap-4 p-0">

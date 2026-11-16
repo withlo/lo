@@ -7,6 +7,8 @@
 // Names, paths, signatures, symbols and code show every one. Prose, which real scripts and emoji
 // write with a few of them, keeps those and shows the rest.
 
+import type { ReactNode } from 'react';
+
 /** Every format character, and the tag characters (which are mostly format characters too). */
 const FORMAT = /[\p{Cf}\u{E0000}-\u{E007F}]/gu;
 
@@ -117,5 +119,14 @@ export function showProse(text: string): string {
  * and has no room for a mark of each.
  */
 export function withoutBidi(text: string): string {
-  return text.replaceAll(/[‪-‮⁦-⁩]/g, '');
+  return text.replaceAll(/[\u202A-\u202E\u2066-\u2069]/g, '');
+}
+
+/**
+ * `node` with the characters that turn text around taken out of it, when it's text. What a caller
+ * builds from elements, such as a name in `<strong>`, is the caller's to clean: a node's children
+ * can't be cleaned from outside.
+ */
+export function withoutBidiNode(node: ReactNode): ReactNode {
+  return typeof node === 'string' ? withoutBidi(node) : node;
 }

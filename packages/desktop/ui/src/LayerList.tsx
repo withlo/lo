@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 
-import { withoutBidi } from './controls.ts';
+import { withoutBidi, withoutBidiNode } from './controls.ts';
 import { Spinner } from './Spinner.tsx';
 import { Steps, type StepState } from './Steps.tsx';
 
@@ -14,7 +14,10 @@ export interface LayerRow {
    * working on in a merge's progress; `done` once it merged; `stopped` where GitHub stopped.
    */
   state: StepState;
-  /** A line under it: "Approved · 14 checks passed · 12 files", "Rules passed". */
+  /**
+   * A line under it: "Approved · 14 checks passed · 12 files", "Rules passed". Text is drawn without
+   * the characters that turn text around; what's built from elements is the caller's to clean.
+   */
   detail?: ReactNode;
   /** GitHub is working on it, which a ring turning before the detail shows. */
   working?: boolean | undefined;
@@ -47,10 +50,10 @@ export function LayerList({ layers, label }: LayerListProps) {
           layer.working === true ? (
             <span className="inline-flex items-center gap-8">
               <Spinner size="xs" />
-              {layer.detail}
+              {withoutBidiNode(layer.detail)}
             </span>
           ) : (
-            layer.detail
+            withoutBidiNode(layer.detail)
           ),
       }))}
     />

@@ -105,9 +105,9 @@ describe('MergeStatus', () => {
 
   it('draws what a branch’s name says without the characters that turn text around', () => {
     const host = render(
-      <MergeStatus kind="ready" verdict="Ready to merge" detail={'Squash into ma‮in'} />,
+      <MergeStatus kind="ready" verdict="Ready to merge" detail={'Squash into ma\u202Ein'} />,
     );
-    expect(host.innerHTML).not.toMatch(/[‪-‮⁦-⁩]/);
+    expect(host.innerHTML).not.toMatch(/[\u202A-\u202E\u2066-\u2069]/);
     expect(host.textContent).toContain('Squash into main');
   });
 

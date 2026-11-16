@@ -2,10 +2,11 @@
 // The merge queue's table: entries in order, those tested together boxed as a group, the account's
 // own marked, the pull requests waiting to join, and those that left, each with why.
 
+import { createRef } from 'react';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { missingRules } from '../test/classes.ts';
-import { cleanUp, click, render } from '../test/dom.ts';
+import { cleanUp, click, focus, press, render } from '../test/dom.ts';
 import { Button } from './Button.tsx';
 import {
   QueueTable,
@@ -168,10 +169,14 @@ describe('QueueTable', () => {
     expect(group?.getAttribute('aria-label')).toBe('Testing together, 3 PRs');
     expect(group?.textContent).toContain('Testing together · 3 PRs');
     expect(
-      [...(group?.querySelectorAll('[role="row"]') ?? [])].map((each) =>
+      [...(group?.querySelectorAll('[role="row"][data-key]') ?? [])].map((each) =>
         each.getAttribute('data-key'),
       ),
     ).toEqual(['4806', '4810', '4797']);
+    // The label is a row of its own, with a cell across the table, so nothing in the grid is loose.
+    const label = group?.querySelector('[role="row"]:not([data-key])');
+    expect(label?.textContent).toBe('Testing together · 3 PRs');
+    expect(label?.querySelector('[role="rowheader"]')?.getAttribute('aria-colspan')).toBe('6');
     // The group has the queue color's edge, and a ring turning while it tests.
     expect(group?.className).toContain('inset-ring-state-merged-border');
     expect(group?.querySelector('.spinner')).not.toBeNull();
@@ -214,7 +219,7 @@ describe('QueueTable', () => {
       <QueueTable label="Merge queue for main" items={items} waiting={[joining]} />,
     );
     const group = host.querySelector('[role="rowgroup"][aria-label="Waiting to join"]');
-    expect(group?.querySelector('[role="columnheader"]')?.textContent).toBe('Waiting to join');
+    expect(group?.querySelector('[role="rowheader"]')?.textContent).toBe('Waiting to join');
     const only = row(host, '4826');
     expect(group?.contains(only)).toBe(true);
     expect([...only.querySelectorAll('[role="gridcell"]')].map((each) => each.textContent)).toEqual(
@@ -249,7 +254,7 @@ describe('QueueTable', () => {
     it('says why each left, in the words for its reason', () => {
       const host = render(<QueueTable label="Merge queue for main" items={[]} left={entries} />);
       const group = host.querySelector('[role="rowgroup"][aria-label="Left the queue"]');
-      expect(group?.querySelector('[role="columnheader"]')?.textContent).toBe('Left the queue');
+      expect(group?.querySelector('[role="rowheader"]')?.textContent).toBe('Left the queue');
       const said = (key: string) =>
         [...row(host, key).querySelectorAll('[role="gridcell"]')].map((each) => each.textContent);
       expect(said('4821')).toEqual([
@@ -330,6 +335,10 @@ describe('QueueTable', () => {
     const link = [...host.querySelectorAll('button')].find(
       (each) => each.textContent === 'See the queue on GitHub.',
     );
+    // The note and its link are a cell of a row of the grid.
+    expect(link?.closest('[role="gridcell"]')?.getAttribute('aria-colspan')).toBe('6');
+    expect(link?.closest('[role="gridcell"]')?.parentElement?.getAttribute('role')).toBe('row');
+    expect(link?.closest('[role="grid"]')).not.toBeNull();
     click(link!);
     expect(onOpen).toHaveBeenCalledOnce();
   });
@@ -340,14 +349,59 @@ describe('QueueTable', () => {
     expect(rows(host)).toHaveLength(0);
   });
 
-  it('rings the row the keyboard is on, and names it as the table’s active row', () => {
+  it('is one focusable element, whose active descendant is the row the keyboard is on', () => {
+    const table = createRef<HTMLDivElement>();
     const host = render(
-      <QueueTable label="Merge queue for main" items={items} waiting={[joining]} focused="4821" />,
+      <QueueTable
+        label="Merge queue for main"
+        items={items}
+        waiting={[joining]}
+        focused="4821"
+        tableRef={table}
+      />,
     );
+    const grid = host.querySelector<HTMLElement>('[role="grid"]');
+    expect(table.current).toBe(grid);
+    // It can hold focus, so the attribute means something: a grid that can't is no help.
+    expect(grid?.tabIndex).toBe(0);
+    focus(grid!);
+    expect(document.activeElement).toBe(grid);
     const on = row(host, '4821');
-    expect(on.className).toContain('shadow-ring-inset');
-    expect(host.querySelector('[role="grid"]')?.getAttribute('aria-activedescendant')).toBe(on.id);
-    expect(host.querySelectorAll('.shadow-ring-inset')).toHaveLength(1);
+    expect(grid?.getAttribute('aria-activedescendant')).toBe(on.id);
+    expect(host.ownerDocument.getElementById(on.id)).toBe(on);
+    expect(on.getAttribute('aria-selected')).toBe('true');
+    expect(host.querySelectorAll('[aria-selected="true"]')).toHaveLength(1);
+    // The ring shows only while the table has keyboard focus, and only on that row.
+    expect(on.className).toContain('group-focus-visible/list:shadow-ring-inset');
+    expect(grid?.className).toContain('group/list');
+    expect(host.querySelectorAll('.group-focus-visible\\/list\\:shadow-ring-inset')).toHaveLength(
+      1,
+    );
+  });
+
+  it('names no active row when the keyboard is on none', () => {
+    const host = render(
+      <QueueTable label="Merge queue for main" items={items} focused="nothing" />,
+    );
+    expect(host.querySelector('[role="grid"]')?.hasAttribute('aria-activedescendant')).toBe(false);
+  });
+
+  it('takes its keys and key scope as attributes, for the feature that drives it', () => {
+    const onKeyDown = vi.fn<(event: { key: string }) => void>();
+    const host = render(
+      <QueueTable
+        label="Merge queue for main"
+        items={items}
+        data-lo-scope="queue"
+        onKeyDown={onKeyDown}
+      />,
+    );
+    const grid = host.querySelector('[role="grid"]');
+    expect(grid?.getAttribute('data-lo-scope')).toBe('queue');
+    press(grid!, 'j');
+    expect(onKeyDown.mock.calls.map(([event]) => event.key)).toEqual(['j']);
+    // What it draws itself stays: attributes added don't take its role or its name.
+    expect(grid?.getAttribute('aria-label')).toBe('Merge queue for main');
   });
 
   it('says which row was clicked', () => {
@@ -362,22 +416,22 @@ describe('QueueTable', () => {
   it('draws a pull request’s text as text, without the characters that turn it around', () => {
     const odd: QueueEntry = {
       ...first,
-      title: 'Fix <img src=x onerror=alert(1)> ‮gnirts',
-      author: 'ev‮il',
+      title: 'Fix <img src=x onerror=alert(1)> \u202Egnirts',
+      author: 'ev\u202Eil',
     };
     const host = render(
       <QueueTable
         label="Merge queue for main"
         items={[{ kind: 'entry', entry: odd }]}
         left={[
-          left('1', { kind: 'removed', by: 'ma⁦llory' }),
-          left('2', { kind: 'failed', check: { name: 'te‮st', onOpen: () => undefined } }),
+          left('1', { kind: 'removed', by: 'ma\u2066llory' }),
+          left('2', { kind: 'failed', check: { name: 'te\u202Est', onOpen: () => undefined } }),
         ]}
       />,
     );
     expect(host.querySelector('img')).toBeNull();
     expect(host.textContent).toContain('Fix <img src=x onerror=alert(1)> gnirts');
-    expect(host.innerHTML).not.toMatch(/[‪-‮⁦-⁩]/);
+    expect(host.innerHTML).not.toMatch(/[\u202A-\u202E\u2066-\u2069]/);
     expect(host.textContent).toContain('evil');
     expect(host.textContent).toContain('by mallory');
   });

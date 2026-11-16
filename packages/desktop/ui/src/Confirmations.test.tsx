@@ -6,7 +6,7 @@ import { act, useState } from 'react';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { missingRules } from '../test/classes.ts';
-import { cleanUp, click, render } from '../test/dom.ts';
+import { cleanUp, click, press, render } from '../test/dom.ts';
 import { Branch } from './Branch.tsx';
 import { Button } from './Button.tsx';
 import { Callout } from './Callout.tsx';
@@ -83,9 +83,9 @@ describe('Facts', () => {
 
   it('draws a login without the characters that turn text around', () => {
     const host = render(
-      <Facts items={[{ label: 'As', value: <FactPerson login={'tess‮-okafor'} /> }]} />,
+      <Facts items={[{ label: 'As', value: <FactPerson login={'tess\u202E-okafor'} /> }]} />,
     );
-    expect(host.innerHTML).not.toMatch(/[‪-‮⁦-⁩]/);
+    expect(host.innerHTML).not.toMatch(/[\u202A-\u202E\u2066-\u2069]/);
     expect(host.textContent).toContain('tess-okafor');
   });
 });
@@ -157,25 +157,84 @@ describe('LayerList', () => {
     const host = render(
       <LayerList
         label="Layers"
-        layers={[{ number: 1, title: '<b>Move</b> ‮daer', state: 'todo' }]}
+        layers={[{ number: 1, title: '<b>Move</b> \u202Edaer', state: 'todo' }]}
       />,
     );
     expect(host.querySelector('b')).toBeNull();
     expect(host.textContent).toContain('<b>Move</b> daer');
-    expect(host.innerHTML).not.toMatch(/[‪-‮⁦-⁩]/);
+    expect(host.innerHTML).not.toMatch(/[\u202A-\u202E\u2066-\u2069]/);
   });
 });
 
 describe('typedMatches', () => {
   it.each([
     ['4821', '4821', true],
-    ['  4821 ', '4821', true],
+    // Exactly: nothing round it, and no other number that looks near.
+    ['  4821 ', '4821', false],
+    ['4821 ', '4821', false],
+    [' 4821', '4821', false],
     ['48', '4821', false],
     ['4821 4', '4821', false],
     ['48210', '4821', false],
     ['', '4821', false],
   ])('%j for %j is %s', (typed, word, matches) => {
     expect(typedMatches(typed, word)).toBe(matches);
+  });
+});
+
+/** A field with `value` typed, and what happens when a press of ⏎ confirms. */
+function field(value: string) {
+  const onConfirm = vi.fn<() => void>();
+  const host = render(
+    <TypeToConfirm word="4821" value={value} onChange={() => undefined} onConfirm={onConfirm} />,
+  );
+  const input = host.querySelector('input');
+  if (input === null) throw new Error('No field.');
+  return { input, onConfirm };
+}
+
+describe('TypeToConfirm’s ⏎', () => {
+  it('confirms on a fresh press with the word typed', () => {
+    const { input, onConfirm } = field('4821');
+    const event = press(input, 'Enter');
+    expect(onConfirm).toHaveBeenCalledOnce();
+    // It's the field's own: the press does nothing else, such as submit a form around it.
+    expect(event.defaultPrevented).toBe(true);
+  });
+
+  it('does not confirm on a key held down, whose presses repeat', () => {
+    const { input, onConfirm } = field('4821');
+    press(input, 'Enter', { repeat: true });
+    press(input, 'Enter', { repeat: true });
+    expect(onConfirm).not.toHaveBeenCalled();
+    // The press after it was let go is a fresh one.
+    press(input, 'Enter');
+    expect(onConfirm).toHaveBeenCalledOnce();
+  });
+
+  it('does not confirm without the word, or near it', () => {
+    for (const value of ['', '48', '4821 ', '48210']) {
+      const { input, onConfirm } = field(value);
+      press(input, 'Enter');
+      expect(onConfirm).not.toHaveBeenCalled();
+    }
+  });
+
+  it('does not confirm for another key, or ⏎ with a modifier, or while a composition is open', () => {
+    const { input, onConfirm } = field('4821');
+    press(input, 'a');
+    press(input, ' ');
+    press(input, 'Enter', { altKey: true });
+    press(input, 'Enter', { metaKey: true });
+    press(input, 'Enter', { ctrlKey: true });
+    press(input, 'Enter', { shiftKey: true });
+    press(input, 'Enter', { isComposing: true });
+    expect(onConfirm).not.toHaveBeenCalled();
+  });
+
+  it('has nothing to do when nothing asks to be told', () => {
+    const host = render(<TypeToConfirm word="4821" value="4821" onChange={() => undefined} />);
+    expect(() => press(host.querySelector('input')!, 'Enter')).not.toThrow();
   });
 });
 

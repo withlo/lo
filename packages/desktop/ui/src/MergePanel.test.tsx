@@ -2,15 +2,15 @@
 // The merge panel's frame, in each state it takes: why it can't merge, ready to merge with
 // the commit's text, ready for a queue, waiting on auto-merge, and blocks Lo can't mend.
 
-import { act, useState, type ReactNode } from 'react';
+import { act, createRef, useState, type ReactNode } from 'react';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { missingRules } from '../test/classes.ts';
-import { cleanUp, click, press, render, rerender } from '../test/dom.ts';
+import { cleanUp, click, focus, press, render, rerender } from '../test/dom.ts';
 import { Branch } from './Branch.tsx';
 import { Button } from './Button.tsx';
 import { Callout } from './Callout.tsx';
-import { Checklist, type CheckItem } from './Checklist.tsx';
+import { Checklist, checkRowId, type CheckItem } from './Checklist.tsx';
 import { Key } from './Key.tsx';
 import {
   CommitText,
@@ -144,6 +144,28 @@ function open(onMerge?: () => void) {
   return render(<Squash {...(onMerge === undefined ? {} : { onMerge })} />);
 }
 
+/** The panel with `focused` as the row the keyboard is on. */
+const viewFocusing = (focused: string | undefined) => (
+  <MergePanel
+    open
+    onOpenChange={() => undefined}
+    anchor={document.body.querySelector('button')}
+    scope="merge"
+    kind="waiting"
+    verdict="Can't merge yet"
+    activeDescendant={focused === undefined ? undefined : checkRowId('reasons', focused)}
+    foot={<MergeFoot primary={{ label: 'Merge', disabled: true }} />}
+  >
+    <Checklist id="reasons" label="Why it can't merge" rows={unmet} focused={focused} />
+  </MergePanel>
+);
+
+/** The key cap on the button in the open panel whose label starts with `label`. */
+const keyOf = (label: string) =>
+  [...panel().querySelectorAll('button')]
+    .find((each) => each.textContent?.startsWith(label))
+    ?.querySelector('kbd');
+
 describe('MergePanel', () => {
   it('opens as a dialog named Merge, in the scope its keys apply in, with a head, body and foot', () => {
     frame({
@@ -154,7 +176,7 @@ describe('MergePanel', () => {
           into <Branch name="ravi/plan-limits" base /> · 6 things in the way
         </>
       ),
-      children: <Checklist label="Why it can't merge" rows={unmet} />,
+      children: <Checklist id="reasons" label="Why it can't merge" rows={unmet} />,
       foot: (
         <MergeFoot
           auto={{ on: false, onChange: () => undefined, keys: ['a'] }}
@@ -208,6 +230,78 @@ describe('MergePanel', () => {
     expect(document.activeElement).toBe(before);
   });
 
+  it('names the row the keyboard is on as its active descendant, and rings it', () => {
+    document.body.append(document.createElement('button'));
+    const host = render(viewFocusing('threads'));
+    const dialog = panel();
+    const active = dialog.getAttribute('aria-activedescendant');
+    expect(active).toBe(checkRowId('reasons', 'threads'));
+    // The id names a row that's in the panel, and the panel is where the ring is shown from.
+    const row = dialog.querySelector(`[id="${active}"]`);
+    expect(row?.getAttribute('data-key')).toBe('threads');
+    expect(row?.className).toContain('group-focus-visible/list:shadow-ring-inset');
+    expect(dialog.className).toContain('group/list');
+    // With no row on, the panel names none.
+    rerender(host, viewFocusing(undefined));
+    expect(panel().hasAttribute('aria-activedescendant')).toBe(false);
+  });
+
+  it('hands on the keys pressed in it', () => {
+    const onKeyDown = vi.fn<(event: { key: string }) => void>();
+    frame({
+      kind: 'ready',
+      verdict: 'Ready to merge',
+      onKeyDown,
+      foot: <MergeFoot primary={{ label: 'Squash and merge' }} />,
+    });
+    press(panel(), 'j');
+    expect(onKeyDown).toHaveBeenCalledOnce();
+    expect(onKeyDown.mock.calls[0]?.[0].key).toBe('j');
+  });
+
+  it('draws the main button’s key on the fill, and where the fill has gone, in the quiet color', () => {
+    frame({
+      kind: 'ready',
+      verdict: 'Ready to merge',
+      foot: <MergeFoot primary={{ label: 'Squash and merge', keys: ['⏎'] }} />,
+    });
+    expect(keyOf('Squash and merge')?.className).toContain('text-on-accent');
+    cleanUp();
+    frame({
+      kind: 'waiting',
+      verdict: "Can't merge yet",
+      foot: <MergeFoot primary={{ label: 'Merge', keys: ['⏎'], disabled: true }} />,
+    });
+    // No fill behind it: on-accent text would be nothing on nothing.
+    expect(keyOf('Merge')?.className).not.toContain('text-on-accent');
+    expect(keyOf('Merge')?.className).toContain('text-fg-muted');
+  });
+
+  it('lets a key focus the commit’s fields, and hands on the keys pressed in them', () => {
+    const title = createRef<HTMLInputElement>();
+    const message = createRef<HTMLTextAreaElement>();
+    const onTitleKey = vi.fn<(event: { key: string }) => void>();
+    const onMessageKey = vi.fn<(event: { key: string }) => void>();
+    const host = render(
+      <CommitText
+        titleRef={title}
+        messageRef={message}
+        title={{ value: 'A title', onChange: () => undefined, onKeyDown: onTitleKey }}
+        message={{ value: 'A message', onChange: () => undefined, onKeyDown: onMessageKey }}
+      />,
+    );
+    expect(title.current).toBe(host.querySelector('input'));
+    expect(message.current).toBe(host.querySelector('textarea'));
+    focus(title.current!);
+    expect(document.activeElement).toBe(title.current);
+    focus(message.current!);
+    expect(document.activeElement).toBe(message.current);
+    press(title.current!, 'Escape');
+    press(message.current!, 'Escape');
+    expect(onTitleKey.mock.calls.map(([event]) => event.key)).toEqual(['Escape']);
+    expect(onMessageKey.mock.calls.map(([event]) => event.key)).toEqual(['Escape']);
+  });
+
   it('draws nothing while it is closed', () => {
     const anchor = document.createElement('button');
     document.body.append(anchor);
@@ -253,8 +347,8 @@ describe('MergePanel', () => {
   });
 
   it('draws the verdict without the characters that turn text around', () => {
-    frame({ kind: 'ready', verdict: 'Ready ‮to merge' });
-    expect(panel().innerHTML).not.toMatch(/[‪-‮⁦-⁩]/);
+    frame({ kind: 'ready', verdict: 'Ready \u202Eto merge' });
+    expect(panel().innerHTML).not.toMatch(/[\u202A-\u202E\u2066-\u2069]/);
   });
 
   describe('can merge, with a squash', () => {
@@ -370,7 +464,7 @@ describe('MergePanel', () => {
         kind: 'auto',
         verdict: 'Merges when ready',
         sub: 'Auto-merge on · squash',
-        children: <Checklist label="What it waits for" rows={rows} />,
+        children: <Checklist id="reasons" label="What it waits for" rows={rows} />,
         foot: (
           <MergeFoot
             auto={{ on: true, onChange: () => undefined, keys: ['a'] }}
@@ -413,21 +507,15 @@ describe('MergePanel', () => {
           kind: 'wait',
           glyph: 'unknown',
           title: 'GitHub says no, and not why',
-          detail: (
-            <>
-              Lo checked reviews, checks, conversations and rules.{' '}
-              <button type="button" onClick={onGitHub}>
-                See it on GitHub ↗
-              </button>
-            </>
-          ),
+          detail: 'Lo checked reviews, checks, conversations and rules.',
+          link: { label: 'See it on GitHub ↗', onOpen: onGitHub },
         },
       ];
       frame({
         kind: 'blocked',
         verdict: "Can't merge",
         sub: 'into main · 4 things in the way',
-        children: <Checklist label="Why it can't merge" rows={rows} />,
+        children: <Checklist id="reasons" label="Why it can't merge" rows={rows} />,
         foot: <MergeFoot method="Merge commit" primary={{ label: 'Merge', disabled: true }} />,
       });
       const { head, body, foot } = parts();
@@ -438,8 +526,10 @@ describe('MergePanel', () => {
         'Conflicts with main',
         'This is a draftThe author marks it ready on GitHub.',
         "main requires signed commits, which Lo doesn't check.",
-        'GitHub says no, and not whyLo checked reviews, checks, conversations and rules. See it on GitHub ↗',
+        'GitHub says no, and not whyLo checked reviews, checks, conversations and rules.See it on GitHub ↗',
       ]);
+      click(body!.querySelector('li[data-key="unknown"] button')!);
+      expect(onGitHub).toHaveBeenCalledOnce();
       // With nothing to switch, the foot is the method and a main button that can't be pressed.
       expect(foot.querySelector('[role="switch"]')).toBeNull();
       expect(foot.textContent).toContain('Merge commit');
@@ -454,7 +544,7 @@ describe('MergePanel', () => {
       sub: <Branch name="main" base />,
       children: (
         <>
-          <Checklist label="Why" rows={unmet} />
+          <Checklist id="reasons" label="Why" rows={unmet} />
           <MergeMethods
             methods={[{ value: 'squash', label: 'Squash' }]}
             value="squash"

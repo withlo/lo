@@ -1,5 +1,5 @@
 import { Popover } from '@base-ui/react/popover';
-import { useCallback, useId, type ReactNode, type Ref } from 'react';
+import { useCallback, useId, type KeyboardEvent, type ReactNode, type Ref } from 'react';
 
 import { Button } from './Button.tsx';
 import { withoutBidi } from './controls.ts';
@@ -35,6 +35,15 @@ export interface MergePanelProps {
   foot?: ReactNode;
   /** The panel itself, which takes focus as it opens, so its keys apply. */
   panelRef?: Ref<HTMLDivElement> | undefined;
+  /**
+   * The id of the row the keyboard is on, such as the reason `j` and `k` moved to
+   * (`checkRowId`): the panel holds focus, so it names that row as its active descendant, and
+   * a screen reader follows the keyboard as it moves. A row that has the keyboard also has a ring
+   * while the panel has keyboard focus.
+   */
+  activeDescendant?: string | undefined;
+  /** A key pressed anywhere in it, before the control with focus gets it. */
+  onKeyDown?: ((event: KeyboardEvent<HTMLDivElement>) => void) | undefined;
 }
 
 /**
@@ -57,6 +66,8 @@ export function MergePanel({
   children,
   foot,
   panelRef,
+  activeDescendant,
+  onKeyDown,
 }: MergePanelProps) {
   const returnFocus = useReturnFocus(open);
   const takeFocus = useTakeFocus();
@@ -93,7 +104,9 @@ export function MergePanel({
             aria-label="Merge"
             data-lo-scope={scope}
             data-kind={kind}
-            className="flex w-mergepanel-w max-w-full flex-col overflow-hidden rounded-md bg-bg-overlay text-fg shadow-pop outline-none text-ui"
+            aria-activedescendant={activeDescendant}
+            onKeyDown={onKeyDown}
+            className="group/list flex w-mergepanel-w max-w-full flex-col overflow-hidden rounded-md bg-bg-overlay text-fg shadow-pop outline-none text-ui"
           >
             <div className="flex items-center gap-12 ps-16 pe-12 pt-12 pb-8">
               <MergeDot kind={kind} size="md" />
@@ -197,7 +210,7 @@ export function MergeFoot({ auto, start, method, primary }: MergeFootProps) {
           <Key
             keys={primary.keys}
             decorative
-            className={primary.quiet ? undefined : 'text-on-accent'}
+            className={primary.quiet || primary.disabled ? undefined : 'text-on-accent'}
           />
         )}
       </Button>
@@ -253,13 +266,17 @@ export interface CommitField {
   onChange: (value: string) => void;
   /** GitHub's own text, which stands where nothing is typed, and is what's sent then. */
   placeholder?: string | undefined;
+  /** A key pressed in the field, such as `Esc`, which leaves it for the panel. */
+  onKeyDown?: ((event: KeyboardEvent<HTMLElement>) => void) | undefined;
 }
 
 export interface CommitTextProps {
   title: CommitField;
   message: CommitField;
-  /** The title's field, for a key that edits it to focus. */
+  /** The title's field, for the key that edits the commit to focus. */
   titleRef?: Ref<HTMLInputElement> | undefined;
+  /** The message's field, for a key that moves on to it to focus. */
+  messageRef?: Ref<HTMLTextAreaElement> | undefined;
 }
 
 /**
@@ -267,7 +284,7 @@ export interface CommitTextProps {
  * and only what the reader types is sent. The window takes the characters that turn text around
  * out of GitHub's text before it goes here, so what's shown is what's sent.
  */
-export function CommitText({ title, message, titleRef }: CommitTextProps) {
+export function CommitText({ title, message, titleRef, messageRef }: CommitTextProps) {
   const id = useId();
   return (
     <div className="flex flex-col gap-12">
@@ -281,6 +298,7 @@ export function CommitText({ title, message, titleRef }: CommitTextProps) {
           value={title.value}
           placeholder={title.placeholder}
           onChange={(event) => title.onChange(event.currentTarget.value)}
+          onKeyDown={title.onKeyDown}
         />
       </div>
       <div className="flex flex-col gap-6">
@@ -289,10 +307,12 @@ export function CommitText({ title, message, titleRef }: CommitTextProps) {
         </label>
         <textarea
           id={`${id}-message`}
+          ref={messageRef}
           rows={3}
           value={message.value}
           placeholder={message.placeholder}
           onChange={(event) => message.onChange(event.currentTarget.value)}
+          onKeyDown={message.onKeyDown}
           className="w-full min-w-0 resize-none rounded-sm border border-border bg-bg-well px-8 py-6 text-fg code-text placeholder:text-fg-subtle hover:border-border-strong focus-visible:shadow-ring"
         />
       </div>

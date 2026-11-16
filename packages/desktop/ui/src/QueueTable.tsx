@@ -1,5 +1,5 @@
 import { cva } from 'class-variance-authority';
-import { useId, type ReactNode } from 'react';
+import { useId, type HTMLAttributes, type ReactNode, type Ref } from 'react';
 
 import { Avatar } from './Avatar.tsx';
 import { CheckIcon } from './Checklist.tsx';
@@ -83,7 +83,10 @@ export interface LeftEntry {
   inQueue?: string | undefined;
 }
 
-export interface QueueTableProps {
+export interface QueueTableProps extends Omit<
+  HTMLAttributes<HTMLDivElement>,
+  'children' | 'role' | 'aria-label' | 'aria-activedescendant'
+> {
   /** What the table is, for screen readers: "Merge queue for main". */
   label: string;
   items: readonly QueueItem[];
@@ -97,12 +100,15 @@ export interface QueueTableProps {
   focused?: string | undefined;
   /** A row was clicked, by key. */
   onRowClick?: ((key: string) => void) | undefined;
+  /** The table itself, which takes focus: its keys and scope go on it as attributes. */
+  tableRef?: Ref<HTMLDivElement> | undefined;
 }
 
 const row = cva('queue-columns min-h-48 cursor-default rounded-sm px-12 text-ui hover:bg-hover', {
   variants: {
     yours: { true: 'bg-on-screen', false: '' },
-    focused: { true: 'shadow-ring-inset', false: '' },
+    // Only while the table has keyboard focus: opened with a click, it has none to show.
+    focused: { true: 'group-focus-visible/list:shadow-ring-inset', false: '' },
   },
 });
 
@@ -275,6 +281,7 @@ function Row({ id, rowKey, yours, focused, onClick, children }: RowProps) {
       id={id}
       role="row"
       data-key={rowKey}
+      aria-selected={focused}
       data-yours={yours === true ? '' : undefined}
       className={row({ yours: yours === true, focused })}
       onClick={() => onClick?.(rowKey)}
@@ -431,7 +438,7 @@ function LeftRow({
 function Heading({ children }: { children: ReactNode }) {
   return (
     <div role="row" className="px-12 pt-16 pb-4">
-      <div role="columnheader" aria-colspan={6} className="label-caps text-fg-muted text-label">
+      <div role="rowheader" aria-colspan={6} className="label-caps text-fg-muted text-label">
         {children}
       </div>
     </div>
@@ -442,8 +449,9 @@ function Heading({ children }: { children: ReactNode }) {
  * A branch's merge queue as a table: each entry's place, title and author, how it stands, how long
  * it's been queued and when it should merge, with entries tested together boxed as a group and the
  * account's own marked. Under it, the pull requests waiting to join with auto-merge on, and those
- * Lo saw leave, each with why. The keyboard's row has a ring; the table says which in
- * `aria-activedescendant`, for whatever holds focus to set.
+ * Lo saw leave, each with why. It's one focusable element, as the threads panel's list is: the row
+ * the keyboard is on is its active descendant and has a ring while the table has keyboard focus.
+ * Its keys and key scope go on it as attributes, such as `onKeyDown` and `data-lo-scope`.
  */
 export function QueueTable({
   label,
@@ -453,6 +461,9 @@ export function QueueTable({
   more,
   focused,
   onRowClick,
+  tableRef,
+  className = '',
+  ...rest
 }: QueueTableProps) {
   const prefix = useId();
   const ids = (key: string) => `${prefix}-${key}`;
@@ -463,10 +474,13 @@ export function QueueTable({
   ].find((each) => each.key === focused);
   return (
     <div
+      ref={tableRef}
       role="grid"
       aria-label={label}
+      tabIndex={0}
       aria-activedescendant={active === undefined ? undefined : ids(active.key)}
-      className="flex flex-col gap-6"
+      className={`group/list flex flex-col gap-6 ${className}`}
+      {...rest}
     >
       <div
         role="row"
@@ -505,9 +519,15 @@ export function QueueTable({
             aria-label={`Testing together, ${item.group.entries.length} PRs`}
             className="relative rounded-md py-6 inset-ring inset-ring-state-merged-border"
           >
-            <div className="flex items-center gap-6 px-12 pb-4 text-small-medium text-queue">
-              <Spinner size="xs" />
-              Testing together · {item.group.entries.length} PRs
+            <div role="row">
+              <div
+                role="rowheader"
+                aria-colspan={6}
+                className="flex items-center gap-6 px-12 pb-4 text-small-medium text-queue"
+              >
+                <Spinner size="xs" />
+                Testing together · {item.group.entries.length} PRs
+              </div>
             </div>
             {item.group.entries.map((entry) => (
               <EntryRow
@@ -522,9 +542,15 @@ export function QueueTable({
         ),
       )}
       {more !== undefined && (
-        <div className="flex items-center gap-6 px-12 pt-6 text-fg-muted text-small">
-          <span>{more.count} more aren&apos;t shown.</span>
-          <LinkButton onClick={more.onOpen}>See the queue on GitHub.</LinkButton>
+        <div role="row">
+          <div
+            role="gridcell"
+            aria-colspan={6}
+            className="flex items-center gap-6 px-12 pt-6 text-fg-muted text-small"
+          >
+            <span>{more.count} more aren&apos;t shown.</span>
+            <LinkButton onClick={more.onOpen}>See the queue on GitHub.</LinkButton>
+          </div>
         </div>
       )}
 

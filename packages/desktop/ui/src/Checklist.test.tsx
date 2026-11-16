@@ -8,7 +8,7 @@ import { missingRules } from '../test/classes.ts';
 import { cleanUp, click, render } from '../test/dom.ts';
 import { Avatar } from './Avatar.tsx';
 import { Button } from './Button.tsx';
-import { Checklist, type CheckItem, type CheckKind } from './Checklist.tsx';
+import { Checklist, checkRowId, type CheckItem, type CheckKind } from './Checklist.tsx';
 import { Key } from './Key.tsx';
 
 beforeAll(() => {
@@ -106,7 +106,7 @@ function blockers(open = vi.fn<(name: string) => void>()): CheckItem[] {
 
 describe('Checklist', () => {
   it('draws a row for each reason, in order, titled and detailed', () => {
-    const host = render(<Checklist label="Why it can't merge" rows={blockers()} />);
+    const host = render(<Checklist id="reasons" label="Why it can't merge" rows={blockers()} />);
     const list = host.querySelector('ul[aria-label="Why it can\'t merge"]');
     expect(list).not.toBeNull();
     const rows = [...host.querySelectorAll<HTMLElement>('ul > li[data-key]')];
@@ -139,7 +139,7 @@ describe('Checklist', () => {
       glyph: kind === 'ok' ? 'ok' : 'unknown',
       title: kind,
     }));
-    const host = render(<Checklist label="Kinds" rows={rows} />);
+    const host = render(<Checklist id="reasons" label="Kinds" rows={rows} />);
     for (const [kind, tint] of kinds) {
       const row = host.querySelector(`li[data-kind="${kind}"]`);
       expect(row?.querySelector('span')?.className).toContain(tint);
@@ -149,7 +149,7 @@ describe('Checklist', () => {
   });
 
   it('draws a running check as a ring turning, and one that has not reported as a hollow ball', () => {
-    const host = render(<Checklist label="Checks" rows={blockers()} />);
+    const host = render(<Checklist id="reasons" label="Checks" rows={blockers()} />);
     const running = host.querySelector('li[data-key="running"]');
     expect(running?.querySelector('.spinner')).not.toBeNull();
     expect(running?.querySelector('svg')).toBeNull();
@@ -160,7 +160,7 @@ describe('Checklist', () => {
 
   it('lists the checks a row holds as sub-rows, each with how it stands and a link to its run', () => {
     const open = vi.fn<(name: string) => void>();
-    const host = render(<Checklist label="Checks" rows={blockers(open)} />);
+    const host = render(<Checklist id="reasons" label="Checks" rows={blockers(open)} />);
     const subs = [...host.querySelectorAll('li[data-key="running"] ul > li')];
     expect(subs.map((each) => each.textContent)).toEqual([
       'e2e (chromium)6 minRun ↗',
@@ -186,7 +186,7 @@ describe('Checklist', () => {
   });
 
   it('puts what is at a row’s end, such as people or a button, in a column of its own', () => {
-    const host = render(<Checklist label="Checks" rows={blockers()} />);
+    const host = render(<Checklist id="reasons" label="Checks" rows={blockers()} />);
     const review = host.querySelector('li[data-key="review"]');
     const end = [...(review?.children ?? [])].at(-1);
     expect(end?.className).toContain('col-start-3');
@@ -196,14 +196,73 @@ describe('Checklist', () => {
     expect(next?.textContent).toContain(']');
   });
 
-  it('rings the row the keyboard is on', () => {
-    const host = render(<Checklist label="Checks" rows={blockers()} focused="threads" />);
-    const rows = [...host.querySelectorAll('ul > li[data-key]')];
-    expect(rows.filter((each) => each.getAttribute('aria-current') === 'true')).toHaveLength(1);
+  it('names each row by an id of its own, for whatever holds focus to point at', () => {
+    const host = render(<Checklist id="reasons" label="Checks" rows={blockers()} />);
+    const ids = [...host.querySelectorAll('ul > li[data-key]')].map((each) => each.id);
+    expect(ids).toEqual(
+      ['review', 'failed', 'running', 'pending', 'threads', 'behind'].map((key) =>
+        checkRowId('reasons', key),
+      ),
+    );
+    expect(new Set(ids).size).toBe(ids.length);
+    // Two lists with other ids draw rows with other ids.
+    expect(checkRowId('reasons', 'review')).not.toBe(checkRowId('other', 'review'));
+  });
+
+  it('rings the row the keyboard is on while what holds focus has keyboard focus, and is not current', () => {
+    const host = render(
+      <Checklist id="reasons" label="Checks" rows={blockers()} focused="threads" />,
+    );
     const on = host.querySelector('li[data-key="threads"]');
-    expect(on?.getAttribute('aria-current')).toBe('true');
-    expect(on?.className).toContain('shadow-ring-inset');
+    expect(on?.hasAttribute('data-focused')).toBe(true);
+    // The ring shows only inside a `group/list` that has keyboard focus, as a list's rows' do.
+    expect(on?.className).toContain('group-focus-visible/list:shadow-ring-inset');
+    expect(host.querySelectorAll('[data-focused]')).toHaveLength(1);
     expect(host.querySelector('li[data-key="review"]')?.className).not.toContain('ring');
+    // Focus is where the keyboard is; current is what's on screen: nothing here is current.
+    expect(host.querySelector('[aria-current]')).toBeNull();
+  });
+
+  it('gives a row a link of its own, named for the row', () => {
+    const open = vi.fn<() => void>();
+    const rows: CheckItem[] = [
+      {
+        key: 'unknown',
+        kind: 'wait',
+        glyph: 'unknown',
+        title: 'GitHub says no, and not why',
+        detail: 'Lo checked reviews, checks, conversations and rules.',
+        link: { label: 'See it on GitHub ↗', onOpen: open },
+      },
+      { key: 'plain', kind: 'info', glyph: 'draft', title: 'This is a draft' },
+    ];
+    const host = render(<Checklist id="reasons" label="Why" rows={rows} />);
+    const links = host.querySelectorAll('li > span > button');
+    expect(links).toHaveLength(1);
+    const link = links[0];
+    expect(link?.textContent).toBe('See it on GitHub ↗');
+    expect(link?.getAttribute('aria-label')).toBe('See it on GitHub: GitHub says no, and not why');
+    click(link!);
+    expect(open).toHaveBeenCalledOnce();
+    // It sits under the row's detail, in the column of the text.
+    expect(link?.parentElement?.className).toContain('col-start-2');
+    expect(host.querySelectorAll('li[data-key="plain"] button')).toHaveLength(0);
+  });
+
+  it('draws a row’s title and detail, when they are text, without the characters that turn text around', () => {
+    const rows: CheckItem[] = [
+      {
+        key: 'x',
+        kind: 'fail',
+        glyph: 'rule',
+        title: 'main requires \u202Esigned commits',
+        detail: 'A rule on \u2066main\u2069.',
+      },
+    ];
+    const host = render(<Checklist id="reasons" label="Why" rows={rows} />);
+    expect(host.innerHTML).not.toMatch(/[\u202A-\u202E\u2066-\u2069]/);
+    expect(host.textContent).toContain('main requires signed commits');
+    expect(host.textContent).toContain('A rule on main.');
   });
 
   it('draws the names of checks without the characters that turn text around', () => {
@@ -213,11 +272,11 @@ describe('Checklist', () => {
         kind: 'fail',
         glyph: 'failed',
         title: 'A check failed',
-        subs: [{ key: 's', name: 'tes‮t (node 20)⁦', note: 'failed' }],
+        subs: [{ key: 's', name: 'tes\u202Et (node 20)\u2066', note: 'failed' }],
       },
     ];
-    const host = render(<Checklist label="Checks" rows={rows} />);
-    expect(host.innerHTML).not.toMatch(/[‪-‮⁦-⁩]/);
+    const host = render(<Checklist id="reasons" label="Checks" rows={rows} />);
+    expect(host.innerHTML).not.toMatch(/[\u202A-\u202E\u2066-\u2069]/);
     expect(host.textContent).toContain('test (node 20)');
   });
 
@@ -231,14 +290,16 @@ describe('Checklist', () => {
         subs: [{ key: 's', name: '<img src=x onerror=alert(1)>', note: '<b>no</b>' }],
       },
     ];
-    const host = render(<Checklist label="Checks" rows={rows} />);
+    const host = render(<Checklist id="reasons" label="Checks" rows={rows} />);
     expect(host.querySelector('img')).toBeNull();
     expect(host.querySelector('b')).toBeNull();
     expect(host.textContent).toContain('<img src=x onerror=alert(1)>');
   });
 
   it("only uses utilities that Lo's stylesheet has", async () => {
-    const host = render(<Checklist label="Checks" rows={blockers()} focused="review" />);
+    const host = render(
+      <Checklist id="reasons" label="Checks" rows={blockers()} focused="review" />,
+    );
     expect(await missingRules(host)).toEqual([]);
   });
 });
