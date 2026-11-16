@@ -81,6 +81,14 @@ export function settingsPath(data: string): string {
 }
 
 /**
+ * Where an unpackaged Lo with this data folder keeps its cache: `lo-cache`, never `cache`, which a
+ * Mac's disk takes for Chromium's own `Cache` beside it.
+ */
+export function cachePath(data: string): string {
+  return join(data, 'lo-cache');
+}
+
+/**
  * The program a test's Lo opens the keymap file with, in place of the system's text editor, so no
  * test starts an editor on a desktop other work shares. It adds the path it's given to `opened`,
  * beside it in the data folder.

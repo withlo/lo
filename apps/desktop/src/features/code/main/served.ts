@@ -15,7 +15,8 @@
 // When the server is starting, waiting for room, refused, slow, stopped or failed, the syntax index
 // answers, with why the server didn't (`fallback`), and a late answer is dropped. The old side
 // always answers from the index, since servers run only on the head; so does a file whose checkout
-// isn't the head's blob, as when two of its names fold together on disk. A place a server names
+// isn't the head's blob, as when two of its names fold together on disk, and a checkout that isn't
+// usable at all, saying so, as one its local copy was made again without. A place a server names
 // outside the checkout, or a file of the checkout that isn't in the head's tree, is never read: it
 // shows as outside the repository, with the asking file's import of the name where there's one.
 //
@@ -105,8 +106,12 @@ export interface Serving {
    */
   readonly noReferences?: string | undefined;
   readonly server: Pick<Running, 'open' | 'request' | 'pathOf' | 'capabilities'>;
-  /** Whether the checkout's file at `path` is blob `oid`, the head's, which the server reads too. */
-  matches(path: string, oid: Oid): Promise<boolean>;
+  /**
+   * Whether the checkout's file at `path` is blob `oid`, the head's, which the server reads too; or,
+   * when the checkout itself isn't usable, as one the local copy no longer counts as its own,
+   * whether Lo is making it again (`remaking`) or couldn't (`unusable`).
+   */
+  matches(path: string, oid: Oid): Promise<boolean | 'remaking' | 'unusable'>;
 }
 
 /**
@@ -159,6 +164,15 @@ function waitingFor(serving: NotServing): string {
   }
 }
 
+/**
+ * What the syntax index's answers say when the server's checkout isn't usable, and whether Lo is
+ * making it again.
+ */
+function unusableCheckout(name: string, remaking: boolean): string {
+  const why = `${name} can't run: this PR's checkout isn't usable.`;
+  return remaking ? `${why} Lo is making it again.` : why;
+}
+
 /** Why a server's request has no answer, as the syntax index's answers say it. */
 function fallbackOf(name: string, why: NoAnswer): string {
   switch (why) {
@@ -198,7 +212,11 @@ async function ask<M extends Method>(
   options: RequestOptions,
 ): Promise<Asking> {
   // The server reads the file on disk too: one that isn't the head's would answer about other text.
-  if (!(await serving.matches(file.path, file.oid))) return { ok: false };
+  const matched = await serving.matches(file.path, file.oid);
+  if (matched === 'remaking' || matched === 'unusable') {
+    return { ok: false, fallback: unusableCheckout(serving.name, matched === 'remaking') };
+  }
+  if (!matched) return { ok: false };
   if (options.signal?.aborted) throw new IpcError('cancelled', 'The question was cancelled.');
   const languageId = serving.languageOf(file.path);
   if (languageId === undefined) return { ok: false, fallback: `${serving.name} doesn't read it.` };

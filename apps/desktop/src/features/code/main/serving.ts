@@ -15,10 +15,16 @@
 //   checkouts stay.
 // - A server answers only about the head it runs on: a view of another head, or the old side, gets
 //   the syntax index's answers.
+// - A checkout a server finds isn't one its local copy counts as its own any more, as once the
+//   local copy was made again, is made again: what runs on the pull request's checkouts stops
+//   first, and starts again on the new one. One made again that's no better fails, for "Restart".
+// - Once no view of a pull request is followed, its checkouts are forgotten, so the next view of it
+//   checks its head out again, and gets a checkout cleanup or a new local copy took meanwhile made
+//   again.
 //
 // Nothing here calls Electron, so it runs under unit tests.
 
-import type { Oid, TreeEntry } from '@lo/git';
+import { GitError, type Oid, type TreeEntry } from '@lo/git';
 
 import { IpcError } from '../../../ipc/contract.ts';
 import type { ServerLog, ServerState, Servers } from '../contract.ts';
@@ -92,7 +98,18 @@ interface Followed {
 interface Checkout {
   folder: string | undefined;
   failed: string | undefined;
+  /**
+   * Whether it was made again once a server found the one before it unusable, and hasn't been
+   * found usable since.
+   */
+  remade: boolean;
 }
+
+/**
+ * What the status bar says, after "Lo couldn't check out this PR's head:", of a checkout made again
+ * that a server finds unusable too.
+ */
+const STILL_UNUSABLE = "the checkout Lo made again isn't usable either";
 
 /** The lowercase key servers of `repo` are kept by. */
 export function repoKey(repo: string): string {
@@ -146,6 +163,7 @@ export class ServingViews {
     if (!input) {
       const closed = this.#views.get(id);
       this.#views.delete(id);
+      if (closed) this.#forgetUnfollowed(closed.input);
       this.#sync();
       // What another view of its pull request decided holds once this one, trusted, has gone.
       if (closed?.trusted === true) this.#decideAgain(closed.input);
@@ -208,7 +226,7 @@ export class ServingViews {
     }
     const checkout = this.#checkouts.get(checkoutKey(input, commit));
     const folder = checkout?.folder;
-    if (folder === undefined) {
+    if (checkout === undefined || folder === undefined) {
       if (checkout?.failed !== undefined) return { kind: 'failed', name };
       return onScreen ? { kind: 'starting', name } : undefined;
     }
@@ -226,6 +244,7 @@ export class ServingViews {
         return { ...found, name };
       case 'ready': {
         const clone = input.clone;
+        const remake = () => this.#remake(input, commit, checkout);
         return {
           kind: 'ready',
           name,
@@ -242,7 +261,14 @@ export class ServingViews {
           async matches(file, oid) {
             const repo = await clone();
             if (!repo) return false;
-            const hashed = await repo.hashCheckoutFile(folder, Buffer.from(file, 'utf8'));
+            let hashed: Oid | undefined;
+            try {
+              hashed = await repo.hashCheckoutFile(folder, Buffer.from(file, 'utf8'));
+            } catch (error) {
+              if (!isNotACheckout(error)) throw error;
+              return remake();
+            }
+            checkout.remade = false;
             return hashed === oid;
           },
         };
@@ -377,8 +403,17 @@ export class ServingViews {
       await dropping;
       return undefined;
     }
-    const checkout: Checkout = { folder: undefined, failed: undefined };
+    const checkout: Checkout = { folder: undefined, failed: undefined, remade: false };
     this.#checkouts.set(key, checkout);
+    return this.#make(input, head, checkout);
+  }
+
+  /**
+   * Makes `checkout`, of `head` for `input`'s pull request, and returns its folder, unless it was
+   * forgotten or replaced meanwhile. One made once nothing trusts the pull request goes at once.
+   */
+  async #make(input: ServingInput, head: Oid, checkout: Checkout): Promise<string | undefined> {
+    const key = checkoutKey(input, head);
     try {
       const repo = await input.clone();
       if (!repo) throw new Error("The pull request's local copy isn't open.");
@@ -399,6 +434,69 @@ export class ServingViews {
     if (!current) return undefined;
     this.#sync();
     return checkout.folder;
+  }
+
+  /**
+   * Makes `head`'s checkout for `input`'s pull request again, once a server found `made`, the one it
+   * runs on, isn't one its local copy counts as its own, as once the local copy was made again
+   * without it. What runs on the pull request's checkouts stops first, so nothing runs on it while
+   * it's made, then starts on the new one. One made again that a server finds no better, before
+   * it's ever found usable, fails instead, so the status bar says so and "Restart" tries again.
+   * Says which it did. A late answer, about a checkout that's since been made again, let go of or
+   * no longer trusted, gets what holds now, or `false`, so its note says nothing out of date.
+   */
+  #remake(input: ServingInput, head: Oid, made: Checkout): 'remaking' | 'unusable' | false {
+    const key = checkoutKey(input, head);
+    const now = this.#checkouts.get(key);
+    if (!this.#trustedNow(input) || this.#dropping.has(pullKey(input))) return false;
+    if (now !== made) {
+      // Another question found it first.
+      if (now === undefined || now.folder !== undefined) return false;
+      return now.failed === undefined ? 'remaking' : 'unusable';
+    }
+    const { repo, number } = input;
+    const stopping = () =>
+      this.#options.stopOn(repo, number).catch((error: unknown) => {
+        this.#options.log(`${repo}#${number}: couldn't stop its servers (${describe(error)}).`);
+      });
+    if (made.remade) {
+      made.folder = undefined;
+      made.failed = STILL_UNUSABLE;
+      this.#options.log(`${repo}#${number}: its checkout of ${head} made again isn't usable.`);
+      this.#sync();
+      void stopping();
+      return 'unusable';
+    }
+    const again: Checkout = { folder: undefined, failed: undefined, remade: true };
+    this.#checkouts.set(key, again);
+    this.#options.log(
+      `${repo}#${number}: making its checkout of ${head} again, since it isn't the local copy's.`,
+    );
+    // With no checkout to run on meanwhile, nothing starts on the old one once what ran there stops.
+    this.#sync();
+    void (async () => {
+      await stopping();
+      if (this.#stopped || this.#checkouts.get(key) !== again) return;
+      await this.#make(input, head, again);
+    })();
+    return 'remaking';
+  }
+
+  /**
+   * Forgets the checkouts of `closed`'s pull request once no view of it is followed, so the next
+   * view of it checks its head out again, which makes one that's gone or no longer the local copy's
+   * again. What runs on them runs on until the pool stops it, so checking out again, which takes the
+   * clone's lock and forces the head's files back as git has them, can happen while a server that
+   * ran on the checkout is still stopping, or still runs there: it writes only what git checks out.
+   */
+  #forgetUnfollowed(closed: Pick<ServingInput, 'repo' | 'number'>): void {
+    const key = pullKey(closed);
+    for (const followed of this.#views.values()) {
+      if (pullKey(followed.input) === key) return;
+    }
+    for (const each of this.#checkouts.keys()) {
+      if (each.startsWith(`${key}@`)) this.#checkouts.delete(each);
+    }
   }
 
   /** Whether a view of `pull`'s pull request is trusted now, or checked again after it was. */
@@ -536,6 +634,13 @@ export class ServingViews {
     }
     return { view: input.id, off: false, servers };
   }
+}
+
+/** Whether `error` says a folder isn't one of its local copy's checkouts. */
+function isNotACheckout(error: unknown): boolean {
+  return (
+    error instanceof GitError && error.detail.kind === 'invalid' && error.detail.what === 'checkout'
+  );
 }
 
 /** The key a pull request's checkouts are kept by: its repository and number. */
