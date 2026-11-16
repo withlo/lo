@@ -6,7 +6,13 @@ import { dirname, join } from 'node:path';
 import { expect, onTestFinished, test } from 'vitest';
 
 import { git, testGitEnvironment } from './git.ts';
-import { MERGE_E4, MERGE_PULLS, mergeScript, writeMergeRemote } from './merge.ts';
+import {
+  MERGE_E4,
+  MERGE_PULLS,
+  mergeScript,
+  writeMergeRemote,
+  type MergeGenerationNumber,
+} from './merge.ts';
 
 const generation = MERGE_PULLS[1];
 const { pulls } = generation;
@@ -64,11 +70,14 @@ test('the names cover every pull request of the generation', () => {
   expect(Object.keys(BRANCHES).toSorted()).toEqual(Object.keys(pulls).toSorted());
 });
 
-/** The generation's repository, built in a folder of its own that goes when the test ends. */
-function built(options?: { pushed: boolean }): string {
+/**
+ * Generation `number`'s repository, generation 1's unless it says, built in a folder of its own
+ * that goes when the test ends.
+ */
+function built(options?: { pushed: boolean }, number: MergeGenerationNumber = 1): string {
   const folder = mkdtempSync(join(tmpdir(), 'lo-merge-'));
   onTestFinished(() => rmSync(folder, { recursive: true, force: true }));
-  expect(writeMergeRemote(folder, 1, options)).toBe(`file://${folder}`);
+  expect(writeMergeRemote(folder, number, options)).toBe(`file://${folder}`);
   return join(folder, 'rozed-dev', 'e2e.git');
 }
 
@@ -222,6 +231,31 @@ test(
   },
 );
 
+test(
+  'generation 2 is made with the commit IDs github has for it, pushed or not',
+  { timeout: 120_000 },
+  () => {
+    const second = MERGE_PULLS[2];
+    const bare = built(undefined, 2);
+    expect(git(bare, 'rev-parse', 'refs/heads/merge/2/base', 'refs/heads/merge/2/override')).toBe(
+      `${second.base.tip}\n${second.overrideBase}`,
+    );
+    expect(git(bare, 'rev-parse', `${second.base.tip}^`)).toBe(second.base.first);
+    for (const name of [...NAMES, ...E4_NAMES]) {
+      const { number, head, base } = second.pulls[name];
+      expect(
+        git(bare, 'rev-parse', `refs/heads/merge/2/${BRANCHES[name]}`, `refs/pull/${number}/head`),
+      ).toBe(`${head}\n${head}`);
+      // Into the same branch as generation 1's, under the generation's own name.
+      expect(base).toBe(pulls[name].base.replace('merge/1/', 'merge/2/'));
+    }
+    const after = built({ pushed: true }, 2);
+    expect(git(after, 'rev-parse', 'refs/heads/merge/2/moved', `${second.pushed}^`)).toBe(
+      `${second.pushed}\n${second.pulls.moved.head}`,
+    );
+  },
+);
+
 /** Runs `merge.sh` with `args`, which must stop, and returns what it said. */
 function refused(args: readonly string[], env: Record<string, string> = {}): string {
   const run = spawnSync('bash', [mergeScript, ...args], {
@@ -235,8 +269,8 @@ function refused(args: readonly string[], env: Record<string, string> = {}): str
 test('merge.sh writes nothing to GitHub without rozed-bot, and builds no generation it has no numbers for', () => {
   // With no token, it stops before it reads or writes anything.
   expect(refused(['1'], { LO_FIXTURE_TOKEN_FILE: '' })).toContain('LO_FIXTURE_TOKEN_FILE');
-  expect(refused(['--local', join(tmpdir(), 'lo-merge-none'), '2'])).toContain(
-    "numbers of generation 2 aren't recorded",
+  expect(refused(['--local', join(tmpdir(), 'lo-merge-none'), '3'])).toContain(
+    "numbers of generation 3 aren't recorded",
   );
   // Nor in a folder inside a work tree, where what it builds would be taken for the repository's.
   expect(refused(['--local', join(dirname(mergeScript), 'merge-none'), '1'])).toContain(

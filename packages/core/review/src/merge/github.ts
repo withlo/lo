@@ -7,6 +7,7 @@ import type {
   CheckConclusionState,
   CheckStatusState,
   MergeableState as GithubMergeableState,
+  MergeQueueEntryState as GithubMergeQueueEntryState,
   MergeStateStatus as GithubMergeStateStatus,
   PullRequestMergeMethod,
   PullRequestReviewDecision,
@@ -149,3 +150,23 @@ export const STATUS_STATES = [
 
 /** A commit status's state: GraphQL's `StatusState`, REST's status `state`. */
 export type StatusState = (typeof STATUS_STATES)[number];
+
+/**
+ * Where an entry stands in its merge queue.
+ *
+ * - `QUEUED`: waiting to be tested.
+ * - `AWAITING_CHECKS`: being tested: its checks are running.
+ * - `MERGEABLE`: its checks passed, and it merges once those ahead of it do.
+ * - `UNMERGEABLE`: it can't merge, and GitHub will take it out of the queue.
+ * - `LOCKED`: GitHub has locked it.
+ */
+export const MERGE_QUEUE_ENTRY_STATES = [
+  'QUEUED',
+  'AWAITING_CHECKS',
+  'MERGEABLE',
+  'UNMERGEABLE',
+  'LOCKED',
+] as const satisfies readonly GithubMergeQueueEntryState[];
+
+/** Where an entry stands in its merge queue: GraphQL's `MergeQueueEntryState`. */
+export type QueueEntryState = (typeof MERGE_QUEUE_ENTRY_STATES)[number];

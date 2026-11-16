@@ -10,6 +10,7 @@ import {
   isExact,
   isTrunk,
   NO_TRUNKS,
+  queueBranches,
   trunksAmong,
   type Trunks,
 } from './trunks.ts';
@@ -79,7 +80,7 @@ test('stars backtrack', () => {
 
 /** A ruleset that gates merging. */
 function refs(include: string[], exclude: string[]): RefNames {
-  return { include, exclude, gatesMerging: true };
+  return { include, exclude, gatesMerging: true, queue: false };
 }
 
 function trunks(defaultBranch: string, protectedBranches: string[], rulesets: RefNames[]): Trunks {
@@ -207,4 +208,62 @@ test('trunks among pull requests list the default branch first', () => {
   ];
   expect(trunksAmong(repo, prs)).toEqual(['main', 'develop', 'release/2.0']);
   expect(trunksAmong(NO_TRUNKS, prs)).toEqual([]);
+});
+
+/** An active ruleset that requires a merge queue. */
+function queued(include: string[], exclude: string[] = []): RefNames {
+  return { ...refs(include, exclude), queue: true };
+}
+
+test('the branches a merge queue ruleset covers have a queue', () => {
+  const rules = {
+    rulesets: [
+      queued(['~DEFAULT_BRANCH']),
+      queued(['refs/heads/release/*'], ['refs/heads/release/old-*']),
+      // Gates merging, with no queue.
+      refs(['refs/heads/develop'], []),
+    ],
+    unavailable: undefined,
+    leftOut: false,
+  };
+  const branches = ['trunk', 'release/2.0', 'release/old-1', 'develop', 'feature', 'release/2.0'];
+  expect(queueBranches(rules, branches, 'trunk')).toEqual({
+    queued: ['trunk', 'release/2.0'],
+    unknown: [],
+  });
+  // Without a default branch, ~DEFAULT_BRANCH covers nothing.
+  expect(queueBranches(rules, ['trunk'], undefined)).toEqual({ queued: [], unknown: [] });
+  expect(
+    queueBranches(
+      { rulesets: [queued(['~ALL'])], unavailable: undefined, leftOut: false },
+      ['x'],
+      'main',
+    ),
+  ).toEqual({ queued: ['x'], unknown: [] });
+});
+
+test('a ruleset whose rules github left out may give the branches it covers a queue', () => {
+  const rules = {
+    rulesets: [
+      { ...refs(['refs/heads/release/*'], []), queue: undefined },
+      queued(['refs/heads/release/2.0']),
+      refs(['refs/heads/develop'], []),
+    ],
+    unavailable: undefined,
+    leftOut: false,
+  };
+  // One that requires a queue wins over one Lo can't tell of.
+  expect(queueBranches(rules, ['release/1.0', 'release/2.0', 'develop'], 'main')).toEqual({
+    queued: ['release/2.0'],
+    unknown: ['release/1.0'],
+  });
+  // Rulesets that couldn't be read leave every branch they don't give a queue unknown.
+  expect(
+    queueBranches({ ...rules, unavailable: 'No' }, ['develop', 'release/2.0'], 'main'),
+  ).toEqual({ queued: ['release/2.0'], unknown: ['develop'] });
+  // So does a whole ruleset left out, which may cover any branch.
+  expect(queueBranches({ ...rules, leftOut: true }, ['develop', 'release/2.0'], 'main')).toEqual({
+    queued: ['release/2.0'],
+    unknown: ['develop'],
+  });
 });

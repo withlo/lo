@@ -50,7 +50,11 @@ test('lookups cut short leave a gap that refuses every plan', async () => {
 
 test('unread rulesets and a list cut short are gaps too', async () => {
   const { list } = await playground();
-  const rules: TrunkRuleList = { rulesets: [], unavailable: 'GitHub answered 502' };
+  const rules: TrunkRuleList = {
+    rulesets: [],
+    unavailable: 'GitHub answered 502',
+    leftOut: false,
+  };
   const stacks = stacksOf({ ...list, truncated: true }, rules);
   const gaps: Gap[] = [
     { kind: 'openPullRequests' },

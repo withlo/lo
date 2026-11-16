@@ -23,6 +23,7 @@ export * from './grant.ts';
 export * from './graphql.ts';
 export * from './json.ts';
 export * from './merge.ts';
+export * from './merge-queue.ts';
 export * from './merged.ts';
 export {
   describeMetadata,

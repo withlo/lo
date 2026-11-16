@@ -21,7 +21,7 @@
  * A long-lived branch that nothing protects can't be told from a work branch.
  */
 
-import type { RefNames } from '@lo/github';
+import type { RefNames, TrunkRuleList } from '@lo/github';
 
 import type { PullRequest } from './stacks.ts';
 
@@ -73,6 +73,46 @@ export function trunksAmong(trunks: Trunks, prs: readonly PullRequest[]): string
     .toSorted((a, b) => (a < b ? -1 : a > b ? 1 : 0))
     .filter((branch) => isTrunk(trunks, branch));
   return defaultBranch === undefined ? others : [defaultBranch, ...others];
+}
+
+/** Which branches have a merge queue, as far as a repository's rulesets say ({@link queueBranches}). */
+export interface QueueBranches {
+  /** Those an active ruleset that requires a merge queue covers. */
+  queued: string[];
+  /**
+   * Those Lo can't tell of: no ruleset that requires a queue covers them, but one whose rules GitHub
+   * left out does, GitHub left a whole ruleset out ({@link TrunkRuleList.leftOut}), which may cover
+   * any branch, or the rulesets couldn't be read ({@link TrunkRuleList.unavailable}), so those read
+   * before may be out of date.
+   */
+  unknown: string[];
+}
+
+/**
+ * Which of `branches` have a merge queue, as far as the repository's rulesets say: those an active
+ * ruleset that requires one covers, and those Lo can't tell of, each once, in their order. A queue
+ * a branch's classic protection requires isn't among them; a pull request's own facts say whether
+ * its base has one.
+ */
+export function queueBranches(
+  rules: TrunkRuleList,
+  branches: readonly string[],
+  defaultBranch: string | undefined,
+): QueueBranches {
+  const found: QueueBranches = { queued: [], unknown: [] };
+  for (const branch of branches) {
+    if (found.queued.includes(branch) || found.unknown.includes(branch)) continue;
+    const covering = rules.rulesets.filter((ruleset) => covers(ruleset, branch, defaultBranch));
+    if (covering.some((ruleset) => ruleset.queue === true)) found.queued.push(branch);
+    else if (
+      rules.unavailable !== undefined ||
+      rules.leftOut ||
+      covering.some((ruleset) => ruleset.queue !== false)
+    ) {
+      found.unknown.push(branch);
+    }
+  }
+  return found;
 }
 
 /** Whether `ruleset`'s condition covers `branch`, as GitHub decides. */

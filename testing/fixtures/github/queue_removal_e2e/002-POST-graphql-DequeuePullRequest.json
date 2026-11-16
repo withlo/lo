@@ -1,0 +1,43 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "https://api.github.com/graphql",
+    "operation": "DequeuePullRequest",
+    "variables": {
+      "id": "PR_kwDOVleUfc8AAAABPnrpmQ"
+    },
+    "query_sha256": "5a6df31496ce0cb85a8aefad61f97767a8075fa3533e3cdb86e27811b6e88a4a"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "x-ratelimit-limit": "5000",
+      "x-ratelimit-remaining": "4991",
+      "x-ratelimit-reset": "1794859428",
+      "x-ratelimit-resource": "graphql",
+      "x-ratelimit-used": "9"
+    },
+    "body": {
+      "data": {
+        "dequeuePullRequest": {
+          "mergeQueueEntry": {
+            "id": "MQE_lQDOVleUfc8AAAABPnrpmc4ABU_AzgQKYZw",
+            "position": 2,
+            "state": "AWAITING_CHECKS",
+            "jump": false,
+            "solo": false,
+            "enqueuedAt": "2026-11-16T19:13:38Z",
+            "estimatedTimeToMerge": null,
+            "headCommit": {
+              "oid": "817c7dabe4642089ba9f0ff015d113ce024f413e"
+            },
+            "pullRequest": {
+              "number": 133
+            }
+          }
+        }
+      }
+    }
+  }
+}

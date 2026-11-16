@@ -8,6 +8,7 @@ export * from './merge/action.ts';
 export * from './merge/blockers.ts';
 export * from './merge/facts.ts';
 export * from './merge/github.ts';
+export * from './merge/queue.ts';
 export * from './merge/reviews.ts';
 export * from './merge/ship.ts';
 export * from './merge/status.ts';

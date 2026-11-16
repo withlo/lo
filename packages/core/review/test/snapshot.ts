@@ -52,6 +52,7 @@ export function snapshot(fields: Partial<MergeSnapshot> = {}): MergeSnapshot {
     threadsCutShort: false,
     outOfDate: 'no',
     unmetRules: [],
+    uncheckedRules: [],
     seesEveryRule: false,
     queue: { required: false, method: undefined, inQueue: false, position: undefined },
     autoMerge: undefined,

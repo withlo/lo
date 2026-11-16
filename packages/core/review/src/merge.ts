@@ -97,18 +97,24 @@ export interface MergeSnapshot {
    */
   readonly outOfDate: OutOfDate;
   /**
-   * Other rules on the base branch the pull request doesn't meet yet, such as required deployments
-   * or signed commits.
+   * Other rules on the base branch the pull request doesn't meet yet, where Lo can tell, such as a
+   * required deployment that's running. Lo tells for none yet: the rules it doesn't check are
+   * named in {@link MergeSnapshot.uncheckedRules}, and GitHub's verdict says whether they're met.
    */
   readonly unmetRules: readonly UnmetRule[];
   /**
+   * The rules on the base branch Lo doesn't check, each once: the classic protection's, then the
+   * rulesets' in GitHub's order. Any of them may block the merge for a reason Lo can't see, so with
+   * one, Lo doesn't see every rule ({@link MergeSnapshot.seesEveryRule}). The merge panel names
+   * them.
+   */
+  readonly uncheckedRules: readonly UncheckedRule[];
+  /**
    * Whether Lo sees every rule on the base branch that can block the merge: the caller read its
    * branch protection and its rulesets' active rules
-   * (`GET /repos/{owner}/{repo}/rules/branches/{branch}`), each one maps to a field here, and no
-   * list was cut short by paging. Rules Lo doesn't model include code scanning, required
-   * workflows, reviewers required by file pattern, and the extra approval for a pull request
-   * Copilot opened. Without this, a `BLOCKED` that Lo explains may be only partly explained
-   * (`mayNotSeeEveryRule`).
+   * (`GET /repos/{owner}/{repo}/rules/branches/{branch}`), each one maps to a field here (none is
+   * in {@link MergeSnapshot.uncheckedRules}), and no list was cut short by paging. Without this, a
+   * `BLOCKED` that Lo explains may be only partly explained (`mayNotSeeEveryRule`).
    */
   readonly seesEveryRule: boolean;
   /** The base branch's merge queue. */
@@ -363,6 +369,37 @@ export interface UnmetRule {
   /** Whether waiting meets it without anyone acting, such as a deployment that's running. */
   readonly waiting: boolean;
 }
+
+/**
+ * A rule on the base branch Lo doesn't check, which may keep the pull request from merging for a
+ * reason Lo can't see: {@link MergeSnapshot.uncheckedRules}. GitHub's verdict says whether it's met.
+ */
+export type UncheckedRule =
+  /** Commits must have verified signatures (`requiresCommitSignatures`, `required_signatures`). */
+  | { readonly kind: 'signatures' }
+  /** Deployments must succeed before it merges (`requiresDeployments`, `required_deployments`). */
+  | { readonly kind: 'deployments' }
+  /**
+   * The branch is locked: only those allowed may update it (`lockBranch`, a ruleset's `update`,
+   * "Restrict updates").
+   */
+  | { readonly kind: 'locked' }
+  /** Code scanning must report its results first (`code_scanning`). */
+  | { readonly kind: 'codeScanning' }
+  /** Workflows the rulesets name must pass (`workflows`). */
+  | { readonly kind: 'workflows' }
+  /** Reviewers required for files by pattern (a `pull_request` rule's `required_reviewers`). */
+  | { readonly kind: 'reviewersByFile' }
+  /**
+   * One more approval, since Copilot opened the pull request (a `pull_request` rule's
+   * `require_extra_approval_for_unattributed_changes`).
+   */
+  | { readonly kind: 'copilotApproval' }
+  /**
+   * Another rule, by its REST type, such as one newer than Lo, or one whose parameters Lo can't
+   * read.
+   */
+  | { readonly kind: 'other'; readonly type: string };
 
 /** The base branch's merge queue. */
 export interface MergeQueue {

@@ -1,0 +1,8 @@
+{
+  "description": "GET /repos/rozed-dev/e2e/pulls?head=rozed-dev:<branch>&state=open as rozed-bot, read only, for a merge fixture generation: the open pull requests from merge/<generation>/chain-1 (its chain-1 pull request, which chain-2 is based on), from merge/<generation>/base (none), and from rozed-dev's code/fork (none: only the code fixture's #99 comes from a branch of that name, rozed-bot's fork's).",
+  "recorded_at": "2026-11-16T20:09:23Z",
+  "repo": "rozed-dev/e2e",
+  "setup": {
+    "generation": 2
+  }
+}
