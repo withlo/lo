@@ -11,8 +11,14 @@ import { expect, test } from 'vitest';
 import { GithubClient } from '../src/client.ts';
 import { Fields } from '../src/json.ts';
 import { openPullsFromHead } from '../src/merge.ts';
-import { queueView, queueViewCutShort, queueWaiting, type QueueView } from '../src/merge-queue.ts';
-import { RepoRef } from '../src/refs.ts';
+import {
+  queueRemoval,
+  queueView,
+  queueViewCutShort,
+  queueWaiting,
+  type QueueView,
+} from '../src/merge-queue.ts';
+import { PullRef, RepoRef } from '../src/refs.ts';
 import { Token } from '../src/token.ts';
 import { BRANCH, NAMES, setupOf } from './scenarios/merge-queue.ts';
 import { branches, FORK_BRANCH } from './scenarios/pulls-from-head.ts';
@@ -100,6 +106,35 @@ test('the queue view lists the entries in order, each with the commits github te
   const failed = at(failing, 'queued-fail');
   expect(failed?.state).toBe('UNMERGEABLE');
   expect(failed?.checks[0]?.url).toMatch(/^https:\/\/github\.com\/rozed-dev\/e2e\/actions\/runs\//);
+});
+
+test('why a pull request left the queue: by hand, failed checks, or merged', async () => {
+  const { pulls } = setupOf(cassette('queue_removal_e2e').info.setup);
+  const github = client(replayFetch('queue_removal_e2e'));
+  const read = (name: (typeof NAMES)[number]) =>
+    queueRemoval(github, new PullRef('rozed-dev', 'e2e', pulls[name].number));
+
+  // rozed-bot took it out while ci ran on the commit the queue tested it on.
+  const byHand = await read('queued-slow-2');
+  expect(byHand).toMatchObject({ state: 'OPEN', inQueue: false, leftOut: [] });
+  expect(byHand.removal).toMatchObject({ reason: 'manual', by: 'rozed-bot' });
+  expect(byHand.removal?.at).toMatch(/^\d{4}-\d\d-\d\dT/);
+  expect(byHand.removal?.checks).toMatchObject([{ name: 'ci', status: 'IN_PROGRESS' }]);
+
+  // GitHub's queue took it out when ci failed on the commit it tested.
+  const failed = await read('queued-fail');
+  expect(failed).toMatchObject({ state: 'OPEN', inQueue: false });
+  expect(failed.removal).toMatchObject({ reason: 'failed_checks', by: 'github-merge-queue' });
+  expect(failed.removal?.tested).toMatch(/^[0-9a-f]{40}$/);
+  expect(failed.removal?.tested).not.toBe(pulls['queued-fail'].head);
+  expect(failed.removal?.checks).toMatchObject([
+    { kind: 'checkRun', name: 'ci', status: 'COMPLETED', conclusion: 'FAILURE' },
+  ]);
+
+  // Merged, it left too.
+  const merged = await read('queued-pass');
+  expect(merged).toMatchObject({ state: 'MERGED', inQueue: false });
+  expect(merged.removal).toMatchObject({ reason: 'merged', by: 'github-merge-queue' });
 });
 
 test('the open pull requests into a queue branch say whether auto-merge is on', async () => {

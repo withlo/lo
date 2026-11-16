@@ -7,22 +7,25 @@
  * took `queued-fail` out, and `queued-pass` merged (`queue_removal_e2e`).
  *
  * rozed-dev/e2e doesn't allow auto-merge, so a pull request waiting to join with it on is a derived
- * answer (`queue_waiting_e2e_auto_merge`).
+ * answer (`queue_waiting_e2e_auto_merge`). The reasons no recording shows, such as a conflict, are
+ * the recorded removal with GitHub's word edited here.
  */
 
 import {
   Fields,
   GithubClient,
+  PullRef,
+  queueRemoval,
   queueView,
   queueWaiting,
   RepoRef,
   Token,
   type QueueView,
 } from '@lo/github';
-import { cassette, replayFetch } from '@lo/testing';
+import { cassette, isObject, Replay, replayFetch, type Interaction, type Json } from '@lo/testing';
 import { expect, test } from 'vitest';
 
-import { queueRows, type QueueRow } from '../src/merge/queue.ts';
+import { leftQueue, queueRows, type QueueRow } from '../src/merge/queue.ts';
 
 const E2E = new RepoRef('rozed-dev', 'e2e');
 const BRANCH = 'e4/queued';
@@ -30,7 +33,7 @@ const BOT = 'rozed-bot';
 
 type Name = 'queued-slow-1' | 'queued-slow-2' | 'queued-pass' | 'queued-fail';
 
-function client(name: string): GithubClient {
+function client(name: string | Replay): GithubClient {
   return new GithubClient({ fetch: replayFetch(name), token: new Token('gho_FAKE') });
 }
 
@@ -183,4 +186,79 @@ test('a pull request with auto-merge on waits to join until it is in the queue',
     waiting: [],
     waitingCutShort: false,
   });
+});
+
+/** Why the generation's pull request `name` left the queue, read from `replay`. */
+async function removal(name: Name, replay: string | Replay = 'queue_removal_e2e') {
+  const pull = new PullRef('rozed-dev', 'e2e', numberOf('queue_removal_e2e', name));
+  return queueRemoval(client(replay), pull);
+}
+
+/** `queue_removal_e2e` with GitHub's reason for `queued-fail`'s removal as `reason`. */
+function failedFor(reason: string | null): Replay {
+  const failing = numberOf('queue_removal_e2e', 'queued-fail');
+  const interactions = cassette('queue_removal_e2e').interactions.map(({ interaction }) => {
+    const copy: Interaction = structuredClone(interaction);
+    if (copy.request.operation !== 'QueueRemoval') return copy;
+    const variables = copy.request.variables;
+    if (!isObject(variables) || variables['number'] !== failing) return copy;
+    const event = removalEventOf(copy.response.body);
+    event['reason'] = reason;
+    return copy;
+  });
+  return new Replay('queue_removal_e2e', interactions);
+}
+
+/** The removal event in a recorded `QueueRemoval` answer. */
+function removalEventOf(body: Json | undefined): { [key: string]: Json } {
+  let value: Json | undefined = body;
+  for (const key of ['data', 'repository', 'pullRequest', 'timelineItems', 'nodes']) {
+    value = isObject(value) ? value[key] : undefined;
+  }
+  const event = Array.isArray(value) ? value[0] : undefined;
+  if (!isObject(event)) throw new Error('the answer names no removal');
+  return event;
+}
+
+test('a pull request left the queue taken out by hand, failing its checks, or merged', async () => {
+  const byHand = await removal('queued-slow-2');
+  expect(leftQueue(byHand)).toEqual({ kind: 'removed', at: byHand.removal?.at, by: BOT });
+
+  const failed = await removal('queued-fail');
+  expect(leftQueue(failed)).toEqual({
+    kind: 'failedChecks',
+    at: failed.removal?.at,
+    checks: [
+      {
+        name: 'ci',
+        state: 'failed',
+        url: expect.stringMatching(/^https:\/\/github\.com\/rozed-dev\/e2e\/actions\/runs\//),
+      },
+    ],
+  });
+
+  const merged = await removal('queued-pass');
+  expect(leftQueue(merged)).toEqual({ kind: 'merged', at: merged.removal?.at });
+  // Merged is merged, whatever the last removal said or whether GitHub lists one.
+  expect(leftQueue({ ...merged, removal: undefined })).toEqual({ kind: 'merged', at: undefined });
+  expect(leftQueue({ ...failed, state: 'MERGED' })).toMatchObject({ kind: 'merged' });
+
+  // In the queue again, or never out of it, it hasn't left.
+  expect(leftQueue({ ...byHand, inQueue: true })).toBeUndefined();
+  expect(leftQueue({ ...byHand, removal: undefined })).toBeUndefined();
+});
+
+/** Why `queued-fail` left the queue, had GitHub given `reason`. */
+async function leftFor(reason: string | null) {
+  return leftQueue(await removal('queued-fail', failedFor(reason)));
+}
+
+test('a conflict, a timeout, or a reason lo doesnt know is said as github gives it', async () => {
+  expect(await leftFor('merge_conflict')).toMatchObject({ kind: 'conflict' });
+  expect(await leftFor('MERGE_CONFLICT')).toMatchObject({ kind: 'conflict' });
+  expect(await leftFor('timed_out')).toMatchObject({ kind: 'timedOut' });
+  expect(await leftFor('ci timeout')).toMatchObject({ kind: 'timedOut' });
+  expect(await leftFor('queue_cleared')).toMatchObject({ kind: 'other', reason: 'queue_cleared' });
+  expect(await leftFor(null)).toMatchObject({ kind: 'other', reason: undefined });
+  expect(await leftFor('')).toMatchObject({ kind: 'other', reason: undefined });
 });

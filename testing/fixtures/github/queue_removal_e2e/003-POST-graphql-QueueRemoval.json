@@ -1,0 +1,74 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "https://api.github.com/graphql",
+    "operation": "QueueRemoval",
+    "variables": {
+      "owner": "rozed-dev",
+      "name": "e2e",
+      "number": 133
+    },
+    "query_sha256": "571eb00e73f0755b5ce1eae53e4a1b447552dde9e99824938b2df2393a166ff9"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "x-ratelimit-limit": "5000",
+      "x-ratelimit-remaining": "4988",
+      "x-ratelimit-reset": "1794859428",
+      "x-ratelimit-resource": "graphql",
+      "x-ratelimit-used": "12"
+    },
+    "body": {
+      "data": {
+        "rateLimit": {
+          "cost": 1,
+          "limit": 5000,
+          "remaining": 4988,
+          "used": 12,
+          "resetAt": "2026-11-16T20:03:48Z"
+        },
+        "repository": {
+          "pullRequest": {
+            "number": 133,
+            "title": "Fixture M2: queued, slow (2)",
+            "url": "https://github.com/rozed-dev/e2e/pull/133",
+            "state": "OPEN",
+            "isInMergeQueue": false,
+            "timelineItems": {
+              "nodes": [
+                {
+                  "__typename": "RemovedFromMergeQueueEvent",
+                  "createdAt": "2026-11-16T19:14:46Z",
+                  "reason": "manual",
+                  "actor": {
+                    "__typename": "User",
+                    "login": "rozed-bot"
+                  },
+                  "beforeCommit": {
+                    "oid": "817c7dabe4642089ba9f0ff015d113ce024f413e",
+                    "statusCheckRollup": {
+                      "contexts": {
+                        "nodes": [
+                          {
+                            "__typename": "CheckRun",
+                            "name": "ci",
+                            "status": "IN_PROGRESS",
+                            "conclusion": null,
+                            "detailsUrl": "https://github.com/rozed-dev/e2e/actions/runs/43937153124/job/133544643440",
+                            "url": "https://github.com/rozed-dev/e2e/runs/133544643440"
+                          }
+                        ]
+                      }
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,74 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "https://api.github.com/graphql",
+    "operation": "QueueRemoval",
+    "variables": {
+      "owner": "rozed-dev",
+      "name": "e2e",
+      "number": 134
+    },
+    "query_sha256": "571eb00e73f0755b5ce1eae53e4a1b447552dde9e99824938b2df2393a166ff9"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "x-ratelimit-limit": "5000",
+      "x-ratelimit-remaining": "4988",
+      "x-ratelimit-reset": "1794859430",
+      "x-ratelimit-resource": "graphql",
+      "x-ratelimit-used": "12"
+    },
+    "body": {
+      "data": {
+        "rateLimit": {
+          "cost": 1,
+          "limit": 5000,
+          "remaining": 4988,
+          "used": 12,
+          "resetAt": "2026-11-16T20:03:50Z"
+        },
+        "repository": {
+          "pullRequest": {
+            "number": 134,
+            "title": "Fixture M2: queued, fails in the queue",
+            "url": "https://github.com/rozed-dev/e2e/pull/134",
+            "state": "OPEN",
+            "isInMergeQueue": false,
+            "timelineItems": {
+              "nodes": [
+                {
+                  "__typename": "RemovedFromMergeQueueEvent",
+                  "createdAt": "2026-11-16T19:24:30Z",
+                  "reason": "failed_checks",
+                  "actor": {
+                    "__typename": "Bot",
+                    "login": "github-merge-queue"
+                  },
+                  "beforeCommit": {
+                    "oid": "84202933e82b45ad375565de0514c53c18ff972d",
+                    "statusCheckRollup": {
+                      "contexts": {
+                        "nodes": [
+                          {
+                            "__typename": "CheckRun",
+                            "name": "ci",
+                            "status": "COMPLETED",
+                            "conclusion": "FAILURE",
+                            "detailsUrl": "https://github.com/rozed-dev/e2e/actions/runs/43937362695/job/133545369741",
+                            "url": "https://github.com/rozed-dev/e2e/runs/133545369741"
+                          }
+                        ]
+                      }
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      }
+    }
+  }
+}
