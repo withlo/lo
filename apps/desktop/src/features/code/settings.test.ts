@@ -1,9 +1,18 @@
 // The trusted entries as the settings file holds them: each read whole, or reported and ignored,
-// never half read.
+// never half read. And the licenses accepted, for one major version each, or none at all.
 
 import { describe, expect, it } from 'vitest';
 
-import { fileEntry, readEntry, readTrusted, trusted } from './settings.ts';
+import {
+  accepts,
+  fileEntry,
+  licenses,
+  readEntry,
+  readTrusted,
+  trusted,
+  withAcceptance,
+  withoutAcceptance,
+} from './settings.ts';
 
 const REPO = { repo: 'rozed-dev/e2e', id: 'R_kgDOVleUfQ', at: '2026-11-15T09:12:44.000Z' };
 const PULL = {
@@ -84,5 +93,35 @@ describe('the trusted entries', () => {
     expect(trusted.fallback).toEqual([]);
     expect(trusted.problems?.([{ repo: 'rozed-dev/e2e' }])).toHaveLength(1);
     expect(trusted.problems?.([REPO])).toEqual([]);
+  });
+});
+
+describe('the licenses accepted', () => {
+  const ONE = { server: 'intelephense', major: 1, at: '2026-11-15T09:30:12.000Z' };
+
+  it('accept a server’s license for one major version, which only main writes', () => {
+    expect(licenses.window).toBe('read');
+    expect(accepts([ONE], { server: 'intelephense', major: 1 })).toBe(true);
+    // The next major version is asked about again, and another server's is its own.
+    expect(accepts([ONE], { server: 'intelephense', major: 2 })).toBe(false);
+    expect(accepts([ONE], { server: 'vtsls', major: 1 })).toBe(false);
+    expect(accepts([], { server: 'intelephense', major: 1 })).toBe(false);
+  });
+
+  it('take an acceptance once, in place of an earlier one, and withdraw every version of it', () => {
+    const again = { ...ONE, at: '2026-11-16T08:00:00.000Z' };
+    const two = { server: 'intelephense', major: 2 };
+    expect(withAcceptance([ONE], again)).toEqual([again]);
+    expect(withAcceptance([ONE], two)).toEqual([ONE, two]);
+    const other = { server: 'other', major: 3 };
+    expect(withoutAcceptance([ONE, two, other], 'intelephense')).toEqual([other]);
+  });
+
+  it('are refused whole when an entry isn’t one Lo reads, so nothing counts as accepted', () => {
+    expect(licenses.schema.safeParse([ONE]).success).toBe(true);
+    expect(licenses.schema.safeParse([ONE, { server: 'intelephense' }]).success).toBe(false);
+    expect(licenses.schema.safeParse([{ ...ONE, major: 1.5 }]).success).toBe(false);
+    expect(licenses.schema.safeParse([{ ...ONE, key: 'paid' }]).success).toBe(false);
+    expect(licenses.fallback).toEqual([]);
   });
 });

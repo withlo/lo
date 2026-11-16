@@ -28,13 +28,14 @@ import {
   readFamily,
   type RequestOptions,
   type Server,
+  type ShownMessage,
   type State,
   startServer,
 } from '../src/index.ts';
 import { longestStop } from '../src/server.ts';
 import { fakeServer } from '@lo/testing/lsp';
 
-import { eventually, GIT, running, startFake, tempFolder } from './support.ts';
+import { eventually, GIT, keysAt, running, startFake, tempFolder } from './support.ts';
 
 const POSITION = { position: { line: 0, character: 6 } };
 
@@ -260,6 +261,164 @@ test('it gets its settings, registrations and progress, and is refused the rest'
   expect(server.log.some((line) => line.includes('refused the server’s workspace/applyEdit'))).toBe(
     true,
   );
+});
+
+test('a server whose messages reach the reader shows them, asks its questions and links pages', async () => {
+  const shown: ShownMessage[] = [];
+  const asked: { message: ShownMessage; actions: readonly string[] }[] = [];
+  const links: string[] = [];
+  const text = '  Licence required.\n\tSee https://intelephense.com  ';
+  const { server, seen } = startFake(
+    {
+      requests: [
+        {
+          method: 'window/showMessageRequest',
+          params: {
+            type: 2,
+            message: 'Index the vendor folder?',
+            actions: [{ title: 'Index it' }, { title: 'Not now' }],
+          },
+        },
+        {
+          method: 'window/showDocument',
+          params: { uri: 'https://intelephense.com/', external: true },
+        },
+        { method: 'window/showDocument', params: { uri: 'file:///etc/passwd' } },
+        { method: 'window/showMessageRequest', params: { type: 3, message: 'Carry on?' } },
+      ],
+      notifications: [{ method: 'window/showMessage', params: { type: 1, message: text } }],
+    },
+    {
+      spec: {
+        messages: {
+          show: (message) => shown.push(message),
+          ask(message, actions) {
+            asked.push({ message, actions });
+            // The reader chooses the second action, and dismisses the next question.
+            return Promise.resolve(asked.length === 1 ? actions[1] : undefined);
+          },
+          link: (url) => links.push(url),
+        },
+      },
+    },
+  );
+  await server.ready;
+  const initialize = seen().find((event) => event.event === 'initialize');
+  expect(initialize?.params).toMatchObject({
+    capabilities: {
+      window: {
+        showMessage: { messageActionItem: { additionalPropertiesSupport: false } },
+        showDocument: { support: true },
+      },
+    },
+  });
+  await eventually(() => shown.length === 1);
+  // Each as the server sent it: nothing is cut, trimmed or changed.
+  expect(shown).toEqual([{ type: 'error', text }]);
+  expect(asked).toEqual([
+    {
+      message: { type: 'warning', text: 'Index the vendor folder?' },
+      actions: ['Index it', 'Not now'],
+    },
+    { message: { type: 'info', text: 'Carry on?' }, actions: [] },
+  ]);
+  // A web page is a link for the reader, and Lo shows nothing itself: no file, ever.
+  expect(links).toEqual(['https://intelephense.com/']);
+  const replies = seen().flatMap((event) => (event.event === 'reply' ? [event] : []));
+  expect(
+    replies.map(({ method, result, error }) => [method, error === undefined ? result : error.code]),
+  ).toEqual([
+    ['window/showMessageRequest', { title: 'Not now' }],
+    ['window/showDocument', { success: false }],
+    ['window/showDocument', -32601],
+    ['window/showMessageRequest', null],
+  ]);
+  // And into its log, as every message goes.
+  expect(server.log.join('\n')).toContain('Licence required.');
+});
+
+test('a question the reader hasn’t answered is given up on as its server stops', async () => {
+  let signal: AbortSignal | undefined;
+  const { server } = startFake(
+    { requests: [{ method: 'window/showMessageRequest', params: { type: 3, message: 'Wait?' } }] },
+    {
+      spec: {
+        messages: {
+          show: () => undefined,
+          ask(_message, _actions, given) {
+            signal = given;
+            return new Promise((resolve) =>
+              given.addEventListener('abort', () => resolve(undefined)),
+            );
+          },
+          link: () => undefined,
+        },
+      },
+    },
+  );
+  await server.ready;
+  const waiting = await eventually(() => signal);
+  expect(waiting.aborted).toBe(false);
+  await server.stop();
+  expect(waiting.aborted).toBe(true);
+});
+
+test('a question past the most that wait is shown as a message, and answered with none', async () => {
+  const shown: ShownMessage[] = [];
+  const waiting: AbortSignal[] = [];
+  const { server, seen } = startFake(
+    {
+      together: true,
+      requests: Array.from({ length: 9 }, (_, at) => ({
+        method: 'window/showMessageRequest',
+        params: { type: 3, message: `Question ${at + 1}`, actions: [{ title: 'Yes' }] },
+        // The last comes once the rest wait.
+        delay: at === 8 ? 200 : 0,
+      })),
+    },
+    {
+      spec: {
+        messages: {
+          show: (message) => shown.push(message),
+          ask: (_message, _actions, signal) => {
+            waiting.push(signal);
+            return new Promise((resolve) =>
+              signal.addEventListener('abort', () => resolve(undefined)),
+            );
+          },
+          link: () => undefined,
+        },
+      },
+    },
+  );
+  await server.ready;
+  await eventually(() => shown.length === 1);
+  expect(waiting).toHaveLength(8);
+  expect(shown).toEqual([{ type: 'info', text: 'Question 9' }]);
+  await eventually(() => seen().some((event) => event.event === 'reply'));
+  expect(seen().filter((event) => event.event === 'reply')).toEqual([
+    { event: 'reply', method: 'window/showMessageRequest', result: null },
+  ]);
+  await server.stop();
+  expect(waiting.every((signal) => signal.aborted)).toBe(true);
+});
+
+test('a server without them asks nothing of the reader, and is never sent what Lo never asks it', async () => {
+  const { server, seen } = startFake({}, { spec: { never: ['textDocument/inlayHint'] } });
+  await server.ready;
+  const initialize = seen().find((event) => event.event === 'initialize');
+  const capabilities = initialize?.params.capabilities;
+  expect(keysAt(capabilities, 'window')).toEqual(['workDoneProgress']);
+  expect(keysAt(capabilities, 'textDocument')).not.toContain('inlayHint');
+  expect(keysAt(capabilities, 'textDocument')).toContain('hover');
+  server.open('src/a.ts', 'typescript', 'const a = 1;');
+  const range = { start: { line: 0, character: 0 }, end: { line: 1, character: 0 } };
+  expect(
+    await server.request('textDocument/inlayHint', { path: 'src/a.ts', range }, { deadline: 5000 }),
+  ).toEqual({ ok: false, why: 'unasked' });
+  expect(await hover(server)).toEqual({ ok: true, value: null });
+  const asked = seen().flatMap((event) => (event.event === 'request' ? [event.method] : []));
+  expect(asked).toEqual(['textDocument/hover']);
 });
 
 test('a crash mid-request is seen with its exit code', async () => {

@@ -1,7 +1,15 @@
 // The adapters Lo ships: which files each reads, and what it downloads before it starts. What each
 // server runs as, and is told, is `@lo/lsp`'s, and tested there.
 
-import { INTELEPHENSE, type Installed, launchOnNode, PYRIGHT, VTSLS } from '@lo/lsp';
+import {
+  acceptanceOf,
+  INTELEPHENSE,
+  type Installed,
+  labelOf,
+  launchOnNode,
+  PYRIGHT,
+  VTSLS,
+} from '@lo/lsp';
 import { describe, expect, it } from 'vitest';
 
 import { ADAPTERS, adapterFor } from './adapters.ts';
@@ -54,6 +62,29 @@ describe('Lo’s adapters', () => {
         launch: launchOnNode(server, installedAs('node'), installedAs(server.id)),
       });
     }
+  });
+
+  it('ask for Intelephense’s license first, show its messages, and say which have no hints', () => {
+    expect(
+      ADAPTERS.map(({ id, about, license, shows, hints }) => ({
+        id,
+        about,
+        license,
+        shows,
+        hints,
+      })),
+    ).toEqual([
+      { id: 'typescript', about: labelOf(VTSLS), license: undefined, shows: false, hints: true },
+      { id: 'python', about: labelOf(PYRIGHT), license: undefined, shows: false, hints: false },
+      {
+        id: 'php',
+        about: labelOf(INTELEPHENSE),
+        license: acceptanceOf(INTELEPHENSE),
+        shows: true,
+        hints: false,
+      },
+    ]);
+    expect(acceptanceOf(INTELEPHENSE)).toMatchObject({ serverName: 'Intelephense', major: 1 });
   });
 
   it('start nothing when a download fails', async () => {

@@ -37,6 +37,9 @@ not a `diff` object holding `layout`.
 - **Which repos you trust changes only through Lo's own dialog.** Lo adds one to `code.trusted` once
   you say "Trust" there, and takes one out once you remove it in Settings. You can still edit the
   file.
+- **Which language servers' licenses you accepted changes only as you say.** Lo adds one to
+  `code.licenses` once you accept it, from the server's item in the status bar or from Settings, and
+  takes it out once you withdraw it in Settings. You can still edit the file.
 
 ## The settings
 
@@ -47,6 +50,7 @@ not a `diff` object holding `layout`.
 | `diff.layout`     | split or inline                        | `"split"`    | The diff's layout: the two sides next to each other, or one column of both. `gi` switches it.                                                    |
 | `diff.whitespace` | show or hide                           | `"show"`     | Whether the diff shows changes to whitespace alone. `gw` switches it. GitHub's diff, shown until the local copy is ready, shows them either way. |
 | `code.trusted`    | a list of trusted repos and PRs        | `[]`         | The repos, and pull requests from forks, that language servers may run on, as below.                                                             |
+| `code.licenses`   | a list of servers' accepted licenses   | `[]`         | The language servers' licenses you accepted, which Lo downloads those servers only after, as below.                                              |
 | `overview.open`   | overview or diff                       | `"overview"` | What a pull request opens on when it has an overview Lo can show: the overview, or the diff. Without one, it always opens on the diff.           |
 
 ## Trusted repos and pull requests
@@ -83,3 +87,23 @@ a pull request from a fork, from its tab, and takes it out once you remove it in
   add to it until it's fixed.
 - Taking an entry out, in the file or in Settings, removes the checkouts Lo made for what it alone
   trusted.
+
+## Language servers' licenses
+
+A language server with a license of its own, such as Intelephense for PHP, which has the
+Intelephense Licence, is downloaded only once you've accepted that license. Until then, its
+language's answers come from the syntax index, and its item in the status bar, and Settings, offer
+to read the license and accept it. `code.licenses` lists what you accepted:
+
+```json
+{
+  "code.licenses": [{ "server": "intelephense", "major": 1, "at": "2026-11-15T09:30:12.000Z" }]
+}
+```
+
+- `server` is the server, and `major` its major version: Lo asks again when a new major version of
+  the server comes with Lo.
+- Withdrawing an acceptance, in Settings or the file, stops the server, and it doesn't start again
+  until you accept the license again.
+- A `code.licenses` with an entry Lo can't read is reported and ignored whole, so nothing counts as
+  accepted, and Lo won't add to it until it's fixed.

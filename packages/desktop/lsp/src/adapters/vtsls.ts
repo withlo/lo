@@ -58,4 +58,5 @@ export const VTSLS: NodeServer = {
       tsserver: { globalPlugins: [] },
     },
   },
+  hints: true,
 };

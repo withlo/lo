@@ -46,14 +46,41 @@ export const CLIENT_CAPABILITIES: ClientCapabilities = {
   },
 };
 
+/**
+ * Lo's client capabilities for one server: without what answers `never`'s requests, which Lo never
+ * sends it, and, for one whose messages reach the reader (`shows`), with its questions, whose
+ * actions are plain titles, and its web pages, which Lo shows as links and doesn't open.
+ */
+export function capabilitiesFor(options: {
+  readonly never?: readonly string[] | undefined;
+  readonly shows?: boolean | undefined;
+}): ClientCapabilities {
+  const never = new Set(options.never);
+  const textDocument = Object.fromEntries(
+    Object.entries(CLIENT_CAPABILITIES.textDocument ?? {}).filter(
+      ([key]) => !never.has(`textDocument/${key}`),
+    ),
+  );
+  const window = options.shows
+    ? {
+        ...CLIENT_CAPABILITIES.window,
+        showMessage: { messageActionItem: { additionalPropertiesSupport: false } },
+        showDocument: { support: true },
+      }
+    : CLIENT_CAPABILITIES.window;
+  return { ...CLIENT_CAPABILITIES, window, textDocument };
+}
+
 /** The parameters of `initialize` for a server on the checkout at `root`. */
 export function initializeParams(options: {
   readonly rootUri: string;
   readonly name: string;
   readonly version: string | undefined;
   readonly initializationOptions: unknown;
+  readonly never?: readonly string[] | undefined;
+  readonly shows?: boolean | undefined;
 }): InitializeParams {
-  const { rootUri, name, version, initializationOptions } = options;
+  const { rootUri, name, version, initializationOptions, never, shows } = options;
   return {
     // A server whose client is gone exits by itself.
     processId: process.pid,
@@ -61,7 +88,7 @@ export function initializeParams(options: {
     locale: 'en',
     rootUri,
     workspaceFolders: [{ uri: rootUri, name }],
-    capabilities: CLIENT_CAPABILITIES,
+    capabilities: capabilitiesFor({ never, shows }),
     initializationOptions,
     trace: 'off',
   };

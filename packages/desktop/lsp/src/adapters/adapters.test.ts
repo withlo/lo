@@ -7,12 +7,13 @@ import { join } from 'node:path';
 
 import { describe, expect, test } from 'vitest';
 
+import { capabilitiesFor } from '../capabilities.ts';
 import type { Installed } from '../install.ts';
 import { MANIFEST } from '../manifest.ts';
 import { sectionOf } from '../requests.ts';
 import { LIMITS } from '../server.ts';
-import { INTELEPHENSE } from './intelephense.ts';
-import { heapCap, launchOnNode, type NodeServer } from './node.ts';
+import { INTELEPHENSE, PREMIUM } from './intelephense.ts';
+import { acceptanceOf, heapCap, labelOf, launchOnNode, type NodeServer } from './node.ts';
 import { NO_PYTHON, PYRIGHT } from './pyright.ts';
 import { VTSLS } from './vtsls.ts';
 
@@ -82,6 +83,9 @@ test('each starts as Lo’s Node, its heap capped, then its own entry point, wit
 });
 
 test('each says what it is, with its version and license, wherever its details show', () => {
+  for (const server of SERVERS) {
+    expect(labelOf(server)).toBe(launchOnNode(server, NODE, installed(server)).version);
+  }
   expect(SERVERS.map((server) => launchOnNode(server, NODE, installed(server)).version)).toEqual([
     `vtsls ${pinned(VTSLS).version} · MIT`,
     `Pyright ${pinned(PYRIGHT).version} · MIT`,
@@ -96,6 +100,71 @@ test('each says what it is, with its version and license, wherever its details s
     );
     expect(readme).toMatch(row);
   }
+});
+
+test('only Intelephense has a license to accept, messages to show and requests never sent', () => {
+  expect(
+    SERVERS.map((server) => ({
+      id: server.id,
+      hints: server.hints,
+      accept: acceptanceOf(server),
+      shows: server.shows ?? false,
+      never: launchOnNode(server, NODE, installed(server)).never ?? [],
+    })),
+  ).toEqual([
+    { id: 'vtsls', hints: true, accept: undefined, shows: false, never: [] },
+    // Pyright answers no inlay hints: `gh` says it has none.
+    { id: 'pyright', hints: false, accept: undefined, shows: false, never: [] },
+    {
+      id: 'intelephense',
+      hints: false,
+      // Accepted once for each major version, the one the manifest pins.
+      accept: {
+        server: 'intelephense',
+        serverName: 'Intelephense',
+        major: Number(pinned(INTELEPHENSE).version.split('.')[0]),
+        name: 'the Intelephense Licence',
+        url: 'https://intelephense.com/eula',
+      },
+      shows: true,
+      never: PREMIUM,
+    },
+  ]);
+  expect(() =>
+    acceptanceOf(INTELEPHENSE, {
+      intelephense: { ...MANIFEST.intelephense!, version: 'next' },
+    }),
+  ).toThrow('has no major version');
+});
+
+test('Intelephense is never sent, or offered, a premium feature’s request', () => {
+  // Each feature its license names as premium, by the requests that ask for it.
+  const features = {
+    rename: ['textDocument/rename', 'textDocument/prepareRename'],
+    'code folding': ['textDocument/foldingRange'],
+    'find all implementations': ['textDocument/implementation'],
+    'go to type definition': ['textDocument/typeDefinition'],
+    'go to declaration': ['textDocument/declaration'],
+    'smart select': ['textDocument/selectionRange'],
+    'code actions': ['textDocument/codeAction', 'codeAction/resolve'],
+    'code lens': ['textDocument/codeLens', 'codeLens/resolve'],
+    'type hierarchy': [
+      'textDocument/prepareTypeHierarchy',
+      'typeHierarchy/supertypes',
+      'typeHierarchy/subtypes',
+    ],
+    'inlay hints': ['textDocument/inlayHint', 'inlayHint/resolve'],
+    'document links': ['textDocument/documentLink', 'documentLink/resolve'],
+  };
+  expect(PREMIUM.toSorted()).toEqual(Object.values(features).flat().toSorted());
+  const offered = capabilitiesFor({ never: PREMIUM, shows: true }).textDocument ?? {};
+  expect(Object.keys(offered).toSorted()).toEqual([
+    'definition',
+    'documentSymbol',
+    'hover',
+    'references',
+    'synchronization',
+  ]);
 });
 
 test('each one’s heaps fit under Lo’s cap on its group', () => {

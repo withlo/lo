@@ -33,4 +33,6 @@ export const PYRIGHT: NodeServer = {
   args: ['--stdio'],
   // Its analysis keeps its defaults: imports looked for in `src` too, and only open files checked.
   settings: { python: { pythonPath: NO_PYTHON } },
+  // It answers no `textDocument/inlayHint`: Pylance, its closed sibling, has them.
+  hints: false,
 };

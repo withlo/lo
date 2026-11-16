@@ -402,6 +402,13 @@
   max-width: calc(100vw - var(--lo-sp-32));
 }
 
+/* What a server said, in its details: as many as fit in a few lines' room, the rest a scroll away,
+   so a long message never pushes the details past the window. */
+@utility server-notices {
+  max-height: 280px;
+  overflow-y: auto;
+}
+
 /* The branches in a run's bar, which the bar leaves out when it's under 1,000px wide, as the
    window's default is: there's no room for them beside the layers' names, which would be cut short
    for them, and the count of files, which is never cut. The bar is the container (`@container`). */

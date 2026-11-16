@@ -8,7 +8,13 @@ import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { buildCss, declarations } from '../scripts/stylesheet.ts';
 import { missingRules } from '../test/classes.ts';
 import { cleanUp, click, focus, press, render, rerender } from '../test/dom.ts';
-import { ServerStatus, type ServerState, type ServerTrust } from './ServerStatus.tsx';
+import {
+  type NoticeAct,
+  type ServerNotice,
+  ServerStatus,
+  type ServerState,
+  type ServerTrust,
+} from './ServerStatus.tsx';
 
 beforeAll(() => {
   Reflect.set(globalThis, 'IS_REACT_ACT_ENVIRONMENT', true);
@@ -19,6 +25,12 @@ afterEach(() => {
 });
 
 const MEMORY: ServerState = { kind: 'failed', why: { kind: 'memory', limit: '4 GB', files: 3880 } };
+
+const LICENSE: ServerState = {
+  kind: 'license',
+  server: 'Intelephense',
+  license: 'the Intelephense Licence',
+};
 
 /** The item's own button: the one that opens the details. */
 function item(host: HTMLElement): HTMLElement {
@@ -143,6 +155,7 @@ describe('ServerStatus', () => {
     expect(say('Go', { kind: 'missing', needs: 'Go 1.24 or later' })).toBe('Go toolchain missing');
     // An untrusted repo has none of them on, whichever server is named.
     expect(say('TypeScript', { kind: 'off' })).toBe('Language servers off');
+    expect(say('PHP', LICENSE)).toBe('PHP off · license');
   });
 
   it('keeps a progress report to the scale it is on', () => {
@@ -548,6 +561,90 @@ describe('ServerStatus', () => {
     expect(details()).toBeNull();
   });
 
+  it('says a license waits for the reader, and offers to read it and accept it, never by itself', async () => {
+    const onRead = vi.fn<() => void>();
+    const onAccept = vi.fn<() => void>();
+    const host = render(
+      <ServerStatus
+        name="PHP"
+        state={LICENSE}
+        version="Intelephense 1.18.5 · proprietary"
+        license={{ onRead, onAccept }}
+      />,
+    );
+    // Nothing opens until the reader opens it.
+    expect(details()).toBeNull();
+    expect(marks(LICENSE).spinner).toBe(false);
+    click(item(host));
+    await settle();
+    const open = details()!;
+    expect(open.textContent).toContain('PHP off');
+    expect(open.textContent).toContain('Intelephense 1.18.5 · proprietary');
+    expect(open.textContent).toContain(
+      "PHP's server, Intelephense, has its own license. Read it and accept it to use it. Until then, peek, references and hovers use the syntax index.",
+    );
+    const buttons = [...open.querySelectorAll('button')];
+    expect(buttons.map((button) => button.textContent)).toEqual([
+      'Read the license',
+      'Accept the license',
+    ]);
+    // Reading it comes first, and has focus.
+    expect(document.activeElement).toBe(buttons[0]);
+    click(buttons[0]!);
+    expect([onRead.mock.calls.length, onAccept.mock.calls.length]).toEqual([1, 0]);
+    click(item(host));
+    await settle();
+    click([...details()!.querySelectorAll('button')][1]!);
+    expect([onRead.mock.calls.length, onAccept.mock.calls.length]).toEqual([1, 1]);
+  });
+
+  it('shows what its server said as it said it, until the reader dismisses each', async () => {
+    const acts: [number, NoticeAct][] = [];
+    const text = '  Licence required.\n\tSee https://intelephense.com  ';
+    const notices: ServerNotice[] = [
+      { id: 1, kind: 'message', type: 'error', text },
+      { id: 2, kind: 'question', type: 'warning', text: 'Index vendor?', actions: ['Yes', 'No'] },
+      { id: 3, kind: 'link', type: 'info', text: 'https://intelephense.com/' },
+    ];
+    const host = render(
+      <ServerStatus
+        name="PHP"
+        state={{ kind: 'ready' }}
+        notices={notices}
+        onNotice={(id, chosen) => acts.push([id, chosen])}
+      />,
+    );
+    // The item counts them, and nothing opens by itself.
+    expect(words(host)).toBe('PHP · 3 messages');
+    expect(details()).toBeNull();
+    click(item(host));
+    await settle();
+    const shown = [...details()!.querySelectorAll('li')];
+    expect(shown.map((each) => each.querySelector('p')?.textContent)).toEqual([
+      text,
+      'Index vendor?',
+      'https://intelephense.com/',
+    ]);
+    // Its lines and spaces are kept as they were.
+    expect(shown[0]?.querySelector('p')?.className).toContain('whitespace-pre-wrap');
+    expect(shown.map((each) => each.querySelector('span')?.textContent)).toEqual([
+      'Error',
+      'Question',
+      'A page it links to',
+    ]);
+    const choose = (at: number, label: string) =>
+      click([...shown[at]!.querySelectorAll('button')].find((each) => each.textContent === label)!);
+    choose(1, 'No');
+    choose(2, 'Open the page');
+    choose(0, 'Dismiss');
+    expect(acts).toEqual([
+      [2, { action: 1 }],
+      [3, 'open'],
+      [1, 'dismiss'],
+    ]);
+    expect(say('PHP', { kind: 'ready' })).toBe('PHP');
+  });
+
   it('draws a wider card for its details than a menu, and keeps it inside a narrow window', async () => {
     const css = await buildCss(['server-details']);
     expect(declarations(css, 'server-details')).toBe(
@@ -561,9 +658,20 @@ describe('ServerStatus', () => {
         <ServerStatus name="TypeScript" state={MEMORY} onRestart={() => undefined} />
         <ServerStatus name="Rust" state={{ kind: 'downloading', done: 1, total: 2 }} />
         <ServerStatus name="Go" state={{ kind: 'missing', needs: 'Go' }} />
+        <ServerStatus
+          name="PHP"
+          state={LICENSE}
+          license={{ onRead: () => undefined, onAccept: () => undefined }}
+          notices={[
+            { id: 1, kind: 'question', type: 'info', text: 'Go?', actions: ['Go'] },
+            { id: 2, kind: 'link', type: 'info', text: 'https://intelephense.com/' },
+          ]}
+        />
       </>,
     );
     click(host.querySelector<HTMLElement>('button[aria-haspopup="dialog"]')!);
+    await settle();
+    click([...host.querySelectorAll<HTMLElement>('button[aria-haspopup="dialog"]')].at(-1)!);
     await settle();
     expect(await missingRules(host)).toEqual([]);
     expect(await missingRules(document.body)).toEqual([]);

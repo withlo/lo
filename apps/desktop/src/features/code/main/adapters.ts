@@ -5,10 +5,13 @@
 // `@lo/lsp`'s, with the reasons. Nothing here calls Electron.
 
 import {
+  acceptanceOf,
   INTELEPHENSE,
+  labelOf,
   launchOnNode,
   PYRIGHT,
   VTSLS,
+  type Acceptance,
   type Installed,
   type Launch,
   type NodeServer,
@@ -51,6 +54,21 @@ export interface Adapter {
   readonly languages: Readonly<Partial<Record<LanguageName, string>>>;
   /** How long `gd` waits for it, for a server slower than most to answer, such as a JVM's. */
   readonly definitionDeadline?: number | undefined;
+  /** What its server is, for Settings, before it's downloaded: "vtsls 0.3.0 · MIT". */
+  readonly about?: string | undefined;
+  /**
+   * The license the reader accepts before Lo downloads its server, once for each major version.
+   * Until then nothing of it is downloaded, checked out for or started.
+   */
+  readonly license?: Acceptance | undefined;
+  /**
+   * Whether its server's messages reach the reader as it sent them, on its item, as its license
+   * asks: its messages, its questions, and the web pages it names, as links. Other servers' go only
+   * into their logs.
+   */
+  readonly shows?: boolean | undefined;
+  /** Whether its server gives inline type hints: `false` for one that has none, which `gh` says. */
+  readonly hints?: boolean | undefined;
   /** Finds or downloads what the server starts as. */
   prepare(context: PrepareContext): Promise<Prepared>;
 }
@@ -59,9 +77,16 @@ export interface Adapter {
  * An adapter for `server`, which runs on Lo's Node: Node downloads first, then the server, each
  * once, on first use.
  */
-function onNode(server: NodeServer, adapter: Omit<Adapter, 'prepare'>): Adapter {
+function onNode(
+  server: NodeServer,
+  adapter: Pick<Adapter, 'id' | 'name' | 'languages' | 'definitionDeadline'>,
+): Adapter {
   return {
     ...adapter,
+    about: labelOf(server),
+    license: acceptanceOf(server),
+    shows: server.shows ?? false,
+    hints: server.hints,
     async prepare(context) {
       const node = await context.install('node');
       return {

@@ -1,7 +1,9 @@
 // What the code feature keeps in the settings file: the repositories and pull requests the reader
-// trusts to run language servers on. Main writes it, and only once its own dialog says so; the
-// window shows it in Settings and can't change it. Each entry names a repository by GitHub's node
-// ID as well as its name, since a name can change hands and an ID can't.
+// trusts to run language servers on, and the language servers' licenses the reader accepted. Main
+// writes both: trust only once its own dialog says so, and a license once the reader accepts it
+// from the server's item or Settings. The window shows them in Settings and can't change them. Each
+// trust entry names a repository by GitHub's node ID as well as its name, since a name can change
+// hands and an ID can't.
 
 import { z } from 'zod';
 
@@ -163,4 +165,49 @@ export function readTrusted(value: readonly unknown[]): {
 /** Whether two repositories' names are the same one, as GitHub compares them: in any case. */
 export function sameName(one: string, other: string): boolean {
   return one.toLowerCase() === other.toLowerCase();
+}
+
+/** A language server's id in Lo's list, as `@lo/lsp`'s manifest names it: `intelephense`. */
+const serverId = z.string().regex(/^[a-z][a-z0-9-]{0,39}$/);
+
+/** One license the reader accepted: the server's, for one of its major versions, and when. */
+const acceptance = z.strictObject({
+  server: serverId,
+  major: z.number().int().min(0).max(1_000_000),
+  at: when.optional(),
+});
+export type Accepted = z.output<typeof acceptance>;
+
+/**
+ * The language servers' licenses the reader accepted, each `{ server, major, at }`: Lo downloads a
+ * server whose license it asks about only once its major version's is here. The list is refused
+ * whole when one entry isn't one Lo reads, so then nothing counts as accepted. Only main writes it.
+ */
+export const licenses = defineSetting(
+  'code.licenses',
+  z.array(acceptance).max(100),
+  [],
+  "a list of servers' accepted licenses",
+  { window: 'read' },
+);
+
+/** Whether `list` accepts the license of `server`'s major version `major`. */
+export function accepts(
+  list: readonly Accepted[],
+  license: { readonly server: string; readonly major: number },
+): boolean {
+  return list.some((entry) => entry.server === license.server && entry.major === license.major);
+}
+
+/** `list` with `entry` accepted, in place of an earlier acceptance of the same version. */
+export function withAcceptance(list: readonly Accepted[], entry: Accepted): Accepted[] {
+  return [
+    ...list.filter((each) => !(each.server === entry.server && each.major === entry.major)),
+    entry,
+  ];
+}
+
+/** `list` without any acceptance of `server`'s license, whichever version. */
+export function withoutAcceptance(list: readonly Accepted[], server: string): Accepted[] {
+  return list.filter((each) => each.server !== server);
 }

@@ -14,12 +14,30 @@
 //   for "Restart".
 // - At most 4 run, holding 8 GB in all. Past either, the one used longest ago that isn't on screen
 //   stops; one on screen is never stopped for another. Each server's own cap, 4 GB, is `@lo/lsp`'s.
+// - A server whose license the reader hasn't accepted never starts, and nothing of it downloads.
+// - What a server whose adapter shows its messages says to the reader is kept, as it said it, until
+//   the reader dismisses it, whatever becomes of the server: its messages, its questions, which
+//   wait for the reader's answer while it does, and the web pages it names, as links.
 //
 // Nothing here calls Electron, so it runs under unit tests.
 
-import { failureMessage, type Server, type ServerSpec, type State } from '@lo/lsp';
+import {
+  failureMessage,
+  type Server,
+  type ServerMessages,
+  type ServerSpec,
+  type ShownMessage,
+  type State,
+} from '@lo/lsp';
 
-import type { ServerState } from '../contract.ts';
+import { IpcError } from '../../../ipc/contract.ts';
+import {
+  NOTICE_ACTIONS,
+  NOTICE_TEXT,
+  NOTICES,
+  type Notice,
+  type ServerState,
+} from '../contract.ts';
 import type { Adapter, Prepared } from './adapters.ts';
 
 /** What the pool uses of a running server: `@lo/lsp`'s. */
@@ -113,8 +131,33 @@ export interface PoolOptions {
     | undefined;
   /** A server of `repo` changed what its views show. */
   readonly changed: (repo: string) => void;
+  /**
+   * Whether `adapter`'s server may download and start: its license, if it has one, is accepted.
+   * Without it, only a server with no license may.
+   */
+  readonly accepted?: ((adapter: Adapter) => boolean) | undefined;
   readonly log: (line: string) => void;
   readonly limits?: Partial<PoolLimits> | undefined;
+}
+
+/** What the reader may do with a notice. */
+export type NoticeAct = 'dismiss' | 'open' | { readonly action: number };
+
+/** A notice kept for the reader, with what answers it. */
+interface Held {
+  notice: Notice;
+  /** A question's answer, while its server waits for it. */
+  answer: ((title: string | undefined) => void) | undefined;
+  /** A question's actions as the server titled them, which its answer names. */
+  readonly titles: readonly string[];
+  /** The page a link opens. */
+  readonly url: string | undefined;
+}
+
+/** A server's notices, by repository and adapter, kept until the reader dismisses each. */
+interface Notices {
+  readonly repo: string;
+  readonly held: Held[];
 }
 
 /** What a question finds of a view's server for a language. */
@@ -179,11 +222,19 @@ export class ServerPool {
   #budget: ReturnType<typeof setInterval> | undefined;
   /** Every server stopping, with the checkout it ran on, until it has stopped. */
   readonly #stopping = new Set<Stopping>();
+  readonly #notices = new Map<string, Notices>();
+  #noticed = 0;
   #stopped = false;
 
   constructor(options: PoolOptions) {
     this.#options = options;
     this.#limits = { ...POOL_LIMITS, ...options.limits };
+  }
+
+  /** Whether `adapter`'s server may download and start. */
+  #accepted(adapter: Adapter): boolean {
+    const { accepted } = this.#options;
+    return accepted ? accepted(adapter) : adapter.license === undefined;
   }
 
   /**
@@ -231,6 +282,51 @@ export class ServerPool {
         server.state satisfies never;
         return { kind: 'failed' };
     }
+  }
+
+  /** What `repo`'s server `adapter` said to the reader that they haven't dismissed, oldest first. */
+  notices(repo: string, adapter: string): Notice[] {
+    return this.#notices.get(keyOf(repo, adapter))?.held.map((held) => held.notice) ?? [];
+  }
+
+  /**
+   * Does what the reader asked with notice `id` of `repo`'s server `adapter`: dismisses it, a
+   * question unanswered, or answers a question with its action at `act.action`; or, for `open`,
+   * returns the page a link opens, for its caller to open. Throws for a notice that's gone, and an
+   * act it can't take.
+   */
+  act(repo: string, adapter: string, id: number, act: NoticeAct): string | undefined {
+    const key = keyOf(repo, adapter);
+    const kept = this.#notices.get(key);
+    const held = kept?.held.find((each) => each.notice.id === id);
+    if (!kept || !held) throw new IpcError('missing', 'That message is gone.');
+    if (act === 'open') {
+      if (held.url === undefined)
+        throw new IpcError('invalid', 'That message has no page to open.');
+      return held.url;
+    }
+    let title: string | undefined;
+    if (act !== 'dismiss') {
+      title = held.titles[act.action];
+      if (held.answer === undefined || title === undefined) {
+        throw new IpcError('invalid', 'That message asks nothing, or has no such action.');
+      }
+    }
+    kept.held.splice(kept.held.indexOf(held), 1);
+    if (kept.held.length === 0) this.#notices.delete(key);
+    const answer = held.answer;
+    held.answer = undefined;
+    answer?.(title);
+    this.#options.changed(repo);
+    return undefined;
+  }
+
+  /** Stops every server of `adapter`, as once its license is withdrawn, and resolves once they have. */
+  async stopAdapter(adapter: string): Promise<void> {
+    const ending = [...this.#entries.values()]
+      .filter((entry) => entry.adapter.id === adapter)
+      .map((entry) => this.#end(entry, 'its license was withdrawn'));
+    await Promise.all(ending);
   }
 
   /** `repo`'s server `adapter`'s log, if it has one. */
@@ -301,6 +397,7 @@ export class ServerPool {
     const root = screen?.root;
     if (screen?.trust === 'trusted' && root) {
       for (const adapter of screen.wants) {
+        if (!this.#accepted(adapter)) continue;
         const entry = this.#entries.get(keyOf(screen.repo, adapter.id));
         if (!entry) {
           this.#launch(this.#added(screen.repo, adapter, root));
@@ -418,6 +515,10 @@ export class ServerPool {
       void this.#end(entry, 'no trusted view on screen shows its head');
       return;
     }
+    if (!this.#accepted(adapter)) {
+      void this.#end(entry, 'its license isn’t accepted');
+      return;
+    }
     if (!(await this.#room(entry, run))) {
       if (this.#current(entry, run)) this.#refuse(entry, undefined);
       return;
@@ -463,10 +564,14 @@ export class ServerPool {
       return;
     }
     if (!this.#current(entry, run)) return;
-    // Trust, or the view on screen, may have changed while it got ready.
+    // Trust, or the view on screen, or its license, may have changed while it got ready.
     const root = entry.root;
     if (!this.#allowed(entry.repo, root)) {
       void this.#end(entry, 'no trusted view on screen shows its head');
+      return;
+    }
+    if (!this.#accepted(adapter)) {
+      void this.#end(entry, 'its license isn’t accepted');
       return;
     }
     const { launch } = prepared;
@@ -485,6 +590,8 @@ export class ServerPool {
         git: base.git,
         settings: launch.settings,
         initializationOptions: launch.initializationOptions,
+        never: launch.never,
+        messages: adapter.shows ? this.#messagesFor(entry) : undefined,
       });
     } catch (error) {
       this.#refuse(entry, {
@@ -498,6 +605,85 @@ export class ServerPool {
     entry.phase = 'running';
     entry.stopListening = server.onState((state) => this.#heard(entry, server, state));
     this.#changed(entry);
+  }
+
+  /** Where `entry`'s server's messages to the reader go: its notices, kept as it sent them. */
+  #messagesFor(entry: Entry): ServerMessages {
+    const { key, repo } = entry;
+    return {
+      show: (message) => {
+        this.#hold(key, repo, message, { titles: [], url: undefined }, 'message');
+      },
+      ask: (message, actions, signal) =>
+        new Promise((resolve) => {
+          const held = this.#hold(
+            key,
+            repo,
+            message,
+            { titles: actions, url: undefined },
+            'question',
+          );
+          held.answer = resolve;
+          signal.addEventListener(
+            'abort',
+            () => {
+              if (held.answer === undefined) return;
+              held.answer = undefined;
+              resolve(undefined);
+              // Its server no longer waits: what it asked stays, as a message.
+              const { actions: _gone, ...rest } = held.notice;
+              held.notice = { ...rest, kind: 'message' };
+              this.#options.changed(repo);
+            },
+            { once: true },
+          );
+        }),
+      link: (url) => {
+        this.#hold(key, repo, { type: 'info', text: url }, { titles: [], url }, 'link');
+      },
+    };
+  }
+
+  /**
+   * Keeps what a server said for the reader, past the oldest once there are {@link NOTICES}, and
+   * returns it.
+   */
+  #hold(
+    key: string,
+    repo: string,
+    message: ShownMessage,
+    { titles, url }: { titles: readonly string[]; url: string | undefined },
+    kind: Notice['kind'],
+  ): Held {
+    let kept = this.#notices.get(key);
+    if (!kept) {
+      kept = { repo, held: [] };
+      this.#notices.set(key, kept);
+    }
+    while (kept.held.length >= NOTICES) {
+      const oldest = kept.held.shift();
+      const answer = oldest?.answer;
+      if (oldest) oldest.answer = undefined;
+      answer?.(undefined);
+      this.#options.log(`a language server of ${repo} said more than ${NOTICES} things at once.`);
+    }
+    const shown = titles.slice(0, NOTICE_ACTIONS).map(clipNotice);
+    this.#noticed += 1;
+    const held: Held = {
+      notice: {
+        id: this.#noticed,
+        kind,
+        type: message.type,
+        text: clipNotice(message.text),
+        ...(kind === 'question' ? { actions: shown } : {}),
+      },
+      answer: undefined,
+      titles,
+      url,
+    };
+    kept.held.push(held);
+    this.#options.changed(repo);
+    return held;
   }
 
   /** Marks `entry` failed with `problem`, or, without one, for want of room. */
@@ -751,6 +937,14 @@ function describe(error: unknown): string {
 /** `text`, cut to what the contract carries. */
 function clip(text: string): string {
   return text.length > 400 ? `${text.slice(0, 399)}…` : text;
+}
+
+/**
+ * A notice's text, whole: far longer than any a server shows, and cut only past what the contract
+ * carries. The server's log has it whole either way.
+ */
+function clipNotice(text: string): string {
+  return text.length > NOTICE_TEXT ? `${text.slice(0, NOTICE_TEXT - 1)}…` : text;
 }
 
 function gigabytes(bytes: number): string {

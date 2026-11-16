@@ -24,7 +24,7 @@ import {
   startServer,
   VTSLS,
 } from '../src/index.ts';
-import { eventually, GIT, tempFolder } from './support.ts';
+import { eventually, GIT, keysAt, tempFolder } from './support.ts';
 
 const SCRIPT = fileURLToPath(
   new URL('../../../../testing/fixtures/code-hostile.sh', import.meta.url),
@@ -94,6 +94,7 @@ async function startAs(server: NodeServer, sections: readonly string[]) {
     git: GIT,
     settings: launch.settings,
     initializationOptions: launch.initializationOptions,
+    never: launch.never,
   });
   onTestFinished(async () => {
     if (running.pid !== undefined) {
@@ -194,7 +195,7 @@ test('Pyright gets no interpreter, whatever the checkout names', async () => {
   });
 });
 
-test('Intelephense gets no license key, and no telemetry', async () => {
+test('Intelephense gets no license key, no telemetry, and no offer of premium features', async () => {
   const { heard, initialize } = await heardBy(INTELEPHENSE, [
     'intelephense.licenceKey',
     'intelephense.telemetry.enabled',
@@ -204,4 +205,12 @@ test('Intelephense gets no license key, and no telemetry', async () => {
     'intelephense.telemetry.enabled': false,
   });
   expect(initialize.initializationOptions).toBeUndefined();
+  // Lo offers it the answers it asks other servers for, but no inlay hints, which are premium.
+  expect(keysAt(initialize.capabilities, 'textDocument').toSorted()).toEqual([
+    'definition',
+    'documentSymbol',
+    'hover',
+    'references',
+    'synchronization',
+  ]);
 });

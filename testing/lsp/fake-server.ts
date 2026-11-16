@@ -18,7 +18,7 @@ import {
   StreamMessageReader,
 } from 'vscode-jsonrpc/node';
 
-import type { Scenario, Seen } from './scenario.ts';
+import type { Outgoing, Scenario, Seen } from './scenario.ts';
 
 /** The protocol's code for a request the client cancelled. */
 const REQUEST_CANCELLED = -32800;
@@ -236,6 +236,18 @@ function flood(): void {
   }
 }
 
+/** Sends Lo the request `request`, after its delay, and reports its reply. */
+async function send({ method, params, delay = 0 }: Outgoing): Promise<void> {
+  await sleep(delay);
+  try {
+    const result: unknown = await connection.sendRequest(method, params);
+    report({ event: 'reply', method, result });
+  } catch (error) {
+    if (!(error instanceof ResponseError)) throw error;
+    report({ event: 'reply', method, error: { code: error.code, message: error.message } });
+  }
+}
+
 async function afterInitialized(): Promise<void> {
   if (scenario.child) {
     const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1 << 30)'], {
@@ -257,15 +269,10 @@ async function afterInitialized(): Promise<void> {
   for (let megabyte = 0; megabyte < (scenario.memory ?? 0); megabyte += 1) {
     kept.push(Buffer.alloc(1024 * 1024, 1));
   }
-  for (const { method, params, delay = 0 } of scenario.requests ?? []) {
-    await sleep(delay);
-    try {
-      const result: unknown = await connection.sendRequest(method, params);
-      report({ event: 'reply', method, result });
-    } catch (error) {
-      if (!(error instanceof ResponseError)) throw error;
-      report({ event: 'reply', method, error: { code: error.code, message: error.message } });
-    }
+  if (scenario.together) {
+    await Promise.all((scenario.requests ?? []).map(send));
+  } else {
+    for (const request of scenario.requests ?? []) await send(request);
   }
   for (const { method, params, delay = 0 } of scenario.notifications ?? []) {
     await sleep(delay);

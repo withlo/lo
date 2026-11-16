@@ -13,7 +13,9 @@
 //
 // Language servers run only on views the reader trusts, on a checkout of the head on screen, one
 // for each repository and language (`servers.ts`, `serving.ts`). On the new side, a server's
-// answer within its deadline wins over the index's (`served.ts`).
+// answer within its deadline wins over the index's (`served.ts`). A server with a license of its
+// own downloads only once the reader has accepted it, which main records in the settings file as
+// the reader asks, from the server's item or Settings, and withdrawing it stops the server.
 
 import { stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
@@ -27,6 +29,7 @@ import { app, BrowserWindow, dialog, MessageChannelMain, net } from 'electron';
 import { IpcError } from '../../../ipc/contract.ts';
 import { codeHandOver, jobs, type CodeHandOver } from '../../../ipc/jobs.ts';
 import { mainJobs, portOf } from '../../../main/background.ts';
+import { openPage } from '../../../main/browser.ts';
 import { githubSettings } from '../../../main/environment.ts';
 import { defineFeature, type FeatureContext } from '../../../main/features.ts';
 import { netFetch } from '../../../main/fetch.ts';
@@ -36,7 +39,16 @@ import { clearing, settings } from '../../settings/service.ts';
 import { tabs } from '../../tab/service.ts';
 import { contract } from '../contract.ts';
 import { contract as codeJobs } from '../jobs.ts';
-import { readTrusted, trusted, type TrustEntry } from '../settings.ts';
+import {
+  accepts,
+  licenses,
+  readTrusted,
+  trusted,
+  withAcceptance,
+  withoutAcceptance,
+  type Accepted,
+  type TrustEntry,
+} from '../settings.ts';
 import { ADAPTERS, type Adapter } from './adapters.ts';
 import { letGo, letGoUntrusted } from './checkouts.ts';
 import { TrustAsker, type AskWindow } from './confirm.ts';
@@ -92,6 +104,39 @@ let serving: ServingViews | undefined;
 let adapters: readonly Adapter[] = [];
 /** What downloads language servers, once the first one is needed. */
 let installer: Installer | undefined;
+/** The licenses the reader accepted, once the settings file has been read: none until then. */
+let accepted: readonly Accepted[] = [];
+
+/** Whether `adapter`'s server may download and start: it has no license, or the reader accepted it. */
+function isAccepted(adapter: Adapter): boolean {
+  return adapter.license === undefined || accepts(accepted, adapter.license);
+}
+
+/** The adapter `id` whose server has a license to accept, or a refusal. */
+function licensed(id: string): Adapter & { license: NonNullable<Adapter['license']> } {
+  const adapter = adapters.find((each) => each.id === id);
+  if (!adapter?.license) {
+    throw new IpcError(
+      'missing',
+      "There's no language server by that name with a license to accept.",
+    );
+  }
+  return { ...adapter, license: adapter.license };
+}
+
+/** Opens `url` in the browser, if it's a web page: Lo opens nothing else for a server. */
+async function openWebPage(url: string): Promise<void> {
+  let protocol: string;
+  try {
+    protocol = new URL(url).protocol;
+  } catch {
+    throw new IpcError('refused', 'Lo opens only web pages.');
+  }
+  if (protocol !== 'https:' && protocol !== 'http:') {
+    throw new IpcError('refused', 'Lo opens only web pages.');
+  }
+  await openPage(url);
+}
 /** The code port of each window's page, by its contents' id, while it's loaded. */
 const ports = new Map<number, () => void>();
 
@@ -453,6 +498,7 @@ function startServers(context: Context): void {
       return { home, git: serverGitEnvironment(), path: [dirname(found.git.program)] };
     },
     changed: (repo) => serving?.changed(repo),
+    accepted: isAccepted,
     log,
   });
   pool = servers;
@@ -460,6 +506,7 @@ function startServers(context: Context): void {
   const followed = new ServingViews({
     pool: servers,
     adapters: () => adapters,
+    accepted: isAccepted,
     view: (id) => servingInput(context, id),
     onScreen: () => service.list().active,
     publish: (shown) => context.publish('served', shown),
@@ -484,6 +531,17 @@ function startServers(context: Context): void {
     context.use(comparisons).onChange((id) => followed.update(id)),
     // The view on screen, which servers start for and move to.
     service.onTabs(() => followed.updateAll()),
+    // A license accepted lets its server start; one withdrawn stops it, however the file lost it.
+    context.use(settings).watch(licenses, (value) => {
+      accepted = value;
+      for (const adapter of adapters) {
+        if (isAccepted(adapter)) continue;
+        servers.stopAdapter(adapter.id).catch((error: unknown) => {
+          log(`couldn't stop ${adapter.name}'s servers: ${String(error)}`);
+        });
+      }
+      followed.updateAll();
+    }),
   );
   context.git.onStatus(() => all());
   all();
@@ -538,6 +596,53 @@ export default defineFeature(contract, {
       await serving.restart(view, server);
     },
     log: ({ view, server }) => serving?.log(view, server) ?? null,
+    listServers: () =>
+      adapters.map((adapter) => ({
+        id: adapter.id,
+        name: adapter.name,
+        ...(adapter.about === undefined ? {} : { about: adapter.about }),
+        ...(adapter.license === undefined
+          ? {}
+          : {
+              license: {
+                server: adapter.license.server,
+                serverName: adapter.license.serverName,
+                name: adapter.license.name,
+                major: adapter.license.major,
+              },
+            }),
+      })),
+    async license({ server, act }, context) {
+      const { license } = licensed(server);
+      switch (act) {
+        case 'read':
+          await openWebPage(license.url);
+          return;
+        case 'accept': {
+          const entry = {
+            server: license.server,
+            major: license.major,
+            at: new Date().toISOString(),
+          };
+          await context.use(settings).update(licenses, (list) => withAcceptance(list, entry));
+          return;
+        }
+        case 'withdraw':
+          await context
+            .use(settings)
+            .update(licenses, (list) => withoutAcceptance(list, license.server));
+          // Its servers stop as the file changes; and here, should the file change otherwise.
+          await pool?.stopAdapter(server);
+          return;
+        default:
+          act satisfies never;
+      }
+    },
+    async notice({ view, server, notice, act }) {
+      if (!serving) throw new IpcError('unavailable', 'Lo is starting, or quitting.');
+      const url = serving.notice(view, server, notice, act);
+      if (url !== undefined) await openWebPage(url);
+    },
   },
   start(context) {
     const service = context.use(tabs);

@@ -99,3 +99,10 @@ export function running(pid: number): boolean {
     return false;
   }
 }
+
+/** The keys of the object at `key` in `value`, an object, or none when there's no object there. */
+export function keysAt(value: unknown, key: string): string[] {
+  if (typeof value !== 'object' || value === null) return [];
+  const inner: unknown = Object.entries(value).find(([name]) => name === key)?.[1];
+  return typeof inner === 'object' && inner !== null ? Object.keys(inner) : [];
+}

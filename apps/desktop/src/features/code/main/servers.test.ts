@@ -553,3 +553,174 @@ describe('a real server', () => {
     expect(() => process.kill(-(pid ?? 0), 0)).toThrow('ESRCH');
   });
 });
+
+/** A license of the kind Intelephense's is, for an adapter that asks the reader to accept it. */
+const LICENSE = {
+  server: 'intelephense',
+  serverName: 'Intelephense',
+  name: 'the Intelephense Licence',
+  url: 'https://intelephense.com/eula',
+  major: 1,
+};
+
+/** PHP's adapter, as Lo's is: its server has a license, shows its messages and has no hints. */
+function php(prepare?: Adapter['prepare']): Adapter {
+  return {
+    ...adapter('php', prepare),
+    name: 'PHP',
+    license: LICENSE,
+    shows: true,
+    hints: false,
+  };
+}
+
+/** A pool of stand-ins whose licenses are accepted while `accepted()` says. */
+function licensedPool(accepted: () => boolean) {
+  const started: StandIn[] = [];
+  const prepared: string[] = [];
+  const changed: string[] = [];
+  const pool = new ServerPool({
+    prepare(each, _progress, signal) {
+      prepared.push(each.id);
+      return each.prepare({
+        install: () => Promise.reject(new Error('no downloads in tests')),
+        findCopy: () => Promise.resolve(undefined),
+        signal,
+      });
+    },
+    start(spec) {
+      const server = new StandIn(spec);
+      started.push(server);
+      return server;
+    },
+    base: () => ({ home: '/home/lo', git: {}, path: [] }),
+    changed: (repo) => changed.push(repo),
+    accepted: (each) => each.license === undefined || accepted(),
+    log: () => undefined,
+  });
+  onTestFinished(() => pool.stop());
+  return { pool, started, prepared, changed };
+}
+
+describe('a server with a license of its own', () => {
+  it('downloads and starts only once its license is accepted, and stops once it’s withdrawn', async () => {
+    let yes = false;
+    const { pool, started, prepared } = licensedPool(() => yes);
+    const PHP = php(() =>
+      Promise.resolve({
+        kind: 'ready',
+        launch: { program: '/bin/x', args: [], never: ['textDocument/inlayHint'] },
+      }),
+    );
+    const views = [view('v1', 'a/x', 1, [PHP, TS])];
+    pool.sync(views, 'v1');
+    await settle();
+    // Nothing of it is prepared, so nothing downloads; another language's server starts.
+    expect(prepared).toEqual(['ts']);
+    expect(pool.shown('a/x', 'php')).toBeUndefined();
+
+    yes = true;
+    pool.sync(views, 'v1');
+    await settle();
+    expect(prepared).toEqual(['ts', 'php']);
+    const server = started.find((each) => each.spec.name === 'PHP');
+    // What Lo never asks it goes with it, and its messages come to the pool.
+    expect(server?.spec.never).toEqual(['textDocument/inlayHint']);
+    expect(server?.spec.messages).toBeDefined();
+    expect(started.find((each) => each.spec.name === 'TypeScript')?.spec.messages).toBeUndefined();
+
+    yes = false;
+    await pool.stopAdapter('php');
+    expect(server?.stopped).toBe(true);
+    expect(pool.shown('a/x', 'php')).toBeUndefined();
+    // And it doesn't start again while its license isn't accepted.
+    pool.sync(views, 'v1');
+    await settle();
+    expect(prepared).toEqual(['ts', 'php']);
+  });
+
+  it('never starts one whose license was withdrawn while it downloaded', async () => {
+    let yes = true;
+    let finish: ((prepared: Prepared) => void) | undefined;
+    const PHP = php(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const { pool, started } = licensedPool(() => yes);
+    pool.sync([view('v1', 'a/x', 1, [PHP])], 'v1');
+    await settle();
+    yes = false;
+    finish?.({ kind: 'ready', launch: { program: '/bin/x', args: [] } });
+    await settle();
+    expect(started).toHaveLength(0);
+  });
+});
+
+/** PHP's server, running on `a/x`, and where its messages go. */
+async function runningPhp() {
+  const { pool, started, changed } = licensedPool(() => true);
+  pool.sync([view('v1', 'a/x', 1, [php()])], 'v1');
+  await settle();
+  const messages = started[0]?.spec.messages;
+  if (!messages) throw new Error('its messages go nowhere');
+  return { pool, server: started[0], messages, changed };
+}
+
+describe('what a server says to the reader', () => {
+  it('keeps each message as it was sent until the reader dismisses it', async () => {
+    const { pool, messages, changed } = await runningPhp();
+    const text = '  Licence required.\n\tSee https://intelephense.com  ';
+    messages.show({ type: 'error', text });
+    expect(pool.notices('a/x', 'php')).toEqual([{ id: 1, kind: 'message', type: 'error', text }]);
+    expect(changed.at(-1)).toBe('a/x');
+    expect(() => pool.act('a/x', 'php', 1, { action: 0 })).toThrow('asks nothing');
+    expect(() => pool.act('a/x', 'php', 1, 'open')).toThrow('no page');
+    pool.act('a/x', 'php', 1, 'dismiss');
+    expect(pool.notices('a/x', 'php')).toEqual([]);
+    expect(() => pool.act('a/x', 'php', 1, 'dismiss')).toThrow('gone');
+  });
+
+  it('answers a question with the action the reader chose, or none once they dismiss it', async () => {
+    const { pool, messages } = await runningPhp();
+    const signal = new AbortController().signal;
+    const chosen = messages.ask({ type: 'warning', text: 'Index vendor?' }, ['Yes', 'No'], signal);
+    const dismissed = messages.ask({ type: 'info', text: 'Carry on?' }, ['Go'], signal);
+    expect(pool.notices('a/x', 'php')).toEqual([
+      { id: 1, kind: 'question', type: 'warning', text: 'Index vendor?', actions: ['Yes', 'No'] },
+      { id: 2, kind: 'question', type: 'info', text: 'Carry on?', actions: ['Go'] },
+    ]);
+    expect(() => pool.act('a/x', 'php', 1, { action: 2 })).toThrow('no such action');
+    pool.act('a/x', 'php', 1, { action: 1 });
+    pool.act('a/x', 'php', 2, 'dismiss');
+    expect(await chosen).toBe('No');
+    expect(await dismissed).toBeUndefined();
+    expect(pool.notices('a/x', 'php')).toEqual([]);
+  });
+
+  it('keeps a question its server stopped waiting on as a message, and its notices past its stop', async () => {
+    const { pool, messages } = await runningPhp();
+    const asking = new AbortController();
+    const asked = messages.ask({ type: 'info', text: 'Wait?' }, ['Yes'], asking.signal);
+    asking.abort();
+    expect(await asked).toBeUndefined();
+    expect(pool.notices('a/x', 'php')).toEqual([
+      { id: 1, kind: 'message', type: 'info', text: 'Wait?' },
+    ]);
+    await pool.stopAdapter('php');
+    // Its server has gone, and what it said stays for the reader.
+    expect(pool.notices('a/x', 'php')).toHaveLength(1);
+  });
+
+  it('gives a web page it names as a link, which only the reader opens', async () => {
+    const { pool, messages } = await runningPhp();
+    messages.link('https://intelephense.com/');
+    expect(pool.notices('a/x', 'php')).toEqual([
+      { id: 1, kind: 'link', type: 'info', text: 'https://intelephense.com/' },
+    ]);
+    expect(pool.act('a/x', 'php', 1, 'open')).toBe('https://intelephense.com/');
+    // Opening it leaves it until it's dismissed.
+    expect(pool.notices('a/x', 'php')).toHaveLength(1);
+  });
+});

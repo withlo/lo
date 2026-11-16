@@ -463,13 +463,23 @@ toolchain and git's variables each server needs.
   no license key, its telemetry is off, and its storage is in its own `HOME`. The package's README
   lists each with its source, version and license, and a server's details name its license beside
   its version.
+- A Node server's adapter says whether it gives inlay hints (`hints`), the license the reader
+  accepts before Lo downloads it (`accept`, with `acceptanceOf` for the major version it covers),
+  whether its messages reach the reader (`shows`) and the requests Lo never sends it (`never`).
+  Intelephense has all three: the Intelephense Licence, its messages shown as it sent them, and its
+  premium features (`PREMIUM`, inlay hints among them) never asked for nor offered in its
+  capabilities. A spec's `never` answers those requests `unasked` without sending them, and its
+  `messages` takes `window/showMessage` as sent, `window/showMessageRequest` with its actions, which
+  it answers with the reader's choice or `null`, and the `http` or `https` page a
+  `window/showDocument` names, which it answers `{ success: false }`, since Lo opens nothing itself.
 - Tests start only the fake server, `testing/lsp/fake-server.ts`, at most two at once in a test
   file, each killed with its group when the test ends. No test starts a real server or downloads
   one: download tests serve archives they build from a server on this machine. The live check,
   `pnpm nx run lsp:live`, by hand only, installs what's pinned into `~/.cache/lo-live/`, starts each
   server as its adapter does on the checkouts the code fixtures build with `--local`, asks what
   `gd`, `gr`, `K`, `gh` and `gO` ask at the places `testing/fixtures/code/cases.json` names, and
-  fails if anything ran what the hostile fixture plants.
+  fails if anything ran what the hostile fixture plants. A server with a license of its own is
+  installed and checked only with `--accept <id>`, which says whoever runs it accepts that license.
 
 ### Accounts
 
@@ -1207,6 +1217,19 @@ the Node it runs on.
   "Stop trusting this repo"; on an untrusted view, "Language servers off" offers to trust it
   (`code.servers`, the `served` topic). The log dialog shows the last 1,000 lines, and copies as
   many of the newest as fit in 1 MB.
+- A server with a license of its own, as PHP's Intelephense has, is downloaded, checked out for and
+  started only once the reader has accepted its license for the major version Lo has, in
+  `code.licenses`, which main alone writes. Until then its item says "PHP off · license", its
+  details offer "Read the license", its page in the browser, and "Accept the license", PHP's answers
+  come from the index saying why, and nothing opens by itself. Settings' Language servers section
+  lists each server with what it is and its license, with the same two, and "Withdraw acceptance",
+  which stops its servers.
+- What a server whose adapter shows its messages says to the reader is kept by repository and
+  adapter, as it said it, until the reader dismisses it: its item counts it ("PHP · 1 message"), and
+  its details show each one's text whole, a question's actions, which answer it, and a page it names
+  as a link the reader opens (`notice`). A question its server stopped waiting on stays as a
+  message. Other servers' messages go only to their logs. A server with no inlay hints is never
+  asked for them, and `served` says `hints: false` for it.
 - In a build run from source, `LO_TEST_SERVERS` names a manifest of servers to run for tests
   (`main/tests.ts`), each by absolute path with its arguments and nothing downloaded; `testServers`
   in `e2e/app.ts` writes one for the fake server. They run in place of Lo's own, and a test run

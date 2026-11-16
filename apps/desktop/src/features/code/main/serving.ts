@@ -14,6 +14,9 @@
 //   can't be reached after a push, what runs stops, and its checkouts stay.
 // - A server answers only about the head it runs on: a view of another head, or the old side, gets
 //   the syntax index's answers.
+// - A server whose license the reader hasn't accepted is shown as waiting for it, and its
+//   language's answers come from the syntax index, saying so: nothing is checked out, downloaded
+//   or started for it until the reader accepts it.
 //
 // Nothing here calls Electron, so it runs under unit tests.
 
@@ -23,7 +26,7 @@ import { IpcError } from '../../../ipc/contract.ts';
 import type { ServerLog, ServerState, Servers } from '../contract.ts';
 import { adapterFor, type Adapter } from './adapters.ts';
 import type { Serving, NotServing } from './served.ts';
-import type { PoolView, Root, ServerPool } from './servers.ts';
+import type { NoticeAct, PoolView, Root, ServerPool } from './servers.ts';
 
 /** What servers need of a view's local copy. */
 export interface ServingRepo {
@@ -54,8 +57,16 @@ export interface ServingInput {
 }
 
 export interface ServingOptions {
-  readonly pool: Pick<ServerPool, 'sync' | 'shown' | 'find' | 'restart' | 'log'>;
+  readonly pool: Pick<
+    ServerPool,
+    'sync' | 'shown' | 'find' | 'restart' | 'log' | 'notices' | 'act'
+  >;
   readonly adapters: () => readonly Adapter[];
+  /**
+   * Whether `adapter`'s server may download and start: its license, if it has one, is accepted.
+   * Without it, only a server with no license may.
+   */
+  readonly accepted?: ((adapter: Adapter) => boolean) | undefined;
   /** View `id` as servers need it, or nothing once it's closed. */
   readonly view: (id: string) => ServingInput | undefined;
   /** The view on screen. */
@@ -123,8 +134,21 @@ function describe(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+/** What a language's answers say while its server's license waits for the reader to accept it. */
+export function licenseWaits(adapter: Adapter): string | undefined {
+  const { license } = adapter;
+  if (!license) return undefined;
+  return `${adapter.name}'s server, ${license.serverName}, has its own license. Read it and accept it to use it.`;
+}
+
 export class ServingViews {
   readonly #options: ServingOptions;
+
+  /** Whether `adapter`'s server may download and start. */
+  #accepted(adapter: Adapter): boolean {
+    const { accepted } = this.#options;
+    return accepted ? accepted(adapter) : adapter.license === undefined;
+  }
   readonly #views = new Map<string, Followed>();
   /** Each head's checkout, by {@link checkoutKey}. */
   readonly #checkouts = new Map<string, Checkout>();
@@ -200,11 +224,14 @@ export class ServingViews {
     const { adapter, languageId } = match;
     const name = adapter.name;
     const onScreen = this.#options.onScreen() === id;
+    const waits = this.#accepted(adapter) ? undefined : licenseWaits(adapter);
     if (!this.#wants(followed).has(adapter.id)) {
       followed.asked.add(adapter.id);
       this.#checkOut(followed);
       this.#sync();
     }
+    // Its item shows its license; the syntax index answers, saying why.
+    if (waits !== undefined) return { kind: 'license', name, why: waits };
     const checkout = this.#checkouts.get(checkoutKey(input, commit));
     const folder = checkout?.folder;
     if (folder === undefined) {
@@ -226,6 +253,7 @@ export class ServingViews {
           name,
           languageId,
           definitionDeadline: adapter.definitionDeadline,
+          hints: adapter.hints !== false,
           server: found.server,
           async matches(file, oid) {
             const repo = await clone();
@@ -281,6 +309,16 @@ export class ServingViews {
   }
 
   /**
+   * Does what the reader asked with notice `notice` of view `id`'s server `server`, and returns the
+   * page to open for `open`.
+   */
+  notice(id: string, server: string, notice: number, act: NoticeAct): string | undefined {
+    const input = this.#views.get(id)?.input;
+    if (!input) throw new IpcError('missing', "There's no pull request's tab with that id.");
+    return this.#options.pool.act(repoKey(input.repo), server, notice, act);
+  }
+
+  /**
    * Forgets the checkouts of `repo` that `dropped` picks by pull request, once they've been let go
    * of, so a view trusted again checks out afresh.
    */
@@ -308,6 +346,14 @@ export class ServingViews {
   /** The servers `followed` needs, by adapter. */
   #wants(followed: Followed): Set<string> {
     return new Set([...(followed.changes?.wants ?? []), ...followed.asked]);
+  }
+
+  /** The servers `followed` needs that may run: those whose license, if they have one, is accepted. */
+  #runs(followed: Followed): Adapter[] {
+    const wants = this.#wants(followed);
+    return this.#options
+      .adapters()
+      .filter((adapter) => wants.has(adapter.id) && this.#accepted(adapter));
   }
 
   /** Reads which servers the files `followed` changes need, once for each pair of sides. */
@@ -345,7 +391,7 @@ export class ServingViews {
   #checkOut(followed: Followed): void {
     const { input } = followed;
     if (input.trust !== 'trusted' || input.head === undefined) return;
-    if (this.#options.onScreen() !== input.id || this.#wants(followed).size === 0) return;
+    if (this.#options.onScreen() !== input.id || this.#runs(followed).length === 0) return;
     void this.#checkoutOf(followed, input.head);
   }
 
@@ -444,7 +490,6 @@ export class ServingViews {
   /** Tells the servers what the views need, and the window what each view shows. */
   #sync(): void {
     if (this.#stopped) return;
-    const adapters = this.#options.adapters();
     const views: PoolView[] = [];
     for (const followed of this.#views.values()) {
       const { input } = followed;
@@ -455,14 +500,13 @@ export class ServingViews {
         input.trust !== 'trusted' || input.head === undefined
           ? undefined
           : this.#checkouts.get(checkoutKey(input, input.head))?.folder;
-      const wants = this.#wants(followed);
       views.push({
         id: input.id,
         repo: repoKey(input.repo),
         pull: input.number,
         trust: input.trust === 'trusted' ? 'trusted' : 'held',
         root: folder === undefined ? undefined : { folder, pull: input.number },
-        wants: adapters.filter((adapter) => wants.has(adapter.id)),
+        wants: this.#runs(followed),
       });
     }
     this.#options.pool.sync(views, this.#options.onScreen());
@@ -491,9 +535,13 @@ export class ServingViews {
     const servers: Servers['servers'] = [];
     for (const adapter of adapters) {
       if (!wants.has(adapter.id)) continue;
-      const shown = this.#options.pool.shown(repoKey(input.repo), adapter.id);
+      const repo = repoKey(input.repo);
+      const shown = this.#options.pool.shown(repo, adapter.id);
       let state: ServerState | undefined = shown?.state;
-      if (checkout?.failed !== undefined && input.trust === 'trusted') {
+      const { license } = adapter;
+      if (license && !this.#accepted(adapter)) {
+        state = { kind: 'license', server: license.serverName, license: license.name };
+      } else if (checkout?.failed !== undefined && input.trust === 'trusted') {
         state = {
           kind: 'failed',
           why: {
@@ -505,8 +553,16 @@ export class ServingViews {
         state = { kind: 'starting' };
       }
       if (state === undefined) continue;
-      const version = shown?.version === undefined ? {} : { version: shown.version };
-      servers.push({ id: adapter.id, name: adapter.name, ...version, state });
+      const version = shown?.version ?? adapter.about;
+      const notices = adapter.shows ? this.#options.pool.notices(repo, adapter.id) : [];
+      servers.push({
+        id: adapter.id,
+        name: adapter.name,
+        ...(version === undefined ? {} : { version }),
+        state,
+        ...(adapter.hints === false ? { hints: false as const } : {}),
+        ...(notices.length > 0 ? { notices } : {}),
+      });
     }
     return { view: input.id, off: false, servers };
   }

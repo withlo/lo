@@ -1,6 +1,10 @@
 // The live check, by hand only, never in CI:
 //
-//   pnpm nx run lsp:live [-- <id>…]
+//   pnpm nx run lsp:live [-- [--accept <id>]… <id>…]
+//
+// A server with a license of its own to accept, as Intelephense has, is installed and checked only
+// with `--accept <id>`, which says that whoever runs it accepts that license, as Lo asks the reader
+// to before it downloads one. Without it, its check says so and fails.
 //
 // It installs what servers.json pins for this system, or just the IDs given, into
 // ~/.cache/lo-live/, through the same checks Lo makes, so each version downloads once. Then it
@@ -100,6 +104,7 @@ function onNode(server: NodeServer, languages: Readonly<Record<string, string>>)
       for (const script of ['code.sh', 'code-hostile.sh']) {
         const root = await checkout(script, join(folder, script));
         console.log(`\n--- ${server.name} on the checkout ${script} --local makes`);
+        const said: string[] = [];
         const log = await askServer({
           spec: {
             name: server.name,
@@ -111,16 +116,29 @@ function onNode(server: NodeServer, languages: Readonly<Record<string, string>>)
             git: serverGitEnvironment(),
             settings: launch.settings,
             initializationOptions: launch.initializationOptions,
+            // What Lo never asks it, it isn't asked here either.
+            never: launch.never,
+            messages: server.shows
+              ? {
+                  show: (message) => said.push(`${message.type}: ${message.text}`),
+                  ask: (message, actions) => {
+                    said.push(`question: ${message.text} [${actions.join(', ')}]`);
+                    return Promise.resolve(undefined);
+                  },
+                  link: (url) => said.push(`link: ${url}`),
+                }
+              : undefined,
           },
           places,
         });
+        if (said.length > 0) console.log(`\nWhat it said to the reader:\n${said.join('\n')}`);
         // What it says of plugins, interpreters and licenses, the folders' own names aside.
-        const said = log.filter((line) =>
+        const noted = log.filter((line) =>
           /hostile|plugin|interpreter|pythonPath|licen[cs]e/i.test(
             line.replaceAll(folder, '').replaceAll(script, 'the fixture'),
           ),
         );
-        if (said.length > 0) console.log(`\nIts log, on those:\n${said.join('\n')}`);
+        if (noted.length > 0) console.log(`\nIts log, on those:\n${noted.join('\n')}`);
         const home = await readdir(join(folder, `home-${script}`), { recursive: true });
         const top = home.filter((path) => path.split('/').length <= 3);
         console.log(`\nIts home holds ${home.length} entries: ${top.join(', ')}`);
@@ -133,6 +151,13 @@ function onNode(server: NodeServer, languages: Readonly<Record<string, string>>)
     }
   };
 }
+
+/** The servers on Lo's Node, by their IDs. */
+const SERVERS: Readonly<Record<string, NodeServer>> = {
+  vtsls: VTSLS,
+  pyright: PYRIGHT,
+  intelephense: INTELEPHENSE,
+};
 
 /** Each ID's check. */
 const CHECKS: Record<string, Check> = {
@@ -165,7 +190,18 @@ async function install(id: string): Promise<Installed> {
   });
 }
 
-const asked = process.argv.slice(2);
+const asked: string[] = [];
+const accepted = new Set<string>();
+const given = process.argv.slice(2);
+for (let at = 0; at < given.length; at += 1) {
+  const arg = given[at] ?? '';
+  if (arg === '--accept') {
+    accepted.add(given[at + 1] ?? '');
+    at += 1;
+  } else {
+    asked.push(arg);
+  }
+}
 const ids = asked.length > 0 ? asked : Object.keys(MANIFEST);
 let failed = false;
 for (const id of ids) {
@@ -174,6 +210,14 @@ for (const id of ids) {
   if (pinned === undefined || check === undefined) {
     console.error(
       `${id}: ${pinned === undefined ? 'servers.json has no such entry' : 'no check yet'}.`,
+    );
+    failed = true;
+    continue;
+  }
+  const license = SERVERS[id]?.accept;
+  if (license !== undefined && !accepted.has(id)) {
+    console.error(
+      `${id}: it has a license of its own, ${license.name} (${license.url}). Read it, and pass --accept ${id} to accept it and check it.`,
     );
     failed = true;
     continue;

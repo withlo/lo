@@ -74,16 +74,20 @@ export interface Serving {
   readonly languageId: string;
   /** How long `definitions` waits for it, when it isn't the usual. */
   readonly definitionDeadline?: number | undefined;
+  /** Whether it gives inline type hints: one that has none, `false`, is never asked for them. */
+  readonly hints?: boolean | undefined;
   readonly server: Pick<Running, 'open' | 'request' | 'pathOf'>;
   /** Whether the checkout's file at `path` is blob `oid`, the head's, which the server reads too. */
   matches(path: string, oid: Oid): Promise<boolean>;
 }
 
-/** A view's server for the file asked about, on its way or stopped. */
-export interface NotServing {
-  readonly kind: 'starting' | 'failed';
-  readonly name: string;
-}
+/**
+ * A view's server for the file asked about, on its way or stopped, or waiting for the reader to
+ * accept its license, `why` saying so.
+ */
+export type NotServing =
+  | { readonly kind: 'starting' | 'failed'; readonly name: string }
+  | { readonly kind: 'license'; readonly name: string; readonly why: string };
 
 /** The server for a file of a view's new side, at the side's commit, if one reads its language. */
 export type ServerOf = (file: {
@@ -104,7 +108,17 @@ const decoder = new TextDecoder('utf-8', { ignoreBOM: true });
 
 /** What the syntax index's answers say when a server that reads the file didn't answer. */
 function waitingFor(serving: NotServing): string {
-  return serving.kind === 'starting' ? `${serving.name} is starting.` : `${serving.name} stopped.`;
+  switch (serving.kind) {
+    case 'starting':
+      return `${serving.name} is starting.`;
+    case 'failed':
+      return `${serving.name} stopped.`;
+    case 'license':
+      return serving.why;
+    default:
+      serving satisfies never;
+      return `${String(serving)} stopped.`;
+  }
 }
 
 /** Why a server's request has no answer, as the syntax index's answers say it. */
@@ -121,6 +135,8 @@ function fallbackOf(name: string, why: NoAnswer): string {
     case 'declined':
     case 'failed':
       return `${name} didn't answer.`;
+    case 'unasked':
+      return `Lo doesn't ask ${name} this.`;
     case 'cancelled':
     case 'replaced':
       throw new IpcError('cancelled', 'The question was cancelled.');
@@ -522,7 +538,8 @@ export async function servedHints(
   checkLine(file, at.from);
   const serving =
     file.side === 'new' ? serverOf({ commit: file.commit, path: file.path }) : undefined;
-  if (serving?.kind !== 'ready') return [];
+  // One with no hints, such as one whose license keeps them for paying users, is never asked.
+  if (serving?.kind !== 'ready' || serving.hints === false) return [];
   const answer = await ask(
     serving,
     file,
