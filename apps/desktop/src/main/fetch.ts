@@ -7,7 +7,8 @@
 // Nothing is kept in Chromium's HTTP cache, where GitHub's answers about private repositories
 // would sit on disk, and no cookie is sent or kept. A request given an `uploadProgress` hears how
 // much of its body has gone, as an attachment's progress bar needs. A `netFetch` that streams
-// hands over each answer as it begins, for downloads too large to hold whole.
+// hands over each answer as it begins, for downloads too large to hold whole, and reads the answer
+// only as fast as its body is read.
 
 import type { FetchInit, UploadProgress } from '@lo/github';
 import type { ClientRequestConstructorOptions } from 'electron';
@@ -21,6 +22,13 @@ export interface NetAnswer {
   on(event: 'end', listener: () => void): unknown;
   on(event: 'error', listener: (error: Error) => void): unknown;
   on(event: 'aborted', listener: () => void): unknown;
+  /**
+   * Stops its data coming, and starts it again: Chromium stops reading the connection once what
+   * waits is full. Electron's answer is a Node `Readable`, as its docs say, though its types leave
+   * these two out.
+   */
+  pause?(): unknown;
+  resume?(): unknown;
 }
 
 /** What Lo uses of a request Electron's `net.request` makes: its `ClientRequest`. */
@@ -57,6 +65,12 @@ const NO_BODY: ReadonlySet<number> = new Set([101, 103, 204, 205, 304]);
 /** How often a request given an `uploadProgress` asks how much of its body has gone, in milliseconds. */
 export const UPLOAD_PROGRESS_EVERY = 250;
 
+/**
+ * How much of a streamed answer waits to be read, in bytes, before Lo stops reading the connection
+ * until it has been.
+ */
+export const STREAM_QUEUE = 1024 * 1024;
+
 /** Thrown when an answer's body is longer than the `limit` a `netFetch` reads. */
 export class AnswerTooLarge extends Error {
   override name = 'AnswerTooLarge';
@@ -72,9 +86,10 @@ export class AnswerTooLarge extends Error {
  * cancelled as soon as it does, and fails with {@link AnswerTooLarge}, so no more than that is ever
  * kept.
  *
- * With `stream`, it resolves as each answer begins, and the body comes as it arrives: a body
- * past the `limit`, a dropped connection or the signal giving up fails the body, and cancelling
- * the body cancels the request.
+ * With `stream`, it resolves as each answer begins, and the body comes as it arrives, at most
+ * {@link STREAM_QUEUE} of it waiting at a time: past that, the answer waits until the body is read.
+ * A body past the `limit`, a dropped connection or the signal giving up fails the body, and
+ * cancelling the body cancels the request.
  */
 export function netFetch(
   request: (options: ClientRequestConstructorOptions) => NetRequest,
@@ -209,39 +224,50 @@ function streamed(
   }
   let done = false;
   let received = 0;
-  const body = new ReadableStream<Uint8Array>({
-    start(controller) {
-      function stop(error: unknown) {
-        if (done) return;
+  const body = new ReadableStream<Uint8Array>(
+    {
+      start(controller) {
+        function stop(error: unknown) {
+          if (done) return;
+          done = true;
+          signal.removeEventListener('abort', giveUp);
+          controller.error(error);
+          sent.abort();
+        }
+        function giveUp() {
+          stop(signal.reason);
+        }
+        signal.addEventListener('abort', giveUp, { once: true });
+        answer.on('data', (chunk) => {
+          if (done) return;
+          received += chunk.length;
+          if (received > limit) {
+            stop(new AnswerTooLarge(`The answer is longer than ${limit} bytes.`));
+            return;
+          }
+          controller.enqueue(new Uint8Array(chunk));
+          // Full: the rest waits at Chromium until the body is read, which pulls for more.
+          if ((controller.desiredSize ?? 0) <= 0) answer.pause?.();
+        });
+        answer.on('error', stop);
+        answer.on('aborted', () => stop(new Error('net::ERR_CONNECTION_CLOSED')));
+        answer.on('end', () => {
+          if (done) return;
+          done = true;
+          signal.removeEventListener('abort', giveUp);
+          controller.close();
+        });
+      },
+      pull() {
+        answer.resume?.();
+      },
+      cancel() {
         done = true;
-        signal.removeEventListener('abort', giveUp);
-        controller.error(error);
         sent.abort();
-      }
-      function giveUp() {
-        stop(signal.reason);
-      }
-      signal.addEventListener('abort', giveUp, { once: true });
-      answer.on('data', (chunk) => {
-        if (done) return;
-        received += chunk.length;
-        if (received > limit) stop(new AnswerTooLarge(`The answer is longer than ${limit} bytes.`));
-        else controller.enqueue(new Uint8Array(chunk));
-      });
-      answer.on('error', stop);
-      answer.on('aborted', () => stop(new Error('net::ERR_CONNECTION_CLOSED')));
-      answer.on('end', () => {
-        if (done) return;
-        done = true;
-        signal.removeEventListener('abort', giveUp);
-        controller.close();
-      });
+      },
     },
-    cancel() {
-      done = true;
-      sent.abort();
-    },
-  });
+    { highWaterMark: STREAM_QUEUE, size: (chunk) => chunk.byteLength },
+  );
   return new Response(body, init);
 }
 

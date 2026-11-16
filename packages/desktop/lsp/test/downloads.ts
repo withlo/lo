@@ -117,7 +117,9 @@ export type Answer =
       readonly chunked?: boolean | undefined;
     }
   | { readonly redirect: string; readonly status?: number | undefined }
-  | { readonly status: number };
+  | { readonly status: number }
+  /** No answer at all, the connection held open. */
+  | { readonly silent: true };
 
 /** What the test server serves, by address: an answer, or one per request in turn. */
 export type Routes = Record<string, Answer | readonly Answer[]>;
@@ -142,6 +144,8 @@ export async function serve(routes: Routes): Promise<Served> {
     const answer = isList(route) ? (route[count] ?? route.at(-1)) : route;
     if (answer === undefined) {
       response.writeHead(404).end();
+    } else if ('silent' in answer) {
+      // It never answers.
     } else if ('redirect' in answer) {
       response.writeHead(answer.status ?? 302, { location: answer.redirect }).end();
     } else if ('body' in answer) {

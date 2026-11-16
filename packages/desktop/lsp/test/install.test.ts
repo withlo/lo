@@ -2,13 +2,22 @@
 // installs, and every way a download is refused or cut short, each leaving nothing behind.
 
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, relative } from 'node:path';
 
-import { describe, expect, test } from 'vitest';
+import { describe, expect, test, vi } from 'vitest';
 
+import * as disk from '../src/disk.ts';
 import { DownloadError, Installer, type Pinned, REDIRECTS } from '../src/index.ts';
+import { fingerprint } from '../src/install.ts';
+import { UNPACK_RULES } from '../src/unpack.ts';
 import { pinned, serve, type Routes, sha256, tarGz } from './downloads.ts';
 import { tempFolder } from './support.ts';
+
+// Each sync to the disk is seen, and made.
+vi.mock(import('../src/disk.ts'), async (original) => {
+  const real = await original();
+  return { ...real, syncPath: vi.fn<typeof real.syncPath>(real.syncPath) };
+});
 
 const URL = 'https://downloads.test/server-1.0.0.tar.gz';
 
@@ -20,11 +29,19 @@ const ARCHIVE = tarGz([
 
 const PINNED = pinned(URL, ARCHIVE, 'tar.gz', 'server/bin/server');
 
-async function setUp(routes: Routes) {
+async function setUp(
+  routes: Routes,
+  fetch?: (served: typeof globalThis.fetch) => typeof globalThis.fetch,
+) {
   const served = await serve(routes);
   const folder = join(tempFolder(), 'servers');
   mkdirSync(folder);
-  const installer = new Installer({ folder, fetch: served.fetch, backoff: [0, 0] });
+  const installer = new Installer({
+    folder,
+    fetch: fetch?.(served.fetch) ?? served.fetch,
+    backoff: [0, 0],
+    stall: 200,
+  });
   /** What's in the installer's folder, but for empty folders it keeps for downloads. */
   const left = () =>
     readdirSync(folder, { recursive: true, encoding: 'utf8' }).filter(
@@ -160,6 +177,22 @@ describe('refuses, leaving nothing behind,', () => {
     expect(left()).toEqual([]);
   });
 
+  test('an answer a fetch followed a redirect to itself, unseen', async () => {
+    const { installer, asked, left } = await setUp(
+      {
+        // Relative, so a fetch that follows it reaches the test server.
+        [URL]: { redirect: '/elsewhere.test/server.tar.gz' },
+        'https://elsewhere.test/server.tar.gz': { body: ARCHIVE },
+      },
+      (fetch) => (input, init) => fetch(input, { ...init, redirect: 'follow' }),
+    );
+    const error = await failure(installer.install('server', PINNED));
+    expect(error.message).toMatch(/redirected without Lo seeing where/);
+    expect(error.problem).toBe('refused');
+    expect(asked).toEqual([URL, 'https://elsewhere.test/server.tar.gz']);
+    expect(left()).toEqual([]);
+  });
+
   test('an address that isn’t https, asking nothing', async () => {
     const http = 'http://downloads.test/server-1.0.0.tar.gz';
     const { installer, asked, left } = await setUp({ [http]: { body: ARCHIVE } });
@@ -173,6 +206,16 @@ describe('refuses, leaving nothing behind,', () => {
 test('a download cut short is tried again, from the start', async () => {
   const { installer, asked } = await setUp({
     [URL]: [{ body: ARCHIVE, cut: 40 }, { status: 503 }, { body: ARCHIVE }],
+  });
+  const installed = await installer.install('server', PINNED);
+  expect(readFileSync(installed.entry, 'utf8')).toBe('program');
+  expect(asked).toEqual([URL, URL, URL]);
+});
+
+test('a download that stalls, before its answer or within it, is tried again', async () => {
+  // Nothing comes for the stall's 200 ms, so each try is given up as cut short.
+  const { installer, asked } = await setUp({
+    [URL]: [{ silent: true }, { body: ARCHIVE, cut: 40, hold: true }, { body: ARCHIVE }],
   });
   const installed = await installer.install('server', PINNED);
   expect(readFileSync(installed.entry, 'utf8')).toBe('program');
@@ -204,6 +247,62 @@ test('a folder without its marker, or with another, is removed and fetched again
   writeFileSync(join(version, 'installed.json'), '{"fingerprint":"another"}');
   await installer.install('server', PINNED);
   expect(asked).toEqual([URL, URL]);
+});
+
+test('a folder whose files aren’t as its marker records is fetched again', async () => {
+  // As a power loss could leave it: whole by its marker, its program cut short.
+  const { installer, asked } = await setUp({ [URL]: { body: ARCHIVE } });
+  const installed = await installer.install('server', PINNED);
+  writeFileSync(installed.entry, 'prog');
+  expect(await installer.installed('server', PINNED)).toBeUndefined();
+  await installer.install('server', PINNED);
+  expect(readFileSync(installed.entry, 'utf8')).toBe('program');
+  expect(asked).toEqual([URL, URL]);
+});
+
+test('a folder unpacked under older rules is fetched again', async () => {
+  const { installer, folder, asked } = await setUp({ [URL]: { body: ARCHIVE } });
+  await installer.install('server', PINNED);
+  const download = PINNED.platforms.any;
+  if (download === undefined) throw new Error('nothing pinned');
+  const file = join(folder, 'server', '1.0.0', 'installed.json');
+  const marker = readFileSync(file, 'utf8');
+  const current = fingerprint('server', PINNED, download);
+  expect(marker).toContain(current);
+  // As an older Lo would have left it, whole by its rules.
+  const older = fingerprint('server', PINNED, download, UNPACK_RULES - 1);
+  writeFileSync(file, marker.replace(current, older));
+  expect(await installer.installed('server', PINNED)).toBeUndefined();
+  await installer.install('server', PINNED);
+  expect(asked).toEqual([URL, URL]);
+});
+
+test('what’s installed is on the disk before it’s put in place', async () => {
+  const { installer, folder } = await setUp({ [URL]: { body: ARCHIVE } });
+  const synced = vi.mocked(disk.syncPath);
+  synced.mockClear();
+  await installer.install('server', PINNED);
+  // Each path synced, the temporary folder's as `work`.
+  const paths = synced.mock.calls.map(([path]) => relative(folder, path));
+  const work = paths
+    .find((path) => path.startsWith('.partial/'))
+    ?.split('/')
+    .slice(0, 2)
+    .join('/');
+  const shown = paths.map((path) =>
+    work !== undefined && (path === work || path.startsWith(`${work}/`))
+      ? `work${path.slice(work.length)}`
+      : path,
+  );
+  // Every file and folder unpacked, then the marker, then the folder that holds them, renamed
+  // into place only then, then where it went.
+  expect(shown.slice(0, -3).toSorted()).toEqual([
+    'work/files',
+    'work/files/server',
+    'work/files/server/bin',
+    'work/files/server/bin/server',
+  ]);
+  expect(shown.slice(-3)).toEqual(['work/installed.json', 'work', 'server']);
 });
 
 test('an install nobody waits for any more stops, and leaves nothing', async () => {

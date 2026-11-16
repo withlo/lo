@@ -410,16 +410,18 @@ toolchain and git's variables each server needs.
   what a server asks, Lo answers settings, registrations and progress tokens, and refuses the rest.
 - Beside the reader, a meter reads each header as `vscode-jsonrpc` does and refuses a message past
   64 MB, a header with two lengths, more than 80 MB read but not handled, and more than 50,000
-  messages or 256 MB of output in 10 s. Lo hands the connection one message a turn and reads more
-  only while few wait, so a flood never keeps main from its turns, and once `shutdown` is answered
-  or given up on, nothing more is read. `packages/desktop/lsp/README.md` lists the limits.
+  messages, 256 MB of output or 50,000 lines of stderr in 10 s. Lo hands the connection one message
+  a turn and reads more only while few wait, and reads stderr a piece a turn, of whose lines the log
+  handles only the last 1,000, so a flood never keeps main from its turns. Once `shutdown` is
+  answered or given up on, nothing more is read. `packages/desktop/lsp/README.md` lists the limits.
 - Main reads each server's family's resident memory every 5 s, and stops it if it can't three times
   running. A server past its cap (4 GB) or the meter's limits is killed at once, whatever its state,
   a stop's included: Lo reads nothing more from it, freezes its group, then what it finds outside
   it, round after round until nothing new appears, and only then kills them all. A stop sends
-  `shutdown` and `exit`, a second each, then `SIGTERM` to the family, then kills it 2 s later,
-  inside a feature's 5 s. A process read earlier is signalled only while it's the same one, by its
-  start time. The package's README says what can't be found.
+  `shutdown` and `exit`, a second each, reading the family within them, then `SIGTERM` to the
+  family, then kills it 2 s later: 4.5 s at most, half a second inside a feature's 5 s. A process
+  read earlier is signalled only while it's the same one, by its start time. The package's README
+  says what can't be found.
 - Its stderr and messages make its log, the last 1,000 lines, in memory only.
 - What Lo downloads is pinned in `packages/desktop/lsp/servers.json`: each server's version, and
   that of the Node the JavaScript ones run on, with each file's address, size and SHA-256 per
@@ -427,16 +429,20 @@ toolchain and git's variables each server needs.
   each file against its publisher's signature first (Node's releasers' keys, in `scripts/keys/`, and
   npm's registry keys), and that it unpacks as Lo would. Lo trusts only the manifest's hashes.
 - A download goes over `https` only, on the usual port, to its entry's hosts, following at most 5
-  redirects, each held to the same rules, with no token or cookie. In the app it goes through
-  `net.request` (`netFetch` with `stream`), so it takes the system's proxy. It's written to
-  `<cache>/servers/.partial/` and stopped past the pinned size, and nothing reads it before its size
-  and hash match. A connection that fails is tried 3 times in all.
+  redirects itself, each held to the same rules, and refusing an answer its `fetch` was redirected
+  to unseen, with no token or cookie. In the app it goes through `net.request` (`netFetch` with
+  `stream`), so it takes the system's proxy, and reads the connection only as fast as the file is
+  written. It's written to `<cache>/servers/.partial/` and stopped past the pinned size, and nothing
+  reads it before its size and hash match. A connection that fails, or brings nothing for 30 s, is
+  tried 3 times in all.
 - Then it's unpacked there: a `tar.gz` (npm's `tar`), a `zip` (`yauzl`), a gzipped program, a
   program as it is, or an npm package's tarballs laid out as `node_modules`, with nothing run.
   Absolute paths, `..`, hard links, devices and links that resolve outside are refused, and so is
-  more than 100,000 entries or 2 GB. The folder is renamed into `<cache>/servers/<id>/<version>/`
-  with a marker naming what it holds; one without a matching marker is removed and fetched again.
-  Two installs of a version at once make one download.
+  more than 100,000 entries or 2 GB. Everything is synced to the disk, a marker last, before the
+  folder is renamed into `<cache>/servers/<id>/<version>/`. The marker names what it holds, the
+  version of the rules it was unpacked under, and each file's size and link's target; a folder whose
+  marker doesn't match, or whose files don't match its marker, is removed and fetched again. Two
+  installs of a version at once make one download.
 - A server installed by the user is used only from where its adapter says it may be, when the app's
   folder check passes it (the one git is held to), it isn't in Lo's cache, and it isn't a version
   manager's shim, which picks a program from the checkout.

@@ -31,7 +31,7 @@ import type {
 import { initializeAnswer, initializeParams } from './capabilities.ts';
 import { Documents } from './documents.ts';
 import { serverEnvironment, temporaryFolder } from './environment.ts';
-import { FLOOD_BYTES, FLOOD_MESSAGES, FLOOD_WINDOW, FrameMeter } from './framing.ts';
+import { FLOOD_BYTES, FLOOD_LINES, FLOOD_MESSAGES, FLOOD_WINDOW, FrameMeter } from './framing.ts';
 import { Log } from './log.ts';
 import { type Member, type ReadFamily, readFamily } from './family.ts';
 import { checkProgram, familyGone, signalFamily, sleep, startProcess } from './process.ts';
@@ -83,7 +83,10 @@ export interface Limits {
   readonly shutdown: number;
   /** How long a stop waits, after `exit`, for it to exit. */
   readonly exit: number;
-  /** How long a stop waits to read its family, before it signals what it knows of. */
+  /**
+   * How long a read of its family may take, before a stop signals what it knows of. A stop reads
+   * it beside `shutdown` and `exit`, so the read takes none of the stop's time of its own.
+   */
   readonly family: number;
   /** How long its family has after `SIGTERM`, before `SIGKILL`. */
   readonly term: number;
@@ -95,6 +98,8 @@ export interface Limits {
   readonly floodMessages: number;
   /** The most output it may write within {@link Limits.floodWindow}, in bytes, stderr included. */
   readonly floodBytes: number;
+  /** The most lines it may write to stderr within {@link Limits.floodWindow}. */
+  readonly floodLines: number;
   readonly floodWindow: number;
   /** How many deadlines it may miss within {@link Limits.missWindow} before it's `notAnswering`. */
   readonly misses: number;
@@ -102,9 +107,9 @@ export interface Limits {
 }
 
 /**
- * A stop takes at most `shutdown + exit + family + term + freeze + kill`, its family read once
- * during `shutdown` and once after `exit`: 4.9 s, inside a feature's 5 s to stop. Nothing the
- * server sends is read once `shutdown` is answered or given up on, so no flood can hold it up.
+ * A stop takes at most {@link longestStop}: 4.5 s, leaving half a second of a feature's 5 s to
+ * stop. Nothing the server sends is read once `shutdown` is answered or given up on, so no flood
+ * can hold it up.
  */
 export const LIMITS: Limits = {
   memoryCap: 4 * 1024 ** 3,
@@ -116,9 +121,10 @@ export const LIMITS: Limits = {
   family: 250,
   term: 2000,
   freeze: 400,
-  kill: 250,
+  kill: 100,
   floodMessages: FLOOD_MESSAGES,
   floodBytes: FLOOD_BYTES,
+  floodLines: FLOOD_LINES,
   floodWindow: FLOOD_WINDOW,
   misses: 3,
   missWindow: 60_000,
@@ -163,6 +169,15 @@ export type Tuning = Partial<Limits> & {
   /** How its family is read, for its memory and to stop it. */
   readonly readFamily?: ReadFamily | undefined;
 };
+
+/**
+ * The longest a stop can take with `limits`: `shutdown`, then `exit`, each with a read of the
+ * family beside it, then `term` after `SIGTERM`, then a kill's `freeze` and `kill`.
+ */
+export function longestStop(limits: Limits): number {
+  const { shutdown, exit, family, term, freeze, kill } = limits;
+  return Math.max(shutdown, family) + Math.max(exit, family) + term + freeze + kill;
+}
 
 /** Starts a server, and returns it at once, `starting`. */
 export function startServer(spec: ServerSpec, tuning: Tuning = {}): Server {
@@ -356,8 +371,8 @@ export class Server {
   /**
    * Stops the server and everything it started: `shutdown` and `exit`, 1 s each, then `SIGTERM` to
    * its family, then `SIGKILL` 2 s later. Its requests are answered `stopped` at once. It resolves
-   * once the group is gone, or once it's been killed, within 5 s. A server that failed stays
-   * `failed`; any other is `stopped`.
+   * once the group is gone, or once it's been killed, within 4.5 s ({@link longestStop}). A server
+   * that failed stays `failed`; any other is `stopped`.
    */
   stop(): Promise<void> {
     this.#stopping ??= this.#stop();
@@ -382,15 +397,16 @@ export class Server {
   }
 
   /**
-   * Asks the server to shut down and exit, then ends its family. What left its group is read
-   * first, as it shuts down, since once the server exits nothing ties those to it.
+   * Asks the server to shut down and exit, then ends its family. What left its group is read as it
+   * shuts down, since once the server exits nothing ties those to it, and again as `exit`'s time
+   * ends, for what it started since. Each read runs inside a wait the stop makes anyway.
    */
   async #shutDown(): Promise<void> {
     const connection = this.#connection;
     const group = this.#child?.pid;
-    let earlier: readonly Member[] = [];
+    let others: readonly Member[] | undefined;
     if (connection !== undefined && group !== undefined) {
-      const { shutdown, exit } = this.#limits;
+      const { shutdown, exit, family } = this.#limits;
       const read = this.#others(group);
       try {
         await Promise.race([
@@ -404,21 +420,25 @@ export class Server {
       // Nothing more it sends matters, so none of it is read, and however much it sends, the stop
       // keeps its time.
       this.#deafen();
-      earlier = await read;
+      const earlier = await read;
       this.#notify('exit');
-      await Promise.race([this.#exited, sleep(exit)]);
+      // The family is read again in the last of `exit`'s time, or once it has exited.
+      await Promise.race([this.#exited, sleep(exit - family)]);
+      const later = this.#others(group, earlier);
+      await Promise.race([this.#exited, sleep(family)]);
+      others = await later;
     }
-    await this.#endGroup(earlier);
+    await this.#endGroup(others);
   }
 
   /**
-   * Stops what's left of the server's family, with any of `earlier` that's still the same process:
-   * `SIGTERM`, then, if anything outlasts it, a kill.
+   * Stops what's left of the server's family, with `others`, what's outside its group, read if not
+   * given: `SIGTERM`, then, if anything outlasts it, a kill.
    */
-  async #endGroup(earlier: readonly Member[] = []): Promise<void> {
+  async #endGroup(given?: readonly Member[]): Promise<void> {
     const group = this.#child?.pid;
     if (group === undefined) return;
-    const others = await this.#others(group, earlier);
+    const others = given ?? (await this.#others(group));
     const pids = others.map((member) => member.pid);
     if (
       signalFamily(group, pids, 'SIGTERM') &&
@@ -533,17 +553,19 @@ export class Server {
     // A pipe's error, such as writing to a server that's gone, changes nothing: its exit says what
     // happened.
     for (const stream of [stdin, stdout, stderr]) stream.on('error', () => undefined);
-    const { floodMessages, floodBytes, floodWindow } = this.#limits;
+    const { floodMessages, floodBytes, floodLines, floodWindow } = this.#limits;
     const meter = new FrameMeter({
       messages: floodMessages,
       bytes: floodBytes,
+      lines: floodLines,
       within: floodWindow,
     });
-    // Each piece of stderr has a turn of its own, so however much it writes, main has turns too.
+    // Each piece of stderr has a turn of its own, so however much it writes, main has turns too,
+    // and the log handles a piece in a pass over it, however many lines it holds.
     stderr.setEncoding('utf8');
     stderr.on('data', (text: string) => {
-      this.#log.write(text);
-      const wrong = meter.counted(Buffer.byteLength(text));
+      const lines = this.#log.write(text);
+      const wrong = meter.counted(Buffer.byteLength(text), lines);
       if (wrong !== undefined) this.#breach({ kind: 'protocol', message: wrong });
       stderr.pause();
       setImmediate(() => {

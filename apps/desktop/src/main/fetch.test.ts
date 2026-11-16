@@ -7,6 +7,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   AnswerTooLarge,
   netFetch,
+  STREAM_QUEUE,
   UPLOAD_PROGRESS_EVERY,
   type NetAnswer,
   type NetRequest,
@@ -18,12 +19,22 @@ class FakeAnswer extends EventEmitter implements NetAnswer {
   readonly statusCode: number;
   readonly statusMessage: string;
   readonly headers: Record<string, string | string[]>;
+  /** Whether its data is held back, as Electron's `pause` holds it. */
+  paused = false;
 
   constructor(statusCode: number, headers: Record<string, string | string[]> = {}) {
     super();
     this.statusCode = statusCode;
     this.statusMessage = '';
     this.headers = headers;
+  }
+
+  pause(): void {
+    this.paused = true;
+  }
+
+  resume(): void {
+    this.paused = false;
   }
 }
 
@@ -305,6 +316,22 @@ describe('netFetch', () => {
       controller.abort(new Error('stopped'));
       await expect(givenReading).rejects.toThrow('stopped');
       expect(givenRequest.aborted).toBe(true);
+    });
+
+    it('reads the answer only as fast as its body is read', async () => {
+      const { fetch, made } = fake(undefined, true);
+      const answered = fetch('https://nodejs.org/dist/v1/node.tar.gz');
+      const answer = new FakeAnswer(200);
+      (await made()).emit('response', answer);
+      const response = await answered;
+      // Nothing reads the body, so once what waits is full, the answer waits too.
+      answer.emit('data', Buffer.alloc(STREAM_QUEUE / 2));
+      expect(answer.paused).toBe(false);
+      answer.emit('data', Buffer.alloc(STREAM_QUEUE / 2));
+      expect(answer.paused).toBe(true);
+      const read = await response.body?.getReader().read();
+      expect(read?.value?.byteLength).toBe(STREAM_QUEUE / 2);
+      expect(answer.paused).toBe(false);
     });
 
     it('cancels the request when its body is cancelled', async () => {

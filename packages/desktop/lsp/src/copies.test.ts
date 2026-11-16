@@ -69,6 +69,27 @@ test('skips version managers’ shims, which pick a program from the checkout', 
   );
 });
 
+test('skips swiftly’s, aqua’s and rye’s shims, wherever they keep them', async () => {
+  const { home, find } = setUp();
+  const shims = [
+    // swiftly's on macOS, then on Linux.
+    program(join(home, '.swiftly', 'bin', 'sourcekit-lsp')),
+    program(join(home, '.local', 'share', 'swiftly', 'bin', 'sourcekit-lsp')),
+    program(join(home, '.local', 'share', 'aquaproj-aqua', 'bin', 'terraform-ls')),
+    program(join(home, '.rye', 'shims', 'python')),
+  ];
+  // aqua's shims in a folder of the user's choosing are still links to aqua-proxy.
+  const proxy = program(join(home, 'aqua', 'aqua-proxy'));
+  const moved = join(home, 'aqua', 'bin', 'terraform-ls');
+  mkdirSync(join(home, 'aqua', 'bin'));
+  symlinkSync(proxy, moved);
+  const found = await find([...shims, moved]);
+  expect(found.program).toBeUndefined();
+  expect(found.skipped.map((skip) => skip.why)).toEqual(
+    Array(5).fill('it’s a version manager’s shim, which picks a program from the checkout'),
+  );
+});
+
 test('skips a copy in Lo’s cache, where checkouts and downloads are', async () => {
   const { cache, find } = setUp();
   const inCheckout = program(join(cache, 'checkouts', 'repo', 'node_modules', '.bin', 'tsserver'));

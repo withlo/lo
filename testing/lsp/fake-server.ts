@@ -212,13 +212,19 @@ setInterval(() => {
 `;
 
 /**
- * Writes the flood's header, then its frame, to stdout, and to stderr too if it says, until the pipe
- * breaks or it's killed.
+ * Writes the flood's header, then its frame, to stdout, to stderr too or stderr alone if it says,
+ * until the pipe breaks or it's killed.
  */
 function flood(): void {
   const { header = '', frame = 'x'.repeat(64 * 1024), stderr = false } = scenario.flood ?? {};
-  process.stdout.write(header);
-  for (const stream of stderr ? [process.stdout, process.stderr] : [process.stdout]) {
+  const streams =
+    stderr === 'only'
+      ? [process.stderr]
+      : stderr
+        ? [process.stdout, process.stderr]
+        : [process.stdout];
+  if (stderr !== 'only') process.stdout.write(header);
+  for (const stream of streams) {
     stream.on('error', () => undefined);
     const more = (): void => {
       while (stream.write(frame)) {

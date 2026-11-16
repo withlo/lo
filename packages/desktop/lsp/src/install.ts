@@ -5,10 +5,13 @@
  *   the manifest's size and SHA-256 before anything reads it. Only then is it unpacked, into the
  *   same temporary folder.
  * - The entry point must be a file inside what was unpacked. A marker, written last, records which
- *   of the manifest's downloads the folder holds; then the temporary folder is renamed into place
- *   in one step. A folder without a marker that matches the manifest is never used: it's removed
- *   and fetched again. So a download cut short, or a version pinned again, is never run.
- * - A download that fails on the way (the connection, or the server's trouble) is tried
+ *   of the manifest's downloads the folder holds, under which rules it was unpacked, and what it
+ *   unpacked to: each file's path and size, and each link's target. Everything is synced to the
+ *   disk, the marker last, before the temporary folder is renamed into place in one step. A folder
+ *   is used only while its marker matches the manifest and the rules, and its files and links
+ *   match its marker: otherwise it's removed and fetched again. So a download cut short, a version
+ *   pinned again, or an install a power loss cut short, is never run.
+ * - A download that fails on the way (the connection, a stall, or the server's trouble) is tried
  *   {@link TRIES} times in all, waiting longer each time. Anything else fails at once.
  * - One download per version at a time: an install asked for while one runs waits for it.
  */
@@ -20,6 +23,7 @@ import {
   mkdtemp,
   readFile,
   readdir,
+  readlink,
   realpath,
   rename,
   rm,
@@ -28,19 +32,23 @@ import {
 } from 'node:fs/promises';
 import { dirname, isAbsolute, join } from 'node:path';
 
+import { z } from 'zod';
+
+import { atOnce, syncPath } from './disk.ts';
 import { fetchFile } from './download.ts';
 import { isInside } from './environment.ts';
 import { DownloadError } from './errors.ts';
 import {
   currentPlatform,
   downloadFor,
+  isPlainPath,
   partsOf,
   type Download,
   type Manifest,
   type Pinned,
   type Platform,
 } from './manifest.ts';
-import { Unpacker, type UnpackLimits } from './unpack.ts';
+import { type Unpacked, Unpacker, UNPACK_RULES, type UnpackLimits } from './unpack.ts';
 
 /** How many times a download is tried before it fails. */
 export const TRIES = 3;
@@ -55,6 +63,16 @@ const PARTIAL = '.partial';
 const FILES = 'files';
 const MARKER = 'installed.json';
 
+/** What a marker holds. */
+const markerSchema = z.object({
+  fingerprint: z.string(),
+  files: z.array(z.tuple([z.string().refine(isPlainPath), z.number().int().nonnegative()])),
+  links: z.array(z.tuple([z.string().refine(isPlainPath), z.string()])),
+});
+
+/** How many of an install's files are checked against its marker at once. */
+const CHECKS = 64;
+
 export interface InstallerOptions {
   /** Lo's folder for servers, in its cache: never inside a checkout. */
   readonly folder: string;
@@ -65,6 +83,8 @@ export interface InstallerOptions {
   readonly limits?: UnpackLimits | undefined;
   /** How long to wait before each try after the first, in milliseconds. */
   readonly backoff?: readonly number[] | undefined;
+  /** How long a try may wait for a byte before it's given up, in milliseconds: `STALL` unless given. */
+  readonly stall?: number | undefined;
 }
 
 export interface InstallOptions {
@@ -98,6 +118,7 @@ export class Installer {
   readonly #platform: Platform | undefined;
   readonly #limits: UnpackLimits | undefined;
   readonly #backoff: readonly number[];
+  readonly #stall: number | undefined;
   readonly #jobs = new Map<string, Job>();
 
   constructor(options: InstallerOptions) {
@@ -107,6 +128,7 @@ export class Installer {
     this.#platform = options.platform ?? currentPlatform();
     this.#limits = options.limits;
     this.#backoff = options.backoff ?? BACKOFF;
+    this.#stall = options.stall;
   }
 
   /** The folder `id`'s `version` is installed in, whole or not. */
@@ -254,6 +276,7 @@ export class Installer {
           hosts: pinned.hosts,
           limit: part.size,
           signal,
+          stall: this.#stall,
           received: (bytes) => report(before + bytes),
         });
         if (fetched.size < part.size) {
@@ -273,14 +296,18 @@ export class Installer {
       }
       const into = join(work, FILES);
       await mkdir(into, { mode: 0o755 });
-      await unpackDownload(download, files, into, { limits: this.#limits, signal });
+      const unpacker = new Unpacker(into, { limits: this.#limits, signal });
+      await unpack(unpacker, download, files, into);
       for (const file of files) await rm(file, { force: true });
       signal.throwIfAborted();
-      await writeFile(
-        join(work, MARKER),
-        `${JSON.stringify({ id, version: pinned.version, fingerprint: print })}\n`,
-        { flag: 'wx' },
-      );
+      // What was unpacked is on the disk before the marker says so, and the marker before the
+      // folder is in place, so a power loss leaves no folder that looks whole and isn't.
+      await unpacker.sync();
+      const { files: unpacked, links } = unpacker.unpacked;
+      const marker = { id, version: pinned.version, fingerprint: print, files: unpacked, links };
+      await writeFile(join(work, MARKER), `${JSON.stringify(marker)}\n`, { flag: 'wx' });
+      await syncPath(join(work, MARKER));
+      await syncPath(work);
       return await this.#place(work, this.folderOf(id, pinned.version), print, download);
     } finally {
       await rm(work, { recursive: true, force: true });
@@ -313,24 +340,30 @@ export class Installer {
       if (raced !== undefined) return raced;
       throw error;
     }
+    // So the install outlasts a power loss, rather than being fetched again.
+    await syncPath(dirname(target));
     const placed = await this.#whole(target, print, download);
     if (placed === undefined) throw new Error(`the install at ${target} isn't whole`);
     return placed;
   }
 
-  /** The install at `target`, if its marker says it holds `print` and its entry point is there. */
+  /**
+   * The install at `target`, if its marker says it holds `print`, each file and link it records is
+   * there as it says, and its entry point is there.
+   */
   async #whole(target: string, print: string, download: Download): Promise<Installed | undefined> {
-    const marker = await readFile(join(target, MARKER), 'utf8').catch(() => undefined);
-    if (marker === undefined) return undefined;
+    const text = await readFile(join(target, MARKER), 'utf8').catch(() => undefined);
+    if (text === undefined) return undefined;
     let said: unknown;
     try {
-      said = JSON.parse(marker);
+      said = JSON.parse(text);
     } catch {
       return undefined;
     }
-    if (typeof said !== 'object' || said === null || !('fingerprint' in said)) return undefined;
-    if (said.fingerprint !== print) return undefined;
+    const marker = markerSchema.safeParse(said);
+    if (!marker.success || marker.data.fingerprint !== print) return undefined;
     const files = join(target, FILES);
+    if (!(await matches(files, marker.data))) return undefined;
     const entry = await checkEntry(files, download.entry).catch(() => undefined);
     return entry === undefined ? undefined : { folder: files, entry };
   }
@@ -344,10 +377,38 @@ export class Installer {
   }
 }
 
-/** What identifies `download` of `id`'s pinned version: any change to it changes this. */
-function fingerprint(id: string, pinned: Pinned, download: Download): string {
-  const installed = { id, version: pinned.version, download };
+/**
+ * What identifies `download` of `id`'s pinned version, unpacked under `rules`: any change to
+ * either changes this.
+ */
+export function fingerprint(
+  id: string,
+  pinned: Pinned,
+  download: Download,
+  rules = UNPACK_RULES,
+): string {
+  const installed = { id, version: pinned.version, download, rules };
   return createHash('sha256').update(JSON.stringify(installed, sortedKeys)).digest('hex');
+}
+
+/**
+ * Whether each file `unpacked` records is in `folder` with its size, and each link with its
+ * target. It reads only what the system knows of each, never a file's data.
+ */
+async function matches(folder: string, unpacked: Unpacked): Promise<boolean> {
+  const at = (path: string) => join(folder, ...path.split('/'));
+  try {
+    await atOnce(unpacked.files, CHECKS, async ([path, size]) => {
+      const info = await lstat(at(path));
+      if (!info.isFile() || info.size !== size) throw new Error(`${path} isn't as unpacked`);
+    });
+    await atOnce(unpacked.links, CHECKS, async ([path, target]) => {
+      if ((await readlink(at(path))) !== target) throw new Error(`${path} isn't as unpacked`);
+    });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /** Each object's keys in order, so that the order a manifest writes them in doesn't count. */
@@ -366,7 +427,19 @@ export async function unpackDownload(
   into: string,
   options: { limits?: UnpackLimits | undefined; signal?: AbortSignal | undefined } = {},
 ): Promise<string> {
-  const unpacker = new Unpacker(into, options);
+  return unpack(new Unpacker(into, options), download, files, into);
+}
+
+/**
+ * Unpacks `files`, the parts of `download` in order, with `unpacker`, which writes into `into`,
+ * makes its links, and says where its entry point is.
+ */
+async function unpack(
+  unpacker: Unpacker,
+  download: Download,
+  files: readonly string[],
+  into: string,
+): Promise<string> {
   await unpackAll(unpacker, download, files);
   await unpacker.finish();
   return checkEntry(into, download.entry);
