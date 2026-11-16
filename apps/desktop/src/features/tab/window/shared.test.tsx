@@ -7,6 +7,7 @@ import type { Tab } from '../contract.ts';
 import { middleIds, panels } from './panels.ts';
 import {
   activeTab,
+  onClosed,
   pullOf,
   showMiddle,
   tabState,
@@ -100,6 +101,19 @@ describe('a stack’s tab on screen', () => {
     showTabs({ tabs: [bat], active: 'bat' });
     expect([count.get('fd'), count.get('fd:2213')]).toEqual([0, 0]);
     expect(pullOf('fd:2213')).toBeUndefined();
+  });
+
+  it('says which views closed, a layer’s as the stack loses it, and each view’s as its tab goes', () => {
+    const closed: string[] = [];
+    showTabs({ tabs: [stack, bat], active: 'fd' });
+    onTestFinished(onClosed((id) => closed.push(id)));
+    // Shown on another layer, the stack's views stay open.
+    showTabs({ tabs: [{ ...stack, layer: undefined }, bat], active: 'fd' });
+    expect(closed).toEqual([]);
+    showTabs({ tabs: [{ ...stack, layer: undefined, layers: [2212] }, bat], active: 'fd' });
+    expect(closed).toEqual(['fd:2213']);
+    showTabs({ tabs: [bat], active: 'bat' });
+    expect(closed).toEqual(['fd:2213', 'fd']);
   });
 });
 

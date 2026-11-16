@@ -11,7 +11,7 @@ import { createElement } from 'react';
 import type { WindowFeature } from '../../../window/features.ts';
 import { defineView } from '../../../window/slots.tsx';
 import { onCodeRest, onDiffDrawn } from '../../diff/window/shared.ts';
-import { banners, dialogs, right, status as statusBar } from '../../tab/window/shared.ts';
+import { banners, dialogs, onClosed, right, status as statusBar } from '../../tab/window/shared.ts';
 import keys from '../keys.ts';
 import { CodeOverlays, ReferencesPanel, SaidStatus } from './Code.tsx';
 import { takeIndex } from './indexes.ts';
@@ -38,6 +38,7 @@ import {
   stepReferences,
   toggleHints,
   typeOf,
+  viewClosed,
 } from './navigate.ts';
 import {
   askToTrust,
@@ -172,5 +173,6 @@ export default {
     main().subscribe('served', takeServers);
     onCodeRest(rested);
     onDiffDrawn(redrawn);
+    onClosed(viewClosed);
   },
 } satisfies WindowFeature;
