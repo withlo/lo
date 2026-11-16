@@ -87,12 +87,12 @@ describe('readSettings', () => {
     expect(await readSettings(path)).toMatchObject({ kind: 'ok', values: { theme: 'dark' } });
   });
 
-  it('drops a byte order mark, as editors on some systems add', async () => {
+  it('reads past a byte order mark, as editors on some systems add, keeping it in the text', async () => {
     write(Uint8Array.from([0xef, 0xbb, 0xbf, ...Buffer.from('{ "theme": "dark" }')]));
     expect(await readSettings(path)).toEqual({
       kind: 'ok',
       values: { theme: 'dark' },
-      text: '{ "theme": "dark" }',
+      text: '\uFEFF{ "theme": "dark" }',
       repeated: [],
     });
   });

@@ -24,7 +24,7 @@ import {
   writeSettings,
   type Read,
 } from './file.ts';
-import { editSettings } from './text.ts';
+import { editSettings, SettingsUneditable } from './text.ts';
 
 /** How often the file is looked at, in ms. */
 const INTERVAL = 400;
@@ -324,7 +324,19 @@ export function createSettings(options: SettingsOptions): Settings {
         if (!checked.ok) throw new IpcError('invalid', `${key} must be ${entry.accepts}.`);
         const written = { ...values, [key]: checked.value };
         // Only the setting's value changes: the rest of the file, comments and all, stays as it is.
-        const text = editSettings(fresh.kind === 'ok' ? fresh.text : '', key, checked.value);
+        let text;
+        try {
+          text = editSettings(fresh.kind === 'ok' ? fresh.text : '', key, checked.value);
+        } catch (error) {
+          if (error instanceof SettingsUneditable) {
+            throw new IpcError('unwritable', `Lo didn't change ${key}: ${error.message}.`);
+          }
+          log("Lo couldn't change the settings file's text:", error);
+          throw new IpcError(
+            'unwritable',
+            `Lo didn't change ${key}: the settings file's text couldn't be changed.`,
+          );
+        }
         if (Buffer.byteLength(text) > SETTINGS_SIZE_LIMIT) {
           throw new IpcError(
             'unwritable',

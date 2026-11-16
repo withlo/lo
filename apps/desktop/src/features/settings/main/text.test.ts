@@ -1,6 +1,32 @@
-import { describe, expect, it } from 'vitest';
+import type * as jsonc from 'jsonc-parser';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { editSettings, parseSettings } from './text.ts';
+import { editSettings, parseSettings, SETTINGS_DEPTH_LIMIT, SettingsUneditable } from './text.ts';
+
+/** What a test does to the text each edit makes, as a mistake in making it would. */
+const fault = vi.hoisted(() => ({ change: undefined as ((text: string) => string) | undefined }));
+
+vi.mock('jsonc-parser', async (importOriginal) => {
+  const actual = await importOriginal<typeof jsonc>();
+  return {
+    ...actual,
+    applyEdits: (...args: Parameters<typeof actual.applyEdits>) => {
+      const text = actual.applyEdits(...args);
+      return fault.change ? fault.change(text) : text;
+    },
+  };
+});
+
+afterEach(() => {
+  fault.change = undefined;
+});
+
+/** 0 inside `levels` lists. */
+function nested(levels: number): unknown {
+  let value: unknown = 0;
+  for (let level = 0; level < levels; level++) value = [value];
+  return value;
+}
 
 const problemOf = (read: ReturnType<typeof parseSettings>) =>
   read.kind === 'problem' ? read.problem : undefined;
@@ -97,11 +123,42 @@ describe('parseSettings', () => {
     expect(read.kind === 'ok' && read.repeated).toEqual(['theme']);
   });
 
-  it('reports a file nested too deeply to read, rather than failing', () => {
-    const deep = `{ "x": ${'['.repeat(100_000)}${']'.repeat(100_000)} }`;
-    expect(problemOf(parseSettings(deep))).toBe(
-      "The settings file is nested too deeply, so Lo didn't read it.",
-    );
+  it('reads a key given twice deeper in as the last says too, naming only the file’s own keys', () => {
+    const text = '{ "x": { "a": 1, "b": [{ "c": 1, "c": 3 }], "a": 2 } }';
+    expect(parseSettings(text)).toEqual({
+      kind: 'ok',
+      values: { x: { a: 2, b: [{ c: 3 }] } },
+      text,
+      repeated: [],
+    });
+  });
+
+  it('reads past a byte order mark, keeping it in the text, and counts columns without it', () => {
+    const text = '\uFEFF// Mine.\n{ "theme": "dark" }';
+    expect(parseSettings(text)).toEqual({
+      kind: 'ok',
+      values: { theme: 'dark' },
+      text,
+      repeated: [],
+    });
+    expect(problemOf(parseSettings('\uFEFF{ "theme": }'))).toContain('at line 1, column 12');
+  });
+
+  it('reads objects and lists nested up to the limit, and leaves a file nested deeper unread', () => {
+    // The file's own object is the first level.
+    const at = (levels: number) => `{ "x": ${'['.repeat(levels - 1)}0${']'.repeat(levels - 1)} }`;
+    expect(parseSettings(at(SETTINGS_DEPTH_LIMIT))).toMatchObject({
+      kind: 'ok',
+      values: { x: nested(SETTINGS_DEPTH_LIMIT - 1) },
+    });
+    const deep =
+      "The settings file nests objects and lists over 100 levels deep, so Lo didn't read it.";
+    expect(problemOf(parseSettings(at(SETTINGS_DEPTH_LIMIT + 1)))).toBe(deep);
+    // Deep enough to run a parser that calls itself out of stack.
+    expect(problemOf(parseSettings(at(100_000)))).toBe(deep);
+    // Brackets in strings and comments aren't levels.
+    const quoted = `{ "x": "${'['.repeat(200)}" /* ${'{'.repeat(200)} */ }`;
+    expect(parseSettings(quoted)).toMatchObject({ kind: 'ok', values: { x: '['.repeat(200) } });
   });
 });
 
@@ -171,18 +228,48 @@ describe('editSettings', () => {
     );
   });
 
+  it('keeps a byte order mark', () => {
+    expect(editSettings('\uFEFF{\n  "theme": "dark"\n}\n', 'theme', 'light')).toBe(
+      '\uFEFF{\n  "theme": "light"\n}\n',
+    );
+  });
+
   it('changes nothing it can’t change exactly: a key the file has twice, or a file it can’t read', () => {
     const twice = '{ "theme": "dark", "theme": "light" }';
     expect(() => editSettings(twice, 'theme', 'system')).toThrow(
-      'The settings file has theme more than once.',
+      new SettingsUneditable('the settings file has it more than once'),
     );
     // Another key changes, and the one given twice says what it did.
     expect(editSettings(twice, 'x', 1)).toBe('{ "theme": "dark", "theme": "light", "x": 1 }');
-    expect(() => editSettings('{ "theme": ', 'theme', 'dark')).toThrow(
-      "Lo can't change a settings file it can't read.",
+    for (const text of ['{ "theme": ', '[]', `{ "x": ${JSON.stringify(nested(200))} }`]) {
+      expect(() => editSettings(text, 'theme', 'dark')).toThrow(
+        new SettingsUneditable('the settings file has a problem'),
+      );
+    }
+  });
+
+  it('reads each change back, and makes none that would read as anything but what was meant', () => {
+    const wrong = new SettingsUneditable(
+      "the new value, written into the settings file, wouldn't read back as Settings shows it, so Lo left the file as it was",
     );
-    expect(() => editSettings('[]', 'theme', 'dark')).toThrow(
-      "Lo can't change a settings file it can't read.",
-    );
+    // A value that would take the file past the depth Lo reads.
+    expect(() => editSettings(COMMENTED, 'later', nested(SETTINGS_DEPTH_LIMIT))).toThrow(wrong);
+    // Each a mistake in making the text: the wrong value, another key changed or lost, a key
+    // written twice, text that isn't JSON.
+    const mistakes = [
+      (text: string) => text.replace('"inline"', '"split"'),
+      (text: string) => text.replace('"dark"', '"light"'),
+      (text: string) => text.replace('"later": [1, 2]', '"later": [1, 2, 3]'),
+      (text: string) => text.replace('  "later": [1, 2]\n', ''),
+      (text: string) => text.replace('"later"', '"diff.layout": "split", "later"'),
+      (text: string) => text.replace('"later"', '"later": [1, 2], "later"'),
+      (text: string) => text.replace('"inline"', '"inline",,'),
+    ];
+    for (const change of mistakes) {
+      fault.change = change;
+      expect(() => editSettings(COMMENTED, 'diff.layout', 'inline')).toThrow(wrong);
+    }
+    fault.change = undefined;
+    expect(editSettings(COMMENTED, 'diff.layout', 'inline')).toContain('"inline"');
   });
 });

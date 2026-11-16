@@ -6,7 +6,8 @@
 // line break around it stays as it was. Before handing the new text on, Lo reads it back and checks
 // it says exactly what was meant, so a change never leaves the file meaning anything but what
 // Settings shows. A key given twice is read as the last one says, as JavaScript reads JSON; Lo
-// won't change it, since the file then says one thing where a person may read another.
+// won't change it, since the file then says one thing where a person may read another. A byte
+// order mark, which some editors write first, is kept.
 
 import { isDeepStrictEqual } from 'node:util';
 
@@ -46,6 +47,24 @@ const OPTIONS = { allowTrailingComma: true, disallowComments: false, allowEmptyC
 /** What Lo says after a problem with the file as a whole that the person can fix. */
 const FIX = 'Fix it, and Lo applies it as soon as you save.';
 
+/**
+ * The most levels of objects and lists Lo reads, the file's own object among them: far more than
+ * any setting needs, and few enough that reading, checking and comparing values never run out of
+ * stack. A file nested deeper is left unread.
+ */
+export const SETTINGS_DEPTH_LIMIT = 100;
+
+/** The byte order mark some editors start a file with, which Lo reads past and keeps. */
+const BOM = '\uFEFF';
+
+/**
+ * A change Lo couldn't make to the file's text, and why, in words for the person, to follow
+ * "Lo didn't change theme: ".
+ */
+export class SettingsUneditable extends Error {
+  override name = 'SettingsUneditable';
+}
+
 /** The file's object, as a tree to edit and as values, or what's wrong with it. */
 type Tree =
   | {
@@ -57,33 +76,31 @@ type Tree =
     }
   | { readonly ok: false; readonly problem: string };
 
-/** Reads `text` as the settings file. */
+/** Reads `text`, a file's without its byte order mark, as the settings file. */
 function read(text: string): Tree {
-  const errors: ParseError[] = [];
-  let root: Node | undefined;
-  let pairs: [string, unknown][];
-  try {
-    root = parseTree(text, errors, OPTIONS);
-    const first = errors[0];
-    if (first) {
-      return {
-        ok: false,
-        problem: `The settings file isn't valid JSON (${said(first, text)}). ${FIX}`,
-      };
-    }
-    if (root === undefined) return { ok: true, root, values: {}, repeated: [] };
-    if (root.type !== 'object') {
-      return {
-        ok: false,
-        problem: `The settings file should hold one JSON object, such as { "theme": "dark" }. ${FIX}`,
-      };
-    }
-    pairs = entries(root);
-  } catch (error) {
-    // The parser calls itself for each level, so a file nested thousands deep runs out of stack.
-    if (!(error instanceof RangeError)) throw error;
-    return { ok: false, problem: "The settings file is nested too deeply, so Lo didn't read it." };
+  if (tooDeep(text)) {
+    return {
+      ok: false,
+      problem: `The settings file nests objects and lists over ${SETTINGS_DEPTH_LIMIT} levels deep, so Lo didn't read it.`,
+    };
   }
+  const errors: ParseError[] = [];
+  const root = parseTree(text, errors, OPTIONS);
+  const first = errors[0];
+  if (first) {
+    return {
+      ok: false,
+      problem: `The settings file isn't valid JSON (${said(first, text)}). ${FIX}`,
+    };
+  }
+  if (root === undefined) return { ok: true, root, values: {}, repeated: [] };
+  if (root.type !== 'object') {
+    return {
+      ok: false,
+      problem: `The settings file should hold one JSON object, such as { "theme": "dark" }. ${FIX}`,
+    };
+  }
+  const pairs = entries(root);
   const seen = new Set<string>();
   const repeated = new Set<string>();
   for (const [key] of pairs) {
@@ -91,6 +108,29 @@ function read(text: string): Tree {
     seen.add(key);
   }
   return { ok: true, root, values: Object.fromEntries(pairs), repeated: [...repeated] };
+}
+
+/**
+ * Whether `text` nests objects and lists past the limit, found by counting brackets token by
+ * token, since the parser, like everything that reads a value after it, calls itself for each
+ * level and would run out of stack first.
+ */
+function tooDeep(text: string): boolean {
+  // Comments are skipped, and a string is one token, so brackets in either aren't counted.
+  const scanner = createScanner(text, true);
+  let depth = 0;
+  for (;;) {
+    scanner.scan();
+    const offset = scanner.getTokenOffset();
+    if (offset >= text.length) return false;
+    const bracket = text[offset];
+    if (bracket === '{' || bracket === '[') {
+      depth += 1;
+      if (depth > SETTINGS_DEPTH_LIMIT) return true;
+    } else if (bracket === '}' || bracket === ']') {
+      depth -= 1;
+    }
+  }
 }
 
 /** An object's keys and values, in the order the text gives them, each key as often as it does. */
@@ -180,7 +220,7 @@ function what(error: ParseError): string {
  * that says what was wrong, and where.
  */
 export function parseSettings(text: string): Parsed {
-  const tree = read(text);
+  const tree = read(text.startsWith(BOM) ? text.slice(1) : text);
   if (!tree.ok) return { kind: 'problem', problem: tree.problem };
   return { kind: 'ok', values: tree.values, text, repeated: tree.repeated };
 }
@@ -205,13 +245,17 @@ function json(value: Json, step: string, indent: string | undefined, eol: string
  * person would by hand. A key the file has keeps its place, and only its value changes. A new one
  * goes after the last key, on a line of its own in the file's indent (two spaces when the file has
  * none), with a comma after it if the last had one; in an object on one line, it goes on that line.
- * Everything else stays as it was. Throws for a key the file has more than once, or a change that
- * would leave the file saying anything but what it did with `key` set to `value`.
+ * Everything else stays as it was, a byte order mark included. Throws {@link SettingsUneditable}
+ * for a file it can't read, a key the file has more than once, or a change that would leave the
+ * file saying anything but what it did with `key` set to `value`.
  */
 export function editSettings(text: string, key: string, value: Json): string {
+  if (text.startsWith(BOM)) return `${BOM}${editSettings(text.slice(1), key, value)}`;
   const tree = read(text);
-  if (!tree.ok) throw new Error("Lo can't change a settings file it can't read.");
-  if (tree.repeated.includes(key)) throw new Error(`The settings file has ${key} more than once.`);
+  if (!tree.ok) throw new SettingsUneditable('the settings file has a problem');
+  if (tree.repeated.includes(key)) {
+    throw new SettingsUneditable('the settings file has it more than once');
+  }
   const { root } = tree;
   const eol = text.includes('\r\n') ? '\r\n' : '\n';
   const properties = root?.children ?? [];
@@ -258,7 +302,9 @@ export function editSettings(text: string, key: string, value: Json): string {
     !isDeepStrictEqual(after.values, meant) ||
     !isDeepStrictEqual(after.repeated, tree.repeated)
   ) {
-    throw new Error(`Changing ${key} would have left the settings file saying something else.`);
+    throw new SettingsUneditable(
+      "the new value, written into the settings file, wouldn't read back as Settings shows it, so Lo left the file as it was",
+    );
   }
   return changed;
 }

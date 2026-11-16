@@ -431,6 +431,52 @@ describe('changing a setting', () => {
     expect((await settings.state()).values).toEqual({ theme: 'dark', 'cache.cap': 20 });
   });
 
+  it('keeps a byte order mark through a change', async () => {
+    write('\uFEFF{\n  "theme": "dark"\n}\n');
+    const { settings } = open();
+    settings.declare(theme);
+    await settings.set('theme', 'light');
+    expect(readFileSync(path)).toEqual(
+      Buffer.from([0xef, 0xbb, 0xbf, ...Buffer.from('{\n  "theme": "light"\n}\n')]),
+    );
+  });
+
+  it('says why, and writes nothing, when the change can’t be made as Settings would show it', async () => {
+    const text = '{ "theme": "dark" }\n';
+    write(text);
+    const { settings, log } = open();
+    const anything = defineSetting('anything', z.json(), null, 'any JSON');
+    settings.declare(anything);
+    // Written, this would nest the file deeper than Lo reads.
+    let deep: z.output<ReturnType<typeof z.json>> = 0;
+    for (let level = 0; level < 100; level++) deep = [deep];
+    const refused = await refusal(settings.set('anything', deep));
+    expect(refused?.code).toBe('unwritable');
+    expect(refused?.message).toBe(
+      "Lo didn't change anything: the new value, written into the settings file, wouldn't read back as Settings shows it, so Lo left the file as it was.",
+    );
+    expect(contents()).toBe(text);
+    expect(log).not.toHaveBeenCalled();
+  });
+
+  it('reports a file nested deeper than Lo reads, and writes nothing over it', async () => {
+    const text = `{ "theme": "dark", "mine": ${'['.repeat(5000)}${']'.repeat(5000)} }`;
+    write(text);
+    const { settings } = open();
+    settings.declare(theme);
+    const state = await settings.state();
+    expect(state.values).toEqual({ theme: 'system' });
+    expect(state.problems).toEqual([
+      {
+        message:
+          "The settings file nests objects and lists over 100 levels deep, so Lo didn't read it.",
+      },
+    ]);
+    const refused = await refusal(settings.set('theme', 'light'));
+    expect(refused?.code).toBe('unwritable');
+    expect(contents()).toBe(text);
+  });
+
   it('reads a comma after the last entry, and keeps it through a change', async () => {
     write('{\n  "theme": "dark",\n  "mine": [1, 2,],\n}\n');
     const { settings } = open();

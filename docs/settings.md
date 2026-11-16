@@ -30,12 +30,12 @@ list.
   reported, with the line and column where Lo found the problem, and Lo goes on with the settings it
   had. It changes nothing in the file until it's fixed, so Settings never writes over what you
   typed.
-- **Settings changes only the setting's value.** Your comments, the order of the keys, the spacing
-  and the keys Lo doesn't know stay as they are, so a file shared with another version of Lo stays
-  whole. A setting the file doesn't have yet goes after the last: on a line of its own, indented as
-  the others are (two spaces in a new file), or on the same line in an object written on one, with a
-  comma after it if the last one has one. Lo writes the new value whole, so a comment inside the old
-  one, as in `code.trusted`'s list, goes with it.
+- **Settings changes only the setting's value.** Your comments, the order of the keys, the spacing,
+  a byte order mark and the keys Lo doesn't know stay as they are, so a file shared with another
+  version of Lo stays whole. A setting the file doesn't have yet goes after the last: on a line of
+  its own, indented as the others are (two spaces in a new file), or on the same line in an object
+  written on one, with a comma after it if the last one has one. Lo writes the new value whole, so a
+  comment inside the old one, as in `code.trusted`'s list, goes with it.
 - **A setting given more than once** is read as the last one says, as JavaScript and VS Code read
   JSON, and Settings reports it. Lo won't change that setting until the file has it once, since with
   two the file says one thing where you might read another. It changes the others as usual.
@@ -44,7 +44,7 @@ list.
   change on top of your save.
 - **A link to a file is followed.** A settings file kept with other dotfiles stays a link, and the
   file it leads to is the one Lo reads, watches and replaces.
-- The file is read up to 1 MiB.
+- The file is read up to 1 MiB, with objects and lists nested up to 100 levels deep.
 - **Which repos you trust changes only through Lo's own dialog.** Lo adds one to `code.trusted` once
   you say "Trust" there, and takes one out once you remove it in Settings. You can still edit the
   file.

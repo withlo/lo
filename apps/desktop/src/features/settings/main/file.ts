@@ -66,7 +66,10 @@ export async function readSettings(path: string): Promise<Read> {
     if (length > SETTINGS_SIZE_LIMIT) return tooBig;
     let text;
     try {
-      text = new TextDecoder('utf-8', { fatal: true }).decode(buffer.subarray(0, length));
+      // A byte order mark stays in the text, so a change Lo makes keeps it.
+      text = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(
+        buffer.subarray(0, length),
+      );
     } catch {
       return problem("The settings file isn't UTF-8 text, so Lo didn't read it.");
     }
