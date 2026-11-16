@@ -87,7 +87,17 @@ export interface Placing {
   readonly at?: string | undefined;
   /** How many leading folders to drop from each path, as npm's tarballs need for `package/`. */
   readonly strip?: number | undefined;
+  /**
+   * The one folder of the archive to take, `/`-separated, as a layer of rust-installer's has its
+   * component's files in `<package>/<component>/`: what's in it goes where `at` says, and the rest
+   * of the archive is left out, as is the `manifest.in` at its top that lists them. An archive
+   * with nothing in it is refused.
+   */
+  readonly from?: string | undefined;
 }
+
+/** The list of a component's files at the top of its folder in a layer, which isn't installed. */
+const LAYER_LIST = 'manifest.in';
 
 /**
  * Writes archives into `root`, a new, empty folder of Lo's, one after another, then makes their
@@ -105,6 +115,8 @@ export class Unpacker {
   readonly #files = new Map<string, number>();
   #entries = 0;
   #bytes = 0;
+  /** How many entries have been placed, rather than left out. */
+  #placed = 0;
 
   constructor(
     root: string,
@@ -117,6 +129,7 @@ export class Unpacker {
 
   /** Unpacks the gzipped tar at `archive`. */
   async tarGz(archive: string, placing: Placing = {}): Promise<void> {
+    const placedBefore = this.#placed;
     const parser = new Parser({ strict: true });
     // Each entry is handled once the one before it is done, and its data waits meanwhile.
     let chain = Promise.resolve();
@@ -157,6 +170,9 @@ export class Unpacker {
     await parsed;
     await chain;
     if (failure !== undefined) throw asError(failure);
+    if (placing.from !== undefined && this.#placed === placedBefore) {
+      throw refused(`The archive has nothing in ${shown(placing.from)}.`);
+    }
   }
 
   async #tarEntry(entry: ReadEntry, placing: Placing): Promise<void> {
@@ -313,8 +329,16 @@ export class Unpacker {
     }
     const parts = name.split('/').filter((part) => part !== '' && part !== '.');
     if (parts.includes('..')) throw refused(`${shown(name)} leads out of its folder.`);
-    const kept = parts.slice(placing.strip ?? 0);
+    let kept = parts.slice(placing.strip ?? 0);
+    if (placing.from !== undefined) {
+      const from = placing.from.split('/');
+      if (kept.length <= from.length || from.some((part, at) => kept[at] !== part))
+        return undefined;
+      kept = kept.slice(from.length);
+      if (kept.length === 1 && kept[0] === LAYER_LIST) return undefined;
+    }
     if (kept.length === 0) return undefined;
+    this.#placed += 1;
     return [...(placing.at === undefined ? [] : [placing.at]), ...kept].join('/');
   }
 

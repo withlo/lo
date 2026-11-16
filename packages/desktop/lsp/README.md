@@ -64,22 +64,32 @@ own (`setsid`) is still found.
 
 ## Downloads
 
-`servers.json` pins what Lo downloads, and `scripts/pin.ts` writes it (see `AGENTS.md`). An
-`Installer` puts each version in `<cache>/servers/<id>/<version>/`, holding a download to these:
+`servers.json` pins what Lo downloads, and `scripts/pin.ts` writes it (see `AGENTS.md`).
+`toolchains.json` pins the toolchains language servers use, Go, Rust, a Temurin JDK and the .NET
+SDK, the same way, with what each unpacks to on each platform; `src/toolchains.ts` says what a
+server gets of each. An `Installer` puts each version in `<folder>/<id>/<version>/`, the servers' in
+`<cache>/servers/` and the toolchains' in `<cache>/toolchains/`, holding a download to these:
 
-| What                       | Limit                                                       |
-| -------------------------- | ----------------------------------------------------------- |
-| Addresses                  | `https`, the usual port, the entry's hosts by exact name    |
-| Redirects                  | 5, each held to the same rules, and none followed unseen    |
-| A file                     | the size the manifest pins, then its SHA-256                |
-| Tries                      | 3, when the connection fails, the file comes short or a 5xx |
-| A stall                    | 30 s with nothing come, which counts as a failed connection |
-| What an archive unpacks to | 100,000 entries and 2 GB                                    |
-| A symbolic link's target   | 1 KB, relative, resolving inside                            |
+| What                       | Limit                                                                                    |
+| -------------------------- | ---------------------------------------------------------------------------------------- |
+| Addresses                  | `https`, the usual port, the entry's hosts by exact name                                 |
+| Redirects                  | 5, each held to the same rules, and none followed unseen                                 |
+| Room on the disk           | its files and what they unpack to, before it starts                                      |
+| A file                     | the size the manifest pins, then its SHA-256                                             |
+| Tries                      | 3, when the connection fails, the file comes short or a 5xx                              |
+| A stall                    | 30 s with nothing come, which counts as a failed connection                              |
+| What an archive unpacks to | 100,000 entries, and what it's recorded to unpack to and 5% more, or 2 GB where it isn't |
+| A symbolic link's target   | 1 KB, relative, resolving inside                                                         |
 
 Nothing is unpacked before its hash matches, and nothing is used before its marker says it's whole.
 Absolute paths, `..`, hard links, devices and pipes are refused, and files are written before any
-link is made, so nothing is written through one.
+link is made, so nothing is written through one. A download in layers, as Rust's components are,
+lays each tarball's component folder over the ones before it, leaving out the rest of the tarball
+and the `manifest.in` that lists the component's files; a file a layer before it wrote is refused.
+
+`remove` takes every version of an ID away, as Settings' "Remove" does a toolchain's: an install of
+it under way stops first, then its folder is renamed aside and deleted, so nothing finds it half
+gone.
 
 Each file and folder unpacked is synced to the disk, then the marker, then the folder that holds
 them, and only then is it renamed into place. The marker records the fingerprint of the download and

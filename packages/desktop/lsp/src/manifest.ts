@@ -11,14 +11,21 @@
  * - the `hosts` its files and their redirects may come from, by exact name;
  * - per platform (`darwin-arm64`, `darwin-x64`, `linux-x64`, `linux-arm64`), or `any` for one
  *   that runs everywhere, what to download: an archive (`tar.gz` or `zip`), a gzipped program
- *   (`gz`), a program as it is (`file`), or an npm package with its dependencies (`npm`), each
- *   of its tarballs pinned the same way;
- * - its `entry`: the file the server starts from, inside what's installed.
+ *   (`gz`), a program as it is (`file`), an npm package with its dependencies (`npm`), each
+ *   of its tarballs pinned the same way, or gzipped tars laid one over another in one folder
+ *   (`layers`), as Rust's components make one sysroot;
+ * - its `entry`: the file the server starts from, inside what's installed;
+ * - where it's recorded, what it `unpacked` to, in bytes, which caps its install at that and 5%
+ *   more, in place of the limit every download shares.
+ *
+ * `toolchains.json` pins the toolchains language servers use, Go, Rust, a JDK and the .NET SDK,
+ * the same way, each with what it unpacks to ({@link TOOLCHAINS}).
  */
 
 import { z } from 'zod';
 
 import servers from '../servers.json' with { type: 'json' };
+import toolchains from '../toolchains.json' with { type: 'json' };
 
 /** The platforms Lo downloads for, as `<platform>-<arch>`. */
 export const PLATFORMS = ['darwin-arm64', 'darwin-x64', 'linux-x64', 'linux-arm64'] as const;
@@ -68,15 +75,20 @@ const MODULE_PATH =
 /** One file to download. */
 const file = z.strictObject({ url: address, size, sha256 });
 
+/** What a download unpacks to, in bytes, where it's recorded. */
+const unpacked = size.optional();
+
 const archive = file.extend({
   kind: z.enum(['tar.gz', 'zip']),
   entry: path,
+  unpacked,
 });
 
 /** A program alone, gzipped or as it is: `entry` is the name it's installed by. */
 const program = file.extend({
   kind: z.enum(['gz', 'file']),
   entry: z.string().regex(NAME, 'a file name'),
+  unpacked,
 });
 
 /** An npm package and its dependencies, each tarball unpacked at its `path`. */
@@ -89,9 +101,22 @@ const npm = z.strictObject({
     .refine((packages) => new Set(packages.map((pkg) => pkg.path)).size === packages.length, {
       message: 'each package once',
     }),
+  unpacked,
 });
 
-const anyDownload = z.discriminatedUnion('kind', [archive, program, npm]);
+/**
+ * Gzipped tars unpacked one over another into one folder, in order, as rust-installer's
+ * components are: each layer's files are those in its folder `from` (`rustc-<version>-<target>/
+ * rustc`), but the `manifest.in` that lists them. A file two layers both hold is refused.
+ */
+const layers = z.strictObject({
+  kind: z.literal('layers'),
+  entry: path,
+  layers: z.array(file.extend({ from: path })).min(1),
+  unpacked,
+});
+
+const anyDownload = z.discriminatedUnion('kind', [archive, program, npm, layers]);
 
 const pinned = z
   .strictObject({
@@ -124,9 +149,21 @@ export interface Part {
   readonly sha256: string;
 }
 
-/** The files `download` fetches: its own, or each of its npm packages'. */
+/** The files `download` fetches: its own, or each of its npm packages' or layers'. */
 export function partsOf(download: Download): readonly Part[] {
-  return download.kind === 'npm' ? download.packages : [download];
+  switch (download.kind) {
+    case 'npm':
+      return download.packages;
+    case 'layers':
+      return download.layers;
+    case 'tar.gz':
+    case 'zip':
+    case 'gz':
+    case 'file':
+      return [download];
+    default:
+      throw new Error(`a download Lo doesn't know: ${JSON.stringify(download satisfies never)}`);
+  }
 }
 
 /** Reads a manifest, and throws with what's wrong with one Lo can't use. */
@@ -138,6 +175,27 @@ export function parseManifest(json: unknown): Manifest {
 
 /** Lo's own manifest. */
 export const MANIFEST: Manifest = parseManifest(servers);
+
+/**
+ * Reads a manifest of toolchains, which must each say what they unpack to on every platform, and
+ * throws with what's wrong with one Lo can't use.
+ */
+export function parseToolchains(json: unknown): Manifest {
+  const parsed = parseManifest(json);
+  for (const [id, entry] of Object.entries(parsed)) {
+    for (const [platform, download] of Object.entries(entry.platforms)) {
+      if (download.unpacked === undefined) {
+        throw new Error(
+          `the manifest is invalid: ${id} doesn't say what it unpacks to on ${platform}`,
+        );
+      }
+    }
+  }
+  return parsed;
+}
+
+/** The toolchains language servers use, which Lo downloads as it does servers: `toolchains.json`. */
+export const TOOLCHAINS: Manifest = parseToolchains(toolchains);
 
 /** What `entry` downloads on `platform`, or `undefined` when it has nothing for it. */
 export function downloadFor(entry: Pinned, platform: Platform): Download | undefined {
