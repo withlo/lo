@@ -1,35 +1,191 @@
 {
+  "intelephense": {
+    "version": "1.18.5",
+    "hosts": ["registry.npmjs.org"],
+    "platforms": {
+      "any": {
+        "kind": "npm",
+        "entry": "node_modules/intelephense/lib/intelephense.js",
+        "packages": [
+          {
+            "path": "node_modules/intelephense",
+            "url": "https://registry.npmjs.org/intelephense/-/intelephense-1.18.5.tgz",
+            "size": 5072793,
+            "sha256": "9c945dfeec2f030108da34c9c1d9e6c692cfd5d0cf5933f13b8651f7b9f943f1"
+          }
+        ]
+      }
+    }
+  },
   "node": {
     "version": "26.13.1",
     "hosts": ["nodejs.org"],
     "platforms": {
       "darwin-arm64": {
-        "kind": "tar.gz",
         "url": "https://nodejs.org/dist/v26.13.1/node-v26.13.1-darwin-arm64.tar.gz",
         "size": 58340590,
         "sha256": "aec2514ea1ceb2ba52455e9ec65986f6749a06dd759e5db2a72e6889668c9735",
+        "kind": "tar.gz",
         "entry": "node-v26.13.1-darwin-arm64/bin/node"
       },
       "darwin-x64": {
-        "kind": "tar.gz",
         "url": "https://nodejs.org/dist/v26.13.1/node-v26.13.1-darwin-x64.tar.gz",
         "size": 59799324,
         "sha256": "82bb96078a24ca50b9c9a38f2379e6be6d87171fcd400fc14c8934b3bce96e2f",
+        "kind": "tar.gz",
         "entry": "node-v26.13.1-darwin-x64/bin/node"
       },
       "linux-x64": {
-        "kind": "tar.gz",
         "url": "https://nodejs.org/dist/v26.13.1/node-v26.13.1-linux-x64.tar.gz",
         "size": 62904977,
         "sha256": "518674de2b621728a5e4486f5fb3b7d2900bb3cc4aa97969edaa463db99f9778",
+        "kind": "tar.gz",
         "entry": "node-v26.13.1-linux-x64/bin/node"
       },
       "linux-arm64": {
-        "kind": "tar.gz",
         "url": "https://nodejs.org/dist/v26.13.1/node-v26.13.1-linux-arm64.tar.gz",
         "size": 62600078,
         "sha256": "80a330b35415382878df18d41afbd106ea89bfb3be0087d6608e289a14c5cc7d",
+        "kind": "tar.gz",
         "entry": "node-v26.13.1-linux-arm64/bin/node"
+      }
+    }
+  },
+  "pyright": {
+    "version": "1.1.414",
+    "hosts": ["registry.npmjs.org"],
+    "platforms": {
+      "any": {
+        "kind": "npm",
+        "entry": "node_modules/pyright/langserver.index.js",
+        "packages": [
+          {
+            "url": "https://registry.npmjs.org/pyright/-/pyright-1.1.414.tgz",
+            "size": 4226827,
+            "sha256": "bf5f473f6167c0d14175492c3263d783b4489a6956e1c06c18e15228e3a3fa42",
+            "path": "node_modules/pyright"
+          }
+        ]
+      }
+    }
+  },
+  "vtsls": {
+    "version": "0.3.0",
+    "hosts": ["registry.npmjs.org"],
+    "platforms": {
+      "any": {
+        "kind": "npm",
+        "entry": "node_modules/@vtsls/language-server/dist/main.js",
+        "packages": [
+          {
+            "url": "https://registry.npmjs.org/@vscode/l10n/-/l10n-0.0.18.tgz",
+            "size": 4548,
+            "sha256": "f1c2dc897488595f6bb42121869f525c6c6a5f7c8dca550754199c3251ed7c5c",
+            "path": "node_modules/@vscode/l10n"
+          },
+          {
+            "url": "https://registry.npmjs.org/@vtsls/language-server/-/language-server-0.3.0.tgz",
+            "size": 7677,
+            "sha256": "f065ff01476d71395caad2647fb56539bb80131f37081767b2aeee8586cbc0c9",
+            "path": "node_modules/@vtsls/language-server"
+          },
+          {
+            "url": "https://registry.npmjs.org/@vtsls/language-service/-/language-service-0.3.0.tgz",
+            "size": 330172,
+            "sha256": "08a4e8db21dc3c9be7080952cd5226932f578512e71b0bf2fd81c7f8af9401c5",
+            "path": "node_modules/@vtsls/language-service"
+          },
+          {
+            "url": "https://registry.npmjs.org/@vtsls/vscode-fuzzy/-/vscode-fuzzy-0.1.0.tgz",
+            "size": 11523,
+            "sha256": "3a04faaa2b0df05b4ece5bc3ff4d2316023d661b028ab15d4aa3f2f13b2a7d8a",
+            "path": "node_modules/@vtsls/vscode-fuzzy"
+          },
+          {
+            "url": "https://registry.npmjs.org/jsonc-parser/-/jsonc-parser-3.3.1.tgz",
+            "size": 27354,
+            "sha256": "4a0315b8671e7463bae7af7c142cdf19e9aa7ba39eb36dc2df383b8648e3cbc9",
+            "path": "node_modules/jsonc-parser"
+          },
+          {
+            "url": "https://registry.npmjs.org/lru-cache/-/lru-cache-6.0.0.tgz",
+            "size": 5788,
+            "sha256": "5ce40deb031cf6968f3832502a68f8d26be09764dc4f8fc07957a2fd7e8cdf5e",
+            "path": "node_modules/lru-cache"
+          },
+          {
+            "url": "https://registry.npmjs.org/semver/-/semver-7.5.2.tgz",
+            "size": 26617,
+            "sha256": "32f78290c12246206449f9a18cf3f7fab44828f06c17448b7e8954ff54ce0a9a",
+            "path": "node_modules/semver"
+          },
+          {
+            "url": "https://registry.npmjs.org/typescript/-/typescript-5.9.3.tgz",
+            "size": 4377468,
+            "sha256": "10e108c9cf7d5f2879053dff18515fb405abf2ccef63eaaf017d9c571687a1d3",
+            "path": "node_modules/typescript"
+          },
+          {
+            "url": "https://registry.npmjs.org/vscode-jsonrpc/-/vscode-jsonrpc-10.0.0.tgz",
+            "size": 38220,
+            "sha256": "353d5e53a8ce960dfbddf9a6d8fa158bf9ad6432cdb4b185952c12a2826a3948",
+            "path": "node_modules/vscode-jsonrpc"
+          },
+          {
+            "url": "https://registry.npmjs.org/vscode-languageserver/-/vscode-languageserver-9.0.1.tgz",
+            "size": 32720,
+            "sha256": "6cd7f463ae7872e588a4dd5ed5149475fe32e53517509a81e715eb0540602412",
+            "path": "node_modules/vscode-languageserver"
+          },
+          {
+            "url": "https://registry.npmjs.org/vscode-languageserver-protocol/-/vscode-languageserver-protocol-3.18.5.tgz",
+            "size": 64372,
+            "sha256": "442093bf98c5e0f39430cf57af266bd5e399617680141e66c7c36de5911174bb",
+            "path": "node_modules/vscode-languageserver-protocol"
+          },
+          {
+            "url": "https://registry.npmjs.org/vscode-languageserver-textdocument/-/vscode-languageserver-textdocument-1.0.16.tgz",
+            "size": 8576,
+            "sha256": "3d00e3f62041ffb10b220a14b057116a9812ee41e04cc7eef12a78ca46302599",
+            "path": "node_modules/vscode-languageserver-textdocument"
+          },
+          {
+            "url": "https://registry.npmjs.org/vscode-languageserver-types/-/vscode-languageserver-types-3.18.5.tgz",
+            "size": 79442,
+            "sha256": "4ee75756cdbe71ac014e9763714b4a3ef4b8de3cf7f96cf69c9cf3babe727a56",
+            "path": "node_modules/vscode-languageserver-types"
+          },
+          {
+            "url": "https://registry.npmjs.org/vscode-jsonrpc/-/vscode-jsonrpc-8.2.0.tgz",
+            "size": 35427,
+            "sha256": "3da44531c398f1545074cb728e359a822f35b9f8ac7171c847f42f0728b9c7cb",
+            "path": "node_modules/vscode-languageserver/node_modules/vscode-jsonrpc"
+          },
+          {
+            "url": "https://registry.npmjs.org/vscode-languageserver-protocol/-/vscode-languageserver-protocol-3.17.5.tgz",
+            "size": 59008,
+            "sha256": "7473eb2d2163f3f8bea09644f9d803789a195e596b65d3946c4157e583e3ccc8",
+            "path": "node_modules/vscode-languageserver/node_modules/vscode-languageserver-protocol"
+          },
+          {
+            "url": "https://registry.npmjs.org/vscode-languageserver-types/-/vscode-languageserver-types-3.17.5.tgz",
+            "size": 71382,
+            "sha256": "d673f9e7f8bbe51351be51c58f32d4dcfa97a670ebb86bc633368394c609cac0",
+            "path": "node_modules/vscode-languageserver/node_modules/vscode-languageserver-types"
+          },
+          {
+            "url": "https://registry.npmjs.org/vscode-uri/-/vscode-uri-3.2.0.tgz",
+            "size": 59281,
+            "sha256": "12fa4a47728ca404c3a679e351eda6c54030c8ed3dd9bc6762ab0be1bf04014b",
+            "path": "node_modules/vscode-uri"
+          },
+          {
+            "url": "https://registry.npmjs.org/yallist/-/yallist-4.0.0.tgz",
+            "size": 4494,
+            "sha256": "a80c78aa276536615891ef66efbc17d3bd07c8cb14e3bd5298eed3006bfa4d49",
+            "path": "node_modules/yallist"
+          }
+        ]
       }
     }
   }

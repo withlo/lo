@@ -1,3 +1,7 @@
+export { INTELEPHENSE } from './adapters/intelephense.ts';
+export { heapCap, launchOnNode, type Launch, type NodeServer } from './adapters/node.ts';
+export { NO_PYTHON, PYRIGHT } from './adapters/pyright.ts';
+export { VTSLS } from './adapters/vtsls.ts';
 export { CLIENT_CAPABILITIES } from './capabilities.ts';
 export { findCopy, type CopyOptions, type Found } from './copies.ts';
 export { OPEN_LIMIT } from './documents.ts';

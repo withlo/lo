@@ -62,6 +62,35 @@ own (`setsid`) is still found.
 - A read of the family has 250 ms. If it takes longer, or fails, only the group, and what was found
   before, is signalled.
 
+## Servers
+
+The servers Lo runs, each downloaded on first use for a trusted view, as `servers.json` pins it, and
+each with its adapter in `src/adapters/`. All three run on Lo's own Node, which downloads first, and
+need nothing installed.
+
+| Server       | Version | For                    | From                                                                               | License                                                                                                  |
+| ------------ | ------- | ---------------------- | ---------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| vtsls        | 0.3.0   | TypeScript, JavaScript | npm: `@vtsls/language-server` and its 17 dependencies, TypeScript 5.9.3 among them | MIT; TypeScript's is Apache-2.0, the rest MIT or ISC                                                     |
+| Pyright      | 1.1.414 | Python                 | npm: `pyright`                                                                     | MIT                                                                                                      |
+| Intelephense | 1.18.5  | PHP                    | npm: `intelephense` alone, which has its dependencies built in                     | proprietary: the Intelephense Licence, `LICENSE.txt` in its package; closed code, used free, with no key |
+| Node         | 26.13.1 | the three above        | nodejs.org                                                                         | MIT                                                                                                      |
+
+Each starts as Node, by its absolute path, with a cap on its heap, then its own entry point inside
+its install, never the launcher npm would link, with no shell and an environment built from nothing.
+What it's told is its adapter's alone, and the adapter says why each setting is as it is:
+
+- **vtsls** runs its own TypeScript, never a workspace's (`node_modules/typescript`), loads no
+  `tsserver` plugin but those beside its own TypeScript, and has automatic type acquisition off, so
+  it runs no npm. `tsserver`'s heap is capped at 3 GB and vtsls's at 512 MB, under Lo's 4 GB for the
+  group.
+- **Pyright** is given `/dev/null` as its Python, which can't run, so it runs no interpreter: not
+  the machine's, nor one a checkout's virtual environment or `.python-version` would pick. It
+  answers from the checkout and the standard library's stubs it carries.
+- **Intelephense** gets no license key, so its paid features, inlay hints among them, refuse. Its
+  telemetry is off, and its storage is in the server's own `HOME`. Lo names its license wherever it
+  says what the server is: a server's details in the status bar show its name, version and license,
+  "Intelephense 1.18.5 · proprietary".
+
 ## Downloads
 
 `servers.json` pins what Lo downloads, and `scripts/pin.ts` writes it (see `AGENTS.md`). An

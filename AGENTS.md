@@ -454,11 +454,22 @@ toolchain and git's variables each server needs.
 - A server installed by the user is used only from where its adapter says it may be, when the app's
   folder check passes it (the one git is held to), it isn't in Lo's cache, and it isn't a version
   manager's shim, which picks a program from the checkout.
+- The servers that run on Lo's Node have their adapters in `src/adapters/`: vtsls for TypeScript and
+  JavaScript, Pyright for Python and Intelephense for PHP, each from npm. Each starts as Node, by
+  its absolute path, with a cap on its heap, then the server's own entry point, never npm's
+  launcher. What it's told is the adapter's alone, and nothing in the checkout picks what runs:
+  vtsls runs its own TypeScript, loads no `tsserver` plugin but those beside it in Lo's install, and
+  acquires no types; Pyright's Python is `/dev/null`, so it runs no interpreter; Intelephense gets
+  no license key, its telemetry is off, and its storage is in its own `HOME`. The package's README
+  lists each with its source, version and license, and a server's details name its license beside
+  its version.
 - Tests start only the fake server, `testing/lsp/fake-server.ts`, at most two at once in a test
   file, each killed with its group when the test ends. No test starts a real server or downloads
   one: download tests serve archives they build from a server on this machine. The live check,
-  `pnpm nx run lsp:live`, installs what's pinned into `~/.cache/lo-live/` and asks each server a
-  hover and a definition, by hand only.
+  `pnpm nx run lsp:live`, by hand only, installs what's pinned into `~/.cache/lo-live/`, starts each
+  server as its adapter does on the checkouts the code fixtures build with `--local`, asks what
+  `gd`, `gr`, `K`, `gh` and `gO` ask at the places `testing/fixtures/code/cases.json` names, and
+  fails if anything ran what the hostile fixture plants.
 
 ### Accounts
 
@@ -1150,7 +1161,8 @@ parse them under `@lo/syntax`'s limits.
 
 The `code` feature runs language servers on the views the reader trusts, and their answers come
 before the syntax index's. A server is whatever an adapter (`main/adapters.ts`) says to start for
-its languages; Lo ships none yet.
+its languages: Lo ships those for TypeScript and JavaScript, Python and PHP, each downloaded with
+the Node it runs on.
 
 - Nothing starts for a view nothing trusts: no download, no checkout, no server. Once a trusted view
   is on screen and a file its pull request adds or changes on the new side, or one asked about, is
@@ -1187,8 +1199,9 @@ its languages; Lo ships none yet.
   many of the newest as fit in 1 MB.
 - In a build run from source, `LO_TEST_SERVERS` names a manifest of servers to run for tests
   (`main/tests.ts`), each by absolute path with its arguments and nothing downloaded; `testServers`
-  in `e2e/app.ts` writes one for the fake server. A packaged build never reads it, which
-  `scripts/check-package.sh` checks.
+  in `e2e/app.ts` writes one for the fake server. They run in place of Lo's own, and a test run
+  without them runs none, so no test starts or downloads a real server. A packaged build never reads
+  it, which `scripts/check-package.sh` checks.
 
 ## The interface
 
