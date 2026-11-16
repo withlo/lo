@@ -767,6 +767,133 @@ test('past its cap a home past a link stays, and frees nothing', async () => {
   expect(there(join(linked, 'data'), oldCheckout, newCheckout)).toEqual([true, false, true]);
 });
 
+test('past its cap a checkout past a link stays, and frees nothing', async () => {
+  const cache = await cacheFor(server());
+  const [old, fresh] = [await useRepo(cache, 'old'), await useRepo(cache, 'new')];
+  stampDaysAgo(old, 10);
+  stampDaysAgo(fresh, 1);
+  // The owner's folder of checkouts is reached through a link to a folder outside the cache, which
+  // holds both checkouts.
+  const owner = join(cache.root, 'checkouts/github.com/owner');
+  const outside = join(tempFolder(), 'owner');
+  renameSync(owner, outside);
+  symlinkSync(outside, owner);
+  const checkouts = [checkoutOf(cache, 'old'), checkoutOf(cache, 'new')];
+
+  // A byte under: neither checkout can be moved aside, so the clone used longest ago goes instead.
+  expect(await cache.setCap((await cache.size()) - 1)).toEqual(['owner/old']);
+
+  expect(await cache.size()).toBeLessThanOrEqual(cache.cap);
+  expect(there(...checkouts, old, fresh)).toEqual([true, true, false, true]);
+});
+
+test('past its cap a checkout kept past a link counts for nothing, so the clone used longest ago still goes', async () => {
+  const cache = await cacheFor(server());
+  const [old, fresh] = [await useRepo(cache, 'old'), await useRepo(cache, 'new')];
+  stampDaysAgo(old, 10);
+  stampDaysAgo(fresh, 1);
+  // A server runs on `new`, and the owner's folder of checkouts, which holds both, is reached
+  // through a link to a folder outside the cache, which the cache's size doesn't count.
+  const stop = cache.cloneLock('owner', 'new').serve();
+  const owner = join(cache.root, 'checkouts/github.com/owner');
+  const outside = join(tempFolder(), 'owner');
+  renameSync(owner, outside);
+  symlinkSync(outside, owner);
+  const checkouts = [checkoutOf(cache, 'old'), checkoutOf(cache, 'new')];
+
+  // A byte under: `new`'s checkout is kept, but holds back nothing the cache doesn't count, so with
+  // `old`'s checkout unable to go, `old` goes.
+  expect(await cache.setCap((await cache.size()) - 1)).toEqual(['owner/old']);
+
+  expect(await cache.size()).toBeLessThanOrEqual(cache.cap);
+  expect(there(...checkouts, old, fresh)).toEqual([true, true, false, true]);
+  stop();
+});
+
+test('past its cap a repository that comes into use as the run reaches it stays, and the next goes', async () => {
+  const cache = await cacheFor(server(['old', 'mid', 'new']));
+  const clones: string[] = [];
+  for (const name of ['old', 'mid', 'new']) clones.push(await useRepo(cache, name));
+  const checkouts = ['old', 'mid', 'new'].map((name) => checkoutOf(cache, name));
+  for (const [index, days] of [10, 5, 1].entries()) stampDaysAgo(clones[index] ?? '', days);
+  for (const [index, days] of [10, 5, 3].entries()) {
+    checkoutUsedDaysAgo(checkouts[index] ?? '', days);
+  }
+  // `old` is free as the run looks at what's in use, and opened just as the run comes to remove
+  // something of it: opening counts at once, so removing it is refused.
+  const lock = cache.cloneLock('owner', 'old');
+  const tryRemove = lock.tryRemove.bind(lock);
+  const removing = vi.spyOn(lock, 'tryRemove');
+  let close: (() => void) | undefined;
+  const openAsRemoved = () =>
+    removing.mockImplementationOnce((...args) => {
+      close = lock.use();
+      return tryRemove(...args);
+    });
+
+  // A byte under: `old`'s checkout stays and frees nothing, so `mid`'s goes in its place, and then
+  // the cache is under.
+  openAsRemoved();
+  expect(await cache.setCap((await cache.size()) - 1)).toEqual([]);
+  expect(await cache.size()).toBeLessThanOrEqual(cache.cap);
+  expect(there(...checkouts)).toEqual([true, false, true]);
+
+  // Nothing fits: `old` comes into use again, so of the clones `mid` goes in its place, and `new`,
+  // used last, stays.
+  close?.();
+  openAsRemoved();
+  expect(await cache.setCap(1)).toEqual(['owner/mid']);
+  expect(there(...clones, ...checkouts)).toEqual([true, false, true, true, false, false]);
+  close?.();
+});
+
+test('keeping the cache under its cap never runs beside removing what’s unused or clearing it', async () => {
+  const logged: string[] = [];
+  const cache = await cacheFor(server(), { log: (line) => logged.push(line) });
+  const now = Date.now();
+  // `old`, a clone alone, was last used 40 days ago, so removing what's unused takes it.
+  const repo = await cache.open('owner', 'old');
+  await fetch(repo);
+  repo.close();
+  const old = repo.folder;
+  writeFileSync(join(old, 'lo-last-used'), `${Math.floor((now - 40 * DAY) / 1000)}\n`);
+  const fresh = await useRepo(cache, 'new');
+  const newCheckout = checkoutOf(cache, 'new');
+  // A byte under: once `old` has gone, the cache is under.
+  const cap = (await cache.size()) - 1;
+  // Removing what's unused holds on as it comes to remove `old`, until let go.
+  const reached = Promise.withResolvers<void>();
+  const held = Promise.withResolvers<void>();
+  const trash = cache.trash.bind(cache);
+  vi.spyOn(cache, 'trash').mockImplementation(async (path) => {
+    if (path === cache.checkoutsFolder('owner', 'old')) {
+      reached.resolve();
+      await held.promise;
+    }
+    return trash(path);
+  });
+
+  const unused = cache.removeUnused(now);
+  await reached.promise;
+  // Asked meanwhile, keeping the cache under its cap waits its turn: it hasn't even looked at
+  // whether the cache is closing, which a run started at once would have by now.
+  const closing = vi.spyOn(cache, 'closing', 'get');
+  const capped = cache.setCap(cap);
+  const cleared = cache.clear();
+  await Promise.resolve();
+  const looked = closing.mock.calls.length;
+  held.resolve();
+  expect(looked).toBe(0);
+
+  expect(await unused).toEqual(['owner/old']);
+  // It counted the cache once `old` had gone, so it was under, and removed nothing.
+  expect(await capped).toEqual([]);
+  expect(logged.filter((line) => line.includes("past the cache's cap"))).toEqual([]);
+  // Clearing went last, and found nothing in use to leave.
+  expect(await cleared).toEqual([]);
+  expect(there(old, fresh, newCheckout)).toEqual([false, false, false]);
+});
+
 test('a server waits for cleanup removing anything of its repository, but not for replays, until its signal aborts', async () => {
   const cache = await cacheFor(server());
   await useRepo(cache, 'new');
@@ -1459,6 +1586,30 @@ test('reading offline stops cleanup collecting replays, and waits for it', async
   expect(hasObject(folder, loose)).toBe(true);
   repo?.close();
   await cache.removeUnused();
+  expect(hasObject(folder, loose)).toBe(false);
+});
+
+test('a fetch that makes a clone keeps the cache under its cap without waiting for replayed trees to go', async () => {
+  const slow = await slowGit('*" prune --expire=now "*');
+  const cache = await cacheFor(server(), { git: slow.git });
+  const folder = await useRepo(cache, 'old');
+  // A loose object, as a replay writes, so removing what's unused prunes the clone, which holds on.
+  const loose = gitBytes(folder, ['hash-object', '-w', '--stdin'], 'replayed\n').toString().trim();
+  let cleaned = false;
+  const cleaning = cache.removeUnused().then(() => {
+    cleaned = true;
+  });
+  await eventually(() => existsSync(slow.started));
+
+  // Making `new`'s clone keeps the cache under its cap, which waits for removing what's unused but
+  // not for the prune, so the fetch is done while the prune still holds on.
+  const repo = await cache.open('owner', 'new');
+  await fetch(repo);
+  repo.close();
+  expect(cleaned).toBe(false);
+
+  writeFileSync(slow.go, '');
+  await cleaning;
   expect(hasObject(folder, loose)).toBe(false);
 });
 
