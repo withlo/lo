@@ -262,21 +262,22 @@ const BUILD_FILES = new Set(['buildserver.json', '.bsp', '.sourcekit-lsp']);
  * `.sourcekit-lsp`, its settings, anywhere in the checkout, by {@link foldName}, so in any case or
  * Unicode form, a link or a file in place of a folder included. It looks in the checkout's own
  * folders, never through a link to one, and through `limit` of their entries at most: a checkout
- * with more is refused, since what's past them would go unchecked.
+ * with more is refused, since what's past them would go unchecked. It's the reason alone, as
+ * `checkoutProblem`'s is.
  */
 export async function sourceKitCheckoutProblem(
   root: string,
   limit = WALK_LIMIT,
 ): Promise<string | undefined> {
   const entries = await entriesOf(root, limit);
-  if (entries === undefined) return tooManyEntries(limit, 'SourceKit-LSP');
+  if (entries === undefined) return tooManyEntries(limit);
   for (const { path } of entries) {
     const name = foldName(basename(path));
     if (!BUILD_FILES.has(name)) continue;
     const named = `The checkout’s ${path.slice(root.length + 1)}`;
     const what =
       name === '.sourcekit-lsp' ? 'holds SourceKit-LSP’s settings' : 'names a build server to run';
-    return `${named} ${what}, so Lo won’t run SourceKit-LSP on it.`;
+    return `${named} ${what}.`;
   }
   return undefined;
 }

@@ -1,6 +1,6 @@
 // A server's downloads added up into one: those its adapter named count from the start, one it
-// didn't counts once it starts, one installed already counts for nothing, and one that has come
-// says so while it's unpacked or built.
+// didn't counts once it starts, and one installed already counts for nothing. The whole install
+// is downloading until every byte has come, then unpacking, then building.
 
 import { expect, it } from 'vitest';
 
@@ -35,25 +35,30 @@ it('counts one it didn’t name once it starts, and one installed already not at
   expect(heard).toEqual([[5, 10]]);
 });
 
-it('says one is unpacking, or building, once all of it has come, until it’s installed', () => {
+it('says the whole install is downloading until every byte has come, then unpacking, then building', () => {
   const heard: [number, number, string][] = [];
   const sum = new DownloadSum((done, total, stage) => heard.push([done, total, stage]));
+  // Go, then gopls, which Lo builds with it: neither installed yet.
   sum.expect('toolchain:go', 164);
   sum.expect('server:gopls', 40);
   const go = sum.part('toolchain:go');
+  go.progress(0, 164, 'downloading');
   go.progress(164, 164, 'downloading');
+  // Go is unpacked while gopls is still to come, so the install is still downloading.
   go.progress(164, 164, 'unpacking');
   go.done();
   const gopls = sum.part('server:gopls');
+  gopls.progress(0, 40, 'downloading');
+  gopls.progress(40, 40, 'downloading');
   gopls.progress(40, 40, 'unpacking');
   gopls.progress(40, 40, 'building');
+  // Built and installed: what was said last holds until the server starts.
   gopls.done();
   expect(heard).toEqual([
+    [0, 204, 'downloading'],
     [164, 204, 'downloading'],
-    [164, 204, 'unpacking'],
-    [164, 204, 'downloading'],
+    [204, 204, 'downloading'],
     [204, 204, 'unpacking'],
     [204, 204, 'building'],
-    [204, 204, 'downloading'],
   ]);
 });

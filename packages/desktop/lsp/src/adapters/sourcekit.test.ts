@@ -237,47 +237,47 @@ describe('the checkouts it refuses', () => {
       [
         'buildServer.json',
         (root) => file(join(root, 'buildServer.json')),
-        'The checkout’s buildServer.json names a build server to run, so Lo won’t run SourceKit-LSP on it.',
+        'The checkout’s buildServer.json names a build server to run.',
       ],
       [
         'one in a folder, in another case',
         (root) => file(join(root, 'Sources', 'BuildServer.JSON')),
-        'The checkout’s Sources/BuildServer.JSON names a build server to run, so Lo won’t run SourceKit-LSP on it.',
+        'The checkout’s Sources/BuildServer.JSON names a build server to run.',
       ],
       [
         '.bsp',
         (root) => file(join(root, '.bsp', 'tool.json')),
-        'The checkout’s .bsp names a build server to run, so Lo won’t run SourceKit-LSP on it.',
+        'The checkout’s .bsp names a build server to run.',
       ],
       [
         '.bsp, a file',
         (root) => file(join(root, 'Sources', '.bsp')),
-        'The checkout’s Sources/.bsp names a build server to run, so Lo won’t run SourceKit-LSP on it.',
+        'The checkout’s Sources/.bsp names a build server to run.',
       ],
       [
         '.sourcekit-lsp',
         (root) => file(join(root, 'Sources', 'App', '.SourceKit-LSP', 'config.json')),
-        'The checkout’s Sources/App/.SourceKit-LSP holds SourceKit-LSP’s settings, so Lo won’t run SourceKit-LSP on it.',
+        'The checkout’s Sources/App/.SourceKit-LSP holds SourceKit-LSP’s settings.',
       ],
       [
         '.sourcekit-lsp with a long s, which a Mac’s disk opens as .sourcekit-lsp',
         (root) => file(join(root, '.\u017Fourcekit-lsp', 'config.json')),
-        'The checkout’s .\u017Fourcekit-lsp holds SourceKit-LSP’s settings, so Lo won’t run SourceKit-LSP on it.',
+        'The checkout’s .\u017Fourcekit-lsp holds SourceKit-LSP’s settings.',
       ],
       [
         '.sourcekit-lsp with a Kelvin sign',
         (root) => file(join(root, 'Sources', '.source\u212Ait-lsp', 'config.json')),
-        'The checkout’s Sources/.source\u212Ait-lsp holds SourceKit-LSP’s settings, so Lo won’t run SourceKit-LSP on it.',
+        'The checkout’s Sources/.source\u212Ait-lsp holds SourceKit-LSP’s settings.',
       ],
       [
         'buildServer.json, decomposed and with a long s',
         (root) => file(join(root, 'buildServer.j\u017Fon'.normalize('NFD'))),
-        `The checkout’s ${'buildServer.j\u017Fon'.normalize('NFD')} names a build server to run, so Lo won’t run SourceKit-LSP on it.`,
+        `The checkout’s ${'buildServer.j\u017Fon'.normalize('NFD')} names a build server to run.`,
       ],
       [
         'a link by that name',
         (root) => symlinkSync(tempFolder(), join(root, '.sourcekit-lsp')),
-        'The checkout’s .sourcekit-lsp holds SourceKit-LSP’s settings, so Lo won’t run SourceKit-LSP on it.',
+        'The checkout’s .sourcekit-lsp holds SourceKit-LSP’s settings.',
       ],
     ];
     const refused: [string, string | undefined][] = [];
@@ -294,7 +294,7 @@ describe('the checkouts it refuses', () => {
     // Package.swift, Sources, Sources/App, its main.swift and .swift-version, and the commands.
     expect(await sourceKitCheckoutProblem(root, 6)).toBeUndefined();
     expect(await sourceKitCheckoutProblem(root, 5)).toBe(
-      'The checkout has more than 5 files and folders, more than Lo looks through, so Lo won’t run SourceKit-LSP on it.',
+      'The checkout has more than 5 files and folders, more than Lo looks through.',
     );
   });
 
