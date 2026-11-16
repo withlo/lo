@@ -34,9 +34,12 @@ export function placedBy(facts: MergeFacts): Placed {
   };
 }
 
-/** The open pull requests from a branch, as `@lo/github`'s `openPullsFromHead` reads them. */
+/**
+ * The open pull requests from a branch, as `@lo/github`'s `openPullsFromHead` reads them, which can
+ * be passed in as they come.
+ */
 export interface OpenFromHead {
-  readonly pulls: readonly {
+  readonly pullRequests: readonly {
     readonly number: number;
     /** Whether its head branch is in the repository itself: a fork's is never a base branch. */
     readonly sameRepository: boolean;
@@ -195,7 +198,7 @@ function readAfresh(
     const read = view.openFrom.get(branch);
     if (!read) return unknown({ kind: 'unconfirmed', branch }, view);
     if (read.cutShort) return unknown({ kind: 'cutShort', branch }, view);
-    const numbers = read.pulls
+    const numbers = read.pullRequests
       .filter((pr) => pr.sameRepository && pr.number !== layer.number)
       .map((pr) => pr.number)
       .toSorted((a, b) => b - a);

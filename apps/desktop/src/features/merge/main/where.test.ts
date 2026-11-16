@@ -109,7 +109,7 @@ function readFrom(at: Repository): Map<string, OpenFromHead> {
     [...branches].map((branch) => [
       branch,
       {
-        pulls: at.pulls
+        pullRequests: at.pulls
           .filter((pr) => pr.state.kind === 'open' && pr.headRef === branch)
           .map((pr) => ({ number: pr.number, sameRepository: pr.headInBaseRepo })),
         cutShort: false,
@@ -132,7 +132,10 @@ function readingFrom(
 
 /** Pull requests `numbers`, from branches in the repository itself, as GitHub gives them. */
 function ours(...numbers: number[]): OpenFromHead {
-  return { pulls: numbers.map((number) => ({ number, sameRepository: true })), cutShort: false };
+  return {
+    pullRequests: numbers.map((number) => ({ number, sameRepository: true })),
+    cutShort: false,
+  };
 }
 
 /** `at`'s stacks as the stacks feature gives them, listed a second ago, with `change` made. */
@@ -226,7 +229,7 @@ describe('where a pull request sits', () => {
     const after = repository([pull(70, 'feat', 'c70'), pull(71, 'main', 'feat')]);
     expect(where(view(70, {}, after))).toEqual({ kind: 'chainAbove', bottom: 71 });
     // A fork's branch of the same name is never a base.
-    const fork = { pulls: [{ number: 71, sameRepository: false }], cutShort: false };
+    const fork = { pullRequests: [{ number: 71, sameRepository: false }], cutShort: false };
     expect(where(view(70, { openFrom: readingFrom(before, 'feat', fork) }, before))).toEqual({
       kind: 'alone',
     });
