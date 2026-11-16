@@ -236,8 +236,12 @@ export class ServingViews {
         // It runs on another head, or hasn't started: it starts once the view is on screen.
         return onScreen ? { kind: 'starting', name } : undefined;
       case 'starting':
+      case 'waiting':
+      case 'refused':
+      case 'missing':
       case 'failed':
-        return { kind: found.kind, name };
+      case 'stopped':
+        return { ...found, name };
       case 'ready': {
         const clone = input.clone;
         const remake = () => this.#remake(input, commit, checkout);

@@ -278,6 +278,28 @@ describe('following views for servers', () => {
     expect(last()[0]?.wants).toEqual([TS, GO]);
   });
 
+  it('says where a server that can’t answer is, as the pool finds it', async () => {
+    const { repo } = repoOf(['src/a.ts']);
+    const why = 'The checkout’s tsconfig.json names a plugin, so Lo won’t run vtsls on it.';
+    const cases: Found[] = [
+      { kind: 'waiting', count: 4 },
+      { kind: 'refused', why },
+      { kind: 'missing', needs: 'Go 1.24 or later' },
+      { kind: 'failed' },
+      { kind: 'stopped' },
+    ];
+    for (const found of cases) {
+      const { serving } = follow(
+        () => input(repo),
+        [TS, GO],
+        () => found,
+      );
+      serving.update('v1');
+      await settle();
+      expect(serving.serverFor('v1', head, 'src/a.ts')).toEqual({ ...found, name: 'TypeScript' });
+    }
+  });
+
   it('gives a ready server its adapter’s word on type hints, so Pyright is never asked for them', async () => {
     const { repo } = repoOf(['src/a.ts', 'src/b.py']);
     const server = new StandIn({

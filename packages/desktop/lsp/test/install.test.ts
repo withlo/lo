@@ -103,13 +103,18 @@ function changed(change: { url?: string; sha256?: string }): Pinned {
 
 test('installs a version once, in its own folder, and finds it there after', async () => {
   const { installer, folder, asked } = await setUp({ [URL]: { body: ARCHIVE } });
-  const progress: [number, number][] = [];
+  const progress: [number, number, string][] = [];
   const installed = await installer.install('server', PINNED, {
-    progress: (received, total) => progress.push([received, total]),
+    progress: (received, total, stage) => progress.push([received, total, stage]),
   });
   expect(installed.entry).toBe(join(folder, 'server', '1.0.0', 'files', 'server', 'bin', 'server'));
   expect(readFileSync(installed.entry, 'utf8')).toBe('program');
-  expect(progress.at(-1)).toEqual([ARCHIVE.length, ARCHIVE.length]);
+  // Every byte came, then it was unpacked, which it says once.
+  expect(progress.slice(-2)).toEqual([
+    [ARCHIVE.length, ARCHIVE.length, 'downloading'],
+    [ARCHIVE.length, ARCHIVE.length, 'unpacking'],
+  ]);
+  expect(progress.filter(([, , stage]) => stage !== 'downloading')).toHaveLength(1);
   // Nothing is left of the download but what's installed.
   expect(readdirSync(join(folder, '.partial'))).toEqual([]);
   expect(await installer.install('server', PINNED)).toEqual(installed);
@@ -683,9 +688,17 @@ describe('a Go program, built from its modules with Lo’s Go', () => {
     const { installer, folder, asked } = await setUp(GO_ROUTES, undefined, {
       platform: 'linux-x64',
     });
-    const installed = await installer.install('tool', goTool(), { go: loGo(fake) });
+    const stages: string[] = [];
+    const installed = await installer.install('tool', goTool(), {
+      go: loGo(fake),
+      progress: (_received, _total, stage) => {
+        if (stages.at(-1) !== stage) stages.push(stage);
+      },
+    });
     expect(installed.entry).toBe(join(folder, 'tool', '1.0.0', 'files', 'tool'));
     expect(readFileSync(installed.entry)).toEqual(GO_BUILT);
+    // Its modules come, are laid out as a proxy, then built, each said as it begins.
+    expect(stages).toEqual(['downloading', 'unpacking', 'building']);
     // The build's folder, with its proxy, caches and home, is gone: the version holds only the
     // program and its marker, and nothing is left of the download.
     expect(readdirSync(join(folder, 'tool', '1.0.0')).toSorted()).toEqual([

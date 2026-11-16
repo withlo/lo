@@ -48,11 +48,15 @@ function gigabytes(bytes: number): string {
 export function itemState(state: ServerState): ItemState {
   switch (state.kind) {
     case 'downloading':
+    case 'unpacking':
+    case 'building':
+    case 'waiting':
     case 'starting':
     case 'indexing':
     case 'ready':
     case 'notAnswering':
     case 'missing':
+    case 'refused':
       return state;
     case 'failed': {
       const { why } = state;

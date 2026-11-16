@@ -28,6 +28,7 @@ import {
   downloadFor,
   findCopy,
   Installer,
+  type InstallProgress,
   MANIFEST,
   type Manifest,
   partsOf,
@@ -474,7 +475,7 @@ function pinnedIn(manifest: Manifest, id: string) {
 function install(
   context: Context,
   id: string,
-  progress: (done: number, total: number) => void,
+  progress: InstallProgress,
   signal: AbortSignal,
   go: Toolchain | undefined,
 ) {
@@ -497,7 +498,7 @@ function install(
 async function installToolchain(
   context: Context,
   id: string,
-  progress: (done: number, total: number) => void,
+  progress: InstallProgress,
   signal: AbortSignal,
 ): Promise<Toolchain> {
   const installing = toolchainsInstaller(context);
@@ -508,9 +509,9 @@ async function installToolchain(
   try {
     const installed = await installing.install(id, pinned, {
       signal,
-      progress: (done, total) => {
+      progress: (done, total, stage) => {
         downloaded = true;
-        progress(done, total);
+        progress(done, total, stage);
       },
     });
     return { version: pinned.version, installed, ...toolchainUse(id, pinned.version, installed) };
@@ -537,7 +538,7 @@ function publishToolchains(context: Context): void {
 async function prepareServer(
   context: Context,
   adapter: Adapter,
-  progress: (done: number, total: number) => void,
+  progress: InstallProgress,
   signal: AbortSignal,
 ) {
   const sum = new DownloadSum(progress);

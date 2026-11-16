@@ -322,6 +322,8 @@ describe('gh with no type hints', () => {
     );
     const missing = servers({ kind: 'missing', needs: 'Go 1.24 or later' });
     expect(noHints([asked], trusted, missing)).toBe('TypeScript needs Go 1.24 or later.');
+    const why = 'The checkout’s tsconfig.json names a plugin, so Lo won’t run vtsls on it.';
+    expect(noHints([asked], trusted, servers({ kind: 'refused', why }))).toBe(why);
     // A file whose server says why comes before one that doesn't.
     expect(noHints([asked, { ...asked, fallback: 'TypeScript is starting.' }], trusted, null)).toBe(
       'TypeScript is starting.',

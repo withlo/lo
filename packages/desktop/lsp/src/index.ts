@@ -68,6 +68,8 @@ export {
   type Installed,
   type InstallerOptions,
   type InstallOptions,
+  type InstallProgress,
+  type InstallStage,
 } from './install.ts';
 export { LINE_LENGTH, LOG_LINES } from './log.ts';
 export { readFamily, type Member, type ReadFamily } from './family.ts';
