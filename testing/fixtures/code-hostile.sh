@@ -72,6 +72,19 @@
 #   Phpactor's tools
 #     php/.phpactor.json, naming php/lo-tool.sh as PHPStan, Psalm and PHP CS Fixer
 #     Phpactor, checking a file; marker php/lo-hostile-phpactor
+#   PHP's tools, as Composer installs them
+#     vendor/bin/{phpcs,phpcbf,phpstan,phpmd,mago,pint,php-cs-fixer,phpunit}, at the root, where a
+#     server started on the checkout runs them from
+#     a server checking, formatting or testing a file; markers in vendor/bin, lo-hostile-phpcs,
+#     lo-hostile-phpcbf, lo-hostile-phpstan, lo-hostile-phpmd, lo-hostile-mago, lo-hostile-pint,
+#     lo-hostile-php-cs-fixer and lo-hostile-phpunit
+#   php-lsp's settings
+#     .php-lsp.json, turning on vendor/bin/phpstan and vendor/bin/phpcs, putting php-lsp's cache
+#     in the checkout, reading code as PHP 7.4 and indexing vendor/, which holds a package's class,
+#     vendor/acme/planted/src/Planted.php
+#     php-lsp, taking them from the checkout; markers lo-hostile-phpstan and lo-hostile-phpcs, and
+#     the folder lo-hostile-php-lsp-cache; for the rest, its log naming PHP 7.4, and a count of the
+#     files it indexed that's one more than on the code fixture's checkout
 #   versions that don't exist
 #     .tool-versions, .nvmrc, python/.python-version, ruby/.ruby-version
 #     a version manager choosing a version from the checkout; no marker, a request to the
@@ -131,7 +144,7 @@ IFS= read -r -d '' HOSTILE_BODY <<'EOF' || true
 
 It's the code fixture's pull request, with one more commit. That commit's files try to run code, steer a language server or a version manager, or fetch from the network, when the pull request is checked out and its servers start:
 
-- programs a tool might run: a workspace TypeScript in `node_modules`, a tsserver plugin in `typescript/node_modules`, an npm `postinstall`, `.vscode/settings.json`, a `rustc-wrapper` in `rust/.cargo/config.toml`, the program `rust/rust-analyzer.toml` names, the Gradle and Maven wrappers, `php/.phpactor.json`'s tools, `mise.toml`, and a Terraform provider's plugin committed in `hostile/terraform-provider/.terraform`;
+- programs a tool might run: a workspace TypeScript in `node_modules`, a tsserver plugin in `typescript/node_modules`, an npm `postinstall`, `.vscode/settings.json`, a `rustc-wrapper` in `rust/.cargo/config.toml`, the program `rust/rust-analyzer.toml` names, the Gradle and Maven wrappers, `php/.phpactor.json`'s tools, PHP's tools in `vendor/bin` and the `.php-lsp.json` that turns two of them on, `mise.toml`, and a Terraform provider's plugin committed in `hostile/terraform-provider/.terraform`;
 - versions that don't exist: `.tool-versions`, `.nvmrc`, `python/.python-version`, `ruby/.ruby-version`, `rust-toolchain.toml`, `go.mod`'s `toolchain`, and a `global.json` that pins an MSBuild SDK;
 - git's own settings, in folders of `git/` that look like bare repositories: a `core.fsmonitor` program, hooks, a clean and smudge filter, and a promisor remote that makes git fetch a commit it lacks; and a `.gitmodules` that points a submodule at a host that doesn't exist;
 - projects in `hostile/` whose dependencies or registries are on hosts ending `.lo-hostile.invalid`, which never resolve.
@@ -224,7 +237,7 @@ EOF
 
 # Makes `code/hostile` in the working copy, on `code/feature`.
 build_hostile() {
-  local hook
+  local hook tool
 
   g switch -q -c code/hostile
 
@@ -356,6 +369,39 @@ EOF
 }
 EOF
   marker_sh php/lo-tool.sh lo-hostile-phpactor "a tool Phpactor's configuration names"
+
+  # PHP's tools, where Composer installs them: those a server runs to check, fix, format or test
+  # a file, from the folder it runs in, the checkout's root.
+  for tool in phpcs phpcbf phpstan phpmd mago pint php-cs-fixer phpunit; do
+    marker_sh "vendor/bin/$tool" "lo-hostile-$tool" "a PHP tool Composer installs, $tool"
+  done
+
+  # A package's class, committed where Composer installs it, which php-lsp indexes only with
+  # indexVendor on.
+  put vendor/acme/planted/src/Planted.php <<'EOF'
+<?php
+
+namespace Acme\Planted;
+
+/** Fixture: a class of a package in vendor/, read as text. */
+final class Planted
+{
+}
+EOF
+
+  # php-lsp's settings for the repository, at its root: two of those tools to run on a save, a
+  # folder in the checkout for its cache, an older PHP to read code as, and vendor/ indexed.
+  put .php-lsp.json <<'EOF'
+{
+  "externalTools": {
+    "phpstan": { "enabled": true, "binPath": "vendor/bin/phpstan" },
+    "phpcs": { "enabled": true, "binPath": "vendor/bin/phpcs" }
+  },
+  "cachePath": "lo-hostile-php-lsp-cache",
+  "phpVersion": "7.4",
+  "indexVendor": true
+}
+EOF
 
   # mise: its config sources a script, which mise runs only in a configuration it trusts.
   put mise.toml <<'EOF'

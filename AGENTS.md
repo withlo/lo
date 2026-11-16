@@ -519,6 +519,15 @@ toolchain and git's variables each server needs.
   an answer names. Each says whether it gives inlay hints (`hints`): Pyright gives none. The
   package's README lists each with its source, version and license, and a server's details name its
   license beside its version.
+- PHP's server, php-lsp, is a program of its own, with its adapter in `src/adapters/` too: an
+  archive per platform from its GitHub releases, which nobody signs, so `lsp:pin` checks each
+  against the checksum its release lists beside it. It starts as its program, by its absolute path,
+  and needs no PHP. It's told which PHP to read code as, so it never runs a `php` to ask; it runs
+  neither PHPStan nor PHPCS; and it skips `vendor/` as it indexes, for its memory and time. Its
+  cache is where it keeps one by default, `.cache/php-lsp` in its `HOME`, with its own caps and
+  cleanup: Lo names no `cachePath`, which php-lsp would take as the whole cache, and sets no
+  `XDG_CACHE_HOME`. What Lo tells it wins over a checkout's `.php-lsp.json` key by key, and that
+  file can't turn the tools on or move the cache.
 - Tests start only the fake server, `testing/lsp/fake-server.ts`, at most two at once in a test
   file, each killed with its group when the test ends. No test starts a real server or downloads
   one: download tests serve archives they build from a server on this machine. The live check,
@@ -1230,7 +1239,7 @@ parse them under `@lo/syntax`'s limits.
 The `code` feature runs language servers on the views the reader trusts, and their answers come
 before the syntax index's. A server is whatever an adapter (`main/adapters.ts`) says to start for
 its languages: Lo ships those for TypeScript and JavaScript, and Python, each downloaded with the
-Node it runs on.
+Node it runs on, and PHP, whose server is a program of its own.
 
 - Nothing starts for a view nothing trusts: no download, no checkout, no server. Once a trusted view
   is on screen and a file its pull request adds or changes on the new side, or one asked about, is
