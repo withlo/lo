@@ -6,9 +6,10 @@
 // - `references` within 10 s, `hover` within 1.5 s, `hints` within 3 s and `outline` within 3 s.
 //   A hover in Markdown is read into Lo's tree by the background process (`code.render`), and a
 //   server with no type hints, by what it offers or what its adapter says, isn't asked for them.
-//   A server that finds references only from a declaration, as its adapter says, is asked for the
-//   definition first, then for the references there; with no definition in the repository, the
-//   index answers, saying why.
+//   A server that finds references only from a declaration, as its adapter says, is asked where
+//   the reader is first; when it finds none there it's asked for the definition, then for the
+//   references at it, and with no definition in the repository the index answers, saying why.
+//   Each file is opened on the server as its own language, by its own path.
 //
 // When the server is starting, slow, stopped or failed, the syntax index answers, with why the
 // server didn't (`fallback`), and a late answer is dropped. The old side always answers from the
@@ -78,13 +79,18 @@ export interface Serving {
   readonly kind: 'ready';
   /** Its name, which labels its answers: "TypeScript". */
   readonly name: string;
-  /** The protocol's id for the file's language. */
-  readonly languageId: string;
+  /**
+   * The protocol's id for the language of the file at `path`, which it's opened as, or nothing for
+   * a file the server doesn't read: from a `.tfvars` file, the `.tf` file declaring its variable is
+   * still `terraform`.
+   */
+  languageOf(path: string): string | undefined;
   /** How long `definitions` waits for it, when it isn't the usual. */
   readonly definitionDeadline?: number | undefined;
   /**
    * Whether it finds references only from a declaration, as terraform-ls does, so that asked at a
-   * use it finds none: Lo asks for the definition first, then for the references there.
+   * use it finds none: when it finds none where the reader is, Lo asks it for the definition, then
+   * for the references there.
    */
   readonly referencesFromDefinition?: boolean | undefined;
   /**
@@ -154,7 +160,7 @@ type Asking =
 
 /**
  * Asks `serving` about `file`, once the checkout's file is the head's blob and it's open on the
- * server with its text from git.
+ * server with its text from git, as its own language.
  */
 async function ask<M extends Method>(
   serving: Serving,
@@ -166,7 +172,9 @@ async function ask<M extends Method>(
   // The server reads the file on disk too: one that isn't the head's would answer about other text.
   if (!(await serving.matches(file.path, file.oid))) return { ok: false };
   if (options.signal?.aborted) throw new IpcError('cancelled', 'The question was cancelled.');
-  if (!serving.server.open(file.path, serving.languageId, decoder.decode(file.bytes))) {
+  const languageId = serving.languageOf(file.path);
+  if (languageId === undefined) return { ok: false, fallback: `${serving.name} doesn't read it.` };
+  if (!serving.server.open(file.path, languageId, decoder.decode(file.bytes))) {
     return { ok: false, fallback: `${serving.name} is starting.` };
   }
   const answer = await serving.server.request(method, params, options);
@@ -399,25 +407,30 @@ export async function servedReferences(
     withFallback(await references(answering, sides, at, signal, file), fallback);
   if (name === undefined || !serving) return syntax();
   if (serving.kind !== 'ready') return syntax(waitingFor(serving));
-  let from: { readonly file: AskedFile; readonly position: { line: number; character: number } } = {
-    file,
-    position: positionOf(at),
-  };
-  if (serving.referencesFromDefinition === true) {
+  const referencesAt = (from: Spot) =>
+    ask(
+      serving,
+      from.file,
+      'textDocument/references',
+      { path: from.file.path, position: from.position, context: { includeDeclaration: true } },
+      { deadline: DEADLINES.references, signal },
+    );
+  const here: Spot = { file, position: positionOf(at) };
+  let answer = await referencesAt(here);
+  if (!answer.ok) return syntax(answer.fallback);
+  let places = locationsOf(answer.value, MAX_REFERENCES + 1);
+  if (places === undefined) return syntax(`${serving.name} didn't answer.`);
+  if (places.length === 0 && serving.referencesFromDefinition === true) {
+    // It finds references only from a declaration, and this may be a use: ask at its definition.
     const found = await definitionOf(serving, sides, file, at, signal);
     if ('fallback' in found) return syntax(found.fallback);
-    from = found;
+    if (!sameSpot(found, here)) {
+      answer = await referencesAt(found);
+      if (!answer.ok) return syntax(answer.fallback);
+      places = locationsOf(answer.value, MAX_REFERENCES + 1);
+      if (places === undefined) return syntax(`${serving.name} didn't answer.`);
+    }
   }
-  const answer = await ask(
-    serving,
-    from.file,
-    'textDocument/references',
-    { path: from.file.path, position: from.position, context: { includeDeclaration: true } },
-    { deadline: DEADLINES.references, signal },
-  );
-  if (!answer.ok) return syntax(answer.fallback);
-  const places = locationsOf(answer.value, MAX_REFERENCES + 1);
-  if (places === undefined) return syntax(`${serving.name} didn't answer.`);
   const { inside, outside } = await place(
     serving,
     file,
@@ -433,9 +446,24 @@ export async function servedReferences(
   };
 }
 
+/** A place in a file of the head's tree, read from git, by the protocol's position. */
+interface Spot {
+  readonly file: AskedFile;
+  readonly position: { readonly line: number; readonly character: number };
+}
+
+/** Whether `a` and `b` are the same place. */
+function sameSpot(a: Spot, b: Spot): boolean {
+  return (
+    a.file.path === b.file.path &&
+    a.position.line === b.position.line &&
+    a.position.character === b.position.character
+  );
+}
+
 /**
  * Where `serving` says the name at `at` in `file` is defined: the first place it names, in a file
- * of the head's tree, read from git, or why there's none to ask about.
+ * of the head's tree it reads, read from git, or why there's none to ask about.
  */
 async function definitionOf(
   serving: Serving,
@@ -443,10 +471,7 @@ async function definitionOf(
   file: AskedFile,
   at: At,
   signal: AbortSignal | undefined,
-): Promise<
-  | { readonly file: AskedFile; readonly position: { line: number; character: number } }
-  | { readonly fallback: string | undefined }
-> {
+): Promise<Spot | { readonly fallback: string | undefined }> {
   const answer = await ask(
     serving,
     file,
@@ -460,6 +485,9 @@ async function definitionOf(
   const outside = { fallback: `${serving.name} found its definition outside the repository.` };
   const path = serving.server.pathOf(first.uri);
   if (path === undefined) return outside;
+  if (serving.languageOf(path) === undefined) {
+    return { fallback: `${serving.name} found its definition in a file it doesn't read.` };
+  }
   try {
     const defined = await readAsked(sides, { key: at.key, path });
     return { file: defined, position: { line: first.line, character: first.character } };

@@ -1299,8 +1299,10 @@ variables.
   hover in 1.5 s, inlay hints and the outline in 3 s. An empty definition falls back to the file's
   import and the index, and an empty hover to the index; empty references or an empty outline are
   the server's answer. A server whose adapter says it finds references only from a declaration
-  (`referencesFromDefinition`, terraform-ls) is asked for the definition first, then for the
-  references there, and with no definition in the repository the index answers, saying why. A place
+  (`referencesFromDefinition`, terraform-ls) and finds none where the reader is, as at a use, is
+  asked for the definition, then for the references there, and with no definition in the repository
+  the index answers, saying why. Each file is opened on a server as its own language, by its path
+  (`languageOf`), so a `.tf` file reached from a `.tfvars` file is still `terraform`. A place
   outside the checkout shows as "Outside this repository" and is never read; the references panel
   counts those it doesn't list. The old side always answers from the index, and a server answers
   only about the head it runs on, for a file whose checkout matches git's.

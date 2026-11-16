@@ -19,9 +19,9 @@
  * Terraform Registry's official and partner tiers as it was built, rather than the versions a
  * checkout pins, and nothing of a provider it doesn't carry. Definitions, references and the
  * outline, which come from the configuration itself, are whole, though it answers references only
- * at a declaration, such as a local's or a variable's, and none at a use of one: the app's adapter
- * asks it for the definition first, then for the references there. It answers no inlay hints
- * (`hints: false`).
+ * at a declaration, such as a local's or a variable's, and none at a use of one: when it finds none
+ * where the reader is, the app asks it for the definition, then for the references there. It
+ * answers no inlay hints (`hints: false`).
  *
  * It asks registry.terraform.io for the inputs and outputs of each module a configuration calls
  * from a registry, and no setting turns that off. Its proxy, as every server's, leads nowhere

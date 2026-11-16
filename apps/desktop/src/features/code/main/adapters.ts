@@ -80,8 +80,8 @@ export interface Adapter {
   readonly definitionDeadline?: number | undefined;
   /**
    * Whether its server finds references only from a declaration, as terraform-ls does, so that
-   * asked at a use it finds none: `gr` asks it for the definition first, then for the references
-   * there.
+   * asked at a use it finds none: when it finds none where the reader is, `gr` asks it for the
+   * definition, then for the references there.
    */
   readonly referencesFromDefinition?: boolean | undefined;
   /**
