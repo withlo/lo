@@ -933,7 +933,7 @@ async function watchStill(page: Page): Promise<void> {
 }
 
 test.describe('while the local copy takes GitHub’s place', () => {
-  test.use({ cassette: 'app_e2e_late', lateRemote: true });
+  test.use({ cassette: 'app_e2e_late', lateRemote: true, traced: false });
 
   for (const order of ['tree', 'review'] as const) {
     for (const depth of [0.25, 0.5, 0.75]) {
@@ -972,6 +972,7 @@ test.describe('while the local copy takes GitHub’s place', () => {
           .toBe(true);
         await page.waitForTimeout(500);
         await watchStill(page);
+        const report = await watchFrames(app, page);
 
         // The banner goes, the local copy comes and takes GitHub's place, and its moves and
         // highlighting follow.
@@ -990,6 +991,7 @@ test.describe('while the local copy takes GitHub’s place', () => {
           window.loStill = true;
           return window.loMoved ?? [];
         });
+        console.log(`${test.info().title}\n${await report()}`);
 
         expect(moved).toEqual([]);
       });
@@ -1110,7 +1112,7 @@ test.describe('when the local copy comes after GitHub’s diff', () => {
       return timed;
     });
     const watched = await report();
-    console.log(watched);
+    console.log(`${test.info().title}\n${watched}`);
     writeFileSync(test.info().outputPath('frames.txt'), watched);
 
     // The same view, and the row that was at the top of the screen where it was on the page,
