@@ -79,6 +79,7 @@ import {
   checkoutRefusal,
   listedToolchain,
   listToolchains,
+  removalFailure,
   removeToolchain,
   toolchainFailure,
   type ToolchainHost,
@@ -697,6 +698,9 @@ export default defineFeature(contract, {
       }
       try {
         await removeToolchain(toolchainHost, id);
+      } catch (error) {
+        log(`couldn't remove the toolchain ${id}: ${String(error)}`);
+        throw new IpcError('failed', removalFailure(error));
       } finally {
         publishToolchains(context);
       }

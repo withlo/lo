@@ -86,6 +86,23 @@ describe('ToolchainList', () => {
     expect(onRemove).toHaveBeenCalledWith('temurin');
   });
 
+  it('has the button of one being removed wait, taking no press, and keep focus', () => {
+    const onRemove = vi.fn<(id: string) => void>();
+    const removing = ENTRIES.map((entry) => ({ ...entry, removing: entry.id === 'go' }));
+    const host = render(<ToolchainList entries={removing} onRemove={onRemove} />);
+    const button = remove(host, 'go')!;
+    expect(button.getAttribute('aria-disabled')).toBe('true');
+    expect(button.getAttribute('aria-label')).toBe('Removing Go');
+    expect(button.textContent).toBe('Removing');
+    expect(button.querySelector('.spinner')).not.toBeNull();
+    focus(button);
+    click(button);
+    expect(onRemove).not.toHaveBeenCalled();
+    expect(document.activeElement).toBe(button);
+    // The others take a press as ever.
+    expect(remove(host, 'temurin')?.hasAttribute('aria-disabled')).toBe(false);
+  });
+
   it('moves focus to the next downloaded row’s button once a toolchain is removed', () => {
     const host = render(<Held entries={ENTRIES} />);
     focus(remove(host, 'go')!);

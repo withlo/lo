@@ -112,6 +112,17 @@ export async function listToolchains(host: ToolchainHost): Promise<Listed[]> {
   return listed;
 }
 
+/** Why removing a toolchain's files failed with `error`, as a sentence: what the notice says. */
+export function removalFailure(error: unknown): string {
+  const code = error instanceof Error && 'code' in error ? error.code : undefined;
+  const path = error instanceof Error && 'path' in error ? error.path : undefined;
+  const where = typeof path === 'string' ? path : 'its folder';
+  if (code === 'EACCES' || code === 'EPERM') return `Lo isn’t allowed to delete ${where}.`;
+  if (code === 'EBUSY') return `A program is using ${where}.`;
+  const message = error instanceof Error ? error.message : String(error);
+  return /[.!?]$/.test(message) ? message : `${message}.`;
+}
+
 /**
  * Removes toolchain `id`, as Settings' "Remove" asks: the servers that use it stop first, each
  * saying so until "Restart" downloads it again, then an install of it under way stops, and its

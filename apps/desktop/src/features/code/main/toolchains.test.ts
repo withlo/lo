@@ -8,6 +8,7 @@ import type { Adapter } from './adapters.ts';
 import {
   listedToolchain,
   listToolchains,
+  removalFailure,
   removedMessage,
   removeToolchain,
   toolchainFailure,
@@ -122,4 +123,15 @@ it('names the toolchain and why, when one can’t download or was removed', () =
     toolchainFailure('dotnet', new DownloadError('space', 'Lo needs 877 MB free.')).message,
   ).toBe('The .NET SDK couldn’t download. Lo needs 877 MB free.');
   expect(removedMessage('go')).toBe('Go was removed. Restart downloads it again.');
+});
+
+it('says why a toolchain’s files weren’t deleted', () => {
+  const denied = Object.assign(new Error('EACCES: permission denied'), {
+    code: 'EACCES',
+    path: '/lo/toolchains/go',
+  });
+  expect(removalFailure(denied)).toBe('Lo isn’t allowed to delete /lo/toolchains/go.');
+  const busy = Object.assign(new Error('EBUSY: resource busy'), { code: 'EBUSY' });
+  expect(removalFailure(busy)).toBe('A program is using its folder.');
+  expect(removalFailure(new Error('The disk is full'))).toBe('The disk is full.');
 });

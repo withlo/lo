@@ -2,6 +2,7 @@ import { useLayoutEffect, useRef } from 'react';
 
 import { Button } from './Button.tsx';
 import { Setting } from './Settings.tsx';
+import { Spinner } from './Spinner.tsx';
 
 /** A toolchain language servers use, as Settings lists it. */
 export interface ToolchainEntry {
@@ -17,6 +18,8 @@ export interface ToolchainEntry {
   download: string;
   /** The language servers that use it, by name. */
   uses: readonly string[];
+  /** Whether it's being removed: its button waits, and takes no press, until it's done. */
+  removing?: boolean | undefined;
 }
 
 export interface ToolchainRowProps {
@@ -59,10 +62,21 @@ export function ToolchainRow({ entry, onRemove }: ToolchainRowProps) {
         <Button
           variant="ghost"
           size="sm"
-          aria-label={`Remove ${entry.name}`}
-          onClick={() => onRemove?.(entry.id)}
+          // Not `disabled`, which would drop focus from it.
+          aria-disabled={entry.removing === true ? true : undefined}
+          aria-label={`${entry.removing === true ? 'Removing' : 'Remove'} ${entry.name}`}
+          onClick={() => {
+            if (entry.removing !== true) onRemove?.(entry.id);
+          }}
         >
-          Remove
+          {entry.removing === true ? (
+            <span className="inline-flex items-center gap-6">
+              <Spinner size="xs" />
+              Removing
+            </span>
+          ) : (
+            'Remove'
+          )}
         </Button>
       )}
     </Setting>
@@ -93,7 +107,12 @@ export function ToolchainList({ entries, onRemove }: ToolchainListProps) {
     const pending = removal.current;
     const root = list.current;
     if (pending === null || root === null) return;
-    if (entries.some((entry) => entry.id === pending.id && entry.installed !== undefined)) return;
+    const entry = entries.find((each) => each.id === pending.id);
+    if (entry?.installed !== undefined) {
+      // It wasn't removed: its button stays, and focus with it.
+      if (entry.removing !== true) removal.current = null;
+      return;
+    }
     removal.current = null;
     const active = root.ownerDocument.activeElement;
     // Focus that went somewhere else on its own is left where it went.
