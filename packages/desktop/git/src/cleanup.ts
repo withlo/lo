@@ -685,7 +685,6 @@ export async function keepUnder(host: CleanupHost, cap: number): Promise<string[
   // used in the same second goes in its clone's order, a home left without one first, then by
   // path.
   const rank = new Map(byUse.map(({ clone }, index) => [keyOf(clone), index]));
-  const second = (used: number | undefined) => Math.floor((used ?? 0) / 1000);
   const spares = [...checkouts, ...homes].toSorted(
     (a, b) =>
       second(a.used) - second(b.used) ||
@@ -766,6 +765,11 @@ export async function keepUnder(host: CleanupHost, cap: number): Promise<string[
 function inUse(host: CleanupHost, clone: CloneName): boolean {
   const lock = host.cloneLock(clone.owner, clone.name);
   return lock.users > 0 || lock.servers > 0 || lock.holder !== undefined;
+}
+
+/** The whole second of `used`, a time in milliseconds, or 0 without one. */
+function second(used: number | undefined): number {
+  return Math.floor((used ?? 0) / 1000);
 }
 
 /** `clone`'s `owner/name`. */
