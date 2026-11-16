@@ -801,7 +801,7 @@ test('past its cap a repository that comes into use as the run reaches it stays,
   const lock = cache.cloneLock('owner', 'old');
   const tryRemove = lock.tryRemove.bind(lock);
   const removing = vi.spyOn(lock, 'tryRemove');
-  let close = () => {};
+  let close: (() => void) | undefined;
   const openAsRemoved = () =>
     removing.mockImplementationOnce((...args) => {
       close = lock.use();
@@ -817,11 +817,11 @@ test('past its cap a repository that comes into use as the run reaches it stays,
 
   // Nothing fits: `old` comes into use again, so of the clones `mid` goes in its place, and `new`,
   // used last, stays.
-  close();
+  close?.();
   openAsRemoved();
   expect(await cache.setCap(1)).toEqual(['owner/mid']);
   expect(there(...clones, ...checkouts)).toEqual([true, false, true, true, false, false]);
-  close();
+  close?.();
 });
 
 test('keeping the cache under its cap never runs beside removing what’s unused or clearing it', async () => {
