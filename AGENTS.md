@@ -1263,16 +1263,25 @@ The `merge` feature says in the pull request's header whether it can merge (`tab
 - Main follows each view on screen (`main/reads.ts`): its account's poller reads the merge facts
   (`poller.mergeFacts`), and `@lo/review`'s `mergeSnapshot` maps them with the head on screen, the
   method last used in the repository (`merge_methods`) and, only where the rules want the head up to
-  date, whether the local copy's head holds the base's tip, fetched first. Each view's status goes
-  out on `merge.status` as it changes, and `merge.state` asks for it. A view acting as nobody, or
-  showing a run of layers, reads nothing, and `m` says why.
+  date, whether the local copy's head holds the base's tip, fetched first (`main/holds.ts`), asked
+  again at a later read, backing off, while the copy can't tell. Each view's status goes out on
+  `merge.status` as it changes, and `merge.state` asks for it. A view acting as nobody, or showing a
+  run of layers, reads nothing, and `m` says why. A view whose account's poller couldn't be had
+  starts again once it's shown.
+- A status says when it may be out of date (`stale`): a read after it failed, or the poller can't
+  read. The header then says how old it is, as it does for one unread for ten minutes, and a ready
+  pull request GitHub may not have told all of reads "Ready to merge · Lo may not see everything",
+  never in the ready colour.
 - The panel has a row for each reason, worded by `window/words.ts` as plain functions tested alone:
   `j` and `k` move, `o` opens the row's page, `Tab` steps through the methods the repository allows,
   `e` goes to the squash commit's title, `]t` to the next unresolved conversation, and `Esc` closes
-  it. Only an `https://` page a view's status links opens, through main (`merge.open`).
+  it. Only an `https://` page a view's status links opens, through main (`merge.open`). The status
+  and each reason are rows to the right-click menus (`merge/status`, `merge/reason/<key>`), listed
+  for the merge feature's commands only: Merge panel, and Open.
 - A squash shows the commit GitHub would write (`merge.panel`), read as the panel opens and again
-  when the head or the title moves. Text the reader types stands in front of it, kept per view in
-  the window until the tab closes.
+  when the head or the title moves, drawn without bidi controls, since the pull request's author
+  wrote it. Text the reader types stands in front of it, kept per view in the window until the tab
+  closes.
 
 ### Images from GitHub
 

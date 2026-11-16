@@ -125,9 +125,11 @@ export function move(step: 1 | -1): void {
  * in, or why there's none.
  */
 function pageOf(target: Target): { id: string; page: string } | string {
-  const open = opened();
-  if (!open) return 'The merge panel isn’t open.';
-  const key = reasonOf(target) ?? panels.get(open.id).focused;
+  const right = reasonOf(target);
+  // A reason right-clicked is one of the status on screen's, whether the panel stayed open or not.
+  const open = right === undefined ? opened() : onScreen();
+  if (!open || typeof open === 'string') return open ?? 'The merge panel isn’t open.';
+  const key = right ?? panels.get(open.id).focused;
   const row = rowsOf(open.state).find((each) => each.key === key);
   const page = row && rowPage(row);
   return page === undefined ? 'This reason has no page to open.' : { id: open.id, page };

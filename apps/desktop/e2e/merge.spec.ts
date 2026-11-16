@@ -106,6 +106,8 @@ test('`m` opens the panel on its reasons, `j` and `k` move, `o` opens a check’
   await reasons(page).first().click({ button: 'right' });
   await page.getByRole('menuitem', { name: /^Open/ }).click();
   await expect.poll(() => browsed().length).toBe(2);
+  // Choosing from a menu over the panel leaves it open.
+  await expect(panel(page)).toBeVisible();
 });
 
 test('`Tab` steps through the methods, and a squash shows the commit GitHub would write', async ({

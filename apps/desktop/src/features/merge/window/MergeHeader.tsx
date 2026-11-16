@@ -24,7 +24,7 @@ import {
 } from 'react';
 import { useStore } from 'zustand';
 
-import { useMenuTarget } from '../../../window/commands/menus.tsx';
+import { currentMenu, useMenuTarget } from '../../../window/commands/menus.tsx';
 import { registry, useKeys } from '../../../window/commands/registry.ts';
 import { usePull, useTabState, withoutBidi, type PullTab } from '../../tab/window/shared.ts';
 import type { MergeState } from '../contract.ts';
@@ -352,7 +352,8 @@ function PanelUnder({
     <MergePanel
       open={panel.open}
       onOpenChange={(open) => {
-        if (!open) closePanel(tab.id);
+        // A right-click menu over the panel is part of it: choosing from one closes nothing.
+        if (!open && currentMenu() === undefined) closePanel(tab.id);
       }}
       anchor={anchor}
       container={document.getElementById('root')}
