@@ -32,11 +32,17 @@
  * - Nothing is written in the checkout. `cargo metadata` writes a `Cargo.lock` as it resolves a
  *   workspace that has none: beside its `Cargo.toml`, or wherever on the disk a config's
  *   `resolver.lockfile-path` names. rust-analyzer points `cargo` at a copy in its `TMPDIR` (by
- *   `CARGO_RESOLVER_LOCKFILE_PATH`) only for a workspace that has a lock file, so for the rest the
- *   toolchain's `CARGO_RESOLVER_LOCKFILE_PATH` names a file in the server's home, which beats the
- *   config. Every workspace without a lock file shares it, each resolve starting from what the
- *   last one wrote, as it would from a lock file of its own. With build scripts, proc-macros and
- *   checks off, nothing is built, so no `target/` is made either.
+ *   `CARGO_RESOLVER_LOCKFILE_PATH`) only for a workspace that has a lock file, so for the rest Lo
+ *   sets `CARGO_RESOLVER_LOCKFILE_PATH` to a file in the server's home, which beats the config
+ *   ({@link placeRustAnalyzer}). A lock file steers the next resolve that reads it: `cargo` keeps
+ *   the versions it names, and fails when a vendored crate's checksum differs from it, loading the
+ *   workspace without its dependencies. So the file is the checkout's, in a folder named by a hash
+ *   of its path, and each start removes every such folder first, so no resolve starts from another
+ *   pull request's lock file or an earlier start's. For the same reason rust-analyzer starts again
+ *   on another checkout rather than moving there (`stays`). Workspaces without a lock file in one
+ *   checkout still share that file: each resolve starts from what the last one wrote, so one
+ *   workspace's versions can steer another's. With build scripts, proc-macros and checks off,
+ *   nothing is built, so no `target/` is made either.
  * - Build scripts (`build.rs`) and proc-macro crates are code from the checkout, so they're off:
  *   `cargo.buildScripts.enable` and `procMacro.enable` are both `false` (rust-analyzer runs build
  *   scripts when either is on). The cost is that code a `build.rs` would generate, and the
@@ -64,12 +70,15 @@
  * opens a place outside the checkout an answer names.
  */
 
+import { createHash } from 'node:crypto';
+import { mkdir, rm } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 
 import type { NativeServer } from './native.ts';
 import type { Launch } from './node.ts';
 import type { Installed } from '../install.ts';
 import { MANIFEST, type Manifest } from '../manifest.ts';
+import type { Placed, Where } from '../place.ts';
 import type { InstalledToolchain } from '../toolchains.ts';
 
 /** rust-analyzer: a program Lo downloads, run on Lo's Rust toolchain. */
@@ -138,6 +147,27 @@ export function launchRustAnalyzer(
     // The section rust-analyzer asks for, and the same object in `initialize`.
     settings: { 'rust-analyzer': settings },
     initializationOptions: settings,
+    place: placeRustAnalyzer,
+    // Its lock file is its checkout's, so it starts again on another.
+    stays: true,
     version: `${RUST_ANALYZER.name} ${entry.version} · ${RUST_ANALYZER.license}`,
   };
+}
+
+/** The folder in rust-analyzer's home that holds the lock file `cargo` writes for its checkout. */
+export const LOCK_FILES = 'lockfile';
+
+/**
+ * What rust-analyzer is given where it runs: `CARGO_RESOLVER_LOCKFILE_PATH`, where `cargo` writes
+ * the lock file of a workspace in the checkout at `root` that has none. It's `Cargo.lock` in a
+ * folder of its own in `home`, named by a hash of the checkout's path, made empty: every lock file
+ * an earlier start wrote, for this checkout or another, is removed first.
+ */
+export async function placeRustAnalyzer({ root, home }: Where): Promise<Placed> {
+  const folder = join(home, LOCK_FILES);
+  // A link the server left there is removed, never followed.
+  await rm(folder, { recursive: true, force: true });
+  const checkout = join(folder, createHash('sha256').update(root).digest('hex').slice(0, 16));
+  await mkdir(checkout, { recursive: true, mode: 0o700 });
+  return { variables: { CARGO_RESOLVER_LOCKFILE_PATH: join(checkout, 'Cargo.lock') } };
 }

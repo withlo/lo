@@ -584,9 +584,10 @@ toolchain and git's variables each server needs.
   `CARGO_ENCODED_RUSTDOCFLAGS`, `cargo.sysroot` set), reads no `rust-toolchain.toml` (no rustup),
   fetches nothing (`CARGO_NET_OFFLINE=true`, a private `CARGO_HOME`), writes nothing in the checkout
   (the `Cargo.lock` `cargo metadata` writes for a workspace that has none goes to
-  `CARGO_RESOLVER_LOCKFILE_PATH`, a file in its home), and runs no build script or proc-macro
-  (`cargo.buildScripts.enable` and `procMacro.enable` off), so a crate's dependencies it can't
-  resolve offline load without them.
+  `CARGO_RESOLVER_LOCKFILE_PATH`, a file in its home for its checkout alone, removed as it starts,
+  so it starts again on another checkout rather than moving there), and runs no build script or
+  proc-macro (`cargo.buildScripts.enable` and `procMacro.enable` off), so a crate's dependencies it
+  can't resolve offline load without them.
 - PHP's server, php-lsp, is a program of its own, with its adapter in `src/adapters/` too: an
   archive per platform from its GitHub releases, which nobody signs, so `lsp:pin` checks each
   against the checksum its release lists beside it. It starts as its program, by its absolute path,

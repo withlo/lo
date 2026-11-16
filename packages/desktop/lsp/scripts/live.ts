@@ -437,10 +437,11 @@ function onRustAnalyzer(languages: Readonly<Record<string, string>>): Check {
             path: rustUse.path,
             variables: { ...rustUse.variables, RUSTC: standIn },
             allowed: rustUse.allowed,
-            homeFolders: launch.homeFolders,
             git: serverGitEnvironment(),
             settings: launch.settings,
             initializationOptions: launch.initializationOptions,
+            place: launch.place,
+            stays: launch.stays,
           },
           places,
         });

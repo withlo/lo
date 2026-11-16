@@ -72,7 +72,7 @@ export interface ServerSpec {
   readonly variables?: Readonly<Record<string, string>> | undefined;
   /** The names among `variables` that load code or configure a program, set on purpose. */
   readonly allowed?: readonly string[] | undefined;
-  /** Variables naming folders and files in its home, by their paths there, such as Go's caches. */
+  /** Variables naming folders in its home, by their paths there, such as Go's caches. */
   readonly homeFolders?: Readonly<Record<string, string>> | undefined;
   /** The variables that set up the git it runs, each `GIT_*`, from `@lo/git`. */
   readonly git: Readonly<Record<string, string>>;

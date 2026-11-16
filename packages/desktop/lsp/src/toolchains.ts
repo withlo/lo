@@ -17,9 +17,8 @@
  *   a checkout's `build.rustc-wrapper`, empty `CARGO_ENCODED_RUSTFLAGS` and
  *   `CARGO_ENCODED_RUSTDOCFLAGS`, which undo every config's `rustflags` and `rustdocflags`, and
  *   `CARGO_NET_OFFLINE=true`. With no rustup, nothing reads
- *   `rust-toolchain.toml`. `CARGO_RESOLVER_LOCKFILE_PATH` is a file in the server's home, so the
- *   `Cargo.lock` that `cargo` writes as it resolves a workspace without one goes there, never into
- *   the checkout nor wherever a config's `resolver.lockfile-path` names.
+ *   `rust-toolchain.toml`. Where `cargo` writes a lock file depends on the checkout, so
+ *   rust-analyzer's adapter sets `CARGO_RESOLVER_LOCKFILE_PATH` as it starts.
  * - The JDK: `JAVA_HOME`.
  * - .NET: `DOTNET_ROOT`, MSBuild's SDK resolver held to Lo's SDK (`DOTNET_MSBUILD_SDK_RESOLVER_*`,
  *   and `DOTNET_HOST_PATH`), programs held to the runtime they were built for and its patches
@@ -60,7 +59,7 @@
  *   reach `rustc`, `rustdoc` or the network (`build.rustc*` by
  *   `RUSTC`/`RUSTC_WRAPPER`/`RUSTC_WORKSPACE_WRAPPER`, `rustflags` and `rustdocflags` by
  *   `CARGO_ENCODED_RUSTFLAGS` and `CARGO_ENCODED_RUSTDOCFLAGS`, the rest by `CARGO_NET_OFFLINE`),
- *   and `resolver.lockfile-path`, which says where `cargo` writes a lock file, by
+ *   and `resolver.lockfile-path`, which says where `cargo` writes a lock file, by rust-analyzer's
  *   `CARGO_RESOLVER_LOCKFILE_PATH`, so those don't refuse the checkout. Anything named
  *   `.cargo/config.toml` or `.cargo/config` in a folder above the checkout is refused outright,
  *   since `cargo` reads it too and Lo can't vet what's outside the checkout; a `rust-analyzer.toml`
@@ -101,7 +100,7 @@ export interface ToolchainUse {
   readonly variables: Readonly<Record<string, string>>;
   /** The names among `variables` that choose a program, which the toolchain sets on purpose. */
   readonly allowed: readonly string[];
-  /** Variables naming the toolchain's caches and files, by their paths in the server's home. */
+  /** Variables naming the toolchain's caches, by their paths in the server's home. */
   readonly homeFolders?: Readonly<Record<string, string>> | undefined;
 }
 
@@ -155,10 +154,6 @@ export function toolchainUse(
           CARGO_NET_OFFLINE: 'true',
         },
         allowed: ['RUSTC', 'RUSTC_WRAPPER', 'RUSTC_WORKSPACE_WRAPPER'],
-        // Where cargo writes the lock file of a workspace that has none, as `cargo metadata` does
-        // when it resolves one. It beats a config's `resolver.lockfile-path`. rust-analyzer gives
-        // its own, a copy in its `TMPDIR`, to one that has a lock file.
-        homeFolders: { CARGO_RESOLVER_LOCKFILE_PATH: 'lockfile/Cargo.lock' },
       };
     case 'temurin':
       return { path: [bin], variables: { JAVA_HOME: root }, allowed: [] };
