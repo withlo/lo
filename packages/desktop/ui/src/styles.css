@@ -306,6 +306,47 @@
   gap: var(--lo-sp-6) var(--lo-sp-12);
 }
 
+/* A merge panel's verdict dot, a little larger than the header's: 10 px. */
+@utility verdict-dot {
+  width: calc(var(--lo-sp-12) - var(--lo-sp-2));
+  height: calc(var(--lo-sp-12) - var(--lo-sp-2));
+}
+
+/* A panel's verdict, "Can't merge yet": reading size and a strong weight, on a 20 px line. */
+@utility verdict {
+  font: var(--lo-read-body);
+  font-weight: 700;
+  line-height: var(--lo-sp-20);
+}
+
+/* One reason in a checklist: an 18 px column for its icon, then what it is with its detail under
+   it, then what's at its end. Its hairline is above it, 10 px from its text, which sits 10 px from
+   its icon. It's inset 8 px beyond its list and pulled back out by as much, so the ring of the row
+   the keyboard is on clears the text, and the hairline runs as wide as the ring. */
+@utility check-row {
+  grid-template-columns: calc(var(--lo-sp-16) + var(--lo-sp-2)) minmax(0, 1fr) auto;
+  gap: var(--lo-sp-2) calc(var(--lo-sp-12) - var(--lo-sp-2));
+  margin-inline: calc(var(--lo-sp-8) * -1);
+  padding: calc(var(--lo-sp-12) - var(--lo-sp-2)) var(--lo-sp-8);
+  border-top: 1px solid var(--lo-border-subtle);
+  &:first-child {
+    border-top: 0;
+  }
+}
+
+/* A row of the merge queue, and its head: its place, the pull request, its state, how long it's been
+   queued, when it should merge, and what to do about it. The state takes a list's column of
+   people, the times a list's column of times, and the actions 120 px. */
+@utility queue-columns {
+  display: grid;
+  grid-template-columns:
+    calc(var(--lo-sp-40) + var(--lo-sp-4)) minmax(0, 1fr) var(--lo-list-who-w)
+    var(--lo-list-when-w) var(--lo-list-when-w)
+    calc(var(--lo-sp-64) + var(--lo-sp-48) + var(--lo-sp-8));
+  align-items: center;
+  gap: var(--lo-sp-12);
+}
+
 /* A peek: its answers beside its code, with a head and a foot across both. A single answer has no
    column of its own, so its row sits above the code. The peek is the container its parts adapt to:
    under 36rem the answers stack above the code, as the one answer's do, since a column of 250px

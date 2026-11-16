@@ -7,6 +7,8 @@
 // Names, paths, signatures, symbols and code show every one. Prose, which real scripts and emoji
 // write with a few of them, keeps those and shows the rest.
 
+import type { ReactNode } from 'react';
+
 /** Every format character, and the tag characters (which are mostly format characters too). */
 const FORMAT = /[\p{Cf}\u{E0000}-\u{E007F}]/gu;
 
@@ -106,4 +108,25 @@ export function showProse(text: string): string {
   return splitFormat(text, true)
     .map((piece) => (typeof piece === 'string' ? piece : `\u2039${piece.code}\u203A`))
     .join('');
+}
+
+/**
+ * `text` without the characters that turn the direction of the text after them around until
+ * they're closed (embeddings, overrides and isolates), which a pull request's author could use to
+ * make a title, a login or a branch's name read as something else. The marks right-to-left text
+ * places numbers and punctuation with (LRM, RLM, ALM) stay: they change no more than their
+ * neighbours. For what a row or a status says of a pull request, which is drawn as a line of text
+ * and has no room for a mark of each.
+ */
+export function withoutBidi(text: string): string {
+  return text.replaceAll(/[\u202A-\u202E\u2066-\u2069]/g, '');
+}
+
+/**
+ * `node` with the characters that turn text around taken out of it, when it's text. What a caller
+ * builds from elements, such as a name in `<strong>`, is the caller's to clean: a node's children
+ * can't be cleaned from outside.
+ */
+export function withoutBidiNode(node: ReactNode): ReactNode {
+  return typeof node === 'string' ? withoutBidi(node) : node;
 }
