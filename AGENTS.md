@@ -442,7 +442,9 @@ toolchain and git's variables each server needs.
   never as a script (a launcher such as `bin/jdtls`), and never as a program in its checkout; what
   starts is the real path that was checked. It leads a process group of its own, and its family is
   that group with whatever descends from it, found by parent, so a stop or a kill reaches whatever
-  it started, a process in a session of its own included.
+  it started, a process in a session of its own included. A service the system starts for it, which
+  its spec names (`services`), is in its family too when its `HOME` is exactly the server's home,
+  with what it starts.
 - Its environment is built from nothing: a `HOME` of its own with `TMPDIR` inside it, a `PATH` of
   the toolchain's folders and the system's, git's variables from `@lo/git`, a proxy that leads
   nowhere (`NO_NETWORK`, port 0 on this machine) in each spelling programs read, and its adapter's
@@ -513,7 +515,9 @@ toolchain and git's variables each server needs.
   it runs. So a server that uses Go doesn't start on, or move to, a checkout with a `go.work` in a
   folder above it, or one in it that names a folder outside it, by `use` or a `replace` with a path,
   or that Lo can't read for certain (`checkoutProblem`). It looks through the checkout's own
-  folders, never through a link, which could lead anywhere on the disk.
+  folders, never through a link, which could lead anywhere on the disk. Every refusal that looks
+  through a checkout matches names as a Mac's disk does (`foldName`: NFKC, then a full case fold),
+  and reads at most `WALK_LIMIT` entries, refusing a checkout with more.
 - Some files steer rust-analyzer or `cargo` past those variables, so a server that uses Rust doesn't
   start on, or move to, a checkout with one (`checkoutProblem`). A `rust-analyzer.toml`'s workspace
   settings win over Lo's client settings and can run a program
@@ -621,8 +625,12 @@ toolchain and git's variables each server needs.
   `.sourcekit-lsp` anywhere in it is refused all the same (`sourceKitCheckoutProblem`, asked through
   the adapter's `checkout`), against a later SourceKit-LSP that looked for them beside a file. Its
   answers are each file's own, and it finds references only in a build's index, so `gr` answers from
-  the syntax index (`noReferences`). Its `SourceKitService` runs as an XPC service outside the
-  server's family, so the cap doesn't count it; it ends with the server.
+  the syntax index (`noReferences`). Its `SourceKitService` is an XPC service `launchd` starts,
+  outside the server's group, so the adapter names it (`services`) and each read of the family takes
+  in the process of that name whose `HOME` is exactly the server's home: it counts against the cap
+  and is stopped with the server. It also reads the machine's
+  `/Library/Application Support/org.swift.sourcekit-lsp/config.json`, which no option turns off;
+  Lo's options win over it key by key.
 - Tests start only the fake server, `testing/lsp/fake-server.ts`, at most two at once in a test
   file, each killed with its group when the test ends. No test starts a real server or downloads
   one: download tests serve archives they build from a server on this machine. The live check,

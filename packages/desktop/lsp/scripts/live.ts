@@ -31,9 +31,9 @@
 // it finds the copy in the developer folder `xcode-select -p` names, as Lo does, and starts it
 // rootless on both checkouts. On the hostile one it says why Lo refuses the checkout, then starts
 // it all the same, opening the Swift plants, to show none of them runs. The system starts
-// `SourceKitService` and `swift-plugin-server` for it, outside its family, so the check watches
-// those, the ones that appear while it runs, for memory and network too. Check the machine has
-// memory to spare before running it.
+// `SourceKitService` for it, outside its group, which Lo takes into its family by its home, and
+// that starts `swift-plugin-server`; the check watches those, the ones that appear while it runs,
+// for memory and network too. Check the machine has memory to spare before running it.
 
 import { execFile } from 'node:child_process';
 import {
@@ -431,7 +431,7 @@ function onRustAnalyzer(languages: Readonly<Record<string, string>>): Check {
   };
 }
 
-/** The system's processes a server starts through it, outside its family, by their programs' names. */
+/** The system's processes a server starts through it, outside its group, by their programs' names. */
 const OUTSIDE = ['SourceKitService', 'swift-plugin-server'];
 
 /** Each running process whose program is named one of `names`, with its resident memory. */
@@ -543,6 +543,7 @@ async function onSourceKit(
           args: launch.args,
           root,
           rootless: launch.rootless,
+          services: launch.services,
           home: join(folder, `home-${script}`),
           path: [],
           git: serverGitEnvironment(),
@@ -558,7 +559,7 @@ async function onSourceKit(
         `What the system started for it (${system.seen.join(', ') || 'nothing'}) held at most ` +
           `${Math.round(system.peak / 1024 ** 2)} MB at once.`,
       );
-      // SourceKitService ends as its client does, within a moment.
+      // Lo stops SourceKitService with the server, and what it started ends with it.
       await new Promise((resolve) => setTimeout(resolve, 2000));
       const left = await outside.running();
       console.log(

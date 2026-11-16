@@ -33,7 +33,7 @@ import { Documents } from './documents.ts';
 import { serverEnvironment, temporaryFolder } from './environment.ts';
 import { FLOOD_BYTES, FLOOD_LINES, FLOOD_MESSAGES, FLOOD_WINDOW, FrameMeter } from './framing.ts';
 import { Log } from './log.ts';
-import { type Member, type ReadFamily, readFamily, stillRunning } from './family.ts';
+import { type Member, type ReadFamily, readFamily, stillRunning, withServices } from './family.ts';
 import { type Place, writeInHome } from './place.ts';
 import {
   checkArguments,
@@ -91,6 +91,13 @@ export interface ServerSpec {
    * project Lo works out from its checkout as it starts.
    */
   readonly stays?: boolean | undefined;
+  /**
+   * The programs the system starts for it outside its family, by their file names, such as the
+   * `SourceKitService` that `launchd` starts for SourceKit-LSP: a process of one of these names
+   * whose `HOME` is this server's home is counted in its memory and stopped with it, as its family
+   * is. Nothing else is touched: no other process has this server's home as its `HOME`.
+   */
+  readonly services?: readonly string[] | undefined;
   /** The most resident memory its process group may hold, in bytes. */
   readonly memoryCap?: number | undefined;
   /** Lo's version, which it hears in `clientInfo`. */
@@ -240,6 +247,8 @@ export class Server {
   readonly #queue: Queue;
   /** The checkout's folder, as the system resolves it and as given. */
   #roots: string[] = [];
+  /** Its home, as the system resolves it, once it's made. */
+  #home: string | undefined;
   /** What it's told, from its spec or where it runs. */
   #settings: unknown;
   #initializationOptions: unknown;
@@ -286,7 +295,9 @@ export class Server {
     this.#settings = spec.settings;
     this.#initializationOptions = spec.initializationOptions;
     this.#limits = limits;
-    this.#readFamily = read;
+    const services = spec.services ?? [];
+    this.#readFamily =
+      services.length === 0 ? read : withServices(read, services, () => this.#home);
     this.ready = new Promise((resolve) => {
       this.#resolveReady = resolve;
     });
@@ -541,16 +552,18 @@ export class Server {
   /**
    * The processes descended from the server's group that have left it, such as a daemon in a
    * session of its own, and each of `known` that's still the same process, with what descends from
-   * it, as read within `within`. Once the group is empty, only `known` leads anywhere. Beside the
-   * read, each of `known` is read again by its ID alone, so a read that fails or takes longer still
-   * gives what was found before that's still the same process, as far as that's known in time.
+   * it, and its services, as read within `within`. Once the group is empty, only `known` and its
+   * services lead anywhere. Beside the read, each of `known` is read again by its ID alone, so a
+   * read that fails or takes longer still gives what was found before that's still the same
+   * process, as far as that's known in time.
    */
   async #others(
     group: number,
     known: readonly Member[] = [],
     within = this.#limits.family,
   ): Promise<readonly Member[]> {
-    if (!signalFamily(group, [], 0) && known.length === 0) return [];
+    const services = (this.#spec.services ?? []).length > 0;
+    if (!signalFamily(group, [], 0) && known.length === 0 && !services) return [];
     const read = this.#readFamily(group, known).then(
       (family) => family.filter((member) => member.group !== group),
       () => undefined,
@@ -589,6 +602,7 @@ export class Server {
       serverEnvironment({ ...given, home: await resolvedAhead(spec.home), path });
       await mkdir(spec.home, { recursive: true, mode: 0o700 });
       const home = await realpath(spec.home);
+      this.#home = home;
       serverEnvironment({ ...given, home, path });
       await mkdir(temporaryFolder(home), { recursive: true, mode: 0o700 });
       // What depends on where it runs, held to the same rules.

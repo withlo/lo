@@ -57,15 +57,19 @@ own (`setsid`) is still found.
   that finds nothing new has found the whole family.
 - A process read earlier is signalled only while it's the same process: the same ID, started at the
   same time. An ID that has since been taken by another process is left alone.
+- A service the system starts for a server is `launchd`'s child, not the server's, as
+  `SourceKitService` is for SourceKit-LSP's `sourcekitd`. A server's spec names the services it
+  starts (`services`), and each read of the family takes in each process by one of those names whose
+  `HOME` is exactly the server's home, read from its environment (`ps -E` on macOS,
+  `/proc/<pid>/environ` on Linux), and what descends from it: every server's home is its own, so no
+  other process matches. So its memory counts against the cap, and a stop or a kill signals it with
+  the rest.
 
 ### What can't be found
 
 - A process whose parent exits before Lo reads it, such as a daemon that forks twice, is taken in by
   the system's first process, or a subreaper, and nothing ties it to the server any longer. It
   outlives the stop.
-- An XPC service the system starts for a server, as it starts `SourceKitService` for SourceKit-LSP's
-  `sourcekitd`, is `launchd`'s child, not the server's. Its memory isn't counted against the cap,
-  and Lo doesn't signal it; it ends as the server does.
 - Once a server has exited on its own, by crashing, what it left behind is found only if a stop read
   it first.
 - What has left the group isn't frozen for the read before `SIGTERM`, so a process one of those
@@ -225,10 +229,15 @@ adapter says why each setting is as it is:
   SDK's: `gd`, `K` and `gh` answer within the file and into the SDK, a use of what another file
   declares isn't resolved, and `gr`, which needs a build's index, comes from the syntax index. Its
   generated files and its compiler's module cache are in its home, by its options, and Foundation's
-  home folder, where it reads its own settings, is too, by `CFFIXED_USER_HOME`. Lo still refuses a
-  checkout with a `buildServer.json`, a `.bsp` or a `.sourcekit-lsp` anywhere in it, so a later
-  SourceKit-LSP that looked for them beside a file finds none. Expanding a macro of the SDK's runs
-  Apple's `swift-plugin-server`; a checkout's macros are never built.
+  home folder, where it reads its own settings, is too, by `CFFIXED_USER_HOME`. It also reads the
+  machine's settings, in `/Library/Application Support/org.swift.sourcekit-lsp/config.json`, which
+  only an administrator can write, and no option turns that off; Lo's options win over it, key by
+  key. A request to `sourcekitd` gives up after 10 s, not 120 s, and a crashed `SourceKitService` is
+  waited for 30 s, not 300 s. `SourceKitService` is counted against the cap and stopped with the
+  server, by its name and home (`services`). Lo still refuses a checkout with a `buildServer.json`,
+  a `.bsp` or a `.sourcekit-lsp` anywhere in it, so a later SourceKit-LSP that looked for them
+  beside a file finds none. Expanding a macro of the SDK's runs Apple's `swift-plugin-server`; a
+  checkout's macros are never built.
 
 None runs in a sandbox: each reads what you can, so an absolute import, Pyright's `extraPaths`, a
 Rust sysroot's sources, the folders of stubs a `.php-lsp.json` names, the paths a `composer.json`'s
@@ -289,6 +298,12 @@ whatever the variables say. A server that uses Go runs only on a checkout with n
 folder above it, which Go would take as its workspace, and none in it that names a folder outside it
 by `use` or a `replace` with a path, or that Lo can't read for certain. It looks through the
 checkout's own folders, never a link to one.
+
+Each refusal that looks through a checkout matches a file's name at least as loosely as a Mac's
+disk, which opens `.ſourcekit-lsp`, with a long s, as `.sourcekit-lsp`, and a name with a Kelvin
+sign as one with a `k`: by `foldName`, NFKC and then a full case fold. And each reads at most
+100,000 files and folders (`WALK_LIMIT`, as many as Lo unpacks from an archive); a checkout with
+more is refused, since what it didn't read could be anything.
 
 ### gopls, built by Lo
 

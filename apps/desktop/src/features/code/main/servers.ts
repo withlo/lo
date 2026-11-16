@@ -608,6 +608,7 @@ export class ServerPool {
         place: launch.place,
         stays: launch.stays,
         rootless: launch.rootless,
+        services: launch.services,
       });
     } catch (error) {
       this.#refuse(entry, {

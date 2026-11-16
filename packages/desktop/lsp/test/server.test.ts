@@ -371,6 +371,54 @@ test('a server past its memory cap is stopped, with everything it started', asyn
   await eventually(() => pids.every((pid) => !running(pid)));
 });
 
+test('a service the system starts for it, by its name and home, is counted in its memory and stopped with it', async () => {
+  const { server, home } = startFake(
+    {},
+    { spec: { services: ['LoService'] }, tuning: { memoryEvery: 100 } },
+  );
+  expect(await server.ready).toBe(true);
+  const real = realpathSync(home);
+  // Programs named as a service is and as another, each Node by another name.
+  const folder = tempFolder();
+  const [service, other] = ['LoService', 'LoOther'].map((name) => {
+    symlinkSync(process.execPath, join(folder, name));
+    return join(folder, name);
+  });
+  // Each holds 128 MB, started as the system starts a service: no child of the server's.
+  const hold =
+    'const held = Buffer.alloc(128 * 1024 * 1024, 1); setInterval(() => held[0]++, 1000);';
+  const started: number[] = [];
+  const start = (program: string, as: string) => {
+    const child = spawn(program, ['-e', hold], {
+      env: { HOME: as, PATH: '/usr/bin:/bin' },
+      detached: true,
+      stdio: 'ignore',
+    });
+    child.unref();
+    started.push(child.pid ?? 0);
+    return child.pid ?? 0;
+  };
+  onTestFinished(() => {
+    for (const pid of started) {
+      try {
+        process.kill(pid, 'SIGKILL');
+      } catch {
+        // It's gone.
+      }
+    }
+  });
+  const ours = start(service ?? '', real);
+  // Neither the service's name with a home that only begins with the server's, nor another
+  // program with the server's home, is the server's.
+  const elsewhere = start(service ?? '', `${real}-elsewhere`);
+  const named = start(other ?? '', real);
+  // The fake server alone holds about 80 MB; with its service, past 200.
+  await eventually(() => (server.memory ?? 0) > 180 * 1024 * 1024);
+  await server.stop();
+  await eventually(() => !running(ours));
+  expect([running(elsewhere), running(named)]).toEqual([true, true]);
+});
+
 test('its environment is built from nothing', async () => {
   // Lo's own environment, with a token, the SSH agent and proxies in it.
   for (const [name, value] of Object.entries({

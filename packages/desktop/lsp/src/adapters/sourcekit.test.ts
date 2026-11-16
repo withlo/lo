@@ -161,6 +161,8 @@ describe('starting SourceKit-LSP', () => {
   test('starts its program, told of no workspace, and says where it’s from', () => {
     const launch = launchSourceKit(found);
     expect(launch).toMatchObject({ program: found.program, args: [], rootless: true });
+    // `sourcekitd`'s XPC service, counted and stopped with it.
+    expect(launch.services).toEqual(['SourceKitService']);
     // Nothing of a toolchain's: its own PATH is the system's.
     expect(launch.path).toBeUndefined();
     expect(launch.variables).toBeUndefined();
@@ -186,6 +188,8 @@ describe('starting SourceKit-LSP', () => {
           cxxCompilerFlags: [],
         },
         clangdOptions: [],
+        sourcekitdRequestTimeout: 10,
+        semanticServiceRestartTimeout: 30,
       },
     });
     expect(sourceKitOptions(where.home, found.sdk)).toEqual(placed.initializationOptions);
@@ -236,6 +240,21 @@ describe('the checkouts it refuses', () => {
         'The checkout’s Sources/App/.SourceKit-LSP holds SourceKit-LSP’s settings, so Lo won’t run SourceKit-LSP on it.',
       ],
       [
+        '.sourcekit-lsp with a long s, which a Mac’s disk opens as .sourcekit-lsp',
+        (root) => file(join(root, '.\u017Fourcekit-lsp', 'config.json')),
+        'The checkout’s .\u017Fourcekit-lsp holds SourceKit-LSP’s settings, so Lo won’t run SourceKit-LSP on it.',
+      ],
+      [
+        '.sourcekit-lsp with a Kelvin sign',
+        (root) => file(join(root, 'Sources', '.source\u212Ait-lsp', 'config.json')),
+        'The checkout’s Sources/.source\u212Ait-lsp holds SourceKit-LSP’s settings, so Lo won’t run SourceKit-LSP on it.',
+      ],
+      [
+        'buildServer.json, decomposed and with a long s',
+        (root) => file(join(root, 'buildServer.j\u017Fon'.normalize('NFD'))),
+        `The checkout’s ${'buildServer.j\u017Fon'.normalize('NFD')} names a build server to run, so Lo won’t run SourceKit-LSP on it.`,
+      ],
+      [
         'a link by that name',
         (root) => symlinkSync(tempFolder(), join(root, '.sourcekit-lsp')),
         'The checkout’s .sourcekit-lsp holds SourceKit-LSP’s settings, so Lo won’t run SourceKit-LSP on it.',
@@ -248,6 +267,15 @@ describe('the checkouts it refuses', () => {
       refused.push([what, await sourceKitCheckoutProblem(root)]);
     }
     expect(refused).toEqual(cases.map(([what, , why]) => [what, why]));
+  });
+
+  test('refuses a checkout with more entries than it looks through', async () => {
+    const root = checkout();
+    // Package.swift, Sources, Sources/App, its main.swift and .swift-version, and the commands.
+    expect(await sourceKitCheckoutProblem(root, 6)).toBeUndefined();
+    expect(await sourceKitCheckoutProblem(root, 5)).toBe(
+      'The checkout has more than 5 files and folders, more than Lo looks through, so Lo won’t run SourceKit-LSP on it.',
+    );
   });
 
   test('looks in its own folders, never through a link to one', async () => {

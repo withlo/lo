@@ -42,6 +42,11 @@ export interface Launch {
   readonly stays?: boolean | undefined;
   /** Whether it's told of no workspace, only of the files Lo opens, as SourceKit-LSP is. */
   readonly rootless?: boolean | undefined;
+  /**
+   * The programs the system starts for it, outside its family, by their file names, which Lo
+   * counts and stops with it when their `HOME` is its home: SourceKit-LSP's `SourceKitService`.
+   */
+  readonly services?: readonly string[] | undefined;
   /** What it is, for its details: its name, version and license, "vtsls 0.3.0 · MIT". */
   readonly version?: string | undefined;
 }

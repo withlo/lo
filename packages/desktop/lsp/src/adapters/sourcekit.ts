@@ -33,11 +33,18 @@
  * `Package.swift` and a `compile_commands.json` are common, and what keeps them out is that there's
  * no workspace, so those aren't refused.
  *
- * Everything it writes is in its home. Its settings files are read from the home folder Apple's
+ * Everything it writes is in its home: its generated interfaces where `generatedFilesPath` says and
+ * its compiler's module cache where `-module-cache-path` does, since neither follows `HOME` or
+ * `TMPDIR`. It logs to the system's log, as Apple's programs do. It needs no network.
+ *
+ * It reads its own settings, besides what Lo tells it, from `.sourcekit-lsp/config.json` and
+ * `Library/Application Support/org.swift.sourcekit-lsp/config.json` in the home folder Apple's
  * Foundation gives it, which on macOS is the user's own unless `CFFIXED_USER_HOME` names another,
- * so that names its home; its generated interfaces go where `generatedFilesPath` says and its
- * compiler's module cache where `-module-cache-path` does, both in its home, since neither follows
- * `HOME` or `TMPDIR`. It logs to the system's log, as Apple's programs do. It needs no network.
+ * so that names its home, where there are none; and from the machine's
+ * `/Library/Application Support/org.swift.sourcekit-lsp/config.json` (and the same in the network's
+ * and the system's `Library`), which only root can write. No option of SourceKit-LSP's turns that
+ * off, so the machine's settings, if there are any, are the administrator's; what Lo tells it wins
+ * over them key by key ({@link sourceKitOptions}). Nothing of the checkout reaches them.
  *
  * What still reaches it, as Lo can't hold it otherwise:
  *
@@ -45,9 +52,10 @@
  *   with the SDK, so `gd`, `K` and `gh` answer within the file and into the SDK, and a use of what
  *   another file declares isn't resolved. `gr` needs an index, which only a build makes, so Lo
  *   answers it from the syntax index. A module only iOS has, such as UIKit, isn't in the macOS SDK.
- * - `sourcekitd` runs as `SourceKitService`, an XPC service the system starts for it. It isn't in
- *   the server's process group, so its memory isn't held to the server's cap and Lo can't signal it
- *   itself; it ends as the server does.
+ * - `sourcekitd` runs as `SourceKitService`, an XPC service `launchd` starts for it, outside its
+ *   family. It takes the server's environment, so its `HOME` is the server's home, and each server
+ *   has its own: Lo finds it by its name and that home (`services`), counts its memory against the
+ *   server's cap, and stops it with the server if it outlives the stop.
  * - Expanding a macro from the SDK, such as `@Observable`, runs Apple's `swift-plugin-server` with
  *   the toolchain's own macro plugins. A checkout's macros aren't built, so none of them runs.
  * - Like every server Lo runs, it has no sandbox: it reads what the user can, and Lo never opens a
@@ -61,7 +69,7 @@ import { promisify } from 'node:util';
 
 import type { Launch } from './node.ts';
 import type { Placed, Where } from '../place.ts';
-import { entriesOf } from '../toolchains.ts';
+import { entriesOf, foldName, tooManyEntries, WALK_LIMIT } from '../toolchains.ts';
 
 /** SourceKit-LSP: what it's called, and its license. */
 export const SOURCEKIT_LSP = { name: 'SourceKit-LSP', license: 'Apache-2.0' } as const;
@@ -153,11 +161,19 @@ export async function findSourceKit(
   return undefined;
 }
 
+/** How long a request of SourceKit-LSP's to `sourcekitd` may take, in seconds: Lo's longest wait. */
+const REQUEST_TIMEOUT = 10;
+
+/** How long a request may take before SourceKit-LSP takes `sourcekitd` as hung and restarts it. */
+const RESTART_TIMEOUT = 30;
+
 /**
  * What SourceKit-LSP is told, as its `initializationOptions`, with `home` its home and `sdk` the
  * macOS SDK: no background indexing, which would build the package; its generated files, and its
  * compiler's module cache, in its home; a file's fallback build settings with Lo's flags and the
- * SDK, so it never asks `xcrun` for one; and nothing more for clangd.
+ * SDK, so it never asks `xcrun` for one; nothing more for clangd; and `sourcekitd`'s requests held
+ * to Lo's longest wait, 10 s, not 2 minutes, and `sourcekitd` restarted once one hangs for 30 s,
+ * not 5 minutes, since Lo has given up on any request by then.
  */
 export function sourceKitOptions(home: string, sdk: string): Record<string, unknown> {
   return {
@@ -170,6 +186,8 @@ export function sourceKitOptions(home: string, sdk: string): Record<string, unkn
       cxxCompilerFlags: [],
     },
     clangdOptions: [],
+    sourcekitdRequestTimeout: REQUEST_TIMEOUT,
+    semanticServiceRestartTimeout: RESTART_TIMEOUT,
   };
 }
 
@@ -192,23 +210,32 @@ export function launchSourceKit(found: SourceKit): Launch {
     // No subcommand: it speaks the protocol over stdio.
     args: [],
     rootless: true,
+    // `sourcekitd`'s XPC service, which `launchd` starts for it with its environment.
+    services: ['SourceKitService'],
     place: (where) => placeSourceKit(where, found.sdk),
     version: `${SOURCEKIT_LSP.name} from ${found.from} · ${SOURCEKIT_LSP.license}`,
   };
 }
 
-/** The names, in any case, of what Lo refuses a checkout for, when it's anywhere in it. */
+/** The names of what Lo refuses a checkout for, when it's anywhere in it, as {@link foldName} gives them. */
 const BUILD_FILES = new Set(['buildserver.json', '.bsp', '.sourcekit-lsp']);
 
 /**
  * Why SourceKit-LSP mustn't run on the checkout at `root`, or `undefined` when it may: a
  * `buildServer.json` or a `.bsp`, which name a build server, a program it would run, or a
- * `.sourcekit-lsp`, its settings, anywhere in the checkout, in any case, a link or a file in place
- * of a folder included. It looks in the checkout's own folders, never through a link to one.
+ * `.sourcekit-lsp`, its settings, anywhere in the checkout, by {@link foldName}, so in any case or
+ * Unicode form, a link or a file in place of a folder included. It looks in the checkout's own
+ * folders, never through a link to one, and through `limit` of their entries at most: a checkout
+ * with more is refused, since what's past them would go unchecked.
  */
-export async function sourceKitCheckoutProblem(root: string): Promise<string | undefined> {
-  for (const { path } of await entriesOf(root)) {
-    const name = basename(path).toLowerCase();
+export async function sourceKitCheckoutProblem(
+  root: string,
+  limit = WALK_LIMIT,
+): Promise<string | undefined> {
+  const entries = await entriesOf(root, limit);
+  if (entries === undefined) return tooManyEntries(limit, 'SourceKit-LSP');
+  for (const { path } of entries) {
+    const name = foldName(basename(path));
     if (!BUILD_FILES.has(name)) continue;
     const named = `The checkout’s ${path.slice(root.length + 1)}`;
     const what =

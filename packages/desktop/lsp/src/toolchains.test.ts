@@ -183,6 +183,11 @@ describe('a checkout a server that uses .NET won’t run on', () => {
       '{ "sdk": { "paths": ["../evil"] } }',
     ],
     [
+      'one named with a long s, which a Mac’s disk opens as global.json',
+      'app/global.j\u017Fon',
+      '{ "sdk": { "paths": ["../evil"] } }',
+    ],
+    [
       'one that spells its key with an escape',
       'global.json',
       '{ "sdk": { "pa\\u0074hs": ["evil"] } }',
@@ -247,6 +252,13 @@ describe('a checkout rust-analyzer won’t run on', () => {
     });
     expect(await checkoutProblem('rust', root)).toBe(
       'The checkout’s crate/rust-analyzer.toml is a rust-analyzer.toml, whose settings win over Lo’s and could run a program, so Lo won’t run rust-analyzer on it.',
+    );
+  });
+
+  test('a rust-analyzer.toml named with a long s, which a Mac’s disk opens as one', async () => {
+    const { root } = checkout({ 'ru\u017Ft-analyzer.toml': '[cargo]\nextraEnv = { X = "1" }\n' });
+    expect(await checkoutProblem('rust', root)).toBe(
+      'The checkout’s ru\u017Ft-analyzer.toml is a rust-analyzer.toml, whose settings win over Lo’s and could run a program, so Lo won’t run rust-analyzer on it.',
     );
   });
 
@@ -377,6 +389,12 @@ describe('a checkout a server that uses Go won’t run on', () => {
     ['a use of a folder above it', 'go.work', 'go 1.24\nuse ../../elsewhere\n', '../../elsewhere'],
     ['one in a block', 'go.work', 'go 1.24\n\nuse (\n\t./app\n\t"../outside"\n)\n', '../outside'],
     ['an absolute one', 'go.work', 'use /etc\n', '/etc'],
+    [
+      'one named with a Kelvin sign, which a Mac’s disk opens',
+      'go.wor\u212A',
+      'use /etc\n',
+      '/etc',
+    ],
     ['a replace with a path', 'go.work', 'replace example.com/x v1.0.0 => ../x\n', '../x'],
     [
       'a replace in a block',
@@ -453,5 +471,26 @@ describe('a checkout a server that uses Go won’t run on', () => {
     writeFileSync(join(above, 'go.work'), 'use .\n');
     for (const id of ['dotnet', 'rust', 'temurin'])
       expect(await checkoutProblem(id, root)).toBeUndefined();
+  });
+});
+
+describe('a checkout with more files and folders than Lo looks through', () => {
+  test.each([
+    ['dotnet', 'a server that uses the .NET SDK'],
+    ['go', 'a server that uses Go'],
+    ['rust', 'rust-analyzer'],
+  ])('is refused by %s, since what Lo didn’t look at could be anything', async (id, server) => {
+    // `app`, `app/main.txt` and `notes.txt`.
+    const { root } = checkout({ 'app/main.txt': '', 'notes.txt': '' });
+    expect(await checkoutProblem(id, root, 3)).toBeUndefined();
+    expect(await checkoutProblem(id, root, 2)).toBe(
+      `The checkout has more than 2 files and folders, more than Lo looks through, so Lo won’t run ${server} on it.`,
+    );
+  });
+
+  test('and the other toolchains don’t look', async () => {
+    const { root } = checkout({ 'app/main.txt': '', 'notes.txt': '' });
+    for (const id of ['temurin', 'node', 'python'])
+      expect(await checkoutProblem(id, root, 1)).toBeUndefined();
   });
 });

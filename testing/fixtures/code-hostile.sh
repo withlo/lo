@@ -167,11 +167,16 @@
 #     lo-swift-macro.sh (`-load-plugin-executable`), and for lo.c, clang's `-Xclang -load` and
 #     `-fplugin` of a library that isn't there
 #     the Swift compiler expanding the macro; marker hostile/swift-commands/lo-hostile-swift-macro
-#   a Swift package's build tool plugin
-#     hostile/swift-plugin/Package.swift and Plugins/plugin.swift, a plugin that runs
-#     lo-swift-plugin.sh before each build, and hostile/swift-plugin/.sourcekit-lsp/config.json,
-#     which builds the package as SourceKit-LSP indexes, outside SwiftPM's sandbox
-#     SwiftPM, building the package; marker hostile/swift-plugin/lo-hostile-swift-plugin
+#   Swift packages' manifests, and a build tool plugin
+#     hostile/swift/Package.swift and hostile/swift-plugin/Package.swift, manifests that write
+#     their markers as SwiftPM evaluates them; hostile/swift-plugin/Plugins/plugin.swift, a plugin
+#     that writes its own and runs lo-swift-plugin.sh before each build; and each package's
+#     .sourcekit-lsp/config.json, which works outside SwiftPM's sandbox, and for
+#     hostile/swift-plugin builds the package as SourceKit-LSP indexes
+#     SwiftPM, reading a package and building it; markers hostile/swift/lo-hostile-swift-manifest,
+#     hostile/swift-plugin/lo-hostile-swift-plugin-manifest,
+#     hostile/swift-plugin/Plugins/lo-hostile-swift-build-plugin and
+#     hostile/swift-plugin/lo-hostile-swift-plugin
 #   git, in folders of git/ that look like bare repositories, which git opens when a tool runs it
 #   inside one, unless `safe.bareRepository` is `explicit`
 #     git/fsmonitor, `core.fsmonitor` naming lo-fsmonitor.sh; run by `git status`; marker
@@ -217,7 +222,7 @@ IFS= read -r -d '' HOSTILE_BODY <<'EOF' || true
 
 It's the code fixture's pull request, with one more commit. That commit's files try to run code, steer a language server or a version manager, or fetch from the network, when the pull request is checked out and its servers start:
 
-- programs a tool might run: a workspace TypeScript in `node_modules`, a tsserver plugin in `typescript/node_modules`, an npm `postinstall`, `.vscode/settings.json`, a `rust/.cargo/config.toml` naming programs for `build.rustc`, its wrappers, a target's runner and linker, and a registry credential provider, and flags for rustc, a `.cargo/config.toml` with an `[env]` table, an `[unstable]` table and an `include`, the workspace settings `rust/rust-analyzer.toml` names, the Gradle and Maven wrappers, Java's Gradle settings script, a JDK in `java/jdk` that `java/gradle.properties` names, an Eclipse builder in `java/.project`, `php/.phpactor.json`'s tools, PHP's tools in `vendor/bin` and the `.php-lsp.json` that turns two of them on, build servers in `.bsp/` and `buildServer.json`, SourceKit-LSP's settings in `.sourcekit-lsp/config.json`, compile commands that load a Swift macro's plugin and clang plugins, a Swift package's build tool plugin, `mise.toml`, a Terraform provider's plugin committed in `hostile/terraform-provider/.terraform`, a `//go:generate` line and a cgo file in `go/`, and a `terraform` and a `gopackagesdriver` in `hostile/bin`, which `.envrc` puts on `PATH`;
+- programs a tool might run: a workspace TypeScript in `node_modules`, a tsserver plugin in `typescript/node_modules`, an npm `postinstall`, `.vscode/settings.json`, a `rust/.cargo/config.toml` naming programs for `build.rustc`, its wrappers, a target's runner and linker, and a registry credential provider, and flags for rustc, a `.cargo/config.toml` with an `[env]` table, an `[unstable]` table and an `include`, the workspace settings `rust/rust-analyzer.toml` names, the Gradle and Maven wrappers, Java's Gradle settings script, a JDK in `java/jdk` that `java/gradle.properties` names, an Eclipse builder in `java/.project`, `php/.phpactor.json`'s tools, PHP's tools in `vendor/bin` and the `.php-lsp.json` that turns two of them on, build servers in `.bsp/` and `buildServer.json`, SourceKit-LSP's settings in `.sourcekit-lsp/config.json`, compile commands that load a Swift macro's plugin and clang plugins, Swift packages' manifests and a build tool plugin, `mise.toml`, a Terraform provider's plugin committed in `hostile/terraform-provider/.terraform`, a `//go:generate` line and a cgo file in `go/`, and a `terraform` and a `gopackagesdriver` in `hostile/bin`, which `.envrc` puts on `PATH`;
 - settings that write in the checkout or turn on what runs: Maven's `.mvn/maven.config` and `.mvn/jvm.config`, Eclipse's `.classpath`, `.factorypath` and `.settings` in `java/`, and a `.hotspotrc`;
 - versions that don't exist: `.tool-versions`, `.nvmrc`, `.sdkmanrc`, `.java-version`, `python/.python-version`, `ruby/.ruby-version`, `rust-toolchain.toml`, the `toolchain` lines of `go.mod` and `go.work`, and a `global.json` that pins an MSBuild SDK;
 - git's own settings, in folders of `git/` that look like bare repositories: a `core.fsmonitor` program, hooks, a clean and smudge filter, and a promisor remote that makes git fetch a commit it lacks; and a `.gitmodules` that points a submodule at a host that doesn't exist;
@@ -1067,9 +1072,15 @@ EOF
 
   plant_terraform_provider
 
+  # A package whose manifest writes a marker as SwiftPM evaluates it, and settings for the package
+  # that evaluate it outside SwiftPM's sandbox, which would keep it from writing beside itself.
   put hostile/swift/Package.swift <<'EOF'
 // swift-tools-version: 5.9
+import Foundation
 import PackageDescription
+
+// Fixture: a Swift package's manifest, which SwiftPM runs to read. Writes the empty file lo-hostile-swift-manifest beside itself, and nothing else.
+_ = FileManager.default.createFile(atPath: URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("lo-hostile-swift-manifest").path, contents: nil)
 
 let package = Package(
     name: "Hostile",
@@ -1087,6 +1098,11 @@ let package = Package(
 EOF
   put hostile/swift/Sources/main.swift <<'EOF'
 print("hostile")
+EOF
+  put hostile/swift/.sourcekit-lsp/config.json <<'EOF'
+{
+  "swiftPM": { "disableSandbox": true }
+}
 EOF
 
   # --- Swift's build files ---------------------------------------------------------------------
@@ -1167,10 +1183,14 @@ EOF
 
   # A package with a build tool plugin, which SwiftPM builds and runs as it builds the package, and
   # which runs lo-swift-plugin.sh first; and settings for the package that build it outside
-  # SwiftPM's sandbox, which would keep the plugin from writing beside itself.
+  # SwiftPM's sandbox, which would keep the manifest and the plugin from writing beside themselves.
   put hostile/swift-plugin/Package.swift <<'EOF'
 // swift-tools-version: 5.9
+import Foundation
 import PackageDescription
+
+// Fixture: a Swift package's manifest, which SwiftPM runs to read. Writes the empty file lo-hostile-swift-plugin-manifest beside itself, and nothing else.
+_ = FileManager.default.createFile(atPath: URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("lo-hostile-swift-plugin-manifest").path, contents: nil)
 
 let package = Package(
     name: "LoHostilePlugin",
@@ -1181,13 +1201,16 @@ let package = Package(
 )
 EOF
   put hostile/swift-plugin/Plugins/plugin.swift <<'EOF'
+import Foundation
 import PackagePlugin
 
 /// A build tool plugin, which runs lo-swift-plugin.sh before each build of the package.
 @main
 struct LoHostilePlugin: BuildToolPlugin {
     func createBuildCommands(context: PluginContext, target: Target) throws -> [Command] {
-        [
+        // Fixture: a Swift package's build tool plugin. Writes the empty file lo-hostile-swift-build-plugin beside itself, and nothing else.
+        _ = FileManager.default.createFile(atPath: URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("lo-hostile-swift-build-plugin").path, contents: nil)
+        return [
             .prebuildCommand(
                 displayName: "lo-hostile",
                 executable: context.package.directory.appending("lo-swift-plugin.sh"),

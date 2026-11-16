@@ -466,6 +466,14 @@ test('SourceKit-LSP refuses the checkout for its build servers and settings, and
     '-load-plugin-executable',
   );
   expect(planted('hostile/swift-plugin/Package.swift')).toContain('.buildTool()');
+  // Each manifest, and the plugin, writes a marker beside itself if SwiftPM runs it.
+  expect(planted('hostile/swift/Package.swift')).toContain('lo-hostile-swift-manifest');
+  expect(planted('hostile/swift-plugin/Package.swift')).toContain(
+    'lo-hostile-swift-plugin-manifest',
+  );
+  expect(planted('hostile/swift-plugin/Plugins/plugin.swift')).toContain(
+    'lo-hostile-swift-build-plugin',
+  );
   expect(await sourceKitCheckoutProblem(checkout)).toBe(
     'The checkout’s .bsp names a build server to run, so Lo won’t run SourceKit-LSP on it.',
   );

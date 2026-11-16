@@ -1,6 +1,14 @@
 import { expect, test } from 'vitest';
 
-import { familyOf, memberOfStat, membersOfPs, residentOfStatus } from './family.ts';
+import {
+  familyOf,
+  memberOfStat,
+  membersOfPs,
+  namedInPs,
+  residentOfStatus,
+  servicesInPs,
+  withServices,
+} from './family.ts';
 
 const START = 'Sun Nov 15 12:52:33 2026';
 
@@ -68,4 +76,76 @@ test('a process’s stat gives its parent, group and start, whatever its name', 
   });
   expect(memberOfStat(`4243 (gone) ${fields('Z')}`)).toBeUndefined();
   expect(memberOfStat('4244 (short) S 1 4200 4200')).toBeUndefined();
+});
+
+test('a service is a process of its name whose HOME is the server’s home, exactly', () => {
+  const home = '/lo/code/homes/a/x/swift';
+  const service = '/Xcode/XPCServices/SourceKitService.xpc/Contents/MacOS/SourceKitService';
+  // Programs by their file names: a path's last part, never a name that only ends with it.
+  expect(
+    namedInPs(
+      [
+        ` 501 ${service}`,
+        ' 502 /usr/bin/NotSourceKitService',
+        ' 503 SourceKitService',
+        ' 504 /bin/zsh',
+        '',
+      ].join('\n'),
+      ['SourceKitService'],
+    ),
+  ).toEqual([501, 503]);
+  const line = (pid: number, command: string) => ` ${pid}  1 ${pid}  2048 ${START} ${command}`;
+  const listing = [
+    line(501, `${service} LANG=C.UTF-8 HOME=${home} TMPDIR=${home}/tmp`),
+    // Its home last of all.
+    line(503, `${service} LANG=C.UTF-8 HOME=${home}`),
+    // Another server's, whose home only begins with this one's, or is inside it.
+    line(505, `${service} HOME=${home}-2 PATH=/usr/bin`),
+    line(506, `${service} HOME=${home}/inner PATH=/usr/bin`),
+    // Its home only in another variable's value, or in its arguments with nothing after it.
+    line(507, `${service} OTHER=HOME=${home} PATH=/usr/bin`),
+    line(508, `${service} --as-HOME=${home}x PATH=/usr/bin`),
+    '',
+  ].join('\n');
+  const found = servicesInPs(listing, home);
+  expect(pids(found)).toEqual([501, 503]);
+  expect(found[0]).toEqual({
+    pid: 501,
+    parent: 1,
+    group: 501,
+    resident: 2048 * 1024,
+    started: START,
+  });
+  // A home with what a pattern would take as its own is matched as itself.
+  expect(pids(servicesInPs(line(509, `${service} HOME=/a+b/(c)`), '/a+b/(c)'))).toEqual([509]);
+  expect(pids(servicesInPs(line(510, `${service} HOME=/aab/(c)`), '/a+b/(c)'))).toEqual([]);
+});
+
+test('a server’s services are read with its family, and what they start, once it has a home', async () => {
+  // The server, 200, and its child; the system's service for it, 400, which started 401 in a group
+  // of its own; and 500, another process.
+  const table = membersOfPs(
+    ps([
+      [200, 1, 200, 10],
+      [201, 200, 200, 10],
+      [400, 1, 400, 20],
+      [401, 400, 401, 30],
+      [500, 1, 500, 40],
+    ]),
+  );
+  const asked: string[] = [];
+  let home: string | undefined;
+  const read = withServices(
+    (group, also) => Promise.resolve(familyOf(table, group, also)),
+    ['SourceKitService'],
+    () => home,
+    (names, where) => {
+      asked.push(`${names.join(',')} ${where}`);
+      return Promise.resolve(table.filter((member) => member.pid === 400));
+    },
+  );
+  expect(pids(await read(200))).toEqual([200, 201]);
+  home = '/lo/home';
+  expect(pids(await read(200))).toEqual([200, 201, 400, 401]);
+  expect(asked).toEqual(['SourceKitService /lo/home']);
 });
