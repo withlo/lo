@@ -6,15 +6,48 @@
 
 import { mkdirSync, mkdtempSync, realpathSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 
 import { type Server, startServer } from '@lo/lsp';
 import { fakeServer } from '@lo/testing/lsp';
 import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 
+import { cacheFolder } from '../../../main/git.ts';
 import type { Adapter, Prepared } from './adapters.ts';
-import { noRoom, ServerPool, type PoolLimits, type PoolView } from './servers.ts';
+import { noRoom, ServerPool, serversFolder, type PoolLimits, type PoolView } from './servers.ts';
 import { StandIn } from './test/server.ts';
+
+/**
+ * Where tsserver looks for a plugin above an install in `folder`: a `node_modules` in it and in
+ * each folder above it, as `@lo/lsp`'s `test/plugins.test.ts` shows.
+ */
+function pluginFolders(folder: string): string[] {
+  const found: string[] = [];
+  for (let at = folder; ; at = dirname(at)) {
+    found.push(join(at, 'node_modules'));
+    if (at === dirname(at)) return found;
+  }
+}
+
+/** The Mac's folder for this user's caches, as `getconf` names it. */
+const macFolder = () => '/private/var/folders/ab/cd/C';
+
+describe('serversFolder', () => {
+  it('is outside the home folder on a Mac, so no plugin loads from a node_modules in it', () => {
+    const home = '/Users/me';
+    for (const packaged of [true, false]) {
+      const root = cacheFolder({ packaged, platform: 'darwin', home, env: {}, macFolder });
+      const folders = pluginFolders(join(serversFolder(root), 'vtsls', '0.3.0', 'files'));
+      expect(folders).not.toContain(join(home, 'node_modules'));
+      expect(folders.filter((each) => each.startsWith(`${home}/`))).toEqual([]);
+    }
+  });
+
+  it('is in ~/.cache on Linux, so ~/node_modules is still one of them', () => {
+    const root = cacheFolder({ packaged: true, platform: 'linux', home: '/home/me', env: {} });
+    expect(pluginFolders(serversFolder(root))).toContain('/home/me/node_modules');
+  });
+});
 
 function adapter(id: string, prepare?: Adapter['prepare']): Adapter {
   return {

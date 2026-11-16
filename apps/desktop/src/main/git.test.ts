@@ -1,4 +1,6 @@
-import { execFileSync } from 'node:child_process';
+import type * as fs from 'node:fs';
+import type * as fsPromises from 'node:fs/promises';
+import { execFileSync, spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import {
   chmodSync,
@@ -8,14 +10,16 @@ import {
   readdirSync,
   readFileSync,
   realpathSync,
+  renameSync,
   rmSync,
   symlinkSync,
   writeFileSync,
 } from 'node:fs';
+import { rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { type Cache, DEFAULT_CAP, type GitStatus, lockCache, unlockCache } from '@lo/git';
+import { type Cache, DEFAULT_CAP, type GitStatus } from '@lo/git';
 import { gitProgram } from '@lo/testing/git';
 import { describe, expect, it, onTestFinished, vi } from 'vitest';
 
@@ -33,6 +37,49 @@ import {
   whyNotCaches,
 } from './git.ts';
 import { StartupError } from './startup.ts';
+
+/**
+ * What a test puts in place of the file system's calls, to make happen what otherwise only a race
+ * would: where a path really leads, a move, or a deletion that waits.
+ */
+const fakes = vi.hoisted(() => ({
+  realpath: undefined as ((path: string) => string | undefined) | undefined,
+  rename: undefined as ((from: string, to: string) => Promise<boolean>) | undefined,
+  rm: undefined as ((path: string) => Promise<void>) | undefined,
+}));
+
+vi.mock('node:fs', async (importOriginal) => {
+  const actual = await importOriginal<typeof fs>();
+  const resolve = Object.assign(
+    (path: fs.PathLike, options?: fs.EncodingOption) =>
+      fakes.realpath?.(String(path)) ?? actual.realpathSync(path, options),
+    { native: actual.realpathSync.native },
+  );
+  return { ...actual, realpathSync: resolve };
+});
+
+vi.mock('node:fs/promises', async (importOriginal) => {
+  const actual = await importOriginal<typeof fsPromises>();
+  return {
+    ...actual,
+    // A fake that says it did the move itself, or leaves it to the real one.
+    rename: async (from: fs.PathLike, to: fs.PathLike) => {
+      if (!(await fakes.rename?.(String(from), String(to)))) await actual.rename(from, to);
+    },
+    rm: async (path: fs.PathLike, options?: fs.RmOptions) => {
+      await fakes.rm?.(String(path));
+      await actual.rm(path, options);
+    },
+  };
+});
+
+/** Puts `fake` in place of the file system's `name` until the test ends. */
+function fake<Name extends keyof typeof fakes>(name: Name, value: (typeof fakes)[Name]): void {
+  fakes[name] = value;
+  onTestFinished(() => {
+    fakes[name] = undefined;
+  });
+}
 
 /** A new folder, removed when the test ends. */
 function folder(): string {
@@ -189,6 +236,17 @@ describe('macCaches', () => {
     );
   });
 
+  it('checks the real path it gives, not only the one getconf named', () => {
+    const { said } = userCaches();
+    // Where the named folder really leads, as a link swapped in after the check would make it.
+    const elsewhere = folder();
+    chmodSync(elsewhere, 0o777);
+    fake('realpath', (path) => (path === said.slice(0, -1) ? elsewhere : undefined));
+    expect(() => macCaches({ run: () => said, uid })).toThrow(
+      `but other users can change ${elsewhere}, so Lo won't use it.`,
+    );
+  });
+
   it.runIf(process.platform === 'darwin')('finds this user’s folder for caches', () => {
     // Only reads: it looks at the folder, and nothing in it.
     expect(macCaches()).toMatch(/^\/private\/var\/folders\/[^/]+\/[^/]+\/C$/);
@@ -259,29 +317,62 @@ function earlier() {
   writeFileSync(join(former, 'repos/github.com/owner/repo.git/HEAD'), 'ref: refs/heads/main\n');
   const root = join(folder(), 'C', 'Lo');
   mkdirSync(join(root, 'tmp'), { recursive: true });
-  const aside: string[] = [];
+  const trashed: string[] = [];
   const cache = {
     root,
-    temporaryPath: (extension: string) => {
-      const path = join(root, 'tmp', `${randomUUID()}${extension}`);
-      aside.push(path);
-      return path;
+    temporaryPath: (extension: string) => join(root, 'tmp', `${randomUUID()}${extension}`),
+    trash: async (path: string) => {
+      trashed.push(path);
+      await rm(path, { recursive: true, force: true });
+      return true;
     },
   };
   const lines: string[] = [];
   const clear = (path = former, user?: number) =>
     clearFormerCache(cache, path, { log: (line) => lines.push(line), uid: user });
-  return { home, former, root, aside, lines, clear };
+  return { home, former, root, trashed, lines, clear };
+}
+
+/**
+ * Another process holding the cache lock at `path`, as another Lo would, with `@lo/git`'s own
+ * code, until it's told to end, when it leaves the lock behind as a crash would.
+ */
+async function otherLo(path: string) {
+  const code = [
+    `import { lockCache } from ${JSON.stringify(import.meta.resolve('@lo/git'))};`,
+    `await lockCache(${JSON.stringify(path)});`,
+    "console.log('locked');",
+    'process.stdin.resume();',
+  ].join('\n');
+  const child = spawn(process.execPath, ['--input-type=module', '-e', code], {
+    stdio: ['pipe', 'pipe', 'inherit'],
+  });
+  onTestFinished(() => {
+    child.kill();
+  });
+  const ended = new Promise((resolve) => child.once('close', resolve));
+  const said = await new Promise<string>((resolve) => {
+    child.stdout.once('data', (data: Buffer) => resolve(data.toString('utf8').trim()));
+  });
+  expect(said).toBe('locked');
+  return {
+    pid: child.pid,
+    end: async () => {
+      child.stdin.end();
+      await ended;
+    },
+  };
 }
 
 describe('clearFormerCache', () => {
-  it('moves it into the cache’s tmp, then deletes it', async () => {
-    const { home, former, root, aside, lines, clear } = earlier();
+  it('moves it into the cache’s tmp, and has the cache delete it', async () => {
+    const { home, former, root, trashed, lines, clear } = earlier();
 
     expect(await clear()).toBe(true);
 
     expect(existsSync(former)).toBe(false);
-    expect(aside).toHaveLength(1);
+    expect(trashed).toHaveLength(1);
+    expect(trashed[0]?.startsWith(join(root, 'tmp'))).toBe(true);
     expect(readdirSync(join(root, 'tmp'))).toEqual([]);
     expect(readdirSync(join(home, 'Library', 'Caches'))).toEqual([]);
     expect(lines).toEqual([`removed the cache an earlier Lo kept at ${former}`]);
@@ -290,24 +381,99 @@ describe('clearFormerCache', () => {
     expect(lines).toHaveLength(1);
   });
 
-  it('leaves it while another Lo has it open, and takes it once that Lo is done', async () => {
+  it('leaves it while another Lo has it open, and takes it once that Lo is gone', async () => {
     const { former, lines, clear } = earlier();
     const lock = join(former, 'lo-cache.lock');
-    const release = await lockCache(lock);
+    const other = await otherLo(lock);
 
     expect(await clear()).toBe(false);
     expect(existsSync(join(former, 'repos/github.com/owner/repo.git/HEAD'))).toBe(true);
-    expect(lines).toEqual([`leaving ${former} for now: ${lock} is already open in this process`]);
+    expect(lines).toEqual([
+      `leaving ${former} for now: another program, process ${other.pid}, is using ${lock}`,
+    ]);
 
-    await unlockCache(lock, release);
-    // A lock a crash left, which names nobody running, is no one's.
-    writeFileSync(lock, '');
+    // Gone without letting go, as after a crash: its lock is no one's.
+    await other.end();
+    expect(existsSync(lock)).toBe(true);
     expect(await clear()).toBe(true);
     expect(existsSync(former)).toBe(false);
   });
 
+  it('never takes the cache it has open, though a link above makes it look like the earlier one', async () => {
+    const { home, root, lines, clear } = earlier();
+    // The new cache, open and locked as Lo has it, and `~/Library/Caches` a link to its folder.
+    mkdirSync(join(root, 'git-env'));
+    const lock = join(root, 'lo-cache.lock');
+    writeFileSync(lock, `lo-cache 2\n${process.pid}\nThu Jan  1 00:00:00 1970\n`);
+    const caches = join(home, 'Library', 'Caches');
+    rmSync(caches, { recursive: true });
+    symlinkSync(join(root, '..'), caches);
+
+    expect(await clear(join(caches, 'Lo'))).toBe(false);
+
+    expect(existsSync(lock)).toBe(true);
+    expect(readdirSync(root).toSorted()).toEqual(['git-env', 'lo-cache.lock', 'tmp']);
+    expect(lines).toEqual([
+      `not removing ${join(caches, 'Lo')}, which may be the cache Lo has open, hold it or be in it`,
+    ]);
+    // Nor a folder holding it, nor one in it.
+    expect(await clear(join(root, '..'))).toBe(false);
+    expect(await clear(join(root, 'tmp'))).toBe(false);
+    expect(existsSync(lock)).toBe(true);
+  });
+
+  it('deletes it where it is when it’s on another volume, never through a link', async () => {
+    const { home, former, root, trashed, lines, clear } = earlier();
+    const outside = join(home, 'outside');
+    mkdirSync(outside);
+    writeFileSync(join(outside, 'keep'), 'mine');
+    symlinkSync(outside, join(former, 'linked'));
+    fake('rename', (from) => {
+      if (from !== former) return Promise.resolve(false);
+      return Promise.reject(Object.assign(new Error('cross-device link'), { code: 'EXDEV' }));
+    });
+
+    expect(await clear()).toBe(true);
+
+    expect(existsSync(former)).toBe(false);
+    expect(readFileSync(join(outside, 'keep'), 'utf8')).toBe('mine');
+    expect(trashed).toEqual([]);
+    expect(readdirSync(join(root, 'tmp'))).toEqual([]);
+    expect(lines).toEqual([`removed the cache an earlier Lo kept at ${former}`]);
+  });
+
+  it('puts back what took its place, outside the cache’s tmp, and deletes none of it', async () => {
+    const { home, former, root, trashed, lines, clear } = earlier();
+    const caches = join(home, 'Library', 'Caches');
+    const real = join(home, 'real');
+    // Just as it's moved, something else takes its place, and something else again after.
+    fake('rename', (from, to) => {
+      if (from !== former) return Promise.resolve(false);
+      renameSync(former, real);
+      mkdirSync(former);
+      writeFileSync(join(former, 'theirs'), 'theirs');
+      renameSync(former, to);
+      mkdirSync(former);
+      writeFileSync(join(former, 'next'), 'next');
+      return Promise.resolve(true);
+    });
+
+    expect(await clear()).toBe(false);
+
+    expect(trashed).toEqual([]);
+    expect(readdirSync(join(root, 'tmp'))).toEqual([]);
+    expect(existsSync(join(real, 'git-env'))).toBe(true);
+    const kept = readdirSync(caches).filter((name) => name.startsWith('Lo.'));
+    expect(kept).toHaveLength(1);
+    expect(readFileSync(join(caches, kept[0] ?? '', 'theirs'), 'utf8')).toBe('theirs');
+    expect(readFileSync(join(former, 'next'), 'utf8')).toBe('next');
+    expect(lines).toEqual([
+      `not removing what took the place of the cache an earlier Lo kept, now at ${join(caches, kept[0] ?? '')}`,
+    ]);
+  });
+
   it('never follows a link, nor removes what isn’t a cache Lo left', async () => {
-    const { home, former, aside, clear } = earlier();
+    const { home, former, trashed, clear } = earlier();
     const caches = join(home, 'Library', 'Caches');
     // A cache moved elsewhere, with a link left in its place.
     const moved = join(home, 'moved');
@@ -331,18 +497,41 @@ describe('clearFormerCache', () => {
     expect(await clear()).toBe(false);
     expect(readdirSync(former).toSorted()).toEqual(['git-env', 'notes.txt', 'tmp']);
     expect(existsSync(join(moved, 'git-env'))).toBe(true);
-    expect(aside).toEqual([]);
+    expect(trashed).toEqual([]);
     expect(readdirSync(caches)).toEqual(['Lo']);
   });
 
-  it('never removes another user’s folder, the cache itself or a folder holding it', async () => {
-    const { former, root, clear } = earlier();
+  it('never removes another user’s folder', async () => {
+    const { former, clear } = earlier();
     expect(await clear(former, uid + 1)).toBe(false);
     expect(existsSync(join(former, 'git-env'))).toBe(true);
-    mkdirSync(join(root, 'git-env'));
-    expect(await clear(root)).toBe(false);
-    expect(await clear(join(root, '..'))).toBe(false);
-    expect(existsSync(join(root, 'tmp'))).toBe(true);
+  });
+
+  it('deletes it as the cache deletes its own, so closing the cache waits for it', async () => {
+    const { former } = earlier();
+    const { git } = testGit();
+    await git.check();
+    const cache = git.cache;
+    if (!cache) throw new Error('no cache');
+    // A deletion that takes until the test says.
+    const deleting = Promise.withResolvers<void>();
+    let started = false;
+    fake('rm', async (path) => {
+      if (!path.endsWith('.trash')) return;
+      started = true;
+      await deleting.promise;
+    });
+
+    expect(await clearFormerCache(cache, former, { log: () => undefined })).toBe(true);
+    await expect.poll(() => started).toBe(true);
+    let closed = false;
+    const closing = cache.close().then(() => (closed = true));
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    expect(closed).toBe(false);
+
+    deleting.resolve();
+    await closing;
+    expect(readdirSync(join(cache.root, 'tmp'))).toEqual([]);
   });
 });
 

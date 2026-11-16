@@ -392,11 +392,13 @@ Only main runs git, through `@lo/git`, and the background process never sees git
   (`/var/folders/<xx>/<random>/C/`), as `/usr/bin/getconf` names it. Tools that language servers run
   read settings from every folder above their own, such as Cargo's `.cargo/config.toml`, and
   tsserver loads plugins from every `node_modules` above its install, so the home folder is none of
-  them. Lo won't start unless that folder is a folder, not a link, of the user's own that nobody
-  else can change, and never falls back to the home folder.
+  them. Lo won't start unless that folder, as named and as it resolves, is a folder, not a link, of
+  the user's own that nobody else can change, and never falls back to the home folder.
 - Once the cache opens, the one an earlier Lo kept in `~/Library/Caches` goes, as the cache removes
-  its own: moved into its `tmp/`, then deleted. Only a folder, never a link, that holds a cache's
-  folders goes, and only under its lock, never while another Lo has it open.
+  its own: moved into its `tmp/` and deleted with the cache's other deletions, which its cap doesn't
+  count, or deleted where it is when it's on another volume. Only a folder, never a link, that holds
+  a cache's folders goes, never the open cache or a folder holding it, whatever links lead there,
+  and only under its lock, never while another Lo has it open.
 - Every git gets an environment of Lo's own making, never main's, and only a fetch gets the
   account's token, from a source read as each fetch starts. Fetches take the proxy Lo's own requests
   take.

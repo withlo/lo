@@ -62,7 +62,7 @@ import {
   servedReferences,
   type ServerOf,
 } from './served.ts';
-import { ServerPool } from './servers.ts';
+import { ServerPool, serversFolder } from './servers.ts';
 import { repoKey, ServingViews, type ServingInput } from './serving.ts';
 import { adaptersFor } from './tests.ts';
 import { storeWorker, type SymbolStore } from './store/client.ts';
@@ -418,7 +418,7 @@ function install(
   const pinned = Object.hasOwn(MANIFEST, id) ? MANIFEST[id] : undefined;
   if (!pinned) throw new Error(`Lo's list of language servers has no ${id}.`);
   installer ??= new Installer({
-    folder: join(cache.root, 'servers'),
+    folder: serversFolder(cache.root),
     // Through Chromium's network stack, with the system's proxy, as every read Lo makes.
     fetch: netFetch((options) => net.request(options), { stream: true }),
   });

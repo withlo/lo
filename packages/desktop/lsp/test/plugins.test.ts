@@ -4,7 +4,8 @@
 // downloaded. Each plugin planted here writes a marker when it's loaded: one in the checkout's
 // `node_modules` never is, nor one named by a path, but a package already in a `node_modules` above
 // Lo's install is, as Node finds packages, and neither vtsls nor `tsserver` can turn that off. Lo's
-// install is outside the home folder, as its cache is on a Mac, so one in `~/node_modules` never is.
+// install is outside the home folder, as its cache is on a Mac, so one in `~/node_modules` never is:
+// the desktop app's `features/code/main/servers.test.ts` checks that's where its install goes.
 
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';

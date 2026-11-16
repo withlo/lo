@@ -17,10 +17,22 @@
 //
 // Nothing here calls Electron, so it runs under unit tests.
 
+import { join } from 'node:path';
+
 import { failureMessage, type Server, type ServerSpec, type State } from '@lo/lsp';
 
 import type { ServerState } from '../contract.ts';
 import type { Adapter, Prepared } from './adapters.ts';
+
+/**
+ * Where Lo installs language servers: `servers` in the cache at `root`. tsserver looks for a plugin
+ * a `tsconfig.json` names in each `node_modules` above its install (`@lo/lsp`'s
+ * `test/plugins.test.ts`), so which folders those are follows from this and from where the cache
+ * is.
+ */
+export function serversFolder(root: string): string {
+  return join(root, 'servers');
+}
 
 /** What the pool uses of a running server: `@lo/lsp`'s. */
 export type Running = Pick<

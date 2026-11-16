@@ -4,9 +4,10 @@
 // needs of Electron.
 
 import { execFileSync } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import { lstatSync, realpathSync, type Stats } from 'node:fs';
-import { lstat, rename, rm } from 'node:fs/promises';
-import { isAbsolute, join, normalize, relative } from 'node:path';
+import { lstat, readdir, realpath, rename, rm, rmdir, stat } from 'node:fs/promises';
+import { dirname, isAbsolute, join, normalize } from 'node:path';
 
 import {
   Cache,
@@ -97,10 +98,11 @@ const runBare: Run = (program, args) =>
 
 /**
  * The folder macOS keeps for this user's caches, `DARWIN_USER_CACHE_DIR`, by its real path
- * (`/private/var/folders/<xx>/<random>/C`): the user's own, closed to everyone else, kept across
- * restarts, and inside folders no other user can change. `/usr/bin/getconf` names it, run by its
- * path with no environment, so nothing Lo was started with can move it. A folder that fails
- * {@link whyNotCaches} is a {@link StartupError}: Lo never falls back to the home folder.
+ * (`/private/var/folders/<xx>/<random>/C`): the user's own, closed to everyone else, and kept
+ * across restarts. The folder above it is the user's too, and only root can change those above
+ * that. `/usr/bin/getconf` names it, run by its path with no environment, so nothing Lo was
+ * started with can move it. The path it gives, and the real path Lo uses, must each pass
+ * {@link whyNotCaches}, or it's a {@link StartupError}: Lo never falls back to the home folder.
  */
 export function macCaches(options: { run?: Run; uid?: number } = {}): string {
   const { run = runBare, uid = process.getuid?.() ?? -1 } = options;
@@ -113,11 +115,16 @@ export function macCaches(options: { run?: Run; uid?: number } = {}): string {
   const folder = said.endsWith('\n') ? said.slice(0, -1) : said;
   const why = whyNotCaches(folder, uid);
   if (why !== undefined) throw refuse(why);
+  let real: string;
   try {
-    return realpathSync(folder);
+    real = realpathSync(folder);
   } catch (error) {
     throw refuse(`Lo can't find ${folder} (${describe(error)})`);
   }
+  // What Lo uses is checked too, not just what it was named.
+  const whyReal = whyNotCaches(real, uid);
+  if (whyReal !== undefined) throw refuse(whyReal);
+  return real;
 }
 
 /** Lo's refusal of the Mac's folder for this user's caches, for `why`. */
@@ -165,25 +172,31 @@ export function formerCacheFolder(options: Placing): string | undefined {
 
 /**
  * Removes the cache an earlier Lo kept at `former`, as the cache removes its own: moved into
- * `cache`'s `tmp/` in one rename, then deleted, so nobody finds it half deleted, and what a crash
- * leaves goes with the cache's other leftovers. Only a folder of this user's, never a link, that
- * holds the folders a cache always has, `git-env` and `tmp`, goes. It goes only under its lock:
- * while another Lo has it open, as an older one still running can, it stays, for a later start.
- * Returns whether nothing is left at `former`, and notes why when something is.
+ * `cache`'s `tmp/` in one rename, then deleted by {@link Cache.trash}, so nobody finds it half
+ * deleted, closing the cache waits for it, and what a quit or a crash leaves goes with the cache's
+ * other leftovers. On another volume, where it can't be moved, it's deleted where it is. Only a
+ * folder of this user's, never a link, that holds the folders a cache always has, `git-env` and
+ * `tmp`, goes, and never the cache itself, a folder holding it or one in it, however links lead.
+ * It goes only under its lock: while another Lo has it open, as an older one still running can, it
+ * stays, for a later start. Returns whether nothing is left at `former`, and notes why when
+ * something is.
  */
 export async function clearFormerCache(
-  cache: Pick<Cache, 'root' | 'temporaryPath'>,
+  cache: Pick<Cache, 'root' | 'temporaryPath' | 'trash'>,
   former: string,
   options: { log: (line: string) => void; uid?: number },
 ): Promise<boolean> {
   const { log, uid = process.getuid?.() ?? -1 } = options;
-  if (contains(former, cache.root) || contains(cache.root, former)) return false;
   let found: Stats;
   try {
     found = await lstat(former);
   } catch (error) {
-    if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return true;
+    if (codeOf(error) === 'ENOENT') return true;
     log(`can't look at ${former}: ${describe(error)}`);
+    return false;
+  }
+  if (await overlaps(former, found, cache.root)) {
+    log(`not removing ${former}, which may be the cache Lo has open, hold it or be in it`);
     return false;
   }
   if (!(await isCache(former, found, uid))) {
@@ -204,6 +217,7 @@ export async function clearFormerCache(
     if (!same(await lstat(former), found)) throw new Error('it changed while Lo looked at it');
     await rename(former, aside);
   } catch (error) {
+    if (codeOf(error) === 'EXDEV') return deleteInPlace(former, found, lockFile, release, log);
     await unlockCache(lockFile, release).catch(() => undefined);
     log(`can't remove ${former}: ${describe(error)}`);
     return false;
@@ -211,22 +225,100 @@ export async function clearFormerCache(
   // Its lock moved with it.
   release();
   if (!same(await lstat(aside).catch(() => undefined), found)) {
-    // Something took its place just before the rename, and goes back.
-    await rename(aside, former).catch(() => undefined);
-    log(`not removing ${former}, which changed while Lo looked at it`);
+    await putBack(
+      aside,
+      [former, `${former}.${randomUUID()}`, join(cache.root, randomUUID())],
+      log,
+    );
     return false;
   }
-  await rm(aside, { recursive: true, force: true }).catch((error: unknown) => {
+  try {
+    await cache.trash(aside);
+  } catch (error) {
     log(`can't remove ${aside}: ${describe(error)}`);
-  });
+  }
   log(`removed the cache an earlier Lo kept at ${former}`);
   return true;
 }
 
-/** Whether `path` is `folder` or inside it. */
-function contains(folder: string, path: string): boolean {
-  const inside = relative(folder, path);
-  return inside === '' || (!inside.startsWith('..') && !isAbsolute(inside));
+/**
+ * Deletes the cache an earlier Lo kept at `former`, which is `found`, where it is, since it's on
+ * another volume than the cache: under its lock, which `release` lets go of, and each entry only
+ * while `former` is still the folder Lo looked at, never through a link. The folders that make it
+ * a cache go last, so a later start finishes what a quit stopped.
+ */
+async function deleteInPlace(
+  former: string,
+  found: Stats,
+  lockFile: string,
+  release: () => void,
+  log: (line: string) => void,
+): Promise<boolean> {
+  const marks = ['tmp', 'git-env'];
+  try {
+    const names = (await readdir(former)).filter((name) => name !== 'lo-cache.lock');
+    const order = [...names.filter((name) => !marks.includes(name)), ...marks];
+    for (const name of order) {
+      if (!same(await lstat(former), found)) throw new Error('it changed while Lo deleted it');
+      await rm(join(former, name), { recursive: true, force: true });
+    }
+  } catch (error) {
+    await unlockCache(lockFile, release).catch(() => undefined);
+    log(`can't remove ${former}: ${describe(error)}`);
+    return false;
+  }
+  await unlockCache(lockFile, release).catch(() => undefined);
+  try {
+    await rmdir(former);
+  } catch (error) {
+    log(`can't remove ${former}: ${describe(error)}`);
+    return false;
+  }
+  log(`removed the cache an earlier Lo kept at ${former}`);
+  return true;
+}
+
+/**
+ * Moves what's at `aside`, which isn't what Lo checked, to the first of `places` that will take
+ * it: never left in `tmp/`, whose cleanup would delete it unchecked. Notes where it is.
+ */
+async function putBack(
+  aside: string,
+  places: readonly string[],
+  log: (line: string) => void,
+): Promise<void> {
+  for (const place of places) {
+    try {
+      await rename(aside, place);
+      log(`not removing what took the place of the cache an earlier Lo kept, now at ${place}`);
+      return;
+    } catch {
+      // The next place.
+    }
+  }
+  log(`not removing what took the place of the cache an earlier Lo kept, still at ${aside}`);
+}
+
+/**
+ * Whether `former`, which is `found`, is the cache's folder at `root`, holds it or is in it, by
+ * what each folder is on disk rather than its path, which a link above either can lead astray.
+ * When Lo can't tell, it is.
+ */
+async function overlaps(former: string, found: Stats, root: string): Promise<boolean> {
+  try {
+    const opened = await stat(root);
+    return (await under(root, found)) || (await under(former, opened));
+  } catch {
+    return true;
+  }
+}
+
+/** Whether the folder at `path`, or one above it, is the folder `folder` is. */
+async function under(path: string, folder: Stats): Promise<boolean> {
+  for (let at = await realpath(path); ; at = dirname(at)) {
+    if (same(await stat(at), folder)) return true;
+    if (at === dirname(at)) return false;
+  }
 }
 
 /** Whether `found`, at `folder`, is a cache Lo made: a folder of `uid`'s with what each holds. */
@@ -241,6 +333,11 @@ async function isCache(folder: string, found: Stats, uid: number): Promise<boole
 /** Whether `found` is the folder `was` is. */
 function same(found: Stats | undefined, was: Stats): boolean {
   return found?.isDirectory() === true && found.dev === was.dev && found.ino === was.ino;
+}
+
+/** An error's code, such as `ENOENT`, if it has one. */
+function codeOf(error: unknown): unknown {
+  return error instanceof Error && 'code' in error ? error.code : undefined;
 }
 
 /** curl's scheme for each kind of proxy Chromium names. */
@@ -496,7 +593,7 @@ class GitHost implements MainGit {
 
   async #cleanUp(cache: Cache): Promise<void> {
     const { former, log } = this.#options;
-    // First, so the cap counts none of the earlier cache while it's deleted.
+    // First, so the earlier cache is out of the way before this one's own cleanup.
     if (former !== undefined) {
       await clearFormerCache(cache, former, { log }).catch((error: unknown) => {
         log(`can't remove ${former}: ${describe(error)}`);

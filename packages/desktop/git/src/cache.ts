@@ -252,7 +252,7 @@ export class Cache {
    * Sets the size to keep the cache under, from Settings, and keeps it there: past it, the least
    * recently used checkouts go, then the least recently used clones, only until it's under, and
    * never a clone that's open or being written to, its checkouts, or the most recently used clone.
-   * Returns the `owner/name` of each clone removed.
+   * What's being deleted doesn't count. Returns the `owner/name` of each clone removed.
    */
   async setCap(bytes: number): Promise<string[]> {
     this.#cap = bytes;
