@@ -80,6 +80,8 @@ Each command's id is what [the keymap file](#the-keymap-file) binds keys to.
 | Trust this PR…                            | None: in the app menu and the palette | Anywhere           | `code.trustPull` |
 | Stop trusting this repo                   | None: in the app menu and the palette | Anywhere           | `code.untrust`   |
 | Dismiss the banner about language servers | None: in the app menu and the palette | Anywhere           | `code.dismiss`   |
+| Restart language servers                  | None: in the app menu and the palette | Anywhere           | `code.restart`   |
+| Show the language server’s log            | None: in the app menu and the palette | Anywhere           | `code.log`       |
 | Back                                      | `⌃o`                                  | Anywhere but `box` | `keys.back`      |
 | Forward                                   | `⌃i`                                  | Anywhere but `box` | `keys.forward`   |
 

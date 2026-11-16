@@ -159,6 +159,26 @@ export class TrustViews {
   }
 
   /**
+   * The entry that trusts view `id`: as last decided, or, while it's checked again after a push or
+   * a reload, as the read before that decided it, since it's the entry that will trust it again.
+   * Nothing when no entry trusts it, or nothing has been read to say.
+   */
+  trustedBy(id: string): TrustEntry | undefined {
+    const followed = this.#views.get(id);
+    if (!followed) return undefined;
+    if (followed.decision.trust.kind === 'trusted') return followed.decision.by;
+    const last = this.#reads.get(followed.key)?.last;
+    const view = this.#options.view(id);
+    if (!last || !view) return undefined;
+    // While the local copy fetches the push, the read before still says which entry it was.
+    const decision = decide({ ...view, local: true }, this.#entries, {
+      kind: 'read',
+      repositories: last.repositories,
+    });
+    return decision.trust.kind === 'trusted' ? decision.by : undefined;
+  }
+
+  /**
    * Reads afresh the repositories view `id`'s pull request joins, as when the reader asks to
    * trust it, and decides its views again with them.
    */

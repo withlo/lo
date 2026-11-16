@@ -1,5 +1,6 @@
-// Trust's commands, each with no key: trusting is done once a repository, and through main's own
-// dialog. In the palette and the app's Review menu; a pull request's banner offers the first two.
+// Trust's and language servers' commands, each with no key: trusting is done once a repository,
+// and through main's own dialog, and a server's status item offers the rest. In the palette and
+// the app's Review menu; a pull request's banner offers the first two.
 
 import { defineCommands } from '@lo/ui/commands';
 
@@ -31,5 +32,19 @@ export default defineCommands('code', {
     group: 'Code',
     keys: [],
     bar: { menu: 'Review', order: 43 },
+  },
+  /** Starts the language servers of the pull request on screen again. */
+  restart: {
+    label: 'Restart language servers',
+    group: 'Code',
+    keys: [],
+    bar: { menu: 'Review', order: 44 },
+  },
+  /** Shows the log of the pull request on screen's language server. */
+  log: {
+    label: 'Show the language server’s log',
+    group: 'Code',
+    keys: [],
+    bar: { menu: 'Review', order: 45 },
   },
 });

@@ -4,7 +4,6 @@
 import { describe, expect, it } from 'vitest';
 
 import { fileEntry, type PullEntry, type RepoEntry } from '../settings.ts';
-import type { DecidedView } from './decide.ts';
 import { dropsFor, goneFrom, meant, removes, withEntry, withoutEntries } from './entries.ts';
 
 const REPO: RepoEntry = {
@@ -68,24 +67,15 @@ describe('the trusted entries, changed', () => {
 });
 
 describe('stopping trusting a view', () => {
-  const view: DecidedView = {
-    repo: 'rozed-dev/e2e',
-    number: 97,
-    noGit: false,
-    local: true,
-    fork: 'rozed-bot/e2e',
-  };
   const both = [REPO, PULL];
 
-  it('takes out only the entry that trusts it, once that’s decided', () => {
-    const decided = { trust: { kind: 'trusted', by: 'pull' }, by: PULL, head: null } as const;
-    expect(both.filter(meant(view, decided))).toEqual([PULL]);
+  it('takes out only the entry that trusts it', () => {
+    expect(both.filter(meant(PULL))).toEqual([PULL]);
+    expect(both.filter(meant(REPO))).toEqual([REPO]);
   });
 
-  it('takes out only the repository’s entry while nothing is decided, never a pull request’s', () => {
-    expect(both.filter(meant(view, undefined))).toEqual([REPO]);
-    const checking = { trust: { kind: 'checking' }, head: null } as const;
-    expect(both.filter(meant(view, checking))).toEqual([REPO]);
+  it('takes out nothing when no entry trusts it', () => {
+    expect(both.filter(meant(undefined))).toEqual([]);
   });
 });
 
