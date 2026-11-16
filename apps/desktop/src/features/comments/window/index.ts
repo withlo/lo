@@ -204,6 +204,7 @@ export default {
     defineView(right, {
       id: 'comments.panel',
       order: 10,
+      label: 'Threads',
       render: ({ tab }) => createElement(ThreadsPanel, { tab }),
       count: UnresolvedCount,
     }),

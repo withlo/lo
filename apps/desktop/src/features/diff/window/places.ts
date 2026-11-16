@@ -115,25 +115,28 @@ const STOPPED = 'Lo stopped waiting for the diff’s list of files.';
 const INPUT = [KEY_EVENT, 'pointerdown', 'wheel'] as const;
 
 /**
- * Shows line `line` of the file at `path`, at the head on screen, in tab `tab`: in the diff, with
- * the cursor on it, when the comparison on screen has the file; otherwise the file whole, at that
- * head, with lines `marked` picked out. Without a line, the file's top. Where the tab was is
- * recorded in its history first, as a jump's place, and focus goes to the code. Until the diff's
- * files are known, which has the file isn't: a note says it waits for them, for up to
- * `holdLimit()`. Past that, or once the reader does anything else, it's dropped, and a note says
- * so; a later place asked for in the tab takes its place.
+ * Shows line `line` of the file at `path` on side `side`, in tab `tab`: in the diff, on that side,
+ * with the cursor on it, when the comparison on screen has the file there; otherwise the file
+ * whole, with lines `marked` picked out. On the head's side (`new`) that's the file at the head on
+ * screen; on the base's (`old`), a file the comparison leaves alone is the same there as at the
+ * head, so it opens at the head. Without a line, the file's top. Where the tab was is recorded in
+ * its history first, as a jump's place, and focus goes to the code. Until the diff's files are
+ * known, which has the file isn't: a note says it waits for them, for up to `holdLimit()`. Past
+ * that, or once the reader does anything else, it's dropped, and a note says so; a later place
+ * asked for in the tab takes its place.
  */
 export function showPlace(
   tab: string,
   path: string,
   line: number | undefined,
   marked?: { from: number; to: number },
+  side: Side = 'new',
 ): void {
   leave();
   waiting.get(tab)?.();
   const loader = loaderOf(tab);
   if (loader.snapshot().state?.files) {
-    place(tab, path, line, marked);
+    place(tab, path, line, marked, side);
     return;
   }
   notify(WAITING.title, WAITING.body);
@@ -153,7 +156,7 @@ export function showPlace(
     if (!loader.snapshot().state?.files) return;
     stop();
     withdraw(WAITING.title, WAITING.body);
-    place(tab, path, line, marked);
+    place(tab, path, line, marked, side);
   });
   // Not the key or click that asked for the place: the window has heard it already.
   for (const type of INPUT) window.addEventListener(type, moved, true);
@@ -166,15 +169,18 @@ function place(
   path: string,
   line: number | undefined,
   marked: { from: number; to: number } | undefined,
+  side: Side,
 ): void {
   const loader = loaderOf(tab);
-  const change = changeAt(loader.snapshot().state?.files, path);
+  const change = changeAt(loader.snapshot().state?.files, path, side);
   if (change) {
     const file = loader.ids.of(keyOf(change));
+    // A file the pull request deletes has no head's side, nor one it adds a base's.
+    const there = side === 'new' ? change.change !== 'deleted' : change.change !== 'added';
     const target: Target =
-      line === undefined || change.change === 'deleted'
+      line === undefined || !there
         ? { kind: 'file', file }
-        : { kind: 'line', at: { file, side: 'new', line } };
+        : { kind: 'line', at: { file, side, line } };
     const drawn = drawnFor(tab);
     if (drawn) {
       drawn.view.reveal(target);

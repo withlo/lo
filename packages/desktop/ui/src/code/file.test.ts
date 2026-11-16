@@ -478,14 +478,14 @@ describe('what it draws', () => {
     expect(parent!.querySelectorAll('.lo-syn-keyword')).toHaveLength(2);
   });
 
-  test("a right-click on the code is its line's menu, or its header's in a file of no lines", () => {
+  test("a right-click on the code is its line's menu, at the column clicked, or its header's in a file of no lines", () => {
     const click = new MouseEvent('contextmenu', { bubbles: true, cancelable: true });
     const on = events();
     // jsdom has no layout, so every point is on the first line.
     const shown = open(on);
     parent!.querySelector('.cm-line')!.dispatchEvent(click);
     expect(click.defaultPrevented).toBe(true);
-    expect(on.menu).toHaveBeenLastCalledWith({ kind: 'line', at: at(1) }, 0, 0);
+    expect(on.menu).toHaveBeenLastCalledWith({ kind: 'line', at: { ...at(1), column: 0 } }, 0, 0);
     shown.destroy();
     parent!.remove();
     open(on, { lines: [] });

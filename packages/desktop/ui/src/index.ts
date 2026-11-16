@@ -148,8 +148,14 @@ export {
 } from './Timeline.tsx';
 export {
   Peek,
+  PeekFoot,
+  PeekHead,
+  PeekList,
   type PeekCandidate,
+  type PeekFootProps,
+  type PeekHeadProps,
   type PeekKeys,
+  type PeekListProps,
   type PeekOutside,
   type PeekPlace,
   type PeekProps,

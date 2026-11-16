@@ -44,8 +44,10 @@ import {
   type PullTab,
 } from './shared.ts';
 import {
+  focusPanel,
   middleIds,
   panels,
+  rightIds,
   takeRightFocus,
   useRightOpen,
   useTabPanels,
@@ -61,7 +63,7 @@ import { ViewSwitch } from './ViewSwitch.tsx';
  */
 function focusRight(panel: HTMLElement | null): void {
   if (!panel || !takeRightFocus()) return;
-  panel.querySelector<HTMLElement>('[data-lo-scope]')?.focus({ preventScroll: true });
+  focusPanel(panel);
 }
 
 /** The time now, ticking each second while `ticking`, for what counts down. */
@@ -270,7 +272,7 @@ export function PullRequestTab({ tab }: { tab: PullTab }) {
   const view = usePull(tab.id);
   const local = useLocalCopy(tab.id);
   const banners = useBanners(tab, view, local);
-  const { leftOpen } = useTabPanels(tab.id);
+  const { leftOpen, right: rightChosen } = useTabPanels(tab.id);
   const lefts = useViews(left);
   const middles = useViews(middle);
   const rights = useViews(right);
@@ -282,11 +284,15 @@ export function PullRequestTab({ tab }: { tab: PullTab }) {
     middleIds.ids = middles.map((each) => each.id);
     middleIds.labeled = middles.map((each) => each.label !== undefined);
   }
+  if (rightIds.length !== rights.length)
+    rightIds.splice(0, Infinity, ...rights.map((each) => each.id));
   const heading = view?.header;
   const acting = view?.acting;
   const showLeft = leftOpen && lefts.length > 0;
   // Only as the reader opens or closes it, so the middle's width changes by their asking alone.
   const showRight = rightOpen && rights.length > 0;
+  // One of its views at a time: the one shown last, or the first, the threads.
+  const shownRight = rights.find((each) => each.id === rightChosen) ?? rights[0];
   const shownMiddle = middles[panels.get(tab.id).middle % Math.max(1, middles.length)];
   // The middle views shown since the tab was drawn stay drawn, hidden while another is on screen.
   const [kept, setKept] = useState<readonly string[]>([]);
@@ -351,14 +357,16 @@ export function PullRequestTab({ tab }: { tab: PullTab }) {
             )}
           </div>
         </section>
-        {showRight && (
+        {showRight && shownRight && (
           <aside
+            // Another view is another panel, which takes focus as it's drawn.
+            key={shownRight.id}
             ref={focusRight}
             className="flex w-panel-right-w min-w-0 flex-none flex-col bg-bg-chrome"
-            aria-label="Threads"
-            data-lo-right
+            aria-label={shownRight.label}
+            data-lo-right={shownRight.id}
           >
-            <Slot slot={right} props={{ tab }} />
+            <shownRight.render tab={tab} />
           </aside>
         )}
       </div>
