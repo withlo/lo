@@ -51,6 +51,7 @@
   --spacing-file-header-h: var(--lo-file-header-h);
   --spacing-diffnote-h: var(--lo-diffnote-h);
   --spacing-revpicker-w: var(--lo-revpicker-w);
+  --spacing-mergepanel-w: var(--lo-mergepanel-w);
   --spacing-window-inset-start: var(--lo-window-inset-start);
   --spacing-window-inset-end: var(--lo-window-inset-end);
   --spacing-code-size: var(--lo-code-size);

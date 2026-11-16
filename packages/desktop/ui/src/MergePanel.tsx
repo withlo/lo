@@ -93,8 +93,7 @@ export function MergePanel({
             aria-label="Merge"
             data-lo-scope={scope}
             data-kind={kind}
-            // The panel is as wide as the revision picker, which it opens beside.
-            className="flex w-revpicker-w max-w-full flex-col overflow-hidden rounded-md bg-bg-overlay text-fg shadow-pop outline-none text-ui"
+            className="flex w-mergepanel-w max-w-full flex-col overflow-hidden rounded-md bg-bg-overlay text-fg shadow-pop outline-none text-ui"
           >
             <div className="flex items-center gap-12 ps-16 pe-12 pt-12 pb-8">
               <MergeDot kind={kind} size="md" />
