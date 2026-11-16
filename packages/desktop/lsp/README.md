@@ -13,20 +13,24 @@ has the rules; this is what the package holds a server to.
 | Output read but not yet handled     | 80 MB                                      |
 | Messages, answers and notifications | 50,000 in any 10 s                         |
 | Output, stderr included             | 256 MB in any 10 s                         |
+| Lines of stderr                     | 50,000 in any 10 s                         |
 | Its family's resident memory        | 4 GB unless its spec says, read every 5 s  |
 | Requests                            | 8 at the server, 64 waiting, 32 unanswered |
 | Open files                          | 50                                         |
-| A stop                              | 4.9 s                                      |
+| A stop                              | 4.5 s                                      |
 
-A server past any of the first six is killed at once, whatever its state, a stop's included. One
+A server past any of the first seven is killed at once, whatever its state, a stop's included. One
 whose memory can't be read three times running is stopped, since its cap would go unenforced.
 
 No real server comes near the rates: a large workspace's diagnostics are thousands of messages over
-many seconds, and the largest answers a few megabytes. Below them, a flood still can't keep main
-from its turns. The connection handles one message a turn, so Lo hands it one a turn, and reads more
-of the server's output only while fewer than 512 messages, or 1 MB of them, wait. The rest waits in
-the pipe. Once `shutdown` is answered, or given up on, nothing more is read at all, so however much
-a server sends, a stop keeps its time.
+many seconds, the largest answers a few megabytes, and a server logs far fewer lines. Bytes alone
+don't bound stderr: a flood of empty lines is a line a byte. Below the rates, a flood still can't
+keep main from its turns. The connection handles one message a turn, so Lo hands it one a turn, and
+reads more of the server's output only while fewer than 512 messages, or 1 MB of them, wait. The
+rest waits in the pipe. Lo reads stderr a piece a turn, and the log, which keeps 1,000 lines, splits
+and cleans only the last 1,000 lines of a piece, or of a message it logs, and only counts the rest.
+Once `shutdown` is answered, or given up on, nothing more is read at all, so however much a server
+sends, a stop keeps its time.
 
 ## A server's family
 
@@ -34,8 +38,10 @@ A server leads a process group of its own. Its family is that group and every pr
 a member of it, found by parent ID, so a process that left the group by starting a session of its
 own (`setsid`) is still found.
 
-- A stop reads the family while the server shuts down, sends `SIGTERM` to all of it once `exit` has
-  had its second, and 2 s later kills what's left, as below.
+- A stop reads the family while the server shuts down and again as `exit`'s second ends, each read
+  within those waits, sends `SIGTERM` to all of it once `exit` has had its second, and 2 s later
+  kills what's left, as below. At most 4.5 s in all: 1 s, 1 s, 2 s, the freeze's 400 ms and 100 ms
+  for the kill to land.
 - A kill freezes the group with `SIGSTOP`, then reads the family and freezes what it finds outside
   the group, round after round until a round finds nothing new, at most 8 rounds within 400 ms. Only
   then does it send `SIGKILL` to everything frozen. A frozen process can't start another, so a round
@@ -64,9 +70,10 @@ own (`setsid`) is still found.
 | What                       | Limit                                                       |
 | -------------------------- | ----------------------------------------------------------- |
 | Addresses                  | `https`, the usual port, the entry's hosts by exact name    |
-| Redirects                  | 5, each held to the same rules                              |
+| Redirects                  | 5, each held to the same rules, and none followed unseen    |
 | A file                     | the size the manifest pins, then its SHA-256                |
 | Tries                      | 3, when the connection fails, the file comes short or a 5xx |
+| A stall                    | 30 s with nothing come, which counts as a failed connection |
 | What an archive unpacks to | 100,000 entries and 2 GB                                    |
 | A symbolic link's target   | 1 KB, relative, resolving inside                            |
 
@@ -74,8 +81,19 @@ Nothing is unpacked before its hash matches, and nothing is used before its mark
 Absolute paths, `..`, hard links, devices and pipes are refused, and files are written before any
 link is made, so nothing is written through one.
 
+Each file and folder unpacked is synced to the disk, then the marker, then the folder that holds
+them, and only then is it renamed into place. The marker records the fingerprint of the download and
+of the rules it was unpacked under (`UNPACK_RULES` in `src/unpack.ts`, raised whenever they change),
+and each file's size and each link's target. Before an install is used, each file and link is
+checked against it, by what the system knows of it, never its bytes.
+
 ### What isn't checked
 
 What a program does once it runs: the hash says it's the file that was pinned, and the signature
 `pin.ts` checked then says who published it, not what it does. That's what trust and each server's
 environment are for.
+
+An installed file's bytes: before each use, its size is checked, not its hash, which would read
+every byte. On macOS, `fsync` leaves what the drive itself caches, and Node can't ask for more
+(`F_FULLFSYNC`), so a power loss there can still lose some of an install: a file cut short or gone
+is caught by the marker, one of the right size with the wrong bytes isn't.

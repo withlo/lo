@@ -9,9 +9,10 @@
  * - what's been read but not yet handed on, whole messages and the one arriving, passes
  *   {@link UNREAD_LIMIT}. That holds whatever the headers say, so even a reader and meter that
  *   disagreed couldn't hold more;
- * - more than {@link FLOOD_MESSAGES} messages, or {@link FLOOD_BYTES} of output, arrive within
- *   {@link FLOOD_WINDOW}: a flood of messages each within the limits. No real server comes near:
- *   a large workspace's diagnostics are thousands of messages over many seconds.
+ * - more than {@link FLOOD_MESSAGES} messages, {@link FLOOD_BYTES} of output or
+ *   {@link FLOOD_LINES} lines of stderr arrive within {@link FLOOD_WINDOW}: a flood, each message
+ *   or line within the limits. No real server comes near: a large workspace's diagnostics are
+ *   thousands of messages over many seconds, and a server logs far fewer lines.
  *
  * It also says when Lo is {@link FrameMeter.behind}, holding many whole messages it hasn't handed
  * on, so the server's output can wait in its pipe while main catches up.
@@ -40,6 +41,12 @@ export const FLOOD_MESSAGES = 50_000;
 
 /** The most output a server may write within {@link FLOOD_WINDOW}, in bytes, stderr included. */
 export const FLOOD_BYTES = 256 * 1024 * 1024;
+
+/**
+ * The most lines a server may write to stderr within {@link FLOOD_WINDOW}. Bytes alone don't bound
+ * it: a flood of empty lines is a line a byte, far more lines than bytes cost.
+ */
+export const FLOOD_LINES = 50_000;
 
 /** The window a server's rate is measured over, in milliseconds. */
 export const FLOOD_WINDOW = 10_000;
@@ -70,6 +77,7 @@ export interface MeterLimits {
   readonly unread?: number | undefined;
   readonly messages?: number | undefined;
   readonly bytes?: number | undefined;
+  readonly lines?: number | undefined;
   readonly within?: number | undefined;
   /** The clock, in milliseconds. */
   readonly now?: (() => number) | undefined;
@@ -80,6 +88,7 @@ export class FrameMeter {
   readonly #unreadLimit: number;
   readonly #messages: number;
   readonly #bytes: number;
+  readonly #lines: number;
   readonly #within: number;
   readonly #now: () => number;
   readonly #window: Window;
@@ -103,6 +112,7 @@ export class FrameMeter {
     this.#unreadLimit = limits.unread ?? UNREAD_LIMIT;
     this.#messages = limits.messages ?? FLOOD_MESSAGES;
     this.#bytes = limits.bytes ?? FLOOD_BYTES;
+    this.#lines = limits.lines ?? FLOOD_LINES;
     this.#within = limits.within ?? FLOOD_WINDOW;
     this.#now = limits.now ?? (() => performance.now());
     this.#window = new Window(this.#within);
@@ -152,12 +162,12 @@ export class FrameMeter {
       this.#body = length;
       if (length === 0) this.#end();
     }
-    return this.#count(this.#whole.length - whole, chunk.byteLength);
+    return this.#count(this.#whole.length - whole, chunk.byteLength, 0);
   }
 
-  /** Counts output the server wrote elsewhere, its stderr, toward its rate. */
-  counted(bytes: number): string | undefined {
-    return this.#count(0, bytes);
+  /** Counts what the server wrote to stderr, `bytes` holding `lines` line ends, toward its rate. */
+  counted(bytes: number, lines = 0): string | undefined {
+    return this.#count(0, bytes, lines);
   }
 
   /** The reader handed on a message. It returns what's wrong if the meter knew of no whole one. */
@@ -169,15 +179,18 @@ export class FrameMeter {
     return undefined;
   }
 
-  /** Adds `messages` and `bytes` to the rate's window, and says if either passes its limit. */
-  #count(messages: number, bytes: number): string | undefined {
-    const sum = this.#window.add(this.#now(), messages, bytes);
+  /** Adds to the rate's window, and says if what it holds passes a limit. */
+  #count(messages: number, bytes: number, lines: number): string | undefined {
+    const sum = this.#window.add(this.#now(), { messages, bytes, lines });
     const seconds = `${(this.#within / 1000).toLocaleString('en-US')} s`;
     if (sum.messages > this.#messages) {
       return `It sent more than ${this.#messages.toLocaleString('en-US')} messages in ${seconds}.`;
     }
     if (sum.bytes > this.#bytes)
       return `It sent more than ${megabytes(this.#bytes)} in ${seconds}.`;
+    if (sum.lines > this.#lines) {
+      return `It wrote more than ${this.#lines.toLocaleString('en-US')} lines to stderr in ${seconds}.`;
+    }
     return undefined;
   }
 
@@ -211,19 +224,25 @@ export class FrameMeter {
   }
 }
 
+/** What a rate counts. */
+interface Counts {
+  messages: number;
+  bytes: number;
+  lines: number;
+}
+
 /** Sums over a window that slides a slot at a time. */
 class Window {
   readonly #slot: number;
-  readonly #slots: { at: number; messages: number; bytes: number }[] = [];
-  #messages = 0;
-  #bytes = 0;
+  readonly #slots: (Counts & { readonly at: number })[] = [];
+  readonly #sum: Counts = { messages: 0, bytes: 0, lines: 0 };
 
   constructor(within: number) {
     this.#slot = within / SLOTS;
   }
 
-  /** Adds to the window at `now`, and returns what it holds. */
-  add(now: number, messages: number, bytes: number): { messages: number; bytes: number } {
+  /** Adds `counts` to the window at `now`, and returns what it holds. */
+  add(now: number, counts: Readonly<Counts>): Readonly<Counts> {
     const at = Math.floor(now / this.#slot);
     for (
       let old = this.#slots[0];
@@ -231,19 +250,22 @@ class Window {
       old = this.#slots[0]
     ) {
       this.#slots.shift();
-      this.#messages -= old.messages;
-      this.#bytes -= old.bytes;
+      this.#sum.messages -= old.messages;
+      this.#sum.bytes -= old.bytes;
+      this.#sum.lines -= old.lines;
     }
     let slot = this.#slots.at(-1);
     if (slot?.at !== at) {
-      slot = { at, messages: 0, bytes: 0 };
+      slot = { at, messages: 0, bytes: 0, lines: 0 };
       this.#slots.push(slot);
     }
-    slot.messages += messages;
-    slot.bytes += bytes;
-    this.#messages += messages;
-    this.#bytes += bytes;
-    return { messages: this.#messages, bytes: this.#bytes };
+    slot.messages += counts.messages;
+    slot.bytes += counts.bytes;
+    slot.lines += counts.lines;
+    this.#sum.messages += counts.messages;
+    this.#sum.bytes += counts.bytes;
+    this.#sum.lines += counts.lines;
+    return this.#sum;
   }
 }
 

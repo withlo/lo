@@ -94,6 +94,10 @@ test('more messages or output than a window allows is refused, and the window mo
   // Its stderr counts toward its output.
   expect(meter.counted(60 * 1024)).toBeUndefined();
   expect(meter.counted(8 * 1024)).toBe('It sent more than 1 MB in 1 s.');
+  // And its lines, however few bytes they take.
+  const lines = new FrameMeter({ lines: 100, within: 1000, now: () => now });
+  expect(lines.counted(100, 100)).toBeUndefined();
+  expect(lines.counted(1, 1)).toBe('It wrote more than 100 lines to stderr in 1 s.');
 });
 
 test('Lo is behind while many whole messages wait to be handed on', () => {

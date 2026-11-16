@@ -25,3 +25,28 @@ test('a stream’s line waits until it ends', () => {
   log.write('y'.repeat(LINE_LENGTH * 2 + 1));
   expect(log.lines.slice(3)).toEqual(['y'.repeat(LINE_LENGTH), 'y'.repeat(LINE_LENGTH)]);
 });
+
+test('many lines at once leave the log as they would one at a time, and are counted', () => {
+  const lines = Array.from({ length: LOG_LINES * 3 }, (_, line) => `line ${line}`);
+  for (const count of [3, LOG_LINES - 1, LOG_LINES, LOG_LINES + 1, LOG_LINES * 3]) {
+    const text = `${lines.slice(0, count).join('\r\n')}\r\nheld`;
+    const once = new Log();
+    once.write('the first ');
+    const apart = new Log();
+    apart.write('the first ');
+    expect(once.write(text)).toBe(count);
+    for (const piece of text.split(/(?<=\n)/)) apart.write(piece);
+    expect(once.lines).toEqual(apart.lines);
+    expect(once.lines.at(-1)).toBe(`line ${count - 1}`);
+    once.end();
+    expect(once.lines.at(-1)).toBe('held');
+  }
+  // The line held back joins the first that ends.
+  const log = new Log();
+  log.write('the first ');
+  log.write('line\n');
+  expect(log.lines).toEqual(['the first line']);
+  // A message of many lines leaves its last.
+  log.add(`${'\n'.repeat(LOG_LINES * 2)}last\n`);
+  expect(log.lines).toEqual([...Array<string>(LOG_LINES - 1).fill(''), 'last']);
+});

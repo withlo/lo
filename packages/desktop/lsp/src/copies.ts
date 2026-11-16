@@ -9,8 +9,9 @@
  *   says (the one Lo holds git to);
  * - it isn't in Lo's cache, where checkouts and downloads are, as given or once links are
  *   followed;
- * - it isn't a version manager's shim (mise's, asdf's, rbenv's, rustup's and the like), which
- *   picks the program to run from files in the folder it runs in: the checkout.
+ * - it isn't a version manager's shim (mise's, asdf's, rbenv's, rustup's, swiftly's, aqua's, rye's
+ *   and the like), which picks the program to run from files in the folder it runs in: the
+ *   checkout, such as its `.swift-version`, `aqua.yaml` or `.python-version`.
  */
 
 import { realpath, stat } from 'node:fs/promises';
@@ -31,6 +32,13 @@ const SHIM_FOLDERS = [
   '.volta/bin',
   '.proto/shims',
   '.proto/bin',
+  // swiftly's, on macOS and on Linux: links to swiftly, which reads `.swift-version`.
+  '.swiftly/bin',
+  '.local/share/swiftly/bin',
+  // aqua's, on both: links to aqua-proxy, which reads `aqua.yaml`.
+  '.local/share/aquaproj-aqua/bin',
+  // rye's, on both: links to rye, which reads `.python-version` and `pyproject.toml`.
+  '.rye/shims',
 ];
 
 /** The programs a version manager's shims are, or link to. */
@@ -49,6 +57,10 @@ const MANAGERS = new Set([
   'proto-shim',
   'rustup',
   'rustup-init',
+  'swiftly',
+  'aqua',
+  'aqua-proxy',
+  'rye',
 ]);
 
 export interface CopyOptions {

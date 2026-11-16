@@ -23,6 +23,7 @@ import { expect, onTestFinished, test, vi } from 'vitest';
 
 import {
   failureMessage,
+  LIMITS,
   OPEN_LIMIT,
   readFamily,
   type RequestOptions,
@@ -30,6 +31,7 @@ import {
   type State,
   startServer,
 } from '../src/index.ts';
+import { longestStop } from '../src/server.ts';
 import { fakeServer } from '@lo/testing/lsp';
 
 import { eventually, GIT, running, startFake, tempFolder } from './support.ts';
@@ -387,6 +389,12 @@ test('a server that ignores shutdown, exit and SIGTERM is killed inside the stop
   await eventually(() => !running(pid) && !running(child.pid), 1000);
 });
 
+test('the longest a stop can take leaves half a second of a feature’s 5 s', () => {
+  // `shutdown` and `exit`, a second each, with the family read inside them; 2 s from SIGTERM to
+  // SIGKILL; then the freeze rounds and the wait for the kill.
+  expect(longestStop(LIMITS)).toBe(4500);
+});
+
 test('a stop while it starts never lets it initialize', async () => {
   const { server, seen } = startFake({ initialize: { hang: true } });
   await eventually(() => seen().some((event) => event.event === 'initialize'));
@@ -502,6 +510,35 @@ test('a flood of valid messages fails the server that sends it', async () => {
   });
   const pid = seen().find((event) => event.event === 'started')?.pid ?? 0;
   await eventually(() => !running(pid));
+});
+
+test('a flood of lines on stderr fails the server that writes it', async () => {
+  // Empty lines: 400 MB of them in half a minute never reached the limit on bytes.
+  const { server, seen } = startFake({
+    flood: { at: 'initialized', header: '', frame: '\n'.repeat(64 * 1024), stderr: 'only' },
+  });
+  expect(await server.ready).toBe(true);
+  await eventually(() => server.state.kind === 'failed');
+  expect(server.state).toEqual({
+    kind: 'failed',
+    failure: { kind: 'protocol', message: 'It wrote more than 50,000 lines to stderr in 10 s.' },
+  });
+  const pid = seen().find((event) => event.event === 'started')?.pid ?? 0;
+  await eventually(() => !running(pid));
+});
+
+test('a message of many lines is logged without keeping main from its turns', async () => {
+  // Main once split and cleaned every line it holds, all in one turn.
+  const lines = 8 * 1024 * 1024;
+  const message = `${'\n'.repeat(lines)}logged`;
+  const { server } = startFake({
+    notifications: [{ method: 'window/logMessage', params: { type: 3, message }, delay: 100 }],
+  });
+  expect(await server.ready).toBe(true);
+  const lag = watchLag();
+  await eventually(() => server.log.at(-1) === 'logged');
+  expect(lag()).toBeLessThan(200);
+  expect(server.log.slice(-3)).toEqual(['', '', 'logged']);
 });
 
 test('main reads a flood a turn at a time, and a stop keeps its time however much is sent', async () => {

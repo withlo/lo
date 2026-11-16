@@ -8,6 +8,9 @@
  *   `fetch` is Chromium's (`net.request`), which takes the system's proxy and keeps nothing in its
  *   cache.
  * - It stops as soon as more comes than may: the size the manifest pinned, when it's known.
+ * - It gives up once nothing has come for {@link STALL} while Lo waits, for the answer to begin or
+ *   for more of its body, as a try that was cut short, so a host that stops sending can't hold up
+ *   the tries after it.
  * - What arrives is only written to the file, never run or unpacked here: the caller checks the
  *   size and hash this returns before anything else reads it.
  */
@@ -20,6 +23,9 @@ import { isDownloadAddress } from './manifest.ts';
 
 /** The most redirects a download follows. */
 export const REDIRECTS = 5;
+
+/** How long a download may wait for a byte before its try is given up, in milliseconds. */
+export const STALL = 30_000;
 
 /** Statuses that send a request on to a `Location`. */
 const REDIRECT_STATUSES: ReadonlySet<number> = new Set([301, 302, 303, 307, 308]);
@@ -37,6 +43,8 @@ export interface FetchOptions {
   readonly signal?: AbortSignal | undefined;
   /** Hears how many bytes of the file have come so far, as they come. */
   readonly received?: ((bytes: number) => void) | undefined;
+  /** How long it may wait for a byte, in milliseconds: {@link STALL} unless given. */
+  readonly stall?: number | undefined;
 }
 
 /** What came: its size, and its SHA-256 in lowercase hex. */
@@ -49,18 +57,33 @@ export interface Fetched {
  * Fetches `url` into `file`, which this creates and must not exist, and says what came. It throws
  * a {@link DownloadError}: `refused` for an address or redirect Lo doesn't download from, or more
  * than `limit`; `unavailable` for an answer that isn't the file; `interrupted` when the
- * connection failed or the file came short, which is worth trying again. Once `signal` aborts,
- * it stops and throws the signal's reason. It leaves `file` as far as it got; the caller removes
- * it.
+ * connection failed, stalled or the file came short, which is worth trying again. Once `signal`
+ * aborts, it stops and throws the signal's reason. It leaves `file` as far as it got; the caller
+ * removes it.
  */
 export async function fetchFile(
   url: string,
   file: string,
   options: FetchOptions,
 ): Promise<Fetched> {
+  options.signal?.throwIfAborted();
+  const stall = new Stall(options.stall ?? STALL, options.signal);
+  try {
+    return await fetchWatched(url, file, { ...options, signal: stall.signal }, stall);
+  } finally {
+    stall.end();
+  }
+}
+
+/** {@link fetchFile}, with `stall` watching each wait for the network. */
+async function fetchWatched(
+  url: string,
+  file: string,
+  options: FetchOptions,
+  stall: Stall,
+): Promise<Fetched> {
   const { signal } = options;
-  signal?.throwIfAborted();
-  const answer = await follow(url, options);
+  const answer = await follow(url, options, stall);
   const declared = declaredLength(answer);
   if (declared !== undefined && declared > options.limit) {
     await answer.body?.cancel().catch(() => undefined);
@@ -72,7 +95,7 @@ export async function fetchFile(
   const out = await open(file, 'wx', 0o600);
   let size = 0;
   try {
-    for await (const chunk of readChunks(body, signal)) {
+    for await (const chunk of readChunks(body, signal, stall)) {
       size += chunk.byteLength;
       if (size > options.limit) throw tooLarge(options.limit);
       hash.update(chunk);
@@ -95,22 +118,33 @@ export async function fetchFile(
  * Asks for `url`, and for each redirect's `Location` in turn, each held to the rules, until an
  * answer that isn't a redirect, which must be the file.
  */
-async function follow(url: string, options: FetchOptions): Promise<Response> {
+async function follow(url: string, options: FetchOptions, stall: Stall): Promise<Response> {
   const { signal } = options;
   let at = checked(url, options.hosts);
   for (let hops = 0; ; hops += 1) {
     let answer: Response;
     try {
-      answer = await options.fetch(at.href, {
-        method: 'GET',
-        redirect: 'manual',
-        credentials: 'omit',
-        cache: 'no-store',
-        referrerPolicy: 'no-referrer',
-        signal,
-      });
+      answer = await stall.watch(
+        options.fetch(at.href, {
+          method: 'GET',
+          redirect: 'manual',
+          credentials: 'omit',
+          cache: 'no-store',
+          referrerPolicy: 'no-referrer',
+          signal,
+        }),
+      );
     } catch (error) {
       throw signal?.aborted ? signal.reason : asDownloadError(error);
+    }
+    // A `fetch` that followed a redirect itself, whatever it was asked, went where Lo didn't
+    // check.
+    if (answer.redirected) {
+      await answer.body?.cancel().catch(() => undefined);
+      throw new DownloadError(
+        'refused',
+        'The download was redirected without Lo seeing where, so Lo didn’t use it.',
+      );
     }
     if (answer.status === 200) return answer;
     await answer.body?.cancel().catch(() => undefined);
@@ -162,6 +196,7 @@ function declaredLength(answer: Response): number | undefined {
 async function* readChunks(
   body: ReadableStream<Uint8Array>,
   signal: AbortSignal | undefined,
+  stall: Stall,
 ): AsyncGenerator<Uint8Array> {
   const reader = body.getReader();
   const stop = () => {
@@ -171,7 +206,7 @@ async function* readChunks(
   try {
     for (;;) {
       signal?.throwIfAborted();
-      const { done, value } = await reader.read();
+      const { done, value } = await stall.watch(reader.read());
       // A cancelled body ends rather than fails.
       signal?.throwIfAborted();
       if (done) return;
@@ -180,6 +215,55 @@ async function* readChunks(
   } finally {
     signal?.removeEventListener('abort', stop);
     reader.releaseLock();
+  }
+}
+
+/**
+ * A watch on a download's waits for the network: once one has lasted `ms` with nothing come, it
+ * aborts its {@link Stall.signal} with an `interrupted` error. Lo's own work between waits, such
+ * as writing what came, never counts.
+ */
+class Stall {
+  /** Aborts once the caller's signal does, or once a wait has stalled. */
+  readonly signal: AbortSignal;
+  readonly #ms: number;
+  readonly #controller = new AbortController();
+  #timer: ReturnType<typeof setTimeout> | undefined;
+
+  constructor(ms: number, signal: AbortSignal | undefined) {
+    this.#ms = ms;
+    this.signal =
+      signal === undefined
+        ? this.#controller.signal
+        : AbortSignal.any([signal, this.#controller.signal]);
+  }
+
+  /**
+   * Waits for `promise`, a wait for the network, under the watch: once it stalls, it throws, even
+   * if whatever `promise` waits on never heard the signal.
+   */
+  async watch<T>(promise: Promise<T>): Promise<T> {
+    const { promise: given, reject: stalled } = Promise.withResolvers<never>();
+    clearTimeout(this.#timer);
+    this.#timer = setTimeout(() => {
+      const seconds = (this.#ms / 1000).toLocaleString('en-US');
+      const error = new DownloadError(
+        'interrupted',
+        `The download stalled: nothing came for ${seconds} s.`,
+      );
+      this.#controller.abort(error);
+      stalled(error);
+    }, this.#ms);
+    try {
+      return await Promise.race([promise, given]);
+    } finally {
+      clearTimeout(this.#timer);
+    }
+  }
+
+  /** Stops watching. */
+  end(): void {
+    clearTimeout(this.#timer);
   }
 }
 

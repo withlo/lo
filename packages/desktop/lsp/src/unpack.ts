@@ -15,7 +15,8 @@
  *   bomb) stops early.
  *
  * A refusal throws a `refused` {@link DownloadError} and leaves what was written: the caller
- * unpacks into a temporary folder and removes it.
+ * unpacks into a temporary folder and removes it. Once it's done, the unpacker says what it wrote
+ * ({@link Unpacker.unpacked}), which an install's marker records, and syncs it all to the disk.
  */
 
 import { createReadStream } from 'node:fs';
@@ -27,6 +28,7 @@ import { createGunzip } from 'node:zlib';
 import { Parser, type ReadEntry } from 'tar';
 import yauzl from 'yauzl';
 
+import { atOnce, syncPath } from './disk.ts';
 import { isInside } from './environment.ts';
 import { DownloadError } from './errors.ts';
 
@@ -39,6 +41,24 @@ export interface UnpackLimits {
 
 /** The limits a download is unpacked within, far above any language server's. */
 export const UNPACK_LIMITS: UnpackLimits = { entries: 100_000, bytes: 2 * 1024 ** 3 };
+
+/**
+ * The version of these rules, part of every install's fingerprint: raise it whenever they change
+ * what a download unpacks to, and each install made under older rules is fetched again. The rules
+ * from before it was kept are 1.
+ */
+export const UNPACK_RULES = 2;
+
+/** What an unpacker wrote, each by its path inside its folder, in order. */
+export interface Unpacked {
+  /** Each file, with its size in bytes. */
+  readonly files: readonly (readonly [path: string, size: number])[];
+  /** Each symbolic link, with its target. */
+  readonly links: readonly (readonly [path: string, target: string])[];
+}
+
+/** How many files or folders are synced to the disk at once. */
+const SYNCS = 32;
 
 /** The longest target a symbolic link may name. */
 const LINK_TARGET_LIMIT = 1024;
@@ -81,6 +101,8 @@ export class Unpacker {
   readonly #folders = new Set<string>(['']);
   /** Links to make once every file is written. */
   readonly #links: { path: string; target: string }[] = [];
+  /** The files written, by path inside `root`, with their sizes. */
+  readonly #files = new Map<string, number>();
   #entries = 0;
   #bytes = 0;
 
@@ -232,6 +254,7 @@ export class Unpacker {
     if (await exists(to)) throw inTheWay(path);
     await rename(file, to);
     await chmod(to, 0o755);
+    this.#files.set(path, size);
   }
 
   /**
@@ -256,6 +279,24 @@ export class Unpacker {
         throw refused(`${shown(path)} is a link to something outside the download.`);
       }
     }
+  }
+
+  /** What it wrote: each file with its size, and each link with its target. */
+  get unpacked(): Unpacked {
+    return {
+      files: [...this.#files].toSorted(byPath),
+      links: this.#links.map(({ path, target }) => [path, target] as const).toSorted(byPath),
+    };
+  }
+
+  /**
+   * Syncs everything it wrote to the disk once it's {@link finish}ed: each file's data, then each
+   * folder's entries, its links' among them.
+   */
+  async sync(): Promise<void> {
+    const at = (path: string) => join(this.#root, ...path.split('/').filter((part) => part !== ''));
+    await atOnce([...this.#files.keys()], SYNCS, (path) => syncPath(at(path)));
+    await atOnce([...this.#folders], SYNCS, (path) => syncPath(at(path)));
   }
 
   /**
@@ -313,14 +354,17 @@ export class Unpacker {
     const out = await open(full, 'wx', 0o600).catch((error: unknown) => {
       throw isCode(error, 'EEXIST') ? inTheWay(path) : error;
     });
+    let written = 0;
     try {
       for await (const chunk of data) {
         this.#signal?.throwIfAborted();
         this.#bytes += chunk.byteLength;
         if (this.#bytes > this.#limits.bytes) throw tooLarge();
         await out.write(chunk);
+        written += chunk.byteLength;
       }
       await out.chmod((mode & 0o111) | 0o644);
+      this.#files.set(path, written);
     } catch (error) {
       data.destroy();
       throw error;
@@ -345,6 +389,11 @@ export class Unpacker {
     }
     this.#links.push({ path, target });
   }
+}
+
+/** Orders entries by their paths. */
+function byPath(a: readonly [string, unknown], b: readonly [string, unknown]): number {
+  return a[0] < b[0] ? -1 : 1;
 }
 
 /** The file at `archive`, gunzipped. Destroying it closes the file. */
