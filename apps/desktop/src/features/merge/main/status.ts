@@ -108,12 +108,14 @@ export interface StatusInput {
   readonly local: Local;
   /** When GitHub last confirmed it, in milliseconds since the Unix epoch. */
   readonly readAt: number;
+  /** Why Lo couldn't read it again since, while it can't. */
+  readonly stale?: string | undefined;
   /** The pull request, for its page when GitHub's answer didn't give one. */
   readonly pull: { readonly owner: string; readonly repo: string; readonly number: number };
 }
 
 /** Where the pull request's merge stands, for the window to word. */
-export function stateOf({ facts, local, readAt, pull }: StatusInput): MergeState {
+export function stateOf({ facts, local, readAt, stale, pull }: StatusInput): MergeState {
   const snapshot = mergeSnapshot(facts, local);
   const status = mergeStatus(snapshot);
   const url = pullPage(facts, pull.owner, pull.repo, pull.number);
@@ -158,6 +160,7 @@ export function stateOf({ facts, local, readAt, pull }: StatusInput): MergeState
     url,
     head: commitOf(facts.pullRequest.head),
     readAt: Math.max(0, Math.round(readAt)),
+    stale: stale === undefined ? null : text(stale),
   };
 }
 

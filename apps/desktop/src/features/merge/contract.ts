@@ -116,6 +116,8 @@ export type Action = z.output<typeof action>;
  *   may read it.
  * - `approvedBy`: who approved it, among those whose approval counts; `checks`: how many required
  *   checks passed, of how many.
+ * - `stale`: why Lo couldn't read it again since `readAt`, while it can't: a read failed, GitHub
+ *   can't be reached, the account is signed out, or the rate limit holds every read.
  */
 export const mergeState = z.strictObject({
   verdict: z.enum(['merged', 'closed', 'queued', 'ready', 'waiting', 'blocked']),
@@ -137,6 +139,7 @@ export const mergeState = z.strictObject({
   /** GitHub's head now; empty when GitHub didn't say. */
   head: z.union([oid, z.literal('')]),
   readAt: time,
+  stale: text.nullable(),
 });
 export type MergeState = z.output<typeof mergeState>;
 

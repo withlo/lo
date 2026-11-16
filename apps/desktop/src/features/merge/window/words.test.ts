@@ -5,6 +5,7 @@ import { expect, test } from 'vitest';
 
 import type { MergeState } from '../contract.ts';
 import {
+  ago,
   headerLine,
   methodNote,
   ordinal,
@@ -14,6 +15,9 @@ import {
   shownMethod,
   steppedMethod,
 } from './words.ts';
+
+/** When the tests' statuses were read: now, so none is out of date unless a test says. */
+const NOW = Date.now();
 
 const PULL_PAGE = 'https://github.com/rozed-dev/e2e/pull/148';
 const RUN = 'https://github.com/rozed-dev/e2e/actions/runs/1';
@@ -38,7 +42,8 @@ function state(change: Partial<MergeState> = {}): MergeState {
     checks: { passed: 0, total: 0 },
     url: PULL_PAGE,
     head: 'a'.repeat(40),
-    readAt: 0,
+    readAt: NOW,
+    stale: null,
     ...change,
   };
 }
@@ -130,6 +135,50 @@ test('what may be missing is the hover, and nothing shows before the first read'
     title: 'GitHub answered 502',
     opens: false,
   });
+});
+
+test('a ready pull request GitHub may not have told all of never looks clean', () => {
+  for (const unsure of [state({ incomplete: 'readAgain' }), state({ partial: true })]) {
+    expect(known(unsure)).toMatchObject({
+      kind: 'waiting',
+      verdict: 'Ready to merge',
+      detail: 'Lo may not see everything',
+    });
+    expect(panelHead(unsure).kind).toBe('waiting');
+  }
+});
+
+test('a status Lo couldn’t read again, or hasn’t for long, says how old it is', () => {
+  const failed = state({ stale: 'GitHub answered 502', readAt: NOW - 3 * 60_000 });
+  expect(headerLine({ kind: 'known', state: failed }, NOW)).toMatchObject({
+    kind: 'ready',
+    detail: 'Squash into main · as of 3 min ago',
+    title: 'Lo couldn’t check again: GitHub answered 502',
+  });
+  expect(rowsOf(failed, NOW).at(-1)).toMatchObject({
+    key: 'stale',
+    title: 'Lo couldn’t check again',
+    detail: 'GitHub answered 502 What’s shown is as of 3 min ago.',
+    inTheWay: false,
+  });
+  // Read five minutes ago it's current: the poller reads it again at most that often.
+  expect(headerLine({ kind: 'known', state: state({ readAt: NOW - 5 * 60_000 }) }, NOW)).toEqual(
+    known(state()),
+  );
+  const old = state({ verdict: 'queued', position: 1, readAt: NOW - 12 * 60_000 });
+  expect(headerLine({ kind: 'known', state: old }, NOW)).toMatchObject({
+    verdict: 'Queued, 1st',
+    detail: 'as of 12 min ago',
+    title: 'Lo hasn’t read this since 12 min ago.',
+  });
+  expect(rowsOf(old, NOW).at(-1)?.title).toBe('As of 12 min ago');
+  // A merge stays merged.
+  expect(
+    headerLine({ kind: 'known', state: state({ verdict: 'merged', readAt: 0 }) }, NOW)?.detail,
+  ).toBeUndefined();
+  expect(
+    [0, 59_000, 60_000, 2 * 3_600_000, 3 * 86_400_000].map((age) => ago(NOW - age, NOW)),
+  ).toEqual(['a moment ago', 'a moment ago', '1 min ago', '2 hours ago', '3 days ago']);
 });
 
 test('the panel has a row for each reason, checks of a state together with their runs', () => {

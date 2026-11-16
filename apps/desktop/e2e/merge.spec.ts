@@ -2,7 +2,8 @@
 // of `testing/fixtures/merge.sh`'s pull requests in rozed-dev/e2e, as `app_merge` recorded from the
 // app. The header says, in a line, whether each can merge: ready, blocked by `e4/gated`'s rules, a
 // draft, queued, or waiting with auto-merge on. `m` opens the merge panel under it, with a row for
-// each reason; `j` and `k` move between them, `o` opens a check's run, and `Esc` closes it. On one
+// each reason; `j` and `k` move between them, `o` opens a check's run, and `Esc` closes it. The
+// status's right-click menu opens the panel too, and a reason's opens its page. On one
 // that's ready, `Tab` steps through the methods, and a squash shows the commit GitHub would write.
 // A tab acting as nobody reads nothing, and says why.
 
@@ -66,7 +67,7 @@ test('the header says whether each pull request can merge, and why not', async (
   await expect(status(page)).toContainText('Auto-merge on');
 });
 
-test('`m` opens the panel on its reasons, `j` and `k` move, `o` opens a check’s run, and `Esc` closes it', async ({
+test('`m` opens the panel on its reasons, `j` and `k` move, `o` opens a check’s run, `Esc` closes it, and right-click menus do the same', async ({
   page,
 }) => {
   await open(page, pulls.gatedFailing.number);
@@ -97,6 +98,14 @@ test('`m` opens the panel on its reasons, `j` and `k` move, `o` opens a check’
   await page.keyboard.press('Escape');
   await expect(panel(page)).toBeHidden();
   await expect(status(page)).toHaveAttribute('aria-expanded', 'false');
+
+  // The status's right-click menu opens the panel, and a reason's opens its page.
+  await status(page).click({ button: 'right' });
+  await page.getByRole('menuitem', { name: /Merge panel/ }).click();
+  await expect(panel(page)).toBeVisible();
+  await reasons(page).first().click({ button: 'right' });
+  await page.getByRole('menuitem', { name: /^Open/ }).click();
+  await expect.poll(() => browsed().length).toBe(2);
 });
 
 test('`Tab` steps through the methods, and a squash shows the commit GitHub would write', async ({

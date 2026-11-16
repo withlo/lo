@@ -4,7 +4,6 @@
 // squash commit's text GitHub would start with; and the pages its reasons link, opened in the
 // system's browser.
 
-import { parseOid } from '@lo/git';
 import { GithubError, squashText } from '@lo/github';
 
 import { IpcError } from '../../../ipc/contract.ts';
@@ -14,6 +13,7 @@ import { github } from '../../accounts/service.ts';
 import { comparisons } from '../../revisions/service.ts';
 import { tabs } from '../../tab/service.ts';
 import { contract } from '../contract.ts';
+import { holdsIn } from './holds.ts';
 import { MethodStore } from './methods.ts';
 import { MergeReads } from './reads.ts';
 
@@ -70,12 +70,7 @@ export default defineFeature(contract, {
       method: (repo) => methods.get(repo),
       async holds(id, tip, head) {
         const clone = service.clone(id);
-        if (!clone) return undefined;
-        const repo = await clone;
-        const [base, ours] = [parseOid(tip), parseOid(head)];
-        if (!(await repo.hasCommit(ours))) return undefined;
-        await repo.fetchCommit(base);
-        return repo.isAncestor(base, ours);
+        return clone === undefined ? undefined : holdsIn(await clone, tip, head);
       },
       publish: (status) => publish('status', status),
       log,
@@ -85,7 +80,7 @@ export default defineFeature(contract, {
       service.onPull((id) => followed.follow(id)),
       // The view shown reads its status, the first time it's on screen.
       service.onTabs(({ active }) => {
-        if (active !== undefined) followed.follow(active);
+        if (active !== undefined) followed.shown(active);
       }),
       use(comparisons).onChange((id) => followed.follow(id)),
     );

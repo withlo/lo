@@ -16,6 +16,9 @@ import feature from './index.ts';
 import { MergeHeader } from './MergeHeader.tsx';
 import { panels } from './store.ts';
 
+/** When the tests' statuses were read: now, so none is out of date unless a test says. */
+const NOW = Date.now();
+
 const RUN = 'https://github.com/rozed-dev/e2e/actions/runs/1';
 
 /** What main says of each view's status, by its id. */
@@ -24,9 +27,10 @@ const views = new Map<string, MergeView>();
 const bridge = installBridge({
   'merge.state': (input) =>
     views.get(String(Reflect.get(Object(input), 'id'))) ?? { kind: 'loading' },
+  // The pull request's title, which its author wrote, with characters that turn text around.
   'merge.panel': () => ({
-    title: 'Fixture M3: squash and merge (#138)',
-    message: '* Add squash.txt',
+    title: 'Fixture M3: \u202Esquash\u202C and merge (#138)',
+    message: '* Add \u2066squash.txt\u2069',
     head: 'a'.repeat(40),
   }),
   'merge.open': () => undefined,
@@ -62,7 +66,8 @@ function state(change: Partial<MergeState> = {}): MergeState {
     checks: { passed: 1, total: 1 },
     url: 'https://github.com/rozed-dev/e2e/pull/138',
     head: 'a'.repeat(40),
-    readAt: 0,
+    readAt: NOW,
+    stale: null,
     ...change,
   };
 }
@@ -147,8 +152,8 @@ it('asks main for a tab drawn before main said anything', async () => {
   expect(page.querySelector('button')?.textContent).toContain('Queued, 2nd');
 });
 
-it('reads GitHub’s squash text as the panel opens, and keeps what the reader typed', async () => {
-  views.set('t3', { kind: 'known', state: state() });
+it('reads GitHub’s squash text as the panel opens, without what turns text around, and keeps what the reader typed', async () => {
+  views.set('t3', { kind: 'known', state: state({ approvedBy: ['jun-\u202Epark'] }) });
   const page = draw(<MergeHeader tab={tabOf('t3')} />);
   await until(() => page.querySelector('button') !== null);
   expect(page.querySelector('button')?.textContent).toContain('Squash into main');
@@ -158,6 +163,8 @@ it('reads GitHub’s squash text as the panel opens, and keeps what the reader t
   const title = panel()?.querySelector('input');
   await until(() => title?.getAttribute('placeholder') === 'Fixture M3: squash and merge (#138)');
   expect(panel()?.querySelector('textarea')?.getAttribute('placeholder')).toBe('* Add squash.txt');
+  expect(panel()?.textContent).toContain('approved by jun-park');
+  expect(panel()?.innerHTML).not.toMatch(/[\u202A-\u202E\u2066-\u2069]/);
   // The fields are a scope of their own, where `Tab` moves between them.
   expect(title?.closest('[data-lo-scope]')?.getAttribute('data-lo-scope')).toBe('commit');
   expect(panel()?.textContent).toContain('Merge commits are off in this repo');

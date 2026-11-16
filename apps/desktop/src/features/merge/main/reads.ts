@@ -4,8 +4,10 @@
 // screen, so a view off screen keeps its last status. Each read is mapped with the head on screen
 // (the newer side of what the view compares), the method remembered for the repository, and, where
 // the base branch's rules require the head up to date, whether the local copy's head holds the base
-// branch's tip, which stays unknown until the copy has fetched it. A view that acts as nobody, or
-// shows a run of a stack's layers, reads nothing. Nothing here calls Electron.
+// branch's tip, which stays unknown until the copy has fetched it, and is asked again later when the
+// copy couldn't tell. A status read before a read that failed, or while the poller can't read, says
+// why it may be out of date. A view that acts as nobody, or shows a run of a stack's layers, reads
+// nothing. Nothing here calls Electron.
 
 import {
   type Cached,
@@ -54,12 +56,25 @@ export interface MergeReadsOptions {
   readonly holds: (id: string, tip: string, head: string) => Promise<boolean | undefined>;
   readonly publish: (status: MergeStatusView) => void;
   readonly log: (line: string) => void;
+  /** The time now, in milliseconds since the Unix epoch; `Date.now` unless a test says. */
+  readonly now?: () => number;
+}
+
+/** How long to wait before asking again what failed `tries` times in a row: 10 s, doubling, to 5 min. */
+export function backoff(tries: number): number {
+  return Math.min(10_000 * 2 ** Math.max(0, tries - 1), 5 * 60_000);
 }
 
 /** What the local copy said of whether a head holds the base's tip, for `<tip>:<head>`. */
 interface Held {
   /** Its answer, once it gave one: nothing when it couldn't tell, or while it's asked. */
   answer: boolean | undefined;
+  /** Whether it's being asked now. */
+  asking: boolean;
+  /** How many times in a row it couldn't tell. */
+  tries: number;
+  /** When it may be asked again, once it couldn't tell. */
+  retryAt: number;
 }
 
 /** A view followed: whose and which pull request, and what's been read of it. */
@@ -69,12 +84,22 @@ interface Followed {
   /** The account it reads as, once it acts as one. */
   readonly login: string | undefined;
   readonly run: boolean;
-  /** Whether its read has been asked for: once, the first time it's on screen. */
+  /**
+   * Whether its read has been asked for: once, the first time it's on screen, and again after its
+   * account's poller couldn't be had, no sooner than `retryAt` unless it's shown again.
+   */
   started: boolean;
+  /** How many times in a row its account's poller couldn't be had. */
+  tries: number;
+  retryAt: number;
   poller: MergePoller | undefined;
   stop: (() => void) | undefined;
   /** What the poller last gave. */
   facts: Cached<MergeFacts> | undefined;
+  /** Why the last read after `facts` failed, until one doesn't. */
+  failedAgain: string | undefined;
+  /** Why the poller can't read now, as its status says, once `facts` are in. */
+  stall: string | undefined;
   held: Map<string, Held>;
   view: MergeView;
   /** The view as last sent, to send nothing that didn't change. */
@@ -161,11 +186,22 @@ export class MergeReads {
       login !== undefined &&
       !followed.started &&
       info.shown !== undefined &&
-      this.#options.onScreen() === id
+      this.#options.onScreen() === id &&
+      this.#now() >= followed.retryAt
     ) {
       followed.started = true;
       void this.#watch(followed, login);
     }
+  }
+
+  /**
+   * Follows view `id` as it comes on screen: one whose account's poller couldn't be had tries again
+   * now, without waiting.
+   */
+  shown(id: string): void {
+    const followed = this.#views.get(id);
+    if (followed && !followed.started) followed.retryAt = 0;
+    this.follow(id);
   }
 
   /** View `id`'s status now: loading for one not followed yet, nothing for no view. */
@@ -209,9 +245,13 @@ export class MergeReads {
       login,
       run,
       started: false,
+      tries: 0,
+      retryAt: 0,
       poller: undefined,
       stop: undefined,
       facts: undefined,
+      failedAgain: undefined,
+      stall: undefined,
       held: new Map(),
       view: { kind: 'loading' },
       sent: undefined,
@@ -221,6 +261,10 @@ export class MergeReads {
   #drop(id: string): void {
     this.#views.get(id)?.stop?.();
     this.#views.delete(id);
+  }
+
+  #now(): number {
+    return this.#options.now?.() ?? Date.now();
   }
 
   /** Whether `followed` is still what view `id` is followed as. */
@@ -233,10 +277,16 @@ export class MergeReads {
     try {
       poller = await this.#options.poller(login);
     } catch (error) {
-      if (this.#current(followed)) this.#fail(followed, describe(error));
+      if (!this.#current(followed)) return;
+      // As when the account isn't signed in: it starts again once it's shown, or later.
+      followed.started = false;
+      followed.tries += 1;
+      followed.retryAt = this.#now() + backoff(followed.tries);
+      this.#fail(followed, describe(error));
       return;
     }
     if (!this.#current(followed)) return;
+    followed.tries = 0;
     followed.poller = poller;
     const events = poller.onEvent((event) => this.#heard(followed, poller, event));
     const changes = poller.onChange(() => this.#stalled(followed, poller));
@@ -257,12 +307,23 @@ export class MergeReads {
 
   /**
    * Ends the wait for a view's first read when the poller can't answer it now: it fails with why,
-   * and the status comes once a read does.
+   * and the status comes once a read does. A status already read says why it may be out of date,
+   * for as long as the poller can't read.
    */
   #stalled(followed: Followed, poller: MergePoller): void {
-    if (!this.#current(followed) || followed.poller !== poller || followed.facts) return;
+    if (!this.#current(followed) || followed.poller !== poller) return;
     const why = stallOf(poller.status());
-    if (why !== undefined) this.#fail(followed, why);
+    if (followed.facts) this.#stale(followed, why, followed.failedAgain);
+    else if (why !== undefined) this.#fail(followed, why);
+  }
+
+  /** Notes why a status already read may be out of date, and maps it again if that changed. */
+  #stale(followed: Followed, stall: string | undefined, failedAgain: string | undefined): void {
+    if (followed.stall === stall && followed.failedAgain === failedAgain) return;
+    followed.stall = stall;
+    followed.failedAgain = failedAgain;
+    const info = this.#options.view(followed.id);
+    if (info) this.#map(followed, info);
   }
 
   #heard(followed: Followed, poller: MergePoller, event: PollEvent): void {
@@ -275,11 +336,14 @@ export class MergeReads {
         if (cached) this.#take(followed, cached);
         return;
       }
-      case 'readFailed':
+      case 'readFailed': {
         if (!event.pull.equals(followed.pull) || event.name !== MERGE_FACTS.name) return;
-        // What was read before stays: it's only not current.
-        if (!followed.facts) this.#fail(followed, new GithubError(event.error).message);
+        const why = new GithubError(event.error).message;
+        // What was read before stays, saying it may be out of date.
+        if (followed.facts) this.#stale(followed, followed.stall, why);
+        else this.#fail(followed, why);
         return;
+      }
       case 'summary':
       case 'check':
       case 'details':
@@ -293,7 +357,13 @@ export class MergeReads {
   }
 
   #take(followed: Followed, cached: Cached<MergeFacts>): void {
-    if (followed.facts?.value === cached.value && followed.facts.fetchedAt === cached.fetchedAt) {
+    const again = followed.failedAgain !== undefined;
+    followed.failedAgain = undefined;
+    if (
+      !again &&
+      followed.facts?.value === cached.value &&
+      followed.facts.fetchedAt === cached.fetchedAt
+    ) {
       return;
     }
     followed.facts = cached;
@@ -314,6 +384,7 @@ export class MergeReads {
         headContainsBase: this.#holds(followed, info, facts),
       },
       readAt: cached.fetchedAt,
+      stale: followed.stall ?? followed.failedAgain,
       pull: {
         owner: followed.pull.repo.owner,
         repo: followed.pull.repo.name,
@@ -325,8 +396,9 @@ export class MergeReads {
 
   /**
    * Whether GitHub's head holds the base branch's tip, where the base's rules require the head up
-   * to date: nothing elsewhere, and nothing until the local copy, once it's ready, has said, which
-   * it's asked once for each tip and head.
+   * to date: nothing elsewhere, and nothing until the local copy, once it's ready, has said. It's
+   * asked once for each tip and head, and again at a later read, backing off, while it can't tell,
+   * as when it lacks GitHub's head or the fetch of the tip failed.
    */
   #holds(followed: Followed, info: PullTabInfo, facts: MergeFacts): boolean | undefined {
     if (!requiresUpToDate(facts)) return undefined;
@@ -336,8 +408,11 @@ export class MergeReads {
     if (info.local.kind !== 'ready') return undefined;
     const key = `${tip}:${head}`;
     const known = followed.held.get(key);
-    if (known) return known.answer;
-    const asked: Held = { answer: undefined };
+    if (known && (known.asking || known.answer !== undefined || this.#now() < known.retryAt)) {
+      return known.answer;
+    }
+    const asked: Held = known ?? { answer: undefined, asking: false, tries: 0, retryAt: 0 };
+    asked.asking = true;
     followed.held.set(key, asked);
     this.#options
       .holds(followed.id, tip, head)
@@ -346,7 +421,12 @@ export class MergeReads {
         return undefined;
       })
       .then((answer) => {
+        asked.asking = false;
         asked.answer = answer;
+        if (answer === undefined) {
+          asked.tries += 1;
+          asked.retryAt = this.#now() + backoff(asked.tries);
+        }
         if (!this.#current(followed) || followed.held.get(key) !== asked) return;
         const now = this.#options.view(followed.id);
         if (now && answer !== undefined) this.#map(followed, now);

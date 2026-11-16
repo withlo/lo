@@ -2,6 +2,8 @@
 // open a reason's page, step through the methods, go to the squash commit's text, and close it,
 // going on to the next unresolved conversation when asked.
 
+import type { Target } from '@lo/ui/commands';
+
 import { focusedTarget } from '../../../window/commands/bar.ts';
 import { notify } from '../../../window/commands/notices.tsx';
 import { focusMiddle, registry } from '../../../window/commands/registry.ts';
@@ -13,6 +15,27 @@ import { rowPage, rowsOf, shownMethod, steppedMethod } from './words.ts';
 
 /** Why the panel can't open before the first read of whether it can merge. */
 const NO_STATUS_YET = 'Lo is still reading whether it can merge.';
+
+/** The header's merge status, as the right-click menus take it: a row of the merge feature's own. */
+export const STATUS_ROW = 'merge/status';
+
+/** A reason of the merge panel, by its key, as the right-click menus take it. */
+export function reasonRow(key: string): string {
+  return `merge/reason/${key}`;
+}
+
+/** The key of the reason `target` names, if it names one. */
+function reasonOf(target: Target): string | undefined {
+  const prefix = reasonRow('');
+  return target.kind === 'row' && target.row.startsWith(prefix)
+    ? target.row.slice(prefix.length)
+    : undefined;
+}
+
+/** Whether a right-click menu on `target` is the header's merge status's. */
+export function onStatus(target: Target): boolean {
+  return target.kind === 'row' && target.row === STATUS_ROW;
+}
 
 /** View `id`'s merge status, for pull request `number`, or why its panel can't open. */
 function statusOf(id: string, number: number): { id: string; state: MergeState } | string {
@@ -97,12 +120,28 @@ export function move(step: 1 | -1): void {
   panels.update(open.id, (panel) => ({ ...panel, focused: next?.key }));
 }
 
-/** Whether the reason the keyboard is on has a page to open, or why not. */
-export function hasPage(): true | string {
+/**
+ * The page of the reason `target` names, else of the one the keyboard is on, with the view it's
+ * in, or why there's none.
+ */
+function pageOf(target: Target): { id: string; page: string } | string {
   const open = opened();
   if (!open) return 'The merge panel isn’t open.';
-  const row = rowsOf(open.state).find((each) => each.key === panels.get(open.id).focused);
-  return row && rowPage(row) !== undefined ? true : 'This reason has no page to open.';
+  const key = reasonOf(target) ?? panels.get(open.id).focused;
+  const row = rowsOf(open.state).find((each) => each.key === key);
+  const page = row && rowPage(row);
+  return page === undefined ? 'This reason has no page to open.' : { id: open.id, page };
+}
+
+/** Whether the reason right-clicked, or the one the keyboard is on, has a page to open, or why not. */
+export function hasPage(target: Target): true | string {
+  const found = pageOf(target);
+  return typeof found === 'string' ? found : true;
+}
+
+/** Whether a right-click menu on `target` lists Open: a reason's, with a page to open. */
+export function reasonHasPage(target: Target): boolean {
+  return reasonOf(target) !== undefined && hasPage(target) === true;
 }
 
 /** Opens `url`, a page view `id`'s status links, in the system's browser. */
@@ -114,13 +153,10 @@ export function openPage(id: string, url: string): void {
     );
 }
 
-/** Opens the page of the reason the keyboard is on. */
-export function openReason(): void {
-  const open = opened();
-  if (!open) return;
-  const row = rowsOf(open.state).find((each) => each.key === panels.get(open.id).focused);
-  const page = row && rowPage(row);
-  if (page !== undefined) openPage(open.id, page);
+/** Opens the page of the reason right-clicked, or the one the keyboard is on. */
+export function openReason(target: Target): void {
+  const found = pageOf(target);
+  if (typeof found !== 'string') openPage(found.id, found.page);
 }
 
 /** Whether the methods can be stepped through, or why not. */

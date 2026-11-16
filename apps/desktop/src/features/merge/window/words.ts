@@ -1,7 +1,7 @@
 // How the window words a pull request's merge status: the header's one line, and the merge panel's
 // head, reasons and foot, from what main decided. Text from GitHub, such as logins, branches and
-// check names, is drawn as text by the components, which take out the characters that turn text
-// around. Nothing here draws.
+// check names, is drawn as text without the characters that turn text around, which the components
+// take out, or `MergeHeader` where it draws the text itself. Nothing here draws.
 
 import type { MergeKind } from '@lo/ui';
 
@@ -289,10 +289,43 @@ function readyDetail(action: Action, base: string): string {
 }
 
 /**
- * The header's merge status for `view`, or nothing while there's nothing to show: before the first
- * read, and for a view that reads none.
+ * How long a status goes unread before it says how old it is: twice the five minutes the poller
+ * lets a read stand, while nothing it watches changes, before it reads it again.
  */
-export function headerLine(view: MergeView | undefined): HeaderLine | undefined {
+export const STALE_AFTER = 10 * 60_000;
+
+/** How long ago `at` was, from `now`, in words: "a moment ago", "3 min ago", "2 hours ago". */
+export function ago(at: number, now: number): string {
+  const minutes = Math.floor(Math.max(0, now - at) / 60_000);
+  if (minutes < 1) return 'a moment ago';
+  if (minutes < 60) return `${minutes} min ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} ${hours === 1 ? 'hour' : 'hours'} ago`;
+  const days = Math.floor(hours / 24);
+  return `${days} ${days === 1 ? 'day' : 'days'} ago`;
+}
+
+/**
+ * Whether `state` may be out of date at `now`, and why: Lo couldn't read it again (`why`), or it's
+ * gone unread past {@link STALE_AFTER}. Nothing while it's current, or once it merged.
+ */
+export function staleness(
+  state: MergeState,
+  now: number,
+): { readonly ago: string; readonly why: string | undefined } | undefined {
+  if (state.verdict === 'merged') return undefined;
+  if (state.stale === null && now - state.readAt < STALE_AFTER) return undefined;
+  return { ago: ago(state.readAt, now), why: state.stale ?? undefined };
+}
+
+/**
+ * The header's merge status for `view` at `now`, or nothing while there's nothing to show: before
+ * the first read, and for a view that reads none.
+ */
+export function headerLine(
+  view: MergeView | undefined,
+  now: number = Date.now(),
+): HeaderLine | undefined {
   if (view === undefined) return undefined;
   switch (view.kind) {
     case 'none':
@@ -307,11 +340,26 @@ export function headerLine(view: MergeView | undefined): HeaderLine | undefined 
         opens: false,
       };
     case 'known':
-      return knownLine(view.state);
+      return dated(knownLine(view.state), view.state, now);
     default:
       view satisfies never;
       return undefined;
   }
+}
+
+/** `line`, saying how old `state` is when it may be out of date at `now`. */
+function dated(line: HeaderLine, state: MergeState, now: number): HeaderLine {
+  const old = staleness(state, now);
+  if (!old) return line;
+  const said =
+    old.why === undefined
+      ? `Lo hasn’t read this since ${old.ago}.`
+      : `Lo couldn’t check again: ${old.why}`;
+  return {
+    ...line,
+    detail: [line.detail, `as of ${old.ago}`].filter((part) => part !== undefined).join(' · '),
+    title: line.title === undefined ? said : `${line.title}\n${said}`,
+  };
 }
 
 function knownLine(state: MergeState): HeaderLine {
@@ -329,14 +377,17 @@ function knownLine(state: MergeState): HeaderLine {
         title,
         opens: true,
       };
-    case 'ready':
+    case 'ready': {
+      // A read that may be missing something never looks clean at a glance.
+      const unsure = state.incomplete !== null || state.partial;
       return {
-        kind: 'ready',
+        kind: unsure ? 'waiting' : 'ready',
         verdict: state.action.kind === 'enqueue' ? 'Ready for the queue' : 'Ready to merge',
-        detail: readyDetail(state.action, state.base),
+        detail: unsure ? 'Lo may not see everything' : readyDetail(state.action, state.base),
         title,
         opens: true,
       };
+    }
     case 'waiting':
       if (state.autoMerge) {
         return {
@@ -638,9 +689,10 @@ function uncheckedTitle(rule: Unchecked): string {
 /**
  * The merge panel's rows for `state`: a row for each reason it can't merge, in `blockers`' order,
  * the checks of a state together, each a sub-row with its run; then what may be missing, as rules
- * Lo doesn't check, a read GitHub left part of out, or a block Lo may not see all of.
+ * Lo doesn't check, a read GitHub left part of out, or a block Lo may not see all of; and, at `now`,
+ * how old it is when it may be out of date.
  */
-export function rowsOf(state: MergeState): Row[] {
+export function rowsOf(state: MergeState, now: number = Date.now()): Row[] {
   const rows: Row[] = [];
   if (state.verdict === 'merged' || state.verdict === 'closed') return rows;
   const checks = checksOf(state.blockers);
@@ -722,6 +774,23 @@ export function rowsOf(state: MergeState): Row[] {
       title: 'Lo may not see every rule',
       detail: 'GitHub may block it for more than what’s listed here.',
       link: { label: SEE_ON_GITHUB, url: state.url },
+      subs: [],
+      nextThread: false,
+      inTheWay: false,
+    });
+  }
+  const old = staleness(state, now);
+  if (old) {
+    rows.push({
+      key: 'stale',
+      kind: 'info',
+      glyph: 'unknown',
+      title: old.why === undefined ? `As of ${old.ago}` : 'Lo couldn’t check again',
+      detail:
+        old.why === undefined
+          ? 'Lo hasn’t read it again since.'
+          : `${old.why} What’s shown is as of ${old.ago}.`,
+      link: undefined,
       subs: [],
       nextThread: false,
       inTheWay: false,

@@ -20,8 +20,10 @@ import {
   leaveCommit,
   move,
   nextConversation,
+  onStatus,
   openPanel,
   openReason,
+  reasonHasPage,
   stepMethod,
 } from './actions.ts';
 import { main } from './main.ts';
@@ -30,10 +32,10 @@ import { forgetStatus, takeStatus } from './store.ts';
 
 export default {
   commands: handlers(keys, {
-    panel: { run: () => openPanel(), enabled: canOpen },
+    panel: { run: () => openPanel(), enabled: canOpen, listed: onStatus },
     down: { run: () => move(1), enabled: isOpen },
     up: { run: () => move(-1), enabled: isOpen },
-    open: { run: openReason, enabled: hasPage },
+    open: { run: openReason, enabled: hasPage, listed: reasonHasPage },
     nextMethod: { run: () => stepMethod(1), enabled: canStep },
     previousMethod: { run: () => stepMethod(-1), enabled: canStep },
     edit: { run: edit, enabled: canEdit },

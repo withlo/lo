@@ -13,13 +13,30 @@ import {
   type CheckItem,
 } from '@lo/ui';
 import { keyLabels } from '@lo/ui/commands';
-import { useEffect, useId, useRef, useState, type ReactNode, type RefObject } from 'react';
+import {
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  type MouseEvent,
+  type ReactNode,
+  type RefObject,
+} from 'react';
 import { useStore } from 'zustand';
 
+import { useMenuTarget } from '../../../window/commands/menus.tsx';
 import { registry, useKeys } from '../../../window/commands/registry.ts';
-import { usePull, useTabState, type PullTab } from '../../tab/window/shared.ts';
+import { usePull, useTabState, withoutBidi, type PullTab } from '../../tab/window/shared.ts';
 import type { MergeState } from '../contract.ts';
-import { closePanel, keepTitleField, nextConversation, openPage, togglePanel } from './actions.ts';
+import {
+  closePanel,
+  keepTitleField,
+  nextConversation,
+  openPage,
+  reasonRow,
+  STATUS_ROW,
+  togglePanel,
+} from './actions.ts';
 import { main } from './main.ts';
 import { panels, statuses, takeStatus, type Panel } from './store.ts';
 import {
@@ -37,6 +54,26 @@ import {
 function keyOf(id: string): string[] | undefined {
   const [first] = registry().keysOf(id);
   return first && keyLabels(first, registry().system);
+}
+
+/** The time now, again each half minute while `ticking`, for how old a status is. */
+function useNow(ticking: boolean): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!ticking) return undefined;
+    setNow(Date.now());
+    const timer = setInterval(() => setNow(Date.now()), 30_000);
+    return () => clearInterval(timer);
+  }, [ticking]);
+  return now;
+}
+
+/** The reason a right-click in the panel's reasons is on, as the menus take it. */
+function reasonAt(event: MouseEvent<HTMLElement>) {
+  const row =
+    event.target instanceof Element ? event.target.closest('[role="option"][data-key]') : null;
+  const key = row?.getAttribute('data-key');
+  return key ? { kind: 'row' as const, row: reasonRow(key) } : undefined;
 }
 
 /** Asks main for view `id`'s status, once the window has none for it, as after a reload. */
@@ -124,21 +161,23 @@ function bodyOf(
   panel: Panel,
   rows: readonly Row[],
   list: { id: string; ref: RefObject<HTMLUListElement | null> },
+  menu: { onContextMenu: (event: MouseEvent<HTMLElement>) => void },
 ): ReactNode {
   const method = shownMethod(state, panel.method);
   const { action } = state;
   const parts: ReactNode[] = [];
   if (rows.length > 0) {
     parts.push(
-      <Checklist
-        key="reasons"
-        label="Why it can’t merge"
-        id={list.id}
-        rows={rows.map((row) => itemOf(tab.id, row))}
-        focused={panel.focused}
-        listRef={list.ref}
-        className="pb-8"
-      />,
+      <div key="reasons" {...menu}>
+        <Checklist
+          label="Why it can’t merge"
+          id={list.id}
+          rows={rows.map((row) => itemOf(tab.id, row))}
+          focused={panel.focused}
+          listRef={list.ref}
+          className="pb-8"
+        />
+      </div>,
     );
   }
   if (state.verdict === 'ready' && action.kind === 'merge') {
@@ -159,17 +198,19 @@ function bodyOf(
               title={{
                 value: panel.title,
                 onChange: (title) => panels.update(tab.id, (current) => ({ ...current, title })),
-                placeholder: squash.kind === 'read' ? squash.title : undefined,
+                // GitHub's text, which the pull request's author wrote, drawn without the
+                // characters that turn text around.
+                placeholder: squash.kind === 'read' ? withoutBidi(squash.title) : undefined,
               }}
               message={{
                 value: panel.message,
                 onChange: (message) =>
                   panels.update(tab.id, (current) => ({ ...current, message })),
-                placeholder: squash.kind === 'read' ? squash.message : undefined,
+                placeholder: squash.kind === 'read' ? withoutBidi(squash.message) : undefined,
               }}
             />
             {squash.kind === 'failed' && (
-              <p className="m-0 mt-6 text-fg-muted text-small">{squash.why}</p>
+              <p className="m-0 mt-6 text-fg-muted text-small">{withoutBidi(squash.why)}</p>
             )}
           </div>
         )}
@@ -239,6 +280,8 @@ export function MergeHeader({ tab }: { tab: PullTab }) {
   const [button, setButton] = useState<HTMLButtonElement | null>(null);
   const listRef = useRef<HTMLUListElement>(null);
   const known = view?.kind === 'known' ? view.state : undefined;
+  const now = useNow(known !== undefined && known.verdict !== 'merged');
+  const statusMenu = useMenuTarget({ kind: 'row', row: STATUS_ROW });
   const squashing =
     panel.open &&
     known?.verdict === 'ready' &&
@@ -254,23 +297,32 @@ export function MergeHeader({ tab }: { tab: PullTab }) {
   useEffect(() => {
     if (squashing && at !== undefined) readSquash(tab.id, at);
   }, [squashing, at, tab.id]);
-  const line = headerLine(view);
+  const line = headerLine(view, now);
   if (!line) return null;
   const keys = keyOf('merge.panel');
   return (
     <>
-      <MergeStatus
-        kind={line.kind}
-        verdict={line.verdict}
-        detail={line.detail}
-        title={line.title}
-        keys={keys}
-        onClick={line.opens ? () => togglePanel(tab.id, tab.number) : undefined}
-        expanded={line.opens ? panel.open : undefined}
-        ref={setButton}
-      />
+      <span className="contents" {...(line.opens ? statusMenu : {})}>
+        <MergeStatus
+          kind={line.kind}
+          verdict={line.verdict}
+          detail={line.detail}
+          title={line.title}
+          keys={keys}
+          onClick={line.opens ? () => togglePanel(tab.id, tab.number) : undefined}
+          expanded={line.opens ? panel.open : undefined}
+          ref={setButton}
+        />
+      </span>
       {known && line.opens && (
-        <PanelUnder tab={tab} state={known} panel={panel} anchor={button} listRef={listRef} />
+        <PanelUnder
+          tab={tab}
+          state={known}
+          panel={panel}
+          anchor={button}
+          listRef={listRef}
+          now={now}
+        />
       )}
     </>
   );
@@ -283,16 +335,19 @@ function PanelUnder({
   panel,
   anchor,
   listRef,
+  now,
 }: {
   tab: PullTab;
   state: MergeState;
   panel: Panel;
   anchor: HTMLButtonElement | null;
   listRef: RefObject<HTMLUListElement | null>;
+  now: number;
 }) {
   const list = `merge-${useId()}`;
   const head = panelHead(state);
-  const rows = rowsOf(state);
+  const rows = rowsOf(state, now);
+  const reasonMenu = useMenuTarget(reasonAt);
   return (
     <MergePanel
       open={panel.open}
@@ -311,14 +366,16 @@ function PanelUnder({
               into <Branch name={state.base} base />
             </>
           )}
-          {head.after !== undefined && <span className="min-w-0 truncate">{head.after}</span>}
+          {head.after !== undefined && (
+            <span className="min-w-0 truncate">{withoutBidi(head.after)}</span>
+          )}
         </>
       }
       closeKeys={keyOf('merge.close')}
       focusRef={rows.length > 0 ? listRef : undefined}
       foot={footOf(state, panel)}
     >
-      {bodyOf(tab, state, panel, rows, { id: list, ref: listRef })}
+      {bodyOf(tab, state, panel, rows, { id: list, ref: listRef }, reasonMenu)}
     </MergePanel>
   );
 }

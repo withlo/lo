@@ -3,7 +3,9 @@
 // diff. In it, `j` and `k` move between the reasons, `o` opens the page of the one the keyboard is
 // on, `Tab` and `⇧Tab` step through the merge methods the repository allows, `e` edits the squash
 // commit's title and message, `]t` goes to the next unresolved conversation, and `Esc` closes it.
-// In the commit's fields, `Esc` goes back to the panel.
+// In the commit's fields, `Esc` goes back to the panel. The header's merge status has a right-click
+// menu that opens the panel, and each reason one that opens its page: both are rows to the menus,
+// which only the merge feature's commands are listed for.
 
 import { defineCommands, type When } from '@lo/ui/commands';
 
@@ -18,8 +20,10 @@ export default defineCommands(
       label: 'Merge panel',
       group: 'Review',
       keys: ['m'],
+      targets: ['row', 'none'],
       overVim: true,
       when: { except: ['menu', 'dialog', 'palette', 'box', 'merge', 'commit'], mode: 'normal' },
+      menu: { on: 'row', order: 0 },
     },
     down: {
       label: 'Next reason',
@@ -35,8 +39,18 @@ export default defineCommands(
       when: panel,
       repeat: true,
     },
-    /** Opens the page of the reason the keyboard is on: a check's run, or the pull request. */
-    open: { label: 'Open the reason’s page', group: 'Review', keys: ['o'], when: panel },
+    /**
+     * Opens the page of the reason the keyboard is on, or the one right-clicked: a check's run, or
+     * the pull request.
+     */
+    open: {
+      label: 'Open the reason’s page',
+      group: 'Review',
+      keys: ['o'],
+      targets: ['row', 'none'],
+      when: panel,
+      menu: { on: 'row', order: 0, label: 'Open' },
+    },
     nextMethod: { label: 'Next merge method', group: 'Review', keys: ['tab'], when: panel },
     previousMethod: {
       label: 'Previous merge method',

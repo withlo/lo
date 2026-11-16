@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -224,7 +224,7 @@ const ETAG = '"a1b2c3"';
  * A `fetch` answering a REST read as GitHub does: `200` with an ETag, then `304` to the same read
  * asked again with it, or `200` again when `moved`. It keeps what it was sent.
  */
-function restAnswering(moved = false) {
+function restAnswering(moved = false, body = '[{"type":"pull_request"}]') {
   const sent: Request[] = [];
   const fetch: typeof globalThis.fetch = (input, init) => {
     const request = new Request(input, init);
@@ -233,7 +233,7 @@ function restAnswering(moved = false) {
       return Promise.resolve(new Response(null, { status: 304, headers: { etag: ETAG } }));
     }
     return Promise.resolve(
-      new Response('[{"type":"pull_request"}]', {
+      new Response(body, {
         headers: { 'content-type': 'application/json', etag: ETAG, 'set-cookie': 'x' },
       }),
     );
@@ -298,4 +298,17 @@ test('adds no REST read whose ETag GitHub doesn’t answer 304, nor one off GitH
   ).rejects.toThrow('isn’t a path');
   expect(readCassette(dir).interactions).toHaveLength(2);
   expect(readCassette(dir).info.added).toBeUndefined();
+});
+
+test('writes no REST read whose answer holds the token, in any cassette', async () => {
+  const [first, second] = [cassette(), cassette()];
+  const before = [first, second].map((dir) => readdirSync(dir).toSorted());
+  const json = readFileSync(join(second, 'cassette.json'), 'utf8');
+  // GitHub echoing the token back, as an error page might.
+  const { fetch } = restAnswering(false, `[{"note":"token ${FAKE_TOKEN}"}]`);
+  await expect(
+    addRestAnswers({ fetch, token: FAKE_TOKEN, path: RULES, dirs: [first, second], at: 'now' }),
+  ).rejects.toThrow('nothing was written');
+  expect([first, second].map((dir) => readdirSync(dir).toSorted())).toEqual(before);
+  expect(readFileSync(join(second, 'cassette.json'), 'utf8')).toBe(json);
 });
