@@ -226,10 +226,33 @@ test('the branches a merge queue ruleset covers have a queue', () => {
     unavailable: undefined,
   };
   const branches = ['trunk', 'release/2.0', 'release/old-1', 'develop', 'feature', 'release/2.0'];
-  expect(queueBranches(rules, branches, 'trunk')).toEqual(['trunk', 'release/2.0']);
+  expect(queueBranches(rules, branches, 'trunk')).toEqual({
+    queued: ['trunk', 'release/2.0'],
+    unknown: [],
+  });
   // Without a default branch, ~DEFAULT_BRANCH covers nothing.
-  expect(queueBranches(rules, ['trunk'], undefined)).toEqual([]);
+  expect(queueBranches(rules, ['trunk'], undefined)).toEqual({ queued: [], unknown: [] });
   expect(
     queueBranches({ rulesets: [queued(['~ALL'])], unavailable: undefined }, ['x'], 'main'),
-  ).toEqual(['x']);
+  ).toEqual({ queued: ['x'], unknown: [] });
+});
+
+test('a ruleset whose rules github left out may give the branches it covers a queue', () => {
+  const rules = {
+    rulesets: [
+      { ...refs(['refs/heads/release/*'], []), queue: undefined },
+      queued(['refs/heads/release/2.0']),
+      refs(['refs/heads/develop'], []),
+    ],
+    unavailable: undefined,
+  };
+  // One that requires a queue wins over one Lo can't tell of.
+  expect(queueBranches(rules, ['release/1.0', 'release/2.0', 'develop'], 'main')).toEqual({
+    queued: ['release/2.0'],
+    unknown: ['release/1.0'],
+  });
+  // Rulesets that couldn't be read leave every branch they don't give a queue unknown.
+  expect(
+    queueBranches({ ...rules, unavailable: 'No' }, ['develop', 'release/2.0'], 'main'),
+  ).toEqual({ queued: ['release/2.0'], unknown: ['develop'] });
 });

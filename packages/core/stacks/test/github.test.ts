@@ -33,6 +33,7 @@ import {
   type TrunkRuleList,
 } from '@lo/github';
 import {
+  cassette,
   isObject,
   Replay,
   replayFetch,
@@ -65,10 +66,10 @@ function client(fetch: ReplayFetch): GithubClient {
  * looked up, its trunk rules, and its client, for the layers.
  */
 async function readRecorded(
-  cassette: string,
+  name: string,
   repo: RepoRef,
 ): Promise<{ list: OpenPullRequestList; rules: TrunkRuleList; github: GithubClient }> {
-  const github = client(replayFetch(cassette));
+  const github = client(replayFetch(name));
   const rules = await readTrunkRules(github, repo, undefined, []);
   const list = await readOpenPullRequests(github, repo, rules, NOW);
   return { list, rules, github };
@@ -323,14 +324,56 @@ test('a ruleset that requires a merge queue gives the branches it covers one', a
   // Of the branches the open pull requests target, only e4/queued merges through a queue.
   const bases = list.pullRequests.map((pr) => pr.baseRefName);
   expect(bases).toEqual(expect.arrayContaining(['main', 'e4/gated', 'e4/queued']));
-  expect(queueBranches(rules, bases, list.defaultBranch)).toEqual(['e4/queued']);
-  expect(queueBranches(rules, ['main', 'e4/gated'], list.defaultBranch)).toEqual([]);
+  expect(queueBranches(rules, bases, list.defaultBranch)).toEqual({
+    queued: ['e4/queued'],
+    unknown: [],
+  });
+  const unqueued = queueBranches(rules, ['main', 'e4/gated'], list.defaultBranch);
+  expect(unqueued).toEqual({ queued: [], unknown: [] });
 
   // Policies and gates without a queue give none.
   const ghStack = await readRecorded('stacks_gh_stack', new RepoRef('github', 'gh-stack'));
   expect(ghStack.rules.rulesets.some((ruleset) => ruleset.queue)).toBe(false);
   const ghBases = ['main', 'enterprise-3.18-release'];
-  expect(queueBranches(ghStack.rules, ghBases, ghStack.list.defaultBranch)).toEqual([]);
+  expect(queueBranches(ghStack.rules, ghBases, ghStack.list.defaultBranch)).toEqual({
+    queued: [],
+    unknown: [],
+  });
+});
+
+test('a ruleset whose rules github left out may require a queue', async () => {
+  const e2e = new RepoRef('rozed-dev', 'e2e');
+  const answers = cassette('app_stack').interactions.map(({ interaction }) => {
+    const copy = structuredClone(interaction);
+    if (copy.request.operation !== 'TrunkRules') return copy;
+    // e4/queued's rules, null with an error naming them, as for a timeout.
+    const body = copy.response.body;
+    if (!isObject(body) || !isObject(body['data']) || !isObject(body['data']['repository'])) {
+      throw new Error('the rulesets answer had no repository');
+    }
+    const rulesets = body['data']['repository']['rulesets'];
+    const nodes = isObject(rulesets) ? rulesets['nodes'] : undefined;
+    const queued = Array.isArray(nodes) ? nodes[1] : undefined;
+    if (!isObject(queued)) throw new Error('the rulesets answer had no second ruleset');
+    queued['rules'] = null;
+    body['errors'] = [
+      {
+        type: null,
+        path: ['repository', 'rulesets', 'nodes', 1, 'rules'],
+        message: 'Something went wrong while executing your query.',
+      },
+    ];
+    return copy;
+  });
+  const rules = await readTrunkRules(client(replay(answers)), e2e, undefined, []);
+  expect(rules.rulesets.map((ruleset) => [ruleset.include, ruleset.queue])).toEqual([
+    [['refs/heads/e4/gated'], false],
+    [['refs/heads/e4/queued'], undefined],
+  ]);
+  expect(queueBranches(rules, ['main', 'e4/gated', 'e4/queued'], 'main')).toEqual({
+    queued: [],
+    unknown: ['e4/queued'],
+  });
 });
 
 test('a reader sees branch protection through pull requests', async () => {
@@ -831,7 +874,11 @@ test('branches are checked one by one when the rulesets cant be read', async () 
   expect(rules.rulesets).toEqual([
     { include: ['refs/heads/develop'], exclude: [], gatesMerging: true, queue: true },
   ]);
-  expect(queueBranches(rules, ['main', 'develop', 'a'], 'main')).toEqual(['develop']);
+  // The others may have one the rulesets give, which couldn't be read.
+  expect(queueBranches(rules, ['main', 'develop', 'a'], 'main')).toEqual({
+    queued: ['develop'],
+    unknown: ['main', 'a'],
+  });
   const stacks = stacksOf(list, rules);
   expect(link(stacks, 2)).toEqual([onBranch('develop'), undefined]);
   expect(link(stacks, 4)).toEqual([onPr(3), 'baseBranch']);

@@ -7,7 +7,9 @@
  *
  * GitHub's enum values are kept as GitHub names them, so one newer than Lo survives to be read as
  * one. A part GitHub leaves out with an error is noted by its path, so a list missing an item never
- * reads as GitHub's whole answer.
+ * reads as GitHub's whole answer, nor a queue left out as none: {@link queueViewCutShort} and
+ * {@link queueWaitingCutShort} say so. A part that can't be null failing nulls the repository or the
+ * pull request, which fails the read with GitHub's errors rather than reading as not found.
  */
 
 import type { GithubClient } from './client.ts';
@@ -21,8 +23,7 @@ import {
   type QueueWaitingQuery,
 } from './generated/graphql.ts';
 import type { GraphQLError } from './graphql.ts';
-import { fieldPath, type CheckFacts } from './merge.ts';
-import { notFound } from './pager.ts';
+import { fieldPath, present, type CheckFacts } from './merge.ts';
 import type { PullRef, RepoRef } from './refs.ts';
 
 /**
@@ -42,12 +43,16 @@ export interface QueueView {
    * doesn't say.
    */
   viewerPermission: string | undefined;
-  /** The queue, or nothing when the branch has none. */
+  /**
+   * The queue, or nothing when the branch has none, or when GitHub left it out with an error
+   * (`mergeQueue` in {@link leftOut}): {@link queueLeftOut} tells the two apart.
+   */
   queue: QueueFacts | undefined;
   /**
    * The parts GitHub left out with an error, by their path from the repository, such as
    * `mergeQueue.entries.nodes.2.headCommit.statusCheckRollup`, but for the settings it hides from
-   * those who can't write.
+   * those who can't write. An entry left out is missing from {@link QueueFacts.entries}, and the
+   * entries left out leave none, with a {@link QueueFacts.total} of 0.
    */
   leftOut: string[];
 }
@@ -62,7 +67,10 @@ export interface QueueFacts {
   settings: QueueSettings | undefined;
   /** The entries read, in the queue's order: the first merges next. */
   entries: QueueEntryFacts[];
-  /** `entries.totalCount`: more than `entries` holds when the queue is longer than the 100 read. */
+  /**
+   * `entries.totalCount`: more than `entries` holds when the queue is longer than the 100 read, or
+   * GitHub left an entry out. 0 when GitHub left the entries out, which isn't an empty queue.
+   */
   total: number;
 }
 
@@ -249,8 +257,7 @@ export async function queueView(
     { owner: repo.owner, name: repo.name, branch },
     2,
   );
-  const repository = data.repository;
-  if (!repository) throw notFound(`repository ${repo.toString()}`);
+  const repository = present(data.repository, errors, `repository ${repo.toString()}`);
   return {
     branch,
     viewerPermission: repository.viewerPermission ?? undefined,
@@ -259,10 +266,29 @@ export async function queueView(
   };
 }
 
-/** Whether the queue holds entries the view doesn't: past the 100 read, or left out by GitHub. */
+/**
+ * Whether GitHub left part of the queue out with an error: the queue itself, so the branch may
+ * have one though {@link QueueView.queue} is nothing, its entries, so the queue may hold some
+ * though none were read, an entry, or an entry's commits, checks or pull request. Its settings or
+ * estimate left out are only missing.
+ */
+export function queueLeftOut(view: QueueView): boolean {
+  return view.leftOut.some((path) =>
+    // A part of the queue that can't be null failing nulls the queue.
+    view.queue === undefined
+      ? path === 'mergeQueue' || path.startsWith('mergeQueue.')
+      : path.startsWith('mergeQueue.entries'),
+  );
+}
+
+/**
+ * Whether the view may not be the whole queue: it holds entries past the 100 read, or GitHub left
+ * part of it out with an error ({@link queueLeftOut}), which may be the queue, its entries or an
+ * entry. A view cut short is never an empty queue or a branch without one.
+ */
 export function queueViewCutShort(view: QueueView): boolean {
   const queue = view.queue;
-  return queue !== undefined && queue.total > queue.entries.length;
+  return queueLeftOut(view) || (queue !== undefined && queue.total > queue.entries.length);
 }
 
 /** Why a pull request last left its merge queue, as `QueueRemoval` reads it. */
@@ -273,9 +299,16 @@ export interface QueueRemoval {
   state: string;
   /** `isInMergeQueue`: it's in the queue again, or still. */
   inQueue: boolean;
-  /** The last time it left (`RemovedFromMergeQueueEvent`), or nothing when GitHub lists none. */
+  /**
+   * The last time it left (`RemovedFromMergeQueueEvent`), or nothing when GitHub lists none, or
+   * left it out with an error ({@link leftOut} isn't empty): a part of it that can't be null
+   * failing, such as `createdAt`, leaves out the whole event.
+   */
   removal: QueueRemovalEvent | undefined;
-  /** The parts GitHub left out with an error, by their path from the repository. */
+  /**
+   * The parts GitHub left out with an error, by their path from the repository: all within the
+   * pull request's timeline, such as `pullRequest.timelineItems.nodes.0.reason`.
+   */
   leftOut: string[];
 }
 
@@ -326,8 +359,9 @@ export async function queueRemoval(client: GithubClient, pull: PullRef): Promise
     { owner: pull.repo.owner, name: pull.repo.name, number: pull.number },
     2,
   );
-  const found = data.repository?.pullRequest;
-  if (!found) throw notFound(`pull request ${pull.toString()}`);
+  const repository = present(data.repository, errors, `repository ${pull.repo.toString()}`);
+  // The timeline can't be null: an error on it nulls the pull request, and fails the read.
+  const found = present(repository.pullRequest, errors, `pull request ${pull.toString()}`);
   const removals = given(found.timelineItems.nodes).flatMap(removalEvent);
   return {
     number: found.number,
@@ -349,7 +383,10 @@ export interface QueueWaiting {
    * auto-merge on may be among those left out.
    */
   total: number;
-  /** The parts GitHub left out with an error, by their path from the repository. */
+  /**
+   * The parts GitHub left out with an error, by their path from the repository: a pull request
+   * left out is missing from {@link pullRequests}, and one whose auto-merge is reads as off.
+   */
   leftOut: string[];
 }
 
@@ -430,8 +467,7 @@ export async function queueWaiting(
     { owner: repo.owner, name: repo.name, branch },
     2,
   );
-  const repository = data.repository;
-  if (!repository) throw notFound(`repository ${repo.toString()}`);
+  const repository = present(data.repository, errors, `repository ${repo.toString()}`);
   const { pullRequests } = repository;
   return {
     branch,
@@ -439,4 +475,12 @@ export async function queueWaiting(
     total: pullRequests.totalCount,
     leftOut: leftOutBy(errors, []),
   };
+}
+
+/**
+ * Whether a pull request waiting to join the queue may be missing from `waiting`: the branch has
+ * more open than were read, or GitHub left part of one out with an error.
+ */
+export function queueWaitingCutShort(waiting: QueueWaiting): boolean {
+  return waiting.leftOut.length > 0 || waiting.total > waiting.pullRequests.length;
 }

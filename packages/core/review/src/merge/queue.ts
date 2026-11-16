@@ -5,13 +5,15 @@
  * removal from its queue (`queueRemoval`).
  */
 
-import type {
-  CheckFacts,
-  QueueEntryFacts,
-  QueueRemoval,
-  QueueView,
-  QueueWaiting,
-  WaitingPullRequest,
+import {
+  queueLeftOut,
+  queueWaitingCutShort,
+  type CheckFacts,
+  type QueueEntryFacts,
+  type QueueRemoval,
+  type QueueView,
+  type QueueWaiting,
+  type WaitingPullRequest,
 } from '@lo/github';
 
 import { knownGithubValue, outsideCase } from '../enums.ts';
@@ -33,18 +35,29 @@ export interface QueueRows {
   /** The queue's entries Lo read, in its order: the first merges next. */
   readonly entries: readonly QueueRow[];
   /**
-   * How many entries the queue holds that aren't in {@link QueueRows.entries}: past the 100 read,
-   * or left out by GitHub. The view says how many more aren't shown and links to the queue.
+   * How many entries the queue holds, as GitHub counts them, that aren't in
+   * {@link QueueRows.entries}: past the 100 read, or left out by GitHub. The view says how many
+   * more aren't shown and links to the queue. It can't count those GitHub left out with the
+   * entries themselves: {@link QueueRows.leftOut} says so.
    */
   readonly more: number;
+  /**
+   * Whether GitHub left part of the queue out with an error: the queue, its entries, an entry, or
+   * an entry's commits, checks or pull request. The rows then aren't the whole queue, even with
+   * none, nor an entry's failed checks all of them; and with no rows, the branch may have a queue.
+   * The view says it couldn't read all of the queue and reads it again, rather than show it as
+   * complete or empty.
+   */
+  readonly leftOut: boolean;
   /**
    * The open pull requests into the branch with auto-merge on that aren't in the queue yet: they
    * join it once they're ready. Updated most recently first.
    */
   readonly waiting: readonly WaitingRow[];
   /**
-   * Whether the branch has more open pull requests than were read, so one waiting to join may be
-   * missing from {@link QueueRows.waiting}.
+   * Whether one waiting to join may be missing from {@link QueueRows.waiting}: the branch has more
+   * open pull requests than were read, or GitHub left part of one out with an error. With the
+   * queue left out ({@link QueueRows.leftOut}), none are shown, and this is set too.
    */
   readonly waitingCutShort: boolean;
 }
@@ -202,9 +215,13 @@ function waitingRow(pull: WaitingPullRequest, login: string): WaitingRow[] {
  *   how long until it merges, whether it's yours, and whether it's tested together with others;
  * - the pull requests with auto-merge on that aren't in the queue yet, which join it once they're
  *   ready. A branch with no queue has none.
+ *
+ * What GitHub left out with an error is never read as an empty queue, or as none waiting: the rows
+ * say they're cut short.
  */
 export function queueRows(view: QueueView, waiting: QueueWaiting, login: string): QueueRows {
   const queue = view.queue;
+  const leftOut = queueLeftOut(view);
   const entries = queue?.entries ?? [];
   const together = chainFromFront(entries);
   const rows = entries.flatMap((entry, index): QueueRow[] => {
@@ -239,13 +256,21 @@ export function queueRows(view: QueueView, waiting: QueueWaiting, login: string)
   return {
     entries: rows,
     more: Math.max(0, (queue?.total ?? 0) - rows.length),
+    leftOut,
     waiting: joining,
-    waitingCutShort: waiting.total > waiting.pullRequests.length,
+    waitingCutShort: queueWaitingCutShort(waiting) || (queue === undefined && leftOut),
   };
 }
 
-/** Why a pull request left its merge queue, and when (`createdAt` of its last removal). */
-export type LeftQueue = { readonly at: string | undefined } & LeftQueueReason;
+/**
+ * Why a pull request left its merge queue, and when (`createdAt` of its last removal), with
+ * whether GitHub left part of the removal out with an error (`leftOut`): who took it out, or the
+ * checks that failed, may then be missing.
+ */
+export type LeftQueue = {
+  readonly at: string | undefined;
+  readonly leftOut: boolean;
+} & LeftQueueReason;
 
 /** Why a pull request left its merge queue. */
 export type LeftQueueReason =
@@ -263,10 +288,18 @@ export type LeftQueueReason =
   /** Someone took it out, `by` this account when GitHub says. */
   | { readonly kind: 'removed'; readonly by: string | undefined }
   /** Another reason, in GitHub's word, or none when GitHub gave none. */
-  | { readonly kind: 'other'; readonly reason: string | undefined };
+  | { readonly kind: 'other'; readonly reason: string | undefined }
+  /**
+   * GitHub left its last removal, or its reason, out with an error: it may have left, and why
+   * isn't known. The view says it couldn't tell, rather than that it never left.
+   */
+  | { readonly kind: 'unknown' };
+
+/** The reasons GitHub's words name. */
+type KnownReason = Exclude<LeftQueueReason['kind'], 'other' | 'unknown'>;
 
 /** GitHub's words for why a pull request left its queue, by the reason each names. */
-const REASONS: ReadonlyMap<string, Exclude<LeftQueueReason['kind'], 'other'>> = new Map([
+const REASONS: ReadonlyMap<string, KnownReason> = new Map([
   ['merged', 'merged'],
   ['failed_checks', 'failedChecks'],
   ['manual', 'removed'],
@@ -277,7 +310,7 @@ const REASONS: ReadonlyMap<string, Exclude<LeftQueueReason['kind'], 'other'>> = 
  * `failed_checks` and `manual` name what they say, and any other naming a conflict or a timeout is
  * read as one, set apart from case, spaces and hyphens. Nothing for the rest.
  */
-function reasonOf(reason: string): Exclude<LeftQueueReason['kind'], 'other'> | undefined {
+function reasonOf(reason: string): KnownReason | undefined {
   const word = reason
     .trim()
     .toLowerCase()
@@ -291,29 +324,35 @@ function reasonOf(reason: string): Exclude<LeftQueueReason['kind'], 'other'> | u
 
 /**
  * Why the pull request `removal` names left its merge queue: merged once GitHub says it's merged,
- * whatever the removal says, else by the reason GitHub gave its last removal. Nothing when it
- * hasn't left: it's in the queue, or GitHub lists no removal.
+ * whatever the removal says, else by the reason GitHub gave its last removal, and a word Lo doesn't
+ * know as itself (`other`). Nothing when it hasn't left: it's in the queue, or GitHub lists no
+ * removal and left none out. When GitHub left the removal or its reason out with an error, it's
+ * `unknown`, never nothing.
  */
 export function leftQueue(removal: QueueRemoval): LeftQueue | undefined {
   const event = removal.removal;
-  if (removal.state.toUpperCase() === 'MERGED') return { kind: 'merged', at: event?.at };
-  if (removal.inQueue || event === undefined) return undefined;
+  const leftOut = removal.leftOut.length > 0;
+  if (removal.state.toUpperCase() === 'MERGED') return { kind: 'merged', at: event?.at, leftOut };
+  if (removal.inQueue) return undefined;
+  if (event === undefined) return leftOut ? { kind: 'unknown', at: undefined, leftOut } : undefined;
   const { at, reason } = event;
+  // A reason left out is null, as is one GitHub didn't give.
+  if (reason === undefined && leftOut) return { kind: 'unknown', at, leftOut };
   const kind = reason === undefined ? undefined : reasonOf(reason);
   switch (kind) {
     case 'merged':
-      return { kind: 'merged', at };
+      return { kind: 'merged', at, leftOut };
     case 'failedChecks':
-      return { kind: 'failedChecks', at, checks: failed(event.checks) };
+      return { kind: 'failedChecks', at, leftOut, checks: failed(event.checks) };
     case 'conflict':
-      return { kind: 'conflict', at };
+      return { kind: 'conflict', at, leftOut };
     case 'timedOut':
-      return { kind: 'timedOut', at };
+      return { kind: 'timedOut', at, leftOut };
     case 'removed':
-      return { kind: 'removed', at, by: event.by };
+      return { kind: 'removed', at, leftOut, by: event.by };
     case undefined:
-      return { kind: 'other', at, reason: reason === '' ? undefined : reason };
+      return { kind: 'other', at, leftOut, reason: reason === '' ? undefined : reason };
     default:
-      return outsideCase(kind, { kind: 'other', at, reason });
+      return outsideCase(kind, { kind: 'other', at, leftOut, reason });
   }
 }

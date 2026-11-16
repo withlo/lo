@@ -7,8 +7,8 @@
  * took `queued-fail` out, and `queued-pass` merged (`queue_removal_e2e`).
  *
  * rozed-dev/e2e doesn't allow auto-merge, so a pull request waiting to join with it on is a derived
- * answer (`queue_waiting_e2e_auto_merge`). The reasons no recording shows, such as a conflict, are
- * the recorded removal with GitHub's word edited here.
+ * answer (`queue_waiting_e2e_auto_merge`). The reasons no recording shows, such as a conflict, and
+ * the parts GitHub leaves out with an error are the recorded answers edited here.
  */
 
 import {
@@ -21,6 +21,7 @@ import {
   RepoRef,
   Token,
   type QueueView,
+  type QueueWaiting,
 } from '@lo/github';
 import { cassette, isObject, Replay, replayFetch, type Interaction, type Json } from '@lo/testing';
 import { expect, test } from 'vitest';
@@ -183,9 +184,52 @@ test('a pull request with auto-merge on waits to join until it is in the queue',
   expect(queueRows({ ...joined!, queue: undefined }, waiting, BOT)).toEqual({
     entries: [],
     more: 0,
+    leftOut: false,
     waiting: [],
     waitingCutShort: false,
   });
+});
+
+test('a queue github left part of out is never read as empty or whole', async () => {
+  const waiting = await queueWaiting(client('queue_waiting_e2e_auto_merge'), E2E, BRANCH);
+  const [joined] = await views();
+  const queue = joined!.queue!;
+  expect(queueRows(joined!, waiting, BOT).leftOut).toBe(false);
+
+  // The entries left out: none read, and none counted, but not an empty queue.
+  const noEntries: QueueView = {
+    ...joined!,
+    queue: { ...queue, entries: [], total: 0 },
+    leftOut: ['mergeQueue.entries'],
+  };
+  expect(queueRows(noEntries, waiting, BOT)).toMatchObject({
+    entries: [],
+    more: 0,
+    leftOut: true,
+  });
+  // The queue left out: the branch may have one, and pull requests may be waiting to join it.
+  const noQueue: QueueView = { ...joined!, queue: undefined, leftOut: ['mergeQueue'] };
+  expect(queueRows(noQueue, waiting, BOT)).toEqual({
+    entries: [],
+    more: 0,
+    leftOut: true,
+    waiting: [],
+    waitingCutShort: true,
+  });
+  // An entry's checks left out: its failed ones may be missing.
+  const noChecks: QueueView = {
+    ...joined!,
+    leftOut: ['mergeQueue.entries.nodes.3.headCommit.statusCheckRollup'],
+  };
+  expect(queueRows(noChecks, waiting, BOT).leftOut).toBe(true);
+  // The account's permission left out isn't part of the queue's rows.
+  expect(queueRows({ ...joined!, leftOut: ['viewerPermission'] }, waiting, BOT).leftOut).toBe(
+    false,
+  );
+
+  // A pull request left out of the open ones may be waiting to join.
+  const missing: QueueWaiting = { ...waiting, leftOut: ['pullRequests.nodes.2'] };
+  expect(queueRows(joined!, missing, BOT).waitingCutShort).toBe(true);
 });
 
 /** Why the generation's pull request `name` left the queue, read from `replay`. */
@@ -194,40 +238,78 @@ async function removal(name: Name, replay: string | Replay = 'queue_removal_e2e'
   return queueRemoval(client(replay), pull);
 }
 
-/** `queue_removal_e2e` with GitHub's reason for `queued-fail`'s removal as `reason`. */
-function failedFor(reason: string | null): Replay {
+/** `queue_removal_e2e` with the answer for `queued-fail`'s removal edited by `edit`. */
+function failedEdited(edit: (body: { [key: string]: Json }) => void): Replay {
   const failing = numberOf('queue_removal_e2e', 'queued-fail');
   const interactions = cassette('queue_removal_e2e').interactions.map(({ interaction }) => {
     const copy: Interaction = structuredClone(interaction);
     if (copy.request.operation !== 'QueueRemoval') return copy;
     const variables = copy.request.variables;
     if (!isObject(variables) || variables['number'] !== failing) return copy;
-    const event = removalEventOf(copy.response.body);
-    event['reason'] = reason;
+    const body = copy.response.body;
+    if (!isObject(body)) throw new Error('the answer has no body');
+    edit(body);
     return copy;
   });
   return new Replay('queue_removal_e2e', interactions);
 }
 
-/** The removal event in a recorded `QueueRemoval` answer. */
-function removalEventOf(body: Json | undefined): { [key: string]: Json } {
+/** `queue_removal_e2e` with GitHub's reason for `queued-fail`'s removal as `reason`. */
+function failedFor(reason: string | null): Replay {
+  return failedEdited((body) => {
+    removalEventOf(body)['reason'] = reason;
+  });
+}
+
+/** The list of removal events in a recorded `QueueRemoval` answer. */
+function removalEventsOf(body: Json | undefined): Json[] {
   let value: Json | undefined = body;
   for (const key of ['data', 'repository', 'pullRequest', 'timelineItems', 'nodes']) {
     value = isObject(value) ? value[key] : undefined;
   }
-  const event = Array.isArray(value) ? value[0] : undefined;
+  if (!Array.isArray(value)) throw new Error('the answer lists no removals');
+  return value;
+}
+
+/** The removal event in a recorded `QueueRemoval` answer. */
+function removalEventOf(body: Json | undefined): { [key: string]: Json } {
+  const event = removalEventsOf(body)[0];
   if (!isObject(event)) throw new Error('the answer names no removal');
   return event;
 }
 
+/**
+ * `queue_removal_e2e` with `queued-fail`'s removal's `field` left out, as GitHub does when it can't
+ * give it: null, and an error naming it. `createdAt` can't be null, so it nulls the whole event.
+ */
+function failedLeavingOut(field: 'createdAt' | 'reason'): Replay {
+  return failedEdited((body) => {
+    if (field === 'createdAt') removalEventsOf(body)[0] = null;
+    else removalEventOf(body)[field] = null;
+    body['errors'] = [
+      {
+        type: null,
+        path: ['repository', 'pullRequest', 'timelineItems', 'nodes', 0, field],
+        message: 'Something went wrong while executing your query.',
+      },
+    ];
+  });
+}
+
 test('a pull request left the queue taken out by hand, failing its checks, or merged', async () => {
   const byHand = await removal('queued-slow-2');
-  expect(leftQueue(byHand)).toEqual({ kind: 'removed', at: byHand.removal?.at, by: BOT });
+  expect(leftQueue(byHand)).toEqual({
+    kind: 'removed',
+    at: byHand.removal?.at,
+    leftOut: false,
+    by: BOT,
+  });
 
   const failed = await removal('queued-fail');
   expect(leftQueue(failed)).toEqual({
     kind: 'failedChecks',
     at: failed.removal?.at,
+    leftOut: false,
     checks: [
       {
         name: 'ci',
@@ -238,9 +320,13 @@ test('a pull request left the queue taken out by hand, failing its checks, or me
   });
 
   const merged = await removal('queued-pass');
-  expect(leftQueue(merged)).toEqual({ kind: 'merged', at: merged.removal?.at });
+  expect(leftQueue(merged)).toEqual({ kind: 'merged', at: merged.removal?.at, leftOut: false });
   // Merged is merged, whatever the last removal said or whether GitHub lists one.
-  expect(leftQueue({ ...merged, removal: undefined })).toEqual({ kind: 'merged', at: undefined });
+  expect(leftQueue({ ...merged, removal: undefined })).toEqual({
+    kind: 'merged',
+    at: undefined,
+    leftOut: false,
+  });
   expect(leftQueue({ ...failed, state: 'MERGED' })).toMatchObject({ kind: 'merged' });
 
   // In the queue again, or never out of it, it hasn't left.
@@ -258,7 +344,29 @@ test('a conflict, a timeout, or a reason lo doesnt know is said as github gives 
   expect(await leftFor('MERGE_CONFLICT')).toMatchObject({ kind: 'conflict' });
   expect(await leftFor('timed_out')).toMatchObject({ kind: 'timedOut' });
   expect(await leftFor('ci timeout')).toMatchObject({ kind: 'timedOut' });
-  expect(await leftFor('queue_cleared')).toMatchObject({ kind: 'other', reason: 'queue_cleared' });
+  // A word Lo doesn't know is kept as GitHub gives it, for the view to show plainly.
+  expect(await leftFor('queue_cleared')).toEqual({
+    kind: 'other',
+    at: expect.stringMatching(/^\d{4}-/),
+    leftOut: false,
+    reason: 'queue_cleared',
+  });
+  expect(await leftFor('Removed: branch deleted')).toMatchObject({
+    kind: 'other',
+    reason: 'Removed: branch deleted',
+  });
   expect(await leftFor(null)).toMatchObject({ kind: 'other', reason: undefined });
   expect(await leftFor('')).toMatchObject({ kind: 'other', reason: undefined });
+});
+
+test('a removal github left out is unknown, never that it didnt leave', async () => {
+  // createdAt can't be null: its error leaves out the whole event.
+  const noEvent = await removal('queued-fail', failedLeavingOut('createdAt'));
+  expect(noEvent.removal).toBeUndefined();
+  expect(leftQueue(noEvent)).toEqual({ kind: 'unknown', at: undefined, leftOut: true });
+
+  // A reason left out isn't one GitHub didn't give.
+  const noReason = await removal('queued-fail', failedLeavingOut('reason'));
+  expect(leftQueue(noReason)).toEqual({ kind: 'unknown', at: noReason.removal?.at, leftOut: true });
+  expect(noReason.removal?.at).toMatch(/^\d{4}-/);
 });

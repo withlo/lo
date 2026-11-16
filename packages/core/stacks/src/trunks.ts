@@ -75,21 +75,40 @@ export function trunksAmong(trunks: Trunks, prs: readonly PullRequest[]): string
   return defaultBranch === undefined ? others : [defaultBranch, ...others];
 }
 
+/** Which branches have a merge queue, as far as a repository's rulesets say ({@link queueBranches}). */
+export interface QueueBranches {
+  /** Those an active ruleset that requires a merge queue covers. */
+  queued: string[];
+  /**
+   * Those Lo can't tell of: no ruleset that requires a queue covers them, but one whose rules GitHub
+   * left out does, or the rulesets couldn't be read ({@link TrunkRuleList.unavailable}), so those
+   * read before may be out of date.
+   */
+  unknown: string[];
+}
+
 /**
  * Which of `branches` have a merge queue, as far as the repository's rulesets say: those an active
- * ruleset that requires one covers, each once, in their order. A queue a branch's classic
- * protection requires isn't among them; a pull request's own facts say whether its base has one.
+ * ruleset that requires one covers, and those Lo can't tell of, each once, in their order. A queue
+ * a branch's classic protection requires isn't among them; a pull request's own facts say whether
+ * its base has one.
  */
 export function queueBranches(
   rules: TrunkRuleList,
   branches: readonly string[],
   defaultBranch: string | undefined,
-): string[] {
-  const queued = rules.rulesets.filter((ruleset) => ruleset.queue);
-  const found: string[] = [];
+): QueueBranches {
+  const found: QueueBranches = { queued: [], unknown: [] };
   for (const branch of branches) {
-    if (found.includes(branch)) continue;
-    if (queued.some((ruleset) => covers(ruleset, branch, defaultBranch))) found.push(branch);
+    if (found.queued.includes(branch) || found.unknown.includes(branch)) continue;
+    const covering = rules.rulesets.filter((ruleset) => covers(ruleset, branch, defaultBranch));
+    if (covering.some((ruleset) => ruleset.queue === true)) found.queued.push(branch);
+    else if (
+      rules.unavailable !== undefined ||
+      covering.some((ruleset) => ruleset.queue !== false)
+    ) {
+      found.unknown.push(branch);
+    }
   }
   return found;
 }

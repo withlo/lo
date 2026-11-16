@@ -17,23 +17,24 @@
  * Also here: a base branch's merge queue ({@link mergeQueue}), the squash commit's text GitHub
  * would start with ({@link squashText}), the rules of a branch a pull request merges into once its
  * base moves there ({@link rulesOnto}), and the open pull requests from a branch, which a pull
- * request based on it sits on ({@link openPullsFromHead}).
+ * request based on it sits on, read through REST ({@link openPullsFromHead}).
  */
 
 import type { GithubClient } from './client.ts';
 import { GithubError } from './errors.ts';
+import { nextLink } from './files.ts';
 import {
   BranchProtectionDocument,
   MergeChecksDocument,
   MergeQueueDocument,
   MergeSnapshotDocument,
   MergeTextDocument,
-  PullsFromHeadDocument,
   type MergeCheckFragment,
   type MergeQueueQuery,
   type MergeSnapshotQuery,
 } from './generated/graphql.ts';
 import type { GraphQLError } from './graphql.ts';
+import { Fields } from './json.ts';
 import { notFound, PAGE_SIZE, Pager } from './pager.ts';
 import type { ViewerPendingReview } from './pending.ts';
 import type { PullRef, RepoRef } from './refs.ts';
@@ -684,7 +685,11 @@ function stackFacts(pull: PullRequestData): {
  * `field`, which GitHub's answer must have: when it's null, the errors that explain it fail the
  * read, or else it's not found.
  */
-function present<T>(field: T | null | undefined, errors: readonly GraphQLError[], what: string): T {
+export function present<T>(
+  field: T | null | undefined,
+  errors: readonly GraphQLError[],
+  what: string,
+): T {
   if (field != null) return field;
   if (errors.length === 0) throw notFound(what);
   throw GithubError.fromGraphQL([...errors], new Headers());
@@ -943,18 +948,18 @@ export async function squashText(client: GithubClient, pull: PullRef): Promise<S
   return { title: found.squashTitle, message: found.squashMessage };
 }
 
-/** An open pull request from a branch, as `PullsFromHead` reads it. */
+/** An open pull request from a branch, as {@link openPullsFromHead} reads it. */
 export interface PullFromHead {
   /** `number`. */
   number: number;
-  /** `baseRefName`: the branch it merges into. */
+  /** `base.ref`: the branch it merges into. */
   base: string;
-  /** `headRefName`: the branch it comes from. */
+  /** `head.ref`: the branch it comes from. */
   head: string;
   /**
-   * Whether its head branch is in the repository itself (`isCrossRepository` false). A fork's pull
-   * request from a branch of the same name comes from another branch, which nothing here is based
-   * on.
+   * Whether its head branch is in the repository itself: its `head.repo` is the repository. Another
+   * repository of the same owner's pull request from a branch of the same name comes from another
+   * branch, which nothing here is based on, as does one whose head repository is gone.
    */
   sameRepository: boolean;
 }
@@ -964,42 +969,62 @@ export interface PullsFromHead {
   /** The branch. */
   branch: string;
   /**
-   * The open pull requests from a branch of that name, the 100 created most recently, a fork's
-   * included: those from the repository's own branch ({@link PullFromHead.sameRepository}) sit
-   * below any pull request based on it.
+   * The open pull requests from a branch of that name of the repository's owner, the first 100
+   * GitHub lists: those from the repository's own branch ({@link PullFromHead.sameRepository}) sit
+   * below any pull request based on it. Forks of other accounts are never among them.
    */
   pullRequests: PullFromHead[];
-  /** Whether there were more than were read, so one from the branch may be missing. */
+  /** Whether GitHub lists more than were read, so one from the branch may be missing. */
   cutShort: boolean;
 }
 
+/** An open pull request in GitHub's REST list, as {@link openPullsFromHead} reads it. */
+function pullFromHead(json: unknown): PullFromHead {
+  const pull = new Fields(json, 'pull');
+  const head = pull.fields('head');
+  const base = pull.fields('base');
+  // A fork that's gone leaves `head.repo` null.
+  const from = head.maybeFields('repo')?.text('full_name');
+  const into = base.fields('repo').text('full_name');
+  return {
+    number: pull.integer('number'),
+    base: base.text('ref'),
+    head: head.text('ref'),
+    sameRepository: from !== undefined && from.toLowerCase() === into.toLowerCase(),
+  };
+}
+
+/** GitHub's REST list of open pull requests, read as {@link PullFromHead}s. */
+function pullsFromHead(json: unknown): PullFromHead[] {
+  if (!Array.isArray(json)) {
+    throw new GithubError({ kind: 'decode', message: "the pull requests weren't a list" });
+  }
+  return json.map(pullFromHead);
+}
+
 /**
- * The open pull requests whose head is `repo`'s `branch`, or a fork's branch of the same name: a
- * pull request based on `branch` sits on the one from the repository's own, which merges first.
- * It's read afresh, as the stacks' list of open pull requests can be minutes old. Any error GitHub
- * gives fails it.
+ * The open pull requests from `repo`'s `branch`: a pull request based on `branch` sits on the one
+ * from the repository's own, which merges first. REST's list filtered by the head's owner and
+ * branch (`head={owner}:{branch}`) is read, so the forks of other accounts, which can name a
+ * branch the same, never push it out. It's read afresh, as the stacks' list of open pull requests
+ * can be minutes old.
  */
 export async function openPullsFromHead(
   client: GithubClient,
   repo: RepoRef,
   branch: string,
 ): Promise<PullsFromHead> {
-  const data = await client.graphql(PullsFromHeadDocument, {
-    owner: repo.owner,
-    name: repo.name,
-    branch,
+  const query = new URLSearchParams({
+    head: `${repo.owner}:${branch}`,
+    state: 'open',
+    per_page: String(PAGE_SIZE),
   });
-  const found = data.repository?.pullRequests;
-  if (!found) throw notFound(`repository ${repo.toString()}`);
-  const { read, missing } = given(found.nodes);
+  const path = ['repos', repo.owner, repo.name, 'pulls'].map(encodeURIComponent).join('/');
+  const response = await client.send('GET', `/${path}?${query.toString()}`);
+  const link = response.header('link');
   return {
     branch,
-    pullRequests: read.map((pull) => ({
-      number: pull.number,
-      base: pull.baseRefName,
-      head: pull.headRefName,
-      sameRepository: !pull.isCrossRepository,
-    })),
-    cutShort: missing > 0 || found.totalCount > read.length,
+    pullRequests: response.json(pullsFromHead),
+    cutShort: link !== undefined && nextLink(link) !== undefined,
   };
 }

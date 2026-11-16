@@ -46,8 +46,11 @@ export interface RefNames {
   exclude: string[];
   /** Whether the ruleset gates merging ({@link GATING_RULES}), which a pattern include needs to name trunks. */
   gatesMerging: boolean;
-  /** Whether it requires a merge queue (`MERGE_QUEUE`): the branches it covers merge only through one. */
-  queue: boolean;
+  /**
+   * Whether it requires a merge queue (`MERGE_QUEUE`): the branches it covers merge only through
+   * one. Nothing when GitHub left its rules, or one of them, out with an error, so it may.
+   */
+  queue: boolean | undefined;
 }
 
 /** The branch rulesets that name a repository's trunks. */
@@ -79,13 +82,16 @@ function fromData(data: TrunkRulesQuery): TrunkRuleList | undefined {
       if (ruleset?.enforcement !== 'ACTIVE') return [];
       const refName = ruleset.conditions.refName;
       if (!refName) return [];
-      const types = (ruleset.rules?.nodes ?? []).flatMap((rule) => (rule ? [rule.type] : []));
+      const nodes = ruleset.rules?.nodes;
+      const types = (nodes ?? []).flatMap((rule) => (rule ? [rule.type] : []));
+      // An error on the rules, or on one, nulls it: what's left can't say there's no queue.
+      const leftOut = !nodes || types.length < nodes.length;
       return [
         {
           include: refName.include,
           exclude: refName.exclude,
           gatesMerging: types.some((type) => GATING_RULES.includes(type)),
-          queue: types.includes('MERGE_QUEUE'),
+          queue: types.includes('MERGE_QUEUE') || (leftOut ? undefined : false),
         },
       ];
     }),

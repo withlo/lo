@@ -912,15 +912,6 @@ export type PullRequestSidebarQuery = { rateLimit: { cost: number, limit: number
             | { __typename: 'User', login: string }
            | null } | null> | null } | null, assignees: { nodes: Array<{ __typename: 'User', login: string } | null> | null } } | null } | null };
 
-export type PullsFromHeadQueryVariables = Exact<{
-  owner: string;
-  name: string;
-  branch: string;
-}>;
-
-
-export type PullsFromHeadQuery = { rateLimit: { cost: number, limit: number, remaining: number, used: number, resetAt: string } | null, repository: { pullRequests: { totalCount: number, nodes: Array<{ number: number, baseRefName: string, headRefName: string, isCrossRepository: boolean } | null> | null } } | null };
-
 export type QueueRemovalQueryVariables = Exact<{
   owner: string;
   name: string;
@@ -4746,33 +4737,6 @@ export const PullRequestSidebarDocument = new TypedDocumentString(`
   }
 }
     `) as unknown as TypedDocumentString<PullRequestSidebarQuery, PullRequestSidebarQueryVariables>;
-export const PullsFromHeadDocument = new TypedDocumentString(`
-    query PullsFromHead($owner: String!, $name: String!, $branch: String!) {
-  rateLimit {
-    cost
-    limit
-    remaining
-    used
-    resetAt
-  }
-  repository(owner: $owner, name: $name) {
-    pullRequests(
-      headRefName: $branch
-      states: [OPEN]
-      orderBy: {field: CREATED_AT, direction: DESC}
-      first: 100
-    ) {
-      totalCount
-      nodes {
-        number
-        baseRefName
-        headRefName
-        isCrossRepository
-      }
-    }
-  }
-}
-    `) as unknown as TypedDocumentString<PullsFromHeadQuery, PullsFromHeadQueryVariables>;
 export const QueueRemovalDocument = new TypedDocumentString(`
     query QueueRemoval($owner: String!, $name: String!, $number: Int!) {
   rateLimit {
