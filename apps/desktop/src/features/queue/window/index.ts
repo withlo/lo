@@ -11,6 +11,7 @@ import {
   canShowQueue,
   canStepBranch,
   move,
+  onQueueRow,
   openOnGithub,
   openRow,
   queueOnScreen,
@@ -32,10 +33,10 @@ export default {
     show: { run: showQueueTab, enabled: canShowQueue },
     down: { run: () => move(1), enabled: canMove },
     up: { run: () => move(-1), enabled: canMove },
-    open: { run: openRow, enabled: canOpenRow },
+    open: { run: openRow, enabled: canOpenRow, listed: onQueueRow },
     nextBranch: { run: () => stepBranch(1), enabled: canStepBranch },
     previousBranch: { run: () => stepBranch(-1), enabled: canStepBranch },
-    openOnGithub: { run: openOnGithub, enabled: canOpenOnGithub },
+    openOnGithub: { run: openOnGithub, enabled: canOpenOnGithub, listed: onQueueRow },
   }),
   views: [
     // A merge queue is drawn in its tab, and in no other.

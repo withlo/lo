@@ -106,6 +106,14 @@ function rowAt(target: RowTarget): { tab: QueueTab; row: Row } | string {
   return row ? { tab, row } : 'That pull request isn’t in the queue any more.';
 }
 
+/**
+ * Whether a row's right-click menu lists the queue's row commands: on the queue's own rows only,
+ * never on another list's, such as a pull request's timeline.
+ */
+export function onQueueRow(target: RowTarget | NoTarget): boolean {
+  return target.kind !== 'row' || typeof rowAt(target) !== 'string';
+}
+
 /** Whether the row `target` names can be opened. */
 export function canOpenRow(target: RowTarget): true | string {
   const at = rowAt(target);

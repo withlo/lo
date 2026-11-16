@@ -3,6 +3,7 @@
 // can show, its entries with those tested together grouped, those waiting to join, and what stands
 // in for the queue when the branch has none, or GitHub left part of it out.
 
+import { menuSections, type Registry } from '@lo/ui/commands';
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, beforeAll, describe, expect, it, onTestFinished } from 'vitest';
@@ -25,10 +26,11 @@ const TAB: QueueTab = {
 };
 
 let bridge: FakeBridge;
+let registry: Registry;
 
 beforeAll(() => {
   Reflect.set(globalThis, 'IS_REACT_ACT_ENVIRONMENT', true);
-  createRegistry(feature.commands, 'mac');
+  registry = createRegistry(feature.commands, 'mac');
   bridge = installBridge({ 'queue.state': () => undefined, 'queue.show': () => 'q' });
 });
 
@@ -179,5 +181,14 @@ describe('a merge queue’s tab', () => {
     const host = render();
     expect(host.textContent).toContain('Reading the merge queue for e4/queued');
     expect(bridge.calls).toContainEqual(['queue.state', { id: 'q' }]);
+  });
+});
+
+describe('a row’s right-click menu', () => {
+  it('lists the queue’s commands only on the queue’s own rows, not another list’s', () => {
+    // No merge queue's tab is on screen, as when a pull request's timeline is.
+    act(() => showQueue(stateOf(QUEUE)));
+    const items = menuSections(registry, { kind: 'row', row: 'queued-150' }).flat();
+    expect(items.map(({ id }) => id)).toEqual([]);
   });
 });
