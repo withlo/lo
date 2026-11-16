@@ -3,7 +3,8 @@
 // Lo's install of vtsls faked as folders and its TypeScript as the repository's, so nothing is
 // downloaded. Each plugin planted here writes a marker when it's loaded: one in the checkout's
 // `node_modules` never is, nor one named by a path, but a package already in a `node_modules` above
-// Lo's install is, as Node finds packages, and neither vtsls nor `tsserver` can turn that off.
+// Lo's install is, as Node finds packages, and neither vtsls nor `tsserver` can turn that off. Lo's
+// install is outside the home folder, as its cache is on a Mac, so one in `~/node_modules` never is.
 
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -40,16 +41,21 @@ function listed(section: string): string[] {
 
 test('a tsconfig.json’s plugin loads only by its name, from beside Lo’s TypeScript or above it', () => {
   const home = tempFolder();
-  // Lo's install of vtsls, under the home folder as its cache is, and where `tsserver` runs from.
-  const install = join(home, 'cache', 'lo', 'servers', 'vtsls', '0.3.0', 'files');
+  // The folder for the user's caches, outside the home folder as macOS's is, and Lo's cache in it,
+  // with its install of vtsls, where `tsserver` runs from, and a checkout.
+  const caches = tempFolder();
+  const cache = join(caches, 'Lo');
+  const install = join(cache, 'servers', 'vtsls', '0.3.0', 'files');
   const tsserver = join(install, 'node_modules', 'typescript', 'lib', 'tsserver.js');
   mkdirSync(join(install, 'node_modules', 'typescript', 'lib'), { recursive: true });
-  const checkout = join(home, 'checkouts', 'pull-1');
+  const checkout = join(cache, 'checkouts', 'pull-1');
   const marker = (name: string) => join(home, `lo-ran-${name}`);
-  // A package the user has above Lo's install, the checkout's own, and one above the checkout.
-  plant(join(home, 'node_modules', 'ancestor-plugin'), marker('ancestor'));
+  // A package in a folder above Lo's install, one the user has in the home folder, the checkout's
+  // own, and one above the checkout.
+  plant(join(caches, 'node_modules', 'ancestor-plugin'), marker('ancestor'));
+  plant(join(home, 'node_modules', 'home-plugin'), marker('home'));
   plant(join(checkout, 'node_modules', 'checkout-plugin'), marker('checkout'));
-  plant(join(home, 'checkouts', 'node_modules', 'beside-plugin'), marker('beside'));
+  plant(join(cache, 'checkouts', 'node_modules', 'beside-plugin'), marker('beside'));
   writeFileSync(join(checkout, 'a.ts'), 'export const a = 1;\n');
   writeFileSync(
     join(checkout, 'tsconfig.json'),
@@ -60,6 +66,7 @@ test('a tsconfig.json’s plugin loads only by its name, from beside Lo’s Type
           { name: 'beside-plugin' },
           { name: './node_modules/checkout-plugin' },
           { name: '../node_modules/beside-plugin' },
+          { name: 'home-plugin' },
           { name: 'ancestor-plugin' },
         ],
       },
@@ -111,6 +118,7 @@ test('a tsconfig.json’s plugin loads only by its name, from beside Lo’s Type
   expect(loading.map((line) => line.split(' ')[1])).toEqual([
     'checkout-plugin',
     'beside-plugin',
+    'home-plugin',
     'ancestor-plugin',
   ]);
   for (const line of loading) {
@@ -118,10 +126,8 @@ test('a tsconfig.json’s plugin loads only by its name, from beside Lo’s Type
       `from ${tsserver}/../../.. (resolved to ${join(install, 'node_modules', 'node_modules')})`,
     );
   }
-  // Nothing of the checkout's, or beside it, loads; a package above Lo's install does.
-  expect(['checkout', 'beside', 'ancestor'].map((name) => existsSync(marker(name)))).toEqual([
-    false,
-    false,
-    true,
-  ]);
+  // Nothing of the checkout's, or beside it, loads, nor anything in the home folder, which isn't
+  // above Lo's install; a package above it does.
+  const loaded = ['checkout', 'beside', 'home', 'ancestor'].map((name) => existsSync(marker(name)));
+  expect(loaded).toEqual([false, false, false, true]);
 });

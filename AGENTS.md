@@ -476,12 +476,13 @@ toolchain and git's variables each server needs.
   adapter's alone, and nothing in the checkout picks what runs: vtsls runs its own TypeScript, loads
   no `tsserver` plugin from the checkout, and acquires no types; Pyright's Python is `/dev/null`, so
   it runs no interpreter. A plugin a `tsconfig.json` names is still looked for by its package's
-  name, beside Lo's TypeScript and in each `node_modules` above Lo's install, such as
-  `~/node_modules`, which neither vtsls nor `tsserver` can turn off (`test/plugins.test.ts`). No
-  server has a sandbox: each reads what the user can, outside the checkout too, and Lo never opens a
-  place outside the checkout an answer names. Each says whether it gives inlay hints (`hints`):
-  Pyright gives none. The package's README lists each with its source, version and license, and a
-  server's details name its license beside its version.
+  name, beside Lo's TypeScript and in each `node_modules` above Lo's install, which neither vtsls
+  nor `tsserver` can turn off (`test/plugins.test.ts`): on a Mac, where the cache is outside the
+  home folder, that's never `~/node_modules`; on Linux it can be. No server has a sandbox: each
+  reads what the user can, outside the checkout too, and Lo never opens a place outside the checkout
+  an answer names. Each says whether it gives inlay hints (`hints`): Pyright gives none. The
+  package's README lists each with its source, version and license, and a server's details name its
+  license beside its version.
 - Tests start only the fake server, `testing/lsp/fake-server.ts`, at most two at once in a test
   file, each killed with its group when the test ends. No test starts a real server or downloads
   one: download tests serve archives they build from a server on this machine. The live check,
