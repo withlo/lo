@@ -70,6 +70,8 @@ export type Seen =
       readonly pid: number;
       /** The program it was started as, as given to it. */
       readonly argv0: string;
+      /** The flags it was given before its script, which Node takes as its own. */
+      readonly execArgv: readonly string[];
       readonly env: Record<string, string>;
       readonly cwd: string;
     }

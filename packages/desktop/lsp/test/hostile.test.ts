@@ -1,13 +1,13 @@
 // Each server Lo runs, started as its adapter starts it on the hostile fixture's checkout
 // (`testing/fixtures/code-hostile.sh --local`), with the fake server standing in for it: Node with
-// the server's flags, or as its program, with its toolchain's variables, its settings and its
-// initialization options. The fake server reports what it got, and asks for every setting the
-// checkout's plants would set.
+// the server's flags, or as its program, with its toolchain's variables, its settings, its
+// initialization options and what it's given where it runs. The fake server reports what it got,
+// and asks for every setting the checkout's plants would set.
 // Nothing the fixture plants runs: the fake server runs nothing, and the plants are read as text,
 // from the bare repository.
 
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, realpathSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -19,7 +19,12 @@ import { afterAll, beforeAll, expect, onTestFinished, test } from 'vitest';
 import {
   checkoutProblem,
   GOPLS,
+  type Installed,
+  JDTLS,
+  jdtlsCheckoutProblem,
+  jdtlsSettings,
   type Launch,
+  launchJdtls,
   launchNative,
   launchOnNode,
   type NativeServer,
@@ -34,8 +39,10 @@ import {
   TERRAFORM_LS,
   toolchainUse,
   type ToolchainUse,
+  TRIGGER,
   VTSLS,
 } from '../src/index.ts';
+import { fileUri } from '../src/uri.ts';
 import { eventually, GIT, tempFolder } from './support.ts';
 
 const SCRIPT = fileURLToPath(
@@ -69,6 +76,8 @@ beforeAll(() => {
   bare = join(folder, 'rozed-dev', 'e2e.git');
   goFolder = join(realpathSync(folder), 'toolchains', 'go');
   mkdirSync(join(goFolder, 'go', 'bin'), { recursive: true });
+  jdkFolder = join(realpathSync(folder), 'toolchains', 'temurin');
+  mkdirSync(join(jdkFolder, 'jdk', 'bin'), { recursive: true });
 });
 
 afterAll(() => {
@@ -97,19 +106,44 @@ function goUse(): ToolchainUse {
   return toolchainUse('go', '1.27.4', { folder: goFolder, entry: `${goFolder}/go/bin/go` });
 }
 
+/** Lo's JDK, as the tests stand it in: a folder beside the checkout, with nothing in it. */
+let jdkFolder = '';
+
+/** Lo's JDK, as installed in {@link jdkFolder}. */
+function jdk(): Installed {
+  return { folder: jdkFolder, entry: `${jdkFolder}/jdk/bin/java` };
+}
+
+/** Whether `server` is JDT LS, which runs on Lo's JDK. */
+function isJdtls(server: NodeServer | NativeServer | typeof JDTLS): server is typeof JDTLS {
+  return server === JDTLS;
+}
+
 /**
  * How `server`'s adapter starts it from its install in `own`, with `toolchains`, and with the fake
  * server, on `scenario`, in its place. Lo's Node is the one running the tests: a server on Lo's
- * Node has the fake server's script as its entry point, and a program of its own is Node with that
- * script.
+ * Node has the fake server's script as its entry point, and a program of its own, or JDT LS on
+ * Lo's JDK, is Node with that script. JDT LS is given what it would be where it runs, but the
+ * JVM's flags, which Node would refuse.
  */
 function standIn(
-  server: NodeServer | NativeServer,
+  server: NodeServer | NativeServer | typeof JDTLS,
   own: string,
   scenario: string,
   toolchains: readonly ToolchainUse[],
 ): Launch {
   const node = { folder: own, entry: process.execPath };
+  if (isJdtls(server)) {
+    const use = toolchains[0] ?? toolchainUse('temurin', '25', jdk());
+    const launch = launchJdtls({ folder: own, entry: `${own}/launcher.jar` }, jdk(), use);
+    const { place } = launch;
+    return {
+      ...launch,
+      program: process.execPath,
+      args: [FAKE_SERVER, scenario],
+      place: async (where) => ({ ...(place === undefined ? {} : await place(where)), args: [] }),
+    };
+  }
   return 'node' in server
     ? launchOnNode({ ...server, args: [scenario] }, node, { folder: own, entry: FAKE_SERVER })
     : launchNative({ ...server, args: [FAKE_SERVER, scenario] }, node, toolchains);
@@ -121,7 +155,7 @@ function standIn(
  * it has.
  */
 async function startAs(
-  server: NodeServer | NativeServer,
+  server: NodeServer | NativeServer | typeof JDTLS,
   sections: readonly string[],
   toolchains: readonly ToolchainUse[] = [],
 ) {
@@ -148,6 +182,8 @@ async function startAs(
     git: GIT,
     settings: launch.settings,
     initializationOptions: launch.initializationOptions,
+    place: launch.place,
+    stays: launch.stays,
   });
   onTestFinished(async () => {
     if (running.pid !== undefined) {
@@ -187,7 +223,7 @@ async function startAs(
  * an environment of Lo's alone, its toolchain's `own` aside, and hears nothing the checkout says.
  */
 async function heardBy(
-  server: NodeServer | NativeServer,
+  server: NodeServer | NativeServer | typeof JDTLS,
   ours: readonly string[],
   own: {
     toolchains?: ToolchainUse[];
@@ -218,9 +254,16 @@ async function heardBy(
     LANG: 'C.UTF-8',
   });
   // It asks Lo for its settings, so it reads none from the checkout's files, and no setting it
-  // hears names a file of the checkout, or is what the checkout's editor settings say.
+  // hears names a file of the checkout, or is what the checkout's editor settings say. The one
+  // path JDT LS is told is the file it starts its project from, at the checkout's root, which no
+  // checkout has.
   expect(initialize).toMatchObject({ capabilities: { workspace: { configuration: true } } });
-  expect(JSON.stringify([heard, initialize.initializationOptions ?? null])).not.toContain(checkout);
+  const options: unknown = initialize.initializationOptions ?? null;
+  const told =
+    typeof options === 'object' && options !== null && 'triggerFiles' in options
+      ? { ...options, triggerFiles: null }
+      : options;
+  expect(JSON.stringify([heard, told])).not.toContain(checkout);
   for (const [name, value] of Object.entries(plants)) {
     expect({ [name]: heard[name] }).not.toEqual({ [name]: value });
   }
@@ -351,4 +394,62 @@ test('terraform-ls gets no Terraform it can run, whatever the checkout names or 
   const { initialize, plants } = await heardBy(TERRAFORM_LS, []);
   expect(plants['terraform.languageServer.terraform.path']).toContain('lo-server.sh');
   expect(initialize.initializationOptions).toMatchObject({ terraform: { path: NO_TERRAFORM } });
+});
+
+test('JDT LS imports nothing and builds nothing, on Lo’s JDK, whatever the checkout plants', async () => {
+  // Gradle's wrapper, a settings script that runs a program, properties naming a JDK in the
+  // checkout; Maven's build, extensions and launcher's options; Eclipse's project, with a builder,
+  // annotation processing and settings; and the JVM's own options file.
+  expect(planted('java/gradlew')).toContain('lo-hostile-gradlew');
+  expect(planted('java/settings.gradle')).toContain('lo-gradle-settings.sh');
+  expect(planted('java/gradle.properties')).toContain('org.gradle.java.home=jdk');
+  expect(planted('java/jdk/bin/java')).toContain('lo-hostile-gradle-java');
+  expect(planted('java/pom.xml')).toContain('maven.lo-hostile.invalid');
+  expect(planted('java/.mvn/extensions.xml')).toContain('core-extension');
+  expect(planted('java/.project')).toContain('ExternalToolBuilder');
+  expect(planted('java/.factorypath')).toContain('lo-processor.jar');
+  expect(planted('java/.settings/org.eclipse.jdt.apt.core.prefs')).toContain('aptEnabled=true');
+  expect(planted('.hotspotrc')).toContain('lo-hostile-hotspotrc');
+  // Its settings are in java/, not at the root, where JDT LS would take them as its project's.
+  expect(await checkoutProblem('temurin', checkout)).toBeUndefined();
+  expect(await jdtlsCheckoutProblem(checkout)).toBeUndefined();
+  // Lo's JDK alone, first on its `PATH`, and Gradle's home in its own.
+  const javaHome = `${jdkFolder}/jdk`;
+  const { heard, initialize, home, plants } = await heardBy(
+    JDTLS,
+    [
+      'java.import.exclusions',
+      'java.import.gradle',
+      'java.import.maven',
+      'java.autobuild.enabled',
+      'java.project.sourcePaths',
+    ],
+    {
+      toolchains: [toolchainUse('temurin', '25', jdk())],
+      path: [`${javaHome}/bin`],
+      env: (own) => ({ JAVA_HOME: javaHome, GRADLE_USER_HOME: join(own, 'gradle') }),
+    },
+  );
+  expect(plants['java.jdt.ls.java.home']).toBe('${workspaceFolder}/java/jdk');
+  // No folder is searched for a build file, nothing is imported or compiled, and its project's
+  // source folders are the ones Lo found from the files' packages.
+  expect(heard).toMatchObject({
+    'java.jdt.ls.java.home': null,
+    'java.configuration.runtimes': null,
+    'java.import.exclusions': ['**'],
+    'java.import.gradle': { enabled: false, wrapper: { enabled: false } },
+    'java.import.maven': { enabled: false },
+    'java.autobuild.enabled': false,
+    'java.project.sourcePaths': ['java/src/main/java'],
+  });
+  expect(initialize.initializationOptions).toEqual({
+    settings: jdtlsSettings(['java/src/main/java']),
+    triggerFiles: [fileUri(checkout, TRIGGER)],
+  });
+  // What it's given to read is in its home: a Gradle held to Lo's JDK, and the hosts file its JVM
+  // looks names up in, which has none. A JVM takes no proxy from the environment.
+  expect(readFileSync(join(home, 'gradle', 'gradle.properties'), 'utf8')).toContain(
+    `org.gradle.java.home=${javaHome}\n`,
+  );
+  expect(readFileSync(join(home, 'hosts'), 'utf8')).toMatch(/^#[^\n]*\n$/);
 });

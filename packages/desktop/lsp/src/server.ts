@@ -34,6 +34,7 @@ import { serverEnvironment, temporaryFolder } from './environment.ts';
 import { FLOOD_BYTES, FLOOD_LINES, FLOOD_MESSAGES, FLOOD_WINDOW, FrameMeter } from './framing.ts';
 import { Log } from './log.ts';
 import { type Member, type ReadFamily, readFamily, stillRunning } from './family.ts';
+import { type Place, writeInHome } from './place.ts';
 import {
   checkArguments,
   checkProgram,
@@ -72,6 +73,17 @@ export interface ServerSpec {
   readonly settings?: unknown;
   /** Its `initializationOptions`. */
   readonly initializationOptions?: unknown;
+  /**
+   * What it's given that depends on its checkout and home, worked out once its home is made, just
+   * before it starts: arguments before `args`, more variables, files Lo writes in its home, and
+   * settings and initialization options in place of these.
+   */
+  readonly place?: Place | undefined;
+  /**
+   * Whether it starts again to go to another checkout, rather than moving there, for a server whose
+   * project Lo works out from its checkout as it starts.
+   */
+  readonly stays?: boolean | undefined;
   /** The most resident memory its process group may hold, in bytes. */
   readonly memoryCap?: number | undefined;
   /** Lo's version, which it hears in `clientInfo`. */
@@ -221,6 +233,9 @@ export class Server {
   readonly #queue: Queue;
   /** The checkout's folder, as the system resolves it and as given. */
   #roots: string[] = [];
+  /** What it's told, from its spec or where it runs. */
+  #settings: unknown;
+  #initializationOptions: unknown;
   #child: ChildProcess | undefined;
   #connection: MessageConnection | undefined;
   #capabilities: ServerCapabilities | undefined;
@@ -261,6 +276,8 @@ export class Server {
   constructor(spec: ServerSpec, limits: Limits, read: ReadFamily) {
     this.name = spec.name;
     this.#spec = spec;
+    this.#settings = spec.settings;
+    this.#initializationOptions = spec.initializationOptions;
     this.#limits = limits;
     this.#readFamily = read;
     this.ready = new Promise((resolve) => {
@@ -369,10 +386,12 @@ export class Server {
    * Moves the server to the checkout at `root`, another head of the same repository, when it says
    * it takes changes to its workspace's folders. Its files are closed. It says whether it moved;
    * if it didn't, the server is as it was, and a new one is needed for `root`. `still`, asked once
-   * `root` is resolved, just before the server is told, keeps it where it is when it says no.
+   * `root` is resolved, just before the server is told, keeps it where it is when it says no. One
+   * whose spec says it stays never moves.
    */
   async moveTo(root: string, still: () => boolean = () => true): Promise<boolean> {
     const changes = this.#capabilities?.workspace?.workspaceFolders?.changeNotifications;
+    if (this.#spec.stays === true) return false;
     if (!this.#answering() || (changes !== true && typeof changes !== 'string')) return false;
     const real = await realpath(root);
     if (!this.#answering() || !still()) return false;
@@ -558,10 +577,22 @@ export class Server {
       serverEnvironment({ ...given, home: await resolvedAhead(spec.home), path });
       await mkdir(spec.home, { recursive: true, mode: 0o700 });
       const home = await realpath(spec.home);
-      const env = serverEnvironment({ ...given, home, path });
+      serverEnvironment({ ...given, home, path });
       await mkdir(temporaryFolder(home), { recursive: true, mode: 0o700 });
+      // What depends on where it runs, held to the same rules.
+      const placed = spec.place === undefined ? {} : await spec.place({ root, home });
       if (this.#stopRequested) return;
-      const child = startProcess(program, spec.args, { env, cwd: root });
+      const args = [...(placed.args ?? []), ...spec.args];
+      checkArguments(spec.program, program, args);
+      const variables = { ...spec.variables, ...placed.variables };
+      const env = serverEnvironment({ ...given, variables, home, path });
+      await writeInHome(home, placed.files ?? {});
+      if (placed.settings !== undefined) this.#settings = placed.settings;
+      if (placed.initializationOptions !== undefined) {
+        this.#initializationOptions = placed.initializationOptions;
+      }
+      if (this.#stopRequested) return;
+      const child = startProcess(program, args, { env, cwd: root });
       this.#child = child;
       child.on('error', (error) => {
         // An error once it runs, such as a signal it can't be sent, changes nothing: its exit
@@ -671,7 +702,7 @@ export class Server {
     this.#connection = connection;
     connection.onRequest((method: string, params: unknown) => {
       const answer = reply(method, params, {
-        settings: this.#spec.settings ?? null,
+        settings: this.#settings ?? null,
         folders: this.#folders(),
       });
       if (!answer.accepted) {
@@ -712,7 +743,7 @@ export class Server {
       rootUri: folderUri(root),
       name: basename(root),
       version: this.#spec.version,
-      initializationOptions: this.#spec.initializationOptions,
+      initializationOptions: this.#initializationOptions,
     });
     let answer: unknown;
     const late = Symbol('late');

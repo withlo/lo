@@ -1,7 +1,7 @@
 // What the live check asks a server, at places in the sample projects: what `gd`, `gr`, `K`, `gh`
 // and `gO` ask (a definition, references, a hover, the file's inlay hints and its outline), printing
-// what came back, in short. Meanwhile it watches the server's family: the most memory it held, and
-// every network connection any of it had open, as `lsof` lists them.
+// what came back, in short. Meanwhile it watches the server's family: the most memory it held, the
+// programs it ran as, and every network connection any of it had open, as `lsof` lists them.
 
 import { execFile } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
@@ -39,6 +39,8 @@ export interface Asked {
   readonly log: readonly string[];
   /** The most resident memory its family held at once, in bytes, as read every half second. */
   readonly peak: number;
+  /** Each program its family ran as, by path, as `ps` names it. */
+  readonly programs: readonly string[];
   /** Each network connection any of its family had open, as `lsof` lists it. */
   readonly connections: readonly string[];
 }
@@ -85,7 +87,7 @@ export async function askServer(ask: Ask): Promise<Asked> {
       const hover = await server.request('textDocument/hover', at, options);
       console.log(`  K  ${said(hover, hoverText)}`);
       // The whole file, ending at the end of its last line: a server such as rust-analyzer refuses
-      // a range that runs past the document.
+      // a range that runs past the document, and JDT LS answers nothing for one.
       const lines = (texts.get(file) ?? '').split('\n');
       const last = Math.max(0, lines.length - 1);
       const range = {
@@ -114,12 +116,15 @@ export async function askServer(ask: Ask): Promise<Asked> {
 }
 
 /**
- * Reads `server`'s family every half second until stopped: the most resident memory it held, and
- * every internet socket any member had open.
+ * Reads `server`'s family every half second until stopped: the most resident memory it held, the
+ * program each member ran as, and every internet socket any member had open.
  */
-function watch(server: Server): { stop: () => Promise<{ peak: number; connections: string[] }> } {
+function watch(server: Server): {
+  stop: () => Promise<{ peak: number; programs: string[]; connections: string[] }>;
+} {
   let peak = 0;
   let known: readonly Member[] = [];
+  const programs = new Set<string>();
   const connections = new Set<string>();
   const stopped = new AbortController();
   const read = async () => {
@@ -130,6 +135,12 @@ function watch(server: Server): { stop: () => Promise<{ peak: number; connection
     peak = Math.max(peak, resident);
     if (known.length === 0) return;
     const pids = known.map((member) => member.pid).join(',');
+    const ran = await promisify(execFile)('/bin/ps', ['-o', 'comm=', '-p', pids], {
+      env: { PATH: '/usr/bin:/bin' },
+    }).catch((error: unknown) => ({ stdout: stdoutOf(error) }));
+    for (const line of ran.stdout.split('\n')) {
+      if (line.trim() !== '') programs.add(line.trim());
+    }
     const listed = await promisify(execFile)('/usr/sbin/lsof', ['-nP', '-a', '-i', '-p', pids], {
       env: { PATH: '/usr/bin:/bin' },
       // It exits 1 when it lists nothing.
@@ -148,7 +159,7 @@ function watch(server: Server): { stop: () => Promise<{ peak: number; connection
     stop: async () => {
       stopped.abort();
       await looping;
-      return { peak, connections: [...connections] };
+      return { peak, programs: [...programs].toSorted(), connections: [...connections] };
     },
   };
 }

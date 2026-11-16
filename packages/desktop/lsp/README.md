@@ -82,24 +82,27 @@ The servers Lo runs, each installed on first use for a trusted view, as `servers
 each with its adapter in `src/adapters/`. vtsls and Pyright run on Lo's own Node, which downloads
 first; rust-analyzer is a compiled program that runs on Lo's Rust toolchain, which downloads with
 it; php-lsp and terraform-ls are programs of their own; gopls runs with Lo's Go, which Lo builds it
-with. None needs anything installed.
+with; JDT LS runs on Lo's Temurin JDK, a toolchain, which downloads first. None needs anything
+installed.
 
-| Server        | Version    | For                    | From                                                                                        | License                                                       |
-| ------------- | ---------- | ---------------------- | ------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
-| vtsls         | 0.3.0      | TypeScript, JavaScript | npm: `@vtsls/language-server` and its 17 dependencies, TypeScript 5.9.3 among them          | MIT; TypeScript's is Apache-2.0, the rest MIT or ISC          |
-| Pyright       | 1.1.414    | Python                 | npm: `pyright`                                                                              | MIT                                                           |
-| Node          | 26.13.1    | vtsls and Pyright      | nodejs.org                                                                                  | MIT                                                           |
-| rust-analyzer | 2026-11-09 | Rust                   | GitHub releases: `rust-lang/rust-analyzer`                                                  | MIT OR Apache-2.0                                             |
-| php-lsp       | 0.33.0     | PHP                    | GitHub: the releases of [jorgsowa/php-lsp](https://github.com/jorgsowa/php-lsp)             | MIT                                                           |
-| gopls         | 0.24.0     | Go                     | proxy.golang.org: `golang.org/x/tools/gopls` and the 23 modules it builds with, built by Lo | BSD-3-Clause; the rest BSD-3-Clause, MIT, MIT-0 or Apache-2.0 |
-| terraform-ls  | 0.39.1     | Terraform              | releases.hashicorp.com                                                                      | MPL-2.0                                                       |
+| Server         | Version    | For                    | From                                                                                        | License                                                       |
+| -------------- | ---------- | ---------------------- | ------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
+| vtsls          | 0.3.0      | TypeScript, JavaScript | npm: `@vtsls/language-server` and its 17 dependencies, TypeScript 5.9.3 among them          | MIT; TypeScript's is Apache-2.0, the rest MIT or ISC          |
+| Pyright        | 1.1.414    | Python                 | npm: `pyright`                                                                              | MIT                                                           |
+| Node           | 26.13.1    | vtsls and Pyright      | nodejs.org                                                                                  | MIT                                                           |
+| rust-analyzer  | 2026-11-09 | Rust                   | GitHub releases: `rust-lang/rust-analyzer`                                                  | MIT OR Apache-2.0                                             |
+| php-lsp        | 0.33.0     | PHP                    | GitHub: the releases of [jorgsowa/php-lsp](https://github.com/jorgsowa/php-lsp)             | MIT                                                           |
+| gopls          | 0.24.0     | Go                     | proxy.golang.org: `golang.org/x/tools/gopls` and the 23 modules it builds with, built by Lo | BSD-3-Clause; the rest BSD-3-Clause, MIT, MIT-0 or Apache-2.0 |
+| terraform-ls   | 0.39.1     | Terraform              | releases.hashicorp.com                                                                      | MPL-2.0                                                       |
+| Eclipse JDT LS | 1.63.0     | Java                   | download.eclipse.org: its release's archive                                                 | EPL-2.0                                                       |
 
 vtsls and Pyright each start as Node, by its absolute path, with a cap on its heap, then the
 server's own entry point inside its install, never the launcher npm would link. rust-analyzer,
 php-lsp, gopls and terraform-ls each start as its program, by its absolute path inside its install.
-None runs through a shell, and each has an environment built from nothing, whose proxy leads nowhere
-(`NO_NETWORK` in `src/environment.ts`). What each is told is its adapter's alone, and the adapter
-says why each setting is as it is:
+JDT LS starts as the JDK's `java`, by its absolute path, with `-jar` and Equinox's launcher inside
+its install. None runs through a shell, and each has an environment built from nothing, whose proxy
+leads nowhere (`NO_NETWORK` in `src/environment.ts`). What each is told is its adapter's alone, and
+the adapter says why each setting is as it is:
 
 - **vtsls** runs its own TypeScript, never a workspace's (`node_modules/typescript`), and has
   automatic type acquisition off, so it runs no npm. It loads no `tsserver` plugin from the
@@ -177,6 +180,29 @@ says why each setting is as it is:
   references there. It asks registry.terraform.io about each module a configuration calls from the
   Registry, which no setting turns off, and the dead proxy fails each request before anything is
   sent. It answers no inlay hints (`hints: false`).
+- **JDT LS** is given Lo's Temurin JDK alone (`JAVA_HOME`), and reads its classes and sources as the
+  project's library. It imports nothing: Gradle's and Maven's imports are off, and every folder is
+  left out of its search for build files, so it reads no `build.gradle`, `pom.xml` or Eclipse
+  `.project`, and no build script, wrapper, plugin or annotation processor runs. Lo finds the
+  checkout's source folders itself, from each `.java` file's package, in the 20,000 folders and
+  20,000 files nearest the root, and JDT LS makes a project of them in its home, compiling nothing;
+  a file in a source folder past those is outside its project, and gets fewer answers. All it writes
+  is in its home: its workspace, Equinox's configuration, the JVM's home and its temporary files,
+  named by system properties, since a JVM takes its home from the system, not `HOME`, and Gradle's
+  home, by `GRADLE_USER_HOME`. It reaches no host: its JVM looks names up only in an empty hosts
+  file of Lo's, and uses no proxy, which would look names up itself. A JVM takes none from the
+  environment, and JDT LS is told to give Eclipse's networking none of the system's
+  (`jdt.ls.disableProxies`, `java.net.useSystemProxies=false`). Two parts of it try to fetch
+  whatever its settings say, and no setting stops them trying: Buildship asks services.gradle.org
+  for Gradle's versions as it starts, and a hover on a class from a jar in `lib/`, or its source,
+  has it ask search.maven.org which artifact the jar is, by its SHA-1, then m2e to download the
+  artifact's sources, which Maven's offline setting keeps to the empty repository in its home. Java
+  isn't available for a repository that commits Eclipse's `.settings` folder at its root: JDT LS
+  would link its project's settings to it, reading them and writing there. Above the checkout it
+  reads nothing: when a folder the checkout is in is named `src`, it looks only for whether the
+  folder holding that one has a build file, and makes no project if it has. Its heap is capped at
+  2.5 GB, under Lo's 4 GB for the group. It finds its project's folders only as it starts, so it
+  restarts on another checkout rather than moving there (`stays`).
 
 None runs in a sandbox: each reads what you can, so an absolute import, Pyright's `extraPaths`, a
 Rust sysroot's sources, the folders of stubs a `.php-lsp.json` names, the paths a `composer.json`'s
@@ -273,7 +299,9 @@ environment are for.
 
 Who published php-lsp: its releases are signed by nobody, so `pin.ts` checks each archive against
 the checksum its release lists beside it, which the same build made. That catches a download gone
-wrong, not a release someone else made.
+wrong, not a release someone else made. JDT LS's is the same: Eclipse publishes a SHA-256 beside
+each archive, on the same host, and signs about half the jars inside it, not the archive or the
+launcher's configuration.
 
 An installed file's bytes: before each use, its size is checked, not its hash, which would read
 every byte. On macOS, `fsync` leaves what the drive itself caches, and Node can't ask for more

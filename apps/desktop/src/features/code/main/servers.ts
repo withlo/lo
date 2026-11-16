@@ -604,6 +604,8 @@ export class ServerPool {
         git: base.git,
         settings: launch.settings,
         initializationOptions: launch.initializationOptions,
+        place: launch.place,
+        stays: launch.stays,
       });
     } catch (error) {
       this.#refuse(entry, {

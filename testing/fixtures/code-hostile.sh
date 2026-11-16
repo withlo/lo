@@ -97,6 +97,31 @@
 #   Maven's wrapper
 #     java/mvnw and java/.mvn/wrapper/maven-wrapper.properties
 #     running the wrapper; marker java/lo-hostile-mvnw, and host maven-dist.lo-hostile.invalid
+#   Java's project, as Gradle, Maven and Eclipse import it, beside the code fixture's java/src
+#     java/gradlew and java/gradle/wrapper/gradle-wrapper.properties, as Kotlin's are; marker
+#       java/lo-hostile-gradlew, and host gradle.lo-hostile.invalid
+#     java/settings.gradle, which runs java/lo-gradle-settings.sh, and java/build.gradle, a plugin,
+#       a repository and an annotation processor; Gradle, configuring the project; marker
+#       java/lo-hostile-gradle-settings, and hosts gradle-plugins and gradle.lo-hostile.invalid
+#     java/gradle.properties, naming java/jdk as the JDK to build with and to find, and turning on
+#       downloads; Gradle, starting its daemon; marker java/jdk/bin/lo-hostile-gradle-java
+#     java/pom.xml, a repository, a plugin's, a build extension and a plugin run as sources are
+#       generated, and java/.mvn/extensions.xml, a core extension; Maven or m2e, importing or
+#       building; hosts maven and maven-plugins.lo-hostile.invalid
+#     java/.mvn/maven.config and java/.mvn/jvm.config, a local repository and a log file in the
+#       checkout; Maven's launcher; the folder java/lo-hostile-maven-repository and the file
+#       java/lo-hostile-maven-jvm
+#     java/.project, an external tool builder, java/.externalToolBuilders/lo.launch, which names
+#       java/lo-eclipse-builder.sh, and m2e's builder; Eclipse, building; marker
+#       java/lo-hostile-eclipse-builder
+#     java/.classpath, java/.factorypath and java/.settings, an output folder, a Javadoc host,
+#       an annotation processor and annotation processing on, generating sources; Eclipse,
+#       importing or building; the folders java/lo-hostile-eclipse-output and
+#       java/lo-hostile-apt-generated, and host javadoc.lo-hostile.invalid
+#   the JVM's options file
+#     .hotspotrc, logging the JVM's output to a file in the folder it runs in
+#     a JVM started there that's told to read it, which no product build is unless told; the file
+#     lo-hostile-hotspotrc
 #   Phpactor's tools
 #     php/.phpactor.json, naming php/lo-tool.sh as PHPStan, Psalm and PHP CS Fixer
 #     Phpactor, checking a file; marker php/lo-hostile-phpactor
@@ -114,7 +139,7 @@
 #     the folder lo-hostile-php-lsp-cache; for the rest, its log naming PHP 7.4, and a count of the
 #     files it indexed that's one more than on the code fixture's checkout
 #   versions that don't exist
-#     .tool-versions, .nvmrc, python/.python-version, ruby/.ruby-version
+#     .tool-versions, .nvmrc, .sdkmanrc, .java-version, python/.python-version, ruby/.ruby-version
 #     a version manager choosing a version from the checkout; no marker, a request to the
 #     version's download host, or an error. csharp/global.json is a version choice too, of an SDK
 #     that exists, rolled forward past it: no marker and no host, and it shows only in the SDK a
@@ -174,10 +199,11 @@ IFS= read -r -d '' HOSTILE_BODY <<'EOF' || true
 
 It's the code fixture's pull request, with one more commit. That commit's files try to run code, steer a language server or a version manager, or fetch from the network, when the pull request is checked out and its servers start:
 
-- programs a tool might run: a workspace TypeScript in `node_modules`, a tsserver plugin in `typescript/node_modules`, an npm `postinstall`, `.vscode/settings.json`, a `rust/.cargo/config.toml` naming programs for `build.rustc`, its wrappers, a target's runner and linker, and a registry credential provider, and flags for rustc, a `.cargo/config.toml` with an `[env]` table, an `[unstable]` table and an `include`, the workspace settings `rust/rust-analyzer.toml` names, the Gradle and Maven wrappers, `php/.phpactor.json`'s tools, PHP's tools in `vendor/bin` and the `.php-lsp.json` that turns two of them on, `mise.toml`, a Terraform provider's plugin committed in `hostile/terraform-provider/.terraform`, a `//go:generate` line and a cgo file in `go/`, and a `terraform` and a `gopackagesdriver` in `hostile/bin`, which `.envrc` puts on `PATH`;
-- versions that don't exist: `.tool-versions`, `.nvmrc`, `python/.python-version`, `ruby/.ruby-version`, `rust-toolchain.toml`, the `toolchain` lines of `go.mod` and `go.work`, and a `global.json` that pins an MSBuild SDK;
+- programs a tool might run: a workspace TypeScript in `node_modules`, a tsserver plugin in `typescript/node_modules`, an npm `postinstall`, `.vscode/settings.json`, a `rust/.cargo/config.toml` naming programs for `build.rustc`, its wrappers, a target's runner and linker, and a registry credential provider, and flags for rustc, a `.cargo/config.toml` with an `[env]` table, an `[unstable]` table and an `include`, the workspace settings `rust/rust-analyzer.toml` names, the Gradle and Maven wrappers, Java's Gradle settings script, a JDK in `java/jdk` that `java/gradle.properties` names, an Eclipse builder in `java/.project`, `php/.phpactor.json`'s tools, PHP's tools in `vendor/bin` and the `.php-lsp.json` that turns two of them on, `mise.toml`, a Terraform provider's plugin committed in `hostile/terraform-provider/.terraform`, a `//go:generate` line and a cgo file in `go/`, and a `terraform` and a `gopackagesdriver` in `hostile/bin`, which `.envrc` puts on `PATH`;
+- settings that write in the checkout or turn on what runs: Maven's `.mvn/maven.config` and `.mvn/jvm.config`, Eclipse's `.classpath`, `.factorypath` and `.settings` in `java/`, and a `.hotspotrc`;
+- versions that don't exist: `.tool-versions`, `.nvmrc`, `.sdkmanrc`, `.java-version`, `python/.python-version`, `ruby/.ruby-version`, `rust-toolchain.toml`, the `toolchain` lines of `go.mod` and `go.work`, and a `global.json` that pins an MSBuild SDK;
 - git's own settings, in folders of `git/` that look like bare repositories: a `core.fsmonitor` program, hooks, a clean and smudge filter, and a promisor remote that makes git fetch a commit it lacks; and a `.gitmodules` that points a submodule at a host that doesn't exist;
-- projects in `hostile/` whose dependencies or registries are on hosts ending `.lo-hostile.invalid`, which never resolve, and a Terraform module from the Terraform Registry that doesn't exist.
+- projects in `hostile/`, and Java's `pom.xml` and Gradle scripts, whose dependencies or registries are on hosts ending `.lo-hostile.invalid`, which never resolve, and a Terraform module from the Terraform Registry that doesn't exist.
 
 Each program writes one empty file named `lo-hostile-<name>` beside itself, and nothing else: no network, no deletes, no reads. Lo passes while no `lo-hostile-*` file appears in the checkout and no request goes to a host ending `.lo-hostile.invalid`, to the download host of a version that doesn't exist, or to the Terraform Registry.
 
@@ -359,7 +385,13 @@ EOF
     "build.buildFlags": ["-toolexec=${workspaceFolder}/.vscode/lo-server.sh"]
   },
   "terraform.languageServer.path": "${workspaceFolder}/.vscode/lo-server.sh",
-  "terraform.languageServer.terraform.path": "${workspaceFolder}/.vscode/lo-server.sh"
+  "terraform.languageServer.terraform.path": "${workspaceFolder}/.vscode/lo-server.sh",
+  "java.jdt.ls.java.home": "${workspaceFolder}/java/jdk",
+  "java.jdt.ls.vmargs": "-XX:OnError=${workspaceFolder}/.vscode/lo-server.sh",
+  "java.configuration.runtimes": [{ "name": "JavaSE-21", "path": "${workspaceFolder}/java/jdk" }],
+  "java.import.gradle.enabled": true,
+  "java.import.gradle.wrapper.enabled": true,
+  "java.import.maven.enabled": true
 }
 EOF
   marker_sh .vscode/lo-server.sh lo-hostile-vscode "a program an editor's settings name"
@@ -456,6 +488,186 @@ distributionUrl=https://maven-dist.lo-hostile.invalid/maven/apache-maven-99.0-bi
 EOF
   marker_sh java/mvnw lo-hostile-mvnw "Maven's wrapper script"
 
+  # Java's project, as each tool that imports one reads it, beside the code fixture's sources in
+  # java/src: Gradle's wrapper, its settings script, which runs a program, its build script and
+  # properties, and a JDK in the checkout; Maven's build, its extensions and the options its
+  # launcher passes; and Eclipse's project, with a builder that runs a program, an output folder,
+  # annotation processing and its settings.
+  put java/gradle/wrapper/gradle-wrapper.properties <<'EOF'
+distributionBase=GRADLE_USER_HOME
+distributionPath=wrapper/dists
+distributionUrl=https\://gradle.lo-hostile.invalid/distributions/gradle-99.0-bin.zip
+zipStoreBase=GRADLE_USER_HOME
+zipStorePath=wrapper/dists
+EOF
+  marker_sh java/gradlew lo-hostile-gradlew "Gradle's wrapper script"
+  put java/settings.gradle <<'EOF'
+pluginManagement {
+    repositories {
+        maven { url = 'https://gradle-plugins.lo-hostile.invalid/repository' }
+    }
+}
+
+// Fixture: the settings script, which Gradle runs first, running a program beside it.
+[new File(settingsDir, 'lo-gradle-settings.sh').path].execute().waitFor()
+
+rootProject.name = 'sample'
+EOF
+  marker_sh java/lo-gradle-settings.sh lo-hostile-gradle-settings "a program Gradle's settings script runs"
+  put java/build.gradle <<'EOF'
+plugins {
+    id 'java'
+    id 'lo.hostile.plugin' version '1.0.0'
+}
+
+repositories {
+    maven { url = 'https://gradle.lo-hostile.invalid/repository' }
+}
+
+dependencies {
+    annotationProcessor 'lo.hostile:processor:1.0.0'
+}
+EOF
+  put java/gradle.properties <<'EOF'
+org.gradle.java.home=jdk
+org.gradle.java.installations.auto-download=true
+org.gradle.java.installations.paths=jdk
+EOF
+  marker_sh java/jdk/bin/java lo-hostile-gradle-java "the java of a JDK in the checkout"
+  put java/pom.xml <<'EOF'
+<project xmlns="http://maven.apache.org/POM/4.0.0">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>lo.hostile</groupId>
+  <artifactId>sample</artifactId>
+  <version>1.0.0</version>
+  <repositories>
+    <repository>
+      <id>lo-hostile</id>
+      <url>https://maven.lo-hostile.invalid/repository</url>
+    </repository>
+  </repositories>
+  <pluginRepositories>
+    <pluginRepository>
+      <id>hostile-plugins</id>
+      <url>https://maven-plugins.lo-hostile.invalid/repository</url>
+    </pluginRepository>
+  </pluginRepositories>
+  <build>
+    <extensions>
+      <extension>
+        <groupId>lo.hostile</groupId>
+        <artifactId>extension</artifactId>
+        <version>1.0.0</version>
+      </extension>
+    </extensions>
+    <plugins>
+      <plugin>
+        <groupId>lo.hostile</groupId>
+        <artifactId>plugin</artifactId>
+        <version>1.0.0</version>
+        <executions>
+          <execution>
+            <phase>generate-sources</phase>
+            <goals><goal>generate</goal></goals>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
+</project>
+EOF
+  put java/.mvn/extensions.xml <<'EOF'
+<extensions>
+  <extension>
+    <groupId>lo.hostile</groupId>
+    <artifactId>core-extension</artifactId>
+    <version>1.0.0</version>
+  </extension>
+</extensions>
+EOF
+  put java/.mvn/maven.config <<'EOF'
+-Dmaven.repo.local=lo-hostile-maven-repository
+EOF
+  put java/.mvn/jvm.config <<'EOF'
+-XX:+UnlockDiagnosticVMOptions -XX:+LogVMOutput -XX:LogFile=lo-hostile-maven-jvm
+EOF
+  put java/.project <<'EOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<projectDescription>
+  <name>sample</name>
+  <buildSpec>
+    <buildCommand>
+      <name>org.eclipse.ui.externaltools.ExternalToolBuilder</name>
+      <triggers>full,incremental,</triggers>
+      <arguments>
+        <dictionary>
+          <key>LaunchConfigHandle</key>
+          <value>&lt;project&gt;/.externalToolBuilders/lo.launch</value>
+        </dictionary>
+      </arguments>
+    </buildCommand>
+    <buildCommand>
+      <name>org.eclipse.m2e.core.maven2Builder</name>
+    </buildCommand>
+    <buildCommand>
+      <name>org.eclipse.jdt.core.javabuilder</name>
+    </buildCommand>
+  </buildSpec>
+  <natures>
+    <nature>org.eclipse.jdt.core.javanature</nature>
+    <nature>org.eclipse.m2e.core.maven2Nature</nature>
+  </natures>
+</projectDescription>
+EOF
+  put java/.externalToolBuilders/lo.launch <<'EOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<launchConfiguration type="org.eclipse.ui.externaltools.ProgramBuilderLaunchConfigurationType">
+  <stringAttribute key="org.eclipse.ui.externaltools.ATTR_LOCATION" value="${project_loc}/lo-eclipse-builder.sh"/>
+  <stringAttribute key="org.eclipse.ui.externaltools.ATTR_RUN_BUILD_KINDS" value="full,incremental,auto,"/>
+</launchConfiguration>
+EOF
+  marker_sh java/lo-eclipse-builder.sh lo-hostile-eclipse-builder "a program Eclipse's project builds with"
+  put java/.classpath <<'EOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<classpath>
+  <classpathentry kind="src" path="src/main/java"/>
+  <classpathentry kind="src" path="lo-hostile-apt-generated">
+    <attributes>
+      <attribute name="optional" value="true"/>
+    </attributes>
+  </classpathentry>
+  <classpathentry kind="con" path="org.eclipse.jdt.launching.JRE_CONTAINER">
+    <attributes>
+      <attribute name="javadoc_location" value="https://javadoc.lo-hostile.invalid/api/"/>
+    </attributes>
+  </classpathentry>
+  <classpathentry kind="con" path="org.eclipse.m2e.MAVEN2_CLASSPATH_CONTAINER"/>
+  <classpathentry kind="output" path="lo-hostile-eclipse-output"/>
+</classpath>
+EOF
+  put java/.factorypath <<'EOF'
+<factorypath>
+  <factorypathentry kind="WKSPJAR" id="/sample/lib/lo-processor.jar" enabled="true" runInBatchMode="false"/>
+</factorypath>
+EOF
+  put java/.settings/org.eclipse.jdt.apt.core.prefs <<'EOF'
+eclipse.preferences.version=1
+org.eclipse.jdt.apt.aptEnabled=true
+org.eclipse.jdt.apt.genSrcDir=lo-hostile-apt-generated
+org.eclipse.jdt.apt.reconcileEnabled=true
+EOF
+  put java/.settings/org.eclipse.jdt.core.prefs <<'EOF'
+eclipse.preferences.version=1
+org.eclipse.jdt.core.compiler.processAnnotations=enabled
+EOF
+
+  # The JVM's own options in the folder it runs in, which a JVM reads only when told to.
+  put .hotspotrc <<'EOF'
++UnlockDiagnosticVMOptions
++LogVMOutput
+LogFile=lo-hostile-hotspotrc
+EOF
+
   # The tools Phpactor runs on a file, which its configuration names.
   put php/.phpactor.json <<'EOF'
 {
@@ -546,6 +758,12 @@ golang 99.0.0
 java temurin-99.0.0
 EOF
   put .nvmrc <<'EOF'
+99
+EOF
+  put .sdkmanrc <<'EOF'
+java=99.0.0-tem
+EOF
+  put .java-version <<'EOF'
 99
 EOF
   put python/.python-version <<'EOF'
