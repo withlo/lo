@@ -4,7 +4,8 @@
 // global.json, in them or above them, that could choose another SDK, and the ones a server that
 // uses Go won’t: those with a go.work above them, or one in them naming a folder outside. And the
 // ones rust-analyzer won't: those with a rust-analyzer.toml, a Cargo config with a key Lo's
-// variables can't answer or that's a link, or any Cargo config above them.
+// variables can't answer or that's a link, or any Cargo config above them. Each matches a name as a
+// Mac's disk opens it.
 
 import { mkdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -17,6 +18,7 @@ import { TOOLCHAINS } from './manifest.ts';
 import {
   checkoutProblem,
   dotnetAbove,
+  foldName,
   TOOLCHAIN_NAMES,
   toolchainUse,
   workFolders,
@@ -423,6 +425,18 @@ describe('a checkout rust-analyzer won’t run on', () => {
     for (const id of ['go', 'dotnet', 'temurin'])
       expect(await checkoutProblem(id, root)).toBeUndefined();
   });
+});
+
+test('names are matched as a Mac’s disk opens them, in any case or Unicode form', () => {
+  // A long s, a Kelvin sign, and an accent composed or not.
+  expect(foldName('.\u017Fourcekit-lsp')).toBe('.sourcekit-lsp');
+  expect(foldName('go.wor\u212A')).toBe('go.work');
+  expect(foldName('BUILDSERVER.JSON')).toBe('buildserver.json');
+  expect(foldName('e\u0301')).toBe(foldName('\u00E9'));
+  // APFS opens both sharp s's, the small ß and the capital ẞ, as ss.
+  expect(foldName('\u00DF')).toBe('ss');
+  expect(foldName('\u1E9E')).toBe('ss');
+  expect(foldName('STRA\u1E9EE')).toBe(foldName('strasse'));
 });
 
 describe('a checkout a server that uses Go won’t run on', () => {

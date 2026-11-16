@@ -1180,7 +1180,10 @@ EOF
   plant_terraform_provider
 
   # A package whose manifest writes a marker as SwiftPM evaluates it, and settings for the package
-  # that evaluate it outside SwiftPM's sandbox, which would keep it from writing beside itself.
+  # that evaluate it outside SwiftPM's sandbox. The sandbox, on by default, keeps a manifest from
+  # writing beside itself, so the marker shows only an evaluation that read these settings. One in
+  # the sandbox still writes in the package (its .build folder), which the live check catches as it
+  # compares the checkout before and after.
   put hostile/swift/Package.swift <<'EOF'
 // swift-tools-version: 5.9
 import Foundation
@@ -1290,7 +1293,10 @@ EOF
 
   # A package with a build tool plugin, which SwiftPM builds and runs as it builds the package, and
   # which runs lo-swift-plugin.sh first; and settings for the package that build it outside
-  # SwiftPM's sandbox, which would keep the manifest and the plugin from writing beside themselves.
+  # SwiftPM's sandbox, which would keep the manifest, the plugin and the program from writing beside
+  # themselves. So their markers show only a build that read these settings. One in the sandbox
+  # still writes in the package (its .build folder), which the live check catches as it compares
+  # the checkout before and after.
   put hostile/swift-plugin/Package.swift <<'EOF'
 // swift-tools-version: 5.9
 import Foundation

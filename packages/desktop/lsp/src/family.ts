@@ -10,8 +10,9 @@
  *
  * A server's services are in its family too: processes the system starts for it, outside its
  * family, such as the `SourceKitService` that `launchd` starts for SourceKit-LSP. Each is found by
- * its program's name and by its `HOME`, which is the server's own home only in a process the
- * server's environment reached ({@link servicesOf}).
+ * its program's name and by its `HOME`, the server's home ({@link servicesOf}). A home is a
+ * repository's, for one adapter, not one server's: a service left by an earlier server there has
+ * the same `HOME`, and it's found, counted and stopped too, as what Lo left.
  */
 
 import { execFile } from 'node:child_process';
@@ -61,6 +62,7 @@ export const readFamily: ReadFamily = async (group, also = []) => {
  * `read`, with the server's services and what descends from them: each process named one of
  * `names` whose `HOME` is the server's home, as `home` gives it once the server has one, found by
  * `find` at each read and read as known before (`also`), so what a service starts is family too.
+ * One that an earlier server in the same home started, and that's still running, is among them.
  */
 export function withServices(
   read: ReadFamily,
@@ -76,11 +78,12 @@ export function withServices(
 }
 
 /**
- * The processes named one of `names` whose `HOME` is `home`, exactly, with their resident memory:
- * on Linux from `/proc`, by the name the system gives each (the first 15 characters of its
- * program's file name, unless it renamed itself) or the file name of its first argument, and its
- * environment; elsewhere, on macOS, by `ps`, by its program's file name, then its environment, as
- * `ps -E` lists it, for those so named.
+ * The processes named one of `names` whose `HOME` is `home`, with their resident memory. On Linux,
+ * from `/proc`: by the name the system gives each (the first 15 characters of its program's file
+ * name, unless it renamed itself) or the file name of its first argument, then by its environment,
+ * read as separate entries, one of which is `HOME=<home>`, whole. Elsewhere, on macOS, from `ps`:
+ * by its program's file name, then by its environment, which `ps -E` lists only as text after its
+ * arguments ({@link servicesInPs}).
  */
 export async function servicesOf(names: readonly string[], home: string): Promise<Member[]> {
   if (names.length === 0) return [];
@@ -88,8 +91,9 @@ export async function servicesOf(names: readonly string[], home: string): Promis
   const { stdout } = await promisify(execFile)('/bin/ps', ['-A', '-o', 'pid=,comm='], PS_OPTIONS);
   const named = namedInPs(stdout, names);
   if (named.length === 0) return [];
-  const args = ['-E', '-ww', '-o', `${PS_COLUMNS},command=`, '-p', named.join(',')];
-  return servicesInPs(await psListing(args), home);
+  const args = ['-ww', '-o', `${PS_COLUMNS},command=`, '-p', named.join(',')];
+  const [commands, listed] = await Promise.all([psListing(args), psListing(['-E', ...args])]);
+  return servicesInPs(commands, listed, home);
 }
 
 /** The IDs in `ps -o pid=,comm=`'s lines whose program's file name is one of `names`. */
@@ -101,18 +105,36 @@ export function namedInPs(output: string, names: readonly string[]): number[] {
 }
 
 /**
- * The processes in `ps -E -o pid=,ppid=,pgid=,rss=,lstart=,command=`'s lines whose environment,
- * after the command, holds `HOME=<home>` as one of its variables: preceded by a space and followed
- * by another variable or the line's end, so a home that only begins with `home` isn't it.
+ * The processes whose environment holds `HOME=<home>`, from two listings of the same processes by
+ * `ps -ww -o pid=,ppid=,pgid=,rss=,lstart=,command=`: `commands`, which lists each one's program and
+ * arguments, and `listed`, run with `-E`, which lists the same, a space, then its environment.
+ * `ps` joins each one's entries with spaces and can't list them apart, so the environment is
+ * matched as text, as tightly as text allows: only in what follows, in `listed`, the program and
+ * arguments `commands` gives the same process, by its ID and start, so no argument matches; and
+ * only as `HOME=<home>` at that text's start or after a space, then a space and another variable's
+ * name and `=`, or the end, so a home that only begins with `home` isn't it. What still matches: a
+ * variable whose value holds ` HOME=<home>` followed by its end or what looks like another
+ * variable, and a `HOME` that's `home` followed by such text. A process whose arguments changed
+ * between the listings, or whose environment `ps` can't read, doesn't.
  */
-export function servicesInPs(output: string, home: string): Member[] {
+export function servicesInPs(commands: string, listed: string, home: string): Member[] {
   const line = new RegExp(
-    String.raw`^(\s*\d+\s+\d+\s+\d+\s+\d+\s+\S+\s+\S+\s+\d+\s+[\d:]+\s+\d+)\s(.*)$`,
+    String.raw`^(\s*\d+\s+\d+\s+\d+\s+\d+\s+\S+\s+\S+\s+\d+\s+[\d:]+\s+\d+)\s+(.*)$`,
   );
-  const variable = new RegExp(String.raw` HOME=${escaped(home)}(?= [A-Za-z_][A-Za-z0-9_]*=|$)`);
-  return output.split('\n').flatMap((each) => {
-    const [, columns = '', command = ''] = line.exec(each) ?? [];
-    return variable.test(command) ? membersOfPs(columns) : [];
+  const rows = (output: string) =>
+    output.split('\n').flatMap((each) => {
+      const [, columns = '', command = ''] = line.exec(each) ?? [];
+      return membersOfPs(columns).map((member) => ({ member, command }));
+    });
+  const key = (member: Member) => `${member.pid} ${member.started}`;
+  const argumentsOf = new Map(rows(commands).map((row) => [key(row.member), row.command]));
+  const variable = new RegExp(
+    String.raw`(?:^| )HOME=${escaped(home)}(?= [A-Za-z_][A-Za-z0-9_]*=|$)`,
+  );
+  return rows(listed).flatMap(({ member, command }) => {
+    const args = argumentsOf.get(key(member));
+    if (args === undefined || !command.startsWith(`${args} `)) return [];
+    return variable.test(command.slice(args.length + 1)) ? [member] : [];
   });
 }
 

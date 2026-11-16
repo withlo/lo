@@ -22,6 +22,7 @@ import {
   launchSourceKit,
   placeSourceKit,
   SOURCEKIT_LSP,
+  sourceKitArguments,
   sourceKitCandidates,
   sourceKitCheckoutProblem,
   sourceKitOptions,
@@ -177,6 +178,14 @@ describe('starting SourceKit-LSP', () => {
     const where = { root: '/lo/checkouts/work', home: '/lo/homes/swift' };
     const placed = await placeSourceKit(where, found.sdk);
     expect(placed).toEqual({
+      args: [
+        '--generated-files-path',
+        '/lo/homes/swift/generated',
+        '-Xswiftc',
+        '-module-cache-path',
+        '-Xswiftc',
+        '/lo/homes/swift/cache/modules',
+      ],
       variables: { CFFIXED_USER_HOME: '/lo/homes/swift' },
       initializationOptions: {
         backgroundIndexing: false,
@@ -193,6 +202,7 @@ describe('starting SourceKit-LSP', () => {
       },
     });
     expect(sourceKitOptions(where.home, found.sdk)).toEqual(placed.initializationOptions);
+    expect(sourceKitArguments(where.home)).toEqual(placed.args);
     // The launch's place gives the same, and its variable is one a server may have.
     const launched = await launchSourceKit(found).place?.(where);
     expect(launched).toEqual(placed);

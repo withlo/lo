@@ -78,7 +78,7 @@ test('a process’s stat gives its parent, group and start, whatever its name', 
   expect(memberOfStat('4244 (short) S 1 4200 4200')).toBeUndefined();
 });
 
-test('a service is a process of its name whose HOME is the server’s home, exactly', () => {
+test('a service is a process of its name whose HOME is the server’s home, as a whole entry', () => {
   const home = '/lo/code/homes/a/x/swift';
   const service = '/Xcode/XPCServices/SourceKitService.xpc/Contents/MacOS/SourceKitService';
   // Programs by their file names: a path's last part, never a name that only ends with it.
@@ -94,21 +94,39 @@ test('a service is a process of its name whose HOME is the server’s home, exac
       ['SourceKitService'],
     ),
   ).toEqual([501, 503]);
-  const line = (pid: number, command: string) => ` ${pid}  1 ${pid}  2048 ${START} ${command}`;
-  const listing = [
-    line(501, `${service} LANG=C.UTF-8 HOME=${home} TMPDIR=${home}/tmp`),
-    // Its home last of all.
-    line(503, `${service} LANG=C.UTF-8 HOME=${home}`),
+  const line = (pid: number, command: string, start = START) =>
+    ` ${pid}  1 ${pid}  2048 ${start} ${command}`;
+  /**
+   * `ps`'s two listings of processes, each a pid, its program and arguments, and its environment:
+   * without `-E`, then with it. An environment `ps` can't read is `undefined`.
+   */
+  const listings = (rows: readonly (readonly [number, string, string | undefined])[]) =>
+    [
+      [...rows.map(([pid, command]) => line(pid, command)), ''].join('\n'),
+      [
+        ...rows.map(([pid, command, environment]) =>
+          line(pid, environment === undefined ? command : `${command} ${environment}`),
+        ),
+        '',
+      ].join('\n'),
+    ] as const;
+  const [commands, listed] = listings([
+    [501, service, `LANG=C.UTF-8 HOME=${home} TMPDIR=${home}/tmp`],
+    // Its home first of all, and last.
+    [502, service, `HOME=${home} LANG=C.UTF-8`],
+    [503, service, `LANG=C.UTF-8 HOME=${home}`],
     // Another server's, whose home only begins with this one's, or is inside it.
-    line(505, `${service} HOME=${home}-2 PATH=/usr/bin`),
-    line(506, `${service} HOME=${home}/inner PATH=/usr/bin`),
-    // Its home only in another variable's value, or in its arguments with nothing after it.
-    line(507, `${service} OTHER=HOME=${home} PATH=/usr/bin`),
-    line(508, `${service} --as-HOME=${home}x PATH=/usr/bin`),
-    '',
-  ].join('\n');
-  const found = servicesInPs(listing, home);
-  expect(pids(found)).toEqual([501, 503]);
+    [505, service, `HOME=${home}-2 PATH=/usr/bin`],
+    [506, service, `HOME=${home}/inner PATH=/usr/bin`],
+    // Its home only in another variable's value, or in its arguments, alone or before more.
+    [507, service, `OTHER=HOME=${home} PATH=/usr/bin`],
+    [508, `${service} HOME=${home}`, 'PATH=/usr/bin'],
+    [509, `${service} --as HOME=${home} --then`, 'PATH=/usr/bin'],
+    // Its home in its arguments, and an environment `ps` can't read.
+    [510, `${service} HOME=${home}`, undefined],
+  ]);
+  const found = servicesInPs(commands, listed, home);
+  expect(pids(found)).toEqual([501, 502, 503]);
   expect(found[0]).toEqual({
     pid: 501,
     parent: 1,
@@ -116,9 +134,26 @@ test('a service is a process of its name whose HOME is the server’s home, exac
     resident: 2048 * 1024,
     started: START,
   });
+  // A process whose arguments aren't those listed without `-E`, as when it changed them between
+  // the listings, or that isn't the same process there, by its start, isn't.
+  const changed = line(511, `${service} --now HOME=${home}`);
+  expect(servicesInPs(line(511, `${service} --was`), changed, home)).toEqual([]);
+  const later = line(512, `${service} HOME=${home}`);
+  expect(servicesInPs(line(512, service, 'Mon Nov 16 09:00:00 2026'), later, home)).toEqual([]);
+  // A home with a space, as a build run from source has (`Lo Dev`), is matched whole.
+  const dev = '/var/folders/x/C/Lo Dev/code/homes/a/x/swift';
+  const [spaced, spacedListed] = listings([[513, service, `HOME=${dev} PATH=/usr/bin`]]);
+  expect(pids(servicesInPs(spaced, spacedListed, dev))).toEqual([513]);
   // A home with what a pattern would take as its own is matched as itself.
-  expect(pids(servicesInPs(line(509, `${service} HOME=/a+b/(c)`), '/a+b/(c)'))).toEqual([509]);
-  expect(pids(servicesInPs(line(510, `${service} HOME=/aab/(c)`), '/a+b/(c)'))).toEqual([]);
+  const [pattern, patternListed] = listings([
+    [514, service, 'HOME=/a+b/(c)'],
+    [515, service, 'HOME=/aab/(c)'],
+  ]);
+  expect(pids(servicesInPs(pattern, patternListed, '/a+b/(c)'))).toEqual([514]);
+  // What `ps` can't tell apart from a whole entry, since it joins them with spaces: a value that
+  // holds the home's entry, then the end or what looks like another variable.
+  const [joined, joinedListed] = listings([[516, service, `OTHER=x HOME=${home} PATH=/usr/bin`]]);
+  expect(pids(servicesInPs(joined, joinedListed, home))).toEqual([516]);
 });
 
 test('a server’s services are read with its family, and what they start, once it has a home', async () => {

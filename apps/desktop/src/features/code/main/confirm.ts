@@ -43,7 +43,13 @@ export const BUTTONS = ['Trust', 'Cancel'] as const;
 const TRUST = BUTTONS.indexOf('Trust');
 const CANCEL = BUTTONS.indexOf('Cancel');
 
-const RUNS_CODE = 'A language server can run code from the repository, such as its build files.';
+/**
+ * Why trust matters, promising no more than Lo does: the servers read what's checked out, Lo holds
+ * back what they run (`@lo/lsp`'s adapters say how and what still reaches each), and no sandbox
+ * holds them.
+ */
+const RISK =
+  'The servers read its code and settings. Lo limits what they run, but they aren’t sandboxed. Its settings can still steer them, and a file that exploits a bug in one could run code as you.';
 
 /** The dialog that asks whether to trust `subject`. */
 export function questionFor(subject: Subject): Question {
@@ -52,14 +58,14 @@ export function questionFor(subject: Subject): Question {
     return {
       ...asked,
       message: `Trust ${subject.repo}?`,
-      detail: `Lo will check out its pull requests and run language servers on them. ${RUNS_CODE}`,
+      detail: `Lo will check out its pull requests and run language servers on them. ${RISK}`,
       noLink: true,
     };
   }
   return {
     ...asked,
     message: `Trust pull request #${subject.pull} from ${subject.from}?`,
-    detail: `Lo will check it out and run language servers on it. ${RUNS_CODE} Later pushes to this pull request are trusted too.`,
+    detail: `Lo will check it out and run language servers on it. ${RISK} Later pushes to this pull request are trusted too.`,
     noLink: true,
   };
 }

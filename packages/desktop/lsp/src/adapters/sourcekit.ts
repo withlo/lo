@@ -35,7 +35,9 @@
  *
  * Everything it writes is in its home: its generated interfaces where `generatedFilesPath` says and
  * its compiler's module cache where `-module-cache-path` does, since neither follows `HOME` or
- * `TMPDIR`. It logs to the system's log, as Apple's programs do. It needs no network.
+ * `TMPDIR`. Lo names both in its options and again in its arguments
+ * ({@link sourceKitArguments}), which hold if it drops its options. It logs to the system's log, as
+ * Apple's programs do. It needs no network.
  *
  * It reads its own settings, besides what Lo tells it, from `.sourcekit-lsp/config.json` and
  * `Library/Application Support/org.swift.sourcekit-lsp/config.json` in the home folder Apple's
@@ -53,9 +55,10 @@
  *   another file declares isn't resolved. `gr` needs an index, which only a build makes, so Lo
  *   answers it from the syntax index. A module only iOS has, such as UIKit, isn't in the macOS SDK.
  * - `sourcekitd` runs as `SourceKitService`, an XPC service `launchd` starts for it, outside its
- *   family. It takes the server's environment, so its `HOME` is the server's home, and each server
- *   has its own: Lo finds it by its name and that home (`services`), counts its memory against the
- *   server's cap, and stops it with the server if it outlives the stop.
+ *   family. It takes the server's environment, so its `HOME` is the server's home, which Swift's
+ *   servers on one repository share, one after another: Lo finds it by its name and that home
+ *   (`services`), counts its memory against the server's cap, and stops it with the server if it
+ *   outlives the stop, as it does one an earlier Swift server on that repository left.
  * - Expanding a macro from the SDK, such as `@Observable`, runs Apple's `swift-plugin-server` with
  *   the toolchain's own macro plugins. A checkout's macros aren't built, so none of them runs.
  * - Like every server Lo runs, it has no sandbox: it reads what the user can, and Lo never opens a
@@ -172,6 +175,12 @@ const REQUEST_TIMEOUT = 10.5;
 /** How long a request may take before SourceKit-LSP takes `sourcekitd` as hung and restarts it. */
 const RESTART_TIMEOUT = 30.5;
 
+/** Where SourceKit-LSP keeps its generated files, in its home `home`. */
+const generatedFiles = (home: string) => join(home, 'generated');
+
+/** Where its compiler keeps its module cache, in its home `home`. */
+const moduleCache = (home: string) => join(home, 'cache', 'modules');
+
 /**
  * What SourceKit-LSP is told, as its `initializationOptions`, with `home` its home and `sdk` the
  * macOS SDK: no background indexing, which would build the package; its generated files, and its
@@ -183,10 +192,10 @@ const RESTART_TIMEOUT = 30.5;
 export function sourceKitOptions(home: string, sdk: string): Record<string, unknown> {
   return {
     backgroundIndexing: false,
-    generatedFilesPath: join(home, 'generated'),
+    generatedFilesPath: generatedFiles(home),
     fallbackBuildSystem: {
       sdk,
-      swiftCompilerFlags: ['-module-cache-path', join(home, 'cache', 'modules')],
+      swiftCompilerFlags: ['-module-cache-path', moduleCache(home)],
       cCompilerFlags: [],
       cxxCompilerFlags: [],
     },
@@ -196,9 +205,31 @@ export function sourceKitOptions(home: string, sdk: string): Record<string, unkn
   };
 }
 
-/** What SourceKit-LSP is given where it runs, with `sdk` the macOS SDK: its home, and its options. */
+/**
+ * SourceKit-LSP's arguments, with `home` its home: its generated files, and its compiler's module
+ * cache, in the folders of its home that its options name. It drops every option it's told when
+ * one doesn't decode, as it did a whole number for an option that takes a fraction, and these hold
+ * all the same.
+ */
+export function sourceKitArguments(home: string): string[] {
+  return [
+    '--generated-files-path',
+    generatedFiles(home),
+    // Each `-Xswiftc` passes one argument on to the compiler.
+    '-Xswiftc',
+    '-module-cache-path',
+    '-Xswiftc',
+    moduleCache(home),
+  ];
+}
+
+/**
+ * What SourceKit-LSP is given where it runs, with `sdk` the macOS SDK: its home, and its arguments
+ * and options.
+ */
 export async function placeSourceKit({ home }: Where, sdk: string): Promise<Placed> {
   return {
+    args: sourceKitArguments(home),
     // Foundation's home folder, where SourceKit-LSP reads its own settings, is the user's otherwise.
     variables: { CFFIXED_USER_HOME: home },
     initializationOptions: sourceKitOptions(home, sdk),
@@ -206,13 +237,13 @@ export async function placeSourceKit({ home }: Where, sdk: string): Promise<Plac
 }
 
 /**
- * How SourceKit-LSP `found` starts: its program, told of no workspace, with its options worked out
- * once its home is made.
+ * How SourceKit-LSP `found` starts: its program, told of no workspace, with its arguments and
+ * options worked out once its home is made.
  */
 export function launchSourceKit(found: SourceKit): Launch {
   return {
     program: found.program,
-    // No subcommand: it speaks the protocol over stdio.
+    // No subcommand: it speaks the protocol over stdio. Its other arguments name its home.
     args: [],
     rootless: true,
     // `sourcekitd`'s XPC service, which `launchd` starts for it with its environment.

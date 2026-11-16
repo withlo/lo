@@ -613,6 +613,12 @@ async function onSourceKit(
       const home = await readdir(join(folder, `home-${script}`), { recursive: true });
       const top = home.filter((path) => path.split('/').length <= 2);
       console.log(`\nIts home holds ${home.length} entries: ${top.join(', ')}`);
+      // Its generated files and its module cache, which follow neither `HOME` nor `TMPDIR`, are in
+      // its home, as its options and arguments say.
+      const unplaced = ['generated', join('cache', 'modules')].filter(
+        (path) => !home.includes(path),
+      );
+      if (unplaced.length > 0) throw new Error(`its home holds no ${unplaced.join(' or ')}`);
       const markersFound = await markers(root);
       if (markersFound.length > 0) {
         throw new Error(`something ran what's planted: ${markersFound.join(', ')}`);
