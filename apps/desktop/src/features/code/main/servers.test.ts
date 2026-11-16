@@ -9,7 +9,16 @@ import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 
-import { NO_NETWORK, type Server, serverEnvironment, type ServerSpec, startServer } from '@lo/lsp';
+import {
+  csharpWorkspace,
+  DOTNET_HEAP,
+  NO_NETWORK,
+  type Server,
+  serverEnvironment,
+  type ServerSpec,
+  startServer,
+  toolchainUse,
+} from '@lo/lsp';
 import { fakeServer } from '@lo/testing/lsp';
 import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 
@@ -662,7 +671,64 @@ describe('Lo’s own servers', () => {
         all_proxy: NO_NETWORK,
         LANG: 'C.UTF-8',
       });
+      expect(spec.workspace).toBeUndefined();
     }
+  });
+
+  it('give C#’s Lo’s .NET first on its PATH, the SDK’s variables, a heap cap and its own project', async () => {
+    /** Lo's .NET SDK, as a server gets it. */
+    const DOTNET = { folder: '/lo/toolchains/dotnet', entry: '/lo/toolchains/dotnet/dotnet' };
+    const specs: ServerSpec[] = [];
+    const csharp = SHIPPED.filter((each) => each.id === 'csharp');
+    const pool = new ServerPool({
+      prepare: (each, progress, signal) =>
+        each.prepare({
+          install: (id) =>
+            Promise.resolve({ folder: `/lo/servers/${id}`, entry: `/lo/servers/${id}/entry` }),
+          toolchain: listedToolchain(each, (id) =>
+            Promise.resolve({
+              version: '10.0.404',
+              installed: DOTNET,
+              ...toolchainUse(id, '10.0.404', DOTNET, 'darwin'),
+            }),
+          ),
+          findCopy: () => Promise.resolve(undefined),
+          signal,
+        }),
+      start(spec) {
+        specs.push(spec);
+        return new StandIn(spec);
+      },
+      base: () => ({ home: '/home/lo', git: { GIT_CONFIG_COUNT: '0' }, path: ['/lo/git/bin'] }),
+      changed: () => undefined,
+      log: () => undefined,
+    });
+    onTestFinished(() => pool.stop());
+    pool.sync([view('v1', 'a/x', 1, csharp)], 'v1');
+    await settle();
+    const [spec] = specs;
+    expect([spec?.program, spec?.args.slice(0, 2)]).toEqual([
+      DOTNET.entry,
+      ['exec', '/lo/servers/roslyn/entry'],
+    ]);
+    if (spec === undefined) return;
+    expect(serverEnvironment({ ...spec, roots: [spec.root] })).toEqual({
+      ...toolchainUse('dotnet', '10.0.404', DOTNET, 'darwin').variables,
+      DOTNET_GCHeapHardLimit: DOTNET_HEAP,
+      GIT_CONFIG_COUNT: '0',
+      HOME: '/home/lo',
+      TMPDIR: '/home/lo/tmp',
+      PATH: '/lo/toolchains/dotnet:/lo/git/bin:/usr/bin:/bin',
+      HTTPS_PROXY: NO_NETWORK,
+      https_proxy: NO_NETWORK,
+      HTTP_PROXY: NO_NETWORK,
+      http_proxy: NO_NETWORK,
+      ALL_PROXY: NO_NETWORK,
+      all_proxy: NO_NETWORK,
+      LANG: 'C.UTF-8',
+    });
+    // It's told of the project Lo writes in its home, never the checkout.
+    expect(spec.workspace).toBe(csharpWorkspace);
   });
 });
 
@@ -751,6 +817,45 @@ describe('checkouts a server won’t run on', () => {
         kind: 'error',
         message:
           'The checkout’s global.json names folders to look for an SDK in, so it could choose a .NET SDK other than Lo’s.',
+      },
+    });
+  });
+
+  it('starts none below a file MSBuild would import into every project under it', async () => {
+    const folder = realpathSync(mkdtempSync(join(tmpdir(), 'lo-above-')));
+    onTestFinished(() => rmSync(folder, { recursive: true, force: true }));
+    const root = join(folder, 'pull-1');
+    mkdirSync(root);
+    writeFileSync(join(folder, 'Directory.Build.props'), '<Project />');
+    const started: string[] = [];
+    const pool = new ServerPool({
+      prepare: () => Promise.resolve({ kind: 'ready', launch: { program: '/bin/x', args: [] } }),
+      checkout: checkoutRefusal,
+      start(spec) {
+        started.push(spec.name);
+        return new StandIn(spec);
+      },
+      base: () => ({ home: '/home/lo', git: { GIT_CONFIG_COUNT: '0' }, path: [] }),
+      changed: () => undefined,
+      log: () => undefined,
+    });
+    onTestFinished(() => pool.stop());
+    const view1: PoolView = {
+      id: 'v1',
+      repo: 'a/x',
+      pull: 1,
+      trust: 'trusted',
+      root: { folder: root, pull: 1 },
+      wants: [CSHARP],
+    };
+    pool.sync([view1], 'v1');
+    await vi.waitFor(() => expect(pool.shown('a/x', 'csharp')?.state.kind).toBe('failed'));
+    expect(started).toEqual([]);
+    expect(pool.shown('a/x', 'csharp')?.state).toEqual({
+      kind: 'failed',
+      why: {
+        kind: 'error',
+        message: `${join(folder, 'Directory.Build.props')} is in a folder above the checkout, and MSBuild would read it for every project below it.`,
       },
     });
   });

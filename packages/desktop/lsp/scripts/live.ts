@@ -6,26 +6,28 @@
 // ~/.cache/lo-live/servers/, or `$LO_LIVE_CACHE/servers/`, through the same checks Lo makes, so
 // each version downloads once, and the toolchains they use beside them, in `toolchains/`. gopls is
 // built there, as Lo builds it. Then it runs each one's check below, one at a time. Node says its
-// version. A server starts as its adapter starts it, on Lo's Node, on Lo's JDK or as its own
-// program with its toolchains, on the checkouts of two pull requests the code fixtures build with `--local`, so no
-// network or token is needed: the code fixture's (`testing/fixtures/code.sh`) and the hostile
-// fixture's (`code-hostile.sh`), which is the same with files planted to run code. On each it's
-// asked what `gd`, `gr`, `K`, `gh` and `gO` ask, at the places in its languages' sample projects
-// that `testing/fixtures/code/cases.json` names, printing what came back, how long it took to
-// start, the most memory its family held, the programs it ran as and each network connection any
-// of it opened. On the
-// hostile checkout it opens the plants in its language too, as a reader's view would. A server
-// that's a program of its own has a folder of stand-ins on its `PATH` after its toolchains', as
-// Lo's git's folder can be Homebrew's: a `terraform`, a `gopackagesdriver`, `pkg-config` and C
-// compilers, each writing a marker if run. rust-analyzer's check runs on a third checkout too, the
-// hostile one without the files Lo refuses it for, so it meets the Cargo keys Lo's variables
-// answer; where Lo refuses a checkout (`checkoutProblem`, which the pool asks before a start), it
-// starts nothing and says why. Then the hostile checkout and that folder are searched for the
-// markers its plants write if anything runs them, and the check fails if there's one, if anything
-// in either checkout changed, or if anything connected to another machine. It fails too if a
-// server took the hostile checkout's settings: if it says it read code as the PHP its
+// version. A server starts as its adapter starts it, on Lo's Node, on Lo's JDK, on Lo's .NET SDK,
+// as Roslyn does, or as its own program with its toolchains, on the checkouts of two pull requests
+// the code fixtures build with `--local`, so no network or token is needed: the code fixture's
+// (`testing/fixtures/code.sh`) and the hostile fixture's (`code-hostile.sh`), which is the same
+// with files planted to run code. On each it's asked what `gd`, `gr`, `K`, `gh` and `gO` ask, at
+// the places in its languages' sample projects that `testing/fixtures/code/cases.json` names,
+// printing what came back, how long it took to start, the most memory its family held, the
+// programs it ran as and each network connection any of it opened. On the hostile checkout it opens
+// the plants in its language too, as a reader's view would, and Roslyn is asked for each one's
+// outline. A server that's a program of its own has a folder of stand-ins on its `PATH` after its
+// toolchains', as Lo's git's folder can be Homebrew's: a `terraform`, a `gopackagesdriver`,
+// `pkg-config` and C compilers, each writing a marker if run. rust-analyzer's check runs on a third
+// checkout too, the hostile one without the files Lo refuses it for, so it meets the Cargo keys
+// Lo's variables answer; where Lo refuses a checkout (`checkoutProblem`, which the pool asks before
+// a start), it starts nothing and says why. Then the hostile checkout and that folder are searched
+// for the markers its plants write if anything runs them, and the check fails if there's one, if
+// anything in either checkout changed, or if anything connected to another machine. It fails too
+// if a server took the hostile checkout's settings: if it says it read code as the PHP its
 // `.php-lsp.json` names, or indexed a different number of files there than on the code fixture's
-// checkout. Check the machine has memory to spare before running it.
+// checkout, or if Roslyn's log says it loaded a project but Lo's or looked for programs, or its
+// home holds NuGet's folders, which a restore writes. Check the machine has memory to spare before
+// running it.
 
 import { execFile } from 'node:child_process';
 import {
@@ -57,6 +59,7 @@ import {
   launchJdtls,
   launchNative,
   launchOnNode,
+  launchRoslyn,
   launchRustAnalyzer,
   MANIFEST,
   type NativeServer,
@@ -64,6 +67,7 @@ import {
   PHP_LSP,
   type Pinned,
   PYRIGHT,
+  ROSLYN,
   RUST_ANALYZER,
   TERRAFORM_LS,
   TOOLCHAINS,
@@ -182,10 +186,21 @@ interface CheckOptions {
   readonly outlines?: readonly Omit<Place, 'position'>[] | undefined;
   /** The hostile fixture's files it opens besides, in its language, as a reader's view would. */
   readonly plants?: readonly string[] | undefined;
+  /** Whether it's asked for each plant's outline too: a server may read a file only when asked. */
+  readonly plantOutlines?: boolean | undefined;
   /** Whether a folder of {@link STAND_INS} goes on its `PATH`, after its toolchains'. */
   readonly standIns?: boolean | undefined;
   /** The toolchains it uses, whose checks of a checkout (`checkoutProblem`) it's held to. */
   readonly toolchains?: readonly string[] | undefined;
+  /** What else in its log to print, besides what any server says of plugins, settings and more. */
+  readonly said?: RegExp | undefined;
+  /**
+   * What its log must say on each checkout: a line `ever` matches, which shows it says the like at
+   * all, and none `never` matches.
+   */
+  readonly heard?: { readonly ever: RegExp; readonly never: RegExp } | undefined;
+  /** What its home must hold none of afterwards, by path in it. */
+  readonly unwritten?: RegExp | undefined;
   /** Why its adapter wouldn't start it on a checkout, by what the server alone reads there. */
   readonly checkout?: ((root: string) => Promise<string | undefined>) | undefined;
 }
@@ -222,6 +237,8 @@ function serverCheck(
         const refused = await options.checkout?.(root);
         if (refused !== undefined) throw new Error(`it wouldn't start: ${refused}`);
         const languageId = places[0]?.languageId ?? '';
+        const opened =
+          script === 'code-hostile.sh' ? plants.map((file) => ({ file, languageId })) : [];
         const { log, peak, programs, connections } = await askServer({
           spec: {
             name: server.name,
@@ -238,25 +255,38 @@ function serverCheck(
             initializationOptions: launched.initializationOptions,
             place: launched.place,
             stays: launched.stays,
+            workspace: launched.workspace,
           },
           places,
-          outlines,
-          opened: script === 'code-hostile.sh' ? plants.map((file) => ({ file, languageId })) : [],
+          outlines: [...outlines, ...(options.plantOutlines === true ? opened : [])],
+          opened,
         });
         // What it says of plugins, interpreters, settings it ignored, what it indexed, and the
         // programs and network it would use, the folders' own names aside. The folders it walks,
         // named after the fixture's, and the jobs it queues and finishes without an error, say
         // nothing of what it did.
-        const said = log.filter(
-          (line) =>
+        const said = log.filter((line) => {
+          const plain = line.replaceAll(folder, '').replaceAll(script, 'the fixture');
+          return (
             !/walker\.go|discover\.go|Enqueueing new job|Dispatching next job|err = %!s\(<nil>\)/.test(
               line,
             ) &&
-            /hostile|plugin|interpreter|pythonPath|ignoring|using PHP|indexed|registry|proxy|dial|toolchain|generate|cgo|driver|telemetry/i.test(
-              line.replaceAll(folder, '').replaceAll(script, 'the fixture'),
-            ),
-        );
+            (/hostile|plugin|interpreter|pythonPath|ignoring|using PHP|indexed|registry|proxy|dial|toolchain|generate|cgo|driver|telemetry/i.test(
+              plain,
+            ) ||
+              (options.said?.test(plain) ?? false))
+          );
+        });
         if (said.length > 0) console.log(`\nIts log, on those:\n${said.slice(-30).join('\n')}`);
+        if (options.heard !== undefined) {
+          const { ever, never } = options.heard;
+          const wrong = log.filter((line) => never.test(line));
+          if (wrong.length > 0)
+            throw new Error(`its log says what it mustn't: ${wrong.join('; ')}`);
+          if (!log.some((line) => ever.test(line)))
+            throw new Error(`its log has no line like ${ever}`);
+          console.log(`\nIts log has a line like ${ever}, and none like ${never}.`);
+        }
         console.log(`\nIts family held at most ${Math.round(peak / 1024 ** 2)} MB at once.`);
         console.log(`It ran as: ${programs.join(', ')}`);
         console.log(
@@ -275,6 +305,12 @@ function serverCheck(
         const home = await readdir(join(folder, `home-${script}`), { recursive: true });
         const top = home.filter((path) => path.split('/').length <= 3);
         console.log(`\nIts home holds ${home.length} entries: ${top.join(', ')}`);
+        if (options.unwritten !== undefined) {
+          const { unwritten } = options;
+          const wrote = home.filter((path) => unwritten.test(path));
+          if (wrote.length > 0) throw new Error(`it wrote in its home ${wrote.join(', ')}`);
+          console.log(`Nothing in its home is like ${unwritten}.`);
+        }
         const found = [
           ...(await markers(root)),
           ...(options.standIns === true ? await markers(stand) : []),
@@ -443,6 +479,12 @@ function native(
   return serverCheck(server, launch, languages, { ...options, standIns: true });
 }
 
+/** How Roslyn starts, on Lo's .NET SDK, which installs first. */
+async function launchOnDotnet(installed: Installed, context: Context): Promise<Launch> {
+  const dotnet = await context.toolchain('dotnet');
+  return launchRoslyn(installed, { installed: dotnet.installed, ...dotnet.use });
+}
+
 /** How Java's server starts from `installed`, on Lo's JDK, which installs first. */
 async function launchOnJdk(installed: Installed, context: Context): Promise<Launch> {
   const jdk = await context.toolchain('temurin');
@@ -480,6 +522,28 @@ const CHECKS: Record<string, Check> = {
     TERRAFORM_LS,
     { terraform: 'terraform' },
     { plants: ['hostile/terraform/main.tf', 'hostile/terraform-provider/main.tf'] },
+  ),
+  // The project Lo writes in its home: what it loaded, whether anything was unresolved, restored
+  // or an analyzer, and the file-based program and a project's program the hostile checkout plants.
+  // The program's copy in `obj`, which Lo's project doesn't list, gets no project of its own when
+  // it's asked about, which would restore with NuGet, writing its folders in the home; nor does it
+  // look for programs, which its log would say.
+  roslyn: serverCheck(
+    ROSLYN,
+    launchOnDotnet,
+    { csharp: 'csharp' },
+    {
+      toolchains: ['dotnet'],
+      plants: ['hostile/app/app.cs', 'hostile/app/obj/app.cs', 'hostile/dotnet/Program.cs'],
+      plantOutlines: true,
+      said: /msbuild|restore|\bload|unresolved|sdk|analyzer|file-based|global\.json|Directory\./i,
+      heard: {
+        ever: /Successfully completed load of \/\S*\/project\/checkout\.csproj$/,
+        never:
+          /(?:load of|loading project|loading|loaded) (?!\S*\/project\/checkout\.csproj\b)\/|file-based app|Finished discovery/i,
+      },
+      unwritten: /^(?:\.nuget|\.local\/share\/NuGet|tmp\/NuGetScratch)(?:\/|$)/,
+    },
   ),
   // Java's `Tally` is a class inside `Words`, whose file the pull request leaves alone. The JDK is
   // held to its checks of a checkout, and JDT LS to its own.

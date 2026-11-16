@@ -16,11 +16,18 @@ export { heapCap, launchOnNode, type Launch, type NodeServer } from './adapters/
 export { PHP_LSP, PHP_VERSION } from './adapters/phplsp.ts';
 export { NO_PYTHON, PYRIGHT } from './adapters/pyright.ts';
 export {
-  type InstalledToolchain,
-  launchRustAnalyzer,
-  RUST_ANALYZER,
-  rustAnalyzerSettings,
-} from './adapters/rust.ts';
+  CSHARP_FILES,
+  CSHARP_FOLDERS,
+  CSHARP_PROJECT,
+  csharpProject,
+  csharpSources,
+  csharpWorkspace,
+  DOTNET_HEAP,
+  launchRoslyn,
+  msbuild,
+  ROSLYN,
+} from './adapters/roslyn.ts';
+export { launchRustAnalyzer, RUST_ANALYZER, rustAnalyzerSettings } from './adapters/rust.ts';
 export { NO_TERRAFORM, TERRAFORM_LS } from './adapters/terraform.ts';
 export { VTSLS } from './adapters/vtsls.ts';
 export { BUILD_TIME, buildGo, GO_TARGETS, type GoBuild, type GoDownload } from './build.ts';
@@ -78,12 +85,16 @@ export {
   type RequestOptions,
   type ServerSpec,
   type Tuning,
+  type Workspace,
+  type WorkspacePaths,
 } from './server.ts';
 export { failureMessage, type Failure, type Progress, type State } from './state.ts';
 export {
   checkoutProblem,
+  dotnetAbove,
   TOOLCHAIN_NAMES,
   toolchainUse,
+  type InstalledToolchain,
   type ToolchainName,
   type ToolchainUse,
 } from './toolchains.ts';

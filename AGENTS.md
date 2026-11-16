@@ -478,12 +478,13 @@ toolchain and git's variables each server needs.
   that of the Node the JavaScript ones run on, with each file's address, size and SHA-256 per
   platform. `pnpm nx run lsp:pin -- <id> <version>` records one, by hand and never in CI: it checks
   each file against its publisher's signature first (Node's releasers' and HashiCorp's keys, in
-  `scripts/keys/`, and npm's registry keys), or for gopls against sum.golang.org as `go` does, and
-  that it unpacks as Lo would. rust-analyzer, which publishes no signature or attestation for its
-  releases, is checked against the SHA-256 the GitHub REST API (`api.github.com`) lists for each
-  release asset, which GitHub computes when the asset is uploaded. GitHub runs that API and the host
-  the file comes from, so the check catches a download gone wrong, not a release someone else made.
-  Lo trusts only the manifest's hashes.
+  `scripts/keys/`, npm's registry keys, and for a NuGet package its author's signature, Microsoft's
+  for Roslyn, timestamped and chaining to a root pinned by its key), or for gopls against
+  sum.golang.org as `go` does, and that it unpacks as Lo would. rust-analyzer, which publishes no
+  signature or attestation for its releases, is checked against the SHA-256 the GitHub REST API
+  (`api.github.com`) lists for each release asset, which GitHub computes when the asset is uploaded.
+  GitHub runs that API and the host the file comes from, so the check catches a download gone wrong,
+  not a release someone else made. Lo trusts only the manifest's hashes.
 - gopls is pinned as the modules it's built from, with the `go.mod` and `go.sum` that require them
   and the size and SHA-256 of what each platform's build makes, since the Go team publishes no
   binary. On first use Lo fetches the modules itself, through its downloader and the entry's hosts,
@@ -507,8 +508,10 @@ toolchain and git's variables each server needs.
   folders to find an SDK in, the checkout's own among them, and the SDK's commands and MSBuild read
   the one nearest where they run. So `dotnet` starts a server only as `dotnet exec`, which reads
   none (`checkArguments`), and a server that uses .NET doesn't start on, or move to, a checkout with
-  a `global.json` that names `paths` or spells a key with an escape, in it or in a folder above it
-  (`checkoutProblem`, asked by the pool).
+  a `global.json` that names `paths` or spells a key with an escape, in it or in a folder above it,
+  nor below a folder that holds a `Directory.Build.props`, `Directory.Build.targets`,
+  `Directory.Packages.props` or `NuGet.config`, which MSBuild and NuGet read for every project under
+  it (`checkoutProblem`, asked by the pool).
 - A `go.work` makes the modules it names one workspace, which Go reads from the folder nearest where
   it runs. So a server that uses Go doesn't start on, or move to, a checkout with a `go.work` in a
   folder above it, or one in it that names a folder outside it, by `use` or a `replace` with a path,
@@ -607,6 +610,15 @@ toolchain and git's variables each server needs.
   Java's server would read and write as its project's (the adapter's `checkout`, asked after the
   toolchains' `checkoutProblem`). It finds its folders only as it starts, so it starts again rather
   than moving (`stays`).
+- C#'s server, Roslyn, is a package per platform from nuget.org, which `lsp:pin` takes only signed
+  by Microsoft. It starts as Lo's `dotnet exec` on its own assembly, with the SDK's variables and
+  `DOTNET_GCHeapHardLimit`. It never loads a project of the checkout's, since MSBuild runs what a
+  project and the files above it bring: Lo writes `project/checkout.csproj` in its home, listing the
+  checkout's `.cs` files and importing only the SDK's own files, with no restore, package, analyzer
+  or source generator, sends it that project (`project/open`), and tells it, and runs it in, that
+  folder (the spec's `workspace`), so it never moves with the head and never looks through the
+  checkout. Its settings turn off restores, file-based programs and fetched sources. The adapter's
+  comment says what reaches it and what's lost.
 - Tests start only the fake server, `testing/lsp/fake-server.ts`, at most two at once in a test
   file, each killed with its group when the test ends. No test starts a real server or downloads
   one: download tests serve archives they build from a server on this machine. The live check,
@@ -1321,7 +1333,7 @@ before the syntax index's. A server is whatever an adapter (`main/adapters.ts`) 
 its languages: Lo ships those for TypeScript and JavaScript, and Python, each downloaded with the
 Node it runs on; PHP, whose server is a program of its own; Go, gopls, which Lo builds with the Go
 it then runs with; Terraform, terraform-ls, which reads a `.tfvars` file as Terraform's variables;
-and Java, JDT LS, which runs on Lo's Temurin JDK.
+Java, JDT LS, which runs on Lo's Temurin JDK; and C#, Roslyn, which runs on Lo's .NET SDK.
 
 - Nothing starts for a view nothing trusts: no download, no checkout, no server. Once a trusted view
   is on screen and a file its pull request adds or changes on the new side, or one asked about, is

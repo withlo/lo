@@ -140,7 +140,7 @@ it('gives a server only the toolchains its adapter names, which “Remove” sto
   expect(asked).toEqual(['temurin']);
 });
 
-it('gives Lo’s own servers only the toolchains they name: Rust’s Rust, Go’s Go, Java’s JDK, and the rest none', async () => {
+it('gives Lo’s own servers only the toolchains they name: Rust’s Rust, Go’s Go, Java’s JDK, C#’s .NET SDK, and the rest none', async () => {
   expect(SHIPPED.map((each) => [each.name, each.downloads?.toolchains])).toEqual([
     ['TypeScript', []],
     ['Python', []],
@@ -149,6 +149,7 @@ it('gives Lo’s own servers only the toolchains they name: Rust’s Rust, Go’
     ['Go', ['go']],
     ['Terraform', []],
     ['Java', ['temurin']],
+    ['C#', ['dotnet']],
   ]);
   for (const shipped of SHIPPED) {
     const toolchain = listedToolchain(shipped, (id) => Promise.resolve(id));
@@ -160,10 +161,11 @@ it('gives Lo’s own servers only the toolchains they name: Rust’s Rust, Go’
       );
     }
   }
-  // So Settings lists Rust's server as using Rust, Go's as using Go, and Java's as using the JDK.
+  // So Settings lists Rust's server as using Rust, Go's as using Go, Java's as using the JDK, and
+  // C#'s as using the .NET SDK.
   const listed = await listToolchains({ ...host().given, adapters: () => SHIPPED });
   expect(listed.map((each) => [each.id, each.uses])).toEqual([
-    ['dotnet', []],
+    ['dotnet', ['C#']],
     ['go', ['Go']],
     ['rust', ['Rust']],
     ['temurin', ['Java']],

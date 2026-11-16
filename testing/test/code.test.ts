@@ -281,8 +281,18 @@ test(
     const settings: unknown = JSON.parse(contents.get('.php-lsp.json') ?? '{}');
     const cache = typeof settings === 'object' && settings !== null && 'cachePath' in settings;
     expect(cache && settings.cachePath).toBe('lo-hostile-php-lsp-cache');
+    // So does the task MSBuild would compile from Directory.Build.props, and the folder NuGet.config
+    // would have NuGet keep its packages in.
+    expect(contents.get('Directory.Build.props')).toContain(
+      '<![CDATA[System.IO.File.WriteAllText(System.IO.Path.Combine(Folder, "lo-hostile-msbuild-inline"), "");]]>',
+    );
+    expect(contents.get('NuGet.config')).toContain(
+      '<add key="globalPackagesFolder" value="lo-hostile-nuget-packages" />',
+    );
     const made = {
       'lo-hostile-php-lsp-cache': '.php-lsp.json',
+      'lo-hostile-msbuild-inline': 'Directory.Build.props',
+      'lo-hostile-nuget-packages': 'NuGet.config',
       'lo-hostile-maven-repository': 'java/.mvn/maven.config',
       'lo-hostile-maven-jvm': 'java/.mvn/jvm.config',
       'lo-hostile-eclipse-output': 'java/.classpath',
@@ -294,7 +304,7 @@ test(
     }
     const said = new Set(script.match(/lo-hostile-[a-z]+(?:-[a-z]+)*/g));
     expect([...markers, ...Object.keys(made)].toSorted()).toEqual([...said].toSorted());
-    expect(markers.size).toBe(34);
+    expect(markers.size).toBe(37);
   },
 );
 
@@ -305,10 +315,12 @@ test("Lo's own repository holds nothing a tool would pick up from what the hosti
   const named = new Set([
     '.cargo',
     '.classpath',
+    '.editorconfig',
     '.envrc',
     '.externalToolBuilders',
     '.factorypath',
     '.gitmodules',
+    '.globalconfig',
     '.hotspotrc',
     '.java-version',
     '.mvn',
@@ -324,6 +336,10 @@ test("Lo's own repository holds nothing a tool would pick up from what the hosti
     '.terraform',
     '.tool-versions',
     '.vscode',
+    'Directory.Build.props',
+    'Directory.Build.targets',
+    'Directory.Packages.props',
+    'NuGet.config',
     'build.gradle',
     'gradle',
     'gradle.properties',

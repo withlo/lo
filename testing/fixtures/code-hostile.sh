@@ -138,6 +138,20 @@
 #     php-lsp, taking them from the checkout; markers lo-hostile-phpstan and lo-hostile-phpcs, and
 #     the folder lo-hostile-php-lsp-cache; for the rest, its log naming PHP 7.4, and a count of the
 #     files it indexed that's one more than on the code fixture's checkout
+#   MSBuild's and NuGet's files, which they read for every project below them
+#     Directory.Build.props, Directory.Build.targets, Directory.Packages.props and NuGet.config, at
+#     the root, naming lo-msbuild-{props,targets,packages}.sh, a task MSBuild compiles from C#, the
+#     analyzer hostile/analyzer/Lo.Hostile.Analyzer.dll (text), a package for every project, and
+#     a package folder in the checkout; and csharp/.editorconfig and csharp/.globalconfig
+#     MSBuild, loading or building a project below them, and the compiler, loading the analyzer;
+#     markers lo-hostile-msbuild-props, lo-hostile-msbuild-inline, lo-hostile-msbuild-targets and
+#     lo-hostile-msbuild-packages, the folder lo-hostile-nuget-packages, and host
+#     nuget-config.lo-hostile.invalid
+#   a file-based C# program
+#     hostile/app/app.cs, whose `#:sdk` names an MSBuild SDK, and a copy in hostile/app/obj, where
+#     no project lists it
+#     `dotnet run`, or a server that builds the files it finds as programs, which would download
+#     the SDK; host nuget-config.lo-hostile.invalid, which NuGet.config names
 #   versions that don't exist
 #     .tool-versions, .nvmrc, .sdkmanrc, .java-version, python/.python-version, ruby/.ruby-version
 #     a version manager choosing a version from the checkout; no marker, a request to the
@@ -199,11 +213,11 @@ IFS= read -r -d '' HOSTILE_BODY <<'EOF' || true
 
 It's the code fixture's pull request, with one more commit. That commit's files try to run code, steer a language server or a version manager, or fetch from the network, when the pull request is checked out and its servers start:
 
-- programs a tool might run: a workspace TypeScript in `node_modules`, a tsserver plugin in `typescript/node_modules`, an npm `postinstall`, `.vscode/settings.json`, a `rust/.cargo/config.toml` naming programs for `build.rustc`, its wrappers, a target's runner and linker, and a registry credential provider, and flags for rustc, a `.cargo/config.toml` with an `[env]` table, an `[unstable]` table and an `include`, the workspace settings `rust/rust-analyzer.toml` names, the Gradle and Maven wrappers, Java's Gradle settings script, a JDK in `java/jdk` that `java/gradle.properties` names, an Eclipse builder in `java/.project`, `php/.phpactor.json`'s tools, PHP's tools in `vendor/bin` and the `.php-lsp.json` that turns two of them on, `mise.toml`, a Terraform provider's plugin committed in `hostile/terraform-provider/.terraform`, a `//go:generate` line and a cgo file in `go/`, and a `terraform` and a `gopackagesdriver` in `hostile/bin`, which `.envrc` puts on `PATH`;
+- programs a tool might run: a workspace TypeScript in `node_modules`, a tsserver plugin in `typescript/node_modules`, an npm `postinstall`, `.vscode/settings.json`, a `rust/.cargo/config.toml` naming programs for `build.rustc`, its wrappers, a target's runner and linker, and a registry credential provider, and flags for rustc, a `.cargo/config.toml` with an `[env]` table, an `[unstable]` table and an `include`, the workspace settings `rust/rust-analyzer.toml` names, the Gradle and Maven wrappers, Java's Gradle settings script, a JDK in `java/jdk` that `java/gradle.properties` names, an Eclipse builder in `java/.project`, `php/.phpactor.json`'s tools, PHP's tools in `vendor/bin` and the `.php-lsp.json` that turns two of them on, `mise.toml`, MSBuild's `Directory.Build.props`, `Directory.Build.targets` and `Directory.Packages.props` with an analyzer and a task compiled from C#, a file-based C# program, and a copy of it in `obj/`, a Terraform provider's plugin committed in `hostile/terraform-provider/.terraform`, a `//go:generate` line and a cgo file in `go/`, and a `terraform` and a `gopackagesdriver` in `hostile/bin`, which `.envrc` puts on `PATH`;
 - settings that write in the checkout or turn on what runs: Maven's `.mvn/maven.config` and `.mvn/jvm.config`, Eclipse's `.classpath`, `.factorypath` and `.settings` in `java/`, and a `.hotspotrc`;
 - versions that don't exist: `.tool-versions`, `.nvmrc`, `.sdkmanrc`, `.java-version`, `python/.python-version`, `ruby/.ruby-version`, `rust-toolchain.toml`, the `toolchain` lines of `go.mod` and `go.work`, and a `global.json` that pins an MSBuild SDK;
 - git's own settings, in folders of `git/` that look like bare repositories: a `core.fsmonitor` program, hooks, a clean and smudge filter, and a promisor remote that makes git fetch a commit it lacks; and a `.gitmodules` that points a submodule at a host that doesn't exist;
-- projects in `hostile/`, and Java's `pom.xml` and Gradle scripts, whose dependencies or registries are on hosts ending `.lo-hostile.invalid`, which never resolve, and a Terraform module from the Terraform Registry that doesn't exist.
+- projects in `hostile/`, and Java's `pom.xml` and Gradle scripts, whose dependencies or registries are on hosts ending `.lo-hostile.invalid`, which never resolve, a Terraform module from the Terraform Registry that doesn't exist, and a `NuGet.config` that names one for every project and puts NuGet's packages in the checkout.
 
 Each program writes one empty file named `lo-hostile-<name>` beside itself, and nothing else: no network, no deletes, no reads. Lo passes while no `lo-hostile-*` file appears in the checkout and no request goes to a host ending `.lo-hostile.invalid`, to the download host of a version that doesn't exist, or to the Terraform Registry.
 
@@ -724,6 +738,99 @@ python = "99.0.0"
 _.source = "./lo-mise-env.sh"
 EOF
   marker_bash lo-mise-env.sh lo-hostile-mise "a script mise's configuration sources"
+
+  # MSBuild's files, which it imports into every project below them, and NuGet's settings, which
+  # it reads for every project below them: targets that run a program and a task MSBuild compiles
+  # from its own C#, an analyzer and a package every project would take, and a package folder in
+  # the checkout.
+  put Directory.Build.props <<'EOF'
+<!-- Fixture: MSBuild imports this into every project below it. Its target runs lo-msbuild-props.sh,
+     and a task MSBuild compiles from the C# below, which writes lo-hostile-msbuild-inline beside
+     this file. -->
+<Project InitialTargets="LoHostileProps">
+  <UsingTask TaskName="LoHostileInline" TaskFactory="RoslynCodeTaskFactory" AssemblyFile="$(MSBuildToolsPath)/Microsoft.Build.Tasks.Core.dll">
+    <ParameterGroup>
+      <Folder ParameterType="System.String" Required="true" />
+    </ParameterGroup>
+    <Task>
+      <Code Type="Fragment" Language="cs"><![CDATA[System.IO.File.WriteAllText(System.IO.Path.Combine(Folder, "lo-hostile-msbuild-inline"), "");]]></Code>
+    </Task>
+  </UsingTask>
+  <Target Name="LoHostileProps" BeforeTargets="Restore;CollectPackageReferences;ResolveAssemblyReferences;CoreCompile">
+    <Exec Command="sh '$(MSBuildThisFileDirectory)lo-msbuild-props.sh'" ContinueOnError="true" />
+    <LoHostileInline Folder="$(MSBuildThisFileDirectory)" ContinueOnError="true" />
+  </Target>
+</Project>
+EOF
+  marker_sh lo-msbuild-props.sh lo-hostile-msbuild-props "a program Directory.Build.props runs"
+  put Directory.Build.targets <<'EOF'
+<!-- Fixture: MSBuild imports this into every project below it. It adds an analyzer the compiler
+     would load, and its target runs lo-msbuild-targets.sh. -->
+<Project>
+  <ItemGroup>
+    <Analyzer Include="$(MSBuildThisFileDirectory)hostile/analyzer/Lo.Hostile.Analyzer.dll" />
+  </ItemGroup>
+  <Target Name="LoHostileTargets" AfterTargets="ResolveAssemblyReferences;CoreCompile">
+    <Exec Command="sh '$(MSBuildThisFileDirectory)lo-msbuild-targets.sh'" ContinueOnError="true" />
+  </Target>
+</Project>
+EOF
+  marker_sh lo-msbuild-targets.sh lo-hostile-msbuild-targets "a program Directory.Build.targets runs"
+  put Directory.Packages.props <<'EOF'
+<!-- Fixture: MSBuild imports this into every project below it. It adds a package every project
+     would take, which NuGet would download, and its target runs lo-msbuild-packages.sh. -->
+<Project>
+  <PropertyGroup>
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+  </PropertyGroup>
+  <ItemGroup>
+    <GlobalPackageReference Include="Lo.Hostile.Analyzer" Version="1.0.0" />
+  </ItemGroup>
+  <Target Name="LoHostilePackages" BeforeTargets="CollectPackageReferences;ResolveAssemblyReferences;CoreCompile">
+    <Exec Command="sh '$(MSBuildThisFileDirectory)lo-msbuild-packages.sh'" ContinueOnError="true" />
+  </Target>
+</Project>
+EOF
+  marker_sh lo-msbuild-packages.sh lo-hostile-msbuild-packages "a program Directory.Packages.props runs"
+  put NuGet.config <<'EOF'
+<configuration>
+  <config>
+    <add key="globalPackagesFolder" value="lo-hostile-nuget-packages" />
+  </config>
+  <packageSources>
+    <clear />
+    <add key="lo-hostile" value="https://nuget-config.lo-hostile.invalid/v3/index.json" />
+  </packageSources>
+</configuration>
+EOF
+  # The analyzer they name. It's text, not an assembly: a compiler that loaded it would say so.
+  put hostile/analyzer/Lo.Hostile.Analyzer.dll <<'EOF'
+Fixture: an analyzer Directory.Build.targets names. Text, not an assembly.
+EOF
+  # A file-based program, which `dotnet run` builds with the MSBuild SDK its directive names.
+  put hostile/app/app.cs <<'EOF'
+#!/usr/bin/env dotnet
+#:sdk Lo.Hostile.Sdk@1.0.0
+System.Console.WriteLine("hostile");
+EOF
+  # The same program in build output, which no project lists: a server that built a file outside
+  # every project as a program would build this one.
+  put hostile/app/obj/app.cs <<'EOF'
+#!/usr/bin/env dotnet
+#:sdk Lo.Hostile.Sdk@1.0.0
+System.Console.WriteLine("hostile");
+EOF
+  # The compiler's settings for the sample project's files, which turn a warning into an error.
+  put csharp/.editorconfig <<'EOF'
+root = true
+
+[*.cs]
+dotnet_diagnostic.CS0168.severity = error
+EOF
+  put csharp/.globalconfig <<'EOF'
+is_global = true
+build_property.LoHostile = true
+EOF
 
   # Go's generators, which `go generate` runs, and cgo, which runs `pkg-config` and a C compiler.
   put go/generate.go <<'EOF'

@@ -82,8 +82,8 @@ The servers Lo runs, each installed on first use for a trusted view, as `servers
 each with its adapter in `src/adapters/`. vtsls and Pyright run on Lo's own Node, which downloads
 first; rust-analyzer is a compiled program that runs on Lo's Rust toolchain, which downloads with
 it; php-lsp and terraform-ls are programs of their own; gopls runs with Lo's Go, which Lo builds it
-with; JDT LS runs on Lo's Temurin JDK, a toolchain, which downloads first. None needs anything
-installed.
+with; JDT LS runs on Lo's Temurin JDK, a toolchain, which downloads first; and Roslyn runs on Lo's
+.NET SDK, which downloads first. None needs anything installed.
 
 | Server         | Version    | For                    | From                                                                                        | License                                                       |
 | -------------- | ---------- | ---------------------- | ------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
@@ -95,14 +95,17 @@ installed.
 | gopls          | 0.24.0     | Go                     | proxy.golang.org: `golang.org/x/tools/gopls` and the 23 modules it builds with, built by Lo | BSD-3-Clause; the rest BSD-3-Clause, MIT, MIT-0 or Apache-2.0 |
 | terraform-ls   | 0.39.1     | Terraform              | releases.hashicorp.com                                                                      | MPL-2.0                                                       |
 | Eclipse JDT LS | 1.63.0     | Java                   | download.eclipse.org: its release's archive                                                 | EPL-2.0                                                       |
+| Roslyn         | 5.11.0     | C#                     | nuget.org: `roslyn-language-server.<platform>`, signed by Microsoft                         | MIT                                                           |
 
 vtsls and Pyright each start as Node, by its absolute path, with a cap on its heap, then the
 server's own entry point inside its install, never the launcher npm would link. rust-analyzer,
 php-lsp, gopls and terraform-ls each start as its program, by its absolute path inside its install.
 JDT LS starts as the JDK's `java`, by its absolute path, with `-jar` and Equinox's launcher inside
-its install. None runs through a shell, and each has an environment built from nothing, whose proxy
-leads nowhere (`NO_NETWORK` in `src/environment.ts`). What each is told is its adapter's alone, and
-the adapter says why each setting is as it is:
+its install. Roslyn starts as Lo's `dotnet`, by its absolute path, with `exec` and the server's own
+assembly inside its install, never the launcher its package's tool would run. None runs through a
+shell, and each has an environment built from nothing, whose proxy leads nowhere (`NO_NETWORK` in
+`src/environment.ts`). What each is told is its adapter's alone, and the adapter says why each
+setting is as it is:
 
 - **vtsls** runs its own TypeScript, never a workspace's (`node_modules/typescript`), and has
   automatic type acquisition off, so it runs no npm. It loads no `tsserver` plugin from the
@@ -203,14 +206,39 @@ the adapter says why each setting is as it is:
   folder holding that one has a build file, and makes no project if it has. Its heap is capped at
   2.5 GB, under Lo's 4 GB for the group. It finds its project's folders only as it starts, so it
   restarts on another checkout rather than moving there (`stays`).
+- **Roslyn** never loads a project of the checkout's. Loading one is running it: MSBuild runs the
+  targets, `Exec` tasks and inline C# tasks a project and the `Directory.Build.props`,
+  `Directory.Build.targets` and `Directory.Packages.props` above it bring, a restore fetches what a
+  `NuGet.config` names, and the compiler loads the analyzers and source generators packages hold,
+  and nothing turns that off for a project of the checkout's. So Lo writes a project of its own in
+  the server's home, `project/checkout.csproj`, which lists the checkout's `.cs` files one by one
+  (none in `bin`, `obj`, `node_modules` or a hidden folder, no link, and none whose path MSBuild
+  would read as another's, with a `\`, or that XML can't hold), compiles them for .NET 10 against
+  .NET's and ASP.NET Core's reference assemblies, imports nothing but the SDK's own files, restores
+  nothing and drops every analyzer and source generator, the SDK's own too. Roslyn is sent that
+  project (`project/open`), told that its folder is the workspace, and run in it, so it neither
+  looks through the checkout for projects nor builds a `.cs` file as a program. Its settings turn
+  off restores, file-based programs, decompiled and Source Link sources, and code lenses. What's
+  lost: a package's types have no definition or hover, nor do the types a source generator would
+  write, and every `.cs` file is in one project, read with the SDK's defaults, so the checkout's
+  target frameworks, `#if` symbols, references between projects and `LangVersion` don't count, and a
+  name two projects both define is defined twice. A checkout with more than 50,000 `.cs` files isn't
+  read, and Lo looks in 20,000 of its folders at most, the nearest its root first.
+  `DOTNET_GCHeapHardLimit` caps each of its .NET processes' heaps at 3 GB, under Lo's 4 GB. Roslyn
+  writes in its home, but for a cache of how its own parts fit together, which it keeps in `cache/`
+  beside its program, in its install, with no option to move it: nothing of a checkout's reaches it,
+  and the installer, which checks only what it unpacked, ignores it. Roslyn writes it to a file of a
+  random name there and moves that to the cache's name, so it appears whole or not at all, though
+  unsynced; a move that fails leaves the other file behind.
 
 None runs in a sandbox: each reads what you can, so an absolute import, Pyright's `extraPaths`, a
 Rust sysroot's sources, the folders of stubs a `.php-lsp.json` names, the paths a `composer.json`'s
 autoload names, or a `composer.json` up to seven folders above the checkout, which php-lsp climbs to
 when the checkout has none, a `go.mod`'s `replace` with a path, or a Terraform module's `source`,
-lead it to files outside the checkout, and a hover can show what's in one. It only reads there, and
-nothing can send what it reads anywhere. Lo never opens a place outside the checkout an answer
-names: it shows as outside the repository.
+lead it to files outside the checkout, and a hover can show what's in one. Roslyn reads the
+reference assemblies of Lo's SDK, and a definition in one goes to the signatures it writes in its
+home's `TMPDIR`. Each only reads there, and nothing can send what it reads anywhere. Lo never opens
+a place outside the checkout an answer names: it shows as outside the repository.
 
 Lo names each server's license wherever it says what the server is: a server's details in the status
 bar show its name, version and license, "Pyright 1.1.414 · MIT".
@@ -259,10 +287,13 @@ aside and deleted, so nothing finds it half gone and nothing puts it back.
 A server that uses .NET runs only as `dotnet exec` (`checkArguments` in `src/process.ts`), and only
 on a checkout `checkoutProblem` finds no `global.json` in, nor above, that names `paths` or spells a
 key with an escape: that file can send the SDK's commands, and MSBuild, to an SDK in the checkout,
-whatever the variables say. A server that uses Go runs only on a checkout with no `go.work` in a
-folder above it, which Go would take as its workspace, and none in it that names a folder outside it
-by `use` or a `replace` with a path, or that Lo can't read for certain. It looks through the
-checkout's own folders, never a link to one.
+whatever the variables say. Nor does it run below a folder that holds a `Directory.Build.props`,
+`Directory.Build.targets`, `Directory.Packages.props` or `NuGet.config`, whatever their case, which
+MSBuild and NuGet read for every project under it (`dotnetAbove`); Roslyn's adapter asks the same of
+the folders above the project Lo writes in its home. A server that uses Go runs only on a checkout
+with no `go.work` in a folder above it, which Go would take as its workspace, and none in it that
+names a folder outside it by `use` or a `replace` with a path, or that Lo can't read for certain. It
+looks through the checkout's own folders, never a link to one.
 
 ### gopls, built by Lo
 
@@ -302,6 +333,12 @@ the checksum its release lists beside it, which the same build made. That catche
 wrong, not a release someone else made. JDT LS's is the same: Eclipse publishes a SHA-256 beside
 each archive, on the same host, and signs about half the jars inside it, not the archive or the
 launcher's configuration.
+
+Whether Microsoft's certificate was revoked: `pin.ts` takes Roslyn's packages only as nuget.org's
+catalog lists them, by their SHA-512, signed as their author's by a certificate whose organization
+is Microsoft's, with a timestamp, both chaining to DigiCert's root, pinned by its key, and each good
+when the timestamp says the package was signed, and as the package their signature signs. It asks no
+one whether a certificate has since been revoked.
 
 An installed file's bytes: before each use, its size is checked, not its hash, which would read
 every byte. On macOS, `fsync` leaves what the drive itself caches, and Node can't ask for more

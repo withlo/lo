@@ -95,6 +95,7 @@ describe('test servers', () => {
       'go',
       'terraform',
       'java',
+      'csharp',
     ]);
     expect(adaptersFor({ packaged: false, env: {}, testRun: false, shipped })).toBe(shipped);
     expect(adaptersFor({ packaged: false, env: {}, testRun: true, shipped })).toEqual([]);

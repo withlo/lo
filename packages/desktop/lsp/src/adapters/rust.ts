@@ -62,7 +62,7 @@ import type { NativeServer } from './native.ts';
 import type { Launch } from './node.ts';
 import type { Installed } from '../install.ts';
 import { MANIFEST, type Manifest } from '../manifest.ts';
-import type { ToolchainUse } from '../toolchains.ts';
+import type { InstalledToolchain } from '../toolchains.ts';
 
 /** rust-analyzer: a program Lo downloads, run on Lo's Rust toolchain. */
 export const RUST_ANALYZER: NativeServer = {
@@ -100,11 +100,6 @@ export function rustAnalyzerSettings(sysroot: string): Record<string, unknown> {
     diagnostics: { enable: false },
     cachePriming: { enable: false },
   };
-}
-
-/** A Rust toolchain Lo installed, as the desktop side hands it to the adapter. */
-export interface InstalledToolchain extends ToolchainUse {
-  readonly installed: Installed;
 }
 
 /**

@@ -19,6 +19,7 @@ import { isAbsolute } from 'node:path';
 import type { Installed } from '../install.ts';
 import { MANIFEST, type Manifest } from '../manifest.ts';
 import type { Place } from '../place.ts';
+import type { Workspace, WorkspacePaths } from '../server.ts';
 
 /** How a server Lo has installed starts, and what it's told. */
 export interface Launch {
@@ -42,6 +43,8 @@ export interface Launch {
   readonly stays?: boolean | undefined;
   /** What it is, for its details: its name, version and license, "vtsls 0.3.0 · MIT". */
   readonly version?: string | undefined;
+  /** The workspace Lo makes for it in its home, in place of the checkout, if it needs one. */
+  readonly workspace?: ((paths: WorkspacePaths) => Promise<Workspace>) | undefined;
 }
 
 /** A language server that runs on Lo's Node. */

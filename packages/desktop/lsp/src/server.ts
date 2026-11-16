@@ -30,7 +30,7 @@ import type {
 
 import { initializeAnswer, initializeParams } from './capabilities.ts';
 import { Documents } from './documents.ts';
-import { serverEnvironment, temporaryFolder } from './environment.ts';
+import { isInside, serverEnvironment, temporaryFolder } from './environment.ts';
 import { FLOOD_BYTES, FLOOD_LINES, FLOOD_MESSAGES, FLOOD_WINDOW, FrameMeter } from './framing.ts';
 import { Log } from './log.ts';
 import { type Member, type ReadFamily, readFamily, stillRunning } from './family.ts';
@@ -88,6 +88,29 @@ export interface ServerSpec {
   readonly memoryCap?: number | undefined;
   /** Lo's version, which it hears in `clientInfo`. */
   readonly version?: string | undefined;
+  /**
+   * Makes the workspace the server is told of, in its home, for a server that mustn't be told of
+   * the checkout itself, such as C#'s, which would load the checkout's own projects. It runs once
+   * the home is made, before the server starts, with the checkout and the home as they resolve,
+   * and the server runs in the workspace's folder, not the checkout.
+   */
+  readonly workspace?: ((paths: WorkspacePaths) => Promise<Workspace>) | undefined;
+}
+
+/** Where a server runs, as the system resolves each, for its {@link ServerSpec.workspace}. */
+export interface WorkspacePaths {
+  /** The checkout it answers about. */
+  readonly root: string;
+  /** Its home. */
+  readonly home: string;
+}
+
+/** The workspace Lo makes for a server, in its home, in place of the checkout. */
+export interface Workspace {
+  /** The folder it's told is its workspace, in `initialize`: one inside its home. */
+  readonly folder: string;
+  /** What it's sent once it's initialized, such as Roslyn's `project/open`. */
+  readonly notifications: readonly { readonly method: string; readonly params: object }[];
 }
 
 /** How long each part of a server's life may take, in milliseconds, and its memory cap. */
@@ -233,6 +256,8 @@ export class Server {
   readonly #queue: Queue;
   /** The checkout's folder, as the system resolves it and as given. */
   #roots: string[] = [];
+  /** The workspace Lo made for it in its home, if its spec makes one. */
+  #workspace: Workspace | undefined;
   /** What it's told, from its spec or where it runs. */
   #settings: unknown;
   #initializationOptions: unknown;
@@ -390,6 +415,8 @@ export class Server {
    * whose spec says it stays never moves.
    */
   async moveTo(root: string, still: () => boolean = () => true): Promise<boolean> {
+    // A workspace Lo made is the checkout's, so a server on one starts again on another.
+    if (this.#workspace !== undefined) return false;
     const changes = this.#capabilities?.workspace?.workspaceFolders?.changeNotifications;
     if (this.#spec.stays === true) return false;
     if (!this.#answering() || (changes !== true && typeof changes !== 'string')) return false;
@@ -592,7 +619,22 @@ export class Server {
         this.#initializationOptions = placed.initializationOptions;
       }
       if (this.#stopRequested) return;
-      const child = startProcess(program, args, { env, cwd: root });
+      if (spec.workspace !== undefined) {
+        // Its failure is Lo's, never the program's, so it keeps no code a start's error is read by.
+        const workspace = await spec.workspace({ root, home }).catch((error: unknown) => {
+          throw new Error(error instanceof Error ? error.message : String(error));
+        });
+        const folder = await realpath(workspace.folder);
+        if (!isInside(home, folder) || this.#roots.some((each) => isInside(each, folder))) {
+          throw new Error(`a server's workspace must be in its home: ${workspace.folder}`);
+        }
+        this.#workspace = { ...workspace, folder };
+        if (this.#stopRequested) return;
+      }
+      // A server told of a workspace of Lo's runs in it, so nothing it starts begins in the
+      // checkout either.
+      const cwd = this.#workspace?.folder ?? root;
+      const child = startProcess(program, args, { env, cwd });
       this.#child = child;
       child.on('error', (error) => {
         // An error once it runs, such as a signal it can't be sent, changes nothing: its exit
@@ -607,7 +649,7 @@ export class Server {
       this.#connect(child);
       this.#memoryTimer = setInterval(() => void this.#watchMemory(), this.#limits.memoryEvery);
       this.#memoryTimer.unref();
-      void this.#initialize(root);
+      void this.#initialize(this.#workspace?.folder ?? root);
     } catch (error) {
       this.#fail({ kind: 'start', message: startError(spec.program, error) });
     }
@@ -735,13 +777,16 @@ export class Server {
     connection.listen();
   }
 
-  /** Sends `initialize`, then `initialized` once it's answered. */
-  async #initialize(root: string): Promise<void> {
+  /**
+   * Sends `initialize`, on the workspace `folder`, then `initialized` once it's answered, and then
+   * what the workspace Lo made sends.
+   */
+  async #initialize(folder: string): Promise<void> {
     const connection = this.#connection;
     if (connection === undefined) return;
     const params = initializeParams({
-      rootUri: folderUri(root),
-      name: basename(root),
+      rootUri: folderUri(folder),
+      name: basename(folder),
       version: this.#spec.version,
       initializationOptions: this.#initializationOptions,
     });
@@ -778,6 +823,9 @@ export class Server {
     }
     this.#capabilities = checked.capabilities;
     this.#notify('initialized', {});
+    for (const { method, params: sent } of this.#workspace?.notifications ?? []) {
+      this.#notify(method, sent);
+    }
     this.#setState(this.#working());
     this.#resolveReady(true);
   }
@@ -973,10 +1021,10 @@ export class Server {
     return kind === 'ready' || kind === 'indexing' || kind === 'notAnswering';
   }
 
-  /** The workspace's folders: the checkout. */
+  /** The workspace's folders: the checkout, or the folder Lo made in its place. */
   #folders(): { uri: string; name: string }[] {
-    const root = this.#roots[0];
-    return root === undefined ? [] : [{ uri: folderUri(root), name: basename(root) }];
+    const folder = this.#workspace?.folder ?? this.#roots[0];
+    return folder === undefined ? [] : [{ uri: folderUri(folder), name: basename(folder) }];
   }
 
   /** Sends a notification, if the connection is still open. */

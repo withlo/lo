@@ -606,6 +606,7 @@ export class ServerPool {
         initializationOptions: launch.initializationOptions,
         place: launch.place,
         stays: launch.stays,
+        workspace: launch.workspace,
       });
     } catch (error) {
       this.#refuse(entry, {
