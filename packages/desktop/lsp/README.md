@@ -110,28 +110,38 @@ adapter's alone, and the adapter says why each setting is as it is:
   carries the standard library's stubs itself. It answers no inlay hints, so its adapter says it has
   none (`hints: false`).
 - **rust-analyzer** reads a Cargo project with `cargo metadata`, which runs `cargo` and, through it,
-  `rustc`. All three are Lo's: `CARGO` and `RUSTC` and the toolchain's folder first on the `PATH`
-  point to Lo's copy, and `cargo.sysroot` is Lo's toolchain, with the standard library's sources
-  (`rust-src`) beside it. `RUSTC_WRAPPER` and `RUSTC_WORKSPACE_WRAPPER` are empty, which undoes a
-  checkout's `.cargo/config.toml` `build.rustc-wrapper`; `cargo` reads `RUSTC` before the file's
-  `build.rustc` too. With no rustup and the sysroot set, nothing reads a `rust-toolchain.toml`.
-  `CARGO_NET_OFFLINE=true`, and `CARGO_HOME` defaults to a private `.cargo` in the server's `HOME`,
-  so `cargo metadata` fetches nothing — no registry, no git dependency, no `[source]` replacement,
-  no credential-provider — whatever a checkout's `.cargo/config.toml` says. For a crate whose
-  dependencies aren't already in that `CARGO_HOME`, `cargo metadata` can't resolve them offline and
-  rust-analyzer loads the workspace without them: the workspace's own code is analysed in full, but
-  go-to-definition into a dependency doesn't resolve. Lo doesn't fetch crates. Build scripts
-  (`build.rs`) and proc-macro crates are a checkout's code, so `cargo.buildScripts.enable` and
-  `procMacro.enable` are both off; the cost is that a `build.rs`'s generated code and a macro's or
-  derive's expansion aren't seen, and a hover or definition that needs them falls back to the syntax
-  index. The commands that would run a checkout's tools (`check.overrideCommand`, `checkOnSave`,
-  `cargo.buildScripts.overrideCommand`, the runnables' and tests') are at their safe defaults, and
-  Lo never saves, so no check runs. rust-analyzer has no heap flag, so Lo's 4 GB cap on the group
-  bounds it; its caches aren't primed for files Lo never opens. Two files Lo's settings can't answer
-  refuse the checkout instead (`src/toolchains.ts`, `checkoutProblem`): a `rust-analyzer.toml`,
-  whose workspace settings win over Lo's and can run a program, and a `.cargo/config.toml` `[env]`
-  table, which `cargo` sets on the `rustc` it runs; a `.cargo/config.toml` or `.cargo/config` in a
-  folder above the checkout is refused too.
+  `rustc`, and asks `cargo rustc --print` for the target's `cfg`s, with `RUSTC_BOOTSTRAP=1` and the
+  nightly channel, so unstable options are on. All three are Lo's: `CARGO` and `RUSTC` and the
+  toolchain's folder first on the `PATH` point to Lo's copy, and `cargo.sysroot` is Lo's toolchain,
+  with the standard library's sources (`rust-src`) beside it. `RUSTC_WRAPPER` and
+  `RUSTC_WORKSPACE_WRAPPER` are empty, which undoes a checkout's `.cargo/config.toml`
+  `build.rustc-wrapper`; `cargo` reads `RUSTC` before the file's `build.rustc` too. An empty
+  `CARGO_ENCODED_RUSTFLAGS` beats `RUSTFLAGS` and a config's `build.rustflags` and
+  `target.*.rustflags`, some of which would load code into Lo's `rustc` with unstable options on;
+  rust-analyzer passes its environment to every `cargo` and `rustc` it runs. With no rustup and the
+  sysroot set, nothing reads a `rust-toolchain.toml`. `CARGO_NET_OFFLINE=true`, and `CARGO_HOME`
+  defaults to a private `.cargo` in the server's `HOME`, so `cargo metadata` fetches nothing — no
+  registry, no git dependency, no `[source]` replacement, no credential-provider — whatever a
+  checkout's `.cargo/config.toml` says. For a crate whose dependencies aren't already in that
+  `CARGO_HOME`, `cargo metadata` can't resolve them offline and rust-analyzer loads the workspace
+  without them: the workspace's own code is analysed in full, but go-to-definition into a dependency
+  doesn't resolve. Lo doesn't fetch crates. Build scripts (`build.rs`) and proc-macro crates are a
+  checkout's code, so `cargo.buildScripts.enable` and `procMacro.enable` are both off; the cost is
+  that a `build.rs`'s generated code and a macro's or derive's expansion aren't seen, and a hover or
+  definition that needs them falls back to the syntax index. The commands that would run a
+  checkout's tools (`check.overrideCommand`, `checkOnSave`, `cargo.buildScripts.overrideCommand`,
+  the runnables' and tests') are at their safe defaults, and Lo never saves, so no check runs.
+  rust-analyzer has no heap flag, so Lo's 4 GB cap on the group bounds it; its caches aren't primed
+  for files Lo never opens. What Lo's settings and variables can't answer refuses the checkout
+  instead (`src/toolchains.ts`, `checkoutProblem`): a `rust-analyzer.toml`, whose workspace settings
+  win over Lo's and can run a program, and a `.cargo/config.toml` (or `.cargo/config`), read as
+  TOML, with an `[env]` table, which `cargo` sets on the `rustc` it runs, an `[unstable]` table,
+  which `RUSTC_BOOTSTRAP=1` lets take effect, or an `include`, which reads another config, outside
+  the checkout too. So is a Cargo config Lo can't read as TOML, one that's a link or in a `.cargo`
+  that's one, and anything named `.cargo/config.toml` or `.cargo/config` in a folder above the
+  checkout, a link to a dotfile included. On Linux, Lo's cache is in `~/.cache`, so a
+  `~/.cargo/config.toml` of your own is above every checkout, and Lo runs rust-analyzer on none
+  while it's there; on a Mac the cache is outside your home folder.
 - **php-lsp** carries the stubs of PHP's own functions and classes, so it needs no PHP. It's told
   which PHP to read code as (`phpVersion`, PHP 8.5), so it never runs a `php` to ask: one can be
   first on its `PATH`, in the folder of Lo's git, as Homebrew's is. Code for an older PHP is read as

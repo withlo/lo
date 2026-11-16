@@ -9,8 +9,9 @@
  * - Go: `GOROOT`, `GOTOOLCHAIN=local`, so a `go.mod`'s `toolchain` line can't download another Go,
  *   `GOENV=off`, `GOPROXY=off` and `CGO_ENABLED=0`.
  * - Rust: `RUSTC` and `CARGO`, and empty `RUSTC_WRAPPER` and `RUSTC_WORKSPACE_WRAPPER`, which undo
- *   a checkout's `build.rustc-wrapper`, and `CARGO_NET_OFFLINE=true`. With no rustup, nothing
- *   reads `rust-toolchain.toml`.
+ *   a checkout's `build.rustc-wrapper`, an empty `CARGO_ENCODED_RUSTFLAGS`, which undoes every
+ *   config's `rustflags`, and `CARGO_NET_OFFLINE=true`. With no rustup, nothing reads
+ *   `rust-toolchain.toml`.
  * - The JDK: `JAVA_HOME`.
  * - .NET: `DOTNET_ROOT`, MSBuild's SDK resolver held to Lo's SDK (`DOTNET_MSBUILD_SDK_RESOLVER_*`,
  *   and `DOTNET_HOST_PATH`), programs held to the runtime they were built for and its patches
@@ -30,19 +31,25 @@
  *   `dotnet exec`, and only where no such file is found.
  * - Rust: a `rust-analyzer.toml`, whose workspace-scoped settings (`cargo.buildScripts.enable` with
  *   an `overrideCommand`, `cargo.extraEnv`, …) win over Lo's own client settings and can run a
- *   program; or a `.cargo/config.toml` (or `.cargo/config`) with an `[env]` table, which `cargo`
- *   sets on the `rustc` it runs for `cargo metadata`, whatever Lo's environment holds, so it can
- *   load code through the dynamic linker. Lo's environment answers the config's other program and
- *   network keys (`build.rustc*` by `RUSTC`/`RUSTC_WRAPPER`/`RUSTC_WORKSPACE_WRAPPER`, the rest by
- *   `CARGO_NET_OFFLINE`), so those don't refuse the checkout. A `.cargo/config.toml` or
- *   `.cargo/config` in a folder above the checkout is refused outright, since `cargo` reads it too
- *   and Lo can't vet what's outside the checkout; a `rust-analyzer.toml` above the checkout isn't,
- *   since rust-analyzer reads one only from a workspace root or under it, and its user config from
- *   `HOME`, which is Lo's.
+ *   program; or a `.cargo/config.toml` (or `.cargo/config`), read as TOML, with an `[env]` table,
+ *   which `cargo` sets on the `rustc` it runs for `cargo metadata`, whatever Lo's environment
+ *   holds, so it can load code through the dynamic linker; with an `[unstable]` table, which
+ *   takes effect since rust-analyzer runs `cargo` with `RUSTC_BOOTSTRAP=1`; or with an `include`,
+ *   which reads another config, one outside the checkout too. A config that's a link, or in a
+ *   `.cargo` that's one, or that isn't TOML Lo can read, is refused too. Lo's environment answers
+ *   the config's other keys that reach `rustc` or the network (`build.rustc*` by
+ *   `RUSTC`/`RUSTC_WRAPPER`/`RUSTC_WORKSPACE_WRAPPER`, `rustflags` by `CARGO_ENCODED_RUSTFLAGS`,
+ *   the rest by `CARGO_NET_OFFLINE`), so those don't refuse the checkout. Anything named
+ *   `.cargo/config.toml` or `.cargo/config` in a folder above the checkout is refused outright,
+ *   since `cargo` reads it too and Lo can't vet what's outside the checkout; a
+ *   `rust-analyzer.toml` above the checkout isn't, since rust-analyzer reads one only from a
+ *   workspace root or under it, and its user config from `HOME`, which is Lo's.
  */
 
 import { lstat, open, readdir } from 'node:fs/promises';
 import { basename, dirname, join, relative } from 'node:path';
+
+import { parse as parseToml } from 'smol-toml';
 
 import type { Installed } from './install.ts';
 
@@ -106,6 +113,9 @@ export function toolchainUse(
           CARGO: join(bin, 'cargo'),
           RUSTC_WRAPPER: '',
           RUSTC_WORKSPACE_WRAPPER: '',
+          // Empty, it beats `RUSTFLAGS` and every config's `rustflags`, the build's and each
+          // target's, so no flag of a checkout's reaches Lo's rustc.
+          CARGO_ENCODED_RUSTFLAGS: '',
           CARGO_NET_OFFLINE: 'true',
         },
         allowed: ['RUSTC', 'RUSTC_WRAPPER', 'RUSTC_WORKSPACE_WRAPPER'],
@@ -207,24 +217,35 @@ function isCargoConfig(path: string): boolean {
 
 /**
  * Why rust-analyzer mustn't run on the checkout at `root`: a `rust-analyzer.toml` anywhere in it,
- * whose workspace settings win over Lo's and can run a program; a `.cargo/config.toml` (or
- * `.cargo/config`) in it with an `[env]` table, which `cargo` sets on the `rustc` it runs; or any
- * `.cargo/config.toml` or `.cargo/config` in a folder above it, which `cargo` reads and Lo can't
- * vet.
+ * whose workspace settings win over Lo's and can run a program; a `.cargo` in it that's a link; a
+ * `.cargo/config.toml` (or `.cargo/config`) in it that {@link cargoConfigProblem} refuses; or
+ * anything at all named `.cargo/config.toml` or `.cargo/config` in a folder above it, which `cargo`
+ * reads, following a link, and Lo can't vet.
  */
 async function rustProblem(root: string): Promise<string | undefined> {
-  for (const path of await readdir(root, { recursive: true, encoding: 'utf8' })) {
-    if (basename(path).toLowerCase() === 'rust-analyzer.toml') {
-      return `The checkout’s ${path} is a rust-analyzer.toml, whose settings win over Lo’s and could run a program, so Lo won’t run rust-analyzer on it.`;
+  for (const entry of await readdir(root, { recursive: true, withFileTypes: true })) {
+    const path = relative(root, join(entry.parentPath, entry.name));
+    const name = entry.name.toLowerCase();
+    if (name === 'rust-analyzer.toml') {
+      return refused(
+        path,
+        'is a rust-analyzer.toml, whose settings win over Lo’s and could run a program',
+      );
     }
-    if (isCargoConfig(path) && (await cargoConfigEnv(join(root, path)))) {
-      return `The checkout’s ${path} has an [env] table, which cargo sets on the rustc it runs, so Lo won’t run rust-analyzer on it.`;
+    // A link cargo follows to a folder whose config this walk would never see by that name.
+    if (name === '.cargo' && !entry.isDirectory()) {
+      return refused(path, 'isn’t a plain folder, which Lo can’t vet');
+    }
+    if (isCargoConfig(path)) {
+      const why = await cargoConfigProblem(join(root, path));
+      if (why !== undefined) return refused(path, why);
     }
   }
   for (let folder = dirname(root); ; folder = dirname(folder)) {
     for (const name of ['config.toml', 'config']) {
       const file = join(folder, '.cargo', name);
-      if (await isPlainFile(file)) {
+      // Anything there, a link to a dotfile or a file Lo can't read included.
+      if ((await lstat(file).catch(() => undefined)) !== undefined) {
         return `${file} is a Cargo config above the checkout, which cargo reads, so Lo won’t run rust-analyzer on this checkout.`;
       }
     }
@@ -233,44 +254,43 @@ async function rustProblem(root: string): Promise<string | undefined> {
   return undefined;
 }
 
-/** Whether the Cargo config at `file` has an `[env]` table, the one key Lo's variables can't answer. */
-async function cargoConfigEnv(file: string): Promise<boolean> {
-  const text = await readConfig(file);
-  // A file too large to read, or one that isn't there, is refused to be safe: a larger one is
-  // unheard-of for a Cargo config, so Lo treats it as if it held an `[env]` table.
-  if (text === undefined) return false;
-  if (text === TOO_LARGE) return true;
-  for (const whole of text.split('\n')) {
-    // TOML outside a comment (`#` doesn't appear in these keys' values), trimmed.
-    const line = whole.split('#')[0]?.trim() ?? '';
-    // An `[env]` or `[env.NAME]` table header, or a root-level `env = { … }` or `env.NAME = …`.
-    if (/^\[\s*env\s*[\].]/.test(line) || /^env\s*[.=]/.test(line)) return true;
-  }
-  return false;
+/** What Lo says of the checkout's `path`, for `why` it won't run rust-analyzer there. */
+function refused(path: string, why: string): string {
+  return `The checkout’s ${path} ${why}, so Lo won’t run rust-analyzer on it.`;
 }
-
-/** A sentinel for a config file too large to read. */
-const TOO_LARGE = Symbol('too large');
 
 /**
- * The text of the config at `file`, read as latin1 so every byte is a character, or `undefined`
- * when it isn't a plain file, or {@link TOO_LARGE} when it's larger than Lo reads.
+ * What makes the Cargo config at `file` in a checkout one Lo can't run rust-analyzer beside, if
+ * anything does: that it isn't a plain file (a link, which cargo follows), is too large, or isn't
+ * TOML Lo can read; or that it has a key Lo's variables can't answer. It's read as TOML, so a key
+ * quoted or spelled with an escape is the key cargo reads.
  */
-async function readConfig(file: string): Promise<string | typeof TOO_LARGE | undefined> {
+async function cargoConfigProblem(file: string): Promise<string | undefined> {
   const info = await lstat(file).catch(() => undefined);
+  // A folder by that name is no config: cargo can't read one.
   if (info === undefined || info.isDirectory()) return undefined;
-  if (!info.isFile()) return undefined;
-  if (info.size > CONFIG_LIMIT) return TOO_LARGE;
-  const handle = await open(file, 'r');
+  if (!info.isFile()) return 'isn’t a plain file, which Lo can’t vet';
+  if (info.size > CONFIG_LIMIT) return 'is too large for Lo to read';
+  let config: Record<string, unknown>;
   try {
-    return (await handle.readFile()).toString('latin1');
-  } finally {
-    await handle.close();
+    const handle = await open(file, 'r');
+    try {
+      config = parseToml(new TextDecoder('utf-8', { fatal: true }).decode(await handle.readFile()));
+    } finally {
+      await handle.close();
+    }
+  } catch {
+    return 'isn’t TOML Lo can read';
   }
-}
-
-/** Whether `file` is a plain file Lo can read. */
-async function isPlainFile(file: string): Promise<boolean> {
-  const info = await lstat(file).catch(() => undefined);
-  return info?.isFile() ?? false;
+  if (Object.hasOwn(config, 'env')) {
+    return 'has an [env] table, which cargo sets on the rustc it runs';
+  }
+  // rust-analyzer runs cargo with `RUSTC_BOOTSTRAP=1`, so these features would take effect.
+  if (Object.hasOwn(config, 'unstable')) {
+    return 'has an [unstable] table, which turns on cargo’s unstable features';
+  }
+  if (Object.hasOwn(config, 'include')) {
+    return 'includes another config, which can be outside the checkout';
+  }
+  return undefined;
 }

@@ -455,8 +455,9 @@ toolchain and git's variables each server needs.
   each file against its publisher's signature first (Node's releasers' keys, in `scripts/keys/`, and
   npm's registry keys), and that it unpacks as Lo would. rust-analyzer, which publishes no signature
   or attestation for its releases, is checked against the SHA-256 the GitHub REST API
-  (`api.github.com`) lists for each release asset, a host run apart from the `github.com` one the
-  file comes from. Lo trusts only the manifest's hashes.
+  (`api.github.com`) lists for each release asset, which GitHub computes when the asset is uploaded.
+  GitHub runs that API and the host the file comes from, so the check catches a download gone wrong,
+  not a release someone else made. Lo trusts only the manifest's hashes.
 - The toolchains language servers use are pinned the same way, in `toolchains.json`: Go, Rust
   (rustc, cargo, the standard library and its sources, as layers of one sysroot), a Temurin JDK and
   the .NET SDK, each with what it unpacks to per platform. `lsp:pin` checks Go against Google's
@@ -474,12 +475,16 @@ toolchain and git's variables each server needs.
   and MSBuild read the one nearest where they run, so `dotnet` starts a server only as `dotnet exec`
   (which reads none, `checkArguments`) and only where no `global.json` names `paths` or spells a key
   with an escape. For Rust, a `rust-analyzer.toml`'s workspace settings win over Lo's client
-  settings and can run a program (`cargo.buildScripts.overrideCommand`, `cargo.extraEnv`), and a
-  `.cargo/config.toml` `[env]` table is set on the `rustc` `cargo metadata` runs, whatever Lo's
-  environment holds; either refuses the checkout. The config's other keys Lo's variables answer
-  (`build.rustc*` by `RUSTC`/`RUSTC_WRAPPER`/`RUSTC_WORKSPACE_WRAPPER`, the registries and sources
-  by `CARGO_NET_OFFLINE`), so they don't; a `.cargo/config.toml` or `.cargo/config` above the
-  checkout is refused outright.
+  settings and can run a program (`cargo.buildScripts.overrideCommand`, `cargo.extraEnv`). A
+  `.cargo/config.toml`, read as TOML with `smol-toml`, refuses the checkout for an `[env]` table,
+  set on the `rustc` `cargo metadata` runs whatever Lo's environment holds; an `[unstable]` table,
+  which takes effect since rust-analyzer runs `cargo` with `RUSTC_BOOTSTRAP=1`; or an `include`,
+  which reads another config, outside the checkout too; and so does one that doesn't parse or is a
+  link, or a `.cargo` that's a link. The config's other keys Lo's variables answer (`build.rustc*`
+  by `RUSTC`/`RUSTC_WRAPPER`/`RUSTC_WORKSPACE_WRAPPER`, `rustflags` by an empty
+  `CARGO_ENCODED_RUSTFLAGS`, the registries and sources by `CARGO_NET_OFFLINE`), so they don't;
+  anything named `.cargo/config.toml` or `.cargo/config` above the checkout, a link included, is
+  refused outright.
 - A download goes over `https` only, on the usual port, to its entry's hosts, following at most 5
   redirects itself, each held to the same rules, and refusing an answer its `fetch` was redirected
   to unseen, with no token or cookie. In the app it goes through `net.request` (`netFetch` with
@@ -510,18 +515,18 @@ toolchain and git's variables each server needs.
   downloads, run on Lo's Rust toolchain. What each is told is the adapter's alone, and nothing in
   the checkout picks what runs: vtsls runs its own TypeScript, loads no `tsserver` plugin from the
   checkout, and acquires no types; Pyright's Python is `/dev/null`, so it runs no interpreter;
-  rust-analyzer runs Lo's `cargo` and `rustc` (`CARGO`, `RUSTC`, empty `RUSTC_WRAPPER` and
-  `RUSTC_WORKSPACE_WRAPPER`, `cargo.sysroot` set), reads no `rust-toolchain.toml` (no rustup),
-  fetches nothing (`CARGO_NET_OFFLINE=true`, a private `CARGO_HOME`), and runs no build script or
-  proc-macro (`cargo.buildScripts.enable` and `procMacro.enable` off), so a crate's dependencies it
-  can't resolve offline load without them. A plugin a `tsconfig.json` names is still looked for by
-  its package's name, beside Lo's TypeScript and in each `node_modules` above Lo's install, which
-  neither vtsls nor `tsserver` can turn off (`test/plugins.test.ts`): on a Mac, where the cache is
-  outside the home folder, that's never `~/node_modules`; on Linux it can be. No server has a
-  sandbox: each reads what the user can, outside the checkout too, and Lo never opens a place
-  outside the checkout an answer names. Each says whether it gives inlay hints (`hints`): Pyright
-  gives none. The package's README lists each with its source, version and license, and a server's
-  details name its license beside its version.
+  rust-analyzer runs Lo's `cargo` and `rustc` (`CARGO`, `RUSTC`, empty `RUSTC_WRAPPER`,
+  `RUSTC_WORKSPACE_WRAPPER` and `CARGO_ENCODED_RUSTFLAGS`, `cargo.sysroot` set), reads no
+  `rust-toolchain.toml` (no rustup), fetches nothing (`CARGO_NET_OFFLINE=true`, a private
+  `CARGO_HOME`), and runs no build script or proc-macro (`cargo.buildScripts.enable` and
+  `procMacro.enable` off), so a crate's dependencies it can't resolve offline load without them. A
+  plugin a `tsconfig.json` names is still looked for by its package's name, beside Lo's TypeScript
+  and in each `node_modules` above Lo's install, which neither vtsls nor `tsserver` can turn off
+  (`test/plugins.test.ts`): on a Mac, where the cache is outside the home folder, that's never
+  `~/node_modules`; on Linux it can be. No server has a sandbox: each reads what the user can,
+  outside the checkout too, and Lo never opens a place outside the checkout an answer names. Each
+  says whether it gives inlay hints (`hints`): Pyright gives none. The package's README lists each
+  with its source, version and license, and a server's details name its license beside its version.
 - PHP's server, php-lsp, is a program of its own, with its adapter in `src/adapters/` too: an
   archive per platform from its GitHub releases, which nobody signs, so `lsp:pin` checks each
   against the checksum its release lists beside it. It starts as its program, by its absolute path,

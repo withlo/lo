@@ -227,6 +227,8 @@ describe('rust-analyzer', () => {
       CARGO: `${SYSROOT}/bin/cargo`,
       RUSTC_WRAPPER: '',
       RUSTC_WORKSPACE_WRAPPER: '',
+      // Beats `RUSTFLAGS` and every config's `rustflags`, so none reaches Lo's rustc.
+      CARGO_ENCODED_RUSTFLAGS: '',
       CARGO_NET_OFFLINE: 'true',
     });
     // The wrappers and compiler it sets on purpose, which undo a checkout's `build.rustc*`.

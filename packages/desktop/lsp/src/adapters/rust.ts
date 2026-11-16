@@ -5,8 +5,11 @@
  * machine's.
  *
  * rust-analyzer reads a Cargo project with `cargo metadata`, which runs `cargo` and, through it,
- * `rustc -vV`. Lo holds every program that choice could reach to its own, and turns off everything
- * that would run a checkout's code:
+ * `rustc -vV`, and asks `cargo rustc --print` for the target's `cfg`s and data layout, with
+ * `RUSTC_BOOTSTRAP=1` and the nightly channel, so `rustc`'s and `cargo`'s unstable options are on.
+ * It passes its own environment to every `cargo` and `rustc` it runs, adding only `cargo.extraEnv`,
+ * which Lo leaves empty. Lo holds every program those calls could reach to its own, and turns off
+ * everything that would run a checkout's code:
  *
  * - `cargo` and `rustc` are Lo's, by `CARGO` and `RUSTC` and the toolchain's folder first on the
  *   `PATH`. `RUSTC_WRAPPER` and `RUSTC_WORKSPACE_WRAPPER` are empty, which undoes a checkout's
@@ -14,6 +17,9 @@
  *   and treats an empty one as no wrapper; `cargo` reads `RUSTC` before the file's `build.rustc`
  *   too. With no rustup on the `PATH` and `cargo.sysroot` set to Lo's toolchain, nothing reads a
  *   `rust-toolchain.toml`, so a checkout can't ask for another Rust.
+ * - `CARGO_ENCODED_RUSTFLAGS` is empty, which beats `RUSTFLAGS` and a config's `build.rustflags` and
+ *   `target.*.rustflags`, so no flag of a checkout's reaches Lo's `rustc`; with unstable options
+ *   on, some flags would load code into it.
  * - `CARGO_NET_OFFLINE=true`, and `CARGO_HOME` defaults to a private `.cargo` in the server's
  *   `HOME`, empty and no one else's. So `cargo metadata` fetches nothing: no registry, no git
  *   dependency, no `[source]` replacement over the network, no `[registries]` and no
@@ -38,10 +44,13 @@
  *
  * What this adapter can't answer with a setting is a workspace `rust-analyzer.toml`, whose
  * workspace-scoped keys (`cargo.buildScripts.overrideCommand`, `cargo.extraEnv`, …) win over Lo's
- * client settings and can run a program, and a `.cargo/config.toml` `[env]` table, which `cargo`
- * sets on the `rustc` it runs, whatever Lo's environment holds. {@link checkoutProblem} refuses a
- * checkout that holds either, or a `.cargo/config.toml` or `.cargo/config` in a folder above it, as
- * `@lo/lsp`'s `toolchains.ts` describes. Like every server Lo runs, rust-analyzer has no sandbox:
+ * client settings and can run a program, and three keys of a `.cargo/config.toml`: an `[env]`
+ * table, which `cargo` sets on the `rustc` it runs, whatever Lo's environment holds; an
+ * `[unstable]` table, which `RUSTC_BOOTSTRAP=1` lets take effect; and an `include`, which reads
+ * another config, one outside the checkout too. {@link checkoutProblem} refuses a checkout that
+ * holds any of these, a Cargo config Lo can't read as TOML or that's a link, or anything named
+ * `.cargo/config.toml` or `.cargo/config` in a folder above it, as `@lo/lsp`'s `toolchains.ts`
+ * describes. Like every server Lo runs, rust-analyzer has no sandbox:
  * it reads what the user can, outside the checkout too (an absolute path, a sysroot's sources), and
  * Lo never opens a place outside the checkout an answer names.
  */

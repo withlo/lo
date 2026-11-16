@@ -20,7 +20,7 @@
 // checkout. Check the machine has memory to spare before running it.
 
 import { execFile } from 'node:child_process';
-import { lstat, mkdtemp, readdir, readFile, realpath, rm } from 'node:fs/promises';
+import { lstat, mkdtemp, readdir, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
@@ -210,9 +210,31 @@ function serverCheck(
 }
 
 /**
- * The check of rust-analyzer: it starts on Lo's Rust toolchain, on each fixture's checkout, unless
- * {@link checkoutProblem} refuses the checkout, in which case nothing runs and it says why. On a
- * checkout it may run, it's asked each place in its `languages`.
+ * The checkouts rust-analyzer's check runs on: each fixture's, and the hostile one again without
+ * the files Lo refuses it for, so the Cargo keys Lo's variables answer meet a running server.
+ */
+const RUST_CHECKOUTS = [
+  { name: 'code.sh', script: 'code.sh', without: [] },
+  { name: 'code-hostile.sh', script: 'code-hostile.sh', without: [] },
+  {
+    name: 'code-hostile-cargo',
+    script: 'code-hostile.sh',
+    without: ['rust/rust-analyzer.toml', '.cargo/config.toml'],
+  },
+] as const;
+
+/** What rustc is run with, as the check's stand-in for `RUSTC` writes it, a line a run. */
+const RUSTC_STAND_IN = (log: string, rustc: string) => `#!/bin/sh
+printf '%s\\n' "$*" >>'${log}'
+exec '${rustc}' "$@"
+`;
+
+/**
+ * The check of rust-analyzer: it starts on Lo's Rust toolchain, on each of {@link RUST_CHECKOUTS},
+ * unless {@link checkoutProblem} refuses the checkout, in which case nothing runs and it says why.
+ * On a checkout it may run, it's asked each place in its `languages`, with a stand-in for Lo's
+ * rustc, outside the checkout, that notes what it's run with, so the check fails if a flag a
+ * checkout's config names reached it.
  */
 function onRustAnalyzer(languages: Readonly<Record<string, string>>): Check {
   return async (installed, context) => {
@@ -222,9 +244,11 @@ function onRustAnalyzer(languages: Readonly<Record<string, string>>): Check {
     const places = await placesFor(languages);
     const folder = await realpath(await mkdtemp(join(tmpdir(), `lo-live-${RUST_ANALYZER.id}-`)));
     try {
-      for (const script of ['code.sh', 'code-hostile.sh']) {
-        const root = await checkout(script, join(folder, script));
-        console.log(`\n--- ${RUST_ANALYZER.name} on the checkout ${script} --local makes`);
+      for (const { name: script, script: fixture, without } of RUST_CHECKOUTS) {
+        const root = await checkout(fixture, join(folder, script));
+        for (const path of without) await rm(join(root, path));
+        const less = without.length > 0 ? `, less ${without.join(' and ')}` : '';
+        console.log(`\n--- ${RUST_ANALYZER.name} on the checkout ${fixture} --local makes${less}`);
         // The pool asks this before a server starts or moves; the live check does the same, so a
         // checkout a Rust server mustn't run on never starts one.
         const refusal = await checkoutProblem('rust', root);
@@ -235,6 +259,11 @@ function onRustAnalyzer(languages: Readonly<Record<string, string>>): Check {
             throw new Error(`something ran what's planted: ${found.join(', ')}`);
           continue;
         }
+        const ran = join(folder, `rustc-${script}.log`);
+        const standIn = join(folder, `rustc-${script}.sh`);
+        const rustc = toolchain.variables.RUSTC ?? '';
+        await writeFile(standIn, RUSTC_STAND_IN(ran, rustc), { mode: 0o755 });
+        await writeFile(ran, '');
         const log = await askServer({
           spec: {
             name: RUST_ANALYZER.name,
@@ -243,7 +272,7 @@ function onRustAnalyzer(languages: Readonly<Record<string, string>>): Check {
             root,
             home: join(folder, `home-${script}`),
             path: toolchain.path,
-            variables: toolchain.variables,
+            variables: { ...toolchain.variables, RUSTC: standIn },
             allowed: toolchain.allowed,
             git: serverGitEnvironment(),
             settings: launch.settings,
@@ -262,8 +291,19 @@ function onRustAnalyzer(languages: Readonly<Record<string, string>>): Check {
         console.log(`\nIts home holds ${home.length} entries: ${top.join(', ')}`);
         const found = await markers(root);
         if (found.length > 0) throw new Error(`something ran what's planted: ${found.join(', ')}`);
+        const runs = (await readFile(ran, 'utf8')).split('\n').filter((line) => line !== '');
+        console.log(`\nLo's rustc ran ${runs.length} times, through cargo:\n${runs.join('\n')}`);
+        const flagged = runs.filter((line) => line.includes('lo_hostile_rustflags'));
+        if (flagged.length > 0) {
+          throw new Error(
+            `a flag the checkout's config names reached rustc: ${flagged.join('; ')}`,
+          );
+        }
       }
-      console.log(`\nNo marker was written: nothing ${RUST_ANALYZER.name} ran was planted.`);
+      console.log(
+        `\nNo marker was written, and no flag of the checkout's reached rustc: nothing ` +
+          `${RUST_ANALYZER.name} ran was planted.`,
+      );
     } finally {
       await rm(folder, { recursive: true, force: true });
     }

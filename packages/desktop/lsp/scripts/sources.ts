@@ -101,9 +101,10 @@ const GITHUB_RELEASE = z.object({
  * rust-analyzer, from its GitHub releases, `<year>-<month>-<day>` (the release tag): a gzipped
  * program for each platform. rust-analyzer publishes no signatures or attestations for its
  * releases, so the strongest check the release allows is GitHub's own asset digest: the REST API
- * (`api.github.com`) serves each asset's SHA-256, which `pin.ts` checks the download from
- * `github.com` against, a host run apart from the one the file comes from. Lo then trusts only the
- * hash `pin.ts` writes.
+ * (`api.github.com`) serves the SHA-256 GitHub computed when each asset was uploaded, which
+ * `pin.ts` checks the download from `github.com` against. GitHub runs both, so this catches a
+ * download gone wrong or changed on its way, not a release someone else made. Lo then trusts only
+ * the hash `pin.ts` writes.
  */
 export function rustAnalyzer(): Source {
   return async (version, tools) => {
