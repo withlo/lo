@@ -11,7 +11,7 @@ import {
   symlinkSync,
   writeFileSync,
 } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { dirname, join, relative } from 'node:path';
 
 import { git } from '@lo/testing/git';
 import { expect, test } from 'vitest';
@@ -23,8 +23,11 @@ import { leadsElsewhere } from '../src/trust.ts';
 import { blobs, fetch, type PullRequest, pullRequest } from './fixtures.ts';
 import { cacheFor, eventually, repoServer, script, tempFolder } from './support.ts';
 
-/** A cache with pull request #1 fetched into `owner/repo`'s clone, and a folder for markers. */
-async function fetched(): Promise<{
+/**
+ * A cache, at `root` if given, with pull request #1 fetched into `owner/repo`'s clone, and a folder
+ * for markers.
+ */
+async function fetched(root?: string): Promise<{
   cache: Cache;
   repo: Repo;
   pr: PullRequest;
@@ -34,7 +37,7 @@ async function fetched(): Promise<{
   const server = repoServer();
   const pr = pullRequest(server);
   const logged: string[] = [];
-  const cache = await cacheFor(server, { log: (line) => logged.push(line) });
+  const cache = await cacheFor(server, { root, log: (line) => logged.push(line) });
   const repo = await cache.open('owner', 'repo');
   await fetch(repo, 1);
   repo.close();
@@ -155,6 +158,57 @@ test('a checkout’s folder in a clone must point back at it and into Lo’s che
     `${tempFolder()}\n`,
   );
   expect(await madeAgain(elsewhere.cache, elsewhere.repo)).toBe(true);
+});
+
+test('a cache reached through a link, as macOS’s /var is, keeps the checkouts git names by their real paths', async () => {
+  const real = tempFolder();
+  const linked = join(tempFolder(), 'var');
+  symlinkSync(real, linked);
+  const { cache, repo, pr, logged } = await fetched(join(linked, 'cache'));
+  const opened = await cache.open('owner', 'repo');
+  const checkout = await opened.checkout(1, pr.head);
+  opened.close();
+  // git names the checkout by its real path, not the one Lo opened the cache by.
+  const [worktree = ''] = readdirSync(join(repo.folder, 'worktrees'));
+  const gitdir = readFileSync(join(repo.folder, 'worktrees', worktree, 'gitdir'), 'utf8');
+  expect(gitdir).toBe(`${join(real, relative(linked, checkout))}/.git\n`);
+
+  expect(await madeAgain(cache, repo)).toBe(false);
+  expect(logged).toEqual([]);
+  const again = await cache.open('owner', 'repo');
+  expect(await again.hashCheckoutFile(checkout, Buffer.from('feature.txt'))).toBe(
+    git(pr.remote.work, 'rev-parse', `${pr.head}:feature.txt`),
+  );
+  again.close();
+});
+
+test('a checkout past a link in the cache is outside Lo’s checkouts, wherever the link leads', async () => {
+  // A link where a pull request's checkouts go, to a folder outside the cache: the path git was
+  // given names Lo's checkouts, but what's there isn't in them.
+  const pull = await fetched();
+  const checkouts = pull.cache.checkoutsFolder('owner', 'repo');
+  const away = tempFolder();
+  mkdirSync(join(away, 'abc'));
+  mkdirSync(checkouts, { recursive: true });
+  symlinkSync(away, join(checkouts, 'pull-1'));
+  plantCheckout(pull.repo, join(checkouts, 'pull-1', 'abc', '.git'));
+  expect(await madeAgain(pull.cache, pull.repo)).toBe(true);
+
+  // A link where the owner's checkouts go leads their folder and the checkout's real path alike
+  // out of the cache.
+  const owner = await fetched();
+  const outside = tempFolder();
+  mkdirSync(join(outside, 'repo', 'pull-1', 'abc'), { recursive: true });
+  mkdirSync(join(owner.cache.root, 'checkouts', 'github.com'), { recursive: true });
+  symlinkSync(outside, join(owner.cache.root, 'checkouts', 'github.com', 'owner'));
+  plantCheckout(owner.repo, join(outside, 'repo', 'pull-1', 'abc', '.git'));
+  expect(await madeAgain(owner.cache, owner.repo)).toBe(true);
+
+  // Nor is a path that climbs out of Lo's checkouts by its names.
+  const climbing = await fetched();
+  const theirs = climbing.cache.checkoutsFolder('owner', 'repo');
+  plantCheckout(climbing.repo, `${theirs}/pull-1/../../../../../../elsewhere/.git`);
+  expect(await madeAgain(climbing.cache, climbing.repo)).toBe(true);
 });
 
 test('a clone’s attributes, which would change a checkout’s bytes, make it again', async () => {

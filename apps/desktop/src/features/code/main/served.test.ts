@@ -95,7 +95,7 @@ const CHECKOUT = 'file:///cache/checkouts/pull-1/head';
  */
 function standIn(
   answers: Partial<Record<Method, Answer | ((given: unknown) => Answer)>>,
-  matches = true,
+  matches: Awaited<ReturnType<Serving['matches']>> = true,
   hints: { offered?: boolean; none?: string } = {},
   options: {
     referencesFromDefinition?: boolean;
@@ -267,6 +267,31 @@ describe('definitions', () => {
     expect(found.fallback).toBeUndefined();
     expect(differs.asked).toEqual([]);
     expect(differs.opened).toEqual([]);
+  });
+
+  it('answers from the index, saying why, when the server’s checkout isn’t usable', async () => {
+    const { sides, answering } = await view();
+    const notes: (string | undefined)[] = [];
+    for (const matches of ['remaking', 'unusable'] as const) {
+      const server = standIn(
+        { 'textDocument/definition': { ok: true, value: [at('src/parse.ts', 2, 16)] } },
+        matches,
+      );
+      const found = await servedDefinitions(
+        answering,
+        sides,
+        PARSE_CALL,
+        undefined,
+        server.serverOf,
+      );
+      expect(found.answers[0]).toMatchObject({ source: 'syntax', path: 'src/parse.ts' });
+      expect(server.asked).toEqual([]);
+      notes.push(found.fallback);
+    }
+    expect(notes).toEqual([
+      "TypeScript can't run: this PR's checkout isn't usable. Lo is making it again.",
+      "TypeScript can't run: this PR's checkout isn't usable.",
+    ]);
   });
 });
 

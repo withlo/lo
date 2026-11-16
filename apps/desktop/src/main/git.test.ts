@@ -17,7 +17,7 @@ import {
 } from 'node:fs';
 import { rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 
 import { type Cache, DEFAULT_CAP, type GitStatus } from '@lo/git';
 import { gitProgram } from '@lo/testing/git';
@@ -191,7 +191,33 @@ describe('cacheFolder', () => {
         env: { LO_USER_DATA_DIR: '/tmp/lo' },
         macFolder: never,
       }),
-    ).toBe('/tmp/lo/cache');
+    ).toBe('/tmp/lo/lo-cache');
+  });
+
+  it('in LO_USER_DATA_DIR, shares no name with a folder Chromium keeps there, in any case', () => {
+    // A Mac's disk, by default, takes `cache` and Chromium's `Cache` for one folder.
+    const chromium = [
+      'Cache',
+      'Code Cache',
+      'GPUCache',
+      'DawnGraphiteCache',
+      'DawnWebGPUCache',
+      'Shared Dictionary',
+      'Local Storage',
+      'Session Storage',
+      'blob_storage',
+      'Network',
+      'Partitions',
+      'Crashpad',
+    ];
+    for (const platform of ['darwin', 'linux'] as const) {
+      const env = { LO_USER_DATA_DIR: '/tmp/lo' };
+      const cache = cacheFolder({ packaged: false, platform, home, env, macFolder: never });
+      expect(dirname(cache)).toBe('/tmp/lo');
+      expect(chromium.map((name) => name.toLowerCase())).not.toContain(
+        basename(cache).toLowerCase(),
+      );
+    }
   });
 });
 

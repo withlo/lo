@@ -6,9 +6,15 @@
  */
 
 import { lstat, readdir, readFile, realpath } from 'node:fs/promises';
-import { isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { basename, dirname, isAbsolute, join, normalize, relative, resolve, sep } from 'node:path';
 
 import type { Runner } from './git.ts';
+
+/** Where a clone's checkouts belong: `folder`, in the cache whose folder is `root`. */
+export interface CheckoutsPlace {
+  readonly root: string;
+  readonly folder: string;
+}
 
 /**
  * Files that make git read settings, objects or attributes from somewhere else, or change what it
@@ -68,13 +74,14 @@ const OWN_SETTINGS: ReadonlyMap<string, Check> = new Map<string, Check>([
 
 /**
  * Why the clone at `clone` can't be trusted, or `undefined` when it can. `options.checkouts` is
- * the folder its checkouts are in: a checkout's `gitdir` must point inside it, and without it, it
- * may have none. A clone must hold its whole history.
+ * where its checkouts belong: a checkout's `gitdir` must lead inside that folder, by real paths
+ * ({@link leadsInto}), and without it, the clone may have none. A clone must hold its whole
+ * history.
  */
 export async function distrust(
   runner: Runner,
   clone: string,
-  options: { checkouts?: string | undefined } = {},
+  options: { checkouts?: CheckoutsPlace | undefined } = {},
 ): Promise<string | undefined> {
   const folder = await lstat(clone).catch(() => undefined);
   if (!folder?.isDirectory()) return 'it isn’t a folder';
@@ -158,14 +165,17 @@ export async function leadsElsewhere(runner: Runner, clone: string): Promise<str
 
 /**
  * Why a checkout's folder under the clone's `worktrees/` can't be trusted: one that points
- * anywhere but back at the clone and into `checkouts`, or holds settings of its own.
+ * anywhere but back at the clone and into `checkouts`, or holds settings of its own. Each is
+ * compared by real paths: git writes a checkout's by its real path, which differs from the one Lo
+ * names it by when a link leads to the cache, as macOS's `/var` does.
  */
 async function distrustWorktrees(
   clone: string,
-  checkouts: string | undefined,
+  checkouts: CheckoutsPlace | undefined,
 ): Promise<string | undefined> {
   const folder = join(clone, 'worktrees');
   const names = await readdir(folder).catch(() => []);
+  const own = await realpath(clone);
   for (const name of names) {
     const worktree = join(folder, name);
     const entry = await lstat(worktree);
@@ -176,24 +186,53 @@ async function distrustWorktrees(
       if (file === 'config.worktree') return `worktrees/${name} has settings of its own`;
     }
     const commondir = await readFile(join(worktree, 'commondir'), 'utf8').catch(() => undefined);
-    const common = commondir === undefined ? undefined : resolve(worktree, commondir.trim());
-    if (common === undefined || resolve(common) !== resolve(clone)) {
-      return `worktrees/${name} leads git to another repository`;
-    }
+    const common =
+      commondir === undefined
+        ? undefined
+        : await realpath(resolve(worktree, commondir.trim())).catch(() => undefined);
+    if (common !== own) return `worktrees/${name} leads git to another repository`;
     const gitdir = await readFile(join(worktree, 'gitdir'), 'utf8').catch(() => undefined);
     const target = gitdir?.trim();
     const inside =
-      checkouts !== undefined &&
-      target !== undefined &&
-      isAbsolute(target) &&
-      within(checkouts, target);
+      checkouts !== undefined && target !== undefined && (await leadsInto(checkouts, target));
     if (!inside) return `worktrees/${name} names a checkout outside Lo's`;
   }
   return undefined;
 }
 
-/** Whether `path` is inside `folder`. */
-function within(folder: string, path: string): boolean {
-  const inside = relative(resolve(folder), resolve(path));
-  return inside !== '' && !inside.startsWith(`..${sep}`) && inside !== '..' && !isAbsolute(inside);
+/**
+ * Whether `path` is really inside `place.folder`: by real paths, with the folder taken where its
+ * own names lead from the cache's real folder. A link above the cache, as macOS's `/var` is, leads
+ * both alike. A link inside the cache never counts, even one that leads the folder and `path`
+ * alike, so nothing past one is inside, wherever it leads. `path` must be absolute and plain,
+ * with no `.` or `..` in it, as git writes a checkout's.
+ */
+async function leadsInto(place: CheckoutsPlace, path: string): Promise<boolean> {
+  const below = relative(place.root, place.folder);
+  if (!isAbsolute(path) || normalize(path) !== path || !isBelow(below)) return false;
+  const folder = join(await realAhead(place.root), below);
+  return isBelow(relative(folder, await realAhead(path)));
+}
+
+/** Whether `between`, the path from one folder to another place, leads inside the folder. */
+function isBelow(between: string): boolean {
+  return (
+    between !== '' && between !== '..' && !between.startsWith(`..${sep}`) && !isAbsolute(between)
+  );
+}
+
+/**
+ * The real path of `path`, which needn't be there: its nearest folder that is, by its real path,
+ * then the rest of `path`, which, not being there, leads through no link.
+ */
+async function realAhead(path: string): Promise<string> {
+  const rest: string[] = [];
+  for (let at = path; ; at = dirname(at)) {
+    try {
+      return join(await realpath(at), ...rest.toReversed());
+    } catch (error) {
+      if (dirname(at) === at) throw error;
+      rest.push(basename(at));
+    }
+  }
 }

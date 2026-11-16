@@ -48,7 +48,7 @@ import { checkName, checkNumber } from './refs.ts';
 import { Repo } from './repo.ts';
 import { stampUsed } from './stamp.ts';
 import type { TokenSource } from './token.ts';
-import { distrust } from './trust.ts';
+import { type CheckoutsPlace, distrust } from './trust.ts';
 
 /** The only host Lo fetches from, for now. */
 const HOST = 'github.com';
@@ -406,6 +406,11 @@ export class Cache {
     return join(this.root, 'checkouts', HOST, owner.toLowerCase(), name.toLowerCase());
   }
 
+  /** Where the checkouts of `owner/name`'s pull requests belong, for the trust check. */
+  #checkoutsPlace(owner: string, name: string): CheckoutsPlace {
+    return { root: this.root, folder: this.checkoutsFolder(owner, name) };
+  }
+
   /** Where the homes of `owner/name`'s language servers live, one folder each. */
   homesFolder(owner: string, name: string): string {
     return join(this.root, HOMES_FOLDER, owner.toLowerCase(), name.toLowerCase());
@@ -600,7 +605,7 @@ export class Cache {
     try {
       if (await isFile(join(folder, 'HEAD'))) {
         const reason = await distrust(this.runner, folder, {
-          checkouts: this.checkoutsFolder(owner, name),
+          checkouts: this.#checkoutsPlace(owner, name),
         });
         if (reason === undefined) {
           await this.#pointAt(folder, url);
@@ -682,7 +687,7 @@ export class Cache {
         return undefined;
       }
       const reason = await distrust(this.runner, folder, {
-        checkouts: this.checkoutsFolder(owner, name),
+        checkouts: this.#checkoutsPlace(owner, name),
       });
       if (reason !== undefined) {
         this.#log?.(`${owner}/${name}: not reading its local copy, since ${reason}`);

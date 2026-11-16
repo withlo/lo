@@ -63,13 +63,21 @@ export interface Placing {
 }
 
 /**
+ * The cache's folder in `LO_USER_DATA_DIR`. Chromium keeps its own folders there, its HTTP cache
+ * in `Cache` among them, which a Mac's disk, by default, takes for `cache`: so Lo's is named
+ * nothing Chromium names, whatever the case, and cleanup never counts or removes Chromium's files.
+ */
+const DATA_CACHE = 'lo-cache';
+
+/**
  * Where Lo keeps its cache, which holds its local copies of repositories, their checkouts and the
  * language servers it installs: `Lo` in the system's folder for this user's caches, and `Lo Dev`
  * for a build run from source, so it never touches an installed Lo's. On a Mac that's the folder
  * macOS keeps outside the home folder ({@link macCaches}), since tools a language server runs read
  * settings from every folder above their own, such as Cargo's `.cargo/config.toml`, and none the
  * home folder holds may reach them. On Linux it's `$XDG_CACHE_HOME` or `~/.cache`. A build run
- * from source with `LO_USER_DATA_DIR` keeps it there, in `cache`, so each test starts empty.
+ * from source with `LO_USER_DATA_DIR` keeps it there, in {@link DATA_CACHE}, so each test starts
+ * empty.
  */
 export function cacheFolder(
   options: Placing & {
@@ -78,7 +86,7 @@ export function cacheFolder(
   },
 ): string {
   const { env } = options;
-  if (!options.packaged && env.LO_USER_DATA_DIR) return join(env.LO_USER_DATA_DIR, 'cache');
+  if (!options.packaged && env.LO_USER_DATA_DIR) return join(env.LO_USER_DATA_DIR, DATA_CACHE);
   const name = options.packaged ? 'Lo' : 'Lo Dev';
   if (options.platform === 'darwin') return join((options.macFolder ?? macCaches)(), name);
   const xdg = env.XDG_CACHE_HOME;

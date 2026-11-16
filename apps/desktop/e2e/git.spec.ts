@@ -22,7 +22,15 @@ import { promisify } from 'node:util';
 import { git, gitProgram, RepoServer, testGitEnvironment } from '@lo/testing/git';
 import { _electron as electron, type ElectronApplication, type Page } from '@playwright/test';
 
-import { appEnvironment, appFolder, dataFolder, drawnWindow, expect, test } from './app.ts';
+import {
+  appEnvironment,
+  appFolder,
+  cachePath,
+  dataFolder,
+  drawnWindow,
+  expect,
+  test,
+} from './app.ts';
 
 /** Starts Lo on the test's data folder, with `env` added to its environment. */
 async function launch(
@@ -122,7 +130,7 @@ test('with a test git and remote, Lo finds git, cleans its cache up, and leaves 
     `exec '${gitProgram()}' "$@"`,
   ]);
   // A clone already in the cache, with packs enough to repack as Lo cleans up.
-  const clone = join(data, 'cache', 'repos', 'github.com', 'owner', 'repo.git');
+  const clone = join(cachePath(data), 'repos', 'github.com', 'owner', 'repo.git');
   mkdirSync(dirname(clone), { recursive: true });
   git(dirname(clone), 'init', '--quiet', '--bare', '--template=', clone);
   execFileSync(
@@ -163,7 +171,7 @@ test('with a test git and remote, Lo finds git, cleans its cache up, and leaves 
 
     // The cache is in the data folder, and cleaning it up repacks the clone while the window
     // goes on answering.
-    const cache = join(data, 'cache');
+    const cache = cachePath(data);
     await expect.poll(() => existsSync(join(cache, 'lo-cache.lock'))).toBe(true);
     expect(existsSync(join(cache, 'git-env', 'home'))).toBe(true);
     await expect.poll(() => existsSync(join(runs, 'repacking')), { timeout: 15_000 }).toBe(true);
@@ -269,7 +277,7 @@ test('with no git, the window opens and says so, and Lo keeps no cache', async (
       message: "Lo can't find git.",
       install: expect.stringContaining('git'),
     });
-    expect(existsSync(join(dataFolder(), 'cache'))).toBe(false);
+    expect(existsSync(cachePath(dataFolder()))).toBe(false);
   } finally {
     await app.close();
   }
@@ -286,7 +294,7 @@ test('with a git too old, the window opens and says why, and Lo keeps no cache',
       message: `Lo needs git 2.41.0 or newer, and ${old} is git 2.30.0.`,
       install: expect.stringContaining('git'),
     });
-    expect(existsSync(join(dataFolder(), 'cache'))).toBe(false);
+    expect(existsSync(cachePath(dataFolder()))).toBe(false);
   } finally {
     await app.close();
   }

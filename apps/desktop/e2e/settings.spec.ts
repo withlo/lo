@@ -8,6 +8,7 @@ import { _electron as electron, type ElectronApplication, type Page } from '@pla
 import {
   appEnvironment,
   appFolder,
+  cachePath,
   dataFolder,
   drawnWindow,
   expect,
@@ -314,7 +315,7 @@ function installGo(bytes: number): string {
   const platform = currentPlatform();
   const download = pinned && platform && downloadFor(pinned, platform);
   if (!pinned || !download) throw new Error('Lo pins no Go for this system');
-  const folder = join(dataFolder(), 'cache', 'toolchains', 'go', pinned.version);
+  const folder = join(cachePath(dataFolder()), 'toolchains', 'go', pinned.version);
   mkdirSync(join(folder, 'files', 'go', 'bin'), { recursive: true });
   writeFileSync(join(folder, 'files', 'go', 'bin', 'go'), Buffer.alloc(bytes));
   const marker = {

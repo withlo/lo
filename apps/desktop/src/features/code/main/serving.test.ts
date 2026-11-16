@@ -2,7 +2,7 @@
 // for one whose files no server reads; a trusted view's head checked out once it's on screen and
 // needs a server; servers answering only about that head; and what the status bar says.
 
-import { parseOid, type Oid, type TreeEntry } from '@lo/git';
+import { GitError, parseOid, type Oid, type TreeEntry } from '@lo/git';
 import { describe, expect, it, onTestFinished } from 'vitest';
 
 import type { Servers } from '../contract.ts';
@@ -173,6 +173,27 @@ function onPool(shown: ReadonlyMap<string, ServingInput>, screen: () => string =
   return { serving, started, alive, lets };
 }
 
+/** A local copy whose checkouts are usable only while `usable` says so, as `hashCheckoutFile` finds. */
+function unusableAt(usable: () => boolean) {
+  const { repo, checkouts } = repoOf(['src/a.ts']);
+  const copy: ServingRepo = {
+    ...repo,
+    async hashCheckoutFile(folder) {
+      if (!usable()) throw new GitError({ kind: 'invalid', what: 'checkout', value: folder });
+      return blobOf('after');
+    },
+  };
+  return { copy, checkouts };
+}
+
+/** View `v1`'s TypeScript server, once the stand-in it runs as says it's ready. */
+function readyServer(serving: ServingViews, server: StandIn | undefined) {
+  server?.set({ kind: 'ready' });
+  const found = serving.serverFor('v1', head, 'src/a.ts');
+  if (found?.kind !== 'ready') throw new Error(`TypeScript isn't ready: ${found?.kind}`);
+  return found;
+}
+
 describe('following views for servers', () => {
   it('reads which servers the files the pull request changes need, on its new side', async () => {
     const { repo } = repoOf(['src/a.ts', 'docs/b.md']);
@@ -331,6 +352,21 @@ describe('following views for servers', () => {
     expect(restarted).toEqual([{ folder: `/cache/checkouts/pull-80/${head}`, pull: 80 }]);
   });
 
+  it('checks a PR’s head out again once a view of it is opened again, after none was', async () => {
+    const { repo, checkouts } = repoOf(['src/a.ts']);
+    let shown: ServingInput | undefined = input(repo);
+    const { serving } = follow(() => shown);
+    serving.update('v1');
+    await settle();
+    // Its tab closes, and opens again: the checkout may have gone meanwhile, with the cache cleared.
+    shown = undefined;
+    serving.update('v1');
+    shown = input(repo);
+    serving.update('v1');
+    await settle();
+    expect(checkouts).toEqual([`80@${head}`, `80@${head}`]);
+  });
+
   it('says language servers are off on a view nothing trusts only when Lo has a server to run', () => {
     const { repo } = repoOf(['src/a.ts']);
     const { serving } = follow(() => input(repo, { trust: 'none', off: true }), []);
@@ -447,6 +483,62 @@ describe('following views for servers', () => {
     serving.update('v1');
     await drain();
     expect(lets).toEqual(['stop Rozed-Dev/E2E#80', 'let go Rozed-Dev/E2E#80']);
+  });
+
+  it('makes a checkout a server finds isn’t the local copy’s again, with what ran on it stopped first', async () => {
+    let usable = false;
+    const { copy, checkouts } = unusableAt(() => usable);
+    const { serving, started, alive, lets } = onPool(new Map([['v1', input(copy)]]));
+    serving.update('v1');
+    await drain();
+    const [first] = started;
+    const ready = readyServer(serving, first);
+
+    expect(await ready.matches('src/a.ts', blobOf('after'))).toBe('remaking');
+    // Asked again meanwhile, it's on its way.
+    expect(serving.serverFor('v1', head, 'src/a.ts')).toEqual({
+      kind: 'starting',
+      name: 'TypeScript',
+    });
+    usable = true;
+    await drain();
+    expect(lets).toEqual(['stop Rozed-Dev/E2E#80']);
+    expect(first?.exited).toBe(true);
+    expect(checkouts).toEqual([`80@${head}`, `80@${head}`]);
+    expect(alive().map((server) => server.spec.root)).toEqual([`/cache/checkouts/pull-80/${head}`]);
+    const again = readyServer(serving, alive()[0]);
+    expect(await again.matches('src/a.ts', blobOf('after'))).toBe(true);
+  });
+
+  it('says a checkout made again that’s no better failed, and makes it again on Restart', async () => {
+    let usable = false;
+    const { copy, checkouts } = unusableAt(() => usable);
+    const { serving, started, alive } = onPool(new Map([['v1', input(copy)]]));
+    serving.update('v1');
+    await drain();
+    expect(await readyServer(serving, started[0]).matches('src/a.ts', head)).toBe('remaking');
+    await drain();
+
+    expect(await readyServer(serving, alive()[0]).matches('src/a.ts', head)).toBe('unusable');
+    await drain();
+    expect(alive()).toEqual([]);
+    expect(serving.serverFor('v1', head, 'src/a.ts')).toEqual({
+      kind: 'failed',
+      name: 'TypeScript',
+    });
+    expect(serving.servers('v1')?.servers[0]?.state).toEqual({
+      kind: 'failed',
+      why: {
+        kind: 'error',
+        message:
+          "Lo couldn't check out this PR's head: the checkout Lo made again isn't usable either",
+      },
+    });
+    usable = true;
+    await serving.restart('v1', 'typescript');
+    await drain();
+    expect(checkouts).toHaveLength(3);
+    expect(alive()).toHaveLength(1);
   });
 
   it('starts nothing on Restart once trust goes while the head is checked out, and lets go of that checkout', async () => {
