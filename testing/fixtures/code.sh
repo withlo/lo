@@ -11,7 +11,8 @@
 # opens one that was closed. It checks the token's account first and writes nowhere but those two
 # repositories. `code-reset.sh` also deletes what a test wrote on them.
 #
-# The second reads no network and needs no token. It makes, in <folder>:
+# The second reads no network and needs no token. It refuses a <folder> inside a git work tree,
+# whose tools would load what it builds, and makes, in <folder>:
 #
 # - `rozed-dev/e2e.git`, a bare repository holding what GitHub holds for the pull requests, commit
 #   for commit: `code/base`, `code/feature`, and `code/fork`, the same commit as `code/feature`, and
@@ -215,6 +216,7 @@ main() {
       ;;
     --local)
       folder=${2:?usage: bash testing/fixtures/code.sh --local <folder>}
+      check_local_folder code.sh "$folder"
       mkdir -p "$folder"
       folder=$(cd "$folder" && pwd)
       code_setup

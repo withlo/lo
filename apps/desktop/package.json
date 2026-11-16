@@ -11,6 +11,7 @@
     "dev": "electron-vite dev",
     "e2e": "playwright test --config e2e/playwright.config.ts",
     "lint": "oxlint && lo-check-classes src",
+    "live": "playwright test --config e2e/live.config.ts",
     "package": "electron-builder --config build/electron-builder.yml --mac",
     "start": "electron .",
     "test": "vitest run --root ../.. --project @lo/desktop"
@@ -75,6 +76,12 @@
         ]
       },
       "e2e": {
+        "dependsOn": [
+          "build"
+        ],
+        "cache": false
+      },
+      "live": {
         "dependsOn": [
           "build"
         ],

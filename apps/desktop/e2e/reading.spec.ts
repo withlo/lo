@@ -351,11 +351,16 @@ const test = base.extend<{
   },
 });
 
-/** Waits for the account from the token file, then opens #80's tab, and returns its id. */
-async function open(page: Page): Promise<string> {
+/** Waits for Lo to add the account from the token file, as it does as it starts. */
+async function accountAdded(page: Page): Promise<void> {
   await expect
     .poll(async () => JSON.stringify(await page.evaluate(() => window.lo.invoke('accounts.list'))))
     .toContain('rozed-bot');
+}
+
+/** Waits for the account from the token file, then opens #80's tab, and returns its id. */
+async function open(page: Page): Promise<string> {
+  await accountAdded(page);
   const reply = await page.evaluate(
     (number) =>
       window.lo.invoke('tab.open', { kind: 'pull', owner: 'rozed-dev', repo: 'e2e', number }),
@@ -363,6 +368,34 @@ async function open(page: Page): Promise<string> {
   );
   if (!reply.ok || typeof reply.value !== 'string') throw new Error(JSON.stringify(reply));
   return reply.value;
+}
+
+/**
+ * Waits for the account from the token file, then opens #80's tab as its row in Recent does, by
+ * its link as rozed-bot, and returns its id. Lo works out which account opens the repository before
+ * the tab opens, so the tab knows it from the start, and the window can read an overview kept from
+ * an earlier read at once. A tab {@link open} opens works that out itself once it's open, by asking
+ * GitHub in the account's queue, behind its polls; until it has, main hands the window none of the
+ * kept overview's files, which a busy machine can take longer than the bound over.
+ */
+async function openAsRecent(page: Page): Promise<string> {
+  await accountAdded(page);
+  const reply = await page.evaluate(
+    (text) => window.lo.invoke('open.open', { text, login: 'rozed-bot' }),
+    `https://github.com/rozed-dev/e2e/pull/${APP_PULL.number}`,
+  );
+  const opened: unknown = reply.ok ? reply.value : undefined;
+  if (
+    typeof opened !== 'object' ||
+    opened === null ||
+    !('kind' in opened) ||
+    opened.kind !== 'tab' ||
+    !('id' in opened) ||
+    typeof opened.id !== 'string'
+  ) {
+    throw new Error(JSON.stringify(reply));
+  }
+  return opened.id;
 }
 
 /** What main has of a tab's overview, as the window asks it. */
@@ -514,13 +547,13 @@ test.describe('as a pull request opens', () => {
     page.on('console', (message) => {
       if (/Content Security Policy|Refused to/i.test(message.text())) refused.push(message.text());
     });
-    // Read and checked once, so it's kept, and opened again with nothing left to fetch.
+    // Read and checked once, so it's kept, and opened again from Recent with nothing left to fetch.
     const first = await open(page);
     await expect(overviewTab(page).getByRole('img')).toBeVisible({ timeout: 20_000 });
     await page.evaluate((tab) => window.lo.invoke('tab.close', { id: tab }), first);
     await expect(views(page)).toHaveCount(0);
 
-    await open(page);
+    await openAsRecent(page);
     await expect(overview(page, 'shown')).toBeVisible({ timeout: 10_000 });
     // It opened on the overview: the diff was never drawn.
     await expect(middleView(page, 'diff.view')).toHaveCount(0);
@@ -1106,11 +1139,12 @@ const cutElsewhere = (page: Page) =>
     });
 
 /**
- * Closes tab `id`, if there is one, and opens #80's again, with its local copy there when it was
- * opened before, starting `watch` as it opens; returns the new tab's id. It opens on the overview,
- * kept from the first read, once Lo knows in time that it shows: a machine too busy to know within
- * the bound opens it on the diff, which isn't what's tested, so it's closed and opened again, three
- * times at most, each time noted in the test's results.
+ * Closes tab `id`, if there is one, and opens #80's again from Recent ({@link openAsRecent}), with
+ * its local copy there when it was opened before, starting `watch` as it opens; returns the new
+ * tab's id. It opens on the overview, kept from the first read, once Lo knows in time that it
+ * shows: a machine too busy to know within the bound opens it on the diff, which isn't what's
+ * tested, so it's closed and opened again, three times at most, each time noted in the test's
+ * results.
  */
 async function openAgain(
   page: Page,
@@ -1124,7 +1158,7 @@ async function openAgain(
       await expect(views(page)).toHaveCount(0);
     }
     await watch();
-    tab = await open(page);
+    tab = await openAsRecent(page);
     /** What the tab opened on, once it has. */
     const opened = async () => {
       if (await middleView(page, 'diff.view').isVisible()) return 'diff';

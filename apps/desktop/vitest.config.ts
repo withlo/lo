@@ -7,7 +7,8 @@ export default defineProject({
   define: { LO_OVERVIEW_CHECKER: JSON.stringify(OVERVIEW_CHECKER) },
   test: {
     name: '@lo/desktop',
-    // The smoke test in e2e/ runs under Playwright, against the built app.
-    include: ['src/**/*.test.{ts,tsx}', 'scripts/**/*.test.ts'],
+    // The smoke test in e2e/ runs under Playwright, against the built app: its specs are
+    // `*.spec.ts`, and the unit tests of what it uses beside them `*.test.ts`.
+    include: ['src/**/*.test.{ts,tsx}', 'scripts/**/*.test.ts', 'e2e/**/*.test.ts'],
   },
 });
