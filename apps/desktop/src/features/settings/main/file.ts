@@ -2,16 +2,18 @@
 // calls Electron, so it runs under unit tests.
 //
 // The file is the person's own, and text from outside Lo, so it is read as such: anything that
-// isn't a plain file of UTF-8 text within the limit holding one JSON object is left unread, and
-// said so in words for the person. It is written whole, to a new file that then replaces the old
-// one, so a crash or a full disk never leaves half a file, and an editor open on it sees it
-// change in one step. It is replaced only if it hasn't changed since it was read, so an edit saved
-// meanwhile isn't lost.
+// isn't a plain file of UTF-8 text within the limit holding one JSON object (comments allowed, as
+// `text.ts` reads it) is left unread, and said so in words for the person. It is written whole, to
+// a new file that then replaces the old one, so a crash or a full disk never leaves half a file,
+// and an editor open on it sees it change in one step. It is replaced only if it hasn't changed
+// since it was read, so an edit saved meanwhile isn't lost.
 
 import { randomUUID } from 'node:crypto';
 import { constants } from 'node:fs';
 import { lstat, mkdir, open, realpath, rename, stat, unlink } from 'node:fs/promises';
 import { basename, dirname, join, sep } from 'node:path';
+
+import { parseSettings, type Parsed } from './text.ts';
 
 /** The most Lo reads of the settings file, in bytes. A longer file is left unread. */
 export const SETTINGS_SIZE_LIMIT = 1024 * 1024;
@@ -20,47 +22,17 @@ export const SETTINGS_SIZE_LIMIT = 1024 * 1024;
 export type Read =
   /** There's no file, which is no settings and no problem. */
   | { readonly kind: 'missing' }
-  /** The file's object: one entry for each key in it, whether or not any feature knows it. */
-  | { readonly kind: 'ok'; readonly values: Readonly<Record<string, unknown>> }
-  /**
-   * The file can't be used, and why, for the person who wrote it: in Settings' words, with what to
-   * do, and what's wrong alone (`cause`), for what says what to do in its own words.
-   */
-  | { readonly kind: 'problem'; readonly problem: string; readonly cause: string };
+  /** The file's object, or what's wrong with it. */
+  | Parsed;
 
-/** A problem: what's wrong, then, when Lo says more, what to do. */
-function problem(cause: string, advice?: string): Read {
-  return { kind: 'problem', problem: advice === undefined ? cause : `${cause} ${advice}`, cause };
+/** A problem with the file, which says only what's wrong. */
+function problem(cause: string): Read {
+  return { kind: 'problem', problem: cause, cause };
 }
-
-/** What to do about a file that isn't what Lo reads. */
-const FIX = 'Fix it, and Lo applies it as soon as you save.';
 
 /** The first `length` characters of `text`, with an ellipsis when it was cut. */
 export function shorten(text: string, length: number): string {
   return text.length <= length ? text : `${text.slice(0, length - 1)}…`;
-}
-
-/**
- * The settings in `text`: one JSON object, or nothing at all (a file with only white space is no
- * settings). Anything else is a problem that says what was wrong.
- */
-export function parseSettings(text: string): Read {
-  if (text.trim() === '') return { kind: 'ok', values: {} };
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(text);
-  } catch (error) {
-    const why = error instanceof Error ? error.message : 'it is not JSON';
-    return problem(`The settings file isn't valid JSON (${shorten(why, 160)}).`, FIX);
-  }
-  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
-    return problem(
-      'The settings file should hold one JSON object, such as { "theme": "dark" }.',
-      FIX,
-    );
-  }
-  return { kind: 'ok', values: Object.fromEntries(Object.entries(parsed)) };
 }
 
 /**
@@ -95,7 +67,10 @@ export async function readSettings(path: string): Promise<Read> {
     if (length > SETTINGS_SIZE_LIMIT) return tooBig;
     let text;
     try {
-      text = new TextDecoder('utf-8', { fatal: true }).decode(buffer.subarray(0, length));
+      // A byte order mark stays in the text, so a change Lo makes keeps it.
+      text = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(
+        buffer.subarray(0, length),
+      );
     } catch {
       return problem("The settings file isn't UTF-8 text, so Lo didn't read it.");
     }

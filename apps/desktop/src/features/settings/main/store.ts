@@ -1,14 +1,15 @@
 // The settings as main keeps them: what the file says, checked against what each feature declared,
-// watched for changes and written back whole. Nothing here calls Electron, so it runs under unit
-// tests.
+// watched for changes and changed in place, one setting's value at a time. Nothing here calls
+// Electron, so it runs under unit tests.
 //
 // A value the schema refuses is reported and ignored: the setting is at its default, and the file
-// keeps what it says, so the person can fix it. What no feature declared is kept as it is. A file
-// that can't be read as a whole (a syntax error, say) leaves the settings as they were, and
-// nothing is written until it can be, since writing would lose what the person typed. For the
-// same reason, a save made while a change is being written is kept, and the change made again on
-// top of it. A setting the window may only read is changed by main alone (`update`): the window's
-// `set` refuses it.
+// keeps what it says, so the person can fix it. What no feature declared is kept as it is, and so
+// is every comment. A file that can't be read as a whole (a syntax error, say) leaves the settings
+// as they were, and nothing is written until it can be, since writing would lose what the person
+// typed. For the same reason, a save made while a change is being written is kept, and the change
+// made again on top of it. A setting the file has more than once is reported, and isn't changed
+// until it has one. A setting the window may only read is changed by main alone (`update`): the
+// window's `set` refuses it.
 
 import { IpcError } from '../../../ipc/contract.ts';
 import { settingValue, type Problem, type Setting, type SettingsState } from '../contract.ts';
@@ -23,6 +24,7 @@ import {
   writeSettings,
   type Read,
 } from './file.ts';
+import { editSettings, SettingsUneditable } from './text.ts';
 
 /** How often the file is looked at, in ms. */
 const INTERVAL = 400;
@@ -92,6 +94,11 @@ export interface Settings extends SettingsStore {
   stop(): Promise<void>;
 }
 
+/** What the person is told of a setting the file has more than once. */
+function twice(key: string): string {
+  return `${key} is in the settings file more than once. Lo uses the last, and won't change it until the file has one.`;
+}
+
 /** What the person is told of a value the schema refuses. */
 function wrong(entry: Entry, found: unknown): string {
   const text = shorten(JSON.stringify(found) ?? String(found), 40);
@@ -110,6 +117,8 @@ export function createSettings(options: SettingsOptions): Settings {
   const watchers = new Set<Watcher>();
   /** The file's object as it was last read in one piece: what the settings come from. */
   let raw: Readonly<Record<string, unknown>> = {};
+  /** The keys that object has more than once, of which it holds the last value. */
+  let repeated: ReadonlySet<string> = new Set();
   /** What is wrong with the file as a whole, if anything is. */
   let wholeProblem: string | undefined;
   /** What was last published, as JSON, and as a value. */
@@ -139,6 +148,7 @@ export function createSettings(options: SettingsOptions): Settings {
     }
     wholeProblem = undefined;
     raw = read.kind === 'ok' ? read.values : {};
+    repeated = new Set(read.kind === 'ok' ? read.repeated : []);
   };
 
   const compute = (): SettingsState => {
@@ -148,6 +158,7 @@ export function createSettings(options: SettingsOptions): Settings {
     for (const [key, entry] of declared) {
       values[key] = entry.fallback;
       if (!Object.hasOwn(raw, key)) continue;
+      if (repeated.has(key)) problems.push({ key, message: twice(key) });
       const found = raw[key];
       const checked = entry.check(found);
       if (checked.ok) {
@@ -296,6 +307,13 @@ export function createSettings(options: SettingsOptions): Settings {
             true,
           );
         }
+        if (fresh.kind === 'ok' && fresh.repeated.includes(key)) {
+          throw new Unwritten(
+            `Lo didn't change ${key}, since the settings file has it more than once. Take out all but one, and Lo can change it.`,
+            `The settings file has ${key} more than once, and Lo changes it only once it has one.`,
+            true,
+          );
+        }
         const values = fresh.kind === 'ok' ? fresh.values : {};
         const current = Object.hasOwn(values, key) ? entry.check(values[key]) : undefined;
         if (from === 'current' && current && !current.ok) {
@@ -308,7 +326,26 @@ export function createSettings(options: SettingsOptions): Settings {
         const checked = entry.check(next(current?.ok ? current.value : entry.fallback));
         if (!checked.ok) throw new IpcError('invalid', `${key} must be ${entry.accepts}.`);
         const written = { ...values, [key]: checked.value };
-        const text = `${JSON.stringify(written, null, 2)}\n`;
+        // Only the setting's value changes: the rest of the file, comments and all, stays as it is.
+        let text;
+        try {
+          text = editSettings(fresh.kind === 'ok' ? fresh.text : '', key, checked.value);
+        } catch (error) {
+          if (error instanceof SettingsUneditable) {
+            // What the file's text holds kept Lo from changing it.
+            throw new Unwritten(
+              `Lo didn't change ${key}: ${error.message}.`,
+              `Lo couldn't change ${key} in the settings file: ${error.message}.`,
+              true,
+            );
+          }
+          log("Lo couldn't change the settings file's text:", error);
+          throw new Unwritten(
+            `Lo didn't change ${key}: the settings file's text couldn't be changed.`,
+            "Lo couldn't change the settings file's text.",
+            false,
+          );
+        }
         if (Buffer.byteLength(text) > SETTINGS_SIZE_LIMIT) {
           throw new Unwritten(
             `Lo didn't change ${key}: the settings file would be too big.`,

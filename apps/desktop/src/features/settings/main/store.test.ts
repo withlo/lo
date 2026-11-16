@@ -364,7 +364,7 @@ describe('watching', () => {
 });
 
 describe('changing a setting', () => {
-  it('writes the file whole, keeps what Lo doesn’t know, and tells the listeners and the window', async () => {
+  it('writes the file, keeps what Lo doesn’t know, and tells the listeners and the window', async () => {
     write('{ "theme": "dark", "from": { "a newer": ["Lo"] } }');
     const { settings, changes } = open();
     const told: string[] = [];
@@ -378,12 +378,9 @@ describe('changing a setting', () => {
       from: { 'a newer': ['Lo'] },
       'diff.layout': 'inline',
     });
+    // Changed in place: an object on one line stays on one.
     expect(contents()).toBe(
-      `${JSON.stringify(
-        { theme: 'light', from: { 'a newer': ['Lo'] }, 'diff.layout': 'inline' },
-        null,
-        2,
-      )}\n`,
+      '{ "theme": "light", "from": { "a newer": ["Lo"] }, "diff.layout": "inline" }',
     );
     expect(told).toEqual(['dark', 'light']);
     expect(changes.at(-1)?.values).toEqual({ theme: 'light', 'diff.layout': 'inline' });
@@ -398,7 +395,135 @@ describe('changing a setting', () => {
     const { settings } = open();
     settings.declare(theme);
     await settings.set('theme', 'dark');
-    expect(JSON.parse(contents())).toEqual({ theme: 'dark' });
+    expect(contents()).toBe('{\n  "theme": "dark"\n}\n');
+  });
+
+  it('changes only the setting’s value, keeping the file’s comments, order and spacing', async () => {
+    const text = `// My settings.
+// Kept in my dotfiles.
+// Lo reads them.
+{
+  /* At night. */
+  "theme":  "dark", // or light
+  "mine": [1, 2],
+  "diff.layout": "split"
+}
+`;
+    write(text);
+    const { settings } = open();
+    settings.declare(theme);
+    settings.declare(layout);
+    expect((await settings.state()).problems).toEqual([]);
+    await settings.set('theme', 'light');
+    await settings.set('diff.layout', 'inline');
+    expect(contents()).toBe(text.replace('"dark"', '"light"').replace('"split"', '"inline"'));
+    expect((await settings.state()).values).toEqual({ theme: 'light', 'diff.layout': 'inline' });
+  });
+
+  it('adds a setting the file doesn’t have after its last, in its indent, keeping its comments', async () => {
+    write('// Mine.\n{\n    "theme": "dark" // at night\n    // More to come.\n}\n');
+    const { settings } = open();
+    settings.declare(theme);
+    settings.declare(cap);
+    await settings.set('cache.cap', 20);
+    expect(contents()).toBe(
+      '// Mine.\n{\n    "theme": "dark", // at night\n    // More to come.\n    "cache.cap": 20\n}\n',
+    );
+    expect((await settings.state()).values).toEqual({ theme: 'dark', 'cache.cap': 20 });
+  });
+
+  it('keeps a byte order mark through a change', async () => {
+    write('\uFEFF{\n  "theme": "dark"\n}\n');
+    const { settings } = open();
+    settings.declare(theme);
+    await settings.set('theme', 'light');
+    expect(readFileSync(path)).toEqual(
+      Buffer.from([0xef, 0xbb, 0xbf, ...Buffer.from('{\n  "theme": "light"\n}\n')]),
+    );
+  });
+
+  it('says why, and writes nothing, when the change can’t be made as Settings would show it', async () => {
+    const text = '{ "theme": "dark" }\n';
+    write(text);
+    const { settings, log } = open();
+    const anything = defineSetting('anything', z.json(), null, 'any JSON');
+    settings.declare(anything);
+    // Written, this would nest the file deeper than Lo reads.
+    let deep: z.output<ReturnType<typeof z.json>> = 0;
+    for (let level = 0; level < 100; level++) deep = [deep];
+    const refused = await refusal(settings.set('anything', deep));
+    expect(refused?.code).toBe('unwritable');
+    expect(refused?.message).toBe(
+      "Lo didn't change anything: the new value, written into the settings file, wouldn't read back as Settings shows it, so Lo left the file as it was.",
+    );
+    expect(contents()).toBe(text);
+    expect(log).not.toHaveBeenCalled();
+  });
+
+  it('reports a file nested deeper than Lo reads, and writes nothing over it', async () => {
+    const text = `{ "theme": "dark", "mine": ${'['.repeat(5000)}${']'.repeat(5000)} }`;
+    write(text);
+    const { settings } = open();
+    settings.declare(theme);
+    const state = await settings.state();
+    expect(state.values).toEqual({ theme: 'system' });
+    expect(state.problems).toEqual([
+      {
+        message:
+          "The settings file nests objects and lists over 100 levels deep, so Lo didn't read it.",
+      },
+    ]);
+    const refused = await refusal(settings.set('theme', 'light'));
+    expect(refused?.code).toBe('unwritable');
+    expect(contents()).toBe(text);
+  });
+
+  it('reads a comma after the last entry, and keeps it through a change', async () => {
+    write('{\n  "theme": "dark",\n  "mine": [1, 2,],\n}\n');
+    const { settings } = open();
+    settings.declare(theme);
+    settings.declare(layout);
+    expect(await settings.state()).toMatchObject({ values: { theme: 'dark' }, problems: [] });
+    await settings.set('theme', 'light');
+    await settings.set('diff.layout', 'inline');
+    expect(contents()).toBe(
+      '{\n  "theme": "light",\n  "mine": [1, 2,],\n  "diff.layout": "inline",\n}\n',
+    );
+  });
+
+  it('reports a setting given twice, uses the last, and changes it only once there’s one', async () => {
+    const text = '{\n  "theme": "dark",\n  "theme": "light"\n}\n';
+    write(text);
+    const { settings } = open();
+    settings.declare(theme);
+    settings.declare(layout);
+    expect(await settings.state()).toMatchObject({
+      values: { theme: 'light' },
+      problems: [
+        {
+          key: 'theme',
+          message:
+            "theme is in the settings file more than once. Lo uses the last, and won't change it until the file has one.",
+        },
+      ],
+    });
+    const refused = await refusal(settings.set('theme', 'system'));
+    expect(refused?.code).toBe('unwritable');
+    expect(refused?.message).toBe(
+      "Lo didn't change theme, since the settings file has it more than once. Take out all but one, and Lo can change it.",
+    );
+    // The file is the cause, which editing it fixes.
+    expect(refused).toMatchObject({
+      inFile: true,
+      why: 'The settings file has theme more than once, and Lo changes it only once it has one.',
+    });
+    expect(contents()).toBe(text);
+    // Another setting changes, and the one given twice still says what Settings shows.
+    await settings.set('diff.layout', 'inline');
+    expect(contents()).toBe(
+      '{\n  "theme": "dark",\n  "theme": "light",\n  "diff.layout": "inline"\n}\n',
+    );
+    expect((await settings.state()).values).toEqual({ theme: 'light', 'diff.layout': 'inline' });
   });
 
   it('refuses a setting no feature declared, and a value its schema refuses, writing nothing', async () => {
@@ -452,6 +577,20 @@ describe('changing a setting', () => {
     await settings.set('theme', 'dark');
     expect(JSON.parse(contents())).toEqual({ theme: 'dark' });
     expect((await settings.state()).problems).toEqual([]);
+  });
+
+  it('writes nothing over a file with comments and a real syntax error, and says where it is', async () => {
+    const text = '// Mine.\n{\n  "theme": "light"\n  "diff.layout": "inline"\n}\n';
+    write(text);
+    const { settings } = open();
+    settings.declare(theme);
+    const refused = await refusal(settings.set('theme', 'dark'));
+    expect(refused?.code).toBe('unwritable');
+    expect(refused?.message).toBe(
+      "Lo didn't change theme, since the settings file has a problem. The settings file isn't valid JSON (Lo expected a comma at line 4, column 3). Fix it, and Lo applies it as soon as you save.",
+    );
+    expect(contents()).toBe(text);
+    expect((await settings.state()).values).toEqual({ theme: 'system' });
   });
 
   it('takes the file as it is on disk now, so a save the poll has not seen yet is not undone', async () => {
@@ -619,6 +758,15 @@ describe('a setting only main changes', () => {
       from: 1,
     });
     expect(changes.at(-1)?.values['code.names']).toEqual(['lo', 'git', 'sh']);
+  });
+
+  it('keeps the file’s comments when main changes it', async () => {
+    const text =
+      '// Trusted by hand.\n{\n  "theme": "dark", // at night\n  "code.names": ["lo"]\n}\n';
+    write(text);
+    const { settings } = open();
+    await settings.update(names, (now) => [...now, 'sh']);
+    expect(contents()).toBe(text.replace('["lo"]', '[\n    "lo",\n    "sh"\n  ]'));
   });
 
   it('refuses to change a value in the file the schema refuses, so it’s never lost', async () => {
