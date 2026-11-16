@@ -238,15 +238,14 @@ function flood(): void {
 
 async function afterInitialized(): Promise<void> {
   if (scenario.child) {
-    const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1 << 30)'], {
-      stdio: 'ignore',
-    });
+    const script = scenario.sleepers === 'child' ? SLEEPERS : IDLE;
+    const child = spawn(process.execPath, ['-e', script, scenario.report], { stdio: 'ignore' });
     report({ event: 'child', pid: child.pid ?? 0 });
   }
   if (scenario.escapee) {
     const escapee = spawn(
       process.execPath,
-      ['-e', scenario.sleepers ? SLEEPERS : IDLE, scenario.report],
+      ['-e', scenario.sleepers === 'escapee' ? SLEEPERS : IDLE, scenario.report],
       {
         stdio: 'ignore',
         detached: true,

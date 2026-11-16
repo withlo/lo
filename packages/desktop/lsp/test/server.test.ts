@@ -392,10 +392,11 @@ test('a server that ignores shutdown, exit and SIGTERM is killed inside the stop
   await eventually(() => !running(pid) && !running(child.pid), 1000);
 });
 
-test('the longest a stop can take leaves half a second of a feature’s 5 s', () => {
-  // `shutdown` and `exit`, a second each, with the family read inside them; 2 s from SIGTERM to
-  // SIGKILL; then the freeze rounds and the wait for the kill.
-  expect(longestStop(LIMITS)).toBe(4500);
+test('the longest a stop can take leaves a quarter of a second of a feature’s 5 s', () => {
+  // `shutdown` and `exit`, a second each, with the family read inside the first; the family read
+  // again, its group frozen; 2 s from SIGTERM to SIGKILL; then the freeze rounds and the wait for
+  // the kill.
+  expect(longestStop(LIMITS)).toBe(4750);
 });
 
 test('a stop while it starts never lets it initialize', async () => {
@@ -607,7 +608,7 @@ test('a kill freezes what left the group, round after round, before it kills any
   // the cap, the server is killed.
   let past = false;
   const { server, seen } = startFake(
-    { escapee: true, sleepers: true },
+    { escapee: true, sleepers: 'escapee' },
     {
       tuning: {
         memoryEvery: 50,
@@ -660,6 +661,30 @@ test('a process read as the server stopped, and since another, is left alone', a
   await sleep(200);
   expect(running(pid)).toBe(true);
   expect(other.signalCode).toBeNull();
+});
+
+test('nothing leaves the group unseen between a stop’s last read of the family and SIGTERM', async () => {
+  // A child in the group starts a sleeper outside it (`setsid`) every 5 ms, and each read of the
+  // family is 150 ms old by the time it's used: what the child starts meanwhile is in no read.
+  const { server, seen } = startFake(
+    { child: true, sleepers: 'child' },
+    {
+      tuning: {
+        memoryEvery: 60_000,
+        family: 1000,
+        readFamily: async (group, also) => {
+          const family = await readFamily(group, also);
+          await sleep(150);
+          return family;
+        },
+      },
+    },
+  );
+  expect(await server.ready).toBe(true);
+  const sleepers = () => seen().flatMap((event) => (event.event === 'sleeper' ? [event.pid] : []));
+  await eventually(() => sleepers().length >= 10);
+  await server.stop();
+  await eventually(() => sleepers().every((pid) => !running(pid)), 2000);
 });
 
 test('what a server started in a session of its own is stopped with it', async () => {

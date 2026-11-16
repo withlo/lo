@@ -41,10 +41,10 @@ export interface Scenario {
   /** It starts a process in a session of its own once initialized, out of its group. */
   readonly escapee?: boolean;
   /**
-   * Its escapee starts a sleeper in a session of its own every few milliseconds, reporting each,
-   * until it's stopped.
+   * Which of its child, in its group, and its escapee starts a sleeper in a session of its own
+   * every few milliseconds, reporting each, until it's stopped.
    */
-  readonly sleepers?: boolean;
+  readonly sleepers?: 'child' | 'escapee';
   /** It ignores `shutdown`, `exit` and `SIGTERM`. */
   readonly stubborn?: boolean;
   /** Lines it writes to stderr as it starts. */

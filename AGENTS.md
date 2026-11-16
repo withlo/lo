@@ -426,10 +426,11 @@ toolchain and git's variables each server needs.
   running. A server past its cap (4 GB) or the meter's limits is killed at once, whatever its state,
   a stop's included: Lo reads nothing more from it, freezes its group, then what it finds outside
   it, round after round until nothing new appears, and only then kills them all. A stop sends
-  `shutdown` and `exit`, a second each, reading the family within them, then `SIGTERM` to the
-  family, then kills it 2 s later: 4.5 s at most, half a second inside a feature's 5 s. A process
-  read earlier is signalled only while it's the same one, by its start time. The package's README
-  says what can't be found.
+  `shutdown` and `exit`, a second each, reading the family within the first, then freezes the group
+  while it reads the family again, so nothing leaves it unseen, sends `SIGTERM` to the family and
+  lets the group go on, then kills it 2 s later: 4.75 s at most, a quarter of a second inside a
+  feature's 5 s. A process read earlier is signalled only while it's the same one, by its start
+  time. The package's README says what can't be found.
 - Its stderr and messages make its log, the last 1,000 lines, in memory only.
 - What Lo downloads is pinned in `packages/desktop/lsp/servers.json`: each server's version, and
   that of the Node the JavaScript ones run on, with each file's address, size and SHA-256 per
@@ -441,16 +442,18 @@ toolchain and git's variables each server needs.
   to unseen, with no token or cookie. In the app it goes through `net.request` (`netFetch` with
   `stream`), so it takes the system's proxy, and reads the connection only as fast as the file is
   written. It's written to `<cache>/servers/.partial/` and stopped past the pinned size, and nothing
-  reads it before its size and hash match. A connection that fails, or brings nothing for 30 s, is
-  tried 3 times in all.
+  reads it before its size and hash match. A connection that fails, or brings less than 16 KB in any
+  30 s, its answer's headers held to the same rule, is tried 3 times in all, and a download as a
+  whole has no deadline.
 - Then it's unpacked there: a `tar.gz` (npm's `tar`), a `zip` (`yauzl`), a gzipped program, a
   program as it is, or an npm package's tarballs laid out as `node_modules`, with nothing run.
   Absolute paths, `..`, hard links, devices and links that resolve outside are refused, and so is
   more than 100,000 entries or 2 GB. Everything is synced to the disk, a marker last, before the
   folder is renamed into `<cache>/servers/<id>/<version>/`. The marker names what it holds, the
-  version of the rules it was unpacked under, and each file's size and link's target; a folder whose
-  marker doesn't match, or whose files don't match its marker, is removed and fetched again. Two
-  installs of a version at once make one download.
+  version of the rules it was unpacked under, each file's size, each folder and each link's target;
+  a folder whose marker doesn't match, or whose files, folders or links don't match its marker, a
+  folder that's become a link included, is removed and fetched again. Two installs of a version at
+  once make one download.
 - A server installed by the user is used only from where its adapter says it may be, when the app's
   folder check passes it (the one git is held to), it isn't in Lo's cache, and it isn't a version
   manager's shim, which picks a program from the checkout.
@@ -1159,10 +1162,10 @@ its languages; Lo ships none yet.
   or moves for it until it's trusted again. Each start, restart, crash's restart and move checks,
   after whatever it waited for, that the view on screen is trusted then and shows the head of its
   checkout. Once a view of a pull request is decided untrusted, for whatever reason, a tab opened
-  again included, and no other view of it is trusted, what runs on its checkouts stops, those
-  stopping waited for, and they go; one finished after that goes as it's made. While its trust can't
-  be worked out, as when GitHub can't be reached after a push, what runs stops and its checkouts
-  stay.
+  again included, and no other view of it is trusted, then or once the one that is closes, what runs
+  on its checkouts stops, those stopping waited for, and they go; one finished after that goes as
+  it's made. While its trust can't be worked out, as when GitHub can't be reached after a push, what
+  runs stops and its checkouts stay.
 - One server runs per repository and adapter, on the checkout of the head on screen, and moves with
   it: by `workspace/didChangeWorkspaceFolders`, sent only once trust is checked again, where it
   takes that, else by starting again (`main/servers.ts`). Its `HOME` is

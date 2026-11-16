@@ -85,7 +85,8 @@ export interface Limits {
   readonly exit: number;
   /**
    * How long a read of its family may take, before a stop signals what it knows of. A stop reads
-   * it beside `shutdown` and `exit`, so the read takes none of the stop's time of its own.
+   * it beside `shutdown`, taking none of the stop's time of its own, and again with its group
+   * frozen, just before `SIGTERM`.
    */
   readonly family: number;
   /** How long its family has after `SIGTERM`, before `SIGKILL`. */
@@ -107,9 +108,9 @@ export interface Limits {
 }
 
 /**
- * A stop takes at most {@link longestStop}: 4.5 s, leaving half a second of a feature's 5 s to
- * stop. Nothing the server sends is read once `shutdown` is answered or given up on, so no flood
- * can hold it up.
+ * A stop takes at most {@link longestStop}: 4.75 s, leaving a quarter of a second of a feature's
+ * 5 s to stop. Nothing the server sends is read once `shutdown` is answered or given up on, so no
+ * flood can hold it up.
  */
 export const LIMITS: Limits = {
   memoryCap: 4 * 1024 ** 3,
@@ -171,12 +172,13 @@ export type Tuning = Partial<Limits> & {
 };
 
 /**
- * The longest a stop can take with `limits`: `shutdown`, then `exit`, each with a read of the
- * family beside it, then `term` after `SIGTERM`, then a kill's `freeze` and `kill`.
+ * The longest a stop can take with `limits`: `shutdown`, with a read of the family beside it, then
+ * `exit`, then a read of the family with its group frozen, then `term` after `SIGTERM`, then a
+ * kill's `freeze` and `kill`.
  */
 export function longestStop(limits: Limits): number {
   const { shutdown, exit, family, term, freeze, kill } = limits;
-  return Math.max(shutdown, family) + Math.max(exit, family) + term + freeze + kill;
+  return Math.max(shutdown, family) + exit + family + term + freeze + kill;
 }
 
 /** Starts a server, and returns it at once, `starting`. */
@@ -372,8 +374,8 @@ export class Server {
   /**
    * Stops the server and everything it started: `shutdown` and `exit`, 1 s each, then `SIGTERM` to
    * its family, then `SIGKILL` 2 s later. Its requests are answered `stopped` at once. It resolves
-   * once the group is gone, or once it's been killed, within 4.5 s ({@link longestStop}). A server
-   * that failed stays `failed`; any other is `stopped`.
+   * once the group is gone, or once it's been killed, within 4.75 s ({@link longestStop}). A
+   * server that failed stays `failed`; any other is `stopped`.
    */
   stop(): Promise<void> {
     this.#stopping ??= this.#stop();
@@ -399,15 +401,15 @@ export class Server {
 
   /**
    * Asks the server to shut down and exit, then ends its family. What left its group is read as it
-   * shuts down, since once the server exits nothing ties those to it, and again as `exit`'s time
-   * ends, for what it started since. Each read runs inside a wait the stop makes anyway.
+   * shuts down, inside that wait, since once the server exits nothing ties those to it, and again
+   * as its family ends, for what it started since.
    */
   async #shutDown(): Promise<void> {
     const connection = this.#connection;
     const group = this.#child?.pid;
-    let others: readonly Member[] | undefined;
+    let earlier: readonly Member[] = [];
     if (connection !== undefined && group !== undefined) {
-      const { shutdown, exit, family } = this.#limits;
+      const { shutdown, exit } = this.#limits;
       const read = this.#others(group);
       try {
         await Promise.race([
@@ -421,30 +423,29 @@ export class Server {
       // Nothing more it sends matters, so none of it is read, and however much it sends, the stop
       // keeps its time.
       this.#deafen();
-      const earlier = await read;
+      earlier = await read;
       this.#notify('exit');
-      // The family is read again in the last of `exit`'s time, or once it has exited.
-      await Promise.race([this.#exited, sleep(exit - family)]);
-      const later = this.#others(group, earlier);
-      await Promise.race([this.#exited, sleep(family)]);
-      others = await later;
+      await Promise.race([this.#exited, sleep(exit)]);
     }
-    await this.#endGroup(others);
+    await this.#endGroup(earlier);
   }
 
   /**
-   * Stops what's left of the server's family, with `others`, what's outside its group, read if not
-   * given: `SIGTERM`, then, if anything outlasts it, a kill.
+   * Stops what's left of the server's family, with any of `known`, read before, that's still the
+   * same process: `SIGTERM`, then, if anything outlasts it, a kill. The group is frozen while
+   * what's outside it is read, and until `SIGTERM` has been sent, so nothing in it can leave it, or
+   * start a process outside it, unseen in between.
    */
-  async #endGroup(given?: readonly Member[]): Promise<void> {
+  async #endGroup(known: readonly Member[] = []): Promise<void> {
     const group = this.#child?.pid;
     if (group === undefined) return;
-    const others = given ?? (await this.#others(group));
+    signalFamily(group, [], 'SIGSTOP');
+    const others = await this.#others(group, known);
     const pids = others.map((member) => member.pid);
-    if (
-      signalFamily(group, pids, 'SIGTERM') &&
-      !(await familyGone(group, pids, this.#limits.term))
-    ) {
+    const sent = signalFamily(group, pids, 'SIGTERM');
+    // Each in the group goes on to the `SIGTERM` waiting for it.
+    signalFamily(group, [], 'SIGCONT');
+    if (sent && !(await familyGone(group, pids, this.#limits.term))) {
       await this.#kill(others);
       return;
     }

@@ -8,9 +8,12 @@
  *   `fetch` is Chromium's (`net.request`), which takes the system's proxy and keeps nothing in its
  *   cache.
  * - It stops as soon as more comes than may: the size the manifest pinned, when it's known.
- * - It gives up once nothing has come for {@link STALL} while Lo waits, for the answer to begin or
- *   for more of its body, as a try that was cut short, so a host that stops sending can't hold up
- *   the tries after it.
+ * - It gives up once less than {@link LEAST} has come in any {@link STALL} that Lo waits for the
+ *   network, as a try that was cut short, so a host that stops sending, or sends a byte now and
+ *   then, can't hold up the tries after it. An answer's headers count by the same rule: they come
+ *   whole, so an answer must begin within {@link STALL} of being asked for, and the count starts
+ *   again from it. There's no deadline for the whole file, which can be hundreds of megabytes on a
+ *   slow connection.
  * - What arrives is only written to the file, never run or unpacked here: the caller checks the
  *   size and hash this returns before anything else reads it.
  */
@@ -24,8 +27,15 @@ import { isDownloadAddress } from './manifest.ts';
 /** The most redirects a download follows. */
 export const REDIRECTS = 5;
 
-/** How long a download may wait for a byte before its try is given up, in milliseconds. */
+/** The time a download's progress is counted over, in milliseconds: any 30 s it waits. */
 export const STALL = 30_000;
+
+/**
+ * The least a download must bring in any {@link STALL} it waits, in bytes: about half a kilobyte a
+ * second, so slow that only a connection that has all but stopped falls below it. It's more than
+ * any host's headers, so an answer that keeps to it begins within {@link STALL}.
+ */
+export const LEAST = 16 * 1024;
 
 /** Statuses that send a request on to a `Location`. */
 const REDIRECT_STATUSES: ReadonlySet<number> = new Set([301, 302, 303, 307, 308]);
@@ -43,7 +53,10 @@ export interface FetchOptions {
   readonly signal?: AbortSignal | undefined;
   /** Hears how many bytes of the file have come so far, as they come. */
   readonly received?: ((bytes: number) => void) | undefined;
-  /** How long it may wait for a byte, in milliseconds: {@link STALL} unless given. */
+  /**
+   * The time its progress is counted over, in milliseconds: {@link STALL} unless given. Less than
+   * {@link LEAST} in any of it is a stall.
+   */
   readonly stall?: number | undefined;
 }
 
@@ -67,7 +80,7 @@ export async function fetchFile(
   options: FetchOptions,
 ): Promise<Fetched> {
   options.signal?.throwIfAborted();
-  const stall = new Stall(options.stall ?? STALL, options.signal);
+  const stall = new Stall(options.stall ?? STALL, LEAST, options.signal);
   try {
     return await fetchWatched(url, file, { ...options, signal: stall.signal }, stall);
   } finally {
@@ -137,6 +150,7 @@ async function follow(url: string, options: FetchOptions, stall: Stall): Promise
     } catch (error) {
       throw signal?.aborted ? signal.reason : asDownloadError(error);
     }
+    stall.answered();
     // A `fetch` that followed a redirect itself, whatever it was asked, went where Lo didn't
     // check.
     if (answer.redirected) {
@@ -210,6 +224,7 @@ async function* readChunks(
       // A cancelled body ends rather than fails.
       signal?.throwIfAborted();
       if (done) return;
+      stall.came(value.byteLength);
       yield value;
     }
   } finally {
@@ -219,23 +234,61 @@ async function* readChunks(
 }
 
 /**
- * A watch on a download's waits for the network: once one has lasted `ms` with nothing come, it
- * aborts its {@link Stall.signal} with an `interrupted` error. Lo's own work between waits, such
- * as writing what came, never counts.
+ * A watch on a download's waits for the network: once less than `least` bytes have come in any
+ * `ms` of waiting, it aborts its {@link Stall.signal} with an `interrupted` error. Only the time
+ * spent waiting counts, so Lo's own work between waits, such as writing what came, never does.
+ * An answer's headers, which come whole, start the count again.
  */
 class Stall {
   /** Aborts once the caller's signal does, or once a wait has stalled. */
   readonly signal: AbortSignal;
   readonly #ms: number;
+  readonly #least: number;
   readonly #controller = new AbortController();
   #timer: ReturnType<typeof setTimeout> | undefined;
+  /** How long it has waited, in milliseconds, up to the end of the last wait. */
+  #waited = 0;
+  /** When the count last started, in time waited. */
+  #from = 0;
+  /**
+   * What came, oldest first, each when its wait ended, in time waited: only the newest that
+   * together reach `least`, since nothing older can be what keeps the download going.
+   */
+  #came: { readonly at: number; readonly bytes: number }[] = [];
+  /** The bytes in {@link Stall.#came}. */
+  #recent = 0;
 
-  constructor(ms: number, signal: AbortSignal | undefined) {
+  constructor(ms: number, least: number, signal: AbortSignal | undefined) {
     this.#ms = ms;
+    this.#least = least;
     this.signal =
       signal === undefined
         ? this.#controller.signal
         : AbortSignal.any([signal, this.#controller.signal]);
+  }
+
+  /** Counts `bytes` that the last wait brought. */
+  came(bytes: number): void {
+    this.#came.push({ at: this.#waited, bytes });
+    this.#recent += bytes;
+    // What's older than the newest that reach `least` no longer counts.
+    let oldest = this.#came[0];
+    while (
+      oldest !== undefined &&
+      this.#came.length > 1 &&
+      this.#recent - oldest.bytes >= this.#least
+    ) {
+      this.#came.shift();
+      this.#recent -= oldest.bytes;
+      oldest = this.#came[0];
+    }
+  }
+
+  /** An answer has come, its headers whole: the count starts again. */
+  answered(): void {
+    this.#came = [];
+    this.#recent = 0;
+    this.#from = this.#waited;
   }
 
   /**
@@ -244,21 +297,37 @@ class Stall {
    */
   async watch<T>(promise: Promise<T>): Promise<T> {
     const { promise: given, reject: stalled } = Promise.withResolvers<never>();
+    const began = performance.now();
     clearTimeout(this.#timer);
-    this.#timer = setTimeout(() => {
-      const seconds = (this.#ms / 1000).toLocaleString('en-US');
-      const error = new DownloadError(
-        'interrupted',
-        `The download stalled: nothing came for ${seconds} s.`,
-      );
-      this.#controller.abort(error);
-      stalled(error);
-    }, this.#ms);
+    this.#timer = setTimeout(
+      () => {
+        const seconds = (this.#ms / 1000).toLocaleString('en-US');
+        const kilobytes = (this.#least / 1024).toLocaleString('en-US');
+        const error = new DownloadError(
+          'interrupted',
+          `The download stalled: less than ${kilobytes} KB came in ${seconds} s.`,
+        );
+        this.#controller.abort(error);
+        stalled(error);
+      },
+      Math.max(0, this.#due() - this.#waited),
+    );
     try {
       return await Promise.race([promise, given]);
     } finally {
       clearTimeout(this.#timer);
+      this.#waited += performance.now() - began;
     }
+  }
+
+  /**
+   * When, in time waited, the download stalls unless more comes: once the oldest of what reaches
+   * `least` is `ms` old, or `ms` after the count started while nothing reaches it.
+   */
+  #due(): number {
+    const oldest = this.#came[0];
+    if (oldest === undefined || this.#recent < this.#least) return this.#from + this.#ms;
+    return oldest.at + this.#ms;
   }
 
   /** Stops watching. */

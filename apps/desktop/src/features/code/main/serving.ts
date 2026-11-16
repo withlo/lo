@@ -9,9 +9,10 @@
 // - A view checked again after a push holds what runs for its repository, and starts nothing,
 //   until it's trusted again.
 // - Once a view of a pull request is decided untrusted, for whatever reason and whatever it was
-//   before, and no other view of it is trusted, what runs on its checkouts stops and they go: one
-//   finished after that goes as it's made. While its trust can't be worked out, as when GitHub
-//   can't be reached after a push, what runs stops, and its checkouts stay.
+//   before, and no other view of it is trusted, then or once the one that is closes, what runs on
+//   its checkouts stops and they go: one finished after that goes as it's made. While its trust
+//   can't be worked out, as when GitHub can't be reached after a push, what runs stops, and its
+//   checkouts stay.
 // - A server answers only about the head it runs on: a view of another head, or the old side, gets
 //   the syntax index's answers.
 //
@@ -143,8 +144,11 @@ export class ServingViews {
     if (this.#stopped) return;
     const input = this.#options.view(id);
     if (!input) {
+      const closed = this.#views.get(id);
       this.#views.delete(id);
       this.#sync();
+      // What another view of its pull request decided holds once this one, trusted, has gone.
+      if (closed?.trusted === true) this.#decideAgain(closed.input);
       return;
     }
     let followed = this.#views.get(id);
@@ -398,6 +402,20 @@ export class ServingViews {
       if (now?.trust === 'trusted' || (now?.trust === 'checking' && followed.trusted)) return true;
     }
     return false;
+  }
+
+  /**
+   * Acts on what the views of `pull`'s pull request decided, as when the one trusted closes: one
+   * decided untrusted lets go of what runs on its checkouts, and one undecided stops it, once no
+   * view of it is trusted.
+   */
+  #decideAgain(pull: Pick<ServingInput, 'repo' | 'number'>): void {
+    const key = pullKey(pull);
+    const decided = [...this.#views.values()]
+      .filter((followed) => pullKey(followed.input) === key)
+      .map((followed) => followed.decided);
+    if (decided.includes('none')) this.#letGo(pull);
+    else if (decided.includes('unknown')) this.#stopOn(pull);
   }
 
   /** Once no view of `pull`'s pull request is trusted, stops what runs on its checkouts. */

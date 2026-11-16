@@ -115,6 +115,8 @@ export type Answer =
       readonly hold?: boolean | undefined;
       /** Whether to send it without saying its length. */
       readonly chunked?: boolean | undefined;
+      /** Sends the body a byte at a time, this many milliseconds apart. */
+      readonly trickle?: number | undefined;
     }
   | { readonly redirect: string; readonly status?: number | undefined }
   | { readonly status: number }
@@ -151,7 +153,16 @@ export async function serve(routes: Routes): Promise<Served> {
     } else if ('body' in answer) {
       const length = answer.chunked === true ? {} : { 'content-length': answer.body.length };
       response.writeHead(answer.status ?? 200, length);
-      if (answer.cut === undefined) {
+      if (answer.trickle !== undefined) {
+        const { body } = answer;
+        let sent = 0;
+        const timer = setInterval(() => {
+          if (sent < body.length) response.write(body.subarray(sent, sent + 1));
+          else response.end();
+          sent += 1;
+        }, answer.trickle);
+        response.on('close', () => clearInterval(timer));
+      } else if (answer.cut === undefined) {
         response.end(answer.body);
       } else {
         response.write(answer.body.subarray(0, answer.cut), () => {

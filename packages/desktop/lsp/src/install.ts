@@ -6,11 +6,12 @@
  *   same temporary folder.
  * - The entry point must be a file inside what was unpacked. A marker, written last, records which
  *   of the manifest's downloads the folder holds, under which rules it was unpacked, and what it
- *   unpacked to: each file's path and size, and each link's target. Everything is synced to the
- *   disk, the marker last, before the temporary folder is renamed into place in one step. A folder
- *   is used only while its marker matches the manifest and the rules, and its files and links
- *   match its marker: otherwise it's removed and fetched again. So a download cut short, a version
- *   pinned again, or an install a power loss cut short, is never run.
+ *   unpacked to: each file's path and size, each folder's path, and each link's target. Everything
+ *   is synced to the disk, the marker last, before the temporary folder is renamed into place in
+ *   one step. A folder is used only while its marker matches the manifest and the rules, and its
+ *   files, folders and links match its marker: otherwise it's removed and fetched again. So a
+ *   download cut short, a version pinned again, or an install a power loss cut short, is never
+ *   run.
  * - A download that fails on the way (the connection, a stall, or the server's trouble) is tried
  *   {@link TRIES} times in all, waiting longer each time. Anything else fails at once.
  * - One download per version at a time: an install asked for while one runs waits for it.
@@ -67,6 +68,7 @@ const MARKER = 'installed.json';
 const markerSchema = z.object({
   fingerprint: z.string(),
   files: z.array(z.tuple([z.string().refine(isPlainPath), z.number().int().nonnegative()])),
+  folders: z.array(z.string().refine(isPlainPath)),
   links: z.array(z.tuple([z.string().refine(isPlainPath), z.string()])),
 });
 
@@ -83,7 +85,10 @@ export interface InstallerOptions {
   readonly limits?: UnpackLimits | undefined;
   /** How long to wait before each try after the first, in milliseconds. */
   readonly backoff?: readonly number[] | undefined;
-  /** How long a try may wait for a byte before it's given up, in milliseconds: `STALL` unless given. */
+  /**
+   * The time a try's progress is counted over, in milliseconds: `STALL` unless given. Less than
+   * `LEAST` in any of it gives the try up.
+   */
   readonly stall?: number | undefined;
 }
 
@@ -303,8 +308,15 @@ export class Installer {
       // What was unpacked is on the disk before the marker says so, and the marker before the
       // folder is in place, so a power loss leaves no folder that looks whole and isn't.
       await unpacker.sync();
-      const { files: unpacked, links } = unpacker.unpacked;
-      const marker = { id, version: pinned.version, fingerprint: print, files: unpacked, links };
+      const { files: unpacked, folders, links } = unpacker.unpacked;
+      const marker = {
+        id,
+        version: pinned.version,
+        fingerprint: print,
+        files: unpacked,
+        folders,
+        links,
+      };
       await writeFile(join(work, MARKER), `${JSON.stringify(marker)}\n`, { flag: 'wx' });
       await syncPath(join(work, MARKER));
       await syncPath(work);
@@ -348,8 +360,8 @@ export class Installer {
   }
 
   /**
-   * The install at `target`, if its marker says it holds `print`, each file and link it records is
-   * there as it says, and its entry point is there.
+   * The install at `target`, if its marker says it holds `print`, each file, folder and link it
+   * records is there as it says, and its entry point is there.
    */
   async #whole(target: string, print: string, download: Download): Promise<Installed | undefined> {
     const text = await readFile(join(target, MARKER), 'utf8').catch(() => undefined);
@@ -392,12 +404,17 @@ export function fingerprint(
 }
 
 /**
- * Whether each file `unpacked` records is in `folder` with its size, and each link with its
- * target. It reads only what the system knows of each, never a file's data.
+ * Whether `folder` and each folder `unpacked` records in it are still folders, not links, so
+ * nothing below them is reached through one, each file it records is there with its size, and
+ * each link with its target. It reads only what the system knows of each, never a file's data.
  */
 async function matches(folder: string, unpacked: Unpacked): Promise<boolean> {
   const at = (path: string) => join(folder, ...path.split('/'));
   try {
+    if (!(await lstat(folder)).isDirectory()) return false;
+    await atOnce(unpacked.folders, CHECKS, async (path) => {
+      if (!(await lstat(at(path))).isDirectory()) throw new Error(`${path} isn't as unpacked`);
+    });
     await atOnce(unpacked.files, CHECKS, async ([path, size]) => {
       const info = await lstat(at(path));
       if (!info.isFile() || info.size !== size) throw new Error(`${path} isn't as unpacked`);

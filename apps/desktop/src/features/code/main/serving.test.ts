@@ -325,6 +325,30 @@ describe('following views for servers', () => {
     expect(lets).toEqual(['let go Rozed-Dev/E2E#81']);
   });
 
+  it('lets go of what runs on a PR’s head at once when its trusted tab closes and another, untrusted, stays', async () => {
+    const { repo } = repoOf(['src/a.ts']);
+    const { repo: docs } = repoOf(['docs/b.md']);
+    let screen = 'v1';
+    const shown = new Map([
+      ['v1', input(repo, { number: 81 })],
+      ['v2', input(docs, { id: 'v2' })],
+      ['v3', input(repo, { id: 'v3', number: 81, trust: 'none', off: true })],
+    ]);
+    const { serving, started, alive, lets } = onPool(shown, () => screen);
+    for (const id of shown.keys()) serving.update(id);
+    await drain();
+    expect(started.map((server) => server.spec.root)).toEqual([`/cache/checkouts/pull-81/${head}`]);
+    // While one view of #81 trusts it, the one that doesn't lets go of nothing.
+    expect(lets).toEqual([]);
+    // The trusted one closes, with another tab of the repo still open: #81 is untrusted now.
+    shown.delete('v1');
+    screen = 'v3';
+    serving.update('v1');
+    await drain();
+    expect(alive()).toEqual([]);
+    expect(lets).toEqual(['let go Rozed-Dev/E2E#81']);
+  });
+
   it('stops what runs, and keeps its checkouts, while trust can’t be worked out after a push', async () => {
     const { repo } = repoOf(['src/a.ts']);
     const shown = new Map([['v1', input(repo)]]);

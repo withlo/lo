@@ -17,7 +17,7 @@ has the rules; this is what the package holds a server to.
 | Its family's resident memory        | 4 GB unless its spec says, read every 5 s  |
 | Requests                            | 8 at the server, 64 waiting, 32 unanswered |
 | Open files                          | 50                                         |
-| A stop                              | 4.5 s                                      |
+| A stop                              | 4.75 s                                     |
 
 A server past any of the first seven is killed at once, whatever its state, a stop's included. One
 whose memory can't be read three times running is stopped, since its cap would go unenforced.
@@ -38,10 +38,12 @@ A server leads a process group of its own. Its family is that group and every pr
 a member of it, found by parent ID, so a process that left the group by starting a session of its
 own (`setsid`) is still found.
 
-- A stop reads the family while the server shuts down and again as `exit`'s second ends, each read
-  within those waits, sends `SIGTERM` to all of it once `exit` has had its second, and 2 s later
-  kills what's left, as below. At most 4.5 s in all: 1 s, 1 s, 2 s, the freeze's 400 ms and 100 ms
-  for the kill to land.
+- A stop reads the family while the server shuts down, within that wait. Once `exit` has had its
+  second, it freezes the group with `SIGSTOP`, reads the family again, sends `SIGTERM` to all of it,
+  and lets the group go on with `SIGCONT` to the `SIGTERM` waiting for it. Frozen, nothing in the
+  group can leave it, or start a process outside it, between that read and the signal. 2 s later it
+  kills what's left, as below. At most 4.75 s in all: 1 s, 1 s, the read's 250 ms, 2 s, the freeze's
+  400 ms and 100 ms for the kill to land.
 - A kill freezes the group with `SIGSTOP`, then reads the family and freezes what it finds outside
   the group, round after round until a round finds nothing new, at most 8 rounds within 400 ms. Only
   then does it send `SIGKILL` to everything frozen. A frozen process can't start another, so a round
@@ -56,6 +58,9 @@ own (`setsid`) is still found.
   outlives the stop.
 - Once a server has exited on its own, by crashing, what it left behind is found only if a stop read
   it first.
+- What has left the group isn't frozen for the read before `SIGTERM`, so a process one of those
+  starts during that read misses `SIGTERM`. A kill finds it by its parent while that's alive; once
+  its parent has ended at `SIGTERM`, it's the first case above.
 - A family still finding new processes after 8 rounds or 400 ms: what's frozen is killed, and a
   process started in the last round isn't. Only processes not yet frozen can start one, and each
   round freezes all it finds, so this takes a process that starts others faster than Lo can read.
@@ -73,9 +78,18 @@ own (`setsid`) is still found.
 | Redirects                  | 5, each held to the same rules, and none followed unseen    |
 | A file                     | the size the manifest pins, then its SHA-256                |
 | Tries                      | 3, when the connection fails, the file comes short or a 5xx |
-| A stall                    | 30 s with nothing come, which counts as a failed connection |
+| A stall                    | less than 16 KB in any 30 s, as a failed connection         |
 | What an archive unpacks to | 100,000 entries and 2 GB                                    |
 | A symbolic link's target   | 1 KB, relative, resolving inside                            |
+
+A stall is too little progress in any 30 s that Lo waits for the network: less than 16 KB, about
+half a kilobyte a second, so slow that only a connection that has all but stopped falls below it. A
+host that sends nothing, or a byte now and then, is given up on, and a slow connection isn't.
+There's no deadline for a whole download, which can be hundreds of megabytes. Headers are held to
+the same rule: `fetch` gives an answer's headers whole, so each answer, a redirect's included, must
+begin within 30 s of being asked for, as any connection that keeps to the rate does, since headers
+are far smaller than 16 KB. The count starts again from each answer. Lo's own time between waits,
+such as writing what came, doesn't count.
 
 Nothing is unpacked before its hash matches, and nothing is used before its marker says it's whole.
 Absolute paths, `..`, hard links, devices and pipes are refused, and files are written before any
@@ -83,9 +97,10 @@ link is made, so nothing is written through one.
 
 Each file and folder unpacked is synced to the disk, then the marker, then the folder that holds
 them, and only then is it renamed into place. The marker records the fingerprint of the download and
-of the rules it was unpacked under (`UNPACK_RULES` in `src/unpack.ts`, raised whenever they change),
-and each file's size and each link's target. Before an install is used, each file and link is
-checked against it, by what the system knows of it, never its bytes.
+of the rules it was unpacked under (`UNPACK_RULES` in `src/unpack.ts`, raised whenever they change,
+or what the marker records does), each file's size, each folder and each link's target. Before an
+install is used, each is checked against it, by what the system knows of it, never its bytes: each
+folder must still be a folder, not a link, so nothing below it is reached through one.
 
 ### What isn't checked
 

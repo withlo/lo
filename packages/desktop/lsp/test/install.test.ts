@@ -1,7 +1,15 @@
 // Downloads and installs against a server on this machine, with archives built by each test: what
 // installs, and every way a download is refused or cut short, each leaving nothing behind.
 
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { join, relative } from 'node:path';
 
 import { describe, expect, test, vi } from 'vitest';
@@ -222,6 +230,16 @@ test('a download that stalls, before its answer or within it, is tried again', a
   expect(asked).toEqual([URL, URL, URL]);
 });
 
+test('a download that trickles in is given up as stalled, though something comes in time', async () => {
+  // A byte every 20 ms: never 200 ms with nothing, but far less than 16 KB in any of it.
+  const { installer, asked } = await setUp({
+    [URL]: [{ body: ARCHIVE, trickle: 20 }, { body: ARCHIVE }],
+  });
+  const installed = await installer.install('server', PINNED);
+  expect(readFileSync(installed.entry, 'utf8')).toBe('program');
+  expect(asked).toEqual([URL, URL]);
+});
+
 test.each([
   ['cut short', { body: ARCHIVE, cut: 40 }],
   ['shorter than pinned', { body: ARCHIVE.subarray(0, 40) }],
@@ -257,6 +275,27 @@ test('a folder whose files aren’t as its marker records is fetched again', asy
   expect(await installer.installed('server', PINNED)).toBeUndefined();
   await installer.install('server', PINNED);
   expect(readFileSync(installed.entry, 'utf8')).toBe('program');
+  expect(asked).toEqual([URL, URL]);
+});
+
+test('a folder whose folders aren’t as its marker records is fetched again', async () => {
+  // One of its folders swapped for a link to one outside, which holds files of the same sizes.
+  const archive = tarGz([
+    { path: 'server/bin/server', data: 'program', mode: 0o755 },
+    { path: 'server/lib/data', data: 'data' },
+  ]);
+  const withLib = pinned(URL, archive, 'tar.gz', 'server/bin/server');
+  const { installer, asked } = await setUp({ [URL]: { body: archive } });
+  const installed = await installer.install('server', withLib);
+  const outside = join(tempFolder(), 'lib');
+  mkdirSync(outside);
+  writeFileSync(join(outside, 'data'), 'atad');
+  const lib = join(installed.folder, 'server', 'lib');
+  rmSync(lib, { recursive: true });
+  symlinkSync(outside, lib);
+  expect(await installer.installed('server', withLib)).toBeUndefined();
+  await installer.install('server', withLib);
+  expect(readFileSync(join(lib, 'data'), 'utf8')).toBe('data');
   expect(asked).toEqual([URL, URL]);
 });
 
