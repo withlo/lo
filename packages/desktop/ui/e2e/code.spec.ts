@@ -342,7 +342,8 @@ for (const layout of ['split', 'inline'] as const) {
 
       expect(await page.evaluate(() => window.harness.peek(40, 15))).toBe(true);
       await frames(page);
-      expect(Math.abs((await lineTop(page, 40))!)).toBeLessThan(0.5);
+      // At the top, within the pixel the scroll rounds to.
+      expect(Math.abs((await lineTop(page, 40))!)).toBeLessThan(1);
       expect(await peekEnd(page)).toBeGreaterThan(300);
       const shown = await onScreen(page);
       await page.evaluate(() => window.harness.frames(10));
@@ -826,7 +827,8 @@ test('in the whole file, a peek taller than the room under its line puts the lin
 
   expect(await page.evaluate(() => window.harness.filePeek(40))).toBe(true);
   await frames(page);
-  expect(Math.abs((await lineTop(page, 40))!)).toBeLessThan(0.5);
+  // At the top, within the pixel the scroll rounds to.
+  expect(Math.abs((await lineTop(page, 40))!)).toBeLessThan(1);
   expect(await peekEnd(page)).toBeGreaterThan(200);
   const shown = await onScreen(page);
   await page.evaluate(() => window.harness.frames(10));
