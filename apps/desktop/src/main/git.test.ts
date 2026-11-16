@@ -26,6 +26,7 @@ import { describe, expect, it, onTestFinished, vi } from 'vitest';
 import {
   cacheFolder,
   clearFormerCache,
+  clearOldDataCache,
   createGit,
   curlProxy,
   formerCacheFolder,
@@ -33,6 +34,7 @@ import {
   gitSettings,
   GitStopped,
   macCaches,
+  oldDataCache,
   onceUp,
   whyNotCaches,
 } from './git.ts';
@@ -326,10 +328,61 @@ describe('formerCacheFolder', () => {
     );
   });
 
-  it('is none where the cache hasn’t moved', () => {
+  it('is none where the cache hasn’t moved, or moved only within LO_USER_DATA_DIR', () => {
     expect(formerCacheFolder({ packaged: true, platform: 'linux', home, env: {} })).toBe(undefined);
     const env = { LO_USER_DATA_DIR: '/tmp/lo' };
     expect(formerCacheFolder({ packaged: false, platform: 'darwin', home, env })).toBe(undefined);
+    // There, the one an earlier build kept is `cache`, whose folders Lo made go.
+    expect(oldDataCache({ packaged: false, platform: 'darwin', home, env })).toBe('/tmp/lo/cache');
+    expect(oldDataCache({ packaged: true, platform: 'darwin', home, env })).toBe(undefined);
+    expect(oldDataCache({ packaged: false, platform: 'linux', home, env: {} })).toBe(undefined);
+  });
+});
+
+describe('clearOldDataCache', () => {
+  it('removes only what Lo made in the cache it kept in LO_USER_DATA_DIR, never Chromium’s', async () => {
+    const data = folder();
+    const old = join(data, 'cache');
+    for (const name of [
+      'repos/github.com/owner/repo.git',
+      'checkouts/github.com/owner/repo/pull-1',
+      'code/homes/owner/repo/typescript',
+      'servers/vtsls/1',
+      'git-env/home',
+      'tmp',
+    ]) {
+      mkdirSync(join(old, name), { recursive: true });
+    }
+    // Chromium's own, the same folder on a Mac's disk.
+    mkdirSync(join(old, 'Cache_Data'));
+    writeFileSync(join(old, 'Cache_Data', 'index'), 'chromium');
+    // A link where Lo's toolchains were goes, and what it leads to stays.
+    const elsewhere = folder();
+    writeFileSync(join(elsewhere, 'kept'), '');
+    symlinkSync(elsewhere, join(old, 'toolchains'));
+    const root = join(data, 'lo-cache');
+    mkdirSync(join(root, 'tmp'), { recursive: true });
+    const cache = {
+      root,
+      temporaryPath: (extension: string) => join(root, 'tmp', `${randomUUID()}${extension}`),
+      trash: async (path: string) => {
+        await rm(path, { recursive: true, force: true });
+        return true;
+      },
+    };
+    const lines: string[] = [];
+    const clear = () => clearOldDataCache(cache, old, { log: (line) => lines.push(line) });
+
+    expect(await clear()).toBe(true);
+    expect(readdirSync(old)).toEqual(['Cache_Data']);
+    expect(readFileSync(join(old, 'Cache_Data', 'index'), 'utf8')).toBe('chromium');
+    expect(readdirSync(elsewhere)).toEqual(['kept']);
+    expect(readdirSync(join(root, 'tmp'))).toEqual([]);
+    expect(lines).toEqual([`removed what an earlier Lo kept in ${old}`]);
+    // With none of Lo's left, nothing is written there, not even a lock.
+    expect(await clear()).toBe(true);
+    expect(readdirSync(old)).toEqual(['Cache_Data']);
+    expect(lines).toHaveLength(1);
   });
 });
 

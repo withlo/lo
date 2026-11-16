@@ -169,8 +169,8 @@ export function whyNotCaches(folder: string, uid: number): string | undefined {
 /**
  * Where Lo kept its cache on a Mac before it moved out of the home folder: `Lo` (`Lo Dev` for a
  * build run from source) in `~/Library/Caches`, which goes once the cache opens
- * ({@link clearFormerCache}). There's none on Linux, or in `LO_USER_DATA_DIR`, where the cache
- * hasn't moved.
+ * ({@link clearFormerCache}). There's none on Linux, where the cache hasn't moved, nor in
+ * `LO_USER_DATA_DIR`, where it moved only within the data folder ({@link oldDataCache}).
  */
 export function formerCacheFolder(options: Placing): string | undefined {
   if (options.platform !== 'darwin') return undefined;
@@ -246,6 +246,111 @@ export async function clearFormerCache(
     log(`can't remove ${aside}: ${describe(error)}`);
   }
   log(`removed the cache an earlier Lo kept at ${former}`);
+  return true;
+}
+
+/**
+ * Where a build run from source kept its cache in `LO_USER_DATA_DIR` before {@link DATA_CACHE}:
+ * `cache`, which a Mac's disk takes for Chromium's own `Cache`. Lo's own folders in it go once the
+ * cache opens, and everything else stays ({@link clearOldDataCache}). None outside that mode.
+ */
+export function oldDataCache(options: Placing): string | undefined {
+  if (options.packaged || !options.env.LO_USER_DATA_DIR) return undefined;
+  return join(options.env.LO_USER_DATA_DIR, 'cache');
+}
+
+/** What Lo makes in its cache's folder, by name: its lock, clones, checkouts, homes and downloads. */
+const CACHE_ENTRIES = [
+  'repos',
+  'checkouts',
+  'code',
+  'servers',
+  'toolchains',
+  'git-env',
+  'tmp',
+  'lo-cache.lock',
+];
+
+/**
+ * Removes what Lo made in `old`, the cache a build run from source kept in `LO_USER_DATA_DIR`
+ * ({@link oldDataCache}), as the cache removes its own: each of {@link CACHE_ENTRIES} moved into
+ * `cache`'s `tmp/` and deleted by {@link Cache.trash}, or, on another volume, deleted where it is.
+ * A link among them goes itself, and what it leads to stays. Everything else in `old`, such as
+ * Chromium's own cache, stays, and so does `old`. Only in a folder of this user's, never a link, and
+ * never the cache itself, a folder holding it or one in it; only under its lock, never while another
+ * Lo has it open; and with none of Lo's there, nothing is written there, not even the lock. Returns
+ * whether none of Lo's is left, and notes why when some is.
+ */
+export async function clearOldDataCache(
+  cache: Pick<Cache, 'root' | 'temporaryPath' | 'trash'>,
+  old: string,
+  options: { log: (line: string) => void; uid?: number },
+): Promise<boolean> {
+  const { log, uid = process.getuid?.() ?? -1 } = options;
+  let found: Stats;
+  try {
+    found = await lstat(old);
+  } catch (error) {
+    if (codeOf(error) === 'ENOENT') return true;
+    log(`can't look at ${old}: ${describe(error)}`);
+    return false;
+  }
+  if (!found.isDirectory() || found.uid !== uid) {
+    log(`not clearing ${old}, which isn't a folder of this user's`);
+    return false;
+  }
+  if (await overlaps(old, found, cache.root)) {
+    log(`not clearing ${old}, which may be the cache Lo has open, hold it or be in it`);
+    return false;
+  }
+  const there: string[] = [];
+  for (const name of CACHE_ENTRIES) {
+    if (await lstat(join(old, name)).catch(() => undefined)) there.push(name);
+  }
+  if (there.length === 0) return true;
+  const lockFile = join(old, 'lo-cache.lock');
+  let release: () => void;
+  try {
+    release = await lockCache(lockFile);
+  } catch (error) {
+    log(`leaving what Lo kept in ${old} for now: ${describe(error)}`);
+    return false;
+  }
+  try {
+    for (const name of there.filter((each) => each !== 'lo-cache.lock')) {
+      // Still the folder Lo looked at, and each entry moved still the one it found there.
+      if (!same(await lstat(old), found)) throw new Error('it changed while Lo looked at it');
+      const path = join(old, name);
+      const entry = await lstat(path).catch(() => undefined);
+      if (entry === undefined) continue;
+      const aside = cache.temporaryPath('.trash');
+      try {
+        await rename(path, aside);
+      } catch (error) {
+        if (codeOf(error) !== 'EXDEV') throw error;
+        await rm(path, { recursive: true, force: true });
+        continue;
+      }
+      const moved = await lstat(aside).catch(() => undefined);
+      if (moved?.dev !== entry.dev || moved.ino !== entry.ino) {
+        await putBack(
+          aside,
+          [path, `${path}.${randomUUID()}`, join(cache.root, randomUUID())],
+          log,
+        );
+        throw new Error(`${name} changed while Lo moved it`);
+      }
+      await cache.trash(aside).catch((error: unknown) => {
+        log(`can't remove ${aside}: ${describe(error)}`);
+      });
+    }
+  } catch (error) {
+    await unlockCache(lockFile, release).catch(() => undefined);
+    log(`can't clear ${old}: ${describe(error)}`);
+    return false;
+  }
+  await unlockCache(lockFile, release).catch(() => undefined);
+  log(`removed what an earlier Lo kept in ${old}`);
   return true;
 }
 
@@ -429,6 +534,11 @@ export interface GitOptions {
   readonly root: string;
   /** Where an earlier Lo kept its cache, which goes once the cache opens. */
   readonly former?: string | undefined;
+  /**
+   * The cache a build run from source kept in `LO_USER_DATA_DIR` before, whose folders Lo made go
+   * once the cache opens ({@link clearOldDataCache}).
+   */
+  readonly oldData?: string | undefined;
   /** Lo's environment: where git is looked for, and the few variables git keeps from it. */
   readonly env: Environment;
   readonly platform: NodeJS.Platform;
@@ -600,11 +710,16 @@ class GitHost implements MainGit {
   }
 
   async #cleanUp(cache: Cache): Promise<void> {
-    const { former, log } = this.#options;
+    const { former, oldData, log } = this.#options;
     // First, so the earlier cache is out of the way before this one's own cleanup.
     if (former !== undefined) {
       await clearFormerCache(cache, former, { log }).catch((error: unknown) => {
         log(`can't remove ${former}: ${describe(error)}`);
+      });
+    }
+    if (oldData !== undefined) {
+      await clearOldDataCache(cache, oldData, { log }).catch((error: unknown) => {
+        log(`can't clear ${oldData}: ${describe(error)}`);
       });
     }
     try {

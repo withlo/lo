@@ -438,14 +438,17 @@ export class ServingViews {
    * without it. What runs on the pull request's checkouts stops first, so nothing runs on it while
    * it's made, then starts on the new one. One made again that a server finds no better, before
    * it's ever found usable, fails instead, so the status bar says so and "Restart" tries again.
-   * Says which it did, or what another question that found it first did.
+   * Says which it did. A late answer, about a checkout that's since been made again, let go of or
+   * no longer trusted, gets what holds now, or `false`, so its note says nothing out of date.
    */
-  #remake(input: ServingInput, head: Oid, made: Checkout): 'remaking' | 'unusable' {
+  #remake(input: ServingInput, head: Oid, made: Checkout): 'remaking' | 'unusable' | false {
     const key = checkoutKey(input, head);
     const now = this.#checkouts.get(key);
+    if (!this.#trustedNow(input) || this.#dropping.has(pullKey(input))) return false;
     if (now !== made) {
-      // Another question found it first, or it was let go of.
-      return now !== undefined && now.failed === undefined ? 'remaking' : 'unusable';
+      // Another question found it first.
+      if (now === undefined || now.folder !== undefined) return false;
+      return now.failed === undefined ? 'remaking' : 'unusable';
     }
     const { repo, number } = input;
     const stopping = () =>
@@ -478,7 +481,9 @@ export class ServingViews {
   /**
    * Forgets the checkouts of `closed`'s pull request once no view of it is followed, so the next
    * view of it checks its head out again, which makes one that's gone or no longer the local copy's
-   * again. What runs on them runs on until the pool stops it.
+   * again. What runs on them runs on until the pool stops it, so checking out again, which takes the
+   * clone's lock and forces the head's files back as git has them, can happen while a server that
+   * ran on the checkout is still stopping, or still runs there: it writes only what git checks out.
    */
   #forgetUnfollowed(closed: Pick<ServingInput, 'repo' | 'number'>): void {
     const key = pullKey(closed);

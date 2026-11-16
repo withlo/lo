@@ -488,7 +488,8 @@ describe('following views for servers', () => {
   it('makes a checkout a server finds isn’t the local copy’s again, with what ran on it stopped first', async () => {
     let usable = false;
     const { copy, checkouts } = unusableAt(() => usable);
-    const { serving, started, alive, lets } = onPool(new Map([['v1', input(copy)]]));
+    const shown = new Map([['v1', input(copy)]]);
+    const { serving, started, alive, lets } = onPool(shown);
     serving.update('v1');
     await drain();
     const [first] = started;
@@ -500,14 +501,23 @@ describe('following views for servers', () => {
       kind: 'starting',
       name: 'TypeScript',
     });
-    usable = true;
     await drain();
     expect(lets).toEqual(['stop Rozed-Dev/E2E#80']);
     expect(first?.exited).toBe(true);
     expect(checkouts).toEqual([`80@${head}`, `80@${head}`]);
     expect(alive().map((server) => server.spec.root)).toEqual([`/cache/checkouts/pull-80/${head}`]);
+    // A late answer about the old checkout says nothing of one that's been made again.
+    expect(await ready.matches('src/a.ts', blobOf('after'))).toBe(false);
+    usable = true;
     const again = readyServer(serving, alive()[0]);
     expect(await again.matches('src/a.ts', blobOf('after'))).toBe(true);
+    // Nor, once trust goes, of one that isn't usable.
+    usable = false;
+    shown.set('v1', input(copy, { trust: 'none', off: true }));
+    serving.update('v1');
+    await drain();
+    expect(await again.matches('src/a.ts', blobOf('after'))).toBe(false);
+    expect(checkouts).toHaveLength(2);
   });
 
   it('says a checkout made again that’s no better failed, and makes it again on Restart', async () => {

@@ -3,6 +3,7 @@
 
 import {
   appendFileSync,
+  chmodSync,
   existsSync,
   mkdirSync,
   readdirSync,
@@ -209,6 +210,78 @@ test('a checkout past a link in the cache is outside Lo’s checkouts, wherever 
   const theirs = climbing.cache.checkoutsFolder('owner', 'repo');
   plantCheckout(climbing.repo, `${theirs}/pull-1/../../../../../../elsewhere/.git`);
   expect(await madeAgain(climbing.cache, climbing.repo)).toBe(true);
+});
+
+test('a checkout past a link Lo can’t follow in its checkouts is outside them', async () => {
+  // A link to nothing, which could be made to lead anywhere later, and a loop of links.
+  for (const plant of [
+    (pull: string) => symlinkSync(join(tempFolder(), 'gone'), pull),
+    (pull: string) => symlinkSync('pull-1', pull),
+  ]) {
+    const { cache, repo } = await fetched();
+    const checkouts = cache.checkoutsFolder('owner', 'repo');
+    mkdirSync(checkouts, { recursive: true });
+    plant(join(checkouts, 'pull-1'));
+    plantCheckout(repo, join(checkouts, 'pull-1', 'abc', '.git'));
+    expect(await madeAgain(cache, repo)).toBe(true);
+  }
+});
+
+// Root can look in any folder.
+test.skipIf(process.getuid?.() === 0)(
+  'a checkout in a folder Lo can’t look in is outside its checkouts',
+  async () => {
+    const { cache, repo } = await fetched();
+    const pull = join(cache.checkoutsFolder('owner', 'repo'), 'pull-1');
+    mkdirSync(join(pull, 'abc'), { recursive: true });
+    plantCheckout(repo, join(pull, 'abc', '.git'));
+    chmodSync(pull, 0);
+    try {
+      expect(await madeAgain(cache, repo)).toBe(true);
+    } finally {
+      chmodSync(pull, 0o755);
+    }
+  },
+);
+
+test('a checkout’s folder names its clone and its checkout as written, never through a link outside the cache', async () => {
+  // Its clone, through a link outside the cache: git writes `../..`.
+  const common = await fetched();
+  const clone = join(tempFolder(), 'clone.git');
+  symlinkSync(common.repo.folder, clone);
+  plantCheckout(
+    common.repo,
+    join(common.cache.checkoutsFolder('owner', 'repo'), 'pull-1', 'abc', '.git'),
+  );
+  writeFileSync(join(common.repo.folder, 'worktrees', 'pull-1', 'commondir'), `${clone}\n`);
+  expect(await madeAgain(common.cache, common.repo)).toBe(true);
+
+  // Its checkout, named outside the cache, where a link leads back into Lo's checkouts.
+  const named = await fetched();
+  const checkouts = named.cache.checkoutsFolder('owner', 'repo');
+  mkdirSync(join(checkouts, 'pull-1', 'abc'), { recursive: true });
+  const outside = join(tempFolder(), 'checkouts');
+  symlinkSync(checkouts, outside);
+  plantCheckout(named.repo, join(outside, 'pull-1', 'abc', '.git'));
+  expect(await madeAgain(named.cache, named.repo)).toBe(true);
+});
+
+test('a checkout in a folder made outside Lo, in another case than Lo’s name for it, is kept', async () => {
+  const { cache, repo, pr, logged } = await fetched();
+  // Lo names its folders in lowercase. On a Mac's disk, which ignores case, `Owner` is the folder
+  // Lo names `owner`: its real path says `Owner`, and git writes the name Lo gave.
+  mkdirSync(join(cache.root, 'checkouts', 'github.com', 'Owner'), { recursive: true });
+  const opened = await cache.open('owner', 'repo');
+  const checkout = await opened.checkout(1, pr.head);
+  opened.close();
+
+  expect(await madeAgain(cache, repo)).toBe(false);
+  expect(logged).toEqual([]);
+  const again = await cache.open('owner', 'repo');
+  expect(await again.hashCheckoutFile(checkout, Buffer.from('feature.txt'))).toBe(
+    git(pr.remote.work, 'rev-parse', `${pr.head}:feature.txt`),
+  );
+  again.close();
 });
 
 test('a clone’s attributes, which would change a checkout’s bytes, make it again', async () => {

@@ -430,7 +430,9 @@ Only main runs git, through `@lo/git`, and the background process never sees git
   its own: moved into its `tmp/` and deleted with the cache's other deletions, or deleted where it
   is when it's on another volume. Only a folder, never a link, that holds a cache's folders goes,
   never the open cache or a folder holding it, whatever links lead there, and only under its lock,
-  never while another Lo has it open.
+  never while another Lo has it open. In `LO_USER_DATA_DIR`, what an earlier build made in the
+  `cache` it kept there goes the same way, folder by folder, by the names Lo gives them, and
+  Chromium's own files there stay.
 - Every git gets an environment of Lo's own making, never main's, and only a fetch gets the
   account's token, from a source read as each fetch starts. Fetches take the proxy Lo's own requests
   take.
