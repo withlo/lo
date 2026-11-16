@@ -1096,8 +1096,10 @@ with trust: highlighting, the diff, comments and the syntax index work the same 
   answers it with `answerDialogs` in `e2e/app.ts`.
 - An untrusted view's banner shows until it's dismissed for its repository (`code_dismissed`).
   Settings' Trust section lists the entries; its "Remove", or "Stop trusting this repo", takes one
-  out. However an entry leaves the file, Lo lets go of the checkouts it alone trusted
-  (`main/entries.ts`, `main/checkouts.ts`).
+  out: the entry that trusts the view, by the newest read, while it's checked again after a push
+  too, or none. However an entry leaves the file, Lo stops the servers it alone trusted and lets go
+  of their checkouts (`main/entries.ts`, `main/checkouts.ts`), and as it starts, of any checkout no
+  entry trusts, for one taken out while Lo was closed.
 
 ### The syntax index
 
@@ -1143,6 +1145,42 @@ parse them under `@lo/syntax`'s limits.
   found goes to every one of them, 5,000 uses at most, "By name"; the hover is the top definition's
   line; the outline is the file's definitions, nested. An answer names its file by the side's commit
   and path, and the first 10 come with 30 lines around them.
+
+### Servers in the app
+
+The `code` feature runs language servers on the views the reader trusts, and their answers come
+before the syntax index's. A server is whatever an adapter (`main/adapters.ts`) says to start for
+its languages; Lo ships none yet.
+
+- Nothing starts for a view nothing trusts: no download, no checkout, no server. Once a trusted view
+  is on screen and a file its pull request adds or changes on the new side, or one asked about, is
+  in an adapter's language, main checks out its head (`@lo/git`'s `checkout`) and starts that server
+  there (`main/serving.ts`). A view checked again after a push keeps what runs, but nothing starts
+  or moves for it until it's trusted again.
+- One server runs per repository and adapter, on the checkout of the head on screen, and moves with
+  it: by `workspace/didChangeWorkspaceFolders` where it takes that, else by starting again
+  (`main/servers.ts`). Its `HOME` is `<cache>/code/homes/<owner>/<name>/<adapter>`, and Lo's git is
+  first on its `PATH`.
+- It stops 10 minutes after a view of its repository was last on screen, once no tab of its
+  repository is open, once its repository or pull request isn't trusted, and as Lo quits, each
+  within 5 s. After a crash it starts again by itself once, if it had run for a minute; otherwise it
+  waits for "Restart". At most 4 run, holding 8 GB in all, read every 5 s: past either, the one used
+  longest ago that isn't on screen stops, and one on screen is never stopped for another.
+- A server's answer comes first, labelled with its name, and the index answers in its place when it
+  can't (`main/served.ts`): a definition in 2 s (an adapter may allow longer), references in 10 s, a
+  hover in 1.5 s, inlay hints and the outline in 3 s. An empty definition falls back to the file's
+  import and the index, and an empty hover to the index; empty references or an empty outline are
+  the server's answer. A place outside the checkout shows as "Outside this repository" and is never
+  read. The old side always answers from the index, and a server answers only about the head it runs
+  on, for a file whose checkout matches git's.
+- The status bar has an item for each server, its details offering "Restart", "Show the log" and
+  "Stop trusting this repo"; on an untrusted view, "Language servers off" offers to trust it
+  (`code.servers`, the `served` topic). The log dialog shows the last 1,000 lines, and copies as
+  many of the newest as fit in 1 MB.
+- In a build run from source, `LO_TEST_SERVERS` names a manifest of servers to run for tests
+  (`main/tests.ts`), each by absolute path with its arguments and nothing downloaded; `testServers`
+  in `e2e/app.ts` writes one for the fake server. A packaged build never reads it, which
+  `scripts/check-package.sh` checks.
 
 ## The interface
 

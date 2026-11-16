@@ -9,7 +9,9 @@
 # - registered, with the Viewer role, for `lo:` links and web links;
 # - quitting at once, saying why, when started with anything but a link, a switch after whitespace
 #   included, or with a variable set that would write out or expose its traffic, such as
-#   SSLKEYLOGFILE.
+#   SSLKEYLOGFILE;
+# - never reading the test servers' manifest LO_TEST_SERVERS names, which only a build run from
+#   source runs servers from.
 # Usage: sh scripts/check-package.sh <zip>
 set -euf
 zip=${1:?usage: check-package.sh <zip>}
@@ -128,5 +130,24 @@ done
 [ ! -e "$work/keys.log" ] || fail "started with SSLKEYLOGFILE or --ssl-key-log-file, Lo wrote to it"
 [ ! -e "$work/net.json" ] || fail "started with --log-net-log, Lo wrote to it"
 
-[ "$status" -eq 0 ] && echo "$zip passed: arm64, ad hoc with the hardened runtime, fuses, asar and links, and it refuses switches, files and variables."
+# Nor does it read a manifest of test servers. LO_TEST_SERVERS names a pipe, which a writer waits to
+# open until something opens it to read: Lo, running long enough to have started its features,
+# never does.
+manifest=$work/servers.json
+mkfifo "$manifest"
+env LO_TEST_SERVERS="$manifest" CFFIXED_USER_HOME="$work/home" "$app/Contents/MacOS/Lo" \
+  > "$work/servers.log" 2>&1 &
+lo=$!
+(printf '{ "servers": [] }\n' > "$manifest" && touch "$work/servers.read") &
+writer=$!
+sleep 10
+if kill -0 "$lo" 2> /dev/null; then
+  kill "$lo" && wait "$lo" || true
+else
+  fail "started with LO_TEST_SERVERS, Lo ended before its features had started"
+fi
+{ kill "$writer" && wait "$writer"; } 2> /dev/null || true
+[ ! -e "$work/servers.read" ] || fail "started with LO_TEST_SERVERS, Lo read the manifest it names"
+
+[ "$status" -eq 0 ] && echo "$zip passed: arm64, ad hoc with the hardened runtime, fuses, asar and links, it refuses switches, files and variables, and it reads no test servers."
 exit "$status"

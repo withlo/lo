@@ -9,17 +9,24 @@
 // and has the background process parse them, over main's own port. Its store is in the cache, on
 // a worker thread of main's, and the window asks it questions over the code port, a port of main's
 // own handed to each load of the page.
+//
+// Language servers run only on views the reader trusts, on a checkout of the head on screen, one
+// for each repository and language (`servers.ts`, `serving.ts`). On the new side, a server's
+// answer within its deadline wins over the index's (`served.ts`).
 
-import { join } from 'node:path';
+import { homedir } from 'node:os';
+import { dirname, join } from 'node:path';
 
-import { parseOid } from '@lo/git';
+import { defaultPlaces, parseOid, serverGitEnvironment, whyDistrusted } from '@lo/git';
 import { PullRef, readPullRequestRepositories, type PullRequestRepositories } from '@lo/github';
-import { app, BrowserWindow, dialog, MessageChannelMain } from 'electron';
+import { findCopy, Installer, MANIFEST, startServer } from '@lo/lsp';
+import { app, BrowserWindow, dialog, MessageChannelMain, net } from 'electron';
 
 import { IpcError } from '../../../ipc/contract.ts';
 import { codeHandOver, jobs, type CodeHandOver } from '../../../ipc/jobs.ts';
 import { mainJobs, portOf } from '../../../main/background.ts';
 import { defineFeature, type FeatureContext } from '../../../main/features.ts';
+import { netFetch } from '../../../main/fetch.ts';
 import { github } from '../../accounts/service.ts';
 import { comparisons } from '../../revisions/service.ts';
 import { clearing, settings } from '../../settings/service.ts';
@@ -27,7 +34,8 @@ import { tabs } from '../../tab/service.ts';
 import { contract } from '../contract.ts';
 import { contract as codeJobs } from '../jobs.ts';
 import { readTrusted, trusted, type TrustEntry } from '../settings.ts';
-import { letGo } from './checkouts.ts';
+import { ADAPTERS, type Adapter } from './adapters.ts';
+import { letGo, letGoUntrusted } from './checkouts.ts';
 import { TrustAsker, type AskWindow } from './confirm.ts';
 import { Dismissed } from './dismissed.ts';
 import {
@@ -40,17 +48,20 @@ import {
   type Drop,
 } from './entries.ts';
 import { TrustViews, type ViewInfo } from './views.ts';
-import {
-  definitions,
-  hints,
-  hover,
-  outline,
-  references,
-  snippet,
-  type Answering,
-} from './answers.ts';
+import { snippet, type Answering } from './answers.ts';
 import { CodeIndex, type ViewInput, type ViewSides } from './indexer.ts';
 import { servePort, type Answerers } from './serve.ts';
+import {
+  servedDefinitions,
+  servedHints,
+  servedHover,
+  servedOutline,
+  servedReferences,
+  type ServerOf,
+} from './served.ts';
+import { ServerPool } from './servers.ts';
+import { repoKey, ServingViews, type ServingInput } from './serving.ts';
+import { readTestServers, testServersFile } from './tests.ts';
 import { storeWorker, type SymbolStore } from './store/client.ts';
 // electron-vite builds the store's worker and gives its path as this import's default.
 // oxlint-disable-next-line import/default
@@ -72,6 +83,12 @@ let dismissed: Dismissed | undefined;
 const stops: (() => void)[] = [];
 let index: CodeIndex | undefined;
 let store: SymbolStore | undefined;
+let pool: ServerPool | undefined;
+let serving: ServingViews | undefined;
+/** The language servers Lo can run: its own, and in a build run from source, a test's. */
+let adapters: readonly Adapter[] = ADAPTERS;
+/** What downloads language servers, once the first one is needed. */
+let installer: Installer | undefined;
 /** The code port of each window's page, by its contents' id, while it's loaded. */
 const ports = new Map<number, () => void>();
 
@@ -230,14 +247,26 @@ function sidesOf(id: string): ViewSides {
   throw new IpcError('unavailable', 'The syntax index waits for the local copy.');
 }
 
-/** What answers each of the code port's questions, from the syntax index. */
+/** The language server for a file of view `view`'s new side, if one reads it there. */
+function serverOf(view: string): ServerOf {
+  return (file) => serving?.serverFor(view, file.commit, file.path);
+}
+
+/**
+ * What answers each of the code port's questions: a language server first, on the new side of a
+ * view the reader trusts, else the syntax index.
+ */
 function answerers(answering: Answering): Answerers {
   return {
-    definitions: (input, signal) => definitions(answering, sidesOf(input.view), input, signal),
-    references: (input, signal) => references(answering, sidesOf(input.view), input, signal),
-    hover: (input, signal) => hover(answering, sidesOf(input.view), input, signal),
-    hints: (input) => hints(sidesOf(input.view), input),
-    outline: (input) => outline(answering, sidesOf(input.view), input),
+    definitions: (input, signal) =>
+      servedDefinitions(answering, sidesOf(input.view), input, signal, serverOf(input.view)),
+    references: (input, signal) =>
+      servedReferences(answering, sidesOf(input.view), input, signal, serverOf(input.view)),
+    hover: (input, signal) =>
+      servedHover(answering, sidesOf(input.view), input, signal, serverOf(input.view)),
+    hints: (input, signal) => servedHints(sidesOf(input.view), input, signal, serverOf(input.view)),
+    outline: (input, signal) =>
+      servedOutline(answering, sidesOf(input.view), input, signal, serverOf(input.view)),
     snippet: (input) => snippet(sidesOf(input.view), input),
   };
 }
@@ -320,6 +349,135 @@ function startIndex(context: Context): void {
   for (const window of BrowserWindow.getAllWindows()) handPorts(context, window, answer);
 }
 
+/** View `id` as its language servers follow it, or nothing once it's closed. */
+function servingInput(context: Context, id: string): ServingInput | undefined {
+  const info = context.use(tabs).pull(id);
+  if (!info) return undefined;
+  const kind = views?.decision(id)?.trust.kind;
+  const { local, shown } = info;
+  const compared = indexInput(context, id);
+  return {
+    id,
+    repo: `${info.repository.owner}/${info.repository.name}`,
+    number: info.number,
+    trust:
+      kind === 'trusted'
+        ? 'trusted'
+        : kind === 'checking' || kind === 'waiting'
+          ? 'checking'
+          : 'none',
+    off: kind === 'untrusted',
+    head:
+      local.kind === 'ready' && shown !== undefined && local.head === shown
+        ? parseOid(shown)
+        : undefined,
+    sides: compared?.kind === 'ready' ? { new: compared.new, old: compared.old } : undefined,
+    clone: () => context.use(tabs).clone(id),
+  };
+}
+
+/** Whether `part` of a repository's name is a plain folder's name. */
+function plainName(part: string): boolean {
+  return /^[\w.-]{1,100}$/.test(part) && part !== '.' && part !== '..';
+}
+
+/** A server's `HOME`, under the cache: `code/homes/<owner>/<name>/<adapter>`. */
+function homeOf(root: string, repo: string, adapter: Adapter): string | undefined {
+  const parts = repo.split('/');
+  if (parts.length !== 2 || !parts.every(plainName)) return undefined;
+  return join(root, 'code', 'homes', ...parts, adapter.id);
+}
+
+/** Installs what Lo's manifest pins as `id`, in the cache, reporting the download's progress. */
+function install(
+  context: Context,
+  id: string,
+  progress: (done: number, total: number) => void,
+  signal: AbortSignal,
+) {
+  const cache = context.git.cache;
+  if (!cache) throw new Error('Lo has no cache to download language servers into.');
+  const pinned = Object.hasOwn(MANIFEST, id) ? MANIFEST[id] : undefined;
+  if (!pinned) throw new Error(`Lo's list of language servers has no ${id}.`);
+  installer ??= new Installer({
+    folder: join(cache.root, 'servers'),
+    // Through Chromium's network stack, with the system's proxy, as every read Lo makes.
+    fetch: netFetch((options) => net.request(options), { stream: true }),
+  });
+  return installer.install(id, pinned, { signal, progress });
+}
+
+/** The first of `candidates` that may run as a server: a copy the user installed. */
+async function installedCopy(context: Context, candidates: readonly string[]) {
+  const cache = context.git.cache;
+  const { groups } = defaultPlaces(process.platform);
+  const found = await findCopy(candidates, {
+    distrust: (program) => whyDistrusted(program, groups),
+    outside: cache ? [cache.root] : [],
+    home: homedir(),
+  });
+  return found.program;
+}
+
+/**
+ * Starts following views for their language servers: the servers a build run from source's test
+ * names, the pool they run in, and each view's needs, as its tab, its comparison, its trust, git
+ * and the view on screen change.
+ */
+function startServers(context: Context): void {
+  const file = testServersFile({ packaged: app.isPackaged, env: process.env });
+  if (file !== undefined) adapters = [...ADAPTERS, ...readTestServers(file)];
+  const servers = new ServerPool({
+    prepare: (adapter, progress, signal) =>
+      adapter.prepare({
+        install: (id) => install(context, id, progress, signal),
+        findCopy: (candidates) => installedCopy(context, candidates),
+        signal,
+      }),
+    start: (spec) => startServer({ ...spec, version: app.getVersion() }),
+    base(repo, adapter) {
+      const cache = context.git.cache;
+      const found = context.git.status;
+      if (!cache || found?.status !== 'found') return undefined;
+      const home = homeOf(cache.root, repo, adapter);
+      if (home === undefined) return undefined;
+      // Lo's own git first, which is new enough for the settings git's variables give it.
+      return { home, git: serverGitEnvironment(), path: [dirname(found.git.program)] };
+    },
+    changed: (repo) => serving?.changed(repo),
+    log,
+  });
+  pool = servers;
+  const service = context.use(tabs);
+  const followed = new ServingViews({
+    pool: servers,
+    adapters: () => adapters,
+    view: (id) => servingInput(context, id),
+    onScreen: () => service.list().active,
+    publish: (shown) => context.publish('served', shown),
+    log,
+  });
+  serving = followed;
+  const all = () => {
+    for (const tab of service.list().tabs) if (tab.kind === 'pull') followed.update(tab.id);
+  };
+  stops.push(
+    service.onPull((id) => followed.update(id)),
+    context.use(comparisons).onChange((id) => followed.update(id)),
+    // The view on screen, which servers start for and move to.
+    service.onTabs(() => followed.updateAll()),
+  );
+  context.git.onStatus(() => all());
+  all();
+}
+
+/** The servers to stop for `drop`, by the pull request each runs on. */
+function stoppedBy(drop: Drop): (pull: number | undefined) => boolean {
+  return 'pull' in drop
+    ? (pull) => pull === drop.pull
+    : (pull) => pull === undefined || !drop.except.includes(pull);
+}
+
 export default defineFeature(contract, {
   uses: [tabs, github, settings, comparisons, clearing],
   handlers: {
@@ -333,7 +491,7 @@ export default defineFeature(contract, {
         const view = viewInfo(context, input.view);
         if (!view) throw new IpcError('missing', "There's no pull request's tab with that id.");
         viewsOf().update(input.view);
-        await untrust(context, meant(view, viewsOf().decision(input.view)));
+        await untrust(context, meant(viewsOf().trustedBy(input.view)));
         return;
       }
       await untrust(context, (entry) => removes(input, entry));
@@ -347,6 +505,12 @@ export default defineFeature(contract, {
       viewsOf().updateAll();
     },
     index: ({ view }) => index?.state(view) ?? null,
+    servers: ({ view }) => serving?.servers(view) ?? null,
+    async restart({ view, server }) {
+      if (!serving) throw new IpcError('unavailable', 'Lo is starting, or quitting.');
+      await serving.restart(view, server);
+    },
+    log: ({ view, server }) => serving?.log(view, server) ?? null,
   },
   start(context) {
     const service = context.use(tabs);
@@ -356,10 +520,15 @@ export default defineFeature(contract, {
       view: (id) => viewInfo(context, id),
       read: (view) => readRepositories(context, view.id),
       dismissed: (repo) => kept.has(repo),
-      publish: (status) => context.publish('status', status),
+      publish(status) {
+        context.publish('status', status);
+        // Servers follow trust: none for a view nothing trusts.
+        serving?.update(status.view);
+      },
       log,
     });
     views = followed;
+    startServers(context);
     asker = new TrustAsker<BrowserAsk>({
       view(id) {
         const view = viewInfo(context, id);
@@ -376,13 +545,25 @@ export default defineFeature(contract, {
       },
       write: (entry) => context.use(settings).update(trusted, (list) => withEntry(list, entry)),
     });
-    // Until language servers run, there's only the checkouts to let go of.
+    // What ran on them stops first, then the checkouts go.
     untrusted.add(async (drop) => {
+      await pool?.stopWhere(repoKey(drop.repo), stoppedBy(drop));
       const cache = context.git.cache;
       if (cache) await letGo(cache, drop);
+      serving?.forget(drop.repo, (pull) => stoppedBy(drop)(pull));
     });
     /** The entries as the file last had them, once it's been read. */
     let before: readonly TrustEntry[] | undefined;
+    let swept = false;
+    // Once, as Lo starts, the checkouts of entries taken out of the file while Lo was closed go.
+    const sweep = () => {
+      const cache = context.git.cache;
+      if (swept || !cache || before === undefined) return;
+      swept = true;
+      letGoUntrusted(cache, before, log).catch((error: unknown) => {
+        log(`couldn't let go of checkouts nothing trusts: ${String(error)}`);
+      });
+    };
     stops.push(
       context.use(settings).watch(trusted, (value) => {
         const entries = readTrusted(value).entries;
@@ -391,8 +572,10 @@ export default defineFeature(contract, {
         // Views are decided again first, so nothing runs on what's let go of.
         followed.setEntries(entries);
         letGoOf(dropsFor(gone, entries));
+        sweep();
       }),
       service.onPull((id) => followed.update(id)),
+      context.git.onCache(() => sweep()),
     );
     context.git.onStatus(() => followed.updateAll());
     for (const tab of service.list().tabs) if (tab.kind === 'pull') followed.update(tab.id);
@@ -406,10 +589,15 @@ export default defineFeature(contract, {
     views?.stop();
     views = undefined;
     asker = undefined;
+    serving?.stop();
+    serving = undefined;
+    const servers = pool;
+    pool = undefined;
     index?.stop();
     index = undefined;
     const closing = store;
     store = undefined;
-    await closing?.stop();
+    // Each server stops within its own limit, inside the feature's 5 s.
+    await Promise.all([servers?.stop(), closing?.stop()]);
   },
 });

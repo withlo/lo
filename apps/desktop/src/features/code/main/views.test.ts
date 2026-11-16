@@ -220,6 +220,40 @@ describe('following views', () => {
     expect(reads).toHaveBeenCalledTimes(3);
   });
 
+  it('says which entry trusts a view, even while it’s checked again after a push', async () => {
+    const fork = { id: 'R_fork', name: 'rozed-bot/e2e' };
+    const pull: TrustEntry = {
+      kind: 'pull',
+      repo: 'rozed-dev/e2e',
+      id: E2E.id,
+      pull: 97,
+      from: fork.name,
+      fromId: fork.id,
+    };
+    const open = new Map([['t1', info('t1', 97, { fork: fork.name })]]);
+    let answer: ((repositories: PullRequestRepositories) => void) | undefined;
+    const { views } = follow(
+      open,
+      () =>
+        new Promise((resolve) => {
+          answer = resolve;
+        }),
+    );
+    views.setEntries([ENTRY, pull]);
+    views.update('t1');
+    await settle();
+    expect(views.trustedBy('t1')).toBeUndefined();
+    answer?.({ base: E2E, head: fork, isCrossRepository: true });
+    await settle();
+    expect(views.trustedBy('t1')).toEqual(pull);
+    // A newer push, still fetching: checked again, and still the pull request's entry, never the
+    // repository's.
+    open.set('t1', info('t1', 97, { fork: fork.name, heads: 'decade c0ffee', local: false }));
+    views.update('t1');
+    expect(views.status('t1')?.trust.kind).not.toBe('trusted');
+    expect(views.trustedBy('t1')).toEqual(pull);
+  });
+
   it('keeps a read made as the reader asks to trust, for the views of its pull request', async () => {
     const open = new Map([['t1', info('t1', 80)]]);
     const { views, reads } = follow(open, () => Promise.resolve(OWN));

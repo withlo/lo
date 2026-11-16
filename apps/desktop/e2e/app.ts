@@ -7,6 +7,7 @@ import { buffer } from 'node:stream/consumers';
 import { fileURLToPath } from 'node:url';
 
 import { STACK_PULLS, writeStackRemote } from '@lo/testing/git';
+import { fakeServer, readReport, type Scenario, type Seen } from '@lo/testing/lsp';
 import { serveReplay, type ReplayServer } from '@lo/testing/server';
 import {
   _electron as electron,
@@ -525,6 +526,56 @@ export const onStacks = test.extend<{
     });
   },
 });
+
+/** The fake language server a test's Lo runs for TypeScript, in place of a real one. */
+export interface TestServers {
+  /** What Lo's environment needs to run it: where its manifest is. */
+  readonly env: { readonly LO_TEST_SERVERS: string };
+  /** What every copy of it Lo started has seen so far, in order. */
+  seen(): Seen[];
+  /** Kills every copy of it Lo started, with its group, once Lo is closed. */
+  kill(): void;
+}
+
+/**
+ * Writes, into `folder`, the manifest of test servers a build run from source reads from
+ * `LO_TEST_SERVERS`: the fake server, named TypeScript, doing what `scenario` says. A packaged
+ * build never reads one.
+ */
+export function testServers(folder: string, scenario: Omit<Scenario, 'report'>): TestServers {
+  mkdirSync(folder, { recursive: true });
+  const server = fakeServer(folder, scenario);
+  const manifest = join(folder, 'servers.json');
+  writeFileSync(
+    manifest,
+    JSON.stringify({
+      servers: [
+        {
+          id: 'typescript',
+          name: 'TypeScript',
+          languages: { typescript: 'typescript', tsx: 'typescriptreact' },
+          program: server.program,
+          args: server.args,
+        },
+      ],
+    }),
+  );
+  const seen = () => readReport(server.report);
+  return {
+    env: { LO_TEST_SERVERS: manifest },
+    seen,
+    kill: () => {
+      for (const each of seen()) {
+        if (each.event !== 'started') continue;
+        try {
+          process.kill(-each.pid, 'SIGKILL');
+        } catch {
+          // Gone already, as it should be once Lo has closed.
+        }
+      }
+    },
+  };
+}
 
 /**
  * Answers main's native dialogs (`dialog.showMessageBox`) from now on with the button labelled

@@ -1,15 +1,28 @@
 // The syntax index in the app: Lo started on the replay server, as rozed-bot, opens
 // rozed-dev/e2e#80, which nothing trusts, and builds its index from the local copy, which the
 // status bar says while it builds and once it's ready. The code port main hands the page answers a
-// definition from it, and refuses a view that isn't open. GitHub answers from `app_e2e`.
+// definition from it, and refuses a view that isn't open. Once the repo is trusted, a language
+// server, here the fake one, runs on the PR's head, its answer to a definition comes first, and
+// "Restart" in its status item starts it again. GitHub answers from `app_e2e`, and, once the repo
+// is trusted, from `pull_request_repositories_e2e`.
 
 import { writeFileSync } from 'node:fs';
 
+import { cassette, Replay } from '@lo/testing';
 import { APP_PULL, writeAppRemote } from '@lo/testing/git';
 import { serveReplay, type ReplayServer } from '@lo/testing/server';
 import type { ElectronApplication, Page } from '@playwright/test';
 
-import { appFolder, DIFF_FIRST, expect, KEYCHAIN, test as base } from './app.ts';
+import {
+  answerDialogs,
+  appFolder,
+  DIFF_FIRST,
+  expect,
+  KEYCHAIN,
+  test as base,
+  testServers,
+  type TestServers,
+} from './app.ts';
 
 /** A stand-in token, never a real one: the cassette was recorded with the same. */
 const TOKEN = 'gho_FAKE_E2E_ACCOUNT';
@@ -167,3 +180,131 @@ test('builds the syntax index of a PR nothing trusts, says so in the status bar,
     ).toMatchObject({ id: 3, ok: false, error: { code: 'invalid' } });
   });
 });
+
+/** Where the fake server says `Line` is: line 2 of src/parser.ts, in the checkout of the head. */
+const LINE = {
+  'textDocument/definition': {
+    '*': [
+      {
+        uri: '$ROOT/src/parser.ts',
+        range: { start: { line: 1, character: 17 }, end: { line: 1, character: 21 } },
+      },
+    ],
+  },
+};
+
+const trusting = test.extend<{ servers: TestServers }>({
+  // Playwright reads a fixture's dependencies from its first parameter, which must be a pattern.
+  // oxlint-disable-next-line no-empty-pattern
+  github: async ({}, use) => {
+    const interactions = ['app_e2e', 'pull_request_repositories_e2e'].flatMap((name) =>
+      cassette(name).interactions.map(({ interaction }) => interaction),
+    );
+    const server = await serveReplay(new Replay('app_e2e with its repositories', interactions));
+    await use(server);
+    await server.close();
+  },
+  // Playwright reads a fixture's dependencies from its first parameter, which must be a pattern.
+  // oxlint-disable-next-line no-empty-pattern
+  servers: async ({}, use) => {
+    const servers = testServers(test.info().outputPath('servers'), { answers: LINE });
+    await use(servers);
+    // After Lo has closed, which stops them itself.
+    servers.kill();
+  },
+  launch: async ({ github, servers }, use) => {
+    const tokenFile = test.info().outputPath('token');
+    writeFileSync(tokenFile, `${TOKEN}\n`);
+    await use({
+      args: [appFolder, ...KEYCHAIN],
+      env: {
+        LO_GITHUB: new URL(github.urls.api).origin,
+        LO_TEST_TOKEN_FILE: tokenFile,
+        LO_GIT_REMOTE: writeAppRemote(test.info().outputPath('remote')),
+        ...servers.env,
+      },
+    });
+  },
+});
+
+trusting(
+  'runs a language server on a trusted PR’s head, answers from it first, and restarts it from its status item',
+  async ({ app, page, servers }) => {
+    test.setTimeout(120_000);
+    await catchCodePort(app, page);
+    const id = await open(page);
+    const status = page.locator('footer[aria-label="Status"]');
+    const started = () => servers.seen().filter((seen) => seen.event === 'started');
+
+    await test.step('nothing runs until the repo is trusted', async () => {
+      await expect
+        .poll(async () => {
+          const reply = await page.evaluate((view) => window.lo.invoke('code.state', { view }), id);
+          return reply.ok ? reply.value : reply;
+        })
+        .toMatchObject({ trust: { kind: 'untrusted' } });
+      expect(started()).toEqual([]);
+      await answerDialogs(app, 'Trust');
+      expect(
+        await page.evaluate(
+          (view) => window.lo.invoke('code.trust', { view, repo: 'rozed-dev/e2e', pull: null }),
+          id,
+        ),
+      ).toEqual({ ok: true, value: 'trusted' });
+    });
+
+    let asked = 10;
+    /** Asks main where `Line`, in src/format.ts's import of it, is defined, until the server says. */
+    const answered = () =>
+      expect
+        .poll(
+          async () => {
+            asked += 1;
+            return ask(page, {
+              id: asked,
+              job: 'code.definitions',
+              input: { view: id, key: APP_PULL.head, path: 'src/format.ts', line: 1, column: 15 },
+            });
+          },
+          { timeout: 60_000 },
+        )
+        .toMatchObject({
+          ok: true,
+          value: {
+            name: 'Line',
+            answers: [
+              {
+                key: APP_PULL.head,
+                side: 'new',
+                path: 'src/parser.ts',
+                line: 2,
+                column: 17,
+                source: 'server',
+                label: 'TypeScript',
+              },
+            ],
+          },
+        });
+
+    await test.step('the server’s definition comes first, labelled with its name', async () => {
+      await answered();
+      // It runs on the checkout of the head.
+      const [initialize] = servers.seen().filter((seen) => seen.event === 'initialize');
+      expect(initialize?.params.rootUri).toMatch(
+        new RegExp(`/pull-${APP_PULL.number}/${APP_PULL.head}$`),
+      );
+    });
+
+    await test.step('“Restart” in its status item starts it again', async () => {
+      await status.getByRole('button', { name: 'TypeScript', exact: true }).click();
+      await page.getByRole('button', { name: 'Restart', exact: true }).click();
+      await expect.poll(() => started().length, { timeout: 20_000 }).toBe(2);
+      // The first was shut down, and the second answers.
+      await answered();
+      const events = servers.seen().map((seen) => seen.event);
+      expect(events.indexOf('shutdown')).toBeLessThan(events.lastIndexOf('started'));
+      expect(events.lastIndexOf('request')).toBeGreaterThan(events.lastIndexOf('started'));
+      await expect(status.getByRole('button', { name: 'TypeScript', exact: true })).toBeVisible();
+    });
+  },
+);
