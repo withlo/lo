@@ -295,6 +295,10 @@ describe('a checkout a server that uses Go won’t run on', () => {
     ['a string left open', 'use "../elsewhere\n'],
     ['a block left open', 'use (\n\t./app\n'],
     ['a block opened mid-line', 'use ./app (\n\t../elsewhere\n)\n'],
+    // Go takes `x=>y` as the module's path, and `../../elsewhere` as where it's replaced from.
+    ['an arrow inside a word', 'replace x=>y => ../../elsewhere\n'],
+    ['an arrow that starts a word', 'replace x =>../../elsewhere\n'],
+    ['a quote inside a word', 'use ./app"../../elsewhere"\n'],
   ])('one whose go.work Lo can’t read for certain: %s', async (_, text) => {
     const { root } = checkout({ ...MODULE, 'go.work': text });
     expect(await checkoutProblem('go', root)).toBe(

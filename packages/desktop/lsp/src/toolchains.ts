@@ -321,9 +321,15 @@ function isDirectoryPath(path: string): boolean {
   );
 }
 
+/** The characters Go's reader takes as tokens of their own, which end a word. */
+const PUNCTUATION = new Set(['(', ')', '[', ']', '{', '}', ',']);
+
 /**
- * The tokens of a line of a `go.mod` or `go.work`, as Go's reader splits them: words, `(`, `)`,
- * `=>` and strings, a comment's left out, or `undefined` for a line Lo can't read for certain.
+ * The tokens of a line of a `go.mod` or `go.work`, as Go's reader splits them: words, punctuation
+ * (`(`, `)` and the like) and strings, a comment's left out, or `undefined` for a line Lo can't
+ * read for certain. A word runs to a space, punctuation or a comment, so Go takes `=>` as the
+ * arrow only as a word of its own, and a quote inside a word as part of it: Lo refuses a word that
+ * holds either, rather than read it otherwise than Go does.
  */
 function tokensOf(line: string): string[] | undefined {
   const tokens: string[] = [];
@@ -342,23 +348,22 @@ function tokensOf(line: string): string[] | undefined {
       if (char === '"' && inside.includes('\\')) return undefined;
       tokens.push(inside);
       at = end + 1;
-    } else if (char === '(' || char === ')') {
+    } else if (PUNCTUATION.has(char)) {
       tokens.push(char);
       at += 1;
-    } else if (line.startsWith('=>', at)) {
-      tokens.push('=>');
-      at += 2;
     } else {
       let end = at;
       while (
         end < line.length &&
-        !/[\s"`()]/.test(line[end] ?? '') &&
+        !/\s/.test(line[end] ?? '') &&
+        !PUNCTUATION.has(line[end] ?? '') &&
         !line.startsWith('//', end)
       ) {
-        if (line.startsWith('=>', end)) break;
         end += 1;
       }
-      tokens.push(line.slice(at, end));
+      const word = line.slice(at, end);
+      if (/["`]/.test(word) || (word.includes('=>') && word !== '=>')) return undefined;
+      tokens.push(word);
       at = end;
     }
   }
