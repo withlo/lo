@@ -294,7 +294,7 @@ test(
     }
     const said = new Set(script.match(/lo-hostile-[a-z]+(?:-[a-z]+)*/g));
     expect([...markers, ...Object.keys(made)].toSorted()).toEqual([...said].toSorted());
-    expect(markers.size).toBe(29);
+    expect(markers.size).toBe(34);
   },
 );
 

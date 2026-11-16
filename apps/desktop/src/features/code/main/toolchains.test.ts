@@ -140,44 +140,32 @@ it('gives a server only the toolchains its adapter names, which “Remove” sto
   expect(asked).toEqual(['temurin']);
 });
 
-it('gives Lo’s own servers only the toolchains they name: Go’s Go, Java’s JDK, the rest none', async () => {
-  expect(SHIPPED.map((each) => each.name)).toEqual([
-    'TypeScript',
-    'Python',
-    'PHP',
-    'Go',
-    'Terraform',
-    'Java',
-  ]);
-  expect(SHIPPED.map((each) => [each.id, each.downloads?.toolchains])).toEqual([
-    ['typescript', []],
-    ['python', []],
-    ['php', []],
-    ['go', ['go']],
-    ['terraform', []],
-    ['java', ['temurin']],
+it('gives Lo’s own servers only the toolchains they name: Rust’s Rust, Go’s Go, Java’s JDK, and the rest none', async () => {
+  expect(SHIPPED.map((each) => [each.name, each.downloads?.toolchains])).toEqual([
+    ['TypeScript', []],
+    ['Python', []],
+    ['Rust', ['rust']],
+    ['PHP', []],
+    ['Go', ['go']],
+    ['Terraform', []],
+    ['Java', ['temurin']],
   ]);
   for (const shipped of SHIPPED) {
     const toolchain = listedToolchain(shipped, (id) => Promise.resolve(id));
     const named = shipped.downloads?.toolchains ?? [];
+    for (const id of named) expect(await toolchain(id)).toBe(id);
     for (const id of Object.keys(TOOLCHAINS).filter((each) => !named.includes(each))) {
       await expect(toolchain(id)).rejects.toThrow(
         `${shipped.name} doesn’t name the toolchain ${id} among its downloads.`,
       );
     }
   }
-  const go = SHIPPED.find((each) => each.id === 'go');
-  expect(go && (await listedToolchain(go, (id) => Promise.resolve(id))('go'))).toBe('go');
-  const java = SHIPPED.find((each) => each.id === 'java');
-  expect(java && (await listedToolchain(java, (id) => Promise.resolve(id))('temurin'))).toBe(
-    'temurin',
-  );
-  // So Settings lists Go's server as using Go, and Java's as using the JDK.
+  // So Settings lists Rust's server as using Rust, Go's as using Go, and Java's as using the JDK.
   const listed = await listToolchains({ ...host().given, adapters: () => SHIPPED });
   expect(listed.map((each) => [each.id, each.uses])).toEqual([
     ['dotnet', []],
     ['go', ['Go']],
-    ['rust', []],
+    ['rust', ['Rust']],
     ['temurin', ['Java']],
   ]);
 });

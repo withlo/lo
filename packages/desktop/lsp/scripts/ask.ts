@@ -86,10 +86,14 @@ export async function askServer(ask: Ask): Promise<Asked> {
       console.log(`  gr ${said(references, (value) => places(server, value))}`);
       const hover = await server.request('textDocument/hover', at, options);
       console.log(`  K  ${said(hover, hoverText)}`);
-      // The whole file, to the end of its last line: JDT LS answers nothing past it.
+      // The whole file, ending at the end of its last line: a server such as rust-analyzer refuses
+      // a range that runs past the document, and JDT LS answers nothing for one.
       const lines = (texts.get(file) ?? '').split('\n');
-      const end = { line: lines.length - 1, character: lines.at(-1)?.length ?? 0 };
-      const range = { start: { line: 0, character: 0 }, end };
+      const last = Math.max(0, lines.length - 1);
+      const range = {
+        start: { line: 0, character: 0 },
+        end: { line: last, character: lines[last]?.length ?? 0 },
+      };
       const hints = await server.request('textDocument/inlayHint', { path: file, range }, options);
       console.log(`  gh ${said(hints, hintsOf)}`);
       const symbols = await server.request('textDocument/documentSymbol', { path: file }, options);
