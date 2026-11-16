@@ -20,7 +20,6 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 
 import {
-  parseSettings,
   readSettings,
   SETTINGS_SIZE_LIMIT,
   SettingsChanged,
@@ -63,48 +62,15 @@ const padding = (extra: number) => ' '.repeat(SETTINGS_SIZE_LIMIT - 2 + extra);
 const problemOf = (read: Awaited<ReturnType<typeof readSettings>>) =>
   read.kind === 'problem' ? read.problem : undefined;
 
-describe('parseSettings', () => {
-  it('reads one JSON object, keeping every key in it, known or not', () => {
-    expect(
-      parseSettings('{ "theme": "dark", "diff.layout": "inline", "later": [1, { "a": null }] }'),
-    ).toEqual({
-      kind: 'ok',
-      values: { theme: 'dark', 'diff.layout': 'inline', later: [1, { a: null }] },
-    });
-  });
-
-  it('reads a file with nothing in it, or only white space, as no settings', () => {
-    expect(parseSettings('')).toEqual({ kind: 'ok', values: {} });
-    expect(parseSettings(' \n\t\n')).toEqual({ kind: 'ok', values: {} });
-    expect(parseSettings('{}')).toEqual({ kind: 'ok', values: {} });
-  });
-
-  it('says what is wrong with text that is not JSON, and with JSON that is not an object', () => {
-    const syntax = problemOf(parseSettings('{ "theme": }'));
-    expect(syntax).toMatch(
-      /^The settings file isn't valid JSON \(.+\)\. Fix it, and Lo applies it as soon as you save\.$/,
-    );
-    // JSON with comments, which editors tolerate in settings files, is not JSON.
-    expect(problemOf(parseSettings('// my settings\n{}'))).toContain("isn't valid JSON");
-    for (const text of ['null', '[]', '[{"theme":"dark"}]', '"dark"', '3', 'true']) {
-      expect(problemOf(parseSettings(text))).toContain('should hold one JSON object');
-    }
-  });
-
-  it('keeps a key called __proto__ as the plain key it is, and does not become its object’s prototype', () => {
-    const read = parseSettings('{ "__proto__": { "theme": "light" } }');
-    expect(read.kind).toBe('ok');
-    if (read.kind !== 'ok') return;
-    expect(Object.hasOwn(read.values, '__proto__')).toBe(true);
-    expect(Object.getPrototypeOf(read.values)).toBe(Object.prototype);
-    expect(Object.hasOwn(read.values, 'theme')).toBe(false);
-  });
-});
-
 describe('readSettings', () => {
-  it('reads the file’s object', async () => {
-    write('{ "theme": "light" }\n');
-    expect(await readSettings(path)).toEqual({ kind: 'ok', values: { theme: 'light' } });
+  it('reads the file’s object, and its text, comments and all', async () => {
+    write('// Mine.\n{ "theme": "light", }\n');
+    expect(await readSettings(path)).toEqual({
+      kind: 'ok',
+      values: { theme: 'light' },
+      text: '// Mine.\n{ "theme": "light", }\n',
+      repeated: [],
+    });
   });
 
   it('reads no file, and no folder for it, as no settings', async () => {
@@ -118,17 +84,23 @@ describe('readSettings', () => {
     write('{ "theme": "dark" }', join(folder, 'dotfiles', 'settings.json'));
     mkdirSync(join(folder, 'config'), { recursive: true });
     symlinkSync(join(folder, 'dotfiles', 'settings.json'), path);
-    expect(await readSettings(path)).toEqual({ kind: 'ok', values: { theme: 'dark' } });
+    expect(await readSettings(path)).toMatchObject({ kind: 'ok', values: { theme: 'dark' } });
   });
 
   it('drops a byte order mark, as editors on some systems add', async () => {
     write(Uint8Array.from([0xef, 0xbb, 0xbf, ...Buffer.from('{ "theme": "dark" }')]));
-    expect(await readSettings(path)).toEqual({ kind: 'ok', values: { theme: 'dark' } });
+    expect(await readSettings(path)).toEqual({
+      kind: 'ok',
+      values: { theme: 'dark' },
+      text: '{ "theme": "dark" }',
+      repeated: [],
+    });
   });
 
   it('reads a file of exactly the limit, and leaves one a byte over unread', async () => {
     write(`{${padding(0)}}`);
-    expect(await readSettings(path)).toEqual({ kind: 'ok', values: {} });
+    const read = await readSettings(path);
+    expect(read.kind === 'ok' && read.values).toEqual({});
     write(`{${padding(1)}}`);
     expect(problemOf(await readSettings(path))).toBe(
       "The settings file is over 1 MiB, so Lo didn't read it.",

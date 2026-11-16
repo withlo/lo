@@ -1,0 +1,308 @@
+// The settings file's text: JSON with comments, as editors' settings files are, read into the
+// settings it holds and changed in place. Nothing here touches the disk.
+//
+// The file is the person's own, so Lo changes it as a person would by hand: a setting's value is
+// replaced where it is, or the setting added after the last one, and every comment, key, space and
+// line break around it stays as it was. Before handing the new text on, Lo reads it back and checks
+// it says exactly what was meant, so a change never leaves the file meaning anything but what
+// Settings shows. A key given twice is read as the last one says, as JavaScript reads JSON; Lo
+// won't change it, since the file then says one thing where a person may read another.
+
+import { isDeepStrictEqual } from 'node:util';
+
+import {
+  applyEdits,
+  createScanner,
+  parseTree,
+  printParseErrorCode,
+  type Edit,
+  type Node,
+  type ParseError,
+} from 'jsonc-parser';
+
+import type { SettingsState } from '../contract.ts';
+
+/** A value as JSON holds it, which is all a setting's value can be. */
+type Json = SettingsState['values'][string];
+
+/** What the settings file's text says. */
+export type Parsed =
+  /**
+   * The file's object: one entry for each key in it, whether or not any feature knows it, the text
+   * it was read from, and the keys it gives more than once.
+   */
+  | {
+      readonly kind: 'ok';
+      readonly values: Readonly<Record<string, unknown>>;
+      readonly text: string;
+      readonly repeated: readonly string[];
+    }
+  /** The file can't be used, and why, for the person who wrote it. */
+  | { readonly kind: 'problem'; readonly problem: string };
+
+/** How the file is read: as JSON, with comments and a comma after the last entry allowed. */
+const OPTIONS = { allowTrailingComma: true, disallowComments: false, allowEmptyContent: true };
+
+/** What Lo says after a problem with the file as a whole that the person can fix. */
+const FIX = 'Fix it, and Lo applies it as soon as you save.';
+
+/** The file's object, as a tree to edit and as values, or what's wrong with it. */
+type Tree =
+  | {
+      readonly ok: true;
+      /** None when the file holds no value: nothing, or only comments. */
+      readonly root: Node | undefined;
+      readonly values: Readonly<Record<string, unknown>>;
+      readonly repeated: readonly string[];
+    }
+  | { readonly ok: false; readonly problem: string };
+
+/** Reads `text` as the settings file. */
+function read(text: string): Tree {
+  const errors: ParseError[] = [];
+  let root: Node | undefined;
+  let pairs: [string, unknown][];
+  try {
+    root = parseTree(text, errors, OPTIONS);
+    const first = errors[0];
+    if (first) {
+      return {
+        ok: false,
+        problem: `The settings file isn't valid JSON (${said(first, text)}). ${FIX}`,
+      };
+    }
+    if (root === undefined) return { ok: true, root, values: {}, repeated: [] };
+    if (root.type !== 'object') {
+      return {
+        ok: false,
+        problem: `The settings file should hold one JSON object, such as { "theme": "dark" }. ${FIX}`,
+      };
+    }
+    pairs = entries(root);
+  } catch (error) {
+    // The parser calls itself for each level, so a file nested thousands deep runs out of stack.
+    if (!(error instanceof RangeError)) throw error;
+    return { ok: false, problem: "The settings file is nested too deeply, so Lo didn't read it." };
+  }
+  const seen = new Set<string>();
+  const repeated = new Set<string>();
+  for (const [key] of pairs) {
+    if (seen.has(key)) repeated.add(key);
+    seen.add(key);
+  }
+  return { ok: true, root, values: Object.fromEntries(pairs), repeated: [...repeated] };
+}
+
+/** An object's keys and values, in the order the text gives them, each key as often as it does. */
+function entries(object: Node): [string, unknown][] {
+  return (object.children ?? []).flatMap((property): [string, unknown][] => {
+    const [name, value] = property.children ?? [];
+    return name && value ? [[String(name.value), valueOf(value)]] : [];
+  });
+}
+
+/** What `node` holds, as `JSON.parse` would make it. */
+function valueOf(node: Node): unknown {
+  const kind = node.type;
+  switch (kind) {
+    case 'object':
+      // A key given twice has its last value, and `__proto__` is a key like any other.
+      return Object.fromEntries(entries(node));
+    case 'array':
+      return (node.children ?? []).map(valueOf);
+    case 'string':
+    case 'number':
+    case 'boolean':
+    case 'null':
+      return node.value;
+    case 'property':
+      // Only an object's children are properties, and `entries` reads those.
+      return undefined;
+    default:
+      kind satisfies never;
+      return undefined;
+  }
+}
+
+/** Where `error` is in `text`, and what it is, in words: "Lo expected a comma at line 4, column 3". */
+function said(error: ParseError, text: string): string {
+  const before = text.slice(0, error.offset);
+  const line = (before.match(/\n/g)?.length ?? 0) + 1;
+  const column = before.length - before.lastIndexOf('\n');
+  return `${what(error)} at line ${line}, column ${column}`;
+}
+
+function what(error: ParseError): string {
+  const code = printParseErrorCode(error.error);
+  switch (code) {
+    case 'InvalidSymbol':
+      return "Lo found something JSON doesn't have";
+    case 'InvalidNumberFormat':
+      return "a number isn't written as JSON writes one";
+    case 'PropertyNameExpected':
+      return 'Lo expected a key in double quotes';
+    case 'ValueExpected':
+      return 'Lo expected a value';
+    case 'ColonExpected':
+      return 'Lo expected a colon';
+    case 'CommaExpected':
+      return 'Lo expected a comma';
+    case 'CloseBraceExpected':
+      return 'Lo expected a closing }';
+    case 'CloseBracketExpected':
+      return 'Lo expected a closing ]';
+    case 'EndOfFileExpected':
+      return 'Lo expected nothing more after the object';
+    case 'UnexpectedEndOfComment':
+      return "a /* comment isn't closed";
+    case 'UnexpectedEndOfString':
+      return "a string isn't closed";
+    case 'UnexpectedEndOfNumber':
+      return 'a number ends too soon';
+    case 'InvalidUnicode':
+      return "a \\u escape isn't four hex digits";
+    case 'InvalidEscapeCharacter':
+      return "a string has a \\ escape JSON doesn't";
+    case 'InvalidCharacter':
+      return 'a string holds a tab or another control character, which JSON writes escaped';
+    case 'InvalidCommentToken':
+    case '<unknown ParseErrorCode>':
+      return "Lo found something it can't read";
+    default:
+      code satisfies never;
+      return "Lo found something it can't read";
+  }
+}
+
+/**
+ * The settings in `text`: one JSON object, or nothing at all (a file with only white space or
+ * comments is no settings), with comments and trailing commas allowed. Anything else is a problem
+ * that says what was wrong, and where.
+ */
+export function parseSettings(text: string): Parsed {
+  const tree = read(text);
+  if (!tree.ok) return { kind: 'problem', problem: tree.problem };
+  return { kind: 'ok', values: tree.values, text, repeated: tree.repeated };
+}
+
+/** The white space before `offset` on its line, or none when something else comes before it. */
+function leading(text: string, offset: number): string | undefined {
+  const before = text.slice(text.lastIndexOf('\n', offset - 1) + 1, offset);
+  return /^[ \t]*$/.test(before) ? before : undefined;
+}
+
+/**
+ * `value` as JSON: over lines a `step` deeper each, from `indent`, the white space its line
+ * starts with; or on one line, where it shares its line with more than white space (no `indent`).
+ */
+function json(value: Json, step: string, indent: string | undefined, eol: string): string {
+  if (indent === undefined) return JSON.stringify(value);
+  return JSON.stringify(value, null, step).replaceAll('\n', `${eol}${indent}`);
+}
+
+/**
+ * `text`, a settings file that reads without a problem, with `key` set to `value`, changed as a
+ * person would by hand. A key the file has keeps its place, and only its value changes. A new one
+ * goes after the last key, on a line of its own in the file's indent (two spaces when the file has
+ * none), with a comma after it if the last had one; in an object on one line, it goes on that line.
+ * Everything else stays as it was. Throws for a key the file has more than once, or a change that
+ * would leave the file saying anything but what it did with `key` set to `value`.
+ */
+export function editSettings(text: string, key: string, value: Json): string {
+  const tree = read(text);
+  if (!tree.ok) throw new Error("Lo can't change a settings file it can't read.");
+  if (tree.repeated.includes(key)) throw new Error(`The settings file has ${key} more than once.`);
+  const { root } = tree;
+  const eol = text.includes('\r\n') ? '\r\n' : '\n';
+  const properties = root?.children ?? [];
+  const step =
+    properties
+      .map((property) => leading(text, property.offset))
+      .find((indent) => indent !== undefined) ?? '  ';
+  const entry = (indent: string | undefined) =>
+    `${JSON.stringify(key)}: ${json(value, step, indent, eol)}`;
+  let edits: Edit[];
+  if (root === undefined) {
+    // No object yet: one in place of white space, or after the comments.
+    const object = `{${eol}${step}${entry(step)}${eol}}${eol}`;
+    edits =
+      text.trim() === ''
+        ? [{ offset: 0, length: text.length, content: object }]
+        : [
+            {
+              offset: text.length,
+              length: 0,
+              content: `${text.endsWith('\n') ? '' : eol}${object}`,
+            },
+          ];
+  } else {
+    const property = properties.find((each) => each.children?.[0]?.value === key);
+    const found = property?.children?.[1];
+    edits =
+      property && found
+        ? [
+            {
+              offset: found.offset,
+              length: found.length,
+              content: json(value, step, leading(text, property.offset), eol),
+            },
+          ]
+        : added(text, root, entry, step, eol);
+  }
+  const changed = applyEdits(text, edits);
+  const after = read(changed);
+  // Through JSON, as the file holds it: -0 is 0 there.
+  const meant: unknown = { ...tree.values, [key]: JSON.parse(JSON.stringify(value)) };
+  if (
+    !after.ok ||
+    !isDeepStrictEqual(after.values, meant) ||
+    !isDeepStrictEqual(after.repeated, tree.repeated)
+  ) {
+    throw new Error(`Changing ${key} would have left the settings file saying something else.`);
+  }
+  return changed;
+}
+
+/** The edits that add a key, as `entry` writes it at an indent, after the object's last. */
+function added(
+  text: string,
+  root: Node,
+  entry: (indent: string | undefined) => string,
+  step: string,
+  eol: string,
+): Edit[] {
+  const close = root.offset + root.length - 1;
+  const last = root.children?.at(-1);
+  const end = last ? last.offset + last.length : root.offset + 1;
+  // The offset after a comma that follows the last key, past any comments, if one does.
+  let comma: number | undefined;
+  if (last) {
+    const scanner = createScanner(text, true);
+    scanner.setPosition(end);
+    scanner.scan();
+    if (text[scanner.getTokenOffset()] === ',') comma = scanner.getPosition();
+  }
+  if (leading(text, close) !== undefined) {
+    // The closing brace is on a line of its own: the key goes on one just above it.
+    const line = text.lastIndexOf('\n', close - 1) + 1;
+    const edits = [
+      {
+        offset: line,
+        length: 0,
+        content: `${step}${entry(step)}${comma === undefined ? '' : ','}${eol}`,
+      },
+    ];
+    if (last && comma === undefined) edits.push({ offset: end, length: 0, content: ',' });
+    return edits;
+  }
+  if (!last) {
+    // `{}`: the key on a line of its own between the braces.
+    const inside = text.slice(root.offset + 1, close);
+    const space = inside.length - inside.trimEnd().length;
+    return [{ offset: close - space, length: space, content: `${eol}${step}${entry(step)}${eol}` }];
+  }
+  // An object on one line stays on one.
+  return comma === undefined
+    ? [{ offset: end, length: 0, content: `, ${entry(undefined)}` }]
+    : [{ offset: comma, length: 0, content: ` ${entry(undefined)},` }];
+}
