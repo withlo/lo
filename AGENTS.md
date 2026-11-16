@@ -1253,6 +1253,25 @@ command's handler may say something after its label (`detail`).
   and the timeline read again. A tab acting as nobody or showing a run of layers can't submit, nor
   can one offline, or while GitHub asked Lo to hold off.
 
+### Whether it can merge
+
+The `merge` feature says in the pull request's header whether it can merge (`tab.headerStatus`), and
+`m`, or a click on that line, opens the merge panel under it.
+
+- Main follows each view on screen (`main/reads.ts`): its account's poller reads the merge facts
+  (`poller.mergeFacts`), and `@lo/review`'s `mergeSnapshot` maps them with the head on screen, the
+  method last used in the repository (`merge_methods`) and, only where the rules want the head up to
+  date, whether the local copy's head holds the base's tip, fetched first. Each view's status goes
+  out on `merge.status` as it changes, and `merge.state` asks for it. A view acting as nobody, or
+  showing a run of layers, reads nothing, and `m` says why.
+- The panel has a row for each reason, worded by `window/words.ts` as plain functions tested alone:
+  `j` and `k` move, `o` opens the row's page, `Tab` steps through the methods the repository allows,
+  `e` goes to the squash commit's title, `]t` to the next unresolved conversation, and `Esc` closes
+  it. Only an `https://` page a view's status links opens, through main (`merge.open`).
+- A squash shows the commit GitHub would write (`merge.panel`), read as the panel opens and again
+  when the head or the title moves. Text the reader types stands in front of it, kept per view in
+  the window until the tab closes.
+
 ### Images from GitHub
 
 The window shows an image from outside Lo only as `<img src="lo-image://…">`, which main serves.

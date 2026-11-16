@@ -43,9 +43,9 @@ export interface CassetteInfo {
    */
   rerecorded?: Record<string, string>;
   /**
-   * The GraphQL operations whose answers were added in place, after the code that replays the
-   * cassette began to send them, each with when (`testing/scripts/add-answers.ts`). The rest is as
-   * of `recorded_at`.
+   * The GraphQL operations, and REST reads as `GET <url>`, whose answers were added in place,
+   * after the code that replays the cassette began to send them, each with when
+   * (`testing/scripts/add-answers.ts`). The rest is as of `recorded_at`.
    */
   added?: Record<string, string>;
   /**

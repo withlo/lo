@@ -1,13 +1,13 @@
-import { chmodSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer as createHttpServer } from 'node:http';
 import { createServer } from 'node:net';
 import { createRequire } from 'node:module';
-import { homedir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { buffer } from 'node:stream/consumers';
 import { fileURLToPath } from 'node:url';
 
-import { STACK_PULLS, writeStackRemote } from '@lo/testing/git';
+import { MERGE_PULLS, STACK_PULLS, writeMergeRemote, writeStackRemote } from '@lo/testing/git';
 import { fakeServer, readReport, type Scenario, type Seen } from '@lo/testing/lsp';
 import { serveReplay, type ReplayServer } from '@lo/testing/server';
 import {
@@ -555,6 +555,48 @@ export const onStacks = test.extend<{
         ...(account ? { LO_TEST_TOKEN_FILE: tokenFile } : {}),
         LO_GIT_REMOTE: remote,
         ...(noGit ? { LO_GIT: 'none' } : {}),
+      },
+    });
+  },
+});
+
+/** The generation of `testing/fixtures/merge.sh`'s pull requests `app_merge` was recorded on. */
+export const MERGE = MERGE_PULLS[3];
+
+/**
+ * `test`, with Lo signed in as rozed-bot on a replay server that answers from `app_merge`, recorded
+ * from the app on {@link MERGE}'s pull requests, and fetching from their repository, built on this
+ * machine. With `account` false, Lo starts with no account.
+ */
+export const onMerge = test.extend<{
+  /** Whether Lo starts with rozed-bot's account. */
+  account: boolean;
+  github: ReplayServer;
+  remote: string;
+}>({
+  account: [true, { option: true }],
+  // oxlint-disable-next-line no-empty-pattern
+  github: async ({}, use) => {
+    const server = await serveReplay('app_merge');
+    await use(server);
+    await server.close();
+  },
+  // oxlint-disable-next-line no-empty-pattern
+  remote: async ({}, use) => {
+    // `merge.sh` builds nothing inside a work tree, so not in the test's output folder.
+    const folder = mkdtempSync(join(tmpdir(), 'lo-merge-'));
+    await use(writeMergeRemote(join(folder, 'remote'), 3));
+    rmSync(folder, { recursive: true, force: true });
+  },
+  launch: async ({ github, remote, account }, use) => {
+    const tokenFile = base.info().outputPath('token');
+    writeFileSync(tokenFile, `${TOKEN}\n`);
+    await use({
+      args: [appFolder, ...KEYCHAIN],
+      env: {
+        LO_GITHUB: new URL(github.urls.api).origin,
+        ...(account ? { LO_TEST_TOKEN_FILE: tokenFile } : {}),
+        LO_GIT_REMOTE: remote,
       },
     });
   },
