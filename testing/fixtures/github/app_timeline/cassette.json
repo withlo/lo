@@ -4,6 +4,8 @@
   "repo": "rozed-dev/e2e",
   "added": {
     "ReviewThreads": "2026-11-13T19:31:42Z",
-    "PendingReview": "2026-11-13T19:31:43Z"
+    "PendingReview": "2026-11-13T19:31:43Z",
+    "MergeSnapshot": "2026-11-16T22:10:13Z",
+    "GET https://api.github.com/repos/rozed-dev/e2e/rules/branches/e11/base?per_page=100": "2026-11-16T22:10:49Z"
   }
 }
