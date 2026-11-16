@@ -95,7 +95,9 @@ export interface ServerSpec {
    * The programs the system starts for it outside its family, by their file names, such as the
    * `SourceKitService` that `launchd` starts for SourceKit-LSP: a process of one of these names
    * whose `HOME` is this server's home is counted in its memory and stopped with it, as its family
-   * is. Nothing else is touched: no other process has this server's home as its `HOME`.
+   * is. Lo gives a repository's servers of one adapter the same home, one after another, so a
+   * service an earlier one left there is counted and stopped too, as what Lo left. `family.ts`
+   * says how a process's `HOME` is read.
    */
   readonly services?: readonly string[] | undefined;
   /** The most resident memory its process group may hold, in bytes. */

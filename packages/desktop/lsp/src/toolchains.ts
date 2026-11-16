@@ -238,12 +238,13 @@ export function tooManyEntries(limit: number, server: string): string {
  * `name` as Lo compares a file's name with one it refuses: as a disk that tells names apart by
  * neither case nor Unicode form compares it, as APFS does, so `.ſourcekit-lsp`, with a long s, is
  * `.sourcekit-lsp`, and `go.worK`, with a Kelvin sign, is `go.work`. It's the name in Unicode's
- * compatibility form (NFKC), cased up then down, which folds case in full, `ß` to `ss` included.
- * NFKC folds more than a disk does, `ﬁ` to `fi`, so Lo may refuse a name the disk would tell
- * apart, never miss one it wouldn't. Every refusal by a name matches with this.
+ * compatibility form (NFKC), cased down, up, then down again, which folds case in full: `ß` to
+ * `ss`, and the capital `ẞ` too, which casing up first would leave as `ß`. NFKC folds more than a
+ * disk does, `ﬁ` to `fi`, so Lo may refuse a name the disk would tell apart, never miss one it
+ * wouldn't. Every refusal by a name matches with this.
  */
 export function foldName(name: string): string {
-  return name.normalize('NFKC').toUpperCase().toLowerCase().normalize('NFKC');
+  return name.normalize('NFKC').toLowerCase().toUpperCase().toLowerCase().normalize('NFKC');
 }
 
 /**

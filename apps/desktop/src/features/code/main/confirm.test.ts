@@ -109,7 +109,7 @@ describe('the dialog', () => {
       type: 'warning',
       message: 'Trust fieldwork/atlas-api?',
       detail:
-        'Lo will check out its pull requests and run language servers on them. A language server can run code from the repository, such as its build files.',
+        'Lo will check out its pull requests and run language servers on them. The servers read its code and settings. Lo limits what they run, but they aren’t sandboxed. The repo’s settings can still steer them. A file that exploits a bug in one could run code as you.',
       buttons: ['Trust', 'Cancel'],
       defaultId: CANCEL,
       cancelId: CANCEL,
@@ -128,7 +128,7 @@ describe('the dialog', () => {
     });
     expect(question.message).toBe('Trust pull request #4833 from sam-whit/atlas-api?');
     expect(question.detail).toBe(
-      'Lo will check it out and run language servers on it. A language server can run code from the repository, such as its build files. Later pushes to this pull request are trusted too.',
+      'Lo will check it out and run language servers on it. The servers read its code and settings. Lo limits what they run, but they aren’t sandboxed. The repo’s settings can still steer them. A file that exploits a bug in one could run code as you. Later pushes to this pull request are trusted too.',
     );
     expect([question.buttons[question.defaultId], question.buttons[question.cancelId]]).toEqual([
       'Cancel',

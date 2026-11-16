@@ -4,8 +4,8 @@
  * this. A JVM does: it takes the folders it writes in as system properties, not from `HOME` or
  * `TMPDIR`, so its arguments name its home. And a server whose project Lo works out from the
  * checkout, as Java's is, is told what Lo found there. SourceKit-LSP writes its generated files and
- * its module cache where its options say, so its options name folders in its home, and Apple's
- * Foundation takes the home folder from `CFFIXED_USER_HOME` rather than `HOME`.
+ * its module cache where its options and arguments say, so both name folders in its home, and
+ * Apple's Foundation takes the home folder from `CFFIXED_USER_HOME` rather than `HOME`.
  */
 
 import { constants } from 'node:fs';

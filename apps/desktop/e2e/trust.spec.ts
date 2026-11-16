@@ -151,7 +151,7 @@ test('trusts the repo only once main’s own dialog says Trust, and Settings lis
     {
       message: 'Trust rozed-dev/e2e?',
       detail:
-        'Lo will check out its pull requests and run language servers on them. A language server can run code from the repository, such as its build files.',
+        'Lo will check out its pull requests and run language servers on them. The servers read its code and settings. Lo limits what they run, but they aren’t sandboxed. The repo’s settings can still steer them. A file that exploits a bug in one could run code as you.',
       buttons: ['Trust', 'Cancel'],
       defaultId: 1,
       cancelId: 1,
