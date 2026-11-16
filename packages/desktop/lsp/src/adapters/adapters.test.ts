@@ -5,18 +5,21 @@
 import {
   accessSync,
   constants,
+  lstatSync,
   mkdirSync,
+  readdirSync,
   readFileSync,
   statSync,
   symlinkSync,
   writeFileSync,
 } from 'node:fs';
-import { join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 import { describe, expect, test } from 'vitest';
 
-import { tempFolder } from '../../test/support.ts';
+import { GIT, tempFolder } from '../../test/support.ts';
+import { serverEnvironment } from '../environment.ts';
 import type { Installed } from '../install.ts';
 import { MANIFEST, PLATFORMS } from '../manifest.ts';
 import { sectionOf } from '../requests.ts';
@@ -40,7 +43,7 @@ import {
   ROSLYN,
   writable,
 } from './roslyn.ts';
-import { launchRustAnalyzer, RUST_ANALYZER } from './rust.ts';
+import { launchRustAnalyzer, LOCK_FILES, placeRustAnalyzer, RUST_ANALYZER } from './rust.ts';
 import { VTSLS } from './vtsls.ts';
 
 const SERVERS = [VTSLS, PYRIGHT];
@@ -283,6 +286,64 @@ describe('rust-analyzer', () => {
     // The sysroot is the toolchain's root, with its bundled standard-library sources.
     expect(told('cargo.sysroot')).toBe(SYSROOT);
     expect(told('cargo.sysrootSrc')).toBe(`${SYSROOT}/lib/rustlib/src/rust/library`);
+  });
+
+  test('has cargo write a workspace’s new lock file in its home, never in the checkout', async () => {
+    const started = launch();
+    const home = tempFolder();
+    const checkout = '/lo/cache/checkouts/github.com/a/b/pull-1/abc';
+    const placed = await started.place?.({ root: checkout, home });
+    const lock = placed?.variables?.CARGO_RESOLVER_LOCKFILE_PATH ?? '';
+    // `Cargo.lock`, in a folder of the checkout's own in its home.
+    expect(basename(lock)).toBe('Cargo.lock');
+    expect(dirname(dirname(lock))).toBe(join(home, LOCK_FILES));
+    const env = serverEnvironment({
+      home,
+      roots: [checkout],
+      path: started.path ?? [],
+      variables: { ...started.variables, ...placed?.variables },
+      allowed: started.allowed,
+      git: GIT,
+    });
+    // As it runs, it beats a Cargo config's `resolver.lockfile-path`.
+    expect(env.CARGO_RESOLVER_LOCKFILE_PATH).toBe(lock);
+    // Nothing in its environment names a place in the checkout.
+    expect(Object.values(env).filter((value) => value.includes(checkout))).toEqual([]);
+  });
+
+  test('gives each checkout a lock file of its own, and starts again on another', async () => {
+    const home = tempFolder();
+    const lockOf = async (root: string) =>
+      (await placeRustAnalyzer({ root, home })).variables?.CARGO_RESOLVER_LOCKFILE_PATH;
+    const one = await lockOf('/lo/cache/checkouts/github.com/a/b/pull-1/abc');
+    const two = await lockOf('/lo/cache/checkouts/github.com/a/b/pull-2/def');
+    expect(one).toBeDefined();
+    expect(two).toBeDefined();
+    expect(two).not.toBe(one);
+    expect(launch().stays).toBe(true);
+  });
+
+  test('starts with no lock file: what an earlier start wrote, for any checkout, is gone', async () => {
+    const home = tempFolder();
+    const root = '/lo/cache/checkouts/github.com/a/b/pull-1/abc';
+    const lockOf = async (at: string) =>
+      (await placeRustAnalyzer({ root: at, home })).variables?.CARGO_RESOLVER_LOCKFILE_PATH ?? '';
+    writeFileSync(await lockOf(root), 'version = 4\n');
+    writeFileSync(await lockOf('/lo/cache/checkouts/github.com/a/b/pull-2/def'), 'version = 4\n');
+    const lock = await lockOf(root);
+    // Only this checkout's folder, made empty.
+    expect(readdirSync(join(home, LOCK_FILES))).toEqual([basename(dirname(lock))]);
+    expect(readdirSync(dirname(lock))).toEqual([]);
+  });
+
+  test('removes a link it finds in place of its lock files’ folder, never what it leads to', async () => {
+    const home = tempFolder();
+    const elsewhere = tempFolder();
+    writeFileSync(join(elsewhere, 'kept'), 'kept\n');
+    symlinkSync(elsewhere, join(home, LOCK_FILES));
+    await placeRustAnalyzer({ root: '/lo/cache/checkouts/github.com/a/b/pull-1/abc', home });
+    expect(readdirSync(elsewhere)).toEqual(['kept']);
+    expect(lstatSync(join(home, LOCK_FILES)).isDirectory()).toBe(true);
   });
 
   test('runs no build script and expands no proc-macro, a checkout’s code', () => {
