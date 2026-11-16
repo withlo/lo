@@ -80,20 +80,23 @@ own (`setsid`) is still found.
 
 The servers Lo runs, each downloaded on first use for a trusted view, as `servers.json` pins it, and
 each with its adapter in `src/adapters/`. vtsls and Pyright run on Lo's own Node, which downloads
-first, and php-lsp is a program of its own. None needs anything installed.
+first, php-lsp is a program of its own, and JDT LS runs on Lo's Temurin JDK, a toolchain, which
+downloads first. None needs anything installed.
 
-| Server  | Version | For                    | From                                                                               | License                                              |
-| ------- | ------- | ---------------------- | ---------------------------------------------------------------------------------- | ---------------------------------------------------- |
-| vtsls   | 0.3.0   | TypeScript, JavaScript | npm: `@vtsls/language-server` and its 17 dependencies, TypeScript 5.9.3 among them | MIT; TypeScript's is Apache-2.0, the rest MIT or ISC |
-| Pyright | 1.1.414 | Python                 | npm: `pyright`                                                                     | MIT                                                  |
-| Node    | 26.13.1 | the two above          | nodejs.org                                                                         | MIT                                                  |
-| php-lsp | 0.33.0  | PHP                    | GitHub: the releases of [jorgsowa/php-lsp](https://github.com/jorgsowa/php-lsp)    | MIT                                                  |
+| Server         | Version | For                    | From                                                                               | License                                              |
+| -------------- | ------- | ---------------------- | ---------------------------------------------------------------------------------- | ---------------------------------------------------- |
+| vtsls          | 0.3.0   | TypeScript, JavaScript | npm: `@vtsls/language-server` and its 17 dependencies, TypeScript 5.9.3 among them | MIT; TypeScript's is Apache-2.0, the rest MIT or ISC |
+| Pyright        | 1.1.414 | Python                 | npm: `pyright`                                                                     | MIT                                                  |
+| Node           | 26.13.1 | the two above          | nodejs.org                                                                         | MIT                                                  |
+| php-lsp        | 0.33.0  | PHP                    | GitHub: the releases of [jorgsowa/php-lsp](https://github.com/jorgsowa/php-lsp)    | MIT                                                  |
+| Eclipse JDT LS | 1.63.0  | Java                   | download.eclipse.org: its release's archive                                        | EPL-2.0                                              |
 
 vtsls and Pyright each start as Node, by its absolute path, with a cap on its heap, then the
 server's own entry point inside its install, never the launcher npm would link. php-lsp starts as
-its program, by its absolute path inside its install. None runs through a shell, and each has an
-environment built from nothing. What each is told is its adapter's alone, and the adapter says why
-each setting is as it is:
+its program, by its absolute path inside its install. JDT LS starts as the JDK's `java`, by its
+absolute path, with `-jar` and Equinox's launcher inside its install. None runs through a shell, and
+each has an environment built from nothing. What each is told is its adapter's alone, and the
+adapter says why each setting is as it is:
 
 - **vtsls** runs its own TypeScript, never a workspace's (`node_modules/typescript`), and has
   automatic type acquisition off, so it runs no npm. It loads no `tsserver` plugin from the
@@ -120,6 +123,21 @@ each setting is as it is:
   `.php-lsp.json` can't turn the tools on or move the cache, and what Lo says wins over the rest of
   it key by key. Lo asks it for nothing that would run another program, such as formatting or a code
   lens's tests.
+- **JDT LS** is given Lo's Temurin JDK alone (`JAVA_HOME`), and reads its classes and sources as the
+  project's library. It imports nothing: Gradle's and Maven's imports are off, and every folder is
+  left out of its search for build files, so it reads no `build.gradle`, `pom.xml` or Eclipse
+  `.project`, and no build script, wrapper, plugin or annotation processor runs. Lo finds the
+  checkout's source folders itself, from each `.java` file's package, and JDT LS makes a project of
+  them in its home, compiling nothing. All it writes, its workspace, Equinox's configuration, its
+  temporary files and Gradle's home, is in its home, named by system properties, since a JVM takes
+  its home from the system, not `HOME`. Its JVM looks names up only in an empty hosts file of Lo's,
+  so it reaches no host: Buildship, inside it, asks services.gradle.org for Gradle's versions as it
+  starts, whatever is imported, and no setting stops it. It doesn't start on a checkout whose root
+  holds a `.settings`, which it would link its project's settings to, reading them and writing
+  there. Above the checkout it reads nothing: when a folder the checkout is in is named `src`, it
+  looks only for whether the folder holding that one has a build file, and makes no project if it
+  has. Its heap is capped at 2.5 GB, under Lo's 4 GB for the group. It finds its project's folders
+  only as it starts, so it restarts on another checkout rather than moving there (`stays`).
 
 None runs in a sandbox: each reads what you can, so an absolute import, Pyright's `extraPaths`, the
 folders of stubs a `.php-lsp.json` names, the paths a `composer.json`'s autoload names, or a
@@ -194,7 +212,9 @@ environment are for.
 
 Who published php-lsp: its releases are signed by nobody, so `pin.ts` checks each archive against
 the checksum its release lists beside it, which the same build made. That catches a download gone
-wrong, not a release someone else made.
+wrong, not a release someone else made. JDT LS's is the same: Eclipse publishes a SHA-256 beside
+each archive, on the same host, and signs about half the jars inside it, not the archive or the
+launcher's configuration.
 
 An installed file's bytes: before each use, its size is checked, not its hash, which would read
 every byte. On macOS, `fsync` leaves what the drive itself caches, and Node can't ask for more

@@ -97,6 +97,7 @@ function standIn(
   hints: { offered?: boolean; none?: string } = {},
 ) {
   const asked: Method[] = [];
+  const params: unknown[] = [];
   const opened: string[] = [];
   const serving: Serving = {
     kind: 'ready',
@@ -109,8 +110,9 @@ function standIn(
         opened.push(path);
         return true;
       },
-      request(method) {
+      request(method, given) {
         asked.push(method);
+        params.push(given);
         return Promise.resolve(answers[method] ?? { ok: true, value: null });
       },
       pathOf: (uri) =>
@@ -118,7 +120,7 @@ function standIn(
     },
     matches: () => Promise.resolve(matches),
   };
-  return { serving, asked, opened, serverOf: () => serving };
+  return { serving, asked, params, opened, serverOf: () => serving };
 }
 
 /** A place in a location's answer, at line `line` (from 1) and `column` of `path`. */
@@ -361,7 +363,7 @@ describe('the other questions', () => {
   it('gives the server’s hints on the new side only, and its outline, nested', async () => {
     const { sides, answering } = await view();
     const range = at('x', 2, 0).range;
-    const { serverOf } = standIn({
+    const { serverOf, params } = standIn({
       'textDocument/inlayHint': {
         ok: true,
         value: [
@@ -386,6 +388,13 @@ describe('the other questions', () => {
     expect(await servedHints(sides, file, undefined, serverOf)).toEqual({
       hints: [{ line: 2, column: 37, label: ': string[]', paddingLeft: true }],
       label: 'TypeScript',
+    });
+    expect(params.at(-1)).toMatchObject({ range: { end: { line: 2, character: 0 } } });
+    // Lines to the file's last end where it does, never past it, where JDT LS would answer nothing.
+    await servedHints(sides, { ...file, to: 3 }, undefined, serverOf);
+    expect(params.at(-1)).toEqual({
+      path: 'src/format.ts',
+      range: { start: { line: 0, character: 0 }, end: { line: 2, character: 8 } },
     });
     expect(await servedHints(sides, { ...file, key: base }, undefined, serverOf)).toEqual({
       hints: [],

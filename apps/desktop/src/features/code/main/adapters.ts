@@ -5,6 +5,9 @@
 // `@lo/lsp`'s, with the reasons. Nothing here calls Electron.
 
 import {
+  JDTLS,
+  jdtlsCheckoutProblem,
+  launchJdtls,
   launchNative,
   launchOnNode,
   PHP_LSP,
@@ -80,6 +83,12 @@ export interface Adapter {
    * asks it for them.
    */
   readonly noHints?: string | undefined;
+  /**
+   * Why its server mustn't run on the checkout at `folder`, by what it alone reads there, such as
+   * the `.settings` at a checkout's root that Java's server would take as its own, or `undefined`
+   * when it may. What the toolchains it uses read there is asked besides.
+   */
+  readonly checkout?: ((folder: string) => Promise<string | undefined>) | undefined;
   /** Finds or downloads what the server starts as. */
   prepare(context: PrepareContext): Promise<Prepared>;
 }
@@ -123,6 +132,25 @@ function native(
   };
 }
 
+/**
+ * The adapter for Java's server, JDT LS, which runs on Lo's Temurin JDK: the JDK downloads first,
+ * then the server, each once, on first use. It doesn't start on a checkout whose root holds a
+ * `.settings`, which it would take as its project's own.
+ */
+function onJdk(adapter: Omit<Adapter, 'prepare' | 'noHints' | 'downloads' | 'checkout'>): Adapter {
+  return {
+    ...adapter,
+    // The JDK it runs on, and the server.
+    downloads: { servers: [JDTLS.id], toolchains: ['temurin'] },
+    checkout: jdtlsCheckoutProblem,
+    async prepare(context) {
+      const jdk = await context.toolchain('temurin');
+      const installed = await context.install(JDTLS.id);
+      return { kind: 'ready', launch: launchJdtls(installed, jdk.installed, jdk) };
+    },
+  };
+}
+
 /** The adapters Lo ships. */
 export const ADAPTERS: readonly Adapter[] = [
   onNode(VTSLS, {
@@ -132,6 +160,8 @@ export const ADAPTERS: readonly Adapter[] = [
   }),
   onNode(PYRIGHT, { id: 'python', name: 'Python', languages: { python: 'python' } }),
   native(PHP_LSP, { id: 'php', name: 'PHP', languages: { php: 'php' } }),
+  // A JVM answers its first definitions slower than most, while it compiles its own code.
+  onJdk({ id: 'java', name: 'Java', languages: { java: 'java' }, definitionDeadline: 5000 }),
 ];
 
 /** The adapter that reads the file at `path`, and the protocol's id for its language, if one does. */

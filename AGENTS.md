@@ -518,13 +518,29 @@ toolchain and git's variables each server needs.
   cleanup: Lo names no `cachePath`, which php-lsp would take as the whole cache, and sets no
   `XDG_CACHE_HOME`. What Lo tells it wins over a checkout's `.php-lsp.json` key by key, and that
   file can't turn the tools on or move the cache.
+- Java's server, Eclipse JDT LS, runs on Lo's Temurin JDK: one archive for every platform from
+  download.eclipse.org, which `lsp:pin` checks against the SHA-256 Eclipse lists beside it, since
+  only some of its jars are signed. It starts as the JDK's `java` with `-jar` and Equinox's
+  launcher, with `JAVA_HOME` the JDK's. It imports nothing: Gradle's and Maven's imports are off,
+  and every folder is left out of its search for build files, so it reads no `build.gradle`,
+  `pom.xml` or `.project`, and runs no build script, wrapper, plugin or annotation processor. Lo
+  finds the checkout's source folders from each `.java` file's package (`sourcePaths`), and JDT LS
+  makes a project of them in its home, compiling nothing. What a server is told can depend on where
+  it runs: an adapter's `place` gives it, as it starts, arguments, variables, files written in its
+  home and settings. JDT LS's names its home as the JVM's home and temporary folder, Equinox's
+  configuration, its workspace and Gradle's home, with a `gradle.properties` that holds a Gradle to
+  Lo's JDK, and has its JVM look names up only in an empty hosts file there, so it reaches no host.
+  It doesn't start on a checkout whose root holds a `.settings`, which it would read and write as
+  its project's (the adapter's `checkout`, asked with the toolchains' `checkoutProblem`). It finds
+  its folders only as it starts, so it starts again rather than moving (`stays`).
 - Tests start only the fake server, `testing/lsp/fake-server.ts`, at most two at once in a test
   file, each killed with its group when the test ends. No test starts a real server or downloads
   one: download tests serve archives they build from a server on this machine. The live check,
-  `pnpm nx run lsp:live`, by hand only, installs what's pinned into `~/.cache/lo-live/`, starts each
-  server as its adapter does on the checkouts the code fixtures build with `--local`, asks what
-  `gd`, `gr`, `K`, `gh` and `gO` ask at the places `testing/fixtures/code/cases.json` names, and
-  fails if anything ran what the hostile fixture plants.
+  `pnpm nx run lsp:live`, by hand only, installs what's pinned, toolchains included, into
+  `~/.cache/lo-live/`, or the folder `LO_LIVE_CACHE` names, starts each server as its adapter does
+  on the checkouts the code fixtures build with `--local`, asks what `gd`, `gr`, `K`, `gh` and `gO`
+  ask at the places `testing/fixtures/code/cases.json` names, and fails if anything ran what the
+  hostile fixture plants, wrote in a checkout or held an internet socket.
 
 ### Accounts
 
@@ -1229,7 +1245,8 @@ parse them under `@lo/syntax`'s limits.
 The `code` feature runs language servers on the views the reader trusts, and their answers come
 before the syntax index's. A server is whatever an adapter (`main/adapters.ts`) says to start for
 its languages: Lo ships those for TypeScript and JavaScript, and Python, each downloaded with the
-Node it runs on, and PHP, whose server is a program of its own.
+Node it runs on, PHP, whose server is a program of its own, and Java, whose server runs on Lo's
+Temurin JDK.
 
 - Nothing starts for a view nothing trusts: no download, no checkout, no server. Once a trusted view
   is on screen and a file its pull request adds or changes on the new side, or one asked about, is
@@ -1244,10 +1261,13 @@ Node it runs on, and PHP, whose server is a program of its own.
   runs stops and its checkouts stay.
 - One server runs per repository and adapter, on the checkout of the head on screen, and moves with
   it: by `workspace/didChangeWorkspaceFolders`, sent only once trust is checked again, where it
-  takes that, else by starting again (`main/servers.ts`). Its `HOME` is
-  `<cache>/code/homes/<owner>/<name>/<adapter>`, and its `PATH` is its toolchain's folders, then
-  Lo's git's, then the system's, so a git from a folder of other programs, as Homebrew's is, can't
-  bring that folder's `go` ahead of the toolchain's.
+  takes that and its adapter doesn't say it `stays`, as Java's does, else by starting again
+  (`main/servers.ts`). It doesn't start on, or move to, a checkout its toolchains or its adapter
+  refuse (`checkoutRefusal` in `main/toolchains.ts`): .NET's for a `global.json` that steers it,
+  Java's for a `.settings` at the root. Its `HOME` is `<cache>/code/homes/<owner>/<name>/<adapter>`,
+  and its `PATH` is its toolchain's folders, then Lo's git's, then the system's, so a git from a
+  folder of other programs, as Homebrew's is, can't bring that folder's `go` ahead of the
+  toolchain's.
 - An adapter names what its server downloads up front, the server and the toolchains it uses, so the
   status bar adds them up from the first byte ("Java downloading · 38.1 MB of 177.4 MB"), counting
   only what isn't installed yet, in the units Settings counts in (`formatBytes`). It gets only the

@@ -1,3 +1,15 @@
+export {
+  gradleProperties,
+  JDTLS,
+  JDTLS_HEAP,
+  jdtlsCheckoutProblem,
+  jdtlsSettings,
+  launchJdtls,
+  placeJdtls,
+  SOURCE_FILES,
+  sourcePaths,
+  TRIGGER,
+} from './adapters/jdtls.ts';
 export { launchNative, type NativeServer } from './adapters/native.ts';
 export { heapCap, launchOnNode, type Launch, type NodeServer } from './adapters/node.ts';
 export { PHP_LSP, PHP_VERSION } from './adapters/phplsp.ts';
@@ -8,6 +20,7 @@ export { findCopy, type CopyOptions, type Found } from './copies.ts';
 export { OPEN_LIMIT } from './documents.ts';
 export { fetchFile, REDIRECTS, type Fetched, type FetchOptions } from './download.ts';
 export { serverEnvironment, SYSTEM_PATH, type EnvironmentOptions } from './environment.ts';
+export { type Place, type Placed, type Where, writeInHome } from './place.ts';
 export { DownloadError, type DownloadProblem } from './errors.ts';
 export { MESSAGE_LIMIT, UNREAD_LIMIT } from './framing.ts';
 export {

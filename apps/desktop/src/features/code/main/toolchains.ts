@@ -62,7 +62,8 @@ export function listedToolchain<T>(
 
 /**
  * Why `adapter`'s server mustn't run on the checkout at `folder`, by what each toolchain it uses
- * reads there, such as a `global.json` that could choose a .NET SDK other than Lo's.
+ * reads there, such as a `global.json` that could choose a .NET SDK other than Lo's, then by what
+ * the server itself reads there, such as the `.settings` Java's server would take as its own.
  */
 export async function checkoutRefusal(
   adapter: Adapter,
@@ -72,7 +73,7 @@ export async function checkoutRefusal(
     const problem = await checkoutProblem(id, folder);
     if (problem !== undefined) return problem;
   }
-  return undefined;
+  return adapter.checkout?.(folder);
 }
 
 /** What a server says once toolchain `id` couldn't install, from why: "Go couldn’t download. …" */

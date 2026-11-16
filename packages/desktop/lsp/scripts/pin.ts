@@ -17,7 +17,7 @@ import { join } from 'node:path';
 import { format, resolveConfig } from 'prettier';
 
 import { parseManifest, parseToolchains } from '../src/index.ts';
-import { githubRelease, node, npm, type Source } from './sources.ts';
+import { githubRelease, jdtls, node, npm, type Source } from './sources.ts';
 import { dotnet, go, rust, temurin } from './toolchains.ts';
 
 /** The armored public keys in `keys/<publisher>/`. */
@@ -31,6 +31,8 @@ function keys(publisher: string): string[] {
 /** Where each ID's files come from. */
 const SOURCES: Record<string, Source> = {
   node: node(keys('node')),
+  // Eclipse's one archive for every platform, which starts from Equinox's launcher in it.
+  jdtls: jdtls(),
   // Its own entry point, not `bin/vtsls.js`, the launcher that loads it.
   vtsls: npm('@vtsls/language-server', 'node_modules/@vtsls/language-server/dist/main.js'),
   // Its own entry point, which says where its files are and loads the server.

@@ -1,4 +1,17 @@
 {
+  "jdtls": {
+    "version": "1.63.0",
+    "hosts": ["download.eclipse.org"],
+    "platforms": {
+      "any": {
+        "kind": "tar.gz",
+        "url": "https://download.eclipse.org/jdtls/milestones/1.63.0/jdt-language-server-1.63.0-202610191322.tar.gz",
+        "size": 51143565,
+        "sha256": "b1f2abe0b3cccb462cf64fb4a5587c7d09df60cf8be7748b152cbd89d018bdc4",
+        "entry": "plugins/org.eclipse.equinox.launcher_1.8.0.v20260804-1928.jar"
+      }
+    }
+  },
   "node": {
     "version": "26.13.1",
     "hosts": ["nodejs.org"],

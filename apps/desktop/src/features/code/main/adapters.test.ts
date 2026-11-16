@@ -1,10 +1,21 @@
-// The adapters Lo ships: which files each reads, and what it downloads before it starts, which is
-// no toolchain. What each server runs as, and is told, is `@lo/lsp`'s, and tested there.
+// The adapters Lo ships: which files each reads, and what it downloads before it starts, a
+// toolchain only for Java's. What each server runs as, and is told, is `@lo/lsp`'s, and tested
+// there.
 
-import { type Installed, launchNative, launchOnNode, PHP_LSP, PYRIGHT, VTSLS } from '@lo/lsp';
+import {
+  type Installed,
+  jdtlsCheckoutProblem,
+  launchJdtls,
+  launchNative,
+  launchOnNode,
+  PHP_LSP,
+  PYRIGHT,
+  toolchainUse,
+  VTSLS,
+} from '@lo/lsp';
 import { describe, expect, it } from 'vitest';
 
-import { type Adapter, ADAPTERS, adapterFor } from './adapters.ts';
+import { type Adapter, ADAPTERS, adapterFor, type Toolchain } from './adapters.ts';
 
 function installedAs(id: string): Installed {
   return { folder: `/lo/cache/servers/${id}`, entry: `/lo/cache/servers/${id}/entry` };
@@ -25,9 +36,9 @@ function shipped(id: string): Adapter {
 
 /**
  * What `adapter` installs, in order, the toolchains it asks for, and what it says to start, with
- * every install there.
+ * every install there, and of the toolchains, those `given`.
  */
-async function prepared(adapter: Adapter) {
+async function prepared(adapter: Adapter, given: Readonly<Record<string, Toolchain>> = {}) {
   const installs: string[] = [];
   const toolchains: string[] = [];
   const ready = await adapter.prepare({
@@ -37,7 +48,8 @@ async function prepared(adapter: Adapter) {
     },
     toolchain: (id) => {
       toolchains.push(id);
-      return Promise.reject(new Error('no toolchain is asked for'));
+      const toolchain = given[id];
+      return toolchain ? Promise.resolve(toolchain) : Promise.reject(new Error(`no ${id}`));
     },
     findCopy: () => Promise.reject(new Error('no copy is looked for')),
     signal: new AbortController().signal,
@@ -45,8 +57,18 @@ async function prepared(adapter: Adapter) {
   return { installs, toolchains, ready };
 }
 
+/** Lo's Temurin JDK, installed, and what a server gets of it. */
+const JDK_INSTALLED: Installed = {
+  folder: '/lo/cache/toolchains/temurin/25/files',
+  entry: '/lo/cache/toolchains/temurin/25/files/jdk-25/bin/java',
+};
+const JDK: Toolchain = {
+  installed: JDK_INSTALLED,
+  ...toolchainUse('temurin', '25', JDK_INSTALLED, 'linux'),
+};
+
 describe('Lo’s adapters', () => {
-  it('read TypeScript and JavaScript, Python, and PHP', () => {
+  it('read TypeScript and JavaScript, Python, PHP and Java', () => {
     expect(readBy('src/a.ts')).toEqual(['TypeScript', 'typescript']);
     expect(readBy('src/a.mts')).toEqual(['TypeScript', 'typescript']);
     expect(readBy('src/A.tsx')).toEqual(['TypeScript', 'typescriptreact']);
@@ -56,6 +78,7 @@ describe('Lo’s adapters', () => {
     expect(readBy('pkg/a.pyi')).toEqual(['Python', 'python']);
     expect(readBy('src/A.php')).toEqual(['PHP', 'php']);
     expect(readBy('views/a.phtml')).toEqual(['PHP', 'php']);
+    expect(readBy('src/main/java/a/B.java')).toEqual(['Java', 'java']);
     // Ruby has none.
     expect(readBy('lib/a.rb')).toBeUndefined();
   });
@@ -88,11 +111,31 @@ describe('Lo’s adapters', () => {
     expect(ready.kind === 'ready' && ready.launch.program).toBe(installedAs('php-lsp').entry);
   });
 
+  it('download Lo’s JDK, then JDT LS, and start it on that JDK, on a checkout it may read', async () => {
+    const adapter = shipped('java');
+    const { installs, toolchains, ready } = await prepared(adapter, { temurin: JDK });
+    expect(toolchains).toEqual(['temurin']);
+    expect(installs).toEqual(['jdtls']);
+    expect(adapter.downloads).toEqual({ servers: ['jdtls'], toolchains: ['temurin'] });
+    const launch = launchJdtls(installedAs('jdtls'), JDK_INSTALLED, JDK);
+    expect(ready.kind === 'ready' && ready.launch).toMatchObject({
+      ...launch,
+      place: expect.any(Function),
+    });
+    expect(ready.kind === 'ready' && ready.launch.program).toBe(JDK_INSTALLED.entry);
+    // A JVM answers its first definitions slower than most.
+    expect(adapter.definitionDeadline).toBe(5000);
+    // What it alone reads in a checkout, beside what its toolchain does.
+    expect(adapter.checkout).toBe(jdtlsCheckoutProblem);
+    expect(ADAPTERS.filter((each) => each.checkout !== undefined)).toEqual([adapter]);
+  });
+
   it('say which servers give no inline type hints, as Pyright gives none', () => {
     expect(ADAPTERS.map((adapter) => [adapter.id, adapter.noHints])).toEqual([
       ['typescript', undefined],
       ['python', 'Pyright has no type hints.'],
       ['php', undefined],
+      ['java', undefined],
     ]);
   });
 
@@ -116,5 +159,20 @@ describe('Lo’s adapters', () => {
         signal: new AbortController().signal,
       }),
     ).rejects.toBe(missing);
+    // Nor when the JDK's does, and the server's own download never starts.
+    const installs: string[] = [];
+    const unavailable = new Error('GitHub answered 503');
+    await expect(
+      shipped('java').prepare({
+        install: (id) => {
+          installs.push(id);
+          return Promise.resolve(installedAs(id));
+        },
+        toolchain: () => Promise.reject(unavailable),
+        findCopy: () => Promise.resolve(undefined),
+        signal: new AbortController().signal,
+      }),
+    ).rejects.toBe(unavailable);
+    expect(installs).toEqual([]);
   });
 });

@@ -571,14 +571,18 @@ export async function servedHints(
   if (serving.kind !== 'ready') return { hints: [], label, fallback: waitingFor(serving) };
   const none = hintless(serving);
   if (none !== undefined) return { hints: [], label, none };
+  // The lines asked end at the next one's start, or at the end of the file: JDT LS answers nothing
+  // for a range that ends past it.
+  const last = file.lines.length - 1;
+  const end =
+    at.to <= last
+      ? { line: at.to, character: 0 }
+      : { line: last, character: file.lines[last]?.length ?? 0 };
   const answer = await ask(
     serving,
     file,
     'textDocument/inlayHint',
-    {
-      path: file.path,
-      range: { start: { line: at.from - 1, character: 0 }, end: { line: at.to, character: 0 } },
-    },
+    { path: file.path, range: { start: { line: at.from - 1, character: 0 }, end } },
     { deadline: DEADLINES.hints, signal, key: `hints\n${at.view}` },
   );
   if (!answer.ok) return withFallback<Hints>({ hints: [], label }, answer.fallback);

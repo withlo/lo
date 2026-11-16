@@ -1,7 +1,8 @@
-// What Settings lists of the toolchains, removing one, and what a server says when its toolchain
-// can't download or was removed, against a stand-in installer and pool.
+// What Settings lists of the toolchains, removing one, what a server says when its toolchain
+// can't download or was removed, against a stand-in installer and pool, and the checkouts a server
+// is refused.
 
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -10,6 +11,7 @@ import { expect, it, onTestFinished } from 'vitest';
 
 import { ADAPTERS as SHIPPED, type Adapter } from './adapters.ts';
 import {
+  checkoutRefusal,
   listedToolchain,
   listToolchains,
   removalFailure,
@@ -138,19 +140,55 @@ it('gives a server only the toolchains its adapter names, which “Remove” sto
   expect(asked).toEqual(['temurin']);
 });
 
-it('gives Lo’s own servers, TypeScript’s, Python’s and PHP’s, no toolchain, since they name none', async () => {
-  expect(SHIPPED.map((each) => each.name)).toEqual(['TypeScript', 'Python', 'PHP']);
+it('gives Lo’s own servers only the toolchains they name: the JDK to Java’s, none to the rest', async () => {
+  expect(SHIPPED.map((each) => each.name)).toEqual(['TypeScript', 'Python', 'PHP', 'Java']);
+  const answers: string[] = [];
+  const refusals: string[] = [];
   for (const shipped of SHIPPED) {
-    const toolchain = listedToolchain(shipped, (id) => Promise.resolve(id));
+    const toolchain = listedToolchain(shipped, (id) => Promise.resolve(`${shipped.name}: ${id}`));
     for (const id of Object.keys(TOOLCHAINS)) {
-      await expect(toolchain(id)).rejects.toThrow(
-        `${shipped.name} doesn’t name the toolchain ${id} among its downloads.`,
-      );
+      answers.push(await toolchain(id).catch((error: unknown) => String(error)));
+      if (shipped.id !== 'java' || id !== 'temurin') {
+        refusals.push(
+          `Error: ${shipped.name} doesn’t name the toolchain ${id} among its downloads.`,
+        );
+      }
     }
   }
-  // So Settings lists none of them as using one.
+  expect(answers.toSorted()).toEqual(['Java: temurin', ...refusals].toSorted());
+  // So Settings lists Java's alone, as using the JDK.
   const listed = await listToolchains({ ...host().given, adapters: () => SHIPPED });
-  expect(listed.flatMap((each) => each.uses)).toEqual([]);
+  expect(listed.map((each) => [each.id, each.uses])).toEqual([
+    ['dotnet', []],
+    ['go', []],
+    ['rust', []],
+    ['temurin', ['Java']],
+  ]);
+});
+
+it('refuses a checkout by what each toolchain reads there, then by what the server reads', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'lo-refusal-'));
+  onTestFinished(() => rmSync(root, { recursive: true, force: true }));
+  const java = SHIPPED.find((each) => each.id === 'java')!;
+  expect(await checkoutRefusal(java, root)).toBeUndefined();
+  mkdirSync(join(root, '.settings'));
+  expect(await checkoutRefusal(java, root)).toBe(
+    'The checkout’s .settings holds Eclipse’s settings, which Java’s server would read, and write to, in the checkout.',
+  );
+  // A server that reads nothing there itself starts.
+  expect(await checkoutRefusal(SHIPPED[0]!, root)).toBeUndefined();
+  const asked: string[] = [];
+  const own = {
+    ...adapter('csharp', 'C#', ['dotnet']),
+    checkout: (folder: string) => {
+      asked.push(folder);
+      return Promise.resolve('its own reason');
+    },
+  };
+  writeFileSync(join(root, 'global.json'), '{ "sdk": { "paths": ["sdk"] } }');
+  // The toolchain's reason comes first, and the server's isn't asked.
+  expect(await checkoutRefusal(own, root)).toContain('global.json names folders');
+  expect(asked).toEqual([]);
 });
 
 it('names the toolchain and why, when one can’t download or was removed', () => {

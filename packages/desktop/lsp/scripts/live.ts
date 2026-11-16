@@ -3,19 +3,22 @@
 //   pnpm nx run lsp:live [-- <id>…]
 //
 // It installs what servers.json pins for this system, or just the IDs given, into
-// ~/.cache/lo-live/, through the same checks Lo makes, so each version downloads once. Then it
-// runs each one's check below, one at a time. Node says its version. A server starts as its
-// adapter starts it, on Lo's Node or as its own program, on the checkouts of two pull requests the
-// code fixtures build with `--local`, so no network or token is needed: the code fixture's
-// (`testing/fixtures/code.sh`) and the hostile fixture's (`code-hostile.sh`), which is the same
-// with files planted to run code. On each it's asked what `gd`, `gr`, `K`, `gh` and `gO` ask, at
-// the places in its languages' sample projects that `testing/fixtures/code/cases.json` names,
-// printing what came back, how long it took to start and what memory it held. Then the hostile
-// checkout is searched for the markers its plants write if anything runs them, and the check fails
-// if there's one, or if anything in either checkout changed. It fails too if a server took the
-// hostile checkout's settings: if it says it read code as the PHP its `.php-lsp.json` names, or
-// indexed a different number of files there than on the code fixture's checkout. Check the
-// machine has memory to spare before running it.
+// ~/.cache/lo-live/servers/, and the toolchains they run on into ~/.cache/lo-live/toolchains/,
+// through the same checks Lo makes, so each version downloads once. `LO_LIVE_CACHE` names a folder
+// to use in place of ~/.cache/lo-live. Then it runs each one's check below, one at a time. Node
+// says its version. A server starts as its adapter starts it, on Lo's Node, on Lo's JDK or as its
+// own program, on the checkouts of two pull requests the code fixtures build with `--local`, so no
+// network or token is needed: the code fixture's (`testing/fixtures/code.sh`) and the hostile
+// fixture's (`code-hostile.sh`), which is the same with files planted to run code. On each it's
+// asked what `gd`, `gr`, `K`, `gh` and `gO` ask, at the places in its languages' sample projects
+// that `testing/fixtures/code/cases.json` names, printing what came back, how long it took to
+// start, what memory it held and what programs its processes ran as. Then the hostile checkout is
+// searched for the markers its plants write if anything runs them, and the check fails if there's
+// one, if anything in either checkout changed, or if any of the server's processes held an
+// internet socket while it ran. It fails too if a server took the hostile checkout's settings: if
+// it says it read code as the PHP its `.php-lsp.json` names, or indexed a different number of
+// files there than on the code fixture's checkout. Check the machine has memory to spare before
+// running it.
 
 import { execFile } from 'node:child_process';
 import { lstat, mkdtemp, readdir, readFile, realpath, rm } from 'node:fs/promises';
@@ -29,7 +32,9 @@ import { z } from 'zod';
 import {
   type Installed,
   Installer,
+  JDTLS,
   type Launch,
+  launchJdtls,
   launchNative,
   launchOnNode,
   MANIFEST,
@@ -38,6 +43,9 @@ import {
   PHP_LSP,
   type Pinned,
   PYRIGHT,
+  TOOLCHAINS,
+  toolchainUse,
+  type ToolchainUse,
   VTSLS,
 } from '../src/index.ts';
 import { askServer, type Place } from './ask.ts';
@@ -47,6 +55,8 @@ interface Context {
   readonly pinned: Pinned;
   /** Installs another entry, such as the Node a JavaScript server runs on. */
   readonly install: (id: string) => Promise<Installed>;
+  /** Installs a toolchain, such as the JDK Java's server runs on, and says what a server gets. */
+  readonly toolchain: (id: string) => Promise<ToolchainUse & { readonly installed: Installed }>;
 }
 
 /** Runs what's installed, prints what it found, and throws if it's wrong. */
@@ -143,21 +153,29 @@ function serverCheck(
         const root = await checkout(script, join(folder, script));
         const before = await snapshot(root);
         console.log(`\n--- ${server.name} on the checkout ${script} --local makes`);
-        const log = await askServer({
+        const { log, programs, connections } = await askServer({
           spec: {
             name: server.name,
             program: launched.program,
             args: launched.args,
             root,
             home: join(folder, `home-${script}`),
-            path: [],
+            path: launched.path ?? [],
+            variables: launched.variables,
+            allowed: launched.allowed,
             git: serverGitEnvironment(),
             settings: launched.settings,
             initializationOptions: launched.initializationOptions,
+            place: launched.place,
+            stays: launched.stays,
           },
           places,
           outlines,
         });
+        console.log(`\nIts processes ran as: ${programs.join(', ')}`);
+        if (connections.length > 0) {
+          throw new Error(`its processes held internet sockets:\n${connections.join('\n')}`);
+        }
         // What it says of plugins, interpreters, settings it ignored and what it indexed, the
         // folders' own names aside.
         const said = log.filter((line) =>
@@ -190,8 +208,8 @@ function serverCheck(
         );
       }
       console.log(
-        `\nNo marker was written, and neither checkout changed: ${server.name} ran nothing ` +
-          'planted, and wrote nothing in them.',
+        `\nNo marker was written, neither checkout changed, and no process held an internet ` +
+          `socket: ${server.name} ran nothing planted, wrote nothing in them and used no network.`,
       );
     } finally {
       await rm(folder, { recursive: true, force: true });
@@ -216,6 +234,20 @@ function native(
   return serverCheck(server, launch, languages, outlines);
 }
 
+/** How Java's server starts from `installed`, on Lo's JDK, which installs first. */
+async function launchOnJdk(installed: Installed, context: Context) {
+  const jdk = await context.toolchain('temurin');
+  return launchJdtls(installed, jdk.installed, jdk);
+}
+
+/** The check of Java's server, on Lo's JDK, which asks for `outlines` too. */
+function onJdk(
+  languages: Readonly<Record<string, string>>,
+  outlines: readonly Omit<Place, 'position'>[] = [],
+): Check {
+  return serverCheck(JDTLS, launchOnJdk, languages, outlines);
+}
+
 /** Each ID's check. */
 const CHECKS: Record<string, Check> = {
   node: async (installed, { pinned }) => {
@@ -231,12 +263,26 @@ const CHECKS: Record<string, Check> = {
   pyright: onNode(PYRIGHT, { python: 'python' }),
   // PHP's project has a file for each class, and `Tally` is in one of its own.
   'php-lsp': native(PHP_LSP, { php: 'php' }, [{ file: 'php/src/Tally.php', languageId: 'php' }]),
+  // Java's `Tally` is a class inside `Words`, whose file is left alone by the pull request.
+  jdtls: onJdk({ java: 'java' }, [
+    { file: 'java/src/main/java/sample/Words.java', languageId: 'java' },
+  ]),
 };
 
-const installer = new Installer({
-  folder: join(homedir(), '.cache', 'lo-live'),
-  fetch: globalThis.fetch,
-});
+const cache = process.env.LO_LIVE_CACHE ?? join(homedir(), '.cache', 'lo-live');
+const installer = new Installer({ folder: join(cache, 'servers'), fetch: globalThis.fetch });
+const toolchains = new Installer({ folder: join(cache, 'toolchains'), fetch: globalThis.fetch });
+
+async function toolchain(id: string): Promise<ToolchainUse & { readonly installed: Installed }> {
+  const pinned = TOOLCHAINS[id];
+  if (pinned === undefined) throw new Error(`toolchains.json has no ${id}`);
+  const installed = await toolchains.install(id, pinned, {
+    progress: (received, total) => {
+      if (received === total) console.log(`${id} ${pinned.version}: ${total} bytes, checked.`);
+    },
+  });
+  return { ...toolchainUse(id, pinned.version, installed), installed };
+}
 
 async function install(id: string): Promise<Installed> {
   const pinned = MANIFEST[id];
@@ -263,11 +309,12 @@ for (const id of ids) {
   }
   try {
     console.log(`\n=== ${id} ${pinned.version}`);
-    await check(await install(id), { pinned, install });
+    await check(await install(id), { pinned, install, toolchain });
   } catch (error) {
     console.error(`${id}: ${error instanceof Error ? error.message : String(error)}`);
     failed = true;
   }
 }
 await installer.prune(MANIFEST);
+await toolchains.prune(TOOLCHAINS);
 process.exitCode = failed ? 1 : 0;

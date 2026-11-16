@@ -1,12 +1,13 @@
 // Each server Lo runs, started as its adapter starts it on the hostile fixture's checkout
 // (`testing/fixtures/code-hostile.sh --local`), with the fake server standing in for it: Node with
-// the server's flags, or as its program, with its settings and its initialization options. The
+// the server's flags, or as its program, with its settings, its initialization options and what
+// it's given where it runs. The
 // fake server reports what it got, and asks for every setting the checkout's plants would set.
 // Nothing the fixture plants runs: the fake server runs nothing, and the plants are read as text,
 // from the bare repository.
 
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, realpathSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -16,7 +17,12 @@ import { FAKE_SERVER, fakeServer, readReport, type Seen } from '@lo/testing/lsp'
 import { afterAll, beforeAll, expect, onTestFinished, test } from 'vitest';
 
 import {
+  type Installed,
+  JDTLS,
+  jdtlsCheckoutProblem,
+  jdtlsSettings,
   type Launch,
+  launchJdtls,
   launchNative,
   launchOnNode,
   type NativeServer,
@@ -26,8 +32,11 @@ import {
   PHP_VERSION,
   PYRIGHT,
   startServer,
+  toolchainUse,
+  TRIGGER,
   VTSLS,
 } from '../src/index.ts';
+import { fileUri } from '../src/uri.ts';
 import { eventually, GIT, tempFolder } from './support.ts';
 
 const SCRIPT = fileURLToPath(
@@ -79,23 +88,63 @@ function editorSettings(): Record<string, unknown> {
   return Object.fromEntries(Object.entries(settings));
 }
 
-/**
- * How `server`'s adapter starts it from its install in `own`, with the fake server, on
- * `scenario`, in its place. Lo's Node is the one running the tests: a server on Lo's Node has the
- * fake server's script as its entry point, and a program of its own is Node with that script.
- */
-function standIn(server: NodeServer | NativeServer, own: string, scenario: string): Launch {
-  const node = { folder: own, entry: process.execPath };
-  return 'node' in server
-    ? launchOnNode({ ...server, args: [scenario] }, node, { folder: own, entry: FAKE_SERVER })
-    : launchNative({ ...server, args: [FAKE_SERVER, scenario] }, node);
+/** A server as a test starts it: its name, and how it starts from its install in `own`. */
+interface StandIn {
+  readonly name: string;
+  /** How it starts, with the fake server, on `scenario`, in its place. */
+  launch(own: string, scenario: string): Launch;
 }
+
+/**
+ * `server`, as its adapter starts it. Lo's Node is the one running the tests: a server on Lo's
+ * Node has the fake server's script as its entry point, and a program of its own is Node with that
+ * script.
+ */
+function standIn(server: NodeServer | NativeServer): StandIn {
+  return {
+    name: server.name,
+    launch(own, scenario) {
+      const node = { folder: own, entry: process.execPath };
+      return 'node' in server
+        ? launchOnNode({ ...server, args: [scenario] }, node, { folder: own, entry: FAKE_SERVER })
+        : launchNative({ ...server, args: [FAKE_SERVER, scenario] }, node);
+    },
+  };
+}
+
+/** Where the stand-in for Lo's JDK is, in `own`. */
+function jdkIn(own: string): Installed {
+  const home = join(own, 'jdk');
+  mkdirSync(join(home, 'bin'), { recursive: true });
+  return { folder: own, entry: join(home, 'bin', 'java') };
+}
+
+/**
+ * JDT LS, as its adapter starts it on a JDK in `own`: with what it gets of the JDK, and what it's
+ * told where it runs, but as Node with the fake server's script, without the JVM's flags, which
+ * Node would refuse.
+ */
+const JDT_LS: StandIn = {
+  name: JDTLS.name,
+  launch(own, scenario) {
+    const jdk = jdkIn(own);
+    const installed = { folder: own, entry: join(own, 'launcher.jar') };
+    const launch = launchJdtls(installed, jdk, toolchainUse('temurin', '25', jdk), 'linux-x64');
+    const { place } = launch;
+    return {
+      ...launch,
+      program: process.execPath,
+      args: [FAKE_SERVER, scenario],
+      place: async (where) => ({ ...(place === undefined ? {} : await place(where)), args: [] }),
+    };
+  },
+};
 
 /**
  * Starts `server` as its adapter would on the checkout, with the fake server in its place, asking
  * for the settings `sections` once it's initialized, and says what it saw once it has.
  */
-async function startAs(server: NodeServer | NativeServer, sections: readonly string[]) {
+async function startAs(server: StandIn, sections: readonly string[]) {
   const own = tempFolder();
   const fake = fakeServer(own, {
     requests: [
@@ -105,17 +154,21 @@ async function startAs(server: NodeServer | NativeServer, sections: readonly str
       },
     ],
   });
-  const launch = standIn(server, own, fake.args.at(-1) ?? '');
+  const launch = server.launch(own, fake.args.at(-1) ?? '');
   const running = startServer({
     name: server.name,
     program: launch.program,
     args: launch.args,
     root: checkout,
     home: join(own, 'home'),
-    path: [],
+    path: launch.path ?? [],
+    variables: launch.variables,
+    allowed: launch.allowed,
     git: GIT,
     settings: launch.settings,
     initializationOptions: launch.initializationOptions,
+    place: launch.place,
+    stays: launch.stays,
   });
   onTestFinished(async () => {
     if (running.pid !== undefined) {
@@ -143,6 +196,7 @@ async function startAs(server: NodeServer | NativeServer, sections: readonly str
   const answers = Array.isArray(reply.result) ? (reply.result as unknown[]) : [];
   return {
     home: realpathSync(join(own, 'home')),
+    launch,
     started,
     initialize: initialize.params,
     heard: Object.fromEntries(sections.map((section, at) => [section, answers[at]])),
@@ -154,25 +208,36 @@ async function startAs(server: NodeServer | NativeServer, sections: readonly str
  * settings set and for `ours`, and checks what holds for every server: it runs in the checkout with
  * an environment of Lo's alone, and hears nothing the checkout says.
  */
-async function heardBy(server: NodeServer | NativeServer, ours: readonly string[]) {
+async function heardBy(server: StandIn, ours: readonly string[]) {
   const plants = editorSettings();
   const seen = await startAs(server, [...Object.keys(plants), ...ours]);
-  const { started, initialize, heard, home } = seen;
+  const { started, initialize, heard, home, launch } = seen;
   expect(started.cwd).toBe(checkout);
-  // Its own home and the system's folders, git's settings, and nothing of the checkout's. macOS
-  // sets its text encoding in a process itself, as the process loads CoreFoundation.
+  // Its own home and the system's folders, those of its toolchain first, git's settings, its
+  // adapter's variables, and nothing of the checkout's. macOS sets its text encoding in a process
+  // itself, as the process loads CoreFoundation.
+  const placed = launch.place === undefined ? {} : await launch.place({ root: checkout, home });
   const { __CF_USER_TEXT_ENCODING: _system, ...env } = started.env;
   expect(env).toEqual({
     ...GIT,
+    ...launch.variables,
+    ...placed.variables,
     HOME: home,
     TMPDIR: join(home, 'tmp'),
-    PATH: '/usr/bin:/bin',
+    PATH: [...(launch.path ?? []), '/usr/bin', '/bin'].join(':'),
     LANG: 'C.UTF-8',
   });
   // It asks Lo for its settings, so it reads none from the checkout's files, and no setting it
-  // hears names a file of the checkout, or is what the checkout's editor settings say.
+  // hears names a file of the checkout, or is what the checkout's editor settings say. The one
+  // path JDT LS is told is the file it starts its project from, at the checkout's root, which no
+  // checkout has.
   expect(initialize).toMatchObject({ capabilities: { workspace: { configuration: true } } });
-  expect(JSON.stringify([heard, initialize.initializationOptions ?? null])).not.toContain(checkout);
+  const options: unknown = initialize.initializationOptions ?? null;
+  const told =
+    typeof options === 'object' && options !== null && 'triggerFiles' in options
+      ? { ...options, triggerFiles: null }
+      : options;
+  expect(JSON.stringify([heard, told])).not.toContain(checkout);
   for (const [name, value] of Object.entries(plants)) {
     expect({ [name]: heard[name] }).not.toEqual({ [name]: value });
   }
@@ -185,7 +250,7 @@ test('vtsls runs its own TypeScript, with no plugin, whatever the checkout plant
   expect(planted('node_modules/typescript/lib/tsserver.js')).toContain('lo-hostile-tsserver');
   expect(planted('typescript/tsconfig.json')).toContain('hostile-plugin');
   expect(planted('typescript/.npmrc')).toContain('npm.lo-hostile.invalid');
-  const { heard, plants } = await heardBy(VTSLS, [
+  const { heard, plants } = await heardBy(standIn(VTSLS), [
     'vtsls.autoUseWorkspaceTsdk',
     'vtsls.tsserver.globalPlugins',
     'typescript.disableAutomaticTypeAcquisition',
@@ -207,7 +272,10 @@ test('vtsls runs its own TypeScript, with no plugin, whatever the checkout plant
 test('Pyright gets no interpreter, whatever the checkout names', async () => {
   // A version for a version manager's `python`, and an interpreter for an editor's.
   expect(planted('python/.python-version')).not.toBe('');
-  const { heard, plants } = await heardBy(PYRIGHT, ['python.pythonPath', 'python.venvPath']);
+  const { heard, plants } = await heardBy(standIn(PYRIGHT), [
+    'python.pythonPath',
+    'python.venvPath',
+  ]);
   expect(plants['python.defaultInterpreterPath']).toContain('lo-server.sh');
   expect(heard).toMatchObject({
     'python.defaultInterpreterPath': null,
@@ -233,7 +301,7 @@ test('php-lsp runs no tool, and keeps its cache in its home, whatever the checko
     phpVersion: '7.4',
     indexVendor: true,
   });
-  const { started, heard, initialize, home } = await heardBy(PHP_LSP, ['php-lsp']);
+  const { started, heard, initialize, home } = await heardBy(standIn(PHP_LSP), ['php-lsp']);
   // Each of Lo's is set, and wins over the repository's file key by key: a PHP, so it runs no
   // `php` to ask, `vendor/` skipped, and the tools off.
   const told = {
@@ -249,4 +317,60 @@ test('php-lsp runs no tool, and keeps its cache in its home, whatever the checko
   expect(started.env).not.toHaveProperty('XDG_CACHE_HOME');
   expect(started.env.HOME).toBe(home);
   expect(home.startsWith(`${checkout}/`)).toBe(false);
+});
+
+test('JDT LS imports nothing and builds nothing, on Lo’s JDK, whatever the checkout plants', async () => {
+  // Gradle's wrapper, a settings script that runs a program, properties naming a JDK in the
+  // checkout; Maven's build, extensions and launcher's options; Eclipse's project, with a builder,
+  // annotation processing and settings; and the JVM's own options file.
+  expect(planted('java/gradlew')).toContain('lo-hostile-gradlew');
+  expect(planted('java/settings.gradle')).toContain('lo-gradle-settings.sh');
+  expect(planted('java/gradle.properties')).toContain('org.gradle.java.home=jdk');
+  expect(planted('java/jdk/bin/java')).toContain('lo-hostile-gradle-java');
+  expect(planted('java/pom.xml')).toContain('maven.lo-hostile.invalid');
+  expect(planted('java/.mvn/extensions.xml')).toContain('core-extension');
+  expect(planted('java/.project')).toContain('ExternalToolBuilder');
+  expect(planted('java/.factorypath')).toContain('lo-processor.jar');
+  expect(planted('java/.settings/org.eclipse.jdt.apt.core.prefs')).toContain('aptEnabled=true');
+  expect(planted('.hotspotrc')).toContain('lo-hostile-hotspotrc');
+  // Its settings are in java/, not at the root, where JDT LS would take them as its project's.
+  expect(await jdtlsCheckoutProblem(checkout)).toBeUndefined();
+  const { started, heard, initialize, home, launch, plants } = await heardBy(JDT_LS, [
+    'java.import.exclusions',
+    'java.import.gradle',
+    'java.import.maven',
+    'java.autobuild.enabled',
+    'java.project.sourcePaths',
+  ]);
+  expect(plants['java.jdt.ls.java.home']).toBe('${workspaceFolder}/java/jdk');
+  // Lo's JDK alone, first on its `PATH`, and Gradle's home in its own.
+  const javaHome = launch.variables?.JAVA_HOME ?? '';
+  expect(started.env).toMatchObject({
+    JAVA_HOME: javaHome,
+    PATH: `${javaHome}/bin:/usr/bin:/bin`,
+    GRADLE_USER_HOME: join(home, 'gradle'),
+  });
+  expect(javaHome.startsWith(`${checkout}/`)).toBe(false);
+  // No folder is searched for a build file, nothing is imported or compiled, and its project's
+  // source folders are the ones Lo found from the files' packages.
+  expect(heard).toMatchObject({
+    'java.jdt.ls.java.home': null,
+    'java.configuration.runtimes': null,
+    'java.import.exclusions': ['**'],
+    'java.import.gradle': { enabled: false, wrapper: { enabled: false } },
+    'java.import.maven': { enabled: false },
+    'java.autobuild.enabled': false,
+    'java.project.sourcePaths': ['java/src/main/java'],
+  });
+  const settings = jdtlsSettings(['java/src/main/java']);
+  expect(initialize.initializationOptions).toEqual({
+    settings,
+    triggerFiles: [fileUri(checkout, TRIGGER)],
+  });
+  // What it's given to write and read is in its home: a Gradle held to Lo's JDK, and the hosts
+  // file its JVM looks names up in, which has none.
+  expect(readFileSync(join(home, 'gradle', 'gradle.properties'), 'utf8')).toContain(
+    `org.gradle.java.home=${javaHome}\n`,
+  );
+  expect(readFileSync(join(home, 'hosts'), 'utf8')).toMatch(/^#[^\n]*\n$/);
 });
