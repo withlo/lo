@@ -166,6 +166,67 @@ test('it starts with Lo’s capabilities, and answers about the files Lo opened'
   );
 });
 
+test('a server told of a workspace of Lo’s runs in it, is told of nothing else, and never moves', async () => {
+  const told = { method: 'project/open', params: { projects: ['file:///lo/project.csproj'] } };
+  const { server, root, home, seen } = startFake(
+    {},
+    {
+      spec: {
+        workspace: ({ home: own }) => {
+          const folder = join(own, 'workspace');
+          mkdirSync(folder);
+          return Promise.resolve({ folder, notifications: [told] });
+        },
+      },
+    },
+  );
+  expect(await server.ready).toBe(true);
+  const folder = join(home, 'workspace');
+  expect(seen().find((event) => event.event === 'started')).toMatchObject({ cwd: folder });
+  const initialize = seen().find((event) => event.event === 'initialize');
+  expect(initialize?.params).toMatchObject({
+    rootUri: pathToFileURL(folder).href,
+    workspaceFolders: [{ uri: pathToFileURL(folder).href, name: 'workspace' }],
+  });
+  expect(JSON.stringify(initialize?.params)).not.toContain(root);
+  // What the workspace says to send, once the server is initialized.
+  await eventually(() => seen().some((event) => event.event === 'notification'));
+  const events = seen().map((event) =>
+    event.event === 'notification' ? { method: event.method, params: event.params } : event.event,
+  );
+  expect(events.slice(events.indexOf('initialized'))).toContainEqual(told);
+  // A workspace of Lo's is the checkout's, so the server starts again on another, not moves.
+  const next = join(root, '..', 'next');
+  mkdirSync(next);
+  expect(await server.moveTo(next)).toBe(false);
+  // Files it's asked about are still the checkout's.
+  expect(server.pathOf(pathToFileURL(join(root, 'src/a.ts')).href)).toBe('src/a.ts');
+});
+
+test('a workspace outside the server’s home, or one Lo couldn’t make, starts nothing', async () => {
+  const tooMany = Object.assign(new Error('The checkout has more than 2 C# files.'), {
+    code: 'ENOENT',
+  });
+  for (const [workspace, why] of [
+    [
+      ({ root }: { root: string }) => Promise.resolve({ folder: root, notifications: [] }),
+      "a server's workspace must be in its home",
+    ],
+    [
+      ({ home }: { home: string }) =>
+        Promise.resolve({ folder: join(home, '..'), notifications: [] }),
+      "a server's workspace must be in its home",
+    ],
+    [() => Promise.reject(tooMany), 'The checkout has more than 2 C# files.'],
+  ] as const) {
+    const { server, seen } = startFake({}, { spec: { workspace } });
+    expect(await server.ready).toBe(false);
+    expect(server.state.kind === 'failed' && failureMessage(server.state.failure)).toContain(why);
+    expect(server.pid).toBeUndefined();
+    expect(seen()).toEqual([]);
+  }
+});
+
 test('a request past its deadline, given up or replaced is cancelled on the server', async () => {
   const { server, seen } = startFake({ delays: { 'textDocument/hover': 10_000 } });
   await server.ready;

@@ -3,7 +3,7 @@
 // that leaving one out fails. And the checkouts a server that uses .NET won't run on: those with a
 // global.json, in them or above them, that could choose another SDK.
 
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { describe, expect, test } from 'vitest';
@@ -11,7 +11,7 @@ import { describe, expect, test } from 'vitest';
 import { GIT, tempFolder } from '../test/support.ts';
 import { serverEnvironment } from './environment.ts';
 import { TOOLCHAINS } from './manifest.ts';
-import { checkoutProblem, TOOLCHAIN_NAMES, toolchainUse } from './toolchains.ts';
+import { checkoutProblem, dotnetAbove, TOOLCHAIN_NAMES, toolchainUse } from './toolchains.ts';
 
 const FILES = '/cache/toolchains/go/1.27.4/files';
 
@@ -201,8 +201,59 @@ describe('a checkout a server that uses .NET won’t run on', () => {
     expect(await checkoutProblem('dotnet', checkout({}).root)).toBeUndefined();
   });
 
-  test('and the other toolchains read no global.json', async () => {
-    const { root } = checkout({ ...PLANTED, 'global.json': '{ "sdk": { "paths": ["evil"] } }' });
+  test.each([
+    ['Directory.Build.props', 'MSBuild'],
+    ['directory.build.TARGETS', 'MSBuild'],
+    ['Directory.Packages.props', 'MSBuild'],
+    ['NuGet.Config', 'NuGet'],
+  ])(
+    'a %s in a folder above it, which %s reads for every project below it',
+    async (name, reader) => {
+      const { root, above } = checkout(PLANTED);
+      const file = join(above, 'checkouts', name);
+      writeFileSync(file, '<Project />');
+      expect(await checkoutProblem('dotnet', root)).toBe(
+        `${file} is in a folder above the checkout, and ${reader} would read it for every project below it.`,
+      );
+    },
+  );
+
+  test('but runs on one that holds them itself, since only its own projects read those', async () => {
+    const { root } = checkout({
+      ...PLANTED,
+      'Directory.Build.props': '<Project />',
+      'app/Directory.Build.targets': '<Project />',
+      'Directory.Packages.props': '<Project />',
+      'NuGet.config': '<configuration />',
+    });
+    expect(await checkoutProblem('dotnet', root)).toBeUndefined();
+  });
+
+  test('and asks the same of each folder above the project Lo writes in a server’s home', async () => {
+    const { above } = checkout({});
+    const project = join(above, 'homes', 'lo', 'roslyn', 'project');
+    mkdirSync(project, { recursive: true });
+    expect(await dotnetAbove(project, 'the project Lo writes for C#')).toBeUndefined();
+    const file = join(above, 'homes', 'Directory.Build.targets');
+    writeFileSync(file, '<Project />');
+    expect(await dotnetAbove(project, 'the project Lo writes for C#')).toBe(
+      `${file} is in a folder above the project Lo writes for C#, and MSBuild would read it for every project below it.`,
+    );
+    // And a global.json the SDK resolver would read there, as the checkout's are read.
+    rmSync(file);
+    const global = join(above, 'global.json');
+    writeFileSync(global, '{ "sdk": { "paths": ["evil"] } }');
+    expect(await dotnetAbove(project, 'the project Lo writes for C#')).toBe(
+      `${global} names folders to look for an SDK in, so it could choose a .NET SDK other than Lo’s.`,
+    );
+  });
+
+  test('and the other toolchains read no global.json, nor what MSBuild and NuGet read', async () => {
+    const { root, above } = checkout({
+      ...PLANTED,
+      'global.json': '{ "sdk": { "paths": ["evil"] } }',
+    });
+    writeFileSync(join(above, 'Directory.Build.props'), '<Project />');
     for (const id of ['go', 'rust', 'temurin'])
       expect(await checkoutProblem(id, root)).toBeUndefined();
   });

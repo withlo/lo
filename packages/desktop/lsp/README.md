@@ -80,7 +80,8 @@ own (`setsid`) is still found.
 
 The servers Lo runs, each downloaded on first use for a trusted view, as `servers.json` pins it, and
 each with its adapter in `src/adapters/`. vtsls and Pyright run on Lo's own Node, which downloads
-first, and php-lsp is a program of its own. None needs anything installed.
+first, php-lsp is a program of its own, and Roslyn runs on Lo's .NET SDK, which downloads first, as
+`toolchains.json` pins it. None needs anything installed.
 
 | Server  | Version | For                    | From                                                                               | License                                              |
 | ------- | ------- | ---------------------- | ---------------------------------------------------------------------------------- | ---------------------------------------------------- |
@@ -88,12 +89,14 @@ first, and php-lsp is a program of its own. None needs anything installed.
 | Pyright | 1.1.414 | Python                 | npm: `pyright`                                                                     | MIT                                                  |
 | Node    | 26.13.1 | the two above          | nodejs.org                                                                         | MIT                                                  |
 | php-lsp | 0.33.0  | PHP                    | GitHub: the releases of [jorgsowa/php-lsp](https://github.com/jorgsowa/php-lsp)    | MIT                                                  |
+| Roslyn  | 5.11.0  | C#                     | nuget.org: `roslyn-language-server.<platform>`, signed by Microsoft                | MIT                                                  |
 
 vtsls and Pyright each start as Node, by its absolute path, with a cap on its heap, then the
 server's own entry point inside its install, never the launcher npm would link. php-lsp starts as
-its program, by its absolute path inside its install. None runs through a shell, and each has an
-environment built from nothing. What each is told is its adapter's alone, and the adapter says why
-each setting is as it is:
+its program, by its absolute path inside its install. Roslyn starts as Lo's `dotnet`, by its
+absolute path, with `exec` and the server's own assembly inside its install, never the launcher its
+package's tool would run. None runs through a shell, and each has an environment built from nothing.
+What each is told is its adapter's alone, and the adapter says why each setting is as it is:
 
 - **vtsls** runs its own TypeScript, never a workspace's (`node_modules/typescript`), and has
   automatic type acquisition off, so it runs no npm. It loads no `tsserver` plugin from the
@@ -120,13 +123,34 @@ each setting is as it is:
   `.php-lsp.json` can't turn the tools on or move the cache, and what Lo says wins over the rest of
   it key by key. Lo asks it for nothing that would run another program, such as formatting or a code
   lens's tests.
+- **Roslyn** never loads a project of the checkout's. Loading one is running it: MSBuild runs the
+  targets, `Exec` tasks and inline C# tasks a project and the `Directory.Build.props`,
+  `Directory.Build.targets` and `Directory.Packages.props` above it bring, a restore fetches what a
+  `NuGet.config` names, and the compiler loads the analyzers and source generators packages hold,
+  and nothing turns that off for a project of the checkout's. So Lo writes a project of its own in
+  the server's home, `project/checkout.csproj`, which lists the checkout's `.cs` files one by one
+  (none in `bin`, `obj` or a hidden folder, and no link), compiles them for .NET 10 against .NET's
+  and ASP.NET Core's reference assemblies, imports nothing but the SDK's own files, restores nothing
+  and drops every analyzer and source generator, the SDK's own too. Roslyn is sent that project
+  (`project/open`), told that its folder is the workspace, and run in it, so it neither looks
+  through the checkout for projects nor builds a `.cs` file as a program. Its settings turn off
+  restores, file-based programs, decompiled and Source Link sources, and code lenses. What's lost: a
+  package's types have no definition or hover, nor do the types a source generator would write, and
+  every `.cs` file is in one project, read with the SDK's defaults, so the checkout's target
+  frameworks, `#if` symbols, references between projects and `LangVersion` don't count, and a name
+  two projects both define is defined twice. A checkout with more than 50,000 `.cs` files isn't
+  read. `DOTNET_GCHeapHardLimit` caps each of its .NET processes' heaps at 3 GB, under Lo's 4 GB.
+  Roslyn writes in its home, and keeps a cache of how its own parts fit together in `cache/` beside
+  its program, in its install: nothing of a checkout's reaches it, and the installer, which checks
+  only what it unpacked, ignores it.
 
 None runs in a sandbox: each reads what you can, so an absolute import, Pyright's `extraPaths`, the
 folders of stubs a `.php-lsp.json` names, the paths a `composer.json`'s autoload names, or a
 `composer.json` up to seven folders above the checkout, which php-lsp climbs to when the checkout
-has none, lead it to files outside the checkout, and a hover can show what's in one. It only reads
-there, and nothing can send what it reads anywhere. Lo never opens a place outside the checkout an
-answer names: it shows as outside the repository.
+has none, lead it to files outside the checkout, and a hover can show what's in one. Roslyn reads
+the reference assemblies of Lo's SDK, and a definition in one goes to the signatures it writes in
+its home's `TMPDIR`. Each only reads there, and nothing can send what it reads anywhere. Lo never
+opens a place outside the checkout an answer names: it shows as outside the repository.
 
 Lo names each server's license wherever it says what the server is: a server's details in the status
 bar show its name, version and license, "Pyright 1.1.414 · MIT".
@@ -175,7 +199,10 @@ aside and deleted, so nothing finds it half gone and nothing puts it back.
 A server that uses .NET runs only as `dotnet exec` (`checkArguments` in `src/process.ts`), and only
 on a checkout `checkoutProblem` finds no `global.json` in, nor above, that names `paths` or spells a
 key with an escape: that file can send the SDK's commands, and MSBuild, to an SDK in the checkout,
-whatever the variables say.
+whatever the variables say. Nor does it run below a folder that holds a `Directory.Build.props`,
+`Directory.Build.targets`, `Directory.Packages.props` or `NuGet.config`, whatever their case, which
+MSBuild and NuGet read for every project under it (`dotnetAbove`); Roslyn's adapter asks the same of
+the folders above the project Lo writes in its home.
 
 Each file and folder unpacked is synced to the disk, then the marker, then the folder that holds
 them, and only then is it renamed into place. The marker records the fingerprint of the download and
@@ -195,6 +222,12 @@ environment are for.
 Who published php-lsp: its releases are signed by nobody, so `pin.ts` checks each archive against
 the checksum its release lists beside it, which the same build made. That catches a download gone
 wrong, not a release someone else made.
+
+Whether Microsoft's certificate was revoked: `pin.ts` takes Roslyn's packages only as nuget.org's
+catalog lists them, by their SHA-512, signed as their author's by a certificate whose organization
+is Microsoft's, with a timestamp, both chaining to DigiCert's root, pinned by its key, and each good
+when the timestamp says the package was signed, and as the package their signature signs. It asks no
+one whether a certificate has since been revoked.
 
 An installed file's bytes: before each use, its size is checked, not its hash, which would read
 every byte. On macOS, `fsync` leaves what the drive itself caches, and Node can't ask for more

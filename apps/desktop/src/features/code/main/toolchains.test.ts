@@ -138,19 +138,26 @@ it('gives a server only the toolchains its adapter names, which “Remove” sto
   expect(asked).toEqual(['temurin']);
 });
 
-it('gives Lo’s own servers, TypeScript’s, Python’s and PHP’s, no toolchain, since they name none', async () => {
-  expect(SHIPPED.map((each) => each.name)).toEqual(['TypeScript', 'Python', 'PHP']);
+it('gives Lo’s own servers no toolchain but C#’s, which gets the .NET SDK alone', async () => {
+  expect(SHIPPED.map((each) => each.name)).toEqual(['TypeScript', 'Python', 'PHP', 'C#']);
   for (const shipped of SHIPPED) {
     const toolchain = listedToolchain(shipped, (id) => Promise.resolve(id));
-    for (const id of Object.keys(TOOLCHAINS)) {
+    const named = shipped.downloads?.toolchains ?? [];
+    for (const id of Object.keys(TOOLCHAINS).filter((each) => !named.includes(each))) {
       await expect(toolchain(id)).rejects.toThrow(
         `${shipped.name} doesn’t name the toolchain ${id} among its downloads.`,
       );
     }
   }
-  // So Settings lists none of them as using one.
+  const csharp = SHIPPED.find((each) => each.name === 'C#');
+  if (csharp === undefined) throw new Error('Lo ships no adapter for C#');
+  expect(csharp.downloads?.toolchains).toEqual(['dotnet']);
+  expect(await listedToolchain(csharp, (id) => Promise.resolve(id))('dotnet')).toBe('dotnet');
+  // So Settings lists C# as using the .NET SDK, and nothing as using another.
   const listed = await listToolchains({ ...host().given, adapters: () => SHIPPED });
-  expect(listed.flatMap((each) => each.uses)).toEqual([]);
+  expect(listed.filter((each) => each.uses.length > 0).map((each) => [each.id, each.uses])).toEqual(
+    [['dotnet', ['C#']]],
+  );
 });
 
 it('names the toolchain and why, when one can’t download or was removed', () => {

@@ -280,9 +280,22 @@ test(
     const settings: unknown = JSON.parse(contents.get('.php-lsp.json') ?? '{}');
     const cache = typeof settings === 'object' && settings !== null && 'cachePath' in settings;
     expect(cache && settings.cachePath).toBe('lo-hostile-php-lsp-cache');
+    // So does the task MSBuild would compile from Directory.Build.props, and the folder NuGet.config
+    // would have NuGet keep its packages in.
+    expect(contents.get('Directory.Build.props')).toContain(
+      '<![CDATA[System.IO.File.WriteAllText(System.IO.Path.Combine(Folder, "lo-hostile-msbuild-inline"), "");]]>',
+    );
+    expect(contents.get('NuGet.config')).toContain(
+      '<add key="globalPackagesFolder" value="lo-hostile-nuget-packages" />',
+    );
     const said = new Set(script.match(/lo-hostile-[a-z]+(?:-[a-z]+)*/g));
-    expect([...markers, 'lo-hostile-php-lsp-cache'].toSorted()).toEqual([...said].toSorted());
-    expect(markers.size).toBe(23);
+    const written = [
+      'lo-hostile-msbuild-inline',
+      'lo-hostile-nuget-packages',
+      'lo-hostile-php-lsp-cache',
+    ];
+    expect([...markers, ...written].toSorted()).toEqual([...said].toSorted());
+    expect(markers.size).toBe(26);
   },
 );
 
@@ -292,6 +305,8 @@ test("Lo's own repository holds nothing a tool would pick up from what the hosti
   // settings or package scripts.
   const named = new Set([
     '.cargo',
+    '.editorconfig',
+    '.globalconfig',
     '.gitmodules',
     '.mvn',
     '.npmrc',
@@ -303,6 +318,10 @@ test("Lo's own repository holds nothing a tool would pick up from what the hosti
     '.terraform',
     '.tool-versions',
     '.vscode',
+    'Directory.Build.props',
+    'Directory.Build.targets',
+    'Directory.Packages.props',
+    'NuGet.config',
     'gradle',
     'gradlew',
     'global.json',

@@ -8,7 +8,15 @@ import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 
-import { type Server, serverEnvironment, type ServerSpec, startServer } from '@lo/lsp';
+import {
+  csharpWorkspace,
+  DOTNET_HEAP,
+  type Server,
+  serverEnvironment,
+  type ServerSpec,
+  startServer,
+  toolchainUse,
+} from '@lo/lsp';
 import { fakeServer } from '@lo/testing/lsp';
 import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 
@@ -522,6 +530,9 @@ describe('halting', () => {
 });
 
 describe('Lo’s own servers', () => {
+  /** Lo's .NET SDK, as a server gets it. */
+  const DOTNET = { folder: '/lo/toolchains/dotnet', entry: '/lo/toolchains/dotnet/dotnet' };
+
   it('get git’s folder, then the system’s, on their PATH, and no variable of their own', async () => {
     const specs: ServerSpec[] = [];
     const pool = new ServerPool({
@@ -529,7 +540,12 @@ describe('Lo’s own servers', () => {
         each.prepare({
           install: (id) =>
             Promise.resolve({ folder: `/lo/servers/${id}`, entry: `/lo/servers/${id}/entry` }),
-          toolchain: listedToolchain(each, () => Promise.reject(new Error('no toolchain here'))),
+          toolchain: listedToolchain(each, (id) =>
+            Promise.resolve({
+              installed: DOTNET,
+              ...toolchainUse(id, '10.0.404', DOTNET, 'darwin'),
+            }),
+          ),
           findCopy: () => Promise.resolve(undefined),
           signal,
         }),
@@ -544,9 +560,9 @@ describe('Lo’s own servers', () => {
     onTestFinished(() => pool.stop());
     pool.sync([view('v1', 'a/x', 1, SHIPPED)], 'v1');
     await settle();
-    // PHP's starts first, since it waits for one download, not Node's as well.
-    expect(specs.map((spec) => spec.name)).toEqual(['PHP', 'TypeScript', 'Python']);
-    for (const spec of specs) {
+    // PHP's starts first, since it waits for one download, not Node's or the SDK as well.
+    expect(specs.map((spec) => spec.name)).toEqual(['PHP', 'TypeScript', 'Python', 'C#']);
+    for (const spec of specs.filter((each) => each.name !== 'C#')) {
       expect(serverEnvironment({ ...spec, roots: [spec.root] })).toEqual({
         GIT_CONFIG_COUNT: '0',
         HOME: '/home/lo',
@@ -554,7 +570,55 @@ describe('Lo’s own servers', () => {
         PATH: '/lo/git/bin:/usr/bin:/bin',
         LANG: 'C.UTF-8',
       });
+      expect(spec.workspace).toBeUndefined();
     }
+  });
+
+  it('give C#’s Lo’s .NET first on its PATH, the SDK’s variables, a heap cap and its own project', async () => {
+    const specs: ServerSpec[] = [];
+    const csharp = SHIPPED.filter((each) => each.id === 'csharp');
+    const pool = new ServerPool({
+      prepare: (each, progress, signal) =>
+        each.prepare({
+          install: (id) =>
+            Promise.resolve({ folder: `/lo/servers/${id}`, entry: `/lo/servers/${id}/entry` }),
+          toolchain: listedToolchain(each, (id) =>
+            Promise.resolve({
+              installed: DOTNET,
+              ...toolchainUse(id, '10.0.404', DOTNET, 'darwin'),
+            }),
+          ),
+          findCopy: () => Promise.resolve(undefined),
+          signal,
+        }),
+      start(spec) {
+        specs.push(spec);
+        return new StandIn(spec);
+      },
+      base: () => ({ home: '/home/lo', git: { GIT_CONFIG_COUNT: '0' }, path: ['/lo/git/bin'] }),
+      changed: () => undefined,
+      log: () => undefined,
+    });
+    onTestFinished(() => pool.stop());
+    pool.sync([view('v1', 'a/x', 1, csharp)], 'v1');
+    await settle();
+    const [spec] = specs;
+    expect([spec?.program, spec?.args.slice(0, 2)]).toEqual([
+      DOTNET.entry,
+      ['exec', '/lo/servers/roslyn/entry'],
+    ]);
+    if (spec === undefined) return;
+    expect(serverEnvironment({ ...spec, roots: [spec.root] })).toEqual({
+      ...toolchainUse('dotnet', '10.0.404', DOTNET, 'darwin').variables,
+      DOTNET_GCHeapHardLimit: DOTNET_HEAP,
+      GIT_CONFIG_COUNT: '0',
+      HOME: '/home/lo',
+      TMPDIR: '/home/lo/tmp',
+      PATH: '/lo/toolchains/dotnet:/lo/git/bin:/usr/bin:/bin',
+      LANG: 'C.UTF-8',
+    });
+    // It's told of the project Lo writes in its home, never the checkout.
+    expect(spec.workspace).toBe(csharpWorkspace);
   });
 });
 
@@ -643,6 +707,45 @@ describe('checkouts a server won’t run on', () => {
         kind: 'error',
         message:
           'The checkout’s global.json names folders to look for an SDK in, so it could choose a .NET SDK other than Lo’s.',
+      },
+    });
+  });
+
+  it('starts none below a file MSBuild would import into every project under it', async () => {
+    const folder = realpathSync(mkdtempSync(join(tmpdir(), 'lo-above-')));
+    onTestFinished(() => rmSync(folder, { recursive: true, force: true }));
+    const root = join(folder, 'pull-1');
+    mkdirSync(root);
+    writeFileSync(join(folder, 'Directory.Build.props'), '<Project />');
+    const started: string[] = [];
+    const pool = new ServerPool({
+      prepare: () => Promise.resolve({ kind: 'ready', launch: { program: '/bin/x', args: [] } }),
+      checkout: checkoutRefusal,
+      start(spec) {
+        started.push(spec.name);
+        return new StandIn(spec);
+      },
+      base: () => ({ home: '/home/lo', git: { GIT_CONFIG_COUNT: '0' }, path: [] }),
+      changed: () => undefined,
+      log: () => undefined,
+    });
+    onTestFinished(() => pool.stop());
+    const view1: PoolView = {
+      id: 'v1',
+      repo: 'a/x',
+      pull: 1,
+      trust: 'trusted',
+      root: { folder: root, pull: 1 },
+      wants: [CSHARP],
+    };
+    pool.sync([view1], 'v1');
+    await vi.waitFor(() => expect(pool.shown('a/x', 'csharp')?.state.kind).toBe('failed'));
+    expect(started).toEqual([]);
+    expect(pool.shown('a/x', 'csharp')?.state).toEqual({
+      kind: 'failed',
+      why: {
+        kind: 'error',
+        message: `${join(folder, 'Directory.Build.props')} is in a folder above the checkout, and MSBuild would read it for every project below it.`,
       },
     });
   });

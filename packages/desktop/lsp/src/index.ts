@@ -2,6 +2,17 @@ export { launchNative, type NativeServer } from './adapters/native.ts';
 export { heapCap, launchOnNode, type Launch, type NodeServer } from './adapters/node.ts';
 export { PHP_LSP, PHP_VERSION } from './adapters/phplsp.ts';
 export { NO_PYTHON, PYRIGHT } from './adapters/pyright.ts';
+export {
+  CSHARP_FILES,
+  CSHARP_PROJECT,
+  csharpProject,
+  csharpSources,
+  csharpWorkspace,
+  DOTNET_HEAP,
+  launchRoslyn,
+  msbuild,
+  ROSLYN,
+} from './adapters/roslyn.ts';
 export { VTSLS } from './adapters/vtsls.ts';
 export { CLIENT_CAPABILITIES } from './capabilities.ts';
 export { findCopy, type CopyOptions, type Found } from './copies.ts';
@@ -51,12 +62,16 @@ export {
   type RequestOptions,
   type ServerSpec,
   type Tuning,
+  type Workspace,
+  type WorkspacePaths,
 } from './server.ts';
 export { failureMessage, type Failure, type Progress, type State } from './state.ts';
 export {
   checkoutProblem,
+  dotnetAbove,
   TOOLCHAIN_NAMES,
   toolchainUse,
+  type InstalledToolchain,
   type ToolchainName,
   type ToolchainUse,
 } from './toolchains.ts';

@@ -7,8 +7,10 @@
 import {
   launchNative,
   launchOnNode,
+  launchRoslyn,
   PHP_LSP,
   PYRIGHT,
+  ROSLYN,
   VTSLS,
   type Installed,
   type Launch,
@@ -123,6 +125,24 @@ function native(
   };
 }
 
+/**
+ * The adapter for C#: Roslyn's server, which downloads once, on first use, with the .NET SDK it
+ * runs on. It loads the project Lo writes for the checkout in its home, never one of the checkout's
+ * (`@lo/lsp`'s `roslyn.ts` says why).
+ */
+const CSHARP: Adapter = {
+  id: 'csharp',
+  name: 'C#',
+  languages: { csharp: 'csharp' },
+  // A first definition waits on the project's first load.
+  definitionDeadline: 5000,
+  downloads: { servers: [ROSLYN.id], toolchains: ['dotnet'] },
+  async prepare(context) {
+    const dotnet = await context.toolchain('dotnet');
+    return { kind: 'ready', launch: launchRoslyn(await context.install(ROSLYN.id), dotnet) };
+  },
+};
+
 /** The adapters Lo ships. */
 export const ADAPTERS: readonly Adapter[] = [
   onNode(VTSLS, {
@@ -132,6 +152,7 @@ export const ADAPTERS: readonly Adapter[] = [
   }),
   onNode(PYRIGHT, { id: 'python', name: 'Python', languages: { python: 'python' } }),
   native(PHP_LSP, { id: 'php', name: 'PHP', languages: { php: 'php' } }),
+  CSHARP,
 ];
 
 /** The adapter that reads the file at `path`, and the protocol's id for its language, if one does. */

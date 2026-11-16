@@ -2,19 +2,40 @@
 // runs, with which flags, what each is told, and what the manifest pins for it. No server runs
 // here; `test/hostile.test.ts` starts each as Lo would, with the fake server standing in for it.
 
-import { accessSync, constants, readFileSync, statSync } from 'node:fs';
+import {
+  accessSync,
+  constants,
+  mkdirSync,
+  readFileSync,
+  statSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 import { describe, expect, test } from 'vitest';
 
+import { tempFolder } from '../../test/support.ts';
 import type { Installed } from '../install.ts';
 import { MANIFEST, PLATFORMS } from '../manifest.ts';
 import { sectionOf } from '../requests.ts';
 import { LIMITS } from '../server.ts';
+import { type InstalledToolchain, toolchainUse } from '../toolchains.ts';
 import { launchNative } from './native.ts';
 import { heapCap, launchOnNode, type NodeServer } from './node.ts';
 import { PHP_LSP, PHP_VERSION } from './phplsp.ts';
 import { NO_PYTHON, PYRIGHT } from './pyright.ts';
+import {
+  CSHARP_PROJECT,
+  csharpProject,
+  csharpSources,
+  csharpWorkspace,
+  DOTNET_HEAP,
+  launchRoslyn,
+  msbuild,
+  ROSLYN,
+} from './roslyn.ts';
 import { VTSLS } from './vtsls.ts';
 
 const SERVERS = [VTSLS, PYRIGHT];
@@ -31,6 +52,25 @@ const PHP_LSP_VERSION = pinnedVersion('php-lsp');
 const PHP_LSP_INSTALLED: Installed = {
   folder: `/lo/cache/servers/php-lsp/${PHP_LSP_VERSION}/files`,
   entry: `/lo/cache/servers/php-lsp/${PHP_LSP_VERSION}/files/php-lsp`,
+};
+
+/** Roslyn's version, as the manifest pins it. */
+const ROSLYN_VERSION = pinnedVersion('roslyn');
+
+/** Roslyn, installed as the manifest pins it, for macOS on Arm. */
+const ROSLYN_INSTALLED: Installed = {
+  folder: `/lo/cache/servers/roslyn/${ROSLYN_VERSION}/files`,
+  entry: `/lo/cache/servers/roslyn/${ROSLYN_VERSION}/files/tools/net10.0/osx-arm64/Microsoft.CodeAnalysis.LanguageServer.dll`,
+};
+
+/** Lo's .NET SDK, installed as `toolchains.json` pins it, and what a server gets of it. */
+const DOTNET_INSTALLED: Installed = {
+  folder: '/lo/cache/toolchains/dotnet/10.0.404/files',
+  entry: '/lo/cache/toolchains/dotnet/10.0.404/files/dotnet',
+};
+const DOTNET: InstalledToolchain = {
+  installed: DOTNET_INSTALLED,
+  ...toolchainUse('dotnet', '10.0.404', DOTNET_INSTALLED, 'darwin'),
 };
 
 /** Lo's Node, installed as the manifest pins it. */
@@ -99,14 +139,16 @@ test('each says what it is, with its version and license, wherever its details s
   expect([
     ...SERVERS.map((server) => launchOnNode(server, NODE, installed(server)).version),
     launchNative(PHP_LSP, PHP_LSP_INSTALLED).version,
+    launchRoslyn(ROSLYN_INSTALLED, DOTNET).version,
   ]).toEqual([
     `vtsls ${pinnedVersion('vtsls')} · MIT`,
     `Pyright ${pinnedVersion('pyright')} · MIT`,
     `php-lsp ${pinnedVersion('php-lsp')} · MIT`,
+    `Roslyn ${ROSLYN_VERSION} · MIT`,
   ]);
   // The README lists each with its version, source and license.
   const readme = readFileSync(join(import.meta.dirname, '..', '..', 'README.md'), 'utf8');
-  for (const server of [...SERVERS, PHP_LSP]) {
+  for (const server of [...SERVERS, PHP_LSP, ROSLYN]) {
     const row = new RegExp(
       `^\\| ${server.name}\\b[^|\\n]*\\| ${pinnedVersion(server.id)} +\\|[^\\n]*\\| ${server.license}\\b`,
       'm',
@@ -116,10 +158,11 @@ test('each says what it is, with its version and license, wherever its details s
 });
 
 test('each says whether it gives the inlay hints `gh` shows: Pyright has none', () => {
-  expect([...SERVERS, PHP_LSP].map((server) => [server.id, server.hints])).toEqual([
+  expect([...SERVERS, PHP_LSP, ROSLYN].map((server) => [server.id, server.hints])).toEqual([
     ['vtsls', true],
     ['pyright', false],
     ['php-lsp', true],
+    ['roslyn', true],
   ]);
 });
 
@@ -230,5 +273,191 @@ describe('php-lsp', () => {
     expect(setting(PHP_LSP, 'php-lsp.cachePath')).toBeNull();
     // Nor does it name a folder for caches, which php-lsp would keep its own in.
     expect(launch.variables).toBeUndefined();
+  });
+});
+
+describe('Roslyn', () => {
+  /** .NET's name for each platform, in Roslyn's packages' names and folders. */
+  const RIDS = {
+    'darwin-arm64': 'osx-arm64',
+    'darwin-x64': 'osx-x64',
+    'linux-x64': 'linux-x64',
+    'linux-arm64': 'linux-arm64',
+  } as const;
+
+  test('starts as `dotnet exec` on its own program, from its package for each platform', () => {
+    const pinnedRoslyn = MANIFEST.roslyn;
+    expect(pinnedRoslyn?.hosts).toEqual(['api.nuget.org']);
+    expect(Object.keys(pinnedRoslyn?.platforms ?? {}).toSorted()).toEqual(
+      [...PLATFORMS].toSorted(),
+    );
+    for (const platform of PLATFORMS) {
+      const rid = RIDS[platform];
+      const id = `roslyn-language-server.${rid}`;
+      expect(pinnedRoslyn?.platforms[platform]).toMatchObject({
+        kind: 'zip',
+        url: `https://api.nuget.org/v3-flatcontainer/${id}/${ROSLYN_VERSION}/${id}.${ROSLYN_VERSION}.nupkg`,
+        entry: `tools/net10.0/${rid}/Microsoft.CodeAnalysis.LanguageServer.dll`,
+      });
+    }
+    const launch = launchRoslyn(ROSLYN_INSTALLED, DOTNET);
+    // Lo's `dotnet`, which runs the program on .NET's runtime and reads no global.json, never the
+    // launcher the package's tool would run, and no `--autoLoadProjects`.
+    expect([launch.program, launch.args]).toEqual([
+      DOTNET_INSTALLED.entry,
+      [
+        'exec',
+        ROSLYN_INSTALLED.entry,
+        '--stdio',
+        '--logLevel',
+        'Information',
+        '--telemetryLevel',
+        'off',
+      ],
+    ]);
+    expect(launch.workspace).toBe(csharpWorkspace);
+    expect(() => launchRoslyn({ folder: 'roslyn', entry: 'roslyn/server.dll' }, DOTNET)).toThrow(
+      "roslyn/server.dll isn't an absolute path",
+    );
+    expect(() =>
+      launchRoslyn(ROSLYN_INSTALLED, {
+        ...DOTNET,
+        installed: { folder: 'dotnet', entry: 'dotnet/dotnet' },
+      }),
+    ).toThrow("dotnet/dotnet isn't an absolute path");
+    expect(() => launchRoslyn(ROSLYN_INSTALLED, DOTNET, {})).toThrow('has no roslyn');
+  });
+
+  test('gets .NET’s folder and variables, and a cap on each heap under Lo’s on its group', () => {
+    const launch = launchRoslyn(ROSLYN_INSTALLED, DOTNET);
+    expect(launch.path).toEqual([DOTNET_INSTALLED.folder]);
+    expect(launch.variables).toEqual({ ...DOTNET.variables, DOTNET_GCHeapHardLimit: 'c0000000' });
+    expect(launch.allowed).toEqual([]);
+    // 3 GB, in hex as .NET reads it.
+    expect(Number.parseInt(DOTNET_HEAP, 16)).toBe(3 * 1024 ** 3);
+    expect(Number.parseInt(DOTNET_HEAP, 16)).toBeLessThan(LIMITS.memoryCap);
+  });
+
+  test('restores nothing, builds no file as a program, and fetches no sources', () => {
+    expect(setting(ROSLYN, 'projects.dotnet_enable_automatic_restore')).toBe(false);
+    expect(setting(ROSLYN, 'projects.dotnet_enable_file_based_programs')).toBe(false);
+    expect(setting(ROSLYN, 'projects.dotnet_enable_file_based_programs_when_ambiguous')).toBe(
+      false,
+    );
+    expect(setting(ROSLYN, 'navigation.dotnet_navigate_to_decompiled_sources')).toBe(false);
+    expect(setting(ROSLYN, 'navigation.dotnet_navigate_to_source_link_and_embedded_sources')).toBe(
+      false,
+    );
+    // No code lens, whose tests' would run them.
+    expect(setting(ROSLYN, 'csharp|code_lens.dotnet_enable_tests_code_lens')).toBe(false);
+    expect(setting(ROSLYN, 'csharp|code_lens.dotnet_enable_references_code_lens')).toBe(false);
+  });
+
+  test('gives the type hints gh shows: parameters’ names, and the types C# infers', () => {
+    for (const name of [
+      'dotnet_enable_inlay_hints_for_parameters',
+      'csharp_enable_inlay_hints_for_types',
+      'csharp_enable_inlay_hints_for_implicit_variable_types',
+      'csharp_enable_inlay_hints_for_lambda_parameter_types',
+    ]) {
+      expect(setting(ROSLYN, `csharp|inlay_hints.${name}`)).toBe(true);
+    }
+  });
+
+  test('loads a project of Lo’s, which imports only the SDK’s files and lists each file', () => {
+    const project = csharpProject([
+      '/c/src/A.cs',
+      '/c/$(Evil)/@(Items)/%41;*?.cs',
+      "/c/it's (1).cs",
+    ]);
+    expect(project.match(/<Compile Include="[^"]*" \/>/g)).toEqual([
+      '<Compile Include="/c/src/A.cs" />',
+      '<Compile Include="/c/%24%28Evil%29/%40%28Items%29/%2541%3B%2A%3F.cs" />',
+      '<Compile Include="/c/it%27s %281%29.cs" />',
+    ]);
+    // The SDK's own files, and nothing it would import from above the project, or from the user's
+    // MSBuild folders.
+    expect(project.match(/<Import [^>]*>/g)).toEqual([
+      '<Import Project="Sdk.props" Sdk="Microsoft.NET.Sdk" />',
+      '<Import Project="Sdk.targets" Sdk="Microsoft.NET.Sdk" />',
+    ]);
+    for (const name of [
+      'ImportDirectoryBuildProps',
+      'ImportDirectoryBuildTargets',
+      'ImportDirectoryPackagesProps',
+      'ImportProjectExtensionProps',
+      'ImportProjectExtensionTargets',
+      'ImportUserLocationsByWildcardBeforeMicrosoftCommonProps',
+      'ImportUserLocationsByWildcardAfterMicrosoftCommonProps',
+      'ImportUserLocationsByWildcardBeforeMicrosoftCommonTargets',
+      'ImportUserLocationsByWildcardAfterMicrosoftCommonTargets',
+      'EnableDefaultItems',
+      'ManagePackageVersionsCentrally',
+      'EnableNETAnalyzers',
+      'RunAnalyzers',
+      'DiscoverEditorConfigFiles',
+      'DiscoverGlobalAnalyzerConfigFiles',
+    ]) {
+      expect(project).toContain(`<${name}>false</${name}>`);
+    }
+    // No package, and no analyzer or source generator, not even the SDK's own.
+    expect(project).not.toMatch(/PackageReference|UsingTask|Exec\b/);
+    expect(project).toContain('<Analyzer Remove="@(Analyzer)" />');
+    // MSBuild's characters, each escaped, and XML's.
+    expect(msbuild("%$@'();?*")).toBe('%25%24%40%27%28%29%3B%3F%2A');
+    expect(csharpProject(['/c/a&b<c>"d.cs'])).toContain(
+      '<Compile Include="/c/a&amp;b&lt;c&gt;&quot;d.cs" />',
+    );
+  });
+
+  test('lists the checkout’s .cs files, but none in build output or hidden folders, nor links', async () => {
+    const root = tempFolder();
+    const files = {
+      'src/A.cs': '',
+      'src/Lower.CS': '',
+      'src/nested/B.cs': '',
+      'src/bin/Built.cs': '',
+      'src/OBJ/Generated.cs': '',
+      '.hidden/C.cs': '',
+      'src/.git/D.cs': '',
+      'src/.editorconfig': '',
+      'src/Readme.md': '',
+      'src/bad\u0007name.cs': '',
+    };
+    for (const [path, text] of Object.entries(files)) {
+      mkdirSync(join(root, path, '..'), { recursive: true });
+      writeFileSync(join(root, path), text);
+    }
+    symlinkSync(join(root, 'src', 'A.cs'), join(root, 'src', 'Link.cs'));
+    symlinkSync(join(root, 'src'), join(root, 'linked'));
+    expect(await csharpSources(root)).toEqual([
+      join(root, 'src', 'A.cs'),
+      join(root, 'src', 'Lower.CS'),
+      join(root, 'src', 'nested', 'B.cs'),
+    ]);
+    await expect(csharpSources(root, 2)).rejects.toThrow('The checkout has more than 2 C# files.');
+  });
+
+  test('writes its project in its home, and is told of no folder but that one', async () => {
+    const folder = tempFolder();
+    const root = join(folder, 'checkout');
+    const home = join(folder, 'home');
+    mkdirSync(join(root, 'app'), { recursive: true });
+    writeFileSync(join(root, 'app', 'Program.cs'), '');
+    writeFileSync(join(root, 'Directory.Build.props'), '<Project />');
+    const workspace = await csharpWorkspace({ root, home });
+    const project = join(home, CSHARP_PROJECT.folder, CSHARP_PROJECT.file);
+    expect(workspace).toEqual({
+      folder: join(home, CSHARP_PROJECT.folder),
+      notifications: [
+        { method: 'project/open', params: { projects: [pathToFileURL(project).href] } },
+      ],
+    });
+    expect(readFileSync(project, 'utf8')).toBe(csharpProject([join(root, 'app', 'Program.cs')]));
+    // Below a folder that holds a file MSBuild reads for every project below it, it writes none.
+    writeFileSync(join(folder, 'Directory.Build.props'), '<Project />');
+    await expect(csharpWorkspace({ root, home })).rejects.toThrow(
+      `${join(folder, 'Directory.Build.props')} is in a folder above the project Lo writes for C#`,
+    );
   });
 });

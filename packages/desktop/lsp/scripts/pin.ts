@@ -17,8 +17,17 @@ import { join } from 'node:path';
 import { format, resolveConfig } from 'prettier';
 
 import { parseManifest, parseToolchains } from '../src/index.ts';
+import { DIGICERT_G4, nuget } from './nuget.ts';
 import { githubRelease, node, npm, type Source } from './sources.ts';
 import { dotnet, go, rust, temurin } from './toolchains.ts';
+
+/** .NET's names for the platforms, its runtime identifiers. */
+const RIDS = {
+  'darwin-arm64': 'osx-arm64',
+  'darwin-x64': 'osx-x64',
+  'linux-x64': 'linux-x64',
+  'linux-arm64': 'linux-arm64',
+} as const;
 
 /** The armored public keys in `keys/<publisher>/`. */
 function keys(publisher: string): string[] {
@@ -46,6 +55,18 @@ const SOURCES: Record<string, Source> = {
       'linux-arm64': 'php-lsp-aarch64-unknown-linux-musl.tar.gz',
     },
     'php-lsp',
+  ),
+  // Roslyn's server, a package for each platform, signed by Microsoft. It starts from its own
+  // program's assembly, under `dotnet exec`, never the launcher the package's tool runs.
+  roslyn: nuget(
+    {
+      'darwin-arm64': `roslyn-language-server.${RIDS['darwin-arm64']}`,
+      'darwin-x64': `roslyn-language-server.${RIDS['darwin-x64']}`,
+      'linux-x64': `roslyn-language-server.${RIDS['linux-x64']}`,
+      'linux-arm64': `roslyn-language-server.${RIDS['linux-arm64']}`,
+    },
+    (platform) => `tools/net10.0/${RIDS[platform]}/Microsoft.CodeAnalysis.LanguageServer.dll`,
+    { organization: 'Microsoft Corporation', roots: [DIGICERT_G4] },
   ),
 };
 

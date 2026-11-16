@@ -25,11 +25,13 @@
  * found there runs with its own runtime. The SDK's commands read the `global.json` nearest the
  * folder they run in, and MSBuild the one nearest each project, however the variables are set.
  * So a server that uses .NET runs only as `dotnet exec`, which reads none, and only on a checkout
- * {@link checkoutProblem} finds no such file in, nor in a folder above.
+ * {@link checkoutProblem} finds no such file in, nor in a folder above. Nor does it run below a
+ * folder that holds a file MSBuild or NuGet read for every project under it, such as a
+ * `Directory.Build.props` ({@link dotnetAbove}).
  */
 
 import { lstat, open, readdir } from 'node:fs/promises';
-import { basename, dirname, join, relative } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 
 import type { Installed } from './install.ts';
 
@@ -56,6 +58,11 @@ export interface ToolchainUse {
   readonly variables: Readonly<Record<string, string>>;
   /** The names among `variables` that choose a program, which the toolchain sets on purpose. */
   readonly allowed: readonly string[];
+}
+
+/** A toolchain Lo installed, and what a server gets of it. */
+export interface InstalledToolchain extends ToolchainUse {
+  readonly installed: Installed;
 }
 
 /**
@@ -131,28 +138,69 @@ const GLOBAL_JSON_LIMIT = 1024 * 1024;
  * Why a server that uses toolchain `id` mustn't run on the checkout at `root`, or `undefined`
  * when it may. For .NET, it's a `global.json` in the checkout, or in a folder above it, that could
  * choose an SDK other than Lo's: one that names folders to look for an SDK in (`sdk.paths`), or
- * that spells a key with an escape, which hides such a name from a look at its text. The other
- * toolchains read nothing in a checkout that their variables don't answer.
+ * that spells a key with an escape, which hides such a name from a look at its text. Or it's one
+ * of the files MSBuild and NuGet read from every folder above a project ({@link dotnetAbove}),
+ * in a folder above the checkout. The other toolchains read nothing in a checkout that their
+ * variables don't answer.
  */
 export async function checkoutProblem(id: string, root: string): Promise<string | undefined> {
   if (id !== 'dotnet') return undefined;
-  const found: string[] = [];
   // Every folder in the checkout, since each project's own nearest file counts, and the disk may
   // not tell names apart by case.
   for (const path of await readdir(root, { recursive: true, encoding: 'utf8' })) {
-    if (basename(path).toLowerCase() === 'global.json') found.push(join(root, path));
+    if (basename(path).toLowerCase() !== 'global.json') continue;
+    const why = await steers(join(root, path));
+    if (why !== undefined)
+      return `The checkout’s ${path} ${why}, so it could choose a .NET SDK other than Lo’s.`;
   }
-  for (let folder = dirname(root); ; folder = dirname(folder)) {
-    found.push(join(folder, 'global.json'));
-    if (dirname(folder) === folder) break;
+  return dotnetAbove(root);
+}
+
+/**
+ * The files MSBuild and NuGet look for in each folder above a project, by their names in lowercase:
+ * MSBuild imports the nearest `Directory.Build.props`, `Directory.Build.targets` and
+ * `Directory.Packages.props` into the project, and NuGet reads every `NuGet.config`.
+ */
+const READ_ABOVE: ReadonlyMap<string, string> = new Map([
+  ['directory.build.props', 'MSBuild'],
+  ['directory.build.targets', 'MSBuild'],
+  ['directory.packages.props', 'MSBuild'],
+  ['nuget.config', 'NuGet'],
+]);
+
+/**
+ * Why .NET mustn't run below `folder`, by what's in each folder above it: a `global.json` that
+ * could choose an SDK other than Lo's, as {@link checkoutProblem} reads one, or a file that
+ * MSBuild or NuGet would read for every project below it ({@link READ_ABOVE}), whatever the case
+ * of its name. It's asked of a checkout, and of the folder of the project Lo writes for a server in
+ * its home, since MSBuild looks above the project, not above its sources; `what` names the folder.
+ */
+export async function dotnetAbove(
+  folder: string,
+  what = 'the checkout',
+): Promise<string | undefined> {
+  for (let above = dirname(folder); ; above = dirname(above)) {
+    // A folder Lo can't list is looked in by the names themselves.
+    const names = (await readdir(above).catch(() => undefined)) ?? [
+      'global.json',
+      ...READ_ABOVE.keys(),
+    ];
+    for (const name of names) {
+      const file = join(above, name);
+      const lower = name.toLowerCase();
+      if (lower === 'global.json') {
+        const why = await steers(file);
+        if (why !== undefined)
+          return `${file} ${why}, so it could choose a .NET SDK other than Lo’s.`;
+        continue;
+      }
+      const reader = READ_ABOVE.get(lower);
+      if (reader === undefined) continue;
+      if ((await lstat(file).catch(() => undefined)) === undefined) continue;
+      return `${file} is in a folder above ${what}, and ${reader} would read it for every project below it.`;
+    }
+    if (dirname(above) === above) return undefined;
   }
-  for (const file of found) {
-    const why = await steers(file);
-    if (why === undefined) continue;
-    const named = file.startsWith(`${root}/`) ? `The checkout’s ${relative(root, file)}` : file;
-    return `${named} ${why}, so it could choose a .NET SDK other than Lo’s.`;
-  }
-  return undefined;
 }
 
 /** What makes the `global.json` at `file` one Lo can't run .NET beside, if anything does. */

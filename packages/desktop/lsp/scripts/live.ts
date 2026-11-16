@@ -3,19 +3,22 @@
 //   pnpm nx run lsp:live [-- <id>…]
 //
 // It installs what servers.json pins for this system, or just the IDs given, into
-// ~/.cache/lo-live/, through the same checks Lo makes, so each version downloads once. Then it
-// runs each one's check below, one at a time. Node says its version. A server starts as its
-// adapter starts it, on Lo's Node or as its own program, on the checkouts of two pull requests the
-// code fixtures build with `--local`, so no network or token is needed: the code fixture's
-// (`testing/fixtures/code.sh`) and the hostile fixture's (`code-hostile.sh`), which is the same
-// with files planted to run code. On each it's asked what `gd`, `gr`, `K`, `gh` and `gO` ask, at
-// the places in its languages' sample projects that `testing/fixtures/code/cases.json` names,
-// printing what came back, how long it took to start and what memory it held. Then the hostile
-// checkout is searched for the markers its plants write if anything runs them, and the check fails
-// if there's one, or if anything in either checkout changed. It fails too if a server took the
-// hostile checkout's settings: if it says it read code as the PHP its `.php-lsp.json` names, or
-// indexed a different number of files there than on the code fixture's checkout. Check the
-// machine has memory to spare before running it.
+// ~/.cache/lo-live/, or the folder LO_LIVE_CACHE names, through the same checks Lo makes, so each
+// version downloads once; a server that runs on a toolchain, as Roslyn runs on .NET, installs that
+// too, as toolchains.json pins it. Then it runs each one's check below, one at a time. Node says
+// its version. A server starts as its adapter starts it, on Lo's Node, on Lo's toolchain or as its
+// own program, on the checkouts of two pull requests the code fixtures build with `--local`, so no
+// network or token is needed: the code fixture's (`testing/fixtures/code.sh`) and the hostile
+// fixture's (`code-hostile.sh`), which is the same with files planted to run code. On each it's
+// asked what `gd`, `gr`, `K`, `gh` and `gO` ask, at the places in its languages' sample projects
+// that `testing/fixtures/code/cases.json` names, printing what came back, how long it took to
+// start and what memory it held. A checkout its toolchain refuses (`checkoutProblem`, which the
+// pool asks before a start) starts nothing, and the check says why. Then the hostile checkout is
+// searched for the markers its plants write if anything runs them, and the check fails if there's
+// one, or if anything in either checkout changed. It fails too if a server took the hostile
+// checkout's settings: if it says it read code as the PHP its `.php-lsp.json` names, or indexed a
+// different number of files there than on the code fixture's checkout. Check the machine has
+// memory to spare before running it.
 
 import { execFile } from 'node:child_process';
 import { lstat, mkdtemp, readdir, readFile, realpath, rm } from 'node:fs/promises';
@@ -27,17 +30,23 @@ import { serverGitEnvironment } from '@lo/git';
 import { z } from 'zod';
 
 import {
+  checkoutProblem,
   type Installed,
   Installer,
+  type InstalledToolchain,
   type Launch,
   launchNative,
   launchOnNode,
+  launchRoslyn,
   MANIFEST,
   type NativeServer,
   type NodeServer,
   PHP_LSP,
   type Pinned,
   PYRIGHT,
+  ROSLYN,
+  TOOLCHAINS,
+  toolchainUse,
   VTSLS,
 } from '../src/index.ts';
 import { askServer, type Place } from './ask.ts';
@@ -47,6 +56,8 @@ interface Context {
   readonly pinned: Pinned;
   /** Installs another entry, such as the Node a JavaScript server runs on. */
   readonly install: (id: string) => Promise<Installed>;
+  /** Installs a toolchain, as `toolchains.json` pins it, and says what a server gets of it. */
+  readonly installToolchain: (id: string) => Promise<InstalledToolchain>;
 }
 
 /** Runs what's installed, prints what it found, and throws if it's wrong. */
@@ -121,6 +132,16 @@ function changes(before: Map<string, string>, after: Map<string, string>): strin
   return [...paths].filter((path) => before.get(path) !== after.get(path)).toSorted();
 }
 
+/** What a check asks besides a server's places. */
+interface Asking {
+  /** Files whose outline it's asked for besides the places'. */
+  readonly outlines?: readonly Omit<Place, 'position'>[] | undefined;
+  /** The toolchains it uses, whose `checkoutProblem` may refuse a checkout. */
+  readonly toolchains?: readonly string[] | undefined;
+  /** What in its log to print, besides what any server says of plugins, settings and indexing. */
+  readonly said?: RegExp | undefined;
+}
+
 /**
  * The check of a server: it starts as its adapter starts it (`launch`), on each fixture's checkout,
  * and is asked about each place in its `languages`, by the protocol's id for each.
@@ -129,8 +150,9 @@ function serverCheck(
   server: { readonly id: string; readonly name: string },
   launch: (installed: Installed, context: Context) => Promise<Launch>,
   languages: Readonly<Record<string, string>>,
-  outlines: readonly Omit<Place, 'position'>[] = [],
+  asking: Asking = {},
 ): Check {
+  const { outlines = [], toolchains = [], said: also } = asking;
   return async (installed, context) => {
     const launched = await launch(installed, context);
     console.log(`${launched.version}: ${[launched.program, ...launched.args].join(' ')}`);
@@ -143,6 +165,13 @@ function serverCheck(
         const root = await checkout(script, join(folder, script));
         const before = await snapshot(root);
         console.log(`\n--- ${server.name} on the checkout ${script} --local makes`);
+        // The pool asks this before a server starts or moves; the live check does the same.
+        const refusals = await Promise.all(toolchains.map((id) => checkoutProblem(id, root)));
+        const refusal = refusals.find((each) => each !== undefined);
+        if (refusal !== undefined) {
+          console.log(`Refused, so nothing runs: ${refusal.replaceAll(`${root}/`, '')}`);
+          continue;
+        }
         const log = await askServer({
           spec: {
             name: server.name,
@@ -150,21 +179,26 @@ function serverCheck(
             args: launched.args,
             root,
             home: join(folder, `home-${script}`),
-            path: [],
+            path: launched.path ?? [],
+            variables: launched.variables,
+            allowed: launched.allowed,
             git: serverGitEnvironment(),
             settings: launched.settings,
             initializationOptions: launched.initializationOptions,
+            workspace: launched.workspace,
           },
           places,
           outlines,
         });
-        // What it says of plugins, interpreters, settings it ignored and what it indexed, the
-        // folders' own names aside.
-        const said = log.filter((line) =>
-          /hostile|plugin|interpreter|pythonPath|ignoring|using PHP|indexed/i.test(
-            line.replaceAll(folder, '').replaceAll(script, 'the fixture'),
-          ),
-        );
+        // What it says of plugins, interpreters, settings it ignored and what it indexed, and
+        // what its check asks to see, the folders' own names aside.
+        const said = log.filter((line) => {
+          const plain = line.replaceAll(folder, '').replaceAll(script, 'the fixture');
+          return (
+            /hostile|plugin|interpreter|pythonPath|ignoring|using PHP|indexed/i.test(plain) ||
+            (also?.test(plain) ?? false)
+          );
+        });
         if (said.length > 0) console.log(`\nIts log, on those:\n${said.join('\n')}`);
         const php = await plantedPhp(root);
         if (php !== undefined && log.some((line) => line.includes(`using PHP ${php} (`))) {
@@ -213,7 +247,23 @@ function native(
   outlines: readonly Omit<Place, 'position'>[] = [],
 ): Check {
   const launch = (installed: Installed) => Promise.resolve(launchNative(server, installed));
-  return serverCheck(server, launch, languages, outlines);
+  return serverCheck(server, launch, languages, { outlines });
+}
+
+/** How Roslyn starts, on Lo's .NET SDK, which installs first. */
+async function launchOnDotnet(installed: Installed, context: Context): Promise<Launch> {
+  return launchRoslyn(installed, await context.installToolchain('dotnet'));
+}
+
+/**
+ * The check of Roslyn: it loads the project Lo writes in its home, and its log says what it loaded,
+ * and whether it found anything unresolved, a restore or an analyzer.
+ */
+function onRoslyn(languages: Readonly<Record<string, string>>): Check {
+  return serverCheck(ROSLYN, launchOnDotnet, languages, {
+    toolchains: ['dotnet'],
+    said: /msbuild|restore|\bload|unresolved|sdk|analyzer|file-based|global\.json|Directory\./i,
+  });
 }
 
 /** Each ID's check. */
@@ -231,10 +281,11 @@ const CHECKS: Record<string, Check> = {
   pyright: onNode(PYRIGHT, { python: 'python' }),
   // PHP's project has a file for each class, and `Tally` is in one of its own.
   'php-lsp': native(PHP_LSP, { php: 'php' }, [{ file: 'php/src/Tally.php', languageId: 'php' }]),
+  roslyn: onRoslyn({ csharp: 'csharp' }),
 };
 
 const installer = new Installer({
-  folder: join(homedir(), '.cache', 'lo-live'),
+  folder: process.env.LO_LIVE_CACHE ?? join(homedir(), '.cache', 'lo-live'),
   fetch: globalThis.fetch,
 });
 
@@ -246,6 +297,17 @@ async function install(id: string): Promise<Installed> {
       if (received === total) console.log(`${id} ${pinned.version}: ${total} bytes, checked.`);
     },
   });
+}
+
+async function installToolchain(id: string): Promise<InstalledToolchain> {
+  const pinned = TOOLCHAINS[id];
+  if (pinned === undefined) throw new Error(`toolchains.json has no ${id}`);
+  const installed = await installer.install(id, pinned, {
+    progress: (received, total) => {
+      if (received === total) console.log(`${id} ${pinned.version}: ${total} bytes, checked.`);
+    },
+  });
+  return { installed, ...toolchainUse(id, pinned.version, installed) };
 }
 
 const asked = process.argv.slice(2);
@@ -263,11 +325,12 @@ for (const id of ids) {
   }
   try {
     console.log(`\n=== ${id} ${pinned.version}`);
-    await check(await install(id), { pinned, install });
+    await check(await install(id), { pinned, install, installToolchain });
   } catch (error) {
     console.error(`${id}: ${error instanceof Error ? error.message : String(error)}`);
     failed = true;
   }
 }
-await installer.prune(MANIFEST);
+// Keep the toolchains a check installed, so a later run downloads them once too.
+await installer.prune({ ...MANIFEST, ...TOOLCHAINS });
 process.exitCode = failed ? 1 : 0;

@@ -1,10 +1,21 @@
 // The adapters Lo ships: which files each reads, and what it downloads before it starts, which is
-// no toolchain. What each server runs as, and is told, is `@lo/lsp`'s, and tested there.
+// no toolchain but for C#'s, which runs on Lo's .NET SDK. What each server runs as, and is told,
+// is `@lo/lsp`'s, and tested there.
 
-import { type Installed, launchNative, launchOnNode, PHP_LSP, PYRIGHT, VTSLS } from '@lo/lsp';
+import {
+  type Installed,
+  launchNative,
+  launchOnNode,
+  launchRoslyn,
+  PHP_LSP,
+  PYRIGHT,
+  ROSLYN,
+  toolchainUse,
+  VTSLS,
+} from '@lo/lsp';
 import { describe, expect, it } from 'vitest';
 
-import { type Adapter, ADAPTERS, adapterFor } from './adapters.ts';
+import { type Adapter, ADAPTERS, adapterFor, type Toolchain } from './adapters.ts';
 
 function installedAs(id: string): Installed {
   return { folder: `/lo/cache/servers/${id}`, entry: `/lo/cache/servers/${id}/entry` };
@@ -46,7 +57,7 @@ async function prepared(adapter: Adapter) {
 }
 
 describe('Lo’s adapters', () => {
-  it('read TypeScript and JavaScript, Python, and PHP', () => {
+  it('read TypeScript and JavaScript, Python, PHP and C#', () => {
     expect(readBy('src/a.ts')).toEqual(['TypeScript', 'typescript']);
     expect(readBy('src/a.mts')).toEqual(['TypeScript', 'typescript']);
     expect(readBy('src/A.tsx')).toEqual(['TypeScript', 'typescriptreact']);
@@ -56,6 +67,7 @@ describe('Lo’s adapters', () => {
     expect(readBy('pkg/a.pyi')).toEqual(['Python', 'python']);
     expect(readBy('src/A.php')).toEqual(['PHP', 'php']);
     expect(readBy('views/a.phtml')).toEqual(['PHP', 'php']);
+    expect(readBy('src/App/Program.cs')).toEqual(['C#', 'csharp']);
     // Ruby has none.
     expect(readBy('lib/a.rb')).toBeUndefined();
   });
@@ -88,11 +100,45 @@ describe('Lo’s adapters', () => {
     expect(ready.kind === 'ready' && ready.launch.program).toBe(installedAs('php-lsp').entry);
   });
 
+  it('download .NET’s SDK and Roslyn, and start Roslyn as `dotnet exec` on that SDK', async () => {
+    const adapter = shipped('csharp');
+    const installs: string[] = [];
+    const toolchains: string[] = [];
+    const dotnet: Toolchain = {
+      installed: installedAs('dotnet'),
+      ...toolchainUse('dotnet', '10.0.404', installedAs('dotnet'), 'darwin'),
+    };
+    const ready = await adapter.prepare({
+      install: (id) => {
+        installs.push(id);
+        return Promise.resolve(installedAs(id));
+      },
+      toolchain: (id) => {
+        toolchains.push(id);
+        return Promise.resolve(dotnet);
+      },
+      findCopy: () => Promise.reject(new Error('no copy is looked for')),
+      signal: new AbortController().signal,
+    });
+    expect(toolchains).toEqual(['dotnet']);
+    expect(installs).toEqual([ROSLYN.id]);
+    // Named up front, so the status bar adds them up from the first byte, and Settings lists C#
+    // as using the SDK.
+    expect(adapter.downloads).toEqual({ servers: [ROSLYN.id], toolchains: ['dotnet'] });
+    expect(ready).toEqual({
+      kind: 'ready',
+      launch: launchRoslyn(installedAs(ROSLYN.id), dotnet),
+    });
+    // A first definition waits on the first load of its project, so `gd` gives it longer.
+    expect(adapter.definitionDeadline).toBe(5000);
+  });
+
   it('say which servers give no inline type hints, as Pyright gives none', () => {
     expect(ADAPTERS.map((adapter) => [adapter.id, adapter.noHints])).toEqual([
       ['typescript', undefined],
       ['python', 'Pyright has no type hints.'],
       ['php', undefined],
+      ['csharp', undefined],
     ]);
   });
 
@@ -116,5 +162,20 @@ describe('Lo’s adapters', () => {
         signal: new AbortController().signal,
       }),
     ).rejects.toBe(missing);
+    // C#'s starts nothing when its toolchain can't download, and downloads no server for it.
+    const sdk = new Error('The .NET SDK couldn’t download.');
+    const installs: string[] = [];
+    await expect(
+      shipped('csharp').prepare({
+        install: (id) => {
+          installs.push(id);
+          return Promise.resolve(installedAs(id));
+        },
+        toolchain: () => Promise.reject(sdk),
+        findCopy: () => Promise.resolve(undefined),
+        signal: new AbortController().signal,
+      }),
+    ).rejects.toBe(sdk);
+    expect(installs).toEqual([]);
   });
 });
