@@ -853,6 +853,128 @@ EOF
 print("hostile")
 EOF
 
+  # --- Swift's build files ---------------------------------------------------------------------
+
+  # A build server, which SourceKit-LSP starts as the program its configuration names, relative to
+  # the workspace's root: by `.bsp/`, where the build server protocol looks, and by the
+  # `buildServer.json` SourceKit-LSP also reads there.
+  for config in .bsp/lo-hostile.json buildServer.json; do
+    put "$config" <<'EOF'
+{
+  "name": "lo-hostile",
+  "version": "1.0.0",
+  "bspVersion": "2.2.0",
+  "languages": ["swift", "c"],
+  "argv": ["hostile/swift-bsp/lo-bsp.sh"]
+}
+EOF
+  done
+  marker_sh hostile/swift-bsp/lo-bsp.sh lo-hostile-bsp "a build server SourceKit-LSP starts"
+
+  # SourceKit-LSP's settings for the workspace, which win over its client's: generated files kept
+  # in the checkout, compile commands taken from hostile/swift-commands, and a package built, as
+  # background indexing prepares it, outside SwiftPM's sandbox.
+  put .sourcekit-lsp/config.json <<'EOF'
+{
+  "generatedFilesPath": "lo-hostile-sourcekit-lsp",
+  "defaultWorkspaceType": "compilationDatabase",
+  "compilationDatabase": { "searchPaths": ["hostile/swift-commands"] },
+  "backgroundIndexing": true,
+  "backgroundPreparationMode": "build",
+  "swiftPM": { "disableSandbox": true }
+}
+EOF
+
+  # Compile commands: a Swift macro whose plugin is a program of the checkout's, which the
+  # compiler runs to expand it, and a plugin the C compiler would load as a library.
+  put hostile/swift-commands/compile_commands.json <<'EOF'
+[
+  {
+    "directory": ".",
+    "file": "Lo.swift",
+    "arguments": [
+      "swiftc",
+      "-module-name",
+      "LoHostile",
+      "-load-plugin-executable",
+      "lo-swift-macro.sh#LoHostileMacros",
+      "Lo.swift"
+    ]
+  },
+  {
+    "directory": ".",
+    "file": "lo.c",
+    "arguments": [
+      "clang",
+      "-Xclang",
+      "-load",
+      "-Xclang",
+      "lo-clang-plugin.dylib",
+      "-fplugin=lo-clang-plugin.dylib",
+      "-c",
+      "lo.c"
+    ]
+  }
+]
+EOF
+  put hostile/swift-commands/Lo.swift <<'EOF'
+/// A macro whose plugin compile_commands.json names, which the compiler runs to expand it.
+@freestanding(expression) macro lo() -> Int = #externalMacro(module: "LoHostileMacros", type: "Lo")
+
+let planted = #lo()
+EOF
+  put hostile/swift-commands/lo.c <<'EOF'
+int lo(void) { return 0; }
+EOF
+  marker_sh hostile/swift-commands/lo-swift-macro.sh lo-hostile-swift-macro \
+    "a macro's plugin that compile commands name"
+
+  # A package with a build tool plugin, which SwiftPM builds and runs as it builds the package, and
+  # which runs lo-swift-plugin.sh first; and settings for the package that build it outside
+  # SwiftPM's sandbox, which would keep the plugin from writing beside itself.
+  put hostile/swift-plugin/Package.swift <<'EOF'
+// swift-tools-version: 5.9
+import PackageDescription
+
+let package = Package(
+    name: "LoHostilePlugin",
+    targets: [
+        .executableTarget(name: "LoHostile", path: "Sources", plugins: ["LoHostilePlugin"]),
+        .plugin(name: "LoHostilePlugin", capability: .buildTool(), path: "Plugins")
+    ]
+)
+EOF
+  put hostile/swift-plugin/Plugins/plugin.swift <<'EOF'
+import PackagePlugin
+
+/// A build tool plugin, which runs lo-swift-plugin.sh before each build of the package.
+@main
+struct LoHostilePlugin: BuildToolPlugin {
+    func createBuildCommands(context: PluginContext, target: Target) throws -> [Command] {
+        [
+            .prebuildCommand(
+                displayName: "lo-hostile",
+                executable: context.package.directory.appending("lo-swift-plugin.sh"),
+                arguments: [],
+                outputFilesDirectory: context.pluginWorkDirectory
+            )
+        ]
+    }
+}
+EOF
+  put hostile/swift-plugin/Sources/main.swift <<'EOF'
+print("hostile")
+EOF
+  put hostile/swift-plugin/.sourcekit-lsp/config.json <<'EOF'
+{
+  "backgroundIndexing": true,
+  "backgroundPreparationMode": "build",
+  "swiftPM": { "disableSandbox": true }
+}
+EOF
+  marker_sh hostile/swift-plugin/lo-swift-plugin.sh lo-hostile-swift-plugin \
+    "a program a package's build tool plugin runs"
+
   # The submodule's entry is a commit that isn't anywhere, which `git add` would only drop.
   g add -A
   g update-index --add --cacheinfo 160000,0123456789abcdef0123456789abcdef01234567,hostile/submodule
