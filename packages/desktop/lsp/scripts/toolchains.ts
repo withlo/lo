@@ -142,7 +142,7 @@ export function go(keys: readonly string[]): Source {
  * such a file holds: `[table]` headers, and `key = "string"` or `key = true` lines, each with or
  * without a comment after it. Arrays of tables, arrays, and multi-line strings, whose lines are
  * text however they look, are left out, and a header it can't read ends the table before it
- * rather than letting its keys join that one.
+ * rather than letting its keys join that one. A table's header twice, which TOML forbids, throws.
  */
 export function parseChannel(text: string): Map<string, Map<string, string | boolean>> {
   const tables = new Map<string, Map<string, string | boolean>>();
@@ -154,6 +154,10 @@ export function parseChannel(text: string): Map<string, Map<string, string | boo
     const trimmed = read.code.trim();
     if (trimmed.startsWith('[')) {
       const name = trimmed.startsWith('[[') ? undefined : headerName(trimmed);
+      // TOML has a table once: a second header for it would have its keys replace the first's.
+      if (name !== undefined && tables.has(name)) {
+        throw new Error(`The channel file has the table [${name}] twice.`);
+      }
       table = name === undefined ? undefined : new Map();
       if (name !== undefined && table !== undefined) tables.set(name, table);
       continue;

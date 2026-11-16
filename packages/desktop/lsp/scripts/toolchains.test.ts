@@ -105,6 +105,15 @@ test.each(['"""', "'''"])(
   },
 );
 
+test('refuses a table whose header comes twice, however its keys are quoted', () => {
+  for (const second of ['[pkg.rustc]', '[pkg."rustc"]', "[ pkg . 'rustc' ] # again"]) {
+    const text = ['[pkg.rustc]', 'hash = "rustc"', '[pkg.cargo]', second, 'hash = "other"'];
+    expect(() => parseChannel(text.join('\n'))).toThrow(
+      'The channel file has the table [pkg.rustc] twice.',
+    );
+  }
+});
+
 test('a header it can’t read ends the table before it, whose keys it then keeps from it', () => {
   const tables = parseChannel(
     ['[pkg.rustc]', 'hash = "rustc"', '[pkg."rust\\u0073td"]', 'hash = "elsewhere"'].join('\n'),
