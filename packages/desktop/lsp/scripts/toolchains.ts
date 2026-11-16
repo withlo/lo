@@ -139,33 +139,116 @@ export function go(keys: readonly string[]): Source {
 /**
  * The tables of a Rust channel file that `pin.ts` reads, by their names with any quotes taken off
  * (`pkg.rust-src.target.*`), each with its keys' string and boolean values. It reads only what
- * such a file holds: `[table]` headers, and `key = "string"` or `key = true` lines; arrays of
- * tables, and arrays, are left out.
+ * such a file holds: `[table]` headers, and `key = "string"` or `key = true` lines, each with or
+ * without a comment after it. Arrays of tables, arrays, and multi-line strings, whose lines are
+ * text however they look, are left out, and a header it can't read ends the table before it
+ * rather than letting its keys join that one.
  */
 export function parseChannel(text: string): Map<string, Map<string, string | boolean>> {
   const tables = new Map<string, Map<string, string | boolean>>();
   let table: Map<string, string | boolean> | undefined;
+  let open: MultiLine | undefined;
   for (const line of text.split('\n')) {
-    const trimmed = line.trim();
-    if (trimmed.startsWith('[[')) {
-      table = undefined;
+    const read = codeOf(line, open);
+    open = read.open;
+    const trimmed = read.code.trim();
+    if (trimmed.startsWith('[')) {
+      const name = trimmed.startsWith('[[') ? undefined : headerName(trimmed);
+      table = name === undefined ? undefined : new Map();
+      if (name !== undefined && table !== undefined) tables.set(name, table);
       continue;
     }
-    const header = /^\[(.+)\]$/.exec(trimmed);
-    if (header?.[1] !== undefined) {
-      const name = [...header[1].matchAll(/"([^"]*)"|([^.\s"]+)/g)]
-        .map((part) => part[1] ?? part[2])
-        .join('.');
-      table = new Map();
-      tables.set(name, table);
-      continue;
-    }
-    const pair = /^([A-Za-z0-9_-]+)\s*=\s*(?:"([^"\\]*)"|(true|false))\s*$/.exec(trimmed);
+    const pair = /^([A-Za-z0-9_-]+)\s*=\s*(?:"([^"\\]*)"|(true|false))$/.exec(trimmed);
     if (table !== undefined && pair?.[1] !== undefined) {
       table.set(pair[1], pair[2] ?? pair[3] === 'true');
     }
   }
   return tables;
+}
+
+/** The delimiters of TOML's multi-line strings, basic and literal. */
+const MULTI_LINE = ['"""', "'''"] as const;
+
+/** The delimiter of a multi-line string left open at the end of a line. */
+type MultiLine = (typeof MULTI_LINE)[number];
+
+/** A bare key, or a quoted one without escapes, in a table's header. */
+const HEADER_KEY = /"([^"\\]*)"|'([^']*)'|([A-Za-z0-9_-]+)/y;
+
+/** The name of the table `header` begins, its keys' quotes taken off, or none if it isn't one. */
+function headerName(header: string): string | undefined {
+  const inside = /^\[(.*)\]$/.exec(header)?.[1];
+  if (inside === undefined) return undefined;
+  const keys: string[] = [];
+  let at = 0;
+  for (;;) {
+    while (inside[at] === ' ' || inside[at] === '\t') at += 1;
+    HEADER_KEY.lastIndex = at;
+    const key = HEADER_KEY.exec(inside);
+    if (key === null) return undefined;
+    keys.push(key[1] ?? key[2] ?? key[3] ?? '');
+    at = HEADER_KEY.lastIndex;
+    while (inside[at] === ' ' || inside[at] === '\t') at += 1;
+    if (at === inside.length) return keys.join('.');
+    if (inside[at] !== '.') return undefined;
+    at += 1;
+  }
+}
+
+/**
+ * What of `line` is TOML outside a comment and a multi-line string, with the multi-line string
+ * still open at its end, if one is, given `open`, the one open at its start. A single-line string
+ * is kept as it is; a multi-line one is left as `<text>`, which no key's value matches.
+ */
+function codeOf(line: string, open: MultiLine | undefined): { code: string; open?: MultiLine } {
+  let code = '';
+  let at = 0;
+  let inside = open;
+  while (at < line.length) {
+    if (inside !== undefined) {
+      const end = closing(line, at, inside);
+      if (end === undefined) return { code, open: inside };
+      at = end;
+      inside = undefined;
+      continue;
+    }
+    const rest = line.slice(at);
+    if (rest.startsWith('#')) break;
+    const opened = MULTI_LINE.find((delimiter) => rest.startsWith(delimiter));
+    if (opened !== undefined) {
+      inside = opened;
+      code += '<text>';
+      at += 3;
+      continue;
+    }
+    const quote = line[at];
+    if (quote === '"' || quote === "'") {
+      let end = at + 1;
+      while (end < line.length && line[end] !== quote)
+        end += quote === '"' && line[end] === '\\' ? 2 : 1;
+      code += line.slice(at, end + 1);
+      at = end + 1;
+      continue;
+    }
+    code += line[at];
+    at += 1;
+  }
+  return inside === undefined ? { code } : { code, open: inside };
+}
+
+/**
+ * Where the multi-line string `delimiter` opened ends in `line`, from `from`: just past its
+ * closing delimiter, which in a basic string no backslash escapes, or none if it goes on.
+ */
+function closing(line: string, from: number, delimiter: MultiLine): number | undefined {
+  for (let at = from; at <= line.length - 3; at += 1) {
+    if (delimiter === '"""' && line[at] === '\\') {
+      at += 1;
+      continue;
+    }
+    if (line.startsWith(delimiter, at)) return at + 3;
+  }
+  return undefined;
 }
 
 /** Rust's names for the platforms. */

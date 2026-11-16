@@ -9,7 +9,7 @@ import { describe, expect, test } from 'vitest';
 import { PLATFORMS } from '../src/index.ts';
 import { type Routes, serve, sha256, tarGz } from '../test/downloads.ts';
 import { tempFolder } from '../test/support.ts';
-import { dotnet, go, parseChannel, rust } from './toolchains.ts';
+import { dotnet, go, parseChannel, rust, temurin } from './toolchains.ts';
 
 /** A key that signs as a publisher would, armored or not, and its armored public key. */
 async function publisher() {
@@ -67,6 +67,50 @@ test('a Rust channel file’s tables, with quoted names and arrays of tables lef
     available: true,
     url: 'https://static.rust-lang.org/dist/rust-src-1.0.0.tar.gz',
   });
+});
+
+test('a header with a comment after it begins its own table, and its keys go in it', () => {
+  const tables = parseChannel(
+    [
+      '[pkg.rustc] # the compiler',
+      'hash = "rustc" # its SHA-256',
+      '[pkg.cargo]   # Cargo, with no hash of its own',
+      'hash = "cargo"',
+    ].join('\n'),
+  );
+  expect([...tables.keys()]).toEqual(['pkg.rustc', 'pkg.cargo']);
+  expect(tables.get('pkg.rustc')?.get('hash')).toBe('rustc');
+  expect(tables.get('pkg.cargo')?.get('hash')).toBe('cargo');
+});
+
+test.each(['"""', "'''"])(
+  'the lines of a multi-line string in %s are its text, however much they look like tables',
+  (delimiter) => {
+    const tables = parseChannel(
+      [
+        '[pkg.rustc]',
+        `notes = ${delimiter}`,
+        '[pkg.cargo]',
+        'hash = "not cargo"',
+        `${delimiter} # the notes end`,
+        'hash = "rustc"',
+        `quoted = ${delimiter}one line, [pkg.cargo]${delimiter}`,
+        '[pkg.cargo]',
+        'hash = "cargo"',
+      ].join('\n'),
+    );
+    expect([...tables.keys()]).toEqual(['pkg.rustc', 'pkg.cargo']);
+    expect(Object.fromEntries(tables.get('pkg.rustc') ?? [])).toEqual({ hash: 'rustc' });
+    expect(Object.fromEntries(tables.get('pkg.cargo') ?? [])).toEqual({ hash: 'cargo' });
+  },
+);
+
+test('a header it can’t read ends the table before it, whose keys it then keeps from it', () => {
+  const tables = parseChannel(
+    ['[pkg.rustc]', 'hash = "rustc"', '[pkg."rust\\u0073td"]', 'hash = "elsewhere"'].join('\n'),
+  );
+  expect([...tables.keys()]).toEqual(['pkg.rustc']);
+  expect(tables.get('pkg.rustc')?.get('hash')).toBe('rustc');
 });
 
 describe('Rust', () => {
@@ -148,8 +192,11 @@ describe('Rust', () => {
   });
 });
 
-/** Go 1.0.0, served as dl.google.com and go.dev would, each archive signed. */
-async function goRelease(options: { listed?: string } = {}) {
+/**
+ * Go 1.0.0, served as dl.google.com and go.dev would, each archive signed, or with a signature of
+ * another file when `signs` says.
+ */
+async function goRelease(options: { listed?: string; signs?: Buffer } = {}) {
   const signer = await publisher();
   const routes: Routes = {};
   const files = [];
@@ -158,7 +205,7 @@ async function goRelease(options: { listed?: string } = {}) {
     const archive = tarGz([{ path: 'go/bin/go', data: `go for ${arch}`, mode: 0o755 }]);
     routes[`https://dl.google.com/go/${name}`] = { body: archive };
     routes[`https://dl.google.com/go/${name}.asc`] = {
-      body: await signer.signDetached(archive, true),
+      body: await signer.signDetached(options.signs ?? archive, true),
     };
     files.push({ filename: name, kind: 'archive', sha256: options.listed ?? sha256(archive) });
   }
@@ -183,6 +230,64 @@ describe('Go', () => {
     await expect(go([listed.signer.publicKey])('1.0.0', listed.tools)).rejects.toThrow(
       /isn’t what go\.dev lists/,
     );
+  });
+
+  test('refuses an archive signed by another key, or whose signature is of another file', async () => {
+    const other = await publisher();
+    const unsigned = await goRelease();
+    await expect(go([other.publicKey])('1.0.0', unsigned.tools)).rejects.toThrow(
+      /isn't signed with one of the keys/,
+    );
+    const elsewhere = await goRelease({ signs: Buffer.from('another file') });
+    await expect(go([elsewhere.signer.publicKey])('1.0.0', elsewhere.tools)).rejects.toThrow(
+      /isn't signed with one of the keys/,
+    );
+  });
+});
+
+/** Temurin's names for the platforms. */
+const TEMURIN_ARCH = ['aarch64_mac', 'x64_mac', 'x64_linux', 'aarch64_linux'] as const;
+
+/**
+ * The Temurin JDK 25.0.1+8, served as GitHub would, each archive with its binary signature, or a
+ * signature of another file when `signs` says.
+ */
+async function temurinRelease(options: { signs?: Buffer } = {}) {
+  const signer = await publisher();
+  const routes: Routes = {};
+  const base = 'https://github.com/adoptium/temurin25-binaries/releases/download/jdk-25.0.1%2B8/';
+  for (const arch of TEMURIN_ARCH) {
+    const name = `OpenJDK25U-jdk_${arch}_hotspot_25.0.1_8.tar.gz`;
+    const home = arch.endsWith('_mac') ? 'jdk-25.0.1+8/Contents/Home' : 'jdk-25.0.1+8';
+    const archive = tarGz([{ path: `${home}/bin/java`, data: `java for ${arch}`, mode: 0o755 }]);
+    routes[`${base}${name}`] = { body: archive };
+    routes[`${base}${name}.sig`] = { body: await signer.signDetached(options.signs ?? archive) };
+  }
+  return { signer, ...(await tools(routes)) };
+}
+
+describe('Temurin', () => {
+  test('records each archive Adoptium’s key signed, with the JDK’s home in it', async () => {
+    const { signer, tools: given } = await temurinRelease();
+    const pinned = await temurin([signer.publicKey])('25.0.1+8', given);
+    expect(pinned.hosts).toEqual(['github.com', 'release-assets.githubusercontent.com']);
+    expect(pinned.platforms['darwin-arm64']).toMatchObject({
+      kind: 'tar.gz',
+      entry: 'jdk-25.0.1+8/Contents/Home/bin/java',
+    });
+    expect(pinned.platforms['linux-x64']).toMatchObject({ entry: 'jdk-25.0.1+8/bin/java' });
+  });
+
+  test('refuses an archive signed by another key, or whose signature is of another file', async () => {
+    const other = await publisher();
+    const unsigned = await temurinRelease();
+    await expect(temurin([other.publicKey])('25.0.1+8', unsigned.tools)).rejects.toThrow(
+      /isn't signed with one of the keys/,
+    );
+    const elsewhere = await temurinRelease({ signs: Buffer.from('another file') });
+    await expect(
+      temurin([elsewhere.signer.publicKey])('25.0.1+8', elsewhere.tools),
+    ).rejects.toThrow(/isn't signed with one of the keys/);
   });
 });
 
