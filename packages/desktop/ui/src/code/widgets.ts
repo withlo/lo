@@ -188,24 +188,62 @@ export class CollapsedWidget extends WidgetType {
   }
 }
 
-/** The label at each end of moved code, naming where the block went or came from. */
+/**
+ * The attribute on a moved label's button that names the line at the other end: the file's index
+ * in the view, its side and the line, as `0:new:12`.
+ */
+export const MOVED_ATTRIBUTE = 'data-moved-to';
+
+/** The other end of moved code, by the file's index in the view. */
+export interface MovedTo {
+  file: number;
+  side: 'old' | 'new';
+  line: number;
+}
+
+/** The other end a moved label's button names, from its attribute. */
+export function movedTo(written: string | null): MovedTo | undefined {
+  const [file, side, line] = (written ?? '').split(':');
+  if (side !== 'old' && side !== 'new') return undefined;
+  return { file: Number(file), side, line: Number(line) };
+}
+
+/**
+ * The label at each end of moved code, naming where the block went or came from, on a button that
+ * goes there.
+ */
 export class MovedLabelWidget extends WidgetType {
   readonly text: string;
   readonly place: string;
+  readonly to: MovedTo;
 
-  constructor(text: string, place: string) {
+  constructor(text: string, place: string, to: MovedTo) {
     super();
     this.text = text;
     this.place = place;
+    this.to = to;
   }
 
   override eq(other: MovedLabelWidget): boolean {
-    return other.text === this.text && other.place === this.place;
+    return (
+      other.text === this.text &&
+      other.place === this.place &&
+      other.to.file === this.to.file &&
+      other.to.side === this.to.side &&
+      other.to.line === this.to.line
+    );
   }
 
   toDOM(): HTMLElement {
     const label = element('div', 'lo-movedlabel');
-    label.append(element('span', '', this.text), element('a', '', this.place));
+    const button = element('button', 'lo-movedlabel__to', this.place);
+    button.type = 'button';
+    // Named as the label reads: "Moved from src/text/wrap.ts:1". `gm` is the way there by key.
+    button.setAttribute('aria-label', `${this.text} ${this.place}`);
+    button.tabIndex = -1;
+    const { file, side, line } = this.to;
+    button.setAttribute(MOVED_ATTRIBUTE, `${file}:${side}:${line}`);
+    label.append(element('span', '', this.text), button);
     return label;
   }
 
@@ -349,12 +387,17 @@ export const NOTE_BLOCK_ATTRIBUTE = 'data-note-block';
 const BLOCK_PADDING = 16;
 const BLOCK_GAP = 8;
 
+/** What a thread widget needs from a peek it holds: as from a box, and how tall it is. */
+export interface PeekHost extends BoxHost {
+  readonly height: number;
+}
+
 /**
- * What goes under a line: the notes of the overview markers that end there, the review threads
- * there, each in the element the caller draws it in (`threads.ts`), with the boxes written in each
- * after it, and the comment boxes being written on the line, last. One block a line, for the same
- * reason as a header's note. Threads and boxes are elements that outlive the block, and move into
- * whichever block draws them last.
+ * What goes under a line: a peek opened there, the notes of the overview markers that end there,
+ * the review threads there, each in the element the caller draws it in (`threads.ts`), with the
+ * boxes written in each after it, and the comment boxes being written on the line, last. One block
+ * a line, for the same reason as a header's note. A peek, threads and boxes are elements that
+ * outlive the block, and move into whichever block draws them last.
  */
 export class ThreadWidget extends WidgetType {
   readonly id: string;
@@ -363,12 +406,13 @@ export class ThreadWidget extends WidgetType {
   readonly drawing: number;
   readonly sizes: ThreadSizes;
   readonly notes: readonly NoteDraw[];
+  readonly peek: PeekHost | undefined;
   readonly #draw: (thread: ThreadHost) => void;
 
   /**
    * `draw` has the caller draw a thread the first time it's drawn. `drawing` changes when the
-   * threads and the boxes must be drawn again, to move them into another editor; `sizes` are the
-   * editor's.
+   * threads, the boxes and the peek must be drawn again, to move them into another editor; `sizes`
+   * are the editor's.
    */
   constructor(
     id: string,
@@ -378,6 +422,7 @@ export class ThreadWidget extends WidgetType {
     boxes: readonly BoxHost[] = [],
     drawing = 0,
     notes: readonly NoteDraw[] = [],
+    peek?: PeekHost,
   ) {
     super();
     this.id = id;
@@ -387,11 +432,13 @@ export class ThreadWidget extends WidgetType {
     this.boxes = boxes;
     this.drawing = drawing;
     this.notes = notes;
+    this.peek = peek;
   }
 
   override eq(other: ThreadWidget): boolean {
     return (
       other.id === this.id &&
+      other.peek === this.peek &&
       other.threads.length === this.threads.length &&
       other.threads.every((thread, index) => thread === this.threads[index]) &&
       sameBoxes(other.boxes, this.boxes) &&
@@ -410,6 +457,8 @@ export class ThreadWidget extends WidgetType {
       block.dataset.thread = this.#key;
       this.sizes.observe(block);
     }
+    // Right under the line, which it's about.
+    this.peek?.attach(block);
     for (const note of this.notes) {
       const drawn = noteElement(note);
       block.append(drawn);
@@ -430,7 +479,7 @@ export class ThreadWidget extends WidgetType {
 
   /** Whether it holds notes alone, whose size as drawn is kept for drawing them again. */
   get #notesOnly(): boolean {
-    return this.threads.length === 0 && this.boxes.length === 0;
+    return this.threads.length === 0 && this.boxes.length === 0 && !this.peek;
   }
 
   /** The notes' size as drawn, for drawing them again. */
@@ -441,14 +490,15 @@ export class ThreadWidget extends WidgetType {
 
   /**
    * Notes alone, as tall as they were last drawn in its editor at this width, if they were. Else
-   * its notes' lines of 21 pixels, at the characters the editor's notes wrap at, between a label
-   * and a foot, its threads as tall as each was drawn, or about as tall, and the boxes as they are.
+   * the peek as tall as it is, its notes' lines of 21 pixels, at the characters the editor's notes
+   * wrap at, between a label and a foot, its threads as tall as each was drawn, or about as tall,
+   * and the boxes as they are.
    */
   override get estimatedHeight(): number {
     const drawn = this.#notesOnly ? this.sizes.drawn(this.#key) : undefined;
     if (drawn !== undefined) return drawn;
-    let height = BLOCK_PADDING;
-    const parts = this.notes.length + this.threads.length + this.boxes.length;
+    let height = BLOCK_PADDING + (this.peek?.height ?? 0);
+    const parts = this.notes.length + this.threads.length + this.boxes.length + (this.peek ? 1 : 0);
     height += Math.max(0, parts - 1) * BLOCK_GAP;
     for (const note of this.notes) {
       height += 70 + Math.max(1, Math.ceil(note.text.length / this.sizes.charsPerLine)) * 21;
@@ -557,6 +607,32 @@ export class SpacerWidget extends WidgetType {
 
   override get estimatedHeight(): number {
     return this.height;
+  }
+}
+
+/**
+ * A hint inside a line, as a language server's type of a name: a space apart from the code before
+ * it, or after it, where it says.
+ */
+export class HintWidget extends WidgetType {
+  readonly label: string;
+  readonly before: boolean;
+  readonly after: boolean;
+
+  constructor(label: string, before: boolean, after: boolean) {
+    super();
+    this.label = label;
+    this.before = before;
+    this.after = after;
+  }
+
+  override eq(other: HintWidget): boolean {
+    return other.label === this.label && other.before === this.before && other.after === this.after;
+  }
+
+  toDOM(): HTMLElement {
+    const padding = `${this.before ? ' lo-inlay--before' : ''}${this.after ? ' lo-inlay--after' : ''}`;
+    return element('span', `lo-inlay${padding}`, this.label);
   }
 }
 

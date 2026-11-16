@@ -1,14 +1,21 @@
-// The page the code view's spec drives: a diff of one file, a line in every four changed, in a box
-// 600 px tall, its threads drawn as cards as tall as the spec says, with Lo's key listener, as the
-// window runs it, which tells the view of each key once it's the reader's input. The first lines can
-// run on past the box's width, so they wrap. The spec works it through `window.harness`.
+// The page the code view's spec drives: a diff of one file, a line in every four changed, or the
+// file's new version whole, in a box 600 px tall, its threads drawn as cards as tall as the spec
+// says, with Lo's key listener, as the window runs it, which tells the view of each key once it's
+// the reader's input. The first lines can run on past the box's width, so they wrap. The spec works
+// it through `window.harness`.
 
 import { diffText } from '@lo/diff';
 
 import {
   createDiffView,
+  createFileView,
+  type Anchor,
   type DiffLayout,
   type DiffView,
+  type FileView,
+  type PeekFrame,
+  type PeekView,
+  type Place,
   type RenderThread,
 } from '../../src/code/index.ts';
 import { listen, Registry } from '../../src/commands/index.ts';
@@ -67,25 +74,66 @@ const render: RenderThread = (host, thread) => {
 
 const ignore = (): void => {};
 
+/**
+ * A peek's frame, as the caller draws it: its head and foot at once, and its list of answers a
+ * frame later, as when a component draws it, longer than the list has room for.
+ */
+const frame: PeekFrame = (parts, peek) => {
+  parts.head.textContent = peek.label;
+  parts.foot.textContent = `${peek.shown + 1} of ${peek.answers.length}`;
+  requestAnimationFrame(() => {
+    for (const answer of Array.from({ length: 10 }, () => peek.answers).flat()) {
+      const item = document.createElement('div');
+      item.className = 'answer';
+      item.textContent = `${answer.path}:${answer.line}`;
+      parts.list.append(item);
+    }
+  });
+  return { update: ignore, destroy: ignore };
+};
+
+/** A peek at two answers, the first shown, its code `lines` lines long. */
+function peekOf(lines: number): PeekView {
+  const answers = [
+    { path: 'src/b.ts', line: 5, source: 'syntax' as const },
+    { path: 'src/c.ts', line: 2, source: 'syntax' as const },
+  ];
+  const code = { first: 1, lines: Array.from({ length: lines }, (_, index) => `b ${index + 1}`) };
+  return { label: 'Definitions of line', answers, shown: 0, code };
+}
+
+/** Each word the pointer rested on, and none as it left it. */
+const rests: (Place | undefined)[] = [];
+
 let shown: DiffView | undefined;
+let whole: FileView | undefined;
 
 function view(): DiffView {
   if (!shown) throw new Error('The page has no view yet.');
   return shown;
 }
 
+/** The whole-file view. */
+function file(): FileView {
+  if (!whole) throw new Error('The page has no whole-file view yet.');
+  return whole;
+}
+
 /** The scrolling box, whose top is the top of the screen. */
 function screen(): DOMRect {
-  const box = document.querySelector('.lo-diffview');
+  const box = document.querySelector('.lo-diffview, .lo-fileview');
   if (!box) throw new Error('The page has no view yet.');
   return box.getBoundingClientRect();
 }
 
-/** The editor showing the new side: the one on the right side by side, or the inline one. */
+/**
+ * The editor showing the new side: the one on the right side by side, the inline one, or the
+ * whole file's.
+ */
 function newSide(): Element {
   const found = [
     ...document.querySelectorAll(
-      '.cm-content[aria-label="After"], .cm-content[aria-label="Changes"]',
+      '.cm-content[aria-label="After"], .cm-content[aria-label="Changes"], .lo-fileview .cm-content',
     ),
   ].find((content) => content.getClientRects().length > 0);
   if (!found) throw new Error('No editor shows the new side.');
@@ -128,9 +176,42 @@ const harness = {
         vimKeys: [],
         nonce: 'harness',
       },
-      { cursor: ignore, mode: ignore, file: ignore, jumped: ignore, load: ignore, menu: ignore },
+      {
+        cursor: ignore,
+        mode: ignore,
+        file: ignore,
+        jumped: ignore,
+        load: ignore,
+        menu: ignore,
+        rested: (at) => rests.push(at),
+      },
     );
     shown.setDiff('a', diffText(textOf(old), textOf(changed)));
+  },
+  /** Draws the file's new version whole, new line `line` at the top of the screen. */
+  openFile(line: number): void {
+    setLines(0);
+    whole = createFileView(
+      root(),
+      { id: 'a', path: 'src/a.ts', lines: changed, vimKeys: [], nonce: 'harness' },
+      { cursor: ignore, mode: ignore, jumped: ignore, menu: ignore },
+    );
+    harness.fileScrollTo(line);
+  },
+  /** Puts the whole file's line `line` at the top of the screen, or `below` pixels below it. */
+  fileScrollTo(line: number, below = 0): void {
+    const box = document.querySelector('.lo-fileview')!;
+    box.scrollTop += (lineTop(line) ?? 0) - below;
+  },
+  /** Puts the whole file's cursor on line `line`, and focus in it. */
+  fileCursor(line: number): void {
+    file().reveal({ kind: 'line', at: { file: 'a', side: 'new', line } });
+    file().focus();
+  },
+  /** Opens a peek under the whole file's line `line`, or with `open` false closes it. */
+  filePeek(line: number, open = true): boolean {
+    const at = { file: 'a', side: 'new', line } as const;
+    return file().peek(at, open ? peekOf(9) : undefined, frame);
   },
   /** Puts new line `line` at the top of the screen, or `below` pixels below it. */
   scrollTo(line: number, below = 0): void {
@@ -227,6 +308,51 @@ const harness = {
       submit: ignore,
       close: ignore,
     });
+  },
+  /** Opens a peek under new line `line`, its code `lines` lines long, in its frame. */
+  peek(line: number, lines = 9): boolean {
+    return view().peek({ file: 'a', side: 'new', line }, peekOf(lines), frame);
+  },
+  /** Closes the peek under new line `line`. */
+  unpeek(line: number): boolean {
+    return view().peek({ file: 'a', side: 'new', line }, undefined);
+  },
+  /** Where the word at `column` of new line `line` is drawn, as the view says. */
+  anchor(line: number, column: number): Anchor | undefined {
+    return view().anchor({ file: 'a', side: 'new', line, column });
+  },
+  /** Where the first word of unchanged new line `line`, `line`, is drawn. */
+  wordBox(line: number): Anchor | undefined {
+    const text = `line ${line}`;
+    const found = [...newSide().querySelectorAll('.cm-line')].find(
+      (each) => each.textContent === text,
+    );
+    const node = found?.firstChild;
+    if (!node) return undefined;
+    const range = document.createRange();
+    range.setStart(node, 0);
+    range.setEnd(node, 'line'.length);
+    const { left, top, right, bottom } = range.getBoundingClientRect();
+    return { left, top, right, bottom };
+  },
+  /** Each word the pointer rested on, and none as it left it, since the page opened. */
+  rests(): (Place | undefined)[] {
+    return rests;
+  },
+  /** Where focus is: `peek` in the peek, an editor's label in its code, or the element's tag. */
+  focused(): string {
+    const active = document.activeElement;
+    if (active?.closest('.lo-diffpeek')) return 'peek';
+    const editor = active?.closest('.cm-content');
+    return editor?.getAttribute('aria-label') ?? active?.tagName.toLowerCase() ?? 'none';
+  },
+  /** How far the peek's code is scrolled. */
+  peekScroll(): number | undefined {
+    return document.querySelector('.lo-diffpeek__code')?.scrollTop;
+  },
+  /** How far apart the rows on screen are drawn side by side, at most. */
+  misalignment(): number {
+    return view().probe.misalignment().worst;
   },
   /** Waits for `count` frames. */
   frames(count: number): Promise<void> {

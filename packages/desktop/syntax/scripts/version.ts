@@ -1,7 +1,8 @@
 // Writes src/version.ts: `tagsVersion`, a hash of what decides how the tagger reads a file. That's
 // the grammars its languages parse with, as grammars.json pins each by its commit and checks its
-// build, the queries it reads them with, and the code that puts their tags together. A change to
-// any of them changes the version, so the syntax index knows to read its files again.
+// build, and the version of tree-sitter that runs them; the queries it reads them with; and the
+// code that guards, parses and puts their tags together. A change to any of them changes the
+// version, so the syntax index knows to read its files again.
 //
 //   pnpm nx run syntax:codegen
 
@@ -13,8 +14,17 @@ import { fileURLToPath } from 'node:url';
 import { languages } from '../src/languages.ts';
 import { taggedLanguages, tagQueries } from '../src/tagged.ts';
 
-/** The code past the queries that decides what's read: the tags, the imports and the languages. */
-export const readingCode = ['src/imports.ts', 'src/tagged.ts', 'src/tags.ts'];
+/**
+ * The code past the queries that decides what the tagger gives: the depth guard, the runtime it
+ * parses in, the imports, the languages it reads with which queries, and the tags.
+ */
+export const readingCode = [
+  'src/depth.ts',
+  'src/imports.ts',
+  'src/runtime.ts',
+  'src/tagged.ts',
+  'src/tags.ts',
+];
 
 interface Grammar {
   name: string;
@@ -24,17 +34,22 @@ interface Grammar {
 }
 
 /**
- * What the version is a hash of, from the package's files: each grammar the tagged languages
- * parse with, by name, commit and build, then each file of their queries and of `readingCode`,
- * by path, with its text.
+ * What the version is a hash of, from the package's files: the version of `web-tree-sitter` it
+ * depends on; each tagged language, with the grammar it parses with; each of those grammars, by
+ * name, commit and build; then each file of their queries and of `readingCode`, by path, with its
+ * text.
  */
 export function versionInputs(read: (file: string) => string): string[] {
+  const manifest: { dependencies: Record<string, string> } = JSON.parse(read('package.json'));
   const list: { grammars: Grammar[] } = JSON.parse(read('grammars.json'));
   const used = new Set<string>(taggedLanguages.map((language) => languages[language].grammar));
-  const inputs = list.grammars
-    .filter(({ name }) => used.has(name))
-    .map(({ name, commit, sha256 }) => `grammar ${name} ${commit} ${sha256 ?? ''}`)
-    .toSorted();
+  const inputs = [
+    `web-tree-sitter ${manifest.dependencies['web-tree-sitter'] ?? ''}`,
+    ...taggedLanguages.map((language) => `language ${language} ${languages[language].grammar}`),
+    ...list.grammars
+      .filter(({ name }) => used.has(name))
+      .map(({ name, commit, sha256 }) => `grammar ${name} ${commit} ${sha256 ?? ''}`),
+  ].toSorted();
   const queries = taggedLanguages.flatMap((language) =>
     tagQueries[language].map(([folder, kind]) => `queries/${folder}/${kind}.scm`),
   );
@@ -59,10 +74,10 @@ export function versionFile(version: string): string {
     "// Written by scripts/version.ts. Don't edit it: run `pnpm nx run syntax:codegen`.",
     '',
     '/**',
-    ' * The version of what `Tagger` reads from a file: a hash of the grammars it parses with, the',
-    ' * queries it reads them with and the code that puts their tags together. It changes whenever',
-    ' * any of them does, so the syntax index can tell a reading made with another version, and',
-    ' * read the file again.',
+    ' * The version of what `Tagger` reads from a file: a hash of the grammars it parses with and',
+    ' * the tree-sitter that runs them, the queries it reads them with, and the code that guards,',
+    ' * parses and puts their tags together. It changes whenever any of them does, so the syntax',
+    ' * index can tell a reading made with another version, and read the file again.',
     ' */',
     `export const tagsVersion = '${version}';`,
     '',

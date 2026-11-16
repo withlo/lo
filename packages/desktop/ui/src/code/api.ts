@@ -430,7 +430,10 @@ export interface DiffView extends KeySource {
   /** Says a file asked for with `load` couldn't be loaded: its note says so, and `za` asks again. */
   loadFailed(file: string): void;
   setHeader(file: string, header: FileHeader): void;
-  /** Lays the diff out again, keeping the cursor's line on screen. */
+  /**
+   * Lays the diff out again, keeping the cursor's line on screen: or, with focus in the peek, the
+   * peek's line, where the cursor goes, as it does as the peek closes, and focus stays in the peek.
+   */
   setLayout(layout: DiffLayout): void;
   /**
    * Replaces the threads drawn under lines, and under files' headers, each drawn by `render` in an
@@ -467,12 +470,14 @@ export interface DiffView extends KeySource {
   threadsDrawn(at: Place | OnFile): readonly string[];
   /**
    * Replaces the marks on lines: overview markers, in a gutter that's there from the start, so
-   * marks change no line's width or height, and what's on screen stays where it is. Kinds the diff
-   * view doesn't draw, and marks on files it doesn't have, are left out. A note stays open while
-   * its mark does, or another from the same block on the same side of the file; one on screen stays
-   * as it was, its mark changed or gone, until it's off screen or closed, or in a diff too short to
-   * scroll, until the reader's next wheel, key or click. Its link then shows what its mark says
-   * now: a note whose mark went closes rather than show a block.
+   * marks change no line's width or height, and what's on screen stays where it is; and hints,
+   * inside lines. Kinds the diff view doesn't draw, and marks on files it doesn't have, are left
+   * out. A note stays open while its mark does, or another from the same block on the same side of
+   * the file; one on screen stays as it was, its mark changed or gone, until it's off screen or
+   * closed, or in a diff too short to scroll, until the reader's next wheel, key or click. Its link
+   * then shows what its mark says now: a note whose mark went closes rather than show a block.
+   * Hints that change, which can make lines wrap anew, wait for the reader's next wheel, key or
+   * click, and come then, what the reader reads staying where it is, unless the view isn't shown.
    */
   setMarks(marks: readonly Mark[]): void;
   /** Whether `openNote` would open a note at `at`: an overview marker's on its line, drawn. */
@@ -566,6 +571,30 @@ export interface DiffView extends KeySource {
    * view doesn't have gets a function that does nothing.
    */
   claimThread(id: string): () => void;
+  /**
+   * Shows `peek` under the line at `at`, with `frame` drawn around its code as it opens, or shows
+   * what the peek there shows now, its frame kept; or, with `peek` undefined, closes the peek
+   * there. A view has one peek at most: one elsewhere closes as this one opens. Each is the
+   * reader's asking, as `gd` is: the line stays where it is on screen, and so does all above it, or
+   * while the line is off screen, what's at the top of the screen does; side by side the other
+   * column makes room level with it, as for threads. Its height comes from its code alone, so
+   * nothing it shows changes it after. Focus goes into the peek, a scope of its own (`peek`), from
+   * the view's code, and closing it puts focus back on the code, the cursor at `at`. Says whether
+   * there was a peek to show or close: there's none under a line not drawn, as of a file closed or
+   * kept out, one GitHub's diff left out, or one among collapsed lines, where no cursor is.
+   */
+  peek(at: Place, peek: PeekView | undefined, frame?: PeekFrame): boolean;
+  /**
+   * Where the word at `at` is drawn, or the character there outside a word, for a popover over it:
+   * none while it isn't on screen.
+   */
+  anchor(at: Place): Anchor | undefined;
+  /**
+   * The place at the other end of the moved code `at` is in, if it's in some: line for line, blank
+   * lines left out, as the move was found, so a line comes back to itself from its other end. A
+   * blank line goes with the next line that isn't.
+   */
+  otherEnd(at: Place): Place | undefined;
   focus(): void;
   destroy(): void;
   readonly probe: Probe;
@@ -595,13 +624,47 @@ export interface DiffEvents {
    * have no such link.
    */
   explained?(block: string, at: Place): void;
+  /** The pointer rested on a word, or left it: see {@link Rested}. */
+  rested?: Rested;
+  /**
+   * A click on the label at one end of moved code: `to` is the first line at its other end, where
+   * the label says the code went or came from.
+   */
+  moved?(to: Place): void;
+}
+
+/**
+ * The pointer stayed on a word for half a second, as for a type hover: `at` is where the word
+ * starts. Then `undefined` once the pointer leaves the word, or the word moves from under it.
+ */
+export type Rested = (at: Place | undefined) => void;
+
+/** Where a word is drawn, in the window's pixels, as `anchor` finds it. */
+export interface Anchor {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
 }
 
 /**
  * Something a code view marks on a file's lines. A view draws the kinds it knows and leaves out the
- * rest: the whole-file view draws `lines`, and the diff view `overview`.
+ * rest: the whole-file view draws `lines` and `hint`, and the diff view `overview` and `hint`.
  */
-export type Mark = LinesMark | OverviewMark;
+export type Mark = LinesMark | OverviewMark | HintMark;
+
+/**
+ * A hint drawn inside a line, in the code's place before column `at.column`, as a language server's
+ * type of a name, or the name of a call's parameter, is: `.lo-inlay`.
+ */
+export interface HintMark {
+  kind: 'hint';
+  /** The line, and the column it's drawn before, from 0; with none, the line's end. */
+  at: Place;
+  label: string;
+  /** Whether it stands a space apart from the code before it, and from the code after it. */
+  padding?: { readonly before?: boolean; readonly after?: boolean } | undefined;
+}
 
 /**
  * Lines picked out, as those a definition or an overview's block points at are when the whole file
@@ -643,15 +706,63 @@ export interface PeekAnswer {
   path: string;
   /** From 1. */
   line: number;
+  /** Where its name starts on the line, from 0, when it's known: its code marks the name. */
+  column?: number | undefined;
   source: PeekSource;
+  /** Where it came from, as its frame says: "TypeScript", "Syntax index · same name". */
+  label?: string | undefined;
 }
 
-/** What a peek under a line shows (`gd`, `gr`): its answers, and the one whose code shows. */
+/** Lines of an answer's file, as a peek shows them, with their highlighting. */
+export interface PeekCode {
+  /** The first line's number in the file, from 1. */
+  first: number;
+  lines: readonly string[];
+  /** `@lo/syntax`'s triples over `lines` joined with line breaks, when they're ready. */
+  tokens?: Uint32Array | undefined;
+}
+
+/** The most lines of code a peek is tall: more scroll inside it. */
+export const PEEK_LINES = 15;
+
+/**
+ * What a peek under a line shows (`gd`, `gr`): its answers, and the code of the one shown, its
+ * answer's line marked, near the top.
+ */
 export interface PeekView {
   answers: readonly PeekAnswer[];
   /** The answer shown, by its place in `answers`. */
   shown: number;
+  /** The shown answer's code: none, as for one outside the repository, whose frame says why. */
+  code?: PeekCode | undefined;
+  /** What it is, for a screen reader: "Definitions of estimateCost". */
+  label: string;
 }
+
+/**
+ * The parts of a peek its caller draws, around its code: each an element the peek makes. The head
+ * and foot are as tall as the design has them, and the list as tall as the code beside it, which it
+ * scrolls past, whatever is drawn in them, so nothing a frame draws moves what's under the peek.
+ */
+export interface PeekParts {
+  /** Above the rest: what it shows and how many answers, and the way to the whole file. */
+  head: HTMLElement;
+  /** Beside the code, with more than one answer: the answers, the one shown picked out. */
+  list: HTMLElement;
+  /** Under the rest: where the shown answer is, and the peek's keys. */
+  foot: HTMLElement;
+}
+
+/**
+ * Draws a peek's frame in its parts as it opens, at once, and again with `update` as what the peek
+ * shows changes. `destroy` takes it down as the peek closes. A key that scrolls, which neither
+ * Lo's commands nor the frame take (it prevents its default), scrolls the peek's code, and never
+ * what's under the peek, short of one typed in a field the frame draws, or a button's `Space`.
+ */
+export type PeekFrame = (
+  parts: PeekParts,
+  peek: PeekView,
+) => { update(peek: PeekView): void; destroy(): void };
 
 /** A file shown whole and read-only, as a whole-file view is given it. */
 export interface FileInit {
@@ -699,8 +810,15 @@ export interface FileView extends KeySource {
    * jump.
    */
   showLine(line: number): void;
-  /** Shows a peek under the line at `at`, or closes the one there when `peek` is undefined. */
-  peek(at: Place, peek: PeekView | undefined): void;
+  /**
+   * Shows `peek` under the line at `at`, as the diff view does (`DiffView.peek`), or with `peek`
+   * undefined closes it: the line stays where it is on screen, and all above it, or while it's off
+   * screen, the first line on screen does. Says whether there was a peek to show or close: there's
+   * none under a line of another file or side.
+   */
+  peek(at: Place, peek: PeekView | undefined, frame?: PeekFrame): boolean;
+  /** Where the word at `at` is drawn, as the diff view finds it (`DiffView.anchor`). */
+  anchor(at: Place): Anchor | undefined;
   focus(): void;
   destroy(): void;
 }
@@ -718,6 +836,8 @@ export interface FileEvents {
   jumped(from: Spot, to: Spot): void;
   /** A right-click: the registry's menu for what was clicked. */
   menu(target: Target, x: number, y: number): void;
+  /** The pointer rested on a word, or left it: see {@link Rested}. */
+  rested?: Rested;
 }
 
 /**

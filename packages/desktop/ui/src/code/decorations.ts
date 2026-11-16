@@ -1,12 +1,12 @@
 // A file's decorations in one document, in two kinds. Its blocks, which change the document's
 // heights: its header, with a note in it where the file has no lines, a note where its lines
-// aren't shown, its collapsed code, the labels on its moved code, and its threads, comment boxes
-// and overview markers' notes; each carries the file's index, so a file's can be replaced alone
-// when its diff or the moves arrive, a run opens, a comment is written or a note opens. And its
-// marks: changed lines and words, and moved lines and their edits, which the view makes only for
-// the lines it draws, so a transaction's cost doesn't grow with the pull request. A side's document
-// and the inline one draw the same things; the inline one has both sides' lines, one after the
-// other.
+// aren't shown, its collapsed code, the labels on its moved code, and its threads, comment boxes,
+// overview markers' notes and peek; each carries the file's index, so a file's can be replaced
+// alone when its diff or the moves arrive, a run opens, a comment is written or a note opens. And
+// its marks: changed lines and words, and moved lines and their edits, which the view makes only
+// for the lines it draws, so a transaction's cost doesn't grow with the pull request. A side's
+// document and the inline one draw the same things; the inline one has both sides' lines, one
+// after the other.
 
 import type { Range, Text } from '@codemirror/state';
 import { Decoration } from '@codemirror/view';
@@ -23,6 +23,7 @@ import {
   HeaderWidget,
   MovedLabelWidget,
   type NoteDraw,
+  type PeekHost,
   type ThreadSizes,
   ThreadWidget,
 } from './widgets.ts';
@@ -36,8 +37,8 @@ export interface ViewFile extends HeaderInfo {
 
 /**
  * What's under one of a file's lines: the threads there, comment boxes, the notes of overview
- * markers that end there, or any of them together. Line 0 is the file's header, under which go the
- * threads and comment boxes on the file.
+ * markers that end there, a peek, or any of them together. Line 0 is the file's header, under which
+ * go the threads and comment boxes on the file.
  */
 export interface ViewThread {
   id: string;
@@ -52,6 +53,8 @@ export interface ViewThread {
    */
   drawing?: number | undefined;
   notes?: readonly NoteDraw[] | undefined;
+  /** A peek open under the line. */
+  peek?: PeekHost | undefined;
 }
 
 /** What a file shows where its lines would be, when they aren't shown as a diff. */
@@ -239,6 +242,7 @@ function movedLabels(
     const label = new MovedLabelWidget(
       side === 'old' ? 'Moved to' : 'Moved from',
       `${other.path}:${other.first}`,
+      { file: other.file, side: side === 'old' ? 'new' : 'old', line: other.first },
     );
     out.push(
       Decoration.widget({ widget: label, block: true, side: -2, file: input.index }).range(
@@ -262,6 +266,7 @@ function threadAt(
     thread.boxes,
     thread.drawing,
     thread.notes,
+    thread.peek,
   );
   return Decoration.widget({ widget, block: true, side: 1, ...tag }).range(at);
 }

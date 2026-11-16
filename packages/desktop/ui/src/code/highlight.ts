@@ -33,6 +33,25 @@ export interface TokenSource {
 
 const marks = tokenNames.map((name) => Decoration.mark({ class: `lo-syn-${name}` }));
 
+/** The class a token draws with, by its number in `@lo/syntax`'s triples, if Lo has one. */
+export function tokenClass(token: number): string | undefined {
+  const name = tokenNames[token];
+  return name === undefined ? undefined : `lo-syn-${name}`;
+}
+
+/** The triples of `tokens` that run into the text from `from` to `to`, in order. */
+export function* tokensFrom(
+  tokens: Uint32Array,
+  from: number,
+  to: number,
+): Generator<{ from: number; to: number; token: number }> {
+  for (let at = firstEndingAfter(tokens, from) * 3; at < tokens.length; at += 3) {
+    const start = tokens[at]!;
+    if (start >= to) return;
+    yield { from: start, to: tokens[at + 1]!, token: tokens[at + 2]! };
+  }
+}
+
 /** Highlights what `view` draws, from `source`. */
 export function highlighting(source: TokenSource): ViewPlugin<{ decorations: DecorationSet }> {
   return ViewPlugin.fromClass(

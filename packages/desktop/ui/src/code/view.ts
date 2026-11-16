@@ -42,6 +42,7 @@ import {
   type Target,
 } from '../commands/index.ts';
 import type {
+  Anchor,
   BoxFrame,
   ComposeOptions,
   Composer,
@@ -63,6 +64,8 @@ import type {
   Movement,
   OnFile,
   PassStats,
+  PeekFrame,
+  PeekView,
   Place,
   Probe,
   RenderThread,
@@ -73,7 +76,15 @@ import type {
   Viewport,
   VimKey,
 } from './api.ts';
-import { Aligner, alignerFields, drawnBottom, drawnTop, lineOnScreen, ownTop } from './aligner.ts';
+import {
+  Aligner,
+  alignerFields,
+  drawnBottom,
+  drawnTop,
+  lineOnScreen,
+  ownTop,
+  partlyOnScreen,
+} from './aligner.ts';
 import { CommentBox, placeKey } from './comments.ts';
 import {
   type FileNote,
@@ -85,6 +96,7 @@ import {
 } from './decorations.ts';
 import { codeEditor } from './editor.ts';
 import { type FileTokens, highlighting, lineStarts, tokensChanged } from './highlight.ts';
+import { columnAt, type FileHints, hintRanges, hintsOf, sameHints } from './hints.ts';
 import { InlineLayout, inlineLines, inlineText } from './inline.ts';
 import {
   addCodeEditor,
@@ -110,6 +122,8 @@ import {
   startingIn,
 } from './markers.ts';
 import { lineKey, marking, marksChanged, rowKey } from './marks.ts';
+import { otherLine } from './moves.ts';
+import { PeekBlock } from './peek.ts';
 import {
   collapsedRuns,
   type FileRows,
@@ -124,7 +138,15 @@ import {
   shownRuns,
 } from './rows.ts';
 import { type ThreadHost, Threads } from './threads.ts';
-import { type BoxHost, NOTE_BLOCK_ATTRIBUTE, type NoteDraw, ThreadSizes } from './widgets.ts';
+import {
+  type BoxHost,
+  MOVED_ATTRIBUTE,
+  movedTo,
+  NOTE_BLOCK_ATTRIBUTE,
+  type NoteDraw,
+  ThreadSizes,
+} from './widgets.ts';
+import { watchRests, type Word, wordAnchor, wordUnder } from './words.ts';
 
 /** Opens a diff view of `init`'s files in `parent`, which tells `on` what happens in it. */
 export function createDiffView(parent: HTMLElement, init: DiffInit, on: DiffEvents): DiffView {
@@ -351,6 +373,14 @@ class View implements DiffView {
   #notes: OpenNote[] = [];
   /** Lines notes were opened under, which stay shown once they close, as a box's do. */
   readonly #noteLines: { old: Set<number>; new: Set<number> }[];
+  /** The peek open, under a line of one side of a file, by its index. */
+  #peek: { place: At; block: PeekBlock } | undefined;
+  /** Lines peeks were opened under, which stay shown once they close, as a note's do. */
+  readonly #peekLines: { old: Set<number>; new: Set<number> }[];
+  /** Each file's hints drawn, by its index. */
+  #hints = new Map<number, FileHints>();
+  /** The hints given last, while they wait for the reader's next input. */
+  #wantedHints: Map<number, FileHints> | undefined;
   /** Each file's opened runs, by their first old line. */
   readonly #open: Set<number>[];
   /**
@@ -446,6 +476,7 @@ class View implements DiffView {
     this.#keep = init.files.map(() => ({ old: new Set<number>(), new: new Set<number>() }));
     this.#boxLines = init.files.map(() => ({ old: new Set<number>(), new: new Set<number>() }));
     this.#noteLines = init.files.map(() => ({ old: new Set<number>(), new: new Set<number>() }));
+    this.#peekLines = init.files.map(() => ({ old: new Set<number>(), new: new Set<number>() }));
     this.#rows = init.files.map((_, index) => this.#rowsOf(index));
 
     this.dom = document.createElement('div');
@@ -514,6 +545,10 @@ class View implements DiffView {
     }
     this.dom.addEventListener('mousedown', this.#readNote);
     this.dom.addEventListener('click', this.#readNote);
+    this.dom.addEventListener('mousedown', this.#followMove);
+    this.dom.addEventListener('click', this.#followMove);
+    const { rested } = on;
+    if (rested) this.#stops.push(watchRests(this.dom, (event) => this.#wordAt(event), rested));
     for (const type of ['pointerdown', KEY_EVENT] as const) {
       this.dom.addEventListener(type, this.#touched, { capture: true });
     }
@@ -1255,6 +1290,31 @@ class View implements DiffView {
     }
     // The markers are in the gutters: no line changes height.
     for (const view of this.#editors()) view.dispatch({ effects: marksChanged.of(null) });
+    this.#takeHints(marks);
+  }
+
+  /**
+   * Takes the hints among `marks`, which can make lines wrap anew: on the reader's next input, as
+   * `#afterInput` has it, or at once while the view isn't shown.
+   */
+  #takeHints(marks: readonly Mark[]): void {
+    const next = new Map<number, FileHints>();
+    for (const [id, hints] of hintsOf(marks)) {
+      const file = this.#index.get(id);
+      if (file !== undefined) next.set(file, hints);
+    }
+    this.#wantedHints = sameHints(next, this.#hints) ? undefined : next;
+    if (!this.#showing()) this.#letHintsGo();
+  }
+
+  /** The hints waiting for the reader's input are drawn. */
+  #letHintsGo(): void {
+    const wanted = this.#wantedHints;
+    if (!wanted) return;
+    this.#wantedHints = undefined;
+    this.#hints = wanted;
+    for (const view of this.#editors()) view.dispatch({ effects: marksChanged.of(null) });
+    if (this.#pane === 'split') this.#aligner.schedule();
   }
 
   hasNote(at: Place): boolean {
@@ -1290,7 +1350,7 @@ class View implements DiffView {
    * Whether a note would be drawn now: under a line of a file shown as a diff, which the view has,
    * not one GitHub's diff left out.
    */
-  #drawable({ file, side, line }: NoteShown): boolean {
+  #drawable({ file, side, line }: { file: number; side: Side; line: number }): boolean {
     if (this.#noteOf(file)) return false;
     if (line < 1 || line > this.#lines[file]![side].length) return false;
     return !isGapLine(this.#gaps[file]!, side, line);
@@ -1371,16 +1431,15 @@ class View implements DiffView {
 
   /**
    * The reader's wheel, key or click, a key the registry took among them. Threads and lines held on
-   * screen, and the rooms of boxes, take what they have now, once the input is handled, so it acts
-   * on what the reader saw. So do notes held where no scroll can take them off screen, as in a diff
-   * too short to scroll or near its ends, which would never leave it.
+   * screen, the rooms of boxes and hints, take what they have now, once the input is handled, so it
+   * acts on what the reader saw. So do notes held where no scroll can take them off screen, as in a
+   * diff too short to scroll or near its ends, which would never leave it.
    */
   readonly #afterInput = (event: Event): void => {
     if (this.#settling !== undefined) return;
     const notes = this.#notes.some((note) => note.next !== undefined);
-    if (!notes && this.#held.size === 0 && this.#waiting.size === 0 && this.#rooms.size === 0) {
-      return;
-    }
+    const waiting = this.#held.size + this.#waiting.size + this.#rooms.size > 0;
+    if (!notes && !waiting && this.#wantedHints === undefined) return;
     const clicked = event.type === 'click' ? event.target : null;
     this.#settling = setTimeout(() => {
       this.#settling = undefined;
@@ -1397,6 +1456,7 @@ class View implements DiffView {
       this.#letRoomsGo(() => true);
       this.#letHeldGo((note) => this.#noteOnScreen(note) && this.#noteStuck(note));
       this.#letThreadsGo('all', false);
+      this.#letHintsGo();
     });
   }
 
@@ -2275,6 +2335,7 @@ class View implements DiffView {
     for (const stop of this.#stops) stop();
     this.#aligner.destroy();
     for (const { box } of this.#boxes.values()) box.destroy();
+    this.#peek?.block.destroy();
     cancelAnimationFrame(this.#takeFrame);
     this.#hosts.destroy();
     for (const sizes of [this.#sizes.old, this.#sizes.new, this.#inline?.sizes]) sizes?.destroy();
@@ -2573,6 +2634,175 @@ class View implements DiffView {
       view.focus();
     }
     box.destroy();
+  }
+
+  // Peeks and words ---------------------------------------------------------------------------
+
+  peek(at: Place, peek: PeekView | undefined, frame?: PeekFrame): boolean {
+    const file = this.#index.get(at.file);
+    const place: At | undefined =
+      file === undefined ? undefined : { file, side: at.side, line: at.line };
+    const open = this.#peek;
+    const here =
+      open !== undefined &&
+      place !== undefined &&
+      open.place.file === place.file &&
+      open.place.side === place.side &&
+      open.place.line === place.line;
+    if (!peek) {
+      if (!here) return false;
+      this.#closePeek();
+      return true;
+    }
+    // A line among collapsed lines isn't drawn, as the cursor never is there: the reader opens
+    // the run first.
+    if (!place || !this.#drawable(place) || this.#collapsedAt(place)) return false;
+    if (here) {
+      const { block } = open;
+      this.#keepPeek(place, () => block.update(peek));
+      return true;
+    }
+    // Focus in the view's code, or in the peek this one takes the place of, goes into it.
+    const focused = this.#editors().some((view) => view.hasFocus) || open?.block.hasFocus === true;
+    const block = new PeekBlock(at, peek, frame);
+    this.#keepPeek(place, () => {
+      if (open) {
+        open.block.destroy();
+        if (open.place.file !== place.file) this.#refresh(open.place.file);
+      }
+      this.#peek = { place, block };
+      this.#peekLines[place.file]![place.side].add(place.line);
+      this.#keepAt(place.file);
+      this.#refresh(place.file);
+    });
+    if (focused) block.focus();
+    return true;
+  }
+
+  /**
+   * Makes a change to the peek under `place`, which the reader asked for: while some of the line is
+   * on screen, it stays where it is, and so does all above it; off screen, above it or below,
+   * what's at the top of the screen does, so a peek opening or closing out of sight moves nothing.
+   */
+  #keepPeek(place: At, change: () => void): void {
+    if (this.#lineOnScreen(place)) this.#keepLine(place, change);
+    else this.#keepTop(change);
+  }
+
+  /** Whether some of line `place` is drawn on screen, as one partly above its top. */
+  #lineOnScreen(place: At): boolean {
+    const pane: Pane = this.#pane === 'inline' ? 'inline' : place.side;
+    const view = this.#viewOf(pane);
+    // Where it's drawn once what's waiting is measured, as a scroll the editor has yet to make.
+    view.lineBlockAtHeight(0);
+    const pos = view.state.doc.line(this.#docLine(pane, place)).from;
+    return partlyOnScreen(view, pos, this.dom.getBoundingClientRect());
+  }
+
+  /** Whether line `place` is among the collapsed lines its file shows now. */
+  #collapsedAt(place: At): boolean {
+    const diff = this.#diffs[place.file];
+    if (!diff) return false;
+    const { file } = place;
+    const runs = shownRuns(diff, this.#keep[file], this.#open[file], this.#gaps[file]);
+    return runAt(runs, place.side, place.line) !== undefined;
+  }
+
+  /**
+   * Closes the peek, its line staying where it is while it's on screen, and puts focus back on its
+   * line if it was in it: the cursor where it was as the peek opened.
+   */
+  #closePeek(): void {
+    const open = this.#peek;
+    if (!open) return;
+    const { place, block } = open;
+    const focused = block.hasFocus;
+    this.#keepPeek(place, () => {
+      this.#peek = undefined;
+      block.destroy();
+      this.#refresh(place.file);
+    });
+    if (!focused) return;
+    const pane: Pane = this.#pane === 'inline' ? 'inline' : place.side;
+    const view = this.#viewOf(pane);
+    const line = view.state.doc.line(this.#docLine(pane, place));
+    // It's on its line already, or near: what's on screen stays as it is.
+    this.#aligner.unfollow();
+    view.dispatch({
+      selection: { anchor: line.from + Math.min(block.at.column ?? 0, line.length) },
+    });
+    view.focus();
+  }
+
+  anchor(at: Place): Anchor | undefined {
+    const file = this.#index.get(at.file);
+    if (file === undefined || !this.#showing()) return undefined;
+    const place: At = { file, side: at.side, line: at.line };
+    if (!this.#drawable(place)) return undefined;
+    const pane: Pane = this.#pane === 'inline' ? 'inline' : at.side;
+    const view = this.#viewOf(pane);
+    const line = view.state.doc.line(this.#docLine(pane, place));
+    const pos = line.from + Math.min(Math.max(0, at.column ?? 0), line.length);
+    return wordAnchor(view, pos, this.dom.getBoundingClientRect());
+  }
+
+  otherEnd(at: Place): Place | undefined {
+    const file = this.#index.get(at.file);
+    if (file === undefined) return undefined;
+    const side = at.side;
+    const other: Side = side === 'old' ? 'new' : 'old';
+    for (const move of this.#moves) {
+      const [here, there] = side === 'old' ? [move.from, move.to] : [move.to, move.from];
+      if (here.file !== file || at.line < here.first || at.line > here.last) continue;
+      // Line for line, blank lines left out, as the move was found.
+      const line = otherLine(
+        { lines: this.#lines[here.file]![side], first: here.first, last: here.last },
+        at.line,
+        { lines: this.#lines[there.file]![other], first: there.first, last: there.last },
+      );
+      return { file: this.#ids[there.file]!, side: other, line };
+    }
+    return undefined;
+  }
+
+  /**
+   * A press on the button of a moved label leaves focus where it is; a click says where the label
+   * goes.
+   */
+  readonly #followMove = (event: MouseEvent): void => {
+    const { target } = event;
+    const button = target instanceof Element ? target.closest(`[${MOVED_ATTRIBUTE}]`) : null;
+    if (!button || !this.dom.contains(button)) return;
+    if (event.type === 'mousedown') {
+      event.preventDefault();
+      return;
+    }
+    const to = movedTo(button.getAttribute(MOVED_ATTRIBUTE));
+    const id = to && this.#ids[to.file];
+    if (to && id !== undefined) this.#on.moved?.({ file: id, side: to.side, line: to.line });
+  };
+
+  /**
+   * The word under the pointer, if it's on one in a line of code: not in a header, or anything else
+   * drawn between lines, such as a thread or a peek.
+   */
+  #wordAt(event: PointerEvent): Word | undefined {
+    const { target } = event;
+    const line = target instanceof Element ? target.closest('.cm-line') : null;
+    const pane = this.#panes().find(
+      (each) => line !== null && line.parentElement === this.#viewOf(each).contentDOM,
+    );
+    if (!pane) return undefined;
+    const view = this.#viewOf(pane);
+    const word = wordUnder(view, event.clientX, event.clientY);
+    if (!word) return undefined;
+    const text = view.state.doc.lineAt(word.from);
+    const place = this.#placeAt(pane, text.number);
+    if (place.line === 0) return undefined;
+    return {
+      key: `${pane}:${word.from}:${word.to}`,
+      at: this.#outward(place, word.from - text.from),
+    };
   }
 
   // Readings ---------------------------------------------------------------------------------
@@ -2962,8 +3192,13 @@ class View implements DiffView {
    * gives it focus unless `focus` is false.
    */
   #toggleLayout(focus = true): void {
-    // Lines and threads waiting to change on screen change with the layout, which moves it all.
+    // Focus in the peek stays there, and its line is what stays in view, the cursor going to it as
+    // it would as the peek closes.
+    const peek = this.#peek?.block.hasFocus === true ? this.#peek : undefined;
+    // Lines, threads and hints waiting to change on screen change with the layout, which moves it
+    // all.
     this.#letThreadsGo('all', false);
+    this.#letHintsGo();
     // What was at the top inline is noted afresh once it's shown, and a jump's line, or one held,
     // is no longer where the screen is: it goes to the cursor.
     this.#inlineTop = undefined;
@@ -2971,7 +3206,18 @@ class View implements DiffView {
     this.#holding = undefined;
     const pane = this.#activePane();
     const view = this.#viewOf(pane);
-    const from = this.#placeAt(pane, view.state.doc.lineAt(view.state.selection.main.head).number);
+    const line = view.state.doc.lineAt(view.state.selection.main.head).number;
+    const cursor = this.#placeAt(pane, line);
+    const from = peek?.place ?? cursor;
+    // Whether the cursor is on the peek's line already: inline, an unchanged line is either side's.
+    const onPeek =
+      peek !== undefined &&
+      (pane === 'inline'
+        ? this.#docLine('inline', peek.place) === line
+        : cursor.file === peek.place.file &&
+          cursor.side === peek.place.side &&
+          cursor.line === peek.place.line);
+    let shown: Pane;
     if (this.#pane === 'split') {
       const inline = this.#inline ?? this.#makeInline();
       this.#pane = 'inline';
@@ -2980,7 +3226,7 @@ class View implements DiffView {
       this.views.new.dom.hidden = true;
       inline.view.dom.hidden = false;
       this.#moveBoxes();
-      this.#show('inline', from, focus);
+      shown = 'inline';
     } else {
       this.#pane = 'split';
       if (this.#inline) this.#inline.view.dom.hidden = true;
@@ -2990,8 +3236,17 @@ class View implements DiffView {
       this.#moveBoxes();
       // The cursor stays on screen as the sides settle, as after any key that moves it.
       this.#aligner.follow();
-      this.#show(from.side, from, focus);
+      shown = from.side;
     }
+    this.#show(shown, from, focus && !peek);
+    if (!peek) return;
+    // The cursor went to the peek's line, with focus not in its editor: said as any move of it is,
+    // and as a jump, from another line.
+    if (!onPeek) this.#on.jumped(this.#spot(cursor), this.#spot(peek.place));
+    this.#tell(shown);
+    // Drawn now, where the editor scrolls to, so it can take focus.
+    this.#viewOf(shown).lineBlockAtHeight(0);
+    peek.block.focus();
   }
 
   /** Shows `pane`, scrolled to `place` with the cursor there, and focus in it unless `focus` is false. */
@@ -3084,11 +3339,19 @@ class View implements DiffView {
     );
   }
 
-  /** Keeps shown the lines a file's threads, comment boxes and notes are under. */
+  /** Keeps shown the lines a file's threads, comment boxes, notes and peeks are under. */
   #keepAt(file: number): void {
     const keep = {
-      old: new Set([...this.#boxLines[file]!.old, ...this.#noteLines[file]!.old]),
-      new: new Set([...this.#boxLines[file]!.new, ...this.#noteLines[file]!.new]),
+      old: new Set([
+        ...this.#boxLines[file]!.old,
+        ...this.#noteLines[file]!.old,
+        ...this.#peekLines[file]!.old,
+      ]),
+      new: new Set([
+        ...this.#boxLines[file]!.new,
+        ...this.#noteLines[file]!.new,
+        ...this.#peekLines[file]!.new,
+      ]),
     };
     for (const threads of this.#threads[file]!.values()) {
       const { side, line } = placeOf(threads[0]!.at);
@@ -3097,7 +3360,10 @@ class View implements DiffView {
     this.#keep[file] = keep;
   }
 
-  /** The file's threads, and the comment boxes and notes shown in it, by the line they're under. */
+  /**
+   * The file's threads, and the comment boxes, notes and peek shown in it, by the line they're
+   * under.
+   */
   #viewThreads(file: number): ViewThread[] {
     const byPlace = new Map<string, ViewThread>();
     for (const [key, threads] of this.#threads[file]!) {
@@ -3137,6 +3403,13 @@ class View implements DiffView {
         link: this.#on.explained !== undefined,
       };
       byPlace.set(key, { ...shown, notes: [...(shown.notes ?? []), note] });
+    }
+    const peek = this.#peek;
+    if (peek?.place.file === file && this.#drawable(peek.place)) {
+      const { side, line } = peek.place;
+      const key = `${side}:${line}`;
+      const shown = byPlace.get(key) ?? { id: placeKey(peek.place), side, line, threads: [] };
+      byPlace.set(key, { ...shown, peek: peek.block, drawing: this.#drawing });
     }
     return [...byPlace.values()];
   }
@@ -3205,6 +3478,9 @@ class View implements DiffView {
           from,
           to,
         ),
+        ...hintRanges(this.#hints.get(file)?.[side], from, to, (number, column) =>
+          columnAt(doc, lines.header + number, column),
+        ),
       );
       const rows = this.#rows[file]!;
       const firsts = side === 'old' ? rows.oldFirst : rows.newFirst;
@@ -3252,6 +3528,9 @@ class View implements DiffView {
             },
             low,
             high,
+          ),
+          ...hintRanges(this.#hints.get(file)?.[side], low, high, (number, column) =>
+            columnAt(doc, header + at[number]!, column),
           ),
         );
       }
@@ -3323,11 +3602,15 @@ class View implements DiffView {
     this.#aligner.schedule();
   }
 
-  /** Draws the files with threads or comment boxes again, so the editors showing take them. */
+  /**
+   * Draws the files with threads, comment boxes or a peek again, so the editors showing take them.
+   */
   #moveBoxes(): void {
     this.#drawing++;
     const files = new Set(
-      [...this.#boxes.values(), ...this.#rooms.values()].map(({ place }) => place.file),
+      [...this.#boxes.values(), ...this.#rooms.values(), ...(this.#peek ? [this.#peek] : [])].map(
+        ({ place }) => place.file,
+      ),
     );
     this.#threads.forEach((byPlace, file) => {
       if (byPlace.size > 0) files.add(file);

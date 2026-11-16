@@ -6,13 +6,15 @@
 
 import { Language, Parser, Query, type Node, type QueryCapture } from 'web-tree-sitter';
 
-import { defaultMaxDepth, defaultTimeout, nestingDepth, type Loader } from './highlight.ts';
+import { defaultMaxDepth, nestingDepth } from './depth.ts';
+import { defaultTimeout, type Loader } from './highlight.ts';
 import { importsOf, maxImports, type Import, type Imports } from './imports.ts';
 import { languages } from './languages.ts';
 import {
   Aborted,
   breakRuntime,
   countAbort,
+  isFault,
   memoryCeiling,
   memoryInUse,
   parseText,
@@ -306,8 +308,11 @@ export class Tagger {
     const started = performance.now();
     try {
       compiled = await this.#load(language);
-    } catch {
-      this.#failed = true;
+    } catch (error) {
+      // A grammar or query that isn't there, or doesn't compile, stops this tagger; a fault as a
+      // grammar loads can break the memory, and stops the thread's highlighters too.
+      if (isFault(error)) breakRuntime();
+      else this.#failed = true;
       return { skipped: 'failed' };
     } finally {
       this.#loadMs += performance.now() - started;

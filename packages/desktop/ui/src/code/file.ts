@@ -2,37 +2,51 @@
 // box that scrolls, as the diff view's sides are, so Lo's screen keys go by the box (`screen.ts`).
 // Its editor is a code view's own, as the diff's are (`editor.ts`, `keys.ts`): no key changes its
 // text or enters insert or replace mode, its jumps go to the caller as places, and its cursor
-// doesn't blink.
+// doesn't blink. A peek opens under a line as a block of its own (`peek.ts`), and hints come into
+// lines with the reader's next input, as in the diff.
 //
 // Callers see none of this: they name the file by their own id, places by that id, the file's side
 // and a line, and reach the view only through `FileView` (`api.ts`). Keys reach it through the
 // registry, which runs Lo's commands and hands the rest to Vim; the view is the `file` scope's
 // `KeySource`.
 
-import { EditorState, Prec, type Range, type SelectionRange, type Text } from '@codemirror/state';
-import { Decoration, EditorView, lineNumbers } from '@codemirror/view';
+import {
+  EditorState,
+  Prec,
+  type Range,
+  type SelectionRange,
+  StateEffect,
+  StateField,
+  type Text,
+} from '@codemirror/state';
+import { Decoration, type DecorationSet, EditorView, lineNumbers } from '@codemirror/view';
 
 import {
   type HeaderTarget,
+  KEY_EVENT,
   type LineTarget,
   SCOPE_ATTRIBUTE,
   setScopeSource,
   type Target,
 } from '../commands/index.ts';
 import type {
+  Anchor,
   FileEvents,
   FileInit,
   FileView,
   Mark,
   Mode,
+  PeekFrame,
   PeekView,
   Place,
   Side,
   Spot,
   VimKey,
 } from './api.ts';
+import { drawnTop, lineOnScreen, partlyOnScreen } from './aligner.ts';
 import { codeEditor } from './editor.ts';
 import { type FileTokens, highlighting, lineStarts, tokensChanged } from './highlight.ts';
+import { columnAt, type HintAt, hintRanges, hintsOf, sameHintList } from './hints.ts';
 import {
   addCodeEditor,
   clearVim,
@@ -46,6 +60,8 @@ import {
   vimPending,
 } from './keys.ts';
 import { marking, marksChanged } from './marks.ts';
+import { PeekBlock, PeekWidget } from './peek.ts';
+import { watchRests, type Word, wordAnchor, wordUnder } from './words.ts';
 
 /** Opens a whole-file view of `init`'s file in `parent`, which tells `on` what happens in it. */
 export function createFileView(parent: HTMLElement, init: FileInit, on: FileEvents): FileView {
@@ -54,6 +70,29 @@ export function createFileView(parent: HTMLElement, init: FileInit, on: FileEven
 
 /** A line a mark picks out. */
 const markedLine = Decoration.line({ class: 'lo-line-marked' });
+
+/** Shows a peek under a document line, or none. */
+const setPeek = StateEffect.define<{ line: number; block: PeekBlock } | undefined>();
+
+/** The peek open, as a block under its line. */
+const peekField = StateField.define<DecorationSet>({
+  create: () => Decoration.none,
+  update(peeks, transaction) {
+    for (const effect of transaction.effects) {
+      if (!effect.is(setPeek)) continue;
+      const open = effect.value;
+      if (!open) return Decoration.none;
+      const widget = new PeekWidget(open.block);
+      const at = transaction.state.doc.line(open.line).to;
+      return Decoration.set(Decoration.widget({ widget, block: true, side: 1 }).range(at));
+    }
+    return peeks.map(transaction.changes);
+  },
+  provide: (field) => EditorView.decorations.from(field),
+});
+
+/** The reader's input in the view, after which hints waiting for it come. */
+const INPUT = ['wheel', KEY_EVENT, 'click'] as const;
 
 class WholeFile implements FileView {
   readonly dom: HTMLElement;
@@ -67,6 +106,13 @@ class WholeFile implements FileView {
   #tokens: FileTokens | undefined;
   /** The lines the marks pick out, as ranges of lines, first to last. */
   #marked: readonly { from: number; to: number }[];
+  /** The hints drawn, and those given last while they wait for the reader's next input. */
+  #hints: readonly HintAt[];
+  #wantedHints: readonly HintAt[] | undefined;
+  /** Hints waiting for the input that let them go to be handled. */
+  #settling: ReturnType<typeof setTimeout> | undefined;
+  /** The peek open, under a line. */
+  #peek: { line: number; block: PeekBlock } | undefined;
   /** What the events last said, so each says only what changed. */
   readonly #said: { cursor?: string; mode: Mode } = { mode: 'normal' };
   readonly #stops: (() => void)[] = [];
@@ -82,6 +128,8 @@ class WholeFile implements FileView {
     this.#starts = lineStarts(init.lines);
     if (init.tokens) this.#tokens = { tokens: init.tokens, starts: this.#starts };
     this.#marked = this.#ownMarks(init.marks ?? []);
+    // Drawn with the rest, as the view comes.
+    this.#hints = this.#ownHints(init.marks ?? []);
 
     this.dom = document.createElement('div');
     this.dom.className = 'lo-fileview';
@@ -105,6 +153,7 @@ class WholeFile implements FileView {
             lineAt: (line) => (line <= count ? { file: 0, side, line } : undefined),
             tokens: () => this.#tokens,
           }),
+          peekField,
         ],
       }),
     });
@@ -130,6 +179,11 @@ class WholeFile implements FileView {
       setScopeSource(this.dom, this),
     );
     this.dom.addEventListener('contextmenu', (event) => this.#contextMenu(event));
+    for (const type of INPUT) {
+      this.dom.addEventListener(type, this.#afterInput, { passive: true, capture: true });
+    }
+    const { rested } = on;
+    if (rested) this.#stops.push(watchRests(this.dom, (event) => this.#wordAt(event), rested));
     setVimKeys(init.vimKeys);
   }
 
@@ -143,26 +197,68 @@ class WholeFile implements FileView {
   setMarks(marks: readonly Mark[]): void {
     this.#marked = this.#ownMarks(marks);
     this.#view.dispatch({ effects: marksChanged.of(null) });
+    // Hints can make lines wrap anew: they wait for the reader's next input, unless the view isn't
+    // shown.
+    const hints = this.#ownHints(marks);
+    this.#wantedHints = sameHintList(hints, this.#hints) ? undefined : hints;
+    if (!this.#showing()) this.#letHintsGo();
+  }
+
+  /** The hints among `marks` on this file and side. */
+  #ownHints(marks: readonly Mark[]): HintAt[] {
+    return hintsOf(marks).get(this.#id)?.[this.#side] ?? [];
+  }
+
+  /** The reader's wheel, key or click: once it's handled, hints waiting for it come. */
+  readonly #afterInput = (): void => {
+    if (this.#wantedHints === undefined || this.#settling !== undefined) return;
+    this.#settling = setTimeout(() => {
+      this.#settling = undefined;
+      this.#keepReading(() => this.#letHintsGo());
+    });
+  };
+
+  /** The hints waiting for the reader's input are drawn. */
+  #letHintsGo(): void {
+    const wanted = this.#wantedHints;
+    if (!wanted) return;
+    this.#wantedHints = undefined;
+    this.#hints = wanted;
+    this.#view.dispatch({ effects: marksChanged.of(null) });
+  }
+
+  /** Whether the view shows anything: it isn't hidden, and it has room. */
+  #showing(): boolean {
+    const { dom } = this;
+    const visible =
+      !('checkVisibility' in dom) || dom.checkVisibility({ visibilityProperty: true });
+    return visible && dom.clientHeight > 0;
   }
 
   /**
    * The lines `marks` pick out in this file and side, each range first to last. Overview markers
-   * are the diff's: they're left out.
+   * are the diff's, and hints are taken apart: they're left out.
    */
   #ownMarks(marks: readonly Mark[]): { from: number; to: number }[] {
-    return marks
-      .filter(({ kind, at }) => kind === 'lines' && at.file === this.#id && at.side === this.#side)
-      .map(({ at }) => ({ from: Math.min(at.from, at.to), to: Math.max(at.from, at.to) }));
+    return marks.flatMap((mark) => {
+      if (mark.kind !== 'lines' || mark.at.file !== this.#id || mark.at.side !== this.#side) {
+        return [];
+      }
+      const { from, to } = mark.at;
+      return [{ from: Math.min(from, to), to: Math.max(from, to) }];
+    });
   }
 
-  /** The marks on document lines `first` to `last`. */
+  /** The marks on document lines `first` to `last`: lines picked out, and hints. */
   #marks(doc: Text, first: number, last: number): Range<Decoration>[] {
     const out: Range<Decoration>[] = [];
-    for (let line = first; line <= Math.min(last, this.#count); line++) {
+    const end = Math.min(last, this.#count);
+    for (let line = first; line <= end; line++) {
       if (this.#marked.some(({ from, to }) => from <= line && line <= to)) {
         out.push(markedLine.range(doc.line(line).from));
       }
     }
+    out.push(...hintRanges(this.#hints, first, end, (line, column) => columnAt(doc, line, column)));
     return out;
   }
 
@@ -235,9 +331,115 @@ class WholeFile implements FileView {
     return true;
   }
 
-  peek(_at: Place, peek: PeekView | undefined): void {
-    // None is ever open, so there's none to close.
-    if (peek) throw new Error("The whole-file view doesn't draw peeks yet.");
+  peek(at: Place, peek: PeekView | undefined, frame?: PeekFrame): boolean {
+    if (at.file !== this.#id || at.side !== this.#side) return false;
+    if (at.line < 1 || at.line > this.#count) return false;
+    const open = this.#peek;
+    const view = this.#view;
+    if (open?.line === at.line) {
+      const { block } = open;
+      if (peek) {
+        this.#keepPeek(at.line, () => block.update(peek));
+        return true;
+      }
+      const focused = block.hasFocus;
+      this.#keepPeek(at.line, () => {
+        this.#peek = undefined;
+        block.destroy();
+        view.dispatch({ effects: setPeek.of(undefined) });
+      });
+      if (focused) {
+        // The cursor where it was as the peek opened.
+        const line = view.state.doc.line(at.line);
+        const column = Math.min(block.at.column ?? 0, line.length);
+        view.dispatch({ selection: { anchor: line.from + column } });
+        view.focus();
+      }
+      return true;
+    }
+    if (!peek) return false;
+    // Focus in the code, or in the peek this one takes the place of, goes into it.
+    const focused = view.hasFocus || open?.block.hasFocus === true;
+    const block = new PeekBlock(at, peek, frame);
+    this.#keepPeek(at.line, () => {
+      open?.block.destroy();
+      this.#peek = { line: at.line, block };
+      view.dispatch({ effects: setPeek.of({ line: at.line, block }) });
+    });
+    if (focused) block.focus();
+    return true;
+  }
+
+  anchor(at: Place): Anchor | undefined {
+    if (at.file !== this.#id || at.side !== this.#side) return undefined;
+    if (at.line < 1 || at.line > this.#count || !this.#showing()) return undefined;
+    const line = this.#view.state.doc.line(at.line);
+    const pos = line.from + Math.min(Math.max(0, at.column ?? 0), line.length);
+    return wordAnchor(this.#view, pos, this.dom.getBoundingClientRect());
+  }
+
+  /** The word under the pointer, if it's on one in a line of code, not in the peek. */
+  #wordAt(event: PointerEvent): Word | undefined {
+    const view = this.#view;
+    const { target } = event;
+    const line = target instanceof Element ? target.closest('.cm-line') : null;
+    if (line?.parentElement !== view.contentDOM || this.#count === 0) return undefined;
+    const word = wordUnder(view, event.clientX, event.clientY);
+    if (!word) return undefined;
+    const text = view.state.doc.lineAt(word.from);
+    const at = {
+      file: this.#id,
+      side: this.#side,
+      line: text.number,
+      column: word.from - text.from,
+    };
+    return { key: `${word.from}:${word.to}`, at };
+  }
+
+  /**
+   * Makes a change under line `line`, as a peek opening there: while some of the line is on screen,
+   * it stays where it is, and so does all above it; off screen, above it or below, the first line
+   * on screen does, so a peek opening or closing out of sight moves nothing in it.
+   */
+  #keepPeek(line: number, change: () => void): void {
+    const view = this.#view;
+    view.lineBlockAtHeight(0);
+    const screen = this.dom.getBoundingClientRect();
+    const pos = view.state.doc.line(line).from;
+    const kept = partlyOnScreen(view, pos, screen) ? pos : lineOnScreen(view, screen)?.pos;
+    if (kept === undefined) change();
+    else this.#keepPos(kept, change);
+  }
+
+  /**
+   * Makes a change that comes with the reader's input, keeping what they read where it is: the
+   * cursor's line, while it's on screen, or else the first line on screen.
+   */
+  #keepReading(change: () => void): void {
+    const view = this.#view;
+    // The input's own scroll comes first, as `j`'s bringing the cursor on screen.
+    view.lineBlockAtHeight(0);
+    const screen = this.dom.getBoundingClientRect();
+    const cursor = view.lineBlockAt(view.state.selection.main.head).from;
+    const top = drawnTop(view, cursor);
+    const onScreen = top !== undefined && top >= screen.top && top < screen.bottom;
+    const pos = onScreen ? cursor : lineOnScreen(view, screen)?.pos;
+    if (pos === undefined) change();
+    else this.#keepPos(pos, change);
+  }
+
+  /** Makes a change, keeping the line at `pos` where it is on screen, and all above it. */
+  #keepPos(pos: number, change: () => void): void {
+    const view = this.#view;
+    const before = drawnTop(view, pos);
+    change();
+    // The editor measures what changed now, as the box's scroll is put right.
+    view.requestMeasure();
+    view.lineBlockAtHeight(0);
+    const after = drawnTop(view, pos);
+    if (before !== undefined && after !== undefined && Math.abs(after - before) >= 0.5) {
+      this.dom.scrollTop += after - before;
+    }
   }
 
   focus(): void {
@@ -247,7 +449,9 @@ class WholeFile implements FileView {
   }
 
   destroy(): void {
+    clearTimeout(this.#settling);
     for (const stop of this.#stops) stop();
+    this.#peek?.block.destroy();
     this.#view.destroy();
     this.dom.remove();
   }
