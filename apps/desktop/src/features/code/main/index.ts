@@ -447,7 +447,8 @@ function startServers(context: Context): void {
       if (!cache || found?.status !== 'found') return undefined;
       const home = homeOf(cache.root, repo, adapter);
       if (home === undefined) return undefined;
-      // Lo's own git first, which is new enough for the settings git's variables give it.
+      // Lo's own git, after the toolchain's folders: it's new enough for the settings git's
+      // variables give it.
       return { home, git: serverGitEnvironment(), path: [dirname(found.git.program)] };
     },
     changed: (repo) => serving?.changed(repo),

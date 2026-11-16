@@ -396,7 +396,7 @@ describe('trust, then and there', () => {
     },
   );
 
-  it('puts Lo’s git first on a server’s PATH, before its toolchain’s folders', async () => {
+  it('puts a server’s toolchain first on its PATH, then Lo’s git', async () => {
     const { pool, started } = standIns();
     const tools = adapter('ts', () =>
       Promise.resolve({
@@ -406,7 +406,8 @@ describe('trust, then and there', () => {
     );
     pool.sync([view('v1', 'a/x', 1, [tools])], 'v1');
     await settle();
-    expect(started[0]?.spec.path).toEqual(['/lo/git/bin', '/toolchain/bin']);
+    // Homebrew's git, say, whose folder also holds Homebrew's `go`, comes after Lo's `go`.
+    expect(started[0]?.spec.path).toEqual(['/toolchain/bin', '/lo/git/bin']);
   });
 });
 

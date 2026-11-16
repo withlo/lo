@@ -99,7 +99,7 @@ export interface PoolOptions {
   readonly start: (spec: ServerSpec) => Running;
   /**
    * The rest of a server's spec, for `repo`: a `HOME` of its own, git's variables, and the folder of
-   * Lo's git, put first on its `PATH`. Nothing without git.
+   * Lo's git, put on its `PATH` after the toolchain's folders. Nothing without git.
    */
   readonly base: (
     repo: string,
@@ -478,8 +478,9 @@ export class ServerPool {
         args: launch.args,
         root: root.folder,
         home: base.home,
-        // Lo's git first, before the toolchain's folders.
-        path: [...base.path, ...(launch.path ?? [])],
+        // The toolchain's folders first, then Lo's git's, so a git from a folder that holds other
+        // programs, as Homebrew's does, can't bring that folder's `go` or `cargo` ahead of Lo's.
+        path: [...(launch.path ?? []), ...base.path],
         variables: launch.variables,
         allowed: launch.allowed,
         git: base.git,

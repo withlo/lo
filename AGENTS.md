@@ -1166,7 +1166,9 @@ its languages; Lo ships none yet.
 - One server runs per repository and adapter, on the checkout of the head on screen, and moves with
   it: by `workspace/didChangeWorkspaceFolders`, sent only once trust is checked again, where it
   takes that, else by starting again (`main/servers.ts`). Its `HOME` is
-  `<cache>/code/homes/<owner>/<name>/<adapter>`, and Lo's git is first on its `PATH`.
+  `<cache>/code/homes/<owner>/<name>/<adapter>`, and its `PATH` is its toolchain's folders, then
+  Lo's git's, then the system's, so a git from a folder of other programs, as Homebrew's is, can't
+  bring that folder's `go` ahead of the toolchain's.
 - It stops 10 minutes after the pull request whose checkout it runs on was last on screen, once no
   tab of its repository is open, once its repository or pull request isn't trusted, and as Lo quits,
   each within 5 s; Lo's quitting waits for each one stopping. After a crash it starts again by
