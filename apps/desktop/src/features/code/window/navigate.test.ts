@@ -12,12 +12,14 @@ import { markdownTree } from '@lo/markdown';
 import { IpcError } from '../../../ipc/contract.ts';
 import type * as TabShared from '../../tab/window/shared.ts';
 import type { RightKept } from '../../tab/window/shared.ts';
+import type { Status } from '../contract.ts';
 import type { CodeAnswer, Definitions, Hints, Hover, Outline, References } from '../port.ts';
 import {
   closePeek,
   closeReferences,
   definition,
   goToAnswer,
+  hintsOn,
   hovers,
   listed,
   outline,
@@ -25,6 +27,7 @@ import {
   peekIn,
   pick,
   references,
+  redrawn,
   rested,
   toggleHints,
   typeOf,
@@ -55,6 +58,8 @@ const seen = vi.hoisted(() => ({
   put: [] as RightKept[],
   middle: 0,
   hints: [] as unknown[],
+  /** The view on screen: a pull request's tab, or one of its layers. */
+  active: 't1',
 }));
 
 /** The code port's `job`: noted as asked, and answered as the test says, or never. */
@@ -127,7 +132,7 @@ vi.mock('../../../window/commands/registry.ts', () => ({
 
 vi.mock('../../tab/window/shared.ts', async (original) => ({
   ...(await original<typeof TabShared>()),
-  activeTab: () => ({ id: 't1', kind: 'pull', owner: 'rozed-dev', repo: 'e2e', number: 80 }),
+  activeTab: () => ({ id: seen.active, kind: 'pull', owner: 'rozed-dev', repo: 'e2e', number: 80 }),
   localCopyOf: () => seen.local,
   rightShown: () => seen.rightShown,
   rightKept: () => seen.kept,
@@ -181,8 +186,10 @@ beforeEach(() => {
   seen.put.length = 0;
   seen.middle = 0;
   seen.hints.length = 0;
+  seen.active = 't1';
   closePeek(peekIn('t1') ?? '');
   said.set('t1', undefined);
+  hintsOn.set('t1', false);
   statuses.set('t1', null);
   servers.set('t1', null);
 });
@@ -373,8 +380,27 @@ describe('gr with every reference outside the repository', () => {
   });
 });
 
+/** A hint TypeScript gives, and the mark it draws. */
+const HINT = { line: 2, column: 5, label: ': string' };
+const MARK = {
+  kind: 'hint',
+  at: { file: 'f1', side: 'new', line: 2, column: 5 },
+  label: ': string',
+  padding: { before: false, after: false },
+};
+
+/** The views asked for hints, each once, in the order first asked. */
+function viewsAsked(): unknown[] {
+  const views = seen.asked.flatMap(({ job, input }) =>
+    job === 'hints' && typeof input === 'object' && input !== null && 'view' in input
+      ? [input.view]
+      : [],
+  );
+  return [...new Set(views)];
+}
+
 describe('gh', () => {
-  it('asks for the hints on screen, and says why none came', async () => {
+  it('asks for the hints on screen, and with none says why and stays off', async () => {
     seen.answers.set('hints', (): Hints => ({ hints: [] }));
     statuses.set('t1', {
       view: 't1',
@@ -392,9 +418,19 @@ describe('gh', () => {
     expect(said.get('t1')?.text).toBe(
       'Type hints need a language server, which Lo runs only on repos you trust.',
     );
-    // Off again: the hints go.
+    expect(hintsOn.get('t1')).toBe(false);
+    // Nothing came, so nothing was turned on: the next gh asks again.
+    seen.asked.length = 0;
     await toggleHints();
-    expect(seen.hints.at(-1)).toEqual([]);
+    expect(seen.asked[0]).toMatchObject({ job: 'hints' });
+  });
+
+  it('asks nothing before the local copy, and leaves hints off', async () => {
+    seen.local = { kind: 'fetching' };
+    await toggleHints();
+    expect(said.get('t1')?.text).toBe('The syntax index waits for the local copy.');
+    expect(seen.asked).toEqual([]);
+    expect(hintsOn.get('t1')).toBe(false);
   });
 
   it('draws a server’s hints with the room it asks for, and says what a server says', async () => {
@@ -412,7 +448,9 @@ describe('gh', () => {
       },
     ]);
     expect(said.get('t1')).toBeUndefined();
+    // Off again: the hints go.
     await toggleHints();
+    expect(seen.hints.at(-1)).toEqual([]);
     seen.answers.set('hints', (): Hints => ({
       hints: [],
       label: 'Python',
@@ -420,7 +458,57 @@ describe('gh', () => {
     }));
     await toggleHints();
     expect(said.get('t1')?.text).toBe('Python has no type hints.');
+    expect(hintsOn.get('t1')).toBe(false);
+  });
+
+  it('shows hints on the first gh once the repo is trusted', async () => {
+    seen.active = 't2';
+    const untrusted: Status = {
+      view: 't2',
+      repo: 'rozed-dev/e2e',
+      pull: 80,
+      head: { kind: 'base' },
+      trust: { kind: 'untrusted', why: 'unnamed' },
+      dismissed: false,
+    };
+    statuses.set('t2', untrusted);
+    seen.answers.set('hints', (): Hints => ({ hints: [] }));
     await toggleHints();
+    expect(said.get('t2')?.text).toBe(
+      'Type hints need a language server, which Lo runs only on repos you trust.',
+    );
+    // Trusted, and TypeScript ready.
+    statuses.set('t2', { ...untrusted, trust: { kind: 'trusted', by: 'repo' } });
+    seen.answers.set('hints', (): Hints => ({ hints: [HINT], label: 'TypeScript' }));
+    await toggleHints();
+    expect(viewsAsked()).toEqual(['t2']);
+    expect(seen.hints.at(-1)).toEqual([MARK]);
+  });
+
+  it('turns hints on and off in each view alone', async () => {
+    seen.answers.set('hints', (): Hints => ({ hints: [HINT], label: 'TypeScript' }));
+    seen.active = 't3';
+    await toggleHints();
+    // Another view, such as another tab's: its first gh turns its own hints on.
+    seen.active = 't4';
+    await toggleHints();
+    expect(viewsAsked()).toEqual(['t3', 't4']);
+    expect(seen.hints.at(-1)).toEqual([MARK]);
+    // Drawn again, a view asks again only while its hints are on.
+    seen.asked.length = 0;
+    redrawn('t5');
+    redrawn('t3');
+    await settle();
+    expect(viewsAsked()).toEqual(['t3']);
+    // Off in one, on in the other.
+    seen.active = 't3';
+    await toggleHints();
+    expect(seen.hints.at(-1)).toEqual([]);
+    seen.asked.length = 0;
+    redrawn('t3');
+    redrawn('t4');
+    await settle();
+    expect(viewsAsked()).toEqual(['t4']);
   });
 });
 
