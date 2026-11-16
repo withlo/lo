@@ -129,6 +129,10 @@ async function labels(trust: ServerTrust, state: ServerState): Promise<string[]>
   return found;
 }
 
+/** An item for servers that are off, offering `trust`. */
+const offItem = (trust: ServerTrust) => (
+  <ServerStatus name="TypeScript" state={{ kind: 'off' }} trust={trust} />
+);
 describe('ServerStatus', () => {
   it('says each state in the one phrase that fits, with its numbers', () => {
     // In the units Settings counts in.
@@ -506,10 +510,7 @@ describe('ServerStatus', () => {
   it('waits while Lo trusts, keeping focus, then says why it didn’t, with what helps', async () => {
     const onChoose = vi.fn<() => void>();
     const fix = vi.fn<() => void>();
-    const drawn = (trust: ServerTrust) => (
-      <ServerStatus name="TypeScript" state={{ kind: 'off' }} trust={trust} />
-    );
-    const host = render(drawn({ action: 'repo', onChoose, busy: 'Trusting' }));
+    const host = render(offItem({ action: 'repo', onChoose, busy: 'Trusting' }));
     click(item(host));
     await settle();
     const [button] = details()!.querySelectorAll('button');
@@ -523,7 +524,7 @@ describe('ServerStatus', () => {
     const message = "Lo couldn't trust rozed-dev/e2e. The settings file isn't valid JSON.";
     rerender(
       host,
-      drawn({
+      offItem({
         action: 'repo',
         onChoose,
         failure: { message, fix: { label: 'Open the settings file', onChoose: fix } },

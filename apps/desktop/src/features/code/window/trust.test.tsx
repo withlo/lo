@@ -156,21 +156,21 @@ describe('the banner', () => {
   });
 });
 
-describe('asking to trust', () => {
-  /** How many times the window asked main for `channel`. */
-  const asked = (channel: string) => bridge.calls.filter(([name]) => name === channel).length;
-  /** The banner's button that trusts, whatever it says now. */
-  const trustButton = (page: HTMLElement) => [...page.querySelectorAll('button')].at(-2);
+/** How many times the window asked main for `channel`. */
+const asked = (channel: string) => bridge.calls.filter(([name]) => name === channel).length;
+/** The banner's button that trusts, whatever it says now. */
+const trustButton = (page: HTMLElement) => [...page.querySelectorAll('button')].at(-2);
 
+describe('asking to trust', () => {
   it('waits while main reads, asks and saves, saying how far it has got, and asks once', async () => {
     const page = draw(<TrustBanner tab={tabOf('t4')} />);
     act(() => bridge.push('code.status', statusOf('t4', { trusting: 'reading' })));
-    const button = trustButton(page);
-    expect(button?.textContent).toBe('Checking with GitHub');
-    expect(button?.getAttribute('aria-disabled')).toBe('true');
-    expect(button?.querySelector('.spinner')).not.toBeNull();
+    const trust = trustButton(page);
+    expect(trust?.textContent).toBe('Checking with GitHub');
+    expect(trust?.getAttribute('aria-disabled')).toBe('true');
+    expect(trust?.querySelector('.spinner')).not.toBeNull();
     const before = asked('code.trust');
-    act(() => button?.click());
+    act(() => trust?.click());
     await act(async () => {
       await Promise.resolve();
     });
@@ -178,8 +178,8 @@ describe('asking to trust', () => {
     expect(asked('code.trust')).toBe(before);
     act(() => bridge.push('code.status', statusOf('t4', { trusting: 'saving' })));
     // The same button, which keeps focus, says what Lo does now.
-    expect(trustButton(page)).toBe(button);
-    expect(button?.textContent).toBe('Trusting');
+    expect(trustButton(page)).toBe(trust);
+    expect(trust?.textContent).toBe('Trusting');
     // Trusted: the banner goes, and the status item shows the servers starting.
     act(() =>
       bridge.push('code.status', statusOf('t4', { trust: { kind: 'trusted', by: 'repo' } })),
