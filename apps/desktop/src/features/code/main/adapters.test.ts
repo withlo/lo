@@ -153,6 +153,12 @@ describe('Lo’s adapters', () => {
     });
   });
 
+  it('ask terraform-ls for references from a definition, as it finds them only there', () => {
+    expect(ADAPTERS.filter((each) => each.referencesFromDefinition).map((each) => each.id)).toEqual(
+      ['terraform'],
+    );
+  });
+
   it('say which servers give no inline type hints, as Pyright and terraform-ls give none', () => {
     expect(ADAPTERS.map((adapter) => [adapter.id, adapter.noHints])).toEqual([
       ['typescript', undefined],

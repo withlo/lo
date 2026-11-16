@@ -6,6 +6,9 @@
 // - `references` within 10 s, `hover` within 1.5 s, `hints` within 3 s and `outline` within 3 s.
 //   A hover in Markdown is read into Lo's tree by the background process (`code.render`), and a
 //   server with no type hints, by what it offers or what its adapter says, isn't asked for them.
+//   A server that finds references only from a declaration, as its adapter says, is asked for the
+//   definition first, then for the references there; with no definition in the repository, the
+//   index answers, saying why.
 //
 // When the server is starting, slow, stopped or failed, the syntax index answers, with why the
 // server didn't (`fallback`), and a late answer is dropped. The old side always answers from the
@@ -79,6 +82,11 @@ export interface Serving {
   readonly languageId: string;
   /** How long `definitions` waits for it, when it isn't the usual. */
   readonly definitionDeadline?: number | undefined;
+  /**
+   * Whether it finds references only from a declaration, as terraform-ls does, so that asked at a
+   * use it finds none: Lo asks for the definition first, then for the references there.
+   */
+  readonly referencesFromDefinition?: boolean | undefined;
   /**
    * Why it has no type hints to give Lo, when its adapter says so, as of a paid feature: Lo never
    * asks it for them. The adapters fill it.
@@ -391,11 +399,20 @@ export async function servedReferences(
     withFallback(await references(answering, sides, at, signal, file), fallback);
   if (name === undefined || !serving) return syntax();
   if (serving.kind !== 'ready') return syntax(waitingFor(serving));
+  let from: { readonly file: AskedFile; readonly position: { line: number; character: number } } = {
+    file,
+    position: positionOf(at),
+  };
+  if (serving.referencesFromDefinition === true) {
+    const found = await definitionOf(serving, sides, file, at, signal);
+    if ('fallback' in found) return syntax(found.fallback);
+    from = found;
+  }
   const answer = await ask(
     serving,
-    file,
+    from.file,
     'textDocument/references',
-    { path: file.path, position: positionOf(at), context: { includeDeclaration: true } },
+    { path: from.file.path, position: from.position, context: { includeDeclaration: true } },
     { deadline: DEADLINES.references, signal },
   );
   if (!answer.ok) return syntax(answer.fallback);
@@ -414,6 +431,43 @@ export async function servedReferences(
     more: places.length > MAX_REFERENCES,
     ...(outside > 0 ? { outside } : {}),
   };
+}
+
+/**
+ * Where `serving` says the name at `at` in `file` is defined: the first place it names, in a file
+ * of the head's tree, read from git, or why there's none to ask about.
+ */
+async function definitionOf(
+  serving: Serving,
+  sides: ViewSides,
+  file: AskedFile,
+  at: At,
+  signal: AbortSignal | undefined,
+): Promise<
+  | { readonly file: AskedFile; readonly position: { line: number; character: number } }
+  | { readonly fallback: string | undefined }
+> {
+  const answer = await ask(
+    serving,
+    file,
+    'textDocument/definition',
+    { path: file.path, position: positionOf(at) },
+    { deadline: serving.definitionDeadline ?? DEADLINES.definitions, signal },
+  );
+  if (!answer.ok) return { fallback: answer.fallback };
+  const [first] = locationsOf(answer.value, 1) ?? [];
+  if (first === undefined) return { fallback: `${serving.name} found no definition of it.` };
+  const outside = { fallback: `${serving.name} found its definition outside the repository.` };
+  const path = serving.server.pathOf(first.uri);
+  if (path === undefined) return outside;
+  try {
+    const defined = await readAsked(sides, { key: at.key, path });
+    return { file: defined, position: { line: first.line, character: first.character } };
+  } catch (error) {
+    // A file of the checkout that isn't in the head's tree, such as a build's output.
+    if (error instanceof IpcError && error.code === 'missing') return outside;
+    throw error;
+  }
 }
 
 const markup = z.object({ kind: z.string(), value: z.string() });

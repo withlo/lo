@@ -137,9 +137,10 @@ setting is as it is:
   carries, the Terraform Registry's official and partner providers as it was built, not the versions
   a checkout's lock file pins, and has none of other providers; definitions, references and the
   outline come from the configuration and are whole, though it answers references only at a
-  declaration, so `gr` at a use finds none. It asks registry.terraform.io about each module a
-  configuration calls from the Registry, which no setting turns off, and the dead proxy fails each
-  request before anything is sent. It answers no inlay hints (`hints: false`).
+  declaration, so `gr` asks it for the definition first, then for the references there. It asks
+  registry.terraform.io about each module a configuration calls from the Registry, which no setting
+  turns off, and the dead proxy fails each request before anything is sent. It answers no inlay
+  hints (`hints: false`).
 
 None runs in a sandbox: each reads what you can, so an absolute import, Pyright's `extraPaths`, the
 folders of stubs a `.php-lsp.json` names, the paths a `composer.json`'s autoload names, or a

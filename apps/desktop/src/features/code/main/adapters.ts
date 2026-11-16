@@ -79,6 +79,12 @@ export interface Adapter {
   /** How long `gd` waits for it, for a server slower than most to answer, such as a JVM's. */
   readonly definitionDeadline?: number | undefined;
   /**
+   * Whether its server finds references only from a declaration, as terraform-ls does, so that
+   * asked at a use it finds none: `gr` asks it for the definition first, then for the references
+   * there.
+   */
+  readonly referencesFromDefinition?: boolean | undefined;
+  /**
    * What it downloads, by ID, named up front so its progress adds them all up from the start
    * ("Java downloading · 38.1 MB of 177.4 MB"): servers and Node from the manifest, and
    * toolchains, which Settings lists it as using and it may install alone.
@@ -155,6 +161,7 @@ export const ADAPTERS: readonly Adapter[] = [
     name: 'Terraform',
     languages: { terraform: 'terraform' },
     extensions: { tfvars: 'terraform-vars' },
+    referencesFromDefinition: true,
   }),
 ];
 

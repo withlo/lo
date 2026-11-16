@@ -227,6 +227,7 @@ export class ServingViews {
           name,
           languageId,
           definitionDeadline: adapter.definitionDeadline,
+          referencesFromDefinition: adapter.referencesFromDefinition,
           noHints: adapter.noHints,
           server: found.server,
           async matches(file, oid) {

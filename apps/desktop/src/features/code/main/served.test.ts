@@ -88,29 +88,34 @@ async function view(render: RenderHover = READ) {
 const CHECKOUT = 'file:///cache/checkouts/pull-1/head';
 
 /**
- * A ready server that answers each method as `answers` says, noting what it's asked, and offering
- * type hints unless `hints` says otherwise.
+ * A ready server that answers each method as `answers` says, noting what it's asked and with what,
+ * and offering type hints unless `hints` says otherwise. It finds references only from a
+ * declaration when `options` says so.
  */
 function standIn(
   answers: Partial<Record<Method, Answer>>,
   matches = true,
   hints: { offered?: boolean; none?: string } = {},
+  options: { referencesFromDefinition?: boolean } = {},
 ) {
   const asked: Method[] = [];
+  const params: unknown[] = [];
   const opened: string[] = [];
   const serving: Serving = {
     kind: 'ready',
     name: 'TypeScript',
     languageId: 'typescript',
     noHints: hints.none,
+    referencesFromDefinition: options.referencesFromDefinition,
     server: {
       capabilities: { hoverProvider: true, inlayHintProvider: hints.offered ?? true },
       open(path) {
         opened.push(path);
         return true;
       },
-      request(method) {
+      request(method, given) {
         asked.push(method);
+        params.push(given);
         return Promise.resolve(answers[method] ?? { ok: true, value: null });
       },
       pathOf: (uri) =>
@@ -118,7 +123,7 @@ function standIn(
     },
     matches: () => Promise.resolve(matches),
   };
-  return { serving, asked, opened, serverOf: () => serving };
+  return { serving, asked, params, opened, serverOf: () => serving };
 }
 
 /** A place in a location's answer, at line `line` (from 1) and `column` of `path`. */
@@ -399,6 +404,82 @@ describe('the other questions', () => {
       source: 'server',
       label: 'TypeScript',
     });
+  });
+});
+
+describe('references from a definition', () => {
+  /** A server that finds references only from a declaration, as terraform-ls does. */
+  const FROM_DEFINITION = { referencesFromDefinition: true };
+
+  it('asks such a server for the definition, then for the references there', async () => {
+    const { sides, answering } = await view();
+    const { serverOf, asked, params, opened } = standIn(
+      {
+        'textDocument/definition': { ok: true, value: [at('src/parse.ts', 2, 16)] },
+        'textDocument/references': {
+          ok: true,
+          value: [at('src/parse.ts', 2, 16), at('src/format.ts', 2, 48)],
+        },
+      },
+      true,
+      {},
+      FROM_DEFINITION,
+    );
+    const references = await servedReferences(answering, sides, PARSE_CALL, undefined, serverOf);
+    expect(asked).toEqual(['textDocument/definition', 'textDocument/references']);
+    expect(params[1]).toEqual({
+      path: 'src/parse.ts',
+      position: { line: 1, character: 16 },
+      context: { includeDeclaration: true },
+    });
+    // The definition's file is open on the server, with its text from git, before it's asked.
+    expect(opened).toContain('src/parse.ts');
+    expect(references.fallback).toBeUndefined();
+    expect(references.answers.map((each) => `${each.path}:${each.line} ${each.label}`)).toEqual([
+      'src/parse.ts:2 TypeScript',
+      'src/format.ts:2 TypeScript',
+    ]);
+  });
+
+  it('lets the index answer, saying why, when it finds no definition in the repository', async () => {
+    const { sides, answering } = await view();
+    for (const [definition, why] of [
+      [{ ok: true, value: null }, 'TypeScript found no definition of it.'],
+      [{ ok: true, value: [] }, 'TypeScript found no definition of it.'],
+      [
+        { ok: true, value: [{ uri: 'jdt://x', range: at('x', 1, 0).range }] },
+        'TypeScript found its definition outside the repository.',
+      ],
+      [
+        { ok: true, value: [at('build/out.ts', 1, 0)] },
+        'TypeScript found its definition outside the repository.',
+      ],
+      [{ ok: false, why: 'deadline' }, "TypeScript didn't answer in time."],
+    ] as const) {
+      const { serverOf, asked } = standIn(
+        { 'textDocument/definition': definition },
+        true,
+        {},
+        FROM_DEFINITION,
+      );
+      const references = await servedReferences(answering, sides, PARSE_CALL, undefined, serverOf);
+      expect(asked).toEqual(['textDocument/definition']);
+      expect(references.fallback).toBe(why);
+      expect(references.answers.length).toBeGreaterThan(0);
+      expect(references.answers.every((each) => each.source === 'syntax')).toBe(true);
+    }
+  });
+
+  it('takes any other server’s empty references as its answer, asked where the reader is', async () => {
+    const { sides, answering } = await view();
+    const { serverOf, asked, params } = standIn({
+      'textDocument/references': { ok: true, value: [] },
+    });
+    const references = await servedReferences(answering, sides, PARSE_CALL, undefined, serverOf);
+    expect(asked).toEqual(['textDocument/references']);
+    expect(params[0]).toMatchObject({ path: 'src/format.ts', position: { line: 1 } });
+    expect(references).toMatchObject({ name: 'parse', answers: [] });
+    expect(references.fallback).toBeUndefined();
   });
 });
 

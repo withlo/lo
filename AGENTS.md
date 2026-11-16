@@ -1296,10 +1296,12 @@ variables.
   can't (`main/served.ts`): a definition in 2 s (an adapter may allow longer), references in 10 s, a
   hover in 1.5 s, inlay hints and the outline in 3 s. An empty definition falls back to the file's
   import and the index, and an empty hover to the index; empty references or an empty outline are
-  the server's answer. A place outside the checkout shows as "Outside this repository" and is never
-  read; the references panel counts those it doesn't list. The old side always answers from the
-  index, and a server answers only about the head it runs on, for a file whose checkout matches
-  git's.
+  the server's answer. A server whose adapter says it finds references only from a declaration
+  (`referencesFromDefinition`, terraform-ls) is asked for the definition first, then for the
+  references there, and with no definition in the repository the index answers, saying why. A place
+  outside the checkout shows as "Outside this repository" and is never read; the references panel
+  counts those it doesn't list. The old side always answers from the index, and a server answers
+  only about the head it runs on, for a file whose checkout matches git's.
 - A hover in Markdown is read into `@lo/markdown`'s tree by the background process (`code.render`,
   main's own job), as any text from anyone is, and the card never draws the Markdown as text: the
   code blocks it starts with, in order, are the declaration (rust-analyzer's module path, then the
