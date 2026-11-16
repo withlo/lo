@@ -120,8 +120,16 @@ export interface Installed {
   readonly entry: string;
 }
 
+/** A removal under way, and why, which an install asked for meanwhile fails with. */
+interface Removal {
+  readonly reason: Error;
+  readonly done: Promise<void>;
+}
+
 /** A download running, and who waits for it. */
 interface Job {
+  /** The version it installs. */
+  readonly version: string;
   readonly done: Promise<Installed>;
   readonly controller: AbortController;
   readonly listeners: Set<(received: number, total: number) => void>;
@@ -139,6 +147,13 @@ export class Installer {
   readonly #stall: number | undefined;
   readonly #free: (folder: string) => Promise<number | undefined>;
   readonly #jobs = new Map<string, Job>();
+  /**
+   * Every job running for each ID until it ends, those nobody waits for any longer among them: one
+   * whose waiters left can still be putting its folder in place.
+   */
+  readonly #running = new Map<string, Set<Job>>();
+  /** The removals of each ID under way, in the order asked: installs of it fail meanwhile. */
+  readonly #removing = new Map<string, Removal[]>();
 
   constructor(options: InstallerOptions) {
     if (!isAbsolute(options.folder)) throw new Error(`${options.folder} isn't an absolute path`);
@@ -163,21 +178,36 @@ export class Installer {
   async install(id: string, pinned: Pinned, options: InstallOptions = {}): Promise<Installed> {
     const { signal, progress } = options;
     signal?.throwIfAborted();
+    // Nothing installs it while it's being removed, so nothing gets the folder that goes.
+    const removing = this.#removing.get(id)?.at(-1);
+    if (removing !== undefined) throw removing.reason;
     const key = `${id}/${pinned.version}`;
     let job = this.#jobs.get(key);
     if (job === undefined) {
       const controller = new AbortController();
       const created: Job = {
+        version: pinned.version,
         controller,
         listeners: new Set(),
         partial: new Set(),
         waiting: 0,
-        done: Promise.resolve().then(() => this.#run(id, pinned, created)),
+        // A job stopped once it's done gives no folder: a removal may be deleting it.
+        done: Promise.resolve()
+          .then(() => this.#run(id, pinned, created))
+          .then((installed) => {
+            controller.signal.throwIfAborted();
+            return installed;
+          }),
       };
       job = created;
       this.#jobs.set(key, job);
+      const running = this.#running.get(id) ?? new Set();
+      running.add(created);
+      this.#running.set(id, running);
       const forget = () => {
         if (this.#jobs.get(key) === created) this.#jobs.delete(key);
+        running.delete(created);
+        if (running.size === 0 && this.#running.get(id) === running) this.#running.delete(id);
       };
       job.done.then(forget, forget);
     }
@@ -226,26 +256,38 @@ export class Installer {
   }
 
   /**
-   * Removes every version of `id`, as Settings' "Remove" asks. An install of it that's under way
-   * stops, and once it has, the folder is renamed aside, then deleted, so nothing finds it half
-   * gone. Whoever waits for that install gets `reason`.
+   * Removes every version of `id`, as Settings' "Remove" asks. Every install of it under way
+   * stops, those nobody waits for any longer included, and once each has ended, the folder is
+   * renamed aside, then deleted, so nothing finds it half gone. Whoever waits for those installs
+   * gets `reason`, and so does an install of it asked for before the removal is done.
    */
   async remove(id: string, reason: Error = new Error(`${id} was removed`)): Promise<void> {
     if (!NAME.test(id)) throw new Error(`${id} isn't an ID`);
-    const stopping: Promise<unknown>[] = [];
-    for (const [key, job] of this.#jobs) {
-      if (!key.startsWith(`${id}/`)) continue;
-      this.#jobs.delete(key);
-      job.controller.abort(reason);
-      stopping.push(job.done.catch(() => undefined));
+    const removals = this.#removing.get(id) ?? [];
+    this.#removing.set(id, removals);
+    const before = removals.at(-1)?.done;
+    for (const key of this.#jobs.keys()) if (key.startsWith(`${id}/`)) this.#jobs.delete(key);
+    const stopping = [...(this.#running.get(id) ?? [])];
+    for (const job of stopping) job.controller.abort(reason);
+    const done = (async () => {
+      // One removal of it at a time.
+      await before?.catch(() => undefined);
+      await Promise.all(stopping.map((job) => job.done.catch(() => undefined)));
+      const folder = join(this.#folder, id);
+      if (!(await lstat(folder).catch(() => undefined))) return;
+      await mkdir(join(this.#folder, PARTIAL), { recursive: true, mode: 0o700 });
+      const aside = await mkdtemp(join(this.#folder, PARTIAL, 'removed-'));
+      await rename(folder, join(aside, id));
+      await rm(aside, { recursive: true, force: true });
+    })();
+    const removal: Removal = { reason, done };
+    removals.push(removal);
+    try {
+      await done;
+    } finally {
+      removals.splice(removals.indexOf(removal), 1);
+      if (removals.length === 0 && this.#removing.get(id) === removals) this.#removing.delete(id);
     }
-    await Promise.all(stopping);
-    const folder = join(this.#folder, id);
-    if (!(await lstat(folder).catch(() => undefined))) return;
-    await mkdir(join(this.#folder, PARTIAL), { recursive: true, mode: 0o700 });
-    const aside = await mkdtemp(join(this.#folder, PARTIAL, 'removed-'));
-    await rename(folder, join(aside, id));
-    await rm(aside, { recursive: true, force: true });
   }
 
   /**
@@ -255,7 +297,9 @@ export class Installer {
    */
   async prune(manifest: Manifest, running: readonly Installed[] = []): Promise<void> {
     const kept = new Set(running.map((installed) => dirname(installed.folder)));
-    for (const job of this.#jobs.values()) for (const folder of job.partial) kept.add(folder);
+    for (const jobs of this.#running.values()) {
+      for (const job of jobs) for (const folder of job.partial) kept.add(folder);
+    }
     const remove = (folder: string) =>
       kept.has(folder) ? undefined : rm(folder, { recursive: true, force: true });
     for (const name of await readdir(this.#folder).catch(() => [])) {
@@ -268,7 +312,9 @@ export class Installer {
       }
       const pinned = manifest[name];
       for (const version of await readdir(folder).catch(() => [])) {
-        const installing = this.#jobs.has(`${name}/${version}`);
+        const installing = [...(this.#running.get(name) ?? [])].some(
+          (job) => job.version === version,
+        );
         if (version !== pinned?.version && !installing) await remove(join(folder, version));
       }
       if ((await readdir(folder).catch(() => [])).length === 0) {

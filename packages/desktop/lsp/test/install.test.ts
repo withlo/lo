@@ -450,4 +450,46 @@ describe('a toolchain', () => {
     expect(await again).toEqual(new Error('Rust was removed.'));
     expect(left()).toEqual([]);
   });
+
+  test('isn’t installed while it’s being removed, so nothing gets the folder that goes', async () => {
+    const sysroot = rust(LAYERS);
+    const { installer, folder, asked } = await setUp(routes(LAYERS));
+    await installer.install('rust', sysroot);
+    const removing = installer.remove('rust', new Error('Rust was removed.'));
+    // Asked for once the removal has started, as a server starting again would.
+    await expect(installer.install('rust', sysroot)).rejects.toThrow('Rust was removed.');
+    await removing;
+    expect(existsSync(join(folder, 'rust'))).toBe(false);
+    // Once it's removed, it downloads again.
+    const installed = await installer.install('rust', sysroot);
+    expect(readFileSync(installed.entry, 'utf8')).toBe('cargo');
+    expect(asked).toHaveLength(4);
+  });
+
+  test('is removed once an install nobody waits for any longer has ended', async () => {
+    const { promise: held, resolve: release } = Promise.withResolvers<void>();
+    let asked = 0;
+    const { installer, left } = await setUp(
+      routes(LAYERS),
+      // The first layer's download is held until the removal has started, whatever stops it.
+      (served) => async (input, init) => {
+        asked += 1;
+        await held;
+        return served(input, init);
+      },
+    );
+    const halted = new AbortController();
+    const installing = installer
+      .install('rust', rust(LAYERS), { signal: halted.signal })
+      .catch((error: unknown) => error);
+    await expect.poll(() => asked).toBe(1);
+    // A server's start stops, as Settings' "Remove" stops the servers that use it first.
+    halted.abort(new Error('The server stopped.'));
+    expect(await installing).toEqual(new Error('The server stopped.'));
+    const removing = installer.remove('rust');
+    release();
+    await removing;
+    // The install had ended, its download folder gone with it, before the removal was done.
+    expect(left()).toEqual([]);
+  });
 });
