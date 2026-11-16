@@ -2,6 +2,7 @@ import { cva } from 'class-variance-authority';
 import type { ReactNode } from 'react';
 
 import { Button } from './Button.tsx';
+import { Spinner } from './Spinner.tsx';
 
 const banner = cva('flex min-w-0 items-center gap-12 py-6 ps-16 pe-12 text-fg text-ui', {
   variants: {
@@ -23,6 +24,11 @@ const icon = cva('flex-none', {
 export interface BannerAction {
   label: string;
   onClick: () => void;
+  /**
+   * What Lo is doing about it, while it does: "Trusting". The button says so, with a ring
+   * turning, in place of its label, and pressing it does nothing until it's done. It keeps focus.
+   */
+  busy?: string | undefined;
 }
 
 export interface BannerProps {
@@ -52,8 +58,23 @@ export function Banner({ tone, title, detail, actions = [], onDismiss }: BannerP
       {(actions.length > 0 || onDismiss) && (
         <div className="flex flex-none items-center gap-6">
           {actions.map((action) => (
-            <Button key={action.label} size="sm" onClick={action.onClick}>
-              {action.label}
+            <Button
+              key={action.label}
+              size="sm"
+              // Not `disabled`, which would drop focus from it.
+              aria-disabled={action.busy === undefined ? undefined : true}
+              onClick={() => {
+                if (action.busy === undefined) action.onClick();
+              }}
+            >
+              {action.busy === undefined ? (
+                action.label
+              ) : (
+                <span className="inline-flex items-center gap-6">
+                  <Spinner size="xs" />
+                  {action.busy}
+                </span>
+              )}
             </Button>
           ))}
           {onDismiss && (

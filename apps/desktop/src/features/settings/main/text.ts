@@ -38,8 +38,11 @@ export type Parsed =
       readonly text: string;
       readonly repeated: readonly string[];
     }
-  /** The file can't be used, and why, for the person who wrote it. */
-  | { readonly kind: 'problem'; readonly problem: string };
+  /**
+   * The file can't be used, and why, for the person who wrote it: in Settings' words, with what to
+   * do, and what's wrong alone (`cause`), for what says what to do in its own words.
+   */
+  | { readonly kind: 'problem'; readonly problem: string; readonly cause: string };
 
 /** How the file is read: as JSON, with comments and a comma after the last entry allowed. */
 const OPTIONS = { allowTrailingComma: true, disallowComments: false, allowEmptyContent: true };
@@ -74,31 +77,32 @@ type Tree =
       readonly values: Readonly<Record<string, unknown>>;
       readonly repeated: readonly string[];
     }
-  | { readonly ok: false; readonly problem: string };
+  | { readonly ok: false; readonly problem: string; readonly cause: string };
+
+/** A problem with the file: what's wrong, then, when the person can fix it, what to do. */
+function wrong(cause: string, advice?: string): Tree {
+  return { ok: false, problem: advice === undefined ? cause : `${cause} ${advice}`, cause };
+}
 
 /** Reads `text`, a file's without its byte order mark, as the settings file. */
 function read(text: string): Tree {
   if (tooDeep(text)) {
-    return {
-      ok: false,
-      problem: `The settings file nests objects and lists over ${SETTINGS_DEPTH_LIMIT} levels deep, so Lo didn't read it.`,
-    };
+    return wrong(
+      `The settings file nests objects and lists over ${SETTINGS_DEPTH_LIMIT} levels deep, so Lo didn't read it.`,
+    );
   }
   const errors: ParseError[] = [];
   const root = parseTree(text, errors, OPTIONS);
   const first = errors[0];
   if (first) {
-    return {
-      ok: false,
-      problem: `The settings file isn't valid JSON (${said(first, text)}). ${FIX}`,
-    };
+    return wrong(`The settings file isn't valid JSON (${said(first, text)}).`, FIX);
   }
   if (root === undefined) return { ok: true, root, values: {}, repeated: [] };
   if (root.type !== 'object') {
-    return {
-      ok: false,
-      problem: `The settings file should hold one JSON object, such as { "theme": "dark" }. ${FIX}`,
-    };
+    return wrong(
+      'The settings file should hold one JSON object, such as { "theme": "dark" }.',
+      FIX,
+    );
   }
   const pairs = entries(root);
   const seen = new Set<string>();
@@ -221,7 +225,7 @@ function what(error: ParseError): string {
  */
 export function parseSettings(text: string): Parsed {
   const tree = read(text.startsWith(BOM) ? text.slice(1) : text);
-  if (!tree.ok) return { kind: 'problem', problem: tree.problem };
+  if (!tree.ok) return { kind: 'problem', problem: tree.problem, cause: tree.cause };
   return { kind: 'ok', values: tree.values, text, repeated: tree.repeated };
 }
 

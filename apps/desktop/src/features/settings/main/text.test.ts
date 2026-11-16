@@ -88,6 +88,10 @@ describe('parseSettings', () => {
     expect(problemOf(parseSettings('{ "theme": }'))).toBe(
       `The settings file isn't valid JSON (Lo expected a value at line 1, column 12). ${fix}`,
     );
+    // And what's wrong alone, for what says what to do in its own words.
+    expect(parseSettings('{ "theme": }')).toMatchObject({
+      cause: "The settings file isn't valid JSON (Lo expected a value at line 1, column 12).",
+    });
     // Lines are counted past comments, at the key the comma should come before.
     expect(problemOf(parseSettings(`${COMMENTED.slice(0, -2)}  "x": 1\n}\n`))).toBe(
       `The settings file isn't valid JSON (Lo expected a comma at line 9, column 3). ${fix}`,

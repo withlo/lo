@@ -93,9 +93,9 @@ export function cachePath(data: string): string {
 }
 
 /**
- * The program a test's Lo opens the keymap file with, in place of the system's text editor, so no
- * test starts an editor on a desktop other work shares. It adds the path it's given to `opened`,
- * beside it in the data folder.
+ * The program a test's Lo opens the keymap and settings files with, in place of the system's text
+ * editor, so no test starts an editor on a desktop other work shares. It adds the path it's given
+ * to `opened`, beside it in the data folder.
  */
 function editorPath(data: string): string {
   return join(data, 'editor');
@@ -134,7 +134,10 @@ export function browsed(): string[] {
   }
 }
 
-/** The paths Lo has opened the keymap file by in this test, in order, as the editor got them. */
+/**
+ * The paths Lo has opened the keymap or settings file by in this test, in order, as the editor got
+ * them.
+ */
 export function opened(): string[] {
   try {
     return readFileSync(join(dataFolder(), 'opened'), 'utf8').split('\n').filter(Boolean);

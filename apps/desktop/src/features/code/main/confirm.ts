@@ -4,14 +4,25 @@
 // for the reader, and writes what that dialog named only once the reader says "Trust" there. It
 // names only what GitHub calls by a name GitHub allows, so no line break or direction mark ever
 // reaches it. "Cancel" is the dialog's default and its `Esc`, so a key held down from the banner
-// never trusts anything. One dialog at a time, for all of Lo. Nothing here calls Electron, so it
-// runs under unit tests.
+// never trusts anything. One dialog at a time, for all of Lo: asked about another view meanwhile,
+// it says so, and brings its dialog forward. Meanwhile it says how far it has got, for the window
+// to show. It waits a while at most for GitHub, giving up on the read once nobody waits on it, so
+// it leaves the account's queue; the settings file is local, and its write ends or fails, so Lo
+// never says it couldn't trust what it then trusts. Nothing here calls Electron, so it runs under
+// unit tests.
 
 import type { PullRequestRepositories } from '@lo/github';
 
 import { IpcError } from '../../../ipc/contract.ts';
-import type { Asked } from '../contract.ts';
+import { Unwritten } from '../../settings/service.ts';
+import type { Asked, Trusting } from '../contract.ts';
 import { repoName, sameName, type TrustEntry } from '../settings.ts';
+
+/**
+ * How long Lo waits for GitHub to say which repo a view's is, in ms, before it gives up on the read
+ * and says it couldn't.
+ */
+export const READ_LIMIT = 30_000;
 
 /** What the reader is asked to trust: a repository, or one pull request from a fork. */
 export type Subject =
@@ -92,16 +103,28 @@ export interface AskWindow {
 export interface AskOptions<W extends AskWindow> {
   /** View `id` as the tab has it now, or nothing for no such view. */
   readonly view: (id: string) => AskedView | undefined;
-  /** Reads afresh the repositories `view`'s pull request joins, from GitHub. */
-  readonly read: (view: AskedView) => Promise<PullRequestRepositories>;
+  /**
+   * Reads afresh the repositories `view`'s pull request joins, from GitHub. Once `signal` aborts,
+   * nobody waits on it: a read still waiting its turn in the account's queue leaves it.
+   */
+  readonly read: (view: AskedView, signal: AbortSignal) => Promise<PullRequestRepositories>;
   /**
    * Shows `question` in main's dialog, attached to `window`, and answers the index of the button
    * the reader pressed. Once `signal` aborts, the dialog closes as if cancelled.
    */
   readonly confirm: (window: W, question: Question, signal: AbortSignal) => Promise<number>;
-  /** Trusts `entry`: writes it in the settings file. */
+  /**
+   * Trusts `entry`: writes it in the settings file. Fails with an {@link Unwritten} that says why it
+   * couldn't.
+   */
   readonly write: (entry: TrustEntry) => Promise<void>;
+  /** Hears how far trusting view `view` has got, and, with nothing, that it's over. */
+  readonly progress?: (view: string, step: Trusting | undefined) => void;
+  /** Brings `window`, and the dialog attached to it, to the front. */
+  readonly focus?: (window: W) => void;
   readonly now?: () => Date;
+  /** How long GitHub's read may take, in ms: {@link READ_LIMIT}. */
+  readonly readLimit?: number;
 }
 
 /** What the window asks: to trust view `view`'s repository, named `repo`, or its pull request. */
@@ -159,10 +182,35 @@ export function subjectOf(
   };
 }
 
+/**
+ * Why the entry wasn't written, for the window, which says it where the reader asked: what the
+ * settings file holds, which editing it fixes (`settingsFile`), then what to do, or anything else
+ * (`unsaved`), each in a sentence or two. `pull` is whether the reader asked to trust a pull request.
+ */
+export function unsaved(error: unknown, pull: boolean): IpcError {
+  if (error instanceof Unwritten && error.inFile) {
+    return new IpcError(
+      'settingsFile',
+      `${error.why} Fix that, then trust the ${pull ? 'PR' : 'repo'} again.`,
+    );
+  }
+  if (error instanceof Unwritten) return new IpcError('unsaved', error.why);
+  return new IpcError('unsaved', "Lo couldn't write the settings file.");
+}
+
+/** The ask under way: what it's about, in which window, how far it has got, and what ends it. */
+interface Current<W> {
+  readonly request: TrustRequest;
+  readonly window: W | undefined;
+  step?: Trusting | undefined;
+  /** Aborts once the window or the view closes: whatever it answers then counts for nothing. */
+  readonly gone: AbortController;
+}
+
 /** Asks the reader to trust what the window names, one dialog at a time. */
 export class TrustAsker<W extends AskWindow = AskWindow> {
   readonly #options: AskOptions<W>;
-  #asking = false;
+  #current: Current<W> | undefined;
 
   constructor(options: AskOptions<W>) {
     this.#options = options;
@@ -170,28 +218,49 @@ export class TrustAsker<W extends AskWindow = AskWindow> {
 
   /** Whether a dialog is being asked, or about to be. */
   get asking(): boolean {
-    return this.#asking;
+    return this.#current !== undefined;
   }
 
   /**
    * Asks in `window`, the window that sent `request`, and answers how it went: `trusted` once the
    * reader said "Trust" and the entry is written, `cancelled` for any other answer, or once that
-   * window closed meanwhile. Throws an `IpcError` for a request it won't ask, with no window to ask
-   * in, and while it's asking already (`busy`), so two requests never share a dialog.
+   * window, or the view, closed meanwhile. Throws an `IpcError` for a request it won't ask, with no
+   * window to ask in, and while it's asking already, so two requests never share a dialog: `busy`
+   * for the same view, which asks already, and `asking` for another, saying which, once its dialog
+   * is brought forward; for GitHub's read failing or taking too long (`unread`); and, once the
+   * reader said "Trust", for an entry it couldn't write ({@link unsaved}). Meanwhile `progress`
+   * hears each step, and that it's over.
    */
   async ask(request: TrustRequest, window: W | undefined): Promise<Asked> {
-    if (this.#asking) {
-      throw new IpcError('busy', 'Lo is already asking whether to trust a repo.');
+    const current = this.#current;
+    if (current) {
+      if (current.request.view === request.view) {
+        throw new IpcError('busy', 'Lo is already asking whether to trust it.');
+      }
+      if (current.step === 'asking' && current.window) this.#options.focus?.(current.window);
+      const { repo, pull } = current.request;
+      throw new IpcError(
+        'asking',
+        `Lo is already asking whether to trust ${pull === null ? repo : `${repo}#${pull}`}. Answer that first, then try again.`,
+      );
     }
-    this.#asking = true;
+    const asked: Current<W> = { request, window, gone: new AbortController() };
+    this.#current = asked;
     try {
-      return await this.#ask(request, window);
+      return await this.#ask(asked);
     } finally {
-      this.#asking = false;
+      this.#current = undefined;
     }
   }
 
-  async #ask(request: TrustRequest, window: W | undefined): Promise<Asked> {
+  /** Hears that view `id` changed: once its tab has closed, the ask about it ends, as if cancelled. */
+  update(id: string): void {
+    const current = this.#current;
+    if (current?.request.view === id && !this.#options.view(id)) current.gone.abort();
+  }
+
+  async #ask(asked: Current<W>): Promise<Asked> {
+    const { request, window, gone } = asked;
     const options = this.#options;
     const view = options.view(request.view);
     if (!view) throw new IpcError('missing', "There's no pull request's tab with that id.");
@@ -202,27 +271,59 @@ export class TrustAsker<W extends AskWindow = AskWindow> {
       throw new IpcError('invalid', `That tab is of #${view.number}, not #${request.pull}.`);
     }
     if (!window) throw new IpcError('unavailable', 'Lo has no window to ask in.');
-    const closed = new AbortController();
-    const stop = window.onClosed(() => closed.abort());
+    const stop = window.onClosed(() => gone.abort());
+    const step = (now: Trusting | undefined) => {
+      asked.step = now;
+      options.progress?.(request.view, now);
+    };
     try {
-      let repositories: PullRequestRepositories;
-      try {
-        repositories = await options.read(view);
-      } catch {
-        throw new IpcError(
-          'unread',
-          "Lo couldn't read from GitHub which repo this is, so it didn't ask. Try again.",
-        );
-      }
-      if (closed.signal.aborted) return 'cancelled';
+      step('reading');
+      const repositories = await this.#read(view, gone.signal);
+      if (!repositories || gone.signal.aborted) return 'cancelled';
       const subject = subjectOf(request, view, repositories);
-      const answer = await options.confirm(window, questionFor(subject), closed.signal);
-      // Only "Trust", pressed while the window was there to ask in, trusts anything.
-      if (closed.signal.aborted || answer !== TRUST) return 'cancelled';
-      await options.write(entryFor(subject, options.now?.() ?? new Date()));
+      step('asking');
+      const answer = await options.confirm(window, questionFor(subject), gone.signal);
+      // Only "Trust", pressed while the window and the view were there to ask in, trusts anything.
+      if (gone.signal.aborted || answer !== TRUST) return 'cancelled';
+      step('saving');
+      // Not given up on: once the reader said "Trust", Lo says it couldn't only once it hasn't.
+      try {
+        await options.write(entryFor(subject, options.now?.() ?? new Date()));
+      } catch (error) {
+        throw unsaved(error, request.pull !== null);
+      }
       return 'trusted';
     } finally {
       stop();
+      step(undefined);
+    }
+  }
+
+  /**
+   * Reads `view`'s repositories from GitHub, or nothing once `gone` aborts first. The read is given
+   * up on then, or once the limit passes, which fails as `unread`.
+   */
+  async #read(view: AskedView, gone: AbortSignal): Promise<PullRequestRepositories | undefined> {
+    const reading = new AbortController();
+    const giveUp = () => reading.abort(new Error('Nobody waits on it.'));
+    const timer = setTimeout(giveUp, this.#options.readLimit ?? READ_LIMIT);
+    gone.addEventListener('abort', giveUp, { once: true });
+    try {
+      return await new Promise<PullRequestRepositories>((resolve, reject) => {
+        reading.signal.addEventListener('abort', () => reject(new Error('Given up on.')), {
+          once: true,
+        });
+        this.#options.read(view, reading.signal).then(resolve, reject);
+      });
+    } catch {
+      if (gone.aborted) return undefined;
+      throw new IpcError(
+        'unread',
+        "Lo couldn't read from GitHub which repo this is, so it didn't ask. Try again.",
+      );
+    } finally {
+      clearTimeout(timer);
+      gone.removeEventListener('abort', giveUp);
     }
   }
 }

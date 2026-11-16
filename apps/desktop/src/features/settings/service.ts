@@ -1,5 +1,24 @@
+import { IpcError } from '../../ipc/contract.ts';
 import { defineService } from '../../main/services.ts';
 import type { Setting } from './contract.ts';
+
+/**
+ * Why a change to a setting wasn't written, as `unwritable`: the message names the setting, as
+ * Settings says it; `why` says what's wrong alone, in a sentence, without what to do, for a caller
+ * to say that in its own words; and `inFile` is whether what the file holds is the cause, which
+ * editing the file fixes, rather than the disk or someone else saving it.
+ */
+export class Unwritten extends IpcError {
+  readonly why: string;
+  readonly inFile: boolean;
+
+  constructor(message: string, why: string, inFile: boolean) {
+    super('unwritable', message);
+    this.name = 'Unwritten';
+    this.why = why;
+    this.inFile = inFile;
+  }
+}
 
 /** The settings file, for features that apply a setting in main, or keep one the window shows. */
 export interface SettingsStore {
@@ -22,9 +41,9 @@ export interface SettingsStore {
    * the file has none). `change` may be called again on the file as a person saved it meanwhile,
    * so it makes its answer from what it's given alone. Other settings, and what Lo doesn't know
    * of, stay in the file as they are. Fails with an `IpcError` as Settings' changes do: `invalid`
-   * when `change` makes a value the schema refuses, `unwritable` when the file has a problem,
-   * holds a value the schema refuses, which Lo never replaces with one made from nothing, or can't
-   * be written.
+   * when `change` makes a value the schema refuses, and `unwritable`, as an {@link Unwritten} that
+   * says why, when the file has a problem, holds a value the schema refuses, which Lo never
+   * replaces with one made from nothing, or can't be written.
    */
   update<T>(setting: Setting<T>, change: (value: T) => T): Promise<void>;
 }

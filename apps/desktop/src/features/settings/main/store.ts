@@ -13,7 +13,7 @@
 
 import { IpcError } from '../../../ipc/contract.ts';
 import { settingValue, type Problem, type Setting, type SettingsState } from '../contract.ts';
-import type { SettingsStore } from '../service.ts';
+import { Unwritten, type SettingsStore } from '../service.ts';
 import {
   errorCode,
   readSettings,
@@ -301,23 +301,26 @@ export function createSettings(options: SettingsOptions): Settings {
         take(fresh);
         update();
         if (fresh.kind === 'problem') {
-          throw new IpcError(
-            'unwritable',
+          throw new Unwritten(
             `Lo didn't change ${key}, since the settings file has a problem. ${fresh.problem}`,
+            fresh.cause,
+            true,
           );
         }
         if (fresh.kind === 'ok' && fresh.repeated.includes(key)) {
-          throw new IpcError(
-            'unwritable',
+          throw new Unwritten(
             `Lo didn't change ${key}, since the settings file has it more than once. Take out all but one, and Lo can change it.`,
+            `The settings file has ${key} more than once, and Lo changes it only once it has one.`,
+            true,
           );
         }
         const values = fresh.kind === 'ok' ? fresh.values : {};
         const current = Object.hasOwn(values, key) ? entry.check(values[key]) : undefined;
         if (from === 'current' && current && !current.ok) {
-          throw new IpcError(
-            'unwritable',
+          throw new Unwritten(
             `Lo didn't change ${key}: the settings file holds one that isn't ${entry.accepts}, which Lo won't replace. Fix it there, or take it out.`,
+            `The settings file's ${key} isn't ${entry.accepts}, and Lo won't replace it.`,
+            true,
           );
         }
         const checked = entry.check(next(current?.ok ? current.value : entry.fallback));
@@ -329,18 +332,25 @@ export function createSettings(options: SettingsOptions): Settings {
           text = editSettings(fresh.kind === 'ok' ? fresh.text : '', key, checked.value);
         } catch (error) {
           if (error instanceof SettingsUneditable) {
-            throw new IpcError('unwritable', `Lo didn't change ${key}: ${error.message}.`);
+            // What the file's text holds kept Lo from changing it.
+            throw new Unwritten(
+              `Lo didn't change ${key}: ${error.message}.`,
+              `Lo couldn't change ${key} in the settings file: ${error.message}.`,
+              true,
+            );
           }
           log("Lo couldn't change the settings file's text:", error);
-          throw new IpcError(
-            'unwritable',
+          throw new Unwritten(
             `Lo didn't change ${key}: the settings file's text couldn't be changed.`,
+            "Lo couldn't change the settings file's text.",
+            false,
           );
         }
         if (Buffer.byteLength(text) > SETTINGS_SIZE_LIMIT) {
-          throw new IpcError(
-            'unwritable',
+          throw new Unwritten(
             `Lo didn't change ${key}: the settings file would be too big.`,
+            `The settings file would be over ${SETTINGS_SIZE_LIMIT / 1024 ** 2} MiB.`,
+            true,
           );
         }
         try {
@@ -350,16 +360,19 @@ export function createSettings(options: SettingsOptions): Settings {
             // Saved by someone else while this was being written: their save is kept, and the
             // change is made again on top of it.
             if (attempt < WRITE_ATTEMPTS) continue;
-            throw new IpcError(
-              'unwritable',
+            throw new Unwritten(
               `Lo didn't change ${key}: the settings file kept changing while Lo saved it.`,
+              'The settings file kept changing while Lo saved it.',
+              false,
             );
           }
           log("Lo couldn't write the settings file:", error);
           const code = errorCode(error);
-          throw new IpcError(
-            'unwritable',
-            `Lo couldn't save ${key} to the settings file${code ? ` (${code})` : ''}.`,
+          const failed = code ? ` (${code})` : '';
+          throw new Unwritten(
+            `Lo couldn't save ${key} to the settings file${failed}.`,
+            `Lo couldn't write the settings file${failed}.`,
+            false,
           );
         }
         raw = written;

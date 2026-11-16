@@ -127,6 +127,12 @@ export const contract = defineContract('settings', {
       input: z.strictObject({ key: settingKey, value: settingValue }),
       reply: reply<void>(),
     },
+    /**
+     * Opens the settings file as text in the system's editor, so the person can fix it. It takes
+     * no path: only the settings file can be opened this way. Refused, with why, for a file that
+     * isn't there, isn't a plain file within the limit, or is executable (`unopened`).
+     */
+    openFile: { input: z.undefined(), reply: reply<void>() },
     /** How much room the local copies take. */
     cacheUsage: { input: z.undefined(), reply: reply<CacheUsage>() },
     /**

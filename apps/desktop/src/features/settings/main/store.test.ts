@@ -16,6 +16,7 @@ import { z } from 'zod';
 
 import { IpcError } from '../../../ipc/contract.ts';
 import { defineSetting, type Setting, type SettingsState } from '../contract.ts';
+import { Unwritten } from '../service.ts';
 import type * as file from './file.ts';
 import { createSettings, type Settings } from './store.ts';
 
@@ -511,6 +512,11 @@ describe('changing a setting', () => {
     expect(refused?.message).toBe(
       "Lo didn't change theme, since the settings file has it more than once. Take out all but one, and Lo can change it.",
     );
+    // The file is the cause, which editing it fixes.
+    expect(refused).toMatchObject({
+      inFile: true,
+      why: 'The settings file has theme more than once, and Lo changes it only once it has one.',
+    });
     expect(contents()).toBe(text);
     // Another setting changes, and the one given twice still says what Settings shows.
     await settings.set('diff.layout', 'inline');
@@ -558,6 +564,13 @@ describe('changing a setting', () => {
       "Lo didn't change theme, since the settings file has a problem.",
     );
     expect(refused?.message).toContain("isn't valid JSON");
+    // What's in the file is the cause, which editing it fixes, and why alone, for a caller to say.
+    expect(refused).toBeInstanceOf(Unwritten);
+    expect(refused).toMatchObject({ inFile: true });
+    // What's wrong alone: saving the file isn't what applies a change Lo couldn't make.
+    expect(refused instanceof Unwritten && refused.why).toMatch(
+      /^The settings file isn't valid JSON \(.+\)\.$/,
+    );
     expect(contents()).toBe('{ "theme": "light", ');
     // Fixed by hand, a change goes through.
     write('{ "theme": "light" }');
@@ -676,6 +689,11 @@ describe('changing a setting', () => {
       const refused = await refusal(settings.set('theme', 'light'));
       expect(refused?.code).toBe('unwritable');
       expect(refused?.message).toBe("Lo couldn't save theme to the settings file (EACCES).");
+      // The disk is the cause, not what the file holds.
+      expect(refused).toMatchObject({
+        why: "Lo couldn't write the settings file (EACCES).",
+        inFile: false,
+      });
       expect(log).toHaveBeenCalled();
     } finally {
       chmodSync(join(folder, 'config'), 0o755);
@@ -760,6 +778,10 @@ describe('a setting only main changes', () => {
       expect(refused?.message).toBe(
         "Lo didn't change code.names: the settings file holds one that isn't a list of names, which Lo won't replace. Fix it there, or take it out.",
       );
+      expect(refused).toMatchObject({
+        why: "The settings file's code.names isn't a list of names, and Lo won't replace it.",
+        inFile: true,
+      });
       expect(contents()).toBe(text);
     }
   });

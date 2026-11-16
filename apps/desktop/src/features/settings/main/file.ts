@@ -25,8 +25,9 @@ export type Read =
   /** The file's object, or what's wrong with it. */
   | Parsed;
 
-function problem(text: string): Read {
-  return { kind: 'problem', problem: text };
+/** A problem with the file, which says only what's wrong. */
+function problem(cause: string): Read {
+  return { kind: 'problem', problem: cause, cause };
 }
 
 /** The first `length` characters of `text`, with an ellipsis when it was cut. */
