@@ -31,9 +31,15 @@ export type ServerState =
   | { kind: 'failed'; why: ServerFailure }
   /**
    * The toolchain it needs isn't installed: `needs` names it ("Go 1.24 or later", "a JDK"), and
-   * `install` is a command that installs it, when there is one.
+   * `install` is a command that installs it, when there is one. `plural` when `needs` names them,
+   * as "Apple’s Command Line Tools" does.
    */
-  | { kind: 'missing'; needs: string; install?: string | undefined }
+  | {
+      kind: 'missing';
+      needs: string;
+      install?: string | undefined;
+      plural?: boolean | undefined;
+    }
   /**
    * Lo doesn't run language servers here, since the repo isn't trusted. The item says so for all of
    * them, whatever its `name` is.
@@ -232,7 +238,7 @@ function detail(raw: string, state: ServerState): ReactNode {
           {state.install !== undefined && (
             <>
               {' '}
-              Install it with{' '}
+              Install {state.plural === true ? 'them' : 'it'} with{' '}
               <code className="text-fg code-small">
                 <ShownText text={state.install} />
               </code>

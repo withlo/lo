@@ -110,6 +110,7 @@ function standIns(
         install: () => Promise.reject(new Error('no downloads in tests')),
         toolchain: () => Promise.reject(new Error('no downloads in tests')),
         findCopy: () => Promise.resolve(undefined),
+        developerFolder: () => Promise.resolve(undefined),
         signal,
       }),
     start(spec) {
@@ -209,6 +210,7 @@ describe('which servers run', () => {
           install: () => Promise.reject(new Error('no downloads in tests')),
           toolchain: () => Promise.reject(new Error('no downloads in tests')),
           findCopy: () => Promise.resolve(undefined),
+          developerFolder: () => Promise.resolve(undefined),
           signal,
         });
       },
@@ -637,6 +639,7 @@ describe('Lo’s own servers', () => {
             Promise.resolve({ folder: `/lo/servers/${id}`, entry: `/lo/servers/${id}/entry` }),
           toolchain: listedToolchain(each, () => Promise.reject(new Error('no toolchain here'))),
           findCopy: () => Promise.resolve(undefined),
+          developerFolder: () => Promise.resolve(undefined),
           signal,
         }),
       start(spec) {
@@ -693,6 +696,7 @@ describe('Lo’s own servers', () => {
             }),
           ),
           findCopy: () => Promise.resolve(undefined),
+          developerFolder: () => Promise.resolve(undefined),
           signal,
         }),
       start(spec) {
@@ -782,6 +786,7 @@ describe('checkouts a server won’t run on', () => {
           install: () => Promise.reject(new Error('no downloads in tests')),
           toolchain: () => Promise.reject(new Error('no downloads in tests')),
           findCopy: () => Promise.resolve(undefined),
+          developerFolder: () => Promise.resolve(undefined),
           signal,
         }),
       checkout: checkoutRefusal,

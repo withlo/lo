@@ -32,6 +32,7 @@ import {
   launchNative,
   launchOnNode,
   launchRoslyn,
+  launchSourceKit,
   type NativeServer,
   NO_NETWORK,
   NO_PYTHON,
@@ -40,6 +41,7 @@ import {
   PHP_LSP,
   PHP_VERSION,
   PYRIGHT,
+  sourceKitCheckoutProblem,
   startServer,
   TERRAFORM_LS,
   toolchainUse,
@@ -591,4 +593,74 @@ test('JDT LS imports nothing and builds nothing, on Lo’s JDK, whatever the che
     `org.gradle.java.home=${javaHome}\n`,
   );
   expect(readFileSync(join(home, 'hosts'), 'utf8')).toMatch(/^#[^\n]*\n$/);
+});
+
+test('SourceKit-LSP refuses the checkout for its build servers and settings, and hears of no workspace', async () => {
+  // Build servers, SourceKit-LSP's settings for the workspace, compile commands that load a
+  // checkout's macro plugin and clang plugins, and a package with a build tool plugin.
+  expect(planted('buildServer.json')).toContain('hostile/swift-bsp/lo-bsp.sh');
+  expect(planted('.bsp/lo-hostile.json')).toContain('hostile/swift-bsp/lo-bsp.sh');
+  expect(planted('.sourcekit-lsp/config.json')).toContain('lo-hostile-sourcekit-lsp');
+  expect(planted('hostile/swift-commands/compile_commands.json')).toContain(
+    '-load-plugin-executable',
+  );
+  expect(planted('hostile/swift-plugin/Package.swift')).toContain('.buildTool()');
+  // Each manifest, and the plugin, writes a marker beside itself if SwiftPM runs it.
+  expect(planted('hostile/swift/Package.swift')).toContain('lo-hostile-swift-manifest');
+  expect(planted('hostile/swift-plugin/Package.swift')).toContain(
+    'lo-hostile-swift-plugin-manifest',
+  );
+  expect(planted('hostile/swift-plugin/Plugins/plugin.swift')).toContain(
+    'lo-hostile-swift-build-plugin',
+  );
+  expect(await sourceKitCheckoutProblem(checkout)).toBe(
+    'The checkout’s .bsp names a build server to run, so Lo won’t run SourceKit-LSP on it.',
+  );
+
+  // Started on it all the same, with the fake server in its place, it's told of no workspace, runs
+  // in its home, and is told of nothing in the checkout.
+  const own = tempFolder();
+  const fake = fakeServer(own, {});
+  const sdk = join(own, 'MacOSX.sdk');
+  const launch = launchSourceKit({ program: process.execPath, sdk, from: 'Xcode' });
+  const running = startServer({
+    name: 'SourceKit-LSP',
+    program: launch.program,
+    args: [FAKE_SERVER, fake.args.at(-1) ?? ''],
+    root: checkout,
+    rootless: launch.rootless,
+    home: join(own, 'home'),
+    path: launch.path ?? [],
+    variables: launch.variables,
+    git: GIT,
+    place: launch.place,
+  });
+  onTestFinished(async () => {
+    if (running.pid !== undefined) {
+      try {
+        process.kill(-running.pid, 'SIGKILL');
+      } catch {
+        // It's gone.
+      }
+    }
+    await running.stop();
+  });
+  expect(await running.ready).toBe(true);
+  const home = realpathSync(join(own, 'home'));
+  const seen = readReport(fake.report);
+  const started = seen.find((each) => each.event === 'started');
+  const initialize = seen.find((each) => each.event === 'initialize');
+  expect(started).toMatchObject({ cwd: home, env: { HOME: home, CFFIXED_USER_HOME: home } });
+  expect(initialize).toMatchObject({
+    params: {
+      rootUri: null,
+      workspaceFolders: null,
+      initializationOptions: {
+        backgroundIndexing: false,
+        generatedFilesPath: join(home, 'generated'),
+        fallbackBuildSystem: { sdk },
+      },
+    },
+  });
+  expect(JSON.stringify(initialize)).not.toContain(checkout);
 });

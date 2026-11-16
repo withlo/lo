@@ -26,8 +26,15 @@
 // if a server took the hostile checkout's settings: if it says it read code as the PHP its
 // `.php-lsp.json` names, or indexed a different number of files there than on the code fixture's
 // checkout, or if Roslyn's log says it loaded a project but Lo's or looked for programs, or its
-// home holds NuGet's folders, which a restore writes. Check the machine has memory to spare before
-// running it.
+// home holds NuGet's folders, which a restore writes.
+//
+// On macOS it checks SourceKit-LSP too, `sourcekit-lsp` among the IDs, which Lo doesn't download:
+// it finds the copy in the developer folder `xcode-select -p` names, as Lo does, and starts it
+// rootless on both checkouts. On the hostile one it says why Lo refuses the checkout, then starts
+// it all the same, opening the Swift plants, to show none of them runs. The system starts
+// `SourceKitService` for it, outside its group, which Lo takes into its family by its home, and
+// that starts `swift-plugin-server`; the check watches those, the ones that appear while it runs,
+// for memory and network too. Check the machine has memory to spare before running it.
 
 import { execFile } from 'node:child_process';
 import {
@@ -42,14 +49,17 @@ import {
   writeFile,
 } from 'node:fs/promises';
 import { homedir, tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { promisify } from 'node:util';
 
-import { serverGitEnvironment } from '@lo/git';
+import { defaultPlaces, serverGitEnvironment, whyDistrusted } from '@lo/git';
 import { z } from 'zod';
 
 import {
   checkoutProblem,
+  developerFolder,
+  findCopy,
+  findSourceKit,
   GOPLS,
   type Installed,
   Installer,
@@ -61,6 +71,7 @@ import {
   launchOnNode,
   launchRoslyn,
   launchRustAnalyzer,
+  launchSourceKit,
   MANIFEST,
   type NativeServer,
   type NodeServer,
@@ -69,6 +80,7 @@ import {
   PYRIGHT,
   ROSLYN,
   RUST_ANALYZER,
+  sourceKitCheckoutProblem,
   TERRAFORM_LS,
   TOOLCHAINS,
   toolchainUse,
@@ -454,6 +466,185 @@ function onRustAnalyzer(languages: Readonly<Record<string, string>>): Check {
   };
 }
 
+/** The system's processes a server starts through it, outside its group, by their programs' names. */
+const OUTSIDE = ['SourceKitService', 'swift-plugin-server'];
+
+/** Each running process whose program is named one of `names`, with its resident memory. */
+async function processesNamed(names: readonly string[]) {
+  const { stdout } = await promisify(execFile)('/bin/ps', ['-A', '-o', 'pid=,rss=,comm='], {
+    env: { PATH: '/usr/bin:/bin', LC_ALL: 'C' },
+    maxBuffer: 16 * 1024 * 1024,
+  });
+  return stdout.split('\n').flatMap((line) => {
+    const [, pid, rss, program = ''] = /^\s*(\d+)\s+(\d+)\s+(.*)$/.exec(line) ?? [];
+    return names.includes(basename(program))
+      ? [{ pid: Number(pid), resident: Number(rss) * 1024, name: basename(program) }]
+      : [];
+  });
+}
+
+/**
+ * Watches the processes named `names` that appear from now on, every half second, until stopped:
+ * the most resident memory they held at once, what they were, and every network connection any had
+ * open, as `lsof` lists them.
+ */
+async function watchOutside(names: readonly string[]) {
+  const before = new Set((await processesNamed(names)).map((each) => each.pid));
+  const seen = new Set<string>();
+  const connections = new Set<string>();
+  let peak = 0;
+  const stopped = new AbortController();
+  const looping = (async () => {
+    while (!stopped.signal.aborted) {
+      const fresh = (await processesNamed(names)).filter((each) => !before.has(each.pid));
+      for (const each of fresh) seen.add(`${each.name} ${each.pid}`);
+      peak = Math.max(
+        peak,
+        fresh.reduce((sum, each) => sum + each.resident, 0),
+      );
+      if (fresh.length > 0) {
+        const pids = fresh.map((each) => each.pid).join(',');
+        const listed = await promisify(execFile)(
+          '/usr/sbin/lsof',
+          ['-nP', '-a', '-i', '-p', pids],
+          { env: { PATH: '/usr/bin:/bin' } },
+        ).catch(() => ({ stdout: '' }));
+        for (const line of listed.stdout.split('\n').slice(1)) {
+          if (line.trim() !== '') connections.add(line);
+        }
+      }
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    }
+  })();
+  return {
+    stop: async () => {
+      stopped.abort();
+      await looping;
+      return { peak, seen: [...seen], connections: [...connections] };
+    },
+    /** Whether any of those that appeared still runs. */
+    running: async () =>
+      (await processesNamed(names)).filter((each) => !before.has(each.pid)).map((each) => each.pid),
+  };
+}
+
+/**
+ * The check of SourceKit-LSP, on macOS: the copy in the developer folder, found as Lo finds it,
+ * started rootless as its adapter starts it on each fixture's checkout, the hostile one included,
+ * though Lo refuses that one, and asked each place in its `languages`. It opens `plants` on the
+ * hostile checkout, as a reader's view would.
+ */
+async function onSourceKit(
+  languages: Readonly<Record<string, string>>,
+  plants: readonly string[],
+): Promise<void> {
+  const developer = await developerFolder();
+  const { groups } = defaultPlaces(process.platform);
+  const found = await findSourceKit(developer, async (candidates) => {
+    const copy = await findCopy(candidates, {
+      distrust: (program) => whyDistrusted(program, groups),
+      outside: [CACHE],
+      home: homedir(),
+    });
+    for (const { path, why } of copy.skipped) console.log(`Not ${path}: ${why}.`);
+    return copy.program;
+  });
+  if (found === undefined) {
+    throw new Error(`there's no SourceKit-LSP in the developer folder, ${developer ?? 'none'}`);
+  }
+  const launch = launchSourceKit(found);
+  console.log(`${launch.version}: ${launch.program}, in ${developer}, with ${found.sdk}`);
+  const places = await placesFor(languages);
+  const languageId = places[0]?.languageId ?? 'swift';
+  const folder = await realpath(await mkdtemp(join(tmpdir(), 'lo-live-sourcekit-lsp-')));
+  try {
+    for (const script of ['code.sh', 'code-hostile.sh']) {
+      const root = await checkout(script, join(folder, script));
+      const before = await snapshot(root);
+      console.log(`\n--- SourceKit-LSP on the checkout ${script} --local makes`);
+      const refusal = await sourceKitCheckoutProblem(root);
+      if (script === 'code.sh' && refusal !== undefined)
+        throw new Error(`Lo refuses it: ${refusal}`);
+      if (refusal !== undefined) {
+        console.log(
+          `Lo refuses it: ${refusal} Started all the same, to show nothing planted runs.`,
+        );
+      }
+      const outside = await watchOutside(OUTSIDE);
+      const { peak, connections } = await askServer({
+        spec: {
+          name: 'SourceKit-LSP',
+          program: launch.program,
+          args: launch.args,
+          root,
+          rootless: launch.rootless,
+          services: launch.services,
+          home: join(folder, `home-${script}`),
+          path: [],
+          git: serverGitEnvironment(),
+          place: launch.place,
+        },
+        places,
+        outlines: [{ file: 'swift/Sources/Sample/Words.swift', languageId }],
+        opened: script === 'code-hostile.sh' ? plants.map((file) => ({ file, languageId })) : [],
+      });
+      const system = await outside.stop();
+      console.log(`\nIts family held at most ${Math.round(peak / 1024 ** 2)} MB at once.`);
+      console.log(
+        `What the system started for it (${system.seen.join(', ') || 'nothing'}) held at most ` +
+          `${Math.round(system.peak / 1024 ** 2)} MB at once.`,
+      );
+      // Lo stops SourceKitService with the server, and what it started ends with it.
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+      const left = await outside.running();
+      console.log(
+        left.length === 0
+          ? 'None of it was still running 2 s after the server stopped.'
+          : `Still running 2 s after the server stopped: ${left.join(', ')}.`,
+      );
+      const all = [...connections, ...system.connections];
+      console.log(
+        all.length === 0
+          ? 'Neither opened a network connection.'
+          : `Network connections:\n${all.join('\n')}`,
+      );
+      const away = all.filter((line) => !/->(?:127\.0\.0\.1|\[::1\]):/.test(line));
+      if (away.length > 0) throw new Error(`it connected to another machine: ${away.join('; ')}`);
+      const home = await readdir(join(folder, `home-${script}`), { recursive: true });
+      const top = home.filter((path) => path.split('/').length <= 2);
+      console.log(`\nIts home holds ${home.length} entries: ${top.join(', ')}`);
+      const markersFound = await markers(root);
+      if (markersFound.length > 0) {
+        throw new Error(`something ran what's planted: ${markersFound.join(', ')}`);
+      }
+      const changed = changes(before, await snapshot(root));
+      if (changed.length > 0) throw new Error(`the checkout changed: ${changed.join(', ')}`);
+    }
+    console.log(
+      '\nNo marker was written, and neither checkout changed: SourceKit-LSP ran nothing ' +
+        'planted, and wrote nothing in them.',
+    );
+  } finally {
+    await rm(folder, { recursive: true, force: true });
+  }
+}
+
+/** The checks of servers Lo doesn't download, by their IDs: SourceKit-LSP's, on macOS. */
+const SYSTEM_CHECKS: Record<string, () => Promise<void>> =
+  process.platform === 'darwin'
+    ? {
+        // A macro whose plugin compile commands name, a package's build tool plugin, and a
+        // package's manifest, which SwiftPM would compile and run.
+        'sourcekit-lsp': () =>
+          onSourceKit({ swift: 'swift' }, [
+            'hostile/swift-commands/Lo.swift',
+            'hostile/swift-plugin/Plugins/plugin.swift',
+            'hostile/swift-plugin/Sources/main.swift',
+            'hostile/swift/Package.swift',
+          ]),
+      }
+    : {};
+
 /** The check of a server on Lo's Node, which installs first. */
 function onNode(server: NodeServer, languages: Readonly<Record<string, string>>): Check {
   const launch = async (installed: Installed, context: Context) =>
@@ -590,9 +781,20 @@ async function toolchain(id: string): Promise<Toolchain> {
 }
 
 const asked = process.argv.slice(2);
-const ids = asked.length > 0 ? asked : Object.keys(MANIFEST);
+const ids = asked.length > 0 ? asked : [...Object.keys(MANIFEST), ...Object.keys(SYSTEM_CHECKS)];
 let failed = false;
 for (const id of ids) {
+  const system = Object.hasOwn(SYSTEM_CHECKS, id) ? SYSTEM_CHECKS[id] : undefined;
+  if (system !== undefined) {
+    try {
+      console.log(`\n=== ${id}, the system's`);
+      await system();
+    } catch (error) {
+      console.error(`${id}: ${error instanceof Error ? error.message : String(error)}`);
+      failed = true;
+    }
+    continue;
+  }
   const pinned = MANIFEST[id];
   const check = CHECKS[id];
   if (pinned === undefined || check === undefined) {

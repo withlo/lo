@@ -208,6 +208,16 @@ const NODE_PLANT =
 const PLUGIN =
   /^\/\/ Fixture: a tsserver plugin\. Writes the empty file (lo-hostile-[a-z-]+) beside itself, and nothing else\.\nmodule\.exports = function init\(\) \{\n {2}require\('node:fs'\)\.writeFileSync\(require\('node:path'\)\.join\(__dirname, '\1'\), ''\);\n {2}return \{ create: \(info\) => info\.languageService \};\n\};\n$/;
 
+/**
+ * What a Swift package's manifest, or its plugin, says to write its marker beside itself, which
+ * SwiftPM runs as it reads the package or builds it. The rest of the file is a package, and holds
+ * nothing else that touches a file or runs a program ({@link SWIFT_FORBIDDEN}).
+ */
+const SWIFT_PLANT =
+  /\n( *)\/\/ Fixture: [^\n]+\. Writes the empty file (lo-hostile-[a-z-]+) beside itself, and nothing else\.\n\1_ = FileManager\.default\.createFile\(atPath: URL\(fileURLWithPath: #filePath\)\.deletingLastPathComponent\(\)\.appendingPathComponent\("\2"\)\.path, contents: nil\)\n/;
+const SWIFT_FORBIDDEN =
+  /\b(FileManager|FileHandle|Process|URLSession|NSTask|popen|posix_spawn|system|dlopen)\b/;
+
 /** What no other planted file says: nothing that deletes, sends, reads or leaves its folder. */
 const FORBIDDEN =
   /\b(curl|wget|nc|ssh|scp|rm|mv|cp|kill|sudo|eval|exec|dd|tar|base64|osascript|launchctl|crontab)\b|>>|\$HOME|~\/|\/etc\b|\/tmp\b|\/Users\b|\/var\b|\.\.\/|\bhttp:\/\/(?!maven\.apache\.org)/;
@@ -255,6 +265,11 @@ test(
       const shell = SHELL_PLANT.exec(text) ?? BASH_PLANT.exec(text);
       const program = shell ?? NODE_PLANT.exec(text) ?? PLUGIN.exec(text);
       if (program) markers.add(program[1] ?? '');
+      const swift = path.endsWith('.swift') ? SWIFT_PLANT.exec(text) : null;
+      if (swift) markers.add(swift[2] ?? '');
+      if (path.endsWith('.swift') && SWIFT_FORBIDDEN.test(text.replace(swift?.[0] ?? '', '\n'))) {
+        wrong.push(`${path} does more in Swift than write its marker`);
+      }
       // No marker is committed, nor a folder named like one.
       if (path.split('/').some((part) => part.startsWith('lo-hostile-'))) {
         wrong.push(`${path} is named like a marker`);
@@ -277,7 +292,8 @@ test(
 
     // The script says each marker, so whoever checks knows what to look for, and each folder or
     // file planted settings would make in the checkout: php-lsp's cache, Maven's local repository
-    // and its JVM's log, Eclipse's output and generated sources, and a JVM's log.
+    // and its JVM's log, Eclipse's output and generated sources, a JVM's log, and SourceKit-LSP's
+    // generated files.
     const settings: unknown = JSON.parse(contents.get('.php-lsp.json') ?? '{}');
     const cache = typeof settings === 'object' && settings !== null && 'cachePath' in settings;
     expect(cache && settings.cachePath).toBe('lo-hostile-php-lsp-cache');
@@ -298,13 +314,14 @@ test(
       'lo-hostile-eclipse-output': 'java/.classpath',
       'lo-hostile-apt-generated': 'java/.settings/org.eclipse.jdt.apt.core.prefs',
       'lo-hostile-hotspotrc': '.hotspotrc',
+      'lo-hostile-sourcekit-lsp': '.sourcekit-lsp/config.json',
     };
     for (const [name, path] of Object.entries(made)) {
       expect({ [path]: contents.get(path) }).toEqual({ [path]: expect.stringContaining(name) });
     }
     const said = new Set(script.match(/lo-hostile-[a-z]+(?:-[a-z]+)*/g));
     expect([...markers, ...Object.keys(made)].toSorted()).toEqual([...said].toSorted());
-    expect(markers.size).toBe(37);
+    expect(markers.size).toBe(43);
   },
 );
 
@@ -313,6 +330,7 @@ test("Lo's own repository holds nothing a tool would pick up from what the hosti
   // or a version manager would pick: no wrappers, node_modules or vendor, version files, tool
   // settings or package scripts.
   const named = new Set([
+    '.bsp',
     '.cargo',
     '.classpath',
     '.editorconfig',
@@ -333,6 +351,7 @@ test("Lo's own repository holds nothing a tool would pick up from what the hosti
     '.ruby-version',
     '.sdkmanrc',
     '.settings',
+    '.sourcekit-lsp',
     '.terraform',
     '.tool-versions',
     '.vscode',
@@ -341,6 +360,8 @@ test("Lo's own repository holds nothing a tool would pick up from what the hosti
     'Directory.Packages.props',
     'NuGet.config',
     'build.gradle',
+    'buildServer.json',
+    'compile_commands.json',
     'gradle',
     'gradle.properties',
     'gradlew',

@@ -1,8 +1,8 @@
 /**
  * Installed copies of a server: one the user installed, which an adapter may use where Lo has no
- * download, or prefers the user's (SourceKit-LSP comes only with Xcode or a Swift toolchain). An
- * adapter names where a copy may be, such as `~/go/bin/gopls` or what `xcrun --find` says, and a
- * copy there is used only if:
+ * download, or prefers the user's (SourceKit-LSP comes only with Xcode or Apple's Command Line
+ * Tools). An adapter names where a copy may be, such as `~/go/bin/gopls` or SourceKit-LSP's place
+ * in the developer folder `xcode-select -p` names, and a copy there is used only if:
  *
  * - it's an absolute path to a file this user may run;
  * - nobody but this user and root can change it, or a folder it's in, as the app's folder check

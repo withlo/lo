@@ -527,9 +527,11 @@ describe('Roslyn', () => {
     const files = {
       'src/A.cs': '',
       'src/Lower.CS': '',
+      'src/Long.c\u017F': '',
       'src/nested/B.cs': '',
       'src/bin/Built.cs': '',
       'src/OBJ/Generated.cs': '',
+      'src/o\uFF42j/Wide.cs': '',
       '.hidden/C.cs': '',
       'src/.git/D.cs': '',
       'src/.editorconfig': '',
@@ -542,13 +544,15 @@ describe('Roslyn', () => {
     }
     symlinkSync(join(root, 'src', 'A.cs'), join(root, 'src', 'Link.cs'));
     symlinkSync(join(root, 'src'), join(root, 'linked'));
+    // Folded names: `.c\u017F`, a long s, as a Mac's disk opens it, and `o\uFF42j`, a wide b.
     expect(await csharpSources(root)).toEqual([
       join(root, 'src', 'A.cs'),
+      join(root, 'src', 'Long.c\u017F'),
       join(root, 'src', 'Lower.CS'),
       join(root, 'src', 'nested', 'B.cs'),
     ]);
-    await expect(csharpSources(root, { folders: CSHARP_FOLDERS, files: 2 })).rejects.toThrow(
-      'The checkout has more than 2 C# files.',
+    await expect(csharpSources(root, { folders: CSHARP_FOLDERS, files: 3 })).rejects.toThrow(
+      'The checkout has more than 3 C# files.',
     );
   });
 

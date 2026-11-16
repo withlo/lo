@@ -13,8 +13,11 @@ export type Reply =
 export interface ReplyContext {
   /** What `workspace/configuration` answers from: the adapter's settings, by section. */
   readonly settings: unknown;
-  /** The workspace's folders, for `workspace/workspaceFolders`. */
-  readonly folders: readonly { readonly uri: string; readonly name: string }[];
+  /**
+   * The workspace's folders, for `workspace/workspaceFolders`, or `null` for a server told of no
+   * workspace, as the protocol answers when only files are open.
+   */
+  readonly folders: readonly { readonly uri: string; readonly name: string }[] | null;
 }
 
 /** The most items one `workspace/configuration` may ask for. */

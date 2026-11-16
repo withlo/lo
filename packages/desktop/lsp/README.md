@@ -58,6 +58,15 @@ own (`setsid`) is still found.
   that finds nothing new has found the whole family.
 - A process read earlier is signalled only while it's the same process: the same ID, started at the
   same time. An ID that has since been taken by another process is left alone.
+- A service the system starts for a server is `launchd`'s child, not the server's, as
+  `SourceKitService` is for SourceKit-LSP's `sourcekitd`. A server's spec names the services it
+  starts (`services`), and each read of the family takes in each process by one of those names whose
+  `HOME` is exactly the server's home, and what descends from it. A home is the folder of one
+  repository and one adapter, so no other server's environment names it. On macOS the read looks in
+  the environment `ps -E` lists after a process's command for `HOME=<home>` as a whole variable, so
+  a home that only begins with it doesn't match; on Linux it matches that exact entry in
+  `/proc/<pid>/environ`. So the service's memory counts against the cap, and a stop or a kill
+  signals it with the rest.
 
 ### What can't be found
 
@@ -80,23 +89,27 @@ own (`setsid`) is still found.
 ## Servers
 
 The servers Lo runs, each downloaded on first use for a trusted view, as `servers.json` pins it, and
-each with its adapter in `src/adapters/`. None needs anything installed: what a server needs, if
-anything, is Lo's own copy, downloaded with it. The last column says what a server can't do, and a
-checkout one won't run on is under "Checkouts a server refuses".
+each with its adapter in `src/adapters/`. None needs anything installed but SourceKit-LSP, Swift's
+on macOS, which Lo doesn't download: it comes with Xcode and with Apple's Command Line Tools, and Lo
+runs the copy there (`src/adapters/sourcekit.ts`). What any other server needs is Lo's own copy,
+downloaded with it. The last column says what a server can't do, and a checkout one won't run on is
+under "Checkouts a server refuses".
 
-| Server         | Version    | For                    | From                                                                                        | License                                                       | Needs       | Can't do                                                                                                                                                                                  |
-| -------------- | ---------- | ---------------------- | ------------------------------------------------------------------------------------------- | ------------------------------------------------------------- | ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| vtsls          | 0.3.0      | TypeScript, JavaScript | npm: `@vtsls/language-server` and its 17 dependencies, TypeScript 5.9.3 among them          | MIT; TypeScript's is Apache-2.0, the rest MIT or ISC          | Node        | Run a workspace's TypeScript or load a `tsserver` plugin from the checkout. It fetches no types, so a dependency's symbols show their import only.                                        |
-| Pyright        | 1.1.414    | Python                 | npm: `pyright`                                                                              | MIT                                                           | Node        | Run an interpreter, so it reads packages only from a virtual environment the checkout's config names. It gives no type hints.                                                             |
-| rust-analyzer  | 2026-11-09 | Rust                   | GitHub releases: `rust-lang/rust-analyzer`                                                  | MIT OR Apache-2.0                                             | Rust        | Run build scripts or proc macros, or fetch crates: generated code, macro expansions and dependencies it can't resolve offline are missing. Refuses some checkouts.                        |
-| php-lsp        | 0.33.0     | PHP                    | GitHub: the releases of [jorgsowa/php-lsp](https://github.com/jorgsowa/php-lsp)             | MIT                                                           | None        | Run PHP, so code is read as PHP 8.5, and a function PHP 8 removed has no hover. `gr` never looks in `vendor/`.                                                                            |
-| gopls          | 0.24.0     | Go                     | proxy.golang.org: `golang.org/x/tools/gopls` and the 23 modules it builds with, built by Lo | BSD-3-Clause; the rest BSD-3-Clause, MIT, MIT-0 or Apache-2.0 | Go          | Fetch modules, run cgo or `go generate`: a dependency not in the checkout shows its import only, and a file that imports `"C"` is left out. Refuses some checkouts.                       |
-| terraform-ls   | 0.39.1     | Terraform              | releases.hashicorp.com                                                                      | MPL-2.0                                                       | None        | Run Terraform or a provider: its schemas are the ones it carries, not the versions a lock file pins, and other providers have none. It gives no type hints.                               |
-| Eclipse JDT LS | 1.63.0     | Java                   | download.eclipse.org: its release's archive                                                 | EPL-2.0                                                       | Temurin JDK | Import a Gradle or Maven build, so what a build brings has no definition. A source folder past the nearest 20,000 folders and 20,000 files gets fewer answers. Refuses some checkouts.    |
-| Roslyn         | 5.11.0     | C#                     | nuget.org: `roslyn-language-server.<platform>`, signed by Microsoft                         | MIT                                                           | .NET SDK    | Load the checkout's projects: a package's types and what a source generator writes have no definition, and every `.cs` file is one project at the SDK's defaults. Refuses some checkouts. |
+| Server         | Version    | For                    | From                                                                                        | License                                                       | Needs                               | Can't do                                                                                                                                                                                  |
+| -------------- | ---------- | ---------------------- | ------------------------------------------------------------------------------------------- | ------------------------------------------------------------- | ----------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| vtsls          | 0.3.0      | TypeScript, JavaScript | npm: `@vtsls/language-server` and its 17 dependencies, TypeScript 5.9.3 among them          | MIT; TypeScript's is Apache-2.0, the rest MIT or ISC          | Node                                | Run a workspace's TypeScript or load a `tsserver` plugin from the checkout. It fetches no types, so a dependency's symbols show their import only.                                        |
+| Pyright        | 1.1.414    | Python                 | npm: `pyright`                                                                              | MIT                                                           | Node                                | Run an interpreter, so it reads packages only from a virtual environment the checkout's config names. It gives no type hints.                                                             |
+| rust-analyzer  | 2026-11-09 | Rust                   | GitHub releases: `rust-lang/rust-analyzer`                                                  | MIT OR Apache-2.0                                             | Rust                                | Run build scripts or proc macros, or fetch crates: generated code, macro expansions and dependencies it can't resolve offline are missing. Refuses some checkouts.                        |
+| php-lsp        | 0.33.0     | PHP                    | GitHub: the releases of [jorgsowa/php-lsp](https://github.com/jorgsowa/php-lsp)             | MIT                                                           | None                                | Run PHP, so code is read as PHP 8.5, and a function PHP 8 removed has no hover. `gr` never looks in `vendor/`.                                                                            |
+| gopls          | 0.24.0     | Go                     | proxy.golang.org: `golang.org/x/tools/gopls` and the 23 modules it builds with, built by Lo | BSD-3-Clause; the rest BSD-3-Clause, MIT, MIT-0 or Apache-2.0 | Go                                  | Fetch modules, run cgo or `go generate`: a dependency not in the checkout shows its import only, and a file that imports `"C"` is left out. Refuses some checkouts.                       |
+| terraform-ls   | 0.39.1     | Terraform              | releases.hashicorp.com                                                                      | MPL-2.0                                                       | None                                | Run Terraform or a provider: its schemas are the ones it carries, not the versions a lock file pins, and other providers have none. It gives no type hints.                               |
+| Eclipse JDT LS | 1.63.0     | Java                   | download.eclipse.org: its release's archive                                                 | EPL-2.0                                                       | Temurin JDK                         | Import a Gradle or Maven build, so what a build brings has no definition. A source folder past the nearest 20,000 folders and 20,000 files gets fewer answers. Refuses some checkouts.    |
+| Roslyn         | 5.11.0     | C#                     | nuget.org: `roslyn-language-server.<platform>`, signed by Microsoft                         | MIT                                                           | .NET SDK                            | Load the checkout's projects: a package's types and what a source generator writes have no definition, and every `.cs` file is one project at the SDK's defaults. Refuses some checkouts. |
+| SourceKit-LSP  | Apple's    | Swift, on macOS        | Xcode or Apple's Command Line Tools, in the developer folder `xcode-select -p` names        | Apache-2.0                                                    | Xcode or Apple's Command Line Tools | Read a build: each file is read alone with the macOS SDK, so a use of what another file declares isn't resolved, and `gr` comes from the syntax index. Refuses some checkouts.            |
 
-What a server needs is pinned and downloaded the same way. Node is in `servers.json`, beside the
-servers. The toolchains, which Settings lists and removes, are in `toolchains.json`.
+What a server needs is pinned and downloaded the same way, but for Apple's. Node is in
+`servers.json`, beside the servers. The toolchains, which Settings lists and removes, are in
+`toolchains.json`; on macOS Settings lists Apple's Swift too, with nothing to remove.
 
 | Needs       | Version  | From                          | License                              | For               |
 | ----------- | -------- | ----------------------------- | ------------------------------------ | ----------------- |
@@ -111,8 +124,9 @@ server's own entry point inside its install, never the launcher npm would link. 
 php-lsp, gopls and terraform-ls each start as its program, by its absolute path inside its install.
 JDT LS starts as the JDK's `java`, by its absolute path, with `-jar` and Equinox's launcher inside
 its install. Roslyn starts as Lo's `dotnet`, by its absolute path, with `exec` and the server's own
-assembly inside its install, never the launcher its package's tool would run. None runs through a
-shell, and each has an environment built from nothing, whose proxy leads nowhere (`NO_NETWORK` in
+assembly inside its install, never the launcher its package's tool would run. SourceKit-LSP starts
+as its program, by its absolute path in Xcode or the Command Line Tools. None runs through a shell,
+and each has an environment built from nothing, whose proxy leads nowhere (`NO_NETWORK` in
 `src/environment.ts`). What each is told is its adapter's alone, and the adapter says why each
 setting is as it is:
 
@@ -228,6 +242,30 @@ setting is as it is:
   and the installer, which checks only what it unpacked, ignores it. Roslyn writes it to a file of a
   random name there and moves that to the cache's name, so it appears whole or not at all, though
   unsynced; a move that fails leaves the other file behind.
+- **SourceKit-LSP** is the copy in the developer folder the system has chosen, which
+  `/usr/bin/xcode-select -p` names when it's run with nothing of Lo's environment: Xcode's
+  `Toolchains/XcodeDefault.xctoolchain/usr/bin/sourcekit-lsp`, or the Command Line Tools'
+  `usr/bin/sourcekit-lsp`. Never the shim in `/usr/bin`, one on `PATH` or what `xcrun` finds, which
+  read `DEVELOPER_DIR` and the like, nor a version manager's shim, which reads a checkout's
+  `.swift-version`. It's Apple's, updated with Xcode or the tools, so Lo pins no version of it.
+  Given a workspace, it runs what its build files name: a build server from `buildServer.json` or
+  `.bsp/`, SwiftPM on a `Package.swift`, which compiles and runs the manifest and its plugins and
+  fetches its dependencies, and the flags of a `compile_commands.json`, which can load code into the
+  compiler; and it reads `.sourcekit-lsp/config.json`, which can turn those on. No option turns that
+  off, so it's told of no workspace (`rootless`: `rootUri` and `workspaceFolders` are `null`) and
+  runs in its home: it reads no build files and no workspace settings, and each file Lo opens gets
+  fallback build settings, the macOS SDK and Lo's flags. So answers are each file's own and the
+  SDK's: `gd`, `K` and `gh` answer within the file and into the SDK, a use of what another file
+  declares isn't resolved, and `gr`, which needs a build's index, comes from the syntax index. Its
+  generated files and its compiler's module cache are in its home, by its options, and Foundation's
+  home folder, where it reads its own settings, is too, by `CFFIXED_USER_HOME`. It also reads the
+  machine's settings, in `/Library/Application Support/org.swift.sourcekit-lsp/config.json`, which
+  only an administrator can write, and no option turns that off; Lo's options win over it, key by
+  key. A request to `sourcekitd` gives up after 10.5 s, not 120 s, and one that hangs for 30.5 s,
+  not 300 s, has SourceKit-LSP restart `sourcekitd`. Each is given with a fraction: SourceKit-LSP
+  reads a whole number in its initialization options as an integer, which those options refuse, and
+  then drops every option Lo gives it. Its `SourceKitService` is in its family. Expanding a macro of
+  the SDK's runs Apple's `swift-plugin-server`; a checkout's macros are never built.
 
 None runs in a sandbox: each reads what you can, so an absolute import, Pyright's `extraPaths`, a
 Rust sysroot's sources, the folders of stubs a `.php-lsp.json` names, the paths a `composer.json`'s
@@ -272,6 +310,17 @@ through its own folders, never through a link to one, which could lead anywhere 
   the cache is outside your home folder.
 - **Java** (JDT LS). A repository that commits Eclipse's `.settings` folder at its root: JDT LS
   would link its project's settings to it, reading them and writing there.
+- **Swift** (SourceKit-LSP). A `buildServer.json`, a `.bsp` or a `.sourcekit-lsp` anywhere in the
+  checkout. This SourceKit-LSP reads none of them, since Lo tells it of no workspace, but Apple
+  updates it, and a later one that looked for them beside a file it opened would. A `Package.swift`
+  and a `compile_commands.json` are common, and no workspace is what keeps them out, so they aren't
+  refused.
+
+Each refusal that looks through a checkout matches a file's name at least as loosely as a Mac's
+disk, which opens `.ſourcekit-lsp`, with a long s, as `.sourcekit-lsp`, and a name with a Kelvin
+sign as one with a `k`: by `foldName`, NFKC and then a full case fold. And each reads at most
+100,000 files and folders (`WALK_LIMIT`, as many as Lo unpacks from an archive); a checkout with
+more is refused, since what it didn't read could be anything.
 
 ## Downloads
 

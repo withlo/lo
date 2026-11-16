@@ -201,31 +201,66 @@ const READ_LIMIT = 1024 * 1024;
  *   {@link cargoConfigProblem} refuses or a `.cargo` that's a link, or a Cargo config of any kind
  *   above it ({@link rustProblem}).
  *
- * The other toolchains read nothing in a checkout that their variables don't answer.
+ * The other toolchains read nothing in a checkout that their variables don't answer. Each looks
+ * through at most `limit` of the checkout's files and folders, and refuses a checkout with more
+ * ({@link WALK_LIMIT}).
  */
-export async function checkoutProblem(id: string, root: string): Promise<string | undefined> {
+export async function checkoutProblem(
+  id: string,
+  root: string,
+  limit = WALK_LIMIT,
+): Promise<string | undefined> {
   switch (id) {
     case 'dotnet':
-      return dotnetProblem(root);
+      return dotnetProblem(root, limit);
     case 'go':
-      return goProblem(root);
+      return goProblem(root, limit);
     case 'rust':
-      return rustProblem(root);
+      return rustProblem(root, limit);
     default:
       return undefined;
   }
 }
 
 /**
- * Every entry in the checkout at `root`, by its path, and whether it's a folder. It looks in the
+ * The most files and folders, all told, a look through a checkout reads ({@link entriesOf}), as
+ * many as Lo unpacks from an archive. A checkout with more is refused: what's past the limit would
+ * go unchecked, and a server mustn't start on a checkout Lo hasn't checked.
+ */
+export const WALK_LIMIT = 100_000;
+
+/** Why a checkout with more than `limit` files and folders is refused, for `server`. */
+export function tooManyEntries(limit: number, server: string): string {
+  return `The checkout has more than ${limit.toLocaleString('en-US')} files and folders, more than Lo looks through, so Lo won’t run ${server} on it.`;
+}
+
+/**
+ * `name` as Lo compares a file's name with one it refuses: as a disk that tells names apart by
+ * neither case nor Unicode form compares it, as APFS does, so `.ſourcekit-lsp`, with a long s, is
+ * `.sourcekit-lsp`, and `go.worK`, with a Kelvin sign, is `go.work`. It's the name in Unicode's
+ * compatibility form (NFKC), cased up then down, which folds case in full, `ß` to `ss` included.
+ * NFKC folds more than a disk does, `ﬁ` to `fi`, so Lo may refuse a name the disk would tell
+ * apart, never miss one it wouldn't. Every refusal by a name matches with this.
+ */
+export function foldName(name: string): string {
+  return name.normalize('NFKC').toUpperCase().toLowerCase().normalize('NFKC');
+}
+
+/**
+ * Every entry in the checkout at `root`, by its path, and whether it's a folder, or `undefined`
+ * once it has more than `limit` of them, all told, and Lo stops looking. It looks in the
  * checkout's own folders, never through a link to one, which may lead anywhere on the disk, or
  * back into the checkout without end; a link is listed as an entry that's no folder.
  */
-async function entriesOf(root: string): Promise<{ path: string; folder: boolean }[]> {
+export async function entriesOf(
+  root: string,
+  limit = WALK_LIMIT,
+): Promise<{ path: string; folder: boolean }[] | undefined> {
   const entries: { path: string; folder: boolean }[] = [];
   const folders = [root];
   for (let folder = folders.pop(); folder !== undefined; folder = folders.pop()) {
     for (const entry of await readdir(folder, { withFileTypes: true, encoding: 'utf8' })) {
+      if (entries.length >= limit) return undefined;
       const path = join(folder, entry.name);
       if (entry.isDirectory()) folders.push(path);
       entries.push({ path, folder: entry.isDirectory() });
@@ -235,17 +270,21 @@ async function entriesOf(root: string): Promise<{ path: string; folder: boolean 
 }
 
 /**
- * The files named `name` in the checkout at `root`, in any case, since the disk may not tell names
- * apart by case, and each folder above it, where one by that name would be. It looks in the
- * checkout's own folders ({@link entriesOf}); a file of that name that is a link is found, and
- * refused as no plain file.
+ * The files named `name` in the checkout at `root`, by {@link foldName}, since the disk may not
+ * tell names apart by case or Unicode form, and each folder above it, where one by that name would
+ * be; or `undefined` when the checkout has more than `limit` entries. It looks in the checkout's
+ * own folders ({@link entriesOf}); a file of that name that is a link is found, and refused as no
+ * plain file.
  */
 async function filesNamed(
   root: string,
   name: string,
-): Promise<{ inside: string[]; above: string[] }> {
-  const inside = (await entriesOf(root))
-    .filter((entry) => !entry.folder && basename(entry.path).toLowerCase() === name)
+  limit: number,
+): Promise<{ inside: string[]; above: string[] } | undefined> {
+  const entries = await entriesOf(root, limit);
+  if (entries === undefined) return undefined;
+  const inside = entries
+    .filter((entry) => !entry.folder && foldName(basename(entry.path)) === name)
     .map((entry) => entry.path);
   const above: string[] = [];
   for (let folder = dirname(root); ; folder = dirname(folder)) {
@@ -274,9 +313,10 @@ function nameOf(root: string, file: string): string {
   return file.startsWith(`${root}/`) ? `The checkout’s ${relative(root, file)}` : file;
 }
 
-async function dotnetProblem(root: string): Promise<string | undefined> {
-  const { inside } = await filesNamed(root, 'global.json');
-  for (const file of inside) {
+async function dotnetProblem(root: string, limit: number): Promise<string | undefined> {
+  const named = await filesNamed(root, 'global.json', limit);
+  if (named === undefined) return tooManyEntries(limit, 'a server that uses the .NET SDK');
+  for (const file of named.inside) {
     const why = await steers(file);
     if (why === undefined) continue;
     return `${nameOf(root, file)} ${why}, so it could choose a .NET SDK other than Lo’s.`;
@@ -286,7 +326,7 @@ async function dotnetProblem(root: string): Promise<string | undefined> {
 }
 
 /**
- * The files MSBuild and NuGet look for in each folder above a project, by their names in lowercase:
+ * The files MSBuild and NuGet look for in each folder above a project, by their names folded:
  * MSBuild imports the nearest `Directory.Build.props`, `Directory.Build.targets` and
  * `Directory.Packages.props` into the project, and NuGet reads every `NuGet.config`.
  */
@@ -300,9 +340,10 @@ const READ_ABOVE: ReadonlyMap<string, string> = new Map([
 /**
  * Why .NET mustn't run below `folder`, by what's in each folder above it: a `global.json` that
  * could choose an SDK other than Lo's, as {@link checkoutProblem} reads one, or a file that
- * MSBuild or NuGet would read for every project below it ({@link READ_ABOVE}), whatever the case
- * of its name. It's asked of a checkout, and of the folder of the project Lo writes for a server in
- * its home, since MSBuild looks above the project, not above its sources; `what` names the folder.
+ * MSBuild or NuGet would read for every project below it ({@link READ_ABOVE}), its name matched by
+ * {@link foldName}. It's asked of a checkout, and of the folder of the project Lo writes for a
+ * server in its home, since MSBuild looks above the project, not above its sources; `what` names
+ * the folder.
  */
 export async function dotnetAbove(
   folder: string,
@@ -316,14 +357,14 @@ export async function dotnetAbove(
     ];
     for (const name of names) {
       const file = join(above, name);
-      const lower = name.toLowerCase();
-      if (lower === 'global.json') {
+      const folded = foldName(name);
+      if (folded === 'global.json') {
         const why = await steers(file);
         if (why !== undefined)
           return `${file} ${why}, so it could choose a .NET SDK other than Lo’s.`;
         continue;
       }
-      const reader = READ_ABOVE.get(lower);
+      const reader = READ_ABOVE.get(folded);
       if (reader === undefined) continue;
       if ((await lstat(file).catch(() => undefined)) === undefined) continue;
       return `${file} is in a folder above ${what}, and ${reader} would read it for every project below it.`;
@@ -353,15 +394,17 @@ const CARGO_CONFIGS = ['config.toml', 'config'];
  * anything at all named `.cargo/config.toml` or `.cargo/config` in a folder above it, which `cargo`
  * reads, following a link, and Lo can't vet.
  */
-async function rustProblem(root: string): Promise<string | undefined> {
+async function rustProblem(root: string, limit: number): Promise<string | undefined> {
   const won = 'so Lo won’t run rust-analyzer on it.';
-  for (const { path, folder } of await entriesOf(root)) {
-    const name = basename(path).toLowerCase();
+  const entries = await entriesOf(root, limit);
+  if (entries === undefined) return tooManyEntries(limit, 'rust-analyzer');
+  for (const { path, folder } of entries) {
+    const name = foldName(basename(path));
     if (name === 'rust-analyzer.toml' && !folder) {
       return `${nameOf(root, path)} is a rust-analyzer.toml, whose settings win over Lo’s and could run a program, ${won}`;
     }
     if (name === '.cargo' && !folder) return `${nameOf(root, path)} isn’t a plain folder, ${won}`;
-    if (CARGO_CONFIGS.includes(name) && basename(dirname(path)).toLowerCase() === '.cargo') {
+    if (CARGO_CONFIGS.includes(name) && foldName(basename(dirname(path))) === '.cargo') {
       const why = await cargoConfigProblem(path);
       if (why !== undefined) return `${nameOf(root, path)} ${why}, ${won}`;
     }
@@ -410,8 +453,10 @@ async function cargoConfigProblem(file: string): Promise<string | undefined> {
   return undefined;
 }
 
-async function goProblem(root: string): Promise<string | undefined> {
-  const { inside, above } = await filesNamed(root, 'go.work');
+async function goProblem(root: string, limit: number): Promise<string | undefined> {
+  const works = await filesNamed(root, 'go.work', limit);
+  if (works === undefined) return tooManyEntries(limit, 'a server that uses Go');
+  const { inside, above } = works;
   // Go takes a `go.work` above as it finds one, by `stat`, a link to a file included.
   for (const file of above) {
     const info = await stat(file).catch(() => undefined);

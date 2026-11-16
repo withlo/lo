@@ -1,6 +1,7 @@
 // Settings' Toolchains section: the toolchains Lo downloads for language servers, as main lists
-// them, each with how much room it takes or that it isn't downloaded, and what uses it. "Remove"
-// asks main to remove one: the servers that use it stop, and its files go. Its button waits
+// them, each with how much room it takes or that it isn't downloaded, and what uses it, and on a
+// Mac Swift's, which comes with Xcode or Apple's Command Line Tools, with where it's from. "Remove"
+// asks main to remove one of Lo's: the servers that use it stop, and its files go. Its button waits
 // meanwhile, and a notice says why when it isn't removed.
 
 import { ToolchainList } from '@lo/ui';
@@ -60,8 +61,9 @@ function Toolchains() {
 export default defineSection({
   id: 'code.toolchains',
   title: 'Toolchains',
-  description:
-    'Language servers build and read code with Lo’s own copies of these, never the ones on this computer. Each downloads the first time a server needs it.',
+  description: navigator.platform.startsWith('Mac')
+    ? 'Language servers build and read code with Lo’s own copies of these, never the ones on this computer, each downloaded the first time a server needs it. Swift’s is the exception: it comes with Xcode or Apple’s Command Line Tools.'
+    : 'Language servers build and read code with Lo’s own copies of these, never the ones on this computer. Each downloads the first time a server needs it.',
   order: 55,
   render: Toolchains,
 });

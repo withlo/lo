@@ -73,7 +73,7 @@ import { temporaryFolder } from '../environment.ts';
 import type { Installed } from '../install.ts';
 import { currentPlatform, MANIFEST, type Manifest, type Platform } from '../manifest.ts';
 import type { Placed, Where } from '../place.ts';
-import type { ToolchainUse } from '../toolchains.ts';
+import { foldName, type ToolchainUse } from '../toolchains.ts';
 import { fileUri } from '../uri.ts';
 import type { Launch } from './node.ts';
 
@@ -441,11 +441,12 @@ export function declaredPackage(text: string): string | undefined {
 /**
  * Why JDT LS mustn't run on the checkout at `root`, or `undefined` when it may: a `.settings` at
  * its root, which JDT LS would link its project's settings to, so that it read them as its own and
- * wrote its own there. The disk may not tell names apart by case, so neither does this.
+ * wrote its own there. The disk may not tell names apart by case or Unicode form, so neither does
+ * this ({@link foldName}).
  */
 export async function jdtlsCheckoutProblem(root: string): Promise<string | undefined> {
   const names = await readdir(root);
-  const settings = names.find((name) => name.toLowerCase() === '.settings');
+  const settings = names.find((name) => foldName(name) === '.settings');
   if (settings === undefined) return undefined;
   return `Java isn’t available for a repository that commits Eclipse’s ${settings} folder at its root. Java’s server would read its settings from that folder, and write to it.`;
 }
