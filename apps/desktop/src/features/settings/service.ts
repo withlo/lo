@@ -4,8 +4,9 @@ import type { Setting } from './contract.ts';
 
 /**
  * Why a change to a setting wasn't written, as `unwritable`: the message names the setting, as
- * Settings says it; `why` says it alone, in a sentence or two; and `inFile` is whether what the file
- * holds is the cause, which editing the file fixes, rather than the disk or someone else saving it.
+ * Settings says it; `why` says what's wrong alone, in a sentence, without what to do, for a caller
+ * to say that in its own words; and `inFile` is whether what the file holds is the cause, which
+ * editing the file fixes, rather than the disk or someone else saving it.
  */
 export class Unwritten extends IpcError {
   readonly why: string;

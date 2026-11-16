@@ -176,6 +176,9 @@ describe('asking to trust', () => {
     });
     // A second press, while main is at it, does nothing.
     expect(asked('code.trust')).toBe(before);
+    // While main's dialog asks, nothing says it's trusting: the reader hasn't said so yet.
+    act(() => bridge.push('code.status', statusOf('t4', { trusting: 'asking' })));
+    expect(trust?.textContent).toBe('Waiting for your answer');
     act(() => bridge.push('code.status', statusOf('t4', { trusting: 'saving' })));
     // The same button, which keeps focus, says what Lo does now.
     expect(trustButton(page)).toBe(trust);
@@ -191,7 +194,7 @@ describe('asking to trust', () => {
     const page = draw(<TrustBanner tab={tabOf('t5')} />);
     act(() => bridge.push('code.status', statusOf('t5')));
     const why =
-      "The settings file isn't valid JSON (Expected ',' or '}' after property value in JSON at position 20). Fix it, and Lo applies it as soon as you save.";
+      "The settings file isn't valid JSON (Expected ',' or '}' after property value in JSON at position 20). Fix that, then trust the repo again.";
     answerTrust = () => {
       throw new IpcError('settingsFile', why);
     };
@@ -227,6 +230,60 @@ describe('asking to trust', () => {
     };
     act(() => button(page, 'Trust this repo')?.click());
     await until(() => page.textContent === '');
+  });
+
+  it('stops saying the settings file kept it from trusting once the settings change', async () => {
+    const page = draw(<TrustBanner tab={tabOf('t7')} />);
+    act(() => bridge.push('code.status', statusOf('t7')));
+    answerTrust = () => {
+      throw new IpcError('settingsFile', "The settings file isn't valid JSON (x). Fix that.");
+    };
+    act(() => button(page, 'Trust this repo')?.click());
+    await until(() => page.textContent.includes("Lo couldn't trust rozed-dev/e2e."));
+    // Saved, as once it's fixed: the banner offers to trust it, as before it was asked.
+    act(() =>
+      bridge.push('settings.state', {
+        file: '~/.config/lo/settings.json',
+        values: {},
+        problems: [],
+      }),
+    );
+    expect(page.textContent).toContain('Language servers are off for rozed-dev/e2e.');
+    expect(button(page, 'Open the settings file')).toBeUndefined();
+
+    // What the file didn't cause stays, whatever the settings do.
+    answerTrust = () => {
+      throw new IpcError('unsaved', "Lo couldn't write the settings file (ENOSPC).");
+    };
+    act(() => button(page, 'Trust this repo')?.click());
+    await until(() => page.textContent.includes('(ENOSPC)'));
+    act(() =>
+      bridge.push('settings.state', {
+        file: '~/.config/lo/settings.json',
+        values: { theme: 'dark' },
+        problems: [],
+      }),
+    );
+    expect(page.textContent).toContain('(ENOSPC)');
+    answerTrust = () => 'cancelled';
+  });
+
+  it('says so when main is asking about another repo, and asks it again once pressed again', async () => {
+    const page = draw(<TrustBanner tab={tabOf('t8')} />);
+    act(() => bridge.push('code.status', statusOf('t8')));
+    const elsewhere =
+      'Lo is already asking whether to trust rozed-dev/other. Answer that first, then try again.';
+    answerTrust = () => {
+      throw new IpcError('asking', elsewhere);
+    };
+    act(() => button(page, 'Trust this repo')?.click());
+    await until(() => page.textContent.includes(elsewhere));
+    expect(button(page, 'Trust this repo')?.getAttribute('aria-disabled')).toBeNull();
+    answerTrust = () => 'cancelled';
+    const before = asked('code.trust');
+    act(() => button(page, 'Trust this repo')?.click());
+    await until(() => asked('code.trust') === before + 1);
+    await until(() => !page.textContent.includes(elsewhere));
   });
 
   it('never waits on an answer main doesn’t give, as after a reload, but on what main says', async () => {

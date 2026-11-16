@@ -247,10 +247,11 @@ export const contract = defineContract('code', {
      * trusts what its dialog named only once the reader says "Trust" there. The view's `status`
      * says how far it has got meanwhile. It refuses a view that isn't open (`missing`), a `repo`
      * or `pull` that isn't the view's (`invalid`), a pull request whose head isn't in a fork GitHub
-     * has (`refused`), and a request while another is asking (`busy`). Once the reader said
-     * "Trust", it fails, saying why, when what the settings file holds keeps Lo from writing the
-     * entry, which editing the file fixes (`settingsFile`), or when the file couldn't be written
-     * otherwise (`unsaved`).
+     * has (`refused`), and a request while it's asking already: about the same view (`busy`), or
+     * about another, which it names, bringing its dialog forward (`asking`). Once the reader said
+     * "Trust", it fails, saying why and what to do, when what the settings file holds keeps Lo from
+     * writing the entry, which editing the file fixes (`settingsFile`), or when the file couldn't
+     * be written otherwise (`unsaved`).
      */
     trust: {
       input: z.strictObject({ view: tabId, repo: named, pull: pullNumber.nullable() }),

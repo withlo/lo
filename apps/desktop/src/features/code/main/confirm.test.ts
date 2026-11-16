@@ -54,7 +54,8 @@ class TestWindow implements AskWindow {
 /** An asker over the views `views`, reading `read` for each, with a dialog the test answers. */
 function asker(
   views: Record<string, AskedView>,
-  read: (view: AskedView) => Promise<PullRequestRepositories> = () => Promise.resolve(OWN),
+  read: (view: AskedView, signal: AbortSignal) => Promise<PullRequestRepositories> = () =>
+    Promise.resolve(OWN),
   change: Partial<AskOptions<TestWindow>> = {},
 ) {
   const window = new TestWindow();
@@ -65,6 +66,7 @@ function asker(
   });
   /** Each step it said it took, by view, and `over` once it was. */
   const steps: string[] = [];
+  const focused: TestWindow[] = [];
   const real = new TrustAsker<TestWindow>({
     view: (id) => views[id],
     read,
@@ -74,6 +76,7 @@ function asker(
       }),
     write,
     progress: (view: string, step: Trusting | undefined) => steps.push(`${view} ${step ?? 'over'}`),
+    focus: (at) => focused.push(at),
     now: () => NOW,
     ...change,
   });
@@ -84,7 +87,7 @@ function asker(
       return real.asking;
     },
   };
-  return { real, trust, window, dialogs, written, write, steps };
+  return { real, trust, window, dialogs, written, write, steps, focused };
 }
 
 const views: Record<string, AskedView> = {
@@ -226,28 +229,79 @@ describe('asking to trust', () => {
   });
 
   it('asks nothing, and writes nothing, once the window closes while GitHub is read', async () => {
-    let answer: ((repositories: PullRequestRepositories) => void) | undefined;
-    const { trust, window, dialogs, write } = asker(
-      views,
-      () => new Promise((resolve) => (answer = resolve)),
-    );
+    let reading: AbortSignal | undefined;
+    const { trust, window, dialogs, write, steps } = asker(views, (_, signal) => {
+      reading = signal;
+      // GitHub never answers, as when the read waits its turn behind others.
+      return new Promise(() => undefined);
+    });
     const asking = trust.ask({ view: 't1', repo: 'rozed-dev/e2e', pull: null });
-    await until(() => answer !== undefined);
+    await until(() => reading !== undefined);
     window.close();
-    answer?.(OWN);
+    // It ends at once, giving up on the read, so the read leaves the account's queue.
     expect(await asking).toBe('cancelled');
+    expect(reading?.aborted).toBe(true);
+    expect(steps).toEqual(['t1 reading', 't1 over']);
+    expect(trust.asking).toBe(false);
     expect(dialogs).toEqual([]);
     expect(write).not.toHaveBeenCalled();
   });
 
+  it('ends, as if cancelled, once the view’s tab closes, while GitHub is read or the dialog asks', async () => {
+    const open: Record<string, AskedView> = { ...views };
+    let reading: AbortSignal | undefined;
+    const { real, trust, write } = asker(open, (_, signal) => {
+      reading = signal;
+      return new Promise(() => undefined);
+    });
+    const read = trust.ask({ view: 't1', repo: 'rozed-dev/e2e', pull: null });
+    await until(() => reading !== undefined);
+    // Another view changing, or this one while it's open, ends nothing.
+    real.update('t2');
+    real.update('t1');
+    expect(reading?.aborted).toBe(false);
+    delete open.t1;
+    real.update('t1');
+    expect(await read).toBe('cancelled');
+    expect(reading?.aborted).toBe(true);
+
+    const showing = asker(open);
+    const shown = showing.trust.ask({ view: 't2', repo: 'rozed-dev/e2e', pull: null });
+    await until(() => showing.dialogs.length === 1);
+    delete open.t2;
+    showing.real.update('t2');
+    expect(showing.dialogs[0]?.signal.aborted).toBe(true);
+    showing.dialogs[0]?.answer(TRUST);
+    expect(await shown).toBe('cancelled');
+    expect(write).not.toHaveBeenCalled();
+    expect(showing.write).not.toHaveBeenCalled();
+  });
+
   it('asks one dialog at a time: a second request meanwhile is refused, and writes nothing', async () => {
-    const { trust, dialogs, written } = asker(views, (view) =>
+    const { trust, window, dialogs, written, focused } = asker(views, (view) =>
       Promise.resolve(view.number === 97 ? FORKED : OWN),
     );
     const first = trust.ask({ view: 't1', repo: 'rozed-dev/e2e', pull: null });
-    const second = trust.ask({ view: 't2', repo: 'rozed-dev/e2e', pull: 97 });
-    expect((await refusal(second))?.code).toBe('busy');
+    // Another view's, while GitHub is read: it says which is asked about, and there's no dialog
+    // to bring forward yet.
+    const second = await refusal(trust.ask({ view: 't2', repo: 'rozed-dev/e2e', pull: 97 }));
+    expect({ code: second?.code, message: second?.message }).toEqual({
+      code: 'asking',
+      message:
+        'Lo is already asking whether to trust rozed-dev/e2e. Answer that first, then try again.',
+    });
+    expect(focused).toEqual([]);
     await until(() => dialogs.length === 1);
+    // Once the dialog asks, another view's brings it forward; the same view's, as from a key
+    // held down, asks already.
+    expect(
+      (await refusal(trust.ask({ view: 't3', repo: 'rozed-dev/other', pull: null })))?.code,
+    ).toBe('asking');
+    expect(focused).toEqual([window]);
+    expect(
+      (await refusal(trust.ask({ view: 't1', repo: 'rozed-dev/e2e', pull: null })))?.code,
+    ).toBe('busy');
+    expect(focused).toHaveLength(1);
     dialogs[0]?.answer(TRUST);
     expect(await first).toBe('trusted');
     // The one dialog's entry alone.
@@ -384,7 +438,8 @@ describe('saying how it goes', () => {
           true,
         ),
         'settingsFile',
-        "The settings file isn't valid JSON (x).",
+        // What's wrong, then what to do here: saving the file trusts nothing.
+        "The settings file isn't valid JSON (x). Fix that, then trust the repo again.",
       ],
       [
         new Unwritten(
@@ -410,31 +465,48 @@ describe('saying how it goes', () => {
     }
   });
 
-  it('ends, saying so, when GitHub or the settings file takes too long', async () => {
+  it('gives up on GitHub once it takes too long, saying so', async () => {
     vi.useFakeTimers();
     try {
-      const reading = asker(views, () => new Promise(() => undefined), { readLimit: 1000 });
+      let given: AbortSignal | undefined;
+      const reading = asker(
+        views,
+        (_, signal) => {
+          given = signal;
+          return new Promise(() => undefined);
+        },
+        { readLimit: 1000 },
+      );
       const unread = refusal(reading.trust.ask({ view: 't1', repo: 'rozed-dev/e2e', pull: null }));
       await vi.advanceTimersByTimeAsync(1000);
       expect((await unread)?.code).toBe('unread');
+      expect(given?.aborted).toBe(true);
       expect(reading.dialogs).toEqual([]);
       expect(reading.steps).toEqual(['t1 reading', 't1 over']);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 
+  it('waits for the settings file however long it takes, saying it’s saving, then trusts', async () => {
+    vi.useFakeTimers();
+    try {
+      let land: (() => void) | undefined;
       const saving = asker(views, undefined, {
-        write: () => new Promise(() => undefined),
-        saveLimit: 10_000,
+        write: () => new Promise<void>((resolve) => (land = resolve)),
       });
       const asking = saving.trust.ask({ view: 't1', repo: 'rozed-dev/e2e', pull: null });
+      let settled = false;
+      void asking.finally(() => (settled = true));
       await vi.advanceTimersByTimeAsync(0);
       saving.dialogs[0]?.answer(TRUST);
-      const unsaved = refusal(asking);
-      await vi.advanceTimersByTimeAsync(10_000);
-      expect(await unsaved).toMatchObject({
-        code: 'unsaved',
-        message: "Lo couldn't write the settings file within 10 s.",
-      });
+      await vi.advanceTimersByTimeAsync(5 * 60_000);
+      // Still saving, and says so: nothing has said it couldn't.
+      expect(settled).toBe(false);
+      expect(saving.steps.at(-1)).toBe('t1 saving');
+      land?.();
+      expect(await asking).toBe('trusted');
       expect(saving.steps.at(-1)).toBe('t1 over');
-      expect(saving.trust.asking).toBe(false);
     } finally {
       vi.useRealTimers();
     }

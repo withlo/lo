@@ -292,7 +292,7 @@ export function createSettings(options: SettingsOptions): Settings {
         if (fresh.kind === 'problem') {
           throw new Unwritten(
             `Lo didn't change ${key}, since the settings file has a problem. ${fresh.problem}`,
-            fresh.problem,
+            fresh.cause,
             true,
           );
         }
@@ -301,7 +301,7 @@ export function createSettings(options: SettingsOptions): Settings {
         if (from === 'current' && current && !current.ok) {
           throw new Unwritten(
             `Lo didn't change ${key}: the settings file holds one that isn't ${entry.accepts}, which Lo won't replace. Fix it there, or take it out.`,
-            `The settings file's ${key} isn't ${entry.accepts}, and Lo won't replace it. Fix it there, or take it out.`,
+            `The settings file's ${key} isn't ${entry.accepts}, and Lo won't replace it.`,
             true,
           );
         }

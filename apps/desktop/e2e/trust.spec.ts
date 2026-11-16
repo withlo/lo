@@ -2,8 +2,8 @@
 // off, and a dismissal holds after Lo starts again; "Trust this repo" trusts it only once main's
 // own dialog, answered here as the reader would, says "Trust", and Settings lists it until it's
 // removed there; taken out of the file by hand, its checkouts go too. With a settings file Lo can't
-// read, the banner says why Lo couldn't trust it, offers to open the file, and trusts it once the
-// file's fixed. GitHub answers from `app_e2e`, and the repository's IDs, which Lo reads only once
+// read, the banner says why Lo couldn't trust it, offers to open the file, and once the file's
+// fixed, offers to trust it again, and does. GitHub answers from `app_e2e`, and the repository's IDs, which Lo reads only once
 // the reader asks to trust it, from `pull_request_repositories_e2e`.
 
 import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
@@ -231,6 +231,7 @@ test('says in the banner why it couldn’t trust the repo, offers the settings f
     .getByRole('alert')
     .filter({ hasText: "Lo couldn't trust rozed-dev/e2e." });
   await expect(failed).toContainText("The settings file isn't valid JSON");
+  await expect(failed).toContainText('Fix that, then trust the repo again.');
   expect(await dialogsAsked(app)).toHaveLength(1);
   // Said there, and not again in a note in the corner.
   await expect(page.getByText("Lo didn't change code.trusted")).toHaveCount(0);
@@ -240,9 +241,11 @@ test('says in the banner why it couldn’t trust the repo, offers the settings f
   await failed.getByRole('button', { name: 'Open the settings file' }).click();
   await expect.poll(opened).toEqual([realpathSync(path)]);
 
-  // Fixed, and asked again: trusted, and the banner goes.
+  // Fixed: what kept Lo from trusting it is past, and the banner offers it again. Asked again, it's
+  // trusted, and the banner goes.
   writeFileSync(path, '{}\n');
-  const again = failed.getByRole('button', { name: 'Trust this repo' });
+  await expect(failed).toHaveCount(0);
+  const again = banner(page).getByRole('button', { name: 'Trust this repo' });
   await expect(again).not.toHaveAttribute('aria-disabled', 'true');
   await again.click();
   await expect

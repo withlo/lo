@@ -31,9 +31,13 @@ export interface ViewsOptions {
   readonly view: (id: string) => ViewInfo | undefined;
   /**
    * Reads the repositories view `view`'s pull request joins, from GitHub: as one someone at the
-   * screen waits on (`foreground`), or not.
+   * screen waits on (`foreground`), or not. One given up on through `signal` leaves the queue.
    */
-  readonly read: (view: ViewInfo, priority: ReadPriority) => Promise<PullRequestRepositories>;
+  readonly read: (
+    view: ViewInfo,
+    priority: ReadPriority,
+    signal: AbortSignal | undefined,
+  ) => Promise<PullRequestRepositories>;
   /** Whether the banner was dismissed for a repository, by its name. */
   readonly dismissed: (repo: string) => boolean;
   readonly publish: (status: Status) => void;
@@ -198,14 +202,15 @@ export class TrustViews {
   /**
    * Reads afresh the repositories view `id`'s pull request joins, as when the reader asks to
    * trust it, ahead of polls, since the reader waits on it, and decides its views again with them.
+   * Once `signal` aborts, nobody waits on it: if it's still waiting its turn, it's never made.
    */
-  async readNow(id: string): Promise<PullRequestRepositories> {
+  async readNow(id: string, signal?: AbortSignal): Promise<PullRequestRepositories> {
     const view = this.#options.view(id);
     if (!view) throw new Error('The view is closed.');
     this.update(id);
     const key = keyOf(view);
     const started = this.#tick();
-    const repositories = await this.#options.read(view, 'foreground');
+    const repositories = await this.#options.read(view, 'foreground', signal);
     this.#landed(key, started, repositories);
     return repositories;
   }
@@ -295,7 +300,7 @@ export class TrustViews {
     const started = this.#tick();
     kept.pending = { started };
     Promise.resolve()
-      .then(() => this.#options.read(view, 'background'))
+      .then(() => this.#options.read(view, 'background', undefined))
       .then(
         (repositories) => this.#landed(key, started, repositories),
         (error: unknown) => {

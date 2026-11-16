@@ -44,7 +44,11 @@ function follow(
   const published: Status[] = [];
   const dismissed = new Set<string>();
   const reads = vi.fn<
-    (view: ViewInfo, priority: 'foreground' | 'background') => Promise<PullRequestRepositories>
+    (
+      view: ViewInfo,
+      priority: 'foreground' | 'background',
+      signal: AbortSignal | undefined,
+    ) => Promise<PullRequestRepositories>
   >((view) => read(view));
   const views = new TrustViews({
     view: (id) => open.get(id),
@@ -262,9 +266,10 @@ describe('following views', () => {
     views.setEntries([]);
     views.update('t1');
     expect(reads).not.toHaveBeenCalled();
-    await views.readNow('t1');
-    // The reader waits on it, so it goes ahead of polls.
-    expect(reads).toHaveBeenLastCalledWith(open.get('t1'), 'foreground');
+    const signal = new AbortController().signal;
+    await views.readNow('t1', signal);
+    // The reader waits on it, so it goes ahead of polls, until nobody does.
+    expect(reads).toHaveBeenLastCalledWith(open.get('t1'), 'foreground', signal);
     views.setEntries([ENTRY]);
     expect(views.status('t1')?.trust).toEqual({ kind: 'trusted', by: 'repo' });
     expect(reads).toHaveBeenCalledTimes(1);
@@ -276,7 +281,7 @@ describe('following views', () => {
     views.setEntries([ENTRY]);
     views.update('t1');
     await settle();
-    expect(reads).toHaveBeenLastCalledWith(open.get('t1'), 'background');
+    expect(reads).toHaveBeenLastCalledWith(open.get('t1'), 'background', undefined);
   });
 
   it('says how far trusting a view has got, until it’s over', () => {
@@ -287,6 +292,8 @@ describe('following views', () => {
     expect(published.at(-1)).toMatchObject({ view: 't1', trusting: 'reading' });
     views.setTrusting('t1', 'saving');
     expect(published.at(-1)).toMatchObject({ trusting: 'saving' });
+    // A window loaded meanwhile asks, and hears it too.
+    expect(views.status('t1')).toMatchObject({ trusting: 'saving' });
     views.setTrusting('t1', undefined);
     expect(published.at(-1)).not.toHaveProperty('trusting');
     expect(views.status('t1')).not.toHaveProperty('trusting');

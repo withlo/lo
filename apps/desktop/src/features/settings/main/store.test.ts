@@ -442,8 +442,9 @@ describe('changing a setting', () => {
     // What's in the file is the cause, which editing it fixes, and why alone, for a caller to say.
     expect(refused).toBeInstanceOf(Unwritten);
     expect(refused).toMatchObject({ inFile: true });
+    // What's wrong alone: saving the file isn't what applies a change Lo couldn't make.
     expect(refused instanceof Unwritten && refused.why).toMatch(
-      /^The settings file isn't valid JSON/,
+      /^The settings file isn't valid JSON \(.+\)\.$/,
     );
     expect(contents()).toBe('{ "theme": "light", ');
     // Fixed by hand, a change goes through.
@@ -630,7 +631,7 @@ describe('a setting only main changes', () => {
         "Lo didn't change code.names: the settings file holds one that isn't a list of names, which Lo won't replace. Fix it there, or take it out.",
       );
       expect(refused).toMatchObject({
-        why: "The settings file's code.names isn't a list of names, and Lo won't replace it. Fix it there, or take it out.",
+        why: "The settings file's code.names isn't a list of names, and Lo won't replace it.",
         inFile: true,
       });
       expect(contents()).toBe(text);

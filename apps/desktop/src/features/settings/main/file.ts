@@ -22,12 +22,19 @@ export type Read =
   | { readonly kind: 'missing' }
   /** The file's object: one entry for each key in it, whether or not any feature knows it. */
   | { readonly kind: 'ok'; readonly values: Readonly<Record<string, unknown>> }
-  /** The file can't be used, and why, for the person who wrote it. */
-  | { readonly kind: 'problem'; readonly problem: string };
+  /**
+   * The file can't be used, and why, for the person who wrote it: in Settings' words, with what to
+   * do, and what's wrong alone (`cause`), for what says what to do in its own words.
+   */
+  | { readonly kind: 'problem'; readonly problem: string; readonly cause: string };
 
-function problem(text: string): Read {
-  return { kind: 'problem', problem: text };
+/** A problem: what's wrong, then, when Lo says more, what to do. */
+function problem(cause: string, advice?: string): Read {
+  return { kind: 'problem', problem: advice === undefined ? cause : `${cause} ${advice}`, cause };
 }
+
+/** What to do about a file that isn't what Lo reads. */
+const FIX = 'Fix it, and Lo applies it as soon as you save.';
 
 /** The first `length` characters of `text`, with an ellipsis when it was cut. */
 export function shorten(text: string, length: number): string {
@@ -45,13 +52,12 @@ export function parseSettings(text: string): Read {
     parsed = JSON.parse(text);
   } catch (error) {
     const why = error instanceof Error ? error.message : 'it is not JSON';
-    return problem(
-      `The settings file isn't valid JSON (${shorten(why, 160)}). Fix it, and Lo applies it as soon as you save.`,
-    );
+    return problem(`The settings file isn't valid JSON (${shorten(why, 160)}).`, FIX);
   }
   if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
     return problem(
-      'The settings file should hold one JSON object, such as { "theme": "dark" }. Fix it, and Lo applies it as soon as you save.',
+      'The settings file should hold one JSON object, such as { "theme": "dark" }.',
+      FIX,
     );
   }
   return { kind: 'ok', values: Object.fromEntries(Object.entries(parsed)) };

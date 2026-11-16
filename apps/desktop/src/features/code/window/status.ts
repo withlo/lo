@@ -24,8 +24,32 @@ export interface TrustFailure {
   readonly file: boolean;
 }
 
-/** Why the last ask to trust each view didn't, until it's asked again, or the view is trusted. */
+/**
+ * Why the last ask to trust each view didn't, until it's asked again, or the view is trusted, or,
+ * for what the settings file held, the settings change, as once the file's fixed.
+ */
 export const failures = tabState<TrustFailure | null>(() => null);
+
+/** The views whose last ask failed for what the settings file held. */
+const fileFailed = new Set<string>();
+
+/** Keeps why asking to trust `view` failed, or with nothing, that it's past. */
+function setFailure(view: string, failure: TrustFailure | null): void {
+  if (failure?.file) fileFailed.add(view);
+  else fileFailed.delete(view);
+  if (failures.get(view) !== failure) failures.set(view, failure);
+}
+
+/**
+ * Hears that the settings changed: what the file held that kept Lo from trusting a view may be
+ * fixed, so what it said of that goes, and the banner offers to trust it again.
+ */
+export function settingsChanged(): void {
+  for (const view of fileFailed) {
+    if (failures.get(view)?.file) failures.set(view, null);
+  }
+  fileFailed.clear();
+}
 
 /** Takes what main said of a view. */
 export function takeStatus(status: Status): void {
@@ -34,17 +58,21 @@ export function takeStatus(status: Status): void {
   }
   // Trusted after all, as by a file fixed by hand: what failed before is past.
   if (status.trust.kind === 'trusted' && failures.get(status.view) !== null) {
-    failures.set(status.view, null);
+    setFailure(status.view, null);
   }
 }
 
-/** What a trust button says while main trusts its view, or nothing while it doesn't. */
+/**
+ * What a trust button says while main trusts its view, or nothing while it doesn't. Nothing says
+ * it's trusting until the reader said "Trust" in main's dialog.
+ */
 export function busyLabel(status: Status): string | undefined {
   const { trusting } = status;
   switch (trusting) {
     case 'reading':
       return 'Checking with GitHub';
     case 'asking':
+      return 'Waiting for your answer';
     case 'saving':
       return 'Trusting';
     case undefined:
@@ -160,8 +188,9 @@ export const trustSwitch: BannerSwitch = {
 /**
  * Asks main to ask the reader whether to trust `status`'s repository, or with `pull`, its PR. While
  * main does, the view's status says how far it has got, and a second ask does nothing. Why it
- * failed is kept for the banner and the status item's details to say; asked from where neither
- * shows (`elsewhere`), as from the palette with the banner dismissed, it's said in a note too.
+ * failed, main asking about another view meanwhile included, is kept for the banner and the status
+ * item's details to say; asked from where neither shows (`elsewhere`), as from the palette with the
+ * banner dismissed, it's said in a note too.
  */
 export async function askToTrust(
   status: Status,
@@ -170,20 +199,23 @@ export async function askToTrust(
 ): Promise<void> {
   const { view } = status;
   if (statuses.get(view)?.trusting !== undefined) return;
-  failures.set(view, null);
+  setFailure(view, null);
   try {
     await main().trust({ view, repo: status.repo, pull: pull ? status.pull : null });
   } catch (error) {
     // Asked again while main asks, as by a key held down on the banner: main asks already.
     if (error instanceof IpcError && error.code === 'busy') return;
-    console.error("Lo couldn't trust a repo:", error);
+    // Asking about another view: main says which, and brings its dialog forward.
+    if (!(error instanceof IpcError && error.code === 'asking')) {
+      console.error("Lo couldn't trust a repo:", error);
+    }
     const failure: TrustFailure = {
       pull,
       message:
         error instanceof IpcError && error.code !== 'internal' ? error.message : 'Try again.',
       file: error instanceof IpcError && error.code === 'settingsFile',
     };
-    failures.set(view, failure);
+    setFailure(view, failure);
     const now = statuses.get(view) ?? status;
     if (elsewhere && !bannerOf(now)) {
       notify(
@@ -219,7 +251,7 @@ export async function stopTrusting(status: Status): Promise<void> {
 export async function dismissBanner(status: Status): Promise<void> {
   // Gone at once; main keeps it for every tab of the repository, and says so.
   statuses.set(status.view, { ...status, dismissed: true });
-  failures.set(status.view, null);
+  setFailure(status.view, null);
   try {
     await main().dismiss({ view: status.view });
   } catch (error) {
