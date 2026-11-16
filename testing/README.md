@@ -322,7 +322,8 @@ and update the tips in `MERGE_E4`. The commits stay the same, so no generation's
 To record a generation: run `merge.sh <generation>`, which prints each pull request's number and
 head, add them to `recorded_numbers` in the script and to `MERGE_PULLS`, and take `pushed` from
 `merge.sh --local <folder> <generation> --push`. Generation 1 is rozed-dev/e2e#101 to #117, with
-GitHub stack #118. Its repository didn't allow auto-merge when it was made.
+GitHub stack #118. Its repository didn't allow auto-merge when it was made. Generation 2 is #119 to
+#135, with GitHub stack #136; the merge queue's recordings used it.
 
 ## The fake language server
 
