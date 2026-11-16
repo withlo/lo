@@ -281,29 +281,28 @@ kept with them is as good as plain text, and Lo keeps or reads one with them onl
 on `LO_GITHUB`. On GitHub itself, Lo started with a stand-in refuses to sign in, and can't read a
 token it kept with the system's keychain.
 
-A run on GitHub itself is a spec of its own that asks for the harness's `live` option:
-
-```ts
-import { test } from './app.ts';
-
-test.use({ live: true });
-```
+A run on GitHub itself is a spec of its own, a `*.live.ts` in `e2e/`, which the suite never runs:
+its config takes only `*.spec.ts`. `nx run desktop:live` builds the app, then runs the live specs
+with `e2e/live.config.ts`, which turns on the harness's `live` option for them and runs them one at
+a time: each starts Lo on the same data folder, and Lo quits a second copy started on a folder
+another holds. The harness refuses a live run with more than one worker.
 
 Lo then starts with the system's keychain: `e2e/keychain.cjs`, preloaded after Playwright's own
 preload, takes the stand-ins off again. It keeps its data in the folder `LO_USER_DATA_DIR` names,
-which the run must set to an absolute path outside the data of any Lo you use: the harness refuses
-to start Lo without one, or in the installed Lo's folder, `Lo Dev`'s or `~/.config/lo`. Sign in
-there first with a build run from source, which keeps its data in the same folder, then run the spec
-by its name:
+taken by its real path, with every link followed. The harness refuses to start Lo without one, or in
+a folder that is, is in or holds a folder a Lo you use keeps its data in: the installed Lo's,
+`Lo Dev`'s, `~/.config/lo` and their caches, by the XDG folders too on Linux. It also refuses a
+folder that holds anything Lo didn't make, so start from a new one. Sign in there first with a build
+run from source, which keeps its data in the same folder, then run the specs:
 
 ```sh
-LO_USER_DATA_DIR=<folder> pnpm nx run desktop:start
-LO_USER_DATA_DIR=<folder> pnpm nx run desktop:e2e -- <spec>
+export LO_USER_DATA_DIR="$(mktemp -d)"
+pnpm nx run desktop:start
+pnpm nx run desktop:live
 ```
 
-Keep the spec out of the suite: CI runs every spec in `e2e/`, and a live one refuses to start there.
-The rest is as in a test, unless the spec's `launch` says otherwise: the stand-ins for the editor
-and the browser, and no gh.
+To run one spec, name it: `pnpm nx run desktop:live -- <spec>`. The rest is as in a test, unless the
+spec's `launch` says otherwise: the stand-ins for the editor and the browser, and no gh.
 
 On a Mac, the key Lo encrypts tokens with is the item `Lo Dev Safe Storage` in your login keychain,
 which Chromium makes the first time it needs it, and which every build run from source shares,

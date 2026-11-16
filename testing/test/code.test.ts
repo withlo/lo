@@ -8,7 +8,16 @@
 // file's text is read from the bare repository, with git run in that, never inside a folder of it.
 
 import { execFileSync, spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -174,6 +183,47 @@ test('each refuses to build in a git work tree, in a folder there or one to come
   }
   expect(readdirSync(repo)).toEqual(['.git']);
   expect(readdirSync(other)).toEqual(['.git']);
+});
+
+test('each takes the folder as it would be made, links followed, before looking for a work tree', () => {
+  const folder = realpathSync(mkdtempSync(join(tmpdir(), 'lo-code-')));
+  onTestFinished(() => rmSync(folder, { recursive: true, force: true }));
+  const repo = join(folder, 'repo');
+  git(folder, 'init', '-q', repo);
+  mkdirSync(join(folder, 'clean'));
+  symlinkSync(repo, join(folder, 'to-repo'));
+  const check = (at: string) =>
+    spawnSync(
+      'bash',
+      [
+        '-c',
+        '. "$1" && check_local_folder code.sh "$2"',
+        'check',
+        join(fixtures, 'code-lib.sh'),
+        at,
+      ],
+      { cwd: folder, env: testGitEnvironment(), encoding: 'utf8' },
+    );
+  for (const at of [
+    `${repo}/../clean/x`,
+    'repo/../clean',
+    `${folder}/new/../clean/x`,
+    // The folder above a link's is the folder above where it leads, as `mkdir -p` finds it.
+    `${folder}/to-repo/../clean`,
+  ]) {
+    const run = check(at);
+    expect({ at, status: run.status, stderr: run.stderr }).toEqual({ at, status: 0, stderr: '' });
+  }
+  for (const at of [
+    `${folder}/clean/../repo/x`,
+    `${folder}/new/../repo`,
+    `${folder}/to-repo/x`,
+    'to-repo',
+  ]) {
+    const run = check(at);
+    expect({ at, status: run.status }).toEqual({ at, status: 1 });
+    expect(run.stderr).toContain(`code.sh: ${at} is inside the git work tree ${repo},`);
+  }
 });
 
 test(

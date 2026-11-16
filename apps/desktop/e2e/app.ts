@@ -185,8 +185,9 @@ interface Fixtures {
   /**
    * Whether Lo runs live, for a run on GitHub itself that no test in the suite makes: with the
    * system's keychain rather than Chromium's stand-in for it, and its data in the folder
-   * `LO_USER_DATA_DIR` names, which the run must set, outside the data of any Lo someone uses
-   * (`liveDataFolder`). `testing/README.md` says how.
+   * `LO_USER_DATA_DIR` names, which the run must set, apart from the folders of any Lo someone uses
+   * (`liveDataFolder`). `live.config.ts` turns it on for the `*.live.ts` specs, one at a time.
+   * `testing/README.md` says how.
    */
   live: boolean;
   /** Lo, started on the test's own empty data folder, or a live run's, with Chromium's sandbox on. */
@@ -204,6 +205,10 @@ export const test = base.extend<Fixtures>({
   live: [false, { option: true }],
   app: async ({ launch, keymap, settings, traced, holdLimit, live }, use, testInfo) => {
     const { env, args = [appFolder], ...options } = launch;
+    if (live && testInfo.config.workers > 1) {
+      // Each copy would start on the one folder, and Lo quits a second copy started on it.
+      throw new Error('A live run starts one Lo at a time: run it with `nx run desktop:live`.');
+    }
     const data = live
       ? liveDataFolder({ platform: process.platform, home: homedir(), env: process.env })
       : dataFolder();

@@ -1,71 +1,182 @@
-import { readFileSync } from 'node:fs';
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { runInNewContext } from 'node:vm';
 
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { liveArgs, liveDataFolder, SYSTEM_KEYCHAIN } from './live.ts';
+import { liveArgs, liveDataFolder, realPath, SYSTEM_KEYCHAIN, type Where } from './live.ts';
 
-const mac = { platform: 'darwin', home: '/Users/me' } as const;
-const linux = { platform: 'linux', home: '/home/me' } as const;
+const OWN = /A live run needs a folder of its own, apart from it\./;
+
+let root: string;
+let home: string;
+let support: string;
+
+beforeEach(() => {
+  root = realpathSync(mkdtempSync(join(tmpdir(), 'lo-live-')));
+  home = join(root, 'home');
+  support = join(home, 'Library', 'Application Support');
+  for (const folder of [
+    join(support, 'Lo'),
+    join(support, 'Lo Dev'),
+    join(home, '.config', 'lo'),
+    join(home, '.config', 'Lo Dev'),
+  ]) {
+    mkdirSync(folder, { recursive: true });
+  }
+});
+
+afterEach(() => {
+  rmSync(root, { recursive: true, force: true });
+});
+
+function mac(folder: string | undefined, env: Where['env'] = {}): Where {
+  return {
+    platform: 'darwin',
+    home,
+    env: { ...env, LO_USER_DATA_DIR: folder },
+    macCaches: () => join(root, 'caches'),
+  };
+}
+
+function linux(folder: string | undefined, env: Where['env'] = {}): Where {
+  return { platform: 'linux', home, env: { ...env, LO_USER_DATA_DIR: folder } };
+}
+
+/** The folder a live run is started on, with why it's refused, if it is. */
+function refusal(where: Where): { folder: string | undefined; refused: string | undefined } {
+  const folder = where.env.LO_USER_DATA_DIR;
+  try {
+    liveDataFolder(where);
+    return { folder, refused: undefined };
+  } catch (error) {
+    return { folder, refused: error instanceof Error ? error.message : String(error) };
+  }
+}
+
+/** What `refusal` says of a folder refused for being, being in or holding a Lo's own. */
+function refusedAs(folder: string, why: RegExp = OWN) {
+  return { folder, refused: expect.stringMatching(why) };
+}
+
+describe('realPath', () => {
+  it('follows the links in the part that exists, and adds the rest by name', () => {
+    mkdirSync(join(root, 'real'));
+    symlinkSync(join(root, 'real'), join(root, 'link'));
+    expect(realPath(join(root, 'link', 'run', 'x', '..', '.', 'y'))).toBe(
+      join(root, 'real', 'run', 'y'),
+    );
+    expect(realPath(`${root}/link/../home`)).toBe(home);
+  });
+});
 
 describe('liveDataFolder', () => {
-  it('takes the folder LO_USER_DATA_DIR names', () => {
-    expect(liveDataFolder({ ...mac, env: { LO_USER_DATA_DIR: '/tmp/lo-live/' } })).toBe(
-      '/tmp/lo-live',
-    );
+  it('takes the folder LO_USER_DATA_DIR names, by its real path', () => {
+    expect(liveDataFolder(mac(`${root}/run/`))).toBe(join(root, 'run'));
+    mkdirSync(join(root, 'real'));
+    symlinkSync(join(root, 'real'), join(root, 'link'));
+    expect(liveDataFolder(mac(join(root, 'link', 'run')))).toBe(join(root, 'real', 'run'));
   });
 
   it('refuses to start without LO_USER_DATA_DIR, or with a relative one', () => {
-    expect(() => liveDataFolder({ ...mac, env: {} })).toThrow(
-      /Set it to a folder of the run's own/,
-    );
-    expect(() => liveDataFolder({ ...mac, env: { LO_USER_DATA_DIR: '' } })).toThrow(
-      /LO_USER_DATA_DIR names/,
-    );
-    expect(() => liveDataFolder({ ...mac, env: { LO_USER_DATA_DIR: 'lo-live' } })).toThrow(
+    expect(() => liveDataFolder(mac(undefined))).toThrow(/Set it to a folder of the run's own/);
+    expect(() => liveDataFolder(mac(''))).toThrow(/LO_USER_DATA_DIR names/);
+    expect(() => liveDataFolder(mac('lo-live'))).toThrow(
       'LO_USER_DATA_DIR must be an absolute path, not "lo-live".',
     );
   });
 
-  it("refuses the data of a Lo someone uses: the installed Lo's, a build run from source's, and the keymap's", () => {
-    const support = '/Users/me/Library/Application Support';
+  it("refuses the folders of a Lo someone uses: the installed Lo's, a build run from source's, the keymap's and the caches", () => {
     for (const folder of [
-      `${support}/Lo`,
-      `${support}/Lo Dev`,
-      `${support}/Lo Dev/live`,
+      join(support, 'Lo'),
+      join(support, 'Lo Dev'),
+      join(support, 'Lo Dev', 'live'),
       `${support}/Lo/../Lo Dev`,
       // A Mac's disk takes names whatever their case.
-      `${support}/lo dev`,
-      '/Users/me/.config/lo',
+      join(support, 'lo dev'),
+      join(home, '.config', 'lo'),
+      join(root, 'caches', 'Lo'),
+      join(home, 'Library', 'Caches', 'Lo Dev'),
     ]) {
-      expect(() => liveDataFolder({ ...mac, env: { LO_USER_DATA_DIR: folder } })).toThrow(
-        'A live run needs a folder of its own.',
-      );
+      expect(refusal(mac(folder))).toEqual(refusedAs(folder));
     }
-    for (const folder of ['/home/me/.config/Lo Dev', '/home/me/.config/lo/x']) {
-      expect(() => liveDataFolder({ ...linux, env: { LO_USER_DATA_DIR: folder } })).toThrow(
-        'A live run needs a folder of its own.',
-      );
-    }
-    for (const folder of ['/srv/config/Lo', '/srv/config/lo']) {
-      expect(() =>
-        liveDataFolder({
-          ...linux,
-          env: { LO_USER_DATA_DIR: folder, XDG_CONFIG_HOME: '/srv/config' },
-        }),
-      ).toThrow('A live run needs a folder of its own.');
+    for (const folder of [
+      join(home, '.config', 'Lo Dev'),
+      join(home, '.config', 'lo', 'x'),
+      join(home, '.cache', 'Lo'),
+    ]) {
+      expect(refusal(linux(folder))).toEqual(refusedAs(folder));
     }
   });
 
-  it('takes a folder beside them, or one that holds them', () => {
-    const support = '/Users/me/Library/Application Support';
-    for (const folder of [`${support}/Lo Live`, `${support}/Lo Dev live`, support]) {
-      expect(liveDataFolder({ ...mac, env: { LO_USER_DATA_DIR: folder } })).toBe(folder);
+  it('refuses them by the XDG folders the run names, and by those Lo finds without them', () => {
+    const xdg = { XDG_CONFIG_HOME: join(root, 'config'), XDG_CACHE_HOME: join(root, 'cache') };
+    for (const folder of [
+      join(root, 'config', 'Lo'),
+      join(root, 'config', 'lo'),
+      join(root, 'cache', 'Lo Dev'),
+      join(home, '.config', 'Lo'),
+      join(home, '.cache', 'Lo Dev'),
+    ]) {
+      expect(refusal(linux(folder, xdg))).toEqual(refusedAs(folder));
+    }
+  });
+
+  it('refuses them through a link to one, or to a folder they are in', () => {
+    symlinkSync(join(support, 'Lo'), join(root, 'to-lo'));
+    for (const folder of [join(root, 'to-lo'), join(root, 'to-lo', 'run')]) {
+      expect(refusal(mac(folder))).toEqual(refusedAs(folder));
+    }
+    // A home whose `Application Support` is a link: Lo's data is where it leads.
+    const elsewhere = join(root, 'elsewhere');
+    mkdirSync(join(elsewhere, 'Lo Dev'), { recursive: true });
+    home = join(root, 'other');
+    mkdirSync(join(home, 'Library'), { recursive: true });
+    symlinkSync(elsewhere, join(home, 'Library', 'Application Support'));
+    expect(() => liveDataFolder(mac(join(elsewhere, 'Lo Dev')))).toThrow(OWN);
+  });
+
+  it('refuses a folder that holds them, which deleting the run would delete', () => {
+    for (const folder of [support, home, join(home, 'Library'), join(home, '.config'), '/']) {
+      expect(refusal(mac(folder))).toEqual(refusedAs(folder, /, which holds .*, where a Lo/));
+    }
+    expect(() => liveDataFolder(linux(join(home, '.config')))).toThrow(OWN);
+  });
+
+  it('takes a folder beside them', () => {
+    for (const folder of [join(support, 'Lo Live'), join(support, 'Lo Dev live')]) {
+      expect(liveDataFolder(mac(folder))).toBe(folder);
     }
     // Linux's names keep their case.
-    expect(liveDataFolder({ ...linux, env: { LO_USER_DATA_DIR: '/home/me/.config/lo dev' } })).toBe(
-      '/home/me/.config/lo dev',
+    const folder = join(home, '.config', 'lo dev');
+    expect(liveDataFolder(linux(folder))).toBe(folder);
+  });
+
+  it("refuses a folder that holds files Lo didn't make, or that isn't a folder", () => {
+    const folder = join(root, 'run');
+    mkdirSync(folder);
+    expect(liveDataFolder(mac(folder))).toBe(folder);
+    for (const name of ['editor', 'browser', 'config', '.DS_Store']) {
+      writeFileSync(join(folder, name), '');
+    }
+    expect(liveDataFolder(mac(folder))).toBe(folder);
+    writeFileSync(join(folder, 'notes.txt'), '');
+    expect(() => liveDataFolder(mac(folder))).toThrow(
+      `LO_USER_DATA_DIR is ${folder}, which holds files Lo didn't make.`,
     );
+    // Lo made it: a run signed in there before.
+    writeFileSync(join(folder, 'lo.db'), '');
+    expect(liveDataFolder(mac(folder))).toBe(folder);
+    expect(() => liveDataFolder(mac(join(folder, 'notes.txt')))).toThrow(/can't keep its data in/);
   });
 });
 

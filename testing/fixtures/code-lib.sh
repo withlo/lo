@@ -38,24 +38,50 @@ code_setup() {
 
 # Fails, saying why, when <folder>, which `--local` builds in, is inside a git work tree: the tools
 # run there, git and Nx among them, would take what's built for the repository's own, and load what
-# the hostile fixture plants. git is asked in the nearest folder that exists, and each folder above
-# <folder> is looked at for a `.git`, so one that doesn't exist yet is covered. Run before anything
-# is made there.
+# the hostile fixture plants. <folder> is taken by its real path first, as `mkdir -p` makes it: each
+# link in the part that exists followed, and a `..` past that taking the name before it away. Then
+# git is asked in the nearest folder that exists, and each folder above <folder> is looked at for a
+# `.git`, so one that doesn't exist yet is covered. Run before anything is made there.
 check_local_folder() {
-  local script=$1 folder=$2 dir top
+  local script=$1 folder=$2 real=/ tail='' rest name top dir
   case $folder in
     /*) ;;
     *) folder=$PWD/$folder ;;
   esac
-  dir=$folder
-  while [ ! -d "$dir" ]; do dir=$(dirname "$dir"); done
+  rest=$folder
+  while [ -n "$rest" ]; do
+    name=${rest%%/*}
+    case $rest in
+      */*) rest=${rest#*/} ;;
+      *) rest='' ;;
+    esac
+    case $name in
+      '' | .) ;;
+      ..)
+        if [ -n "$tail" ]; then
+          tail=${tail%/*}
+        else
+          real=$(CDPATH='' cd -P -- "${real%/}/.." && pwd -P)
+        fi
+        ;;
+      *)
+        if [ -z "$tail" ] && [ -d "${real%/}/$name" ] \
+          && dir=$(CDPATH='' cd -P -- "${real%/}/$name" 2>/dev/null && pwd -P); then
+          real=$dir
+        else
+          tail=$tail/$name
+        fi
+        ;;
+    esac
+  done
+  folder=${real%/}$tail
   top=$(
     unset GIT_DIR GIT_WORK_TREE GIT_CEILING_DIRECTORIES
-    if [ "$(git -C "$dir" rev-parse --is-inside-work-tree 2>/dev/null)" = true ]; then
-      git -C "$dir" rev-parse --show-toplevel
+    if [ "$(git -C "$real" rev-parse --is-inside-work-tree 2>/dev/null)" = true ]; then
+      git -C "$real" rev-parse --show-toplevel
     fi
   )
-  dir=$folder
+  dir=${folder:-/}
   while [ -z "$top" ]; do
     if [ -e "$dir/.git" ]; then top=$dir; fi
     if [ "$dir" = / ]; then break; fi
