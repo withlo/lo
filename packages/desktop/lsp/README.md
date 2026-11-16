@@ -149,20 +149,24 @@ What each is told is its adapter's alone, and the adapter says why each setting 
   `NuGet.config` names, and the compiler loads the analyzers and source generators packages hold,
   and nothing turns that off for a project of the checkout's. So Lo writes a project of its own in
   the server's home, `project/checkout.csproj`, which lists the checkout's `.cs` files one by one
-  (none in `bin`, `obj` or a hidden folder, and no link), compiles them for .NET 10 against .NET's
-  and ASP.NET Core's reference assemblies, imports nothing but the SDK's own files, restores nothing
-  and drops every analyzer and source generator, the SDK's own too. Roslyn is sent that project
-  (`project/open`), told that its folder is the workspace, and run in it, so it neither looks
-  through the checkout for projects nor builds a `.cs` file as a program. Its settings turn off
-  restores, file-based programs, decompiled and Source Link sources, and code lenses. What's lost: a
-  package's types have no definition or hover, nor do the types a source generator would write, and
-  every `.cs` file is in one project, read with the SDK's defaults, so the checkout's target
-  frameworks, `#if` symbols, references between projects and `LangVersion` don't count, and a name
-  two projects both define is defined twice. A checkout with more than 50,000 `.cs` files isn't
-  read. `DOTNET_GCHeapHardLimit` caps each of its .NET processes' heaps at 3 GB, under Lo's 4 GB.
-  Roslyn writes in its home, and keeps a cache of how its own parts fit together in `cache/` beside
-  its program, in its install: nothing of a checkout's reaches it, and the installer, which checks
-  only what it unpacked, ignores it.
+  (none in `bin`, `obj`, `node_modules` or a hidden folder, no link, and none whose path MSBuild
+  would read as another's, with a `\`, or that XML can't hold), compiles them for .NET 10 against
+  .NET's and ASP.NET Core's reference assemblies, imports nothing but the SDK's own files, restores
+  nothing and drops every analyzer and source generator, the SDK's own too. Roslyn is sent that
+  project (`project/open`), told that its folder is the workspace, and run in it, so it neither
+  looks through the checkout for projects nor builds a `.cs` file as a program. Its settings turn
+  off restores, file-based programs, decompiled and Source Link sources, and code lenses. What's
+  lost: a package's types have no definition or hover, nor do the types a source generator would
+  write, and every `.cs` file is in one project, read with the SDK's defaults, so the checkout's
+  target frameworks, `#if` symbols, references between projects and `LangVersion` don't count, and a
+  name two projects both define is defined twice. A checkout with more than 50,000 `.cs` files isn't
+  read, and Lo looks in 20,000 of its folders at most, the nearest its root first.
+  `DOTNET_GCHeapHardLimit` caps each of its .NET processes' heaps at 3 GB, under Lo's 4 GB. Roslyn
+  writes in its home, but for a cache of how its own parts fit together, which it keeps in `cache/`
+  beside its program, in its install, with no option to move it: nothing of a checkout's reaches it,
+  and the installer, which checks only what it unpacked, ignores it. Roslyn writes it to a file of a
+  random name there and moves that to the cache's name, so it appears whole or not at all, though
+  unsynced; a move that fails leaves the other file behind.
 
 None runs in a sandbox: each reads what you can, so an absolute import, Pyright's `extraPaths`, the
 folders of stubs a `.php-lsp.json` names, the paths a `composer.json`'s autoload names, or a

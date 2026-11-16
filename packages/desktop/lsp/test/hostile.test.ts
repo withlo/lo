@@ -367,6 +367,7 @@ test('Roslyn loads only a project of Lo’s, in its home, and runs there, whatev
   expect(planted('Directory.Packages.props')).toContain('GlobalPackageReference');
   expect(planted('NuGet.config')).toContain('nuget-config.lo-hostile.invalid');
   expect(planted('hostile/app/app.cs')).toContain('#:sdk Lo.Hostile.Sdk');
+  expect(planted('hostile/app/obj/app.cs')).toContain('#:sdk Lo.Hostile.Sdk');
   expect(planted('csharp/global.json')).toContain('8.0.100');
   expect(planted('hostile/dotnet-sdk/global.json')).toContain('Lo.Hostile.Sdk');
   // None of it is in a folder above the checkout, or names folders for an SDK, so Lo runs it there:
@@ -467,11 +468,12 @@ test('Roslyn loads only a project of Lo’s, in its home, and runs there, whatev
   });
 
   // The project lists the checkout's .cs files, the planted program's among them, as text, and
-  // imports nothing of the checkout's.
+  // imports nothing of the checkout's. Its copy in `obj` isn't listed: Roslyn reads it alone.
   const text = readFileSync(project, 'utf8');
   const sources = await csharpSources(checkout);
   expect(sources).toContain(join(checkout, 'csharp', 'Report.cs'));
   expect(sources).toContain(join(checkout, 'hostile', 'app', 'app.cs'));
+  expect(sources).not.toContain(join(checkout, 'hostile', 'app', 'obj', 'app.cs'));
   expect(text).toBe(csharpProject(sources));
   expect(text).not.toMatch(/Directory\.|NuGet|Lo\.Hostile|global\.json/);
 

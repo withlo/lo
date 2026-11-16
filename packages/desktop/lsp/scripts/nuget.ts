@@ -263,7 +263,7 @@ const CHAIN_LENGTH = 5;
  * Checks that `leaf` chains, through `pool`, to one of `roots`, by its key, each certificate
  * signed by the next, each above the leaf a CA, and each good at `at`.
  */
-function chain(
+export function chain(
   leaf: X509Certificate,
   pool: readonly X509Certificate[],
   at: Date,
@@ -357,7 +357,7 @@ interface SignerInfo {
 }
 
 /** Reads `bytes`, a CMS content info holding a signed-data with its content in it. */
-function signedData(bytes: Buffer): SignedData {
+export function signedData(bytes: Buffer): SignedData {
   const [type, wrapped] = parse(bytes).children();
   if (type?.oid() !== OID.signedData || wrapped?.tag !== 0xa0) {
     throw new Error('It isn’t a CMS signed-data');

@@ -5,6 +5,7 @@ export { PHP_LSP, PHP_VERSION } from './adapters/phplsp.ts';
 export { NO_PYTHON, PYRIGHT } from './adapters/pyright.ts';
 export {
   CSHARP_FILES,
+  CSHARP_FOLDERS,
   CSHARP_PROJECT,
   csharpProject,
   csharpSources,

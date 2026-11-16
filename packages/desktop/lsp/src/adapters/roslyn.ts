@@ -13,7 +13,8 @@
  * the checkout's. So Roslyn never loads one:
  *
  * - Lo writes a project of its own in the server's home ({@link CSHARP_PROJECT}), which lists the
- *   checkout's `.cs` files one by one, those in `bin`, `obj` and hidden folders aside, and
+ *   checkout's `.cs` files one by one, leaving out those in `bin`, `obj`, `node_modules` and
+ *   hidden folders and those whose names a project can't hold as they are ({@link writable}), and
  *   compiles them against .NET's and ASP.NET Core's reference assemblies from Lo's SDK. It
  *   imports nothing but the SDK's own files: not the `Directory.Build.*` and
  *   `Directory.Packages.props` MSBuild would look for above it, nor the user's MSBuild folders in
@@ -30,8 +31,13 @@
  *   its own, `BuildHost`, which it starts as the `dotnet` first on its `PATH`, Lo's, with Lo's
  *   SDK found from the project's folder, in the home. A project like Lo's that imports an SDK
  *   never needs the build host for .NET Framework, which would run `mono`.
- * - It writes in its home, and keeps a cache of how its own parts fit together in `cache/` beside
- *   its program in its install, where nothing of a checkout's reaches.
+ * - It writes in its home, but for a cache of how its own parts fit together, which it keeps in
+ *   `cache/` beside its program, in its install: that folder is set in its code, with no option to
+ *   move it. Nothing of a checkout's reaches it. It writes the cache to a file of a random name in
+ *   that folder and then moves that to the cache's name, so the cache appears whole or not at all,
+ *   though nothing syncs it to the disk first. A move that fails, as when another Roslyn has just
+ *   written the same cache, leaves the other file behind, about half a megabyte, and a cache it
+ *   can't read, it makes again.
  *
  * What the checkout still gives it is its `.cs` files, read as text. A package's types are
  * unknown, so a name from one has no definition or hover, nor do types a source generator would
@@ -46,8 +52,8 @@
  * `TMPDIR`: it shows as outside the repository.
  */
 
-import { lstat, mkdir, readdir, rename, writeFile } from 'node:fs/promises';
-import { isAbsolute, join, sep } from 'node:path';
+import { lstat, mkdir, readdir, realpath, rename, writeFile } from 'node:fs/promises';
+import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 import type { Installed } from '../install.ts';
@@ -168,39 +174,85 @@ export async function csharpWorkspace({ root, home }: WorkspacePaths): Promise<W
   };
 }
 
-/** Folders whose `.cs` files Lo leaves out, as the SDK does: build output. */
-const LEFT_OUT = new Set(['bin', 'obj']);
+/**
+ * The most folders {@link csharpSources} looks in, the checkout's root and the nearest it first.
+ */
+export const CSHARP_FOLDERS = 20_000;
+
+/** Folders Lo never looks in for `.cs` files: build output, as the SDK leaves out, and packages. */
+const LEFT_OUT = new Set(['bin', 'obj', 'node_modules']);
 
 /**
  * The `.cs` files of the checkout at `root`, by absolute path, sorted: plain files only, never a
- * link, and none in a hidden folder or in `bin` or `obj`, nor any whose name has a character a
- * project can't hold. It throws past `limit`.
+ * link, and none whose name, or a folder's on its way, a project can't hold as it is
+ * ({@link writable}), each as MSBuild reads it ({@link inCheckout}). It never looks in a link, a
+ * hidden folder, such as `.git`, or `bin`, `obj` or `node_modules`.
+ *
+ * It looks in {@link CSHARP_FOLDERS} folders at most, or `limits.folders`, the nearest the root
+ * first, and no further: a file only those past them hold isn't listed, so Roslyn reads it alone,
+ * as it would any other. It throws past {@link CSHARP_FILES} files, or `limits.files`.
  */
-export async function csharpSources(root: string, limit = CSHARP_FILES): Promise<string[]> {
+export async function csharpSources(
+  root: string,
+  limits: { folders: number; files: number } = { folders: CSHARP_FOLDERS, files: CSHARP_FILES },
+): Promise<string[]> {
   const found: string[] = [];
-  // A recursive read lists links without following them.
-  for (const entry of await readdir(root, { recursive: true, withFileTypes: true })) {
-    if (!entry.isFile() || !entry.name.toLowerCase().endsWith('.cs')) continue;
-    const path = join(entry.parentPath, entry.name);
-    const parts = path.slice(root.length + 1).split(sep);
-    const folders = parts.slice(0, -1);
-    if (folders.some((part) => part.startsWith('.') || LEFT_OUT.has(part.toLowerCase()))) continue;
-    if (parts.some((part) => !writable(part))) continue;
-    found.push(path);
-    if (found.length > limit) {
-      throw new Error(`The checkout has more than ${limit.toLocaleString('en-US')} C# files.`);
+  const folders = [root];
+  for (let at = 0; at < folders.length; at += 1) {
+    const folder = folders[at] ?? root;
+    // A folder that can't be read is passed over, but not the checkout.
+    const entries = await readdir(folder, { withFileTypes: true }).catch((error: unknown) => {
+      if (folder === root) throw error;
+      return [];
+    });
+    for (const entry of entries.toSorted((a, b) => (a.name < b.name ? -1 : 1))) {
+      if (!writable(entry.name)) continue;
+      const path = join(folder, entry.name);
+      if (entry.isDirectory()) {
+        const looked = !entry.name.startsWith('.') && !LEFT_OUT.has(entry.name.toLowerCase());
+        if (looked && folders.length < limits.folders) folders.push(path);
+      } else if (entry.isFile() && entry.name.toLowerCase().endsWith('.cs')) {
+        found.push(path);
+        if (found.length > limits.files) {
+          throw new Error(
+            `The checkout has more than ${limits.files.toLocaleString('en-US')} C# files.`,
+          );
+        }
+      }
     }
   }
-  // What the read listed is as it was: a file that has since become a link is left out.
-  const plain = await Promise.all(
-    found.map(async (path) => ((await lstat(path).catch(() => undefined))?.isFile() ? path : '')),
-  );
-  return plain.filter((path) => path !== '').toSorted();
+  return (await inCheckout(root, found)).toSorted();
 }
 
-/** Whether a file's name can be written in a project as it is: no control character, no U+FFFD. */
-function writable(name: string): boolean {
-  return !/[\p{Cc}�]/u.test(name);
+/**
+ * Whether `name` can be part of a path in Lo's project as it is. Not with a `\`, which MSBuild on
+ * macOS and Linux reads as `/`, so `a\..\..\b.cs` would be a file two folders above the checkout,
+ * and `.\c.cs` the checkout's `c.cs`, which may be a link; nor a character XML 1.0 can't hold,
+ * such as U+FFFE and U+FFFF, which would make the project no XML; nor a control character, which
+ * an attribute reads as a space; nor U+FFFD, which stands for bytes that aren't UTF-8, so the name
+ * isn't the file's.
+ */
+export function writable(name: string): boolean {
+  return !/[^\u0020-\uD7FF\uE000-\uFFFC\u{10000}-\u{10FFFF}]|[\p{Cc}\\]/u.test(name);
+}
+
+/**
+ * Of `paths`, files in the checkout at `root`, those that, as MSBuild reads them, with each `\` a
+ * `/`, are still in the checkout, and name a plain file there, through no link.
+ */
+export async function inCheckout(root: string, paths: readonly string[]): Promise<string[]> {
+  const real = await realpath(root);
+  const kept = await Promise.all(
+    paths.map(async (path) => {
+      const read = resolve(path.replaceAll('\\', '/'));
+      if (!read.startsWith(`${root}${sep}`)) return undefined;
+      // What the walk listed is as it was: a file that has since become a link is left out.
+      if ((await lstat(read).catch(() => undefined))?.isFile() !== true) return undefined;
+      const target = await realpath(read).catch(() => undefined);
+      return target === join(real, relative(root, read)) ? path : undefined;
+    }),
+  );
+  return kept.filter((path) => path !== undefined);
 }
 
 /**

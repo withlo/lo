@@ -27,14 +27,18 @@ import { heapCap, launchOnNode, type NodeServer } from './node.ts';
 import { PHP_LSP, PHP_VERSION } from './phplsp.ts';
 import { NO_PYTHON, PYRIGHT } from './pyright.ts';
 import {
+  CSHARP_FILES,
+  CSHARP_FOLDERS,
   CSHARP_PROJECT,
   csharpProject,
   csharpSources,
   csharpWorkspace,
   DOTNET_HEAP,
+  inCheckout,
   launchRoslyn,
   msbuild,
   ROSLYN,
+  writable,
 } from './roslyn.ts';
 import { VTSLS } from './vtsls.ts';
 
@@ -435,7 +439,85 @@ describe('Roslyn', () => {
       join(root, 'src', 'Lower.CS'),
       join(root, 'src', 'nested', 'B.cs'),
     ]);
-    await expect(csharpSources(root, 2)).rejects.toThrow('The checkout has more than 2 C# files.');
+    await expect(csharpSources(root, { folders: CSHARP_FOLDERS, files: 2 })).rejects.toThrow(
+      'The checkout has more than 2 C# files.',
+    );
+  });
+
+  test('never looks in .git or node_modules, and looks in so many folders, the nearest first', async () => {
+    const root = tempFolder();
+    for (const folder of [
+      '.git/objects/pack',
+      'node_modules/a/b',
+      'Node_Modules/c',
+      'src/deep/er',
+    ]) {
+      mkdirSync(join(root, folder), { recursive: true });
+    }
+    for (const file of [
+      'node_modules/a/b/N.cs',
+      'Node_Modules/c/M.cs',
+      'src/A.cs',
+      'src/deep/er/B.cs',
+    ]) {
+      writeFileSync(join(root, file), '');
+    }
+    // The checkout's root and `src`: neither `.git` nor `node_modules` is one it looks in.
+    expect(await csharpSources(root, { folders: 2, files: CSHARP_FILES })).toEqual([
+      join(root, 'src', 'A.cs'),
+    ]);
+    expect(await csharpSources(root)).toEqual([
+      join(root, 'src', 'A.cs'),
+      join(root, 'src', 'deep', 'er', 'B.cs'),
+    ]);
+  });
+
+  test('lists no file whose path MSBuild would read as another file’s', async () => {
+    const folder = tempFolder();
+    const root = join(folder, 'outer', 'checkout');
+    mkdirSync(root, { recursive: true });
+    // On macOS and Linux MSBuild reads `\` as `/`: the first is `outside.cs`, two folders above
+    // the checkout, and `.\z.cs` is `z.cs`, a link to a file outside it.
+    writeFileSync(join(folder, 'outside.cs'), '');
+    writeFileSync(join(root, 'back\\..\\..\\outside.cs'), '');
+    symlinkSync('/etc/hosts', join(root, 'z.cs'));
+    writeFileSync(join(root, '.\\z.cs'), '');
+    writeFileSync(join(root, 'A.cs'), '');
+    expect(await csharpSources(root)).toEqual([join(root, 'A.cs')]);
+    // A name with a `\` is never one, and a path that got past that isn't kept either.
+    expect(writable('back\\..\\..\\outside.cs')).toBe(false);
+    expect(writable('.\\z.cs')).toBe(false);
+    const named = ['back\\..\\..\\outside.cs', '.\\z.cs', 'z.cs', 'A.cs'];
+    expect(
+      await inCheckout(
+        root,
+        named.map((name) => join(root, name)),
+      ),
+    ).toEqual([join(root, 'A.cs')]);
+    // Nor one through a link to a folder out of the checkout.
+    writeFileSync(join(folder, 'B.cs'), '');
+    symlinkSync(folder, join(root, 'away'));
+    expect(await inCheckout(root, [join(root, 'away', 'B.cs')])).toEqual([]);
+  });
+
+  test('lists no file whose name XML can’t hold, which would make its project no XML', async () => {
+    // XML 1.0 holds none of U+FFFE, U+FFFF, a lone surrogate or most controls, and an attribute
+    // reads a tab or line break as a space. Linux names files with any of them; macOS with some.
+    const names = ['a\uFFFE.cs', 'b\uFFFF.cs', 'c\uD800.cs', 'd\u0001.cs', 'e\t.cs', 'f\u0085.cs'];
+    expect(names.filter((name) => writable(name))).toEqual([]);
+    expect(
+      ['A.cs', 'é.cs', '中.cs', '\u{1F600}.cs', 'a b.cs'].every((name) => writable(name)),
+    ).toBe(true);
+    const root = tempFolder();
+    writeFileSync(join(root, 'A.cs'), '');
+    for (const name of names) {
+      try {
+        writeFileSync(join(root, name), '');
+      } catch {
+        // A name the disk can't hold either.
+      }
+    }
+    expect(await csharpSources(root)).toEqual([join(root, 'A.cs')]);
   });
 
   test('writes its project in its home, and is told of no folder but that one', async () => {

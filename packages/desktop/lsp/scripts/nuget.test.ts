@@ -12,10 +12,13 @@ import { PLATFORMS } from '../src/index.ts';
 import { serve, zip, type ZipEntry } from '../test/downloads.ts';
 import { tempFolder } from '../test/support.ts';
 import {
+  chain,
   contentHash,
   DIGICERT_G4,
   nuget,
+  parse,
   signatureFile,
+  signedData,
   type Signer,
   verifyAuthorSignature,
   verifyPackage,
@@ -91,6 +94,36 @@ test('refuses a signature whose content, or whose signed value, was changed', ()
   expect(() => verifyAuthorSignature(SIGNATURE.subarray(0, -1), MICROSOFT)).toThrow(
     'A DER value runs past its end',
   );
+});
+
+test('refuses a timestamp that stamps another signature', () => {
+  // The signer's signature value, one byte changed: the timestamp's hash of it no longer matches.
+  const [, wrapped] = parse(SIGNATURE).children();
+  const signers = wrapped?.children()[0]?.children().at(-1);
+  const value = signers?.children()[0]?.children()[5]?.value;
+  if (value === undefined) throw new Error('the signature has no signer’s value');
+  const changed = Buffer.from(SIGNATURE);
+  const at = SIGNATURE.indexOf(value) + 10;
+  changed[at] = (changed[at] ?? 0) ^ 0xff;
+  expect(() => verifyAuthorSignature(changed, MICROSOFT)).toThrow(
+    'Its timestamp stamps another signature',
+  );
+});
+
+test('refuses a certificate that wasn’t good when the timestamp says it signed', () => {
+  const { at, certificate } = verifyAuthorSignature(SIGNATURE, MICROSOFT);
+  const { certificates } = signedData(SIGNATURE);
+  expect(() => chain(certificate, certificates, at, MICROSOFT.roots)).not.toThrow();
+  // A second before it was issued, and a second after it expired.
+  for (const time of [
+    certificate.validFromDate.getTime() - 1000,
+    certificate.validToDate.getTime() + 1000,
+  ]) {
+    const when = new Date(time);
+    expect(() => chain(certificate, certificates, when, MICROSOFT.roots)).toThrow(
+      `wasn’t good at ${when.toISOString()}`,
+    );
+  }
 });
 
 test('refuses a package that isn’t the file nuget.org’s catalog lists', async () => {

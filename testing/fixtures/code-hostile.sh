@@ -108,7 +108,8 @@
 #     lo-hostile-msbuild-packages, the folder lo-hostile-nuget-packages, and host
 #     nuget-config.lo-hostile.invalid
 #   a file-based C# program
-#     hostile/app/app.cs, whose `#:sdk` names an MSBuild SDK
+#     hostile/app/app.cs, whose `#:sdk` names an MSBuild SDK, and a copy in hostile/app/obj, where
+#     no project lists it
 #     `dotnet run`, or a server that builds the files it finds as programs, which would download
 #     the SDK; host nuget-config.lo-hostile.invalid, which NuGet.config names
 #   versions that don't exist
@@ -172,7 +173,7 @@ IFS= read -r -d '' HOSTILE_BODY <<'EOF' || true
 
 It's the code fixture's pull request, with one more commit. That commit's files try to run code, steer a language server or a version manager, or fetch from the network, when the pull request is checked out and its servers start:
 
-- programs a tool might run: a workspace TypeScript in `node_modules`, a tsserver plugin in `typescript/node_modules`, an npm `postinstall`, `.vscode/settings.json`, a `rustc-wrapper` in `rust/.cargo/config.toml`, the program `rust/rust-analyzer.toml` names, the Gradle and Maven wrappers, `php/.phpactor.json`'s tools, PHP's tools in `vendor/bin` and the `.php-lsp.json` that turns two of them on, `mise.toml`, MSBuild's `Directory.Build.props`, `Directory.Build.targets` and `Directory.Packages.props` with an analyzer and a task compiled from C#, a file-based C# program, a Terraform provider's plugin committed in `hostile/terraform-provider/.terraform`, a `//go:generate` line and a cgo file in `go/`, and a `terraform` and a `gopackagesdriver` in `hostile/bin`, which `.envrc` puts on `PATH`;
+- programs a tool might run: a workspace TypeScript in `node_modules`, a tsserver plugin in `typescript/node_modules`, an npm `postinstall`, `.vscode/settings.json`, a `rustc-wrapper` in `rust/.cargo/config.toml`, the program `rust/rust-analyzer.toml` names, the Gradle and Maven wrappers, `php/.phpactor.json`'s tools, PHP's tools in `vendor/bin` and the `.php-lsp.json` that turns two of them on, `mise.toml`, MSBuild's `Directory.Build.props`, `Directory.Build.targets` and `Directory.Packages.props` with an analyzer and a task compiled from C#, a file-based C# program, and a copy of it in `obj/`, a Terraform provider's plugin committed in `hostile/terraform-provider/.terraform`, a `//go:generate` line and a cgo file in `go/`, and a `terraform` and a `gopackagesdriver` in `hostile/bin`, which `.envrc` puts on `PATH`;
 - versions that don't exist: `.tool-versions`, `.nvmrc`, `python/.python-version`, `ruby/.ruby-version`, `rust-toolchain.toml`, the `toolchain` lines of `go.mod` and `go.work`, and a `global.json` that pins an MSBuild SDK;
 - git's own settings, in folders of `git/` that look like bare repositories: a `core.fsmonitor` program, hooks, a clean and smudge filter, and a promisor remote that makes git fetch a commit it lacks; and a `.gitmodules` that points a submodule at a host that doesn't exist;
 - projects in `hostile/` whose dependencies or registries are on hosts ending `.lo-hostile.invalid`, which never resolve, a Terraform module from the Terraform Registry that doesn't exist, and a `NuGet.config` that names one for every project and puts NuGet's packages in the checkout.
@@ -520,6 +521,13 @@ Fixture: an analyzer Directory.Build.targets names. Text, not an assembly.
 EOF
   # A file-based program, which `dotnet run` builds with the MSBuild SDK its directive names.
   put hostile/app/app.cs <<'EOF'
+#!/usr/bin/env dotnet
+#:sdk Lo.Hostile.Sdk@1.0.0
+System.Console.WriteLine("hostile");
+EOF
+  # The same program in build output, which no project lists: a server that built a file outside
+  # every project as a program would build this one.
+  put hostile/app/obj/app.cs <<'EOF'
 #!/usr/bin/env dotnet
 #:sdk Lo.Hostile.Sdk@1.0.0
 System.Console.WriteLine("hostile");
