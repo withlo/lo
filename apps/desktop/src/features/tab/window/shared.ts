@@ -331,6 +331,18 @@ export function activeTab(): Tab | undefined {
 }
 
 /**
+ * Calls `listener` with the id of each tab, and of each view of a pull request's tab, as it closes:
+ * a layer's view as the stack loses the layer, a run's as the run ends. An id can come back, as a
+ * run viewed again does. Returns a function that stops it.
+ */
+export function onClosed(listener: (id: string) => void): () => void {
+  return tabsStore.subscribe((next, previous) => {
+    const open = new Set(viewIds(next.tabs));
+    for (const id of viewIds(previous.tabs)) if (!open.has(id)) listener(id);
+  });
+}
+
+/**
  * State a feature keeps for each open tab: a value a tab, or a view of a pull request's tab, by its
  * id, forgotten as the tab closes.
  */
