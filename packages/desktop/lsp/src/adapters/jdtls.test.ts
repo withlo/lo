@@ -305,16 +305,16 @@ describe('jdtlsCheckoutProblem', () => {
     // Anywhere but the root, it's a folder of files.
     expect(await jdtlsCheckoutProblem(root)).toBeUndefined();
     mkdirSync(join(root, '.settings'));
-    // Plainly: what isn't available, for which repositories, and why.
+    // Plainly: what the repository holds, and why that keeps Java's server off it.
     expect(await jdtlsCheckoutProblem(root)).toBe(
-      'Java isn’t available for a repository that commits Eclipse’s .settings folder at its root. ' +
+      'The repository commits Eclipse’s .settings folder at its root. ' +
         'Java’s server would read its settings from that folder, and write to it.',
     );
 
     const file = tempFolder();
     writeFileSync(join(file, '.Settings'), '');
     expect(await jdtlsCheckoutProblem(file)).toMatch(
-      /^Java isn’t available .* Eclipse’s \.Settings /,
+      /^The repository commits Eclipse’s \.Settings /,
     );
 
     const link = tempFolder();
