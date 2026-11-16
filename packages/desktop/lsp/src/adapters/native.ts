@@ -24,8 +24,6 @@ export interface NativeServer {
   readonly args: readonly string[];
   readonly settings: unknown;
   readonly initializationOptions?: unknown;
-  /** The initialization option that names the folder for its cache, which Lo makes in its `HOME`. */
-  readonly cacheOption?: string | undefined;
   /** Whether it gives inlay hints, which `gh` shows: `false` for one that answers none. */
   readonly hints: boolean;
 }
@@ -44,7 +42,6 @@ export function launchNative(
     args: [...server.args],
     settings: server.settings,
     initializationOptions: server.initializationOptions,
-    cacheOption: server.cacheOption,
     version: `${server.name} ${pinned.version} · ${server.license}`,
   };
 }

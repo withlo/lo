@@ -6,7 +6,7 @@
 // from the bare repository.
 
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, realpathSync, rmSync, statSync } from 'node:fs';
+import { mkdtempSync, realpathSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -15,7 +15,6 @@ import { git, testGitEnvironment } from '@lo/testing/git';
 import { FAKE_SERVER, fakeServer, readReport, type Seen } from '@lo/testing/lsp';
 import { afterAll, beforeAll, expect, onTestFinished, test } from 'vitest';
 
-import { cacheFolder } from '../src/environment.ts';
 import {
   type Launch,
   launchNative,
@@ -117,7 +116,6 @@ async function startAs(server: NodeServer | NativeServer, sections: readonly str
     git: GIT,
     settings: launch.settings,
     initializationOptions: launch.initializationOptions,
-    cacheOption: launch.cacheOption,
   });
   onTestFinished(async () => {
     if (running.pid !== undefined) {
@@ -219,28 +217,36 @@ test('Pyright gets no interpreter, whatever the checkout names', async () => {
 });
 
 test('php-lsp runs no tool, and keeps its cache in its home, whatever the checkout plants', async () => {
-  // PHP's tools, where Composer installs them, and php-lsp's settings for the repository, which
-  // turn two of them on and put its cache in the checkout.
+  // PHP's tools, where Composer installs them, a package's class committed in `vendor/`, and
+  // php-lsp's settings for the repository, which turn two of the tools on, put its cache in the
+  // checkout, read code as another PHP and index `vendor/`.
   for (const tool of PHP_TOOLS) {
     expect(planted(`vendor/bin/${tool}`)).toContain(`lo-hostile-${tool}`);
   }
+  expect(planted('vendor/acme/planted/src/Planted.php')).toContain('class Planted');
   expect(JSON.parse(planted('.php-lsp.json'))).toEqual({
     externalTools: {
       phpstan: { enabled: true, binPath: 'vendor/bin/phpstan' },
       phpcs: { enabled: true, binPath: 'vendor/bin/phpcs' },
     },
     cachePath: 'lo-hostile-php-lsp-cache',
+    phpVersion: '7.4',
+    indexVendor: true,
   });
-  const { heard, initialize, home } = await heardBy(PHP_LSP, ['php-lsp']);
-  // Each is set, and what Lo says wins over the repository's file, key by key: a PHP, so it runs
-  // no `php` to ask, the tools off, and the cache in a folder of its home, made as it started.
+  const { started, heard, initialize, home } = await heardBy(PHP_LSP, ['php-lsp']);
+  // Each of Lo's is set, and wins over the repository's file key by key: a PHP, so it runs no
+  // `php` to ask, `vendor/` skipped, and the tools off.
   const told = {
     phpVersion: PHP_VERSION,
     indexVendor: false,
     externalTools: { phpstan: { enabled: false }, phpcs: { enabled: false } },
   };
-  expect(initialize.initializationOptions).toEqual({ ...told, cachePath: cacheFolder(home) });
-  expect(statSync(cacheFolder(home)).isDirectory()).toBe(true);
+  expect(initialize.initializationOptions).toEqual(told);
   // It hears the same if it asks again, as it does once its settings change.
   expect(heard['php-lsp']).toEqual(told);
+  // Named no `cachePath`, it keeps its cache in `$XDG_CACHE_HOME`, or else in `.cache` in its
+  // `HOME`. It gets no `XDG_CACHE_HOME`, and its `HOME` is its own folder, outside the checkout.
+  expect(started.env).not.toHaveProperty('XDG_CACHE_HOME');
+  expect(started.env.HOME).toBe(home);
+  expect(home.startsWith(`${checkout}/`)).toBe(false);
 });

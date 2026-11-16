@@ -223,9 +223,12 @@ describe('php-lsp', () => {
     expect(setting(PHP_LSP, 'php-lsp')).toEqual(initializationOptions);
   });
 
-  test('keeps its cache in the folder Lo adds as it starts it, and in no other', () => {
-    expect(launchNative(PHP_LSP, PHP_LSP_INSTALLED).cacheOption).toBe('cachePath');
-    expect(PHP_LSP.initializationOptions).not.toHaveProperty('cachePath');
+  test('names no folder for its cache, so it keeps its own, with its caps, in its home', () => {
+    const launch = launchNative(PHP_LSP, PHP_LSP_INSTALLED);
+    expect(launch).not.toHaveProperty('cacheOption');
+    expect(launch.initializationOptions).not.toHaveProperty('cachePath');
     expect(setting(PHP_LSP, 'php-lsp.cachePath')).toBeNull();
+    // Nor does it name a folder for caches, which php-lsp would keep its own in.
+    expect(launch.variables).toBeUndefined();
   });
 });

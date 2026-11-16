@@ -79,10 +79,12 @@
 #     lo-hostile-phpcbf, lo-hostile-phpstan, lo-hostile-phpmd, lo-hostile-mago, lo-hostile-pint,
 #     lo-hostile-php-cs-fixer and lo-hostile-phpunit
 #   php-lsp's settings
-#     .php-lsp.json, turning on vendor/bin/phpstan and vendor/bin/phpcs, and putting php-lsp's
-#     cache in the checkout
+#     .php-lsp.json, turning on vendor/bin/phpstan and vendor/bin/phpcs, putting php-lsp's cache
+#     in the checkout, reading code as PHP 7.4 and indexing vendor/, which holds a package's class,
+#     vendor/acme/planted/src/Planted.php
 #     php-lsp, taking them from the checkout; markers lo-hostile-phpstan and lo-hostile-phpcs, and
-#     the folder lo-hostile-php-lsp-cache
+#     the folder lo-hostile-php-lsp-cache; for the rest, its log naming PHP 7.4, and a count of the
+#     files it indexed that's one more than on the code fixture's checkout
 #   versions that don't exist
 #     .tool-versions, .nvmrc, python/.python-version, ruby/.ruby-version
 #     a version manager choosing a version from the checkout; no marker, a request to the
@@ -374,15 +376,30 @@ EOF
     marker_sh "vendor/bin/$tool" "lo-hostile-$tool" "a PHP tool Composer installs, $tool"
   done
 
-  # php-lsp's settings for the repository, at its root: two of those tools to run on a save, and a
-  # folder in the checkout for its cache.
+  # A package's class, committed where Composer installs it, which php-lsp indexes only with
+  # indexVendor on.
+  put vendor/acme/planted/src/Planted.php <<'EOF'
+<?php
+
+namespace Acme\Planted;
+
+/** Fixture: a class of a package in vendor/, read as text. */
+final class Planted
+{
+}
+EOF
+
+  # php-lsp's settings for the repository, at its root: two of those tools to run on a save, a
+  # folder in the checkout for its cache, an older PHP to read code as, and vendor/ indexed.
   put .php-lsp.json <<'EOF'
 {
   "externalTools": {
     "phpstan": { "enabled": true, "binPath": "vendor/bin/phpstan" },
     "phpcs": { "enabled": true, "binPath": "vendor/bin/phpcs" }
   },
-  "cachePath": "lo-hostile-php-lsp-cache"
+  "cachePath": "lo-hostile-php-lsp-cache",
+  "phpVersion": "7.4",
+  "indexVendor": true
 }
 EOF
 

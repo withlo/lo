@@ -135,7 +135,6 @@ function serverCheck(
             git: serverGitEnvironment(),
             settings: launched.settings,
             initializationOptions: launched.initializationOptions,
-            cacheOption: launched.cacheOption,
           },
           places,
           outlines,

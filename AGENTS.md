@@ -412,9 +412,7 @@ toolchain and git's variables each server needs.
   load code into a program or shell (`NODE_OPTIONS`, `DYLD_*`, `BASH_ENV`, `RUSTC_WRAPPER`,
   `GOFLAGS`, `CLASSPATH`) unless the adapter names it in `allowed`. Each folder is checked as given
   and as it resolves, against the checkout as given and as it resolves, its `HOME` before it's made.
-  Nothing of main's reaches it. A server that keeps a cache keeps it in `cache` in its `HOME`, which
-  Lo makes and names in the initialization option its adapter says (`cacheOption`), over whatever
-  else would name one.
+  Nothing of main's reaches it.
 - Lo opens a file on a server with its text from git, at most 50 at once, and asks only for hovers,
   definitions, references, inlay hints and document symbols, each with a deadline. A request is
   cancelled once its deadline passes, its asker gives up or a newer one replaces it, and keeps its
@@ -478,9 +476,11 @@ toolchain and git's variables each server needs.
   archive per platform from its GitHub releases, which nobody signs, so `lsp:pin` checks each
   against the checksum its release lists beside it. It starts as its program, by its absolute path,
   and needs no PHP. It's told which PHP to read code as, so it never runs a `php` to ask; it runs
-  neither PHPStan nor PHPCS; its cache is a folder of its `HOME` (`cachePath`); and it skips
-  `vendor/` as it indexes. What Lo tells it wins over a checkout's `.php-lsp.json`, which can't turn
-  the tools on or move the cache.
+  neither PHPStan nor PHPCS; and it skips `vendor/` as it indexes, for its memory and time. Its
+  cache is where it keeps one by default, `.cache/php-lsp` in its `HOME`, with its own caps and
+  cleanup: Lo names no `cachePath`, which php-lsp would take as the whole cache, and sets no
+  `XDG_CACHE_HOME`. What Lo tells it wins over a checkout's `.php-lsp.json` key by key, and that
+  file can't turn the tools on or move the cache.
 - Tests start only the fake server, `testing/lsp/fake-server.ts`, at most two at once in a test
   file, each killed with its group when the test ends. No test starts a real server or downloads
   one: download tests serve archives they build from a server on this machine. The live check,

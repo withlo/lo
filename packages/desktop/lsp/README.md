@@ -107,17 +107,25 @@ each setting is as it is:
   carries the standard library's stubs itself. It answers no inlay hints, so its adapter says it has
   none (`hints: false`).
 - **php-lsp** carries the stubs of PHP's own functions and classes, so it needs no PHP. It's told
-  which PHP to read code as (`phpVersion`), so it never runs a `php` to ask, and has PHPStan and
-  PHPCS off, so it runs no tool. Its cache is `cache` in its `HOME`, which Lo names as its
-  `cachePath` as it starts it. It skips `vendor/` as it indexes, since a checkout has one only if
-  it's committed, and reads a class there when something refers to it. A checkout's `.php-lsp.json`
-  can't turn the tools on or move the cache, and what Lo says wins over the rest of it. Lo asks it
-  for nothing that would run another program, such as formatting or a code lens's tests.
+  which PHP to read code as (`phpVersion`, PHP 8.5), so it never runs a `php` to ask: one can be
+  first on its `PATH`, in the folder of Lo's git, as Homebrew's is. Code for an older PHP is read as
+  8.5 too, so a function PHP 8 removed, such as `each`, has no hover. It has PHPStan and PHPCS off,
+  so it runs no tool. It skips `vendor/` as it indexes, since a committed `vendor/` can hold far
+  more code than the project, which would cost memory and time and count against its cap on the
+  files it indexes. `gd`, `K` and `gh` still find a class there through Composer's autoload, and
+  `gr` never looks there. Its cache is where it keeps one by default, `.cache/php-lsp` in its
+  `HOME`, a folder for each version of itself and each checkout, under caps of its own; Lo names no
+  `cachePath`, which php-lsp would take as the whole cache, with none of those. A checkout's
+  `.php-lsp.json` can't turn the tools on or move the cache, and what Lo says wins over the rest of
+  it key by key. Lo asks it for nothing that would run another program, such as formatting or a code
+  lens's tests.
 
-None runs in a sandbox: each reads what you can, so an absolute import, Pyright's `extraPaths` or
-the folders of stubs a `.php-lsp.json` names lead it to files outside the checkout, and a hover can
-show what's in one. Nothing can send what it reads anywhere, and Lo never opens a place outside the
-checkout an answer names: it shows as outside the repository.
+None runs in a sandbox: each reads what you can, so an absolute import, Pyright's `extraPaths`, the
+folders of stubs a `.php-lsp.json` names, the paths a `composer.json`'s autoload names, or a
+`composer.json` up to seven folders above the checkout, which php-lsp climbs to when the checkout
+has none, lead it to files outside the checkout, and a hover can show what's in one. It only reads
+there, and nothing can send what it reads anywhere. Lo never opens a place outside the checkout an
+answer names: it shows as outside the repository.
 
 Lo names each server's license wherever it says what the server is: a server's details in the status
 bar show its name, version and license, "Pyright 1.1.414 · MIT".
