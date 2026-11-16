@@ -1,0 +1,30 @@
+{
+  "description": "rozed-dev/e2e's merge queue for e4/queued, read as rozed-bot, its admin, as it tests a merge fixture generation's four pull requests: each added in turn once ci passed on it, through merge-async with merge_queue (queued-slow-1, queued-slow-2, queued-pass, then queued-fail), then QueueView every 20 s until GitHub has built two or more together and the one that fails in the queue is failing or gone.",
+  "recorded_at": "2026-11-16T19:14:45Z",
+  "repo": "rozed-dev/e2e",
+  "setup": {
+    "generation": 2,
+    "pulls": {
+      "queued-slow-1": {
+        "number": 132,
+        "id": "PR_kwDOVleUfc8AAAABPnrkrA",
+        "head": "bdcd224a9a0300449aa711cfabfec1d5668ddb5c"
+      },
+      "queued-slow-2": {
+        "number": 133,
+        "id": "PR_kwDOVleUfc8AAAABPnrpmQ",
+        "head": "3230ff8eaabe0f4f6d0ebc6fa5188a1b6e51dfcd"
+      },
+      "queued-pass": {
+        "number": 131,
+        "id": "PR_kwDOVleUfc8AAAABPnrf7A",
+        "head": "684f2b1321be9652168cdb77a3c23a4a463df7bf"
+      },
+      "queued-fail": {
+        "number": 134,
+        "id": "PR_kwDOVleUfc8AAAABPnru6w",
+        "head": "1cd1ca9351bb8bf8ce0a4e89f1dfe75ef720d060"
+      }
+    }
+  }
+}

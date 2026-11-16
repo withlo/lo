@@ -42,6 +42,52 @@ function readsPull(request: Interaction['request'], number: number): boolean {
   return request.method === 'GET' && new URL(request.url).pathname.endsWith(`/pulls/${number}`);
 }
 
+/** The merge fixture's slow pull request that the derived answer turns auto-merge on for, by its title's end. */
+const WAITING_TITLE = ': queued, slow (2)';
+
+/** When the derived answer says auto-merge was turned on: as `queue_waiting_e2e` was recorded. */
+const AUTO_MERGE_ON = '2026-11-16T19:05:00Z';
+
+/**
+ * The recorded `QueueWaiting` answer `read`, with auto-merge on, squashing, as rozed-bot turned it
+ * on, for the open pull request whose title ends {@link WAITING_TITLE}.
+ */
+function withAutoMerge(read: Interaction): Interaction {
+  const nodes = at(read.response.body, 'data', 'repository', 'pullRequests', 'nodes');
+  if (!Array.isArray(nodes)) throw new Error('the recording lists no pull requests');
+  const titled = (node: Json) =>
+    isObject(node) && typeof node['title'] === 'string' && node['title'].endsWith(WAITING_TITLE);
+  const place = nodes.findIndex(titled);
+  const node = nodes[place];
+  if (!isObject(node)) throw new Error(`the recording lists no pull request${WAITING_TITLE}`);
+  const changed = [...nodes];
+  changed[place] = {
+    ...node,
+    autoMergeRequest: {
+      enabledAt: AUTO_MERGE_ON,
+      mergeMethod: 'SQUASH',
+      enabledBy: { __typename: 'User', login: 'rozed-bot' },
+    },
+  };
+  const body = read.response.body;
+  const data = at(body, 'data');
+  const repository = at(body, 'data', 'repository');
+  const pullRequests = at(body, 'data', 'repository', 'pullRequests');
+  if (!isObject(body) || !isObject(data) || !isObject(repository) || !isObject(pullRequests)) {
+    throw new Error('the recording answered no pull requests');
+  }
+  return answered(read, {
+    ...read.response,
+    body: {
+      ...body,
+      data: {
+        ...data,
+        repository: { ...repository, pullRequests: { ...pullRequests, nodes: changed } },
+      },
+    },
+  });
+}
+
 /** The state a review submitted with each verdict has. */
 const STATES = { APPROVE: 'APPROVED', REQUEST_CHANGES: 'CHANGES_REQUESTED' } as const;
 
@@ -128,6 +174,16 @@ export const DERIVATIONS: readonly Derivation[] = [
         ...added.response,
         body: { data: { addPullRequestReviewThread: { thread: null } } },
       });
+      return recorded;
+    },
+  },
+  {
+    name: 'queue_waiting_e2e_auto_merge',
+    from: 'queue_waiting_e2e',
+    description: `queue_waiting_e2e as if rozed-dev/e2e allowed auto-merge and rozed-bot had turned it on, squashing, for the merge fixture's pull request titled "...${WAITING_TITLE}" while its ci ran: the one pull request waiting to join e4/queued's merge queue. The repository doesn't allow auto-merge, which only its owner turns on.`,
+    derive(recorded) {
+      const place = only(recorded, graphql('QueueWaiting'), 'reads of the open pull requests');
+      recorded[place] = withAutoMerge(recorded[place]!);
       return recorded;
     },
   },

@@ -1,0 +1,48 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "https://api.github.com/graphql",
+    "operation": "PullsFromHead",
+    "variables": {
+      "owner": "rozed-dev",
+      "name": "e2e",
+      "branch": "merge/2/chain-1"
+    },
+    "query_sha256": "88b9e9caa82c5ef0666005b2c870d14d0bb39d3d2f79e59964b1c2d8e50a52cd"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "x-ratelimit-limit": "5000",
+      "x-ratelimit-remaining": "4996",
+      "x-ratelimit-reset": "1794859428",
+      "x-ratelimit-resource": "graphql",
+      "x-ratelimit-used": "4"
+    },
+    "body": {
+      "data": {
+        "rateLimit": {
+          "cost": 1,
+          "limit": 5000,
+          "remaining": 4996,
+          "used": 4,
+          "resetAt": "2026-11-16T20:03:48Z"
+        },
+        "repository": {
+          "pullRequests": {
+            "totalCount": 1,
+            "nodes": [
+              {
+                "number": 126,
+                "baseRefName": "merge/2/base",
+                "headRefName": "merge/2/chain-1",
+                "isCrossRepository": false
+              }
+            ]
+          }
+        }
+      }
+    }
+  }
+}

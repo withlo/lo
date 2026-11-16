@@ -15,8 +15,9 @@
  *   through the stack's bottom entry, whose base is the stack's.
  *
  * Also here: a base branch's merge queue ({@link mergeQueue}), the squash commit's text GitHub
- * would start with ({@link squashText}), and the rules of a branch a pull request merges into once
- * its base moves there ({@link rulesOnto}).
+ * would start with ({@link squashText}), the rules of a branch a pull request merges into once its
+ * base moves there ({@link rulesOnto}), and the open pull requests from a branch, which a pull
+ * request based on it sits on ({@link openPullsFromHead}).
  */
 
 import type { GithubClient } from './client.ts';
@@ -27,6 +28,7 @@ import {
   MergeQueueDocument,
   MergeSnapshotDocument,
   MergeTextDocument,
+  PullsFromHeadDocument,
   type MergeCheckFragment,
   type MergeQueueQuery,
   type MergeSnapshotQuery,
@@ -939,4 +941,65 @@ export async function squashText(client: GithubClient, pull: PullRef): Promise<S
   const found = data.repository?.pullRequest;
   if (!found) throw notFound(`pull request ${pull.toString()}`);
   return { title: found.squashTitle, message: found.squashMessage };
+}
+
+/** An open pull request from a branch, as `PullsFromHead` reads it. */
+export interface PullFromHead {
+  /** `number`. */
+  number: number;
+  /** `baseRefName`: the branch it merges into. */
+  base: string;
+  /** `headRefName`: the branch it comes from. */
+  head: string;
+  /**
+   * Whether its head branch is in the repository itself (`isCrossRepository` false). A fork's pull
+   * request from a branch of the same name comes from another branch, which nothing here is based
+   * on.
+   */
+  sameRepository: boolean;
+}
+
+/** The open pull requests from a branch of a repository. */
+export interface PullsFromHead {
+  /** The branch. */
+  branch: string;
+  /**
+   * The open pull requests from a branch of that name, the 100 created most recently, a fork's
+   * included: those from the repository's own branch ({@link PullFromHead.sameRepository}) sit
+   * below any pull request based on it.
+   */
+  pullRequests: PullFromHead[];
+  /** Whether there were more than were read, so one from the branch may be missing. */
+  cutShort: boolean;
+}
+
+/**
+ * The open pull requests whose head is `repo`'s `branch`, or a fork's branch of the same name: a
+ * pull request based on `branch` sits on the one from the repository's own, which merges first.
+ * It's read afresh, as the stacks' list of open pull requests can be minutes old. Any error GitHub
+ * gives fails it.
+ */
+export async function openPullsFromHead(
+  client: GithubClient,
+  repo: RepoRef,
+  branch: string,
+): Promise<PullsFromHead> {
+  const data = await client.graphql(PullsFromHeadDocument, {
+    owner: repo.owner,
+    name: repo.name,
+    branch,
+  });
+  const found = data.repository?.pullRequests;
+  if (!found) throw notFound(`repository ${repo.toString()}`);
+  const { read, missing } = given(found.nodes);
+  return {
+    branch,
+    pullRequests: read.map((pull) => ({
+      number: pull.number,
+      base: pull.baseRefName,
+      head: pull.headRefName,
+      sameRepository: !pull.isCrossRepository,
+    })),
+    cutShort: missing > 0 || found.totalCount > read.length,
+  };
 }

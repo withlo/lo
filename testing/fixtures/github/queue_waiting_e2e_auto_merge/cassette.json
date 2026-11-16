@@ -1,0 +1,4 @@
+{
+  "description": "queue_waiting_e2e as if rozed-dev/e2e allowed auto-merge and rozed-bot had turned it on, squashing, for the merge fixture's pull request titled \"...: queued, slow (2)\" while its ci ran: the one pull request waiting to join e4/queued's merge queue. The repository doesn't allow auto-merge, which only its owner turns on.",
+  "derived_from": "queue_waiting_e2e"
+}

@@ -99,6 +99,8 @@ recording, then write it again. A test checks that each is as its derivation wri
 - `app_comments_now_too_fast`: the comment posted at once refused as "was submitted too quickly".
 - `review_writes_e2e_23_not_in_diff`: a thread on lines outside the diff, answered with no thread.
 - `attachments_e2e_not_found`: an upload answered 404.
+- `queue_waiting_e2e_auto_merge`: a pull request into `e4/queued` with auto-merge on, waiting to
+  join its merge queue, which rozed-dev/e2e can't have while it doesn't allow auto-merge.
 
 To add one, add its derivation to the list, with what it changes in its description, and run the
 script.

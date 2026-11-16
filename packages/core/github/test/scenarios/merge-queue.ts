@@ -40,6 +40,8 @@ import { PullRef, RepoRef } from '../../src/refs.ts';
 import { Token } from '../../src/token.ts';
 
 export const REPO = new RepoRef('rozed-dev', 'e2e');
+/** The schema the queries were checked against when these were recorded. */
+const SCHEMA = 'github/docs@03caf3ce9bc56af9d147500036b0bb6dda352674';
 /** The branch whose queue is read. */
 export const BRANCH = 'e4/queued';
 
@@ -207,6 +209,7 @@ export const scenarios: Scenario[] = [
     description:
       "QueueWaiting for rozed-dev/e2e's e4/queued, read as rozed-bot, its admin, right after the merge fixture opened a generation: the open pull requests into the branch, the 100 updated most recently, among them the generation's four, whose ci is running or passed. The repository doesn't allow auto-merge, so none has it on.",
     repo: 'rozed-dev/e2e',
+    schema: SCHEMA,
     async run(fetch, token) {
       const setup = await findPulls(unrecorded(token), generation());
       const client = new GithubClient({ fetch, token: new Token(token) });
@@ -219,6 +222,7 @@ export const scenarios: Scenario[] = [
     description:
       "rozed-dev/e2e's merge queue for e4/queued, read as rozed-bot, its admin, as it tests a merge fixture generation's four pull requests: each added in turn once ci passed on it, through merge-async with merge_queue (queued-slow-1, queued-slow-2, queued-pass, then queued-fail), then QueueView every 20 s until GitHub has built two or more together and the one that fails in the queue is failing or gone.",
     repo: 'rozed-dev/e2e',
+    schema: SCHEMA,
     writes: true,
     async run(fetch, token) {
       const github = unrecorded(token);
@@ -266,6 +270,7 @@ export const scenarios: Scenario[] = [
     description:
       "Why pull requests left rozed-dev/e2e's merge queue for e4/queued, read as rozed-bot with QueueRemoval, after queue_view_e2e added a merge fixture generation's four: queued-slow-2, which rozed-bot then took out by hand (dequeuePullRequest, after its GitHub stacks were read); queued-fail, once GitHub took it out when ci failed in the queue; and queued-pass, once it merged.",
     repo: 'rozed-dev/e2e',
+    schema: SCHEMA,
     writes: true,
     async run(fetch, token) {
       const github = unrecorded(token);
