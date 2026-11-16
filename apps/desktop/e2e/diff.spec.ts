@@ -2,8 +2,9 @@
 // draws every changed file in one scroll, in the left panel's order, each starting out as it should,
 // and answers the diff's keys. Without git, it draws GitHub's diff, hunks only.
 
-import { readFileSync, writeFileSync } from 'node:fs';
+import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
+import { cpus, loadavg } from 'node:os';
 import { buffer } from 'node:stream/consumers';
 
 import { APP_PULL, writeAppRemote } from '@lo/testing/git';
@@ -1050,6 +1051,7 @@ test.describe('when the local copy comes after GitHub’s diff', () => {
         row,
       );
     const before = await where();
+    const report = await watchFrames(app, page);
 
     // The local copy comes, and swaps GitHub's diff out a file at a time, frames timed meanwhile,
     // with where the row, the box and the scroll are, for a failure to show.
@@ -1107,6 +1109,9 @@ test.describe('when the local copy comes after GitHub’s diff', () => {
       window.loTops = undefined;
       return timed;
     });
+    const watched = await report();
+    console.log(watched);
+    writeFileSync(test.info().outputPath('frames.txt'), watched);
 
     // The same view, and the row that was at the top of the screen where it was on the page,
     // through the banners going and the files changing above it.
@@ -1390,3 +1395,238 @@ test.describe('when a banner over the diff goes', () => {
     });
   });
 });
+
+/** One process's CPU time so far, in clock ticks, with what it runs. */
+interface Ticks {
+  ticks: number;
+  command: string;
+}
+
+/** Every process's CPU time so far, on Linux: none elsewhere. */
+function processTicks(): Map<number, Ticks> {
+  const all = new Map<number, Ticks>();
+  if (process.platform !== 'linux') return all;
+  for (const name of readdirSync('/proc')) {
+    if (!/^\d+$/.test(name)) continue;
+    try {
+      const stat = readFileSync(`/proc/${name}/stat`, 'utf8');
+      const fields = stat.slice(stat.lastIndexOf(')') + 2).split(' ');
+      const ticks = Number(fields[11]) + Number(fields[12]);
+      const command = readFileSync(`/proc/${name}/cmdline`, 'utf8').replaceAll('\0', ' ').trim();
+      all.set(Number(name), { ticks, command });
+    } catch {
+      // It ended meanwhile.
+    }
+  }
+  return all;
+}
+
+/** The machine's CPU time so far, busy and in all, in clock ticks, on Linux. */
+function machineTicks(): { busy: number; all: number } {
+  if (process.platform !== 'linux') return { busy: 0, all: 0 };
+  const [line] = readFileSync('/proc/stat', 'utf8').split('\n');
+  const fields = (line ?? '').trim().split(/\s+/).slice(1).map(Number);
+  const all = fields.reduce((sum, each) => sum + each, 0);
+  const idle = (fields[3] ?? 0) + (fields[4] ?? 0);
+  return { busy: all - idle, all };
+}
+
+/**
+ * Watches the page's frames while the local copy comes, for a failure to say what a long frame
+ * held: each frame's start and length, the diff's changes in it, the window's long animation
+ * frames, the page's main thread's tasks from a trace of its timeline, Lo's processes' CPU time, and
+ * on Linux, what else the machine ran meanwhile. Returns a function that stops and reports.
+ */
+async function watchFrames(app: ElectronApplication, page: Page): Promise<() => Promise<string>> {
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send('Tracing.start', {
+    transferMode: 'ReturnAsStream',
+    traceConfig: { includedCategories: ['devtools.timeline', 'toplevel', 'blink.user_timing'] },
+  });
+  const lo = () =>
+    app.evaluate(({ app: electron }) =>
+      electron.getAppMetrics().map((each) => ({
+        pid: each.pid,
+        type: each.type,
+        name: each.serviceName ?? each.name ?? '',
+        cpu: each.cpu.cumulativeCPUUsage ?? 0,
+      })),
+    );
+  const loBefore = await lo();
+  const ticksBefore = processTicks();
+  const machineBefore = machineTicks();
+  const loadBefore = loadavg();
+  const started = Date.now();
+  await page.evaluate(() => {
+    const watched = {
+      mark: performance.mark('lo-frames').startTime,
+      frames: [] as number[],
+      changes: [] as number[],
+      long: [] as unknown[],
+    };
+    Reflect.set(window, 'loWatched', watched);
+    const tick = (now: number) => {
+      watched.frames.push(now);
+      if (Reflect.get(window, 'loWatched') === watched) requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+    new PerformanceObserver((list) => {
+      for (const entry of list.getEntries()) watched.long.push(entry.toJSON());
+    }).observe({ type: 'long-animation-frame' });
+    const view = document.querySelector('.lo-diffview');
+    if (view) {
+      new MutationObserver(() => watched.changes.push(performance.now())).observe(view, {
+        subtree: true,
+        childList: true,
+        attributes: true,
+        characterData: true,
+      });
+    }
+  });
+  return async () => {
+    const watched = await page.evaluate(() => {
+      const each: unknown = Reflect.get(window, 'loWatched');
+      Reflect.set(window, 'loWatched', undefined);
+      const numbers = (name: string): number[] => {
+        const value: unknown = each && Reflect.get(each, name);
+        return Array.isArray(value) ? value.map(Number) : [];
+      };
+      const long: unknown = each && Reflect.get(each, 'long');
+      return {
+        mark: Number(each && Reflect.get(each, 'mark')),
+        frames: numbers('frames'),
+        changes: numbers('changes'),
+        long: JSON.stringify(long ?? []),
+      };
+    });
+    const seconds = (Date.now() - started) / 1000;
+    const loAfter = await lo();
+    const ticksAfter = processTicks();
+    const machineAfter = machineTicks();
+    const loadAfter = loadavg();
+    const complete = new Promise<{ stream?: string }>((resolve) =>
+      cdp.once('Tracing.tracingComplete', resolve),
+    );
+    await cdp.send('Tracing.end');
+    const { stream } = await complete;
+    let text = '';
+    if (stream) {
+      for (;;) {
+        const chunk = await cdp.send('IO.read', { handle: stream });
+        text += chunk.base64Encoded ? Buffer.from(chunk.data, 'base64').toString() : chunk.data;
+        if (chunk.eof) break;
+      }
+      await cdp.send('IO.close', { handle: stream });
+    }
+    await cdp.detach();
+    writeFileSync(test.info().outputPath('timeline.json'), text);
+    type Event = {
+      name: string;
+      ph: string;
+      pid: number;
+      tid: number;
+      ts: number;
+      dur?: number;
+      tdur?: number;
+      args?: { name?: string; data?: { functionName?: string } };
+    };
+    const parsed: unknown = JSON.parse(text || '{"traceEvents":[]}');
+    const listed: unknown = Array.isArray(parsed)
+      ? parsed
+      : Reflect.get(Object(parsed), 'traceEvents');
+    const events: Event[] = Array.isArray(listed) ? listed : [];
+    const mains = new Set(
+      events
+        .filter((each) => each.ph === 'M' && each.args?.name === 'CrRendererMain')
+        .map((each) => `${each.pid}:${each.tid}`),
+    );
+    const counts = new Map<string, number>();
+    for (const each of events) {
+      const key = `${each.pid}:${each.tid}`;
+      if (mains.has(key)) counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+    const main = [...counts].toSorted((a, b) => b[1] - a[1])[0]?.[0];
+    const onMain = events.filter((each) => `${each.pid}:${each.tid}` === main && each.ph === 'X');
+    const mark = events.find((each) => each.name === 'lo-frames');
+    // The trace's clock, in microseconds, less the page's, in milliseconds.
+    const offset = mark ? mark.ts / 1000 - watched.mark : Number.NaN;
+    const tasks = onMain
+      .filter((each) => each.name === 'ThreadControllerImpl::RunTask' || each.name === 'RunTask')
+      .map((each) => ({
+        start: each.ts / 1000 - offset,
+        wall: (each.dur ?? 0) / 1000,
+        cpu: (each.tdur ?? 0) / 1000,
+        calls: onMain
+          .filter(
+            (call) =>
+              call.name === 'FunctionCall' &&
+              call.ts >= each.ts &&
+              call.ts < each.ts + (each.dur ?? 0),
+          )
+          .map(
+            (call) =>
+              `${call.args?.data?.functionName || '?'} ${((call.dur ?? 0) / 1000).toFixed(1)}`,
+          )
+          .slice(0, 6),
+      }));
+    const lines: string[] = [];
+    const lengths = watched.frames.slice(1).map((at, index) => at - watched.frames[index]!);
+    const multiples = new Map<number, number>();
+    for (const length of lengths) {
+      const vsyncs = Math.round(length / (1000 / 60));
+      multiples.set(vsyncs, (multiples.get(vsyncs) ?? 0) + 1);
+    }
+    lines.push(
+      `frames ${lengths.length} in ${seconds.toFixed(2)} s, by vsyncs: ${JSON.stringify([...multiples].toSorted((a, b) => a[0] - b[0]))}`,
+      `diff changed ${watched.changes.length} times, ${(watched.changes[0] ?? 0) - (watched.frames[0] ?? 0)} to ${(watched.changes.at(-1) ?? 0) - (watched.frames[0] ?? 0)} ms in`,
+      `main thread busy ${tasks.reduce((sum, each) => sum + each.wall, 0).toFixed(0)} ms wall, ${tasks.reduce((sum, each) => sum + each.cpu, 0).toFixed(0)} ms CPU`,
+    );
+    watched.frames.slice(1).forEach((end, index) => {
+      const start = watched.frames[index]!;
+      const length = end - start;
+      if (length < 30) return;
+      const changes = watched.changes.filter((at) => at >= start && at < end).length;
+      const within = tasks.filter((each) => each.start < end && each.start + each.wall > start);
+      const wall = within.reduce((sum, each) => sum + each.wall, 0);
+      const cpu = within.reduce((sum, each) => sum + each.cpu, 0);
+      const biggest = within.toSorted((a, b) => b.wall - a.wall)[0];
+      lines.push(
+        `frame at ${(start - watched.frames[0]!).toFixed(0)} ms, ${length.toFixed(1)} ms long: ${changes} changes to the diff; main thread ${within.length} tasks, ${wall.toFixed(1)} ms wall, ${cpu.toFixed(1)} ms CPU; longest ${biggest ? `${biggest.wall.toFixed(1)} ms wall, ${biggest.cpu.toFixed(1)} ms CPU: ${biggest.calls.join(', ')}` : 'none'}`,
+      );
+    });
+    const longFrames: unknown = JSON.parse(watched.long);
+    for (const entry of Array.isArray(longFrames) ? longFrames : []) {
+      const start = Number(entry.startTime);
+      const listedScripts: unknown = entry.scripts;
+      const scripts: Record<string, unknown>[] = Array.isArray(listedScripts) ? listedScripts : [];
+      lines.push(
+        `long animation frame at ${(start - watched.frames[0]!).toFixed(0)} ms, ${Number(entry.duration).toFixed(1)} ms, rendering from +${(Number(entry.renderStart) - start).toFixed(1)}, blocking ${Number(entry.blockingDuration).toFixed(1)}: ${scripts.map((each) => `${String(each.invoker)} ${String(each.sourceFunctionName)} ${Number(each.duration).toFixed(1)} ms (layout ${Number(each.forcedStyleAndLayoutDuration).toFixed(1)})`).join('; ')}`,
+      );
+    }
+    const before = new Map(loBefore.map((each) => [each.pid, each.cpu]));
+    lines.push(
+      `Lo's processes' CPU: ${loAfter.map((each) => `${each.type}${each.name ? ` ${each.name}` : ''} ${(each.cpu - (before.get(each.pid) ?? 0)).toFixed(2)} s`).join(', ')}`,
+    );
+    if (process.platform === 'linux') {
+      const hz = 100;
+      const busy = (machineAfter.busy - machineBefore.busy) / hz;
+      const all = (machineAfter.all - machineBefore.all) / hz;
+      lines.push(
+        `machine: ${cpus().length} CPUs, ${busy.toFixed(1)} of ${all.toFixed(1)} CPU-seconds busy; load ${loadBefore[0]?.toFixed(2)} then ${loadAfter[0]?.toFixed(2)}`,
+      );
+      const used = [...ticksAfter]
+        .map(([pid, { ticks, command }]) => ({
+          pid,
+          command,
+          seconds: (ticks - (ticksBefore.get(pid)?.ticks ?? 0)) / hz,
+        }))
+        .filter((each) => each.seconds > 0)
+        .toSorted((a, b) => b.seconds - a.seconds)
+        .slice(0, 15);
+      for (const each of used) {
+        lines.push(`  ${each.seconds.toFixed(2)} s  ${each.pid}  ${each.command.slice(0, 160)}`);
+      }
+    }
+    return lines.join('\n');
+  };
+}
