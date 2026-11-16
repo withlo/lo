@@ -582,11 +582,16 @@ export interface DiffView extends KeySource {
    * there. A view has one peek at most: one elsewhere closes as this one opens. Each is the
    * reader's asking, as `gd` is: the line stays where it is on screen, and so does all above it, or
    * while the line is off screen, what's at the top of the screen does; side by side the other
-   * column makes room level with it, as for threads. Its height comes from its code alone, so
-   * nothing it shows changes it after. Focus goes into the peek, a scope of its own (`peek`), from
-   * the view's code, and closing it puts focus back on the code, the cursor at `at`. Says whether
-   * there was a peek to show or close: there's none under a line not drawn, as of a file closed or
-   * kept out, one GitHub's diff left out, or one among collapsed lines, where no cursor is.
+   * column makes room level with it, as for threads. Then a peek opened under a line on screen
+   * that ends below the screen's foot comes on screen whole, as a jump does, by the least scroll,
+   * the cursor on its line: its line goes no higher than the top, where a peek taller than the room
+   * under it puts it. Closing it scrolls nothing. Its height comes from its code alone, and what
+   * comes later for the answer shown, as its code, never makes it shorter, so nothing moves after
+   * it opens without the reader.
+   * Focus goes into the peek, a scope of its own (`peek`), from the view's code, and closing it
+   * puts focus back on the code, the cursor at `at`. Says whether there was a peek to show or
+   * close: there's none under a line not drawn, as of a file closed or kept out, one GitHub's diff
+   * left out, or one among collapsed lines, where no cursor is.
    */
   peek(at: Place, peek: PeekView | undefined, frame?: PeekFrame): boolean;
   /**
@@ -746,6 +751,12 @@ export interface PeekView {
   shown: number;
   /** The shown answer's code: none, as for one outside the repository, whose frame says why. */
   code?: PeekCode | undefined;
+  /**
+   * Whether the shown answer's code is still to come: till then the peek is as tall as its code
+   * can be (`PEEK_LINES`), and it stays that tall as the code comes, so nothing moves without the
+   * reader.
+   */
+  waiting?: boolean | undefined;
   /** What it is, for a screen reader: "Definitions of estimateCost". */
   label: string;
 }
@@ -758,7 +769,11 @@ export interface PeekView {
 export interface PeekParts {
   /** Above the rest: what it shows and how many answers, and the way to the whole file. */
   head: HTMLElement;
-  /** Beside the code, with more than one answer: the answers, the one shown picked out. */
+  /**
+   * Beside the code, with more than one answer: the answers, the one shown picked out. What in it
+   * takes focus (`tabindex`), as a listbox, is where focus goes as the peek takes it, so a screen
+   * reader tells of each answer picked.
+   */
   list: HTMLElement;
   /** Under the rest: where the shown answer is, and the peek's keys. */
   foot: HTMLElement;
@@ -824,7 +839,8 @@ export interface FileView extends KeySource {
   /**
    * Shows `peek` under the line at `at`, as the diff view does (`DiffView.peek`), or with `peek`
    * undefined closes it: the line stays where it is on screen, and all above it, or while it's off
-   * screen, the first line on screen does. Says whether there was a peek to show or close: there's
+   * screen, the first line on screen does; then a peek that ends below the screen's foot comes on
+   * screen whole, as it does there. Says whether there was a peek to show or close: there's
    * none under a line of another file or side.
    */
   peek(at: Place, peek: PeekView | undefined, frame?: PeekFrame): boolean;

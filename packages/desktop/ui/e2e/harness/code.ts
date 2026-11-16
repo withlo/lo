@@ -92,12 +92,14 @@ const frame: PeekFrame = (parts, peek) => {
   return { update: ignore, destroy: ignore };
 };
 
-/** A peek at two answers, the first shown, its code `lines` lines long. */
-function peekOf(lines: number): PeekView {
+/** A peek at two answers, the first shown, its code `lines` lines long, or with none still to come. */
+function peekOf(lines: number | undefined): PeekView {
   const answers = [
     { path: 'src/b.ts', line: 5, source: 'syntax' as const },
     { path: 'src/c.ts', line: 2, source: 'syntax' as const },
   ];
+  if (lines === undefined)
+    return { label: 'Definitions of line', answers, shown: 0, waiting: true };
   const code = { first: 1, lines: Array.from({ length: lines }, (_, index) => `b ${index + 1}`) };
   return { label: 'Definitions of line', answers, shown: 0, code };
 }
@@ -213,6 +215,14 @@ const harness = {
     const at = { file: 'a', side: 'new', line } as const;
     return file().peek(at, open ? peekOf(9) : undefined, frame);
   },
+  /** Opens a peek under the whole file's line `line`, its code still to come. */
+  filePeekWaiting(line: number): boolean {
+    return file().peek({ file: 'a', side: 'new', line }, peekOf(undefined), frame);
+  },
+  /** Makes the box the view is drawn in `height` pixels tall. */
+  setHeight(height: number): void {
+    root().style.height = `${height}px`;
+  },
   /** Puts new line `line` at the top of the screen, or `below` pixels below it. */
   scrollTo(line: number, below = 0): void {
     view().scrollTo({ at: { kind: 'line', at: { file: 'a', side: 'new', line } }, offset: -below });
@@ -312,6 +322,10 @@ const harness = {
   /** Opens a peek under new line `line`, its code `lines` lines long, in its frame. */
   peek(line: number, lines = 9): boolean {
     return view().peek({ file: 'a', side: 'new', line }, peekOf(lines), frame);
+  },
+  /** Opens a peek under new line `line`, its code still to come. */
+  peekWaiting(line: number): boolean {
+    return view().peek({ file: 'a', side: 'new', line }, peekOf(undefined), frame);
   },
   /** Closes the peek under new line `line`. */
   unpeek(line: number): boolean {

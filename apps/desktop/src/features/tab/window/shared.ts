@@ -17,7 +17,17 @@ import {
   type Tab,
 } from '../contract.ts';
 import { makeTabState, type TabState, useKept } from './kept.ts';
-import { middleIds, panels, type Panels } from './panels.ts';
+import {
+  keptRight,
+  middleIds,
+  panels,
+  putRightBack,
+  rightIds,
+  rightPanel,
+  showRightView,
+  type Panels,
+  type RightKept,
+} from './panels.ts';
 import { Placeholder } from './Placeholder.tsx';
 import { activeOf, pullsStore, tabsStore, type TabsState } from './store.ts';
 
@@ -33,6 +43,7 @@ export type {
   Run,
   Tab,
 } from '../contract.ts';
+export type { RightKept } from './panels.ts';
 export type { TabsState } from './store.ts';
 
 /**
@@ -144,22 +155,54 @@ export function useMiddle(tab: string): { shown: string | undefined; ids: readon
  */
 export const over = defineSlot<{ tab: PullTab }>('tab.over');
 
-/** What the header's toggle for the right panel shows of a view in it. */
+/** What the header's toggle for the right panel shows of a view in it, and what it's called. */
 export interface RightToggle {
   /**
    * What goes after the toggle's icon for a tab, such as how many of its threads are unresolved.
    * It says what it means itself, to a screen reader too.
    */
   readonly count?: ((props: { tab: PullTab }) => ReactNode) | undefined;
+  /** What the panel is while it shows this view, to a screen reader: "Threads", "References". */
+  readonly label: string;
 }
 
 /**
- * The right panel of a pull request's tab: its threads. It's open or closed for the whole window,
- * by `⌘⇧\` or the header's toggle, each tab showing its view on screen's, and takes focus as it
- * opens: its element named by `data-lo-scope`. Opening or closing it changes the middle's width,
- * as the left panel does.
+ * The right panel of a pull request's tab: one of its views at a time, the threads first. It's
+ * open or closed for the whole window, by `⌘⇧\` or the header's toggle, each tab showing the
+ * view it showed last, and takes focus as it opens: its element named by `data-lo-scope`. Another
+ * view comes with `showRight`. Opening or closing it changes the middle's width, as the left panel
+ * does.
  */
 export const right = defineSlot<{ tab: PullTab }, RightToggle>('tab.right');
+
+/**
+ * Shows view `id` of the right panel in pull request's tab `tab`, opening the panel if it's
+ * closed, and focus goes into it as it's drawn, unless `focus` is false; or, with none, closes the
+ * panel, and focus in it goes back to the middle view. `⌘⇧\` opens it on the view shown last.
+ */
+export function showRight(tab: string, id: string | undefined, focus = true): void {
+  showRightView(tab, id, focus);
+}
+
+/** How pull request's tab `tab`'s right panel stands now, for `putRight` to put back. */
+export function rightKept(tab: string): RightKept {
+  return keptRight(tab);
+}
+
+/**
+ * Puts pull request's tab `tab`'s right panel back as `kept` had it, on its view, open or closed,
+ * without taking focus; closing, focus in it goes back to the middle view.
+ */
+export function putRight(tab: string, kept: RightKept): void {
+  putRightBack(tab, kept);
+}
+
+/** The view pull request's tab `tab`'s right panel shows, by id, or none while it's closed. */
+export function rightShown(tab: string): string | undefined {
+  if (!rightPanel.getState().open || rightIds.length === 0) return undefined;
+  const chosen = panels.get(tab).right;
+  return chosen !== undefined && rightIds.includes(chosen) ? chosen : rightIds[0];
+}
 
 /** Items in a pull request's tab's status bar, after Lo's own. */
 export const status = defineSlot<{ tab: PullTab }>('tab.status');

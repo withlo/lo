@@ -2,8 +2,10 @@
 // compares is said; showing the diff, and a place in it or the file whole; how many files it shows; one file of it beside
 // another view; the lines another feature explains, which the diff marks; the review threads
 // another feature places under its lines, showing one of them, and the comment boxes it opens
-// there; diffing texts another feature has, as the diff's own files are diffed; and the code
-// other features draw in views of their own, whose lines the diff's keys read as its own.
+// there; diffing texts another feature has, as the diff's own files are diffed; the code
+// other features draw in views of their own, whose lines the diff's keys read as its own; and
+// what code features reach of the diff and the whole-file view: a peek, a word's box, inline
+// hints and the pointer resting on a word.
 
 import type {
   BoxFrame,
@@ -22,6 +24,7 @@ import { showMiddle, type PullTab } from '../../tab/window/shared.ts';
 import type { DiffState } from '../contract.ts';
 import { FILES_PER_JOB, type FileResult } from '../jobs.ts';
 import { Beside } from './Beside.tsx';
+import { codeViewsOf, onCodeRest as onRest, type CodeViewKind, type CodeViews } from './code.ts';
 import { changed, explainWith, type Explainer } from './explained.ts';
 import { addCodeElsewhere, type CodeElsewhere } from './elsewhere.ts';
 import { diffJobs } from './main.ts';
@@ -31,6 +34,8 @@ import { changed as changedThreads, type DrawnDiff, threadWith, type Threader } 
 import { DIFF_VIEW } from './whole.ts';
 
 export type { ShowWhen } from './places.ts';
+
+export type { CodeFile, CodeViewKind, CodeViews } from './code.ts';
 
 export type { CodeElsewhere } from './elsewhere.ts';
 
@@ -98,17 +103,56 @@ export function untilLocalCopy(local: LocalState | undefined): string {
  * Shows line `line` of the file at `path` in pull request's tab `tab`, as following a reference to
  * code does: in the diff on screen, its cursor on the line, when the comparison has the file;
  * otherwise the file whole, at the head the diff shows, with lines `marked` picked out. Without a
- * line, the file's top. The line is the head's: a caller with a place at another commit maps it
- * there first. Where the tab was is recorded in its history, so `⌃o` comes back, and focus goes to
- * the code.
+ * line, the file's top. The line and path are on side `side`: the head's, unless it's `old`, the
+ * base's, as a definition the syntax index found there is, which shows on the diff's old side, or
+ * for a file the comparison leaves alone, which is the same at both, the file whole at the head. A
+ * caller with a place at another commit maps it there first. Where the tab was is recorded in its
+ * history, so `⌃o` comes back, and focus goes to the code.
  */
 export function showPlace(
   tab: string,
   path: string,
   line: number | undefined,
   marked?: { from: number; to: number },
+  side: 'old' | 'new' = 'new',
 ): void {
-  showCode(tab, path, line, marked);
+  showCode(tab, path, line, marked, side);
+}
+
+/**
+ * Pull request's tab `tab`'s code views, the diff and the whole-file view, as code features reach
+ * them: which one the keys act on, the file and commit at a place, a peek under a line, a word's
+ * box for a card over it, and inline hints, which each view draws with its own marks.
+ */
+export function codeViews(tab: string): CodeViews {
+  return codeViewsOf(tab);
+}
+
+/**
+ * Calls `listener` each time the pointer rests on a word in a pull request's tab's diff or whole
+ * file, on screen, for half a second, and with no place once it leaves the word. Returns a function
+ * that stops it.
+ */
+export function onCodeRest(
+  listener: (tab: string, view: CodeViewKind, at: Place | undefined) => void,
+): () => void {
+  return onRest(listener);
+}
+
+/**
+ * `@lo/syntax`'s triples over `text` as the file at `path` is highlighted, in the background
+ * process, if it can be: for code another feature shows, such as a peek's.
+ */
+export async function highlightText(
+  path: string,
+  text: string,
+  signal?: AbortSignal,
+): Promise<Uint32Array | undefined> {
+  const [tokens] = await diffJobs().highlight(
+    { files: [{ path, old: null, new: text }] },
+    { signal },
+  );
+  return tokens?.new;
 }
 
 /**

@@ -123,7 +123,7 @@ import {
 } from './markers.ts';
 import { lineKey, marking, marksChanged, rowKey } from './marks.ts';
 import { otherLine } from './moves.ts';
-import { PeekBlock } from './peek.ts';
+import { PeekBlock, peekShownAt } from './peek.ts';
 import {
   collapsedRuns,
   type FileRows,
@@ -2690,17 +2690,19 @@ class View implements DiffView {
     // Focus in the view's code, or in the peek this one takes the place of, goes into it.
     const focused = this.#editors().some((view) => view.hasFocus) || open?.block.hasFocus === true;
     const block = new PeekBlock(at, peek, frame);
-    this.#keepPeek(place, () => {
+    const opened = { place, block };
+    const shown = this.#keepPeek(place, () => {
       if (open) {
         open.block.destroy();
         if (open.place.file !== place.file) this.#refresh(open.place.file);
       }
-      this.#peek = { place, block };
+      this.#peek = opened;
       this.#peekLines[place.file]![place.side].add(place.line);
       this.#keepAt(place.file);
       this.#refresh(place.file);
     });
     if (focused) block.focus();
+    if (shown) this.#showPeek(opened);
     return true;
   }
 
@@ -2708,10 +2710,50 @@ class View implements DiffView {
    * Makes a change to the peek under `place`, which the reader asked for: while some of the line is
    * on screen, it stays where it is, and so does all above it; off screen, above it or below,
    * what's at the top of the screen does, so a peek opening or closing out of sight moves nothing.
+   * Says whether the line was on screen.
    */
-  #keepPeek(place: At, change: () => void): void {
-    if (this.#lineOnScreen(place)) this.#keepLine(place, change);
+  #keepPeek(place: At, change: () => void): boolean {
+    const shown = this.#lineOnScreen(place);
+    if (shown) this.#keepLine(place, change);
     else this.#keepTop(change);
+    return shown;
+  }
+
+  /**
+   * Brings `opened`, under a line on screen, on screen whole, once what it moved is lined up: the
+   * least scroll that ends it at the screen's foot, its line going no higher than the top, where a
+   * peek taller than the room under it puts it. It's a jump the reader asked for, as `reveal`'s:
+   * the editor scrolls to the line, the cursor on it where the peek has it. A peek on screen whole
+   * moves nothing.
+   */
+  #showPeek(opened: { place: At; block: PeekBlock }): void {
+    // After the pass that keeps the line where it is, which the change scheduled first.
+    queueMicrotask(() => {
+      if (this.#peek !== opened) return;
+      const { place, block } = opened;
+      const pane: Pane = this.#pane === 'inline' ? 'inline' : place.side;
+      const view = this.#viewOf(pane);
+      view.lineBlockAtHeight(0);
+      const line = view.state.doc.line(this.#docLine(pane, place));
+      // The line's box, which goes where the peek wants it, and its text, which the editor scrolls
+      // to, a little under the box's top.
+      const top = drawnTop(view, line.from);
+      const text = view.coordsAtPos(line.from, 1);
+      const span = this.#spanOf(block.dom);
+      if (top === undefined || !text || !span) return;
+      const screen = this.dom.getBoundingClientRect().top;
+      const to = peekShownAt(top - screen, span.bottom - top, this.dom.clientHeight);
+      if (to === undefined) return;
+      this.#holding = undefined;
+      this.#jumped = undefined;
+      this.#lastPane = pane;
+      this.#lastSide = place.side;
+      this.#aligner.follow(pane === 'inline' ? undefined : pane);
+      view.dispatch({
+        selection: { anchor: line.from + Math.min(block.at.column ?? 0, line.length) },
+        effects: EditorView.scrollIntoView(line.from, { y: 'start', yMargin: to + text.top - top }),
+      });
+    });
   }
 
   /** Whether some of line `place` is drawn on screen, as one partly above its top. */
@@ -2987,7 +3029,9 @@ class View implements DiffView {
       const view = this.#viewOf(pane);
       const pos = view.posAtCoords({ x: event.clientX, y: event.clientY });
       if (pos === null) return;
-      clicked = this.#lineTarget(this.#placeAt(pane, view.state.doc.lineAt(pos).number));
+      // At the column clicked, so what acts on a word, as `gd` does, acts on the one clicked.
+      const line = view.state.doc.lineAt(pos);
+      clicked = this.#lineTarget(this.#placeAt(pane, line.number), pos - line.from);
     }
     event.preventDefault();
     this.#on.menu(clicked, event.clientX, event.clientY);

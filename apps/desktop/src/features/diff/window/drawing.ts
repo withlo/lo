@@ -28,6 +28,7 @@ import { comparisonHere, type ShownMarks, viewedMarkOf } from '../../revisions/w
 import type { PullTab } from '../../tab/window/shared.ts';
 import { followFile } from '../../tree/window/shared.ts';
 import type { Start } from '../contract.ts';
+import { hintsShown, restedIn } from './code.ts';
 import { explainer, marksOf, onExplained, sameMarks } from './explained.ts';
 import { diffFileOf, headerOf, startWith } from './files.ts';
 import type { Entry, Loader, Moved, Shown } from './loader.ts';
@@ -494,6 +495,10 @@ export function draw(options: DrawOptions): Drawing {
           keys.history.record(entryAt({ kind: 'line', at: line }));
         }
       },
+      // For a type hover, while the diff is on screen.
+      rested(line) {
+        if (showing || line === undefined) restedIn(tab.id, 'diff', line);
+      },
       // A moved label's click: a jump, from the line the label is over, to the other end.
       moved(to) {
         followLabel({ view, enter }, to, (left) => keys.history.record(entryAt(left)));
@@ -508,13 +513,22 @@ export function draw(options: DrawOptions): Drawing {
     change: versions.change,
   }));
   let explained: readonly Mark[] = [];
+  // Code features' inline hints, drawn with them.
+  let hints = hintsShown.get(tab.id).diff;
   const explain = () => {
     const next = marksOf(explainer()?.linesAt(tab.id, at) ?? [], whole);
     if (sameMarks(next, explained)) return;
     explained = next;
-    view.setMarks(next);
+    view.setMarks([...next, ...hints]);
   };
   explain();
+  if (hints.length > 0) view.setMarks([...explained, ...hints]);
+  const hint = () => {
+    const next = hintsShown.get(tab.id).diff;
+    if (next === hints) return;
+    hints = next;
+    view.setMarks([...explained, ...hints]);
+  };
   // The review threads under the lines, placed as the threader says for what each column shows, and
   // drawn by it, now and each time they change. The headers count what each file's hold.
   const threaded = (): DrawnDiff => ({ at, comparison, compareFrom, files: threadFiles(latest) });
@@ -625,6 +639,7 @@ export function draw(options: DrawOptions): Drawing {
     keys.subscribe(() => view.setVimKeys(keys.vimKeys())),
     onExplained(tab.id, explain),
     onThreads(tab.id, () => showThreads()),
+    hintsShown.subscribe(hint),
   ];
   const setShown = (shown: boolean) => {
     if (shown === (showing !== undefined)) return;

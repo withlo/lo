@@ -12,6 +12,7 @@ import type { DiffState, FileVersions } from '../contract.ts';
 import { keyOf, Loader } from './loader.ts';
 import { keepPlaces, showPlace } from './places.ts';
 import type * as Tabs from './tabs.ts';
+import { opened } from './whole.ts';
 
 const seen = vi.hoisted(() => ({
   loader: undefined as unknown,
@@ -209,6 +210,32 @@ describe('showPlace', () => {
     showPlace('t1', 'src/parser.ts', 3);
     diff.take(state([changed('src/parser.ts')]));
     expect(seen.middles).toEqual(['diff.view']);
+  });
+
+  it('shows a place on the base’s side on the diff’s old side, by the file’s path there', () => {
+    const diff = loader();
+    const renamed = { ...changed('src/parser.ts'), previous: { text: 'src/parse.ts' } };
+    diff.take(state([renamed]));
+    showPlace('t1', 'src/parse.ts', 4, { from: 4, to: 4 }, 'old');
+    expect(seen.middles).toEqual(['diff.view']);
+    const file = diff.ids.of(keyOf(renamed));
+    expect(seen.reveals).toEqual([
+      { target: { kind: 'line', at: { file, side: 'old', line: 4 } }, focus: true },
+    ]);
+  });
+
+  it('shows a place on the base’s side of a file the diff leaves alone whole, at the head', () => {
+    const diff = loader();
+    diff.take(state([changed('src/parser.ts')]));
+    // The head's path is no base's: src/parser.ts was src/parse.ts nowhere here.
+    showPlace('t1', 'src/format.ts', 2, undefined, 'old');
+    expect(seen.middles).toEqual(['diff.whole']);
+    expect(seen.reveals).toEqual([]);
+    expect(opened.get('t1')).toMatchObject({
+      path: { text: 'src/format.ts' },
+      version: 'new',
+      ask: { at: { kind: 'line', at: { side: 'new', line: 2 } } },
+    });
   });
 
   it('shows the place at once when the files are known', () => {
