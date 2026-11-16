@@ -19,10 +19,12 @@ export interface Placed {
   /** The branch it merges into: the facts' `pullRequest.base`. */
   readonly base: string;
   /**
-   * The GitHub stack it's a layer of, if it's in one, and its place there from 1 at the bottom:
-   * the facts' `stack.number` and `stack.position`.
+   * The GitHub stack it's a layer of, if it's in one: the facts' `stack.number`, its place there
+   * from 1 at the bottom (`stack.position`), and the branch the whole stack merges into
+   * (`stack.base`), which the list has as its bottom open layer's base.
    */
-  readonly stack: { readonly number: number; readonly position: number } | undefined;
+  readonly stack:
+    { readonly number: number; readonly position: number; readonly base: string } | undefined;
 }
 
 /** Where `facts` put their pull request. */
@@ -30,7 +32,7 @@ export function placedBy(facts: MergeFacts): Placed {
   const { stack } = facts;
   return {
     base: facts.pullRequest.base,
-    stack: stack && { number: stack.number, position: stack.position },
+    stack: stack && { number: stack.number, position: stack.position, base: stack.base },
   };
 }
 
@@ -154,11 +156,13 @@ export function where(view: WhereView): Where {
   const layer = layerOf(stacks, number);
   const stack = stackOf(stacks, number);
   if (!layer || !stack) return unknown({ kind: 'missing' }, view);
+  const entry = layer.nativeStack;
   const listed: Placed = {
     base: layer.baseRef,
-    stack: layer.nativeStack && {
-      number: layer.nativeStack.stack,
-      position: layer.nativeStack.position,
+    stack: entry && {
+      number: entry.stack,
+      position: entry.position,
+      base: githubBottom(stacks, layer, entry).baseRef,
     },
   };
   if (!samePlace(listed, facts)) return unknown({ kind: 'moved', listed }, view);
@@ -183,7 +187,7 @@ function readAfresh(
 ): Where | undefined {
   // It, and its GitHub stack's bottom layer, which a stack merges into the base of.
   const entry = layer.nativeStack;
-  const bottom = entry ? layerOf(stacks, githubBelow(stacks, entry)[0] ?? layer.number) : undefined;
+  const bottom = entry && githubBottom(stacks, layer, entry);
   const layers = [layer, ...(bottom && bottom !== layer ? [bottom] : [])];
   // The branches the list says nothing comes from: a stack's root, and a layer's base it sits on.
   const roots = layers.flatMap((each) => [
@@ -230,11 +234,20 @@ function githubBelow(stacks: Stacks, entry: NativeStackEntry): number[] {
     .map((other) => other.number);
 }
 
+/** The lowest open layer of `layer`'s GitHub stack, whose base the whole stack merges into. */
+function githubBottom(stacks: Stacks, layer: Layer, entry: NativeStackEntry): Layer {
+  return layerOf(stacks, githubBelow(stacks, entry)[0] ?? layer.number) ?? layer;
+}
+
 /** Whether `a` and `b` put a pull request in the same place. */
 function samePlace(a: Placed, b: Placed): boolean {
   if (a.base !== b.base) return false;
   if (a.stack === undefined || b.stack === undefined) return a.stack === b.stack;
-  return a.stack.number === b.stack.number && a.stack.position === b.stack.position;
+  return (
+    a.stack.number === b.stack.number &&
+    a.stack.position === b.stack.position &&
+    a.stack.base === b.stack.base
+  );
 }
 
 /** Where `layer` sits among `stacks`, which Lo can be sure of. */
@@ -243,7 +256,7 @@ function placed(stacks: Stacks, layer: Layer): Where {
   if (entry) {
     // GitHub's stack, as the open layers say it: a closed layer between them doesn't split it.
     const below = githubBelow(stacks, entry);
-    const bottom = layerOf(stacks, below[0] ?? layer.number) ?? layer;
+    const bottom = githubBottom(stacks, layer, entry);
     if (onItsBase(bottom)) return { kind: 'githubStack', stack: entry.stack, below };
     // The GitHub stack sits on another pull request, or on a merged one's branch.
     return inChain(stacks, layer, bottom);
@@ -335,8 +348,11 @@ function movedText(number: number, facts: Placed, listed: Placed): string {
   }
   const said = facts.stack;
   const has = listed.stack;
-  if (said && has && said.number === has.number) {
+  if (said && has && said.number === has.number && said.position !== has.position) {
     return `GitHub says #${number} is layer ${said.position} of GitHub stack #${said.number}, but Lo's list has it as layer ${has.position}.`;
+  }
+  if (said && has && said.number === has.number) {
+    return `GitHub says GitHub stack #${said.number} merges into ${said.base}, but Lo's list says ${has.base}.`;
   }
   const github = said === undefined ? 'no GitHub stack' : `GitHub stack #${said.number}`;
   const list = has === undefined ? 'none' : `#${has.number}`;

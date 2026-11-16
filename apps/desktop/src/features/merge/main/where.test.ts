@@ -93,12 +93,20 @@ const MAIN = repository([
   pull(31, 'm30', 'c31', { baseTip: squashed.headOid, commits: [squashed.headOid] }),
 ]);
 
-/** Where `layer` sits as the list has it, as GitHub's merge facts would agree. */
-function placedIn(layer: Layer): Placed {
+/** Where `layer` sits as the list in `at` has it, as GitHub's merge facts would agree. */
+function placedIn(layer: Layer, at: Repository = MAIN): Placed {
   const entry = layer.nativeStack;
+  // The stack merges into its bottom layer's base.
+  const bottom = Object.values(at.stacks.layers)
+    .filter((other) => other.nativeStack?.stack === entry?.stack)
+    .toSorted((a, b) => (a.nativeStack?.position ?? 0) - (b.nativeStack?.position ?? 0))[0];
   return {
     base: layer.baseRef,
-    stack: entry && { number: entry.stack, position: entry.position },
+    stack: entry && {
+      number: entry.stack,
+      position: entry.position,
+      base: bottom?.baseRef ?? layer.baseRef,
+    },
   };
 }
 
@@ -161,7 +169,7 @@ function view(number: number, more: Partial<WhereView> = {}, at: Repository = MA
   const layer = layerOf(at.stacks, number);
   return {
     number,
-    facts: layer ? placedIn(layer) : { base: 'main', stack: undefined },
+    facts: layer ? placedIn(layer, at) : { base: 'main', stack: undefined },
     forest: forest({}, at),
     openFrom: readFrom(at),
     now: NOW,
@@ -353,7 +361,7 @@ describe('where a pull request sits is unknown', () => {
   });
 
   it('while the list has it in another GitHub stack than the merge facts, or none', () => {
-    expect(unsure(stackSaid(2, { number: 90, position: 1 }))).toMatchObject({
+    expect(unsure(stackSaid(2, { number: 90, position: 1, base: 'main' }))).toMatchObject({
       why: { kind: 'moved', listed: { base: 'main', stack: undefined } },
       text: "GitHub says #2 is in GitHub stack #90, but Lo's list has it in none. Lo is listing the open pull requests again.",
       listAgain: true,
@@ -361,19 +369,28 @@ describe('where a pull request sits is unknown', () => {
     expect(unsure(stackSaid(11, undefined)).text).toBe(
       "GitHub says #11 is in no GitHub stack, but Lo's list has it in #90. Lo is listing the open pull requests again.",
     );
-    expect(unsure(stackSaid(11, { number: 97, position: 2 })).text).toBe(
+    expect(unsure(stackSaid(11, { number: 97, position: 2, base: 'main' })).text).toBe(
       "GitHub says #11 is in GitHub stack #97, but Lo's list has it in #90. Lo is listing the open pull requests again.",
     );
   });
 
   it('while the list has it at another place in its GitHub stack than the merge facts', () => {
-    expect(unsure(stackSaid(11, { number: 90, position: 1 }))).toMatchObject({
-      why: { kind: 'moved', listed: { stack: { number: 90, position: 2 } } },
+    expect(unsure(stackSaid(11, { number: 90, position: 1, base: 'main' }))).toMatchObject({
+      why: { kind: 'moved', listed: { stack: { number: 90, position: 2, base: 'main' } } },
       text: "GitHub says #11 is layer 1 of GitHub stack #90, but Lo's list has it as layer 2. Lo is listing the open pull requests again.",
       listAgain: true,
     });
     // Never the bottom of the stack, with nothing below, while they disagree.
-    expect(unsure(stackSaid(10, { number: 90, position: 2 })).why.kind).toBe('moved');
+    expect(unsure(stackSaid(10, { number: 90, position: 2, base: 'main' })).why.kind).toBe('moved');
+  });
+
+  it('while the list has its GitHub stack merging into another branch than the merge facts', () => {
+    // #10, the stack's bottom layer, moved onto release since the list was read.
+    expect(unsure(stackSaid(11, { number: 90, position: 2, base: 'release' }))).toMatchObject({
+      why: { kind: 'moved', listed: { stack: { number: 90, position: 2, base: 'main' } } },
+      text: "GitHub says GitHub stack #90 merges into release, but Lo's list says main. Lo is listing the open pull requests again.",
+      listAgain: true,
+    });
   });
 
   it('while pull requests in its stack sit on each other in a loop', () => {
