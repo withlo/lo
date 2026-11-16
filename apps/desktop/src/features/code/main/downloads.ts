@@ -1,8 +1,8 @@
 // A server's downloads added up, so its status item counts them as one: the server, the Node it
-// runs on and the toolchains it uses, "Java downloading · 40 of 186 MB". Its adapter names them up
-// front, so the total holds from the first byte: each not installed yet counts its whole size from
-// the start, and one installed already counts for nothing. One it didn't name counts once it
-// starts. Nothing here calls Electron.
+// runs on and the toolchains it uses, "Java downloading · 38.1 MB of 177.4 MB". Its adapter names
+// them up front, so the total holds from the first byte: each not installed yet counts its whole
+// size from the start, and one installed already counts for nothing. One it didn't name counts
+// once it starts. Nothing here calls Electron.
 
 /** One download a server waits for: how much has come of how much. */
 interface Part {

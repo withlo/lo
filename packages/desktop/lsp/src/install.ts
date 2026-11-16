@@ -470,9 +470,9 @@ async function freeSpace(folder: string): Promise<number | undefined> {
   return found === undefined ? undefined : found.bavail * found.bsize;
 }
 
-/** `bytes` in MB, rounded up, as the status bar counts a download. */
+/** `bytes` in MB, rounded up, in the binary units Settings and the status bar count in. */
 function megabytes(bytes: number): string {
-  return `${Math.ceil(bytes / 1_000_000).toLocaleString('en-US')} MB`;
+  return `${Math.ceil(bytes / 1024 ** 2).toLocaleString('en-US')} MB`;
 }
 
 /**

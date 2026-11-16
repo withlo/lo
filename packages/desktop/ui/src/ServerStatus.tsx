@@ -3,6 +3,7 @@ import { cva } from 'class-variance-authority';
 import { useCallback, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 
 import { Button } from './Button.tsx';
+import { formatBytes } from './bytes.ts';
 import { showFormat } from './controls.ts';
 import { useTakeFocus } from './focus.ts';
 import { ShownText } from './ShownText.tsx';
@@ -72,11 +73,6 @@ const FALLBACK = "Peek, references and hovers fall back to the syntax index unti
 const WAITING = "Peek, references and hovers use the syntax index until it's ready.";
 const UNTIL = 'Until then, peek, references and hovers use the syntax index.';
 
-/** Bytes as whole megabytes, as a download's progress counts them. */
-function megabytes(bytes: number): number {
-  return Math.round(bytes / 1_000_000);
-}
-
 /** The percent of a progress report, clamped to the scale it's on. */
 function percentOf(percent: number): number {
   return Math.min(100, Math.max(0, Math.round(percent)));
@@ -91,7 +87,7 @@ function Words({ name: raw, state }: { name: string; state: ServerState }): Reac
         <>
           {name} downloading ·{' '}
           <span className="lo-num">
-            {megabytes(state.done)} of {megabytes(state.total)} MB
+            {formatBytes(state.done)} of {formatBytes(state.total)}
           </span>
         </>
       );
