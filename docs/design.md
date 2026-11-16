@@ -82,8 +82,8 @@ these rules.
 | `artifact` | The artifact format: its parser and checks (MIT)                                                           | Anywhere                    |
 | `checker`  | The checker's command line, published to npm (MIT)                                                         | Node                        |
 | `git`      | Partial clones, fetching PR commits and artifact refs, checkouts                                           | Desktop, main process       |
-| `syntax`   | Highlighting and the syntax index, built with tree-sitter                                                  | Desktop, background process |
-| `lsp`      | Starting, feeding and stopping language servers                                                            | Desktop, main process       |
+| `syntax`   | Highlighting, and the syntax index's tags and ranking, built with tree-sitter                              | Desktop, background or main |
+| `lsp`      | Downloading language servers and their toolchains, and starting, feeding and stopping the servers          | Desktop, main process       |
 | `ui`       | Lo's React components and CodeMirror extensions                                                            | Desktop, window             |
 | `desktop`  | The Electron app: processes, windows, menus, settings, updates                                             | Desktop                     |
 
@@ -105,15 +105,18 @@ syntax-aware diff. A small bridge turns tree-sitter's output into CodeMirror hig
 
 ### Processes
 
-- **Main process.** It holds the GitHub tokens, makes every GitHub call and owns the database. It
-  starts git and language servers as child processes.
+- **Main process.** It holds the GitHub tokens, makes every GitHub call and owns the database and
+  the syntax index's store. It starts git and language servers as child processes and speaks the
+  protocol with the servers itself.
 - **Window.** It draws the interface in a sandbox with no access to Node or the file system. It asks
   the main process for data through a small, typed set of messages, and it never sees a token.
 - **Background process.** Parsing and highlighting, the syntax index, diffs and moved-code
   detection, and Markdown and artifact parsing run in one background process, each job with a time
   limit. The main process restarts it when its memory passes a cap, so a hostile file can't freeze
   Lo or exhaust its memory. It gets no tokens: the main process reads git and hands it file
-  contents, and the window gets its results directly.
+  contents, and the window gets its results directly. Main sends it work of its own too, for the
+  syntax index's parsing, in a queue behind the window's: those jobs run one at a time, so the index
+  never slows what you asked for.
 
 ### Untrusted content
 
@@ -132,14 +135,19 @@ Everything a PR contains is untrusted: code, Markdown, images and artifacts.
 ### Local data
 
 - **Database.** A SQLite file holds cached PR data, "last seen" revisions, the account to use per
-  owner, trusted repos, recent PRs and unsent comment text.
+  owner, recent PRs, unsent comment text and the repos whose banner about language servers you
+  dismissed.
+- **Settings file.** `settings.json` in `~/.config/lo/` holds the settings, among them which repos
+  and PRs you trust to run language servers. The window shows that list but can't change it: only
+  the main process writes it, once its own dialog says "Trust".
 - **Tokens** are encrypted with a key kept in the system keychain, and stored in the database, one
   per account. On Linux that's a keyring, such as GNOME Keyring or KWallet: when none answers, Lo
   asks for one rather than keep a token as good as unencrypted.
 - **Repo copies.** Each repo gets a bare partial clone in Lo's cache folder. On a Mac that's the
   folder macOS keeps for the user's caches outside the home folder (`/var/folders/…/C/Lo`), so no
   settings a tool reads from the folders above its own, such as `~/.cargo/config.toml`, reach the
-  language servers Lo runs there.
+  language servers Lo runs there. The servers and toolchains Lo downloads, and the syntax index's
+  store, are in that folder too.
 
 ### Per-system code
 
@@ -569,7 +577,7 @@ repo. The right side of a diff navigates the new commit, and the left side the o
 
 - **Index.** Lo builds a symbol index from tree-sitter tag queries, reading files from its local
   copy. The first index of a repo downloads its files at that commit, and later commits reuse most
-  of them.
+  of them. It needs no trust, since reading a file runs nothing.
 - **How it answers.** The index answers inside the app, for both sides of the diff, the peek and the
   whole-file view.
 - **Name collisions.** When a name matches several definitions, the peek lists them all: same file
@@ -577,13 +585,17 @@ repo. The right side of a diff navigates the new commit, and the left side the o
 
 ### Language servers, on trusted repos
 
-- **What they add.** Type hovers, inline type hints (off by default, toggled with a key), and exact
-  definitions and references.
-- **How they run.** Lo starts each one as a child process on a checkout of the PR head, and
-  CodeMirror talks to it through its language-server client. They serve the new side only. The old
-  side keeps syntax-based navigation.
-- **Precedence.** Language server answers win. Syntax-based answers fill in while a language server
-  starts up.
+- **What they add.** Type hovers, inline type hints (off by default, toggled with a key), exact
+  definitions and references, and the file's outline.
+- **How they run.** The main process starts each one as a child process on a checkout of the PR head
+  and speaks the protocol with it. The window asks main, which answers from the server or, when the
+  server can't, from the syntax index. They serve the new side only. The old side keeps syntax-based
+  navigation.
+- **How many.** One server runs per repo and language, on the head on screen, and it moves when
+  another head of the repo comes on screen. Each is held to 4 GB, and at most four run, holding 8 GB
+  in all: past either, the one used longest ago that isn't on screen stops.
+- **Precedence.** Language server answers win, each labelled with the server's name. Syntax-based
+  answers fill in while a language server starts up, or when it can't answer, and say why.
 - **Dependencies.** Dependencies are never installed, so a symbol from one shows its import and
   nothing more.
 
@@ -593,17 +605,36 @@ repo. The right side of a diff navigates the new commit, and the left side the o
   Python, Rust, Go, Swift, Kotlin, Terraform, Ruby, Java, C#, PHP and Elixir, plus common config and
   markup formats.
 - **Language servers** come from a fixed list built into Lo, one per language: TypeScript and
-  JavaScript, Python, Rust, Go, Swift, Kotlin, Terraform, Ruby, Java, C# and PHP. Each is downloaded
-  on first use from its official source, only for trusted repos, and Lo uses an installed copy when
-  it finds one.
+  JavaScript (vtsls), Python (Pyright), PHP (php-lsp), Go (gopls), Terraform (terraform-ls), Rust
+  (rust-analyzer), Java (Eclipse JDT LS) and C# (Roslyn's server). Each is downloaded on first use,
+  only for trusted repos, from its project's own release: npm, NuGet, GitHub releases,
+  releases.hashicorp.com and download.eclipse.org. The Go team publishes no gopls binary, so Lo
+  fetches its source from the Go module proxy and builds it, offline. Every file is pinned by its
+  hash. vtsls and Pyright run on a Node that Lo downloads for them from nodejs.org.
 - **Toolchains.** The toolchains servers need are Lo's own too: Go, Rust, a Temurin JDK and the .NET
   SDK, one version each, pinned and downloaded like the servers on first use of their language.
-  Servers never use the machine's, nor a version a repo asks for. A repo whose `global.json` names
-  other folders to find a .NET SDK in gets no .NET server, and one whose `go.work` names folders
-  outside it, or that sits below a `go.work`, no Go server, each saying why. Settings lists them
-  with their sizes, and removes them.
-- **Java and Kotlin.** Their servers read the project's Gradle or Maven build to understand it,
-  which is one reason language servers need trust.
+  Servers never use the machine's, nor a version a repo asks for. Settings lists them with their
+  sizes, and removes them.
+- **Hardening.** Each server runs as its own program, never through a shell, in an environment built
+  from nothing, so none of Lo's secrets or your settings reach it. It has no network: its proxy
+  variables point nowhere. Its home is a folder of its own in Lo's cache, so it reads none of the
+  settings files in yours. Nothing in a checkout chooses what runs or how, and a server's settings
+  are Lo's. None is sandboxed, though: a server reads what you can, and Lo never opens a place
+  outside the checkout that an answer names.
+- **Refusals.** A checkout that holds files a server's tools would act on gets no server for that
+  language, and the status bar says why. For Rust that's a `rust-analyzer.toml`, or a Cargo config
+  that sets an environment or unstable options, includes another file or sits above the checkout;
+  for Go, a `go.work` above the checkout or one that names folders outside it; for C#, a
+  `global.json` that names folders to find an SDK in, or an MSBuild or NuGet settings file, such as
+  `Directory.Build.props`, above the checkout; and for Java, Eclipse's `.settings` folder at the
+  root.
+- **Homes.** Each server has a home of its own for each repo in Lo's cache, where it keeps all it
+  writes. The cache's size cap counts homes, and a repo's go with its clone.
+- **Java and C#.** Neither server reads the repo's build, since a build can run code. Java's source
+  folders come from the files' own packages, and Roslyn gets a project of Lo's own that lists the
+  checkout's `.cs` files. So a type from a dependency has no definition.
+- **Without a server.** Kotlin and Ruby have none and answer from the syntax index, as does any
+  other language that has a grammar but no server.
 
 ### Trust
 
@@ -611,9 +642,14 @@ Language servers run only when the repo is trusted and the PR's branch lives in 
 a fork is someone else's code, even in a repo you trust.
 
 - **Untrusted repo.** A banner says "Language servers are off for this repo," with buttons to trust
-  the repo or dismiss the banner. You're asked once per repo.
-- **PR from a fork.** The banner offers to trust that one PR instead.
-- **Settings.** Settings lists trusted repos and PRs, and you can remove any of them.
+  the repo or dismiss the banner. You're asked once per repo: trusting opens a dialog of Lo's own
+  that names the repo, with "Cancel" as its default, and Lo remembers a dismissal for the repo.
+- **PR from a fork.** The banner offers to trust that one PR instead, and its later pushes are
+  trusted too.
+- **Where it's kept.** Trust is in the settings file, by the repo's name and GitHub's ID for it, so
+  a name that comes to belong to another repo isn't trusted. Only the main process writes it.
+- **Settings.** Settings lists trusted repos and PRs, and you can remove any of them. Removing one
+  stops the servers it alone trusted and removes their checkouts.
 
 ### Navigating
 
@@ -621,8 +657,10 @@ a fork is someone else's code, even in a repo you trust.
   only, in the same tab, and `⌃o` brings you back to the diff.
 - **Into the diff.** If the definition is in a file the PR changes, Lo jumps to that spot in the
   diff instead of the plain file.
-- **Other keys.** `gr` lists references in a panel. `K` shows the type hover. `⌃o` and `⌃i` go back
-  and forward, comparing again the revisions a place in the diff was in.
+- **Other keys.** `gr` lists references in a panel, the right one, beside the threads. `K` shows the
+  type hover, `gh` turns inline type hints on or off and `gO` opens the file's outline. In moved
+  code, `gm` goes to the other end. `⌃o` and `⌃i` go back and forward, comparing again the revisions
+  a place in the diff was in.
 
 ## 10. Comments, reviews and the timeline
 
@@ -816,10 +854,12 @@ the keymap file, `~/.config/lo/keymap`. `?` shows every key.
 | What            | Keys                                                                                                                                                                                                                                                                                                                                   |
 | --------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Move            | `j`/`k` line, `w`/`b` word, `gg`/`G` top and bottom                                                                                                                                                                                                                                                                                    |
-| Jump            | `]c`/`[c` change, `]f`/`[f` file, `]t`/`[t` thread, `]s`/`[s` stack layer                                                                                                                                                                                                                                                              |
+| Jump            | `]c`/`[c` change, `]f`/`[f` file, `]t`/`[t` thread, `]s`/`[s` stack layer, `gm` the other end of moved code                                                                                                                                                                                                                            |
 | Act             | `v` select lines, `c` comment, `C` comment right away, `s` suggest, `e` mark viewed, `Tab` switch side                                                                                                                                                                                                                                 |
 | Threads         | `r` reply, `x` resolve or unresolve, `i` edit your comment, `dd` delete your comment                                                                                                                                                                                                                                                   |
-| Code            | `gd` definition, `gr` references, `K` type hover, `gh` inline type hints, `⌃o`/`⌃i` back and forward                                                                                                                                                                                                                                   |
+| Code            | `gd` definition, `gr` references, `K` type hover, `gh` inline type hints, `gO` outline, `⌃o`/`⌃i` back and forward                                                                                                                                                                                                                     |
+| Peek            | `j`/`k` pick an answer, `⏎` go to it, `gr` the references of the same name, `Esc` close it                                                                                                                                                                                                                                             |
+| References      | In the references panel, which `gr` opens: `j`/`k` move, `⏎` go there, `Esc` back to the threads, or close the panel                                                                                                                                                                                                                   |
 | Copy and open   | `yy` the line, `yl` a link to it, `yp` the file's path, `gf` the whole file, `gx` on GitHub                                                                                                                                                                                                                                            |
 | Review          | `m` merge panel, `a` merge when ready (in the merge panel), `⌘⏎` submit review, `⌘⇧⏎` approve and ship, `gq` the merge queue, `gS` make this a GitHub stack                                                                                                                                                                            |
 | Find            | `⌘L` open PR (`⌘O` too on macOS), `⌘P` files, `⌘⇧P` command palette, `/` search, `n`/`N` next and previous match                                                                                                                                                                                                                       |
@@ -836,7 +876,8 @@ the keymap file, `~/.config/lo/keymap`. `?` shows every key.
 | Tabs and window | `⌘1`–`⌘9` a tab, `⌘⇧]`/`⌘⇧[` or `⌃⇥`/`⌃⇧⇥` next and previous tab, `⌘W` close the tab, `⌘,` settings, `?` every key, `Menu` or `⇧F10` the right-click menu of what has focus, `g ,` open the keymap file                                                                                                                                |
 
 Copying is always `y` plus a letter; there's no single-key `y`. `⌃o` returns from anywhere a key
-took you: from the code back to the overview block, from a definition back to the diff.
+took you: from the code back to the overview block, from a definition or the other end of moved code
+back to the diff.
 
 A count typed before a key repeats it, as in Vim, for `e`, `yy`, `]s` and `[s`, and `j` and `k` in
 the file tree: `3e` marks three files viewed, and `2yy` copies two lines as they show. A count
@@ -864,7 +905,7 @@ screen a place with `⌃⇧PgUp` and `⌃⇧PgDn`; the tabs come back in that or
 - **Left.** The stack tree, with the file tree below it.
 - **Middle.** The overview, the diff or the timeline. One key cycles between them. When code is
   opened beside the overview, the middle splits in two and the diff shows in its inline layout.
-- **Right.** The threads panel.
+- **Right.** The threads panel, or the references `gr` lists, one at a time.
 
 Each panel opens and closes with a key. With no PR open, Lo shows the PRs you opened recently,
 across all accounts.
@@ -887,7 +928,8 @@ has:
 ### Settings
 
 Settings live in a file in `~/.config/lo/` and in a Settings screen. They cover accounts, trusted
-repos and PRs, the theme, the cache, and whether a PR opens on its overview or its diff.
+repos and PRs, the theme, the cache, the toolchains language servers use, and whether a PR opens on
+its overview or its diff.
 
 ### Opening links
 
@@ -979,7 +1021,8 @@ cap.
 ### Language servers
 
 If one fails to download, crashes or hangs, syntax-based navigation carries on, the status bar shows
-the problem, and a button restarts it. A repo's language servers stop when its last tab closes.
+the problem, and a button restarts it. A repo's language servers stop when its last tab closes, and
+a server stops once its PR hasn't been on screen for 10 minutes.
 
 ## 14. Testing
 
@@ -1022,8 +1065,8 @@ the problem, and a button restarts it. A repo's language servers stop when its l
 | Code in overviews by reference                                                   | Code written into the artifact                                     | An overview can't misquote the PR                                                                                 | A block needs the code loaded before it shows                                      |
 | Lo never writes an overview                                                      | An action that runs a local agent                                  | Lo calls no model                                                                                                 | One copy and paste to get an overview                                              |
 | The whole repo in the file tree                                                  | A list of changed files                                            | Changed files are seen in context                                                                                 | More to load in large repos                                                        |
-| Language servers for eleven languages in v1                                      | Syntax-based navigation only in v1                                 | Types and exact references are what GitHub can't show                                                             | Each server needs its own download and start-up handling                           |
-| A fixed list of language servers built into Lo                                   | An extension store                                                 | Nothing is fetched from a third party's store                                                                     | New languages arrive only with Lo releases                                         |
+| Language servers in v1                                                           | Syntax-based navigation only in v1                                 | Types and exact references are what GitHub can't show                                                             | Each server needs its own download and start-up handling                           |
+| A fixed list of language servers, each from its project's own source             | An extension store                                                 | Official sources only (npm, NuGet, GitHub, HashiCorp, Eclipse, Go's module proxy), each file pinned by hash       | New languages arrive only with Lo releases                                         |
 | The syntax-aware diff comes later                                                | In v1                                                              | Its algorithm must be written from scratch                                                                        | v1 has moved-code detection only                                                   |
 | Git is optional                                                                  | Git is required                                                    | A PR is useful from GitHub's API alone                                                                            | Two ways to load a PR                                                              |
 | Mac release, Linux preview as deb and rpm                                        | Mac only; both as full releases                                    | The tests already run on Linux                                                                                    | The Linux build is unpolished in v1                                                |

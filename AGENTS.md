@@ -1331,9 +1331,10 @@ parse them under `@lo/syntax`'s limits.
 The `code` feature runs language servers on the views the reader trusts, and their answers come
 before the syntax index's. A server is whatever an adapter (`main/adapters.ts`) says to start for
 its languages: Lo ships those for TypeScript and JavaScript, and Python, each downloaded with the
-Node it runs on; PHP, whose server is a program of its own; Go, gopls, which Lo builds with the Go
-it then runs with; Terraform, terraform-ls, which reads a `.tfvars` file as Terraform's variables;
-Java, JDT LS, which runs on Lo's Temurin JDK; and C#, Roslyn, which runs on Lo's .NET SDK.
+Node it runs on; Rust, rust-analyzer, which runs on Lo's Rust toolchain; PHP, whose server is a
+program of its own; Go, gopls, which Lo builds with the Go it then runs with; Terraform,
+terraform-ls, which reads a `.tfvars` file as Terraform's variables; Java, JDT LS, which runs on
+Lo's Temurin JDK; and C#, Roslyn, which runs on Lo's .NET SDK.
 
 - Nothing starts for a view nothing trusts: no download, no checkout, no server. Once a trusted view
   is on screen and a file its pull request adds or changes on the new side, or one asked about, is
