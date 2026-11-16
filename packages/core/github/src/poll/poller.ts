@@ -534,8 +534,8 @@ type Outcome =
       listed: ListedPulls;
       list: OpenPullRequestList | undefined;
       /**
-       * When GitHub gave the open pull requests, before the rulesets and lookups that follow, in
-       * milliseconds since the Unix epoch: what the list is stamped with.
+       * When Lo started reading the open pull requests, before their pages and the rulesets and
+       * lookups that follow, in milliseconds since the Unix epoch: what the list is stamped with.
        */
       listedAt: number;
       rules: TrunkRuleList | undefined;
@@ -2460,8 +2460,8 @@ export class Poller {
             state.lookupRetryAt = undefined;
           }
         }
-        // Stamped when GitHub gave them, not once the rulesets and lookups after them are done, so
-        // they never look newer than they are.
+        // Stamped when their read started, not once the rulesets and lookups after them are done,
+        // so they never look newer than they are.
         if (state.listed && sameJson(state.listed.value, listed)) {
           state.listed.fetchedAt = listedAt;
           touch(LISTED, listedAt);
@@ -2622,6 +2622,8 @@ async function pollRepo(
   now: () => number,
 ): Promise<Extract<Outcome, { kind: 'repo' }>> {
   const { repo } = job;
+  // Stamped as the read starts: a pull request opened while its pages are read may be missed.
+  const listedAt = now();
   const listed: ListedPulls = { pages: [] };
   for (let number = 1; number <= MAX_LISTED_PAGES; number++) {
     const known = job.listed?.pages[number - 1];
@@ -2649,5 +2651,5 @@ async function pollRepo(
     changed || job.list === undefined
       ? await openPullRequestsPaged(client, repo, PAGE_SIZE, RECENTLY_UPDATED_MERGED)
       : undefined;
-  return { kind: 'repo', listed, list, listedAt: now(), rules: undefined, written: job.written };
+  return { kind: 'repo', listed, list, listedAt, rules: undefined, written: job.written };
 }

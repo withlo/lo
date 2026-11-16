@@ -3,11 +3,11 @@
 // a pull request only once it knows, and it knows only while the list of open pull requests the
 // stacks were found among is recent, holds every open pull request, and holds this one where
 // GitHub's latest merge facts put it: the stacks are listed less often than the facts are read. A
-// pull request opened since the list, from the branch this one merges into, would sit below it, so
-// that branch is asked about afresh. Nothing here calls Electron or GitHub.
+// pull request opened since the list, from a branch its merge would go into, would sit below it, so
+// those branches are asked about afresh. Nothing here calls Electron or GitHub.
 
 import { MAX_OPEN_PULL_REQUESTS, type MergeFacts } from '@lo/github';
-import { layerOf, stackOf, type Layer, type Stacks } from '@lo/stacks';
+import { layerOf, stackOf, type Layer, type NativeStackEntry, type Stacks } from '@lo/stacks';
 
 import type { Forest } from '../../stacks/service.ts';
 
@@ -34,11 +34,15 @@ export function placedBy(facts: MergeFacts): Placed {
   };
 }
 
-/** An open pull request whose head branch is a given branch, as GitHub gives it. */
-export interface FromBranch {
-  readonly number: number;
-  /** `isCrossRepository`: whether its head branch is a fork's, which is never a base branch. */
-  readonly isCrossRepository: boolean;
+/** The open pull requests from a branch, as `@lo/github`'s `openPullsFromHead` reads them. */
+export interface OpenFromHead {
+  readonly pulls: readonly {
+    readonly number: number;
+    /** Whether its head branch is in the repository itself: a fork's is never a base branch. */
+    readonly sameRepository: boolean;
+  }[];
+  /** Whether GitHub gave only some of them: over 100, or some it answered as nothing. */
+  readonly cutShort: boolean;
 }
 
 /** What {@link where} is worked out from. */
@@ -54,11 +58,12 @@ export interface WhereView {
   readonly forest:
     Pick<Forest, 'stacks' | 'trunks' | 'listedAt' | 'listEvery' | 'whole'> | undefined;
   /**
-   * The open pull requests whose head branch is the one it merges into, read from GitHub when
-   * it's to merge, so one opened since the list was read isn't missed: nothing until they're read.
-   * Not needed when it merges into a trunk, which no pull request sits on a layer below.
+   * The open pull requests from each branch it, or the stack it merges with, merges into, read from
+   * GitHub when it's to merge, so one opened since the list was read isn't missed: its base branch
+   * and its stack's root, and its GitHub stack's base. A trunk needs none, since no pull request
+   * sits on a layer below one.
    */
-  readonly openFromBase: readonly FromBranch[] | undefined;
+  readonly openFrom: ReadonlyMap<string, OpenFromHead>;
   /** The time, in milliseconds since the Unix epoch. */
   readonly now: number;
 }
@@ -124,12 +129,14 @@ export type Unsure =
    */
   | { readonly kind: 'lookups' }
   /**
-   * It merges into `base`, which isn't a trunk, and the open pull requests from `base` haven't been
-   * read since it was asked to merge ({@link WhereView.openFromBase}).
+   * Its merge would go into `branch`, which isn't a trunk, and the open pull requests from it
+   * haven't been read since it was asked to merge ({@link WhereView.openFrom}).
    */
-  | { readonly kind: 'unconfirmed'; readonly base: string }
-  /** Pull request `pr` comes from `base`, the branch it merges into, but isn't in the list. */
-  | { readonly kind: 'unlistedBelow'; readonly pr: number; readonly base: string };
+  | { readonly kind: 'unconfirmed'; readonly branch: string }
+  /** GitHub gave only some of the open pull requests from `branch`, a branch its merge goes into. */
+  | { readonly kind: 'cutShort'; readonly branch: string }
+  /** Pull request `pr` comes from `branch`, a branch its merge goes into, but isn't in the list. */
+  | { readonly kind: 'unlistedBelow'; readonly pr: number; readonly branch: string };
 
 /** Where the pull request `view` shows sits, or why Lo can't tell. */
 export function where(view: WhereView): Where {
@@ -156,37 +163,68 @@ export function where(view: WhereView): Where {
   if (cycle) return unknown({ kind: 'cycle', prs: cycle.prs }, view);
   const unlooked = stacks.gaps.some((gap) => gap.kind === 'mergedPullRequests');
   if (unlooked && !trunks.includes(stack.root)) return unknown({ kind: 'lookups' }, view);
-  if (!trunks.includes(layer.baseRef)) {
-    const below = belowRead(view, stacks, layer, stack.layers);
-    if (below) return below;
-  }
-  return placed(stacks, layer);
+  return readAfresh(view, stacks, trunks, layer) ?? placed(stacks, layer);
 }
 
 /**
- * What the open pull requests read from `layer`'s base branch say, when that isn't what the list
- * says: that one opened since sits below it, or that they weren't read. Nothing when they agree.
+ * What the open pull requests read afresh from the branches `layer`'s merge would go into say, when
+ * that isn't what the list says: that they weren't read, or only in part; that one opened since the
+ * list sits below it; or that one the list has sits below where the list sits a layer on a branch.
+ * Nothing when they agree.
  */
-function belowRead(
+function readAfresh(
   view: WhereView,
   stacks: Stacks,
+  trunks: readonly string[],
   layer: Layer,
-  stack: readonly number[],
 ): Where | undefined {
-  const base = layer.baseRef;
-  if (!view.openFromBase) return unknown({ kind: 'unconfirmed', base }, view);
-  const from = view.openFromBase
-    .filter((pr) => !pr.isCrossRepository && pr.number !== layer.number)
-    .map((pr) => pr.number)
-    .toSorted((a, b) => b - a);
-  const unlisted = from.find((pr) => !layerOf(stacks, pr));
-  if (unlisted !== undefined) return unknown({ kind: 'unlistedBelow', pr: unlisted, base }, view);
-  // The list sits it on another pull request already, which the base branch's may be.
-  const [newest] = from;
-  if (newest === undefined || layer.parent.kind === 'pr') return undefined;
-  // It sits on the newest, as finding stacks would put it, and as far down as the list goes.
-  if (stack.includes(newest)) return unknown({ kind: 'cycle', prs: [layer.number, newest] }, view);
-  return { kind: 'chainAbove', bottom: stackOf(stacks, newest)?.layers[0] ?? newest };
+  // It, and its GitHub stack's bottom layer, which a stack merges into the base of.
+  const entry = layer.nativeStack;
+  const bottom = entry ? layerOf(stacks, githubBelow(stacks, entry)[0] ?? layer.number) : undefined;
+  const layers = [layer, ...(bottom && bottom !== layer ? [bottom] : [])];
+  // The branches the list says nothing comes from: a stack's root, and a layer's base it sits on.
+  const roots = layers.flatMap((each) => [
+    stackOf(stacks, each.number)?.root ?? each.baseRef,
+    ...(each.parent.kind === 'branch' ? [each.baseRef] : []),
+  ]);
+  const into = [...new Set([...layers.map((each) => each.baseRef), ...roots])].filter(
+    (branch) => !trunks.includes(branch),
+  );
+  const from = new Map<string, number[]>();
+  for (const branch of into) {
+    const read = view.openFrom.get(branch);
+    if (!read) return unknown({ kind: 'unconfirmed', branch }, view);
+    if (read.cutShort) return unknown({ kind: 'cutShort', branch }, view);
+    const numbers = read.pulls
+      .filter((pr) => pr.sameRepository && pr.number !== layer.number)
+      .map((pr) => pr.number)
+      .toSorted((a, b) => b - a);
+    const pr = numbers.find((number) => !layerOf(stacks, number));
+    if (pr !== undefined) return unknown({ kind: 'unlistedBelow', pr, branch }, view);
+    from.set(branch, numbers);
+  }
+  const own = stackOf(stacks, layer.number)?.layers ?? [layer.number];
+  for (const branch of new Set(roots)) {
+    // It sits on the newest, as finding stacks would put it, and as far down as the list goes.
+    const [newest] = from.get(branch) ?? [];
+    if (newest === undefined) continue;
+    if (own.includes(newest)) {
+      return unknown({ kind: 'cycle', prs: [own[0] ?? layer.number, newest] }, view);
+    }
+    return { kind: 'chainAbove', bottom: stackOf(stacks, newest)?.layers[0] ?? newest };
+  }
+  return undefined;
+}
+
+/** The open layers of the GitHub stack `entry` names below its place, bottom first. */
+function githubBelow(stacks: Stacks, entry: NativeStackEntry): number[] {
+  return Object.values(stacks.layers)
+    .filter(
+      (other) =>
+        other.nativeStack?.stack === entry.stack && other.nativeStack.position < entry.position,
+    )
+    .toSorted((a, b) => (a.nativeStack?.position ?? 0) - (b.nativeStack?.position ?? 0))
+    .map((other) => other.number);
 }
 
 /** Whether `a` and `b` put a pull request in the same place. */
@@ -201,13 +239,7 @@ function placed(stacks: Stacks, layer: Layer): Where {
   const entry = layer.nativeStack;
   if (entry) {
     // GitHub's stack, as the open layers say it: a closed layer between them doesn't split it.
-    const below = Object.values(stacks.layers)
-      .filter(
-        (other) =>
-          other.nativeStack?.stack === entry.stack && other.nativeStack.position < entry.position,
-      )
-      .toSorted((a, b) => (a.nativeStack?.position ?? 0) - (b.nativeStack?.position ?? 0))
-      .map((other) => other.number);
+    const below = githubBelow(stacks, entry);
     const bottom = layerOf(stacks, below[0] ?? layer.number) ?? layer;
     if (onItsBase(bottom)) return { kind: 'githubStack', stack: entry.stack, below };
     // The GitHub stack sits on another pull request, or on a merged one's branch.
@@ -252,11 +284,12 @@ function settlesByListing(why: Unsure): boolean {
     case 'lookups':
     case 'unlistedBelow':
       return true;
-    // Still being listed; nothing settles it; a loop stays one; it waits for its own read.
+    // Still being listed; nothing settles it; a loop stays one; they wait for their own reads.
     case 'unread':
     case 'tooMany':
     case 'cycle':
     case 'unconfirmed':
+    case 'cutShort':
       return false;
     default:
       throw new Error(`a reason Lo doesn't know: ${JSON.stringify(why satisfies never)}`);
@@ -282,9 +315,11 @@ function unsureText(why: Unsure, { number, facts, now }: WhereView): string {
     case 'lookups':
       return `Some merged pull requests weren't looked up yet, so Lo can't tell what #${number} sits on. ${again}`;
     case 'unconfirmed':
-      return `Lo hasn't asked GitHub yet whether an open pull request comes from ${why.base}, the branch #${number} merges into.`;
+      return `Lo hasn't asked GitHub yet which open pull requests come from ${why.branch}.`;
+    case 'cutShort':
+      return `GitHub gave only some of the open pull requests from ${why.branch}, so Lo can't tell what this one sits on. Merge it on GitHub.`;
     case 'unlistedBelow':
-      return `#${why.pr} comes from ${why.base}, the branch #${number} merges into, but isn't in Lo's list yet. ${again}`;
+      return `#${why.pr} comes from ${why.branch} but isn't in Lo's list yet, so Lo can't tell what #${number} sits on. ${again}`;
     default:
       throw new Error(`a reason Lo doesn't know: ${JSON.stringify(why satisfies never)}`);
   }

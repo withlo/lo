@@ -25,7 +25,7 @@ import { describe, expect, it } from 'vitest';
 import {
   LIST_SLACK,
   where,
-  type FromBranch,
+  type OpenFromHead,
   type Placed,
   type Where,
   type WhereView,
@@ -102,11 +102,37 @@ function placedIn(layer: Layer): Placed {
   };
 }
 
-/** The open pull requests in `at` from `branch`, as GitHub would answer at the press. */
-function fromBranch(at: Repository, branch: string): FromBranch[] {
-  return at.pulls
-    .filter((pr) => pr.state.kind === 'open' && pr.headRef === branch)
-    .map((pr) => ({ number: pr.number, isCrossRepository: !pr.headInBaseRepo }));
+/** The open pull requests from each of `at`'s branches, as GitHub would answer at the press. */
+function readFrom(at: Repository): Map<string, OpenFromHead> {
+  const branches = new Set(at.pulls.flatMap((pr) => [pr.baseRef, pr.headRef]));
+  return new Map(
+    [...branches].map((branch) => [
+      branch,
+      {
+        pulls: at.pulls
+          .filter((pr) => pr.state.kind === 'open' && pr.headRef === branch)
+          .map((pr) => ({ number: pr.number, sameRepository: pr.headInBaseRepo })),
+        cutShort: false,
+      },
+    ]),
+  );
+}
+
+/** What GitHub answers at the press in `at`, but for `branch`, which `read` comes from, or none. */
+function readingFrom(
+  at: Repository,
+  branch: string,
+  read: OpenFromHead | undefined,
+): Map<string, OpenFromHead> {
+  const answers = readFrom(at);
+  if (read) answers.set(branch, read);
+  else answers.delete(branch);
+  return answers;
+}
+
+/** Pull requests `numbers`, from branches in the repository itself, as GitHub gives them. */
+function ours(...numbers: number[]): OpenFromHead {
+  return { pulls: numbers.map((number) => ({ number, sameRepository: true })), cutShort: false };
 }
 
 /** `at`'s stacks as the stacks feature gives them, listed a second ago, with `change` made. */
@@ -126,7 +152,7 @@ function forest(
 
 /**
  * Pull request `number`'s view in `at`: a list confirmed a second ago, merge facts that agree with
- * it, and the open pull requests from its base branch read afresh.
+ * it, and the open pull requests from every branch read afresh.
  */
 function view(number: number, more: Partial<WhereView> = {}, at: Repository = MAIN): WhereView {
   const layer = layerOf(at.stacks, number);
@@ -134,7 +160,7 @@ function view(number: number, more: Partial<WhereView> = {}, at: Repository = MA
     number,
     facts: layer ? placedIn(layer) : { base: 'main', stack: undefined },
     forest: forest({}, at),
-    openFromBase: layer ? fromBranch(at, layer.baseRef) : [],
+    openFrom: readFrom(at),
     now: NOW,
     ...more,
   };
@@ -147,11 +173,6 @@ function stackSaid(number: number, stack: Placed['stack']): Where {
   return where(view(number, { facts: { ...placedIn(layer), stack } }));
 }
 
-/** Pull request `number`, from a branch in the repository itself, as GitHub gives it. */
-function ours(number: number): FromBranch[] {
-  return [{ number, isCrossRepository: false }];
-}
-
 function unsure(answer: Where) {
   if (answer.kind !== 'unknown') throw new Error(`Lo knew: ${JSON.stringify(answer)}`);
   return answer;
@@ -161,7 +182,7 @@ describe('where a pull request sits', () => {
   it('is alone on its own base branch', () => {
     expect(where(view(1))).toEqual({ kind: 'alone' });
     // Nothing sits below a pull request into a trunk, so nothing need be read for it.
-    expect(where(view(1, { openFromBase: undefined }))).toEqual({ kind: 'alone' });
+    expect(where(view(1, { openFrom: new Map() }))).toEqual({ kind: 'alone' });
   });
 
   it("is a GitHub stack's layer, with its open layers below", () => {
@@ -194,22 +215,21 @@ describe('where a pull request sits', () => {
     const before = repository([pull(70, 'feat', 'c70')]);
     expect(where(view(70, {}, before))).toEqual({ kind: 'alone' });
     // #71, from feat into main, opened since: the list doesn't have it.
-    const opened = ours(71);
-    expect(where(view(70, { openFromBase: opened }, before))).toEqual({
+    const opened = readingFrom(before, 'feat', ours(71));
+    expect(where(view(70, { openFrom: opened }, before))).toEqual({
       kind: 'unknown',
-      why: { kind: 'unlistedBelow', pr: 71, base: 'feat' },
-      text: "#71 comes from feat, the branch #70 merges into, but isn't in Lo's list yet. Lo is listing the open pull requests again.",
+      why: { kind: 'unlistedBelow', pr: 71, branch: 'feat' },
+      text: "#71 comes from feat but isn't in Lo's list yet, so Lo can't tell what #70 sits on. Lo is listing the open pull requests again.",
       listAgain: true,
     });
     // Listed again, it's below.
     const after = repository([pull(70, 'feat', 'c70'), pull(71, 'main', 'feat')]);
-    expect(where(view(70, { openFromBase: opened }, after))).toEqual({
-      kind: 'chainAbove',
-      bottom: 71,
-    });
+    expect(where(view(70, {}, after))).toEqual({ kind: 'chainAbove', bottom: 71 });
     // A fork's branch of the same name is never a base.
-    const fork = [{ number: 71, isCrossRepository: true }];
-    expect(where(view(70, { openFromBase: fork }, before))).toEqual({ kind: 'alone' });
+    const fork = { pulls: [{ number: 71, sameRepository: false }], cutShort: false };
+    expect(where(view(70, { openFrom: readingFrom(before, 'feat', fork) }, before))).toEqual({
+      kind: 'alone',
+    });
   });
 
   it('sits on a pull request from its base branch the list has but doesn’t put below it', () => {
@@ -219,13 +239,55 @@ describe('where a pull request sits', () => {
       pull(72, 'main', 'x72'),
       pull(73, 'c70', 'c73'),
     ]);
-    expect(where(view(70, { openFromBase: ours(72) }, at))).toEqual({
+    expect(where(view(70, { openFrom: readingFrom(at, 'feat', ours(72)) }, at))).toEqual({
       kind: 'chainAbove',
       bottom: 72,
     });
-    expect(unsure(where(view(70, { openFromBase: ours(73) }, at))).why).toEqual({
-      kind: 'cycle',
-      prs: [70, 73],
+    expect(
+      unsure(where(view(70, { openFrom: readingFrom(at, 'feat', ours(73)) }, at))).why,
+    ).toEqual({ kind: 'cycle', prs: [70, 73] });
+  });
+
+  it('sits on a pull request opened since from the base its GitHub stack merges into', () => {
+    // GitHub stack #90 on feat: #11's own base is #10's branch, but the stack merges into feat.
+    const stacked = [
+      pull(10, 'feat', 's10', inStack(90, 1)),
+      pull(11, 's10', 's11', inStack(90, 2)),
+    ];
+    const before = repository(stacked);
+    expect(where(view(11, {}, before))).toEqual({ kind: 'githubStack', stack: 90, below: [10] });
+    // #99, from feat, opened since.
+    expect(
+      unsure(where(view(11, { openFrom: readingFrom(before, 'feat', ours(99)) }, before))).why,
+    ).toEqual({ kind: 'unlistedBelow', pr: 99, branch: 'feat' });
+    expect(
+      unsure(where(view(11, { openFrom: readingFrom(before, 'feat', undefined) }, before))).why,
+    ).toEqual({ kind: 'unconfirmed', branch: 'feat' });
+    // Listed again, the stack sits on it.
+    const after = repository([...stacked, pull(99, 'main', 'feat')]);
+    expect(where(view(11, {}, after))).toEqual({ kind: 'chainAbove', bottom: 99 });
+  });
+
+  it('sits on a pull request opened since from the root a chain merges into', () => {
+    // #30 was merge-committed into feat: #31, still on #30's branch, would move onto feat.
+    const merged = pull(30, 'feat', 'm30', { state: { kind: 'merged', headInBase: true } });
+    const at = repository([
+      merged,
+      pull(31, 'm30', 'c31', { baseTip: merged.headOid, commits: [merged.headOid] }),
+    ]);
+    expect(where(view(31, {}, at))).toEqual({ kind: 'chainBottom' });
+    expect(
+      unsure(where(view(31, { openFrom: readingFrom(at, 'feat', ours(29)) }, at))).why,
+    ).toEqual({
+      kind: 'unlistedBelow',
+      pr: 29,
+      branch: 'feat',
+    });
+    expect(
+      unsure(where(view(31, { openFrom: readingFrom(at, 'feat', undefined) }, at))).why,
+    ).toEqual({
+      kind: 'unconfirmed',
+      branch: 'feat',
     });
   });
 });
@@ -350,10 +412,20 @@ describe('where a pull request sits is unknown', () => {
   });
 
   it('until the open pull requests from its base branch are read, unless that’s a trunk', () => {
-    expect(where(view(3, { openFromBase: undefined }))).toEqual({
+    expect(where(view(3, { openFrom: readingFrom(MAIN, 'b2', undefined) }))).toEqual({
       kind: 'unknown',
-      why: { kind: 'unconfirmed', base: 'b2' },
-      text: "Lo hasn't asked GitHub yet whether an open pull request comes from b2, the branch #3 merges into.",
+      why: { kind: 'unconfirmed', branch: 'b2' },
+      text: "Lo hasn't asked GitHub yet which open pull requests come from b2.",
+      listAgain: false,
+    });
+  });
+
+  it('when GitHub gave only some of the open pull requests from a branch it merges into', () => {
+    const some = { ...ours(2), cutShort: true };
+    expect(where(view(3, { openFrom: readingFrom(MAIN, 'b2', some) }))).toEqual({
+      kind: 'unknown',
+      why: { kind: 'cutShort', branch: 'b2' },
+      text: "GitHub gave only some of the open pull requests from b2, so Lo can't tell what this one sits on. Merge it on GitHub.",
       listAgain: false,
     });
   });
