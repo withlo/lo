@@ -49,7 +49,7 @@ const CANCEL = BUTTONS.indexOf('Cancel');
  * holds them.
  */
 const RISK =
-  'The servers read its code and settings. Lo limits what they run, but they aren’t sandboxed. Its settings can still steer them, and a file that exploits a bug in one could run code as you.';
+  'The servers read its code and settings. Lo limits what they run, but they aren’t sandboxed. The repo’s settings can still steer them. A file that exploits a bug in one could run code as you.';
 
 /** The dialog that asks whether to trust `subject`. */
 export function questionFor(subject: Subject): Question {

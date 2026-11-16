@@ -1,5 +1,10 @@
-import { expect, test } from 'vitest';
+import { spawn } from 'node:child_process';
+import { symlinkSync } from 'node:fs';
+import { join } from 'node:path';
 
+import { expect, onTestFinished, test, vi } from 'vitest';
+
+import { tempFolder } from '../test/support.ts';
 import {
   familyOf,
   memberOfStat,
@@ -7,6 +12,7 @@ import {
   namedInPs,
   residentOfStatus,
   servicesInPs,
+  servicesOf,
   withServices,
 } from './family.ts';
 
@@ -155,6 +161,40 @@ test('a service is a process of its name whose HOME is the server’s home, as a
   const [joined, joinedListed] = listings([[516, service, `OTHER=x HOME=${home} PATH=/usr/bin`]]);
   expect(pids(servicesInPs(joined, joinedListed, home))).toEqual([516]);
 });
+
+test.runIf(process.platform === 'darwin')(
+  'on macOS, `ps` finds a service by the HOME in its environment, never by one in its arguments',
+  async () => {
+    const folder = tempFolder();
+    const home = join(folder, 'home');
+    // Node by a service's name, as the system would start one: no child of this process's group.
+    const program = join(folder, 'LoFamilyService');
+    symlinkSync(process.execPath, program);
+    const start = (args: readonly string[], as: string) => {
+      const child = spawn(program, ['-e', 'setInterval(() => undefined, 1000);', ...args], {
+        env: { HOME: as, PATH: '/usr/bin:/bin' },
+        detached: true,
+        stdio: 'ignore',
+      });
+      onTestFinished(() => {
+        child.kill('SIGKILL');
+      });
+      return child.pid ?? 0;
+    };
+    const ours = start([], home);
+    // The home only as an argument, just before its own environment.
+    const argued = start([`HOME=${home}`], folder);
+    const names = ['LoFamilyService'];
+    await vi.waitFor(
+      async () => {
+        expect(pids(await servicesOf(names, home))).toEqual([ours]);
+        // Found by its own HOME, so it was there to be seen.
+        expect(pids(await servicesOf(names, folder))).toEqual([argued]);
+      },
+      { timeout: 10_000, interval: 100 },
+    );
+  },
+);
 
 test('a server’s services are read with its family, and what they start, once it has a home', async () => {
   // The server, 200, and its child; the system's service for it, 400, which started 401 in a group

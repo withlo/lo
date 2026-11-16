@@ -73,7 +73,7 @@ export default defineSection({
   id: 'code.trust',
   title: 'Trust',
   description:
-    'Language servers read a repo’s code and settings, and aren’t sandboxed, so a repo can steer them or exploit a bug in one. They only start on repos and PRs you trust.',
+    'Language servers aren’t sandboxed. A repo’s settings can steer them. A file that exploits a bug in one could run code as you. They only start on repos and PRs you trust.',
   order: 20,
   render: Trusted,
 });

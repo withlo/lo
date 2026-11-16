@@ -597,11 +597,10 @@ async function onSourceKit(
       // Lo stops SourceKitService with the server, and what it started ends with it.
       await new Promise((resolve) => setTimeout(resolve, 2000));
       const left = await outside.running();
-      console.log(
-        left.length === 0
-          ? 'None of it was still running 2 s after the server stopped.'
-          : `Still running 2 s after the server stopped: ${left.join(', ')}.`,
-      );
+      if (left.length > 0) {
+        throw new Error(`still running 2 s after the server stopped: ${left.join(', ')}`);
+      }
+      console.log('None of it was still running 2 s after the server stopped.');
       const all = [...connections, ...system.connections];
       console.log(
         all.length === 0

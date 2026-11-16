@@ -69,9 +69,10 @@ own (`setsid`) is still found.
   processes without `-E` as well and looks only in what follows their program and arguments: for
   `HOME=<home>` at its start or after a space, followed by another variable's ` NAME=` or the end.
   No argument can match, but another variable whose value holds ` HOME=<home>` followed by its end
-  or what looks like a variable still could. Only processes named like a service are searched, so a
-  false match is unlikely, and it can only take in a process named like one of Lo's own services. So
-  the service's memory counts against the cap, and a stop or a kill signals it with the rest.
+  or what looks like a variable still could, and so could a `HOME` whose value is the home followed
+  by what looks like another variable. Only processes named like a service are searched, so a false
+  match is unlikely, and it can only take in a process named like one of Lo's own services. So the
+  service's memory counts against the cap, and a stop or a kill signals it with the rest.
 
 ### What can't be found
 
@@ -262,15 +263,16 @@ setting is as it is:
   fallback build settings, the macOS SDK and Lo's flags. So answers are each file's own and the
   SDK's: `gd`, `K` and `gh` answer within the file and into the SDK, a use of what another file
   declares isn't resolved, and `gr`, which needs a build's index, comes from the syntax index. Its
-  generated files and its compiler's module cache are in its home, by its options, and Foundation's
-  home folder, where it reads its own settings, is too, by `CFFIXED_USER_HOME`. It also reads the
-  machine's settings, in `/Library/Application Support/org.swift.sourcekit-lsp/config.json`, which
-  only an administrator can write, and no option turns that off; Lo's options win over it, key by
-  key. A request to `sourcekitd` gives up after 10.5 s, not 120 s, and one that hangs for 30.5 s,
-  not 300 s, has SourceKit-LSP restart `sourcekitd`. Each is given with a fraction: SourceKit-LSP
-  reads a whole number in its initialization options as an integer, which those options refuse, and
-  then drops every option Lo gives it. Its `SourceKitService` is in its family. Expanding a macro of
-  the SDK's runs Apple's `swift-plugin-server`; a checkout's macros are never built.
+  generated files and its compiler's module cache are in its home, by its options and by its
+  arguments, which hold if it drops its options. Foundation's home folder, where it reads its own
+  settings, is in its home too, by `CFFIXED_USER_HOME`. It also reads the machine's settings, in
+  `/Library/Application Support/org.swift.sourcekit-lsp/config.json`, which only an administrator
+  can write, and no option turns that off; Lo's options win over it, key by key. A request to
+  `sourcekitd` gives up after 10.5 s, not 120 s, and one that hangs for 30.5 s, not 300 s, has
+  SourceKit-LSP restart `sourcekitd`. Each is given with a fraction: SourceKit-LSP reads a whole
+  number in its initialization options as an integer, which those options refuse, and then drops
+  every option Lo gives it. Its `SourceKitService` is in its family. Expanding a macro of the SDK's
+  runs Apple's `swift-plugin-server`; a checkout's macros are never built.
 
 None runs in a sandbox: each reads what you can, so an absolute import, Pyright's `extraPaths`, a
 Rust sysroot's sources, the folders of stubs a `.php-lsp.json` names, the paths a `composer.json`'s

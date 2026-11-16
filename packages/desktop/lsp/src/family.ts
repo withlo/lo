@@ -114,8 +114,9 @@ export function namedInPs(output: string, names: readonly string[]): number[] {
  * only as `HOME=<home>` at that text's start or after a space, then a space and another variable's
  * name and `=`, or the end, so a home that only begins with `home` isn't it. What still matches: a
  * variable whose value holds ` HOME=<home>` followed by its end or what looks like another
- * variable, and a `HOME` that's `home` followed by such text. A process whose arguments changed
- * between the listings, or whose environment `ps` can't read, doesn't.
+ * variable, and a `HOME` that's `home` followed by such text. A process whose environment `ps`
+ * can't read doesn't, nor does one whose arguments changed between the listings, unless its new
+ * arguments begin with its old ones, which only the process itself could arrange.
  */
 export function servicesInPs(commands: string, listed: string, home: string): Member[] {
   const line = new RegExp(
