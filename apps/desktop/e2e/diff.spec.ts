@@ -1203,12 +1203,18 @@ test.describe('when the local copy comes after GitHub’s diff', () => {
     // Each frame ends with the task that ran its animation callbacks, which lays out and paints
     // what changed since the frame before. So from one such task's end to the next's, a frame
     // holds the pacer's share, which runs once the frame before is painted, and its own layout.
-    // The page's clock and the trace's differ by the mark's rounding, a tenth of a millisecond.
+    // The page rounds both the mark and each frame's time to a tenth of a millisecond, so a
+    // frame's time can sit up to 0.2 ms off its task on the trace's clock: past an edge, the task
+    // nearest it within 0.3 ms ran it, a little more to spare.
     const ends = frames.map((at) => {
-      const within = (slack: number) => (task: Task) =>
-        task.start - slack <= at && at <= task.start + task.wall + slack;
-      const ran = tasks.find(within(0)) ?? tasks.find(within(0.2));
-      if (!ran) throw new Error(`no task in the trace ran the frame at ${at.toFixed(1)} ms`);
+      const off = (task: Task) => Math.max(0, task.start - at, at - (task.start + task.wall));
+      const ran = tasks.reduce<Task | undefined>(
+        (best, task) => (best === undefined || off(task) < off(best) ? task : best),
+        undefined,
+      );
+      if (!ran || off(ran) > 0.3) {
+        throw new Error(`no task in the trace ran the frame at ${at.toFixed(1)} ms`);
+      }
       return ran.start + ran.wall;
     });
     // Each frame with the CPU time of the page's tasks in it: its own work, without the time the
