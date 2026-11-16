@@ -1,6 +1,7 @@
 import type * as jsonc from 'jsonc-parser';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import type { SettingsState } from '../contract.ts';
 import { editSettings, parseSettings, SETTINGS_DEPTH_LIMIT, SettingsUneditable } from './text.ts';
 
 /** What a test does to the text each edit makes, as a mistake in making it would. */
@@ -22,11 +23,15 @@ afterEach(() => {
 });
 
 /** 0 inside `levels` lists. */
-function nested(levels: number): unknown {
-  let value: unknown = 0;
+function nested(levels: number): SettingsState['values'][string] {
+  let value: SettingsState['values'][string] = 0;
   for (let level = 0; level < levels; level++) value = [value];
   return value;
 }
+
+/** A settings file whose objects and lists go `levels` deep, its own object the first. */
+const nestedFile = (levels: number) =>
+  `{ "x": ${'['.repeat(levels - 1)}0${']'.repeat(levels - 1)} }`;
 
 const problemOf = (read: ReturnType<typeof parseSettings>) =>
   read.kind === 'problem' ? read.problem : undefined;
@@ -145,17 +150,15 @@ describe('parseSettings', () => {
   });
 
   it('reads objects and lists nested up to the limit, and leaves a file nested deeper unread', () => {
-    // The file's own object is the first level.
-    const at = (levels: number) => `{ "x": ${'['.repeat(levels - 1)}0${']'.repeat(levels - 1)} }`;
-    expect(parseSettings(at(SETTINGS_DEPTH_LIMIT))).toMatchObject({
+    expect(parseSettings(nestedFile(SETTINGS_DEPTH_LIMIT))).toMatchObject({
       kind: 'ok',
       values: { x: nested(SETTINGS_DEPTH_LIMIT - 1) },
     });
     const deep =
       "The settings file nests objects and lists over 100 levels deep, so Lo didn't read it.";
-    expect(problemOf(parseSettings(at(SETTINGS_DEPTH_LIMIT + 1)))).toBe(deep);
+    expect(problemOf(parseSettings(nestedFile(SETTINGS_DEPTH_LIMIT + 1)))).toBe(deep);
     // Deep enough to run a parser that calls itself out of stack.
-    expect(problemOf(parseSettings(at(100_000)))).toBe(deep);
+    expect(problemOf(parseSettings(nestedFile(100_000)))).toBe(deep);
     // Brackets in strings and comments aren't levels.
     const quoted = `{ "x": "${'['.repeat(200)}" /* ${'{'.repeat(200)} */ }`;
     expect(parseSettings(quoted)).toMatchObject({ kind: 'ok', values: { x: '['.repeat(200) } });
