@@ -1,7 +1,7 @@
 /**
  * The environment a language server runs in, built from nothing rather than taken from Lo's and
- * trimmed, so nothing of Lo's reaches it: no token, no SSH agent, no proxy, none of the user's
- * settings.
+ * trimmed, so nothing of Lo's reaches it: no token, no SSH agent, not the system's proxy, none of
+ * the user's settings.
  *
  * - `HOME` is a folder of the server's own, and `TMPDIR` a folder inside it, so the server reads
  *   none of the user's files there (`~/.gitconfig`, `~/.npmrc`, `~/.cargo/config.toml`, shell
@@ -13,18 +13,45 @@
  * - git's variables, from `@lo/git`, set up any git the server runs: Lo's safe settings as
  *   protected configuration, no system or global config, no prompts and no lazy fetching. They're
  *   the only `GIT_*` variables it gets.
+ * - A proxy that leads nowhere ({@link NO_NETWORK}), in each spelling programs read, so a program
+ *   that takes its proxy from the environment, as Go's HTTP client, curl and git do, reaches no
+ *   host: its connection fails at once, before anything is sent or any name is looked up. Node's
+ *   `fetch` takes no proxy from the environment, and none of the Node servers Lo runs uses the
+ *   network.
  * - The adapter's own variables, such as `GOPROXY=off`. None may set what's above, a proxy, the
  *   SSH agent or anything named like a secret or credential. Nor may one load code into a program
  *   or a shell (`LD_PRELOAD`, `DYLD_*`, `NODE_OPTIONS`, `ELECTRON_RUN_AS_NODE`, `BASH_ENV`,
- *   `RUSTC_WRAPPER`, `GOFLAGS`, `CLASSPATH` and the like) or configure npm, unless the adapter
- *   names it in `allowed`, saying it sets it on purpose.
+ *   `RUSTC_WRAPPER`, `GOFLAGS`, `GOPACKAGESDRIVER`, `CLASSPATH` and the like) or configure npm,
+ *   unless the adapter names it in `allowed`, saying it sets it on purpose.
+ * - The adapter's folders in the server's home (`homeFolders`): variables that each name a folder
+ *   by its path inside `HOME`, such as Go's `GOMODCACHE`, held to the rules its own variables are.
+ *   So a server's caches are in its home, wherever that is, and nothing in a checkout moves them.
  * - `LANG=C.UTF-8`, so servers read source as UTF-8.
  */
 
 import { isAbsolute, join, relative, sep } from 'node:path';
 
+import { isPlainPath } from './manifest.ts';
+
 /** The system's folders, which end every server's `PATH`. */
 export const SYSTEM_PATH = ['/usr/bin', '/bin'] as const;
+
+/**
+ * A server's proxy: port 0 on this machine, which nothing can listen on, so a connection to it
+ * fails before anything is sent, and a program that takes it as its proxy never looks up or
+ * reaches the host it asks for.
+ */
+export const NO_NETWORK = 'http://127.0.0.1:0';
+
+/** The proxy variables, as programs spell them, which each name {@link NO_NETWORK}. */
+const PROXIES = [
+  'HTTPS_PROXY',
+  'https_proxy',
+  'HTTP_PROXY',
+  'http_proxy',
+  'ALL_PROXY',
+  'all_proxy',
+];
 
 export interface EnvironmentOptions {
   /** The server's own folder, its `HOME`. */
@@ -42,10 +69,15 @@ export interface EnvironmentOptions {
   readonly allowed?: readonly string[] | undefined;
   /** The variables that set up the git a server runs, each `GIT_*`, from `@lo/git`. */
   readonly git: Readonly<Record<string, string>>;
+  /**
+   * Variables that each name a folder of the server's own by its path inside its `HOME`,
+   * `/`-separated, such as `{ GOMODCACHE: 'go/pkg/mod' }`.
+   */
+  readonly homeFolders?: Readonly<Record<string, string>> | undefined;
 }
 
 /** The variables this module sets itself. */
-const OWN = new Set(['HOME', 'PATH', 'TMPDIR', 'LANG']);
+const OWN = new Set(['HOME', 'PATH', 'TMPDIR', 'LANG', ...PROXIES]);
 
 /** Names no adapter's variable may have. */
 const NEVER = [
@@ -77,7 +109,9 @@ const RISKY = [
   /^(?:DOTNET_STARTUP_HOOKS|DOTNET_ADDITIONAL_DEPS|CORECLR_.+)$/,
   // Programs a toolchain runs in place of its own, and flags it passes them.
   /^(?:RUSTC_WRAPPER|RUSTC_WORKSPACE_WRAPPER|RUSTC|RUSTDOC|CARGO_BUILD_RUSTC_WRAPPER)$/,
-  /^GOFLAGS$/,
+  // Go's flags, which can name a program to run each tool through (`-toolexec`), and the program
+  // Go's package loader runs in place of `go list`.
+  /^(?:GOFLAGS|GOPACKAGESDRIVER)$/,
   // Where the C library and Ruby load code from.
   /^(?:GCONV_PATH|GEM_PATH|GEM_HOME|BUNDLE_GEMFILE|RUBYGEMS_GEMDEPS)$/,
   // What a shell runs as it starts, and how it reads.
@@ -106,7 +140,7 @@ export function temporaryFolder(home: string): string {
  * is a mistake in Lo's own code: an adapter's or the app's.
  */
 export function serverEnvironment(options: EnvironmentOptions): Record<string, string> {
-  const { home, roots, path, variables = {}, allowed = [], git } = options;
+  const { home, roots, path, variables = {}, allowed = [], git, homeFolders = {} } = options;
   const inside = (folder: string) => roots.some((root) => isInside(root, folder));
   if (!isAbsolute(home) || inside(home)) {
     throw new Error(`a server's home must be an absolute path outside its checkout: ${home}`);
@@ -128,18 +162,30 @@ export function serverEnvironment(options: EnvironmentOptions): Record<string, s
     }
     env[name] = checkedValue(name, git[name]);
   }
-  for (const name of Object.keys(variables)) {
+  const checkName = (name: string) => {
     const risky = RISKY.some((pattern) => pattern.test(name)) && !allowed.includes(name);
     if (!NAME.test(name) || OWN.has(name) || NEVER.some((pattern) => pattern.test(name)) || risky) {
       throw new Error(`a server may not be given the variable ${name}`);
     }
+  };
+  for (const name of Object.keys(variables)) {
+    checkName(name);
     env[name] = checkedValue(name, variables[name]);
+  }
+  for (const name of Object.keys(homeFolders)) {
+    checkName(name);
+    const inside = checkedValue(name, homeFolders[name]);
+    if (Object.hasOwn(variables, name) || !isPlainPath(inside)) {
+      throw new Error(`the variable ${name} must name one folder inside the server's home`);
+    }
+    env[name] = join(home, ...inside.split('/'));
   }
   return {
     ...env,
     HOME: home,
     TMPDIR: temporaryFolder(home),
     PATH: [...new Set([...path, ...SYSTEM_PATH])].join(':'),
+    ...Object.fromEntries(PROXIES.map((name) => [name, NO_NETWORK])),
     LANG: 'C.UTF-8',
   };
 }

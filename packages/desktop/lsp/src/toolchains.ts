@@ -6,8 +6,13 @@
  * What a server gets of one ({@link toolchainUse}) is the folder of its programs, first on its
  * `PATH`, and the variables that hold the toolchain to Lo's copy:
  *
- * - Go: `GOROOT`, `GOTOOLCHAIN=local`, so a `go.mod`'s `toolchain` line can't download another Go,
- *   `GOENV=off`, `GOPROXY=off` and `CGO_ENABLED=0`.
+ * - Go: `GOROOT`, `GOTOOLCHAIN=local`, so a `go.mod`'s or `go.work`'s `toolchain` line can't
+ *   download another Go and a newer `go` line fails rather than fetch one, `GOENV=off`, so no
+ *   settings file is read, `GOPROXY=off`, so no module is fetched, an empty `GOFLAGS`, so nothing
+ *   adds a flag such as `-toolexec` or `-overlay`, `CGO_ENABLED=0`, so no C compiler runs, and
+ *   `GOPACKAGESDRIVER=off`, so Go's package loader, which gopls is built on, runs `go list` rather
+ *   than a driver program the variable names or a `gopackagesdriver` on `PATH`. Its caches,
+ *   `GOPATH`, `GOMODCACHE` and `GOCACHE`, are folders in the server's home.
  * - Rust: `RUSTC` and `CARGO`, and empty `RUSTC_WRAPPER` and `RUSTC_WORKSPACE_WRAPPER`, which undo
  *   a checkout's `build.rustc-wrapper`, and `CARGO_NET_OFFLINE=true`. With no rustup, nothing
  *   reads `rust-toolchain.toml`.
@@ -17,20 +22,31 @@
  *   (`DOTNET_ROLL_FORWARD=LatestPatch`), its telemetry and first-run messages off, and on Linux
  *   invariant globalization, since the system may have no ICU.
  *
- * Each keeps its caches and settings in the server's own `HOME` (`CARGO_HOME`, `GOPATH`,
- * `DOTNET_CLI_HOME` and `NUGET_PACKAGES` all default to folders there), which no one else uses.
+ * Each keeps its caches and settings in the server's own `HOME` (`CARGO_HOME`, `DOTNET_CLI_HOME`
+ * and `NUGET_PACKAGES` all default to folders there), which no one else uses.
  *
- * A `global.json` is the one file in a checkout the variables can't answer: since .NET 10 its
- * `sdk.paths` names folders to look for an SDK in, the checkout's own among them, and the SDK
- * found there runs with its own runtime. The SDK's commands read the `global.json` nearest the
- * folder they run in, and MSBuild the one nearest each project, however the variables are set.
- * So a server that uses .NET runs only as `dotnet exec`, which reads none, and only on a checkout
- * {@link checkoutProblem} finds no such file in, nor in a folder above.
+ * Two files in a checkout, or above it, are what the variables can't answer, and a server that
+ * uses the toolchain doesn't run on a checkout {@link checkoutProblem} finds one of them in:
+ *
+ * - A `global.json`: since .NET 10 its `sdk.paths` names folders to look for an SDK in, the
+ *   checkout's own among them, and the SDK found there runs with its own runtime. The SDK's
+ *   commands read the `global.json` nearest the folder they run in, and MSBuild the one nearest
+ *   each project, however the variables are set. So a server that uses .NET runs only as
+ *   `dotnet exec`, which reads none, and only on a checkout with no such file in it, nor above.
+ * - A `go.work`, which makes the modules it names one workspace, loaded together. Go reads the one
+ *   nearest the folder it runs in, so one in a folder above the checkout would make the user's
+ *   other modules, or anyone's, the server's workspace; and one in the checkout may name a folder
+ *   outside it (`use ../../elsewhere`, or a `replace` with a path), whose packages Go would load
+ *   and the server read as the checkout's own. Its `go` and `toolchain` lines are held by
+ *   `GOTOOLCHAIN=local`, as a `go.mod`'s are. A `go.mod`'s `replace` with a path outside the
+ *   checkout loads only the packages the checkout imports from it, which the server reads as it
+ *   reads any file outside the checkout, as the README says.
  */
 
-import { lstat, open, readdir } from 'node:fs/promises';
-import { basename, dirname, join, relative } from 'node:path';
+import { lstat, open, readdir, realpath, stat } from 'node:fs/promises';
+import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 
+import { isInside } from './environment.ts';
 import type { Installed } from './install.ts';
 
 /** What Lo calls a toolchain: in a row of Settings, and in a sentence about it. */
@@ -56,6 +72,8 @@ export interface ToolchainUse {
   readonly variables: Readonly<Record<string, string>>;
   /** The names among `variables` that choose a program, which the toolchain sets on purpose. */
   readonly allowed: readonly string[];
+  /** Variables naming the toolchain's caches, by their paths in the server's home. */
+  readonly homeFolders?: Readonly<Record<string, string>> | undefined;
 }
 
 /**
@@ -81,9 +99,12 @@ export function toolchainUse(
           GOTOOLCHAIN: 'local',
           GOENV: 'off',
           GOPROXY: 'off',
+          GOFLAGS: '',
           CGO_ENABLED: '0',
+          GOPACKAGESDRIVER: 'off',
         },
-        allowed: [],
+        allowed: ['GOFLAGS', 'GOPACKAGESDRIVER'],
+        homeFolders: { GOPATH: 'go', GOMODCACHE: 'go/pkg/mod', GOCACHE: 'cache/go-build' },
       };
     case 'rust':
       return {
@@ -124,51 +145,222 @@ export function toolchainUse(
   }
 }
 
-/** The largest `global.json` {@link checkoutProblem} reads; a larger one it refuses. */
-const GLOBAL_JSON_LIMIT = 1024 * 1024;
+/** The largest `global.json` or `go.work` {@link checkoutProblem} reads; a larger one it refuses. */
+const READ_LIMIT = 1024 * 1024;
 
 /**
  * Why a server that uses toolchain `id` mustn't run on the checkout at `root`, or `undefined`
- * when it may. For .NET, it's a `global.json` in the checkout, or in a folder above it, that could
- * choose an SDK other than Lo's: one that names folders to look for an SDK in (`sdk.paths`), or
- * that spells a key with an escape, which hides such a name from a look at its text. The other
- * toolchains read nothing in a checkout that their variables don't answer.
+ * when it may:
+ *
+ * - for .NET, a `global.json` in the checkout, or in a folder above it, that could choose an SDK
+ *   other than Lo's: one that names folders to look for an SDK in (`sdk.paths`), or that spells a
+ *   key with an escape, which hides such a name from a look at its text;
+ * - for Go, a `go.work` in a folder above the checkout, or one in it that names a folder outside
+ *   it, by `use` or by a `replace` with a path, or that Lo can't read for certain, as one that
+ *   spells a path with an escape.
+ *
+ * The other toolchains read nothing in a checkout that their variables don't answer.
  */
 export async function checkoutProblem(id: string, root: string): Promise<string | undefined> {
-  if (id !== 'dotnet') return undefined;
-  const found: string[] = [];
-  // Every folder in the checkout, since each project's own nearest file counts, and the disk may
-  // not tell names apart by case.
-  for (const path of await readdir(root, { recursive: true, encoding: 'utf8' })) {
-    if (basename(path).toLowerCase() === 'global.json') found.push(join(root, path));
+  switch (id) {
+    case 'dotnet':
+      return dotnetProblem(root);
+    case 'go':
+      return goProblem(root);
+    default:
+      return undefined;
   }
+}
+
+/**
+ * The files named `name` in the checkout at `root`, in any case, since the disk may not tell names
+ * apart by case, and each folder above it, where one by that name would be. It looks in the
+ * checkout's own folders, never through a link to one, which may lead anywhere on the disk, or
+ * back into the checkout without end; a file of that name that is a link is found, and refused
+ * as no plain file.
+ */
+async function filesNamed(
+  root: string,
+  name: string,
+): Promise<{ inside: string[]; above: string[] }> {
+  const inside: string[] = [];
+  const folders = [root];
+  for (let folder = folders.pop(); folder !== undefined; folder = folders.pop()) {
+    for (const entry of await readdir(folder, { withFileTypes: true, encoding: 'utf8' })) {
+      const path = join(folder, entry.name);
+      if (entry.isDirectory()) folders.push(path);
+      else if (entry.name.toLowerCase() === name) inside.push(path);
+    }
+  }
+  inside.sort();
+  const above: string[] = [];
   for (let folder = dirname(root); ; folder = dirname(folder)) {
-    found.push(join(folder, 'global.json'));
+    above.push(join(folder, name));
     if (dirname(folder) === folder) break;
   }
-  for (const file of found) {
+  return { inside, above };
+}
+
+/** The text of the file at `file`, or why Lo won't read it, or `undefined` when there's none. */
+async function readSmall(file: string): Promise<{ text: string } | { why: string } | undefined> {
+  const info = await lstat(file).catch(() => undefined);
+  if (info === undefined || info.isDirectory()) return undefined;
+  if (!info.isFile()) return { why: 'isn’t a plain file' };
+  if (info.size > READ_LIMIT) return { why: 'is too large for Lo to read' };
+  const handle = await open(file, 'r');
+  try {
+    return { text: (await handle.readFile()).toString('latin1') };
+  } finally {
+    await handle.close();
+  }
+}
+
+/** How a sentence names `file`: by its path in the checkout at `root`, or by its own. */
+function nameOf(root: string, file: string): string {
+  return file.startsWith(`${root}/`) ? `The checkout’s ${relative(root, file)}` : file;
+}
+
+async function dotnetProblem(root: string): Promise<string | undefined> {
+  const { inside, above } = await filesNamed(root, 'global.json');
+  for (const file of [...inside, ...above]) {
     const why = await steers(file);
     if (why === undefined) continue;
-    const named = file.startsWith(`${root}/`) ? `The checkout’s ${relative(root, file)}` : file;
-    return `${named} ${why}, so it could choose a .NET SDK other than Lo’s.`;
+    return `${nameOf(root, file)} ${why}, so it could choose a .NET SDK other than Lo’s.`;
   }
   return undefined;
 }
 
 /** What makes the `global.json` at `file` one Lo can't run .NET beside, if anything does. */
 async function steers(file: string): Promise<string | undefined> {
-  const info = await lstat(file).catch(() => undefined);
-  if (info === undefined || info.isDirectory()) return undefined;
-  if (!info.isFile()) return 'isn’t a plain file';
-  if (info.size > GLOBAL_JSON_LIMIT) return 'is too large for Lo to read';
-  const handle = await open(file, 'r');
-  let text: string;
-  try {
-    text = (await handle.readFile()).toString('latin1');
-  } finally {
-    await handle.close();
-  }
-  if (/paths/i.test(text)) return 'names folders to look for an SDK in';
-  if (/\\u/i.test(text)) return 'spells a name with an escape Lo doesn’t read';
+  const read = await readSmall(file);
+  if (read === undefined) return undefined;
+  if ('why' in read) return read.why;
+  if (/paths/i.test(read.text)) return 'names folders to look for an SDK in';
+  if (/\\u/i.test(read.text)) return 'spells a name with an escape Lo doesn’t read';
   return undefined;
+}
+
+async function goProblem(root: string): Promise<string | undefined> {
+  const { inside, above } = await filesNamed(root, 'go.work');
+  // Go takes a `go.work` above as it finds one, by `stat`, a link to a file included.
+  for (const file of above) {
+    const info = await stat(file).catch(() => undefined);
+    if (info !== undefined && !info.isDirectory()) {
+      return `${file} is a go.work in a folder above the checkout, which Go would take as the checkout’s workspace.`;
+    }
+  }
+  const real = await realpath(root);
+  for (const file of inside) {
+    const read = await readSmall(file);
+    if (read === undefined) continue;
+    const named = nameOf(root, file);
+    if ('why' in read)
+      return `${named} ${read.why}, so it could name a folder outside the checkout.`;
+    const folders = workFolders(read.text);
+    if (folders === undefined) {
+      return `${named} spells a path in a way Lo doesn’t read, so it could name a folder outside the checkout.`;
+    }
+    for (const folder of folders) {
+      const target = resolve(dirname(file), folder);
+      const resolved = await realpath(target).catch(() => undefined);
+      if (!isInside(root, target) || (resolved !== undefined && !isInside(real, resolved))) {
+        return `${named} names ${folder}, a folder outside the checkout, as part of its workspace.`;
+      }
+    }
+  }
+  return undefined;
+}
+
+/** The verbs of a `go.work` whose arguments name folders. */
+const VERBS = new Set(['use', 'replace']);
+
+/**
+ * The folders a `go.work`'s `text` names, by `use` or by a `replace` with a path, as written, or
+ * `undefined` for one Lo can't read for certain: a string with an escape, or one left open.
+ */
+export function workFolders(text: string): string[] | undefined {
+  const folders: string[] = [];
+  let block: string | undefined;
+  for (const line of text.split('\n')) {
+    const tokens = tokensOf(line);
+    if (tokens === undefined) return undefined;
+    const [first, second] = tokens;
+    if (first === undefined) continue;
+    if (block !== undefined && first === ')') {
+      block = undefined;
+      continue;
+    }
+    if (block === undefined && second === '(' && tokens.length === 2) {
+      block = first;
+      continue;
+    }
+    // A block opened or closed anywhere else is one Lo can't follow for certain.
+    if (tokens.includes('(') || tokens.includes(')')) return undefined;
+    const verb = block ?? first;
+    const args = block === undefined ? tokens.slice(1) : tokens;
+    if (!VERBS.has(verb)) continue;
+    if (verb === 'use') {
+      folders.push(...args);
+      continue;
+    }
+    const arrow = args.indexOf('=>');
+    const target = arrow === -1 ? undefined : args[arrow + 1];
+    if (target !== undefined && isDirectoryPath(target)) folders.push(target);
+  }
+  return block === undefined ? folders : undefined;
+}
+
+/** Whether a `replace`'s target is a folder, as Go tells: `./`, `../`, `/`, `.` or `..`. */
+function isDirectoryPath(path: string): boolean {
+  return (
+    path.startsWith('./') ||
+    path.startsWith('../') ||
+    isAbsolute(path) ||
+    path === '.' ||
+    path === '..'
+  );
+}
+
+/**
+ * The tokens of a line of a `go.mod` or `go.work`, as Go's reader splits them: words, `(`, `)`,
+ * `=>` and strings, a comment's left out, or `undefined` for a line Lo can't read for certain.
+ */
+function tokensOf(line: string): string[] | undefined {
+  const tokens: string[] = [];
+  let at = 0;
+  while (at < line.length) {
+    const char = line[at] ?? '';
+    if (/\s/.test(char)) {
+      at += 1;
+    } else if (line.startsWith('//', at)) {
+      break;
+    } else if (char === '"' || char === '`') {
+      const end = line.indexOf(char, at + 1);
+      if (end === -1) return undefined;
+      const inside = line.slice(at + 1, end);
+      // An escape in a quoted string spells what its text doesn't show.
+      if (char === '"' && inside.includes('\\')) return undefined;
+      tokens.push(inside);
+      at = end + 1;
+    } else if (char === '(' || char === ')') {
+      tokens.push(char);
+      at += 1;
+    } else if (line.startsWith('=>', at)) {
+      tokens.push('=>');
+      at += 2;
+    } else {
+      let end = at;
+      while (
+        end < line.length &&
+        !/[\s"`()]/.test(line[end] ?? '') &&
+        !line.startsWith('//', end)
+      ) {
+        if (line.startsWith('=>', end)) break;
+        end += 1;
+      }
+      tokens.push(line.slice(at, end));
+      at = end;
+    }
+  }
+  return tokens;
 }

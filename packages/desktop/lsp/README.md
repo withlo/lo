@@ -78,18 +78,22 @@ own (`setsid`) is still found.
 
 ## Servers
 
-The servers Lo runs, each downloaded on first use for a trusted view, as `servers.json` pins it, and
-each with its adapter in `src/adapters/`. Both run on Lo's own Node, which downloads first, and need
-nothing installed.
+The servers Lo runs, each installed on first use for a trusted view, as `servers.json` pins it, and
+each with its adapter in `src/adapters/`. vtsls and Pyright run on Lo's own Node, which downloads
+first; gopls runs with Lo's Go, which Lo builds it with; terraform-ls is a program of its own. None
+needs anything installed.
 
-| Server  | Version | For                    | From                                                                               | License                                              |
-| ------- | ------- | ---------------------- | ---------------------------------------------------------------------------------- | ---------------------------------------------------- |
-| vtsls   | 0.3.0   | TypeScript, JavaScript | npm: `@vtsls/language-server` and its 17 dependencies, TypeScript 5.9.3 among them | MIT; TypeScript's is Apache-2.0, the rest MIT or ISC |
-| Pyright | 1.1.414 | Python                 | npm: `pyright`                                                                     | MIT                                                  |
-| Node    | 26.13.1 | the two above          | nodejs.org                                                                         | MIT                                                  |
+| Server       | Version | For                    | From                                                                                        | License                                                       |
+| ------------ | ------- | ---------------------- | ------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
+| vtsls        | 0.3.0   | TypeScript, JavaScript | npm: `@vtsls/language-server` and its 17 dependencies, TypeScript 5.9.3 among them          | MIT; TypeScript's is Apache-2.0, the rest MIT or ISC          |
+| Pyright      | 1.1.414 | Python                 | npm: `pyright`                                                                              | MIT                                                           |
+| gopls        | 0.24.0  | Go                     | proxy.golang.org: `golang.org/x/tools/gopls` and the 23 modules it builds with, built by Lo | BSD-3-Clause; the rest BSD-3-Clause, MIT, MIT-0 or Apache-2.0 |
+| terraform-ls | 0.39.1  | Terraform              | releases.hashicorp.com                                                                      | MPL-2.0                                                       |
+| Node         | 26.13.1 | vtsls and Pyright      | nodejs.org                                                                                  | MIT                                                           |
 
-Each starts as Node, by its absolute path, with a cap on its heap, then its own entry point inside
-its install, never the launcher npm would link, with no shell and an environment built from nothing.
+Each starts as its program by its absolute path, Node with a cap on its heap and then the server's
+own entry point inside its install, never the launcher npm would link, with no shell and an
+environment built from nothing, whose proxy leads nowhere (`NO_NETWORK` in `src/environment.ts`).
 What it's told is its adapter's alone, and the adapter says why each setting is as it is:
 
 - **vtsls** runs its own TypeScript, never a workspace's (`node_modules/typescript`), and has
@@ -103,11 +107,26 @@ What it's told is its adapter's alone, and the adapter says why each setting is 
   the machine's, nor one a checkout's virtual environment or `.python-version` would pick. It
   carries the standard library's stubs itself. It answers no inlay hints, so its adapter says it has
   none (`hints: false`).
+- **gopls** runs `go list` and `go env` on the checkout with Lo's Go, held by Go's variables
+  (`src/toolchains.ts`): a `toolchain` line fetches no other Go, no module is fetched, nothing adds
+  a flag such as `-toolexec` or names a package driver, and cgo is off, so no C compiler or
+  `pkg-config` runs. `//go:generate` lines run only under `go generate`, which gopls runs only for a
+  command Lo never sends. Vulncheck is off, and its telemetry stays in its home, never uploaded.
+  `GOMEMLIMIT` keeps its heap at 3 GB, under the group's cap. It doesn't start on a checkout with a
+  `go.work` in a folder above it, or one in it that names a folder outside it.
+- **terraform-ls** is given `/dev/null` as Terraform, so it never runs `terraform`, the machine's or
+  one on `PATH`, nor the provider plugins a checkout's `.terraform/` holds, which
+  `terraform providers schema` would. Without it, it reads providers' schemas from the ones it
+  carries, the Terraform Registry's official and partner providers as it was built, not the versions
+  a checkout's lock file pins, and has none of other providers; definitions, references and the
+  outline come from the configuration and are whole. It asks registry.terraform.io about each module
+  a configuration calls from the Registry, which no setting turns off, and the dead proxy fails each
+  request before anything is sent. It answers no inlay hints (`hints: false`).
 
-Neither runs in a sandbox: each reads what you can, so an absolute import, or Pyright's
-`extraPaths`, leads it to files outside the checkout, and a hover can show what's in one. Nothing
-can send what it reads anywhere, and Lo never opens a place outside the checkout an answer names: it
-shows as outside the repository.
+None runs in a sandbox: each reads what you can, so an absolute import, Pyright's `extraPaths`, a
+`go.mod`'s `replace` with a path, or a Terraform module's `source`, leads it to files outside the
+checkout, and a hover can show what's in one. Nothing can send what it reads anywhere, and Lo never
+opens a place outside the checkout an answer names: it shows as outside the repository.
 
 Lo names each server's license wherever it says what the server is: a server's details in the status
 bar show its name, version and license, "Pyright 1.1.414 · MIT".
@@ -156,7 +175,26 @@ aside and deleted, so nothing finds it half gone and nothing puts it back.
 A server that uses .NET runs only as `dotnet exec` (`checkArguments` in `src/process.ts`), and only
 on a checkout `checkoutProblem` finds no `global.json` in, nor above, that names `paths` or spells a
 key with an escape: that file can send the SDK's commands, and MSBuild, to an SDK in the checkout,
-whatever the variables say.
+whatever the variables say. A server that uses Go runs only on a checkout with no `go.work` in a
+folder above it, which Go would take as its workspace, and none in it that names a folder outside it
+by `use` or a `replace` with a path, or that Lo can't read for certain. It looks through the
+checkout's own folders, never a link to one.
+
+### gopls, built by Lo
+
+The Go team publishes no gopls binary, so Lo builds it (`src/build.ts`). `pin.ts` resolves its
+modules with Lo's Go against proxy.golang.org, checked against sum.golang.org as `go` checks them,
+and pins the `go.mod` and `go.sum` that require them, each module file the build reads, as any file
+is pinned, and the size and SHA-256 of the gopls built for each platform, `-trimpath`,
+`CGO_ENABLED=0` and with no version control stamp. On first use, Lo installs its Go, then fetches
+those files itself, through its downloader and the entry's hosts (proxy.golang.org, and
+storage.googleapis.com, where it redirects), rather than letting `go` fetch them, which would go
+around the system's proxy. It lays them out as a module proxy in the download's folder, and builds
+once with its Go, offline (`GOPROXY=file://…`, `GOSUMDB=off`, `-mod=readonly` against its `go.sum`,
+no `go.work`, and an environment built from nothing). Go's builds are reproducible, so what it
+builds is the file pinned, byte for byte: Lo refuses one whose hash is another, and a Go other than
+the one gopls was pinned with. A build has 20 minutes, and gopls takes about one. `room` is the most
+a build holds on the disk, counted before it starts.
 
 Each file and folder unpacked is synced to the disk, then the marker, then the folder that holds
 them, and only then is it renamed into place. The marker records the fingerprint of the download and

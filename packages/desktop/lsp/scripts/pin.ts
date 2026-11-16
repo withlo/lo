@@ -17,7 +17,8 @@ import { join } from 'node:path';
 import { format, resolveConfig } from 'prettier';
 
 import { parseManifest, parseToolchains } from '../src/index.ts';
-import { node, npm, type Source } from './sources.ts';
+import { goProgram } from './go.ts';
+import { hashicorp, node, npm, type Source } from './sources.ts';
 import { dotnet, go, rust, temurin } from './toolchains.ts';
 
 /** The armored public keys in `keys/<publisher>/`. */
@@ -35,6 +36,9 @@ const SOURCES: Record<string, Source> = {
   vtsls: npm('@vtsls/language-server', 'node_modules/@vtsls/language-server/dist/main.js'),
   // Its own entry point, which says where its files are and loads the server.
   pyright: npm('pyright', 'node_modules/pyright/langserver.index.js'),
+  // Built from its modules with Lo's Go, which toolchains.json pins: pin it again when Go is.
+  gopls: goProgram('golang.org/x/tools/gopls', 'gopls'),
+  'terraform-ls': hashicorp('terraform-ls', keys('hashicorp')),
 };
 
 /** Where each toolchain's files come from. */

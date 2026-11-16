@@ -1,10 +1,20 @@
-// The adapters Lo ships: which files each reads, and what it downloads before it starts, which is
-// no toolchain. What each server runs as, and is told, is `@lo/lsp`'s, and tested there.
+// The adapters Lo ships: which files each reads, and what it downloads before it starts: Node for
+// the servers that run on it, and Go for gopls, which Lo builds with it. What each server runs as,
+// and is told, is `@lo/lsp`'s, and tested there.
 
-import { type Installed, launchOnNode, PYRIGHT, VTSLS } from '@lo/lsp';
+import {
+  GOPLS,
+  type Installed,
+  launchNative,
+  launchOnNode,
+  PYRIGHT,
+  TERRAFORM_LS,
+  toolchainUse,
+  VTSLS,
+} from '@lo/lsp';
 import { describe, expect, it } from 'vitest';
 
-import { ADAPTERS, adapterFor } from './adapters.ts';
+import { ADAPTERS, adapterFor, type PrepareContext, type Toolchain } from './adapters.ts';
 
 function installedAs(id: string): Installed {
   return { folder: `/lo/cache/servers/${id}`, entry: `/lo/cache/servers/${id}/entry` };
@@ -25,6 +35,11 @@ describe('Lo’s adapters', () => {
     expect(readBy('src/a.jsx')).toEqual(['TypeScript', 'javascript']);
     expect(readBy('pkg/a.py')).toEqual(['Python', 'python']);
     expect(readBy('pkg/a.pyi')).toEqual(['Python', 'python']);
+    expect(readBy('cmd/main.go')).toEqual(['Go', 'go']);
+    expect(readBy('infra/main.tf')).toEqual(['Terraform', 'terraform']);
+    // terraform-ls reads a file of variables as one, by its own id.
+    expect(readBy('infra/prod.tfvars')).toEqual(['Terraform', 'terraform-vars']);
+    expect(readBy('infra/PROD.TFVARS')).toEqual(['Terraform', 'terraform-vars']);
     // PHP and Ruby have none.
     expect(readBy('src/A.php')).toBeUndefined();
     expect(readBy('lib/a.rb')).toBeUndefined();
@@ -35,7 +50,7 @@ describe('Lo’s adapters', () => {
       ['typescript', VTSLS],
       ['python', PYRIGHT],
     ]);
-    for (const adapter of ADAPTERS) {
+    for (const adapter of ADAPTERS.filter((each) => servers.has(each.id))) {
       const installs: string[] = [];
       const toolchains: string[] = [];
       const prepared = await adapter.prepare({
@@ -63,10 +78,64 @@ describe('Lo’s adapters', () => {
     }
   });
 
-  it('say which servers give no inline type hints, as Pyright gives none', () => {
+  it('install Go, then build gopls with it, and start gopls with that Go', async () => {
+    const asked: string[] = [];
+    let builtWith: Toolchain | undefined;
+    const go: Toolchain = {
+      ...toolchainUse('go', '1.27.4', installedAs('go')),
+      version: '1.27.4',
+      installed: installedAs('go'),
+    };
+    const context: PrepareContext = {
+      install: (id, options) => {
+        asked.push(id);
+        builtWith = options?.go;
+        return Promise.resolve(installedAs(id));
+      },
+      toolchain: (id) => {
+        asked.push(`toolchain ${id}`);
+        return id === 'go' ? Promise.resolve(go) : Promise.reject(new Error(`no ${id}`));
+      },
+      findCopy: () => Promise.reject(new Error('no copy is looked for')),
+      signal: new AbortController().signal,
+    };
+    const adapter = ADAPTERS.find((each) => each.id === 'go');
+    expect(adapter?.downloads).toEqual({ servers: ['gopls'], toolchains: ['go'] });
+    expect(await adapter?.prepare(context)).toEqual({
+      kind: 'ready',
+      launch: launchNative(GOPLS, installedAs('gopls'), [go]),
+    });
+    expect(asked).toEqual(['toolchain go', 'gopls']);
+    expect(builtWith).toBe(go);
+  });
+
+  it('download terraform-ls alone, and start it with no toolchain', async () => {
+    const asked: string[] = [];
+    const adapter = ADAPTERS.find((each) => each.id === 'terraform');
+    expect(adapter?.downloads).toEqual({ servers: ['terraform-ls'], toolchains: [] });
+    const prepared = await adapter?.prepare({
+      install: (id, options) => {
+        asked.push(id);
+        expect(options?.go).toBeUndefined();
+        return Promise.resolve(installedAs(id));
+      },
+      toolchain: () => Promise.reject(new Error('no toolchain is asked for')),
+      findCopy: () => Promise.reject(new Error('no copy is looked for')),
+      signal: new AbortController().signal,
+    });
+    expect(prepared).toEqual({
+      kind: 'ready',
+      launch: launchNative(TERRAFORM_LS, installedAs('terraform-ls')),
+    });
+    expect(asked).toEqual(['terraform-ls']);
+  });
+
+  it('say which servers give no inline type hints, as Pyright and terraform-ls give none', () => {
     expect(ADAPTERS.map((adapter) => [adapter.id, adapter.noHints])).toEqual([
       ['typescript', undefined],
       ['python', 'Pyright has no type hints.'],
+      ['go', undefined],
+      ['terraform', 'terraform-ls has no type hints.'],
     ]);
   });
 

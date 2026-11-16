@@ -18,6 +18,7 @@ import {
   fetchFile,
   type Part,
   type Pinned,
+  type Platform,
   PLATFORMS,
   unpackDownload,
 } from '../src/index.ts';
@@ -67,6 +68,45 @@ export function node(keys: readonly string[]): Source {
         ...part,
         entry: `node-v${version}-${platform}/bin/node`,
       };
+      await checkUnpacks(download, [file], tools);
+      platforms[platform] = download;
+    }
+    return { version, hosts, platforms };
+  };
+}
+
+/** HashiCorp's names for the platforms. */
+const HASHICORP_PLATFORMS: Record<Platform, string> = {
+  'darwin-arm64': 'darwin_arm64',
+  'darwin-x64': 'darwin_amd64',
+  'linux-x64': 'linux_amd64',
+  'linux-arm64': 'linux_arm64',
+};
+
+/**
+ * A program HashiCorp releases, such as terraform-ls, from releases.hashicorp.com: the zip for each
+ * platform, each listed in the release's `SHA256SUMS`, which HashiCorp signed with one of `keys`,
+ * its own, armored. The program is the zip's file named `product`.
+ */
+export function hashicorp(product: string, keys: readonly string[]): Source {
+  return async (version, tools) => {
+    if (!/^\d+\.\d+\.\d+$/.test(version))
+      throw new Error(`${version} isn’t a version of ${product}`);
+    const hosts = ['releases.hashicorp.com'];
+    const base = `https://releases.hashicorp.com/${product}/${version}/`;
+    const name = `${product}_${version}_SHA256SUMS`;
+    const sums = await fetchBytes(`${base}${name}`, hosts, tools);
+    await verifySigned(sums, await fetchBytes(`${base}${name}.sig`, hosts, tools), keys);
+    tools.log(`${name} is signed with HashiCorp's key.`);
+    const listed = parseSums(sums.toString('utf8'));
+    const platforms: Record<string, Download> = {};
+    for (const platform of PLATFORMS) {
+      const zip = `${product}_${version}_${HASHICORP_PLATFORMS[platform]}.zip`;
+      const expected = listed.get(zip);
+      if (expected === undefined) throw new Error(`${name} doesn’t list ${zip}`);
+      const { part, file } = await fetchPart(`${base}${zip}`, hosts, tools);
+      if (part.sha256 !== expected) throw new Error(`${zip} isn’t what ${name} lists`);
+      const download: Download = { kind: 'zip', ...part, entry: product };
       await checkUnpacks(download, [file], tools);
       platforms[platform] = download;
     }

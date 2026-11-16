@@ -409,12 +409,14 @@ toolchain and git's variables each server needs.
   that group with whatever descends from it, found by parent, so a stop or a kill reaches whatever
   it started, a process in a session of its own included.
 - Its environment is built from nothing: a `HOME` of its own with `TMPDIR` inside it, a `PATH` of
-  the toolchain's folders and the system's, git's variables from `@lo/git`, and its adapter's own
-  variables, none of which may be a proxy, the SSH agent or named like a secret or credential, nor
-  load code into a program or shell (`NODE_OPTIONS`, `DYLD_*`, `BASH_ENV`, `RUSTC_WRAPPER`,
-  `GOFLAGS`, `CLASSPATH`) unless the adapter names it in `allowed`. Each folder is checked as given
-  and as it resolves, against the checkout as given and as it resolves, its `HOME` before it's made.
-  Nothing of main's reaches it.
+  the toolchain's folders and the system's, git's variables from `@lo/git`, a proxy that leads
+  nowhere (`NO_NETWORK`, port 0 on this machine) in each spelling programs read, and its adapter's
+  own variables, none of which may be a proxy, the SSH agent or named like a secret or credential,
+  nor load code into a program or shell (`NODE_OPTIONS`, `DYLD_*`, `BASH_ENV`, `RUSTC_WRAPPER`,
+  `GOFLAGS`, `GOPACKAGESDRIVER`, `CLASSPATH`) unless the adapter names it in `allowed`. Its
+  adapter's caches (`homeFolders`, such as `GOMODCACHE`) are folders in its `HOME`, by their paths
+  there. Each folder is checked as given and as it resolves, against the checkout as given and as it
+  resolves, its `HOME` before it's made. Nothing of main's reaches it.
 - Lo opens a file on a server with its text from git, at most 50 at once, and asks only for hovers,
   definitions, references, inlay hints and document symbols, each with a deadline. A request is
   cancelled once its deadline passes, its asker gives up or a newer one replaces it, and keeps its
@@ -440,8 +442,17 @@ toolchain and git's variables each server needs.
 - What Lo downloads is pinned in `packages/desktop/lsp/servers.json`: each server's version, and
   that of the Node the JavaScript ones run on, with each file's address, size and SHA-256 per
   platform. `pnpm nx run lsp:pin -- <id> <version>` records one, by hand and never in CI: it checks
-  each file against its publisher's signature first (Node's releasers' keys, in `scripts/keys/`, and
-  npm's registry keys), and that it unpacks as Lo would. Lo trusts only the manifest's hashes.
+  each file against its publisher's signature first (Node's releasers' and HashiCorp's keys, in
+  `scripts/keys/`, and npm's registry keys), or for gopls against sum.golang.org as `go` does, and
+  that it unpacks as Lo would. Lo trusts only the manifest's hashes.
+- gopls is pinned as the modules it's built from, with the `go.mod` and `go.sum` that require them
+  and the size and SHA-256 of what each platform's build makes, since the Go team publishes no
+  binary. On first use Lo fetches the modules itself, through its downloader and the entry's hosts,
+  never by running `go` against the network, lays them out as a module proxy in the download's
+  folder, and builds once with its Go, offline, from an environment built from nothing
+  (`src/build.ts`). Go's builds are reproducible: a build whose hash isn't the one pinned is
+  refused, and so is a Go other than the version gopls was pinned with, so gopls is pinned again
+  whenever Go is.
 - The toolchains language servers use are pinned the same way, in `toolchains.json`: Go, Rust
   (rustc, cargo, the standard library and its sources, as layers of one sysroot), a Temurin JDK and
   the .NET SDK, each with what it unpacks to per platform. `lsp:pin` checks Go against Google's
@@ -450,14 +461,20 @@ toolchain and git's variables each server needs.
   and the dotnet/core repository list. Pins are renewed before each release. A server uses only Lo's
   copy, never the machine's, nor a version its checkout asks for: `toolchainUse` gives it the folder
   of programs for its `PATH` and the variables that hold the toolchain to Lo's copy
-  (`GOTOOLCHAIN=local`, an empty `RUSTC_WRAPPER`, `JAVA_HOME`, `DOTNET_ROOT`, MSBuild's
-  `DOTNET_MSBUILD_SDK_RESOLVER_*`, and the rest).
+  (`GOTOOLCHAIN=local`, `GOPROXY=off`, an empty `GOFLAGS`, `GOPACKAGESDRIVER=off`, an empty
+  `RUSTC_WRAPPER`, `JAVA_HOME`, `DOTNET_ROOT`, MSBuild's `DOTNET_MSBUILD_SDK_RESOLVER_*`, and the
+  rest), and the caches it keeps in the server's home.
 - A `global.json` can steer `dotnet` past those variables: since .NET 10 its `sdk.paths` names
   folders to find an SDK in, the checkout's own among them, and the SDK's commands and MSBuild read
   the one nearest where they run. So `dotnet` starts a server only as `dotnet exec`, which reads
   none (`checkArguments`), and a server that uses .NET doesn't start on, or move to, a checkout with
   a `global.json` that names `paths` or spells a key with an escape, in it or in a folder above it
   (`checkoutProblem`, asked by the pool).
+- A `go.work` makes the modules it names one workspace, which Go reads from the folder nearest where
+  it runs. So a server that uses Go doesn't start on, or move to, a checkout with a `go.work` in a
+  folder above it, or one in it that names a folder outside it, by `use` or a `replace` with a path,
+  or that Lo can't read for certain (`checkoutProblem`). It looks through the checkout's own
+  folders, never through a link, which could lead anywhere on the disk.
 - A download goes over `https` only, on the usual port, to its entry's hosts, following at most 5
   redirects itself, each held to the same rules, and refusing an answer its `fetch` was redirected
   to unseen, with no token or cookie. In the app it goes through `net.request` (`netFetch` with
@@ -482,6 +499,12 @@ toolchain and git's variables each server needs.
 - A server installed by the user is used only from where its adapter says it may be, when the app's
   folder check passes it (the one git is held to), it isn't in Lo's cache, and it isn't a version
   manager's shim, which picks a program from the checkout.
+- The servers that are programs of their own start as that program, by its absolute path inside its
+  install (`launchNative`), with their toolchains' folders and variables: gopls for Go, with Lo's
+  Go, its settings turning vulncheck off and its heap held under the cap by `GOMEMLIMIT`; and
+  terraform-ls for Terraform, from releases.hashicorp.com, given `/dev/null` as Terraform so it runs
+  neither `terraform` nor a provider's plugin, and so reads only the provider schemas it carries.
+  Each adapter's comment says what in a checkout can reach its server and what can't.
 - The servers that run on Lo's Node have their adapters in `src/adapters/`: vtsls for TypeScript and
   JavaScript, and Pyright for Python, each from npm. Each starts as Node, by its absolute path, with
   a cap on its heap, then the server's own entry point, never npm's launcher. What it's told is the
@@ -492,8 +515,8 @@ toolchain and git's variables each server needs.
   `~/node_modules`, which neither vtsls nor `tsserver` can turn off (`test/plugins.test.ts`). No
   server has a sandbox: each reads what the user can, outside the checkout too, and Lo never opens a
   place outside the checkout an answer names. Each says whether it gives inlay hints (`hints`):
-  Pyright gives none. The package's README lists each with its source, version and license, and a
-  server's details name its license beside its version.
+  Pyright and terraform-ls give none. The package's README lists each with its source, version and
+  license, and a server's details name its license beside its version.
 - Tests start only the fake server, `testing/lsp/fake-server.ts`, at most two at once in a test
   file, each killed with its group when the test ends. No test starts a real server or downloads
   one: download tests serve archives they build from a server on this machine. The live check,
@@ -1205,7 +1228,8 @@ parse them under `@lo/syntax`'s limits.
 The `code` feature runs language servers on the views the reader trusts, and their answers come
 before the syntax index's. A server is whatever an adapter (`main/adapters.ts`) says to start for
 its languages: Lo ships those for TypeScript and JavaScript, and Python, each downloaded with the
-Node it runs on.
+Node it runs on; Go, gopls, which Lo builds with the Go it then runs with; and Terraform,
+terraform-ls, which reads a `.tfvars` file as Terraform's variables.
 
 - Nothing starts for a view nothing trusts: no download, no checkout, no server. Once a trusted view
   is on screen and a file its pull request adds or changes on the new side, or one asked about, is
@@ -1262,7 +1286,8 @@ Node it runs on.
 - `gh` shows a server's inlay hints, held until the reader's next input. With none, the status bar
   says why: the server is starting, failed, needs a toolchain or gave none, no server reads the code
   on screen, or the repo isn't trusted. A server that doesn't offer inlay hints, or whose adapter
-  says it has none, isn't asked for them, and `gh` says so ("Pyright has no type hints.").
+  says it has none, isn't asked for them, and `gh` says so ("Pyright has no type hints.",
+  "terraform-ls has no type hints.").
 - The status bar has an item for each server, its details offering "Restart", "Show the log" and
   "Stop trusting this repo"; on an untrusted view, "Language servers off" offers to trust it
   (`code.servers`, the `served` topic). The log dialog shows the last 1,000 lines, and copies as

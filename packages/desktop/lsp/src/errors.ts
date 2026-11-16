@@ -8,8 +8,10 @@
  * - `interrupted`: the connection failed, the file came short, or the server had trouble. Only
  *   this is worth trying again by itself.
  * - `space`: the disk hasn't room for it.
+ * - `build`: a program Lo builds from what it downloaded, as it does gopls, didn't build.
  */
-export type DownloadProblem = 'refused' | 'mismatch' | 'unavailable' | 'interrupted' | 'space';
+export type DownloadProblem =
+  'refused' | 'mismatch' | 'unavailable' | 'interrupted' | 'space' | 'build';
 
 /** A download Lo couldn't make, or won't use. Its message says why, for the reader. */
 export class DownloadError extends Error {

@@ -591,8 +591,9 @@ repo. The right side of a diff navigates the new commit, and the left side the o
 - **Toolchains.** The toolchains servers need are Lo's own too: Go, Rust, a Temurin JDK and the .NET
   SDK, one version each, pinned and downloaded like the servers on first use of their language.
   Servers never use the machine's, nor a version a repo asks for. A repo whose `global.json` names
-  other folders to find a .NET SDK in gets no .NET server, which says why. Settings lists them with
-  their sizes, and removes them.
+  other folders to find a .NET SDK in gets no .NET server, and one whose `go.work` names folders
+  outside it, or that sits below a `go.work`, no Go server, each saying why. Settings lists them
+  with their sizes, and removes them.
 - **Java and Kotlin.** Their servers read the project's Gradle or Maven build to understand it,
   which is one reason language servers need trust.
 

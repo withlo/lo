@@ -138,19 +138,28 @@ it('gives a server only the toolchains its adapter names, which “Remove” sto
   expect(asked).toEqual(['temurin']);
 });
 
-it('gives Lo’s own servers, TypeScript’s and Python’s, no toolchain, since they name none', async () => {
-  expect(SHIPPED.map((each) => each.name)).toEqual(['TypeScript', 'Python']);
+it('gives Lo’s own servers only the toolchains they name: Go’s Go, and the rest none', async () => {
+  expect(SHIPPED.map((each) => each.name)).toEqual(['TypeScript', 'Python', 'Go', 'Terraform']);
   for (const shipped of SHIPPED) {
     const toolchain = listedToolchain(shipped, (id) => Promise.resolve(id));
     for (const id of Object.keys(TOOLCHAINS)) {
+      if (shipped.id === 'go' && id === 'go') {
+        expect(await toolchain(id)).toBe('go');
+        continue;
+      }
       await expect(toolchain(id)).rejects.toThrow(
         `${shipped.name} doesn’t name the toolchain ${id} among its downloads.`,
       );
     }
   }
-  // So Settings lists none of them as using one.
+  // So Settings lists Go's server alone as using one: Go.
   const listed = await listToolchains({ ...host().given, adapters: () => SHIPPED });
-  expect(listed.flatMap((each) => each.uses)).toEqual([]);
+  expect(listed.map((each) => [each.id, each.uses])).toEqual([
+    ['dotnet', []],
+    ['go', ['Go']],
+    ['rust', []],
+    ['temurin', []],
+  ]);
 });
 
 it('names the toolchain and why, when one can’t download or was removed', () => {

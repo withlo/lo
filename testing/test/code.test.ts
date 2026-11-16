@@ -278,7 +278,7 @@ test(
     // The script says each marker, so whoever checks knows what to look for.
     const said = new Set(script.match(/lo-hostile-[a-z]+(?:-[a-z]+)*/g));
     expect([...markers].toSorted()).toEqual([...said].toSorted());
-    expect(markers.size).toBe(15);
+    expect(markers.size).toBe(18);
   },
 );
 
@@ -288,6 +288,7 @@ test("Lo's own repository holds nothing a tool would pick up from what the hosti
   // package scripts.
   const named = new Set([
     '.cargo',
+    '.envrc',
     '.gitmodules',
     '.mvn',
     '.npmrc',
@@ -301,6 +302,7 @@ test("Lo's own repository holds nothing a tool would pick up from what the hosti
     'gradle',
     'gradlew',
     'global.json',
+    'go.work',
     'mise.toml',
     'mvnw',
     'node_modules',

@@ -90,6 +90,8 @@ describe('test servers', () => {
     expect(ids(adaptersFor({ packaged: true, env, testRun: false, shipped }))).toEqual([
       'typescript',
       'python',
+      'go',
+      'terraform',
     ]);
     expect(adaptersFor({ packaged: false, env: {}, testRun: false, shipped })).toBe(shipped);
     expect(adaptersFor({ packaged: false, env: {}, testRun: true, shipped })).toEqual([]);
