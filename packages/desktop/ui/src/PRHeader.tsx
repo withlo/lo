@@ -1,6 +1,7 @@
 import { cva } from 'class-variance-authority';
 import type { ReactNode } from 'react';
 
+import { Branch } from './Branch.tsx';
 import { Skeleton } from './Spinner.tsx';
 import { StatePill, type PullRequestState } from './StatePill.tsx';
 
@@ -29,6 +30,11 @@ export interface PRHeaderProps {
   acting?: { login: string } | 'anonymous' | undefined;
   /** Shown only when the connection isn't as usual. */
   connection?: HeaderConnection | undefined;
+  /**
+   * Whether the pull request can merge: the merge status, a dot and one line. It goes on the first
+   * row, between the connection chip and the account.
+   */
+  status?: ReactNode;
   /** What goes on the second row after the branches: what's on screen, its controls. */
   children?: ReactNode;
 }
@@ -40,8 +46,8 @@ const chip = cva(
 
 /**
  * The two rows above a pull request: its state, title and number, how the connection stands when
- * it isn't as usual, and who Lo acts as; then who wants to merge which branch into which, and what
- * other features put after them.
+ * it isn't as usual, whether it can merge, and who Lo acts as; then who wants to merge which branch
+ * into which, and what other features put after them.
  */
 export function PRHeader({
   number,
@@ -52,6 +58,7 @@ export function PRHeader({
   base,
   acting,
   connection,
+  status,
   children,
 }: PRHeaderProps) {
   return (
@@ -78,6 +85,7 @@ export function PRHeader({
             )}
           </span>
         )}
+        {status}
         {acting !== undefined && (
           <span
             className="inline-flex h-control-h flex-none items-center gap-6 px-6 whitespace-nowrap text-fg text-small"
@@ -118,18 +126,6 @@ export function PRHeader({
         {children}
       </div>
     </header>
-  );
-}
-
-/** A branch's name, in code type, cut short with its whole name on hover. */
-function Branch({ name, base = false }: { name: string; base?: boolean }) {
-  return (
-    <span
-      className={`lo-selectable inline-block h-20 max-w-tab-w min-w-0 truncate rounded-xs bg-hover px-6 code-small ${base ? 'text-fg-muted' : 'text-fg'}`}
-      title={name}
-    >
-      {name}
-    </span>
   );
 }
 

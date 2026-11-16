@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { hasFormat, showFormat, showProse, splitFormat } from './controls.ts';
+import { hasFormat, showFormat, showProse, splitFormat, withoutBidi } from './controls.ts';
 
 /** The code points of the marks in `text`, in order, as names show them. */
 function marks(text: string, prose = false): string[] {
@@ -134,5 +134,18 @@ describe('in prose', () => {
       { code: 'U+202E', name: 'right-to-left override' },
       'b‏c',
     ]);
+  });
+});
+
+describe('withoutBidi', () => {
+  it('drops the embeddings, overrides and isolates that turn the text after them around', () => {
+    expect(withoutBidi('evil\u202Etxt.exe')).toBe('eviltxt.exe');
+    expect(withoutBidi('\u202Aa\u202Bb\u202Cc\u202Dd\u202Ee')).toBe('abcde');
+    expect(withoutBidi('\u2066a\u2067b\u2068c\u2069')).toBe('abc');
+  });
+
+  it('keeps the marks that right-to-left text places numbers and punctuation with', () => {
+    expect(withoutBidi('a\u200Eb\u200Fc\u061Cd')).toBe('a\u200Eb\u200Fc\u061Cd');
+    expect(withoutBidi('Fix the null check in #4821')).toBe('Fix the null check in #4821');
   });
 });

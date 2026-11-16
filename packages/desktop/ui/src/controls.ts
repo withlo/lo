@@ -107,3 +107,15 @@ export function showProse(text: string): string {
     .map((piece) => (typeof piece === 'string' ? piece : `\u2039${piece.code}\u203A`))
     .join('');
 }
+
+/**
+ * `text` without the characters that turn the direction of the text after them around until
+ * they're closed (embeddings, overrides and isolates), which a pull request's author could use to
+ * make a title, a login or a branch's name read as something else. The marks right-to-left text
+ * places numbers and punctuation with (LRM, RLM, ALM) stay: they change no more than their
+ * neighbours. For what a row or a status says of a pull request, which is drawn as a line of text
+ * and has no room for a mark of each.
+ */
+export function withoutBidi(text: string): string {
+  return text.replaceAll(/[‪-‮⁦-⁩]/g, '');
+}

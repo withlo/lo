@@ -18,6 +18,46 @@ export { KeyHelp, type KeyHelpProps } from './KeyHelp.tsx';
 export { Palette, PaletteHint, type PaletteGroup, type PaletteProps } from './Palette.tsx';
 export { Banner, type BannerAction, type BannerProps } from './Banner.tsx';
 export { PRHeader, type HeaderConnection, type PRHeaderProps } from './PRHeader.tsx';
+export { Branch, type BranchProps } from './Branch.tsx';
+export { LinkButton } from './LinkButton.tsx';
+export {
+  Checklist,
+  CheckIcon,
+  type CheckGlyph,
+  type CheckItem,
+  type CheckKind,
+  type CheckLink,
+  type CheckSub,
+  type ChecklistProps,
+} from './Checklist.tsx';
+export { MergeDot, MergeStatus, type MergeKind, type MergeStatusProps } from './MergeStatus.tsx';
+export {
+  CommitText,
+  MergeFoot,
+  MergeMethods,
+  MergePanel,
+  type CommitField,
+  type CommitTextProps,
+  type MergeFootProps,
+  type MergeMethod,
+  type MergeMethodsProps,
+  type MergePanelProps,
+  type MergePrimary,
+} from './MergePanel.tsx';
+export {
+  QueueTable,
+  type LeftEntry,
+  type LeftReason,
+  type QueueEntry,
+  type QueueGroup,
+  type QueueItem,
+  type QueueState,
+  type QueueTableProps,
+  type WaitingEntry,
+} from './QueueTable.tsx';
+export { FactPerson, Facts, type FactItem } from './Facts.tsx';
+export { LayerList, type LayerListProps, type LayerRow } from './LayerList.tsx';
+export { TypeToConfirm, typedMatches, type TypeToConfirmProps } from './TypeToConfirm.tsx';
 export { Skeleton, Spinner, type SpinnerProps } from './Spinner.tsx';
 export { StatePill, type PullRequestState } from './StatePill.tsx';
 export { StatusBar, StatusItem, StatusKeys, StatusMode } from './StatusBar.tsx';
