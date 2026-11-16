@@ -171,8 +171,8 @@ export function countOf(view: QueueView): number | null {
 /**
  * The branches a merge queue's tab can switch between, in order: the repository's default branch
  * first, then by name. They're the branch it shows, those it showed before (the one `gq` opened it
- * at among them, a pull request's base), and the bases of the repository's open pull requests that a
- * ruleset gives a merge queue, as far as the rulesets Lo has read say.
+ * at among them, a pull request's base), and the bases of the repository's open pull requests that
+ * a ruleset gives a merge queue, as far as the rulesets Lo has read say.
  */
 export function switchBranches(
   shown: string,

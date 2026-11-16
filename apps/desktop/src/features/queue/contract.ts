@@ -119,8 +119,8 @@ export type BranchCount = z.output<typeof branchCount>;
 
 /**
  * A merge queue's tab as main has it, sent each time it changes: the branch it shows, the branches
- * it can show, what was read of the branch's queue and when, and why the last read failed, with when
- * Lo reads again.
+ * it can show, what was read of the branch's queue and when, and why the last read failed, with
+ * when Lo reads again.
  */
 export const queueState = z.strictObject({
   id: tabId,

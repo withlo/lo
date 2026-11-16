@@ -8,6 +8,7 @@ import { createStore } from 'zustand/vanilla';
 import { shownLayerOf, type Moved, type Tab } from '../contract.ts';
 import { main } from './main.ts';
 import { moreStore } from './more.ts';
+import { withoutBidi } from './shared.ts';
 import { tabsStore, type TabsState } from './store.ts';
 
 /** What the strip last said of a tab it moved, for a screen reader. */
@@ -23,7 +24,7 @@ function nameOf(tab: Tab): string {
     case 'settings':
       return 'Settings';
     case 'queue':
-      return `${tab.repo} merge queue for ${tab.branch}`;
+      return `${tab.repo} merge queue for ${withoutBidi(tab.branch)}`;
     default:
       tab satisfies never;
       throw new Error(`A tab of an unknown kind: ${JSON.stringify(tab)}.`);

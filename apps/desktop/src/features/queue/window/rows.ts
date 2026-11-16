@@ -38,7 +38,7 @@ export function rowsOf(read: QueueRead | undefined): Row[] {
   ];
 }
 
-/** The row the keyboard is on among `rows`: the one `key` names while it's there, else the first. */
+/** The row the keyboard is on among `rows`: the one `key` names while it's there, or the first. */
 export function focusedRow(rows: readonly Row[], key: string | undefined): Row | undefined {
   return rows.find((row) => row.key === key) ?? rows[0];
 }

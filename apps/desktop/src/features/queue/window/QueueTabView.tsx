@@ -91,7 +91,7 @@ function Notes({ state, now }: { state: QueueState; now: number }) {
       {failure && (
         <Callout tone="warning" role="status">
           Lo couldn’t read the merge queue for {withoutBidi(state.branch)}.{' '}
-          {sentence(failure.message)}
+          {sentence(withoutBidi(failure.message))}
           {again === undefined ? '' : ` Lo reads it again ${again}.`}
         </Callout>
       )}
@@ -172,7 +172,7 @@ function Body({
   }
 }
 
-/** The tab's header: what it shows, the queue's settings, the switch of branches, and the account. */
+/** The tab's header: what it shows, the queue's settings, the branch switch, and the account. */
 function Header({ tab, state }: { tab: QueueTab; state: QueueState | undefined }) {
   const settings = settingsOf(state?.read);
   const branches = state?.branches ?? [];

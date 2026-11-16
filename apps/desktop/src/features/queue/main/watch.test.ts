@@ -1,12 +1,20 @@
-// Reading a merge queue's tab: only while it's on screen, the queue every 20 s backing off to every
-// 2 minutes while reads fail, those waiting to join and the other branches' counts every 2
-// minutes, and nothing of a branch it no longer shows.
+// Reading a merge queue's tab: only while it's on screen and its account is there, the queue every
+// 20 s backing off to every 2 minutes while reads fail, those waiting to join and the other
+// branches' counts every 2 minutes backing off to every 10, and nothing of a branch it no longer
+// shows.
 
 import type { OpenPullRequestList, QueueView, QueueWaiting, TrunkRuleList } from '@lo/github';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { QueueState } from '../contract.ts';
-import { QUEUE_EVERY, QUEUE_MOST, QueueWatch, WAITING_EVERY, type QueueSource } from './watch.ts';
+import {
+  QUEUE_EVERY,
+  QUEUE_MOST,
+  QueueWatch,
+  WAITING_EVERY,
+  WAITING_MOST,
+  type QueueSource,
+} from './watch.ts';
 
 beforeEach(() => {
   vi.useFakeTimers({ now: 1_000_000 });
@@ -61,6 +69,24 @@ function fakeSource(options: { list?: OpenPullRequestList; rules?: TrunkRuleList
   };
   return { source, asked, state };
 }
+
+/** A repository whose open pull request into release/2.8 has a merge queue, as main does. */
+const WITH_RELEASE = {
+  list: {
+    pullRequests: [openInto('release/2.8')],
+    totalCount: 1,
+    truncated: false,
+    defaultBranch: 'main',
+    merged: [],
+    lookups: [],
+    mergedTruncated: false,
+  },
+  rules: {
+    rulesets: [{ include: ['refs/heads/release/*'], exclude: [], gatesMerging: true, queue: true }],
+    unavailable: undefined,
+    leftOut: false,
+  },
+} satisfies { list: OpenPullRequestList; rules: TrunkRuleList };
 
 function watchOf(source: QueueSource, branch = 'main') {
   const published: QueueState[] = [];
@@ -161,17 +187,31 @@ describe('a merge queue’s tab', () => {
     expect(asked).toContain('view main');
   });
 
-  it('reads those waiting again as soon as the queue once their read failed', async () => {
-    const { source, asked, state } = fakeSource();
+  it('backs off reading those waiting and the other branches’ counts on their own while they fail', async () => {
+    const { source, asked, state } = fakeSource(WITH_RELEASE);
     const { watch } = watchOf(source);
     state.failing = true;
     watch.show();
-    await vi.advanceTimersByTimeAsync(0);
-    state.failing = false;
+    // Ten minutes of GitHub out of reach.
+    await vi.advanceTimersByTimeAsync(10 * 60_000);
+    const times = (read: string) => asked.filter((each) => each === read).length;
+    // The queue at 0, 20, 60, 140, 260, 380 and 500 s; the others at 0, 2 and 6 minutes.
+    expect(times('view main')).toBe(7);
+    expect(times('waiting main')).toBe(3);
+    expect(times('view release/2.8')).toBe(3);
+
+    // Their waits double up to 10 minutes, and go back to 2 once a read succeeds.
+    for (let read = 0; read < 3; read++) await vi.advanceTimersByTimeAsync(WAITING_MOST);
     asked.length = 0;
-    await vi.advanceTimersByTimeAsync(QUEUE_EVERY);
-    expect(asked).toContain('waiting main');
+    await vi.advanceTimersByTimeAsync(WAITING_MOST);
+    expect(times('waiting main')).toBe(1);
+    state.failing = false;
+    await vi.advanceTimersByTimeAsync(WAITING_MOST);
     expect(watch.state().read).toMatchObject({ kind: 'queue', waitingCutShort: false });
+    asked.length = 0;
+    await vi.advanceTimersByTimeAsync(WAITING_EVERY);
+    expect(times('waiting main')).toBe(1);
+    expect(times('view release/2.8')).toBe(1);
   });
 
   it('drops the branch it showed for the one asked for, reads it at once, and keeps offering both', async () => {
@@ -199,36 +239,24 @@ describe('a merge queue’s tab', () => {
     answer?.(viewOf('main', 9));
     await vi.advanceTimersByTimeAsync(0);
     expect(asked).toContain('view release/2.8');
-    // main is still offered, counted by the read of those waiting.
+    // main is still offered, and counted when the other branches next are.
     expect(watch.state()).toMatchObject({
       branch: 'release/2.8',
       read: { kind: 'queue' },
       branches: [
-        { name: 'main', count: 3 },
+        { name: 'main', count: null },
         { name: 'release/2.8', count: 1 },
       ],
     });
+    await vi.advanceTimersByTimeAsync(WAITING_EVERY);
+    expect(watch.state().branches).toEqual([
+      { name: 'main', count: 3 },
+      { name: 'release/2.8', count: 1 },
+    ]);
   });
 
-  it('counts the other branches’ queues with those waiting, every 2 minutes', async () => {
-    const { source, asked } = fakeSource({
-      list: {
-        pullRequests: [openInto('release/2.8')],
-        totalCount: 1,
-        truncated: false,
-        defaultBranch: 'main',
-        merged: [],
-        lookups: [],
-        mergedTruncated: false,
-      },
-      rules: {
-        rulesets: [
-          { include: ['refs/heads/release/*'], exclude: [], gatesMerging: true, queue: true },
-        ],
-        unavailable: undefined,
-        leftOut: false,
-      },
-    });
+  it('counts the other branches’ queues every 2 minutes', async () => {
+    const { source, asked } = fakeSource(WITH_RELEASE);
     const { watch } = watchOf(source);
     watch.show();
     await vi.advanceTimersByTimeAsync(0);
@@ -237,6 +265,69 @@ describe('a merge queue’s tab', () => {
       { name: 'main', count: 3 },
       { name: 'release/2.8', count: 1 },
     ]);
+    asked.length = 0;
+    await vi.advanceTimersByTimeAsync(WAITING_EVERY);
+    expect(asked.filter((each) => each === 'view release/2.8')).toHaveLength(1);
+  });
+
+  it('stops counting the other branches as it goes off screen', async () => {
+    let answer: ((view: QueueView) => void) | undefined;
+    const { source, asked } = fakeSource({
+      ...WITH_RELEASE,
+      list: {
+        ...WITH_RELEASE.list,
+        pullRequests: [openInto('release/2.8'), openInto('release/2.9')],
+      },
+    });
+    // The count of release/2.8 answers only when the test says.
+    const slow: QueueSource = {
+      ...source,
+      view(branch, signal) {
+        if (branch !== 'release/2.8') return source.view(branch, signal);
+        asked.push(`view ${branch}`);
+        return new Promise((resolve) => {
+          answer = resolve;
+        });
+      },
+    };
+    const { watch } = watchOf(slow);
+    watch.show();
+    await vi.advanceTimersByTimeAsync(0);
+    watch.hide();
+    answer?.(viewOf('release/2.8', 4));
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(asked).toEqual(['view main', 'waiting main', 'view release/2.8']);
+    // What it was reading when it went still counts.
+    expect(watch.state().branches).toContainEqual({ name: 'release/2.8', count: 4 });
+
+    // Back on screen, it counts the one it left out, and not the one just counted.
+    asked.length = 0;
+    watch.show();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(asked).toEqual(['view main', 'view release/2.9']);
+  });
+
+  it('reads nothing while its account is away, saying why, and everything at once once it’s back', async () => {
+    const { source, asked } = fakeSource(WITH_RELEASE);
+    const { watch, published } = watchOf(source);
+    watch.show();
+    await vi.advanceTimersByTimeAsync(0);
+    watch.hold('tess-okafor is signed out.');
+    expect(published.at(-1)?.failure).toEqual({
+      message: 'tess-okafor is signed out.',
+      retryAt: null,
+    });
+    asked.length = 0;
+    await vi.advanceTimersByTimeAsync(10 * 60_000);
+    watch.hide();
+    watch.show();
+    await vi.advanceTimersByTimeAsync(10 * 60_000);
+    expect(asked).toEqual([]);
+
+    watch.release();
+    expect(watch.state().failure).toBeNull();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(asked).toEqual(['view main', 'waiting main', 'view release/2.8']);
   });
 
   it('reads nothing more once its tab closes', async () => {

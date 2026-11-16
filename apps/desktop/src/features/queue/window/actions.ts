@@ -61,7 +61,7 @@ function rowsIn(tab: string): Row[] {
   return rowsOf(queueOf(tab)?.read);
 }
 
-/** The table of the merge queue's tab on screen, while it's drawn, which keys give focus back to. */
+/** The table of the merge queue's tab on screen, while it's drawn, which keys give focus to. */
 let table: { readonly tab: string; readonly element: () => HTMLElement | null } | undefined;
 
 /** Says the table of merge queue tab `tab` is drawn, until the returned function. */
@@ -107,11 +107,12 @@ function rowAt(target: RowTarget): { tab: QueueTab; row: Row } | string {
 }
 
 /**
- * Whether a row's right-click menu lists the queue's row commands: on the queue's own rows only,
- * never on another list's, such as a pull request's timeline.
+ * Whether a row's right-click menu lists the queue's row commands: on the rows of the queue's table
+ * drawn now only, never on another list's, such as a pull request's timeline.
  */
 export function onQueueRow(target: RowTarget | NoTarget): boolean {
-  return target.kind !== 'row' || typeof rowAt(target) !== 'string';
+  if (target.kind !== 'row') return true;
+  return table !== undefined && rowsIn(table.tab).some((row) => row.key === target.row);
 }
 
 /** Whether the row `target` names can be opened. */
@@ -158,7 +159,10 @@ export async function openOnGithub(target: RowTarget | NoTarget): Promise<void> 
   await tabs().openExternal({ url }).catch(failed('Open on GitHub'));
 }
 
-/** The branches the merge queue's tab on screen can show, and the one it shows, if it can show another. */
+/**
+ * The branches the merge queue's tab on screen can show, and the one it shows, if it can show
+ * another.
+ */
 function branchesOnScreen(): { tab: QueueTab; names: string[]; at: number } | string {
   const tab = queueOnScreen();
   if (typeof tab === 'string') return tab;

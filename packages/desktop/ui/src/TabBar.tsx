@@ -690,7 +690,7 @@ function labelOf(item: Tab): string {
     case 'settings':
       return 'Settings';
     case 'queue':
-      return `${item.repo} Merge queue · ${item.branch}`;
+      return `${item.repo} Merge queue · ${withoutBidi(item.branch)}`;
     default:
       item satisfies never;
       throw new Error(`A tab of an unknown kind: ${JSON.stringify(item)}.`);

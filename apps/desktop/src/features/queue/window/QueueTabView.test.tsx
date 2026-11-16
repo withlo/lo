@@ -166,7 +166,12 @@ describe('a merge queue’s tab', () => {
       showQueue(
         stateOf(
           { kind: 'none' },
-          { failure: { message: 'GitHub couldn’t be reached.', retryAt: Date.now() + 40_000 } },
+          {
+            failure: {
+              message: 'GitHub couldn’t be \u202Ereached.',
+              retryAt: Date.now() + 40_000,
+            },
+          },
         ),
       ),
     );
@@ -184,11 +189,26 @@ describe('a merge queue’s tab', () => {
   });
 });
 
+/** The commands a right-click on row `row` lists. */
+function listed(row: string): string[] {
+  return menuSections(registry, { kind: 'row', row })
+    .flat()
+    .map(({ id }) => id);
+}
+
 describe('a row’s right-click menu', () => {
-  it('lists the queue’s commands only on the queue’s own rows, not another list’s', () => {
-    // No merge queue's tab is on screen, as when a pull request's timeline is.
+  it('lists the queue’s commands on the queue’s own rows', () => {
     act(() => showQueue(stateOf(QUEUE)));
-    const items = menuSections(registry, { kind: 'row', row: 'queued-150' }).flat();
-    expect(items.map(({ id }) => id)).toEqual([]);
+    render();
+    expect(listed('queued-150')).toEqual(['queue.open', 'queue.openOnGithub']);
+    expect(listed('waiting-153')).toEqual(['queue.open', 'queue.openOnGithub']);
+  });
+
+  it('lists none of them on another list’s rows, as a pull request’s timeline’s', () => {
+    act(() => showQueue(stateOf(QUEUE)));
+    // The queue's table isn't drawn: a pull request's tab is on screen.
+    expect(listed('queued-150')).toEqual([]);
+    render();
+    expect(listed('comment-150')).toEqual([]);
   });
 });
