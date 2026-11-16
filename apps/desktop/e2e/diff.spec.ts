@@ -1065,8 +1065,8 @@ async function traceMainThread(page: Page): Promise<() => Promise<Task[]>> {
       // A task run inside another is counted in that one's time.
       if (event.ts < busyUntil) continue;
       busyUntil = event.ts + (event.dur ?? 0);
-      if (event.tdur === undefined) throw new Error('the trace has a task without its CPU time');
-      tasks.push({ start: event.ts / 1000 - offset, cpu: event.tdur / 1000 });
+      // A task too short to measure comes without its CPU time: its length stands in.
+      tasks.push({ start: event.ts / 1000 - offset, cpu: (event.tdur ?? event.dur ?? 0) / 1000 });
     }
     if (tasks.length === 0) throw new Error('the trace has none of the page’s tasks');
     return tasks;
