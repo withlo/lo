@@ -1,3 +1,4 @@
+export { GOPLS } from './adapters/gopls.ts';
 export {
   gradleProperties,
   JDTLS,
@@ -10,16 +11,23 @@ export {
   sourcePaths,
   TRIGGER,
 } from './adapters/jdtls.ts';
-export { launchNative, type NativeServer } from './adapters/native.ts';
+export { goMemoryLimit, launchNative, type NativeServer } from './adapters/native.ts';
 export { heapCap, launchOnNode, type Launch, type NodeServer } from './adapters/node.ts';
 export { PHP_LSP, PHP_VERSION } from './adapters/phplsp.ts';
 export { NO_PYTHON, PYRIGHT } from './adapters/pyright.ts';
+export { NO_TERRAFORM, TERRAFORM_LS } from './adapters/terraform.ts';
 export { VTSLS } from './adapters/vtsls.ts';
+export { BUILD_TIME, buildGo, GO_TARGETS, type GoBuild, type GoDownload } from './build.ts';
 export { CLIENT_CAPABILITIES } from './capabilities.ts';
 export { findCopy, type CopyOptions, type Found } from './copies.ts';
 export { OPEN_LIMIT } from './documents.ts';
 export { fetchFile, REDIRECTS, type Fetched, type FetchOptions } from './download.ts';
-export { serverEnvironment, SYSTEM_PATH, type EnvironmentOptions } from './environment.ts';
+export {
+  NO_NETWORK,
+  serverEnvironment,
+  SYSTEM_PATH,
+  type EnvironmentOptions,
+} from './environment.ts';
 export { type Place, type Placed, type Where, writeInHome } from './place.ts';
 export { DownloadError, type DownloadProblem } from './errors.ts';
 export { MESSAGE_LIMIT, UNREAD_LIMIT } from './framing.ts';

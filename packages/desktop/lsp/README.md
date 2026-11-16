@@ -78,25 +78,29 @@ own (`setsid`) is still found.
 
 ## Servers
 
-The servers Lo runs, each downloaded on first use for a trusted view, as `servers.json` pins it, and
+The servers Lo runs, each installed on first use for a trusted view, as `servers.json` pins it, and
 each with its adapter in `src/adapters/`. vtsls and Pyright run on Lo's own Node, which downloads
-first, php-lsp is a program of its own, and JDT LS runs on Lo's Temurin JDK, a toolchain, which
-downloads first. None needs anything installed.
+first; php-lsp and terraform-ls are programs of their own; gopls runs with Lo's Go, which Lo builds
+it with; JDT LS runs on Lo's Temurin JDK, a toolchain, which downloads first. None needs anything
+installed.
 
-| Server         | Version | For                    | From                                                                               | License                                              |
-| -------------- | ------- | ---------------------- | ---------------------------------------------------------------------------------- | ---------------------------------------------------- |
-| vtsls          | 0.3.0   | TypeScript, JavaScript | npm: `@vtsls/language-server` and its 17 dependencies, TypeScript 5.9.3 among them | MIT; TypeScript's is Apache-2.0, the rest MIT or ISC |
-| Pyright        | 1.1.414 | Python                 | npm: `pyright`                                                                     | MIT                                                  |
-| Node           | 26.13.1 | the two above          | nodejs.org                                                                         | MIT                                                  |
-| php-lsp        | 0.33.0  | PHP                    | GitHub: the releases of [jorgsowa/php-lsp](https://github.com/jorgsowa/php-lsp)    | MIT                                                  |
-| Eclipse JDT LS | 1.63.0  | Java                   | download.eclipse.org: its release's archive                                        | EPL-2.0                                              |
+| Server         | Version | For                    | From                                                                                        | License                                                       |
+| -------------- | ------- | ---------------------- | ------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
+| vtsls          | 0.3.0   | TypeScript, JavaScript | npm: `@vtsls/language-server` and its 17 dependencies, TypeScript 5.9.3 among them          | MIT; TypeScript's is Apache-2.0, the rest MIT or ISC          |
+| Pyright        | 1.1.414 | Python                 | npm: `pyright`                                                                              | MIT                                                           |
+| Node           | 26.13.1 | vtsls and Pyright      | nodejs.org                                                                                  | MIT                                                           |
+| php-lsp        | 0.33.0  | PHP                    | GitHub: the releases of [jorgsowa/php-lsp](https://github.com/jorgsowa/php-lsp)             | MIT                                                           |
+| gopls          | 0.24.0  | Go                     | proxy.golang.org: `golang.org/x/tools/gopls` and the 23 modules it builds with, built by Lo | BSD-3-Clause; the rest BSD-3-Clause, MIT, MIT-0 or Apache-2.0 |
+| terraform-ls   | 0.39.1  | Terraform              | releases.hashicorp.com                                                                      | MPL-2.0                                                       |
+| Eclipse JDT LS | 1.63.0  | Java                   | download.eclipse.org: its release's archive                                                 | EPL-2.0                                                       |
 
 vtsls and Pyright each start as Node, by its absolute path, with a cap on its heap, then the
-server's own entry point inside its install, never the launcher npm would link. php-lsp starts as
-its program, by its absolute path inside its install. JDT LS starts as the JDK's `java`, by its
-absolute path, with `-jar` and Equinox's launcher inside its install. None runs through a shell, and
-each has an environment built from nothing. What each is told is its adapter's alone, and the
-adapter says why each setting is as it is:
+server's own entry point inside its install, never the launcher npm would link. php-lsp, gopls and
+terraform-ls each start as its program, by its absolute path inside its install. JDT LS starts as
+the JDK's `java`, by its absolute path, with `-jar` and Equinox's launcher inside its install. None
+runs through a shell, and each has an environment built from nothing, whose proxy leads nowhere
+(`NO_NETWORK` in `src/environment.ts`). What each is told is its adapter's alone, and the adapter
+says why each setting is as it is:
 
 - **vtsls** runs its own TypeScript, never a workspace's (`node_modules/typescript`), and has
   automatic type acquisition off, so it runs no npm. It loads no `tsserver` plugin from the
@@ -123,15 +127,33 @@ adapter says why each setting is as it is:
   `.php-lsp.json` can't turn the tools on or move the cache, and what Lo says wins over the rest of
   it key by key. Lo asks it for nothing that would run another program, such as formatting or a code
   lens's tests.
+- **gopls** runs `go list` and `go env` on the checkout with Lo's Go, held by Go's variables
+  (`src/toolchains.ts`): a `toolchain` line fetches no other Go, no module is fetched, nothing adds
+  a flag such as `-toolexec` or names a package driver, and cgo is off, so no C compiler or
+  `pkg-config` runs. `//go:generate` lines run only under `go generate`, which gopls runs only for a
+  command Lo never sends. Vulncheck is off, and its telemetry stays in its home, never uploaded.
+  `GOMEMLIMIT` keeps its heap at 3 GB, under the group's cap. It doesn't start on a checkout with a
+  `go.work` in a folder above it, or one in it that names a folder outside it.
+- **terraform-ls** is given `/dev/null` as Terraform, so it never runs `terraform`, the machine's or
+  one on `PATH`, nor the provider plugins a checkout's `.terraform/` holds, which
+  `terraform providers schema` would. Without it, it reads providers' schemas from the ones it
+  carries, the Terraform Registry's official and partner providers as it was built, not the versions
+  a checkout's lock file pins, and has none of other providers; definitions, references and the
+  outline come from the configuration and are whole, though it answers references only at a
+  declaration, so `gr` finding none where the reader is asks it for the definition, then for the
+  references there. It asks registry.terraform.io about each module a configuration calls from the
+  Registry, which no setting turns off, and the dead proxy fails each request before anything is
+  sent. It answers no inlay hints (`hints: false`).
 - **JDT LS** is given Lo's Temurin JDK alone (`JAVA_HOME`), and reads its classes and sources as the
   project's library. It imports nothing: Gradle's and Maven's imports are off, and every folder is
   left out of its search for build files, so it reads no `build.gradle`, `pom.xml` or Eclipse
   `.project`, and no build script, wrapper, plugin or annotation processor runs. Lo finds the
   checkout's source folders itself, from each `.java` file's package, and JDT LS makes a project of
-  them in its home, compiling nothing. All it writes, its workspace, Equinox's configuration, its
-  temporary files and Gradle's home, is in its home, named by system properties, since a JVM takes
-  its home from the system, not `HOME`. Its JVM looks names up only in an empty hosts file of Lo's,
-  so it reaches no host: Buildship, inside it, asks services.gradle.org for Gradle's versions as it
+  them in its home, compiling nothing. All it writes is in its home: its workspace, Equinox's
+  configuration, the JVM's home and its temporary files, named by system properties, since a JVM
+  takes its home from the system, not `HOME`, and Gradle's home, by `GRADLE_USER_HOME`. A JVM takes
+  no proxy from the environment, so its JVM looks names up only in an empty hosts file of Lo's, and
+  reaches no host: Buildship, inside it, asks services.gradle.org for Gradle's versions as it
   starts, whatever is imported, and no setting stops it. It doesn't start on a checkout whose root
   holds a `.settings`, which it would link its project's settings to, reading them and writing
   there. Above the checkout it reads nothing: when a folder the checkout is in is named `src`, it
@@ -142,9 +164,10 @@ adapter says why each setting is as it is:
 None runs in a sandbox: each reads what you can, so an absolute import, Pyright's `extraPaths`, the
 folders of stubs a `.php-lsp.json` names, the paths a `composer.json`'s autoload names, or a
 `composer.json` up to seven folders above the checkout, which php-lsp climbs to when the checkout
-has none, lead it to files outside the checkout, and a hover can show what's in one. It only reads
-there, and nothing can send what it reads anywhere. Lo never opens a place outside the checkout an
-answer names: it shows as outside the repository.
+has none, a `go.mod`'s `replace` with a path, or a Terraform module's `source`, lead it to files
+outside the checkout, and a hover can show what's in one. It only reads there, and nothing can send
+what it reads anywhere. Lo never opens a place outside the checkout an answer names: it shows as
+outside the repository.
 
 Lo names each server's license wherever it says what the server is: a server's details in the status
 bar show its name, version and license, "Pyright 1.1.414 · MIT".
@@ -193,7 +216,28 @@ aside and deleted, so nothing finds it half gone and nothing puts it back.
 A server that uses .NET runs only as `dotnet exec` (`checkArguments` in `src/process.ts`), and only
 on a checkout `checkoutProblem` finds no `global.json` in, nor above, that names `paths` or spells a
 key with an escape: that file can send the SDK's commands, and MSBuild, to an SDK in the checkout,
-whatever the variables say.
+whatever the variables say. A server that uses Go runs only on a checkout with no `go.work` in a
+folder above it, which Go would take as its workspace, and none in it that names a folder outside it
+by `use` or a `replace` with a path, or that Lo can't read for certain. It looks through the
+checkout's own folders, never a link to one.
+
+### gopls, built by Lo
+
+The Go team publishes no gopls binary, so Lo builds it (`src/build.ts`). `pin.ts` resolves its
+modules with Lo's Go against proxy.golang.org, checked against sum.golang.org as `go` checks them,
+and pins the `go.mod` and `go.sum` that require them, each module file the build reads, as any file
+is pinned, and the size and SHA-256 of the gopls built for each platform, `-trimpath`,
+`CGO_ENABLED=0` and with no version control stamp. On first use, Lo installs its Go, then fetches
+those files itself, through its downloader and the entry's hosts (proxy.golang.org, and
+storage.googleapis.com, where it redirects), rather than letting `go` fetch them, which would go
+around the system's proxy. It lays them out as a module proxy in the download's folder, and builds
+once with its Go, offline (`GOPROXY=file://…`, `GOSUMDB=off`, `-mod=readonly` against its `go.sum`,
+no `go.work`, and an environment built from nothing). Go's builds are reproducible, so what it
+builds is the file pinned, byte for byte: Lo refuses one whose hash is another, and a Go other than
+the one gopls was pinned with. A build has 20 minutes, and gopls takes about one. `room` is the most
+a build holds on the disk, the module files among them, counted before it starts. Once gopls is
+built, the build's folder, about 640 MB of module proxy, module cache, build cache and home, is
+removed before the version is put in place, which then holds only the program and its marker.
 
 Each file and folder unpacked is synced to the disk, then the marker, then the folder that holds
 them, and only then is it renamed into place. The marker records the fingerprint of the download and

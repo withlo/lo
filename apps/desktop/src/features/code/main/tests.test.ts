@@ -91,6 +91,8 @@ describe('test servers', () => {
       'typescript',
       'python',
       'php',
+      'go',
+      'terraform',
       'java',
     ]);
     expect(adaptersFor({ packaged: false, env: {}, testRun: false, shipped })).toBe(shipped);

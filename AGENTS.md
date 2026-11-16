@@ -389,7 +389,28 @@ Only main runs git, through `@lo/git`, and the background process never sees git
 - With git, main opens the cache, as `git.cache`, and cleans it up without anyone waiting.
   `git.setCap()` sets the size it's kept under, which counts all of it but the toolchains language
   servers use (`toolchains/`), since Settings removes those and their gigabytes would otherwise
-  evict clones, and what's being deleted (`tmp/*.trash`).
+  evict clones, and what's being deleted (`tmp/*.trash`). Language servers' homes (`code/homes/`)
+  count.
+- Past the cap, what Lo gets back without a fetch goes first: checkouts and language servers' homes,
+  together, least recently used first, by a checkout's stamp and a home's folder time, which the
+  cache sets as each server using it starts, every 5 minutes while it runs, and as it stops, before
+  letting go. Then clones go, a fetch each to get back, least recently used first, each with its
+  checkouts and homes, but never the one used last. Each goes only while the cache is still over. A
+  checkout's stamp holds whole seconds, so times are compared to the second, and what was used in
+  the same second goes in the order its clone was used, a home left without one first, then by path.
+- Nothing of a clone that's open, being written to or that a language server runs on goes, its
+  checkouts and homes included. Those checkouts and homes count toward removing nothing else, so a
+  running server's large home never pushes out another's checkouts or clone, though the clone's own
+  folder counts as any clone's does. Each run looks at what's in use all at once, so a server that
+  stops during it has its checkouts and homes kept alike, never one removed without the other. A
+  server holds its repository (`cache.useForServer`) from just before it starts until it has
+  stopped, and one starting waits for cleanup that's removing any of it, but not for collecting the
+  trees comparisons replayed, which takes nothing a server reads and so runs alongside servers. A
+  minute after nothing has a clone open or runs on it any more, the cache is kept under its cap
+  again. Runs keeping the cache under its cap go one at a time, and stop once the cache closes.
+- A repository's homes go with its clone, unused for 30 days, past the cap or cleared, through
+  `Cache.trash`, and cleanup removes homes left without a clone. A home past a link stays, and frees
+  nothing.
 - The cache is `Lo` (`Lo Dev` for a build run from source, or `cache` in `LO_USER_DATA_DIR`) in the
   system's folder for this user's caches: `$XDG_CACHE_HOME` or `~/.cache` on Linux, and on a Mac the
   one macOS keeps outside the home folder, `DARWIN_USER_CACHE_DIR`
@@ -423,12 +444,14 @@ toolchain and git's variables each server needs.
   that group with whatever descends from it, found by parent, so a stop or a kill reaches whatever
   it started, a process in a session of its own included.
 - Its environment is built from nothing: a `HOME` of its own with `TMPDIR` inside it, a `PATH` of
-  the toolchain's folders and the system's, git's variables from `@lo/git`, and its adapter's own
-  variables, none of which may be a proxy, the SSH agent or named like a secret or credential, nor
-  load code into a program or shell (`NODE_OPTIONS`, `DYLD_*`, `BASH_ENV`, `RUSTC_WRAPPER`,
-  `GOFLAGS`, `CLASSPATH`) unless the adapter names it in `allowed`. Each folder is checked as given
-  and as it resolves, against the checkout as given and as it resolves, its `HOME` before it's made.
-  Nothing of main's reaches it.
+  the toolchain's folders and the system's, git's variables from `@lo/git`, a proxy that leads
+  nowhere (`NO_NETWORK`, port 0 on this machine) in each spelling programs read, and its adapter's
+  own variables, none of which may be a proxy, the SSH agent or named like a secret or credential,
+  nor load code into a program or shell (`NODE_OPTIONS`, `DYLD_*`, `BASH_ENV`, `RUSTC_WRAPPER`,
+  `GOFLAGS`, `GOPACKAGESDRIVER`, `CLASSPATH`) unless the adapter names it in `allowed`. Its
+  adapter's caches (`homeFolders`, such as `GOMODCACHE`) are folders in its `HOME`, by their paths
+  there. Each folder is checked as given and as it resolves, against the checkout as given and as it
+  resolves, its `HOME` before it's made. Nothing of main's reaches it.
 - Lo opens a file on a server with its text from git, at most 50 at once, and asks only for hovers,
   definitions, references, inlay hints and document symbols, each with a deadline. A request is
   cancelled once its deadline passes, its asker gives up or a newer one replaces it, and keeps its
@@ -454,8 +477,17 @@ toolchain and git's variables each server needs.
 - What Lo downloads is pinned in `packages/desktop/lsp/servers.json`: each server's version, and
   that of the Node the JavaScript ones run on, with each file's address, size and SHA-256 per
   platform. `pnpm nx run lsp:pin -- <id> <version>` records one, by hand and never in CI: it checks
-  each file against its publisher's signature first (Node's releasers' keys, in `scripts/keys/`, and
-  npm's registry keys), and that it unpacks as Lo would. Lo trusts only the manifest's hashes.
+  each file against its publisher's signature first (Node's releasers' and HashiCorp's keys, in
+  `scripts/keys/`, and npm's registry keys), or for gopls against sum.golang.org as `go` does, and
+  that it unpacks as Lo would. Lo trusts only the manifest's hashes.
+- gopls is pinned as the modules it's built from, with the `go.mod` and `go.sum` that require them
+  and the size and SHA-256 of what each platform's build makes, since the Go team publishes no
+  binary. On first use Lo fetches the modules itself, through its downloader and the entry's hosts,
+  never by running `go` against the network, lays them out as a module proxy in the download's
+  folder, and builds once with its Go, offline, from an environment built from nothing
+  (`src/build.ts`). Go's builds are reproducible: a build whose hash isn't the one pinned is
+  refused, and so is a Go other than the version gopls was pinned with, so gopls is pinned again
+  whenever Go is.
 - The toolchains language servers use are pinned the same way, in `toolchains.json`: Go, Rust
   (rustc, cargo, the standard library and its sources, as layers of one sysroot), a Temurin JDK and
   the .NET SDK, each with what it unpacks to per platform. `lsp:pin` checks Go against Google's
@@ -464,14 +496,20 @@ toolchain and git's variables each server needs.
   and the dotnet/core repository list. Pins are renewed before each release. A server uses only Lo's
   copy, never the machine's, nor a version its checkout asks for: `toolchainUse` gives it the folder
   of programs for its `PATH` and the variables that hold the toolchain to Lo's copy
-  (`GOTOOLCHAIN=local`, an empty `RUSTC_WRAPPER`, `JAVA_HOME`, `DOTNET_ROOT`, MSBuild's
-  `DOTNET_MSBUILD_SDK_RESOLVER_*`, and the rest).
+  (`GOTOOLCHAIN=local`, `GOPROXY=off`, an empty `GOFLAGS`, `GOPACKAGESDRIVER=off`, an empty
+  `RUSTC_WRAPPER`, `JAVA_HOME`, `DOTNET_ROOT`, MSBuild's `DOTNET_MSBUILD_SDK_RESOLVER_*`, and the
+  rest), and the caches it keeps in the server's home.
 - A `global.json` can steer `dotnet` past those variables: since .NET 10 its `sdk.paths` names
   folders to find an SDK in, the checkout's own among them, and the SDK's commands and MSBuild read
   the one nearest where they run. So `dotnet` starts a server only as `dotnet exec`, which reads
   none (`checkArguments`), and a server that uses .NET doesn't start on, or move to, a checkout with
   a `global.json` that names `paths` or spells a key with an escape, in it or in a folder above it
   (`checkoutProblem`, asked by the pool).
+- A `go.work` makes the modules it names one workspace, which Go reads from the folder nearest where
+  it runs. So a server that uses Go doesn't start on, or move to, a checkout with a `go.work` in a
+  folder above it, or one in it that names a folder outside it, by `use` or a `replace` with a path,
+  or that Lo can't read for certain (`checkoutProblem`). It looks through the checkout's own
+  folders, never through a link, which could lead anywhere on the disk.
 - A download goes over `https` only, on the usual port, to its entry's hosts, following at most 5
   redirects itself, each held to the same rules, and refusing an answer its `fetch` was redirected
   to unseen, with no token or cookie. In the app it goes through `net.request` (`netFetch` with
@@ -506,9 +544,9 @@ toolchain and git's variables each server needs.
   nor `tsserver` can turn off (`test/plugins.test.ts`): on a Mac, where the cache is outside the
   home folder, that's never `~/node_modules`; on Linux it can be. No server has a sandbox: each
   reads what the user can, outside the checkout too, and Lo never opens a place outside the checkout
-  an answer names. Each says whether it gives inlay hints (`hints`): Pyright gives none. The
-  package's README lists each with its source, version and license, and a server's details name its
-  license beside its version.
+  an answer names. Each says whether it gives inlay hints (`hints`): Pyright and terraform-ls give
+  none. The package's README lists each with its source, version and license, and a server's details
+  name its license beside its version.
 - PHP's server, php-lsp, is a program of its own, with its adapter in `src/adapters/` too: an
   archive per platform from its GitHub releases, which nobody signs, so `lsp:pin` checks each
   against the checksum its release lists beside it. It starts as its program, by its absolute path,
@@ -518,6 +556,12 @@ toolchain and git's variables each server needs.
   cleanup: Lo names no `cachePath`, which php-lsp would take as the whole cache, and sets no
   `XDG_CACHE_HOME`. What Lo tells it wins over a checkout's `.php-lsp.json` key by key, and that
   file can't turn the tools on or move the cache.
+- Go's and Terraform's servers are programs of their own too, started as php-lsp is
+  (`launchNative`), with their toolchains' folders and variables: gopls for Go, with Lo's Go, its
+  settings turning vulncheck off and its heap held under the cap by `GOMEMLIMIT`; and terraform-ls
+  for Terraform, from releases.hashicorp.com, given `/dev/null` as Terraform so it runs neither
+  `terraform` nor a provider's plugin, and so reads only the provider schemas it carries. Each
+  adapter's comment says what in a checkout can reach its server and what can't.
 - Java's server, Eclipse JDT LS, runs on Lo's Temurin JDK: one archive for every platform from
   download.eclipse.org, which `lsp:pin` checks against the SHA-256 Eclipse lists beside it, since
   only some of its jars are signed. It starts as the JDK's `java` with `-jar` and Equinox's
@@ -528,11 +572,12 @@ toolchain and git's variables each server needs.
   makes a project of them in its home, compiling nothing. What a server is told can depend on where
   it runs: an adapter's `place` gives it, as it starts, arguments, variables, files written in its
   home and settings. JDT LS's names its home as the JVM's home and temporary folder, Equinox's
-  configuration, its workspace and Gradle's home, with a `gradle.properties` that holds a Gradle to
-  Lo's JDK, and has its JVM look names up only in an empty hosts file there, so it reaches no host.
-  It doesn't start on a checkout whose root holds a `.settings`, which it would read and write as
-  its project's (the adapter's `checkout`, asked with the toolchains' `checkoutProblem`). It finds
-  its folders only as it starts, so it starts again rather than moving (`stays`).
+  configuration and its workspace, writes a `gradle.properties` that holds a Gradle to Lo's JDK in
+  Gradle's home (`GRADLE_USER_HOME`, one of its `homeFolders`), and has its JVM, which takes no
+  proxy from the environment, look names up only in an empty hosts file there, so it reaches no
+  host. It doesn't start on a checkout whose root holds a `.settings`, which it would read and write
+  as its project's (the adapter's `checkout`, asked after the toolchains' `checkoutProblem`). It
+  finds its folders only as it starts, so it starts again rather than moving (`stays`).
 - Tests start only the fake server, `testing/lsp/fake-server.ts`, at most two at once in a test
   file, each killed with its group when the test ends. No test starts a real server or downloads
   one: download tests serve archives they build from a server on this machine. The live check,
@@ -1245,8 +1290,9 @@ parse them under `@lo/syntax`'s limits.
 The `code` feature runs language servers on the views the reader trusts, and their answers come
 before the syntax index's. A server is whatever an adapter (`main/adapters.ts`) says to start for
 its languages: Lo ships those for TypeScript and JavaScript, and Python, each downloaded with the
-Node it runs on, PHP, whose server is a program of its own, and Java, whose server runs on Lo's
-Temurin JDK.
+Node it runs on; PHP, whose server is a program of its own; Go, gopls, which Lo builds with the Go
+it then runs with; Terraform, terraform-ls, which reads a `.tfvars` file as Terraform's variables;
+and Java, JDT LS, which runs on Lo's Temurin JDK.
 
 - Nothing starts for a view nothing trusts: no download, no checkout, no server. Once a trusted view
   is on screen and a file its pull request adds or changes on the new side, or one asked about, is
@@ -1264,9 +1310,11 @@ Temurin JDK.
   takes that and its adapter doesn't say it `stays`, as Java's does, else by starting again
   (`main/servers.ts`). It doesn't start on, or move to, a checkout its toolchains or its adapter
   refuse (`checkoutRefusal` in `main/toolchains.ts`): .NET's for a `global.json` that steers it,
-  Java's for a `.settings` at the root. Its `HOME` is `<cache>/code/homes/<owner>/<name>/<adapter>`,
-  and its `PATH` is its toolchain's folders, then Lo's git's, then the system's, so a git from a
-  folder of other programs, as Homebrew's is, can't bring that folder's `go` ahead of the
+  Go's for a `go.work` that reaches outside it, Java's for a `.settings` at the root. Its `HOME` is
+  `<cache>/code/homes/<owner>/<name>/<adapter>` (`Cache.homeFolder`), which the cache's cap counts
+  and trims and which goes with the repository's clone, but never while a server of the repository
+  runs (see Git). Its `PATH` is its toolchain's folders, then Lo's git's, then the system's, so a
+  git from a folder of other programs, as Homebrew's is, can't bring that folder's `go` ahead of the
   toolchain's.
 - An adapter names what its server downloads up front, the server and the toolchains it uses, so the
   status bar adds them up from the first byte ("Java downloading · 38.1 MB of 177.4 MB"), counting
@@ -1293,10 +1341,15 @@ Temurin JDK.
   can't (`main/served.ts`): a definition in 2 s (an adapter may allow longer), references in 10 s, a
   hover in 1.5 s, inlay hints and the outline in 3 s. An empty definition falls back to the file's
   import and the index, and an empty hover to the index; empty references or an empty outline are
-  the server's answer. A place outside the checkout shows as "Outside this repository" and is never
-  read; the references panel counts those it doesn't list. The old side always answers from the
-  index, and a server answers only about the head it runs on, for a file whose checkout matches
-  git's.
+  the server's answer. A server whose adapter says it finds references only from a declaration
+  (`referencesFromDefinition`, terraform-ls) and finds none where the reader is, as at a use, is
+  asked for the definition, then for the references there, all within the 10 s; with no definition
+  in the repository the index answers, saying why, and with none at all, that the server found no
+  references there, as at a declaration nothing uses. Each file is opened on a server as its own
+  language, by its path (`languageOf`), so a `.tf` file reached from a `.tfvars` file is still
+  `terraform`. A place outside the checkout shows as "Outside this repository" and is never read;
+  the references panel counts those it doesn't list. The old side always answers from the index, and
+  a server answers only about the head it runs on, for a file whose checkout matches git's.
 - A hover in Markdown is read into `@lo/markdown`'s tree by the background process (`code.render`,
   main's own job), as any text from anyone is, and the card never draws the Markdown as text: the
   code blocks it starts with, in order, are the declaration (rust-analyzer's module path, then the
@@ -1306,7 +1359,8 @@ Temurin JDK.
 - `gh` shows a server's inlay hints, held until the reader's next input. With none, the status bar
   says why: the server is starting, failed, needs a toolchain or gave none, no server reads the code
   on screen, or the repo isn't trusted. A server that doesn't offer inlay hints, or whose adapter
-  says it has none, isn't asked for them, and `gh` says so ("Pyright has no type hints.").
+  says it has none, isn't asked for them, and `gh` says so ("Pyright has no type hints.",
+  "terraform-ls has no type hints.").
 - The status bar has an item for each server, its details offering "Restart", "Show the log" and
   "Stop trusting this repo"; on an untrusted view, "Language servers off" offers to trust it
   (`code.servers`, the `served` topic). The log dialog shows the last 1,000 lines, and copies as

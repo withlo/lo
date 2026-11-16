@@ -76,8 +76,9 @@ describe('JDT LS', () => {
     expect(program).toBe(JDK.entry);
     expect(USE.variables).toEqual({ JAVA_HOME });
     expect([path, variables]).toEqual([USE.path, { JAVA_HOME }]);
-    // Gradle's home is Lo's, in the server's own, which the server is given as it starts.
+    // Gradle's home is Lo's, in the server's own.
     expect(allowed).toEqual(['GRADLE_USER_HOME']);
+    expect(launch().homeFolders).toEqual({ GRADLE_USER_HOME: 'gradle' });
     // Its classes are the launcher's alone, never the folder it runs in.
     expect(args.slice(-2)).toEqual(['-jar', INSTALLED.entry]);
     expect(
@@ -161,7 +162,7 @@ describe('JDT LS', () => {
       `-Dosgi.instance.area=${home}/workspace`,
       `-Djdk.net.hosts.file=${home}/hosts`,
     ]);
-    expect(placed.variables).toEqual({ GRADLE_USER_HOME: `${home}/gradle` });
+    expect(placed.variables).toBeUndefined();
     expect(placed.files).toEqual({
       'gradle/gradle.properties': gradleProperties(JAVA_HOME),
       // No line that isn't a comment, so no name has an address.

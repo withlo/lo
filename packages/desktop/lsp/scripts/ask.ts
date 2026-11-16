@@ -1,6 +1,7 @@
 // What the live check asks a server, at places in the sample projects: what `gd`, `gr`, `K`, `gh`
 // and `gO` ask (a definition, references, a hover, the file's inlay hints and its outline), printing
-// what came back, in short.
+// what came back, in short. Meanwhile it watches the server's family: the most memory it held, the
+// programs it ran as, and every network connection any of it had open, as `lsof` lists them.
 
 import { execFile } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
@@ -9,6 +10,7 @@ import { promisify } from 'node:util';
 
 import {
   type Answer,
+  type Member,
   readFamily,
   type Server,
   type ServerSpec,
@@ -28,46 +30,41 @@ export interface Ask {
   readonly places: readonly Place[];
   /** Files whose outline it's asked for besides the places', by their paths in the checkout. */
   readonly outlines?: readonly Omit<Place, 'position'>[] | undefined;
+  /** Files it opens besides, unasked, as a reader's view would: the hostile fixture's plants. */
+  readonly opened?: readonly Omit<Place, 'position'>[] | undefined;
+}
+
+/** What the server did while it was asked. */
+export interface Asked {
+  readonly log: readonly string[];
+  /** The most resident memory its family held at once, in bytes, as read every half second. */
+  readonly peak: number;
+  /** Each program its family ran as, by path, as `ps` names it. */
+  readonly programs: readonly string[];
+  /** Each network connection any of its family had open, as `lsof` lists it. */
+  readonly connections: readonly string[];
 }
 
 /** How long a server has to answer, and to finish indexing before it's asked. */
 const DEADLINE = 120_000;
 
-/** What a server did besides answer, as {@link askServer} watched it. */
-export interface Watched {
-  /** Its log. */
-  readonly log: readonly string[];
-  /** Each program its processes ran as, by name. */
-  readonly programs: readonly string[];
-  /** Each internet connection or socket any of them held, as `lsof` lists it. */
-  readonly connections: readonly string[];
-}
-
 /**
  * Starts `ask.spec`, opens each place's file, waits for it to finish indexing, asks each place what
- * Lo asks, prints the answers, how long it took to start and what memory it held, and stops it. As
- * it runs, it reads what programs the server's processes are and what internet sockets they hold,
- * every half second. It returns those, and the server's log.
+ * Lo asks, prints the answers, how long it took to start and what memory it held, and stops it. It
+ * says what the server did meanwhile.
  */
-export async function askServer(ask: Ask): Promise<Watched> {
+export async function askServer(ask: Ask): Promise<Asked> {
   const started = performance.now();
   const server = startServer(ask.spec);
-  const programs = new Set<string>();
-  const connections = new Set<string>();
-  const done = new AbortController();
-  const watched = (async () => {
-    while (!done.signal.aborted) {
-      await watch(server, programs, connections);
-      await new Promise((resolve) => setTimeout(resolve, 500));
-    }
-  })();
+  const watching = watch(server);
   try {
     if (!(await server.ready)) {
       throw new Error(`${ask.spec.name} didn't start (${server.state.kind})`);
     }
     console.log(`It answered initialize ${seconds(performance.now() - started)} after it started.`);
     const texts = new Map<string, string>();
-    for (const { file, languageId } of [...ask.places, ...(ask.outlines ?? [])]) {
+    const opened = [...(ask.opened ?? []), ...ask.places, ...(ask.outlines ?? [])];
+    for (const { file, languageId } of opened) {
       if (texts.has(file)) continue;
       const text = await readFile(join(ask.spec.root, ...file.split('/')), 'utf8');
       texts.set(file, text);
@@ -107,41 +104,66 @@ export async function askServer(ask: Ask): Promise<Watched> {
     const amount = memory === undefined ? 'an unread amount of' : megabytes(memory);
     console.log(`\nIts processes held ${amount} memory then.`);
   } finally {
-    await watch(server, programs, connections);
-    done.abort();
-    await watched;
     await server.stop();
     const log = server.log.slice(-30);
     if (log.length > 0) console.log(`\nThe last of its log:\n${log.join('\n')}`);
   }
-  return { log: server.log, programs: [...programs].toSorted(), connections: [...connections] };
+  return { log: server.log, ...(await watching.stop()) };
 }
 
-const run = promisify(execFile);
-
 /**
- * Adds what `server`'s processes run as to `programs`, and the internet sockets they hold to
- * `connections`, as `ps` and `lsof` say now. A read that fails adds nothing.
+ * Reads `server`'s family every half second until stopped: the most resident memory it held, the
+ * program each member ran as, and every internet socket any member had open.
  */
-async function watch(server: Server, programs: Set<string>, connections: Set<string>) {
-  const group = server.pid;
-  if (group === undefined) return;
-  const family = await readFamily(group).catch(() => []);
-  const pids = family.map((member) => String(member.pid)).join(',');
-  if (pids === '') return;
-  const env = { PATH: '/usr/sbin:/usr/bin:/bin:/sbin' };
-  const listed = await run('ps', ['-o', 'comm=', '-p', pids], { env }).catch(() => undefined);
-  for (const line of listed?.stdout.split('\n') ?? []) {
-    if (line.trim() !== '') programs.add(line.trim());
-  }
-  // `lsof` exits 1 when it finds nothing, which is what it should find.
-  const open = await run('lsof', ['-nP', '-a', '-i', '-p', pids], { env }).catch(
-    (error: unknown) => (error instanceof Error && 'stdout' in error ? error : undefined),
-  );
-  const lines = typeof open?.stdout === 'string' ? open.stdout.split('\n') : [];
-  for (const line of lines.slice(1)) {
-    if (line.trim() !== '') connections.add(line.trim());
-  }
+function watch(server: Server): {
+  stop: () => Promise<{ peak: number; programs: string[]; connections: string[] }>;
+} {
+  let peak = 0;
+  let known: readonly Member[] = [];
+  const programs = new Set<string>();
+  const connections = new Set<string>();
+  const stopped = new AbortController();
+  const read = async () => {
+    const pid = server.pid;
+    if (pid === undefined) return;
+    known = await readFamily(pid, known).catch(() => known);
+    const resident = known.reduce((sum, member) => sum + (member.resident ?? 0), 0);
+    peak = Math.max(peak, resident);
+    if (known.length === 0) return;
+    const pids = known.map((member) => member.pid).join(',');
+    const ran = await promisify(execFile)('/bin/ps', ['-o', 'comm=', '-p', pids], {
+      env: { PATH: '/usr/bin:/bin' },
+    }).catch((error: unknown) => ({ stdout: stdoutOf(error) }));
+    for (const line of ran.stdout.split('\n')) {
+      if (line.trim() !== '') programs.add(line.trim());
+    }
+    const listed = await promisify(execFile)('/usr/sbin/lsof', ['-nP', '-a', '-i', '-p', pids], {
+      env: { PATH: '/usr/bin:/bin' },
+      // It exits 1 when it lists nothing.
+    }).catch((error: unknown) => ({ stdout: stdoutOf(error) }));
+    for (const line of listed.stdout.split('\n').slice(1)) {
+      if (line.trim() !== '') connections.add(line);
+    }
+  };
+  const looping = (async () => {
+    while (!stopped.signal.aborted) {
+      await read();
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    }
+  })();
+  return {
+    stop: async () => {
+      stopped.abort();
+      await looping;
+      return { peak, programs: [...programs].toSorted(), connections: [...connections] };
+    },
+  };
+}
+
+/** What a failed command wrote to stdout, as `execFile`'s error holds it. */
+function stdoutOf(error: unknown): string {
+  const holds = typeof error === 'object' && error !== null && 'stdout' in error;
+  return holds && typeof error.stdout === 'string' ? error.stdout : '';
 }
 
 /**

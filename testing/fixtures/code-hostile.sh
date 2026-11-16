@@ -61,8 +61,21 @@
 #     rust/rust-toolchain.toml, asking for Rust 99.0.0
 #     rustup, which would download it; no marker, a request to static.rust-lang.org
 #   Go's toolchain
-#     go/go.mod, a `toolchain` line asking for Go 1.99.9
+#     go/go.mod, a `toolchain` line asking for Go 1.99.9, and go.work, a workspace of go/ alone
+#     with the same line
 #     go, which would download it; no marker, a request to proxy.golang.org
+#   Go's generators and cgo
+#     go/generate.go, a `//go:generate` line naming go/lo-go-generate.sh; go/cgo.go, which imports
+#     "C" with a `#cgo pkg-config` line
+#     `go generate`, which only a command runs; marker go/lo-hostile-go-generate. cgo, which would
+#     run `pkg-config` and a C compiler from PATH, has no marker in the checkout: the live check
+#     puts programs of those names on the server's PATH
+#   programs on PATH
+#     hostile/bin/terraform and hostile/bin/gopackagesdriver, and .envrc adding hostile/bin to
+#     PATH, as direnv would
+#     terraform-ls running Terraform, Go's package loader running a driver, or anything that took
+#     a folder of the checkout as one of its programs'; markers hostile/bin/lo-hostile-terraform
+#     and hostile/bin/lo-hostile-gopackagesdriver
 #   Gradle's wrapper
 #     kotlin/gradlew and kotlin/gradle/wrapper/gradle-wrapper.properties
 #     running the wrapper; marker kotlin/lo-hostile-gradlew, and host gradle.lo-hostile.invalid
@@ -146,7 +159,9 @@
 #     a package manager resolving them, which Lo never lets one do; hosts maven, gradle-plugins,
 #     gradle, cargo, nuget, nuget-sdk, rubygems, composer, registry, git and swift
 #     .lo-hostile.invalid, and the module lo-hostile.invalid/dependency for Go. dotnet-sdk's
-#     global.json names an MSBuild SDK, which NuGet would download and MSBuild would run
+#     global.json names an MSBuild SDK, which NuGet would download and MSBuild would run.
+#     hostile/terraform also calls a module from the Terraform Registry, lo-hostile/module/invalid,
+#     whose inputs terraform-ls asks registry.terraform.io for, whatever the module's name
 #
 # Automatic type acquisition has no plant: tsserver installs the typings of the packages a project
 # uses from the npm registry its own settings name, never one a file of a project names.
@@ -169,13 +184,13 @@ IFS= read -r -d '' HOSTILE_BODY <<'EOF' || true
 
 It's the code fixture's pull request, with one more commit. That commit's files try to run code, steer a language server or a version manager, or fetch from the network, when the pull request is checked out and its servers start:
 
-- programs a tool might run: a workspace TypeScript in `node_modules`, a tsserver plugin in `typescript/node_modules`, an npm `postinstall`, `.vscode/settings.json`, a `rustc-wrapper` in `rust/.cargo/config.toml`, the program `rust/rust-analyzer.toml` names, the Gradle and Maven wrappers, Java's Gradle settings script, a JDK in `java/jdk` that `java/gradle.properties` names, an Eclipse builder in `java/.project`, `php/.phpactor.json`'s tools, PHP's tools in `vendor/bin` and the `.php-lsp.json` that turns two of them on, `mise.toml`, and a Terraform provider's plugin committed in `hostile/terraform-provider/.terraform`;
+- programs a tool might run: a workspace TypeScript in `node_modules`, a tsserver plugin in `typescript/node_modules`, an npm `postinstall`, `.vscode/settings.json`, a `rustc-wrapper` in `rust/.cargo/config.toml`, the program `rust/rust-analyzer.toml` names, the Gradle and Maven wrappers, Java's Gradle settings script, a JDK in `java/jdk` that `java/gradle.properties` names, an Eclipse builder in `java/.project`, `php/.phpactor.json`'s tools, PHP's tools in `vendor/bin` and the `.php-lsp.json` that turns two of them on, `mise.toml`, a Terraform provider's plugin committed in `hostile/terraform-provider/.terraform`, a `//go:generate` line and a cgo file in `go/`, and a `terraform` and a `gopackagesdriver` in `hostile/bin`, which `.envrc` puts on `PATH`;
 - settings that write in the checkout or turn on what runs: Maven's `.mvn/maven.config` and `.mvn/jvm.config`, Eclipse's `.classpath`, `.factorypath` and `.settings` in `java/`, and a `.hotspotrc`;
-- versions that don't exist: `.tool-versions`, `.nvmrc`, `.sdkmanrc`, `.java-version`, `python/.python-version`, `ruby/.ruby-version`, `rust-toolchain.toml`, `go.mod`'s `toolchain`, and a `global.json` that pins an MSBuild SDK;
+- versions that don't exist: `.tool-versions`, `.nvmrc`, `.sdkmanrc`, `.java-version`, `python/.python-version`, `ruby/.ruby-version`, `rust-toolchain.toml`, the `toolchain` lines of `go.mod` and `go.work`, and a `global.json` that pins an MSBuild SDK;
 - git's own settings, in folders of `git/` that look like bare repositories: a `core.fsmonitor` program, hooks, a clean and smudge filter, and a promisor remote that makes git fetch a commit it lacks; and a `.gitmodules` that points a submodule at a host that doesn't exist;
-- projects in `hostile/`, and Java's `pom.xml` and Gradle scripts, whose dependencies or registries are on hosts ending `.lo-hostile.invalid`, which never resolve.
+- projects in `hostile/`, and Java's `pom.xml` and Gradle scripts, whose dependencies or registries are on hosts ending `.lo-hostile.invalid`, which never resolve, and a Terraform module from the Terraform Registry that doesn't exist.
 
-Each program writes one empty file named `lo-hostile-<name>` beside itself, and nothing else: no network, no deletes, no reads. Lo passes while no `lo-hostile-*` file appears in the checkout and no request goes to a host ending `.lo-hostile.invalid`, or to the download host of a version that doesn't exist.
+Each program writes one empty file named `lo-hostile-<name>` beside itself, and nothing else: no network, no deletes, no reads. Lo passes while no `lo-hostile-*` file appears in the checkout and no request goes to a host ending `.lo-hostile.invalid`, to the download host of a version that doesn't exist, or to the Terraform Registry.
 
 It targets `code/base`, so merging it can't put these files on `main`.
 EOF
@@ -347,7 +362,15 @@ EOF
     "go": "${workspaceFolder}/.vscode/lo-server.sh",
     "gopls": "${workspaceFolder}/.vscode/lo-server.sh"
   },
+  "gopls": {
+    "build.env": {
+      "GOFLAGS": "-toolexec=${workspaceFolder}/.vscode/lo-server.sh",
+      "GOPACKAGESDRIVER": "${workspaceFolder}/.vscode/lo-server.sh"
+    },
+    "build.buildFlags": ["-toolexec=${workspaceFolder}/.vscode/lo-server.sh"]
+  },
   "terraform.languageServer.path": "${workspaceFolder}/.vscode/lo-server.sh",
+  "terraform.languageServer.terraform.path": "${workspaceFolder}/.vscode/lo-server.sh",
   "java.jdt.ls.java.home": "${workspaceFolder}/java/jdk",
   "java.jdt.ls.vmargs": "-XX:OnError=${workspaceFolder}/.vscode/lo-server.sh",
   "java.configuration.runtimes": [{ "name": "JavaSE-21", "path": "${workspaceFolder}/java/jdk" }],
@@ -626,6 +649,29 @@ _.source = "./lo-mise-env.sh"
 EOF
   marker_bash lo-mise-env.sh lo-hostile-mise "a script mise's configuration sources"
 
+  # Go's generators, which `go generate` runs, and cgo, which runs `pkg-config` and a C compiler.
+  put go/generate.go <<'EOF'
+package main
+
+//go:generate ./lo-go-generate.sh
+EOF
+  marker_sh go/lo-go-generate.sh lo-hostile-go-generate "a program a //go:generate line names"
+  put go/cgo.go <<'EOF'
+package main
+
+// #cgo pkg-config: lo-hostile
+// #cgo CFLAGS: -DLO_HOSTILE
+import "C"
+EOF
+
+  # Programs a tool would find on PATH, in a folder direnv's .envrc adds to it.
+  put .envrc <<'EOF'
+PATH_add hostile/bin
+EOF
+  marker_sh hostile/bin/terraform lo-hostile-terraform "a Terraform a language server finds on PATH"
+  marker_sh hostile/bin/gopackagesdriver lo-hostile-gopackagesdriver \
+    "a driver Go's package loader finds on PATH"
+
   # --- Versions that don't exist ---------------------------------------------------------------
 
   put .tool-versions <<'EOF'
@@ -661,6 +707,14 @@ module example.com/sample
 go 1.24
 
 toolchain go1.99.9
+EOF
+  # A workspace of the Go project alone, which names no folder outside the checkout.
+  put go.work <<'EOF'
+go 1.24
+
+toolchain go1.99.9
+
+use ./go
 EOF
   put csharp/global.json <<'EOF'
 {
@@ -908,6 +962,12 @@ terraform {
 
 module "hostile" {
   source = "git::https://git.lo-hostile.invalid/lo/module.git"
+}
+
+# A module from the Terraform Registry, whose inputs and outputs terraform-ls asks it for.
+module "registry" {
+  source  = "lo-hostile/module/invalid"
+  version = "1.0.0"
 }
 EOF
 

@@ -203,6 +203,8 @@ export function launchJdtls(
     path: use.path,
     variables: use.variables,
     allowed: [...use.allowed, 'GRADLE_USER_HOME'],
+    // Gradle's home, in its own: where a Gradle that ran would read its properties first.
+    homeFolders: { GRADLE_USER_HOME: 'gradle' },
     settings: jdtlsSettings([]),
     place: (where) => placeJdtls(where, javaHome),
     // It finds its project's source folders only as it starts.
@@ -226,7 +228,6 @@ export async function placeJdtls({ root, home }: Where, javaHome: string): Promi
       // Names resolve only from Lo's hosts file, which has none, so it reaches no host by name.
       `-Djdk.net.hosts.file=${join(home, HOSTS)}`,
     ],
-    variables: { GRADLE_USER_HOME: join(home, 'gradle') },
     files: {
       'gradle/gradle.properties': gradleProperties(javaHome),
       [HOSTS]: '# Lo’s: no host has an address here, so Java’s server looks none up.\n',

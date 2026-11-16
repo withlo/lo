@@ -17,7 +17,8 @@ import { join } from 'node:path';
 import { format, resolveConfig } from 'prettier';
 
 import { parseManifest, parseToolchains } from '../src/index.ts';
-import { githubRelease, jdtls, node, npm, type Source } from './sources.ts';
+import { goProgram } from './go.ts';
+import { githubRelease, hashicorp, jdtls, node, npm, type Source } from './sources.ts';
 import { dotnet, go, rust, temurin } from './toolchains.ts';
 
 /** The armored public keys in `keys/<publisher>/`. */
@@ -49,6 +50,9 @@ const SOURCES: Record<string, Source> = {
     },
     'php-lsp',
   ),
+  // Built from its modules with Lo's Go, which toolchains.json pins: pin it again when Go is.
+  gopls: goProgram('golang.org/x/tools/gopls', 'gopls'),
+  'terraform-ls': hashicorp('terraform-ls', keys('hashicorp')),
 };
 
 /** Where each toolchain's files come from. */

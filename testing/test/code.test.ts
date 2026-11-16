@@ -294,7 +294,7 @@ test(
     }
     const said = new Set(script.match(/lo-hostile-[a-z]+(?:-[a-z]+)*/g));
     expect([...markers, ...Object.keys(made)].toSorted()).toEqual([...said].toSorted());
-    expect(markers.size).toBe(26);
+    expect(markers.size).toBe(29);
   },
 );
 
@@ -305,6 +305,7 @@ test("Lo's own repository holds nothing a tool would pick up from what the hosti
   const named = new Set([
     '.cargo',
     '.classpath',
+    '.envrc',
     '.externalToolBuilders',
     '.factorypath',
     '.gitmodules',
@@ -328,6 +329,7 @@ test("Lo's own repository holds nothing a tool would pick up from what the hosti
     'gradle.properties',
     'gradlew',
     'global.json',
+    'go.work',
     'jdk',
     'mise.toml',
     'mvnw',
