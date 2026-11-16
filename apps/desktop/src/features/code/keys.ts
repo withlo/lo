@@ -1,8 +1,8 @@
 // Code features' keys, and trust's commands. In the diff and a file whole, in normal mode, on the
 // word at the cursor: `gd` opens a peek of its definitions under the line, `gr` lists its
 // references in the right panel, `K` shows its type in a card over it, and `gh` turns inline type
-// hints on or off in the view on screen; `gO` opens the outline of the cursor's file. None of these
-// is one of Vim's keys in a code view. In the peek, `j` and `k` (and the arrows) pick an answer in
+// hints on or off for the window; `gO` opens the outline of the cursor's file. None of these is
+// one of Vim's keys in a code view. In the peek, `j` and `k` (and the arrows) pick an answer in
 // place of Vim's moves, `⏎` goes to it, `gr` lists the references of the same name, and `Esc`
 // closes it, putting the cursor back. In the references panel, the `references` scope, `j` and `k`
 // move, `⏎` goes, and `Esc` goes back to the threads, if they were showing, or closes the panel.
@@ -59,8 +59,9 @@ export default defineCommands(
       menu: { on: 'line', order: 7 },
     },
     /**
-     * Inline type hints in the view's code, on or off; off at first. Where none come, as on a repo
-     * Lo runs no language server for, it says why and they stay off.
+     * Inline type hints in the code views, on or off for the window; off at each start. They come
+     * on only when the code on screen gets some: otherwise the status bar says why, and they stay
+     * off.
      */
     hints: {
       label: 'Type hints',

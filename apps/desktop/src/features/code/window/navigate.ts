@@ -2,7 +2,7 @@
 // each shows of the answer, through the diff's code views, which draw it. A peek of definitions
 // under the cursor's line, whose answer `j` and `k` pick and `⏎` goes to; references in the right
 // panel; a card over a word, from `K` or the pointer resting on it, which never takes focus; inline
-// hints, on or off in each view; and a palette of the file's outline. A question asked again
+// hints, on or off for the window; and a palette of the file's outline. A question asked again
 // cancels the one before, and what finds nothing says so in the status bar and opens nothing.
 
 import { KEY_EVENT, type HeaderTarget, type LineTarget, type Side } from '@lo/ui/commands';
@@ -617,11 +617,21 @@ export function rested(tab: string, view: CodeViewKind, at: Place | undefined): 
 
 // Hints -----------------------------------------------------------------------------------------
 
-/**
- * Whether inline type hints are on in each view of a pull request: off at first, and on only once
- * `gh` has found some to show.
- */
-export const hintsOn = tabState<boolean>(() => false);
+/** Inline type hints, for the window. */
+export interface HintsState {
+  /** Whether they're on: off at each start, and on only once `gh` has found some to show. */
+  readonly on: boolean;
+  /** The view a `gh` turning them on asks in, until its answer comes. */
+  readonly pressed: string | undefined;
+}
+
+/** Whether inline type hints are on for the window, or on their way on. */
+export const hints = createStore<HintsState>()(() => ({ on: false, pressed: undefined }));
+
+/** The views hints were drawn in, to take them away from as they're turned off. */
+const hinted = new Set<string>();
+
+const HINTED_VIEWS = ['diff', 'file'] as const;
 
 /**
  * Asks for the hints of the head's side of each file on screen in tab `tab`'s code views, and
@@ -633,7 +643,7 @@ async function askHints(
 ): Promise<Hints[] | undefined> {
   const views = codeViews(tab);
   const found: Hints[] = [];
-  for (const view of ['diff', 'file'] as const) {
+  for (const view of HINTED_VIEWS) {
     const marks: HintMark[] = [];
     for (const { file: id, lines } of views.newOnScreen(view)) {
       const at: Place = { file: id, side: 'new', line: 1 };
@@ -654,29 +664,55 @@ async function askHints(
         });
       }
     }
+    if (marks.length > 0) hinted.add(tab);
     views.setHints(view, marks);
   }
   return found;
 }
 
-/** Takes view `tab`'s hints away, and stops asking for them. */
-function hintsOff(tab: string): void {
-  hintsOn.set(tab, false);
-  asking.get(`hints:${tab}`)?.abort();
-  for (const view of ['diff', 'file'] as const) codeViews(tab).setHints(view, []);
+/** Takes the hints away from every view, and stops asking for them. */
+function hintsOff(): void {
+  hints.setState({ on: false, pressed: undefined }, true);
+  for (const [key, controller] of asking) if (key.startsWith('hints:')) controller.abort();
+  for (const tab of hinted) for (const view of HINTED_VIEWS) codeViews(tab).setHints(view, []);
+  hinted.clear();
 }
 
 /**
- * `gh`: inline type hints on in the view on screen, asked for the code on screen, or off. When
- * none come, as on a repo Lo runs no language server for, it says why and leaves them off, so the
- * next `gh`, once a server can give some, shows them.
+ * Asks for view `tab`'s hints as `gh` turns them on: on for the window once some come, or, when
+ * none do, said why and left off. A newer question in its place, as the view is drawn anew, decides
+ * instead.
+ */
+async function turnOn(tab: string): Promise<void> {
+  hints.setState({ on: false, pressed: tab }, true);
+  const signal = fresh('hints', tab);
+  try {
+    const found = await askHints(tab, signal);
+    // Turned off meanwhile, asked again as the view was drawn anew, or the view closed.
+    if (!found) return;
+    const none = noHints(found, statuses.get(tab), servers.get(tab));
+    hints.setState({ on: none === undefined, pressed: undefined }, true);
+    if (none !== undefined) say(tab, none);
+  } catch (error) {
+    if (signal.aborted) return;
+    hintsOff();
+    failed(tab, error);
+  }
+}
+
+/**
+ * `gh`: inline type hints on for the window, asked for the code on screen, or off everywhere. They
+ * come on only when the code on screen gets some: when it gets none, as on a repo Lo runs no
+ * language server for, `gh` says why and leaves them off, so the next one asks again.
  */
 export async function toggleHints(): Promise<void> {
   const on = onCode();
   if (typeof on === 'string') return;
   const { tab } = on;
-  if (hintsOn.get(tab)) {
-    hintsOff(tab);
+  // On, or asking to come on: off.
+  const { on: shown, pressed } = hints.getState();
+  if (shown || pressed !== undefined) {
+    hintsOff();
     return;
   }
   const why = notYet(localCopyOf(tab));
@@ -684,29 +720,32 @@ export async function toggleHints(): Promise<void> {
     say(tab, why);
     return;
   }
-  hintsOn.set(tab, true);
-  const signal = fresh('hints', tab);
-  try {
-    const found = await askHints(tab, signal);
-    // Turned off meanwhile, or asked again as the code was drawn anew.
-    if (!found) return;
-    const none = noHints(found, statuses.get(tab), servers.get(tab));
-    if (none === undefined) return;
-    hintsOn.set(tab, false);
-    say(tab, none);
-  } catch (error) {
-    if (signal.aborted) return;
-    hintsOff(tab);
-    failed(tab, error);
-  }
+  await turnOn(tab);
 }
 
-/** A view's code was drawn anew: its hints are asked for again, while they're on. */
+/**
+ * A view's code was drawn anew: while hints are on, it asks for its own, quietly, and while `gh`
+ * asks in it to turn them on, `gh` asks again.
+ */
 export function redrawn(tab: string): void {
-  if (!hintsOn.get(tab) || notYet(localCopyOf(tab))) return;
-  askHints(tab).catch((error: unknown) => {
+  const { on, pressed } = hints.getState();
+  if ((!on && pressed !== tab) || notYet(localCopyOf(tab))) return;
+  const asked = pressed === tab ? turnOn(tab) : askHints(tab);
+  asked.catch((error: unknown) => {
     if (failureOf(error) !== undefined) console.error('Lo couldn’t ask for type hints:', error);
   });
+}
+
+/** View `tab` closed: what was asked about it stops, and it's forgotten. */
+export function viewClosed(tab: string): void {
+  for (const [key, controller] of asking) {
+    // Keys are `<kind>:<view>`, and no kind has a colon.
+    if (key.slice(key.indexOf(':') + 1) !== tab) continue;
+    controller.abort();
+    asking.delete(key);
+  }
+  hinted.delete(tab);
+  if (hints.getState().pressed === tab) hints.setState({ on: false, pressed: undefined }, true);
 }
 
 // The outline -----------------------------------------------------------------------------------
