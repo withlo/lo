@@ -538,8 +538,9 @@ toolchain and git's variables each server needs.
   plain file, or a `.cargo` that isn't a plain folder. Lo's variables answer the config's other keys
   (`build.rustc*` by `RUSTC`/`RUSTC_WRAPPER`/`RUSTC_WORKSPACE_WRAPPER`, `rustflags` and
   `rustdocflags` by an empty `CARGO_ENCODED_RUSTFLAGS` and `CARGO_ENCODED_RUSTDOCFLAGS`, the
-  registries and sources by `CARGO_NET_OFFLINE`), so they don't. Anything named `.cargo/config.toml`
-  or `.cargo/config` in a folder above the checkout, a link included, is refused outright.
+  registries and sources by `CARGO_NET_OFFLINE`, and `resolver.lockfile-path` by
+  `CARGO_RESOLVER_LOCKFILE_PATH`), so they don't. Anything named `.cargo/config.toml` or
+  `.cargo/config` in a folder above the checkout, a link included, is refused outright.
 - A download goes over `https` only, on the usual port, to its entry's hosts, following at most 5
   redirects itself, each held to the same rules, and refusing an answer its `fetch` was redirected
   to unseen, with no token or cookie. In the app it goes through `net.request` (`netFetch` with
@@ -581,9 +582,11 @@ toolchain and git's variables each server needs.
   `src/adapters/` too, run on Lo's Rust toolchain. It runs Lo's `cargo` and `rustc` (`CARGO`,
   `RUSTC`, empty `RUSTC_WRAPPER`, `RUSTC_WORKSPACE_WRAPPER`, `CARGO_ENCODED_RUSTFLAGS` and
   `CARGO_ENCODED_RUSTDOCFLAGS`, `cargo.sysroot` set), reads no `rust-toolchain.toml` (no rustup),
-  fetches nothing (`CARGO_NET_OFFLINE=true`, a private `CARGO_HOME`), and runs no build script or
-  proc-macro (`cargo.buildScripts.enable` and `procMacro.enable` off), so a crate's dependencies it
-  can't resolve offline load without them.
+  fetches nothing (`CARGO_NET_OFFLINE=true`, a private `CARGO_HOME`), writes nothing in the checkout
+  (the `Cargo.lock` `cargo metadata` writes for a workspace that has none goes to
+  `CARGO_RESOLVER_LOCKFILE_PATH`, a file in its home), and runs no build script or proc-macro
+  (`cargo.buildScripts.enable` and `procMacro.enable` off), so a crate's dependencies it can't
+  resolve offline load without them.
 - PHP's server, php-lsp, is a program of its own, with its adapter in `src/adapters/` too: an
   archive per platform from its GitHub releases, which nobody signs, so `lsp:pin` checks each
   against the checksum its release lists beside it. It starts as its program, by its absolute path,

@@ -19,10 +19,11 @@
 // toolchains', as Lo's git's folder can be Homebrew's: a `terraform`, a `gopackagesdriver`,
 // `pkg-config` and C compilers, each writing a marker if run. rust-analyzer's check runs on a third
 // checkout too, the hostile one without the files Lo refuses it for, so it meets the Cargo keys
-// Lo's variables answer; where Lo refuses a checkout (`checkoutProblem`, which the pool asks before
-// a start), it starts nothing and says why. Then the hostile checkout and that folder are searched
-// for the markers its plants write if anything runs them, and the check fails if there's one, if
-// anything in either checkout changed, or if anything connected to another machine. It fails too
+// Lo's variables answer, with a `resolver.lockfile-path` added that names a file outside it; where
+// Lo refuses a checkout (`checkoutProblem`, which the pool asks before a start), it starts nothing
+// and says why. Then the hostile checkout and that folder are searched for the markers its plants
+// write if anything runs them, and the check fails if there's one, if anything in a checkout
+// changed, if that file was written, or if anything connected to another machine. It fails too
 // if a server took the hostile checkout's settings: if it says it read code as the PHP its
 // `.php-lsp.json` names, or indexed a different number of files there than on the code fixture's
 // checkout, or if Roslyn's log says it loaded a project but Lo's or looked for programs, or its
@@ -38,6 +39,7 @@
 
 import { execFile } from 'node:child_process';
 import {
+  appendFile,
   chmod,
   lstat,
   mkdir,
@@ -358,15 +360,18 @@ function serverCheck(
 
 /**
  * The checkouts rust-analyzer's check runs on: each fixture's, and the hostile one again without
- * the files Lo refuses it for, so the Cargo keys Lo's variables answer meet a running server.
+ * the files Lo refuses it for, so the Cargo keys Lo's variables answer meet a running server. That
+ * one's Cargo config also names a lock file outside the checkout (`resolver.lockfile-path`), where
+ * `cargo metadata` would write one for the workspace, which has none.
  */
 const RUST_CHECKOUTS = [
-  { name: 'code.sh', script: 'code.sh', without: [] },
-  { name: 'code-hostile.sh', script: 'code-hostile.sh', without: [] },
+  { name: 'code.sh', script: 'code.sh', without: [], lockfile: false },
+  { name: 'code-hostile.sh', script: 'code-hostile.sh', without: [], lockfile: false },
   {
     name: 'code-hostile-cargo',
     script: 'code-hostile.sh',
     without: ['rust/rust-analyzer.toml', '.cargo/config.toml'],
+    lockfile: true,
   },
 ] as const;
 
@@ -381,7 +386,8 @@ exec '${rustc}' "$@"
  * unless {@link checkoutProblem} refuses the checkout, in which case nothing runs and it says why.
  * On a checkout it may run, it's asked each place in its `languages`, with a stand-in for Lo's
  * rustc, outside the checkout, that notes what it's run with, so the check fails if a flag a
- * checkout's config names reached it.
+ * checkout's config names reached it. It fails too if the checkout changed, as it would if cargo
+ * wrote the workspace's lock file there, or if cargo wrote the one its config names.
  */
 function onRustAnalyzer(languages: Readonly<Record<string, string>>): Check {
   return async (installed, context) => {
@@ -392,11 +398,19 @@ function onRustAnalyzer(languages: Readonly<Record<string, string>>): Check {
     const places = await placesFor(languages);
     const folder = await realpath(await mkdtemp(join(tmpdir(), `lo-live-${RUST_ANALYZER.id}-`)));
     try {
-      for (const { name: script, script: fixture, without } of RUST_CHECKOUTS) {
+      for (const { name: script, script: fixture, without, lockfile } of RUST_CHECKOUTS) {
         const root = await checkout(fixture, join(folder, script));
         for (const path of without) await rm(join(root, path));
+        const elsewhere = join(folder, `lockfile-${script}`, 'Cargo.lock');
+        if (lockfile) {
+          const config = join(root, 'rust', '.cargo', 'config.toml');
+          await appendFile(config, `\n[resolver]\nlockfile-path = ${JSON.stringify(elsewhere)}\n`);
+        }
         const less = without.length > 0 ? `, less ${without.join(' and ')}` : '';
-        console.log(`\n--- ${RUST_ANALYZER.name} on the checkout ${fixture} --local makes${less}`);
+        const more = lockfile ? ', its Cargo config naming a lock file outside it' : '';
+        console.log(
+          `\n--- ${RUST_ANALYZER.name} on the checkout ${fixture} --local makes${less}${more}`,
+        );
         // The pool asks this before a server starts or moves; the live check does the same, so a
         // checkout a Rust server mustn't run on never starts one.
         const refusal = await checkoutProblem('rust', root);
@@ -412,6 +426,7 @@ function onRustAnalyzer(languages: Readonly<Record<string, string>>): Check {
         const rustc = rustUse.variables.RUSTC ?? '';
         await writeFile(standIn, RUSTC_STAND_IN(ran, rustc), { mode: 0o755 });
         await writeFile(ran, '');
+        const before = await snapshot(root);
         const { log, peak, connections } = await askServer({
           spec: {
             name: RUST_ANALYZER.name,
@@ -422,6 +437,7 @@ function onRustAnalyzer(languages: Readonly<Record<string, string>>): Check {
             path: rustUse.path,
             variables: { ...rustUse.variables, RUSTC: standIn },
             allowed: rustUse.allowed,
+            homeFolders: launch.homeFolders,
             git: serverGitEnvironment(),
             settings: launch.settings,
             initializationOptions: launch.initializationOptions,
@@ -455,10 +471,17 @@ function onRustAnalyzer(languages: Readonly<Record<string, string>>): Check {
             `a flag the checkout's config names reached rustc: ${flagged.join('; ')}`,
           );
         }
+        const changed = changes(before, await snapshot(root));
+        if (changed.length > 0) throw new Error(`the checkout changed: ${changed.join(', ')}`);
+        const wrote = await lstat(elsewhere).then(
+          () => true,
+          () => false,
+        );
+        if (wrote) throw new Error("cargo wrote the lock file the checkout's config names");
       }
       console.log(
-        `\nNo marker was written, and no flag of the checkout's reached rustc: nothing ` +
-          `${RUST_ANALYZER.name} ran was planted.`,
+        `\nNo marker was written, no flag of the checkout's reached rustc, and nothing was written ` +
+          `in a checkout or as its config names: nothing ${RUST_ANALYZER.name} ran was planted.`,
       );
     } finally {
       await rm(folder, { recursive: true, force: true });

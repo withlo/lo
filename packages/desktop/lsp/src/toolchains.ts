@@ -17,7 +17,9 @@
  *   a checkout's `build.rustc-wrapper`, empty `CARGO_ENCODED_RUSTFLAGS` and
  *   `CARGO_ENCODED_RUSTDOCFLAGS`, which undo every config's `rustflags` and `rustdocflags`, and
  *   `CARGO_NET_OFFLINE=true`. With no rustup, nothing reads
- *   `rust-toolchain.toml`.
+ *   `rust-toolchain.toml`. `CARGO_RESOLVER_LOCKFILE_PATH` is a file in the server's home, so the
+ *   `Cargo.lock` that `cargo` writes as it resolves a workspace without one goes there, never into
+ *   the checkout nor wherever a config's `resolver.lockfile-path` names.
  * - The JDK: `JAVA_HOME`.
  * - .NET: `DOTNET_ROOT`, MSBuild's SDK resolver held to Lo's SDK (`DOTNET_MSBUILD_SDK_RESOLVER_*`,
  *   and `DOTNET_HOST_PATH`), programs held to the runtime they were built for and its patches
@@ -25,7 +27,8 @@
  *   invariant globalization, since the system may have no ICU.
  *
  * Each keeps its caches and settings in the server's own `HOME` (`CARGO_HOME`, `DOTNET_CLI_HOME`
- * and `NUGET_PACKAGES` all default to folders there), which no one else uses.
+ * and `NUGET_PACKAGES` all default to folders there), which no one else uses, and writes nothing in
+ * the checkout.
  *
  * Some files in a checkout, or above it, are what the variables can't answer, and a server that
  * uses the toolchain doesn't run on a checkout {@link checkoutProblem} finds one of them in:
@@ -57,11 +60,12 @@
  *   reach `rustc`, `rustdoc` or the network (`build.rustc*` by
  *   `RUSTC`/`RUSTC_WRAPPER`/`RUSTC_WORKSPACE_WRAPPER`, `rustflags` and `rustdocflags` by
  *   `CARGO_ENCODED_RUSTFLAGS` and `CARGO_ENCODED_RUSTDOCFLAGS`, the rest by `CARGO_NET_OFFLINE`),
- *   so those don't refuse the checkout. Anything named `.cargo/config.toml` or `.cargo/config` in a
- *   folder above the checkout is refused outright, since `cargo` reads it too and Lo can't vet
- *   what's outside the checkout; a `rust-analyzer.toml` above the checkout isn't, since
- *   rust-analyzer reads one only from a workspace root or under it, and its user config from
- *   `HOME`, which is Lo's.
+ *   and `resolver.lockfile-path`, which says where `cargo` writes a lock file, by
+ *   `CARGO_RESOLVER_LOCKFILE_PATH`, so those don't refuse the checkout. Anything named
+ *   `.cargo/config.toml` or `.cargo/config` in a folder above the checkout is refused outright,
+ *   since `cargo` reads it too and Lo can't vet what's outside the checkout; a `rust-analyzer.toml`
+ *   above the checkout isn't, since rust-analyzer reads one only from a workspace root or under it,
+ *   and its user config from `HOME`, which is Lo's.
  *
  * Each walk of a checkout keeps to its own folders, never following a link to one.
  */
@@ -97,7 +101,7 @@ export interface ToolchainUse {
   readonly variables: Readonly<Record<string, string>>;
   /** The names among `variables` that choose a program, which the toolchain sets on purpose. */
   readonly allowed: readonly string[];
-  /** Variables naming the toolchain's caches, by their paths in the server's home. */
+  /** Variables naming the toolchain's caches and files, by their paths in the server's home. */
   readonly homeFolders?: Readonly<Record<string, string>> | undefined;
 }
 
@@ -151,6 +155,10 @@ export function toolchainUse(
           CARGO_NET_OFFLINE: 'true',
         },
         allowed: ['RUSTC', 'RUSTC_WRAPPER', 'RUSTC_WORKSPACE_WRAPPER'],
+        // Where cargo writes the lock file of a workspace that has none, as `cargo metadata` does
+        // when it resolves one. It beats a config's `resolver.lockfile-path`. rust-analyzer gives
+        // its own, a copy in its `TMPDIR`, to one that has a lock file.
+        homeFolders: { CARGO_RESOLVER_LOCKFILE_PATH: 'lockfile/Cargo.lock' },
       };
     case 'temurin':
       return { path: [bin], variables: { JAVA_HOME: root }, allowed: [] };

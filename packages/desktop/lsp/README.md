@@ -165,15 +165,19 @@ setting is as it is:
   `.cargo/config.toml` says. For a crate whose dependencies aren't already in that `CARGO_HOME`,
   `cargo metadata` can't resolve them offline and rust-analyzer loads the workspace without them:
   the workspace's own code is analysed in full, but go-to-definition into a dependency doesn't
-  resolve. Lo doesn't fetch crates. Build scripts (`build.rs`) and proc-macro crates are a
+  resolve. Lo doesn't fetch crates. Nor does anything write in the checkout: `cargo metadata` writes
+  a `Cargo.lock` as it resolves a workspace that has none, beside its `Cargo.toml` or wherever a
+  config's `resolver.lockfile-path` names, and rust-analyzer has it write to a copy in its `TMPDIR`
+  only for a workspace that has one, so for the rest `CARGO_RESOLVER_LOCKFILE_PATH` names a file in
+  the server's home, which beats the config. Build scripts (`build.rs`) and proc-macro crates are a
   checkout's code, so `cargo.buildScripts.enable` and `procMacro.enable` are both off; the cost is
   that a `build.rs`'s generated code and a macro's or derive's expansion aren't seen, and a hover or
   definition that needs them falls back to the syntax index. The commands that would run a
   checkout's tools (`check.overrideCommand`, `checkOnSave`, `cargo.buildScripts.overrideCommand`,
-  the runnables' and tests') are at their safe defaults, and Lo never saves, so no check runs.
-  rust-analyzer has no heap flag, so Lo's 4 GB cap on the group bounds it; its caches aren't primed
-  for files Lo never opens. What Lo's settings and variables can't answer refuses the checkout
-  instead.
+  the runnables' and tests') are at their safe defaults, and Lo never saves, so no check runs. With
+  these off, nothing is built and no `target/` is made. rust-analyzer has no heap flag, so Lo's 4 GB
+  cap on the group bounds it; its caches aren't primed for files Lo never opens. What Lo's settings
+  and variables can't answer refuses the checkout instead.
 - **php-lsp** carries the stubs of PHP's own functions and classes, so it needs no PHP. It's told
   which PHP to read code as (`phpVersion`, PHP 8.5), so it never runs a `php` to ask: one can be
   first on its `PATH`, in the folder of Lo's git, as Homebrew's is. Code for an older PHP is read as

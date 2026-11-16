@@ -23,9 +23,10 @@
  *   or a shell (`LD_PRELOAD`, `DYLD_*`, `NODE_OPTIONS`, `ELECTRON_RUN_AS_NODE`, `BASH_ENV`,
  *   `RUSTC_WRAPPER`, `GOFLAGS`, `GOPACKAGESDRIVER`, `CLASSPATH` and the like) or configure npm,
  *   unless the adapter names it in `allowed`, saying it sets it on purpose.
- * - The adapter's folders in the server's home (`homeFolders`): variables that each name a folder
- *   by its path inside `HOME`, such as Go's `GOMODCACHE`, held to the rules its own variables are.
- *   So a server's caches are in its home, wherever that is, and nothing in a checkout moves them.
+ * - The adapter's folders in the server's home (`homeFolders`): variables that each name a folder,
+ *   or a file, by its path inside `HOME`, such as Go's `GOMODCACHE` or Cargo's
+ *   `CARGO_RESOLVER_LOCKFILE_PATH`, held to the rules its own variables are. So a server's caches
+ *   are in its home, wherever that is, and nothing in a checkout moves them.
  * - `LANG=C.UTF-8`, so servers read source as UTF-8.
  */
 
@@ -70,8 +71,8 @@ export interface EnvironmentOptions {
   /** The variables that set up the git a server runs, each `GIT_*`, from `@lo/git`. */
   readonly git: Readonly<Record<string, string>>;
   /**
-   * Variables that each name a folder of the server's own by its path inside its `HOME`,
-   * `/`-separated, such as `{ GOMODCACHE: 'go/pkg/mod' }`.
+   * Variables that each name a folder, or a file, of the server's own by its path inside its
+   * `HOME`, `/`-separated, such as `{ GOMODCACHE: 'go/pkg/mod' }`.
    */
   readonly homeFolders?: Readonly<Record<string, string>> | undefined;
 }

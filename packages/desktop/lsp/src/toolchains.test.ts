@@ -64,6 +64,7 @@ test.each([
         CARGO_NET_OFFLINE: 'true',
       },
       allowed: ['RUSTC', 'RUSTC_WRAPPER', 'RUSTC_WORKSPACE_WRAPPER'],
+      homeFolders: { CARGO_RESOLVER_LOCKFILE_PATH: 'lockfile/Cargo.lock' },
     },
   ],
   [

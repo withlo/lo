@@ -29,6 +29,14 @@
  *   and rust-analyzer falls back to loading the workspace without them (its own `--no-deps`
  *   pre-fetch): the workspace's own code is analysed in full, but go-to-definition into a
  *   dependency doesn't resolve. Lo doesn't fetch crates.
+ * - Nothing is written in the checkout. `cargo metadata` writes a `Cargo.lock` as it resolves a
+ *   workspace that has none: beside its `Cargo.toml`, or wherever on the disk a config's
+ *   `resolver.lockfile-path` names. rust-analyzer points `cargo` at a copy in its `TMPDIR` (by
+ *   `CARGO_RESOLVER_LOCKFILE_PATH`) only for a workspace that has a lock file, so for the rest the
+ *   toolchain's `CARGO_RESOLVER_LOCKFILE_PATH` names a file in the server's home, which beats the
+ *   config. Every workspace without a lock file shares it, each resolve starting from what the
+ *   last one wrote, as it would from a lock file of its own. With build scripts, proc-macros and
+ *   checks off, nothing is built, so no `target/` is made either.
  * - Build scripts (`build.rs`) and proc-macro crates are code from the checkout, so they're off:
  *   `cargo.buildScripts.enable` and `procMacro.enable` are both `false` (rust-analyzer runs build
  *   scripts when either is on). The cost is that code a `build.rs` would generate, and the

@@ -16,7 +16,8 @@ import { pathToFileURL } from 'node:url';
 
 import { describe, expect, test } from 'vitest';
 
-import { tempFolder } from '../../test/support.ts';
+import { GIT, tempFolder } from '../../test/support.ts';
+import { serverEnvironment } from '../environment.ts';
 import type { Installed } from '../install.ts';
 import { MANIFEST, PLATFORMS } from '../manifest.ts';
 import { sectionOf } from '../requests.ts';
@@ -283,6 +284,26 @@ describe('rust-analyzer', () => {
     // The sysroot is the toolchain's root, with its bundled standard-library sources.
     expect(told('cargo.sysroot')).toBe(SYSROOT);
     expect(told('cargo.sysrootSrc')).toBe(`${SYSROOT}/lib/rustlib/src/rust/library`);
+  });
+
+  test('has cargo write a workspace’s new lock file in its home, never in the checkout', () => {
+    const started = launch();
+    expect(started.homeFolders).toEqual({ CARGO_RESOLVER_LOCKFILE_PATH: 'lockfile/Cargo.lock' });
+    const home = '/lo/cache/code/homes/a/b/rust';
+    const checkout = '/lo/cache/checkouts/a/b/pull-1';
+    const env = serverEnvironment({
+      home,
+      roots: [checkout],
+      path: started.path ?? [],
+      variables: started.variables,
+      allowed: started.allowed,
+      homeFolders: started.homeFolders,
+      git: GIT,
+    });
+    // A file in its home, which beats a Cargo config's `resolver.lockfile-path`.
+    expect(env.CARGO_RESOLVER_LOCKFILE_PATH).toBe(`${home}/lockfile/Cargo.lock`);
+    // Nothing in its environment names a place in the checkout.
+    expect(Object.values(env).filter((value) => value.includes(checkout))).toEqual([]);
   });
 
   test('runs no build script and expands no proc-macro, a checkout’s code', () => {
