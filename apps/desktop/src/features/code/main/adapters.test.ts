@@ -1,14 +1,17 @@
 // The adapters Lo ships: which files each reads, and what it downloads before it starts: Node for
-// the servers that run on it, and Go for gopls, which Lo builds with it. What each server runs as,
-// and is told, is `@lo/lsp`'s, and tested there.
+// the servers that run on it, Go for gopls, which Lo builds with it, and Lo's Rust for
+// rust-analyzer, which runs on it. What each server runs as, and is told, is `@lo/lsp`'s, and
+// tested there.
 
 import {
   GOPLS,
   type Installed,
   launchNative,
   launchOnNode,
+  launchRustAnalyzer,
   PHP_LSP,
   PYRIGHT,
+  RUST_ANALYZER,
   TERRAFORM_LS,
   toolchainUse,
   VTSLS,
@@ -25,6 +28,15 @@ import {
 
 function installedAs(id: string): Installed {
   return { folder: `/lo/cache/servers/${id}`, entry: `/lo/cache/servers/${id}/entry` };
+}
+
+/** Lo's Rust toolchain, installed, as the desktop side hands it to an adapter. */
+function installedToolchain(): Toolchain {
+  const installed: Installed = {
+    folder: '/lo/cache/toolchains/rust',
+    entry: '/lo/cache/toolchains/rust/bin/cargo',
+  };
+  return { ...toolchainUse('rust', '1.100.0', installed), version: '1.100.0', installed };
 }
 
 /** The adapter that reads the file at `path`, by name, and the protocol's id for the file. */
@@ -63,7 +75,7 @@ async function prepared(adapter: Adapter) {
 }
 
 describe('Lo’s adapters', () => {
-  it('read TypeScript and JavaScript, Python, PHP, Go and Terraform', () => {
+  it('read TypeScript and JavaScript, Python, Rust, PHP, Go and Terraform', () => {
     expect(readBy('src/a.ts')).toEqual(['TypeScript', 'typescript']);
     expect(readBy('src/a.mts')).toEqual(['TypeScript', 'typescript']);
     expect(readBy('src/A.tsx')).toEqual(['TypeScript', 'typescriptreact']);
@@ -71,6 +83,7 @@ describe('Lo’s adapters', () => {
     expect(readBy('src/a.jsx')).toEqual(['TypeScript', 'javascript']);
     expect(readBy('pkg/a.py')).toEqual(['Python', 'python']);
     expect(readBy('pkg/a.pyi')).toEqual(['Python', 'python']);
+    expect(readBy('src/a.rs')).toEqual(['Rust', 'rust']);
     expect(readBy('src/A.php')).toEqual(['PHP', 'php']);
     expect(readBy('views/a.phtml')).toEqual(['PHP', 'php']);
     expect(readBy('cmd/main.go')).toEqual(['Go', 'go']);
@@ -98,6 +111,33 @@ describe('Lo’s adapters', () => {
         launch: launchOnNode(server, installedAs('node'), installedAs(server.id)),
       });
     }
+  });
+
+  it('download rust-analyzer and Lo’s Rust toolchain, and start it on that toolchain', async () => {
+    const adapter = shipped('rust');
+    const installs: string[] = [];
+    const toolchains: string[] = [];
+    const toolchain = installedToolchain();
+    const ready = await adapter.prepare({
+      install: (id) => {
+        installs.push(id);
+        return Promise.resolve(installedAs(id));
+      },
+      toolchain: (id) => {
+        toolchains.push(id);
+        return Promise.resolve(toolchain);
+      },
+      findCopy: () => Promise.reject(new Error('no copy is looked for')),
+      signal: new AbortController().signal,
+    });
+    expect(installs).toEqual([RUST_ANALYZER.id]);
+    expect(toolchains).toEqual(['rust']);
+    // Named up front: the server and the toolchain it runs on.
+    expect(adapter.downloads).toEqual({ servers: [RUST_ANALYZER.id], toolchains: ['rust'] });
+    expect(ready).toEqual({
+      kind: 'ready',
+      launch: launchRustAnalyzer(installedAs(RUST_ANALYZER.id), toolchain),
+    });
   });
 
   it('download php-lsp alone, with no toolchain, and start it as its own program', async () => {
@@ -163,6 +203,7 @@ describe('Lo’s adapters', () => {
     expect(ADAPTERS.map((adapter) => [adapter.id, adapter.noHints])).toEqual([
       ['typescript', undefined],
       ['python', 'Pyright has no type hints.'],
+      ['rust', undefined],
       ['php', undefined],
       ['go', undefined],
       ['terraform', 'terraform-ls has no type hints.'],

@@ -3,6 +3,12 @@ export { goMemoryLimit, launchNative, type NativeServer } from './adapters/nativ
 export { heapCap, launchOnNode, type Launch, type NodeServer } from './adapters/node.ts';
 export { PHP_LSP, PHP_VERSION } from './adapters/phplsp.ts';
 export { NO_PYTHON, PYRIGHT } from './adapters/pyright.ts';
+export {
+  type InstalledToolchain,
+  launchRustAnalyzer,
+  RUST_ANALYZER,
+  rustAnalyzerSettings,
+} from './adapters/rust.ts';
 export { NO_TERRAFORM, TERRAFORM_LS } from './adapters/terraform.ts';
 export { VTSLS } from './adapters/vtsls.ts';
 export { BUILD_TIME, buildGo, GO_TARGETS, type GoBuild, type GoDownload } from './build.ts';

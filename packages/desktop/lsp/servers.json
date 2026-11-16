@@ -490,6 +490,40 @@
       }
     }
   },
+  "rust-analyzer": {
+    "version": "2026-11-09",
+    "hosts": ["github.com", "release-assets.githubusercontent.com"],
+    "platforms": {
+      "darwin-arm64": {
+        "kind": "gz",
+        "url": "https://github.com/rust-lang/rust-analyzer/releases/download/2026-11-09/rust-analyzer-aarch64-apple-darwin.gz",
+        "size": 14335571,
+        "sha256": "e43a65008f8f4291320f33c0545dd577ad7623a7407b584a27155833d3722dfb",
+        "entry": "rust-analyzer"
+      },
+      "darwin-x64": {
+        "kind": "gz",
+        "url": "https://github.com/rust-lang/rust-analyzer/releases/download/2026-11-09/rust-analyzer-x86_64-apple-darwin.gz",
+        "size": 15071019,
+        "sha256": "abf410a54e33e9f8b2d37f76dde8884db86a030d6a9cc70c0e3f87a77c084c5c",
+        "entry": "rust-analyzer"
+      },
+      "linux-x64": {
+        "kind": "gz",
+        "url": "https://github.com/rust-lang/rust-analyzer/releases/download/2026-11-09/rust-analyzer-x86_64-unknown-linux-gnu.gz",
+        "size": 15661566,
+        "sha256": "8c039b25cb338b3970c731646677a4c9d4e9dd7a92c9ab9ae459c71467fbf4a9",
+        "entry": "rust-analyzer"
+      },
+      "linux-arm64": {
+        "kind": "gz",
+        "url": "https://github.com/rust-lang/rust-analyzer/releases/download/2026-11-09/rust-analyzer-aarch64-unknown-linux-gnu.gz",
+        "size": 15102920,
+        "sha256": "813ca3cec78ac6dab99c7bc9d51e63578f6d401b994ecf29cc0dcad86f9b2cd4",
+        "entry": "rust-analyzer"
+      }
+    }
+  },
   "terraform-ls": {
     "version": "0.39.1",
     "hosts": ["releases.hashicorp.com"],

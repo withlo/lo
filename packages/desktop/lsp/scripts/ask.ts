@@ -84,8 +84,14 @@ export async function askServer(ask: Ask): Promise<Asked> {
       console.log(`  gr ${said(references, (value) => places(server, value))}`);
       const hover = await server.request('textDocument/hover', at, options);
       console.log(`  K  ${said(hover, hoverText)}`);
-      const lines = (texts.get(file) ?? '').split('\n').length;
-      const range = { start: { line: 0, character: 0 }, end: { line: lines, character: 0 } };
+      // The whole file, ending at the end of its last line: a server such as rust-analyzer refuses
+      // a range that runs past the document.
+      const lines = (texts.get(file) ?? '').split('\n');
+      const last = Math.max(0, lines.length - 1);
+      const range = {
+        start: { line: 0, character: 0 },
+        end: { line: last, character: lines[last]?.length ?? 0 },
+      };
       const hints = await server.request('textDocument/inlayHint', { path: file, range }, options);
       console.log(`  gh ${said(hints, hintsOf)}`);
       const symbols = await server.request('textDocument/documentSymbol', { path: file }, options);

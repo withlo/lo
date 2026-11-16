@@ -282,7 +282,7 @@ test(
     expect(cache && settings.cachePath).toBe('lo-hostile-php-lsp-cache');
     const said = new Set(script.match(/lo-hostile-[a-z]+(?:-[a-z]+)*/g));
     expect([...markers, 'lo-hostile-php-lsp-cache'].toSorted()).toEqual([...said].toSorted());
-    expect(markers.size).toBe(26);
+    expect(markers.size).toBe(31);
   },
 );
 

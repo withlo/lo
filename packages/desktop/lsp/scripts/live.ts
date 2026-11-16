@@ -16,10 +16,13 @@
 // hostile checkout it opens the plants in its language too, as a reader's view would. A server
 // that's a program of its own has a folder of stand-ins on its `PATH` after its toolchains', as
 // Lo's git's folder can be Homebrew's: a `terraform`, a `gopackagesdriver`, `pkg-config` and C
-// compilers, each writing a marker if run. Then the hostile checkout and that folder are searched
-// for the markers its plants write if anything runs them, and the check fails if there's one, if
-// anything in either checkout changed, or if anything connected to another machine. It fails too
-// if a server took the hostile checkout's settings: if it says it read code as the PHP its
+// compilers, each writing a marker if run. rust-analyzer's check runs on a third checkout too, the
+// hostile one without the files Lo refuses it for, so it meets the Cargo keys Lo's variables
+// answer; where Lo refuses a checkout (`checkoutProblem`, which the pool asks before a start), it
+// starts nothing and says why. Then the hostile checkout and that folder are searched for the
+// markers its plants write if anything runs them, and the check fails if there's one, if anything
+// in either checkout changed, or if anything connected to another machine. It fails too if a
+// server took the hostile checkout's settings: if it says it read code as the PHP its
 // `.php-lsp.json` names, or indexed a different number of files there than on the code fixture's
 // checkout. Check the machine has memory to spare before running it.
 
@@ -50,12 +53,14 @@ import {
   type Launch,
   launchNative,
   launchOnNode,
+  launchRustAnalyzer,
   MANIFEST,
   type NativeServer,
   type NodeServer,
   PHP_LSP,
   type Pinned,
   PYRIGHT,
+  RUST_ANALYZER,
   TERRAFORM_LS,
   TOOLCHAINS,
   toolchainUse,
@@ -292,6 +297,116 @@ function serverCheck(
   };
 }
 
+/**
+ * The checkouts rust-analyzer's check runs on: each fixture's, and the hostile one again without
+ * the files Lo refuses it for, so the Cargo keys Lo's variables answer meet a running server.
+ */
+const RUST_CHECKOUTS = [
+  { name: 'code.sh', script: 'code.sh', without: [] },
+  { name: 'code-hostile.sh', script: 'code-hostile.sh', without: [] },
+  {
+    name: 'code-hostile-cargo',
+    script: 'code-hostile.sh',
+    without: ['rust/rust-analyzer.toml', '.cargo/config.toml'],
+  },
+] as const;
+
+/** What rustc is run with, as the check's stand-in for `RUSTC` writes it, a line a run. */
+const RUSTC_STAND_IN = (log: string, rustc: string) => `#!/bin/sh
+printf '%s\\n' "$*" >>'${log}'
+exec '${rustc}' "$@"
+`;
+
+/**
+ * The check of rust-analyzer: it starts on Lo's Rust toolchain, on each of {@link RUST_CHECKOUTS},
+ * unless {@link checkoutProblem} refuses the checkout, in which case nothing runs and it says why.
+ * On a checkout it may run, it's asked each place in its `languages`, with a stand-in for Lo's
+ * rustc, outside the checkout, that notes what it's run with, so the check fails if a flag a
+ * checkout's config names reached it.
+ */
+function onRustAnalyzer(languages: Readonly<Record<string, string>>): Check {
+  return async (installed, context) => {
+    const rust = await context.toolchain('rust');
+    const rustUse = { installed: rust.installed, ...rust.use };
+    const launch = launchRustAnalyzer(installed, rustUse);
+    console.log(`${launch.version}: ${[launch.program, ...launch.args].join(' ')}`);
+    const places = await placesFor(languages);
+    const folder = await realpath(await mkdtemp(join(tmpdir(), `lo-live-${RUST_ANALYZER.id}-`)));
+    try {
+      for (const { name: script, script: fixture, without } of RUST_CHECKOUTS) {
+        const root = await checkout(fixture, join(folder, script));
+        for (const path of without) await rm(join(root, path));
+        const less = without.length > 0 ? `, less ${without.join(' and ')}` : '';
+        console.log(`\n--- ${RUST_ANALYZER.name} on the checkout ${fixture} --local makes${less}`);
+        // The pool asks this before a server starts or moves; the live check does the same, so a
+        // checkout a Rust server mustn't run on never starts one.
+        const refusal = await checkoutProblem('rust', root);
+        if (refusal !== undefined) {
+          console.log(`Refused, so nothing runs: ${refusal.replaceAll(`${root}/`, '')}`);
+          const found = await markers(root);
+          if (found.length > 0)
+            throw new Error(`something ran what's planted: ${found.join(', ')}`);
+          continue;
+        }
+        const ran = join(folder, `rustc-${script}.log`);
+        const standIn = join(folder, `rustc-${script}.sh`);
+        const rustc = rustUse.variables.RUSTC ?? '';
+        await writeFile(standIn, RUSTC_STAND_IN(ran, rustc), { mode: 0o755 });
+        await writeFile(ran, '');
+        const { log, peak, connections } = await askServer({
+          spec: {
+            name: RUST_ANALYZER.name,
+            program: launch.program,
+            args: launch.args,
+            root,
+            home: join(folder, `home-${script}`),
+            path: rustUse.path,
+            variables: { ...rustUse.variables, RUSTC: standIn },
+            allowed: rustUse.allowed,
+            git: serverGitEnvironment(),
+            settings: launch.settings,
+            initializationOptions: launch.initializationOptions,
+          },
+          places,
+        });
+        const said = log.filter((line) =>
+          /hostile|rustc|wrapper|proc.?macro|sysroot|offline/i.test(
+            line.replaceAll(folder, '').replaceAll(script, 'the fixture'),
+          ),
+        );
+        if (said.length > 0) console.log(`\nIts log, on those:\n${said.join('\n')}`);
+        console.log(`\nIts family held at most ${Math.round(peak / 1024 ** 2)} MB at once.`);
+        console.log(
+          connections.length === 0
+            ? 'Its family opened no network connection.'
+            : `Its family's network connections:\n${connections.join('\n')}`,
+        );
+        const away = connections.filter((line) => !/->(?:127\.0\.0\.1|\[::1\]):/.test(line));
+        if (away.length > 0) throw new Error(`it connected to another machine: ${away.join('; ')}`);
+        const home = await readdir(join(folder, `home-${script}`), { recursive: true });
+        const top = home.filter((path) => path.split('/').length <= 3);
+        console.log(`\nIts home holds ${home.length} entries: ${top.join(', ')}`);
+        const found = await markers(root);
+        if (found.length > 0) throw new Error(`something ran what's planted: ${found.join(', ')}`);
+        const runs = (await readFile(ran, 'utf8')).split('\n').filter((line) => line !== '');
+        console.log(`\nLo's rustc ran ${runs.length} times, through cargo:\n${runs.join('\n')}`);
+        const flagged = runs.filter((line) => line.includes('lo_hostile_rustflags'));
+        if (flagged.length > 0) {
+          throw new Error(
+            `a flag the checkout's config names reached rustc: ${flagged.join('; ')}`,
+          );
+        }
+      }
+      console.log(
+        `\nNo marker was written, and no flag of the checkout's reached rustc: nothing ` +
+          `${RUST_ANALYZER.name} ran was planted.`,
+      );
+    } finally {
+      await rm(folder, { recursive: true, force: true });
+    }
+  };
+}
+
 /** The check of a server on Lo's Node, which installs first. */
 function onNode(server: NodeServer, languages: Readonly<Record<string, string>>): Check {
   const launch = async (installed: Installed, context: Context) =>
@@ -330,6 +445,7 @@ const CHECKS: Record<string, Check> = {
   },
   vtsls: onNode(VTSLS, { typescript: 'typescript', javascript: 'javascript' }),
   pyright: onNode(PYRIGHT, { python: 'python' }),
+  'rust-analyzer': onRustAnalyzer({ rust: 'rust' }),
   // PHP's project has a file for each class, and `Tally` is in one of its own.
   'php-lsp': native(
     PHP_LSP,

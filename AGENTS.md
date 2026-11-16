@@ -479,7 +479,11 @@ toolchain and git's variables each server needs.
   platform. `pnpm nx run lsp:pin -- <id> <version>` records one, by hand and never in CI: it checks
   each file against its publisher's signature first (Node's releasers' and HashiCorp's keys, in
   `scripts/keys/`, and npm's registry keys), or for gopls against sum.golang.org as `go` does, and
-  that it unpacks as Lo would. Lo trusts only the manifest's hashes.
+  that it unpacks as Lo would. rust-analyzer, which publishes no signature or attestation for its
+  releases, is checked against the SHA-256 the GitHub REST API (`api.github.com`) lists for each
+  release asset, which GitHub computes when the asset is uploaded. GitHub runs that API and the host
+  the file comes from, so the check catches a download gone wrong, not a release someone else made.
+  Lo trusts only the manifest's hashes.
 - gopls is pinned as the modules it's built from, with the `go.mod` and `go.sum` that require them
   and the size and SHA-256 of what each platform's build makes, since the Go team publishes no
   binary. On first use Lo fetches the modules itself, through its downloader and the entry's hosts,
@@ -510,6 +514,19 @@ toolchain and git's variables each server needs.
   folder above it, or one in it that names a folder outside it, by `use` or a `replace` with a path,
   or that Lo can't read for certain (`checkoutProblem`). It looks through the checkout's own
   folders, never through a link, which could lead anywhere on the disk.
+- Some files steer rust-analyzer or `cargo` past those variables, so a server that uses Rust doesn't
+  start on, or move to, a checkout with one (`checkoutProblem`). A `rust-analyzer.toml`'s workspace
+  settings win over Lo's client settings and can run a program
+  (`cargo.buildScripts.overrideCommand`, `cargo.extraEnv`). A `.cargo/config.toml` or
+  `.cargo/config`, read as TOML with `smol-toml`, refuses the checkout for an `[env]` table, set on
+  the `rustc` `cargo metadata` runs whatever Lo's environment holds; an `[unstable]` table, which
+  takes effect since rust-analyzer runs `cargo` with `RUSTC_BOOTSTRAP=1`; or an `include`, which
+  reads another config, outside the checkout too; and so does one that doesn't parse or isn't a
+  plain file, or a `.cargo` that isn't a plain folder. Lo's variables answer the config's other keys
+  (`build.rustc*` by `RUSTC`/`RUSTC_WRAPPER`/`RUSTC_WORKSPACE_WRAPPER`, `rustflags` and
+  `rustdocflags` by an empty `CARGO_ENCODED_RUSTFLAGS` and `CARGO_ENCODED_RUSTDOCFLAGS`, the
+  registries and sources by `CARGO_NET_OFFLINE`), so they don't. Anything named `.cargo/config.toml`
+  or `.cargo/config` in a folder above the checkout, a link included, is refused outright.
 - A download goes over `https` only, on the usual port, to its entry's hosts, following at most 5
   redirects itself, each held to the same rules, and refusing an answer its `fetch` was redirected
   to unseen, with no token or cookie. In the app it goes through `net.request` (`netFetch` with
@@ -547,6 +564,13 @@ toolchain and git's variables each server needs.
   an answer names. Each says whether it gives inlay hints (`hints`): Pyright and terraform-ls give
   none. The package's README lists each with its source, version and license, and a server's details
   name its license beside its version.
+- Rust's server, rust-analyzer, is a compiled program Lo downloads, with its adapter in
+  `src/adapters/` too, run on Lo's Rust toolchain. It runs Lo's `cargo` and `rustc` (`CARGO`,
+  `RUSTC`, empty `RUSTC_WRAPPER`, `RUSTC_WORKSPACE_WRAPPER`, `CARGO_ENCODED_RUSTFLAGS` and
+  `CARGO_ENCODED_RUSTDOCFLAGS`, `cargo.sysroot` set), reads no `rust-toolchain.toml` (no rustup),
+  fetches nothing (`CARGO_NET_OFFLINE=true`, a private `CARGO_HOME`), and runs no build script or
+  proc-macro (`cargo.buildScripts.enable` and `procMacro.enable` off), so a crate's dependencies it
+  can't resolve offline load without them.
 - PHP's server, php-lsp, is a program of its own, with its adapter in `src/adapters/` too: an
   archive per platform from its GitHub releases, which nobody signs, so `lsp:pin` checks each
   against the checksum its release lists beside it. It starts as its program, by its absolute path,

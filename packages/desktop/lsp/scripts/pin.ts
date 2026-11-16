@@ -18,7 +18,7 @@ import { format, resolveConfig } from 'prettier';
 
 import { parseManifest, parseToolchains } from '../src/index.ts';
 import { goProgram } from './go.ts';
-import { githubRelease, hashicorp, node, npm, type Source } from './sources.ts';
+import { githubRelease, hashicorp, node, npm, rustAnalyzer, type Source } from './sources.ts';
 import { dotnet, go, rust, temurin } from './toolchains.ts';
 
 /** The armored public keys in `keys/<publisher>/`. */
@@ -36,6 +36,7 @@ const SOURCES: Record<string, Source> = {
   vtsls: npm('@vtsls/language-server', 'node_modules/@vtsls/language-server/dist/main.js'),
   // Its own entry point, which says where its files are and loads the server.
   pyright: npm('pyright', 'node_modules/pyright/langserver.index.js'),
+  'rust-analyzer': rustAnalyzer(),
   // Its release's archives, each holding the one program. Linux's are linked statically, with
   // musl, so they run whatever C library the system has.
   'php-lsp': githubRelease(
