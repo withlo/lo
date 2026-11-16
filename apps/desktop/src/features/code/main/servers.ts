@@ -2,6 +2,10 @@
 // screen, moving with it. Only main runs them, only for views the reader trusts, and each starts
 // only once a file of its language shows on the new side of the view on screen.
 //
+// - Nothing starts, starts again or moves unless, then and there, the view on screen is trusted and
+//   shows the head of the checkout it's for: each start, restart, crash's restart and move checks,
+//   after whatever it waited for.
+// - Each server stopping is kept until it has, so a stop, and Lo's quitting, waits for all of them.
 // - A server moves to another head of its repository when that comes on screen: by
 //   `workspace/didChangeWorkspaceFolders` where it says it takes that, else by starting again.
 // - It stops 10 minutes after no view of its repository was last on screen, as soon as no tab of
@@ -70,7 +74,10 @@ export interface PoolView {
    * again, as after a push: what runs for its repository keeps running, and nothing new starts.
    */
   readonly trust: 'trusted' | 'held';
-  /** The checkout of its head on screen, once it's made. */
+  /**
+   * The checkout of its head on screen, once it's made, while it's trusted: what a server may start
+   * on, or move to, while the view is on screen.
+   */
   readonly root: Root | undefined;
   /** The servers it needs: those that read the files its new side shows. */
   readonly wants: readonly Adapter[];
@@ -87,7 +94,7 @@ export interface PoolOptions {
   readonly start: (spec: ServerSpec) => Running;
   /**
    * The rest of a server's spec, for `repo`: a `HOME` of its own, git's variables, and the folder of
-   * Lo's git, first on its `PATH`. Nothing without git.
+   * Lo's git, put first on its `PATH`. Nothing without git.
    */
   readonly base: (
     repo: string,
@@ -148,6 +155,8 @@ interface Entry {
   /** Each start's number, so what an earlier one finds out late is dropped. */
   run: number;
   controller: AbortController;
+  /** Its server before this one, while it stops for this one to start. */
+  stopping: Promise<void> | undefined;
   ended: Promise<void> | undefined;
 }
 
@@ -163,6 +172,8 @@ export class ServerPool {
   #views: readonly PoolView[] = [];
   #screen: string | undefined;
   #budget: ReturnType<typeof setInterval> | undefined;
+  /** Every server's stop, until it has stopped. */
+  readonly #stopping = new Set<Promise<void>>();
   #stopped = false;
 
   constructor(options: PoolOptions) {
@@ -228,15 +239,18 @@ export class ServerPool {
    * runs, and able to start again by itself after a crash once more.
    */
   async restart(repo: string, adapter: Adapter, root: Root): Promise<void> {
-    if (this.#stopped) return;
+    if (!this.#allowed(repo, root)) return;
     const key = keyOf(repo, adapter.id);
     const before = this.#entries.get(key);
     if (before?.phase === 'ending') await before.ended;
+    // Trust may have gone while it stopped.
+    if (!this.#allowed(repo, root)) return;
     const entry = this.#entries.get(key);
     if (!entry) {
       this.#launch(this.#added(repo, adapter, root));
       return;
     }
+    if (entry.phase === 'ending') return;
     entry.restarted = false;
     await this.#again(entry, root);
   }
@@ -252,7 +266,10 @@ export class ServerPool {
     await Promise.all(ending.map((entry) => this.#end(entry, 'trust in it went')));
   }
 
-  /** Stops every server, as Lo quits, within `@lo/lsp`'s limit for a stop. */
+  /**
+   * Stops every server, as Lo quits, within `@lo/lsp`'s limit for a stop, and resolves once every
+   * one has, those stopping already included.
+   */
   async stop(): Promise<void> {
     this.#stopped = true;
     clearInterval(this.#budget);
@@ -260,6 +277,7 @@ export class ServerPool {
     await Promise.all(
       [...this.#entries.values()].map((entry) => this.#end(entry, 'Lo is quitting')),
     );
+    while (this.#stopping.size > 0) await Promise.all(this.#stopping);
   }
 
   /** What the views need now. */
@@ -268,7 +286,7 @@ export class ServerPool {
     const views = this.#views;
     const repos = new Set(views.map((view) => view.repo));
     for (const entry of this.#entries.values()) {
-      if (!repos.has(entry.repo)) void this.#end(entry, `no tab of ${entry.repo} is open`);
+      if (!repos.has(entry.repo)) void this.#end(entry, `no trusted tab of ${entry.repo} is open`);
     }
     const screen = views.find((view) => view.id === this.#screen);
     for (const entry of this.#entries.values()) {
@@ -318,11 +336,35 @@ export class ServerPool {
       restarted: false,
       run: 0,
       controller: new AbortController(),
+      stopping: undefined,
       ended: undefined,
     };
     this.#entries.set(entry.key, entry);
     this.#watchBudget();
     return entry;
+  }
+
+  /**
+   * Whether a server of `repo` may start, start again or move to `root` now: the view on screen is
+   * of `repo`, trusted, and shows the head `root` checks out. Each start and move asks, after
+   * whatever it waited for.
+   */
+  #allowed(repo: string, root: Root | undefined): root is Root {
+    if (this.#stopped || !root) return false;
+    const screen = this.#views.find((view) => view.id === this.#screen);
+    return (
+      screen?.trust === 'trusted' && screen.repo === repo && screen.root?.folder === root.folder
+    );
+  }
+
+  /** Stops `server`, kept among those stopping until it has. */
+  #stopServer(server: Running): Promise<void> {
+    const stopping = server.stop().catch((error: unknown) => {
+      this.#options.log(`a language server's stop failed: ${describe(error)}`);
+    });
+    this.#stopping.add(stopping);
+    void stopping.finally(() => this.#stopping.delete(stopping));
+    return stopping;
   }
 
   /** Whether `entry` is the one kept for its key, and not stopping for good. */
@@ -349,8 +391,13 @@ export class ServerPool {
 
   async #prepareAndStart(entry: Entry, run: number): Promise<void> {
     const { adapter } = entry;
-    if (!this.#room(entry)) {
-      this.#refuse(entry, undefined);
+    // Nothing is downloaded for what may not run.
+    if (!this.#allowed(entry.repo, entry.root)) {
+      void this.#end(entry, 'no trusted view on screen shows its head');
+      return;
+    }
+    if (!(await this.#room(entry, run))) {
+      if (this.#current(entry, run)) this.#refuse(entry, undefined);
       return;
     }
     let prepared: Prepared;
@@ -381,8 +428,7 @@ export class ServerPool {
       return;
     }
     const base = this.#options.base(entry.repo, adapter);
-    const root = entry.root;
-    if (!base || !root) {
+    if (!base) {
       this.#refuse(entry, {
         kind: 'failed',
         why: { kind: 'error', message: 'Code features need git.' },
@@ -390,8 +436,15 @@ export class ServerPool {
       return;
     }
     // Another may have started while this one got ready.
-    if (!this.#room(entry)) {
-      this.#refuse(entry, undefined);
+    if (!(await this.#room(entry, run))) {
+      if (this.#current(entry, run)) this.#refuse(entry, undefined);
+      return;
+    }
+    if (!this.#current(entry, run)) return;
+    // Trust, or the view on screen, may have changed while it got ready.
+    const root = entry.root;
+    if (!this.#allowed(entry.repo, root)) {
+      void this.#end(entry, 'no trusted view on screen shows its head');
       return;
     }
     const { launch } = prepared;
@@ -403,7 +456,8 @@ export class ServerPool {
         args: launch.args,
         root: root.folder,
         home: base.home,
-        path: [...(launch.path ?? []), ...base.path],
+        // Lo's git first, before the toolchain's folders.
+        path: [...base.path, ...(launch.path ?? [])],
         variables: launch.variables,
         allowed: launch.allowed,
         git: base.git,
@@ -455,7 +509,10 @@ export class ServerPool {
     this.#changed(entry);
   }
 
-  /** Stops `entry`'s server, if it runs, and starts it again on `root`. */
+  /**
+   * Stops `entry`'s server, if it runs, and starts it again on `root`, if it may run there once the
+   * old one has stopped.
+   */
   async #again(entry: Entry, root: Root | undefined): Promise<void> {
     const old = entry.server;
     entry.stopListening?.();
@@ -470,7 +527,13 @@ export class ServerPool {
     entry.phase = 'preparing';
     entry.problem = undefined;
     this.#changed(entry);
-    await old?.stop();
+    // The server before, or the one an earlier restart is still stopping.
+    const stopping = old ? this.#stopServer(old) : entry.stopping;
+    if (stopping) {
+      entry.stopping = stopping;
+      await stopping;
+      if (entry.stopping === stopping) entry.stopping = undefined;
+    }
     if (this.#current(entry, run)) this.#launch(entry);
   }
 
@@ -491,20 +554,36 @@ export class ServerPool {
     entry.moving = false;
     if (moved) {
       entry.root = root;
+      // Trust, or the view on screen, may have changed while it moved.
+      if (!this.#allowed(entry.repo, root)) {
+        void this.#end(entry, 'no trusted view on screen shows its head');
+        return;
+      }
       this.#changed(entry);
       return;
     }
     await this.#again(entry, root);
   }
 
-  /** Whether there's room for `entry` to run, stopping the server used longest ago off screen if need be. */
-  #room(entry: Entry): boolean {
-    const others = this.#live().filter((each) => each !== entry);
-    if (others.length < this.#limits.count) return true;
-    const victim = this.#leastUsedOffScreen(others);
-    if (!victim) return false;
-    void this.#end(victim, `Lo runs ${this.#limits.count} language servers at most`);
-    return true;
+  /**
+   * Whether there's room for `entry` to run, once the server used longest ago off screen has
+   * stopped if need be: those still stopping count until they have.
+   */
+  async #room(entry: Entry, run: number): Promise<boolean> {
+    for (;;) {
+      if (!this.#current(entry, run)) return false;
+      // One starting again counts by its old server, until that has stopped.
+      const others = this.#live().filter((each) => each !== entry && each.stopping === undefined);
+      const { count } = this.#limits;
+      if (others.length + this.#stopping.size < count) return true;
+      if (others.length < count) {
+        await Promise.race(this.#stopping);
+        continue;
+      }
+      const victim = this.#leastUsedOffScreen(others);
+      if (!victim) return false;
+      await this.#end(victim, `Lo runs ${count} language servers at most`);
+    }
   }
 
   /** The servers running or about to. */
@@ -561,11 +640,12 @@ export class ServerPool {
     entry.controller.abort();
     entry.stopListening?.();
     entry.stopListening = undefined;
-    const { server } = entry;
+    const { server, stopping } = entry;
     if (server) this.#options.log(`stopping ${entry.adapter.name} for ${entry.repo}: ${why}.`);
     entry.ended = (async () => {
       try {
-        await server?.stop();
+        // And the one before it, if it's still stopping for this one to start.
+        await Promise.all([server && this.#stopServer(server), stopping]);
       } finally {
         if (this.#entries.get(entry.key) === entry) this.#entries.delete(entry.key);
         this.#options.changed(entry.repo);

@@ -4,6 +4,7 @@
 // each time it changes. Trust is written only here, once main's own dialog, attached to the window
 // that asked, says "Trust"; the banner, the palette and Settings only ask. Taking trust away,
 // however the settings file loses an entry, lets go of what ran on it: its checkouts are removed.
+// So does a view no longer trusted for any other reason, once no other view of its pull request is.
 //
 // The syntax index needs no trust: it reads blobs through git, never runs the repository's code,
 // and has the background process parse them, over main's own port. Its store is in the cache, on
@@ -455,6 +456,11 @@ function startServers(context: Context): void {
     view: (id) => servingInput(context, id),
     onScreen: () => service.list().active,
     publish: (shown) => context.publish('served', shown),
+    async letGo(repo, pull) {
+      await servers.stopWhere(repoKey(repo), (each) => each === pull);
+      const cache = context.git.cache;
+      if (cache) await letGo(cache, { repo, pull });
+    },
     log,
   });
   serving = followed;

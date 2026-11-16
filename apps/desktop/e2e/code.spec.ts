@@ -3,7 +3,8 @@
 // status bar says while it builds and once it's ready. The code port main hands the page answers a
 // definition from it, and refuses a view that isn't open. Once the repo is trusted, a language
 // server, here the fake one, runs on the PR's head, its answer to a definition comes first, and
-// "Restart" in its status item starts it again. GitHub answers from `app_e2e`, and, once the repo
+// "Restart" in its status item starts it again; killed, it shows as failed until restarted, and
+// "Stop trusting this repo" stops it. GitHub answers from `app_e2e`, and, once the repo
 // is trusted, from `pull_request_repositories_e2e`.
 
 import { writeFileSync } from 'node:fs';
@@ -228,7 +229,7 @@ const trusting = test.extend<{ servers: TestServers }>({
 });
 
 trusting(
-  'runs a language server on a trusted PR’s head, answers from it first, and restarts it from its status item',
+  'runs a language server on a trusted PR’s head, answers from it first, restarts it from its status item, and stops it once trust goes',
   async ({ app, page, servers }) => {
     test.setTimeout(120_000);
     await catchCodePort(app, page);
@@ -306,5 +307,36 @@ trusting(
       expect(events.lastIndexOf('request')).toBeGreaterThan(events.lastIndexOf('started'));
       await expect(status.getByRole('button', { name: 'TypeScript', exact: true })).toBeVisible();
     });
+
+    await test.step('killed, it shows as failed, and “Restart” beside it starts it again', async () => {
+      process.kill(-(started().at(-1)?.pid ?? 0), 'SIGKILL');
+      await expect(
+        status.getByRole('button', { name: 'TypeScript failed', exact: true }),
+      ).toBeVisible({ timeout: 20_000 });
+      await status.getByRole('button', { name: 'Restart TypeScript', exact: true }).click();
+      await expect.poll(() => started().length, { timeout: 20_000 }).toBe(3);
+      await answered();
+    });
+
+    await test.step('“Stop trusting this repo” stops it', async () => {
+      const pid = started().at(-1)?.pid ?? 0;
+      await status.getByRole('button', { name: 'TypeScript', exact: true }).click();
+      await page.getByRole('button', { name: 'Stop trusting this repo', exact: true }).click();
+      await expect.poll(() => running(pid), { timeout: 20_000 }).toBe(false);
+      await expect(
+        status.getByRole('button', { name: 'Language servers off', exact: true }),
+      ).toBeVisible();
+      expect(started()).toHaveLength(3);
+    });
   },
 );
+
+/** Whether process `pid` is still there. */
+function running(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}

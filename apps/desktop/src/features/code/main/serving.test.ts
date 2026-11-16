@@ -3,13 +3,20 @@
 // needs a server; servers answering only about that head; and what the status bar says.
 
 import { parseOid, type Oid, type TreeEntry } from '@lo/git';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, onTestFinished } from 'vitest';
 
 import type { Servers } from '../contract.ts';
 import type { Adapter } from './adapters.ts';
-import type { PoolView, Root, ServerPool } from './servers.ts';
-import { changedLanguages, ServingViews, type ServingInput, type ServingRepo } from './serving.ts';
+import { ServerPool, type PoolView, type Root } from './servers.ts';
+import {
+  changedLanguages,
+  repoKey,
+  ServingViews,
+  type ServingInput,
+  type ServingRepo,
+} from './serving.ts';
 import { blobOf, commitOf } from './test/fake.ts';
+import { StandIn } from './test/server.ts';
 
 const TS: Adapter = {
   id: 'typescript',
@@ -73,6 +80,7 @@ function follow(current: () => ServingInput | undefined, adapters: readonly Adap
     view: (id) => (id === 'v1' ? current() : undefined),
     onScreen: () => screen,
     publish: (servers) => published.push(servers),
+    letGo: () => Promise.resolve(),
     log: () => undefined,
   });
   return {
@@ -104,6 +112,54 @@ function input(clone: ServingRepo, change: Partial<ServingInput> = {}): ServingI
 /** Lets what's waiting on promises settle. */
 async function settle(): Promise<void> {
   for (let round = 0; round < 20; round += 1) await Promise.resolve();
+}
+
+/** Lets everything under way finish: promises, and what waits a turn of the event loop. */
+async function drain(): Promise<void> {
+  for (let round = 0; round < 10; round += 1) {
+    await new Promise((resolve) => setImmediate(resolve));
+  }
+}
+
+/**
+ * The views `shown` holds, followed on a pool of stand-in servers, with `v1` on screen: the servers
+ * it started, those whose process is still there, and each pull request let go of.
+ */
+function onPool(shown: ReadonlyMap<string, ServingInput>) {
+  const started: StandIn[] = [];
+  const lets: string[] = [];
+  let serving: ServingViews | undefined;
+  const pool = new ServerPool({
+    prepare: (adapter, _progress, signal) =>
+      adapter.prepare({
+        install: () => Promise.reject(new Error('no downloads in tests')),
+        findCopy: () => Promise.resolve(undefined),
+        signal,
+      }),
+    start(spec) {
+      const server = new StandIn(spec);
+      started.push(server);
+      return server;
+    },
+    base: () => ({ home: '/home/lo', git: {}, path: ['/lo/git/bin'] }),
+    changed: (repo) => serving?.changed(repo),
+    log: () => undefined,
+  });
+  onTestFinished(() => pool.stop());
+  serving = new ServingViews({
+    pool,
+    adapters: () => [TS],
+    view: (id) => shown.get(id),
+    onScreen: () => 'v1',
+    publish: () => undefined,
+    async letGo(repo, pull) {
+      lets.push(`${repo}#${pull}`);
+      await pool.stopWhere(repoKey(repo), (each) => each === pull);
+    },
+    log: () => undefined,
+  });
+  const alive = () => started.filter((server) => !server.exited);
+  return { serving, started, alive, lets };
 }
 
 describe('following views for servers', () => {
@@ -214,5 +270,58 @@ describe('following views for servers', () => {
     const { serving } = follow(() => input(repo, { trust: 'none', off: true }), []);
     serving.update('v1');
     expect(serving.servers('v1')).toEqual({ view: 'v1', off: false, servers: [] });
+  });
+
+  it('stops the server on a PR’s head once nothing trusts the PR, and lets go of its checkouts, while another of the repo stays trusted', async () => {
+    const { repo } = repoOf(['src/a.ts']);
+    const shown = new Map([
+      ['v1', input(repo, { number: 81 })],
+      ['v2', input(repo, { id: 'v2' })],
+    ]);
+    const { serving, started, alive, lets } = onPool(shown);
+    serving.update('v1');
+    serving.update('v2');
+    await drain();
+    expect(started.map((server) => server.spec.root)).toEqual([`/cache/checkouts/pull-81/${head}`]);
+    // #81, from a fork, isn't trusted any longer, as when its fork was renamed; #80 still is.
+    shown.set('v1', input(repo, { number: 81, trust: 'none', off: true }));
+    serving.update('v1');
+    await drain();
+    expect(alive()).toEqual([]);
+    expect(lets).toEqual(['Rozed-Dev/E2E#81']);
+  });
+
+  it('starts nothing on Restart once trust goes while the head is checked out, and lets go of that checkout', async () => {
+    const { repo } = repoOf(['src/a.ts']);
+    let fail = true;
+    let made: (() => void) | undefined;
+    const slow: ServingRepo = {
+      ...repo,
+      checkout: (number, at) =>
+        fail
+          ? Promise.reject(new Error('the disk is full'))
+          : new Promise((resolve) => {
+              made = () => resolve(`/cache/checkouts/pull-${number}/${at}`);
+            }),
+    };
+    const shown = new Map([['v1', input(slow)]]);
+    const { serving, started, alive, lets } = onPool(shown);
+    serving.update('v1');
+    await drain();
+    // The checkout failed; Restart makes it again, and waits for it.
+    fail = false;
+    const restarting = serving.restart('v1', 'typescript');
+    await drain();
+    // Trust goes meanwhile: what ran is let go of.
+    shown.set('v1', input(slow, { trust: 'none', off: true }));
+    serving.update('v1');
+    expect(lets).toEqual(['Rozed-Dev/E2E#80']);
+    made?.();
+    await restarting;
+    await drain();
+    expect(started).toEqual([]);
+    expect(alive()).toEqual([]);
+    // The checkout, finished after trust went, is let go of too.
+    expect(lets).toEqual(['Rozed-Dev/E2E#80', 'Rozed-Dev/E2E#80']);
   });
 });

@@ -8,6 +8,8 @@
 //   for a view nothing trusts.
 // - A view checked again after a push holds what runs for its repository, and starts nothing,
 //   until it's trusted again.
+// - Once no view of a pull request is trusted, for whatever reason, what runs on its checkouts
+//   stops and they go: one finished after that goes as it's made.
 // - A server answers only about the head it runs on: a view of another head, or the old side, gets
 //   the syntax index's answers.
 //
@@ -56,6 +58,11 @@ export interface ServingOptions {
   /** The view on screen. */
   readonly onScreen: () => string | undefined;
   readonly publish: (servers: Servers) => void;
+  /**
+   * Stops what runs on pull request `pull` of `repo`'s checkouts, and removes them, as when no view
+   * of it is trusted any longer.
+   */
+  readonly letGo: (repo: string, pull: number) => Promise<void>;
   readonly log: (line: string) => void;
 }
 
@@ -113,6 +120,8 @@ export class ServingViews {
   readonly #checkouts = new Map<string, Checkout>();
   /** The changed files' languages being read, by repository and sides. */
   readonly #reading = new Set<string>();
+  /** Each pull request's checkouts being let go of, by {@link pullKey}. */
+  readonly #dropping = new Map<string, Promise<void>>();
   #stopped = false;
 
   constructor(options: ServingOptions) {
@@ -130,10 +139,17 @@ export class ServingViews {
     }
     let followed = this.#views.get(id);
     if (!followed) {
-      followed = { input, trusted: false, changes: undefined, asked: new Set(), sent: '' };
+      followed = {
+        input,
+        trusted: false,
+        changes: undefined,
+        asked: new Set(),
+        sent: '',
+      };
       this.#views.set(id, followed);
     }
     followed.input = input;
+    const was = followed.trusted;
     if (input.trust === 'trusted') followed.trusted = true;
     else if (input.trust === 'none') {
       followed.trusted = false;
@@ -142,6 +158,8 @@ export class ServingViews {
     if (input.trust === 'trusted') this.#readChanges(followed);
     this.#checkOut(followed);
     this.#sync();
+    // Trust went, whatever took it: what ran on its checkouts stops, and they go.
+    if (was && !followed.trusted) this.#letGo(input);
   }
 
   /** Follows every view again, as when git changes. */
@@ -225,12 +243,15 @@ export class ServingViews {
     const adapter = this.#options.adapters().find((each) => each.id === server);
     if (!adapter) throw new IpcError('missing', "There's no language server by that name.");
     followed.asked.add(adapter.id);
-    const key = checkoutKey(input, input.head);
+    const head = input.head;
+    const key = checkoutKey(input, head);
     const checkout = this.#checkouts.get(key);
     if (checkout?.failed !== undefined) this.#checkouts.delete(key);
-    const folder = await this.#checkoutOf(followed, input.head);
-    if (folder === undefined) {
-      this.#sync();
+    const folder = await this.#checkoutOf(followed, head);
+    this.#sync();
+    // Trust, or the head, may have changed while it was checked out.
+    const now = this.#options.view(id);
+    if (folder === undefined || this.#stopped || now?.trust !== 'trusted' || now.head !== head) {
       return;
     }
     const root: Root = { folder, pull: input.number };
@@ -315,12 +336,22 @@ export class ServingViews {
     void this.#checkoutOf(followed, input.head);
   }
 
-  /** The folder of `head`'s checkout for `followed`'s pull request, made if it isn't. */
+  /**
+   * The folder of `head`'s checkout for `followed`'s pull request, made if it isn't, once its
+   * checkouts have been let go of if they're being let go of. One made once nothing trusts the pull
+   * request goes at once.
+   */
   async #checkoutOf(followed: Followed, head: Oid): Promise<string | undefined> {
     const { input } = followed;
     const key = checkoutKey(input, head);
     const known = this.#checkouts.get(key);
     if (known) return known.folder;
+    const dropping = this.#dropping.get(pullKey(input));
+    if (dropping) {
+      // Once they've gone, views trusted meanwhile check out afresh.
+      await dropping;
+      return undefined;
+    }
     const checkout: Checkout = { folder: undefined, failed: undefined };
     this.#checkouts.set(key, checkout);
     try {
@@ -333,8 +364,59 @@ export class ServingViews {
         `${input.repo}#${input.number}: couldn't check out ${head}: ${checkout.failed}`,
       );
     }
-    if (this.#checkouts.get(key) === checkout) this.#sync();
+    const current = this.#checkouts.get(key) === checkout;
+    if (checkout.folder !== undefined && !this.#trustedNow(input)) {
+      // Trust went while it was made: it goes too.
+      if (current) this.#checkouts.delete(key);
+      this.#letGo(input, true);
+      return undefined;
+    }
+    if (!current) return undefined;
+    this.#sync();
     return checkout.folder;
+  }
+
+  /** Whether a view of `pull`'s pull request is trusted now, or checked again after it was. */
+  #trustedNow(pull: Pick<ServingInput, 'repo' | 'number'>): boolean {
+    const key = pullKey(pull);
+    for (const followed of this.#views.values()) {
+      if (pullKey(followed.input) !== key) continue;
+      const now = this.#options.view(followed.input.id);
+      if (now?.trust === 'trusted' || (now?.trust === 'checking' && followed.trusted)) return true;
+    }
+    return false;
+  }
+
+  /**
+   * Once no view of `pull`'s pull request is trusted, stops what runs on its checkouts and removes
+   * them, then forgets them, so a view trusted again checks out afresh. `again`, for a checkout
+   * made meanwhile, lets go once more after a letting go already under way.
+   */
+  #letGo(pull: Pick<ServingInput, 'repo' | 'number'>, again = false): void {
+    if (this.#stopped || this.#trustedNow(pull)) return;
+    const key = pullKey(pull);
+    const under = this.#dropping.get(key);
+    if (under) {
+      if (again) void under.then(() => this.#letGo(pull));
+      return;
+    }
+    const { repo, number } = pull;
+    const dropping = (async () => {
+      try {
+        await this.#options.letGo(repo, number);
+      } catch (error) {
+        this.#options.log(
+          `${repo}#${number}: couldn't let go of its checkouts (${describe(error)}).`,
+        );
+      } finally {
+        for (const each of this.#checkouts.keys()) {
+          if (each.startsWith(`${key}@`)) this.#checkouts.delete(each);
+        }
+        this.#dropping.delete(key);
+      }
+      this.updateAll();
+    })();
+    this.#dropping.set(key, dropping);
   }
 
   /** Tells the servers what the views need, and the window what each view shows. */
@@ -346,8 +428,9 @@ export class ServingViews {
       const { input } = followed;
       const held = input.trust === 'checking' && followed.trusted;
       if (input.trust !== 'trusted' && !held) continue;
+      // Only a trusted view's head is one a server may start on or move to.
       const folder =
-        input.head === undefined
+        input.trust !== 'trusted' || input.head === undefined
           ? undefined
           : this.#checkouts.get(checkoutKey(input, input.head))?.folder;
       const wants = this.#wants(followed);
@@ -406,9 +489,14 @@ export class ServingViews {
   }
 }
 
+/** The key a pull request's checkouts are kept by: its repository and number. */
+function pullKey(input: Pick<ServingInput, 'repo' | 'number'>): string {
+  return `${repoKey(input.repo)}#${input.number}`;
+}
+
 /** The key a head's checkout is kept by: its repository, pull request and commit. */
 function checkoutKey(input: Pick<ServingInput, 'repo' | 'number'>, head: Oid): string {
-  return `${repoKey(input.repo)}#${input.number}@${head}`;
+  return `${pullKey(input)}@${head}`;
 }
 
 /** `text`, cut to what the contract carries. */

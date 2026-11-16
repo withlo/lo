@@ -8,63 +8,13 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { type Answer, type Server, type ServerSpec, startServer, type State } from '@lo/lsp';
+import { type Server, startServer } from '@lo/lsp';
 import { fakeServer } from '@lo/testing/lsp';
 import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 
 import type { Adapter, Prepared } from './adapters.ts';
-import { noRoom, ServerPool, type PoolLimits, type PoolView, type Running } from './servers.ts';
-
-/** A server, standing in for one: its state and memory set by the test. */
-class StandIn implements Running {
-  state: State = { kind: 'starting' };
-  uptime = 0;
-  memory: number | undefined;
-  log: readonly string[] = [];
-  /** Whether it takes a change to its workspace's folders. */
-  moves = true;
-  readonly moved: string[] = [];
-  stopped = false;
-  readonly #listeners = new Set<(state: State) => void>();
-  readonly spec: ServerSpec;
-
-  constructor(spec: ServerSpec) {
-    this.spec = spec;
-  }
-
-  onState(listener: (state: State) => void): () => void {
-    this.#listeners.add(listener);
-    return () => this.#listeners.delete(listener);
-  }
-
-  set(state: State): void {
-    this.state = state;
-    for (const listener of this.#listeners) listener(state);
-  }
-
-  open(): boolean {
-    return true;
-  }
-
-  request(): Promise<Answer> {
-    return Promise.resolve({ ok: false, why: 'notReady' });
-  }
-
-  pathOf(): string | undefined {
-    return undefined;
-  }
-
-  moveTo(root: string): Promise<boolean> {
-    if (this.moves) this.moved.push(root);
-    return Promise.resolve(this.moves);
-  }
-
-  stop(): Promise<void> {
-    this.stopped = true;
-    this.set({ kind: 'stopped' });
-    return Promise.resolve();
-  }
-}
+import { noRoom, ServerPool, type PoolLimits, type PoolView } from './servers.ts';
+import { StandIn } from './test/server.ts';
 
 function adapter(id: string, prepare?: Adapter['prepare']): Adapter {
   return {
@@ -87,7 +37,8 @@ function view(
   wants: readonly Adapter[] = [TS],
   trust: PoolView['trust'] = 'trusted',
 ): PoolView {
-  return { id, repo, trust, root: { folder: `/cache/${repo}/pull-${pull}`, pull }, wants };
+  const root = { folder: `/cache/${repo}/pull-${pull}`, pull };
+  return { id, repo, trust, root: trust === 'trusted' ? root : undefined, wants };
 }
 
 /** A pool of stand-ins, and each one it started. */
@@ -105,14 +56,17 @@ function standIns(limits: Partial<PoolLimits> = {}) {
       started.push(server);
       return server;
     },
-    base: () => ({ home: '/home/lo', git: { GIT_CONFIG_COUNT: '0' }, path: ['/usr/bin'] }),
+    // The folder of Lo's git.
+    base: () => ({ home: '/home/lo', git: { GIT_CONFIG_COUNT: '0' }, path: ['/lo/git/bin'] }),
     changed: () => undefined,
     log: () => undefined,
     limits,
   });
   onTestFinished(() => pool.stop());
   const live = () => started.filter((server) => !server.stopped);
-  return { pool, started, live };
+  /** Those whose process is still there, stopping or not. */
+  const alive = () => started.filter((server) => !server.exited);
+  return { pool, started, live, alive };
 }
 
 /** Has `server` exit by itself, with code 1, after running for `uptime` ms. */
@@ -326,6 +280,76 @@ describe('how long they run', () => {
   });
 });
 
+describe('trust, then and there', () => {
+  it('starts nothing on Restart once trust went while the server before it stopped', async () => {
+    const { pool, started, alive } = standIns();
+    const root = { folder: '/cache/a/x/pull-1', pull: 1 };
+    pool.sync([view('v1', 'a/x', 1)], 'v1');
+    await settle();
+    const first = started[0];
+    if (first) first.slow = true;
+    // Its tab closes, and it stops, slowly; the tab comes back, and Restart waits for that stop.
+    pool.sync([], 'v1');
+    pool.sync([view('v1', 'a/x', 1)], 'v1');
+    const restarting = pool.restart('a/x', TS, root);
+    await settle();
+    // Trust goes meanwhile.
+    pool.sync([], 'v1');
+    first?.exit();
+    await restarting;
+    await settle();
+    expect(started).toHaveLength(1);
+    expect(alive()).toEqual([]);
+  });
+
+  it.each(['a move', 'Restart', 'a crash'])(
+    'waits, as Lo quits, for the server stopped for %s',
+    async (what) => {
+      const { pool, started, alive } = standIns();
+      const views = [view('v1', 'a/x', 1), view('v2', 'a/x', 2)];
+      pool.sync(views, 'v1');
+      await settle();
+      const first = started[0];
+      if (!first) throw new Error('nothing started');
+      first.slow = true;
+      first.set({ kind: 'ready' });
+      if (what === 'a move') {
+        first.moves = false;
+        pool.sync(views, 'v2');
+      } else if (what === 'Restart') {
+        void pool.restart('a/x', TS, { folder: '/cache/a/x/pull-1', pull: 1 });
+      } else {
+        crash(first, 61_000);
+      }
+      await settle();
+      expect(first.stopped).toBe(true);
+      let quit = false;
+      void pool.stop().then(() => {
+        quit = true;
+      });
+      await settle();
+      expect(quit).toBe(false);
+      first.exit();
+      await settle();
+      expect(quit).toBe(true);
+      expect(alive()).toEqual([]);
+    },
+  );
+
+  it('puts Lo’s git first on a server’s PATH, before its toolchain’s folders', async () => {
+    const { pool, started } = standIns();
+    const tools = adapter('ts', () =>
+      Promise.resolve({
+        kind: 'ready',
+        launch: { program: '/bin/x', args: [], path: ['/toolchain/bin'] },
+      }),
+    );
+    pool.sync([view('v1', 'a/x', 1, [tools])], 'v1');
+    await settle();
+    expect(started[0]?.spec.path).toEqual(['/lo/git/bin', '/toolchain/bin']);
+  });
+});
+
 describe('budgets', () => {
   it('runs 4 at most, stopping the one used longest ago off screen first', async () => {
     vi.useFakeTimers();
@@ -339,6 +363,27 @@ describe('budgets', () => {
     expect(started).toHaveLength(5);
     expect(started[0]?.stopped).toBe(true);
     expect(live()).toHaveLength(4);
+  });
+
+  it('starts one past 4 only once the one stopped for its room has', async () => {
+    vi.useFakeTimers();
+    const { pool, started, alive } = standIns();
+    const views = [1, 2, 3, 4, 5].map((n) => view(`v${n}`, `r/${n}`, n));
+    for (const each of views.slice(0, 4)) {
+      pool.sync(views, each.id);
+      await settle();
+      await vi.advanceTimersByTimeAsync(1000);
+    }
+    const first = started[0];
+    if (first) first.slow = true;
+    pool.sync(views, 'v5');
+    await settle();
+    expect(first?.stopped).toBe(true);
+    expect(started).toHaveLength(4);
+    first?.exit();
+    await settle();
+    expect(started).toHaveLength(5);
+    expect(alive()).toHaveLength(4);
   });
 
   it('never stops one on screen for another: past 4 on screen, the next waits for room', async () => {
