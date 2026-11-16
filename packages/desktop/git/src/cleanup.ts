@@ -696,10 +696,32 @@ export async function keepUnder(host: CleanupHost, cap: number): Promise<string[
   }
   let trimmed = 0;
   let emptied = 0;
+  const debug = (line: unknown) =>
+    console.error(`[keepUnder ${host.root.slice(-24)}] ${JSON.stringify(line)}`);
+  debug({ now: Date.now(), cap, total, kept });
+  for (const spare of spares) {
+    const lock = host.cloneLock(spare.clone.owner, spare.clone.name);
+    debug({
+      kind: spare.kind,
+      clone: spare.clone.name,
+      used: spare.used,
+      path: spare.path.slice(-60),
+      users: lock.users,
+      servers: lock.servers,
+      holder: lock.holder,
+    });
+  }
   for (const spare of free) {
+    debug({
+      tryAt: { kind: spare.kind, clone: spare.clone.name },
+      total,
+      kept,
+      over: total - kept > cap,
+    });
     if (total - kept <= cap) break;
     const { owner, name } = spare.clone;
     const release = host.cloneLock(owner, name).tryRemove('keeping the cache small');
+    debug({ refused: release === undefined });
     if (release === undefined) continue;
     try {
       const size = await diskUsage(spare.path);

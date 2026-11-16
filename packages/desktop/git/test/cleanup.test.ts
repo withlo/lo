@@ -642,6 +642,19 @@ test('past its cap nothing of a repository a server runs on goes, nor is anythin
   await stopServer(cache, 'new', release);
   await eventually(() => !existsSync(home));
   expect(there(old, fresh)).toEqual([true, true]);
+  expect(there(oldCheckout, newCheckout, old, fresh)).toEqual([false, false, true, true]);
+});
+
+test('DEBUG once nothing has a clone open, by size', async () => {
+  const cache = await cacheFor(server(), { maintenance: { idleFor: 10, attempts: 0 } });
+  const [old, fresh] = [await useRepo(cache, 'old'), await useRepo(cache, 'new')];
+  const [oldCheckout, newCheckout] = [checkoutOf(cache, 'old'), checkoutOf(cache, 'new')];
+  const repo = await cache.open('owner', 'old');
+  expect(await cache.setCap((await cache.size()) - 1)).toEqual([]);
+  expect(existsSync(oldCheckout)).toBe(true);
+  repo.close();
+  await eventually(() => !existsSync(oldCheckout));
+  expect(there(old, fresh, newCheckout)).toEqual([true, true, true]);
 });
 
 test('a clone still goes while a server’s home stays, once the rest alone is over the cap', async () => {
