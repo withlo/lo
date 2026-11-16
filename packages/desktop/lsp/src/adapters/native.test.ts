@@ -37,7 +37,8 @@ test('each starts as its own program, by its absolute path, with nothing from th
     const launch = launchNative(server, install);
     expect(launch.program).toBe(install.entry);
     expect(launch.args).toEqual(['serve']);
-    expect(launch.path).toEqual([]);
+    // Nothing of its own goes into its environment without a toolchain.
+    expect(launch.path).toBeUndefined();
   }
   expect(() => launchNative(GOPLS, { folder: 'gopls', entry: 'gopls/gopls' })).toThrow(
     "gopls/gopls isn't an absolute path",
@@ -129,7 +130,12 @@ describe('terraform-ls', () => {
     expect(launch.initializationOptions).toMatchObject({
       experimentalFeatures: { validateOnSave: false, prefillRequiredFields: false },
     });
-    expect([launch.variables, launch.allowed, launch.homeFolders]).toEqual([{}, [], {}]);
+    expect([launch.path, launch.variables, launch.allowed, launch.homeFolders]).toEqual([
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+    ]);
     expect(TERRAFORM_LS.hints).toBe(false);
   });
 });

@@ -275,17 +275,21 @@ test(
     }
     expect(wrong).toEqual([]);
 
-    // The script says each marker, so whoever checks knows what to look for.
+    // The script says each marker, so whoever checks knows what to look for, and the folder
+    // php-lsp's planted settings would put its cache in, which it would make in the checkout.
+    const settings: unknown = JSON.parse(contents.get('.php-lsp.json') ?? '{}');
+    const cache = typeof settings === 'object' && settings !== null && 'cachePath' in settings;
+    expect(cache && settings.cachePath).toBe('lo-hostile-php-lsp-cache');
     const said = new Set(script.match(/lo-hostile-[a-z]+(?:-[a-z]+)*/g));
-    expect([...markers].toSorted()).toEqual([...said].toSorted());
-    expect(markers.size).toBe(18);
+    expect([...markers, 'lo-hostile-php-lsp-cache'].toSorted()).toEqual([...said].toSorted());
+    expect(markers.size).toBe(26);
   },
 );
 
 test("Lo's own repository holds nothing a tool would pick up from what the hostile pull request plants", () => {
   // The sample projects are the pull request's head, so they have none of what a language server
-  // or a version manager would pick: no wrappers, node_modules, version files, tool settings or
-  // package scripts.
+  // or a version manager would pick: no wrappers, node_modules or vendor, version files, tool
+  // settings or package scripts.
   const named = new Set([
     '.cargo',
     '.envrc',
@@ -293,6 +297,7 @@ test("Lo's own repository holds nothing a tool would pick up from what the hosti
     '.mvn',
     '.npmrc',
     '.nvmrc',
+    '.php-lsp.json',
     '.phpactor.json',
     '.python-version',
     '.ruby-version',
@@ -309,6 +314,7 @@ test("Lo's own repository holds nothing a tool would pick up from what the hosti
     'package.json',
     'rust-analyzer.toml',
     'rust-toolchain.toml',
+    'vendor',
   ]);
   const files = filesUnder(samples);
   expect(files.filter((file) => file.split('/').some((part) => named.has(part)))).toEqual([]);

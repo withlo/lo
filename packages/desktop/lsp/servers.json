@@ -438,6 +438,40 @@
       }
     }
   },
+  "php-lsp": {
+    "version": "0.33.0",
+    "hosts": ["github.com", "release-assets.githubusercontent.com"],
+    "platforms": {
+      "darwin-arm64": {
+        "kind": "tar.gz",
+        "url": "https://github.com/jorgsowa/php-lsp/releases/download/v0.33.0/php-lsp-aarch64-apple-darwin.tar.gz",
+        "size": 9609717,
+        "sha256": "33440ed65c0d09a47d374dd6f1c15a16b115af7e6163e1979959c4978264ee37",
+        "entry": "php-lsp"
+      },
+      "darwin-x64": {
+        "kind": "tar.gz",
+        "url": "https://github.com/jorgsowa/php-lsp/releases/download/v0.33.0/php-lsp-x86_64-apple-darwin.tar.gz",
+        "size": 9989602,
+        "sha256": "a4202040c3a2417a44e001c4c3bf6d19981e10df818ea068d9c2c36f803c90d1",
+        "entry": "php-lsp"
+      },
+      "linux-x64": {
+        "kind": "tar.gz",
+        "url": "https://github.com/jorgsowa/php-lsp/releases/download/v0.33.0/php-lsp-x86_64-unknown-linux-musl.tar.gz",
+        "size": 10934969,
+        "sha256": "b29f8985c69ba4357baec9271470d350dee455dcfc290d690d4d0c3a1f2b5c96",
+        "entry": "php-lsp"
+      },
+      "linux-arm64": {
+        "kind": "tar.gz",
+        "url": "https://github.com/jorgsowa/php-lsp/releases/download/v0.33.0/php-lsp-aarch64-unknown-linux-musl.tar.gz",
+        "size": 10556648,
+        "sha256": "63d1a18ea0523fe58c79af9a1c342a42a1bc96295bb0bdeac6370b86e37169b8",
+        "entry": "php-lsp"
+      }
+    }
+  },
   "pyright": {
     "version": "1.1.414",
     "hosts": ["registry.npmjs.org"],

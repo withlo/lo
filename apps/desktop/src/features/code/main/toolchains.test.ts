@@ -139,7 +139,13 @@ it('gives a server only the toolchains its adapter names, which “Remove” sto
 });
 
 it('gives Lo’s own servers only the toolchains they name: Go’s Go, and the rest none', async () => {
-  expect(SHIPPED.map((each) => each.name)).toEqual(['TypeScript', 'Python', 'Go', 'Terraform']);
+  expect(SHIPPED.map((each) => each.name)).toEqual([
+    'TypeScript',
+    'Python',
+    'PHP',
+    'Go',
+    'Terraform',
+  ]);
   for (const shipped of SHIPPED) {
     const toolchain = listedToolchain(shipped, (id) => Promise.resolve(id));
     for (const id of Object.keys(TOOLCHAINS)) {

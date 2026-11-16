@@ -384,11 +384,23 @@ Only main runs git, through `@lo/git`, and the background process never sees git
   system's usual folders, and the newest new enough wins. `app.info` says what it found, `checking`
   until it has, and `app.git` pushes each answer. Asking again (`git.check()`) finds a git installed
   since.
-- With git, main opens the cache, `Lo` in the system's folder for caches (`Lo Dev` for a build run
-  from source, or `cache` in `LO_USER_DATA_DIR`), as `git.cache`, and cleans it up without anyone
-  waiting. `git.setCap()` sets the size it's kept under, which counts all of it but the toolchains
-  language servers use (`toolchains/`): Settings removes those, and their gigabytes would otherwise
-  evict clones.
+- With git, main opens the cache, as `git.cache`, and cleans it up without anyone waiting.
+  `git.setCap()` sets the size it's kept under, which counts all of it but the toolchains language
+  servers use (`toolchains/`), since Settings removes those and their gigabytes would otherwise
+  evict clones, and what's being deleted (`tmp/*.trash`).
+- The cache is `Lo` (`Lo Dev` for a build run from source, or `cache` in `LO_USER_DATA_DIR`) in the
+  system's folder for this user's caches: `$XDG_CACHE_HOME` or `~/.cache` on Linux, and on a Mac the
+  one macOS keeps outside the home folder, `DARWIN_USER_CACHE_DIR`
+  (`/var/folders/<xx>/<random>/C/`), as `/usr/bin/getconf` names it. Tools that language servers run
+  read settings from every folder above their own, such as Cargo's `.cargo/config.toml`, and
+  tsserver loads plugins from every `node_modules` above its install, so the home folder is none of
+  them. Lo won't start unless that folder, as named and as it resolves, is a folder, not a link, of
+  the user's own that nobody else can change, and never falls back to the home folder.
+- Once the cache opens, the one an earlier Lo kept in `~/Library/Caches` goes, as the cache removes
+  its own: moved into its `tmp/` and deleted with the cache's other deletions, or deleted where it
+  is when it's on another volume. Only a folder, never a link, that holds a cache's folders goes,
+  never the open cache or a folder holding it, whatever links lead there, and only under its lock,
+  never while another Lo has it open.
 - Every git gets an environment of Lo's own making, never main's, and only a fetch gets the
   account's token, from a source read as each fetch starts. Fetches take the proxy Lo's own requests
   take.
@@ -499,24 +511,34 @@ toolchain and git's variables each server needs.
 - A server installed by the user is used only from where its adapter says it may be, when the app's
   folder check passes it (the one git is held to), it isn't in Lo's cache, and it isn't a version
   manager's shim, which picks a program from the checkout.
-- The servers that are programs of their own start as that program, by its absolute path inside its
-  install (`launchNative`), with their toolchains' folders and variables: gopls for Go, with Lo's
-  Go, its settings turning vulncheck off and its heap held under the cap by `GOMEMLIMIT`; and
-  terraform-ls for Terraform, from releases.hashicorp.com, given `/dev/null` as Terraform so it runs
-  neither `terraform` nor a provider's plugin, and so reads only the provider schemas it carries.
-  Each adapter's comment says what in a checkout can reach its server and what can't.
 - The servers that run on Lo's Node have their adapters in `src/adapters/`: vtsls for TypeScript and
   JavaScript, and Pyright for Python, each from npm. Each starts as Node, by its absolute path, with
   a cap on its heap, then the server's own entry point, never npm's launcher. What it's told is the
   adapter's alone, and nothing in the checkout picks what runs: vtsls runs its own TypeScript, loads
   no `tsserver` plugin from the checkout, and acquires no types; Pyright's Python is `/dev/null`, so
   it runs no interpreter. A plugin a `tsconfig.json` names is still looked for by its package's
-  name, beside Lo's TypeScript and in each `node_modules` above Lo's install, such as
-  `~/node_modules`, which neither vtsls nor `tsserver` can turn off (`test/plugins.test.ts`). No
-  server has a sandbox: each reads what the user can, outside the checkout too, and Lo never opens a
-  place outside the checkout an answer names. Each says whether it gives inlay hints (`hints`):
-  Pyright and terraform-ls give none. The package's README lists each with its source, version and
-  license, and a server's details name its license beside its version.
+  name, beside Lo's TypeScript and in each `node_modules` above Lo's install, which neither vtsls
+  nor `tsserver` can turn off (`test/plugins.test.ts`): on a Mac, where the cache is outside the
+  home folder, that's never `~/node_modules`; on Linux it can be. No server has a sandbox: each
+  reads what the user can, outside the checkout too, and Lo never opens a place outside the checkout
+  an answer names. Each says whether it gives inlay hints (`hints`): Pyright and terraform-ls give
+  none. The package's README lists each with its source, version and license, and a server's details
+  name its license beside its version.
+- PHP's server, php-lsp, is a program of its own, with its adapter in `src/adapters/` too: an
+  archive per platform from its GitHub releases, which nobody signs, so `lsp:pin` checks each
+  against the checksum its release lists beside it. It starts as its program, by its absolute path,
+  and needs no PHP. It's told which PHP to read code as, so it never runs a `php` to ask; it runs
+  neither PHPStan nor PHPCS; and it skips `vendor/` as it indexes, for its memory and time. Its
+  cache is where it keeps one by default, `.cache/php-lsp` in its `HOME`, with its own caps and
+  cleanup: Lo names no `cachePath`, which php-lsp would take as the whole cache, and sets no
+  `XDG_CACHE_HOME`. What Lo tells it wins over a checkout's `.php-lsp.json` key by key, and that
+  file can't turn the tools on or move the cache.
+- Go's and Terraform's servers are programs of their own too, started as php-lsp is
+  (`launchNative`), with their toolchains' folders and variables: gopls for Go, with Lo's Go, its
+  settings turning vulncheck off and its heap held under the cap by `GOMEMLIMIT`; and terraform-ls
+  for Terraform, from releases.hashicorp.com, given `/dev/null` as Terraform so it runs neither
+  `terraform` nor a provider's plugin, and so reads only the provider schemas it carries. Each
+  adapter's comment says what in a checkout can reach its server and what can't.
 - Tests start only the fake server, `testing/lsp/fake-server.ts`, at most two at once in a test
   file, each killed with its group when the test ends. No test starts a real server or downloads
   one: download tests serve archives they build from a server on this machine. The live check,
@@ -1228,8 +1250,9 @@ parse them under `@lo/syntax`'s limits.
 The `code` feature runs language servers on the views the reader trusts, and their answers come
 before the syntax index's. A server is whatever an adapter (`main/adapters.ts`) says to start for
 its languages: Lo ships those for TypeScript and JavaScript, and Python, each downloaded with the
-Node it runs on; Go, gopls, which Lo builds with the Go it then runs with; and Terraform,
-terraform-ls, which reads a `.tfvars` file as Terraform's variables.
+Node it runs on; PHP, whose server is a program of its own; Go, gopls, which Lo builds with the Go
+it then runs with; and Terraform, terraform-ls, which reads a `.tfvars` file as Terraform's
+variables.
 
 - Nothing starts for a view nothing trusts: no download, no checkout, no server. Once a trusted view
   is on screen and a file its pull request adds or changes on the new side, or one asked about, is

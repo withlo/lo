@@ -8,6 +8,7 @@ import {
   GOPLS,
   launchNative,
   launchOnNode,
+  PHP_LSP,
   PYRIGHT,
   TERRAFORM_LS,
   VTSLS,
@@ -147,6 +148,7 @@ export const ADAPTERS: readonly Adapter[] = [
     languages: { typescript: 'typescript', tsx: 'typescriptreact', javascript: 'javascript' },
   }),
   onNode(PYRIGHT, { id: 'python', name: 'Python', languages: { python: 'python' } }),
+  native(PHP_LSP, { id: 'php', name: 'PHP', languages: { php: 'php' } }),
   native(GOPLS, { id: 'go', name: 'Go', languages: { go: 'go' } }, ['go']),
   native(TERRAFORM_LS, {
     id: 'terraform',

@@ -80,33 +80,50 @@ own (`setsid`) is still found.
 
 The servers Lo runs, each installed on first use for a trusted view, as `servers.json` pins it, and
 each with its adapter in `src/adapters/`. vtsls and Pyright run on Lo's own Node, which downloads
-first; gopls runs with Lo's Go, which Lo builds it with; terraform-ls is a program of its own. None
-needs anything installed.
+first; php-lsp and terraform-ls are programs of their own; gopls runs with Lo's Go, which Lo builds
+it with. None needs anything installed.
 
 | Server       | Version | For                    | From                                                                                        | License                                                       |
 | ------------ | ------- | ---------------------- | ------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
 | vtsls        | 0.3.0   | TypeScript, JavaScript | npm: `@vtsls/language-server` and its 17 dependencies, TypeScript 5.9.3 among them          | MIT; TypeScript's is Apache-2.0, the rest MIT or ISC          |
 | Pyright      | 1.1.414 | Python                 | npm: `pyright`                                                                              | MIT                                                           |
+| Node         | 26.13.1 | vtsls and Pyright      | nodejs.org                                                                                  | MIT                                                           |
+| php-lsp      | 0.33.0  | PHP                    | GitHub: the releases of [jorgsowa/php-lsp](https://github.com/jorgsowa/php-lsp)             | MIT                                                           |
 | gopls        | 0.24.0  | Go                     | proxy.golang.org: `golang.org/x/tools/gopls` and the 23 modules it builds with, built by Lo | BSD-3-Clause; the rest BSD-3-Clause, MIT, MIT-0 or Apache-2.0 |
 | terraform-ls | 0.39.1  | Terraform              | releases.hashicorp.com                                                                      | MPL-2.0                                                       |
-| Node         | 26.13.1 | vtsls and Pyright      | nodejs.org                                                                                  | MIT                                                           |
 
-Each starts as its program by its absolute path, Node with a cap on its heap and then the server's
-own entry point inside its install, never the launcher npm would link, with no shell and an
-environment built from nothing, whose proxy leads nowhere (`NO_NETWORK` in `src/environment.ts`).
-What it's told is its adapter's alone, and the adapter says why each setting is as it is:
+vtsls and Pyright each start as Node, by its absolute path, with a cap on its heap, then the
+server's own entry point inside its install, never the launcher npm would link. php-lsp, gopls and
+terraform-ls each start as its program, by its absolute path inside its install. None runs through a
+shell, and each has an environment built from nothing, whose proxy leads nowhere (`NO_NETWORK` in
+`src/environment.ts`). What each is told is its adapter's alone, and the adapter says why each
+setting is as it is:
 
 - **vtsls** runs its own TypeScript, never a workspace's (`node_modules/typescript`), and has
   automatic type acquisition off, so it runs no npm. It loads no `tsserver` plugin from the
   checkout. A plugin a checkout's `tsconfig.json` names is looked for by its package's name alone,
   in the `node_modules` beside Lo's TypeScript and, as Node finds packages, in each `node_modules`
-  above Lo's install, such as `~/node_modules`, so a checkout can load a package you already have
-  there, though it can't add one. Neither vtsls nor `tsserver` can turn those plugins off.
+  above Lo's install, so a checkout can load a package you already have there, though it can't add
+  one. Neither vtsls nor `tsserver` can turn those plugins off. On a Mac, Lo's cache is outside your
+  home folder, so those never include `~/node_modules`; on Linux it's in `~/.cache`, so they do.
   `tsserver`'s heap is capped at 3 GB and vtsls's at 512 MB, under Lo's 4 GB for the group.
 - **Pyright** is given `/dev/null` as its Python, which can't run, so it runs no interpreter: not
   the machine's, nor one a checkout's virtual environment or `.python-version` would pick. It
   carries the standard library's stubs itself. It answers no inlay hints, so its adapter says it has
   none (`hints: false`).
+- **php-lsp** carries the stubs of PHP's own functions and classes, so it needs no PHP. It's told
+  which PHP to read code as (`phpVersion`, PHP 8.5), so it never runs a `php` to ask: one can be
+  first on its `PATH`, in the folder of Lo's git, as Homebrew's is. Code for an older PHP is read as
+  8.5 too, so a function PHP 8 removed, such as `each`, has no hover. It has PHPStan and PHPCS off,
+  so it runs no tool. It skips `vendor/` as it indexes, since a committed `vendor/` can hold far
+  more code than the project, which would cost memory and time and count against its cap on the
+  files it indexes. `gd`, `K` and `gh` still find a class there through Composer's autoload, and
+  `gr` never looks there. Its cache is where it keeps one by default, `.cache/php-lsp` in its
+  `HOME`, a folder for each version of itself and each checkout, under caps of its own; Lo names no
+  `cachePath`, which php-lsp would take as the whole cache, with none of those. A checkout's
+  `.php-lsp.json` can't turn the tools on or move the cache, and what Lo says wins over the rest of
+  it key by key. Lo asks it for nothing that would run another program, such as formatting or a code
+  lens's tests.
 - **gopls** runs `go list` and `go env` on the checkout with Lo's Go, held by Go's variables
   (`src/toolchains.ts`): a `toolchain` line fetches no other Go, no module is fetched, nothing adds
   a flag such as `-toolexec` or names a package driver, and cgo is off, so no C compiler or
@@ -119,14 +136,18 @@ What it's told is its adapter's alone, and the adapter says why each setting is 
   `terraform providers schema` would. Without it, it reads providers' schemas from the ones it
   carries, the Terraform Registry's official and partner providers as it was built, not the versions
   a checkout's lock file pins, and has none of other providers; definitions, references and the
-  outline come from the configuration and are whole. It asks registry.terraform.io about each module
-  a configuration calls from the Registry, which no setting turns off, and the dead proxy fails each
+  outline come from the configuration and are whole, though it answers references only at a
+  declaration, so `gr` at a use finds none. It asks registry.terraform.io about each module a
+  configuration calls from the Registry, which no setting turns off, and the dead proxy fails each
   request before anything is sent. It answers no inlay hints (`hints: false`).
 
-None runs in a sandbox: each reads what you can, so an absolute import, Pyright's `extraPaths`, a
-`go.mod`'s `replace` with a path, or a Terraform module's `source`, leads it to files outside the
-checkout, and a hover can show what's in one. Nothing can send what it reads anywhere, and Lo never
-opens a place outside the checkout an answer names: it shows as outside the repository.
+None runs in a sandbox: each reads what you can, so an absolute import, Pyright's `extraPaths`, the
+folders of stubs a `.php-lsp.json` names, the paths a `composer.json`'s autoload names, or a
+`composer.json` up to seven folders above the checkout, which php-lsp climbs to when the checkout
+has none, a `go.mod`'s `replace` with a path, or a Terraform module's `source`, lead it to files
+outside the checkout, and a hover can show what's in one. It only reads there, and nothing can send
+what it reads anywhere. Lo never opens a place outside the checkout an answer names: it shows as
+outside the repository.
 
 Lo names each server's license wherever it says what the server is: a server's details in the status
 bar show its name, version and license, "Pyright 1.1.414 · MIT".
@@ -210,6 +231,10 @@ folder may be a link, as a cache moved elsewhere can be.
 What a program does once it runs: the hash says it's the file that was pinned, and the signature
 `pin.ts` checked then says who published it, not what it does. That's what trust and each server's
 environment are for.
+
+Who published php-lsp: its releases are signed by nobody, so `pin.ts` checks each archive against
+the checksum its release lists beside it, which the same build made. That catches a download gone
+wrong, not a release someone else made.
 
 An installed file's bytes: before each use, its size is checked, not its hash, which would read
 every byte. On macOS, `fsync` leaves what the drive itself caches, and Node can't ask for more

@@ -75,7 +75,7 @@ import {
   type ServerOf,
 } from './served.ts';
 import { DownloadSum } from './downloads.ts';
-import { ServerPool } from './servers.ts';
+import { ServerPool, serversFolder } from './servers.ts';
 import {
   checkoutRefusal,
   listedToolchain,
@@ -441,7 +441,7 @@ function downloadFetch(): typeof globalThis.fetch {
 function serverInstaller(context: Context): Installer | undefined {
   const cache = context.git.cache;
   if (!cache) return undefined;
-  installer ??= new Installer({ folder: join(cache.root, 'servers'), fetch: downloadFetch() });
+  installer ??= new Installer({ folder: serversFolder(cache.root), fetch: downloadFetch() });
   return installer;
 }
 

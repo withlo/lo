@@ -7,22 +7,26 @@
 // each version downloads once, and the toolchains they use beside them, in `toolchains/`. gopls is
 // built there, as Lo builds it. Then it runs each one's check below, one at a time. Node says its
 // version. A server starts as its adapter starts it, on Lo's Node or as its own program with its
-// toolchain, on the checkouts of two pull requests the code fixtures build with `--local`, so no
+// toolchains, on the checkouts of two pull requests the code fixtures build with `--local`, so no
 // network or token is needed: the code fixture's (`testing/fixtures/code.sh`) and the hostile
 // fixture's (`code-hostile.sh`), which is the same with files planted to run code. On each it's
 // asked what `gd`, `gr`, `K`, `gh` and `gO` ask, at the places in its languages' sample projects
-// that `testing/fixtures/code/cases.json` names, printing what came back, how long it took to be
-// ready, the most memory its family held and each network connection any of it opened. A server
-// that's a program of its own has a folder of stand-ins on its `PATH` after its toolchain's, as
+// that `testing/fixtures/code/cases.json` names, printing what came back, how long it took to
+// start, the most memory its family held and each network connection any of it opened. On the
+// hostile checkout it opens the plants in its language too, as a reader's view would. A server
+// that's a program of its own has a folder of stand-ins on its `PATH` after its toolchains', as
 // Lo's git's folder can be Homebrew's: a `terraform`, a `gopackagesdriver`, `pkg-config` and C
 // compilers, each writing a marker if run. Then the hostile checkout and that folder are searched
-// for the markers its plants write if anything runs them, and the check fails if there's one, or
-// if anything connected to another machine. Check the machine has memory to spare before running
-// it.
+// for the markers its plants write if anything runs them, and the check fails if there's one, if
+// anything in either checkout changed, or if anything connected to another machine. It fails too
+// if a server took the hostile checkout's settings: if it says it read code as the PHP its
+// `.php-lsp.json` names, or indexed a different number of files there than on the code fixture's
+// checkout. Check the machine has memory to spare before running it.
 
 import { execFile } from 'node:child_process';
 import {
   chmod,
+  lstat,
   mkdir,
   mkdtemp,
   readdir,
@@ -49,6 +53,7 @@ import {
   MANIFEST,
   type NativeServer,
   type NodeServer,
+  PHP_LSP,
   type Pinned,
   PYRIGHT,
   TERRAFORM_LS,
@@ -120,7 +125,29 @@ async function markers(folder: string): Promise<string[]> {
   return entries.filter((path) => path.split('/').some((part) => part.startsWith('lo-hostile-')));
 }
 
-/** The programs on the `PATH` of a server that's a program of its own, after its toolchain's. */
+/** Every entry under `folder`, by its path there, with its size and when it last changed. */
+async function snapshot(folder: string): Promise<Map<string, string>> {
+  const entries = await readdir(folder, { recursive: true });
+  const stats = await Promise.all(entries.map((path) => lstat(join(folder, path))));
+  return new Map(entries.map((path, at) => [path, `${stats[at]?.size}:${stats[at]?.mtimeMs}`]));
+}
+
+/** What a server's log says it indexed, as php-lsp's "indexed 2 files in 0.1 s" does. */
+const INDEXED = /\bindexed (\d+) files?\b/;
+
+/** The PHP the checkout's `.php-lsp.json` names, if it names one. */
+async function plantedPhp(root: string): Promise<string | undefined> {
+  let text: string;
+  try {
+    text = await readFile(join(root, '.php-lsp.json'), 'utf8');
+  } catch {
+    return undefined;
+  }
+  const settings = z.object({ phpVersion: z.string() }).safeParse(JSON.parse(text));
+  return settings.success ? settings.data.phpVersion : undefined;
+}
+
+/** The programs on the `PATH` of a server that's a program of its own, after its toolchains'. */
 const STAND_INS = ['terraform', 'gopackagesdriver', 'pkg-config', 'cc', 'gcc', 'clang', 'c++'];
 
 /** Writes {@link STAND_INS} into `folder`, each writing `lo-hostile-path-<name>` if run. */
@@ -134,153 +161,125 @@ async function standIns(folder: string): Promise<void> {
   }
 }
 
-/** What a server is, how it starts, and what it uses, for {@link checkOn}. */
-interface Started {
-  readonly server: { readonly id: string; readonly name: string };
-  readonly launch: Launch;
-  /** Its PATH's folders, before the system's. */
-  readonly path: readonly string[];
-  /** The toolchains it uses, whose checks of a checkout it's held to. */
-  readonly toolchains: readonly string[];
-  /** A folder of stand-ins on its PATH, searched for markers, if it has one. */
-  readonly standIns?: string | undefined;
+/** What changed under a folder between snapshots `before` and `after`. */
+function changes(before: Map<string, string>, after: Map<string, string>): string[] {
+  const paths = new Set([...before.keys(), ...after.keys()]);
+  return [...paths].filter((path) => before.get(path) !== after.get(path)).toSorted();
+}
+
+/** What a server's check does besides asking it about its places. */
+interface CheckOptions {
+  /** Files whose outline it's asked for besides the places'. */
+  readonly outlines?: readonly Omit<Place, 'position'>[] | undefined;
   /** The hostile fixture's files it opens besides, in its language, as a reader's view would. */
   readonly plants?: readonly string[] | undefined;
+  /** Whether a folder of {@link STAND_INS} goes on its `PATH`, after its toolchains'. */
+  readonly standIns?: boolean | undefined;
+  /** The toolchains it uses, whose checks of a checkout (`checkoutProblem`) it's held to. */
+  readonly toolchains?: readonly string[] | undefined;
 }
 
 /**
- * Starts `started`'s server on each fixture's checkout in `folder`, asks it about each place in
- * `languages`, and prints what it did. It throws if anything ran what's planted, or reached
- * another machine.
+ * The check of a server: it starts as its adapter starts it (`launch`), on each fixture's checkout,
+ * and is asked about each place in its `languages`, by the protocol's id for each.
  */
-async function checkOn(
-  started: Started,
-  folder: string,
+function serverCheck(
+  server: { readonly id: string; readonly name: string },
+  launch: (installed: Installed, context: Context) => Promise<Launch>,
   languages: Readonly<Record<string, string>>,
-): Promise<void> {
-  const { server, launch } = started;
-  console.log(`${launch.version}: ${[launch.program, ...launch.args].join(' ')}`);
-  const places = await placesFor(languages);
-  for (const script of ['code.sh', 'code-hostile.sh']) {
-    const root = await checkout(script, join(folder, script));
-    console.log(`\n--- ${server.name} on the checkout ${script} --local makes`);
-    for (const id of started.toolchains) {
-      const problem = await checkoutProblem(id, root);
-      if (problem !== undefined) throw new Error(`it wouldn't start: ${problem}`);
-    }
-    const home = join(folder, `home-${script}`);
-    const asked = await askServer({
-      spec: {
-        name: server.name,
-        program: launch.program,
-        args: launch.args,
-        root,
-        home,
-        path: started.path,
-        variables: launch.variables,
-        allowed: launch.allowed,
-        homeFolders: launch.homeFolders,
-        git: serverGitEnvironment(),
-        settings: launch.settings,
-        initializationOptions: launch.initializationOptions,
-      },
-      places,
-      opened:
-        script === 'code-hostile.sh'
-          ? (started.plants ?? []).map((file) => ({
-              file,
-              languageId: places[0]?.languageId ?? '',
-            }))
-          : [],
-    });
-    // What it says of plugins, interpreters, programs and the network, the folders' names aside.
-    const said = asked.log.filter(
-      (line) =>
-        // The folders it walks, named after the fixture's, and the jobs it queues and finishes
-        // without an error, say nothing of what it did.
-        !/walker\.go|discover\.go|Enqueueing new job|Dispatching next job|err = %!s\(<nil>\)/.test(
-          line,
-        ) &&
-        /hostile|plugin|interpreter|pythonPath|terraform\b.*(?:exec|path|version)|registry|proxy|dial|toolchain|generate|cgo|driver|telemetry/i.test(
-          line.replaceAll(folder, '').replaceAll(script, 'the fixture'),
-        ),
-    );
-    if (said.length > 0) console.log(`\nIts log, on those:\n${said.slice(-20).join('\n')}`);
-    const entries = await readdir(home, { recursive: true });
-    const top = entries.filter((path) => path.split('/').length <= 3);
-    console.log(`\nIts home holds ${entries.length} entries: ${top.slice(0, 30).join(', ')}`);
-    console.log(
-      `Ready in ${seconds(asked.ready)}, indexed in ${seconds(asked.indexed)}; at most ` +
-        `${Math.round(asked.peak / 1024 ** 2)} MB resident.`,
-    );
-    const away = asked.connections.filter((line) => !/->(?:127\.0\.0\.1|\[::1\]):/.test(line));
-    console.log(
-      asked.connections.length === 0
-        ? 'Its family opened no network connection.'
-        : `Its family's network connections:\n${asked.connections.join('\n')}`,
-    );
-    if (away.length > 0) throw new Error(`it connected to another machine: ${away.join('; ')}`);
-    const found = [
-      ...(await markers(root)),
-      ...(started.standIns === undefined ? [] : await markers(started.standIns)),
-    ];
-    if (found.length > 0) throw new Error(`something ran what's planted: ${found.join(', ')}`);
-  }
-  console.log(`\nNo marker was written: nothing ${server.name} ran was planted.`);
-}
-
-function seconds(ms: number): string {
-  return `${(ms / 1000).toFixed(1)} s`;
-}
-
-/**
- * The check of a server on Lo's Node: it starts as its adapter starts it, on each fixture's
- * checkout, and is asked about each place in its `languages`, by the protocol's id for each.
- */
-function onNode(server: NodeServer, languages: Readonly<Record<string, string>>): Check {
-  return async (installed, context) => {
-    const launch = launchOnNode(server, await context.install('node'), installed);
-    const folder = await realpath(await mkdtemp(join(tmpdir(), `lo-live-${server.id}-`)));
-    try {
-      await checkOn({ server, launch, path: [], toolchains: [] }, folder, languages);
-    } finally {
-      await rm(folder, { recursive: true, force: true });
-    }
-  };
-}
-
-/**
- * The check of a server that's a program of its own, using `toolchains`: it starts as its adapter
- * starts it, with stand-ins on its `PATH` after its toolchains' folders. For Go, a `go.work` put
- * in a folder above a checkout then keeps it from starting there.
- */
-function native(
-  server: NativeServer,
-  languages: Readonly<Record<string, string>>,
-  options: { readonly toolchains?: readonly string[]; readonly plants?: readonly string[] } = {},
+  options: CheckOptions = {},
 ): Check {
-  const { toolchains = [], plants } = options;
+  const { outlines = [], plants = [], toolchains = [] } = options;
   return async (installed, context) => {
-    const used: Toolchain[] = [];
-    for (const id of toolchains) used.push(await context.toolchain(id));
-    const launch = launchNative(
-      server,
-      installed,
-      used.map((each) => each.use),
-    );
+    const launched = await launch(installed, context);
+    console.log(`${launched.version}: ${[launched.program, ...launched.args].join(' ')}`);
+    const places = await placesFor(languages);
     const folder = await realpath(await mkdtemp(join(tmpdir(), `lo-live-${server.id}-`)));
+    const path = join(folder, 'path');
+    if (options.standIns === true) await standIns(path);
+    // How many files it says it indexed on each checkout, if it says.
+    const indexed = new Map<string, string>();
     try {
-      const path = join(folder, 'path');
-      await standIns(path);
-      const started = {
-        server,
-        launch,
-        path: [...(launch.path ?? []), path],
-        toolchains,
-        standIns: path,
-        plants,
-      };
-      await checkOn(started, folder, languages);
+      for (const script of ['code.sh', 'code-hostile.sh']) {
+        const root = await checkout(script, join(folder, script));
+        const before = await snapshot(root);
+        console.log(`\n--- ${server.name} on the checkout ${script} --local makes`);
+        for (const id of toolchains) {
+          const problem = await checkoutProblem(id, root);
+          if (problem !== undefined) throw new Error(`it wouldn't start: ${problem}`);
+        }
+        const languageId = places[0]?.languageId ?? '';
+        const { log, peak, connections } = await askServer({
+          spec: {
+            name: server.name,
+            program: launched.program,
+            args: launched.args,
+            root,
+            home: join(folder, `home-${script}`),
+            path: [...(launched.path ?? []), ...(options.standIns === true ? [path] : [])],
+            variables: launched.variables,
+            allowed: launched.allowed,
+            homeFolders: launched.homeFolders,
+            git: serverGitEnvironment(),
+            settings: launched.settings,
+            initializationOptions: launched.initializationOptions,
+          },
+          places,
+          outlines,
+          opened: script === 'code-hostile.sh' ? plants.map((file) => ({ file, languageId })) : [],
+        });
+        // What it says of plugins, interpreters, settings it ignored, what it indexed, and the
+        // programs and network it would use, the folders' own names aside. The folders it walks,
+        // named after the fixture's, and the jobs it queues and finishes without an error, say
+        // nothing of what it did.
+        const said = log.filter(
+          (line) =>
+            !/walker\.go|discover\.go|Enqueueing new job|Dispatching next job|err = %!s\(<nil>\)/.test(
+              line,
+            ) &&
+            /hostile|plugin|interpreter|pythonPath|ignoring|using PHP|indexed|registry|proxy|dial|toolchain|generate|cgo|driver|telemetry/i.test(
+              line.replaceAll(folder, '').replaceAll(script, 'the fixture'),
+            ),
+        );
+        if (said.length > 0) console.log(`\nIts log, on those:\n${said.slice(-30).join('\n')}`);
+        console.log(`\nIts family held at most ${Math.round(peak / 1024 ** 2)} MB at once.`);
+        console.log(
+          connections.length === 0
+            ? 'Its family opened no network connection.'
+            : `Its family's network connections:\n${connections.join('\n')}`,
+        );
+        const away = connections.filter((line) => !/->(?:127\.0\.0\.1|\[::1\]):/.test(line));
+        if (away.length > 0) throw new Error(`it connected to another machine: ${away.join('; ')}`);
+        const php = await plantedPhp(root);
+        if (php !== undefined && log.some((line) => line.includes(`using PHP ${php} (`))) {
+          throw new Error(`it read code as PHP ${php}, which the checkout's .php-lsp.json names`);
+        }
+        const count = log.map((line) => INDEXED.exec(line)?.[1]).findLast((n) => n !== undefined);
+        if (count !== undefined) indexed.set(script, count);
+        const home = await readdir(join(folder, `home-${script}`), { recursive: true });
+        const top = home.filter((path) => path.split('/').length <= 3);
+        console.log(`\nIts home holds ${home.length} entries: ${top.join(', ')}`);
+        const found = [
+          ...(await markers(root)),
+          ...(options.standIns === true ? await markers(path) : []),
+        ];
+        if (found.length > 0) throw new Error(`something ran what's planted: ${found.join(', ')}`);
+        const changed = changes(before, await snapshot(root));
+        if (changed.length > 0) throw new Error(`the checkout changed: ${changed.join(', ')}`);
+      }
+      // The hostile checkout is the code fixture's with a package's class in `vendor/`, and
+      // settings that index it, so a server that took them indexes one more file there.
+      const [code, hostile] = [indexed.get('code.sh'), indexed.get('code-hostile.sh')];
+      if (code !== hostile) {
+        throw new Error(
+          `it indexed ${hostile ?? 'no'} files on the hostile checkout, and ${code ?? 'no'} on ` +
+            "the code fixture's: it indexed what the hostile checkout's settings asked for",
+        );
+      }
+      console.log(
+        `\nNo marker was written, and neither checkout changed: ${server.name} ran nothing ` +
+          'planted, and wrote nothing in them.',
+      );
       if (toolchains.includes('go')) {
         await writeFile(join(folder, 'code.sh', 'go.work'), 'go 1.24\n\nuse ./work/go\n');
         const problem = await checkoutProblem('go', join(folder, 'code.sh', 'work'));
@@ -291,6 +290,31 @@ function native(
       await rm(folder, { recursive: true, force: true });
     }
   };
+}
+
+/** The check of a server on Lo's Node, which installs first. */
+function onNode(server: NodeServer, languages: Readonly<Record<string, string>>): Check {
+  const launch = async (installed: Installed, context: Context) =>
+    launchOnNode(server, await context.install('node'), installed);
+  return serverCheck(server, launch, languages);
+}
+
+/**
+ * The check of a server that's a program of its own, using `options.toolchains`, with stand-ins on
+ * its `PATH` after their folders. For Go, a `go.work` put in a folder above a checkout then keeps
+ * it from starting there.
+ */
+function native(
+  server: NativeServer,
+  languages: Readonly<Record<string, string>>,
+  options: Omit<CheckOptions, 'standIns'> = {},
+): Check {
+  const launch = async (installed: Installed, context: Context) => {
+    const used: ToolchainUse[] = [];
+    for (const id of options.toolchains ?? []) used.push((await context.toolchain(id)).use);
+    return launchNative(server, installed, used);
+  };
+  return serverCheck(server, launch, languages, { ...options, standIns: true });
 }
 
 /** Each ID's check. */
@@ -306,18 +330,23 @@ const CHECKS: Record<string, Check> = {
   },
   vtsls: onNode(VTSLS, { typescript: 'typescript', javascript: 'javascript' }),
   pyright: onNode(PYRIGHT, { python: 'python' }),
+  // PHP's project has a file for each class, and `Tally` is in one of its own.
+  'php-lsp': native(
+    PHP_LSP,
+    { php: 'php' },
+    { outlines: [{ file: 'php/src/Tally.php', languageId: 'php' }] },
+  ),
+  // The files that import "C" and run a generator.
   gopls: native(
     GOPLS,
     { go: 'go' },
     { toolchains: ['go'], plants: ['go/cgo.go', 'go/generate.go'] },
   ),
+  // The module that calls one from the Registry, and the provider whose plugin is in .terraform.
   'terraform-ls': native(
     TERRAFORM_LS,
     { terraform: 'terraform' },
-    {
-      // The module that calls one from the Registry, and the provider whose plugin is in .terraform.
-      plants: ['hostile/terraform/main.tf', 'hostile/terraform-provider/main.tf'],
-    },
+    { plants: ['hostile/terraform/main.tf', 'hostile/terraform-provider/main.tf'] },
   ),
 };
 
@@ -338,8 +367,8 @@ async function install(id: string, go?: Toolchain): Promise<Installed> {
     },
     go: go && { version: go.version, installed: go.installed },
   });
-  const took = performance.now() - started;
-  if (took > 1000) console.log(`${id} ${pinned.version} installed in ${seconds(took)}.`);
+  const took = (performance.now() - started) / 1000;
+  if (took > 1) console.log(`${id} ${pinned.version} installed in ${took.toFixed(1)} s.`);
   return installed;
 }
 
@@ -347,12 +376,8 @@ async function toolchain(id: string): Promise<Toolchain> {
   const pinned = TOOLCHAINS[id];
   if (pinned === undefined) throw new Error(`toolchains.json has no ${id}`);
   const installed = await toolchainInstaller.install(id, pinned);
-  return {
-    id,
-    version: pinned.version,
-    installed,
-    use: toolchainUse(id, pinned.version, installed),
-  };
+  const use = toolchainUse(id, pinned.version, installed);
+  return { id, version: pinned.version, installed, use };
 }
 
 const asked = process.argv.slice(2);

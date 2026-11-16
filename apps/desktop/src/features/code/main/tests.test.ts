@@ -90,6 +90,7 @@ describe('test servers', () => {
     expect(ids(adaptersFor({ packaged: true, env, testRun: false, shipped }))).toEqual([
       'typescript',
       'python',
+      'php',
       'go',
       'terraform',
     ]);

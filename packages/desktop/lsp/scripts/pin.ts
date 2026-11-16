@@ -18,7 +18,7 @@ import { format, resolveConfig } from 'prettier';
 
 import { parseManifest, parseToolchains } from '../src/index.ts';
 import { goProgram } from './go.ts';
-import { hashicorp, node, npm, type Source } from './sources.ts';
+import { githubRelease, hashicorp, node, npm, type Source } from './sources.ts';
 import { dotnet, go, rust, temurin } from './toolchains.ts';
 
 /** The armored public keys in `keys/<publisher>/`. */
@@ -36,6 +36,18 @@ const SOURCES: Record<string, Source> = {
   vtsls: npm('@vtsls/language-server', 'node_modules/@vtsls/language-server/dist/main.js'),
   // Its own entry point, which says where its files are and loads the server.
   pyright: npm('pyright', 'node_modules/pyright/langserver.index.js'),
+  // Its release's archives, each holding the one program. Linux's are linked statically, with
+  // musl, so they run whatever C library the system has.
+  'php-lsp': githubRelease(
+    'jorgsowa/php-lsp',
+    {
+      'darwin-arm64': 'php-lsp-aarch64-apple-darwin.tar.gz',
+      'darwin-x64': 'php-lsp-x86_64-apple-darwin.tar.gz',
+      'linux-x64': 'php-lsp-x86_64-unknown-linux-musl.tar.gz',
+      'linux-arm64': 'php-lsp-aarch64-unknown-linux-musl.tar.gz',
+    },
+    'php-lsp',
+  ),
   // Built from its modules with Lo's Go, which toolchains.json pins: pin it again when Go is.
   gopls: goProgram('golang.org/x/tools/gopls', 'gopls'),
   'terraform-ls': hashicorp('terraform-ls', keys('hashicorp')),

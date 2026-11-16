@@ -136,7 +136,10 @@ Everything a PR contains is untrusted: code, Markdown, images and artifacts.
 - **Tokens** are encrypted with a key kept in the system keychain, and stored in the database, one
   per account. On Linux that's a keyring, such as GNOME Keyring or KWallet: when none answers, Lo
   asks for one rather than keep a token as good as unencrypted.
-- **Repo copies.** Each repo gets a bare partial clone in Lo's cache folder.
+- **Repo copies.** Each repo gets a bare partial clone in Lo's cache folder. On a Mac that's the
+  folder macOS keeps for the user's caches outside the home folder (`/var/folders/…/C/Lo`), so no
+  settings a tool reads from the folders above its own, such as `~/.cargo/config.toml`, reach the
+  language servers Lo runs there.
 
 ### Per-system code
 

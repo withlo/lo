@@ -7,6 +7,7 @@ import {
   type Installed,
   launchNative,
   launchOnNode,
+  PHP_LSP,
   PYRIGHT,
   TERRAFORM_LS,
   toolchainUse,
@@ -14,7 +15,13 @@ import {
 } from '@lo/lsp';
 import { describe, expect, it } from 'vitest';
 
-import { ADAPTERS, adapterFor, type PrepareContext, type Toolchain } from './adapters.ts';
+import {
+  type Adapter,
+  ADAPTERS,
+  adapterFor,
+  type PrepareContext,
+  type Toolchain,
+} from './adapters.ts';
 
 function installedAs(id: string): Installed {
   return { folder: `/lo/cache/servers/${id}`, entry: `/lo/cache/servers/${id}/entry` };
@@ -26,8 +33,37 @@ function readBy(path: string) {
   return found && [found.adapter.name, found.languageId];
 }
 
+/** Lo's adapter `id`. */
+function shipped(id: string): Adapter {
+  const found = ADAPTERS.find((adapter) => adapter.id === id);
+  if (!found) throw new Error(`Lo ships no adapter ${id}`);
+  return found;
+}
+
+/**
+ * What `adapter` installs, in order, the toolchains it asks for, and what it says to start, with
+ * every install there.
+ */
+async function prepared(adapter: Adapter) {
+  const installs: string[] = [];
+  const toolchains: string[] = [];
+  const ready = await adapter.prepare({
+    install: (id) => {
+      installs.push(id);
+      return Promise.resolve(installedAs(id));
+    },
+    toolchain: (id) => {
+      toolchains.push(id);
+      return Promise.reject(new Error('no toolchain is asked for'));
+    },
+    findCopy: () => Promise.reject(new Error('no copy is looked for')),
+    signal: new AbortController().signal,
+  });
+  return { installs, toolchains, ready };
+}
+
 describe('Lo’s adapters', () => {
-  it('read TypeScript and JavaScript, and Python', () => {
+  it('read TypeScript and JavaScript, Python, PHP, Go and Terraform', () => {
     expect(readBy('src/a.ts')).toEqual(['TypeScript', 'typescript']);
     expect(readBy('src/a.mts')).toEqual(['TypeScript', 'typescript']);
     expect(readBy('src/A.tsx')).toEqual(['TypeScript', 'typescriptreact']);
@@ -35,47 +71,43 @@ describe('Lo’s adapters', () => {
     expect(readBy('src/a.jsx')).toEqual(['TypeScript', 'javascript']);
     expect(readBy('pkg/a.py')).toEqual(['Python', 'python']);
     expect(readBy('pkg/a.pyi')).toEqual(['Python', 'python']);
+    expect(readBy('src/A.php')).toEqual(['PHP', 'php']);
+    expect(readBy('views/a.phtml')).toEqual(['PHP', 'php']);
     expect(readBy('cmd/main.go')).toEqual(['Go', 'go']);
     expect(readBy('infra/main.tf')).toEqual(['Terraform', 'terraform']);
     // terraform-ls reads a file of variables as one, by its own id.
     expect(readBy('infra/prod.tfvars')).toEqual(['Terraform', 'terraform-vars']);
     expect(readBy('infra/PROD.TFVARS')).toEqual(['Terraform', 'terraform-vars']);
-    // PHP and Ruby have none.
-    expect(readBy('src/A.php')).toBeUndefined();
+    // Ruby has none.
     expect(readBy('lib/a.rb')).toBeUndefined();
   });
 
   it('download Node, then their server, and start it on that Node, with no toolchain', async () => {
-    const servers = new Map([
+    for (const [id, server] of [
       ['typescript', VTSLS],
       ['python', PYRIGHT],
-    ]);
-    for (const adapter of ADAPTERS.filter((each) => servers.has(each.id))) {
-      const installs: string[] = [];
-      const toolchains: string[] = [];
-      const prepared = await adapter.prepare({
-        install: (id) => {
-          installs.push(id);
-          return Promise.resolve(installedAs(id));
-        },
-        toolchain: (id) => {
-          toolchains.push(id);
-          return Promise.reject(new Error('no toolchain is asked for'));
-        },
-        findCopy: () => Promise.reject(new Error('no copy is looked for')),
-        signal: new AbortController().signal,
-      });
-      const server = servers.get(adapter.id);
-      if (!server) throw new Error(`${adapter.id} has no server here`);
+    ] as const) {
+      const adapter = shipped(id);
+      const { installs, toolchains, ready } = await prepared(adapter);
       expect(installs).toEqual(['node', server.id]);
       expect(toolchains).toEqual([]);
       // Named up front, so the status bar adds them up from the first byte.
       expect(adapter.downloads).toEqual({ servers: ['node', server.id], toolchains: [] });
-      expect(prepared).toEqual({
+      expect(ready).toEqual({
         kind: 'ready',
         launch: launchOnNode(server, installedAs('node'), installedAs(server.id)),
       });
     }
+  });
+
+  it('download php-lsp alone, with no toolchain, and start it as its own program', async () => {
+    const adapter = shipped('php');
+    const { installs, toolchains, ready } = await prepared(adapter);
+    expect(installs).toEqual(['php-lsp']);
+    expect(toolchains).toEqual([]);
+    expect(adapter.downloads).toEqual({ servers: ['php-lsp'], toolchains: [] });
+    expect(ready).toEqual({ kind: 'ready', launch: launchNative(PHP_LSP, installedAs('php-lsp')) });
+    expect(ready.kind === 'ready' && ready.launch.program).toBe(installedAs('php-lsp').entry);
   });
 
   it('install Go, then build gopls with it, and start gopls with that Go', async () => {
@@ -99,9 +131,9 @@ describe('Lo’s adapters', () => {
       findCopy: () => Promise.reject(new Error('no copy is looked for')),
       signal: new AbortController().signal,
     };
-    const adapter = ADAPTERS.find((each) => each.id === 'go');
-    expect(adapter?.downloads).toEqual({ servers: ['gopls'], toolchains: ['go'] });
-    expect(await adapter?.prepare(context)).toEqual({
+    const adapter = shipped('go');
+    expect(adapter.downloads).toEqual({ servers: ['gopls'], toolchains: ['go'] });
+    expect(await adapter.prepare(context)).toEqual({
       kind: 'ready',
       launch: launchNative(GOPLS, installedAs('gopls'), [go]),
     });
@@ -109,41 +141,32 @@ describe('Lo’s adapters', () => {
     expect(builtWith).toBe(go);
   });
 
-  it('download terraform-ls alone, and start it with no toolchain', async () => {
-    const asked: string[] = [];
-    const adapter = ADAPTERS.find((each) => each.id === 'terraform');
-    expect(adapter?.downloads).toEqual({ servers: ['terraform-ls'], toolchains: [] });
-    const prepared = await adapter?.prepare({
-      install: (id, options) => {
-        asked.push(id);
-        expect(options?.go).toBeUndefined();
-        return Promise.resolve(installedAs(id));
-      },
-      toolchain: () => Promise.reject(new Error('no toolchain is asked for')),
-      findCopy: () => Promise.reject(new Error('no copy is looked for')),
-      signal: new AbortController().signal,
-    });
-    expect(prepared).toEqual({
+  it('download terraform-ls alone, with no toolchain, and start it as its own program', async () => {
+    const adapter = shipped('terraform');
+    const { installs, toolchains, ready } = await prepared(adapter);
+    expect(installs).toEqual(['terraform-ls']);
+    expect(toolchains).toEqual([]);
+    expect(adapter.downloads).toEqual({ servers: ['terraform-ls'], toolchains: [] });
+    expect(ready).toEqual({
       kind: 'ready',
       launch: launchNative(TERRAFORM_LS, installedAs('terraform-ls')),
     });
-    expect(asked).toEqual(['terraform-ls']);
   });
 
   it('say which servers give no inline type hints, as Pyright and terraform-ls give none', () => {
     expect(ADAPTERS.map((adapter) => [adapter.id, adapter.noHints])).toEqual([
       ['typescript', undefined],
       ['python', 'Pyright has no type hints.'],
+      ['php', undefined],
       ['go', undefined],
       ['terraform', 'terraform-ls has no type hints.'],
     ]);
   });
 
   it('start nothing when a download fails', async () => {
-    const [typescript] = ADAPTERS;
     const failed = new Error('npm’s registry answered 503');
     await expect(
-      typescript?.prepare({
+      shipped('typescript').prepare({
         install: (id) =>
           id === 'node' ? Promise.resolve(installedAs(id)) : Promise.reject(failed),
         toolchain: () => Promise.reject(new Error('no toolchain is asked for')),
@@ -151,5 +174,14 @@ describe('Lo’s adapters', () => {
         signal: new AbortController().signal,
       }),
     ).rejects.toBe(failed);
+    const missing = new Error('GitHub answered 404');
+    await expect(
+      shipped('php').prepare({
+        install: () => Promise.reject(missing),
+        toolchain: () => Promise.reject(new Error('no toolchain is asked for')),
+        findCopy: () => Promise.resolve(undefined),
+        signal: new AbortController().signal,
+      }),
+    ).rejects.toBe(missing);
   });
 });

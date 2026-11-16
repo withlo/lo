@@ -1,14 +1,15 @@
 /**
  * The language servers that are programs of their own, built for the system they run on, each
- * installed as the manifest pins it: gopls, which Lo builds from its modules with its own Go, and
- * terraform-ls, downloaded from HashiCorp. A server starts as its program, by its absolute path
- * inside its install, with its arguments: no shell, and nothing from the checkout.
+ * installed as the manifest pins it for the platform Lo runs on: php-lsp, downloaded from its
+ * releases, terraform-ls, from HashiCorp's, and gopls, which Lo builds from its modules with its
+ * own Go. A server starts as its program, by its absolute path inside its install, then its own
+ * arguments: no shell, no launcher script, and nothing from the checkout.
  *
- * Its environment is `serverEnvironment`'s, built from nothing, with the toolchains it uses, each
- * as `toolchainUse` gives it (the folder of its programs first on `PATH`, its variables and its
- * caches' folders in the server's home), and the server's own variables. What it's told is its
- * adapter's alone: its settings, which answer `workspace/configuration`, and its initialization
- * options.
+ * As for a server on Lo's Node (`node.ts`), its environment is `serverEnvironment`'s, built from
+ * nothing, with the toolchains it uses, each as `toolchainUse` gives it (the folder of its programs
+ * first on `PATH`, its variables and its caches' folders in the server's home), and the server's
+ * own variables. What it's told comes only from its adapter: its settings, which answer
+ * `workspace/configuration`, and its initialization options.
  */
 
 import { isAbsolute } from 'node:path';
@@ -22,9 +23,9 @@ import type { Launch } from './node.ts';
 export interface NativeServer {
   /** Its entry in the manifest, `servers.json`, whose `entry` is its program. */
   readonly id: string;
-  /** What it's called: "gopls". */
+  /** What it's called: "php-lsp". */
   readonly name: string;
-  /** Its license, as its details and the README name it: "BSD-3-Clause". */
+  /** Its license, as its details and the README name it: "MIT". */
   readonly license: string;
   readonly args: readonly string[];
   /** Its own variables, such as the soft cap on a Go program's heap. */
@@ -45,13 +46,18 @@ export function launchNative(
   const pinned = Object.hasOwn(manifest, server.id) ? manifest[server.id] : undefined;
   if (pinned === undefined) throw new Error(`Lo's list of language servers has no ${server.id}.`);
   if (!isAbsolute(installed.entry)) throw new Error(`${installed.entry} isn't an absolute path.`);
+  const path = toolchains.flatMap((use) => use.path);
+  const variables = merged([...toolchains.map((use) => use.variables), server.variables ?? {}]);
+  const allowed = toolchains.flatMap((use) => use.allowed);
+  const homeFolders = merged(toolchains.map((use) => use.homeFolders ?? {}));
   return {
     program: installed.entry,
-    args: server.args,
-    path: toolchains.flatMap((use) => use.path),
-    variables: merged([...toolchains.map((use) => use.variables), server.variables ?? {}]),
-    allowed: toolchains.flatMap((use) => use.allowed),
-    homeFolders: merged(toolchains.map((use) => use.homeFolders ?? {})),
+    args: [...server.args],
+    // Only what it has: a server with no toolchain and no variable gets nothing of its own.
+    ...(path.length > 0 ? { path } : {}),
+    ...(Object.keys(variables).length > 0 ? { variables } : {}),
+    ...(allowed.length > 0 ? { allowed } : {}),
+    ...(Object.keys(homeFolders).length > 0 ? { homeFolders } : {}),
     settings: server.settings,
     initializationOptions: server.initializationOptions,
     version: `${server.name} ${pinned.version} · ${server.license}`,
