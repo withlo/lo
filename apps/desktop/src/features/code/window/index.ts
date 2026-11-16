@@ -1,7 +1,7 @@
 // The code feature in the window: trust, the syntax index, language servers and code features.
-// The banner on a view nothing trusts, Settings' Trust and Language servers sections, and the
-// palette's trust commands, each of which only asks main; the index's item in the status bar, and
-// each language server's, with its log and what its server says; and `gd`, `gr`, `K`, `gh` and `gO`, with the peek's and the references panel's
+// The banner on a view nothing trusts, Settings' Trust section, and the palette's trust commands,
+// each of which only asks main; the index's item in the status bar, and each language server's,
+// with its log; and `gd`, `gr`, `K`, `gh` and `gO`, with the peek's and the references panel's
 // keys, which ask main over the code port and show what it answers in the diff's code views, the
 // right panel and over the window.
 
@@ -50,7 +50,6 @@ import {
   trustSwitch,
   untrustable,
 } from './status.ts';
-import ServerList from './ServerList.tsx';
 import Trusted from './Trusted.tsx';
 import { TrustBanner } from './TrustBanner.tsx';
 
@@ -134,7 +133,6 @@ export default {
       ...trustSwitch,
     }),
     Trusted,
-    ServerList,
     // After the diff's (20) and the overview's (30).
     defineView(statusBar, {
       id: 'code.index',

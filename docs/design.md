@@ -587,9 +587,7 @@ repo. The right side of a diff navigates the new commit, and the left side the o
 - **Language servers** come from a fixed list built into Lo, one per language: TypeScript and
   JavaScript, Python, Rust, Go, Swift, Kotlin, Terraform, Ruby, Java, C# and PHP. Each is downloaded
   on first use from its official source, only for trusted repos, and Lo uses an installed copy when
-  it finds one. One with a license of its own, as PHP's has, downloads only once you accept that
-  license, from its item in the status bar or in Settings, and what it says to you shows on its item
-  as it said it.
+  it finds one.
 - **Java and Kotlin.** Their servers read the project's Gradle or Maven build to understand it,
   which is one reason language servers need trust.
 

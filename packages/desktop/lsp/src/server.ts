@@ -5,22 +5,14 @@
  * Main speaks the protocol; the window never sees the server's output, its checkout's folder or a
  * URI. Lo asks only for what it shows (hovers, definitions, references, inlay hints and document
  * symbols) about files it opened with their text from git, and answers the server's own requests
- * itself, refusing anything that would edit, show or ask. A server whose spec gives it `messages`
- * may show the reader its messages, ask them its questions and name web pages, which Lo shows as
- * links and never opens itself.
+ * itself, refusing anything that would edit, show or ask.
  */
 
 import type { ChildProcess } from 'node:child_process';
 import { mkdir, realpath } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
 
-import {
-  type CancellationToken,
-  ErrorCodes,
-  type Message,
-  type MessageReader,
-  ResponseError,
-} from 'vscode-jsonrpc';
+import { ErrorCodes, type Message, type MessageReader, ResponseError } from 'vscode-jsonrpc';
 import {
   createMessageConnection,
   type MessageConnection,
@@ -47,36 +39,6 @@ import { type Answer, Queue } from './queue.ts';
 import { reply } from './requests.ts';
 import { type Failure, failureMessage, type Progress, type State } from './state.ts';
 import { fileUri, folderUri, treePath } from './uri.ts';
-
-/** What a server shows the reader, as it sent it, by the protocol's type for it. */
-export interface ShownMessage {
-  readonly type: 'error' | 'warning' | 'info' | 'log' | 'debug';
-  readonly text: string;
-}
-
-/**
- * Where a server's messages to the reader go, for one whose adapter shows them. Each is passed on as
- * the server sent it.
- */
-export interface ServerMessages {
-  /** A message it shows the reader: `window/showMessage`. */
-  show(message: ShownMessage): void;
-  /**
-   * A question it asks the reader, `window/showMessageRequest`, with its actions' titles: resolves
-   * with the title the reader chose, or nothing once they dismiss it. `signal` aborts once the
-   * server no longer waits for the answer, or stops.
-   */
-  ask(
-    message: ShownMessage,
-    actions: readonly string[],
-    signal: AbortSignal,
-  ): Promise<string | undefined>;
-  /**
-   * A web page its `window/showDocument` names, by an `http` or `https` address, which Lo doesn't
-   * open itself: the reader may.
-   */
-  link(url: string): void;
-}
 
 /** What Lo needs to start a server. */
 export interface ServerSpec {
@@ -105,10 +67,6 @@ export interface ServerSpec {
   readonly memoryCap?: number | undefined;
   /** Lo's version, which it hears in `clientInfo`. */
   readonly version?: string | undefined;
-  /** The requests Lo never sends it, which its capabilities don't offer either. */
-  readonly never?: readonly string[] | undefined;
-  /** Where its messages to the reader go. Without it, they go only into its log. */
-  readonly messages?: ServerMessages | undefined;
 }
 
 /** How long each part of a server's life may take, in milliseconds, and its memory cap. */
@@ -230,11 +188,6 @@ export function startServer(spec: ServerSpec, tuning: Tuning = {}): Server {
 /** How long a server may run on after its output ends, before it counts as failed. */
 const CLOSED_GRACE = 1000;
 
-/** How many of a server's questions may wait for the reader at once. */
-const QUESTIONS = 8;
-/** The most actions a question may offer. */
-const ACTIONS = 16;
-
 /** The most rounds a kill reads and freezes its family in, until a round finds nothing new. */
 const FREEZE_ROUNDS = 8;
 
@@ -281,8 +234,6 @@ export class Server {
   #muted = false;
   #misses: number[] = [];
   readonly #tokens = new Set<string | number>();
-  /** Its questions waiting for the reader, each given up on as it stops. */
-  readonly #questions = new Set<AbortController>();
   readonly #progress = new Map<string | number, Progress>();
   #spawnedAt: number | undefined;
   #endedAt: number | undefined;
@@ -373,7 +324,6 @@ export class Server {
     options: RequestOptions,
   ): Promise<Answer> {
     if (!METHODS.has(method)) throw new Error(`Lo doesn’t ask servers ${method}`);
-    if (this.#spec.never?.includes(method)) return { ok: false, why: 'unasked' };
     const root = this.#roots[0];
     if (this.#state.kind === 'starting') return { ok: false, why: 'notReady' };
     if (!this.#answering() || root === undefined) return { ok: false, why: 'stopped' };
@@ -435,7 +385,6 @@ export class Server {
     const failed = this.#state.kind === 'failed';
     if (!failed) this.#setState({ kind: 'stopping' });
     this.#queue.close('stopped');
-    this.#giveUpQuestions();
     this.#resolveReady(false);
     await this.#launched;
     if (this.#child?.pid !== undefined) {
@@ -681,19 +630,7 @@ export class Server {
       log: () => undefined,
     });
     this.#connection = connection;
-    connection.onRequest((method: string, params: unknown, token: CancellationToken) => {
-      const messages = this.#spec.messages;
-      if (messages !== undefined && method === 'window/showMessageRequest') {
-        return this.#question(messages, params, token);
-      }
-      if (messages !== undefined && method === 'window/showDocument') {
-        const url = webPage(params);
-        if (url !== undefined) {
-          note(`it asked to show ${url}, which Lo shows as a link to open.`);
-          this.#told(() => messages.link(url));
-          return { success: false };
-        }
-      }
+    connection.onRequest((method: string, params: unknown) => {
       const answer = reply(method, params, {
         settings: this.#spec.settings ?? null,
         folders: this.#folders(),
@@ -737,8 +674,6 @@ export class Server {
       name: basename(root),
       version: this.#spec.version,
       initializationOptions: this.#spec.initializationOptions,
-      never: this.#spec.never,
-      shows: this.#spec.messages !== undefined,
     });
     let answer: unknown;
     const late = Symbol('late');
@@ -794,7 +729,6 @@ export class Server {
     );
     this.#fail({ kind: 'exited', code, signal });
     this.#queue.close('stopped');
-    this.#giveUpQuestions();
     this.#connection?.dispose();
     this.#child?.stdin?.destroy();
     this.#child?.stdout?.destroy();
@@ -840,15 +774,8 @@ export class Server {
     if (kind === 'failed' || kind === 'stopping' || kind === 'stopped') return false;
     this.#setState({ kind: 'failed', failure });
     this.#queue.close('stopped');
-    this.#giveUpQuestions();
     this.#resolveReady(false);
     return true;
-  }
-
-  /** Gives up on its questions waiting for the reader: it can't hear the answers now. */
-  #giveUpQuestions(): void {
-    for (const question of this.#questions) question.abort();
-    this.#questions.clear();
   }
 
   /** Reads nothing more of what the server writes, stderr included, though Lo can still write to it. */
@@ -900,63 +827,11 @@ export class Server {
         if (!isObject(params) || typeof params.message !== 'string') return;
         const level = params.type === 1 ? 'Error: ' : params.type === 2 ? 'Warning: ' : '';
         this.#log.add(`${level}${params.message}`);
-        const { messages } = this.#spec;
-        const text = params.message;
-        if (method === 'window/showMessage' && messages !== undefined) {
-          this.#told(() => messages.show({ type: messageType(params.type), text }));
-        }
         return;
       }
       default:
         // Diagnostics, telemetry and the rest: Lo shows none of them.
         return;
-    }
-  }
-
-  /**
-   * Its question for the reader, `window/showMessageRequest`, passed on as it sent it: answered
-   * with the action the reader chose, or `null` once they dismiss it, or once it no longer waits.
-   */
-  async #question(
-    messages: ServerMessages,
-    params: unknown,
-    token: CancellationToken,
-  ): Promise<{ title: string } | null | ResponseError> {
-    const note = (message: string) => this.#log.add(`Lo: ${message}`);
-    const asked = questionOf(params);
-    if (asked === undefined) {
-      note('refused the server’s window/showMessageRequest: it isn’t a question Lo can show.');
-      return new ResponseError(ErrorCodes.InvalidParams, 'Lo can’t show this question.');
-    }
-    this.#log.add(`Question: ${asked.message.text}`);
-    if (this.#questions.size >= QUESTIONS || this.#stopRequested) {
-      // It's still shown, as a message, though there's no room to wait for its answer.
-      note(
-        'answered the server’s window/showMessageRequest with none: too many of its questions wait.',
-      );
-      this.#told(() => messages.show(asked.message));
-      return null;
-    }
-    const question = new AbortController();
-    this.#questions.add(question);
-    const listener = token.onCancellationRequested(() => question.abort());
-    try {
-      const title = await messages.ask(asked.message, asked.actions, question.signal);
-      return title !== undefined && asked.actions.includes(title) ? { title } : null;
-    } catch {
-      return null;
-    } finally {
-      listener.dispose();
-      this.#questions.delete(question);
-    }
-  }
-
-  /** Passes on what the server said to the reader: a mistake there changes nothing here. */
-  #told(pass: () => void): void {
-    try {
-      pass();
-    } catch (error) {
-      this.#log.add(`Lo: couldn’t pass on what it said: ${String(error)}`);
     }
   }
 
@@ -1089,52 +964,6 @@ function startError(program: string, error: unknown): string {
   if (code === 'ENOENT') return `${program} isn’t there.`;
   if (code === 'EACCES') return `${program} can’t be run.`;
   return error instanceof Error ? error.message : String(error);
-}
-
-/** What the protocol's message type is: an error, a warning, information, a log or debugging. */
-function messageType(type: unknown): ShownMessage['type'] {
-  switch (type) {
-    case 1:
-      return 'error';
-    case 2:
-      return 'warning';
-    case 4:
-      return 'log';
-    case 5:
-      return 'debug';
-    default:
-      return 'info';
-  }
-}
-
-/** A `window/showMessageRequest`'s message and its actions' titles, when it's one Lo can show. */
-function questionOf(
-  params: unknown,
-): { readonly message: ShownMessage; readonly actions: string[] } | undefined {
-  if (!isObject(params) || typeof params.message !== 'string') return undefined;
-  const given: unknown[] = Array.isArray(params.actions) ? params.actions : [];
-  const actions: string[] = [];
-  // An action with no title can't be shown, and past the most a question offers, none can.
-  for (const action of given) {
-    if (isObject(action) && typeof action.title === 'string') actions.push(action.title);
-  }
-  return {
-    message: { type: messageType(params.type), text: params.message },
-    actions: actions.slice(0, ACTIONS),
-  };
-}
-
-/** The `http` or `https` address a `window/showDocument` names, or nothing for any other. */
-function webPage(params: unknown): string | undefined {
-  if (!isObject(params) || typeof params.uri !== 'string' || params.uri.length > 8192) {
-    return undefined;
-  }
-  try {
-    const url = new URL(params.uri);
-    return url.protocol === 'https:' || url.protocol === 'http:' ? params.uri : undefined;
-  } catch {
-    return undefined;
-  }
 }
 
 function percent(value: unknown): number | undefined {

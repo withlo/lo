@@ -122,9 +122,7 @@ const serverId = z.string().regex(/^[a-z][a-z0-9-]{0,39}$/);
  * - `ready`, or `notAnswering` once it has missed several deadlines in a short while;
  * - `failed`: out of memory at `cap` bytes, a download that failed, or anything else, in a
  *   sentence; it waits for "Restart";
- * - `missing`: the toolchain it needs isn't installed;
- * - `license`: its server, `server`, has a license of its own, `license`, which the reader hasn't
- *   accepted: nothing of it is downloaded until they do.
+ * - `missing`: the toolchain it needs isn't installed.
  */
 export const serverState = z.discriminatedUnion('kind', [
   z.strictObject({
@@ -152,45 +150,13 @@ export const serverState = z.discriminatedUnion('kind', [
     needs: z.string().max(200),
     install: z.string().max(200).optional(),
   }),
-  z.strictObject({
-    kind: z.literal('license'),
-    server: z.string().max(40),
-    license: z.string().max(80),
-  }),
 ]);
 export type ServerState = z.output<typeof serverState>;
-
-/** The most of a server's notices the window is told of: the newest. */
-export const NOTICES = 20;
-/** The longest text of a notice, in UTF-16 code units: far past any a server sends. */
-export const NOTICE_TEXT = 16_000;
-/** The most actions a question offers. */
-export const NOTICE_ACTIONS = 16;
-
-/**
- * What a server, whose adapter shows its messages, says to the reader, as it said it: `text` is the
- * server's own, never changed. A `message` (`window/showMessage`), of its `type`; a `question`
- * (`window/showMessageRequest`) with the titles of its `actions`, which main answers with the one
- * the reader chooses, or with none once they dismiss it; or a `link`, the web page a
- * `window/showDocument` names, whose `text` is its address, which Lo opens only once the reader
- * says to. Each stays until the reader dismisses it, a question that its server stopped waiting on
- * as a message.
- */
-export const notice = z.strictObject({
-  id: z.number().int().nonnegative(),
-  kind: z.enum(['message', 'question', 'link']),
-  type: z.enum(['error', 'warning', 'info', 'log', 'debug']),
-  text: z.string().max(NOTICE_TEXT),
-  actions: z.array(z.string().max(NOTICE_TEXT)).max(NOTICE_ACTIONS).optional(),
-});
-export type Notice = z.output<typeof notice>;
 
 /**
  * A view's language servers, sent each time they change: `off` when servers don't run on it
  * because nothing trusts it, and otherwise one for each language its new side shows that a server
- * reads, by its adapter's `id`, with its `name`, what it is (`version`) where Lo knows, `hints:
- * false` for one with no inline type hints, which `gh` says, and what its server says to the reader
- * (`notices`), oldest first.
+ * reads, by its adapter's `id`, with its `name` and what it is (`version`) where Lo knows.
  */
 export const servers = z.strictObject({
   view: tabId,
@@ -201,24 +167,10 @@ export const servers = z.strictObject({
       name: z.string().max(40),
       version: z.string().max(80).optional(),
       state: serverState,
-      hints: z.literal(false).optional(),
-      notices: z.array(notice).max(NOTICES).optional(),
     }),
   ),
 });
 export type Servers = z.output<typeof servers>;
-
-/**
- * The language servers Lo runs, for Settings: each adapter's `id` and `name`, what its server is
- * (`about`), and the license its server has, if the reader accepts one before Lo downloads it: the
- * server's id and name, the license's name, and the major version an acceptance covers.
- */
-export interface ServerListing {
-  id: string;
-  name: string;
-  about?: string;
-  license?: { server: string; serverName: string; name: string; major: number };
-}
 
 /** A language server's log, oldest line first, as main keeps it: in memory, plain text. */
 export interface ServerLog {
@@ -276,43 +228,6 @@ export const contract = defineContract('code', {
     log: {
       input: z.strictObject({ view: tabId, server: serverId }),
       reply: reply<ServerLog | null>(),
-    },
-    /** The language servers Lo runs, for Settings. */
-    listServers: { input: z.undefined(), reply: reply<ServerListing[]>() },
-    /**
-     * Acts on the license of language server `server`, an adapter's, as the reader asks: `read`
-     * opens its page in the browser; `accept` records that the reader accepts it, for the major
-     * version Lo has, so its server may download; `withdraw` takes every acceptance of it away, and
-     * its servers stop. Refused for an adapter whose server has no license to accept (`missing`).
-     */
-    license: {
-      input: z.strictObject({ server: serverId, act: z.enum(['read', 'accept', 'withdraw']) }),
-      reply: reply<void>(),
-    },
-    /**
-     * Acts on notice `notice` of view `view`'s language server `server`, as the reader asks:
-     * `dismiss` it, a question unanswered; answer a question with its action at `action`; or `open`
-     * a link's page in the browser. Refused for a notice that's gone (`missing`), or that can't take
-     * the act (`invalid`).
-     */
-    notice: {
-      input: z.strictObject({
-        view: tabId,
-        server: serverId,
-        notice: z.number().int().nonnegative(),
-        act: z.union([
-          z.literal('dismiss'),
-          z.literal('open'),
-          z.strictObject({
-            action: z
-              .number()
-              .int()
-              .min(0)
-              .max(NOTICE_ACTIONS - 1),
-          }),
-        ]),
-      }),
-      reply: reply<void>(),
     },
   },
   topics: {

@@ -1,14 +1,4 @@
-export { INTELEPHENSE, PREMIUM } from './adapters/intelephense.ts';
-export {
-  acceptanceOf,
-  heapCap,
-  labelOf,
-  launchOnNode,
-  type Acceptance,
-  type Launch,
-  type License,
-  type NodeServer,
-} from './adapters/node.ts';
+export { heapCap, launchOnNode, type Launch, type NodeServer } from './adapters/node.ts';
 export { NO_PYTHON, PYRIGHT } from './adapters/pyright.ts';
 export { VTSLS } from './adapters/vtsls.ts';
 export { CLIENT_CAPABILITIES } from './capabilities.ts';
@@ -51,9 +41,7 @@ export {
   type Method,
   type Methods,
   type RequestOptions,
-  type ServerMessages,
   type ServerSpec,
-  type ShownMessage,
   type Tuning,
 } from './server.ts';
 export { failureMessage, type Failure, type Progress, type State } from './state.ts';

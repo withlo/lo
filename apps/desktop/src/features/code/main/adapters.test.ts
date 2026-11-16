@@ -1,15 +1,7 @@
 // The adapters Lo ships: which files each reads, and what it downloads before it starts. What each
 // server runs as, and is told, is `@lo/lsp`'s, and tested there.
 
-import {
-  acceptanceOf,
-  INTELEPHENSE,
-  type Installed,
-  labelOf,
-  launchOnNode,
-  PYRIGHT,
-  VTSLS,
-} from '@lo/lsp';
+import { type Installed, launchOnNode, PYRIGHT, VTSLS } from '@lo/lsp';
 import { describe, expect, it } from 'vitest';
 
 import { ADAPTERS, adapterFor } from './adapters.ts';
@@ -25,7 +17,7 @@ function readBy(path: string) {
 }
 
 describe('Lo’s adapters', () => {
-  it('read TypeScript and JavaScript, Python and PHP', () => {
+  it('read TypeScript and JavaScript, and Python', () => {
     expect(readBy('src/a.ts')).toEqual(['TypeScript', 'typescript']);
     expect(readBy('src/a.mts')).toEqual(['TypeScript', 'typescript']);
     expect(readBy('src/A.tsx')).toEqual(['TypeScript', 'typescriptreact']);
@@ -33,8 +25,8 @@ describe('Lo’s adapters', () => {
     expect(readBy('src/a.jsx')).toEqual(['TypeScript', 'javascript']);
     expect(readBy('pkg/a.py')).toEqual(['Python', 'python']);
     expect(readBy('pkg/a.pyi')).toEqual(['Python', 'python']);
-    expect(readBy('src/A.php')).toEqual(['PHP', 'php']);
-    // Ruby has none.
+    // PHP and Ruby have none.
+    expect(readBy('src/A.php')).toBeUndefined();
     expect(readBy('lib/a.rb')).toBeUndefined();
   });
 
@@ -42,7 +34,6 @@ describe('Lo’s adapters', () => {
     const servers = new Map([
       ['typescript', VTSLS],
       ['python', PYRIGHT],
-      ['php', INTELEPHENSE],
     ]);
     for (const adapter of ADAPTERS) {
       const installs: string[] = [];
@@ -64,27 +55,11 @@ describe('Lo’s adapters', () => {
     }
   });
 
-  it('ask for Intelephense’s license first, show its messages, and say which have no hints', () => {
-    expect(
-      ADAPTERS.map(({ id, about, license, shows, hints }) => ({
-        id,
-        about,
-        license,
-        shows,
-        hints,
-      })),
-    ).toEqual([
-      { id: 'typescript', about: labelOf(VTSLS), license: undefined, shows: false, hints: true },
-      { id: 'python', about: labelOf(PYRIGHT), license: undefined, shows: false, hints: false },
-      {
-        id: 'php',
-        about: labelOf(INTELEPHENSE),
-        license: acceptanceOf(INTELEPHENSE),
-        shows: true,
-        hints: false,
-      },
+  it('say which servers give no inline type hints, as Pyright gives none', () => {
+    expect(ADAPTERS.map((adapter) => [adapter.id, adapter.hints])).toEqual([
+      ['typescript', true],
+      ['python', false],
     ]);
-    expect(acceptanceOf(INTELEPHENSE)).toMatchObject({ serverName: 'Intelephense', major: 1 });
   });
 
   it('start nothing when a download fails', async () => {

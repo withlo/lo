@@ -32,11 +32,6 @@ const SOURCES: Record<string, Source> = {
   vtsls: npm('@vtsls/language-server', 'node_modules/@vtsls/language-server/dist/main.js'),
   // Its own entry point, which says where its files are and loads the server.
   pyright: npm('pyright', 'node_modules/pyright/langserver.index.js'),
-  // One file, built with everything it uses but Node's own modules: the packages its manifest names
-  // as dependencies are built into it, and never loaded.
-  intelephense: npm('intelephense', 'node_modules/intelephense/lib/intelephense.js', {
-    bundled: true,
-  }),
 };
 
 const MANIFEST = join(import.meta.dirname, '..', 'servers.json');

@@ -34,38 +34,10 @@ export type ServerState =
    */
   | { kind: 'missing'; needs: string; install?: string | undefined }
   /**
-   * Its server, `server` ("Intelephense"), has a license of its own, `license` ("the Intelephense
-   * Licence"), which the reader hasn't accepted: nothing of it is downloaded until they do.
-   */
-  | { kind: 'license'; server: string; license: string }
-  /**
    * Lo doesn't run language servers here, since the repo isn't trusted. The item says so for all of
    * them, whatever its `name` is.
    */
   | { kind: 'off' };
-
-/**
- * What a server said to the reader, as it said it: a message, of its type; a question, with its
- * actions; or a link, a web page it named, whose text is its address.
- */
-export interface ServerNotice {
-  id: number;
-  kind: 'message' | 'question' | 'link';
-  type: 'error' | 'warning' | 'info' | 'log' | 'debug';
-  text: string;
-  actions?: readonly string[] | undefined;
-}
-
-/** What the reader does with a notice: dismisses it, opens a link's page, or answers a question. */
-export type NoticeAct = 'dismiss' | 'open' | { action: number };
-
-/** What the details offer for a server whose license the reader hasn't accepted. */
-export interface ServerLicense {
-  /** "Read the license": its page, in the browser. */
-  onRead: () => void;
-  /** "Accept the license": the server downloads and starts. */
-  onAccept: () => void;
-}
 
 /** What the details offer to do about trust. */
 export interface ServerTrust {
@@ -88,11 +60,6 @@ export interface ServerStatusProps {
   onShowLog?: (() => void) | undefined;
   /** The details' way to trust the repo, or to stop. */
   trust?: ServerTrust | undefined;
-  /** The details' way to read and accept its server's license, while it's `license`. */
-  license?: ServerLicense | undefined;
-  /** What its server said to the reader, oldest first, each kept until they dismiss it. */
-  notices?: readonly ServerNotice[] | undefined;
-  onNotice?: ((id: number, act: NoticeAct) => void) | undefined;
   /** Whether the details are open. Without it, the item keeps its own. */
   open?: boolean | undefined;
   onOpenChange?: ((open: boolean) => void) | undefined;
@@ -113,11 +80,6 @@ function megabytes(bytes: number): number {
 /** The percent of a progress report, clamped to the scale it's on. */
 function percentOf(percent: number): number {
   return Math.min(100, Math.max(0, Math.round(percent)));
-}
-
-/** How many notices there are, as the item counts them. */
-function noticeCount(count: number): string {
-  return `${count.toLocaleString('en-US')} ${count === 1 ? 'message' : 'messages'}`;
 }
 
 /** The word or words beside the language's name in the status bar. */
@@ -155,8 +117,6 @@ function Words({ name: raw, state }: { name: string; state: ServerState }): Reac
       return <>{name} failed</>;
     case 'missing':
       return <>{name} toolchain missing</>;
-    case 'license':
-      return <>{name} off · license</>;
     case 'off':
       return 'Language servers off';
     default:
@@ -186,7 +146,6 @@ function Mark({ state }: { state: ServerState }) {
     case 'notAnswering':
     case 'missing':
       return <span className={`size-8 flex-none rounded-full ${DOT.warn}`} aria-hidden="true" />;
-    case 'license':
     case 'off':
       return <span className={`size-8 flex-none rounded-full ${DOT.idle}`} aria-hidden="true" />;
     default:
@@ -223,8 +182,6 @@ function heading(raw: string, state: ServerState): ReactNode {
       return <>{name} stopped</>;
     case 'missing':
       return <>{name} toolchain missing</>;
-    case 'license':
-      return <>{name} off</>;
     case 'off':
       return 'Language servers off';
     default:
@@ -289,13 +246,6 @@ function detail(raw: string, state: ServerState): ReactNode {
           {UNTIL}
         </>
       );
-    case 'license':
-      return (
-        <>
-          {name}'s server, <ShownText text={state.server} />, has its own license. Read it and
-          accept it to use it. {UNTIL}
-        </>
-      );
     case 'off':
       return `Lo runs language servers only on repos you trust. ${UNTIL}`;
     default:
@@ -317,87 +267,6 @@ function trustLabel(action: ServerTrust['action']): string {
       action satisfies never;
       throw new Error(`A way to change trust Lo doesn't know: ${JSON.stringify(action)}.`);
   }
-}
-
-/** What a notice is, in a word or two, above its text. */
-function noticeLabel(notice: ServerNotice): string {
-  if (notice.kind === 'question') return 'Question';
-  if (notice.kind === 'link') return 'A page it links to';
-  switch (notice.type) {
-    case 'error':
-      return 'Error';
-    case 'warning':
-      return 'Warning';
-    case 'info':
-      return 'Message';
-    case 'log':
-      return 'Log';
-    case 'debug':
-      return 'Debugging';
-    default:
-      notice.type satisfies never;
-      return 'Message';
-  }
-}
-
-/**
- * What a server said, each as it said it, its text whole and its lines kept, with what to do: a
- * question's actions, a link's "Open the page", and "Dismiss".
- */
-function Notices({
-  name,
-  notices,
-  onNotice,
-}: {
-  name: string;
-  notices: readonly ServerNotice[];
-  onNotice: ((id: number, act: NoticeAct) => void) | undefined;
-}) {
-  return (
-    <section aria-label={`What ${showFormat(name)}'s server says`} className="flex flex-col gap-6">
-      <h3 className="m-0 text-fg-muted text-small">
-        <ShownText text={name} />
-        's server says
-      </h3>
-      <ul className="m-0 flex server-notices list-none flex-col gap-8 p-0">
-        {notices.map((notice) => (
-          <li
-            key={notice.id}
-            className="flex flex-col gap-6 rounded-sm bg-bg-raised px-8 py-8"
-            data-notice={notice.kind}
-          >
-            <span className="text-fg-muted text-micro">{noticeLabel(notice)}</span>
-            <p
-              className={`m-0 wrap-anywhere whitespace-pre-wrap text-fg ${notice.kind === 'link' ? 'code-small' : 'text-small'}`}
-            >
-              <ShownText text={notice.text} />
-            </p>
-            <div className="flex flex-wrap gap-6">
-              {notice.kind === 'question' &&
-                notice.actions?.map((title, action) => (
-                  <Button
-                    key={action}
-                    variant="secondary"
-                    size="sm"
-                    onClick={() => onNotice?.(notice.id, { action })}
-                  >
-                    <ShownText text={title} />
-                  </Button>
-                ))}
-              {notice.kind === 'link' && (
-                <Button variant="secondary" size="sm" onClick={() => onNotice?.(notice.id, 'open')}>
-                  Open the page
-                </Button>
-              )}
-              <Button variant="ghost" size="sm" onClick={() => onNotice?.(notice.id, 'dismiss')}>
-                Dismiss
-              </Button>
-            </div>
-          </li>
-        ))}
-      </ul>
-    </section>
-  );
 }
 
 /** What the button that starts a server again says. */
@@ -452,9 +321,6 @@ export function ServerStatus({
   onRestart,
   onShowLog,
   trust,
-  license,
-  notices = [],
-  onNotice,
   open,
   onOpenChange,
   container,
@@ -481,7 +347,6 @@ export function ServerStatus({
   useLayoutEffect(() => () => handOffFocus([trigger.current, beside.current], details.current), []);
   const failed = state.kind === 'failed';
   const says = detail(name, state);
-  const licensing = state.kind === 'license' ? license : undefined;
   const change = (next: boolean) => {
     setKept(next);
     onOpenChange?.(next);
@@ -493,7 +358,6 @@ export function ServerStatus({
           <Mark state={state} />
           <span className="min-w-0 truncate">
             <Words name={name} state={state} />
-            {notices.length > 0 && <span className="lo-num"> · {noticeCount(notices.length)}</span>}
           </span>
         </Popover.Trigger>
         <Popover.Portal container={container}>
@@ -526,32 +390,6 @@ export function ServerStatus({
                   {says}
                 </Popover.Description>
               )}
-              {notices.length > 0 && <Notices name={name} notices={notices} onNotice={onNotice} />}
-              {licensing && (
-                <div className="flex flex-wrap gap-6">
-                  <Button
-                    ref={first}
-                    variant="secondary"
-                    size="sm"
-                    onClick={() => {
-                      change(false);
-                      licensing.onRead();
-                    }}
-                  >
-                    Read the license
-                  </Button>
-                  <Button
-                    variant="primary"
-                    size="sm"
-                    onClick={() => {
-                      change(false);
-                      licensing.onAccept();
-                    }}
-                  >
-                    Accept the license
-                  </Button>
-                </div>
-              )}
               {(onRestart || onShowLog || trust) && (
                 <div className="flex flex-wrap gap-6">
                   {onRestart && (
@@ -569,7 +407,7 @@ export function ServerStatus({
                   )}
                   {onShowLog && (
                     <Button
-                      ref={onRestart || licensing ? undefined : first}
+                      ref={onRestart ? undefined : first}
                       variant="ghost"
                       size="sm"
                       onClick={() => {
@@ -582,7 +420,7 @@ export function ServerStatus({
                   )}
                   {trust && (
                     <Button
-                      ref={onRestart || onShowLog || licensing ? undefined : first}
+                      ref={onRestart || onShowLog ? undefined : first}
                       variant={state.kind === 'off' ? 'secondary' : 'ghost'}
                       size="sm"
                       onClick={() => {

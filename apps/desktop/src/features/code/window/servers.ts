@@ -1,8 +1,8 @@
 // Each view's language servers, as main last said: kept with the view, and gone when its tab
-// closes. What each status item shows follows from it, as plain functions tested alone; "Restart",
-// the log, a license and what a server said only ask main.
+// closes. What each status item shows follows from it, as plain functions tested alone; "Restart"
+// and the log only ask main.
 
-import type { ServerState as ItemState, NoticeAct } from '@lo/ui';
+import type { ServerState as ItemState } from '@lo/ui';
 import { createStore } from 'zustand/vanilla';
 
 import { IpcError } from '../../../ipc/contract.ts';
@@ -53,7 +53,6 @@ export function itemState(state: ServerState): ItemState {
     case 'ready':
     case 'notAnswering':
     case 'missing':
-    case 'license':
       return state;
     case 'failed': {
       const { why } = state;
@@ -85,53 +84,6 @@ export async function restartServer(view: string, server: string, name: string):
       error instanceof IpcError && error.code !== 'internal'
         ? error.message
         : `Lo couldn't start ${name} again.`,
-    );
-  }
-}
-
-/** What a license's `act` is called, for what Lo says when it fails. */
-const LICENSE_ACTS = {
-  read: 'Read the license',
-  accept: 'Accept the license',
-  withdraw: 'Withdraw acceptance',
-} as const;
-
-/**
- * Asks main to act on the license of server `server`, an adapter's: open its page, accept it, so
- * its server may download, or withdraw it, which stops its servers.
- */
-export async function actOnLicense(server: string, act: keyof typeof LICENSE_ACTS): Promise<void> {
-  try {
-    await main().license({ server, act });
-  } catch (error) {
-    console.error(`Lo couldn't ${act} a license:`, error);
-    notify(
-      LICENSE_ACTS[act],
-      error instanceof IpcError && error.code !== 'internal'
-        ? error.message
-        : act === 'read'
-          ? "Lo couldn't open the license's page."
-          : "Lo couldn't change the settings file.",
-    );
-  }
-}
-
-/** Asks main to act on notice `notice` of view `view`'s server `server`, as the reader chose. */
-export async function actOnNotice(
-  view: string,
-  server: string,
-  notice: number,
-  act: NoticeAct,
-): Promise<void> {
-  try {
-    await main().notice({ view, server, notice, act });
-  } catch (error) {
-    console.error("Lo couldn't act on a language server's message:", error);
-    notify(
-      act === 'open' ? 'Open the page' : act === 'dismiss' ? 'Dismiss' : 'Answer',
-      error instanceof IpcError && error.code !== 'internal'
-        ? error.message
-        : "Lo couldn't pass that on to the language server.",
     );
   }
 }

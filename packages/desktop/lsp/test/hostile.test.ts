@@ -16,7 +16,6 @@ import { FAKE_SERVER, fakeServer, readReport, type Seen } from '@lo/testing/lsp'
 import { afterAll, beforeAll, expect, onTestFinished, test } from 'vitest';
 
 import {
-  INTELEPHENSE,
   launchOnNode,
   NO_PYTHON,
   type NodeServer,
@@ -24,7 +23,7 @@ import {
   startServer,
   VTSLS,
 } from '../src/index.ts';
-import { eventually, GIT, keysAt, tempFolder } from './support.ts';
+import { eventually, GIT, tempFolder } from './support.ts';
 
 const SCRIPT = fileURLToPath(
   new URL('../../../../testing/fixtures/code-hostile.sh', import.meta.url),
@@ -94,7 +93,6 @@ async function startAs(server: NodeServer, sections: readonly string[]) {
     git: GIT,
     settings: launch.settings,
     initializationOptions: launch.initializationOptions,
-    never: launch.never,
   });
   onTestFinished(async () => {
     if (running.pid !== undefined) {
@@ -193,24 +191,4 @@ test('Pyright gets no interpreter, whatever the checkout names', async () => {
     'python.pythonPath': NO_PYTHON,
     'python.venvPath': null,
   });
-});
-
-test('Intelephense gets no license key, no telemetry, and no offer of premium features', async () => {
-  const { heard, initialize } = await heardBy(INTELEPHENSE, [
-    'intelephense.licenceKey',
-    'intelephense.telemetry.enabled',
-  ]);
-  expect(heard).toMatchObject({
-    'intelephense.licenceKey': null,
-    'intelephense.telemetry.enabled': false,
-  });
-  expect(initialize.initializationOptions).toBeUndefined();
-  // Lo offers it the answers it asks other servers for, but no inlay hints, which are premium.
-  expect(keysAt(initialize.capabilities, 'textDocument').toSorted()).toEqual([
-    'definition',
-    'documentSymbol',
-    'hover',
-    'references',
-    'synchronization',
-  ]);
 });

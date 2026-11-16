@@ -55,9 +55,7 @@ export type NoAnswer =
   /** The server declined: what it was asked about changed (`ContentModified`), or it cancelled. */
   | 'declined'
   /** The server answered with an error. */
-  | 'failed'
-  /** Lo never asks this server this, as its spec says: it was never sent. */
-  | 'unasked';
+  | 'failed';
 
 /** A request's answer: the server's result, unchecked, or why there's none. */
 export type Answer =

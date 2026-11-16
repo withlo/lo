@@ -186,14 +186,10 @@ describe('definitions', () => {
     const { sides, answering } = await view();
     const starting: NotServing = { kind: 'starting', name: 'TypeScript' };
     const failed: NotServing = { kind: 'failed', name: 'TypeScript' };
-    const waits = "TypeScript's server has its own license. Read it and accept it to use it.";
-    const license: NotServing = { kind: 'license', name: 'TypeScript', why: waits };
     const slow = standIn({ 'textDocument/definition': { ok: false, why: 'deadline' } });
     const cases = [
       [() => starting, 'TypeScript is starting.'],
       [() => failed, 'TypeScript stopped.'],
-      // Its license waits for the reader, and the index answers, saying so.
-      [() => license, waits],
       [slow.serverOf, "TypeScript didn't answer in time."],
       [
         standIn({ 'textDocument/definition': { ok: false, why: 'notReady' } }).serverOf,
@@ -319,11 +315,6 @@ describe('the other questions', () => {
       { line: 2, column: 37, label: ': string[]', paddingLeft: true },
     ]);
     expect(await servedHints(sides, { ...file, key: base }, undefined, serverOf)).toEqual([]);
-    // One with no hints, as Intelephense's free version has none, is never asked for them.
-    const none = standIn({});
-    const noHints = { ...none.serving, hints: false };
-    expect(await servedHints(sides, file, undefined, () => noHints)).toEqual([]);
-    expect(none.asked).toEqual([]);
     expect(await servedOutline(answering, sides, file, undefined, serverOf)).toEqual({
       symbols: [
         { name: 'format', kind: 'function', line: 2, column: 0, lastLine: 2 },

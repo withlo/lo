@@ -133,37 +133,17 @@ const VERSION = z.object({
 /** What npm's registry says of a package: when each version was published. */
 const PACKAGE = z.object({ time: z.record(z.string(), z.string()).optional() });
 
-/** How `npm` records a package. */
-export interface NpmOptions {
-  /**
-   * Whether the package is recorded alone, without what it says it depends on: for one whose entry
-   * point has its dependencies built in, needing only Node's own modules, such as Intelephense's.
-   */
-  readonly bundled?: boolean;
-  /** npm's registry keys, as {@link NPM_KEYS}. */
-  readonly keys?: readonly RegistryKey[];
-}
-
 /**
  * An npm package and what it depends on, as npm itself resolves them (`npm install
  * --package-lock-only --ignore-scripts`, so nothing is installed or run), each tarball from npm's
  * registry, its `integrity` signed by the registry. An optional package for some systems only,
- * such as `fsevents`, is left out, as npm leaves it out elsewhere. `entry` is the file the server
- * starts from, inside the install's folder, such as `node_modules/pyright/langserver.index.js`.
+ * such as `fsevents`, is left out, as npm leaves it out elsewhere. `entry` is the file the server starts from,
+ * inside the install's folder, such as `node_modules/pyright/langserver.index.js`.
  */
-export function npm(name: string, entry: string, options: NpmOptions = {}): Source {
-  const { bundled = false, keys = NPM_KEYS } = options;
-  const own = `node_modules/${name}`;
+export function npm(name: string, entry: string, keys: readonly RegistryKey[] = NPM_KEYS): Source {
   return async (version, tools) => {
     const hosts = ['registry.npmjs.org'];
-    const resolved = await resolveLock(name, version, tools);
-    const itself = resolved[own];
-    if (itself?.version !== version) throw new Error(`npm didn't resolve ${name}@${version}`);
-    const lock = bundled ? { [own]: itself } : resolved;
-    if (bundled) {
-      const left = Object.keys(resolved).filter((path) => path !== '' && path !== own).length;
-      tools.log(`Leaving out the ${left} packages npm resolves for ${name}: it has them built in.`);
-    }
+    const lock = await resolveLock(name, version, tools);
     const packages: (Part & { path: string })[] = [];
     const files: string[] = [];
     for (const [path, locked] of Object.entries(lock)) {
@@ -180,8 +160,8 @@ export function npm(name: string, entry: string, options: NpmOptions = {}): Sour
         throw new Error(`${path} is for some systems only, which pin.ts doesn't record yet`);
       }
       const pkg = path.slice(path.lastIndexOf('node_modules/') + 'node_modules/'.length);
-      const { version: exact, resolved: url, integrity } = locked;
-      if (exact === undefined || url === undefined || integrity === undefined) {
+      const { version: exact, resolved, integrity } = locked;
+      if (exact === undefined || resolved === undefined || integrity === undefined) {
         throw new Error(`${path} has no version, address or integrity in the lockfile`);
       }
       const { dist } = await fetchJson(`${REGISTRY}${pkg}/${exact}`, VERSION, hosts, tools);
@@ -189,7 +169,7 @@ export function npm(name: string, entry: string, options: NpmOptions = {}): Sour
         throw new Error(`${pkg}@${exact}'s integrity isn't the registry's`);
       }
       await verifyRegistry(pkg, exact, integrity, dist.signatures, keys, tools);
-      const { part, file } = await fetchPart(url, hosts, tools);
+      const { part, file } = await fetchPart(resolved, hosts, tools);
       if (sri(await readFile(file), integrity) !== integrity) {
         throw new Error(`${pkg}@${exact}'s tarball isn't what its integrity says`);
       }

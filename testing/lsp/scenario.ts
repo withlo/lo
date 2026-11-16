@@ -34,8 +34,6 @@ export interface Scenario {
   readonly memory?: number;
   /** Requests it sends Lo once initialized, one after another; it reports each reply. */
   readonly requests?: readonly Outgoing[];
-  /** It sends its requests all at once, each without waiting for the reply to the one before. */
-  readonly together?: boolean;
   /** Notifications it sends Lo after those requests. */
   readonly notifications?: readonly Outgoing[];
   /** It starts a process of its own once initialized, which runs until it's killed. */

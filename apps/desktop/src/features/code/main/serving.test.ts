@@ -5,7 +5,7 @@
 import { parseOid, type Oid, type TreeEntry } from '@lo/git';
 import { describe, expect, it, onTestFinished } from 'vitest';
 
-import type { Notice, Servers } from '../contract.ts';
+import type { Servers } from '../contract.ts';
 import type { Adapter } from './adapters.ts';
 import { ServerPool, type PoolView, type Root } from './servers.ts';
 import {
@@ -54,35 +54,24 @@ function repoOf(changed: readonly string[]) {
   return { repo, checkouts };
 }
 
-/** A pool that notes what it's told, and says its servers said `notices`. */
-function poolOf(notices: readonly Notice[] = []) {
+/** A pool that notes what it's told. */
+function poolOf() {
   const synced: { views: readonly PoolView[]; screen: string | undefined }[] = [];
   const restarted: Root[] = [];
-  const acted: string[] = [];
-  const pool: Pick<ServerPool, 'sync' | 'shown' | 'find' | 'restart' | 'log' | 'notices' | 'act'> =
-    {
-      sync: (views, screen) => synced.push({ views, screen }),
-      shown: () => undefined,
-      find: () => undefined,
-      async restart(_repo, _adapter, root) {
-        restarted.push(root);
-      },
-      log: () => undefined,
-      notices: () => [...notices],
-      act(repo, adapter, id, act) {
-        acted.push(`${repo} ${adapter} ${id} ${JSON.stringify(act)}`);
-        return act === 'open' ? 'https://intelephense.com/' : undefined;
-      },
-    };
-  return { pool, synced, restarted, acted, last: () => synced.at(-1)?.views ?? [] };
+  const pool: Pick<ServerPool, 'sync' | 'shown' | 'find' | 'restart' | 'log'> = {
+    sync: (views, screen) => synced.push({ views, screen }),
+    shown: () => undefined,
+    find: () => undefined,
+    async restart(_repo, _adapter, root) {
+      restarted.push(root);
+    },
+    log: () => undefined,
+  };
+  return { pool, synced, restarted, last: () => synced.at(-1)?.views ?? [] };
 }
 
-function follow(
-  current: () => ServingInput | undefined,
-  adapters: readonly Adapter[] = [TS, GO],
-  options: { accepted?: (adapter: Adapter) => boolean; notices?: readonly Notice[] } = {},
-) {
-  const { pool, synced, restarted, acted, last } = poolOf(options.notices);
+function follow(current: () => ServingInput | undefined, adapters: readonly Adapter[] = [TS, GO]) {
+  const { pool, synced, restarted, last } = poolOf();
   const published: Servers[] = [];
   let screen: string | undefined = 'v1';
   const serving = new ServingViews({
@@ -94,13 +83,11 @@ function follow(
     stopOn: () => Promise.resolve(),
     letGo: () => Promise.resolve(),
     log: () => undefined,
-    accepted: options.accepted,
   });
   return {
     serving,
     synced,
     restarted,
-    acted,
     last,
     published,
     offScreen: () => {
@@ -262,63 +249,6 @@ describe('following views for servers', () => {
     // A Go file of the whole tree, asked about: its server is needed too.
     expect(serving.serverFor('v1', head, 'cmd/main.go')).toEqual({ kind: 'starting', name: 'Go' });
     expect(last()[0]?.wants).toEqual([TS, GO]);
-  });
-
-  it('waits for the reader to accept a server’s license: nothing checked out or started meanwhile', async () => {
-    const PHP: Adapter = {
-      ...TS,
-      id: 'php',
-      name: 'PHP',
-      languages: { php: 'php' },
-      about: 'Intelephense 1.18.5 · proprietary',
-      license: {
-        server: 'intelephense',
-        serverName: 'Intelephense',
-        name: 'the Intelephense Licence',
-        url: 'https://intelephense.com/eula',
-        major: 1,
-      },
-      shows: true,
-      hints: false,
-    };
-    const { repo, checkouts } = repoOf(['src/A.php']);
-    let yes = false;
-    const said: Notice = { id: 7, kind: 'message', type: 'warning', text: ' As it was sent. ' };
-    const { serving, last, published, acted } = follow(() => input(repo), [TS, PHP], {
-      accepted: (adapter) => adapter.license === undefined || yes,
-      notices: [said],
-    });
-    serving.update('v1');
-    await settle();
-    expect(checkouts).toEqual([]);
-    expect(last()).toMatchObject([{ id: 'v1', wants: [] }]);
-    const waiting = {
-      id: 'php',
-      name: 'PHP',
-      version: 'Intelephense 1.18.5 · proprietary',
-      state: { kind: 'license', server: 'Intelephense', license: 'the Intelephense Licence' },
-      hints: false,
-      notices: [said],
-    };
-    expect(published.at(-1)?.servers).toEqual([waiting]);
-    // Its language's answers come from the index, saying why.
-    expect(serving.serverFor('v1', head, 'src/A.php')).toEqual({
-      kind: 'license',
-      name: 'PHP',
-      why: "PHP's server, Intelephense, has its own license. Read it and accept it to use it.",
-    });
-    expect(checkouts).toEqual([]);
-
-    // Accepted: its head is checked out, and its server is wanted there.
-    yes = true;
-    serving.updateAll();
-    await settle();
-    expect(checkouts).toEqual([`80@${head}`]);
-    expect(last()).toMatchObject([{ id: 'v1', wants: [PHP] }]);
-    expect(published.at(-1)?.servers).toEqual([{ ...waiting, state: { kind: 'starting' } }]);
-    // What the reader does with what its server said goes to the pool, by the view's repository.
-    expect(serving.notice('v1', 'php', 7, 'open')).toBe('https://intelephense.com/');
-    expect(acted).toEqual(['rozed-dev/e2e php 7 "open"']);
   });
 
   it('says a checkout that failed, and makes it again on Restart', async () => {

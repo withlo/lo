@@ -183,9 +183,6 @@ export {
 } from './TypeHover.tsx';
 export {
   ServerStatus,
-  type NoticeAct,
-  type ServerLicense,
-  type ServerNotice,
   type ServerFailure,
   type ServerState,
   type ServerStatusProps,
