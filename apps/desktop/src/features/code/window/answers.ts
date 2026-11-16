@@ -123,6 +123,8 @@ function serverHints(
     case 'missing':
       return `${name} needs ${state.needs}.`;
     case 'downloading':
+    case 'unpacking':
+    case 'waiting':
     case 'starting':
     case 'indexing':
     case 'ready':

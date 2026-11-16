@@ -12,12 +12,12 @@
 //   answers, saying why.
 //   Each file is opened on the server as its own language, by its own path.
 //
-// When the server is starting, slow, stopped or failed, the syntax index answers, with why the
-// server didn't (`fallback`), and a late answer is dropped. The old side always answers from the
-// index, since servers run only on the head; so does a file whose checkout isn't the head's blob,
-// as when two of its names fold together on disk. A place a server names outside the checkout, or
-// a file of the checkout that isn't in the head's tree, is never read: it shows as outside the
-// repository, with the asking file's import of the name where there's one.
+// When the server is starting, waiting for room, refused, slow, stopped or failed, the syntax index
+// answers, with why the server didn't (`fallback`), and a late answer is dropped. The old side
+// always answers from the index, since servers run only on the head; so does a file whose checkout
+// isn't the head's blob, as when two of its names fold together on disk. A place a server names
+// outside the checkout, or a file of the checkout that isn't in the head's tree, is never read: it
+// shows as outside the repository, with the asking file's import of the name where there's one.
 //
 // What a server answers is read as untrusted: each place, symbol and hint is checked, anything
 // malformed is dropped, and lists are cut at the port's limits before they're read. Nothing here
@@ -64,7 +64,7 @@ import {
   type AskedFile,
 } from './answers.ts';
 import type { ViewSides } from './indexer.ts';
-import type { Running } from './servers.ts';
+import type { Found, Running } from './servers.ts';
 
 /** How long each question waits for a server, in milliseconds. */
 export const DEADLINES = {
@@ -109,11 +109,13 @@ export interface Serving {
   matches(path: string, oid: Oid): Promise<boolean>;
 }
 
-/** A view's server for the file asked about, on its way or stopped. */
-export interface NotServing {
-  readonly kind: 'starting' | 'failed';
-  readonly name: string;
-}
+/**
+ * A view's server for the file asked about, when it can't answer: where it is instead, as the pool
+ * finds it. It's on its way; `waiting` in line for room, as Lo runs `count` at once at most;
+ * `refused` on this checkout, for the reason its status gives, `why`; `missing` the toolchain it
+ * `needs`; `failed`, waiting for "Restart"; or `stopped`.
+ */
+export type NotServing = { readonly name: string } & Exclude<Found, { readonly kind: 'ready' }>;
 
 /** The server for a file of a view's new side, at the side's commit, if one reads its language. */
 export type ServerOf = (file: {
@@ -132,9 +134,29 @@ export interface At {
 
 const decoder = new TextDecoder('utf-8', { ignoreBOM: true });
 
-/** What the syntax index's answers say when a server that reads the file didn't answer. */
+/**
+ * What the syntax index's answers say when a server that reads the file can't answer: where it is,
+ * as its item in the status bar says.
+ */
 function waitingFor(serving: NotServing): string {
-  return serving.kind === 'starting' ? `${serving.name} is starting.` : `${serving.name} stopped.`;
+  const { name } = serving;
+  switch (serving.kind) {
+    case 'starting':
+      return `${name} is starting.`;
+    case 'waiting':
+      return `${name} is waiting to start. Lo runs ${serving.count} language servers at once at most.`;
+    case 'refused':
+      return `Lo won’t run ${name} on this checkout. ${serving.why}`;
+    case 'missing':
+      return `${name} needs ${serving.needs}.`;
+    case 'failed':
+      return `${name} failed. Restart it from the status bar.`;
+    case 'stopped':
+      return `${name} stopped.`;
+    default:
+      serving satisfies never;
+      throw new Error(`a server's state Lo doesn't know: ${JSON.stringify(serving)}`);
+  }
 }
 
 /** Why a server's request has no answer, as the syntax index's answers say it. */

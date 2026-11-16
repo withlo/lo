@@ -594,7 +594,10 @@ repo. The right side of a diff navigates the new commit, and the left side the o
   navigation.
 - **How many.** One server runs per repo and language, on the head on screen, and it moves when
   another head of the repo comes on screen. Each is held to 4 GB, and at most four run, holding 8 GB
-  in all: past either, the one used longest ago that isn't on screen stops.
+  in all: past either, the one used longest ago that isn't on screen stops. One on screen is never
+  stopped for another, so past four on screen the rest wait in line, and the first starts as soon as
+  one stops, fails or is refused. "Restart" starts one if there's room, and otherwise puts it first
+  in line.
 - **Precedence.** Language server answers win, each labelled with its language's name, such as
   "TypeScript". Syntax-based answers fill in while a language server starts up, or when it can't
   answer, and say why.

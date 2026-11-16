@@ -121,8 +121,11 @@ export interface InstallerOptions {
 export interface InstallOptions {
   /** Stops this install waiting. The download stops once nothing waits for it. */
   readonly signal?: AbortSignal | undefined;
-  /** Hears how many bytes of how many have come. */
-  readonly progress?: ((received: number, total: number) => void) | undefined;
+  /**
+   * Hears how many bytes of how many have come, and, once they all have and match what's pinned,
+   * that they're being unpacked, which a large download takes a while to do.
+   */
+  readonly progress?: ((received: number, total: number, unpacking: boolean) => void) | undefined;
   /**
    * Lo's Go, installed, which a Go program the manifest pins by its modules is built with. It
    * must be the version the program was pinned with.
@@ -150,7 +153,7 @@ interface Job {
   readonly version: string;
   readonly done: Promise<Installed>;
   readonly controller: AbortController;
-  readonly listeners: Set<(received: number, total: number) => void>;
+  readonly listeners: Set<(received: number, total: number, unpacking: boolean) => void>;
   /** The temporary folders it's using, which pruning leaves. */
   readonly partial: Set<string>;
   waiting: number;
@@ -388,10 +391,10 @@ export class Installer {
     try {
       const parts = partsOf(download);
       const total = parts.reduce((sum, part) => sum + part.size, 0);
-      const report = (received: number) => {
+      const report = (received: number, unpacking = false) => {
         for (const listener of job.listeners) {
           try {
-            listener(received, total);
+            listener(received, total, unpacking);
           } catch {
             // Whoever listens can't stop the download.
           }
@@ -425,6 +428,8 @@ export class Installer {
         before += part.size;
         files.push(file);
       }
+      // Every byte has come and checks out: what's left, unpacking, can take a while.
+      report(total, true);
       const into = join(work, FILES);
       await mkdir(into, { mode: 0o755 });
       const limits = this.#limits ?? limitsFor(download);

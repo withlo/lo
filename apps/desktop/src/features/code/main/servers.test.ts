@@ -25,7 +25,6 @@ import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 import { cacheFolder } from '../../../main/git.ts';
 import { ADAPTERS as SHIPPED, type Adapter, type Prepared } from './adapters.ts';
 import {
-  noRoom,
   ServerPool,
   serversFolder,
   type PoolLimits,
@@ -202,7 +201,7 @@ describe('which servers run', () => {
     const missing = adapter('java', () =>
       Promise.resolve({ kind: 'missing', needs: 'a JDK', install: 'brew install openjdk' }),
     );
-    const progress: ((done: number, total: number) => void)[] = [];
+    const progress: ((done: number, total: number, unpacking: boolean) => void)[] = [];
     const pool = new ServerPool({
       prepare(each, report, signal) {
         progress.push(report);
@@ -223,8 +222,12 @@ describe('which servers run', () => {
     pool.sync([view('v1', 'a/x', 1, [slow, failing, missing])], 'v1');
     await settle();
     expect(pool.shown('a/x', 'ts')?.state).toEqual({ kind: 'starting' });
-    progress[0]?.(12, 40);
+    progress[0]?.(12, 40, false);
     expect(pool.shown('a/x', 'ts')?.state).toEqual({ kind: 'downloading', done: 12, total: 40 });
+    expect(pool.find('a/x', 'ts', '/cache/a/x/pull-1')).toEqual({ kind: 'starting' });
+    // All of it has come, and it's unpacked.
+    progress[0]?.(40, 40, true);
+    expect(pool.shown('a/x', 'ts')?.state).toEqual({ kind: 'unpacking' });
     finish?.({ kind: 'ready', launch: { program: '/bin/x', args: [], version: 'x 1.0' } });
     await settle();
     expect(pool.shown('a/x', 'ts')).toEqual({ state: { kind: 'starting' }, version: 'x 1.0' });
@@ -232,10 +235,15 @@ describe('which servers run', () => {
       kind: 'failed',
       why: { kind: 'download', message: 'The download failed.' },
     });
+    expect(pool.find('a/x', 'go', '/cache/a/x/pull-1')).toEqual({ kind: 'failed' });
     expect(pool.shown('a/x', 'java')?.state).toEqual({
       kind: 'missing',
       needs: 'a JDK',
       install: 'brew install openjdk',
+    });
+    expect(pool.find('a/x', 'java', '/cache/a/x/pull-1')).toEqual({
+      kind: 'missing',
+      needs: 'a JDK',
     });
   });
 });
@@ -908,10 +916,8 @@ describe('budgets', () => {
     pool.sync([view('v1', 'r/1', 1, adapters)], 'v1');
     await settle();
     expect(live()).toHaveLength(4);
-    expect(pool.shown('r/1', 'e')?.state).toEqual({
-      kind: 'failed',
-      why: { kind: 'error', message: noRoom(4) },
-    });
+    expect(pool.shown('r/1', 'e')?.state).toEqual({ kind: 'waiting', count: 4, next: true });
+    expect(pool.find('r/1', 'e', '/cache/r/1/pull-1')).toEqual({ kind: 'waiting', count: 4 });
   });
 
   it('holds them to 8 GB in all, stopping those off screen used longest ago first', async () => {
@@ -932,6 +938,109 @@ describe('budgets', () => {
     pool.sync(views.slice(1), 'v3');
     await vi.advanceTimersByTimeAsync(5000);
     expect(started[2]?.stopped).toBe(false);
+  });
+});
+
+describe('waiting for room', () => {
+  const B = adapter('b');
+  const D = adapter('d');
+  const E = adapter('e');
+  const F = adapter('f');
+  const ALL = [adapter('a'), B, adapter('c'), D, E, F];
+  const ROOT = { folder: '/cache/r/1/pull-1', pull: 1 };
+
+  /** A pool on one view that needs six servers, room for four, and what runs, by name. */
+  function sixOnScreen(checkout?: PoolOptions['checkout']) {
+    const made = standIns({}, checkout);
+    const views = [view('v1', 'r/1', 1, ALL)];
+    made.pool.sync(views, 'v1');
+    /** The servers running, by name. */
+    const running = () =>
+      made.started
+        .filter((server) => !server.stopped && server.state.kind !== 'failed')
+        .map((server) => server.spec.name)
+        .toSorted();
+    /** The last server started for `name`. */
+    const last = (name: string) => made.started.findLast((server) => server.spec.name === name);
+    /** "Restart", as the window asks it: the views are followed again first. */
+    const restart = async (each: Adapter) => {
+      made.pool.sync(views, 'v1');
+      await made.pool.restart('r/1', each, ROOT);
+      await settle();
+    };
+    return { ...made, running, last, restart };
+  }
+
+  it('starts the next in line as soon as one on screen is refused, or fails', async () => {
+    const WHY = 'The checkout’s .cargo/config.toml has an [env] table, so Lo won’t run it.';
+    const { pool, running, last } = sixOnScreen((each) =>
+      Promise.resolve(each === B ? WHY : undefined),
+    );
+    await settle();
+    // b was refused once it had room: e, first in line, runs in its place, and f waits.
+    expect(running()).toEqual(['a', 'c', 'd', 'e']);
+    expect(pool.shown('r/1', 'b')?.state).toEqual({
+      kind: 'failed',
+      why: { kind: 'error', message: WHY },
+    });
+    expect(pool.find('r/1', 'b', ROOT.folder)).toEqual({ kind: 'refused', why: WHY });
+    expect(pool.shown('r/1', 'f')?.state).toEqual({ kind: 'waiting', count: 4, next: true });
+
+    // c fails within a minute of starting, so it waits for Restart: f runs in its place.
+    crash(last('c'), 1_000);
+    await settle();
+    expect(running()).toEqual(['a', 'd', 'e', 'f']);
+  });
+
+  it('puts one restarted without room first in line, saying so, and starts it in the next room', async () => {
+    const { pool, running, last, restart } = sixOnScreen();
+    await settle();
+    expect(running()).toEqual(['a', 'b', 'c', 'd']);
+    // d fails within a minute, so it waits for Restart: e, first in line, runs in its place.
+    crash(last('d'), 1_000);
+    await settle();
+    expect(running()).toEqual(['a', 'b', 'c', 'e']);
+
+    // Restart finds no room: d waits, first in line, ahead of f, which waited longer.
+    await restart(D);
+    expect(running()).toEqual(['a', 'b', 'c', 'e']);
+    expect(pool.shown('r/1', 'd')?.state).toEqual({ kind: 'waiting', count: 4, next: true });
+    expect(pool.shown('r/1', 'f')?.state).toEqual({ kind: 'waiting', count: 4, next: false });
+    expect(pool.find('r/1', 'd', ROOT.folder)).toEqual({ kind: 'waiting', count: 4 });
+
+    // The next room is d's.
+    crash(last('a'), 1_000);
+    await settle();
+    expect(running()).toEqual(['b', 'c', 'd', 'e']);
+    expect(pool.shown('r/1', 'f')?.state).toEqual({ kind: 'waiting', count: 4, next: true });
+  });
+
+  it('keeps one restarted while it waits in line, however often, never failed and never past 4', async () => {
+    const { pool, started, running, restart } = sixOnScreen();
+    await settle();
+    for (let times = 0; times < 3; times += 1) {
+      await restart(F);
+      expect(running()).toEqual(['a', 'b', 'c', 'd']);
+      expect(pool.shown('r/1', 'f')?.state).toEqual({ kind: 'waiting', count: 4, next: true });
+      expect(pool.shown('r/1', 'e')?.state).toEqual({ kind: 'waiting', count: 4, next: false });
+    }
+    expect(started).toHaveLength(4);
+  });
+
+  it('starts one restarted that has room, though others wait in line with it', async () => {
+    const { pool, running, last, restart } = sixOnScreen();
+    await settle();
+    // d fails within a minute: e runs in its place, at once.
+    crash(last('d'), 1_000);
+    await settle();
+    const before = last('e');
+    expect(running()).toEqual(['a', 'b', 'c', 'e']);
+    // Restart stops e and starts it again, in its own room, which f doesn't take.
+    await restart(E);
+    expect(before?.stopped).toBe(true);
+    expect(last('e')).not.toBe(before);
+    expect(running()).toEqual(['a', 'b', 'c', 'e']);
+    expect(pool.shown('r/1', 'f')?.state).toEqual({ kind: 'waiting', count: 4, next: true });
   });
 });
 

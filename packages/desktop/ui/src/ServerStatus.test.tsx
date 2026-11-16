@@ -135,6 +135,9 @@ describe('ServerStatus', () => {
     expect(say('TypeScript', { kind: 'downloading', done: 12_300_000, total: 40_100_000 })).toBe(
       'TypeScript downloading · 11.7 MB of 38.2 MB',
     );
+    expect(say('Java', { kind: 'unpacking' })).toBe('Java unpacking');
+    expect(say('Go', { kind: 'waiting', count: 4, next: false })).toBe('Go waiting');
+    expect(say('PHP', { kind: 'waiting', count: 4, next: true })).toBe('PHP waiting · next');
     expect(say('TypeScript', { kind: 'starting' })).toBe('TypeScript starting');
     expect(say('TypeScript', { kind: 'indexing', percent: 40 })).toBe('TypeScript indexing 40%');
     expect(say('TypeScript', { kind: 'indexing' })).toBe('TypeScript indexing');
@@ -154,6 +157,7 @@ describe('ServerStatus', () => {
   it('marks a server coming up with a ring turning, and the rest with a dot and a word', () => {
     for (const state of [
       { kind: 'downloading', done: 1, total: 2 },
+      { kind: 'unpacking' },
       { kind: 'starting' },
       { kind: 'indexing' },
     ] as const) {
@@ -163,6 +167,8 @@ describe('ServerStatus', () => {
     expect(marks(MEMORY).dot).toContain('bg-danger');
     expect(marks({ kind: 'missing', needs: 'a JDK' }).dot).toContain('bg-warning');
     expect(marks({ kind: 'notAnswering' }).dot).toContain('bg-warning');
+    // Waiting is amber, as GitHub's waiting is, and not a failure.
+    expect(marks({ kind: 'waiting', count: 4, next: false }).dot).toContain('bg-warning');
     expect(marks({ kind: 'ready' }).spinner).toBe(false);
     expect(marks({ kind: 'off' })).toEqual({
       spinner: false,
@@ -293,6 +299,50 @@ describe('ServerStatus', () => {
     expect(open.querySelector('code')?.textContent).toBe('brew install go');
     // Not stopped by anything: no main button.
     expect(open.querySelector('button')?.className).not.toContain('bg-accent');
+  });
+
+  it('says why one waits for room, and offers to start it next unless it is next already', async () => {
+    const onRestart = vi.fn<() => void>();
+    const host = render(
+      <ServerStatus
+        name="Go"
+        state={{ kind: 'waiting', count: 4, next: false }}
+        onRestart={onRestart}
+        onShowLog={() => undefined}
+      />,
+    );
+    // Nothing beside its name: it isn't failed, and starts by itself.
+    expect(host.querySelectorAll('button')).toHaveLength(1);
+    click(item(host));
+    await settle();
+    const open = details()!;
+    expect(open.textContent).toContain('Go waiting');
+    expect(open.textContent).toContain(
+      "Lo runs 4 language servers at once at most, and they're all in use on screen. Go is in line, and starts when its turn comes. Until then, peek, references and hovers use the syntax index.",
+    );
+    const buttons = [...open.querySelectorAll('button')];
+    expect(buttons.map((button) => button.textContent)).toEqual(['Start next', 'Show the log']);
+    expect(buttons[0]?.className).not.toContain('bg-accent');
+    click(buttons[0]!);
+    expect(onRestart).toHaveBeenCalledTimes(1);
+    cleanUp();
+
+    const next = render(
+      <ServerStatus
+        name="PHP"
+        state={{ kind: 'waiting', count: 4, next: true }}
+        onRestart={onRestart}
+        onShowLog={() => undefined}
+      />,
+    );
+    click(item(next));
+    await settle();
+    expect(details()?.textContent).toContain(
+      'PHP is next in line, and starts when one of them stops.',
+    );
+    expect([...details()!.querySelectorAll('button')].map((button) => button.textContent)).toEqual([
+      'Show the log',
+    ]);
   });
 
   it('says only what is needed when there is no command to install it', async () => {

@@ -75,7 +75,7 @@ import {
   servedReferences,
   type ServerOf,
 } from './served.ts';
-import { DownloadSum } from './downloads.ts';
+import { DownloadSum, type Progress } from './downloads.ts';
 import { ServerPool, serversFolder } from './servers.ts';
 import {
   checkoutRefusal,
@@ -474,7 +474,7 @@ function pinnedIn(manifest: Manifest, id: string) {
 function install(
   context: Context,
   id: string,
-  progress: (done: number, total: number) => void,
+  progress: Progress,
   signal: AbortSignal,
   go: Toolchain | undefined,
 ) {
@@ -497,7 +497,7 @@ function install(
 async function installToolchain(
   context: Context,
   id: string,
-  progress: (done: number, total: number) => void,
+  progress: Progress,
   signal: AbortSignal,
 ): Promise<Toolchain> {
   const installing = toolchainsInstaller(context);
@@ -508,9 +508,9 @@ async function installToolchain(
   try {
     const installed = await installing.install(id, pinned, {
       signal,
-      progress: (done, total) => {
+      progress: (done, total, unpacking) => {
         downloaded = true;
-        progress(done, total);
+        progress(done, total, unpacking);
       },
     });
     return { version: pinned.version, installed, ...toolchainUse(id, pinned.version, installed) };
@@ -537,7 +537,7 @@ function publishToolchains(context: Context): void {
 async function prepareServer(
   context: Context,
   adapter: Adapter,
-  progress: (done: number, total: number) => void,
+  progress: Progress,
   signal: AbortSignal,
 ) {
   const sum = new DownloadSum(progress);

@@ -117,7 +117,8 @@ const serverId = z.string().regex(/^[a-z][a-z0-9-]{0,39}$/);
 /**
  * Where a view's language server is, for its item in the status bar:
  *
- * - `downloading`, in bytes, the first time it's needed;
+ * - `downloading`, in bytes, the first time it's needed, then `unpacking` what came;
+ * - `waiting` in line for room, since Lo runs `count` at once at most: `next` when it's first;
  * - `starting`, also while its checkout is made, or while it moves to another head;
  * - `indexing` while it says it's loading the project, `percent` far when it says;
  * - `ready`, or `notAnswering` once it has missed several deadlines in a short while;
@@ -130,6 +131,12 @@ export const serverState = z.discriminatedUnion('kind', [
     kind: z.literal('downloading'),
     done: z.number().int().nonnegative(),
     total: z.number().int().nonnegative(),
+  }),
+  z.strictObject({ kind: z.literal('unpacking') }),
+  z.strictObject({
+    kind: z.literal('waiting'),
+    count: z.number().int().positive(),
+    next: z.boolean(),
   }),
   z.strictObject({ kind: z.literal('starting') }),
   z.strictObject({

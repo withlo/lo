@@ -103,13 +103,18 @@ function changed(change: { url?: string; sha256?: string }): Pinned {
 
 test('installs a version once, in its own folder, and finds it there after', async () => {
   const { installer, folder, asked } = await setUp({ [URL]: { body: ARCHIVE } });
-  const progress: [number, number][] = [];
+  const progress: [number, number, boolean][] = [];
   const installed = await installer.install('server', PINNED, {
-    progress: (received, total) => progress.push([received, total]),
+    progress: (received, total, unpacking) => progress.push([received, total, unpacking]),
   });
   expect(installed.entry).toBe(join(folder, 'server', '1.0.0', 'files', 'server', 'bin', 'server'));
   expect(readFileSync(installed.entry, 'utf8')).toBe('program');
-  expect(progress.at(-1)).toEqual([ARCHIVE.length, ARCHIVE.length]);
+  // Every byte came, then it was unpacked, which it says once.
+  expect(progress.slice(-2)).toEqual([
+    [ARCHIVE.length, ARCHIVE.length, false],
+    [ARCHIVE.length, ARCHIVE.length, true],
+  ]);
+  expect(progress.filter(([, , unpacking]) => unpacking)).toHaveLength(1);
   // Nothing is left of the download but what's installed.
   expect(readdirSync(join(folder, '.partial'))).toEqual([]);
   expect(await installer.install('server', PINNED)).toEqual(installed);

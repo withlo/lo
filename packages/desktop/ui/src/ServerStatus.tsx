@@ -22,6 +22,13 @@ export type ServerFailure =
 export type ServerState =
   /** Its files are on their way, in bytes. */
   | { kind: 'downloading'; done: number; total: number }
+  /** Its files have come, and are being unpacked. */
+  | { kind: 'unpacking' }
+  /**
+   * It waits in line for room, since Lo runs `count` at once at most, and they're all in use on
+   * screen: `next` when it's first in line.
+   */
+  | { kind: 'waiting'; count: number; next: boolean }
   | { kind: 'starting' }
   /** It's reading the project; `percent` is how far, from 0 to 100, when it says. */
   | { kind: 'indexing'; percent?: number | undefined }
@@ -62,7 +69,10 @@ export interface ServerStatusProps {
   state: ServerState;
   /** The program and its version, for the details: "tsserver 5.6.3". */
   version?: string | undefined;
-  /** The button that starts it again. A failed download offers "Retry" in its place. */
+  /**
+   * The button that starts it again. A failed download offers "Retry" in its place, and one waiting
+   * in line "Start next", unless it's next already.
+   */
   onRestart?: (() => void) | undefined;
   onShowLog?: (() => void) | undefined;
   /** The details' way to trust the repo, or to stop. */
@@ -97,6 +107,10 @@ function Words({ name: raw, state }: { name: string; state: ServerState }): Reac
           </span>
         </>
       );
+    case 'unpacking':
+      return <>{name} unpacking</>;
+    case 'waiting':
+      return state.next ? <>{name} waiting · next</> : <>{name} waiting</>;
     case 'starting':
       return <>{name} starting</>;
     case 'indexing':
@@ -138,6 +152,7 @@ const DOT = {
 function Mark({ state }: { state: ServerState }) {
   switch (state.kind) {
     case 'downloading':
+    case 'unpacking':
     case 'starting':
     case 'indexing':
       return <Spinner size="xs" />;
@@ -145,6 +160,7 @@ function Mark({ state }: { state: ServerState }) {
       return <span className={`size-8 flex-none rounded-full ${DOT.ok}`} aria-hidden="true" />;
     case 'failed':
       return <span className={`size-8 flex-none rounded-full ${DOT.fail}`} aria-hidden="true" />;
+    case 'waiting':
     case 'notAnswering':
     case 'missing':
       return <span className={`size-8 flex-none rounded-full ${DOT.warn}`} aria-hidden="true" />;
@@ -172,6 +188,10 @@ function heading(raw: string, state: ServerState): ReactNode {
   switch (state.kind) {
     case 'downloading':
       return <>{name} downloading</>;
+    case 'unpacking':
+      return <>{name} unpacking</>;
+    case 'waiting':
+      return <>{name} waiting</>;
     case 'starting':
       return <>{name} starting</>;
     case 'indexing':
@@ -218,9 +238,21 @@ function detail(raw: string, state: ServerState): ReactNode {
   const name = <ShownText text={raw} />;
   switch (state.kind) {
     case 'downloading':
+    case 'unpacking':
     case 'starting':
     case 'indexing':
       return WAITING;
+    case 'waiting':
+      return (
+        <>
+          {`Lo runs ${state.count} language servers at once at most, and they're all in use on screen.`}{' '}
+          {name}{' '}
+          {state.next
+            ? 'is next in line, and starts when one of them stops.'
+            : 'is in line, and starts when its turn comes.'}{' '}
+          {UNTIL}
+        </>
+      );
     case 'ready':
       return undefined;
     case 'notAnswering':
@@ -271,8 +303,12 @@ function trustLabel(action: ServerTrust['action']): string {
   }
 }
 
-/** What the button that starts a server again says. */
+/**
+ * What the button that starts a server again says: for one waiting in line, which it puts first,
+ * "Start next".
+ */
 function restartLabel(state: ServerState): string {
+  if (state.kind === 'waiting') return 'Start next';
   return state.kind === 'failed' && state.why.kind === 'download' ? 'Retry' : 'Restart';
 }
 
@@ -327,6 +363,8 @@ export function ServerStatus({
   onOpenChange,
   container,
 }: ServerStatusProps) {
+  // One first in line for room already starts as soon as it can: there's nothing to offer it.
+  const again = state.kind === 'waiting' && state.next ? undefined : onRestart;
   const [kept, setKept] = useState(false);
   const shown = open ?? kept;
   const restart = useRef<HTMLButtonElement>(null);
@@ -336,7 +374,7 @@ export function ServerStatus({
   const details = useRef<HTMLElement | null>(null);
   // The details take focus as they open, not a frame on, so a key pressed then is theirs. It goes
   // to Restart, or to the first of the other buttons when the server has none to offer.
-  const takeFocus = useTakeFocus(onRestart ? restart : first);
+  const takeFocus = useTakeFocus(again ? restart : first);
   const popup = useCallback(
     (element: HTMLElement | null) => {
       details.current = element;
@@ -392,16 +430,16 @@ export function ServerStatus({
                   {says}
                 </Popover.Description>
               )}
-              {(onRestart || onShowLog || trust) && (
+              {(again || onShowLog || trust) && (
                 <div className="flex flex-wrap gap-6">
-                  {onRestart && (
+                  {again && (
                     <Button
                       ref={restart}
                       variant={failed ? 'primary' : 'secondary'}
                       size="sm"
                       onClick={() => {
                         change(false);
-                        onRestart();
+                        again();
                       }}
                     >
                       {restartLabel(state)}
@@ -409,7 +447,7 @@ export function ServerStatus({
                   )}
                   {onShowLog && (
                     <Button
-                      ref={onRestart ? undefined : first}
+                      ref={again ? undefined : first}
                       variant="ghost"
                       size="sm"
                       onClick={() => {
@@ -422,7 +460,7 @@ export function ServerStatus({
                   )}
                   {trust && (
                     <Button
-                      ref={onRestart || onShowLog ? undefined : first}
+                      ref={again || onShowLog ? undefined : first}
                       variant={state.kind === 'off' ? 'secondary' : 'ghost'}
                       size="sm"
                       onClick={() => {
@@ -439,7 +477,7 @@ export function ServerStatus({
           </Popover.Positioner>
         </Popover.Portal>
       </Popover.Root>
-      {failed && onRestart && (
+      {failed && again && (
         <button
           ref={beside}
           type="button"
@@ -449,7 +487,7 @@ export function ServerStatus({
           onClick={() => {
             // The button goes once the server is starting, and takes focus with it: the item stays.
             trigger.current?.focus({ preventScroll: true });
-            onRestart();
+            again();
           }}
         >
           {restartLabel(state)}

@@ -140,6 +140,11 @@ function standIn(
 }
 
 /** A place in a location's answer, at line `line` (from 1) and `column` of `path`. */
+/** Asked for the server of a file, finds `serving`, which can't answer. */
+function not(serving: NotServing): () => NotServing {
+  return () => serving;
+}
+
 function at(path: string, line: number, column: number) {
   const start = { line: line - 1, character: column };
   return { uri: `${CHECKOUT}/${path}`, range: { start, end: start } };
@@ -216,14 +221,24 @@ describe('definitions', () => {
     expect(found.answers[1]).toMatchObject({ source: 'syntax' });
   });
 
-  it('answers from the index, saying why, when the server is starting, slow or stopped', async () => {
+  it('answers from the index, saying why, when the server is starting, waiting, refused, slow, failed or stopped', async () => {
     const { sides, answering } = await view();
-    const starting: NotServing = { kind: 'starting', name: 'TypeScript' };
-    const failed: NotServing = { kind: 'failed', name: 'TypeScript' };
+    const name = 'TypeScript';
+    const why = 'The checkout’s tsconfig.json names a plugin, so Lo won’t run vtsls on it.';
     const slow = standIn({ 'textDocument/definition': { ok: false, why: 'deadline' } });
     const cases = [
-      [() => starting, 'TypeScript is starting.'],
-      [() => failed, 'TypeScript stopped.'],
+      [not({ kind: 'starting', name }), 'TypeScript is starting.'],
+      [
+        not({ kind: 'waiting', name, count: 4 }),
+        'TypeScript is waiting to start. Lo runs 4 language servers at once at most.',
+      ],
+      [not({ kind: 'refused', name, why }), `Lo won’t run TypeScript on this checkout. ${why}`],
+      [
+        not({ kind: 'missing', name, needs: 'Go 1.24 or later' }),
+        'TypeScript needs Go 1.24 or later.',
+      ],
+      [not({ kind: 'failed', name }), 'TypeScript failed. Restart it from the status bar.'],
+      [not({ kind: 'stopped', name }), 'TypeScript stopped.'],
       [slow.serverOf, "TypeScript didn't answer in time."],
       [
         standIn({ 'textDocument/definition': { ok: false, why: 'notReady' } }).serverOf,
