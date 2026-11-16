@@ -1300,12 +1300,13 @@ variables.
   import and the index, and an empty hover to the index; empty references or an empty outline are
   the server's answer. A server whose adapter says it finds references only from a declaration
   (`referencesFromDefinition`, terraform-ls) and finds none where the reader is, as at a use, is
-  asked for the definition, then for the references there, and with no definition in the repository
-  the index answers, saying why. Each file is opened on a server as its own language, by its path
-  (`languageOf`), so a `.tf` file reached from a `.tfvars` file is still `terraform`. A place
-  outside the checkout shows as "Outside this repository" and is never read; the references panel
-  counts those it doesn't list. The old side always answers from the index, and a server answers
-  only about the head it runs on, for a file whose checkout matches git's.
+  asked for the definition, then for the references there, all within the 10 s; with no definition
+  in the repository the index answers, saying why, and with none at all, that the server found no
+  references there, as at a declaration nothing uses. Each file is opened on a server as its own
+  language, by its path (`languageOf`), so a `.tf` file reached from a `.tfvars` file is still
+  `terraform`. A place outside the checkout shows as "Outside this repository" and is never read;
+  the references panel counts those it doesn't list. The old side always answers from the index, and
+  a server answers only about the head it runs on, for a file whose checkout matches git's.
 - A hover in Markdown is read into `@lo/markdown`'s tree by the background process (`code.render`,
   main's own job), as any text from anyone is, and the card never draws the Markdown as text: the
   code blocks it starts with, in order, are the declaration (rust-analyzer's module path, then the

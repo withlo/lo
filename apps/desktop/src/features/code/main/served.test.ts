@@ -6,7 +6,7 @@
 
 import type { Answer, Method } from '@lo/lsp';
 import { markdownTree } from '@lo/markdown';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, onTestFinished, vi } from 'vitest';
 
 import { IpcError } from '../../../ipc/contract.ts';
 import type { Answering, RenderHover } from './answers.ts';
@@ -104,6 +104,7 @@ function standIn(
 ) {
   const asked: Method[] = [];
   const params: unknown[] = [];
+  const deadlines: number[] = [];
   const opened: string[] = [];
   const openedAs: string[] = [];
   const { languages = {} } = options;
@@ -120,9 +121,10 @@ function standIn(
         openedAs.push(`${path} ${languageId}`);
         return true;
       },
-      request(method, given): Promise<Answer> {
+      request(method, given, { deadline }): Promise<Answer> {
         asked.push(method);
         params.push(given);
+        deadlines.push(deadline);
         const answer: Answer | ((asked: unknown) => Answer) | undefined = answers[method];
         if (typeof answer === 'function') return Promise.resolve(answer(given));
         return Promise.resolve(answer ?? { ok: true, value: null });
@@ -132,7 +134,7 @@ function standIn(
     },
     matches: () => Promise.resolve(matches),
   };
-  return { serving, asked, params, opened, openedAs, serverOf: () => serving };
+  return { serving, asked, params, deadlines, opened, openedAs, serverOf: () => serving };
 }
 
 /** A place in a location's answer, at line `line` (from 1) and `column` of `path`. */
@@ -541,11 +543,68 @@ describe('references from a definition', () => {
     );
   });
 
-  it('lets the index answer, saying why, when it finds no definition in the repository', async () => {
+  it('says it found no references there, with no definition to go through, as at a declaration nothing uses', async () => {
+    const { sides, answering } = await view();
+    for (const definition of [
+      { ok: true, value: null },
+      { ok: true, value: [] },
+    ] as const) {
+      const { serverOf, asked } = standIn(
+        {
+          'textDocument/definition': definition,
+          'textDocument/references': { ok: true, value: [] },
+        },
+        true,
+        {},
+        FROM_DEFINITION,
+      );
+      const references = await servedReferences(
+        answering,
+        sides,
+        PARSE_DECLARATION,
+        undefined,
+        serverOf,
+      );
+      expect(asked).toEqual(['textDocument/references', 'textDocument/definition']);
+      expect(references.fallback).toBe('TypeScript found no references there.');
+      expect(references.answers.length).toBeGreaterThan(0);
+      expect(references.answers.every((each) => each.source === 'syntax')).toBe(true);
+    }
+  });
+
+  it('asks everything within one deadline, a single question’s, and lets the index answer once it passes', async () => {
+    const { sides, answering } = await view();
+    vi.useFakeTimers({ toFake: ['performance'] });
+    onTestFinished(() => {
+      vi.useRealTimers();
+    });
+    const { serverOf, asked, deadlines } = standIn(
+      {
+        'textDocument/references': (given) => {
+          vi.advanceTimersByTime(9_000);
+          return FOUND_AT_DECLARATION(given);
+        },
+        'textDocument/definition': () => {
+          vi.advanceTimersByTime(1_000);
+          return { ok: true, value: [at('src/parse.ts', 2, 16)] };
+        },
+      },
+      true,
+      {},
+      FROM_DEFINITION,
+    );
+    const references = await servedReferences(answering, sides, PARSE_CALL, undefined, serverOf);
+    // The definition has what's left, and nothing's left to ask for the references there.
+    expect(asked).toEqual(['textDocument/references', 'textDocument/definition']);
+    expect(deadlines).toEqual([10_000, 1_000]);
+    expect(references.fallback).toBe("TypeScript didn't answer in time.");
+    expect(references.answers.length).toBeGreaterThan(0);
+    expect(references.answers.every((each) => each.source === 'syntax')).toBe(true);
+  });
+
+  it('lets the index answer, saying why, when its definition is out of reach', async () => {
     const { sides, answering } = await view();
     for (const [definition, why] of [
-      [{ ok: true, value: null }, 'TypeScript found no definition of it.'],
-      [{ ok: true, value: [] }, 'TypeScript found no definition of it.'],
       [
         { ok: true, value: [{ uri: 'jdt://x', range: at('x', 1, 0).range }] },
         'TypeScript found its definition outside the repository.',
