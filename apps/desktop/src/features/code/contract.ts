@@ -120,7 +120,7 @@ const serverId = z.string().regex(/^[a-z][a-z0-9-]{0,39}$/);
  * - `downloading`, in bytes, the first time it's needed, then `unpacking` what came, and
  *   `building` it, for a server Lo builds from its source;
  * - `waiting` in line for room, since Lo runs `count` at once at most: `next` when it's first;
- * - `starting`, also while its checkout is made, or while it moves to another head;
+ * - `starting`, also while its checkout is made or looked at, or while it moves to another head;
  * - `indexing` while it says it's loading the project, `percent` far when it says;
  * - `ready`, or `notAnswering` once it has missed several deadlines in a short while;
  * - `failed`: out of memory at `cap` bytes, a download that failed, or anything else, in a
