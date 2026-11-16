@@ -96,7 +96,8 @@ export interface OverviewDocumentProps {
   ref?: Ref<HTMLDivElement> | undefined;
   /**
    * Whether its blocks are still drawing what they show before it's first seen: the outline and
-   * the article are laid out, so the blocks can tell where they are, but not shown.
+   * the article are laid out, so the blocks can tell where they are, but not shown, and their place
+   * on the page isn't held yet.
    */
   drawing?: boolean | undefined;
 }
@@ -154,12 +155,13 @@ export function OverviewDocument({
   );
 
   // What's on screen stays where it is on the page as the box moves without the reader, as when a
-  // banner over it comes or goes.
-  useEffect(() => {
+  // banner over it comes or goes, from the first frame it's seen in. A banner that goes while its
+  // blocks draw unseen, or as it's shown, moves nothing anyone saw, so it leaves no room above it.
+  useLayoutEffect(() => {
     const element = root.current;
-    if (!element || typeof ResizeObserver === 'undefined') return undefined;
+    if (drawing || !element || typeof ResizeObserver === 'undefined') return undefined;
     return holdPlace(element);
-  }, []);
+  }, [drawing]);
 
   // The latest handler, read when a link is followed, so a new one doesn't draw the article again.
   const handler = useRef(onFollow);

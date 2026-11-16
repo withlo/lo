@@ -3,7 +3,7 @@ import { readdirSync, readFileSync, statSync } from 'node:fs';
 
 import { act, type ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it, onTestFinished, vi } from 'vitest';
 
 import {
   parseArtifact,
@@ -16,6 +16,7 @@ import {
 
 import { buildCss, hasRule } from '../../scripts/stylesheet.ts';
 import { cleanUp, click, disallowed, focus, ids, press, render, rerender } from '../../test/dom.ts';
+import { FakeResizeObserver, resize } from '../../test/figures.ts';
 import { isMarkdownAttribute, MARKDOWN_ELEMENTS } from '../markdown/index.ts';
 import {
   alphabetical,
@@ -138,6 +139,36 @@ describe('OverviewDocument', () => {
     expect(box.querySelector('article.lo-ov__article')).not.toBeNull();
     rerender(page, <OverviewDocument tree={tree} />);
     expect(box.classList.contains('is-drawing')).toBe(false);
+  });
+
+  it('holds its place on the page once it’s seen: a banner that goes while its blocks draw unseen leaves no room above it', () => {
+    vi.stubGlobal('ResizeObserver', FakeResizeObserver);
+    // The box's top on the page, under a banner 30 pixels tall.
+    let top = 130;
+    const layout = vi
+      .spyOn(Element.prototype, 'getBoundingClientRect')
+      .mockImplementation(function (this: Element) {
+        return this.classList.contains('lo-ov') ? new DOMRect(0, top, 600, 400) : new DOMRect();
+      });
+    onTestFinished(() => {
+      layout.mockRestore();
+      vi.unstubAllGlobals();
+    });
+    const tree = fixture('valid/example');
+    const page = render(<OverviewDocument tree={tree} drawing />);
+    const box = page.querySelector<HTMLElement>('.lo-ov')!;
+    // The banner goes while the blocks draw, and the box moves up.
+    top = 100;
+    resize(box);
+    rerender(page, <OverviewDocument tree={tree} />);
+    resize(box);
+    expect(box.style.paddingTop).toBe('');
+    // Seen, it stays where it is as the next banner goes.
+    top = 130;
+    resize(box);
+    top = 100;
+    resize(box);
+    expect(box.style.paddingTop).toBe('30px');
   });
 
   it('draws the blocks given views for, in place of what they point at', () => {
