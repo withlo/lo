@@ -511,6 +511,79 @@ describe('an overview that can’t be shown', () => {
   });
 });
 
+/**
+ * The overview's box, `top` pixels down the page, which a test moves as a banner over it comes or
+ * goes, telling the box's resize observers as a browser would.
+ */
+function boxed() {
+  const box = { top: 130 };
+  /** The observers watching each element. */
+  const watching = new Map<Element, Set<ResizeObserver>>();
+  const told = new WeakMap<ResizeObserver, ResizeObserverCallback>();
+  vi.stubGlobal(
+    'ResizeObserver',
+    class implements ResizeObserver {
+      constructor(callback: ResizeObserverCallback) {
+        told.set(this, callback);
+      }
+      observe(element: Element) {
+        watching.set(element, new Set([...(watching.get(element) ?? []), this]));
+      }
+      unobserve(element: Element) {
+        watching.get(element)?.delete(this);
+      }
+      disconnect() {
+        for (const observers of watching.values()) observers.delete(this);
+      }
+    },
+  );
+  const layout = vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (
+    this: Element,
+  ) {
+    return this.classList.contains('lo-ov') ? new DOMRect(0, box.top, 600, 400) : new DOMRect();
+  });
+  onTestFinished(() => {
+    layout.mockRestore();
+    vi.unstubAllGlobals();
+  });
+  return {
+    /** The box moves to `top`, as a banner over it comes or goes. */
+    move(top: number) {
+      box.top = top;
+      for (const [element, observers] of watching) {
+        if (!element.classList.contains('lo-ov')) continue;
+        for (const observer of observers) act(() => told.get(observer)?.([], observer));
+      }
+    },
+  };
+}
+
+describe('its place on the page', () => {
+  it('is where it’s first seen: drawn behind another view, a banner that goes meanwhile leaves no room above it', async () => {
+    const page = boxed();
+    const tab = tabOf();
+    const checking = checkingFor(tab);
+    act(() => states.set(tab.id, stateOf(tab)));
+    const view = render(tab);
+    // The reader shows another view before the overview has drawn.
+    view.shown(false);
+    checking.take(stateOf(tab));
+    await until(() => view.querySelector('.lo-ov') !== null);
+    await until(() => view.querySelector('.lo-ov.is-drawing') === null);
+    // The banner over it goes while it's behind the other view.
+    page.move(100);
+    // Shown, the frame that shows it tells of the box as it is.
+    view.shown(true);
+    page.move(100);
+    const box = view.querySelector<HTMLElement>('.lo-ov')!;
+    expect(box.style.paddingTop).toBe('');
+    // Seen, it stays where it is as the next banner goes.
+    page.move(130);
+    page.move(100);
+    expect(box.style.paddingTop).toBe('30px');
+  });
+});
+
 describe('an overview on screen', () => {
   it('keeps every node, its folds open and focus where it was, when it’s checked again or copied', async () => {
     const tab = tabOf();

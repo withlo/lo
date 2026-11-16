@@ -122,6 +122,11 @@ export interface DiffInit {
   vimKeys: readonly VimKey[];
   /** The nonce the window's content security policy lets the view's style elements carry. */
   nonce: string;
+  /**
+   * Whether it's drawn hidden, behind another view: its place on the page is held only from the
+   * first frame after `seen`. Otherwise, from its first frame.
+   */
+  hidden?: boolean | undefined;
 }
 
 /**
@@ -601,6 +606,11 @@ export interface DiffView extends KeySource {
    * view, as one kept out, there's no pairing them: it's the other end's first line.
    */
   otherEnd(at: Place): Place | undefined;
+  /**
+   * It's on screen, drawn `hidden`: its place on the page is where it is in the next frame, the
+   * first it's seen in. Once it's been seen, nothing.
+   */
+  seen(): void;
   focus(): void;
   destroy(): void;
   readonly probe: Probe;

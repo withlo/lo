@@ -460,7 +460,14 @@ export function draw(options: DrawOptions): Drawing {
   const toTop = (id: string): boolean => view.revealAtTop({ kind: 'file', file: id });
   const view = createDiffView(
     parent,
-    { files, layout: options.layout, vimKeys: keys.vimKeys(), nonce: options.nonce },
+    {
+      files,
+      layout: options.layout,
+      vimKeys: keys.vimKeys(),
+      nonce: options.nonce,
+      // Drawn behind another middle view, its place is held once it's first shown.
+      hidden: !options.shown,
+    },
     {
       cursor: settle,
       mode() {},

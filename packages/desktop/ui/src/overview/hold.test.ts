@@ -42,17 +42,38 @@ function scrollerOf(content: number) {
     element,
     /** Where the content's first line is on the page. */
     first: () => box.top + room() - scrollTop,
-    /** A banner `height` pixels tall comes over the box, or goes when negative. */
-    banner(height: number) {
+    /**
+     * A banner `height` pixels tall comes over the box, or goes when negative. Unless `told`, the
+     * resize observers hear of it only at the next {@link resize}, as a browser tells them once it
+     * has run the frame's animation callbacks.
+     */
+    banner(height: number, told = true) {
       box.top += height;
       box.height -= height;
       scrollTop = Math.min(scrollTop, end());
-      resize(element);
+      if (told) resize(element);
     },
     /** The reader scrolls to `to`. */
     scroll(to: number) {
       element.scrollTop = to;
       element.dispatchEvent(new Event('scroll'));
+    },
+  };
+}
+
+/** The window's animation frames, run when a test says: `run` runs the next one's callbacks. */
+function framesOf() {
+  let waiting: FrameRequestCallback[] = [];
+  const spy = vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {
+    waiting.push(callback);
+    return waiting.length;
+  });
+  onTestFinished(() => spy.mockRestore());
+  return {
+    run() {
+      const now = waiting;
+      waiting = [];
+      for (const callback of now) callback(performance.now());
     },
   };
 }
@@ -87,6 +108,24 @@ describe('an overview’s place on the page', () => {
     expect(view.element.scrollTop).toBe(0);
     expect(view.element.style.paddingTop).toBe('');
     expect(view.first()).toBe(180);
+  });
+
+  it('starts where it’s first seen: a banner that goes before that frame leaves no room above', () => {
+    const frames = framesOf();
+    const view = scrollerOf(3000);
+    holdPlace(view.element);
+    // The banner goes after the hold starts, before the frame the document is first seen in, which
+    // tells of the box's new size only after its animation callbacks.
+    view.banner(-60, false);
+    frames.run();
+    resize(view.element);
+    expect(view.element.style.paddingTop).toBe('');
+    expect(view.first()).toBe(40);
+    // From there, a banner going leaves the document where it was seen.
+    view.banner(30);
+    view.banner(-30);
+    expect(view.element.style.paddingTop).toBe('30px');
+    expect(view.first()).toBe(70);
   });
 
   it('keeps the top in view as what comes in at the top grows, until the reader scrolls', () => {
