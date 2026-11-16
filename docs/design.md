@@ -138,8 +138,9 @@ Everything a PR contains is untrusted: code, Markdown, images and artifacts.
   owner, recent PRs, unsent comment text and the repos whose banner about language servers you
   dismissed.
 - **Settings file.** `settings.json` in `~/.config/lo/` holds the settings, among them which repos
-  and PRs you trust to run language servers. The window shows that list but can't change it: only
-  the main process writes it, once its own dialog says "Trust".
+  and PRs you trust to run language servers. The window shows that list but can't write it: only the
+  main process does. It adds an entry only once its own dialog says "Trust", and the window can ask
+  it to take one out.
 - **Tokens** are encrypted with a key kept in the system keychain, and stored in the database, one
   per account. On Linux that's a keyring, such as GNOME Keyring or KWallet: when none answers, Lo
   asks for one rather than keep a token as good as unencrypted.
@@ -594,8 +595,9 @@ repo. The right side of a diff navigates the new commit, and the left side the o
 - **How many.** One server runs per repo and language, on the head on screen, and it moves when
   another head of the repo comes on screen. Each is held to 4 GB, and at most four run, holding 8 GB
   in all: past either, the one used longest ago that isn't on screen stops.
-- **Precedence.** Language server answers win, each labelled with the server's name. Syntax-based
-  answers fill in while a language server starts up, or when it can't answer, and say why.
+- **Precedence.** Language server answers win, each labelled with its language's name, such as
+  "TypeScript". Syntax-based answers fill in while a language server starts up, or when it can't
+  answer, and say why.
 - **Dependencies.** Dependencies are never installed, so a symbol from one shows its import and
   nothing more.
 
@@ -612,15 +614,23 @@ repo. The right side of a diff navigates the new commit, and the left side the o
   fetches its source from the Go module proxy and builds it, offline. Every file is pinned by its
   hash. vtsls and Pyright run on a Node that Lo downloads for them from nodejs.org.
 - **Toolchains.** The toolchains servers need are Lo's own too: Go, Rust, a Temurin JDK and the .NET
-  SDK, one version each, pinned and downloaded like the servers on first use of their language.
-  Servers never use the machine's, nor a version a repo asks for. Settings lists them with their
-  sizes, and removes them.
-- **Hardening.** Each server runs as its own program, never through a shell, in an environment built
-  from nothing, so none of Lo's secrets or your settings reach it. It has no network: its proxy
-  variables point nowhere. Its home is a folder of its own in Lo's cache, so it reads none of the
-  settings files in yours. Nothing in a checkout chooses what runs or how, and a server's settings
-  are Lo's. None is sandboxed, though: a server reads what you can, and Lo never opens a place
-  outside the checkout that an answer names.
+  SDK, one version each, pinned and downloaded like the servers on first use of their language, from
+  each project's own site: dl.google.com, static.rust-lang.org, Adoptium's releases on GitHub and
+  builds.dotnet.microsoft.com. Servers never use the machine's, nor a version a repo asks for.
+  Settings lists them with their sizes, and removes them.
+- **Hardening.** Lo picks each server's program, its arguments and its environment, and nothing in a
+  checkout supplies a program: a server starts as its own program, never through a shell. Its
+  environment is built from nothing, so none of Lo's secrets or your settings reach it, and its home
+  is a folder of its own in Lo's cache, so it reads none of the settings files in yours. Its proxy
+  variables point nowhere, so a program that honours them reaches no host. That isn't a sandbox:
+  Node's `fetch`, for one, ignores them.
+- **Still steered.** Files in a checkout can still steer a server. A `tsconfig.json` can load a
+  `tsserver` plugin that's already in a `node_modules` above Lo's install, which on Linux includes
+  `~/node_modules`. A `pyrightconfig.json` can name a virtual environment and extra paths for
+  Pyright to read, and a `.php-lsp.json` folders of stubs. A `go.mod` or a Terraform module can lead
+  a server to files outside the checkout. No server is sandboxed: it reads what you can, and Lo
+  never opens a place outside the checkout that an answer names. The lsp package's README lists
+  each.
 - **Refusals.** A checkout that holds files a server's tools would act on gets no server for that
   language, and the status bar says why. For Rust that's a `rust-analyzer.toml`, or a Cargo config
   that sets an environment or unstable options, includes another file or sits above the checkout;
@@ -628,18 +638,22 @@ repo. The right side of a diff navigates the new commit, and the left side the o
   `global.json` that names folders to find an SDK in, or an MSBuild or NuGet settings file, such as
   `Directory.Build.props`, above the checkout; and for Java, Eclipse's `.settings` folder at the
   root.
-- **Homes.** Each server has a home of its own for each repo in Lo's cache, where it keeps all it
-  writes. The cache's size cap counts homes, and a repo's go with its clone.
-- **Java and C#.** Neither server reads the repo's build, since a build can run code. Java's source
-  folders come from the files' own packages, and Roslyn gets a project of Lo's own that lists the
-  checkout's `.cs` files. So a type from a dependency has no definition.
+- **Homes.** Each repo and language has a home in Lo's cache, where its server keeps what it writes,
+  but for a cache Roslyn keeps in its install. The cache's size cap counts homes, and a repo's go
+  with its clone.
+- **Java and C#.** Neither server reads the repo's build. Java's source folders come from the files'
+  own packages, and Roslyn gets a project of Lo's own that lists the checkout's `.cs` files. So a
+  type from a dependency has no definition.
 - **Without a server.** Kotlin and Ruby have none and answer from the syntax index, as does any
   other language that has a grammar but no server.
 
 ### Trust
 
-Language servers run only when the repo is trusted and the PR's branch lives in that repo. A PR from
-a fork is someone else's code, even in a repo you trust.
+Language servers are large programs that read a checkout's code and settings files. Lo limits what
+they can run, but they aren't sandboxed: a checkout can still steer them in the ways listed under
+Languages, and hostile content could use a bug in one. So they run only when the repo is trusted and
+the PR's branch lives in that repo. A PR from a fork is someone else's code, even in a repo you
+trust.
 
 - **Untrusted repo.** A banner says "Language servers are off for this repo," with buttons to trust
   the repo or dismiss the banner. You're asked once per repo: trusting opens a dialog of Lo's own
@@ -1053,33 +1067,33 @@ a server stops once its PR hasn't been on screen for 10 minutes.
 
 ## 15. Decisions and trade-offs
 
-| Decision                                                                         | Rejected                                                           | Why                                                                                                               | Cost we accept                                                                     |
-| -------------------------------------------------------------------------------- | ------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
-| Electron and TypeScript                                                          | A native toolkit; a Rust backend behind a web view; forking an IDE | Overviews are web content, tests can drive the real app, and one language can be shared with a mobile app         | A larger download and more memory than a native app                                |
-| CodeMirror 6 for every code view                                                 | Monaco; a read-only diff renderer                                  | Many editors on one page stay cheap, it's styled with plain CSS, it works on phones and it has a real text cursor | Lo builds thread alignment, the many-file scroll, the peek and the references list |
-| tree-sitter for highlighting                                                     | CodeMirror's own grammars                                          | One set of grammars covers highlighting, navigation and the later syntax-aware diff                               | A bridge between tree-sitter and CodeMirror                                        |
-| Logic in core packages that run anywhere                                         | Logic inside the app                                               | A mobile app can reuse it                                                                                         | Those packages can't touch git, files, processes, Node or Electron                 |
-| Overviews are structured documents Lo renders                                    | Sandboxed HTML pages                                               | They follow Lo's design, never run scripts and tell Lo every code reference                                       | Layout is limited to Lo's blocks, with no agent-written widgets in v1              |
-| Overviews live in a hidden ref per PR                                            | One shared branch; a PR comment; a Lo backend                      | No size limit, nothing visible on GitHub, no races between agents, no server                                      | They can't be read on github.com, and writing one needs push access                |
-| One overview per PR                                                              | One per writer                                                     | One explanation to read, with no picker                                                                           | A new one replaces the last for everyone                                           |
-| Code in overviews by reference                                                   | Code written into the artifact                                     | An overview can't misquote the PR                                                                                 | A block needs the code loaded before it shows                                      |
-| Lo never writes an overview                                                      | An action that runs a local agent                                  | Lo calls no model                                                                                                 | One copy and paste to get an overview                                              |
-| The whole repo in the file tree                                                  | A list of changed files                                            | Changed files are seen in context                                                                                 | More to load in large repos                                                        |
-| Language servers in v1                                                           | Syntax-based navigation only in v1                                 | Types and exact references are what GitHub can't show                                                             | Each server needs its own download and start-up handling                           |
-| A fixed list of language servers, each from its project's own source             | An extension store                                                 | Official sources only (npm, NuGet, GitHub, HashiCorp, Eclipse, Go's module proxy), each file pinned by hash       | New languages arrive only with Lo releases                                         |
-| The syntax-aware diff comes later                                                | In v1                                                              | Its algorithm must be written from scratch                                                                        | v1 has moved-code detection only                                                   |
-| Git is optional                                                                  | Git is required                                                    | A PR is useful from GitHub's API alone                                                                            | Two ways to load a PR                                                              |
-| Mac release, Linux preview as deb and rpm                                        | Mac only; both as full releases                                    | The tests already run on Linux                                                                                    | The Linux build is unpolished in v1                                                |
-| GPL-3.0 app, MIT skill and format                                                | Permissive everywhere; a source-available license                  | Nobody can ship a closed rebrand, and the format stays easy to adopt                                              | Contributors sign an agreement so the license can change later                     |
-| OAuth app                                                                        | GitHub App                                                         | A GitHub App can't comment, approve or merge where it isn't installed, which rules out most open-source repos     | Broad `repo` scope, and orgs that restrict apps must approve Lo                    |
-| No backend, polling                                                              | A server receiving webhooks                                        | Nothing to run, pay for or trust                                                                                  | Up to 15–30 seconds of lag, and a rate limit to budget                             |
-| A local partial clone                                                            | GitHub's API alone                                                 | Whole-file context, navigation, rebase-aware comparison and language servers all need one                         | git is required, and repos take disk space                                         |
-| Three stack rules, including shared commits                                      | Base-branch chains only                                            | Catches agents branching off another branch but targeting `main`, and stacks from forks                           | More data per repo, and the nearest-parent rule can guess wrong                    |
-| Convert chains to GitHub stacks to merge them                                    | Merging one layer at a time                                        | Stacks merge as one unit, including through the queue                                                             | It changes PR base branches for everyone, on a feature in preview                  |
-| Language servers only for trusted repos and same-repo PRs                        | Language servers everywhere                                        | Some language servers run code from the repo                                                                      | One click per repo, and PRs from forks get syntax-based navigation only            |
-| No dependency types                                                              | Installing dependencies                                            | Every repo installs differently, and Lo never runs a repo's code                                                  | Symbols from dependencies show their import only                                   |
-| Attachments uploaded the way `gh --attach` does                                  | No attachments                                                     | You want GIFs in reviews                                                                                          | The upload endpoint is undocumented and needs write access                         |
-| Comments collect into a pending review                                           | Posting each one right away                                        | Agents act on each comment as it lands                                                                            | One extra key to post a single comment                                             |
-| Read-only: no "Update branch," applying suggestions, PR edits or branch deletion | Matching GitHub's web UI                                           | Lo changes nothing but reviews, comments and merges                                                               | Those actions stay on GitHub                                                       |
-| Several accounts in v1                                                           | One account                                                        | You work across several GitHub accounts                                                                           | Choosing an account for each owner, plus account names shown everywhere            |
-| Signed download and Homebrew                                                     | Mac App Store                                                      | App Store rules forbid downloading and running code                                                               | No App Store discovery or updates                                                  |
+| Decision                                                                         | Rejected                                                           | Why                                                                                                                                                  | Cost we accept                                                                     |
+| -------------------------------------------------------------------------------- | ------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| Electron and TypeScript                                                          | A native toolkit; a Rust backend behind a web view; forking an IDE | Overviews are web content, tests can drive the real app, and one language can be shared with a mobile app                                            | A larger download and more memory than a native app                                |
+| CodeMirror 6 for every code view                                                 | Monaco; a read-only diff renderer                                  | Many editors on one page stay cheap, it's styled with plain CSS, it works on phones and it has a real text cursor                                    | Lo builds thread alignment, the many-file scroll, the peek and the references list |
+| tree-sitter for highlighting                                                     | CodeMirror's own grammars                                          | One set of grammars covers highlighting, navigation and the later syntax-aware diff                                                                  | A bridge between tree-sitter and CodeMirror                                        |
+| Logic in core packages that run anywhere                                         | Logic inside the app                                               | A mobile app can reuse it                                                                                                                            | Those packages can't touch git, files, processes, Node or Electron                 |
+| Overviews are structured documents Lo renders                                    | Sandboxed HTML pages                                               | They follow Lo's design, never run scripts and tell Lo every code reference                                                                          | Layout is limited to Lo's blocks, with no agent-written widgets in v1              |
+| Overviews live in a hidden ref per PR                                            | One shared branch; a PR comment; a Lo backend                      | No size limit, nothing visible on GitHub, no races between agents, no server                                                                         | They can't be read on github.com, and writing one needs push access                |
+| One overview per PR                                                              | One per writer                                                     | One explanation to read, with no picker                                                                                                              | A new one replaces the last for everyone                                           |
+| Code in overviews by reference                                                   | Code written into the artifact                                     | An overview can't misquote the PR                                                                                                                    | A block needs the code loaded before it shows                                      |
+| Lo never writes an overview                                                      | An action that runs a local agent                                  | Lo calls no model                                                                                                                                    | One copy and paste to get an overview                                              |
+| The whole repo in the file tree                                                  | A list of changed files                                            | Changed files are seen in context                                                                                                                    | More to load in large repos                                                        |
+| Language servers in v1                                                           | Syntax-based navigation only in v1                                 | Types and exact references are what GitHub can't show                                                                                                | Each server needs its own download and start-up handling                           |
+| A fixed list of language servers, each from its project's own source             | An extension store                                                 | Official sources only, each file pinned by hash: npm, NuGet, GitHub, HashiCorp, Eclipse, Go's module proxy, nodejs.org and each toolchain's own site | New languages arrive only with Lo releases                                         |
+| The syntax-aware diff comes later                                                | In v1                                                              | Its algorithm must be written from scratch                                                                                                           | v1 has moved-code detection only                                                   |
+| Git is optional                                                                  | Git is required                                                    | A PR is useful from GitHub's API alone                                                                                                               | Two ways to load a PR                                                              |
+| Mac release, Linux preview as deb and rpm                                        | Mac only; both as full releases                                    | The tests already run on Linux                                                                                                                       | The Linux build is unpolished in v1                                                |
+| GPL-3.0 app, MIT skill and format                                                | Permissive everywhere; a source-available license                  | Nobody can ship a closed rebrand, and the format stays easy to adopt                                                                                 | Contributors sign an agreement so the license can change later                     |
+| OAuth app                                                                        | GitHub App                                                         | A GitHub App can't comment, approve or merge where it isn't installed, which rules out most open-source repos                                        | Broad `repo` scope, and orgs that restrict apps must approve Lo                    |
+| No backend, polling                                                              | A server receiving webhooks                                        | Nothing to run, pay for or trust                                                                                                                     | Up to 15–30 seconds of lag, and a rate limit to budget                             |
+| A local partial clone                                                            | GitHub's API alone                                                 | Whole-file context, navigation, rebase-aware comparison and language servers all need one                                                            | git is required, and repos take disk space                                         |
+| Three stack rules, including shared commits                                      | Base-branch chains only                                            | Catches agents branching off another branch but targeting `main`, and stacks from forks                                                              | More data per repo, and the nearest-parent rule can guess wrong                    |
+| Convert chains to GitHub stacks to merge them                                    | Merging one layer at a time                                        | Stacks merge as one unit, including through the queue                                                                                                | It changes PR base branches for everyone, on a feature in preview                  |
+| Language servers only for trusted repos and same-repo PRs                        | Language servers everywhere                                        | Servers are large programs that read a repo's code and settings with no sandbox, and a checkout can still steer them                                 | One click per repo, and PRs from forks get syntax-based navigation only            |
+| No dependency types                                                              | Installing dependencies                                            | Every repo installs differently, and Lo never runs a repo's code                                                                                     | Symbols from dependencies show their import only                                   |
+| Attachments uploaded the way `gh --attach` does                                  | No attachments                                                     | You want GIFs in reviews                                                                                                                             | The upload endpoint is undocumented and needs write access                         |
+| Comments collect into a pending review                                           | Posting each one right away                                        | Agents act on each comment as it lands                                                                                                               | One extra key to post a single comment                                             |
+| Read-only: no "Update branch," applying suggestions, PR edits or branch deletion | Matching GitHub's web UI                                           | Lo changes nothing but reviews, comments and merges                                                                                                  | Those actions stay on GitHub                                                       |
+| Several accounts in v1                                                           | One account                                                        | You work across several GitHub accounts                                                                                                              | Choosing an account for each owner, plus account names shown everywhere            |
+| Signed download and Homebrew                                                     | Mac App Store                                                      | App Store rules forbid downloading and running code                                                                                                  | No App Store discovery or updates                                                  |

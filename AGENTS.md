@@ -1352,7 +1352,8 @@ Lo's Temurin JDK; and C#, Roslyn, which runs on Lo's .NET SDK.
   takes that and its adapter doesn't say it `stays`, as Java's does, else by starting again
   (`main/servers.ts`). It doesn't start on, or move to, a checkout its toolchains or its adapter
   refuse (`checkoutRefusal` in `main/toolchains.ts`): .NET's for a `global.json` that steers it,
-  Go's for a `go.work` that reaches outside it, Java's for a `.settings` at the root. Its `HOME` is
+  Go's for a `go.work` that reaches outside it, Rust's for a `rust-analyzer.toml` or a Cargo config
+  that could load code, Java's for a `.settings` at the root. Its `HOME` is
   `<cache>/code/homes/<owner>/<name>/<adapter>` (`Cache.homeFolder`), which the cache's cap counts
   and trims and which goes with the repository's clone, but never while a server of the repository
   runs (see Git). Its `PATH` is its toolchain's folders, then Lo's git's, then the system's, so a
