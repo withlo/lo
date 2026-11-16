@@ -3,8 +3,9 @@
 // changes. Each plan runs once, its changes sent in order through the account's poller, stopping at
 // the first GitHub refuses or that fails, or before the next one once the reader stops it. Nothing
 // is ever sent again by itself. A conversion that failed or stopped can put back the base branches
-// it changed, last first, once the reader asks. A repository has one conversion at a time, and none
-// outlives Lo. Nothing here calls Electron.
+// it changed, last first, once the reader asks. A repository has one conversion at a time, none
+// changes the base branches of pull requests Lo is merging, and none outlives Lo. Nothing here calls
+// Electron.
 
 import {
   describeMergeRefusal,
@@ -26,6 +27,7 @@ import { layerOf, planConversion, type Plan, type Stacks, type Step } from '@lo/
 
 import { IpcError } from '../../../ipc/contract.ts';
 import type { Acting } from '../../tab/contract.ts';
+import type { Converting } from '../service.ts';
 import type {
   Change,
   ChangeRow,
@@ -82,6 +84,11 @@ export interface ConversionOptions {
   found(id: string): Found | undefined;
   /** Sends a conversion to the window, each time it changes. */
   publish(view: ConversionView): void;
+  /**
+   * Which of `prs`, pull requests in `repo`, Lo is merging now: a conversion whose path holds any
+   * is refused. None without it.
+   */
+  held?: (repo: RepoRef, prs: readonly number[]) => readonly number[];
   log(line: string): void;
   /** The time, in milliseconds since the Unix epoch. */
   now?: () => number;
@@ -227,6 +234,8 @@ export class Conversions {
     // Whether each pull request it changes is in a merge queue must be known.
     const read = new Set(layers?.layers.map((each) => each.number));
     if (!plan.path.every((number) => read.has(number))) return refused([OWN.layersUnread]);
+    const merging = this.#held(repo, plan.path);
+    if (merging.length > 0) return refused([OWN.merging(merging)]);
 
     for (const [key, kept] of this.#kept) if (kept.tab === tab.id) this.#kept.delete(key);
     const key = this.#newKey();
@@ -259,6 +268,9 @@ export class Conversions {
     if (this.#busy.has(kept.repo.key)) {
       throw new IpcError('busy', OWN.running(kept.repository));
     }
+    // A merge that started since the plan was made: the plan waits for it to finish.
+    const merging = this.#held(kept.repo, kept.plan.path);
+    if (merging.length > 0) throw new IpcError('busy', OWN.merging(merging));
     this.#kept.delete(key);
     const run: Run = {
       ...kept,
@@ -317,6 +329,8 @@ export class Conversions {
       throw new IpcError('gone', "There's nothing to put back.");
     }
     if (this.#busy.has(run.repo.key)) throw new IpcError('busy', OWN.running(run.repository));
+    const merging = this.#held(run.repo, run.plan.path);
+    if (merging.length > 0) throw new IpcError('busy', OWN.merging(merging));
     if (!putBackOf(run).some(toDo)) {
       throw new IpcError('gone', "There's nothing to put back.");
     }
@@ -329,6 +343,22 @@ export class Conversions {
     this.#publish(run);
     void this.#putBack(run).catch((error: unknown) => this.#crashed(run, error));
     return this.#view(run);
+  }
+
+  /**
+   * The conversion in `repo` sending changes, putting base branches back included, or else one that
+   * waits on a rollback: it failed or stopped with base branches the reader may still put back, and
+   * the window hasn't forgotten it.
+   */
+  converting(repo: RepoRef): Converting | undefined {
+    const busy = this.#busy.get(repo.key);
+    if (busy) return { kind: 'running', prs: [...busy.plan.path] };
+    for (const run of this.#runs.values()) {
+      if (run.repo.equals(repo) && !run.controller && canPutBack(run)) {
+        return { kind: 'rollback', prs: [...run.plan.path] };
+      }
+    }
+    return undefined;
   }
 
   /** Forgets the plans of tabs that closed: the window can't confirm them any more. */
@@ -588,6 +618,11 @@ export class Conversions {
     }
   }
 
+  /** Which of `prs`, pull requests in `repo`, Lo is merging now. */
+  #held(repo: RepoRef, prs: readonly number[]): readonly number[] {
+    return this.#options.held?.(repo, prs) ?? [];
+  }
+
   #mark(rows: ChangeRow[], index: number, status: ChangeStatus, detail: string | null): void {
     const row = rows[index];
     if (row) rows[index] = { ...row, status, detail };
@@ -622,11 +657,9 @@ export class Conversions {
   /** What the window shows of `run`. */
   #view(run: Run): ConversionView {
     const { phase, plan } = run;
-    const left = putBackOf(run).filter(toDo);
-    const canPutBack =
-      (phase === 'failed' || phase === 'stopped' || (phase === 'putBack' && run.again)) &&
-      left.length > 0;
-    const moves = left.filter((row) => row.change.kind === 'retarget').length;
+    const moves = putBackOf(run)
+      .filter(toDo)
+      .filter((row) => row.change.kind === 'retarget').length;
     return {
       key: run.key,
       tab: run.tab,
@@ -637,7 +670,7 @@ export class Conversions {
       stopping: run.stopping,
       changes: run.changes,
       putBack: run.putBack,
-      putBackLabel: canPutBack
+      putBackLabel: canPutBack(run)
         ? moves === 1
           ? 'Put the base branch back'
           : 'Put the base branches back'
@@ -701,6 +734,16 @@ function unsureUnstack(row: ChangeRow): boolean {
 /** Whether putting back has `row` still to do: to send, or to read again first. */
 function toDo(row: ChangeRow): boolean {
   return row.status === 'todo' || unsureUnstack(row);
+}
+
+/**
+ * Whether the reader may put back what `run` changed: it failed or stopped, or stopped putting back
+ * before it was over, with something still to put back.
+ */
+function canPutBack(run: Run): boolean {
+  const { phase } = run;
+  const settled = phase === 'failed' || phase === 'stopped' || (phase === 'putBack' && run.again);
+  return settled && putBackOf(run).some(toDo);
 }
 
 /** What a plan shows of each pull request it changes: every one in the path, or those added. */

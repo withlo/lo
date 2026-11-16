@@ -10,6 +10,7 @@ import {
   STACK_LAYERS,
   Token,
   type Cached,
+  type ListSchedule,
   type OpenPullRequestList,
   type OverviewRefNumbers,
   type ReadKind,
@@ -52,6 +53,8 @@ class FakePoller implements FinderPoller {
   readonly again: string[] = [];
   /** The pull requests whose layers were no longer to be read. */
   readonly forgotten: string[] = [];
+  /** How often the poller lists repositories now. */
+  schedule: ListSchedule = { every: 120_000, listing: true };
   readonly #listeners = new Set<() => void>();
   /** When each read was fetched, by a clock that moves on with each. */
   #clock = 0;
@@ -97,6 +100,10 @@ class FakePoller implements FinderPoller {
 
   forgetStackLayers(pull: PullRef): void {
     this.forgotten.push(pull.toString());
+  }
+
+  listSchedule(): ListSchedule {
+    return this.schedule;
   }
 
   onChange(listener: () => void): () => void {
@@ -537,5 +544,63 @@ describe('a run of layers', () => {
     await settle();
     expect(finder.state('t1:83-84')?.offer).toBeNull();
     expect(starts).toEqual([]);
+  });
+});
+
+describe("a repository's stacks, for the features that merge", () => {
+  it('are known once the list and the rulesets are, with when the list was confirmed', async () => {
+    const found = await recorded('stacks_e2e', E2E);
+    const poller = new FakePoller();
+    const { finder } = started(poller);
+    finder.follow([tab(4)]);
+    expect(finder.forest(E2E, LOGIN)).toBeUndefined();
+    await settle();
+    poller.set(E2E, { list: found.list });
+    expect(finder.forest(E2E, LOGIN)).toBeUndefined();
+    poller.set(E2E, { rules: found.rules });
+    poller.schedule = { every: 240_000, listing: true };
+    const forest = finder.forest(E2E, LOGIN);
+    expect(forest).toMatchObject({
+      listedAt: poller.lists.get(E2E.key)?.fetchedAt,
+      listEvery: 240_000,
+      whole: true,
+    });
+    expect(forest?.stacks.stackIndex[4]).toEqual(forest?.stacks.stackIndex[2]);
+    // By any case of the account's login, and for no account Lo has no poller for.
+    expect(finder.forest(E2E, LOGIN.toUpperCase())?.stacks).toBe(forest?.stacks);
+    expect(finder.forest(E2E, 'someone')).toBeUndefined();
+  });
+
+  it('say whether their list holds every open pull request', async () => {
+    const found = await recorded('stacks_e2e', E2E);
+    const poller = new FakePoller();
+    const { finder } = started(poller);
+    finder.follow([tab(4)]);
+    await settle();
+    poller.set(E2E, { list: { ...found.list, truncated: true }, rules: found.rules });
+    expect(finder.forest(E2E, LOGIN)).toMatchObject({
+      whole: false,
+      stacks: { gaps: [{ kind: 'openPullRequests' }] },
+    });
+  });
+
+  it("say what making a layer's chain a GitHub stack would do, or why it can't, in words", async () => {
+    const found = await recorded('stacks_e2e', E2E);
+    const poller = new FakePoller();
+    const { finder } = started(poller);
+    finder.follow([tab(4)]);
+    await settle();
+    poller.set(E2E, { list: found.list, rules: found.rules });
+    const forest = finder.forest(E2E, LOGIN);
+    expect(forest?.conversion(6, { stacksApi: true, queued: [] })).toMatchObject({
+      kind: 'plan',
+      plan: { path: [2, 3, 4, 6] },
+      offer:
+        "These PRs sit on each other's branches and share commits but aren't a GitHub stack. As one, they'd merge together.",
+    });
+    expect(forest?.conversion(6, { stacksApi: false, queued: [3] })).toMatchObject({
+      kind: 'notOffered',
+      words: ["GitHub's Stacks API isn't available for e2e.", '#3 is in a merge queue.'],
+    });
   });
 });

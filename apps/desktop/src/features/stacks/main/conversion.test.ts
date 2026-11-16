@@ -32,6 +32,7 @@ import {
   type ConversionTab,
   type Found,
 } from './conversion.ts';
+import { Holds } from './holds.ts';
 import {
   changePull,
   convertedAppStack,
@@ -204,13 +205,17 @@ function doneFor(step: ConversionStep): StepDone {
   return { kind: 'stacked', stack: githubStack(99, step.prs) };
 }
 
-/** Conversions on `poller`, over what `found` recorded, with what they publish checked. */
+/**
+ * Conversions on `poller`, over what `found` recorded, with what they publish checked, held back
+ * by the checks registered with `holds`.
+ */
 function started(
   poller: FakePoller,
   found: Recorded | undefined,
   more: { list?: OpenPullRequestList } = {},
 ) {
   const views: ConversionView[] = [];
+  const holds = new Holds();
   const keys = [...KEYS];
   let now = 1000;
   const list = more.list ?? found?.list;
@@ -223,13 +228,14 @@ function started(
         ? { login: LOGIN, forest: forestOf({ ...found, list }), list, layers: found.layers }
         : undefined,
     publish: (view) => views.push(conversionSchema.parse(view)),
+    held: (repo, prs) => holds.held(repo, prs),
     log: () => {},
     now: () => (now += 1),
     newKey: () => keys.shift() ?? 'ffffffff-ffff-ffff-ffff-ffffffffffff',
     freshWait: 50,
     tick: 5,
   });
-  return { conversions, views, last: () => views.at(-1) };
+  return { conversions, views, holds, last: () => views.at(-1) };
 }
 
 /** The tab of pull request `number` in rozed-dev/e2e, acting as rozed-bot. */
@@ -753,6 +759,113 @@ async function onStack() {
   }
   return { found, list };
 }
+
+/**
+ * A check like the one the feature that merges registers: it names those of `numbers` it's asked
+ * about, and notes what it's asked.
+ */
+function merging(...numbers: number[]) {
+  const asked: [string, number[]][] = [];
+  const check = (repo: RepoRef, prs: readonly number[]) => {
+    asked.push([repo.toString(), [...prs]]);
+    return prs.filter((pr) => numbers.includes(pr));
+  };
+  return { check, asked };
+}
+
+describe('while Lo merges', () => {
+  it('refuses to plan a conversion while a pull request on its path merges', async () => {
+    const found = await recorded('stacks_e2e', E2E, LAYERS);
+    const { conversions, holds } = started(new FakePoller(), found);
+    const merge = merging(3);
+    const stop = holds.add(merge.check);
+    expect(reasonsOf(await conversions.plan(tab(6)))).toEqual([
+      'Lo is merging #3. Wait for that to finish.',
+    ]);
+    expect(merge.asked).toEqual([[E2E.toString(), [2, 3, 4, 6]]]);
+    // A merge off the path holds nothing back, nor one that's over.
+    const other = holds.add(merging(11).check);
+    stop();
+    planOf(await conversions.plan(tab(6)));
+    other();
+  });
+
+  it('refuses to confirm a plan while one merges, and keeps the plan for when it’s done', async () => {
+    const found = await recorded('stacks_e2e', E2E, LAYERS);
+    const poller = new FakePoller();
+    const { conversions, holds } = started(poller, found);
+    const { key } = planOf(await conversions.plan(tab(6)));
+    const stop = holds.add(merging(2, 6).check);
+    expect(() => conversions.convert(key)).toThrow(
+      new IpcError('busy', 'Lo is merging #2 and #6. Wait for that to finish.'),
+    );
+    await settle();
+    expect(poller.sent).toEqual([]);
+    stop();
+    expect(conversions.convert(key).phase).toBe('running');
+  });
+
+  it('refuses to put base branches back while one merges', async () => {
+    const found = await recorded('stacks_e2e', E2E, LAYERS);
+    const poller = new FakePoller();
+    poller.steps.push(
+      doneFor({ kind: 'retarget', retarget: { pr: 6, from: 'main', to: 'e2/c' } }),
+      { refusal: 'baseChanged', now: 'elsewhere' },
+    );
+    const { conversions, holds, last } = started(poller, found);
+    const { key } = planOf(await conversions.plan(tab(6)));
+    conversions.convert(key);
+    await until(() => last()?.phase === 'failed');
+    const stop = holds.add(merging(6).check);
+    expect(() => conversions.putBack(key)).toThrow('Lo is merging #6.');
+    stop();
+    expect(conversions.putBack(key).phase).toBe('puttingBack');
+  });
+
+  it('says whether a conversion runs or waits on a rollback', async () => {
+    const found = await recorded('stacks_e2e', E2E, LAYERS);
+    const poller = new FakePoller();
+    const first = later<StepDone>();
+    poller.steps.push(first.promise, { refusal: 'baseChanged', now: 'elsewhere' });
+    const { conversions, last } = started(poller, found);
+    expect(conversions.converting(E2E)).toBeUndefined();
+    const { key } = planOf(await conversions.plan(tab(6)));
+    // A plan waiting to be confirmed changes nothing yet.
+    expect(conversions.converting(E2E)).toBeUndefined();
+    conversions.convert(key);
+    expect(conversions.converting(E2E)).toEqual({ kind: 'running', prs: [2, 3, 4, 6] });
+    first.resolve(doneFor({ kind: 'retarget', retarget: { pr: 6, from: 'main', to: 'e2/c' } }));
+    await until(() => last()?.phase === 'failed');
+    // #6's base branch changed, and the reader may put it back.
+    expect(conversions.converting(E2E)).toEqual({ kind: 'rollback', prs: [2, 3, 4, 6] });
+    conversions.putBack(key);
+    expect(conversions.converting(E2E)).toEqual({ kind: 'running', prs: [2, 3, 4, 6] });
+    await until(() => last()?.phase === 'putBack');
+    expect(conversions.converting(E2E)).toBeUndefined();
+  });
+
+  it('says nothing waits on a rollback once the reader closes it, or nothing changed', async () => {
+    const found = await recorded('stacks_e2e', E2E, LAYERS);
+    const poller = new FakePoller();
+    poller.steps.push(
+      doneFor({ kind: 'retarget', retarget: { pr: 6, from: 'main', to: 'e2/c' } }),
+      { refusal: 'baseChanged', now: 'elsewhere' },
+      { refusal: 'baseChanged', now: 'elsewhere' },
+    );
+    const { conversions, last } = started(poller, found);
+    const { key } = planOf(await conversions.plan(tab(6)));
+    conversions.convert(key);
+    await until(() => last()?.phase === 'failed');
+    conversions.stop(key);
+    expect(conversions.converting(E2E)).toBeUndefined();
+    // Refused at its first change, it changed nothing to put back.
+    poller.listAgain(1_000_000);
+    const again = planOf(await conversions.plan(tab(6)));
+    conversions.convert(again.key);
+    await until(() => last()?.key === again.key && last()?.phase === 'failed');
+    expect(conversions.converting(E2E)).toBeUndefined();
+  });
+});
 
 describe('adding to a GitHub stack', () => {
   it('plans only the PRs added, and leaves an add that may have gone through', async () => {
