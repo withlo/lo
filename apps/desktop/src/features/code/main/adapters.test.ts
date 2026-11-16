@@ -1,8 +1,8 @@
 // The adapters Lo ships: which files each reads, and what it downloads before it starts: Node for
 // the servers that run on it, Go for gopls, which Lo builds with it, Lo's Rust for rust-analyzer,
-// which runs on it, and the JDK Java's runs on; and, on macOS, the SourceKit-LSP it finds in Xcode
-// or Apple's Command Line Tools. What each server runs as, and is told, is `@lo/lsp`'s, and tested
-// there.
+// which runs on it, the JDK Java's runs on, and the .NET SDK Roslyn runs on; and, on macOS, the
+// SourceKit-LSP it finds in Xcode or Apple's Command Line Tools. What each server runs as, and is
+// told, is `@lo/lsp`'s, and tested there.
 
 import { mkdirSync, mkdtempSync, realpathSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -15,9 +15,11 @@ import {
   launchJdtls,
   launchNative,
   launchOnNode,
+  launchRoslyn,
   launchRustAnalyzer,
   PHP_LSP,
   PYRIGHT,
+  ROSLYN,
   RUST_ANALYZER,
   sourceKitCandidates,
   sourceKitCheckoutProblem,
@@ -100,7 +102,7 @@ const JDK: Toolchain = {
 };
 
 describe('Lo’s adapters', () => {
-  it('read TypeScript and JavaScript, Python, Rust, PHP, Go, Terraform, Java and, on macOS, Swift', () => {
+  it('read TypeScript and JavaScript, Python, Rust, PHP, Go, Terraform, Java, C# and, on macOS, Swift', () => {
     expect(readBy('src/a.ts')).toEqual(['TypeScript', 'typescript']);
     expect(readBy('src/a.mts')).toEqual(['TypeScript', 'typescript']);
     expect(readBy('src/A.tsx')).toEqual(['TypeScript', 'typescriptreact']);
@@ -117,6 +119,7 @@ describe('Lo’s adapters', () => {
     expect(readBy('infra/prod.tfvars')).toEqual(['Terraform', 'terraform-vars']);
     expect(readBy('infra/PROD.TFVARS')).toEqual(['Terraform', 'terraform-vars']);
     expect(readBy('src/main/java/a/B.java')).toEqual(['Java', 'java']);
+    expect(readBy('src/App/Program.cs')).toEqual(['C#', 'csharp']);
     expect(readBy('Sources/App/main.swift')).toEqual(['Swift', 'swift']);
     expect(adapterFor(shippedAdapters('linux'), 'Sources/App/main.swift')).toBeUndefined();
     // Ruby has none.
@@ -251,6 +254,41 @@ describe('Lo’s adapters', () => {
     ]);
   });
 
+  it('download .NET’s SDK and Roslyn, and start Roslyn as `dotnet exec` on that SDK', async () => {
+    const adapter = shipped('csharp');
+    const installs: string[] = [];
+    const toolchains: string[] = [];
+    const dotnet: Toolchain = {
+      version: '10.0.404',
+      installed: installedAs('dotnet'),
+      ...toolchainUse('dotnet', '10.0.404', installedAs('dotnet'), 'darwin'),
+    };
+    const ready = await adapter.prepare({
+      install: (id) => {
+        installs.push(id);
+        return Promise.resolve(installedAs(id));
+      },
+      toolchain: (id) => {
+        toolchains.push(id);
+        return Promise.resolve(dotnet);
+      },
+      findCopy: () => Promise.reject(new Error('no copy is looked for')),
+      developerFolder: () => Promise.reject(new Error('no developer folder is looked for')),
+      signal: new AbortController().signal,
+    });
+    expect(toolchains).toEqual(['dotnet']);
+    expect(installs).toEqual([ROSLYN.id]);
+    // Named up front, so the status bar adds them up from the first byte, and Settings lists C#
+    // as using the SDK.
+    expect(adapter.downloads).toEqual({ servers: [ROSLYN.id], toolchains: ['dotnet'] });
+    expect(ready).toEqual({
+      kind: 'ready',
+      launch: launchRoslyn(installedAs(ROSLYN.id), dotnet),
+    });
+    // A first definition waits on the first load of its project, so `gd` gives it longer.
+    expect(adapter.definitionDeadline).toBe(5000);
+  });
+
   it('say which servers give no inline type hints, as Pyright and terraform-ls give none', () => {
     expect(ADAPTERS.map((adapter) => [adapter.id, adapter.noHints])).toEqual([
       ['typescript', undefined],
@@ -260,6 +298,7 @@ describe('Lo’s adapters', () => {
       ['go', undefined],
       ['terraform', 'terraform-ls has no type hints.'],
       ['java', undefined],
+      ['csharp', undefined],
       ['swift', undefined],
     ]);
   });
@@ -273,6 +312,7 @@ describe('Lo’s adapters', () => {
       ['go', undefined],
       ['terraform', undefined],
       ['java', undefined],
+      ['csharp', undefined],
       ['swift', 'SourceKit-LSP finds references only from a build, which Lo never runs.'],
     ]);
   });
@@ -366,6 +406,20 @@ describe('Lo’s adapters', () => {
         signal: new AbortController().signal,
       }),
     ).rejects.toBe(unavailable);
+    // C#'s starts nothing when its toolchain can't download, and downloads no server for it.
+    const sdk = new Error('The .NET SDK couldn’t download.');
+    await expect(
+      shipped('csharp').prepare({
+        install: (id) => {
+          installs.push(id);
+          return Promise.resolve(installedAs(id));
+        },
+        toolchain: () => Promise.reject(sdk),
+        findCopy: () => Promise.resolve(undefined),
+        developerFolder: () => Promise.reject(new Error('no developer folder is looked for')),
+        signal: new AbortController().signal,
+      }),
+    ).rejects.toBe(sdk);
     expect(installs).toEqual([]);
   });
 });

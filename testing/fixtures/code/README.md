@@ -44,6 +44,6 @@ and the file it went to. A test reads each place back out of the files, so an ed
 fails it.
 
 Nothing in these folders may be something a tool in this repository, or a language server, would
-run or read as a setting: no `package.json`, wrapper, `node_modules`, `vendor`, interpreter or
-version file. `code-hostile.sh` writes those, as text, on top of these projects in a pull request of
+run or read as a setting: no `package.json`, wrapper, `node_modules`, `vendor`, interpreter, version
+file, or file MSBuild or NuGet reads for every project below it. `code-hostile.sh` writes those, as text, on top of these projects in a pull request of
 its own, and a test checks that none is here.

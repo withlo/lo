@@ -12,11 +12,13 @@ import {
   launchJdtls,
   launchNative,
   launchOnNode,
+  launchRoslyn,
   launchRustAnalyzer,
   launchSourceKit,
   NO_SOURCEKIT,
   PHP_LSP,
   PYRIGHT,
+  ROSLYN,
   RUST_ANALYZER,
   SOURCEKIT_LSP,
   sourceKitCheckoutProblem,
@@ -260,6 +262,24 @@ function onJdk(adapter: Omit<Adapter, 'prepare' | 'noHints' | 'downloads' | 'che
   };
 }
 
+/**
+ * The adapter for C#: Roslyn's server, which downloads once, on first use, with the .NET SDK it
+ * runs on. It loads the project Lo writes for the checkout in its home, never one of the checkout's
+ * (`@lo/lsp`'s `roslyn.ts` says why).
+ */
+const CSHARP: Adapter = {
+  id: 'csharp',
+  name: 'C#',
+  languages: { csharp: 'csharp' },
+  // A first definition waits on the project's first load.
+  definitionDeadline: 5000,
+  downloads: { servers: [ROSLYN.id], toolchains: ['dotnet'] },
+  async prepare(context) {
+    const dotnet = await context.toolchain('dotnet');
+    return { kind: 'ready', launch: launchRoslyn(await context.install(ROSLYN.id), dotnet) };
+  },
+};
+
 /** The adapters Lo ships on `platform`: Swift's only on macOS. */
 export function shippedAdapters(platform: NodeJS.Platform = process.platform): readonly Adapter[] {
   return platform === 'darwin' ? [...EVERYWHERE, SWIFT] : EVERYWHERE;
@@ -285,6 +305,7 @@ const EVERYWHERE: readonly Adapter[] = [
   }),
   // A JVM answers its first definitions slower than most, while it compiles its own code.
   onJdk({ id: 'java', name: 'Java', languages: { java: 'java' }, definitionDeadline: 5000 }),
+  CSHARP,
 ];
 
 /** The adapters Lo ships on this platform. */

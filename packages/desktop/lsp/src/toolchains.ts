@@ -35,6 +35,8 @@
  *   commands read the `global.json` nearest the folder they run in, and MSBuild the one nearest
  *   each project, however the variables are set. So a server that uses .NET runs only as
  *   `dotnet exec`, which reads none, and only on a checkout with no such file in it, nor above.
+ *   Nor does it run below a folder that holds a file MSBuild or NuGet read for every project
+ *   under it, such as a `Directory.Build.props` ({@link dotnetAbove}).
  * - A `go.work`, which makes the modules it names one workspace, loaded together. Go reads the one
  *   nearest the folder it runs in, so one in a folder above the checkout would make the user's
  *   other modules, or anyone's, the server's workspace; and one in the checkout may name a folder
@@ -97,6 +99,11 @@ export interface ToolchainUse {
   readonly allowed: readonly string[];
   /** Variables naming the toolchain's caches, by their paths in the server's home. */
   readonly homeFolders?: Readonly<Record<string, string>> | undefined;
+}
+
+/** A toolchain Lo installed, and what a server gets of it. */
+export interface InstalledToolchain extends ToolchainUse {
+  readonly installed: Installed;
 }
 
 /**
@@ -184,7 +191,9 @@ const READ_LIMIT = 1024 * 1024;
  *
  * - for .NET, a `global.json` in the checkout, or in a folder above it, that could choose an SDK
  *   other than Lo's: one that names folders to look for an SDK in (`sdk.paths`), or that spells a
- *   key with an escape, which hides such a name from a look at its text;
+ *   key with an escape, which hides such a name from a look at its text; or one of the files
+ *   MSBuild and NuGet read from every folder above a project, in a folder above the checkout
+ *   ({@link dotnetAbove});
  * - for Go, a `go.work` in a folder above the checkout, or one in it that names a folder outside
  *   it, by `use` or by a `replace` with a path, or that Lo can't read for certain, as one that
  *   spells a path with an escape;
@@ -307,13 +316,61 @@ function nameOf(root: string, file: string): string {
 async function dotnetProblem(root: string, limit: number): Promise<string | undefined> {
   const named = await filesNamed(root, 'global.json', limit);
   if (named === undefined) return tooManyEntries(limit, 'a server that uses the .NET SDK');
-  const { inside, above } = named;
-  for (const file of [...inside, ...above]) {
+  for (const file of named.inside) {
     const why = await steers(file);
     if (why === undefined) continue;
     return `${nameOf(root, file)} ${why}, so it could choose a .NET SDK other than Lo’s.`;
   }
-  return undefined;
+  // The folders above it, for a global.json and the files MSBuild and NuGet read.
+  return dotnetAbove(root);
+}
+
+/**
+ * The files MSBuild and NuGet look for in each folder above a project, by their names folded:
+ * MSBuild imports the nearest `Directory.Build.props`, `Directory.Build.targets` and
+ * `Directory.Packages.props` into the project, and NuGet reads every `NuGet.config`.
+ */
+const READ_ABOVE: ReadonlyMap<string, string> = new Map([
+  ['directory.build.props', 'MSBuild'],
+  ['directory.build.targets', 'MSBuild'],
+  ['directory.packages.props', 'MSBuild'],
+  ['nuget.config', 'NuGet'],
+]);
+
+/**
+ * Why .NET mustn't run below `folder`, by what's in each folder above it: a `global.json` that
+ * could choose an SDK other than Lo's, as {@link checkoutProblem} reads one, or a file that
+ * MSBuild or NuGet would read for every project below it ({@link READ_ABOVE}), its name matched by
+ * {@link foldName}. It's asked of a checkout, and of the folder of the project Lo writes for a
+ * server in its home, since MSBuild looks above the project, not above its sources; `what` names
+ * the folder.
+ */
+export async function dotnetAbove(
+  folder: string,
+  what = 'the checkout',
+): Promise<string | undefined> {
+  for (let above = dirname(folder); ; above = dirname(above)) {
+    // A folder Lo can't list is looked in by the names themselves.
+    const names = (await readdir(above).catch(() => undefined)) ?? [
+      'global.json',
+      ...READ_ABOVE.keys(),
+    ];
+    for (const name of names) {
+      const file = join(above, name);
+      const folded = foldName(name);
+      if (folded === 'global.json') {
+        const why = await steers(file);
+        if (why !== undefined)
+          return `${file} ${why}, so it could choose a .NET SDK other than Lo’s.`;
+        continue;
+      }
+      const reader = READ_ABOVE.get(folded);
+      if (reader === undefined) continue;
+      if ((await lstat(file).catch(() => undefined)) === undefined) continue;
+      return `${file} is in a folder above ${what}, and ${reader} would read it for every project below it.`;
+    }
+    if (dirname(above) === above) return undefined;
+  }
 }
 
 /** What makes the `global.json` at `file` one Lo can't run .NET beside, if anything does. */
