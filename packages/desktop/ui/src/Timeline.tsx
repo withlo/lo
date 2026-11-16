@@ -13,6 +13,7 @@ import { Avatar } from './Avatar.tsx';
 import { Button } from './Button.tsx';
 import { Key } from './Key.tsx';
 import { Label } from './Label.tsx';
+import { LinkButton } from './LinkButton.tsx';
 import { StateIcon } from './StatePill.tsx';
 import { Tag } from './Tag.tsx';
 import { CommentIcon } from './ThreadCount.tsx';
@@ -446,25 +447,6 @@ export function TimelineForcePush({
         )}
       </Line>
     </TimelineRow>
-  );
-}
-
-/** A button that reads as a link, for what a card points to. */
-function LinkButton({
-  children,
-  onClick,
-}: {
-  children: ReactNode;
-  onClick?: (() => void) | undefined;
-}) {
-  return (
-    <button
-      type="button"
-      className="rounded-xs text-link underline-offset-2 text-small hover:text-link-hover hover:underline focus-visible:shadow-ring"
-      onClick={onClick}
-    >
-      {children}
-    </button>
   );
 }
 
