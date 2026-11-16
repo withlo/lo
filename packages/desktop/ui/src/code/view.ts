@@ -2797,6 +2797,10 @@ class View implements DiffView {
     for (const move of this.#moves) {
       const [here, there] = side === 'old' ? [move.from, move.to] : [move.to, move.from];
       if (here.file !== file || at.line < here.first || at.line > here.last) continue;
+      // Without the lines of both ends, nothing pairs them: the block's first line stands in.
+      if (!this.#loaded.has(here.file) || !this.#loaded.has(there.file)) {
+        return { file: this.#ids[there.file]!, side: other, line: there.first };
+      }
       // Line for line, blank lines left out, as the move was found.
       const line = otherLine(
         { lines: this.#lines[here.file]![side], first: here.first, last: here.last },

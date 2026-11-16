@@ -63,6 +63,20 @@ export default defineCommands('diff', {
     when: diff,
   },
   /**
+   * From moved code on the cursor's line to the same line at the other end, where the code went or
+   * came from, its file opened if it's closed; a moved label's click goes to the other end's first
+   * line. `⌃o` comes back. The code views' Vim has no `gm` (Vim's middle of the screen line) for it
+   * to be over.
+   */
+  otherEnd: {
+    label: 'The other end of moved code',
+    group: 'Jump',
+    keys: ['g m'],
+    targets: ['line'],
+    jump: true,
+    when: normal,
+  },
+  /**
    * Marks the file viewed, or clears its mark. Marking closes it and goes to the next file that
    * isn't viewed, round the end. A count marks that many, and clears none: `3e`. `e` is Vim's "end
    * of word", which `w` and `b` stand in for.

@@ -33,6 +33,7 @@ import { explainer, marksOf, onExplained, sameMarks } from './explained.ts';
 import { diffFileOf, headerOf, startWith } from './files.ts';
 import type { Entry, Loader, Moved, Shown } from './loader.ts';
 import { main } from './main.ts';
+import { followLabel } from './moved.ts';
 import { setDrawn, takeReveal } from './tabs.ts';
 import { drawnName, shown as shownWanted, wantedIn } from './wanted.ts';
 import {
@@ -362,6 +363,22 @@ export function draw(options: DrawOptions): Drawing {
     else if (shown) setLines(id, shown, true);
   };
 
+  /** The reader opened or closed a file: how it starts out is theirs to say now. */
+  const acted = (id: string) => {
+    pending.delete(id);
+    catchUp(id);
+  };
+
+  /**
+   * The reader goes into a file, as from moved code: acted on, and kept out with its lines come, as
+   * the local copy's do while it's on screen, brought in now, as `za` brings it.
+   */
+  const enter = (id: string) => {
+    const waiting = pending.get(id);
+    acted(id);
+    if (waiting?.change === 'bring') apply(id, 'bring', waiting.start, true);
+  };
+
   /** Makes a change to a file now, `onScreen` or not. Returns whether it could. */
   const apply = (id: string, change: Change, start: Start, onScreen = false): boolean => {
     switch (change) {
@@ -470,6 +487,10 @@ export function draw(options: DrawOptions): Drawing {
       // For a type hover, while the diff is on screen.
       rested(line) {
         if (showing || line === undefined) restedIn(tab.id, 'diff', line);
+      },
+      // A moved label's click: a jump, from the line the label is over, to the other end.
+      moved(to) {
+        followLabel({ view, enter }, to, (left) => keys.history.record(entryAt(left)));
       },
     },
   );
@@ -624,10 +645,8 @@ export function draw(options: DrawOptions): Drawing {
         pull: { owner: tab.owner, repo: tab.repo, number: tab.number },
         order: files.map((file) => file.id),
         threaded,
-        acted(id) {
-          pending.delete(id);
-          catchUp(id);
-        },
+        acted,
+        enter,
         toTop,
         fileAt(target) {
           const spot = spotOf(target);
