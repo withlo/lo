@@ -1,10 +1,11 @@
 # syntax
 
-Syntax highlighting and the syntax index's reading of files, with
-[tree-sitter](https://tree-sitter.github.io/) grammars compiled to WebAssembly. Both run on worker
-threads in the background process. To highlight, a file's text goes in, and its tokens come out as
-`[from, to, token]` triples for the `lo-syn-*` classes in `design/css/code.css`. To index, its
-definitions, the names it uses and its imports come out (see "Tags").
+Syntax highlighting, and the parts of the syntax index that read code: its tags and its ranking,
+with [tree-sitter](https://tree-sitter.github.io/) grammars compiled to WebAssembly. Highlighting
+and tagging run on worker threads in the background process. To highlight, a file's text goes in,
+and its tokens come out as `[from, to, token]` triples for the `lo-syn-*` classes in
+`design/css/code.css`. To tag, its definitions, the names it uses and its imports come out (see
+"Tags"). The index's store isn't here; see "The index's store".
 
 ## Grammars
 
@@ -121,3 +122,13 @@ A scanner that aborts on a file, as Kotlin's does with strings nested 512 deep, 
 file. Any other failure in WebAssembly can leave its memory broken, and that memory never shrinks,
 so once a highlighter fails, its memory passes 256 MB, or its thread has had eight aborts, it says
 it isn't `usable`, and its worker thread should be replaced.
+
+## The index's store
+
+The store that keeps these readings isn't in this package: it's the app's, in main
+(`apps/desktop/src/features/code/main/store/`), where a worker thread of main opens it as
+`code/symbols.db` in Lo's cache. It keeps each blob's reading once, by its ID and language, stamped
+with `tagsVersion`, and each tree's files, and finds a name's definitions across a tree. Main picks
+which files of a tree to read and sends them to the background process as jobs that call `Tagger`;
+it keeps what comes back, and calls `rank` to order a name's definitions for the file asking.
+`AGENTS.md`, under "The syntax index", has the rest.
