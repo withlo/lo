@@ -143,7 +143,8 @@ it('shows nothing until main says, then opens the panel with each reason', async
 it('asks main for a tab drawn before main said anything', async () => {
   views.set('t2', { kind: 'known', state: state({ verdict: 'queued', position: 2 }) });
   const page = draw(<MergeHeader tab={tabOf('t2')} />);
-  await until(() => page.textContent?.includes('Queued, 2nd') === true);
+  await until(() => page.textContent?.includes('Queued, 2nd') ?? false);
+  expect(page.querySelector('button')?.textContent).toContain('Queued, 2nd');
 });
 
 it('reads GitHub’s squash text as the panel opens, and keeps what the reader typed', async () => {

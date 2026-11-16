@@ -8,6 +8,7 @@ import {
   type MergeFacts,
   type PollEvent,
   type PollStatus,
+  type ReadKind,
   PullRef,
   noBranchRules,
 } from '@lo/github';
@@ -31,12 +32,12 @@ function info(overrides: Partial<PullTabInfo> = {}): PullTabInfo {
     shown: HEAD,
     latest: HEAD,
     provisional: false,
-    local: { kind: 'ready', head: HEAD, offline: false, from: null },
+    local: { kind: 'ready', head: HEAD, base: BASE_TIP, mergeBase: null, offline: false },
     compareFrom: undefined,
     drawn: false,
     run: undefined,
     ...overrides,
-  } as PullTabInfo;
+  };
 }
 
 /** A poller holding `facts`, with events the test sends, and what it was asked. */
@@ -56,8 +57,10 @@ function fakePoller(facts: MergeFacts | Error) {
       asked.push(pull.key);
       return held.facts instanceof Error ? Promise.reject(held.facts) : Promise.resolve(held.facts);
     },
-    cachedRead<T>() {
-      return (held.facts instanceof Error ? undefined : held.facts) as Cached<T> | undefined;
+    cachedRead<T>(_: PullRef, kind: ReadKind<T>): Cached<T> | undefined {
+      if (held.facts instanceof Error || kind.name !== MERGE_FACTS.name) return undefined;
+      // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- what MERGE_FACTS reads.
+      return held.facts as Cached<T>;
     },
     onEvent(listener) {
       listeners.add(listener);
@@ -66,7 +69,7 @@ function fakePoller(facts: MergeFacts | Error) {
     onChange: () => () => undefined,
     status: () => status,
     readOnce: (request) => Promise.reject(new Error(`not here: ${String(request)}`)),
-  } as MergePoller;
+  };
   return {
     poller,
     asked,
@@ -83,8 +86,8 @@ function fakePoller(facts: MergeFacts | Error) {
           kind: 'readFailed',
           pull: PULL,
           name: MERGE_FACTS.name,
-          error: { kind: 'api', status: 404, message: 'Not Found' },
-        } as PollEvent);
+          error: { kind: 'api', status: 404, message: 'Not Found', errors: [] },
+        });
       }
     },
   };
@@ -208,7 +211,7 @@ test('where the rules want the head up to date, the local copy says whether it i
   // Not before the local copy is ready, and then it can't tell, so Lo may not see every rule.
   const early = reads({
     poller: fakePoller(strict),
-    view: info({ local: { kind: 'fetching', progress: null } } as Partial<PullTabInfo>),
+    view: info({ local: { kind: 'fetching', progress: null, attempt: 1 } }),
   });
   early.followed.follow('t1');
   await settled();

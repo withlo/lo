@@ -89,7 +89,7 @@ class Staged extends Replay {
     const isAdded = ({ request }: Interaction) =>
       added.has(request.operation ?? `${request.method} ${request.url}`);
     const stages: Interaction[][] = [[...images, ...interactions.filter(isAdded)]];
-    for (const each of interactions.filter((each) => !isAdded(each))) {
+    for (const each of interactions.filter((interaction) => !isAdded(interaction))) {
       stages.at(-1)!.push(each);
       if (WRITES.has(each.request.operation ?? '')) stages.push([]);
     }
