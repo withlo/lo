@@ -56,9 +56,9 @@ describe('Lo’s adapters', () => {
   });
 
   it('say which servers give no inline type hints, as Pyright gives none', () => {
-    expect(ADAPTERS.map((adapter) => [adapter.id, adapter.hints])).toEqual([
-      ['typescript', true],
-      ['python', false],
+    expect(ADAPTERS.map((adapter) => [adapter.id, adapter.noHints])).toEqual([
+      ['typescript', undefined],
+      ['python', 'Pyright has no type hints.'],
     ]);
   });
 

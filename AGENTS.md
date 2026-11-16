@@ -1220,7 +1220,7 @@ Node it runs on.
 - `gh` shows a server's inlay hints, held until the reader's next input. With none, the status bar
   says why: the server is starting, failed, needs a toolchain or gave none, no server reads the code
   on screen, or the repo isn't trusted. A server that doesn't offer inlay hints, or whose adapter
-  says it has none, isn't asked for them, and `gh` says so ("Python has no type hints.").
+  says it has none, isn't asked for them, and `gh` says so ("Pyright has no type hints.").
 - The status bar has an item for each server, its details offering "Restart", "Show the log" and
   "Stop trusting this repo"; on an untrusted view, "Language servers off" offers to trust it
   (`code.servers`, the `served` topic). The log dialog shows the last 1,000 lines, and copies as

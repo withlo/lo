@@ -50,8 +50,11 @@ export interface Adapter {
   readonly languages: Readonly<Partial<Record<LanguageName, string>>>;
   /** How long `gd` waits for it, for a server slower than most to answer, such as a JVM's. */
   readonly definitionDeadline?: number | undefined;
-  /** Whether its server gives inline type hints: `false` for one that has none, which `gh` says. */
-  readonly hints?: boolean | undefined;
+  /**
+   * Why its server gives no inline type hints, for one that has none: `gh` says so, and Lo never
+   * asks it for them.
+   */
+  readonly noHints?: string | undefined;
   /** Finds or downloads what the server starts as. */
   prepare(context: PrepareContext): Promise<Prepared>;
 }
@@ -60,10 +63,10 @@ export interface Adapter {
  * An adapter for `server`, which runs on Lo's Node: Node downloads first, then the server, each
  * once, on first use.
  */
-function onNode(server: NodeServer, adapter: Omit<Adapter, 'prepare' | 'hints'>): Adapter {
+function onNode(server: NodeServer, adapter: Omit<Adapter, 'prepare' | 'noHints'>): Adapter {
   return {
     ...adapter,
-    hints: server.hints,
+    noHints: server.hints ? undefined : `${server.name} has no type hints.`,
     async prepare(context) {
       const node = await context.install('node');
       return {
