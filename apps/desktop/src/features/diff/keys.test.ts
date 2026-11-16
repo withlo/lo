@@ -1,11 +1,13 @@
 // "Overview note", which has no key: offered in the diff alone, which draws the overview's markers,
-// on a line with one, and listed on that line's menu only.
+// on a line with one, and listed on that line's menu only. And `gm`, a jump, which `⌃o` comes back
+// from.
 
 import {
   commandsOf,
   menuSections,
   paletteItems,
   Registry,
+  type Entry,
   type LineTarget,
   type Target,
 } from '@lo/ui/commands';
@@ -63,5 +65,26 @@ describe('Overview note', () => {
         .map((item) => item.label);
     expect(menu(line(4))).toContain('Overview note');
     expect(menu(line(5))).not.toContain('Overview note');
+  });
+});
+
+describe('The other end of moved code', () => {
+  it('is a jump: it records where the cursor was, which ⌃o goes back to', () => {
+    const here: Entry = { view: 'diff', at: line(4) };
+    const jumps = new Registry({
+      system: 'mac',
+      commands: commandsOf(keys).map((command) =>
+        command.name === 'otherEnd' ? { ...command, handler: { run() {} } } : command,
+      ),
+      here: () => here,
+    });
+    const shown: Target[] = [];
+    jumps.history.register('', 'diff', (at) => {
+      shown.push(at);
+      return true;
+    });
+    expect(jumps.run('diff.otherEnd', line(4))).toBe(true);
+    expect(jumps.history.back({ view: 'diff', at: line(9) })).toEqual(here);
+    expect(shown).toEqual([line(4)]);
   });
 });

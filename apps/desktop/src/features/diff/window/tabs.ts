@@ -83,6 +83,11 @@ export interface Drawn {
   /** The reader opened or closed a file: how it starts out is theirs to say now. */
   acted(file: string): void;
   /**
+   * The reader goes into a file, as from moved code: it's acted on, as for a key on it, and a file
+   * kept out whose lines have come, as the local copy's do, takes them now.
+   */
+  enter(file: string): void;
+  /**
    * The file a command on `target` acts on, by id: the target's, when it's on screen; else, as when
    * the cursor was scrolled away, the file at the top of the screen.
    */

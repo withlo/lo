@@ -592,7 +592,8 @@ export interface DiffView extends KeySource {
   /**
    * The place at the other end of the moved code `at` is in, if it's in some: line for line, blank
    * lines left out, as the move was found, so a line comes back to itself from its other end. A
-   * blank line goes with the next line that isn't.
+   * blank line goes with the next line that isn't. While either end's file has no lines in the
+   * view, as one kept out, there's no pairing them: it's the other end's first line.
    */
   otherEnd(at: Place): Place | undefined;
   focus(): void;

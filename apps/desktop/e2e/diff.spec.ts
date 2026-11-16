@@ -449,6 +449,45 @@ test('answers its keys: files, changes, sides, layout, whitespace and folds, Esc
   }
 });
 
+test('gm and a moved label’s click go to the other end of the moved code, and ⌃o comes back', async ({
+  page,
+}) => {
+  await drawn(page);
+  await focusDiff(page);
+  const view = page.locator('.lo-diffview');
+  // src/format.ts's code moved to src/text/wrap.ts: each end's label names the other's first line.
+  const label = (side: 'Before' | 'After', path: string) =>
+    view.locator(`.cm-content[aria-label="${side}"] .lo-movedlabel`, { hasText: `${path}:` });
+  const firstOf = async (side: 'Before' | 'After', path: string) =>
+    Number(/:(\d+)$/.exec(await label(side, path).locator('button').innerText())?.[1]);
+  const wrapFirst = await firstOf('Before', 'src/text/wrap.ts');
+  const formatFirst = await firstOf('After', 'src/format.ts');
+  await expect(label('After', 'src/format.ts')).toContainText('Moved from');
+
+  // On src/text/wrap.ts's third line, `gm` goes to the same line of the code in src/format.ts.
+  await press(page, ']', 'f', ']', 'f', ']', 'c', 'j', 'j');
+  const there = { path: 'src/text/wrap.ts', side: 'new', line: 3 };
+  await expect.poll(() => cursor(page)).toMatchObject(there);
+  await press(page, 'g', 'm');
+  const back = { path: 'src/format.ts', side: 'old', line: formatFirst + 3 - wrapFirst };
+  await expect.poll(() => cursor(page)).toMatchObject(back);
+  await press(page, 'Control+o');
+  await expect.poll(() => cursor(page)).toMatchObject(there);
+  await press(page, 'Control+i');
+  await expect.poll(() => cursor(page)).toMatchObject(back);
+
+  // The label over src/format.ts's end goes to the first line where the code went, and `⌃o` back
+  // to the label's line.
+  await label('Before', 'src/text/wrap.ts').locator('button').click();
+  await expect
+    .poll(() => cursor(page))
+    .toMatchObject({ path: 'src/text/wrap.ts', side: 'new', line: wrapFirst });
+  await press(page, 'Control+o');
+  await expect
+    .poll(() => cursor(page))
+    .toMatchObject({ path: 'src/format.ts', side: 'old', line: formatFirst });
+});
+
 test('the tree follows the file on screen, and shows the file it’s asked for', async ({ page }) => {
   await drawn(page);
   const tree = page.locator('[role="tree"][data-lo-scope="tree"]');
