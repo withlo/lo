@@ -1,5 +1,6 @@
-// The process's side of each port to the window: every message is checked before a job runs, since
-// the window shows untrusted content and this process has Node.
+// The process's side of each port, to the window or to main: every message is checked before a job
+// runs, since the window shows untrusted content and this process has Node, and main's are held to
+// the same.
 
 import { z } from 'zod';
 
@@ -26,8 +27,8 @@ const cancel = z.strictObject({
 });
 
 /**
- * One port's side of the process: answers each job the window sends, and stops one the window
- * cancels, waiting or running, which then answers as `cancelled`.
+ * One port's side of the process: answers each job sent on it, and stops one its sender cancels,
+ * waiting or running, which then answers as `cancelled`.
  */
 export function host(runners: readonly Runner[], execute: Execute) {
   const running = new Map<number, AbortController>();

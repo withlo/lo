@@ -26,7 +26,7 @@ function controlled() {
 describe('pool', () => {
   it('runs no more jobs at once than its size, in the order they came', async () => {
     const { execute, started, finish, most } = controlled();
-    const run = pool(execute, 2);
+    const run = pool(execute, 2).window;
     const answers = ['a', 'b', 'c', 'd'].map((job) => run(job, undefined, defaultLimits));
     await Promise.resolve();
     expect(started).toEqual(['a', 'b']);
@@ -44,7 +44,7 @@ describe('pool', () => {
 
   it('turns jobs away once too many are waiting', async () => {
     const { execute } = controlled();
-    const run = pool(execute, 1, 1);
+    const run = pool(execute, 1, 1).window;
     void run('running', undefined, defaultLimits);
     void run('waiting', undefined, defaultLimits);
     expect(await run('one too many', undefined, defaultLimits)).toEqual({
@@ -55,7 +55,7 @@ describe('pool', () => {
 
   it('never starts a job cancelled while it waits', async () => {
     const { execute, started, finish } = controlled();
-    const run = pool(execute, 1);
+    const run = pool(execute, 1).window;
     const first = run('a', undefined, defaultLimits);
     const controller = new AbortController();
     const second = run('b', undefined, defaultLimits, controller.signal);
@@ -73,12 +73,79 @@ describe('pool', () => {
     const run = pool(async (job) => {
       if (job === 'bad') throw new Error('Broken.');
       return { ok: true, value: job };
-    }, 1);
+    }, 1).window;
     expect(await run('bad', undefined, defaultLimits)).toEqual({
       ok: false,
       error: { code: 'failed', message: 'bad failed.' },
     });
     expect(await run('good', undefined, defaultLimits)).toEqual({ ok: true, value: 'good' });
+  });
+});
+
+/** Lets every job that can start, and every answer that's in, go on. */
+const settled = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+describe("main's jobs", () => {
+  it('runs one of main’s jobs at a time, on a worker the window isn’t using', async () => {
+    const { execute, started, finish, most } = controlled();
+    const jobs = pool(execute, 3);
+    const answers = ['m1', 'm2', 'm3'].map((job) => jobs.main(job, undefined, defaultLimits));
+    await settled();
+    expect(started).toEqual(['m1']);
+    finish.get('m1')?.();
+    await settled();
+    expect(started).toEqual(['m1', 'm2']);
+    finish.get('m2')?.();
+    await settled();
+    finish.get('m3')?.();
+    expect(await Promise.all(answers)).toEqual(
+      ['m1', 'm2', 'm3'].map((value) => ({ ok: true, value })),
+    );
+    expect(most()).toBe(1);
+  });
+
+  it('waits behind the window’s jobs: a free worker goes to the window first', async () => {
+    const { execute, started, finish } = controlled();
+    const jobs = pool(execute, 2);
+    void jobs.window('w1', undefined, defaultLimits);
+    void jobs.window('w2', undefined, defaultLimits);
+    // Both workers busy: main's job and the window's next wait, and the window's goes first.
+    void jobs.main('m1', undefined, defaultLimits);
+    void jobs.window('w3', undefined, defaultLimits);
+    await settled();
+    expect(started).toEqual(['w1', 'w2']);
+    finish.get('w1')?.();
+    await settled();
+    expect(started).toEqual(['w1', 'w2', 'w3']);
+    finish.get('w2')?.();
+    await settled();
+    expect(started).toEqual(['w1', 'w2', 'w3', 'm1']);
+  });
+
+  it('leaves the window’s jobs every other worker while one of main’s runs', async () => {
+    const { execute, started } = controlled();
+    const jobs = pool(execute, 2);
+    void jobs.main('m1', undefined, defaultLimits);
+    void jobs.window('w1', undefined, defaultLimits);
+    void jobs.main('m2', undefined, defaultLimits);
+    await settled();
+    expect(started).toEqual(['m1', 'w1']);
+  });
+
+  it('never starts one of main’s jobs cancelled while it waits', async () => {
+    const { execute, started, finish } = controlled();
+    const jobs = pool(execute, 1);
+    void jobs.window('w1', undefined, defaultLimits);
+    const controller = new AbortController();
+    const waiting = jobs.main('m1', undefined, defaultLimits, controller.signal);
+    controller.abort();
+    expect(await waiting).toEqual({
+      ok: false,
+      error: { code: 'cancelled', message: 'm1 was cancelled.' },
+    });
+    finish.get('w1')?.();
+    await settled();
+    expect(started).toEqual(['w1']);
   });
 });
 

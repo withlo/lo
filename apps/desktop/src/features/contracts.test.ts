@@ -9,7 +9,8 @@ const contracts = import.meta.glob<Contract>('./*/contract.ts', {
   eager: true,
   import: 'contract',
 });
-const jobContracts = import.meta.glob<JobContract>('./*/jobs.ts', {
+// The code port speaks the jobs protocol's shapes, so it's held to the same.
+const jobContracts = import.meta.glob<JobContract>(['./*/jobs.ts', './*/port.ts'], {
   eager: true,
   import: 'contract',
 });

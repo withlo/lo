@@ -1,7 +1,9 @@
-// Code features: trust first. Language servers run only on a repository, or a pull request from a
-// fork, the reader trusts, and only main decides which: the window asks main to ask the reader in
-// a dialog of main's own, and nothing the window sends trusts anything by itself. Main tells the
-// window where each view of a pull request's tab stands, for the banner, the palette and Settings.
+// Code features: trust, and the syntax index. Language servers run only on a repository, or a pull
+// request from a fork, the reader trusts, and only main decides which: the window asks main to ask
+// the reader in a dialog of main's own, and nothing the window sends trusts anything by itself.
+// Main tells the window where each view of a pull request's tab stands, for the banner, the palette
+// and Settings, and how far its syntax index has got, for the status bar. What code features ask
+// of the index goes over the code port (`port.ts`).
 
 import { z } from 'zod';
 
@@ -66,6 +68,48 @@ export const status = z.strictObject({
 });
 export type Status = z.output<typeof status>;
 
+/**
+ * Why a view's syntax index isn't whole: past a tree's files, past its downloads, offline, or a
+ * tree with more files than git lists for Lo.
+ */
+export const partialWhy = z.enum(['files', 'bytes', 'offline', 'listing']);
+export type PartialWhy = z.output<typeof partialWhy>;
+
+/**
+ * How far a view's syntax index has got, for the status bar:
+ *
+ * - `noGit` when Lo has no git it can run: the index reads the local copy;
+ * - `waiting` for the local copy at the head on screen, or for what the tab compares;
+ * - `building`, with the files read of those it reads, across both sides;
+ * - `ready`, whole or `partial`: `indexed` of `total` files, and why;
+ * - `failed`, with why, which Lo tries again by itself.
+ */
+export const indexState = z.discriminatedUnion('kind', [
+  z.strictObject({ kind: z.literal('noGit') }),
+  z.strictObject({ kind: z.literal('waiting') }),
+  z.strictObject({
+    kind: z.literal('building'),
+    done: z.number().int().nonnegative(),
+    total: z.number().int().nonnegative(),
+  }),
+  z.strictObject({
+    kind: z.literal('ready'),
+    partial: z
+      .strictObject({
+        indexed: z.number().int().nonnegative(),
+        total: z.number().int().nonnegative(),
+        why: z.array(partialWhy),
+      })
+      .nullable(),
+  }),
+  z.strictObject({ kind: z.literal('failed'), message: z.string().max(400) }),
+]);
+export type IndexState = z.output<typeof indexState>;
+
+/** A view's syntax index, sent each time it changes. */
+export const indexed = z.strictObject({ view: tabId, state: indexState });
+export type Indexed = z.output<typeof indexed>;
+
 /** How asking to trust went: the reader said "Trust", or didn't. */
 export type Asked = 'trusted' | 'cancelled';
 
@@ -100,9 +144,13 @@ export const contract = defineContract('code', {
     },
     /** Dismisses the banner for view `view`'s repository: no tab of it shows it again. */
     dismiss: { input: z.strictObject({ view: tabId }), reply: reply<void>() },
+    /** How far view `view`'s syntax index has got, or nothing for no such view. The `indexed` topic follows it. */
+    index: { input: z.strictObject({ view: tabId }), reply: reply<IndexState | null>() },
   },
   topics: {
     /** Where a view stands, each time that changes. */
     status,
+    /** How far a view's syntax index has got, each time that changes. */
+    indexed,
   },
 });

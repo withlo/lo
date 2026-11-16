@@ -7,6 +7,7 @@
     "src/ipc/**/*.ts",
     "src/features/*/contract.ts",
     "src/features/*/jobs.ts",
+    "src/features/*/port.ts",
     "src/features/*/settings.ts"
   ],
   "exclude": ["src/**/*.test.ts"],

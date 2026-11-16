@@ -47,4 +47,25 @@ describe('the background process’s entry', () => {
       expect(on).not.toHaveBeenCalled();
     },
   );
+
+  it('refuses the window the jobs only main may send, which main’s own port runs', async () => {
+    const { on, loaded } = load('2048');
+    await loaded;
+    const connect = on.mock.calls.find(([event]) => event === 'message')?.[1];
+    const replies: unknown[] = [];
+    const heard: ((event: { data: unknown }) => void)[] = [];
+    const port = {
+      on: (_event: string, hear: (event: { data: unknown }) => void) => {
+        heard.push(hear);
+      },
+      postMessage: (reply: unknown) => {
+        replies.push(reply);
+      },
+      start: () => undefined,
+    };
+    Reflect.apply(connect ?? (() => undefined), undefined, [{ data: 'connect', ports: [port] }]);
+    for (const hear of heard) hear({ data: { id: 1, job: 'code.symbols', input: { files: [] } } });
+    await vi.waitFor(() => expect(replies).toHaveLength(1));
+    expect(replies[0]).toMatchObject({ id: 1, ok: false, error: { code: 'unavailable' } });
+  });
 });
