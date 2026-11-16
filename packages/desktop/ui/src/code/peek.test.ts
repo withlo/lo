@@ -4,7 +4,7 @@ import { beforeAll, describe, expect, test, vi } from 'vitest';
 
 import { findScope, isKeySource } from '../commands/index.ts';
 import type { PeekCode, PeekFrame, PeekView } from './api.ts';
-import { PeekBlock, peekLines } from './peek.ts';
+import { PeekBlock, peekLines, peekShownAt } from './peek.ts';
 
 beforeAll(() => {
   globalThis.ResizeObserver ??= class {
@@ -176,6 +176,59 @@ describe('a peek', () => {
     expect(body.style.getPropertyValue('--lo-diffpeek-lines')).toBe('15');
   });
 
+  test('opened before its code comes, it’s as tall as code gets, and stays so as shorter code comes', () => {
+    expect(peekLines(definitions({ code: undefined, waiting: true }))).toBe(15);
+    const block = new PeekBlock(at, definitions({ code: undefined, waiting: true }), undefined);
+    const body = block.dom.querySelector<HTMLElement>('.lo-diffpeek__body')!;
+    const rows = () => body.style.getPropertyValue('--lo-diffpeek-lines');
+    expect(rows()).toBe('15');
+    const height = block.height;
+    // Its code comes, 3 lines: nothing under it moves.
+    expect(block.update(definitions({ code: lines(3) }))).toBe(false);
+    expect(rows()).toBe('15');
+    expect(block.height).toBe(height);
+    // Another answer, which the reader picks, is as tall as its own code.
+    expect(block.update(definitions({ shown: 1, code: lines(3) }))).toBe(true);
+    expect(rows()).toBe('6');
+    block.destroy();
+  });
+
+  test('takes focus in the list its frame draws beside more than one answer, drawn then or after', async () => {
+    let drawList: (() => void) | undefined;
+    // The list, which takes focus, comes a frame after the rest, as a component draws it.
+    const frame: PeekFrame = (parts) => {
+      drawList = () => {
+        const list = document.createElement('div');
+        list.setAttribute('role', 'listbox');
+        list.tabIndex = 0;
+        parts.list.append(list);
+      };
+      return { update() {}, destroy() {} };
+    };
+    const block = new PeekBlock(at, definitions(), frame);
+    document.body.append(block.dom);
+    block.focus();
+    expect(document.activeElement).toBe(block.dom);
+    drawList!();
+    await Promise.resolve();
+    expect(document.activeElement?.getAttribute('role')).toBe('listbox');
+    block.dom.focus();
+    block.focus();
+    expect(document.activeElement?.getAttribute('role')).toBe('listbox');
+    block.destroy();
+    // Beside one answer, the peek itself.
+    const one = new PeekBlock(
+      at,
+      definitions({ answers: definitions().answers.slice(0, 1) }),
+      frame,
+    );
+    document.body.append(one.dom);
+    drawList!();
+    one.focus();
+    expect(document.activeElement).toBe(one.dom);
+    one.destroy();
+  });
+
   test('is a scope of its own, with no Vim, whose keys act on the line it’s under', () => {
     const block = new PeekBlock(at, definitions(), undefined);
     document.body.append(block.dom);
@@ -292,5 +345,31 @@ describe('a peek', () => {
     await Promise.resolve();
     expect(document.activeElement).toBe(block.dom);
     block.destroy();
+  });
+});
+
+describe('where a peek’s line goes for the peek to show whole', () => {
+  // A screen 600 px tall, and a peek that ends 280 px under its line's top.
+  test('nowhere while the peek ends on screen', () => {
+    expect(peekShownAt(0, 280, 600)).toBeUndefined();
+    expect(peekShownAt(320, 280, 600)).toBeUndefined();
+    // A line partly above the top keeps its place, as the peek under it shows whole.
+    expect(peekShownAt(-8, 280, 600)).toBeUndefined();
+  });
+
+  test('up by the least scroll that ends the peek at the screen’s foot', () => {
+    // The last line on screen, one partly below the foot, and one two rows above it.
+    expect(peekShownAt(582, 280, 600)).toBe(320);
+    expect(peekShownAt(590, 280, 600)).toBe(320);
+    expect(peekShownAt(546, 280, 600)).toBe(320);
+  });
+
+  test('to the top, and no higher, for a peek taller than the room under its line', () => {
+    expect(peekShownAt(500, 700, 600)).toBe(0);
+    expect(peekShownAt(-8, 700, 600)).toBe(0);
+  });
+
+  test('nowhere for a line below the screen', () => {
+    expect(peekShownAt(600, 280, 600)).toBeUndefined();
   });
 });

@@ -17,6 +17,7 @@ import { tabState, useLocalCopy, useTabState, type PullTab } from '../../tab/win
 import type { TreePath } from '../../tree/contract.ts';
 import { followFile } from '../../tree/window/shared.ts';
 import type { FileVersions, Version } from '../contract.ts';
+import { hintsShown, restedIn } from './code.ts';
 import { shownPath } from './files.ts';
 import { usePage } from './page.ts';
 import { placesFor } from './places.ts';
@@ -58,9 +59,20 @@ const cursors = tabState<{ key: string; version: Version; at: Target } | undefin
 /** The last ask each tab's view answered, so it answers each once. */
 const answered = tabState<number>(() => 0);
 
-/** The marks for lines `marked` picks out in file `id`'s `version`, if any. */
-function marksOf(id: string, version: Version, marked: Opened['marked']): Mark[] {
-  return marked ? [{ kind: 'lines', at: { file: id, side: version, ...marked } }] : [];
+/**
+ * The marks for lines `marked` picks out in file `id`'s `version`, if any, with code features'
+ * inline hints.
+ */
+function marksOf(
+  id: string,
+  version: Version,
+  marked: Opened['marked'],
+  hints: readonly Mark[] = [],
+): Mark[] {
+  const lines: Mark[] = marked
+    ? [{ kind: 'lines', at: { file: id, side: version, ...marked } }]
+    : [];
+  return [...lines, ...hints];
 }
 
 /** The file's header, which keys act on while it shows no lines. */
@@ -113,6 +125,7 @@ export function WholeFile({ tab, shown }: { tab: PullTab; shown: boolean }) {
   const copyReady = local?.kind === 'ready' && local.head === head;
   const change = open && changedIn(state?.files, open.key);
   const path = open && pathIn(change, open.version, () => open.path);
+  const hints = useTabState(hintsShown, tab.id, (each) => each.file);
   const content =
     open && head !== undefined && readOf(read, open, head, from) ? read.content : undefined;
   const lines = content?.kind === 'text' ? content.lines : undefined;
@@ -207,7 +220,7 @@ export function WholeFile({ tab, shown }: { tab: PullTab; shown: boolean }) {
         side: version,
         lines,
         tokens: latest.current.tokens,
-        marks: marksOf(id, version, opened.get(tab.id)?.marked),
+        marks: marksOf(id, version, opened.get(tab.id)?.marked, hintsShown.get(tab.id).file),
         vimKeys: keys.vimKeys(),
         nonce: page.nonce,
       },
@@ -217,6 +230,10 @@ export function WholeFile({ tab, shown }: { tab: PullTab; shown: boolean }) {
         jumped: (left) => keys.history.record({ view: 'file', at: left }),
         menu: (target, x, y) => {
           openMenu(target, { x, y });
+        },
+        // For a type hover, while the file is on screen.
+        rested: (at) => {
+          if (latest.current.shown || at === undefined) restedIn(tab.id, 'file', at);
         },
       },
     );
@@ -241,11 +258,11 @@ export function WholeFile({ tab, shown }: { tab: PullTab; shown: boolean }) {
     if (tokens) view.current?.setTokens(tokens);
   }, [tokens]);
 
-  // The lines picked out, which another ask for the same file can change.
+  // The lines picked out, which another ask for the same file can change, and the hints.
   useEffect(() => {
     if (id === undefined || !version) return;
-    view.current?.setMarks(marksOf(id, version, marked));
-  }, [id, version, marked]);
+    view.current?.setMarks(marksOf(id, version, marked, hints));
+  }, [id, version, marked, hints]);
 
   // Each ask answered once, while the view is on screen: its place, and focus when it asks for it
   // or focus is free. Without code to show, the view's note takes focus in its place. Shown again

@@ -1,6 +1,7 @@
 // Each pull request's tab's panels, for each of its views, kept while the tab is open: whether its
-// left panel is open, and which of the middle views it shows. And the right panel, the threads,
-// whose open state is the window's: it stays open or closed from tab to tab and layer to layer.
+// left panel is open, which of the middle views it shows, and which of the right panel's. And the
+// right panel's open state, which is the window's: it stays open or closed from tab to tab and
+// layer to layer.
 
 import { useStore } from 'zustand';
 import { createStore } from 'zustand/vanilla';
@@ -12,6 +13,11 @@ export interface Panels {
   readonly leftOpen: boolean;
   /** Which middle view is on screen, by its place among them. */
   readonly middle: number;
+  /**
+   * Which of the right panel's views it shows, by id: the one shown last, which `⌘⇧\` opens it on.
+   * None for the first, the threads.
+   */
+  readonly right?: string | undefined;
 }
 
 export const panels = makeTabState<Panels>(() => ({ leftOpen: true, middle: 0 }));
@@ -36,6 +42,9 @@ export const middleIds: { ids: readonly string[]; labeled: readonly boolean[] } 
   ids: [],
   labeled: [],
 };
+
+/** The right panel's views' ids, in their order, as the tab last drew them, the threads first. */
+export const rightIds: string[] = [];
 
 /**
  * The middle view `step` on from view `at` among those `labeled` says have a label, round the ends,
@@ -80,6 +89,50 @@ export function toggleRight(): void {
   const had = document.querySelector(RIGHT)?.contains(document.activeElement) ?? false;
   rightPanel.setState({ open: false, focus: false });
   if (had) focusMiddle();
+}
+
+/** Gives focus to the scope drawn in right panel `panel`, so its keys work at once. */
+export function focusPanel(panel: HTMLElement): void {
+  panel.querySelector<HTMLElement>('[data-lo-scope]')?.focus({ preventScroll: true });
+}
+
+/**
+ * Shows view `id` in tab `tab`'s right panel, opening it if it's closed, and gives it focus, as
+ * it's drawn or at once if it's drawn already, unless `focus` is false; or, with none, closes the
+ * panel, giving focus in it back to the middle view.
+ */
+export function showRightView(tab: string, id: string | undefined, focus = true): void {
+  if (id === undefined) {
+    if (rightPanel.getState().open) toggleRight();
+    return;
+  }
+  const drawn = document.querySelector<HTMLElement>(RIGHT);
+  const shown = rightPanel.getState().open && drawn?.dataset.loRight === id;
+  panels.update(tab, (current) => ({ ...current, right: id }));
+  rightPanel.setState({ open: true, focus });
+  // Drawn already, it isn't drawn again to take it.
+  if (shown && drawn && takeRightFocus()) focusPanel(drawn);
+}
+
+/** How a tab's right panel stands: open or closed, and on which view (none for the first). */
+export interface RightKept {
+  readonly open: boolean;
+  readonly right: string | undefined;
+}
+
+/** How tab `tab`'s right panel stands now. */
+export function keptRight(tab: string): RightKept {
+  return { open: rightPanel.getState().open, right: panels.get(tab).right };
+}
+
+/**
+ * Puts tab `tab`'s right panel back as `kept` had it, on its view, open or closed, without taking
+ * focus; closing, focus in it goes back to the middle view.
+ */
+export function putRightBack(tab: string, kept: RightKept): void {
+  panels.update(tab, (current) => ({ ...current, right: kept.right }));
+  if (kept.open) rightPanel.setState({ open: true, focus: false });
+  else if (rightPanel.getState().open) toggleRight();
 }
 
 /**

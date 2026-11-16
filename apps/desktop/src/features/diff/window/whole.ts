@@ -113,13 +113,19 @@ export function changedIn(
 /**
  * The file of `files` whose head's path is `path`, if the comparison has one: by its text, since a
  * path given as text is UTF-8, so never one whose bytes aren't. A file the comparison deletes is
- * there under its path in the base.
+ * there under its path in the base. With `old`, the file whose path in the base is `path`, as a
+ * renamed file's was before.
  */
 export function changeAt(
   files: readonly FileVersions[] | null | undefined,
   path: string,
+  side: Version = 'new',
 ): FileVersions | undefined {
-  return files?.find((file) => file.path.hex === undefined && file.path.text === path);
+  return files?.find((file) => {
+    const named =
+      side === 'old' && file.change !== 'added' ? (file.previous ?? file.path) : file.path;
+    return named.hex === undefined && named.text === path;
+  });
 }
 
 /**
