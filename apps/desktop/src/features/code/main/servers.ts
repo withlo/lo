@@ -548,6 +548,7 @@ export class ServerPool {
         path: [...(launch.path ?? []), ...base.path],
         variables: launch.variables,
         allowed: launch.allowed,
+        homeFolders: launch.homeFolders,
         git: base.git,
         settings: launch.settings,
         initializationOptions: launch.initializationOptions,

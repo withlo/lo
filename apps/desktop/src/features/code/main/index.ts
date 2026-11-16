@@ -458,18 +458,26 @@ function pinnedIn(manifest: Manifest, id: string) {
   return Object.hasOwn(manifest, id) ? manifest[id] : undefined;
 }
 
-/** Installs what Lo's manifest pins as `id`, in the cache, reporting the download's progress. */
+/**
+ * Installs what Lo's manifest pins as `id`, in the cache, reporting the download's progress. One
+ * Lo builds from its Go modules is built with `go`, Lo's Go.
+ */
 function install(
   context: Context,
   id: string,
   progress: (done: number, total: number) => void,
   signal: AbortSignal,
+  go: Toolchain | undefined,
 ) {
   const installing = serverInstaller(context);
   if (!installing) throw new Error('Lo has no cache to download language servers into.');
   const pinned = pinnedIn(MANIFEST, id);
   if (!pinned) throw new Error(`Lo's list of language servers has no ${id}.`);
-  return installing.install(id, pinned, { signal, progress });
+  return installing.install(id, pinned, {
+    signal,
+    progress,
+    go: go && { version: go.version, installed: go.installed },
+  });
 }
 
 /**
@@ -496,7 +504,7 @@ async function installToolchain(
         progress(done, total);
       },
     });
-    return { installed, ...toolchainUse(id, pinned.version, installed) };
+    return { version: pinned.version, installed, ...toolchainUse(id, pinned.version, installed) };
   } catch (error) {
     throw signal.aborted ? error : toolchainFailure(id, error);
   } finally {
@@ -556,7 +564,8 @@ async function prepareServer(
     return done;
   };
   return adapter.prepare({
-    install: (id) => counted(`server:${id}`, (heard) => install(context, id, heard, signal)),
+    install: (id, options) =>
+      counted(`server:${id}`, (heard) => install(context, id, heard, signal, options?.go)),
     toolchain: listedToolchain(adapter, (id) =>
       counted(`toolchain:${id}`, (heard) => installToolchain(context, id, heard, signal)),
     ),

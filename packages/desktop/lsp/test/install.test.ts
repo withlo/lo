@@ -18,7 +18,16 @@ import { join, relative } from 'node:path';
 import { describe, expect, test, vi } from 'vitest';
 
 import * as disk from '../src/disk.ts';
-import { DownloadError, Installer, type Pinned, REDIRECTS } from '../src/index.ts';
+import {
+  buildGo,
+  DownloadError,
+  type GoDownload,
+  Installer,
+  NO_NETWORK,
+  type Pinned,
+  type Platform,
+  REDIRECTS,
+} from '../src/index.ts';
 import type { StallLimits } from '../src/download.ts';
 import { fingerprint } from '../src/install.ts';
 import { UNPACK_RULES } from '../src/unpack.ts';
@@ -50,7 +59,7 @@ const STALL: StallLimits = { quiet: 300, window: 1500, least: 256 };
 async function setUp(
   routes: Routes,
   fetch?: (served: typeof globalThis.fetch) => typeof globalThis.fetch,
-  options: { free?: number } = {},
+  options: { free?: number; platform?: Platform } = {},
 ) {
   const served = await serve(routes);
   const folder = join(tempFolder(), 'servers');
@@ -60,6 +69,7 @@ async function setUp(
     fetch: fetch?.(served.fetch) ?? served.fetch,
     backoff: [0, 0],
     stall: STALL,
+    ...(options.platform === undefined ? {} : { platform: options.platform }),
     ...(options.free === undefined ? {} : { free: () => Promise.resolve(options.free) }),
   });
   /** What's in the installer's folder, but for empty folders it keeps for downloads. */
@@ -580,5 +590,230 @@ describe('a toolchain', () => {
     await removing;
     // The install had ended, its download folder gone with it, before the removal was done.
     expect(left()).toEqual([]);
+  });
+});
+
+const GO_PROXY = 'https://proxy.golang.org';
+const GO_MOD = Buffer.from('module example.com/tool\n\ngo 1.24\n');
+const GO_ZIP = Buffer.from('the module’s source');
+/** What the stand-in for Go builds: the module's zip, as it is. */
+const GO_BUILT = GO_ZIP;
+
+/**
+ * A stand-in for Lo's Go, `<root>/bin/go`: it records its arguments, its environment and the
+ * go.mod and go.sum it's given in `seen`, then writes the module's zip from its proxy as the
+ * program, or does what `script` says.
+ */
+function fakeGo(script = ''): { go: string; seen: string; version: string } {
+  const folder = tempFolder();
+  const seen = join(folder, 'seen');
+  mkdirSync(join(folder, 'go', 'bin'), { recursive: true });
+  mkdirSync(seen);
+  const go = join(folder, 'go', 'bin', 'go');
+  writeFileSync(
+    go,
+    [
+      '#!/bin/sh',
+      `seen='${seen}'`,
+      'printf "%s\\n" "$@" > "$seen/args"',
+      '/usr/bin/env > "$seen/env"',
+      'cat go.mod > "$seen/go.mod"; cat go.sum > "$seen/go.sum"',
+      script,
+      'while [ "$1" != "-o" ]; do shift; done',
+      'cat "${GOPROXY#file://}/example.com/tool/@v/v1.0.0.zip" > "$2"',
+    ].join('\n'),
+    { mode: 0o755 },
+  );
+  return { go, seen, version: '1.27.4' };
+}
+
+/** A module file of `data` at `path` in the Go module proxy, pinned. */
+function goPart(path: string, data: Buffer) {
+  return { url: `${GO_PROXY}/${path}`, path, size: data.length, sha256: sha256(data) };
+}
+
+/** A Go program pinned as built from one module, `example.com/tool`. */
+function goTool(builds: GoDownload['builds'] = { 'linux-x64': goBuilt(GO_BUILT) }): Pinned {
+  return {
+    version: '1.0.0',
+    hosts: ['proxy.golang.org'],
+    platforms: {
+      any: {
+        kind: 'go',
+        entry: 'tool',
+        package: 'example.com/tool',
+        go: '1.27.4',
+        mod: ['module lo/tool', '', 'go 1.27.4', '', 'require example.com/tool v1.0.0'],
+        sum: [
+          `example.com/tool v1.0.0 h1:${'A'.repeat(43)}=`,
+          `example.com/tool v1.0.0/go.mod h1:${'B'.repeat(43)}=`,
+        ],
+        modules: [
+          goPart('example.com/tool/@v/v1.0.0.mod', GO_MOD),
+          goPart('example.com/tool/@v/v1.0.0.zip', GO_ZIP),
+        ],
+        builds,
+        room: 1024 * 1024,
+      },
+    },
+  };
+}
+
+/** What a build of `data` is pinned as: its size and SHA-256. */
+function goBuilt(data: Buffer) {
+  return { size: data.length, sha256: sha256(data) };
+}
+
+const GO_ROUTES = {
+  [`${GO_PROXY}/example.com/tool/@v/v1.0.0.mod`]: { body: GO_MOD },
+  [`${GO_PROXY}/example.com/tool/@v/v1.0.0.zip`]: { body: GO_ZIP },
+};
+
+/** Lo's Go as the installer is given it. */
+function loGo(fake: { go: string; version: string }) {
+  return {
+    version: fake.version,
+    installed: { folder: join(fake.go, '..', '..'), entry: fake.go },
+  };
+}
+
+describe('a Go program, built from its modules with Lo’s Go', () => {
+  test('is built once, offline, from Lo’s own module proxy, in an environment of its own', async () => {
+    const fake = fakeGo();
+    const { installer, folder, asked } = await setUp(GO_ROUTES, undefined, {
+      platform: 'linux-x64',
+    });
+    const installed = await installer.install('tool', goTool(), { go: loGo(fake) });
+    expect(installed.entry).toBe(join(folder, 'tool', '1.0.0', 'files', 'tool'));
+    expect(readFileSync(installed.entry)).toEqual(GO_BUILT);
+    // The build's folder, with its proxy, caches and home, is gone: the version holds only the
+    // program and its marker, and nothing is left of the download.
+    expect(readdirSync(join(folder, 'tool', '1.0.0')).toSorted()).toEqual([
+      'files',
+      'installed.json',
+    ]);
+    expect(readdirSync(join(folder, 'tool', '1.0.0', 'files'))).toEqual(['tool']);
+    expect(readdirSync(join(folder, '.partial'))).toEqual([]);
+    expect(lstatSync(installed.entry).mode & 0o111).not.toBe(0);
+    expect(await installer.install('tool', goTool(), { go: loGo(fake) })).toEqual(installed);
+    expect(asked).toHaveLength(2);
+
+    const read = (name: string) => readFileSync(join(fake.seen, name), 'utf8');
+    const args = read('args').trimEnd().split('\n');
+    expect(args).toEqual([
+      'build',
+      '-trimpath',
+      '-buildvcs=false',
+      '-mod=readonly',
+      '-modcacherw',
+      '-o',
+      expect.stringMatching(/\/build\/out\/tool$/),
+      'example.com/tool',
+    ]);
+    expect(read('go.mod')).toBe(`module lo/tool\n\ngo 1.27.4\n\nrequire example.com/tool v1.0.0\n`);
+    expect(read('go.sum').trimEnd().split('\n')).toHaveLength(2);
+    const env = Object.fromEntries(
+      read('env')
+        .trimEnd()
+        .split('\n')
+        .map((line) => [line.slice(0, line.indexOf('=')), line.slice(line.indexOf('=') + 1)]),
+    );
+    // The shell's own aside, that's all it's given.
+    for (const name of ['PWD', 'SHLVL', '_', 'OLDPWD']) delete env[name];
+    const build = args[6]?.replace(/\/out\/tool$/, '') ?? '';
+    expect(env).toEqual({
+      HOME: `${build}/home`,
+      TMPDIR: `${build}/home/tmp`,
+      PATH: `${join(fake.go, '..')}:/usr/bin:/bin`,
+      LANG: 'C.UTF-8',
+      GOROOT: join(fake.go, '..', '..'),
+      GOTOOLCHAIN: 'local',
+      GOENV: 'off',
+      GOFLAGS: '',
+      GOWORK: 'off',
+      GO111MODULE: 'on',
+      GOPROXY: `file://${build}/proxy`,
+      GONOPROXY: '',
+      GOPRIVATE: '',
+      GOINSECURE: '',
+      GOVCS: '*:off',
+      GOSUMDB: 'off',
+      GONOSUMDB: '',
+      GOPATH: `${build}/home/go`,
+      GOMODCACHE: `${build}/modules`,
+      GOCACHE: `${build}/cache`,
+      CGO_ENABLED: '0',
+      GOOS: 'linux',
+      GOARCH: 'amd64',
+      HTTPS_PROXY: NO_NETWORK,
+      HTTP_PROXY: NO_NETWORK,
+    });
+  });
+
+  test('asks the disk for the most its build holds, which counts the module files once', async () => {
+    const room = 1024 * 1024;
+    const fits = await setUp(GO_ROUTES, undefined, { platform: 'linux-x64', free: room + 10 });
+    await fits.installer.install('tool', goTool(), { go: loGo(fakeGo()) });
+    const short = await setUp(GO_ROUTES, undefined, { platform: 'linux-x64', free: room - 1 });
+    const error = await failure(short.installer.install('tool', goTool(), { go: loGo(fakeGo()) }));
+    expect(error.problem).toBe('space');
+    expect(short.asked).toEqual([]);
+  });
+
+  test('is refused, leaving nothing behind, when what’s built isn’t what was pinned', async () => {
+    const { installer, left } = await setUp(GO_ROUTES, undefined, { platform: 'linux-x64' });
+    const pin = goTool({ 'linux-x64': goBuilt(Buffer.from('another program')) });
+    const error = await failure(installer.install('tool', pin, { go: loGo(fakeGo()) }));
+    expect(error.problem).toBe('mismatch');
+    expect(error.message).toBe(
+      'What Lo built isn’t the program it pinned: its SHA-256 is another.',
+    );
+    expect(left()).toEqual([]);
+  });
+
+  test('says why it didn’t build, leaving nothing behind', async () => {
+    const { installer, left } = await setUp(GO_ROUTES, undefined, { platform: 'linux-x64' });
+    const fake = fakeGo('echo "go: example.com/tool: missing go.sum entry" >&2; exit 1');
+    const error = await failure(installer.install('tool', goTool(), { go: loGo(fake) }));
+    expect(error.problem).toBe('build');
+    expect(error.message).toBe('It didn’t build: go: example.com/tool: missing go.sum entry');
+    expect(left()).toEqual([]);
+  });
+
+  test('is refused before anything downloads, with another Go or for a system it isn’t built for', async () => {
+    const { installer, asked } = await setUp(GO_ROUTES, undefined, { platform: 'linux-x64' });
+    const other = { ...loGo(fakeGo()), version: '1.28.0' };
+    const error = await failure(installer.install('tool', goTool(), { go: other }));
+    expect(error.problem).toBe('refused');
+    expect(error.message).toBe('It’s pinned as Go 1.27.4 builds it, and Lo has Go 1.28.0.');
+    await expect(installer.install('tool', goTool())).rejects.toThrow('which it wasn’t given');
+    const unbuilt = goTool({ 'darwin-arm64': goBuilt(GO_BUILT) });
+    expect(
+      (await failure(installer.install('tool', unbuilt, { go: loGo(fakeGo()) }))).problem,
+    ).toBe('unavailable');
+    expect(asked).toEqual([]);
+  });
+
+  test('is stopped, with everything Go started, once it takes too long', async () => {
+    const folder = tempFolder();
+    const pin = goTool().platforms.any;
+    if (pin?.kind !== 'go') throw new Error('not a Go program');
+    const files = pin.modules.map((part, index) => {
+      const file = join(folder, `download-${index}`);
+      writeFileSync(file, part.path.endsWith('.zip') ? GO_ZIP : GO_MOD);
+      return file;
+    });
+    const build = join(folder, 'build');
+    mkdirSync(build);
+    const fake = fakeGo('sleep 30; :');
+    const building = buildGo({
+      go: fake.go,
+      download: pin,
+      files,
+      folder: build,
+      platform: 'linux-x64',
+      time: 100,
+    });
+    await expect(building).rejects.toThrow('It took longer than');
   });
 });

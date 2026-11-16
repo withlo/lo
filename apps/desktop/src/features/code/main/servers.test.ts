@@ -8,7 +8,7 @@ import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 
-import { type Server, serverEnvironment, type ServerSpec, startServer } from '@lo/lsp';
+import { NO_NETWORK, type Server, serverEnvironment, type ServerSpec, startServer } from '@lo/lsp';
 import { fakeServer } from '@lo/testing/lsp';
 import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 
@@ -522,7 +522,7 @@ describe('halting', () => {
 });
 
 describe('Lo’s own servers', () => {
-  it('get git’s folder, then the system’s, on their PATH, and no variable of their own', async () => {
+  it('that use no toolchain get git’s folder, then the system’s, on their PATH, and no variable of their own', async () => {
     const specs: ServerSpec[] = [];
     const pool = new ServerPool({
       prepare: (each, progress, signal) =>
@@ -542,16 +542,27 @@ describe('Lo’s own servers', () => {
       log: () => undefined,
     });
     onTestFinished(() => pool.stop());
-    pool.sync([view('v1', 'a/x', 1, SHIPPED)], 'v1');
+    const own = SHIPPED.filter((each) => each.downloads?.toolchains?.length === 0);
+    pool.sync([view('v1', 'a/x', 1, own)], 'v1');
     await settle();
-    // PHP's starts first, since it waits for one download, not Node's as well.
-    expect(specs.map((spec) => spec.name)).toEqual(['PHP', 'TypeScript', 'Python']);
+    expect(specs.map((spec) => spec.name).toSorted()).toEqual([
+      'PHP',
+      'Python',
+      'Terraform',
+      'TypeScript',
+    ]);
     for (const spec of specs) {
       expect(serverEnvironment({ ...spec, roots: [spec.root] })).toEqual({
         GIT_CONFIG_COUNT: '0',
         HOME: '/home/lo',
         TMPDIR: '/home/lo/tmp',
         PATH: '/lo/git/bin:/usr/bin:/bin',
+        HTTPS_PROXY: NO_NETWORK,
+        https_proxy: NO_NETWORK,
+        HTTP_PROXY: NO_NETWORK,
+        http_proxy: NO_NETWORK,
+        ALL_PROXY: NO_NETWORK,
+        all_proxy: NO_NETWORK,
         LANG: 'C.UTF-8',
       });
     }
