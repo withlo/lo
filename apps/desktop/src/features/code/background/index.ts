@@ -91,5 +91,7 @@ export default defineRunner(contract, {
     // text, and links and images pass Lo's rules or become text, as in any post.
     run: ({ markdown, repo }) =>
       markdownTree(markdown, repo === null ? { breaks: false } : { breaks: false, repo }),
+    // The reader waits on the card: it never waits behind the index's reading.
+    asked: true,
   },
 });

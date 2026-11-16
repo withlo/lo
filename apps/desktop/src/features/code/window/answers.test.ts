@@ -313,8 +313,8 @@ describe('gh with no type hints', () => {
     expect(noHints([{ ...asked, fallback: 'TypeScript is starting.' }], trusted, null)).toBe(
       'TypeScript is starting.',
     );
-    expect(noHints([{ ...asked, none: 'Pyright has no inline hints.' }], trusted, ready)).toBe(
-      'Pyright has no inline hints.',
+    expect(noHints([{ ...asked, none: 'Pyright has no type hints.' }], trusted, ready)).toBe(
+      'Pyright has no type hints.',
     );
     const failed = servers({ kind: 'failed', why: { kind: 'error', message: 'It exited.' } });
     expect(noHints([{ ...asked, fallback: 'TypeScript stopped.' }], trusted, failed)).toBe(
@@ -342,6 +342,10 @@ describe('gh with no type hints', () => {
         null,
       ),
     ).toBe('Type hints need a language server, which Lo runs only on PRs you trust.');
+    // The banner's cause: Lo can't tell whose code it is.
+    expect(noHints([], status({ kind: 'untrusted', why: 'unnamed' }, { kind: 'gone' }), null)).toBe(
+      'Type hints need a language server. GitHub no longer has this PR’s fork, so Lo can’t tell whose code it is.',
+    );
     expect(noHints([], status({ kind: 'checking' }), null)).toBe(
       'Type hints wait for Lo to work out whether this repo is trusted.',
     );

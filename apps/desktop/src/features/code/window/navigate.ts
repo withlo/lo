@@ -28,7 +28,7 @@ import {
   tabState,
   type RightKept,
 } from '../../tab/window/shared.ts';
-import type { Definitions, Hints, Hover, Lines, Outline, References } from '../port.ts';
+import type { Definitions, Hints, Hover, Lines, NoHover, Outline, References } from '../port.ts';
 import {
   allOutside,
   cardOf,
@@ -38,6 +38,7 @@ import {
   NO_NAME,
   noDefinition,
   noHints,
+  noHover,
   noneFound,
   noReferences,
   notYet,
@@ -556,7 +557,7 @@ async function showHover(asked: Asked, byKey: boolean): Promise<void> {
     if (controller?.signal === signal) controller.abort();
   };
   for (const kind of INPUT) window.addEventListener(kind, stop, true);
-  let hover: Hover | null;
+  let hover: Hover | NoHover;
   try {
     hover = await port().hover(asked.input, { signal });
   } catch (error) {
@@ -566,9 +567,9 @@ async function showHover(asked: Asked, byKey: boolean): Promise<void> {
     for (const kind of INPUT) window.removeEventListener(kind, stop, true);
   }
   if (signal.aborted) return;
-  // A hover with nothing the card can draw is none.
-  if (!hover || !cardOf(hover)) {
-    if (byKey) say(tab, 'No definition found at the cursor.');
+  // A hover with nothing the card can draw is none, saying why a server didn't answer.
+  if ('none' in hover || !cardOf(hover)) {
+    if (byKey) say(tab, noHover(hover.fallback));
     return;
   }
   const anchor = codeViews(tab).anchor(view, at);

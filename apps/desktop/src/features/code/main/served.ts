@@ -5,7 +5,7 @@
 //   gives the asking file's import of the name, if it has one, then the syntax index's answers;
 // - `references` within 10 s, `hover` within 1.5 s, `hints` within 3 s and `outline` within 3 s.
 //   A hover in Markdown is read into Lo's tree by the background process (`code.render`), and a
-//   server with no inline hints, by what it offers or what its adapter says, isn't asked for them.
+//   server with no type hints, by what it offers or what its adapter says, isn't asked for them.
 //
 // When the server is starting, slow, stopped or failed, the syntax index answers, with why the
 // server didn't (`fallback`), and a late answer is dropped. The old side always answers from the
@@ -37,6 +37,7 @@ import {
   type Hint,
   type Hints,
   type Hover,
+  type NoHover,
   type Outline,
   type OutlineSymbol,
   type OutsideAnswer,
@@ -79,8 +80,8 @@ export interface Serving {
   /** How long `definitions` waits for it, when it isn't the usual. */
   readonly definitionDeadline?: number | undefined;
   /**
-   * Why it has no inline hints to give Lo, when its adapter says so, as of a paid feature: Lo never
-   * asks it for them.
+   * Why it has no type hints to give Lo, when its adapter says so, as of a paid feature: Lo never
+   * asks it for them. The adapters fill it.
    */
   readonly noHints?: string | undefined;
   readonly server: Pick<Running, 'open' | 'request' | 'pathOf' | 'capabilities'>;
@@ -461,12 +462,13 @@ export async function servedHover(
   at: At,
   signal: AbortSignal | undefined,
   serverOf: ServerOf,
-): Promise<Hover | null> {
+): Promise<Hover | NoHover> {
   const { file, serving } = await asked(sides, at, serverOf);
   const name = askedName(file, at.line, at.column);
-  const syntax = async (fallback?: string) => {
+  // The index's line, or none, saying either way why the server didn't answer.
+  const syntax = async (fallback?: string): Promise<Hover | NoHover> => {
     const found = await hover(answering, sides, at, signal, file);
-    return found && withFallback(found, fallback);
+    return withFallback<Hover | NoHover>(found ?? { none: true }, fallback);
   };
   if (name === undefined || !serving) return syntax();
   if (serving.kind !== 'ready') return syntax(waitingFor(serving));
@@ -491,7 +493,12 @@ export async function servedHover(
     if (signal?.aborted) throw new IpcError('cancelled', 'The question was cancelled.');
     if (error instanceof IpcError && error.code === 'cancelled') throw error;
     // The window never draws the Markdown itself: the index answers, saying why.
-    return syntax(`Lo couldn't read ${serving.name}'s hover.`);
+    const slow = error instanceof IpcError && error.code === 'unanswered';
+    return syntax(
+      slow
+        ? `Lo took too long to read ${serving.name}'s hover.`
+        : `Lo couldn't read ${serving.name}'s hover.`,
+    );
   }
   // Markdown that shows nothing, as a comment alone: the index may know the name.
   if (tree.blocks.length === 0) return syntax();
@@ -534,7 +541,7 @@ export function hintsOf(value: unknown, from: number, to: number): Hint[] {
 }
 
 /**
- * Why `serving` gives no inline hints, so it isn't asked for them: its adapter says so, or it
+ * Why `serving` gives no type hints, so it isn't asked for them: its adapter says so, or it
  * doesn't offer them. Nothing when it does.
  */
 function hintless(serving: Serving): string | undefined {
@@ -542,7 +549,7 @@ function hintless(serving: Serving): string | undefined {
   const { capabilities } = serving.server;
   // Lo takes no registration of them later, so what it said to `initialize` is all it offers.
   const offered = capabilities === undefined || Boolean(capabilities.inlayHintProvider);
-  return offered ? undefined : `${serving.name} has no inline hints.`;
+  return offered ? undefined : `${serving.name} has no type hints.`;
 }
 
 /**

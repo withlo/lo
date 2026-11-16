@@ -78,8 +78,8 @@ type Context = FeatureContext<typeof contract>;
 const JOB_WAIT = 10 * 60_000;
 
 /**
- * How long main waits for a hover's Markdown to be read, behind its other jobs, such as the index's:
- * past it the index answers, so a card isn't long in coming.
+ * How long main waits for a hover's Markdown to be read, which goes ahead of its other jobs, such as
+ * the index's: past it the job is cancelled and the index answers, so a card isn't long in coming.
  */
 const RENDER_WAIT = 5_000;
 

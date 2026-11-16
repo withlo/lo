@@ -416,10 +416,10 @@ describe('gh', () => {
     seen.answers.set('hints', (): Hints => ({
       hints: [],
       label: 'Python',
-      none: 'Python has no inline hints.',
+      none: 'Python has no type hints.',
     }));
     await toggleHints();
-    expect(said.get('t1')?.text).toBe('Python has no inline hints.');
+    expect(said.get('t1')?.text).toBe('Python has no type hints.');
     await toggleHints();
   });
 });
@@ -465,9 +465,13 @@ describe('K and the pointer resting', () => {
   });
 
   it('says so when K finds nothing, but a rest that finds nothing says nothing', async () => {
-    seen.answers.set('hover', () => null);
+    seen.answers.set('hover', () => ({ none: true }));
     await typeOf(AT);
     expect(said.get('t1')?.text).toBe('No definition found at the cursor.');
+    // With why the server didn't answer, when one could have.
+    seen.answers.set('hover', () => ({ none: true, fallback: 'TypeScript is starting.' }));
+    await typeOf(AT);
+    expect(said.get('t1')?.text).toBe('No definition found at the cursor. TypeScript is starting.');
     said.set('t1', undefined);
     rested('t1', 'diff', PLACE);
     await settle();

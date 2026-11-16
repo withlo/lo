@@ -43,6 +43,12 @@ export function noneFound(said: string, fallback: string | undefined): string {
   return fallback === undefined ? said : `${said}. ${fallback}`;
 }
 
+/** What `K` says of a name nothing's known of, with why a server didn't answer, if one could. */
+export function noHover(fallback: string | undefined): string {
+  const said = 'No definition found at the cursor.';
+  return fallback === undefined ? said : `${said} ${fallback}`;
+}
+
 /** "`parse` has 3 references, all outside this repository.": what a server found, none listed. */
 export function allOutside(name: string, count: number): string {
   return count === 1
@@ -80,7 +86,7 @@ export function noHints(
         case 'fork':
           return 'Type hints need a language server, which Lo runs only on PRs you trust.';
         case 'gone':
-          return 'Type hints need a language server, which Lo doesn’t run on this PR.';
+          return 'Type hints need a language server. GitHub no longer has this PR’s fork, so Lo can’t tell whose code it is.';
         case 'base':
         case undefined:
           return 'Type hints need a language server, which Lo runs only on repos you trust.';

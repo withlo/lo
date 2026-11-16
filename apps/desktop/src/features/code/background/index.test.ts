@@ -1,7 +1,7 @@
 // The syntax index's jobs as the background process runs them: the version they stamp what they
 // read with, and a language the index has no tags for, which is skipped; and a hover's Markdown,
-// read as text from anyone. What tags each language reads is `@lo/syntax`'s, tested there, and how
-// Markdown is read is `@lo/markdown`'s.
+// read as text from anyone, ahead of the index's jobs. What tags each language reads is
+// `@lo/syntax`'s, tested there, and how Markdown is read is `@lo/markdown`'s.
 
 import { tagsVersion } from '@lo/syntax';
 import { describe, expect, it } from 'vitest';
@@ -35,5 +35,10 @@ describe('a hover’s Markdown', () => {
     expect(text).not.toContain('"break"');
     // `#12` refers to the repository's.
     expect(text).toContain('rozed-dev');
+  });
+
+  it('is read ahead of the index’s jobs, since the reader waits on it', () => {
+    expect(runner.jobs.render?.asked).toBe(true);
+    expect(runner.jobs.symbols?.asked).toBeUndefined();
   });
 });

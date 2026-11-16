@@ -140,6 +140,15 @@ export interface Hover {
   fallback?: string;
 }
 
+/**
+ * No hover for the name at a place: nothing's known of it, with why a language server didn't
+ * answer, when one could have: "TypeScript is starting."
+ */
+export interface NoHover {
+  none: true;
+  fallback?: string;
+}
+
 /** An inlay hint: a label after a place, with a space before or after it where it asks. */
 export interface Hint {
   line: number;
@@ -160,7 +169,7 @@ export interface Hints {
   /** Why it gave none, when it could have: "TypeScript is starting." */
   fallback?: string;
   /**
-   * Why it never gives any, so Lo didn't ask: it doesn't offer them ("Python has no inline
+   * Why it never gives any, so Lo didn't ask: it doesn't offer them ("Python has no type
    * hints."), or its adapter says it has none to give Lo.
    */
   none?: string;
@@ -190,8 +199,8 @@ export const contract = defineJobs('code', {
   definitions: { input: place, reply: reply<Definitions>() },
   /** Where the name at a place is used, in files of the same tree. */
   references: { input: place, reply: reply<References>() },
-  /** What the hover card says of the name at a place, or nothing. */
-  hover: { input: place, reply: reply<Hover | null>() },
+  /** What the hover card says of the name at a place, or that there's nothing, and why. */
+  hover: { input: place, reply: reply<Hover | NoHover>() },
   /** A language server's type hints for lines `from` to `to`, or why there are none. */
   hints: {
     input: z.strictObject({ ...file, from: line, to: line }),

@@ -19,6 +19,11 @@ export type Jobs<C extends JobContract> = {
       input: ParsedOf<C['jobs'][Name]>,
     ): ReplyOf<C['jobs'][Name]> | Promise<ReplyOf<C['jobs'][Name]>>;
     limits?: Partial<Limits>;
+    /**
+     * Whether main sends it to answer a question the reader is waiting on, such as a hover's: it
+     * waits in a queue of its own, ahead of main's other jobs.
+     */
+    asked?: boolean;
   };
 };
 
@@ -28,7 +33,9 @@ type AnyRun = { run(input: unknown): unknown }['run'];
 /** A group of jobs as the process runs them, its types checked where it was defined. */
 export interface Runner {
   readonly contract: JobContract;
-  readonly jobs: Readonly<Record<string, { run: AnyRun; limits?: Partial<Limits> | undefined }>>;
+  readonly jobs: Readonly<
+    Record<string, { run: AnyRun; limits?: Partial<Limits> | undefined; asked?: boolean }>
+  >;
 }
 
 /** The groups the window may send jobs of: all but those only main sends. */
@@ -45,7 +52,9 @@ export function defineRunner<C extends JobContract>(contract: C, jobs: Jobs<C>):
 export function findJob(
   runners: readonly Runner[],
   path: string,
-): { run: AnyRun; limits: Limits; spec: Runner['contract']['jobs'][string] } | undefined {
+):
+  | { run: AnyRun; limits: Limits; spec: Runner['contract']['jobs'][string]; asked: boolean }
+  | undefined {
   const [group, name] = path.split('.');
   const runner = runners.find((candidate) => candidate.contract.group === group);
   if (
@@ -59,7 +68,12 @@ export function findJob(
   const job = runner.jobs[name];
   const spec = runner.contract.jobs[name];
   if (!job || !spec) return undefined;
-  return { run: job.run, spec, limits: { ...defaultLimits, ...job.limits } };
+  return {
+    run: job.run,
+    spec,
+    limits: { ...defaultLimits, ...job.limits },
+    asked: job.asked === true,
+  };
 }
 
 /**

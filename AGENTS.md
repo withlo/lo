@@ -359,7 +359,9 @@ reads files or the network.
 - Main's jobs wait behind the window's: they run one at a time, and only once a worker is free and
   none of the window's jobs is waiting for one, so main's work never slows what the reader asked
   for. Main waits for each one longer than the window does, since its wait doesn't count against its
-  deadline.
+  deadline. Main's jobs that answer what the reader is waiting on (`asked` in the runner, such as
+  `code.render`) have a queue of their own: one at a time, ahead of main's other jobs and beside one
+  that runs. Main gives up on those sooner, and a job it gives up on is cancelled.
 - Main watches the process's memory and stops it past 2 GB, since memory outside the heap
   (WebAssembly's) can't be capped any other way, and treats a fatal error the same way. Jobs the
   window and main had sent fail as `restarted` at once; the process starts again, waiting longer
@@ -1197,11 +1199,13 @@ its languages; Lo ships none yet.
 - A hover in Markdown is read into `@lo/markdown`'s tree by the background process (`code.render`,
   main's own job), as any text from anyone is, and the card never draws the Markdown as text: the
   code blocks it starts with, in order, are the declaration (rust-analyzer's module path, then the
-  signature), and the rest is the docs. One that can't be read leaves the index to answer.
+  signature), and the rest is the docs. One that can't be read in 5 s leaves the index to answer,
+  saying why, as does a hover the index has nothing for, which `K` shows after "No definition found
+  at the cursor.".
 - `gh` shows a server's inlay hints, held until the reader's next input. With none, the status bar
   says why: the server is starting, failed, needs a toolchain or gave none, no server reads the code
   on screen, or the repo isn't trusted. A server that doesn't offer inlay hints, or whose adapter
-  says it has none, isn't asked for them, and `gh` says so ("Python has no inline hints.").
+  says it has none, isn't asked for them, and `gh` says so ("Python has no type hints.").
 - The status bar has an item for each server, its details offering "Restart", "Show the log" and
   "Stop trusting this repo"; on an untrusted view, "Language servers off" offers to trust it
   (`code.servers`, the `served` topic). The log dialog shows the last 1,000 lines, and copies as
