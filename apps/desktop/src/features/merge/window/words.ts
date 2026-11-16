@@ -548,7 +548,7 @@ function reasonRow(
         kind: 'fail',
         glyph: 'behind',
         title: `Out of date with ${base}`,
-        detail: 'The author or their agent updates the branch; Lo doesn’t add commits to a PR.',
+        detail: 'The author updates the branch; Lo doesn’t add commits to a PR.',
       };
     case 'changesRequested':
       return {
