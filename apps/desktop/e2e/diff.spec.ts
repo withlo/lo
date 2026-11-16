@@ -1494,7 +1494,9 @@ async function watchFrames(app: ElectronApplication, page: Page): Promise<() => 
         return Array.isArray(value) ? value.map(Number) : [];
       };
       const long: unknown = each && Reflect.get(each, 'long');
+      const shares: unknown = Reflect.get(window, 'loShares');
       return {
+        shares: JSON.stringify(shares ?? []),
         mark: Number(each && Reflect.get(each, 'mark')),
         frames: numbers('frames'),
         changes: numbers('changes'),
@@ -1594,6 +1596,32 @@ async function watchFrames(app: ElectronApplication, page: Page): Promise<() => 
       const biggest = within.toSorted((a, b) => b.wall - a.wall)[0];
       lines.push(
         `frame at ${(start - watched.frames[0]!).toFixed(0)} ms, ${length.toFixed(1)} ms long: ${changes} changes to the diff; main thread ${within.length} tasks, ${wall.toFixed(1)} ms wall, ${cpu.toFixed(1)} ms CPU; longest ${biggest ? `${biggest.wall.toFixed(1)} ms wall, ${biggest.cpu.toFixed(1)} ms CPU: ${biggest.calls.join(', ')}` : 'none'}`,
+      );
+    });
+    const shares: unknown = JSON.parse(watched.shares);
+    const timed = (Array.isArray(shares) ? shares : []).map((share) => ({
+      at: Number(share.at),
+      tasks: Number(share.tasks),
+      total: Number(share.total),
+      ran: Array.isArray(share.ran) ? share.ran.map(String) : [],
+    }));
+    const inWindow = timed.filter((share) => share.at >= (watched.frames[0] ?? 0));
+    lines.push(
+      `pacer: ${inWindow.length} shares; longest: ${inWindow
+        .toSorted((a, b) => b.total - a.total)
+        .slice(0, 6)
+        .map(
+          (share) =>
+            `${share.total.toFixed(1)} ms (${share.tasks.toFixed(1)} in tasks) ${share.ran.join(' + ')}`,
+        )
+        .join('; ')}`,
+    );
+    watched.frames.slice(1).forEach((end, index) => {
+      const start = watched.frames[index]!;
+      if (end - start < 30) return;
+      const ran = timed.filter((share) => share.at >= start && share.at < end);
+      lines.push(
+        `  in the frame at ${(start - watched.frames[0]!).toFixed(0)} ms: ${ran.map((share) => `${share.total.toFixed(1)} ms (${share.tasks.toFixed(1)} in tasks) ${share.ran.join(' + ')}`).join('; ') || 'no share'}`,
       );
     });
     const longFrames: unknown = JSON.parse(watched.long);
