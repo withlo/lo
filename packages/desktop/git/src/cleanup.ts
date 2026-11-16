@@ -521,16 +521,28 @@ export async function clear(host: CleanupHost): Promise<string[]> {
 }
 
 /**
- * Keeps the cache under `cap` bytes, as {@link cappedUsage} counts them, removing only as much as
- * gets it there: first the checkouts
- * of clones nobody has open, least recently used first, then those clones themselves, least
- * recently used first, each only while the cache is still over. A clone that's open or being
- * written to is never touched, nor are its checkouts, and the most recently used clone always
- * stays, so the cache is never emptied: a clone over the cap alone loses its checkouts and stays.
- * Returns the `owner/name` of each clone removed.
+ * The bytes the cache counts against its cap: what {@link cappedUsage} counts but what's being
+ * deleted, its `tmp/*.trash`, which removing a clone wouldn't make go any sooner.
+ */
+async function counted(host: CleanupHost): Promise<number> {
+  const tmp = join(host.root, 'tmp');
+  let deleting = 0;
+  for (const name of await readdir(tmp).catch(() => [])) {
+    if (name.endsWith('.trash')) deleting += await diskUsage(join(tmp, name));
+  }
+  return (await cappedUsage(host.root)) - deleting;
+}
+
+/**
+ * Keeps the cache under `cap` bytes, as {@link counted} counts them, removing only as much as gets
+ * it there: first the checkouts of clones nobody has open, least recently used first, then those
+ * clones themselves, least recently used first, each only while the cache is still over. A clone
+ * that's open or being written to is never touched, nor are its checkouts, and the most recently
+ * used clone always stays, so the cache is never emptied: a clone over the cap alone loses its
+ * checkouts and stays. Returns the `owner/name` of each clone removed.
  */
 export async function keepUnder(host: CleanupHost, cap: number): Promise<string[]> {
-  let total = await cappedUsage(host.root);
+  let total = await counted(host);
   if (total <= cap) return [];
   const byUse = (
     await Promise.all(
