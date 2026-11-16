@@ -103,7 +103,8 @@ test('gd, K, gr, gO and gh answer from the syntax index of a PR nothing trusts',
 
   await test.step('gd opens a peek of the definition, ⏎ goes there, and ⌃o comes back', async () => {
     await press(page, 'g', 'd');
-    await expect(peek(page)).toBeVisible();
+    // Under the last line on screen, it comes on screen whole.
+    await expect(peek(page)).toBeInViewport({ ratio: 1 });
     await expect(peek(page).locator('.lo-diffpeek__head')).toContainText('Line · 1 definition');
     await expect(peek(page).locator('.lo-diffpeek__code')).toContainText('export interface Line {');
     await expect(peek(page).locator('.lo-diffpeek__foot')).toContainText('src/parser.ts');

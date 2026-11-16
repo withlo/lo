@@ -48,6 +48,18 @@ export function peekLines(peek: PeekView): number {
   return Math.min(PEEK_LINES, Math.max(1, lines, peek.answers.length > 1 ? LISTED : 0));
 }
 
+/**
+ * Where a peek's line goes, down from the top of a screen `height` tall, for the peek to show
+ * whole: the line is `top` down from the top now, and the peek ends `below` under the line's top.
+ * The least scroll ends the peek at the screen's foot. A peek taller than the room under the line
+ * puts the line at the top, never above it. Undefined while the peek ends on screen, within half a
+ * pixel, or the line is below the screen.
+ */
+export function peekShownAt(top: number, below: number, height: number): number | undefined {
+  if (top >= height || top + below <= height + 0.5) return undefined;
+  return Math.max(0, height - below);
+}
+
 /** A peek under a line, as a code view draws it. */
 export class PeekBlock {
   readonly dom: HTMLElement;

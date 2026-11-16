@@ -60,7 +60,7 @@ import {
   vimPending,
 } from './keys.ts';
 import { marking, marksChanged } from './marks.ts';
-import { PeekBlock, PeekWidget } from './peek.ts';
+import { PeekBlock, PeekWidget, peekLines, peekShownAt } from './peek.ts';
 import { watchRests, type Word, wordAnchor, wordUnder } from './words.ts';
 
 /** Opens a whole-file view of `init`'s file in `parent`, which tells `on` what happens in it. */
@@ -339,7 +339,10 @@ class WholeFile implements FileView {
     if (open?.line === at.line) {
       const { block } = open;
       if (peek) {
-        this.#keepPeek(at.line, () => block.update(peek));
+        const before = peekLines(block.peek);
+        const shown = this.#keepPeek(at.line, () => block.update(peek));
+        // Grown or shrunk as the reader reads it, as when its code comes, it shows whole again.
+        if (shown && block.hasFocus && peekLines(peek) !== before) this.#showPeek(open);
         return true;
       }
       const focused = block.hasFocus;
@@ -361,12 +364,14 @@ class WholeFile implements FileView {
     // Focus in the code, or in the peek this one takes the place of, goes into it.
     const focused = view.hasFocus || open?.block.hasFocus === true;
     const block = new PeekBlock(at, peek, frame);
-    this.#keepPeek(at.line, () => {
+    const opened = { line: at.line, block };
+    const shown = this.#keepPeek(at.line, () => {
       open?.block.destroy();
-      this.#peek = { line: at.line, block };
-      view.dispatch({ effects: setPeek.of({ line: at.line, block }) });
+      this.#peek = opened;
+      view.dispatch({ effects: setPeek.of(opened) });
     });
     if (focused) block.focus();
+    if (shown) this.#showPeek(opened);
     return true;
   }
 
@@ -399,16 +404,49 @@ class WholeFile implements FileView {
   /**
    * Makes a change under line `line`, as a peek opening there: while some of the line is on screen,
    * it stays where it is, and so does all above it; off screen, above it or below, the first line
-   * on screen does, so a peek opening or closing out of sight moves nothing in it.
+   * on screen does, so a peek opening or closing out of sight moves nothing in it. Says whether the
+   * line was on screen.
    */
-  #keepPeek(line: number, change: () => void): void {
+  #keepPeek(line: number, change: () => void): boolean {
     const view = this.#view;
     view.lineBlockAtHeight(0);
     const screen = this.dom.getBoundingClientRect();
     const pos = view.state.doc.line(line).from;
-    const kept = partlyOnScreen(view, pos, screen) ? pos : lineOnScreen(view, screen)?.pos;
+    const shown = partlyOnScreen(view, pos, screen);
+    const kept = shown ? pos : lineOnScreen(view, screen)?.pos;
     if (kept === undefined) change();
     else this.#keepPos(kept, change);
+    return shown;
+  }
+
+  /**
+   * Brings `opened`, under a line on screen, on screen whole, once it's drawn: the least scroll
+   * that ends it at the screen's foot, its line going no higher than the top, where a peek taller
+   * than the room under it puts it. It's a jump the reader asked for, as `reveal`'s: the editor
+   * scrolls to the line, the cursor on it where the peek has it. A peek on screen whole moves
+   * nothing.
+   */
+  #showPeek(opened: { line: number; block: PeekBlock }): void {
+    queueMicrotask(() => {
+      if (this.#peek !== opened) return;
+      const view = this.#view;
+      view.lineBlockAtHeight(0);
+      const line = view.state.doc.line(opened.line);
+      // Where the editor finds the line as it scrolls to it.
+      const drawn = view.coordsAtPos(line.from, 1);
+      const { block } = opened;
+      if (!drawn || !this.#showing() || !block.dom.isConnected) return;
+      const bottom = block.dom.getBoundingClientRect().bottom;
+      const screen = this.dom.getBoundingClientRect().top;
+      const to = peekShownAt(drawn.top - screen, bottom - drawn.top, this.dom.clientHeight);
+      if (to === undefined) return;
+      // Its scroll is the editor's own, as a jump's, whatever `showLine` asked for before it.
+      this.#ownScroll = false;
+      view.dispatch({
+        selection: { anchor: line.from + Math.min(block.at.column ?? 0, line.length) },
+        effects: EditorView.scrollIntoView(line.from, { y: 'start', yMargin: to }),
+      });
+    });
   }
 
   /**

@@ -577,11 +577,15 @@ export interface DiffView extends KeySource {
    * there. A view has one peek at most: one elsewhere closes as this one opens. Each is the
    * reader's asking, as `gd` is: the line stays where it is on screen, and so does all above it, or
    * while the line is off screen, what's at the top of the screen does; side by side the other
-   * column makes room level with it, as for threads. Its height comes from its code alone, so
-   * nothing it shows changes it after. Focus goes into the peek, a scope of its own (`peek`), from
-   * the view's code, and closing it puts focus back on the code, the cursor at `at`. Says whether
-   * there was a peek to show or close: there's none under a line not drawn, as of a file closed or
-   * kept out, one GitHub's diff left out, or one among collapsed lines, where no cursor is.
+   * column makes room level with it, as for threads. Then a peek under a line on screen that ends
+   * below the screen's foot comes on screen whole, as a jump does, by the least scroll, the cursor
+   * on its line: its line goes no higher than the top, where a peek taller than the room under it
+   * puts it. So does one the reader is in that grows, as its code comes. Closing it scrolls
+   * nothing. Its height comes from its code alone, so nothing else it shows changes it after.
+   * Focus goes into the peek, a scope of its own (`peek`), from the view's code, and closing it
+   * puts focus back on the code, the cursor at `at`. Says whether there was a peek to show or
+   * close: there's none under a line not drawn, as of a file closed or kept out, one GitHub's diff
+   * left out, or one among collapsed lines, where no cursor is.
    */
   peek(at: Place, peek: PeekView | undefined, frame?: PeekFrame): boolean;
   /**
@@ -813,7 +817,8 @@ export interface FileView extends KeySource {
   /**
    * Shows `peek` under the line at `at`, as the diff view does (`DiffView.peek`), or with `peek`
    * undefined closes it: the line stays where it is on screen, and all above it, or while it's off
-   * screen, the first line on screen does. Says whether there was a peek to show or close: there's
+   * screen, the first line on screen does; then a peek that ends below the screen's foot comes on
+   * screen whole, as it does there. Says whether there was a peek to show or close: there's
    * none under a line of another file or side.
    */
   peek(at: Place, peek: PeekView | undefined, frame?: PeekFrame): boolean;

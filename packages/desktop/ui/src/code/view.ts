@@ -123,7 +123,7 @@ import {
 } from './markers.ts';
 import { lineKey, marking, marksChanged, rowKey } from './marks.ts';
 import { otherLine } from './moves.ts';
-import { PeekBlock } from './peek.ts';
+import { PeekBlock, peekLines, peekShownAt } from './peek.ts';
 import {
   collapsedRuns,
   type FileRows,
@@ -2659,23 +2659,28 @@ class View implements DiffView {
     if (!place || !this.#drawable(place) || this.#collapsedAt(place)) return false;
     if (here) {
       const { block } = open;
-      this.#keepPeek(place, () => block.update(peek));
+      const before = peekLines(block.peek);
+      const shown = this.#keepPeek(place, () => block.update(peek));
+      // Grown or shrunk as the reader reads it, as when its code comes, it shows whole again.
+      if (shown && block.hasFocus && peekLines(peek) !== before) this.#showPeek(open);
       return true;
     }
     // Focus in the view's code, or in the peek this one takes the place of, goes into it.
     const focused = this.#editors().some((view) => view.hasFocus) || open?.block.hasFocus === true;
     const block = new PeekBlock(at, peek, frame);
-    this.#keepPeek(place, () => {
+    const opened = { place, block };
+    const shown = this.#keepPeek(place, () => {
       if (open) {
         open.block.destroy();
         if (open.place.file !== place.file) this.#refresh(open.place.file);
       }
-      this.#peek = { place, block };
+      this.#peek = opened;
       this.#peekLines[place.file]![place.side].add(place.line);
       this.#keepAt(place.file);
       this.#refresh(place.file);
     });
     if (focused) block.focus();
+    if (shown) this.#showPeek(opened);
     return true;
   }
 
@@ -2683,10 +2688,48 @@ class View implements DiffView {
    * Makes a change to the peek under `place`, which the reader asked for: while some of the line is
    * on screen, it stays where it is, and so does all above it; off screen, above it or below,
    * what's at the top of the screen does, so a peek opening or closing out of sight moves nothing.
+   * Says whether the line was on screen.
    */
-  #keepPeek(place: At, change: () => void): void {
-    if (this.#lineOnScreen(place)) this.#keepLine(place, change);
+  #keepPeek(place: At, change: () => void): boolean {
+    const shown = this.#lineOnScreen(place);
+    if (shown) this.#keepLine(place, change);
     else this.#keepTop(change);
+    return shown;
+  }
+
+  /**
+   * Brings `opened`, under a line on screen, on screen whole, once what it moved is lined up: the
+   * least scroll that ends it at the screen's foot, its line going no higher than the top, where a
+   * peek taller than the room under it puts it. It's a jump the reader asked for, as `reveal`'s:
+   * the editor scrolls to the line, the cursor on it where the peek has it. A peek on screen whole
+   * moves nothing.
+   */
+  #showPeek(opened: { place: At; block: PeekBlock }): void {
+    // After the pass that keeps the line where it is, which the change scheduled first.
+    queueMicrotask(() => {
+      if (this.#peek !== opened) return;
+      const { place, block } = opened;
+      const pane: Pane = this.#pane === 'inline' ? 'inline' : place.side;
+      const view = this.#viewOf(pane);
+      view.lineBlockAtHeight(0);
+      const line = view.state.doc.line(this.#docLine(pane, place));
+      // Where the editor finds the line as it scrolls to it.
+      const drawn = view.coordsAtPos(line.from, 1);
+      const span = this.#spanOf(block.dom);
+      if (!drawn || !span) return;
+      const screen = this.dom.getBoundingClientRect().top;
+      const to = peekShownAt(drawn.top - screen, span.bottom - drawn.top, this.dom.clientHeight);
+      if (to === undefined) return;
+      this.#holding = undefined;
+      this.#jumped = undefined;
+      this.#lastPane = pane;
+      this.#lastSide = place.side;
+      this.#aligner.follow(pane === 'inline' ? undefined : pane);
+      view.dispatch({
+        selection: { anchor: line.from + Math.min(block.at.column ?? 0, line.length) },
+        effects: EditorView.scrollIntoView(line.from, { y: 'start', yMargin: to }),
+      });
+    });
   }
 
   /** Whether some of line `place` is drawn on screen, as one partly above its top. */

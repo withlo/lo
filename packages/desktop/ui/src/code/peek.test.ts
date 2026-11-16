@@ -4,7 +4,7 @@ import { beforeAll, describe, expect, test, vi } from 'vitest';
 
 import { findScope, isKeySource } from '../commands/index.ts';
 import type { PeekCode, PeekFrame, PeekView } from './api.ts';
-import { PeekBlock, peekLines } from './peek.ts';
+import { PeekBlock, peekLines, peekShownAt } from './peek.ts';
 
 beforeAll(() => {
   globalThis.ResizeObserver ??= class {
@@ -292,5 +292,31 @@ describe('a peek', () => {
     await Promise.resolve();
     expect(document.activeElement).toBe(block.dom);
     block.destroy();
+  });
+});
+
+describe('where a peek’s line goes for the peek to show whole', () => {
+  // A screen 600 px tall, and a peek that ends 280 px under its line's top.
+  test('nowhere while the peek ends on screen', () => {
+    expect(peekShownAt(0, 280, 600)).toBeUndefined();
+    expect(peekShownAt(320, 280, 600)).toBeUndefined();
+    // A line partly above the top keeps its place, as the peek under it shows whole.
+    expect(peekShownAt(-8, 280, 600)).toBeUndefined();
+  });
+
+  test('up by the least scroll that ends the peek at the screen’s foot', () => {
+    // The last line on screen, one partly below the foot, and one two rows above it.
+    expect(peekShownAt(582, 280, 600)).toBe(320);
+    expect(peekShownAt(590, 280, 600)).toBe(320);
+    expect(peekShownAt(546, 280, 600)).toBe(320);
+  });
+
+  test('to the top, and no higher, for a peek taller than the room under its line', () => {
+    expect(peekShownAt(500, 700, 600)).toBe(0);
+    expect(peekShownAt(-8, 700, 600)).toBe(0);
+  });
+
+  test('nowhere for a line below the screen', () => {
+    expect(peekShownAt(600, 280, 600)).toBeUndefined();
   });
 });
