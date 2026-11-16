@@ -441,7 +441,10 @@ toolchain and git's variables each server needs.
   that of the Node the JavaScript ones run on, with each file's address, size and SHA-256 per
   platform. `pnpm nx run lsp:pin -- <id> <version>` records one, by hand and never in CI: it checks
   each file against its publisher's signature first (Node's releasers' keys, in `scripts/keys/`, and
-  npm's registry keys), and that it unpacks as Lo would. Lo trusts only the manifest's hashes.
+  npm's registry keys), and that it unpacks as Lo would. rust-analyzer, which publishes no signature
+  or attestation for its releases, is checked against the SHA-256 the GitHub REST API
+  (`api.github.com`) lists for each release asset, a host run apart from the `github.com` one the
+  file comes from. Lo trusts only the manifest's hashes.
 - The toolchains language servers use are pinned the same way, in `toolchains.json`: Go, Rust
   (rustc, cargo, the standard library and its sources, as layers of one sysroot), a Temurin JDK and
   the .NET SDK, each with what it unpacks to per platform. `lsp:pin` checks Go against Google's
@@ -452,12 +455,19 @@ toolchain and git's variables each server needs.
   of programs for its `PATH` and the variables that hold the toolchain to Lo's copy
   (`GOTOOLCHAIN=local`, an empty `RUSTC_WRAPPER`, `JAVA_HOME`, `DOTNET_ROOT`, MSBuild's
   `DOTNET_MSBUILD_SDK_RESOLVER_*`, and the rest).
-- A `global.json` can steer `dotnet` past those variables: since .NET 10 its `sdk.paths` names
-  folders to find an SDK in, the checkout's own among them, and the SDK's commands and MSBuild read
-  the one nearest where they run. So `dotnet` starts a server only as `dotnet exec`, which reads
-  none (`checkArguments`), and a server that uses .NET doesn't start on, or move to, a checkout with
-  a `global.json` that names `paths` or spells a key with an escape, in it or in a folder above it
-  (`checkoutProblem`, asked by the pool).
+- Some files steer a toolchain past those variables, so a server that uses one doesn't start on, or
+  move to, a checkout `checkoutProblem` (asked by the pool) finds one in, nor, for a Cargo config or
+  `global.json`, in a folder above it. A `global.json` can steer `dotnet`: since .NET 10 its
+  `sdk.paths` names folders to find an SDK in, the checkout's own among them, and the SDK's commands
+  and MSBuild read the one nearest where they run, so `dotnet` starts a server only as `dotnet exec`
+  (which reads none, `checkArguments`) and only where no `global.json` names `paths` or spells a key
+  with an escape. For Rust, a `rust-analyzer.toml`'s workspace settings win over Lo's client
+  settings and can run a program (`cargo.buildScripts.overrideCommand`, `cargo.extraEnv`), and a
+  `.cargo/config.toml` `[env]` table is set on the `rustc` `cargo metadata` runs, whatever Lo's
+  environment holds; either refuses the checkout. The config's other keys Lo's variables answer
+  (`build.rustc*` by `RUSTC`/`RUSTC_WRAPPER`/`RUSTC_WORKSPACE_WRAPPER`, the registries and sources
+  by `CARGO_NET_OFFLINE`), so they don't; a `.cargo/config.toml` or `.cargo/config` above the
+  checkout is refused outright.
 - A download goes over `https` only, on the usual port, to its entry's hosts, following at most 5
   redirects itself, each held to the same rules, and refusing an answer its `fetch` was redirected
   to unseen, with no token or cookie. In the app it goes through `net.request` (`netFetch` with
@@ -482,13 +492,18 @@ toolchain and git's variables each server needs.
 - A server installed by the user is used only from where its adapter says it may be, when the app's
   folder check passes it (the one git is held to), it isn't in Lo's cache, and it isn't a version
   manager's shim, which picks a program from the checkout.
-- The servers that run on Lo's Node have their adapters in `src/adapters/`: vtsls for TypeScript and
-  JavaScript, and Pyright for Python, each from npm. Each starts as Node, by its absolute path, with
-  a cap on its heap, then the server's own entry point, never npm's launcher. What it's told is the
-  adapter's alone, and nothing in the checkout picks what runs: vtsls runs its own TypeScript, loads
-  no `tsserver` plugin from the checkout, and acquires no types; Pyright's Python is `/dev/null`, so
-  it runs no interpreter. A plugin a `tsconfig.json` names is still looked for by its package's
-  name, beside Lo's TypeScript and in each `node_modules` above Lo's install, such as
+- Each server's adapter is in `src/adapters/`: vtsls for TypeScript and JavaScript, and Pyright for
+  Python, each from npm and run on Lo's Node, by its absolute path, with a cap on its heap, then the
+  server's own entry point, never npm's launcher; and rust-analyzer for Rust, a compiled program Lo
+  downloads, run on Lo's Rust toolchain. What each is told is the adapter's alone, and nothing in
+  the checkout picks what runs: vtsls runs its own TypeScript, loads no `tsserver` plugin from the
+  checkout, and acquires no types; Pyright's Python is `/dev/null`, so it runs no interpreter;
+  rust-analyzer runs Lo's `cargo` and `rustc` (`CARGO`, `RUSTC`, empty `RUSTC_WRAPPER` and
+  `RUSTC_WORKSPACE_WRAPPER`, `cargo.sysroot` set), reads no `rust-toolchain.toml` (no rustup),
+  fetches nothing (`CARGO_NET_OFFLINE=true`, a private `CARGO_HOME`), and runs no build script or
+  proc-macro (`cargo.buildScripts.enable` and `procMacro.enable` off), so a crate's dependencies it
+  can't resolve offline load without them. A plugin a `tsconfig.json` names is still looked for by
+  its package's name, beside Lo's TypeScript and in each `node_modules` above Lo's install, such as
   `~/node_modules`, which neither vtsls nor `tsserver` can turn off (`test/plugins.test.ts`). No
   server has a sandbox: each reads what the user can, outside the checkout too, and Lo never opens a
   place outside the checkout an answer names. Each says whether it gives inlay hints (`hints`):

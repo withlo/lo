@@ -1,5 +1,12 @@
 export { heapCap, launchOnNode, type Launch, type NodeServer } from './adapters/node.ts';
 export { NO_PYTHON, PYRIGHT } from './adapters/pyright.ts';
+export {
+  type InstalledToolchain,
+  launchRustAnalyzer,
+  type NativeServer,
+  RUST_ANALYZER,
+  rustAnalyzerSettings,
+} from './adapters/rust.ts';
 export { VTSLS } from './adapters/vtsls.ts';
 export { CLIENT_CAPABILITIES } from './capabilities.ts';
 export { findCopy, type CopyOptions, type Found } from './copies.ts';

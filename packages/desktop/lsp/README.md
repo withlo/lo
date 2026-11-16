@@ -79,18 +79,21 @@ own (`setsid`) is still found.
 ## Servers
 
 The servers Lo runs, each downloaded on first use for a trusted view, as `servers.json` pins it, and
-each with its adapter in `src/adapters/`. Both run on Lo's own Node, which downloads first, and need
-nothing installed.
+each with its adapter in `src/adapters/`. The JavaScript servers run on Lo's own Node, which
+downloads first; rust-analyzer is a compiled program that runs on Lo's Rust toolchain, which
+downloads with it. None needs anything installed.
 
-| Server  | Version | For                    | From                                                                               | License                                              |
-| ------- | ------- | ---------------------- | ---------------------------------------------------------------------------------- | ---------------------------------------------------- |
-| vtsls   | 0.3.0   | TypeScript, JavaScript | npm: `@vtsls/language-server` and its 17 dependencies, TypeScript 5.9.3 among them | MIT; TypeScript's is Apache-2.0, the rest MIT or ISC |
-| Pyright | 1.1.414 | Python                 | npm: `pyright`                                                                     | MIT                                                  |
-| Node    | 26.13.1 | the two above          | nodejs.org                                                                         | MIT                                                  |
+| Server        | Version    | For                    | From                                                                               | License                                              |
+| ------------- | ---------- | ---------------------- | ---------------------------------------------------------------------------------- | ---------------------------------------------------- |
+| vtsls         | 0.3.0      | TypeScript, JavaScript | npm: `@vtsls/language-server` and its 17 dependencies, TypeScript 5.9.3 among them | MIT; TypeScript's is Apache-2.0, the rest MIT or ISC |
+| Pyright       | 1.1.414    | Python                 | npm: `pyright`                                                                     | MIT                                                  |
+| rust-analyzer | 2026-11-09 | Rust                   | GitHub releases: `rust-lang/rust-analyzer`                                         | MIT OR Apache-2.0                                    |
+| Node          | 26.13.1    | vtsls and Pyright      | nodejs.org                                                                         | MIT                                                  |
 
-Each starts as Node, by its absolute path, with a cap on its heap, then its own entry point inside
-its install, never the launcher npm would link, with no shell and an environment built from nothing.
-What it's told is its adapter's alone, and the adapter says why each setting is as it is:
+The JavaScript servers start as Node, by its absolute path, with a cap on their heap, then their own
+entry point inside the install, never the launcher npm would link; rust-analyzer starts as the
+compiled program itself. Each runs with no shell and an environment built from nothing. What it's
+told is its adapter's alone, and the adapter says why each setting is as it is:
 
 - **vtsls** runs its own TypeScript, never a workspace's (`node_modules/typescript`), and has
   automatic type acquisition off, so it runs no npm. It loads no `tsserver` plugin from the
@@ -103,11 +106,34 @@ What it's told is its adapter's alone, and the adapter says why each setting is 
   the machine's, nor one a checkout's virtual environment or `.python-version` would pick. It
   carries the standard library's stubs itself. It answers no inlay hints, so its adapter says it has
   none (`hints: false`).
+- **rust-analyzer** reads a Cargo project with `cargo metadata`, which runs `cargo` and, through it,
+  `rustc`. All three are Lo's: `CARGO` and `RUSTC` and the toolchain's folder first on the `PATH`
+  point to Lo's copy, and `cargo.sysroot` is Lo's toolchain, with the standard library's sources
+  (`rust-src`) beside it. `RUSTC_WRAPPER` and `RUSTC_WORKSPACE_WRAPPER` are empty, which undoes a
+  checkout's `.cargo/config.toml` `build.rustc-wrapper`; `cargo` reads `RUSTC` before the file's
+  `build.rustc` too. With no rustup and the sysroot set, nothing reads a `rust-toolchain.toml`.
+  `CARGO_NET_OFFLINE=true`, and `CARGO_HOME` defaults to a private `.cargo` in the server's `HOME`,
+  so `cargo metadata` fetches nothing — no registry, no git dependency, no `[source]` replacement,
+  no credential-provider — whatever a checkout's `.cargo/config.toml` says. For a crate whose
+  dependencies aren't already in that `CARGO_HOME`, `cargo metadata` can't resolve them offline and
+  rust-analyzer loads the workspace without them: the workspace's own code is analysed in full, but
+  go-to-definition into a dependency doesn't resolve. Lo doesn't fetch crates. Build scripts
+  (`build.rs`) and proc-macro crates are a checkout's code, so `cargo.buildScripts.enable` and
+  `procMacro.enable` are both off; the cost is that a `build.rs`'s generated code and a macro's or
+  derive's expansion aren't seen, and a hover or definition that needs them falls back to the syntax
+  index. The commands that would run a checkout's tools (`check.overrideCommand`, `checkOnSave`,
+  `cargo.buildScripts.overrideCommand`, the runnables' and tests') are at their safe defaults, and
+  Lo never saves, so no check runs. rust-analyzer has no heap flag, so Lo's 4 GB cap on the group
+  bounds it; its caches aren't primed for files Lo never opens. Two files Lo's settings can't answer
+  refuse the checkout instead (`src/toolchains.ts`, `checkoutProblem`): a `rust-analyzer.toml`,
+  whose workspace settings win over Lo's and can run a program, and a `.cargo/config.toml` `[env]`
+  table, which `cargo` sets on the `rustc` it runs; a `.cargo/config.toml` or `.cargo/config` in a
+  folder above the checkout is refused too.
 
-Neither runs in a sandbox: each reads what you can, so an absolute import, or Pyright's
-`extraPaths`, leads it to files outside the checkout, and a hover can show what's in one. Nothing
-can send what it reads anywhere, and Lo never opens a place outside the checkout an answer names: it
-shows as outside the repository.
+No server runs in a sandbox: each reads what you can, so an absolute import, Pyright's `extraPaths`
+or a Rust sysroot's sources lead it to files outside the checkout, and a hover can show what's in
+one. Nothing can send what it reads anywhere, and Lo never opens a place outside the checkout an
+answer names: it shows as outside the repository.
 
 Lo names each server's license wherever it says what the server is: a server's details in the status
 bar show its name, version and license, "Pyright 1.1.414 · MIT".

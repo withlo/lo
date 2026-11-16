@@ -278,7 +278,7 @@ test(
     // The script says each marker, so whoever checks knows what to look for.
     const said = new Set(script.match(/lo-hostile-[a-z]+(?:-[a-z]+)*/g));
     expect([...markers].toSorted()).toEqual([...said].toSorted());
-    expect(markers.size).toBe(15);
+    expect(markers.size).toBe(20);
   },
 );
 

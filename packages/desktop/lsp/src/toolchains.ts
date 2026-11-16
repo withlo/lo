@@ -20,12 +20,25 @@
  * Each keeps its caches and settings in the server's own `HOME` (`CARGO_HOME`, `GOPATH`,
  * `DOTNET_CLI_HOME` and `NUGET_PACKAGES` all default to folders there), which no one else uses.
  *
- * A `global.json` is the one file in a checkout the variables can't answer: since .NET 10 its
- * `sdk.paths` names folders to look for an SDK in, the checkout's own among them, and the SDK
- * found there runs with its own runtime. The SDK's commands read the `global.json` nearest the
- * folder they run in, and MSBuild the one nearest each project, however the variables are set.
- * So a server that uses .NET runs only as `dotnet exec`, which reads none, and only on a checkout
- * {@link checkoutProblem} finds no such file in, nor in a folder above.
+ * Some files in a checkout the variables can't answer, so {@link checkoutProblem} refuses a
+ * checkout that holds one, as the pool asks it to before a server starts or moves:
+ *
+ * - .NET: a `global.json`, in the checkout or in a folder above it, whose `sdk.paths` names folders
+ *   to look for an SDK in (the checkout's own among them), or that spells a key with an escape that
+ *   hides such a name. Since .NET 10 the SDK's commands and MSBuild read the `global.json` nearest
+ *   where they run, however the variables are set, so a server that uses .NET runs only as
+ *   `dotnet exec`, and only where no such file is found.
+ * - Rust: a `rust-analyzer.toml`, whose workspace-scoped settings (`cargo.buildScripts.enable` with
+ *   an `overrideCommand`, `cargo.extraEnv`, …) win over Lo's own client settings and can run a
+ *   program; or a `.cargo/config.toml` (or `.cargo/config`) with an `[env]` table, which `cargo`
+ *   sets on the `rustc` it runs for `cargo metadata`, whatever Lo's environment holds, so it can
+ *   load code through the dynamic linker. Lo's environment answers the config's other program and
+ *   network keys (`build.rustc*` by `RUSTC`/`RUSTC_WRAPPER`/`RUSTC_WORKSPACE_WRAPPER`, the rest by
+ *   `CARGO_NET_OFFLINE`), so those don't refuse the checkout. A `.cargo/config.toml` or
+ *   `.cargo/config` in a folder above the checkout is refused outright, since `cargo` reads it too
+ *   and Lo can't vet what's outside the checkout; a `rust-analyzer.toml` above the checkout isn't,
+ *   since rust-analyzer reads one only from a workspace root or under it, and its user config from
+ *   `HOME`, which is Lo's.
  */
 
 import { lstat, open, readdir } from 'node:fs/promises';
@@ -124,18 +137,28 @@ export function toolchainUse(
   }
 }
 
-/** The largest `global.json` {@link checkoutProblem} reads; a larger one it refuses. */
-const GLOBAL_JSON_LIMIT = 1024 * 1024;
+/** The largest config file {@link checkoutProblem} reads; a larger one it refuses. */
+const CONFIG_LIMIT = 1024 * 1024;
 
 /**
- * Why a server that uses toolchain `id` mustn't run on the checkout at `root`, or `undefined`
- * when it may. For .NET, it's a `global.json` in the checkout, or in a folder above it, that could
- * choose an SDK other than Lo's: one that names folders to look for an SDK in (`sdk.paths`), or
- * that spells a key with an escape, which hides such a name from a look at its text. The other
- * toolchains read nothing in a checkout that their variables don't answer.
+ * Why a server that uses toolchain `id` mustn't run on the checkout at `root`, or `undefined` when
+ * it may. It's `dotnet` or `rust`, each with a file the toolchain's variables can't answer
+ * ({@link dotnetProblem}, {@link rustProblem}); the other toolchains read nothing in a checkout
+ * that their variables don't answer.
  */
 export async function checkoutProblem(id: string, root: string): Promise<string | undefined> {
-  if (id !== 'dotnet') return undefined;
+  if (id === 'dotnet') return dotnetProblem(root);
+  if (id === 'rust') return rustProblem(root);
+  return undefined;
+}
+
+/**
+ * Why .NET mustn't run on the checkout at `root`: a `global.json` in it, or in a folder above it,
+ * that could choose an SDK other than Lo's — one that names folders to look for an SDK in
+ * (`sdk.paths`), or that spells a key with an escape, which hides such a name from a look at its
+ * text.
+ */
+async function dotnetProblem(root: string): Promise<string | undefined> {
   const found: string[] = [];
   // Every folder in the checkout, since each project's own nearest file counts, and the disk may
   // not tell names apart by case.
@@ -160,7 +183,7 @@ async function steers(file: string): Promise<string | undefined> {
   const info = await lstat(file).catch(() => undefined);
   if (info === undefined || info.isDirectory()) return undefined;
   if (!info.isFile()) return 'isn’t a plain file';
-  if (info.size > GLOBAL_JSON_LIMIT) return 'is too large for Lo to read';
+  if (info.size > CONFIG_LIMIT) return 'is too large for Lo to read';
   const handle = await open(file, 'r');
   let text: string;
   try {
@@ -171,4 +194,83 @@ async function steers(file: string): Promise<string | undefined> {
   if (/paths/i.test(text)) return 'names folders to look for an SDK in';
   if (/\\u/i.test(text)) return 'spells a name with an escape Lo doesn’t read';
   return undefined;
+}
+
+/** Whether `name` is `.cargo/config.toml` or `.cargo/config`, the files `cargo metadata` reads. */
+function isCargoConfig(path: string): boolean {
+  const base = basename(path).toLowerCase();
+  return (
+    (base === 'config.toml' || base === 'config') &&
+    basename(dirname(path)).toLowerCase() === '.cargo'
+  );
+}
+
+/**
+ * Why rust-analyzer mustn't run on the checkout at `root`: a `rust-analyzer.toml` anywhere in it,
+ * whose workspace settings win over Lo's and can run a program; a `.cargo/config.toml` (or
+ * `.cargo/config`) in it with an `[env]` table, which `cargo` sets on the `rustc` it runs; or any
+ * `.cargo/config.toml` or `.cargo/config` in a folder above it, which `cargo` reads and Lo can't
+ * vet.
+ */
+async function rustProblem(root: string): Promise<string | undefined> {
+  for (const path of await readdir(root, { recursive: true, encoding: 'utf8' })) {
+    if (basename(path).toLowerCase() === 'rust-analyzer.toml') {
+      return `The checkout’s ${path} is a rust-analyzer.toml, whose settings win over Lo’s and could run a program, so Lo won’t run rust-analyzer on it.`;
+    }
+    if (isCargoConfig(path) && (await cargoConfigEnv(join(root, path)))) {
+      return `The checkout’s ${path} has an [env] table, which cargo sets on the rustc it runs, so Lo won’t run rust-analyzer on it.`;
+    }
+  }
+  for (let folder = dirname(root); ; folder = dirname(folder)) {
+    for (const name of ['config.toml', 'config']) {
+      const file = join(folder, '.cargo', name);
+      if (await isPlainFile(file)) {
+        return `${file} is a Cargo config above the checkout, which cargo reads, so Lo won’t run rust-analyzer on this checkout.`;
+      }
+    }
+    if (dirname(folder) === folder) break;
+  }
+  return undefined;
+}
+
+/** Whether the Cargo config at `file` has an `[env]` table, the one key Lo's variables can't answer. */
+async function cargoConfigEnv(file: string): Promise<boolean> {
+  const text = await readConfig(file);
+  // A file too large to read, or one that isn't there, is refused to be safe: a larger one is
+  // unheard-of for a Cargo config, so Lo treats it as if it held an `[env]` table.
+  if (text === undefined) return false;
+  if (text === TOO_LARGE) return true;
+  for (const whole of text.split('\n')) {
+    // TOML outside a comment (`#` doesn't appear in these keys' values), trimmed.
+    const line = whole.split('#')[0]?.trim() ?? '';
+    // An `[env]` or `[env.NAME]` table header, or a root-level `env = { … }` or `env.NAME = …`.
+    if (/^\[\s*env\s*[\].]/.test(line) || /^env\s*[.=]/.test(line)) return true;
+  }
+  return false;
+}
+
+/** A sentinel for a config file too large to read. */
+const TOO_LARGE = Symbol('too large');
+
+/**
+ * The text of the config at `file`, read as latin1 so every byte is a character, or `undefined`
+ * when it isn't a plain file, or {@link TOO_LARGE} when it's larger than Lo reads.
+ */
+async function readConfig(file: string): Promise<string | typeof TOO_LARGE | undefined> {
+  const info = await lstat(file).catch(() => undefined);
+  if (info === undefined || info.isDirectory()) return undefined;
+  if (!info.isFile()) return undefined;
+  if (info.size > CONFIG_LIMIT) return TOO_LARGE;
+  const handle = await open(file, 'r');
+  try {
+    return (await handle.readFile()).toString('latin1');
+  } finally {
+    await handle.close();
+  }
+}
+
+/** Whether `file` is a plain file Lo can read. */
+async function isPlainFile(file: string): Promise<boolean> {
+  const info = await lstat(file).catch(() => undefined);
+  return info?.isFile() ?? false;
 }

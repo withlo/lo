@@ -29,10 +29,12 @@ const DEADLINE = 120_000;
  */
 export async function askServer(ask: Ask): Promise<readonly string[]> {
   const server = startServer(ask.spec);
+  const started = performance.now();
   try {
     if (!(await server.ready)) {
       throw new Error(`${ask.spec.name} didn't start (${server.state.kind})`);
     }
+    console.log(`  started and ready in ${((performance.now() - started) / 1000).toFixed(1)} s`);
     const texts = new Map<string, string>();
     for (const place of ask.places) {
       const text = await readFile(join(ask.spec.root, ...place.file.split('/')), 'utf8');
@@ -40,6 +42,10 @@ export async function askServer(ask: Ask): Promise<readonly string[]> {
       server.open(place.file, place.languageId, text);
     }
     await settled(server);
+    const memory = server.memory;
+    if (memory !== undefined) {
+      console.log(`  its family holds ${(memory / 1024 ** 2).toFixed(0)} MB once settled`);
+    }
     const options = { deadline: DEADLINE };
     for (const { file, position } of ask.places) {
       console.log(`\n${file}:${position.line + 1}:${position.character + 1}`);
@@ -54,8 +60,14 @@ export async function askServer(ask: Ask): Promise<readonly string[]> {
       console.log(`  gr ${said(references, (value) => places(server, value))}`);
       const hover = await server.request('textDocument/hover', at, options);
       console.log(`  K  ${said(hover, hoverText)}`);
-      const lines = (texts.get(file) ?? '').split('\n').length;
-      const range = { start: { line: 0, character: 0 }, end: { line: lines, character: 0 } };
+      // The whole file, ending at the end of its last line: a server such as rust-analyzer refuses
+      // a range that runs past the document.
+      const lines = (texts.get(file) ?? '').split('\n');
+      const last = Math.max(0, lines.length - 1);
+      const range = {
+        start: { line: 0, character: 0 },
+        end: { line: last, character: lines[last]?.length ?? 0 },
+      };
       const hints = await server.request('textDocument/inlayHint', { path: file, range }, options);
       console.log(`  gh ${said(hints, hintsOf)}`);
       const symbols = await server.request('textDocument/documentSymbol', { path: file }, options);

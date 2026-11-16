@@ -6,7 +6,9 @@
 
 import {
   launchOnNode,
+  launchRustAnalyzer,
   PYRIGHT,
+  RUST_ANALYZER,
   VTSLS,
   type Installed,
   type Launch,
@@ -104,6 +106,22 @@ function onNode(
   };
 }
 
+/**
+ * The Rust adapter: rust-analyzer, a compiled program Lo downloads, run on Lo's Rust toolchain.
+ * Both download on first use, their progress added up from the start.
+ */
+const RUST: Adapter = {
+  id: 'rust',
+  name: 'Rust',
+  languages: { rust: 'rust' },
+  downloads: { servers: [RUST_ANALYZER.id], toolchains: ['rust'] },
+  async prepare(context) {
+    const server = await context.install(RUST_ANALYZER.id);
+    const toolchain = await context.toolchain('rust');
+    return { kind: 'ready', launch: launchRustAnalyzer(server, toolchain) };
+  },
+};
+
 /** The adapters Lo ships. */
 export const ADAPTERS: readonly Adapter[] = [
   onNode(VTSLS, {
@@ -112,6 +130,7 @@ export const ADAPTERS: readonly Adapter[] = [
     languages: { typescript: 'typescript', tsx: 'typescriptreact', javascript: 'javascript' },
   }),
   onNode(PYRIGHT, { id: 'python', name: 'Python', languages: { python: 'python' } }),
+  RUST,
 ];
 
 /** The adapter that reads the file at `path`, and the protocol's id for its language, if one does. */

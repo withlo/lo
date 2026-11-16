@@ -138,19 +138,32 @@ it('gives a server only the toolchains its adapter names, which “Remove” sto
   expect(asked).toEqual(['temurin']);
 });
 
-it('gives Lo’s own servers, TypeScript’s and Python’s, no toolchain, since they name none', async () => {
-  expect(SHIPPED.map((each) => each.name)).toEqual(['TypeScript', 'Python']);
+it('gives Lo’s own servers only the toolchain each names: none but Rust’s', async () => {
+  expect(SHIPPED.map((each) => [each.name, each.downloads?.toolchains ?? []])).toEqual([
+    ['TypeScript', []],
+    ['Python', []],
+    ['Rust', ['rust']],
+  ]);
   for (const shipped of SHIPPED) {
     const toolchain = listedToolchain(shipped, (id) => Promise.resolve(id));
     for (const id of Object.keys(TOOLCHAINS)) {
-      await expect(toolchain(id)).rejects.toThrow(
-        `${shipped.name} doesn’t name the toolchain ${id} among its downloads.`,
+      const uses = shipped.downloads?.toolchains?.includes(id) ?? false;
+      // It installs only a toolchain the adapter names, and refuses any other.
+      const got = await toolchain(id).then(
+        (value) => ({ value }),
+        (error: unknown) => ({ error: error instanceof Error ? error.message : String(error) }),
+      );
+      expect(got).toEqual(
+        uses
+          ? { value: id }
+          : { error: `${shipped.name} doesn’t name the toolchain ${id} among its downloads.` },
       );
     }
   }
-  // So Settings lists none of them as using one.
+  // So Settings lists only Rust as using one, the Rust toolchain.
   const listed = await listToolchains({ ...host().given, adapters: () => SHIPPED });
-  expect(listed.flatMap((each) => each.uses)).toEqual([]);
+  expect(listed.find((each) => each.id === 'rust')?.uses).toEqual(['Rust']);
+  expect(listed.filter((each) => each.id !== 'rust').flatMap((each) => each.uses)).toEqual([]);
 });
 
 it('names the toolchain and why, when one can’t download or was removed', () => {

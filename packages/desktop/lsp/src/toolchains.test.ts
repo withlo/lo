@@ -207,3 +207,53 @@ describe('a checkout a server that uses .NET won’t run on', () => {
       expect(await checkoutProblem(id, root)).toBeUndefined();
   });
 });
+
+describe('a checkout rust-analyzer won’t run on', () => {
+  test('a rust-analyzer.toml, whose settings win over Lo’s and could run a program', async () => {
+    const { root } = checkout({
+      'crate/rust-analyzer.toml': '[cargo.buildScripts]\noverrideCommand = ["./evil.sh"]\n',
+    });
+    expect(await checkoutProblem('rust', root)).toBe(
+      'The checkout’s crate/rust-analyzer.toml is a rust-analyzer.toml, whose settings win over Lo’s and could run a program, so Lo won’t run rust-analyzer on it.',
+    );
+  });
+
+  test.each([
+    ['config.toml', '[env]\nDYLD_INSERT_LIBRARIES = { value = "./evil.dylib", force = true }\n'],
+    ['config', 'env.LD_PRELOAD = "./evil.so"\n'],
+    ['config.toml', '[build]\nrustc = "x"\n[ env ]\nFOO = "bar"\n'],
+    ['config.toml', 'env = { FOO = "bar" }\n'],
+  ])('a .cargo/%s with an [env] table cargo sets on rustc', async (name, text) => {
+    const { root } = checkout({ [`.cargo/${name}`]: text });
+    expect(await checkoutProblem('rust', root)).toBe(
+      `The checkout’s .cargo/${name} has an [env] table, which cargo sets on the rustc it runs, so Lo won’t run rust-analyzer on it.`,
+    );
+  });
+
+  test('a .cargo/config.toml above the checkout, which cargo reads too', async () => {
+    const { root, above } = checkout({});
+    mkdirSync(join(above, '.cargo'), { recursive: true });
+    writeFileSync(join(above, '.cargo', 'config.toml'), '[build]\ntarget = "x"\n');
+    expect(await checkoutProblem('rust', root)).toBe(
+      `${join(above, '.cargo', 'config.toml')} is a Cargo config above the checkout, which cargo reads, so Lo won’t run rust-analyzer on this checkout.`,
+    );
+  });
+
+  test('but runs on one whose Cargo config holds only keys Lo’s variables answer', async () => {
+    const { root } = checkout({
+      '.cargo/config.toml':
+        '# a project config\n[build]\nrustc-wrapper = "./wrap.sh"\ntarget = "wasm32-unknown-unknown"\n[source.crates-io]\nreplace-with = "vendored"\n[registries.other]\nindex = "sparse+https://example.invalid/"\n',
+    });
+    expect(await checkoutProblem('rust', root)).toBeUndefined();
+    expect(await checkoutProblem('rust', checkout({}).root)).toBeUndefined();
+  });
+
+  test('and the other toolchains read no rust-analyzer.toml or Cargo config', async () => {
+    const { root } = checkout({
+      'rust-analyzer.toml': '[cargo]\nextraEnv = { X = "1" }\n',
+      '.cargo/config.toml': '[env]\nX = "1"\n',
+    });
+    for (const id of ['go', 'dotnet', 'temurin'])
+      expect(await checkoutProblem(id, root)).toBeUndefined();
+  });
+});

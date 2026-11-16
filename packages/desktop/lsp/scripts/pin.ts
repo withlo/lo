@@ -17,7 +17,7 @@ import { join } from 'node:path';
 import { format, resolveConfig } from 'prettier';
 
 import { parseManifest, parseToolchains } from '../src/index.ts';
-import { node, npm, type Source } from './sources.ts';
+import { node, npm, rustAnalyzer, type Source } from './sources.ts';
 import { dotnet, go, rust, temurin } from './toolchains.ts';
 
 /** The armored public keys in `keys/<publisher>/`. */
@@ -35,6 +35,7 @@ const SOURCES: Record<string, Source> = {
   vtsls: npm('@vtsls/language-server', 'node_modules/@vtsls/language-server/dist/main.js'),
   // Its own entry point, which says where its files are and loads the server.
   pyright: npm('pyright', 'node_modules/pyright/langserver.index.js'),
+  'rust-analyzer': rustAnalyzer(),
 };
 
 /** Where each toolchain's files come from. */

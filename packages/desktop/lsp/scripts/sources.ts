@@ -18,6 +18,7 @@ import {
   fetchFile,
   type Part,
   type Pinned,
+  type Platform,
   PLATFORMS,
   unpackDownload,
 } from '../src/index.ts';
@@ -67,6 +68,67 @@ export function node(keys: readonly string[]): Source {
         ...part,
         entry: `node-v${version}-${platform}/bin/node`,
       };
+      await checkUnpacks(download, [file], tools);
+      platforms[platform] = download;
+    }
+    return { version, hosts, platforms };
+  };
+}
+
+/** rust-analyzer's names for the platforms, as its release assets spell them. */
+const RUST_ANALYZER_TARGETS: Record<Platform, string> = {
+  'darwin-arm64': 'aarch64-apple-darwin',
+  'darwin-x64': 'x86_64-apple-darwin',
+  'linux-x64': 'x86_64-unknown-linux-gnu',
+  'linux-arm64': 'aarch64-unknown-linux-gnu',
+};
+
+/** What `pin.ts` reads of a GitHub release: each asset's name, its address, and its digest. */
+const GITHUB_RELEASE = z.object({
+  assets: z.array(
+    z.object({
+      name: z.string(),
+      browser_download_url: z.string(),
+      // GitHub computes this itself and the REST API serves it, e.g. `sha256:…`; older releases
+      // may lack it, which `pin.ts` then refuses.
+      digest: z.string().nullable().default(null),
+    }),
+  ),
+});
+
+/**
+ * rust-analyzer, from its GitHub releases, `<year>-<month>-<day>` (the release tag): a gzipped
+ * program for each platform. rust-analyzer publishes no signatures or attestations for its
+ * releases, so the strongest check the release allows is GitHub's own asset digest: the REST API
+ * (`api.github.com`) serves each asset's SHA-256, which `pin.ts` checks the download from
+ * `github.com` against, a host run apart from the one the file comes from. Lo then trusts only the
+ * hash `pin.ts` writes.
+ */
+export function rustAnalyzer(): Source {
+  return async (version, tools) => {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(version)) {
+      throw new Error(`${version} isn’t a rust-analyzer release, which is dated YYYY-MM-DD`);
+    }
+    const release = await fetchJson(
+      `https://api.github.com/repos/rust-lang/rust-analyzer/releases/tags/${version}`,
+      GITHUB_RELEASE,
+      ['api.github.com'],
+      tools,
+    );
+    // GitHub sends each download on to its host for release files.
+    const hosts = ['github.com', 'release-assets.githubusercontent.com'];
+    const platforms: Record<string, Download> = {};
+    for (const platform of PLATFORMS) {
+      const name = `rust-analyzer-${RUST_ANALYZER_TARGETS[platform]}.gz`;
+      const asset = release.assets.find((each) => each.name === name);
+      if (asset === undefined) throw new Error(`The release ${version} has no ${name}`);
+      const sha256 = /^sha256:([0-9a-f]{64})$/.exec(asset.digest ?? '')?.[1];
+      if (sha256 === undefined) throw new Error(`The GitHub API lists no SHA-256 for ${name}`);
+      const { part, file } = await fetchPart(asset.browser_download_url, hosts, tools);
+      if (part.sha256 !== sha256)
+        throw new Error(`${name} isn’t what the GitHub API’s digest says`);
+      tools.log(`${name} has the SHA-256 the GitHub release API lists.`);
+      const download: Download = { kind: 'gz', ...part, entry: 'rust-analyzer' };
       await checkUnpacks(download, [file], tools);
       platforms[platform] = download;
     }
