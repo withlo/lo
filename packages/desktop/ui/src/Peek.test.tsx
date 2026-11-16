@@ -8,7 +8,7 @@ import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { buildCss, declarations } from '../scripts/stylesheet.ts';
 import { missingRules } from '../test/classes.ts';
 import { cleanUp, click, focus, render, rerender } from '../test/dom.ts';
-import { Peek, type PeekCandidate, type PeekKeys } from './Peek.tsx';
+import { Peek, PeekHead, type PeekCandidate, type PeekKeys } from './Peek.tsx';
 
 beforeAll(() => {
   Reflect.set(globalThis, 'IS_REACT_ACT_ENVIRONMENT', true);
@@ -369,5 +369,42 @@ describe('Peek', () => {
     expect(await missingRules(single)).toEqual([]);
     const syntax = render(<Peek name="estimateCost" candidates={SYNTAX} selected="outside" />);
     expect(await missingRules(syntax)).toEqual([]);
+  });
+});
+
+describe('PeekHead', () => {
+  it('says where the answers came from when no list does, with what sets them apart', async () => {
+    const host = render(
+      <div>
+        <PeekHead
+          name="Line"
+          count={1}
+          at="r2"
+          goes
+          source={{ kind: 'syntax' }}
+          note="TypeScript is starting."
+        />
+      </div>,
+    );
+    expect(host.textContent).toContain(
+      'Line · 1 definitionat r2·Syntax index · TypeScript is starting.',
+    );
+    const server = render(
+      <div>
+        <PeekHead name="Line" count={1} goes source={{ kind: 'server', name: 'TypeScript' }} />
+      </div>,
+    );
+    expect(server.textContent).toContain('Line · 1 definition·TypeScript');
+    expect(await missingRules(host)).toEqual([]);
+  });
+
+  it('says nothing of where they came from when it isn’t given, as beside a list', () => {
+    const host = render(
+      <div>
+        <PeekHead name="Line" count={3} goes />
+      </div>,
+    );
+    expect(host.textContent).not.toContain('·TypeScript');
+    expect(host.textContent).not.toContain('Syntax index');
   });
 });

@@ -10,8 +10,8 @@ import { isMainThread } from 'node:worker_threads';
 import type { MessagePortMain } from 'electron';
 
 import { host, idOf, type Execute } from './host.ts';
-import { memoryCap, pool, poolSize } from './pool.ts';
-import { largestHeap, loadRunners, windowRunners, type Runner } from './runners.ts';
+import { mainWay, memoryCap, pool, poolSize } from './pool.ts';
+import { findJob, largestHeap, loadRunners, windowRunners, type Runner } from './runners.ts';
 import testing from './testing.ts';
 import { work, workers } from './worker.ts';
 
@@ -54,13 +54,15 @@ if (isMainThread) {
     jobHeap: largestHeap(runners) * 1024 ** 2,
   });
   const workerPool = pool(workers(new URL(import.meta.url)), size);
+  // Main's jobs that answer the reader take a queue of their own, so none waits behind the index.
+  const mainJobs = mainWay(workerPool, (job) => findJob(runners, job)?.asked === true);
   // Main sends a port for each connection to the window, and a new one whenever the window loads;
   // and one for its own jobs each time the process starts, which wait behind the window's.
   process.parentPort.on('message', ({ data, ports }) => {
     const [port] = ports;
     if (!port) return;
     if (data === 'connect') serve(port, workerPool.window, windowRunners(runners));
-    else if (data === 'connect-main') serve(port, workerPool.main, runners);
+    else if (data === 'connect-main') serve(port, mainJobs, runners);
   });
 } else {
   void work(runners);

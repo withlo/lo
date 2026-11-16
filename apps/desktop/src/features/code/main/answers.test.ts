@@ -67,6 +67,7 @@ async function view(more: Readonly<Record<string, string>> = {}) {
     version: async () => 'v1',
     read: (files) => background.symbols(files),
     find: (name, files) => background.find(name, files),
+    render: () => Promise.reject(new Error('The syntax index reads no hover’s Markdown.')),
   };
   return { sides, answering, background };
 }

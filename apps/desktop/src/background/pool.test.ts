@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { Execute } from './host.ts';
-import { memoryCap, pool, poolSize } from './pool.ts';
+import { mainWay, memoryCap, pool, poolSize } from './pool.ts';
 import { defaultLimits } from './runners.ts';
 
 /** An execute whose jobs finish when the test says, recording how many ran at once. */
@@ -130,6 +130,38 @@ describe("main's jobs", () => {
     void jobs.main('m2', undefined, defaultLimits);
     await settled();
     expect(started).toEqual(['m1', 'w1']);
+  });
+
+  it('starts what the reader waits on while one of main’s jobs runs, ahead of main’s others, behind the window’s', async () => {
+    const { execute, started, finish } = controlled();
+    const jobs = pool(execute, 2);
+    void jobs.main('m1', undefined, defaultLimits);
+    void jobs.main('m2', undefined, defaultLimits);
+    void jobs.asked('a1', undefined, defaultLimits);
+    await settled();
+    expect(started).toEqual(['m1', 'a1']);
+    // One at a time, and the window's first once a worker is free.
+    void jobs.asked('a2', undefined, defaultLimits);
+    void jobs.window('w1', undefined, defaultLimits);
+    finish.get('a1')?.();
+    await settled();
+    expect(started).toEqual(['m1', 'a1', 'w1']);
+    finish.get('w1')?.();
+    await settled();
+    expect(started).toEqual(['m1', 'a1', 'w1', 'a2']);
+    finish.get('m1')?.();
+    await settled();
+    expect(started).toEqual(['m1', 'a1', 'w1', 'a2', 'm2']);
+  });
+
+  it('takes the jobs main names as asked by the reader in their queue, and the rest in main’s', async () => {
+    const { execute, started } = controlled();
+    const run = mainWay(pool(execute, 3), (job) => job === 'code.render');
+    for (const job of ['code.symbols', 'code.find', 'code.render']) {
+      void run(job, undefined, defaultLimits);
+    }
+    await settled();
+    expect(started).toEqual(['code.symbols', 'code.render']);
   });
 
   it('never starts one of main’s jobs cancelled while it waits', async () => {

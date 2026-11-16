@@ -191,8 +191,8 @@ export interface Connection {
   /**
    * Runs a job by its full name. Rejects with an `IpcError`: the other side's own, `invalid` for
    * input that isn't plain data, `restarted` if the other side stopped meanwhile, `unanswered` past
-   * `timeout` milliseconds (a minute unless given), or `cancelled` once `signal` aborts, which
-   * stops the job on the other side too.
+   * `timeout` milliseconds (a minute unless given), or `cancelled` once `signal` aborts. Either of
+   * the last two stops the job on the other side too.
    */
   run(job: string, input: unknown, options?: RunOptions): Promise<unknown>;
   /** Takes a new port. Jobs sent before any port go out on this one. */
@@ -267,7 +267,9 @@ export function createConnection(who = 'The background process'): Connection {
         };
         const timer = setTimeout(() => {
           signal?.removeEventListener('abort', stop);
-          settle(id);
+          const waited = settle(id);
+          // Given up on, it's stopped on the other side too, rather than waiting or running there.
+          if (waited?.sent) port?.postMessage({ cancel: id });
           reject(new IpcError('unanswered', `${job} got no answer in ${timeout} ms.`));
         }, timeout);
         signal?.addEventListener('abort', stop, { once: true });

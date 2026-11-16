@@ -10,6 +10,7 @@ import {
   PeekList,
   ReferencesHead,
   ReferencesList,
+  SourceMark,
   Spinner,
   StatusItem,
   Tag,
@@ -25,13 +26,14 @@ import { useTabState, type PullTab } from '../../tab/window/shared.ts';
 import {
   answerKey,
   candidatesOf,
+  cardOf,
   filesIn,
   filterOutline,
   groupsOf,
   isOutside,
   metaOf,
   outlineRows,
-  signatureOf,
+  peekSource,
   sourceOf,
   type OutlineRow,
 } from './answers.ts';
@@ -76,6 +78,7 @@ function PeekFrame({ open }: { open: OpenPeek }) {
   useKeys();
   const { parts, found, shown } = open;
   const candidates = useMemo(() => candidatesOf(found.answers), [found]);
+  const source = useMemo(() => peekSource(found), [found]);
   if (!parts) return null;
   const answer = found.answers[shown];
   const keys = {
@@ -95,6 +98,8 @@ function PeekFrame({ open }: { open: OpenPeek }) {
           at={open.revision}
           goLabel={inDiff ? 'Show in the diff' : 'Open the whole file'}
           goes={answer !== undefined && !isOutside(answer)}
+          source={source?.source}
+          note={source?.note}
           keys={keys}
           onGo={() => goToAnswer(open)}
           onClose={() => closePeek(open)}
@@ -174,6 +179,8 @@ export function ReferencesPanel({ tab }: { tab: PullTab }): ReactNode {
           files={filesIn(answers)}
           source={sourceOf(first).source}
           at={list.revision}
+          fallback={list.found.fallback}
+          outside={list.found.outside}
         />
       )}
       {list?.found.more && (
@@ -214,6 +221,7 @@ const EDGE = 16;
 function HoverCard() {
   useKeys();
   const shown = useStore(hovers);
+  const drawn = useMemo(() => (shown ? cardOf(shown.hover) : undefined), [shown]);
   const card = useRef<HTMLDivElement>(null);
   // Placed once it's drawn, and so measured: under the word, or over it where there's no room.
   useEffect(() => {
@@ -229,7 +237,7 @@ function HoverCard() {
     element.style.left = `${left}px`;
     element.style.visibility = 'visible';
   }, [shown]);
-  if (!shown) return null;
+  if (!shown || !drawn) return null;
   const { hover } = shown;
   const { source } = sourceOf(hover);
   return (
@@ -240,8 +248,10 @@ function HoverCard() {
       data-lo-hover
     >
       <TypeHover
-        signature={signatureOf(hover)}
+        signature={drawn.signature}
+        docs={drawn.docs}
         source={source}
+        fallback={hover.fallback}
         location={hover.at && { path: hover.at.path, line: hover.at.line }}
         keys={{ definition: keysOf('code.definition'), close: keysOf('keys.escape') }}
       />
@@ -279,15 +289,18 @@ function OutlinePalette() {
   const shown = useMemo(() => filterOutline(rows, state?.query ?? ''), [rows, state?.query]);
   if (!state) return null;
   const typed = state.query.trim() !== '';
+  const found = state.outline;
   const empty =
     state.problem ??
-    (state.outline === undefined ? (
+    (found === undefined ? (
       <span className="inline-flex items-center gap-8">
         <Spinner size="xs" />
         Reading the file’s symbols…
       </span>
     ) : typed ? (
       `No symbol matches "${state.query}".`
+    ) : found.source === 'server' && found.label !== undefined ? (
+      `${found.label} finds no symbols in this file.`
     ) : (
       'The syntax index finds no symbols in this file.'
     ));
@@ -318,7 +331,19 @@ function OutlinePalette() {
               : ''}
           </span>
           {state.outline?.more && <span className="min-w-0">Lo lists the first 5,000.</span>}
-          <span className="flex-1" />
+          {/* Where they came from, cut short rather than taking a line of its own. */}
+          <span className="flex min-w-0 flex-1 basis-0">
+            {found && (
+              <SourceMark
+                source={
+                  found.source === 'server' && found.label !== undefined
+                    ? { kind: 'server', name: found.label }
+                    : { kind: 'syntax' }
+                }
+                note={found.fallback}
+              />
+            )}
+          </span>
           <PaletteHint keys={labels('enter')}>Go</PaletteHint>
         </>
       }

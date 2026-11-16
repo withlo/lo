@@ -7,6 +7,7 @@ import type { Answer, ServerSpec, State } from '@lo/lsp';
 import type { Running } from '../servers.ts';
 
 export class StandIn implements Running {
+  capabilities: Running['capabilities'] = {};
   state: State = { kind: 'starting' };
   uptime = 0;
   memory: number | undefined;
