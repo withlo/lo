@@ -116,8 +116,13 @@ function untouched(outside: string): boolean {
 
 /** Makes the checkout in `folder` look last used `days` ago, through its git folder's stamp. */
 function checkoutUsedDaysAgo(folder: string, days: number): void {
+  checkoutUsedIn(folder, Math.floor((Date.now() - days * DAY) / 1000));
+}
+
+/** Makes the checkout in `folder` look last used in `second`, as its stamp holds it. */
+function checkoutUsedIn(folder: string, second: number): void {
   const gitDir = readFileSync(join(folder, '.git'), 'utf8').slice('gitdir:'.length).trim();
-  stampDaysAgo(gitDir, days);
+  writeFileSync(join(gitDir, 'lo-last-used'), `${second}\n`);
 }
 
 test('size counts clones and checkouts', async () => {
@@ -627,6 +632,8 @@ test('past its cap nothing of a repository a server runs on goes, nor is anythin
   stampDaysAgo(old, 10);
   stampDaysAgo(fresh, 1);
   const [oldCheckout, newCheckout] = [checkoutOf(cache, 'old'), checkoutOf(cache, 'new')];
+  checkoutUsedDaysAgo(oldCheckout, 10);
+  checkoutUsedDaysAgo(newCheckout, 3);
   const home = homeOf(cache, 'new', 'ts', { bytes: 4 * MB });
   const release = await cache.useForServer('owner', 'new', 'ts');
 
@@ -637,24 +644,56 @@ test('past its cap nothing of a repository a server runs on goes, nor is anythin
   expect(there(home, newCheckout, oldCheckout)).toEqual([true, true, true]);
   expect(there(old, fresh)).toEqual([true, true]);
 
-  // Once the server has stopped, the cache is kept under its cap again by itself: the home goes,
-  // and the clones still stay.
+  // Once the server has stopped, the cache is kept under its cap again by itself. The home was
+  // used last, as the server stopped, so both checkouts go before it, and the clones stay.
   await stopServer(cache, 'new', release);
   await eventually(() => !existsSync(home));
-  expect(there(old, fresh)).toEqual([true, true]);
   expect(there(oldCheckout, newCheckout, old, fresh)).toEqual([false, false, true, true]);
 });
 
-test('DEBUG once nothing has a clone open, by size', async () => {
-  const cache = await cacheFor(server(), { maintenance: { idleFor: 10, attempts: 0 } });
+test('a server stopping as the cache is kept under its cap has all of its repository kept, not part', async () => {
+  const cache = await cacheFor(server());
   const [old, fresh] = [await useRepo(cache, 'old'), await useRepo(cache, 'new')];
+  stampDaysAgo(old, 10);
+  stampDaysAgo(fresh, 1);
   const [oldCheckout, newCheckout] = [checkoutOf(cache, 'old'), checkoutOf(cache, 'new')];
-  const repo = await cache.open('owner', 'old');
+  checkoutUsedDaysAgo(oldCheckout, 10);
+  checkoutUsedDaysAgo(newCheckout, 5);
+  const home = homeOf(cache, 'new', 'ts', { bytes: 4 * MB, days: 3 });
+  const stop = cache.cloneLock('owner', 'new').serve();
+  // The server stops just after the cache first looks at whether anything uses its repository.
+  const lockOf = cache.cloneLock.bind(cache);
+  vi.spyOn(cache, 'cloneLock').mockImplementation((owner, name) => {
+    if (name === 'new') queueMicrotask(stop);
+    return lockOf(owner, name);
+  });
+
+  // Half the home under. The server ran as the cache was looked at, so its checkout and home both
+  // count as kept, and removing the rest wouldn't get the cache under: nothing goes, never its
+  // checkout kept while its home goes.
+  expect(await cache.setCap((await cache.size()) - 2 * MB)).toEqual([]);
+  expect(there(oldCheckout, newCheckout, home, old, fresh)).toEqual([true, true, true, true, true]);
+});
+
+test('past its cap what was used in the same second goes in the order its clones were used', async () => {
+  const cache = await cacheFor(server());
+  const [old, fresh] = [await useRepo(cache, 'old'), await useRepo(cache, 'new')];
+  stampDaysAgo(old, 10);
+  stampDaysAgo(fresh, 1);
+  const [oldCheckout, newCheckout] = [checkoutOf(cache, 'old'), checkoutOf(cache, 'new')];
+  checkoutUsedDaysAgo(oldCheckout, 1);
+  // `new`'s checkout and `old`'s home were used in the same second, the home later in it, which
+  // the checkout's stamp, in whole seconds, can't tell.
+  const second = Math.floor((Date.now() - 3 * DAY) / 1000);
+  checkoutUsedIn(newCheckout, second);
+  const home = homeOf(cache, 'old', 'ts');
+  const then = new Date(second * 1000 + 900);
+  utimesSync(home, then, then);
+
+  // A byte under: one of the two is enough, and `old`'s home goes, its clone used longest ago.
   expect(await cache.setCap((await cache.size()) - 1)).toEqual([]);
-  expect(existsSync(oldCheckout)).toBe(true);
-  repo.close();
-  await eventually(() => !existsSync(oldCheckout));
-  expect(there(old, fresh, newCheckout)).toEqual([true, true, true]);
+
+  expect(there(home, newCheckout, oldCheckout)).toEqual([false, true, true]);
 });
 
 test('a clone still goes while a server’s home stays, once the rest alone is over the cap', async () => {
@@ -674,16 +713,34 @@ test('a clone still goes while a server’s home stays, once the rest alone is o
 test('once nothing has a clone open, the cache is kept under its cap again by itself', async () => {
   const cache = await cacheFor(server(), { maintenance: { idleFor: 10, attempts: 0 } });
   const [old, fresh] = [await useRepo(cache, 'old'), await useRepo(cache, 'new')];
-  const oldCheckout = checkoutOf(cache, 'old');
-  // Opened last, so the clone used last, which stays, and its checkout can't go while it's open.
+  const [oldCheckout, newCheckout] = [checkoutOf(cache, 'old'), checkoutOf(cache, 'new')];
+  checkoutUsedDaysAgo(oldCheckout, 10);
+  checkoutUsedDaysAgo(newCheckout, 3);
+  // A large home of `old`'s, used after its checkout and before the other.
+  const home = homeOf(cache, 'old', 'ts', { bytes: 4 * MB, days: 5 });
   const repo = await cache.open('owner', 'old');
-  expect(await cache.setCap(1)).toEqual(['owner/new']);
-  expect(there(old, oldCheckout, fresh)).toEqual([true, true, false]);
 
-  // The tab closes: its checkout goes too, and the clone stays.
+  // Half the home under: what's open can't go, and the rest wouldn't get the cache under.
+  expect(await cache.setCap((await cache.size()) - 2 * MB)).toEqual([]);
+  expect(there(oldCheckout, home, newCheckout)).toEqual([true, true, true]);
+
+  // The tab closes: the checkout used longest ago goes, then the home, and the cache is under, so
+  // the other checkout and both clones stay.
   repo.close();
-  await eventually(() => !existsSync(oldCheckout));
-  expect(existsSync(old)).toBe(true);
+  await eventually(() => !existsSync(home));
+  expect(there(oldCheckout, newCheckout, old, fresh)).toEqual([false, true, true, true]);
+});
+
+test('once the cache closes, keeping it under its cap removes nothing more', async () => {
+  const cache = await cacheFor(server());
+  const [old, fresh] = [await useRepo(cache, 'old'), await useRepo(cache, 'new')];
+  const checkouts = [checkoutOf(cache, 'old'), checkoutOf(cache, 'new')];
+
+  const capping = cache.setCap(1);
+  await cache.close();
+
+  expect(await capping).toEqual([]);
+  expect(there(...checkouts, old, fresh)).toEqual([true, true, true, true]);
 });
 
 test('past its cap a home past a link stays, and frees nothing', async () => {

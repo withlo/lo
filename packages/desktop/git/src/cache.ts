@@ -132,6 +132,8 @@ export class Cache {
   readonly #closing = new AbortController();
   /** The wait to keep the cache under its cap again, once what kept it over may have let go. */
   #capCheck: ReturnType<typeof setTimeout> | undefined;
+  /** The run keeping the cache under its cap, or waiting to: one at a time. */
+  #capping: Promise<unknown> = Promise.resolve();
   #closed = false;
 
   private constructor(
@@ -185,6 +187,7 @@ export class Cache {
     this.#capCheck = undefined;
     this.#closing.abort();
     await this.#maintaining;
+    await this.#capping;
     await this.#deleted();
     await unlockCache(join(this.root, 'lo-cache.lock'), this.#release);
   }
@@ -281,7 +284,7 @@ export class Cache {
    */
   async setCap(bytes: number): Promise<string[]> {
     this.#cap = bytes;
-    const removed = await keepUnder(this, bytes);
+    const removed = await this.#keepUnder();
     await this.#deleted();
     return removed;
   }
@@ -311,9 +314,19 @@ export class Cache {
   /** Keeps the cache under its cap once a fetch has made a clone, which may have grown it most. */
   async madeClone(): Promise<void> {
     if (this.#closing.signal.aborted) return;
-    await keepUnder(this, this.#cap).catch((error: unknown) => {
+    await this.#keepUnder().catch((error: unknown) => {
       this.note(`can't keep the cache under its cap: ${String(error)}`);
     });
+  }
+
+  /**
+   * Keeps the cache under its cap, once the run before is done, so no two runs remove for the same
+   * bytes, and none once the cache is closing. Closing the cache waits for the one running.
+   */
+  #keepUnder(): Promise<string[]> {
+    const run = this.#capping.then(() => keepUnder(this, this.#cap));
+    this.#capping = run.catch(() => undefined);
+    return run;
   }
 
   /** Runs `work` once the maintenance before it is done. */
@@ -443,7 +456,7 @@ export class Cache {
     if (this.#closed || this.#capCheck !== undefined) return;
     this.#capCheck = setTimeout(() => {
       this.#capCheck = undefined;
-      void this.#serially(() => keepUnder(this, this.#cap))
+      void this.#keepUnder()
         .then(() => this.#deleted())
         .catch((error: unknown) => {
           this.note(`can't keep the cache under its cap: ${String(error)}`);

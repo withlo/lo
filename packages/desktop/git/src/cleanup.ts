@@ -652,10 +652,12 @@ async function counted(host: CleanupHost): Promise<number> {
  * its checkouts and homes included, and those don't count toward removing anything else either:
  * removing the rest for them would never get the cache under, and a large home of a server that
  * runs never pushes a clone out. The most recently used clone always stays, so the cache is never
- * emptied: a clone over the cap alone loses its checkouts and homes and stays. Returns the
- * `owner/name` of each clone removed.
+ * emptied: a clone over the cap alone loses its checkouts and homes and stays. Nothing more goes
+ * once the cache is closing. Run one at a time: two at once would remove for the same bytes.
+ * Returns the `owner/name` of each clone removed.
  */
 export async function keepUnder(host: CleanupHost, cap: number): Promise<string[]> {
+  if (host.closing.aborted) return [];
   let total = await counted(host);
   if (total <= cap) return [];
   const byUse = (
@@ -679,49 +681,42 @@ export async function keepUnder(host: CleanupHost, cap: number): Promise<string[
     )
   ).flat();
   const homes = (await homesIn(host)).map((home) => ({ kind: 'home' as const, ...home }));
-  const spares = [...checkouts, ...homes].toSorted((a, b) => (a.used ?? 0) - (b.used ?? 0));
+  // A checkout's stamp holds whole seconds, so times are compared to the second, and what was
+  // used in the same second goes in its clone's order, a home left without one first, then by
+  // path.
+  const rank = new Map(byUse.map(({ clone }, index) => [keyOf(clone), index]));
+  const second = (used: number | undefined) => Math.floor((used ?? 0) / 1000);
+  const spares = [...checkouts, ...homes].toSorted(
+    (a, b) =>
+      second(a.used) - second(b.used) ||
+      (rank.get(keyOf(a.clone)) ?? -1) - (rank.get(keyOf(b.clone)) ?? -1) ||
+      a.path.localeCompare(b.path),
+  );
+  // What's in use, looked at all at once: a server stopping while what it used is measured mustn't
+  // leave some of it kept and the rest free.
+  const busy = new Set(
+    spares.filter(({ clone }) => inUse(host, clone)).map(({ clone }) => keyOf(clone)),
+  );
   // What can't go now, by repository, which nothing is removed for.
   const keptBy = new Map<string, number>();
   let kept = 0;
   const free: typeof spares = [];
   for (const spare of spares) {
-    if (!inUse(host, spare.clone)) {
+    const key = keyOf(spare.clone);
+    if (!busy.has(key)) {
       free.push(spare);
       continue;
     }
     const size = await diskUsage(spare.path);
-    const key = `${spare.clone.owner}/${spare.clone.name}`;
     keptBy.set(key, (keptBy.get(key) ?? 0) + size);
     kept += size;
   }
   let trimmed = 0;
   let emptied = 0;
-  const debug = (line: unknown) =>
-    console.error(`[keepUnder ${host.root.slice(-24)}] ${JSON.stringify(line)}`);
-  debug({ now: Date.now(), cap, total, kept });
-  for (const spare of spares) {
-    const lock = host.cloneLock(spare.clone.owner, spare.clone.name);
-    debug({
-      kind: spare.kind,
-      clone: spare.clone.name,
-      used: spare.used,
-      path: spare.path.slice(-60),
-      users: lock.users,
-      servers: lock.servers,
-      holder: lock.holder,
-    });
-  }
   for (const spare of free) {
-    debug({
-      tryAt: { kind: spare.kind, clone: spare.clone.name },
-      total,
-      kept,
-      over: total - kept > cap,
-    });
-    if (total - kept <= cap) break;
+    if (host.closing.aborted || total - kept <= cap) break;
     const { owner, name } = spare.clone;
     const release = host.cloneLock(owner, name).tryRemove('keeping the cache small');
-    debug({ refused: release === undefined });
     if (release === undefined) continue;
     try {
       const size = await diskUsage(spare.path);
@@ -739,12 +734,12 @@ export async function keepUnder(host: CleanupHost, cap: number): Promise<string[
   }
   const removed: string[] = [];
   for (const { clone } of byUse) {
-    if (total - kept <= cap) break;
+    if (host.closing.aborted || total - kept <= cap) break;
     if (clone === newest) continue;
     const release = host.cloneLock(clone.owner, clone.name).tryRemove('keeping the cache small');
     if (release === undefined) continue;
     try {
-      const key = `${clone.owner}/${clone.name}`;
+      const key = keyOf(clone);
       const size =
         (await diskUsage(host.repoFolder(clone.owner, clone.name))) +
         (await diskUsage(host.checkoutsFolder(clone.owner, clone.name)));
@@ -771,6 +766,11 @@ export async function keepUnder(host: CleanupHost, cap: number): Promise<string[
 function inUse(host: CleanupHost, clone: CloneName): boolean {
   const lock = host.cloneLock(clone.owner, clone.name);
   return lock.users > 0 || lock.servers > 0 || lock.holder !== undefined;
+}
+
+/** `clone`'s `owner/name`. */
+function keyOf(clone: CloneName): string {
+  return `${clone.owner}/${clone.name}`;
 }
 
 /**

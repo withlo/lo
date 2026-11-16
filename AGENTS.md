@@ -393,15 +393,19 @@ Only main runs git, through `@lo/git`, and the background process never sees git
   together, least recently used first, by a checkout's stamp and a home's folder time, which the
   cache sets as each server using it starts, every 5 minutes while it runs, and as it stops, before
   letting go. Then clones go, a fetch each to get back, least recently used first, each with its
-  checkouts and homes, but never the one used last. Each goes only while the cache is still over.
+  checkouts and homes, but never the one used last. Each goes only while the cache is still over. A
+  checkout's stamp holds whole seconds, so times are compared to the second, and what was used in
+  the same second goes in the order its clone was used, a home left without one first, then by path.
 - Nothing of a clone that's open, being written to or that a language server runs on goes, its
-  checkouts and homes included, and what can't go counts toward removing nothing else: removing the
-  rest for it would never get the cache under, and a running server's large home never pushes a
-  clone out. A server holds its repository (`cache.useForServer`) from just before it starts until
-  it has stopped, and one starting waits for cleanup that's removing any of it, but not for
-  collecting the trees comparisons replayed, which takes nothing a server reads and so runs
-  alongside servers. A minute after nothing has a clone open or runs on it any more, the cache is
-  kept under its cap again.
+  checkouts and homes included. Those checkouts and homes count toward removing nothing else, so a
+  running server's large home never pushes out another's checkouts or clone, though the clone's own
+  folder counts as any clone's does. Each run looks at what's in use all at once, so a server that
+  stops during it has its checkouts and homes kept alike, never one removed without the other. A
+  server holds its repository (`cache.useForServer`) from just before it starts until it has
+  stopped, and one starting waits for cleanup that's removing any of it, but not for collecting the
+  trees comparisons replayed, which takes nothing a server reads and so runs alongside servers. A
+  minute after nothing has a clone open or runs on it any more, the cache is kept under its cap
+  again. Runs keeping the cache under its cap go one at a time, and stop once the cache closes.
 - A repository's homes go with its clone, unused for 30 days, past the cap or cleared, through
   `Cache.trash`, and cleanup removes homes left without a clone. A home past a link stays, and frees
   nothing.

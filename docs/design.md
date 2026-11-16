@@ -215,7 +215,8 @@ and the whole-file view.
   language servers use. Past it, checkouts and what language servers keep go first, least recently
   used first, since Lo gets them back without a fetch, then the least recently used copies, each
   only while the cache is still over. Nothing of a repo that's open or that a language server runs
-  on goes, and nothing else goes for it either.
+  on goes, and its checkouts and what its language servers keep don't count toward removing anything
+  else.
 
 ### When git is missing
 
