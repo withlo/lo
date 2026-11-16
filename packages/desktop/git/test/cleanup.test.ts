@@ -787,6 +787,29 @@ test('past its cap a checkout past a link stays, and frees nothing', async () =>
   expect(there(...checkouts, old, fresh)).toEqual([true, true, false, true]);
 });
 
+test('past its cap a checkout kept past a link counts for nothing, so the clone used longest ago still goes', async () => {
+  const cache = await cacheFor(server());
+  const [old, fresh] = [await useRepo(cache, 'old'), await useRepo(cache, 'new')];
+  stampDaysAgo(old, 10);
+  stampDaysAgo(fresh, 1);
+  // A server runs on `new`, and the owner's folder of checkouts, which holds both, is reached
+  // through a link to a folder outside the cache, which the cache's size doesn't count.
+  const stop = cache.cloneLock('owner', 'new').serve();
+  const owner = join(cache.root, 'checkouts/github.com/owner');
+  const outside = join(tempFolder(), 'owner');
+  renameSync(owner, outside);
+  symlinkSync(outside, owner);
+  const checkouts = [checkoutOf(cache, 'old'), checkoutOf(cache, 'new')];
+
+  // A byte under: `new`'s checkout is kept, but holds back nothing the cache doesn't count, so with
+  // `old`'s checkout unable to go, `old` goes.
+  expect(await cache.setCap((await cache.size()) - 1)).toEqual(['owner/old']);
+
+  expect(await cache.size()).toBeLessThanOrEqual(cache.cap);
+  expect(there(...checkouts, old, fresh)).toEqual([true, true, false, true]);
+  stop();
+});
+
 test('past its cap a repository that comes into use as the run reaches it stays, and the next goes', async () => {
   const cache = await cacheFor(server(['old', 'mid', 'new']));
   const clones: string[] = [];
@@ -1563,6 +1586,30 @@ test('reading offline stops cleanup collecting replays, and waits for it', async
   expect(hasObject(folder, loose)).toBe(true);
   repo?.close();
   await cache.removeUnused();
+  expect(hasObject(folder, loose)).toBe(false);
+});
+
+test('a fetch that makes a clone keeps the cache under its cap without waiting for replayed trees to go', async () => {
+  const slow = await slowGit('*" prune --expire=now "*');
+  const cache = await cacheFor(server(), { git: slow.git });
+  const folder = await useRepo(cache, 'old');
+  // A loose object, as a replay writes, so removing what's unused prunes the clone, which holds on.
+  const loose = gitBytes(folder, ['hash-object', '-w', '--stdin'], 'replayed\n').toString().trim();
+  let cleaned = false;
+  const cleaning = cache.removeUnused().then(() => {
+    cleaned = true;
+  });
+  await eventually(() => existsSync(slow.started));
+
+  // Making `new`'s clone keeps the cache under its cap, which waits for removing what's unused but
+  // not for the prune, so the fetch is done while the prune still holds on.
+  const repo = await cache.open('owner', 'new');
+  await fetch(repo);
+  repo.close();
+  expect(cleaned).toBe(false);
+
+  writeFileSync(slow.go, '');
+  await cleaning;
   expect(hasObject(folder, loose)).toBe(false);
 });
 

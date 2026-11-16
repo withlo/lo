@@ -407,13 +407,16 @@ Only main runs git, through `@lo/git`, and the background process never sees git
   holds its repository (`cache.useForServer`) from just before it starts until it has stopped, and
   one starting waits for cleanup that's removing any of it, but not for collecting the trees
   comparisons replayed, which takes nothing a server reads and so runs alongside servers. A minute
-  after nothing has a clone open or runs on it any more, the cache is kept under its cap again.
-  Keeping the cache under its cap, removing what's unused and clearing it take turns, in the order
-  they're asked for, so none counts what another is removing, and runs keeping it under its cap stop
-  once the cache closes.
+  after nothing has a clone open or runs on it any more, the cache is kept under its cap again. Runs
+  keeping the cache under its cap take turns with removing what's unused and clearing the cache, in
+  the order they're asked for, so a run never counts what those two are removing. Dropping a
+  repository's checkouts and making a clone again go by the clone's lock alone, so a run can count
+  them part way. Collecting the trees comparisons replayed, which can take minutes, takes its turns
+  with repacks instead, so a fetch that made a clone, which waits for the cap, never waits for it.
+  Runs keeping the cache under its cap stop once the cache closes.
 - A repository's homes go with its clone, unused for 30 days, past the cap or cleared, through
   `Cache.trash`, and cleanup removes homes left without a clone. A checkout, home or clone past a
-  link stays, and frees nothing.
+  link stays, frees nothing and, kept while its repository is in use, counts for nothing.
 - The cache is `Lo` (`Lo Dev` for a build run from source, or `cache` in `LO_USER_DATA_DIR`) in the
   system's folder for this user's caches: `$XDG_CACHE_HOME` or `~/.cache` on Linux, and on a Mac the
   one macOS keeps outside the home folder, `DARWIN_USER_CACHE_DIR`

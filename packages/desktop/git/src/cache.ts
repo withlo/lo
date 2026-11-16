@@ -25,6 +25,7 @@ import { DEFAULT_FETCH_LIMITS, type FetchLimits } from './limits.ts';
 import {
   cappedUsage,
   clear,
+  collectEveryReplay,
   collectReplays,
   DEFAULT_CAP,
   DEFAULT_MAINTENANCE,
@@ -263,12 +264,19 @@ export class Cache {
    * servers' homes, checkouts for 14, what crashes and stopped fetches left a day or more ago,
    * checkouts and homes left without a clone, and from clones nobody has open, the trees
    * comparisons replayed. Never anything of a clone that's open, being written to or that a
-   * language server runs on. Returns the `owner/name` of each clone removed. It runs in its turn
-   * with keeping the cache under its cap and clearing it, and closing the cache waits for it, so no
-   * git it runs, such as a `prune` closing stopped, outlives the cache's lock.
+   * language server runs on. Returns the `owner/name` of each clone removed. What it removes goes
+   * in its turn with keeping the cache under its cap and clearing it. Then the replayed trees go as
+   * maintenance, one at a time with repacks, since a `prune` can take minutes and a fetch that made
+   * a clone waits for the cap. Closing the cache waits for both, so no git they run, such as a
+   * `prune` closing stopped, outlives the cache's lock.
    */
   async removeUnused(now = Date.now()): Promise<string[]> {
-    const removed = await this.#inTurn(() => removeUnused(this, now));
+    const removing = this.#inTurn(() => removeUnused(this, now));
+    const collecting = this.#serially(async () => {
+      await removing.catch(() => undefined);
+      await collectEveryReplay(this);
+    });
+    const [removed] = await Promise.all([removing, collecting]);
     await this.#deleted();
     return removed;
   }
@@ -329,10 +337,12 @@ export class Cache {
 
   /**
    * Runs `work`, which removes from the cache, once the removal before it is done, in the order
-   * they're asked for. Keeping the cache under its cap, removing what's unused and clearing it never
-   * run at once, so keeping it under its cap never counts what another is removing. Closing the
-   * cache waits for the one running. Repacks take turns of their own: they can run for minutes, and
-   * a fetch that made a clone waits for the cache to be kept under its cap.
+   * they're asked for: keeping the cache under its cap, removing what's unused and clearing it, so
+   * keeping it under its cap never counts what the other two are removing. Dropping a repository's
+   * checkouts and making a clone again go by the clone's lock alone, and a run can count them part
+   * way. Closing the cache waits for the one running. Repacks and collecting replayed trees take
+   * turns of their own ({@link Cache.repack}): they can run for minutes, and a fetch that made a
+   * clone waits for the cache to be kept under its cap.
    */
   #inTurn<T>(work: () => Promise<T>): Promise<T> {
     const run = this.#removals.then(work);

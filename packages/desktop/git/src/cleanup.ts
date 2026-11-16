@@ -113,6 +113,8 @@ export interface CleanupHost {
   homesFolder(owner: string, name: string): string;
   cloneLock(owner: string, name: string): CloneLock;
   trash(path: string): Promise<boolean>;
+  /** Whether `path` is in the cache with a real folder, never a link, at each step above it. */
+  linkFree(path: string): Promise<boolean>;
   note(line: string): void;
   /** A new path in the cache's `tmp/`, ending in `extension`. */
   temporaryPath(extension: string): string;
@@ -395,10 +397,11 @@ async function removeClone(host: CleanupHost, clone: CloneName): Promise<Set<str
  * Removes the clones nobody opened, fetched into or checked out from for {@link UNUSED_FOR},
  * with their checkouts and homes, and the checkouts and homes left without a clone, as homes of a
  * clone removed before they went with it are. Of the clones kept, it removes the checkouts unused
- * for {@link CHECKOUTS_UNUSED_FOR}, the partial packs left a day or more ago and, from those nobody
- * has open, the trees comparisons replayed; and from the cache's `tmp/`, whatever was left there a
- * day or more ago. A clone open, being written to or that a language server runs on is left
- * alone, with all of it. Returns the `owner/name` of each clone removed.
+ * for {@link CHECKOUTS_UNUSED_FOR} and the partial packs left a day or more ago; and from the
+ * cache's `tmp/`, whatever was left there a day or more ago. A clone open, being written to or that
+ * a language server runs on is left alone, with all of it. Returns the `owner/name` of each clone
+ * removed. The trees comparisons replayed go apart from it ({@link collectEveryReplay}), since
+ * removing them can take minutes.
  */
 export async function removeUnused(host: CleanupHost, now: number): Promise<string[]> {
   // Those left first: the homes of clones removed from here on go with them.
@@ -410,7 +413,6 @@ export async function removeUnused(host: CleanupHost, now: number): Promise<stri
     if (used !== undefined && now - used <= UNUSED_FOR) {
       await removeUnusedCheckouts(host, clone, now);
       await removeOldPacks(host, clone, now);
-      await collectReplays(host, clone);
       continue;
     }
     const release = host.cloneLock(clone.owner, clone.name).tryRemove('removing it, unused');
@@ -491,6 +493,14 @@ async function removeOldPacks(host: CleanupHost, clone: CloneName, now: number) 
   } finally {
     release();
   }
+}
+
+/**
+ * Removes the trees comparisons replayed from every clone nobody has open, as
+ * {@link collectReplays} does each.
+ */
+export async function collectEveryReplay(host: CleanupHost): Promise<void> {
+  for (const clone of await clones(host)) await collectReplays(host, clone);
 }
 
 /**
@@ -707,7 +717,8 @@ export async function keepUnder(host: CleanupHost, cap: number): Promise<string[
   const busy = new Set(
     spares.filter(({ clone }) => inUse(host, clone)).map(({ clone }) => keyOf(clone)),
   );
-  // What can't go now, by repository, which nothing is removed for.
+  // What can't go now, by repository, which nothing is removed for. Measured as `total` is, so what's
+  // past a link, which `total` doesn't count, counts for nothing here either.
   const keptBy = new Map<string, number>();
   let kept = 0;
   const free: typeof spares = [];
@@ -717,13 +728,13 @@ export async function keepUnder(host: CleanupHost, cap: number): Promise<string[
       free.push(spare);
       continue;
     }
-    const size = await diskUsage(spare.path);
+    const size = (await host.linkFree(spare.path)) ? await diskUsage(spare.path) : 0;
     keptBy.set(key, (keptBy.get(key) ?? 0) + size);
     kept += size;
   }
-  // Only what goes counts as freed: what came into use since the run looked, which removing
-  // refuses, and what's past a link stay and free nothing, so the next goes in their place while
-  // the cache is still over.
+  // Only what goes counts as freed: what's past a link isn't moved aside, so it frees nothing, and
+  // the next goes in its place while the cache is still over, as it does for a repository that came
+  // into use since the run looked, which removing refuses.
   let trimmed = 0;
   let emptied = 0;
   for (const spare of free) {
