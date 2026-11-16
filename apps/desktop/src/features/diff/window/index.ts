@@ -21,6 +21,7 @@ import { Diff } from './Diff.tsx';
 import { drawnElsewhere, linesElsewhere } from './elsewhere.ts';
 import { changesLink, fileLink } from './links.ts';
 import { main } from './main.ts';
+import { fromMoved, movedNow } from './moved.ts';
 import { keepPlaces, openWhole, showTreeFiles } from './places.ts';
 import { LayoutRow } from './LayoutRow.tsx';
 import { DiffStatus } from './Status.tsx';
@@ -152,6 +153,13 @@ function noteNow(target: LineTarget): true | string {
   return drawn.view.hasNote(placeOf(target.at)) || 'There’s no overview note on this line.';
 }
 
+/** Whether `gm` can go from the target's line, in moved code, to the other end, or why not. */
+function otherEndNow(target: LineTarget): true | string {
+  const drawn = onScreen();
+  if (typeof drawn === 'string') return drawn;
+  return movedNow(drawn.view, placeOf(target.at));
+}
+
 /** The line a target is on, for a link: the cursor's, or the last of the lines selected. */
 function lineOf(target: LineTarget | HeaderTarget) {
   if (target.kind === 'header') return { file: target.file, line: undefined };
@@ -227,6 +235,10 @@ export default {
     previousFile: { run: withDiff(({ view }) => view.jump('file', -1)), enabled: drawnNow },
     nextThread: { run: withDiff(({ view }) => view.jump('thread', 1)), enabled: drawnNow },
     previousThread: { run: withDiff(({ view }) => view.jump('thread', -1)), enabled: drawnNow },
+    otherEnd: {
+      run: withDiff((drawn, target: LineTarget) => fromMoved(drawn, placeOf(target.at))),
+      enabled: otherEndNow,
+    },
     markViewed: { run: withDiff(markViewed), enabled: drawnNow },
     otherSide: { run: withDiff(({ view }) => view.otherSide()), enabled: drawnNow },
     inline: {

@@ -223,6 +223,7 @@ function Code({
           order: [id],
           beside: true,
           acted() {},
+          enter() {},
           fileAt: () => id,
           toTop: (file) => made.revealAtTop({ kind: 'file', file }),
           viewedHere(file, viewed) {
