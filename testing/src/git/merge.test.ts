@@ -269,8 +269,8 @@ function refused(args: readonly string[], env: Record<string, string> = {}): str
 test('merge.sh writes nothing to GitHub without rozed-bot, and builds no generation it has no numbers for', () => {
   // With no token, it stops before it reads or writes anything.
   expect(refused(['1'], { LO_FIXTURE_TOKEN_FILE: '' })).toContain('LO_FIXTURE_TOKEN_FILE');
-  expect(refused(['--local', join(tmpdir(), 'lo-merge-none'), '3'])).toContain(
-    "numbers of generation 3 aren't recorded",
+  expect(refused(['--local', join(tmpdir(), 'lo-merge-none'), '999'])).toContain(
+    "numbers of generation 999 aren't recorded",
   );
   // Nor in a folder inside a work tree, where what it builds would be taken for the repository's.
   expect(refused(['--local', join(dirname(mergeScript), 'merge-none'), '1'])).toContain(

@@ -46,7 +46,8 @@ function synthetic(dir: string): boolean {
   }
 }
 
-test('no fixture holds a credential', () => {
+// It reads every fixture, over 40 MB of them, which takes a slow runner more than Vitest's 5 s.
+test('no fixture holds a credential', { timeout: 30_000 }, () => {
   const found = files(fixtures);
   expect(found.length).toBeGreaterThan(100);
   const leaks: string[] = [];

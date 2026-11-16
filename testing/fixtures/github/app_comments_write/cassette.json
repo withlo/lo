@@ -3,6 +3,8 @@
   "recorded_at": "2026-11-14T01:04:51Z",
   "repo": "rozed-dev/e2e",
   "added": {
-    "YourReviews": "2026-11-14T01:05:05Z"
+    "YourReviews": "2026-11-14T01:05:05Z",
+    "MergeSnapshot": "2026-11-16T22:10:07Z",
+    "GET https://api.github.com/repos/rozed-dev/e2e/rules/branches/comments/base?per_page=100": "2026-11-16T22:10:47Z"
   }
 }

@@ -74,6 +74,9 @@ with nothing sent to GitHub:
 node testing/scripts/add-answers.ts --copy <recorded request's file> <cassette> ...
 ```
 
+A REST read is added with `--rest <path>`, such as `/repos/rozed-dev/e2e/rules/branches/main`:
+GitHub's first answer, and its `304` to the read again with the first's `ETag`, as a poll reads it.
+
 ### What GitHub can't be made to answer
 
 Some answers can't be recorded on demand: a lost answer, a refusal of content sent too fast, or an
@@ -323,7 +326,8 @@ To record a generation: run `merge.sh <generation>`, which prints each pull requ
 head, add them to `recorded_numbers` in the script and to `MERGE_PULLS`, and take `pushed` from
 `merge.sh --local <folder> <generation> --push`. Generation 1 is rozed-dev/e2e#101 to #117, with
 GitHub stack #118. Its repository didn't allow auto-merge when it was made. Generation 2 is #119 to
-#135, with GitHub stack #136; the merge queue's recordings used it.
+#135, with GitHub stack #136; the merge queue's recordings used it. Generation 3 is #138 to #154,
+with GitHub stack #155; `app_merge` used it.
 
 ## The fake language server
 

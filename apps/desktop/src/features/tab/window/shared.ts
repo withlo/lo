@@ -71,6 +71,12 @@ export const cover = defineSlot<{ tab: Tab }>('tab.cover');
 export const header = defineSlot<{ tab: PullTab }>('tab.header');
 
 /**
+ * Whether a pull request can merge, on its header's first row, between the connection chip and
+ * the account: the merge status, and what it opens.
+ */
+export const headerStatus = defineSlot<{ tab: PullTab }>('tab.headerStatus');
+
+/**
  * What a view in {@link banners} says of itself, so a tab makes room only for the banners it has:
  * whether it draws one for a tab now, and when that may change.
  */

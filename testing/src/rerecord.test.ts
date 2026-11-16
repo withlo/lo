@@ -1,11 +1,11 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { expect, onTestFinished, test } from 'vitest';
 
 import { queryHash, readCassette, type Interaction } from './cassette.ts';
-import { addAnswers, copyAnswer, queryOperation, rerecord } from './rerecord.ts';
+import { addAnswers, addRestAnswers, copyAnswer, queryOperation, rerecord } from './rerecord.ts';
 
 const FAKE_TOKEN = 'fake-token-for-the-rerecord-test';
 const OLD = 'query Layers($ids: [ID!]!) { nodes(ids: $ids) { id } }';
@@ -215,4 +215,100 @@ test('copies an answer another cassette recorded after the rest, once', () => {
   expect(interactions[2]?.interaction).toEqual(avatar);
   expect(() => copyAnswer({ from, dirs: [dir], at: 'later' })).toThrow('holds GET');
   expect(readCassette(dir).interactions).toHaveLength(3);
+});
+
+const RULES = '/repos/rozed-dev/e2e/rules/branches/e4/gated?per_page=100';
+const ETAG = '"a1b2c3"';
+
+/**
+ * A `fetch` answering a REST read as GitHub does: `200` with an ETag, then `304` to the same read
+ * asked again with it, or `200` again when `moved`. It keeps what it was sent.
+ */
+function restAnswering(moved = false, body = '[{"type":"pull_request"}]') {
+  const sent: Request[] = [];
+  const fetch: typeof globalThis.fetch = (input, init) => {
+    const request = new Request(input, init);
+    sent.push(request);
+    if (!moved && request.headers.get('if-none-match') === ETAG) {
+      return Promise.resolve(new Response(null, { status: 304, headers: { etag: ETAG } }));
+    }
+    return Promise.resolve(
+      new Response(body, {
+        headers: { 'content-type': 'application/json', etag: ETAG, 'set-cookie': 'x' },
+      }),
+    );
+  };
+  return { fetch, sent };
+}
+
+test('adds a REST read’s first answer and its 304 after the rest, and leaves the rest', async () => {
+  const dir = cassette();
+  const user = readFileSync(join(dir, '001-GET-user.json'), 'utf8');
+  const { fetch, sent } = restAnswering();
+  const counts = await addRestAnswers({
+    fetch,
+    token: FAKE_TOKEN,
+    path: RULES,
+    dirs: [dir],
+    at: 'now',
+  });
+  expect(counts.get(dir)).toBe(2);
+  expect(sent.map((request) => [request.url, request.headers.get('if-none-match')])).toEqual([
+    [`https://api.github.com${RULES}`, null],
+    [`https://api.github.com${RULES}`, ETAG],
+  ]);
+  expect(sent[0]?.headers.get('authorization')).toBe(`token ${FAKE_TOKEN}`);
+
+  const { info, interactions } = readCassette(dir);
+  const url = `https://api.github.com${RULES}`;
+  expect(info.added).toEqual({ [`GET ${url}`]: 'now' });
+  expect(interactions.map(({ file }) => file)).toEqual([
+    '001-GET-user.json',
+    '002-POST-graphql-Layers.json',
+    '003-GET-repos_rozed-dev_e2e_rules_branches_e4_gated.json',
+    '004-GET-repos_rozed-dev_e2e_rules_branches_e4_gated.json',
+  ]);
+  expect(readFileSync(join(dir, '001-GET-user.json'), 'utf8')).toBe(user);
+  expect(interactions[2]?.interaction).toEqual({
+    request: { method: 'GET', url },
+    response: {
+      status: 200,
+      headers: { 'content-type': 'application/json', etag: ETAG },
+      body: [{ type: 'pull_request' }],
+    },
+  });
+  expect(interactions[3]?.interaction).toEqual({
+    request: { method: 'GET', url, if_none_match: ETAG },
+    response: { status: 304, headers: { etag: ETAG } },
+  });
+  // Once there, it isn't added again.
+  await expect(
+    addRestAnswers({ fetch, token: FAKE_TOKEN, path: RULES, dirs: [dir], at: 'later' }),
+  ).rejects.toThrow('holds GET');
+});
+
+test('adds no REST read whose ETag GitHub doesn’t answer 304, nor one off GitHub’s API', async () => {
+  const dir = cassette();
+  const { fetch } = restAnswering(true);
+  await expect(
+    addRestAnswers({ fetch, token: FAKE_TOKEN, path: RULES, dirs: [dir], at: 'now' }),
+  ).rejects.toThrow('not 304');
+  await expect(
+    addRestAnswers({ fetch, token: FAKE_TOKEN, path: '//example.com/x', dirs: [dir], at: 'now' }),
+  ).rejects.toThrow('isn’t a path');
+  expect(readCassette(dir).interactions).toHaveLength(2);
+  expect(readCassette(dir).info.added).toBeUndefined();
+});
+
+test('writes no REST read whose answer holds the token, in any cassette', async () => {
+  const [first, second] = [cassette(), cassette()];
+  const before = [first, second].map((dir) => readdirSync(dir).toSorted());
+  const json = readFileSync(join(second, 'cassette.json'), 'utf8');
+  // GitHub echoing the token back, as an error page might.
+  const { fetch } = restAnswering(false, `[{"note":"token ${FAKE_TOKEN}"}]`);
+  await expect(
+    addRestAnswers({ fetch, token: FAKE_TOKEN, path: RULES, dirs: [first, second], at: 'now' }),
+  ).rejects.toThrow('nothing was written');
+  expect([first, second].map((dir) => readdirSync(dir).toSorted())).toEqual(before);
+  expect(readFileSync(join(second, 'cassette.json'), 'utf8')).toBe(json);
 });
