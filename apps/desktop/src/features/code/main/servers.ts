@@ -144,8 +144,8 @@ interface Entry {
   stopListening: (() => void) | undefined;
   /** The checkout it runs on, or will. */
   root: Root | undefined;
-  /** Whether it's moving to `root`, so asks nothing meanwhile. */
-  moving: boolean;
+  /** The checkout it's moving to, while it is, so it's asked nothing meanwhile. */
+  moving: Root | undefined;
   /** Its download's progress, while there's one. */
   progress: { done: number; total: number } | undefined;
   /** What the window is told while it has failed, or can't start. */
@@ -216,7 +216,9 @@ export class ServerPool {
     entry.used = Date.now();
     if (entry.phase === 'failed') return { kind: 'failed' };
     const { server } = entry;
-    if (entry.phase === 'preparing' || entry.moving || !server) return { kind: 'starting' };
+    if (entry.phase === 'preparing' || entry.moving !== undefined || !server) {
+      return { kind: 'starting' };
+    }
     switch (server.state.kind) {
       case 'ready':
       case 'indexing':
@@ -329,13 +331,16 @@ export class ServerPool {
     }
   }
 
-  /** Whether `entry` runs, or is moving, on the pull request on screen. */
+  /**
+   * Whether `entry` runs on the pull request on screen, or is moving there: a move to another, even
+   * one that never ends, doesn't count.
+   */
   #onScreen(entry: Entry): boolean {
     const screen = this.#views.find((view) => view.id === this.#screen);
     return (
       screen !== undefined &&
       entry.repo === screen.repo &&
-      (entry.moving || entry.root?.pull === screen.pull)
+      (entry.root?.pull === screen.pull || entry.moving?.pull === screen.pull)
     );
   }
 
@@ -348,7 +353,7 @@ export class ServerPool {
       server: undefined,
       stopListening: undefined,
       root,
-      moving: false,
+      moving: undefined,
       progress: undefined,
       problem: undefined,
       full: false,
@@ -542,7 +547,7 @@ export class ServerPool {
     entry.stopListening?.();
     entry.stopListening = undefined;
     entry.server = undefined;
-    entry.moving = false;
+    entry.moving = undefined;
     if (root) entry.root = root;
     entry.controller.abort();
     entry.controller = new AbortController();
@@ -575,12 +580,12 @@ export class ServerPool {
     const still = () =>
       entry.server === server && entry.phase === 'running' && this.#allowed(entry.repo, root);
     if (!still()) return;
-    entry.moving = true;
+    entry.moving = root;
     this.#changed(entry);
     const moved =
       kind === 'starting' ? false : await server.moveTo(root.folder, still).catch(() => false);
     if (entry.server !== server || entry.phase !== 'running') return;
-    entry.moving = false;
+    entry.moving = undefined;
     if (moved) {
       entry.root = root;
       this.#changed(entry);
@@ -703,7 +708,7 @@ function keyOf(repo: string, adapter: string): string {
 
 /** What the window is told of `entry`. */
 function stateOf(entry: Entry): ServerState {
-  if (entry.moving) return { kind: 'starting' };
+  if (entry.moving !== undefined) return { kind: 'starting' };
   switch (entry.phase) {
     case 'preparing':
       return entry.progress

@@ -211,6 +211,24 @@ describe('how long they run', () => {
     expect(alive()).toEqual([]);
   });
 
+  it('stops one 10 minutes after its pull request was on screen, though its move to another never ends', async () => {
+    vi.useFakeTimers();
+    const { pool, started } = standIns();
+    const views = [view('v1', 'a/x', 1), view('v2', 'a/x', 2), view('v3', 'a/x', 3, [])];
+    pool.sync(views, 'v1');
+    await settle();
+    const first = started[0];
+    if (!first) throw new Error('nothing started');
+    first.set({ kind: 'ready' });
+    // #2 on screen: it moves there, and the folder is never resolved. Then #3, which needs none.
+    first.slowMoves = true;
+    pool.sync(views, 'v2');
+    await settle();
+    pool.sync(views, 'v3');
+    await vi.advanceTimersByTimeAsync(10 * 60_000);
+    expect(first.stopped).toBe(true);
+  });
+
   it('stops one at once when its repository’s last tab closes', async () => {
     vi.useFakeTimers();
     const { pool, started } = standIns();

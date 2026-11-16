@@ -6,11 +6,12 @@
  *   same temporary folder.
  * - The entry point must be a file inside what was unpacked. A marker, written last, records which
  *   of the manifest's downloads the folder holds, under which rules it was unpacked, and what it
- *   unpacked to: each file's path and size, and each link's target. Everything is synced to the
- *   disk, the marker last, before the temporary folder is renamed into place in one step. A folder
- *   is used only while its marker matches the manifest and the rules, and its files and links
- *   match its marker: otherwise it's removed and fetched again. So a download cut short, a version
- *   pinned again, or an install a power loss cut short, is never run.
+ *   unpacked to: each file's path and size, each folder's path, and each link's target. Everything
+ *   is synced to the disk, the marker last, before the temporary folder is renamed into place in
+ *   one step. A folder is used only while its marker matches the manifest and the rules, and its
+ *   files, folders and links match its marker: otherwise it's removed and fetched again. So a
+ *   download cut short, a version pinned again, or an install a power loss cut short, is never
+ *   run.
  * - A download that fails on the way (the connection, a stall, or the server's trouble) is tried
  *   {@link TRIES} times in all, waiting longer each time. Anything else fails at once.
  * - One download per version at a time: an install asked for while one runs waits for it.
@@ -30,12 +31,12 @@ import {
   stat,
   writeFile,
 } from 'node:fs/promises';
-import { dirname, isAbsolute, join } from 'node:path';
+import { dirname, isAbsolute, join, relative, sep } from 'node:path';
 
 import { z } from 'zod';
 
 import { atOnce, syncPath } from './disk.ts';
-import { fetchFile } from './download.ts';
+import { fetchFile, type StallLimits } from './download.ts';
 import { isInside } from './environment.ts';
 import { DownloadError } from './errors.ts';
 import {
@@ -67,6 +68,7 @@ const MARKER = 'installed.json';
 const markerSchema = z.object({
   fingerprint: z.string(),
   files: z.array(z.tuple([z.string().refine(isPlainPath), z.number().int().nonnegative()])),
+  folders: z.array(z.string().refine(isPlainPath)),
   links: z.array(z.tuple([z.string().refine(isPlainPath), z.string()])),
 });
 
@@ -83,8 +85,8 @@ export interface InstallerOptions {
   readonly limits?: UnpackLimits | undefined;
   /** How long to wait before each try after the first, in milliseconds. */
   readonly backoff?: readonly number[] | undefined;
-  /** How long a try may wait for a byte before it's given up, in milliseconds: `STALL` unless given. */
-  readonly stall?: number | undefined;
+  /** What counts as a try that has stalled: `STALL` unless given. */
+  readonly stall?: StallLimits | undefined;
 }
 
 export interface InstallOptions {
@@ -118,7 +120,7 @@ export class Installer {
   readonly #platform: Platform | undefined;
   readonly #limits: UnpackLimits | undefined;
   readonly #backoff: readonly number[];
-  readonly #stall: number | undefined;
+  readonly #stall: StallLimits | undefined;
   readonly #jobs = new Map<string, Job>();
 
   constructor(options: InstallerOptions) {
@@ -303,8 +305,15 @@ export class Installer {
       // What was unpacked is on the disk before the marker says so, and the marker before the
       // folder is in place, so a power loss leaves no folder that looks whole and isn't.
       await unpacker.sync();
-      const { files: unpacked, links } = unpacker.unpacked;
-      const marker = { id, version: pinned.version, fingerprint: print, files: unpacked, links };
+      const { files: unpacked, folders, links } = unpacker.unpacked;
+      const marker = {
+        id,
+        version: pinned.version,
+        fingerprint: print,
+        files: unpacked,
+        folders,
+        links,
+      };
       await writeFile(join(work, MARKER), `${JSON.stringify(marker)}\n`, { flag: 'wx' });
       await syncPath(join(work, MARKER));
       await syncPath(work);
@@ -327,11 +336,11 @@ export class Installer {
   ): Promise<Installed> {
     const there = await this.#whole(target, print, download);
     if (there !== undefined) return there;
-    if (await lstat(target).catch(() => undefined)) {
-      const aside = await mkdtemp(join(this.#folder, PARTIAL, 'old-'));
-      await rename(target, join(aside, 'old'));
-      await rm(aside, { recursive: true, force: true });
-    }
+    // A link, or anything else, where the version's folders go is removed itself, first, so
+    // nothing is removed through it.
+    const above = await lstat(dirname(target)).catch(() => undefined);
+    if (above !== undefined && !above.isDirectory()) await this.#discard(dirname(target));
+    if (await lstat(target).catch(() => undefined)) await this.#discard(target);
     await mkdir(dirname(target), { recursive: true, mode: 0o755 });
     try {
       await rename(work, target);
@@ -347,11 +356,24 @@ export class Installer {
     return placed;
   }
 
+  /** Moves `path` aside, into the folder for downloads, and removes it there. */
+  async #discard(path: string): Promise<void> {
+    const aside = await mkdtemp(join(this.#folder, PARTIAL, 'old-'));
+    await rename(path, join(aside, 'old'));
+    await rm(aside, { recursive: true, force: true });
+  }
+
   /**
-   * The install at `target`, if its marker says it holds `print`, each file and link it records is
-   * there as it says, and its entry point is there.
+   * The install at `target`, if each folder from the installer's own down to it is a folder, not a
+   * link, its marker says it holds `print`, each file, folder and link it records is there as it
+   * says, and its entry point is there.
    */
   async #whole(target: string, print: string, download: Download): Promise<Installed | undefined> {
+    let folder = this.#folder;
+    for (const part of relative(this.#folder, target).split(sep)) {
+      folder = join(folder, part);
+      if ((await lstat(folder).catch(() => undefined))?.isDirectory() !== true) return undefined;
+    }
     const text = await readFile(join(target, MARKER), 'utf8').catch(() => undefined);
     if (text === undefined) return undefined;
     let said: unknown;
@@ -392,12 +414,17 @@ export function fingerprint(
 }
 
 /**
- * Whether each file `unpacked` records is in `folder` with its size, and each link with its
- * target. It reads only what the system knows of each, never a file's data.
+ * Whether `folder` and each folder `unpacked` records in it are still folders, not links, so
+ * nothing below them is reached through one, each file it records is there with its size, and
+ * each link with its target. It reads only what the system knows of each, never a file's data.
  */
 async function matches(folder: string, unpacked: Unpacked): Promise<boolean> {
   const at = (path: string) => join(folder, ...path.split('/'));
   try {
+    if (!(await lstat(folder)).isDirectory()) return false;
+    await atOnce(unpacked.folders, CHECKS, async (path) => {
+      if (!(await lstat(at(path))).isDirectory()) throw new Error(`${path} isn't as unpacked`);
+    });
     await atOnce(unpacked.files, CHECKS, async ([path, size]) => {
       const info = await lstat(at(path));
       if (!info.isFile() || info.size !== size) throw new Error(`${path} isn't as unpacked`);

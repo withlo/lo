@@ -44,15 +44,17 @@ export const UNPACK_LIMITS: UnpackLimits = { entries: 100_000, bytes: 2 * 1024 *
 
 /**
  * The version of these rules, part of every install's fingerprint: raise it whenever they change
- * what a download unpacks to, and each install made under older rules is fetched again. The rules
- * from before it was kept are 1.
+ * what a download unpacks to, or what an install's marker records of it, and each install made
+ * under older rules is fetched again. The rules from before it was kept are 1.
  */
-export const UNPACK_RULES = 2;
+export const UNPACK_RULES = 3;
 
 /** What an unpacker wrote, each by its path inside its folder, in order. */
 export interface Unpacked {
   /** Each file, with its size in bytes. */
   readonly files: readonly (readonly [path: string, size: number])[];
+  /** Each folder, made or found, but for the unpacker's own. */
+  readonly folders: readonly string[];
   /** Each symbolic link, with its target. */
   readonly links: readonly (readonly [path: string, target: string])[];
 }
@@ -281,10 +283,11 @@ export class Unpacker {
     }
   }
 
-  /** What it wrote: each file with its size, and each link with its target. */
+  /** What it wrote: each file with its size, each folder, and each link with its target. */
   get unpacked(): Unpacked {
     return {
       files: [...this.#files].toSorted(byPath),
+      folders: [...this.#folders].filter((path) => path !== '').toSorted(),
       links: this.#links.map(({ path, target }) => [path, target] as const).toSorted(byPath),
     };
   }
