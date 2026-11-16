@@ -417,19 +417,22 @@ Only main runs git, through `@lo/git`, and the background process never sees git
 - A repository's homes go with its clone, unused for 30 days, past the cap or cleared, through
   `Cache.trash`, and cleanup removes homes left without a clone. A checkout, home or clone past a
   link stays, frees nothing and, kept while its repository is in use, counts for nothing.
-- The cache is `Lo` (`Lo Dev` for a build run from source, or `cache` in `LO_USER_DATA_DIR`) in the
-  system's folder for this user's caches: `$XDG_CACHE_HOME` or `~/.cache` on Linux, and on a Mac the
-  one macOS keeps outside the home folder, `DARWIN_USER_CACHE_DIR`
-  (`/var/folders/<xx>/<random>/C/`), as `/usr/bin/getconf` names it. Tools that language servers run
-  read settings from every folder above their own, such as Cargo's `.cargo/config.toml`, and
-  tsserver loads plugins from every `node_modules` above its install, so the home folder is none of
-  them. Lo won't start unless that folder, as named and as it resolves, is a folder, not a link, of
-  the user's own that nobody else can change, and never falls back to the home folder.
+- The cache is `Lo` (`Lo Dev` for a build run from source, or `lo-cache` in `LO_USER_DATA_DIR`,
+  never `cache`, which a Mac's disk takes for Chromium's own `Cache` there) in the system's folder
+  for this user's caches: `$XDG_CACHE_HOME` or `~/.cache` on Linux, and on a Mac the one macOS keeps
+  outside the home folder, `DARWIN_USER_CACHE_DIR` (`/var/folders/<xx>/<random>/C/`), as
+  `/usr/bin/getconf` names it. Tools that language servers run read settings from every folder above
+  their own, such as Cargo's `.cargo/config.toml`, and tsserver loads plugins from every
+  `node_modules` above its install, so the home folder is none of them. Lo won't start unless that
+  folder, as named and as it resolves, is a folder, not a link, of the user's own that nobody else
+  can change, and never falls back to the home folder.
 - Once the cache opens, the one an earlier Lo kept in `~/Library/Caches` goes, as the cache removes
   its own: moved into its `tmp/` and deleted with the cache's other deletions, or deleted where it
   is when it's on another volume. Only a folder, never a link, that holds a cache's folders goes,
   never the open cache or a folder holding it, whatever links lead there, and only under its lock,
-  never while another Lo has it open.
+  never while another Lo has it open. In `LO_USER_DATA_DIR`, what an earlier build made in the
+  `cache` it kept there goes the same way, folder by folder, by the names Lo gives them, and
+  Chromium's own files there stay.
 - Every git gets an environment of Lo's own making, never main's, and only a fetch gets the
   account's token, from a source read as each fetch starts. Fetches take the proxy Lo's own requests
   take.
@@ -1434,7 +1437,12 @@ Swift's item says it needs Apple's Command Line Tools, and to install them with
   `.tfvars` file is still `terraform`. A place outside the checkout shows as "Outside this
   repository" and is never read; the references panel counts those it doesn't list. The old side
   always answers from the index, and a server answers only about the head it runs on, for a file
-  whose checkout matches git's.
+  whose checkout matches git's. A checkout the local copy no longer counts as its own, as once the
+  local copy was made again, gets the index's answers, saying the server can't run because the
+  checkout isn't usable, and is made again: what runs on the pull request's checkouts stops first,
+  then starts on the new one. One made again that's no better fails, for "Restart". Once no view of
+  a pull request is open, its checkouts are forgotten, so the next view of it checks its head out
+  again.
 - A hover in Markdown is read into `@lo/markdown`'s tree by the background process (`code.render`,
   main's own job), as any text from anyone is, and the card never draws the Markdown as text: the
   code blocks it starts with, in order, are the declaration (rust-analyzer's module path, then the

@@ -5,10 +5,16 @@
  * the check is moved aside and made again; nothing ran on it, so making it again is safe.
  */
 
-import { lstat, readdir, readFile, realpath } from 'node:fs/promises';
-import { isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { lstat, readdir, readFile, readlink, realpath } from 'node:fs/promises';
+import { basename, dirname, isAbsolute, join, normalize, relative, resolve, sep } from 'node:path';
 
 import type { Runner } from './git.ts';
+
+/** Where a clone's checkouts belong: `folder`, in the cache whose folder is `root`. */
+export interface CheckoutsPlace {
+  readonly root: string;
+  readonly folder: string;
+}
 
 /**
  * Files that make git read settings, objects or attributes from somewhere else, or change what it
@@ -68,13 +74,14 @@ const OWN_SETTINGS: ReadonlyMap<string, Check> = new Map<string, Check>([
 
 /**
  * Why the clone at `clone` can't be trusted, or `undefined` when it can. `options.checkouts` is
- * the folder its checkouts are in: a checkout's `gitdir` must point inside it, and without it, it
- * may have none. A clone must hold its whole history.
+ * where its checkouts belong: a checkout's `gitdir` must lead inside that folder, as written and
+ * really ({@link leadsInto}), and without it, the clone may have none. A clone must hold its whole
+ * history.
  */
 export async function distrust(
   runner: Runner,
   clone: string,
-  options: { checkouts?: string | undefined } = {},
+  options: { checkouts?: CheckoutsPlace | undefined } = {},
 ): Promise<string | undefined> {
   const folder = await lstat(clone).catch(() => undefined);
   if (!folder?.isDirectory()) return 'it isn’t a folder';
@@ -162,7 +169,7 @@ export async function leadsElsewhere(runner: Runner, clone: string): Promise<str
  */
 async function distrustWorktrees(
   clone: string,
-  checkouts: string | undefined,
+  checkouts: CheckoutsPlace | undefined,
 ): Promise<string | undefined> {
   const folder = join(clone, 'worktrees');
   const names = await readdir(folder).catch(() => []);
@@ -175,6 +182,7 @@ async function distrustWorktrees(
       if (found.isSymbolicLink()) return `worktrees/${name}/${file} is a link to somewhere else`;
       if (file === 'config.worktree') return `worktrees/${name} has settings of its own`;
     }
+    // git writes `../..`, so it's read as written, never through a link.
     const commondir = await readFile(join(worktree, 'commondir'), 'utf8').catch(() => undefined);
     const common = commondir === undefined ? undefined : resolve(worktree, commondir.trim());
     if (common === undefined || resolve(common) !== resolve(clone)) {
@@ -183,17 +191,116 @@ async function distrustWorktrees(
     const gitdir = await readFile(join(worktree, 'gitdir'), 'utf8').catch(() => undefined);
     const target = gitdir?.trim();
     const inside =
-      checkouts !== undefined &&
-      target !== undefined &&
-      isAbsolute(target) &&
-      within(checkouts, target);
+      checkouts !== undefined && target !== undefined && (await leadsInto(checkouts, target));
     if (!inside) return `worktrees/${name} names a checkout outside Lo's`;
   }
   return undefined;
 }
 
-/** Whether `path` is inside `folder`. */
-function within(folder: string, path: string): boolean {
-  const inside = relative(resolve(folder), resolve(path));
-  return inside !== '' && !inside.startsWith(`..${sep}`) && inside !== '..' && !isAbsolute(inside);
+/**
+ * Whether `path`, a checkout's `.git` as git names it in the clone, is inside `place.folder`, both
+ * as written and really. git names a checkout with the links on the way to it followed, so a link
+ * above the cache, as macOS's `/var` is, gives it another name than Lo's for the same folder.
+ *
+ * - Nothing on the way from the cache's folder to `place.folder` is a link: what's past one isn't
+ *   in the cache, wherever it leads.
+ * - As written, `path` is inside the folder as Lo names it or as git does ({@link asGitNames}), so
+ *   one named outside the cache is refused, even where a link there leads back in.
+ * - Really, `path` is inside the folder, both by their real paths, so neither the case each is
+ *   spelled in, which a Mac's disk ignores, nor a link inside the folder can mislead. A path that
+ *   can't be resolved, such as one past a dangling link, is refused ({@link realAhead}).
+ *
+ * `path` must be absolute and plain, with no `.` or `..` in it, as git writes a checkout's.
+ */
+async function leadsInto(place: CheckoutsPlace, path: string): Promise<boolean> {
+  const below = relative(place.root, place.folder);
+  if (!isAbsolute(path) || normalize(path) !== path || !isBelow(below)) return false;
+  if (!(await plainFolders(place.root, below))) return false;
+  const named = await asGitNames(place.root);
+  const spellings = [place.folder, ...(named === undefined ? [] : [join(named, below)])];
+  if (!spellings.some((folder) => isBelow(relative(folder, path)))) return false;
+  const [folder, real] = await Promise.all([realAhead(place.folder), realAhead(path)]);
+  return folder !== undefined && real !== undefined && isBelow(relative(folder, real));
+}
+
+/** Whether `between`, the path from one folder to another place, leads inside the folder. */
+function isBelow(between: string): boolean {
+  return (
+    between !== '' && between !== '..' && !between.startsWith(`..${sep}`) && !isAbsolute(between)
+  );
+}
+
+/**
+ * Whether each folder on the way from `root` down `below` is a folder, never a link, as far as
+ * they're there.
+ */
+async function plainFolders(root: string, below: string): Promise<boolean> {
+  let at = root;
+  for (const name of below.split(sep)) {
+    at = join(at, name);
+    try {
+      if (!(await lstat(at)).isDirectory()) return false;
+    } catch (error) {
+      return codeOf(error) === 'ENOENT';
+    }
+  }
+  return true;
+}
+
+/**
+ * `path`, absolute, as git names it once it follows the links on it: each link replaced by what it
+ * says, and every other name kept as given, whatever case the disk keeps it in. `undefined` for a
+ * link that can't be read, or past 32 links, where git gives up.
+ */
+async function asGitNames(path: string): Promise<string | undefined> {
+  let named: string = sep;
+  const left = path.split(sep).toReversed();
+  let links = 0;
+  while (left.length > 0) {
+    const name = left.pop() ?? '';
+    if (name === '' || name === '.') continue;
+    if (name === '..') {
+      named = dirname(named);
+      continue;
+    }
+    const next = join(named, name);
+    if (!(await lstat(next).catch(() => undefined))?.isSymbolicLink()) {
+      named = next;
+      continue;
+    }
+    links += 1;
+    const target = links > 32 ? undefined : await readlink(next).catch(() => undefined);
+    if (target === undefined) return undefined;
+    if (isAbsolute(target)) named = sep;
+    left.push(...target.split(sep).toReversed());
+  }
+  return named;
+}
+
+/**
+ * The real path of `path`, which needn't be there: its nearest folder that is, by its real path,
+ * then the rest of `path`, where nothing is, so none of it is a link. `undefined` when something on
+ * the way can't be resolved: a dangling link, a loop of links, or a folder that can't be read.
+ */
+async function realAhead(path: string): Promise<string | undefined> {
+  const rest: string[] = [];
+  for (let at = path; ; at = dirname(at)) {
+    try {
+      return join(await realpath(at), ...rest.toReversed());
+    } catch (error) {
+      // Only a name with nothing at all there is kept as it is: anything else may lead anywhere.
+      if (codeOf(error) !== 'ENOENT' || dirname(at) === at) return undefined;
+      const there = await lstat(at).then(
+        () => true,
+        (missing: unknown) => codeOf(missing) !== 'ENOENT',
+      );
+      if (there) return undefined;
+      rest.push(basename(at));
+    }
+  }
+}
+
+/** An error's code, such as `ENOENT`, if it has one. */
+function codeOf(error: unknown): unknown {
+  return error instanceof Error && 'code' in error ? error.code : undefined;
 }

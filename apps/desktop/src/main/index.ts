@@ -17,6 +17,7 @@ import {
   formerCacheFolder,
   GitStopped,
   gitSettings,
+  oldDataCache,
   onceUp,
 } from './git.ts';
 import { serveFeatures } from './ipc.ts';
@@ -136,6 +137,7 @@ function start(): void {
     settings: gitOptions,
     root: cacheRoot,
     former: formerCacheFolder(placing),
+    oldData: oldDataCache(placing),
     env,
     platform: process.platform,
     // The route Lo's own requests take: `net.request`'s, in the default session.

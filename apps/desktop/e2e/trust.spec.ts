@@ -17,6 +17,7 @@ import {
   answerDialogs,
   appEnvironment,
   appFolder,
+  cachePath,
   dataFolder,
   dialogsAsked,
   drawnWindow,
@@ -201,7 +202,7 @@ test('trusts the repo only once main’s own dialog says Trust, and Settings lis
       id,
     ),
   ).toEqual({ ok: true, value: 'trusted' });
-  const checkout = join(dataFolder(), 'cache', 'checkouts', 'github.com', 'rozed-dev', 'e2e');
+  const checkout = join(cachePath(dataFolder()), 'checkouts', 'github.com', 'rozed-dev', 'e2e');
   mkdirSync(join(checkout, 'pull-80'), { recursive: true });
   writeFileSync(settingsPath(dataFolder()), '{ "code.trusted": [] }\n');
   await expect.poll(() => existsSync(join(checkout, 'pull-80')), { timeout: 20_000 }).toBe(false);
