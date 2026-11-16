@@ -98,8 +98,8 @@ const runBare: Run = (program, args) =>
 /**
  * The folder macOS keeps for this user's caches, `DARWIN_USER_CACHE_DIR`, by its real path
  * (`/private/var/folders/<xx>/<random>/C`): the user's own, closed to everyone else, kept across
- * restarts, and inside folders only root can change. `/usr/bin/getconf` names it, run by its path
- * with no environment, so nothing Lo was started with can move it. A folder that fails
+ * restarts, and inside folders no other user can change. `/usr/bin/getconf` names it, run by its
+ * path with no environment, so nothing Lo was started with can move it. A folder that fails
  * {@link whyNotCaches} is a {@link StartupError}: Lo never falls back to the home folder.
  */
 export function macCaches(options: { run?: Run; uid?: number } = {}): string {
