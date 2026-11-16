@@ -2,7 +2,7 @@
 // The merge panel's frame, in each state it takes: why it can't merge, ready to merge with
 // the commit's text, ready for a queue, waiting on auto-merge, and blocks Lo can't mend.
 
-import { act, createRef, useState, type ReactNode } from 'react';
+import { act, createRef, useState, type ReactNode, type RefObject } from 'react';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { missingRules } from '../test/classes.ts';
@@ -144,8 +144,8 @@ function open(onMerge?: () => void) {
   return render(<Squash {...(onMerge === undefined ? {} : { onMerge })} />);
 }
 
-/** The panel with `focused` as the row the keyboard is on. */
-const viewFocusing = (focused: string | undefined) => (
+/** The panel with `focused` as the row the keyboard is on, and the list for it to focus. */
+const viewFocusing = (focused: string | undefined, list?: RefObject<HTMLUListElement | null>) => (
   <MergePanel
     open
     onOpenChange={() => undefined}
@@ -153,10 +153,16 @@ const viewFocusing = (focused: string | undefined) => (
     scope="merge"
     kind="waiting"
     verdict="Can't merge yet"
-    activeDescendant={focused === undefined ? undefined : checkRowId('reasons', focused)}
+    focusRef={list}
     foot={<MergeFoot primary={{ label: 'Merge', disabled: true }} />}
   >
-    <Checklist id="reasons" label="Why it can't merge" rows={unmet} focused={focused} />
+    <Checklist
+      id="reasons"
+      label="Why it can't merge"
+      rows={unmet}
+      focused={focused}
+      listRef={list}
+    />
   </MergePanel>
 );
 
@@ -230,20 +236,53 @@ describe('MergePanel', () => {
     expect(document.activeElement).toBe(before);
   });
 
-  it('names the row the keyboard is on as its active descendant, and rings it', () => {
+  it('names the row the keyboard is on as its list’s active descendant, not its own, and rings it', () => {
     document.body.append(document.createElement('button'));
     const host = render(viewFocusing('threads'));
     const dialog = panel();
-    const active = dialog.getAttribute('aria-activedescendant');
-    expect(active).toBe(checkRowId('reasons', 'threads'));
-    // The id names a row that's in the panel, and the panel is where the ring is shown from.
-    const row = dialog.querySelector(`[id="${active}"]`);
+    // A dialog can't have one: the listbox in it does, and it's the one with the ring's group.
+    expect(dialog.hasAttribute('aria-activedescendant')).toBe(false);
+    const list = dialog.querySelector('[role="listbox"]');
+    expect(list?.getAttribute('aria-activedescendant')).toBe(checkRowId('reasons', 'threads'));
+    const row = dialog.querySelector(`[id="${list?.getAttribute('aria-activedescendant')}"]`);
+    expect(row?.getAttribute('role')).toBe('option');
     expect(row?.getAttribute('data-key')).toBe('threads');
     expect(row?.className).toContain('group-focus-visible/list:shadow-ring-inset');
-    expect(dialog.className).toContain('group/list');
-    // With no row on, the panel names none.
+    expect(list?.className).toContain('group/list');
+    // With no row on, or one that isn't in the list, the list names none.
     rerender(host, viewFocusing(undefined));
-    expect(panel().hasAttribute('aria-activedescendant')).toBe(false);
+    expect(panel().querySelector('[role="listbox"]')?.hasAttribute('aria-activedescendant')).toBe(
+      false,
+    );
+    rerender(host, viewFocusing('not-a-reason'));
+    expect(panel().querySelector('[role="listbox"]')?.hasAttribute('aria-activedescendant')).toBe(
+      false,
+    );
+  });
+
+  it('takes focus on the list it is given as it opens, and hears the keys pressed there', async () => {
+    document.body.append(document.createElement('button'));
+    const list = createRef<HTMLUListElement>();
+    const keys: string[] = [];
+    render(
+      <div
+        onKeyDown={(event) => {
+          keys.push(event.key);
+        }}
+      >
+        {viewFocusing('review', list)}
+      </div>,
+    );
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(list.current).not.toBeNull();
+    expect(document.activeElement).toBe(list.current);
+    // The keys are the panel's: they reach it from the list, inside its key scope.
+    expect(list.current?.closest('[data-lo-scope]')).toBe(panel());
+    press(list.current!, 'j');
+    expect(keys).toContain('j');
   });
 
   it('hands on the keys pressed in it', () => {

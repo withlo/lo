@@ -1,5 +1,12 @@
 import { Popover } from '@base-ui/react/popover';
-import { useCallback, useId, type KeyboardEvent, type ReactNode, type Ref } from 'react';
+import {
+  useCallback,
+  useId,
+  type KeyboardEvent,
+  type ReactNode,
+  type Ref,
+  type RefObject,
+} from 'react';
 
 import { Button } from './Button.tsx';
 import { withoutBidi } from './controls.ts';
@@ -33,16 +40,15 @@ export interface MergePanelProps {
   children?: ReactNode;
   /** Its foot: see {@link MergeFoot}. */
   foot?: ReactNode;
-  /** The panel itself, which takes focus as it opens, so its keys apply. */
+  /** The panel itself, the dialog, which is the key scope its keys apply in. */
   panelRef?: Ref<HTMLDivElement> | undefined;
   /**
-   * The id of the row the keyboard is on, such as the reason `j` and `k` moved to
-   * (`checkRowId`): the panel holds focus, so it names that row as its active descendant, and
-   * a screen reader follows the keyboard as it moves. A row that has the keyboard also has a ring
-   * while the panel has keyboard focus.
+   * What takes focus as the panel opens, so its keys apply: the checklist's `listRef`, which
+   * holds focus itself and names the row the keyboard is on, or a field. Without one, or until it
+   * is drawn, the panel does.
    */
-  activeDescendant?: string | undefined;
-  /** A key pressed anywhere in it, before the control with focus gets it. */
+  focusRef?: RefObject<HTMLElement | null> | undefined;
+  /** A key pressed anywhere in it, as it reaches the panel from what has focus. */
   onKeyDown?: ((event: KeyboardEvent<HTMLDivElement>) => void) | undefined;
 }
 
@@ -66,11 +72,11 @@ export function MergePanel({
   children,
   foot,
   panelRef,
-  activeDescendant,
+  focusRef,
   onKeyDown,
 }: MergePanelProps) {
   const returnFocus = useReturnFocus(open);
-  const takeFocus = useTakeFocus();
+  const takeFocus = useTakeFocus(focusRef);
   // One ref for as long as the panel's own do not change, or each draw would take focus again.
   const popup = useCallback(
     (element: HTMLDivElement | null) => {
@@ -104,9 +110,8 @@ export function MergePanel({
             aria-label="Merge"
             data-lo-scope={scope}
             data-kind={kind}
-            aria-activedescendant={activeDescendant}
             onKeyDown={onKeyDown}
-            className="group/list flex w-mergepanel-w max-w-full flex-col overflow-hidden rounded-md bg-bg-overlay text-fg shadow-pop outline-none text-ui"
+            className="flex w-mergepanel-w max-w-full flex-col overflow-hidden rounded-md bg-bg-overlay text-fg shadow-pop outline-none text-ui"
           >
             <div className="flex items-center gap-12 ps-16 pe-12 pt-12 pb-8">
               <MergeDot kind={kind} size="md" />

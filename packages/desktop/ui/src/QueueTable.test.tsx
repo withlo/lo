@@ -369,8 +369,8 @@ describe('QueueTable', () => {
     const on = row(host, '4821');
     expect(grid?.getAttribute('aria-activedescendant')).toBe(on.id);
     expect(host.ownerDocument.getElementById(on.id)).toBe(on);
-    expect(on.getAttribute('aria-selected')).toBe('true');
-    expect(host.querySelectorAll('[aria-selected="true"]')).toHaveLength(1);
+    // Focus is not selection: no row says it is selected, or not, so none reads "not selected".
+    expect(host.querySelector('[aria-selected]')).toBeNull();
     // The ring shows only while the table has keyboard focus, and only on that row.
     expect(on.className).toContain('group-focus-visible/list:shadow-ring-inset');
     expect(grid?.className).toContain('group/list');

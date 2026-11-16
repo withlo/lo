@@ -17,6 +17,11 @@ export interface TypeToConfirmProps {
   /**
    * `⏎` was pressed with the word typed. Only a fresh press counts: a key held down repeats, and
    * the press that opened the dialog was never pressed here, so neither confirms.
+   *
+   * The field handles every plain `⏎` (not one with a modifier, nor one that ends a composition)
+   * and calls `preventDefault()` on it, whether it confirms or not. A handler for keys above it,
+   * such as the dialog's or the panel's, must ignore an event whose `defaultPrevented` is set, or
+   * the same press would act twice, or on a word not yet typed.
    */
   onConfirm?: (() => void) | undefined;
 }
@@ -24,16 +29,18 @@ export interface TypeToConfirmProps {
 /**
  * The field a confirmation that bypasses rules asks for something typed in: "Type 4821 to
  * confirm". Its button stays off until `typedMatches` says the word is there, and `⏎` in the field
- * confirms only once it is, on a press of its own.
+ * confirms only once it is, on a press of its own. It marks the `⏎` it handles with
+ * `preventDefault()`: see `onConfirm`.
  */
 export function TypeToConfirm({ word, value, onChange, inputRef, onConfirm }: TypeToConfirmProps) {
   const id = useId();
   const onKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
     if (event.key !== 'Enter') return;
-    event.preventDefault();
     const plain = !(event.metaKey || event.ctrlKey || event.altKey || event.shiftKey);
-    if (event.repeat || event.nativeEvent.isComposing || !plain) return;
-    if (typedMatches(value, word)) onConfirm?.();
+    // Not its press: a modifier makes it another command's, and a composition's ends the text.
+    if (event.nativeEvent.isComposing || !plain) return;
+    event.preventDefault();
+    if (!event.repeat && typedMatches(value, word)) onConfirm?.();
   };
   return (
     <div className="flex flex-col gap-6">

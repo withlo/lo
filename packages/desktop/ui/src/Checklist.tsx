@@ -1,5 +1,5 @@
 import { cva } from 'class-variance-authority';
-import type { ReactNode } from 'react';
+import type { HTMLAttributes, ReactNode, Ref } from 'react';
 
 import { withoutBidi, withoutBidiNode } from './controls.ts';
 import { LinkButton } from './LinkButton.tsx';
@@ -71,20 +71,22 @@ export interface CheckItem {
   end?: ReactNode;
 }
 
-export interface ChecklistProps {
+export interface ChecklistProps extends Omit<
+  HTMLAttributes<HTMLUListElement>,
+  'children' | 'role' | 'aria-label' | 'aria-activedescendant'
+> {
   /** What the list is, for screen readers: "Why it can't merge". */
   label: string;
-  /**
-   * What its rows' ids start with, so that whatever holds focus, such as the merge panel, can name
-   * the row the keyboard is on as its active descendant with {@link checkRowId}.
-   */
+  /** What its rows' ids start with, so that no two lists on a page share one: see {@link checkRowId}. */
   id: string;
   rows: readonly CheckItem[];
   /**
-   * The row the keyboard is on, by key. It takes a ring while what holds focus, which is not the
-   * list, has keyboard focus: that element is inside a `group/list`.
+   * The row the keyboard is on, by key: the list names it as its active descendant and rings it
+   * while the list has keyboard focus. A key that is none of the rows names no row.
    */
   focused?: string | undefined;
+  /** The list itself, which takes focus: give it to a panel to focus as it opens. */
+  listRef?: Ref<HTMLUListElement> | undefined;
 }
 
 /** The id of the row with this key in the list with this `id`, for an `aria-activedescendant`. */
@@ -213,17 +215,37 @@ function Sub({ sub }: { sub: CheckSub }) {
  * merge waits for. A row has an icon in the color of how it stands, a title, a line of detail,
  * the checks it holds as sub-rows, each linked to where it's fixed, and an action at its end.
  *
- * The list never takes focus: the element that does, such as the merge panel, is told which row
- * the keyboard is on by its `aria-activedescendant`, and the list draws that row's ring. Focus is
- * where the keyboard is, not what's current, so no row says it's current.
+ * It's a listbox that holds focus itself, as the timeline and the references are, with the row the
+ * keyboard is on as its active descendant, and a ring on that row while it has keyboard focus.
+ * Focus is where the keyboard is, not what's current or selected, so no row says it's either. Like
+ * the other lists it takes what a focusable list takes: a ref, a key handler and the rest.
  */
-export function Checklist({ label, id, rows, focused }: ChecklistProps) {
+export function Checklist({
+  label,
+  id,
+  rows,
+  focused,
+  listRef,
+  className = '',
+  ...rest
+}: ChecklistProps) {
+  const active = focused !== undefined && rows.some((item) => item.key === focused);
   return (
-    <ul aria-label={label} className="m-0 flex list-none flex-col p-0">
+    <ul
+      ref={listRef}
+      // With nothing to list it's a group holding nothing, not a listbox without options.
+      role={rows.length === 0 ? 'group' : 'listbox'}
+      aria-label={label}
+      tabIndex={0}
+      aria-activedescendant={active ? checkRowId(id, focused) : undefined}
+      {...rest}
+      className={`group/list m-0 flex list-none flex-col p-0 ${className}`}
+    >
       {rows.map((item) => (
         <li
           key={item.key}
           id={checkRowId(id, item.key)}
+          role="option"
           data-key={item.key}
           data-kind={item.kind}
           data-focused={item.key === focused ? '' : undefined}

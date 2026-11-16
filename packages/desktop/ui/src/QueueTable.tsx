@@ -281,7 +281,6 @@ function Row({ id, rowKey, yours, focused, onClick, children }: RowProps) {
       id={id}
       role="row"
       data-key={rowKey}
-      aria-selected={focused}
       data-yours={yours === true ? '' : undefined}
       className={row({ yours: yours === true, focused })}
       onClick={() => onClick?.(rowKey)}

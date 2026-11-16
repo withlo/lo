@@ -232,6 +232,34 @@ describe('TypeToConfirm’s ⏎', () => {
     expect(onConfirm).not.toHaveBeenCalled();
   });
 
+  it('marks every ⏎ it handles as prevented, for the keys above it to leave alone', () => {
+    // What a dialog around it sees, bubbling: the press, and whether the field already took it.
+    const seen: { key: string; handled: boolean }[] = [];
+    const host = render(
+      <div
+        onKeyDown={(event) => {
+          seen.push({ key: event.key, handled: event.defaultPrevented });
+        }}
+      >
+        <TypeToConfirm word="4821" value="48" onChange={() => undefined} />
+      </div>,
+    );
+    const input = host.querySelector('input')!;
+    // With the word not typed, held down, all the same: it's the field's ⏎ while it has focus.
+    press(input, 'Enter');
+    press(input, 'Enter', { repeat: true });
+    expect(seen).toEqual([
+      { key: 'Enter', handled: true },
+      { key: 'Enter', handled: true },
+    ]);
+    seen.length = 0;
+    // Not its ⏎, or no ⏎ at all: left for what's above to act on.
+    press(input, 'Enter', { metaKey: true });
+    press(input, 'Enter', { isComposing: true });
+    press(input, 'a');
+    expect(seen.map((each) => each.handled)).toEqual([false, false, false]);
+  });
+
   it('has nothing to do when nothing asks to be told', () => {
     const host = render(<TypeToConfirm word="4821" value="4821" onChange={() => undefined} />);
     expect(() => press(host.querySelector('input')!, 'Enter')).not.toThrow();

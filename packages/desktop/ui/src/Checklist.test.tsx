@@ -2,10 +2,11 @@
 // The checklist: a row for each reason, in the color of how it stands, with the checks it holds as
 // sub-rows linked to their runs, and what's at its end.
 
+import { createRef } from 'react';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { missingRules } from '../test/classes.ts';
-import { cleanUp, click, render } from '../test/dom.ts';
+import { cleanUp, click, focus, press, render, rerender } from '../test/dom.ts';
 import { Avatar } from './Avatar.tsx';
 import { Button } from './Button.tsx';
 import { Checklist, checkRowId, type CheckItem, type CheckKind } from './Checklist.tsx';
@@ -209,18 +210,81 @@ describe('Checklist', () => {
     expect(checkRowId('reasons', 'review')).not.toBe(checkRowId('other', 'review'));
   });
 
-  it('rings the row the keyboard is on while what holds focus has keyboard focus, and is not current', () => {
+  it('is a listbox of options that can hold focus, as the other lists are', () => {
+    const list = createRef<HTMLUListElement>();
+    const host = render(
+      <Checklist id="reasons" label="Checks" rows={blockers()} listRef={list} focused="review" />,
+    );
+    const box = host.querySelector<HTMLElement>('[role="listbox"]');
+    expect(list.current).toBe(box);
+    expect(box?.getAttribute('aria-label')).toBe('Checks');
+    // It can hold focus, so what names the row the keyboard is on means something.
+    expect(box?.tabIndex).toBe(0);
+    focus(box!);
+    expect(document.activeElement).toBe(box);
+    const options = [...host.querySelectorAll('[role="listbox"] > li')];
+    expect(options).toHaveLength(6);
+    expect(options.every((each) => each.getAttribute('role') === 'option')).toBe(true);
+    // Focus is not selection: none says it is selected, or not.
+    expect(host.querySelector('[aria-selected]')).toBeNull();
+  });
+
+  it('names the row the keyboard is on as its active descendant, and rings only that row', () => {
     const host = render(
       <Checklist id="reasons" label="Checks" rows={blockers()} focused="threads" />,
     );
+    const box = host.querySelector('[role="listbox"]');
     const on = host.querySelector('li[data-key="threads"]');
+    expect(box?.getAttribute('aria-activedescendant')).toBe(on?.id);
     expect(on?.hasAttribute('data-focused')).toBe(true);
     // The ring shows only inside a `group/list` that has keyboard focus, as a list's rows' do.
+    expect(box?.className).toContain('group/list');
     expect(on?.className).toContain('group-focus-visible/list:shadow-ring-inset');
     expect(host.querySelectorAll('[data-focused]')).toHaveLength(1);
     expect(host.querySelector('li[data-key="review"]')?.className).not.toContain('ring');
     // Focus is where the keyboard is; current is what's on screen: nothing here is current.
     expect(host.querySelector('[aria-current]')).toBeNull();
+  });
+
+  it('names no row when the keyboard is on none, or on one that is not in the list', () => {
+    const host = render(<Checklist id="reasons" label="Checks" rows={blockers()} />);
+    const box = () => host.querySelector('[role="listbox"]');
+    expect(box()?.hasAttribute('aria-activedescendant')).toBe(false);
+    rerender(host, <Checklist id="reasons" label="Checks" rows={blockers()} focused="gone" />);
+    expect(box()?.hasAttribute('aria-activedescendant')).toBe(false);
+    expect(host.querySelector('[data-focused]')).toBeNull();
+    // A row that was on, and has gone, leaves nothing for the list to point at.
+    rerender(host, <Checklist id="reasons" label="Checks" rows={blockers()} focused="behind" />);
+    expect(box()?.getAttribute('aria-activedescendant')).toBe(checkRowId('reasons', 'behind'));
+    rerender(
+      host,
+      <Checklist id="reasons" label="Checks" rows={blockers().slice(0, 2)} focused="behind" />,
+    );
+    expect(box()?.hasAttribute('aria-activedescendant')).toBe(false);
+  });
+
+  it('takes its keys and key scope as attributes, for the feature that drives it', () => {
+    const onKeyDown = vi.fn<(event: { key: string }) => void>();
+    const host = render(
+      <Checklist
+        id="reasons"
+        label="Checks"
+        rows={blockers()}
+        data-lo-scope="merge"
+        onKeyDown={onKeyDown}
+      />,
+    );
+    const box = host.querySelector('[role="listbox"]');
+    expect(box?.getAttribute('data-lo-scope')).toBe('merge');
+    press(box!, 'j');
+    expect(onKeyDown).toHaveBeenCalledOnce();
+    expect(onKeyDown.mock.calls[0]?.[0].key).toBe('j');
+  });
+
+  it('is a group, not a listbox without options, when it has no rows', () => {
+    const host = render(<Checklist id="reasons" label="Checks" rows={[]} />);
+    expect(host.querySelector('[role="listbox"]')).toBeNull();
+    expect(host.querySelector('[role="group"]')?.getAttribute('aria-label')).toBe('Checks');
   });
 
   it('gives a row a link of its own, named for the row', () => {
