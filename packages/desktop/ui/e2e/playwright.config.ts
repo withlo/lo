@@ -1,6 +1,6 @@
 import { defineConfig } from '@playwright/test';
 
-// Specs for ui's components in a real Chromium: Electron's, on a page each spec builds.
+// Specs for ui's components in a real Chromium: Electron's, on a page each spec builds itself.
 export default defineConfig({
   testDir: '.',
   outputDir: '../test-results',
