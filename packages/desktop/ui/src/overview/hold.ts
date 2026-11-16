@@ -11,6 +11,10 @@
 // where it is, by room above it; and what comes in at the top, such as a banner, pushes the rest
 // down. Holding a place in the document starts with that first scroll or jump.
 //
+// It holds from the first frame the document is seen in, once its blocks have drawn unseen: where
+// it is in that frame is where it starts. A box that moved before then, as a banner went while the
+// blocks drew or as the document was shown, moved nothing anyone saw, so it leaves no room above.
+//
 // Only the scroll the reader, or the document, asks for moves what's on screen. A scroll seen as
 // something changes size is the reader's only when it follows their input, as a wheel, a key or a
 // drag of the scroll bar; otherwise it's the browser's, as when it pulls the scroll back to an end
@@ -42,8 +46,10 @@ const ROUNDING = 1;
 
 /**
  * Holds what's on screen in `scroller` where it is on the page as the box moves, and as what's
- * above the place being read changes size, until the returned function stops it. Room added above
- * the content is the scroller's top padding, and room at its end its bottom padding.
+ * above the place being read changes size, until the returned function stops it. Its place is
+ * where the content is in the next frame, the first it's seen in: start it as the content is shown.
+ * Room added above the content is the scroller's top padding, and room at its end its bottom
+ * padding.
  */
 export function holdPlace(scroller: HTMLElement): () => void {
   let slack = 0;
@@ -223,6 +229,16 @@ export function holdPlace(scroller: HTMLElement): () => void {
     view.addEventListener(type, listener, { capture: true, passive: true });
   }
   read(false);
+  // Where the content is in the first frame it's seen in is its place, whatever moved it since it
+  // started: nobody had seen it. Taken before that frame's resizes are told, so a box that moved
+  // before then isn't made up for.
+  let first = view.requestAnimationFrame(() => {
+    first = 0;
+    placed = contentTop();
+    scrolled = scroller.scrollTop;
+    height = scroller.clientHeight;
+    read(false);
+  });
   scroller.addEventListener('scroll', onScroll, { passive: true });
   const watch = new ResizeObserver(settle);
   watch.observe(scroller);
@@ -230,6 +246,7 @@ export function holdPlace(scroller: HTMLElement): () => void {
   if (article) watch.observe(article);
   places.set(scroller, { resizing, settle });
   return () => {
+    view.cancelAnimationFrame(first);
     places.delete(scroller);
     watch.disconnect();
     scroller.removeEventListener('scroll', onScroll);

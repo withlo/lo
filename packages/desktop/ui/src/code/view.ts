@@ -520,12 +520,14 @@ class View implements DiffView {
     );
     this.dom.addEventListener('scroll', this.#watchFile, { passive: true });
     // When the box moves on the page, as a banner over it comes or goes, what's on screen stays
-    // put: the scroll takes the move, and at the very top, room above the first file does.
+    // put: the scroll takes the move, and at the very top, room above the first file does. That's
+    // from the first frame it's seen in: until then, its place is wherever it's laid out.
     this.#slack.className = 'lo-diffslack';
     this.dom.prepend(this.#slack);
     this.#placed = this.#contentTop();
     this.#scrolled = this.dom.scrollTop;
     this.#boxHeight = this.dom.clientHeight;
+    if (!init.hidden) this.seen();
     this.dom.addEventListener('scroll', this.#placeChosen, { passive: true });
     this.dom.addEventListener('scroll', this.#trimRoom, { passive: true });
     for (const type of INPUT) {
@@ -660,6 +662,26 @@ class View implements DiffView {
   #boxHeight = 0;
   readonly #boxWatch: ResizeObserver;
 
+  /**
+   * Whether the view has been seen, from the first frame it's on screen in, or that frame is to
+   * come: until then a box that moves, as a banner over it goes, moves nothing anyone saw.
+   */
+  #seen: 'no' | 'next' | 'yes' = 'no';
+  #seenFrame = 0;
+
+  seen(): void {
+    if (this.#seen !== 'no') return;
+    this.#seen = 'next';
+    // Where the content is in that frame is its place, taken before the frame's resizes are told,
+    // so a box that moved before then isn't made up for.
+    this.#seenFrame = requestAnimationFrame(() => {
+      this.#seen = 'yes';
+      this.#placed = this.#contentTop();
+      this.#scrolled = this.dom.scrollTop;
+      this.#boxHeight = this.dom.clientHeight;
+    });
+  }
+
   /** Where the content's top is on the page now, room above it included. */
   #contentTop(): number {
     return this.dom.getBoundingClientRect().top - this.dom.scrollTop + this.#slackHeight;
@@ -691,6 +713,8 @@ class View implements DiffView {
     // A scroll whose event hasn't come yet is the reader's, or the view's, not the box's.
     this.#placeChosen();
     this.#boxHeight = this.dom.clientHeight;
+    // Not seen yet, it's where it's laid out.
+    if (this.#seen !== 'yes') this.#placed = this.#contentTop();
     const moved = this.#contentTop() - this.#placed;
     const kept = Math.abs(moved) >= 0.5;
     if (kept && moved > 0) {
@@ -2324,6 +2348,7 @@ class View implements DiffView {
   destroy(): void {
     // A hold's check still to come finds it over.
     this.#holding = undefined;
+    cancelAnimationFrame(this.#seenFrame);
     this.#boxWatch.disconnect();
     this.dom.removeEventListener('scroll', this.#placeChosen);
     this.dom.removeEventListener('scroll', this.#trimRoom);

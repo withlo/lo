@@ -182,6 +182,11 @@ export function Diff({ tab, shown }: { tab: PullTab; shown: boolean }) {
     view.current?.setShown(shown);
   }, [shown]);
 
+  // Its place on the page is held from the first frame it's seen in, as it's shown.
+  useLayoutEffect(() => {
+    if (shown) view.current?.view.seen();
+  }, [shown]);
+
   // Viewed marks change the headers' balls, and close the files marked viewed elsewhere, or that
   // GitHub said were viewed after the view was drawn, where the reader isn't looking.
   useEffect(() => {
