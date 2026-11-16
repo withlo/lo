@@ -10,6 +10,7 @@ import {
   isExact,
   isTrunk,
   NO_TRUNKS,
+  queueBranches,
   trunksAmong,
   type Trunks,
 } from './trunks.ts';
@@ -79,7 +80,7 @@ test('stars backtrack', () => {
 
 /** A ruleset that gates merging. */
 function refs(include: string[], exclude: string[]): RefNames {
-  return { include, exclude, gatesMerging: true };
+  return { include, exclude, gatesMerging: true, queue: false };
 }
 
 function trunks(defaultBranch: string, protectedBranches: string[], rulesets: RefNames[]): Trunks {
@@ -207,4 +208,28 @@ test('trunks among pull requests list the default branch first', () => {
   ];
   expect(trunksAmong(repo, prs)).toEqual(['main', 'develop', 'release/2.0']);
   expect(trunksAmong(NO_TRUNKS, prs)).toEqual([]);
+});
+
+/** An active ruleset that requires a merge queue. */
+function queued(include: string[], exclude: string[] = []): RefNames {
+  return { ...refs(include, exclude), queue: true };
+}
+
+test('the branches a merge queue ruleset covers have a queue', () => {
+  const rules = {
+    rulesets: [
+      queued(['~DEFAULT_BRANCH']),
+      queued(['refs/heads/release/*'], ['refs/heads/release/old-*']),
+      // Gates merging, with no queue.
+      refs(['refs/heads/develop'], []),
+    ],
+    unavailable: undefined,
+  };
+  const branches = ['trunk', 'release/2.0', 'release/old-1', 'develop', 'feature', 'release/2.0'];
+  expect(queueBranches(rules, branches, 'trunk')).toEqual(['trunk', 'release/2.0']);
+  // Without a default branch, ~DEFAULT_BRANCH covers nothing.
+  expect(queueBranches(rules, ['trunk'], undefined)).toEqual([]);
+  expect(
+    queueBranches({ rulesets: [queued(['~ALL'])], unavailable: undefined }, ['x'], 'main'),
+  ).toEqual(['x']);
 });

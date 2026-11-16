@@ -51,7 +51,7 @@ import {
   trunksOf,
 } from '../src/github.ts';
 import { layerOf, stackOf, type Parent, type Rule, type Stacks } from '../src/stacks.ts';
-import { isTrunk, trunksAmong } from '../src/trunks.ts';
+import { isTrunk, queueBranches, trunksAmong } from '../src/trunks.ts';
 
 const NOW = Date.now();
 const HOUR = 60 * 60 * 1000;
@@ -308,6 +308,29 @@ test('policy rulesets for every branch name no trunks', async () => {
   const layer = stackLayer(layers, list.pullRequests[0]?.id ?? '');
   expect(layer?.reviewDecision).toBe('REVIEW_REQUIRED');
   expect(layer?.statusCheckRollup?.state).toBe('SUCCESS');
+});
+
+test('a ruleset that requires a merge queue gives the branches it covers one', async () => {
+  // rozed-dev/e2e's two rulesets, read by its admin: e4/gated's requires a pull request and
+  // checks, e4/queued's a merge queue and checks.
+  const { list, rules } = await readRecorded('app_stack', new RepoRef('rozed-dev', 'e2e'));
+  expect(
+    rules.rulesets.map((ruleset) => [ruleset.include, ruleset.gatesMerging, ruleset.queue]),
+  ).toEqual([
+    [['refs/heads/e4/gated'], true, false],
+    [['refs/heads/e4/queued'], true, true],
+  ]);
+  // Of the branches the open pull requests target, only e4/queued merges through a queue.
+  const bases = list.pullRequests.map((pr) => pr.baseRefName);
+  expect(bases).toEqual(expect.arrayContaining(['main', 'e4/gated', 'e4/queued']));
+  expect(queueBranches(rules, bases, list.defaultBranch)).toEqual(['e4/queued']);
+  expect(queueBranches(rules, ['main', 'e4/gated'], list.defaultBranch)).toEqual([]);
+
+  // Policies and gates without a queue give none.
+  const ghStack = await readRecorded('stacks_gh_stack', new RepoRef('github', 'gh-stack'));
+  expect(ghStack.rules.rulesets.some((ruleset) => ruleset.queue)).toBe(false);
+  const ghBases = ['main', 'enterprise-3.18-release'];
+  expect(queueBranches(ghStack.rules, ghBases, ghStack.list.defaultBranch)).toEqual([]);
 });
 
 test('a reader sees branch protection through pull requests', async () => {
@@ -738,7 +761,7 @@ test('rulesets that cant be read leave the trunks to the rest', async () => {
   expect(rules.unavailable).toContain('Resource not accessible');
   // What was read before is kept.
   const known: TrunkRuleList = {
-    rulesets: [{ include: ['refs/heads/develop'], exclude: [], gatesMerging: true }],
+    rulesets: [{ include: ['refs/heads/develop'], exclude: [], gatesMerging: true, queue: false }],
     unavailable: undefined,
   };
   const again = await readTrunkRules(github, REPO, known, []);
@@ -797,13 +820,18 @@ test('branches are checked one by one when the rulesets cant be read', async () 
       openPage(open, [], RECENTLY_UPDATED_MERGED),
       refusedRules('No'),
       rulesOf('a', ['copilot_code_review']),
-      rulesOf('develop', ['deletion', 'pull_request']),
+      rulesOf('develop', ['deletion', 'pull_request', 'merge_queue']),
     ]),
   );
   const list = await openPullRequestsPaged(github, REPO, PAGE_SIZE, RECENTLY_UPDATED_MERGED);
   expect(branchesToCheck(list)).toEqual(['a', 'develop']);
   const rules = await readTrunkRules(github, REPO, undefined, branchesToCheck(list));
   expect(rules.unavailable).toBeDefined();
+  // develop's merge_queue rule gives it a queue.
+  expect(rules.rulesets).toEqual([
+    { include: ['refs/heads/develop'], exclude: [], gatesMerging: true, queue: true },
+  ]);
+  expect(queueBranches(rules, ['main', 'develop', 'a'], 'main')).toEqual(['develop']);
   const stacks = stacksOf(list, rules);
   expect(link(stacks, 2)).toEqual([onBranch('develop'), undefined]);
   expect(link(stacks, 4)).toEqual([onPr(3), 'baseBranch']);

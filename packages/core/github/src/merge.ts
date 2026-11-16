@@ -273,7 +273,10 @@ export interface RequestFacts {
   asCodeOwner: boolean;
 }
 
-/** A required check run or commit status on the head. */
+/**
+ * A check run or commit status on a commit: in {@link MergeFacts}, a required one on the head; in
+ * a merge queue's reads, one on the commit the queue tests.
+ */
 export type CheckFacts =
   /** A `CheckRun`: its `name`, `status`, `conclusion`, and `detailsUrl` (else `url`). */
   | {

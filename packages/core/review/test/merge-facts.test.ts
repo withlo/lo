@@ -345,6 +345,11 @@ test('electron 55594 has auto merge on while a required check runs', async () =>
   // and workflows, which Lo doesn't model.
   expect(methodList(snapshot.methods)).toEqual(['SQUASH']);
   expect(snapshot.signedCommits).toBe(true);
+  expect(snapshot.uncheckedRules).toEqual([
+    { kind: 'reviewersByFile' },
+    { kind: 'signatures' },
+    { kind: 'workflows' },
+  ]);
   expect(snapshot.seesEveryRule).toBe(false);
   expect(mayNotSeeEveryRule(snapshot)).toBe(true);
 });
@@ -370,6 +375,7 @@ test('pytorch 115316s checks are read a page at a time', async () => {
     { kind: 'unexplained', url: 'https://github.com/pytorch/pytorch/pull/115316' },
   ]);
   expect(facts.rules.rules).toContainEqual({ kind: 'other', type: 'update' });
+  expect(snapshot.uncheckedRules).toEqual([{ kind: 'locked' }]);
   // main requires linear history.
   expect(snapshot.methods.merge).toBe(false);
 });
@@ -941,7 +947,8 @@ test('e4 gateds ruleset is read in full by its admin', async () => {
     expect(snapshot.rules.codeOwnerReview && snapshot.rules.conversationResolution).toBe(true);
     // GitHub's default: a push keeps approvals.
     expect(snapshot.rules.dismissStaleReviews || snapshot.rules.lastPushApproval).toBe(false);
-    // An admin reads every rule, and nothing needs the head up to date.
+    // An admin reads every rule, Lo checks each, and nothing needs the head up to date.
+    expect(snapshot.uncheckedRules).toEqual([]);
     expect(snapshot.seesEveryRule).toBe(true);
     expect(requiresUpToDate(facts)).toBe(false);
     expect(snapshot.outOfDate).toBe('no');

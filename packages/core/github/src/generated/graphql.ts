@@ -1044,6 +1044,27 @@ export type QueueViewQuery = { rateLimit: { cost: number, limit: number, remaini
               | { __typename: 'User', login: string }
              | null } | null } | null> | null } | null } | null } | null };
 
+export type QueueWaitingQueryVariables = Exact<{
+  owner: string;
+  name: string;
+  branch: string;
+}>;
+
+
+export type QueueWaitingQuery = { rateLimit: { cost: number, limit: number, remaining: number, used: number, resetAt: string } | null, repository: { pullRequests: { totalCount: number, nodes: Array<{ id: string, number: number, title: string, url: string, headRefOid: string, isInMergeQueue: boolean, viewerDidAuthor: boolean, reviewDecision: PullRequestReviewDecision | null, author:
+          | { __typename: 'Bot', login: string }
+          | { __typename: 'EnterpriseUserAccount', login: string }
+          | { __typename: 'Mannequin', login: string }
+          | { __typename: 'Organization', login: string }
+          | { __typename: 'User', login: string }
+         | null, statusCheckRollup: { state: StatusState } | null, autoMergeRequest: { enabledAt: string | null, mergeMethod: PullRequestMergeMethod, enabledBy:
+            | { __typename: 'Bot', login: string }
+            | { __typename: 'EnterpriseUserAccount', login: string }
+            | { __typename: 'Mannequin', login: string }
+            | { __typename: 'Organization', login: string }
+            | { __typename: 'User', login: string }
+           | null } | null } | null> | null } } | null };
+
 export type RenderedBodiesQueryVariables = Exact<{
   owner: string;
   name: string;
@@ -4851,6 +4872,52 @@ export const QueueViewDocument = new TypedDocumentString(`
     targetUrl
   }
 }`) as unknown as TypedDocumentString<QueueViewQuery, QueueViewQueryVariables>;
+export const QueueWaitingDocument = new TypedDocumentString(`
+    query QueueWaiting($owner: String!, $name: String!, $branch: String!) {
+  rateLimit {
+    cost
+    limit
+    remaining
+    used
+    resetAt
+  }
+  repository(owner: $owner, name: $name) {
+    pullRequests(
+      baseRefName: $branch
+      states: [OPEN]
+      orderBy: {field: UPDATED_AT, direction: DESC}
+      first: 100
+    ) {
+      totalCount
+      nodes {
+        id
+        number
+        title
+        url
+        headRefOid
+        isInMergeQueue
+        viewerDidAuthor
+        author {
+          __typename
+          login
+        }
+        reviewDecision
+        statusCheckRollup {
+          state
+        }
+        autoMergeRequest {
+          enabledAt
+          mergeMethod
+          enabledBy {
+            __typename
+            login
+          }
+        }
+      }
+    }
+  }
+}
+    `) as unknown as TypedDocumentString<QueueWaitingQuery, QueueWaitingQueryVariables>;
 export const RenderedBodiesDocument = new TypedDocumentString(`
     query RenderedBodies($owner: String!, $name: String!, $number: Int!, $description: Boolean!, $ids: [ID!]!) {
   rateLimit {

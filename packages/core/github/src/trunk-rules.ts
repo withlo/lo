@@ -46,6 +46,8 @@ export interface RefNames {
   exclude: string[];
   /** Whether the ruleset gates merging ({@link GATING_RULES}), which a pattern include needs to name trunks. */
   gatesMerging: boolean;
+  /** Whether it requires a merge queue (`MERGE_QUEUE`): the branches it covers merge only through one. */
+  queue: boolean;
 }
 
 /** The branch rulesets that name a repository's trunks. */
@@ -77,10 +79,15 @@ function fromData(data: TrunkRulesQuery): TrunkRuleList | undefined {
       if (ruleset?.enforcement !== 'ACTIVE') return [];
       const refName = ruleset.conditions.refName;
       if (!refName) return [];
-      const gatesMerging = (ruleset.rules?.nodes ?? []).some(
-        (rule) => rule !== null && GATING_RULES.includes(rule.type),
-      );
-      return [{ include: refName.include, exclude: refName.exclude, gatesMerging }];
+      const types = (ruleset.rules?.nodes ?? []).flatMap((rule) => (rule ? [rule.type] : []));
+      return [
+        {
+          include: refName.include,
+          exclude: refName.exclude,
+          gatesMerging: types.some((type) => GATING_RULES.includes(type)),
+          queue: types.includes('MERGE_QUEUE'),
+        },
+      ];
     }),
     unavailable: undefined,
   };
@@ -144,7 +151,8 @@ export async function readTrunkRules(
       break;
     }
     if (applied.some((type) => GATING_REST_RULES.includes(type))) {
-      rules.rulesets.push({ include: [include], exclude: [], gatesMerging: true });
+      const queue = applied.includes('merge_queue');
+      rules.rulesets.push({ include: [include], exclude: [], gatesMerging: true, queue });
     }
   }
   return rules;

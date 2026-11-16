@@ -19,6 +19,7 @@ import {
   requiresUpToDate,
   reviewRulesOf,
   seesEveryRule,
+  uncheckedRules,
   viewerOf,
   type Local,
 } from './facts.ts';
@@ -160,6 +161,49 @@ test('copilots extra approval matters only on copilots pull requests', () => {
 
   expect(seesEveryRule(by('octocat'))).toBe(true);
   expect(seesEveryRule(by('Copilot'))).toBe(false);
+});
+
+test('rules lo doesnt check are named once each, protections first', () => {
+  const facts: MergeFacts = {
+    ...withRules([
+      { kind: 'requiredSignatures' },
+      pullRequestRule({ requiredReviewers: true, extraApprovalForCopilot: true }),
+      { kind: 'other', type: 'code_scanning' },
+      { kind: 'other', type: 'required_deployments' },
+      { kind: 'other', type: 'update' },
+      { kind: 'other', type: 'something_new' },
+      { kind: 'other', type: 'something_new' },
+      { kind: 'harmless', type: 'deletion' },
+      { kind: 'mergeQueue', method: 'SQUASH' },
+    ]),
+    protection: protection({
+      complete: true,
+      signatures: true,
+      deployments: true,
+      lockBranch: true,
+    }),
+  };
+  // Copilot's extra approval is unchecked only on a pull request Copilot opened.
+  expect(uncheckedRules(facts)).toEqual([
+    { kind: 'signatures' },
+    { kind: 'deployments' },
+    { kind: 'locked' },
+    { kind: 'reviewersByFile' },
+    { kind: 'codeScanning' },
+    { kind: 'other', type: 'something_new' },
+  ]);
+  const byCopilot = { ...facts, pullRequest: { ...facts.pullRequest, author: 'Copilot' } };
+  expect(uncheckedRules(byCopilot)).toContainEqual({ kind: 'copilotApproval' });
+  expect(mergeSnapshot(facts, NOTHING_LOCAL).uncheckedRules).toEqual(uncheckedRules(facts));
+  expect(seesEveryRule(facts)).toBe(false);
+
+  // Rules Lo checks leave none, and a protection read in full without them sees every rule.
+  const plain: MergeFacts = {
+    ...withRules([{ kind: 'mergeQueue', method: undefined }]),
+    protection: protection({ complete: true }),
+  };
+  expect(uncheckedRules(plain)).toEqual([]);
+  expect(seesEveryRule(plain)).toBe(true);
 });
 
 test('up to date is required only with strict checks and a check to require', () => {

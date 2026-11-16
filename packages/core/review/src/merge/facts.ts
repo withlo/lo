@@ -20,6 +20,7 @@ import {
   type RequiredCheck,
   type Review,
   type ReviewRules,
+  type UncheckedRule,
   type Viewer,
 } from '../merge.ts';
 import { pendingReviewFrom } from '../pending.ts';
@@ -128,42 +129,73 @@ function isCopilot(login: string): boolean {
   return sameLogin(login, 'Copilot') || login.startsWith('copilot-swe-agent');
 }
 
+/** The rules Lo knows but doesn't model, by their REST type, as it names them. */
+const UNCHECKED_TYPES: ReadonlyMap<string, UncheckedRule> = new Map<string, UncheckedRule>([
+  ['required_deployments', { kind: 'deployments' }],
+  ['update', { kind: 'locked' }],
+  ['code_scanning', { kind: 'codeScanning' }],
+  ['workflows', { kind: 'workflows' }],
+]);
+
+/** Whether two unchecked rules are the same rule. */
+function sameRule(a: UncheckedRule, b: UncheckedRule): boolean {
+  return a.kind === 'other' && b.kind === 'other' ? a.type === b.type : a.kind === b.kind;
+}
+
 /**
- * Whether Lo sees every rule on the base branch that can block the merge: the rulesets' rules were
- * read in full, the classic protection in full or not there, each rule maps to the snapshot, no
- * list was cut short or left out, and GitHub gave no value newer than Lo
- * ({@link hasUnknownValues}).
+ * The rules on the base branch Lo doesn't check, each once: the classic protection's signed
+ * commits, deployments and lock, then, in GitHub's order, the rulesets' signed commits, reviewers
+ * by file pattern, Copilot's extra approval on a pull request Copilot opened, and every rule Lo
+ * doesn't model, named by its REST type where Lo knows it.
  */
-export function seesEveryRule(facts: MergeFacts): boolean {
+export function uncheckedRules(facts: MergeFacts): UncheckedRule[] {
+  const found: UncheckedRule[] = [];
+  const add = (rule: UncheckedRule) => {
+    if (!found.some((other) => sameRule(other, rule))) found.push(rule);
+  };
   const { protection } = facts;
-  const protectionSeen =
-    protection === undefined ||
-    (protection.complete &&
-      !protection.signatures &&
-      !protection.deployments &&
-      !protection.lockBranch);
+  if (protection?.signatures) add({ kind: 'signatures' });
+  if (protection?.deployments) add({ kind: 'deployments' });
+  if (protection?.lockBranch) add({ kind: 'locked' });
   const author = facts.pullRequest.author;
   const byCopilot = author !== undefined && isCopilot(author);
-  const rulesSeen = facts.rules.rules.every((rule) => {
+  for (const rule of facts.rules.rules) {
     switch (rule.kind) {
       case 'pullRequest':
-        return !rule.rule.requiredReviewers && !(rule.rule.extraApprovalForCopilot && byCopilot);
+        if (rule.rule.requiredReviewers) add({ kind: 'reviewersByFile' });
+        if (rule.rule.extraApprovalForCopilot && byCopilot) add({ kind: 'copilotApproval' });
+        break;
+      case 'requiredSignatures':
+        add({ kind: 'signatures' });
+        break;
+      case 'other':
+        add(UNCHECKED_TYPES.get(rule.type) ?? { kind: 'other', type: rule.type });
+        break;
       case 'requiredStatusChecks':
       case 'mergeQueue':
       case 'requiredLinearHistory':
       case 'harmless':
-        return true;
-      case 'requiredSignatures':
-      case 'other':
-        return false;
+        break;
       default:
-        return outsideCase(rule, false);
+        add({ kind: 'other', type: outsideCase(rule, 'unknown') });
     }
-  });
+  }
+  return found;
+}
+
+/**
+ * Whether Lo sees every rule on the base branch that can block the merge: the rulesets' rules were
+ * read in full, the classic protection in full or not there, each rule maps to the snapshot (none
+ * is unchecked, {@link uncheckedRules}), no list was cut short or left out, and GitHub gave no
+ * value newer than Lo ({@link hasUnknownValues}).
+ */
+export function seesEveryRule(facts: MergeFacts): boolean {
+  const { protection } = facts;
+  const protectionSeen = protection === undefined || protection.complete;
   const stackBaseRead = facts.stack === undefined || facts.stack.baseRead;
   return (
     protectionSeen &&
-    rulesSeen &&
+    uncheckedRules(facts).length === 0 &&
     stackBaseRead &&
     facts.rules.unavailable === undefined &&
     !facts.rules.cutShort &&
@@ -426,6 +458,7 @@ export function mergeSnapshot(facts: MergeFacts, local: Local): MergeSnapshot {
     threadsCutShort: facts.cutShort.includes(THREADS),
     outOfDate,
     unmetRules: [],
+    uncheckedRules: uncheckedRules(facts),
     seesEveryRule: seesEveryRule(facts),
     queue: queueOf(facts),
     autoMerge: autoMerge && {

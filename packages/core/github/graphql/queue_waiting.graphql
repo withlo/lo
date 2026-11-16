@@ -1,0 +1,49 @@
+# The open pull requests into a base branch, the 100 updated most recently, each with auto-merge if
+# it's on: those waiting to join the branch's merge queue once they're ready (`docs/design.md`, "The
+# merge queue"), with what they wait on, their review decision and their checks. A pull request
+# whose auto-merge was turned on long ago and hasn't moved since can be past the 100. It costs 1
+# point.
+query QueueWaiting($owner: String!, $name: String!, $branch: String!) {
+  rateLimit {
+    cost
+    limit
+    remaining
+    used
+    resetAt
+  }
+  repository(owner: $owner, name: $name) {
+    pullRequests(
+      baseRefName: $branch
+      states: [OPEN]
+      orderBy: { field: UPDATED_AT, direction: DESC }
+      first: 100
+    ) {
+      totalCount
+      nodes {
+        id
+        number
+        title
+        url
+        headRefOid
+        isInMergeQueue
+        viewerDidAuthor
+        author {
+          __typename
+          login
+        }
+        reviewDecision
+        statusCheckRollup {
+          state
+        }
+        autoMergeRequest {
+          enabledAt
+          mergeMethod
+          enabledBy {
+            __typename
+            login
+          }
+        }
+      }
+    }
+  }
+}

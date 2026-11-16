@@ -21,7 +21,7 @@
  * A long-lived branch that nothing protects can't be told from a work branch.
  */
 
-import type { RefNames } from '@lo/github';
+import type { RefNames, TrunkRuleList } from '@lo/github';
 
 import type { PullRequest } from './stacks.ts';
 
@@ -73,6 +73,25 @@ export function trunksAmong(trunks: Trunks, prs: readonly PullRequest[]): string
     .toSorted((a, b) => (a < b ? -1 : a > b ? 1 : 0))
     .filter((branch) => isTrunk(trunks, branch));
   return defaultBranch === undefined ? others : [defaultBranch, ...others];
+}
+
+/**
+ * Which of `branches` have a merge queue, as far as the repository's rulesets say: those an active
+ * ruleset that requires one covers, each once, in their order. A queue a branch's classic
+ * protection requires isn't among them; a pull request's own facts say whether its base has one.
+ */
+export function queueBranches(
+  rules: TrunkRuleList,
+  branches: readonly string[],
+  defaultBranch: string | undefined,
+): string[] {
+  const queued = rules.rulesets.filter((ruleset) => ruleset.queue);
+  const found: string[] = [];
+  for (const branch of branches) {
+    if (found.includes(branch)) continue;
+    if (queued.some((ruleset) => covers(ruleset, branch, defaultBranch))) found.push(branch);
+  }
+  return found;
 }
 
 /** Whether `ruleset`'s condition covers `branch`, as GitHub decides. */
