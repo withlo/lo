@@ -1,7 +1,7 @@
 import { spawnSync } from 'node:child_process';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 
 import { expect, onTestFinished, test } from 'vitest';
 
@@ -237,6 +237,10 @@ test('merge.sh writes nothing to GitHub without rozed-bot, and builds no generat
   expect(refused(['1'], { LO_FIXTURE_TOKEN_FILE: '' })).toContain('LO_FIXTURE_TOKEN_FILE');
   expect(refused(['--local', join(tmpdir(), 'lo-merge-none'), '2'])).toContain(
     "numbers of generation 2 aren't recorded",
+  );
+  // Nor in a folder inside a work tree, where what it builds would be taken for the repository's.
+  expect(refused(['--local', join(dirname(mergeScript), 'merge-none'), '1'])).toContain(
+    'is inside the git work tree',
   );
   expect(refused(['0'])).toContain('usage');
   expect(refused(['1', '--check', '--push'])).toContain('usage');

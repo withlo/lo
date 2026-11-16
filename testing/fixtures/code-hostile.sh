@@ -11,7 +11,8 @@
 # the token's account first and writes nowhere but rozed-dev/e2e. The second reads no network and
 # needs no token: it makes, in <folder>, `rozed-dev/e2e.git` with `code/base`, `code/feature`,
 # `code/fork` and `code/hostile`, and each head again as `refs/pull/<number>/head`, as `code.sh
-# --local` does, and `work`.
+# --local` does, and `work`. It refuses a <folder> inside a git work tree, whose tools would load
+# what it plants.
 #
 # `code/hostile` is the code fixture's pull request (`code.sh`: a small project in each language,
 # with `report` and `main` calling the definitions in `words`) and one commit on it that plants what
@@ -1376,6 +1377,7 @@ main() {
       ;;
     --local)
       folder=${2:?usage: bash testing/fixtures/code-hostile.sh --local <folder>}
+      check_local_folder code-hostile.sh "$folder"
       mkdir -p "$folder"
       folder=$(cd "$folder" && pwd)
       code_setup

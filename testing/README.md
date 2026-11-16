@@ -251,7 +251,10 @@ has it, and only once `GET /user` says the token is rozed-bot's:
 The three share `fixtures/code-lib.sh`, as does `merge.sh` below. `code.sh` and `code-hostile.sh`
 take `--local <folder>`, which builds the same commits, with the IDs GitHub has, into
 `<folder>/rozed-dev/e2e.git` and `<folder>/work` and reads no network, as the other fixtures do. Run
-again, they put the branches back and open a closed pull request.
+again, they put the branches back and open a closed pull request. They refuse a folder inside a git
+work tree, whether it exists yet or not, since git, Nx and the other tools run there would load what
+they build, the hostile fixture's plants among it: build them in a folder of their own, such as
+`"$(mktemp -d)"`. So does `merge.sh --local`.
 
 The pull requests the merging features are tried on come from `fixtures/merge.sh`. A merge can't be
 undone, so it makes them in numbered generations, `merge.sh <generation>`, and what merges, queues
@@ -337,6 +340,51 @@ each request and cancel, Lo's replies to its requests, and each sleeper started.
 `fakeServer(folder, scenario)` from `@lo/testing/lsp` writes the scenario and returns the program,
 arguments and report to start it with, and `readReport` reads what it saw. It's the only server
 tests start.
+
+## Running the app on GitHub itself
+
+The app's tests (`apps/desktop/e2e/`) start Lo through Playwright, which adds Chromium's stand-ins
+for the system's keychain to every Electron it starts: `--use-mock-keychain` on a Mac, and
+`--password-store=basic` on Linux. Both encrypt with a key every copy of Chromium knows, so a token
+kept with them is as good as plain text, and Lo keeps or reads one with them only in a test run, one
+on `LO_GITHUB`. On GitHub itself, Lo started with a stand-in refuses to sign in, and can't read a
+token it kept with the system's keychain.
+
+A run on GitHub itself is a spec of its own, a `*.live.ts` in `e2e/`, which the suite never runs:
+its config takes only `*.spec.ts`. `nx run desktop:live` builds the app, then runs the live specs
+with `e2e/live.config.ts`, which turns on the harness's `live` option for them and runs them one at
+a time: each starts Lo on the same data folder, and Lo quits a second copy started on a folder
+another holds. The harness refuses a live run with more than one worker.
+
+Lo then starts with the system's keychain: `e2e/keychain.cjs`, preloaded after Playwright's own
+preload, takes the stand-ins off again. It keeps its data in the folder `LO_USER_DATA_DIR` names,
+taken by its real path, with every link followed. The harness refuses to start Lo without one, or in
+a folder that is, is in or holds a folder a Lo you use keeps its data in: the installed Lo's,
+`Lo Dev`'s, `~/.config/lo` and their caches, by the XDG folders too on Linux. It also refuses a
+folder that holds anything Lo didn't make, so start from a new one. Sign in there first with a build
+run from source, which keeps its data in the same folder, then run the specs:
+
+```sh
+export LO_USER_DATA_DIR="$(mktemp -d)"
+pnpm nx run desktop:start
+pnpm nx run desktop:live
+```
+
+To run one spec, name it: `pnpm nx run desktop:live -- <spec>`. The rest is as in a test, unless the
+spec's `launch` says otherwise: the stand-ins for the editor and the browser, and no gh.
+
+On a Mac, the key Lo encrypts tokens with is the item `Lo Dev Safe Storage` in your login keychain,
+which Chromium makes the first time it needs it, and which every build run from source shares,
+`desktop:dev` and `desktop:start` too. Once you're done, delete the run's data folder, which holds
+its tokens, encrypted with that key. Delete the item too, unless another build run from source keeps
+tokens with it, since that build then can't read them:
+
+```sh
+security delete-generic-password -s 'Lo Dev Safe Storage'
+```
+
+On Linux, the desktop's keyring, such as GNOME Keyring or KWallet, keeps the key instead. Remove it
+with the keyring's own tool.
 
 ## The credential scan
 

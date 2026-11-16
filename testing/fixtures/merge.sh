@@ -751,6 +751,7 @@ main() {
 
   code_setup
   if [ "$local_mode" = true ]; then
+    check_local_folder merge.sh "$folder"
     if [ -z "$(recorded_numbers "$generation")" ]; then
       echo "merge.sh: the numbers of generation $generation aren't recorded" >&2
       return 1
