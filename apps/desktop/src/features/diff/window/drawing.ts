@@ -362,10 +362,20 @@ export function draw(options: DrawOptions): Drawing {
     else if (shown) setLines(id, shown, true);
   };
 
-  /** The reader opened or closed a file, or went into it: how it starts out is theirs now. */
+  /** The reader opened or closed a file: how it starts out is theirs to say now. */
   const acted = (id: string) => {
     pending.delete(id);
     catchUp(id);
+  };
+
+  /**
+   * The reader goes into a file, as from moved code: acted on, and kept out with its lines come, as
+   * the local copy's do while it's on screen, brought in now, as `za` brings it.
+   */
+  const enter = (id: string) => {
+    const waiting = pending.get(id);
+    acted(id);
+    if (waiting?.change === 'bring') apply(id, 'bring', waiting.start, true);
   };
 
   /** Makes a change to a file now, `onScreen` or not. Returns whether it could. */
@@ -475,7 +485,7 @@ export function draw(options: DrawOptions): Drawing {
       },
       // A moved label's click: a jump, from the line the label is over, to the other end.
       moved(to) {
-        followLabel({ view, acted }, to, (left) => keys.history.record(entryAt(left)));
+        followLabel({ view, enter }, to, (left) => keys.history.record(entryAt(left)));
       },
     },
   );
@@ -621,6 +631,7 @@ export function draw(options: DrawOptions): Drawing {
         order: files.map((file) => file.id),
         threaded,
         acted,
+        enter,
         toTop,
         fileAt(target) {
           const spot = spotOf(target);

@@ -9,7 +9,6 @@ import { draw, type Drawing, Pacer, samePlace } from './drawing.ts';
 import { setThreader, threadsChanged } from './shared.ts';
 import type { DrawnDiff, ThreadCounts } from './threads.ts';
 import { Loader, type LoaderWork } from './loader.ts';
-import { toOtherEnd } from './moved.ts';
 import { drawnFor, revealWhenDrawn } from './tabs.ts';
 
 /** What the stand-in view was told, in order, and the files it says are on screen. */
@@ -143,6 +142,11 @@ function state(start: Start, from: Source, paths = ['src/a.ts']): DiffState {
     uncompared: false,
     problem: null,
   };
+}
+
+/** `src/a.ts`, shown, and `src/b.ts`, starting out as `start` says. */
+function aAndB(start: Start): FileVersions[] {
+  return [versions('shown', 'src/a.ts'), versions(start, 'src/b.ts')];
 }
 
 /** Five files, the first on screen as the tests that use them start. */
@@ -465,7 +469,7 @@ describe('a file the reader acts on', () => {
     ]);
   });
 
-  it('takes them first when the reader goes to it from moved code, as for a key on it', async () => {
+  it('takes them first when the reader goes into it, as from moved code', async () => {
     const loader = await drawnGithub(work, FIVE);
     await frames();
     const waiting: FrameRequestCallback[] = [];
@@ -479,9 +483,43 @@ describe('a file the reader acts on', () => {
     await waitFor(() => loader.shown('d4')?.from === 'local');
     expect(told).toEqual([]);
 
-    toOtherEnd(drawnFor(TAB.id)!, { file: 'd4', side: 'new', line: 1 });
-    expect(told).toEqual(['lines d4 local shown', 'collapsed d4 false']);
-    expect(moved).toEqual(['reveal line']);
+    drawnFor(TAB.id)?.enter('d4');
+    expect(told).toEqual(['lines d4 local shown']);
+  });
+
+  it('kept out, takes the lines that came for it at once when the reader goes into it', async () => {
+    const loader = new Loader(work);
+    loader.setWhitespace(true);
+    // GitHub's diff keeps b out, as large; the local copy's starts it out shown.
+    loader.take({ ...state('shown', 'github'), files: aAndB('large') });
+    await frames();
+    const ready = loader.snapshot().ready;
+    if (!ready) throw new Error('GitHub’s diff isn’t ready');
+    drawing = draw({
+      parent: document.body.appendChild(document.createElement('div')),
+      tab: TAB,
+      loader,
+      entries: ready.entries,
+      at: HEAD,
+      comparison: null,
+      compareFrom: null,
+      layout: 'split',
+      nonce: '',
+      packaged: true,
+      shown: true,
+      before: undefined,
+      marks: { byPath: new Map(), count: undefined },
+    });
+    loader.subscribe(() => drawing?.update(loader.snapshot().ready?.entries ?? []));
+    // The reader is on it, so its lines wait for it to go off screen.
+    onScreen = ['d1'];
+    loader.take({ ...state('shown', 'local'), files: aAndB('shown') });
+    await waitFor(() => loader.shown('d1')?.from === 'local');
+    await frames();
+    expect(told.filter((each) => each.startsWith('lines d1'))).toEqual([]);
+
+    drawnFor(TAB.id)?.enter('d1');
+    expect(told.filter((each) => each.startsWith('lines d1'))).toEqual(['lines d1 local shown']);
   });
 });
 

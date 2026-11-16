@@ -2176,6 +2176,22 @@ describe('moved code', () => {
     expect(shown.otherEnd(at('gone', 'old', 1))).toBeUndefined();
   });
 
+  test('otherEnd is the first line at an end whose file has no lines yet, and pairs them once it has', () => {
+    const shown = open();
+    const words = { old: [], new: [] };
+    // `d` is kept out, as a large file is until `za`.
+    shown.setMoves([
+      { from: { file: 'c', first: 1, last: 3 }, to: { file: 'd', first: 4, last: 6 }, words },
+    ]);
+    expect(shown.otherEnd(at('c', 'old', 2))).toEqual(at('d', 'new', 4));
+    expect(shown.otherEnd(at('d', 'new', 5))).toEqual(at('c', 'old', 1));
+    const lines = { old: numbered(4, 'd'), new: numbered(8, 'd') };
+    shown.setLines('d', lines);
+    shown.setDiff('d', diffOf(lines));
+    expect(shown.otherEnd(at('c', 'old', 2))).toEqual(at('d', 'new', 5));
+    expect(shown.otherEnd(at('d', 'new', 5))).toEqual(at('c', 'old', 2));
+  });
+
   test('otherEnd pairs the lines that aren’t blank, as moves are found, and comes back both ways', () => {
     const block = [
       'export function wrap(text: string): string[] {',

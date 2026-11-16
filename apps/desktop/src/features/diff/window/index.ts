@@ -21,7 +21,7 @@ import { Diff } from './Diff.tsx';
 import { drawnElsewhere, linesElsewhere } from './elsewhere.ts';
 import { changesLink, fileLink } from './links.ts';
 import { main } from './main.ts';
-import { movedNow, toOtherEnd } from './moved.ts';
+import { fromMoved, movedNow } from './moved.ts';
 import { keepPlaces, openWhole, showTreeFiles } from './places.ts';
 import { LayoutRow } from './LayoutRow.tsx';
 import { DiffStatus } from './Status.tsx';
@@ -236,10 +236,7 @@ export default {
     nextThread: { run: withDiff(({ view }) => view.jump('thread', 1)), enabled: drawnNow },
     previousThread: { run: withDiff(({ view }) => view.jump('thread', -1)), enabled: drawnNow },
     otherEnd: {
-      run: withDiff((drawn, target: LineTarget) => {
-        const to = drawn.view.otherEnd(placeOf(target.at));
-        if (to) toOtherEnd(drawn, to);
-      }),
+      run: withDiff((drawn, target: LineTarget) => fromMoved(drawn, placeOf(target.at))),
       enabled: otherEndNow,
     },
     markViewed: { run: withDiff(markViewed), enabled: drawnNow },
