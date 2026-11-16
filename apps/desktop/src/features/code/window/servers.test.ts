@@ -10,6 +10,11 @@ describe('a language server’s status item', () => {
     expect(itemState({ kind: 'indexing', percent: 40 })).toEqual({ kind: 'indexing', percent: 40 });
     expect(itemState({ kind: 'notAnswering' })).toEqual({ kind: 'notAnswering' });
     expect(itemState({ kind: 'unpacking' })).toEqual({ kind: 'unpacking' });
+    expect(itemState({ kind: 'building' })).toEqual({ kind: 'building' });
+    expect(itemState({ kind: 'refused', why: 'Lo won’t run it.' })).toEqual({
+      kind: 'refused',
+      why: 'Lo won’t run it.',
+    });
     expect(itemState({ kind: 'waiting', count: 4, next: true })).toEqual({
       kind: 'waiting',
       count: 4,

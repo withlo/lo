@@ -24,6 +24,8 @@ export type ServerState =
   | { kind: 'downloading'; done: number; total: number }
   /** Its files have come, and are being unpacked. */
   | { kind: 'unpacking' }
+  /** Its source has come, and Lo is building it, as it does Go's server. */
+  | { kind: 'building' }
   /**
    * It waits in line for room, since Lo runs `count` at once at most, and they're all in use on
    * screen: `next` when it's first in line.
@@ -48,6 +50,11 @@ export type ServerState =
       plural?: boolean | undefined;
     }
   /**
+   * Lo won't run it on this checkout, as files there would steer its tools: `why` says so, and
+   * why, in a sentence or two. A new head is looked at again by itself.
+   */
+  | { kind: 'refused'; why: string }
+  /**
    * Lo doesn't run language servers here, since the repo isn't trusted. The item says so for all of
    * them, whatever its `name` is.
    */
@@ -71,7 +78,7 @@ export interface ServerStatusProps {
   version?: string | undefined;
   /**
    * The button that starts it again. A failed download offers "Retry" in its place, and one waiting
-   * in line "Start next", unless it's next already.
+   * in line "Start next", unless it's next already. One refused offers none.
    */
   onRestart?: (() => void) | undefined;
   onShowLog?: (() => void) | undefined;
@@ -88,6 +95,7 @@ export interface ServerStatusProps {
 const FALLBACK = "Peek, references and hovers fall back to the syntax index until it's back.";
 const WAITING = "Peek, references and hovers use the syntax index until it's ready.";
 const UNTIL = 'Until then, peek, references and hovers use the syntax index.';
+const INSTEAD = 'Peek, references and hovers use the syntax index instead.';
 
 /** The percent of a progress report, clamped to the scale it's on. */
 function percentOf(percent: number): number {
@@ -109,6 +117,8 @@ function Words({ name: raw, state }: { name: string; state: ServerState }): Reac
       );
     case 'unpacking':
       return <>{name} unpacking</>;
+    case 'building':
+      return <>{name} building</>;
     case 'waiting':
       return state.next ? <>{name} waiting · next</> : <>{name} waiting</>;
     case 'starting':
@@ -133,6 +143,8 @@ function Words({ name: raw, state }: { name: string; state: ServerState }): Reac
       return <>{name} failed</>;
     case 'missing':
       return <>{name} toolchain missing</>;
+    case 'refused':
+      return <>{name} refused</>;
     case 'off':
       return 'Language servers off';
     default:
@@ -153,6 +165,7 @@ function Mark({ state }: { state: ServerState }) {
   switch (state.kind) {
     case 'downloading':
     case 'unpacking':
+    case 'building':
     case 'starting':
     case 'indexing':
       return <Spinner size="xs" />;
@@ -164,6 +177,7 @@ function Mark({ state }: { state: ServerState }) {
     case 'notAnswering':
     case 'missing':
       return <span className={`size-8 flex-none rounded-full ${DOT.warn}`} aria-hidden="true" />;
+    case 'refused':
     case 'off':
       return <span className={`size-8 flex-none rounded-full ${DOT.idle}`} aria-hidden="true" />;
     default:
@@ -190,6 +204,8 @@ function heading(raw: string, state: ServerState): ReactNode {
       return <>{name} downloading</>;
     case 'unpacking':
       return <>{name} unpacking</>;
+    case 'building':
+      return <>{name} building</>;
     case 'waiting':
       return <>{name} waiting</>;
     case 'starting':
@@ -204,6 +220,8 @@ function heading(raw: string, state: ServerState): ReactNode {
       return <>{name} stopped</>;
     case 'missing':
       return <>{name} toolchain missing</>;
+    case 'refused':
+      return <>{name} refused</>;
     case 'off':
       return 'Language servers off';
     default:
@@ -239,9 +257,16 @@ function detail(raw: string, state: ServerState): ReactNode {
   switch (state.kind) {
     case 'downloading':
     case 'unpacking':
+    case 'building':
     case 'starting':
     case 'indexing':
       return WAITING;
+    case 'refused':
+      return (
+        <>
+          <ShownText text={state.why} /> {INSTEAD}
+        </>
+      );
     case 'waiting':
       return (
         <>
@@ -363,8 +388,10 @@ export function ServerStatus({
   onOpenChange,
   container,
 }: ServerStatusProps) {
-  // One first in line for room already starts as soon as it can: there's nothing to offer it.
-  const again = state.kind === 'waiting' && state.next ? undefined : onRestart;
+  // One first in line for room already starts as soon as it can, and one refused would only be
+  // refused again on this head: there's nothing to offer either.
+  const again =
+    (state.kind === 'waiting' && state.next) || state.kind === 'refused' ? undefined : onRestart;
   const [kept, setKept] = useState(false);
   const shown = open ?? kept;
   const restart = useRef<HTMLButtonElement>(null);

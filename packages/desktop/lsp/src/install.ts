@@ -118,14 +118,20 @@ export interface InstallerOptions {
   readonly free?: ((folder: string) => Promise<number | undefined>) | undefined;
 }
 
+/** What an install is doing once it has begun: its files coming, then unpacked, then built. */
+export type InstallStage = 'downloading' | 'unpacking' | 'building';
+
+/** Hears how many bytes of how many have come, and what the install is doing with them. */
+export type InstallProgress = (received: number, total: number, stage: InstallStage) => void;
+
 export interface InstallOptions {
   /** Stops this install waiting. The download stops once nothing waits for it. */
   readonly signal?: AbortSignal | undefined;
   /**
    * Hears how many bytes of how many have come, and, once they all have and match what's pinned,
-   * that they're being unpacked, which a large download takes a while to do.
+   * that they're being unpacked, then for a Go program built: each can take a while.
    */
-  readonly progress?: ((received: number, total: number, unpacking: boolean) => void) | undefined;
+  readonly progress?: InstallProgress | undefined;
   /**
    * Lo's Go, installed, which a Go program the manifest pins by its modules is built with. It
    * must be the version the program was pinned with.
@@ -153,7 +159,7 @@ interface Job {
   readonly version: string;
   readonly done: Promise<Installed>;
   readonly controller: AbortController;
-  readonly listeners: Set<(received: number, total: number, unpacking: boolean) => void>;
+  readonly listeners: Set<InstallProgress>;
   /** The temporary folders it's using, which pruning leaves. */
   readonly partial: Set<string>;
   waiting: number;
@@ -391,10 +397,10 @@ export class Installer {
     try {
       const parts = partsOf(download);
       const total = parts.reduce((sum, part) => sum + part.size, 0);
-      const report = (received: number, unpacking = false) => {
+      const report = (received: number, stage: InstallStage = 'downloading') => {
         for (const listener of job.listeners) {
           try {
-            listener(received, total, unpacking);
+            listener(received, total, stage);
           } catch {
             // Whoever listens can't stop the download.
           }
@@ -429,7 +435,7 @@ export class Installer {
         files.push(file);
       }
       // Every byte has come and checks out: what's left, unpacking, can take a while.
-      report(total, true);
+      report(total, 'unpacking');
       const into = join(work, FILES);
       await mkdir(into, { mode: 0o755 });
       const limits = this.#limits ?? limitsFor(download);
@@ -438,6 +444,7 @@ export class Installer {
       const build = join(work, BUILD);
       await unpack(unpacker, download, files, into, async (program) => {
         if (platform === undefined) throw new Error('there’s no platform to build for');
+        report(total, 'building');
         await mkdir(build, { mode: 0o700 });
         const lo = checkGo(program, go);
         return buildChecked(program, { files, folder: build, platform, go: lo, signal });

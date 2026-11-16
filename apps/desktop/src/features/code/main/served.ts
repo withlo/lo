@@ -112,7 +112,7 @@ export interface Serving {
 /**
  * A view's server for the file asked about, when it can't answer: where it is instead, as the pool
  * finds it. It's on its way; `waiting` in line for room, as Lo runs `count` at once at most;
- * `refused` on this checkout, for the reason its status gives, `why`; `missing` the toolchain it
+ * `refused` on this checkout, as `why` says, as its status does; `missing` the toolchain it
  * `needs`; `failed`, waiting for "Restart"; or `stopped`.
  */
 export type NotServing = { readonly name: string } & Exclude<Found, { readonly kind: 'ready' }>;
@@ -146,7 +146,7 @@ function waitingFor(serving: NotServing): string {
     case 'waiting':
       return `${name} is waiting to start. Lo runs ${serving.count} language servers at once at most.`;
     case 'refused':
-      return `Lo won’t run ${name} on this checkout. ${serving.why}`;
+      return serving.why;
     case 'missing':
       return `${name} needs ${serving.needs}.`;
     case 'failed':

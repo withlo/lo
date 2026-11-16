@@ -232,7 +232,7 @@ describe('definitions', () => {
         not({ kind: 'waiting', name, count: 4 }),
         'TypeScript is waiting to start. Lo runs 4 language servers at once at most.',
       ],
-      [not({ kind: 'refused', name, why }), `Lo won’t run TypeScript on this checkout. ${why}`],
+      [not({ kind: 'refused', name, why }), why],
       [
         not({ kind: 'missing', name, needs: 'Go 1.24 or later' }),
         'TypeScript needs Go 1.24 or later.',

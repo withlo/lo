@@ -12,6 +12,7 @@ import { dirname, join } from 'node:path';
 import {
   csharpWorkspace,
   DOTNET_HEAP,
+  type InstallProgress,
   NO_NETWORK,
   type Server,
   serverEnvironment,
@@ -26,6 +27,7 @@ import { cacheFolder } from '../../../main/git.ts';
 import { ADAPTERS as SHIPPED, type Adapter, type Prepared } from './adapters.ts';
 import {
   ServerPool,
+  whyRefused,
   serversFolder,
   type PoolLimits,
   type PoolOptions,
@@ -201,7 +203,7 @@ describe('which servers run', () => {
     const missing = adapter('java', () =>
       Promise.resolve({ kind: 'missing', needs: 'a JDK', install: 'brew install openjdk' }),
     );
-    const progress: ((done: number, total: number, unpacking: boolean) => void)[] = [];
+    const progress: InstallProgress[] = [];
     const pool = new ServerPool({
       prepare(each, report, signal) {
         progress.push(report);
@@ -222,12 +224,14 @@ describe('which servers run', () => {
     pool.sync([view('v1', 'a/x', 1, [slow, failing, missing])], 'v1');
     await settle();
     expect(pool.shown('a/x', 'ts')?.state).toEqual({ kind: 'starting' });
-    progress[0]?.(12, 40, false);
+    progress[0]?.(12, 40, 'downloading');
     expect(pool.shown('a/x', 'ts')?.state).toEqual({ kind: 'downloading', done: 12, total: 40 });
     expect(pool.find('a/x', 'ts', '/cache/a/x/pull-1')).toEqual({ kind: 'starting' });
-    // All of it has come, and it's unpacked.
-    progress[0]?.(40, 40, true);
+    // All of it has come, and it's unpacked, then built.
+    progress[0]?.(40, 40, 'unpacking');
     expect(pool.shown('a/x', 'ts')?.state).toEqual({ kind: 'unpacking' });
+    progress[0]?.(40, 40, 'building');
+    expect(pool.shown('a/x', 'ts')?.state).toEqual({ kind: 'building' });
     finish?.({ kind: 'ready', launch: { program: '/bin/x', args: [], version: 'x 1.0' } });
     await settle();
     expect(pool.shown('a/x', 'ts')).toEqual({ state: { kind: 'starting' }, version: 'x 1.0' });
@@ -245,6 +249,10 @@ describe('which servers run', () => {
       kind: 'missing',
       needs: 'a JDK',
     });
+    // A push moves the view to a new head: one failed waits for Restart there too.
+    pool.sync([view('v1', 'a/x', 2, [slow, failing, missing])], 'v1');
+    await settle();
+    expect(pool.find('a/x', 'go', '/cache/a/x/pull-2')).toEqual({ kind: 'failed' });
   });
 });
 
@@ -404,6 +412,19 @@ describe('trust, then and there', () => {
     await settle();
     expect(started).toHaveLength(1);
     expect(alive()).toEqual([]);
+  });
+
+  it('starts nothing once another repository is on screen by the time its checkout is looked at', async () => {
+    const { promise, resolve } = Promise.withResolvers<string | undefined>();
+    const { pool, started } = standIns({}, () => promise);
+    const views = [view('v1', 'a/x', 1), view('v2', 'b/y', 2, [])];
+    pool.sync(views, 'v1');
+    await settle();
+    // Another repository's tab comes on screen while the checkout is looked at.
+    pool.sync(views, 'v2');
+    resolve(undefined);
+    await settle();
+    expect(started).toEqual([]);
   });
 
   it('tells a server nothing of a move once trust went while it resolved the folder', async () => {
@@ -752,15 +773,15 @@ describe('checkouts a server won’t run on', () => {
   const refusing: PoolOptions['checkout'] = (each, folder) =>
     Promise.resolve(each === CSHARP && folder === '/cache/a/x/pull-2' ? WHY : undefined);
 
+  const REFUSED = { kind: 'refused', why: `Lo won’t run csharp on this checkout. ${WHY}` };
+
   it('starts none on a checkout its toolchain refuses, and says why', async () => {
     const { pool, started } = standIns({}, refusing);
     pool.sync([view('v2', 'a/x', 2, [TS, CSHARP])], 'v2');
     await settle();
     expect(started.map((server) => server.spec.name)).toEqual(['TypeScript']);
-    expect(pool.shown('a/x', 'csharp')?.state).toEqual({
-      kind: 'failed',
-      why: { kind: 'error', message: WHY },
-    });
+    expect(pool.shown('a/x', 'csharp')?.state).toEqual(REFUSED);
+    expect(pool.find('a/x', 'csharp', '/cache/a/x/pull-2')).toEqual(REFUSED);
   });
 
   it('moves none to such a checkout: it stops there, and says why', async () => {
@@ -773,10 +794,40 @@ describe('checkouts a server won’t run on', () => {
     await settle();
     expect(started[0]?.moved).toEqual([]);
     expect(live()).toEqual([]);
-    expect(pool.shown('a/x', 'csharp')?.state).toEqual({
-      kind: 'failed',
-      why: { kind: 'error', message: WHY },
-    });
+    expect(pool.shown('a/x', 'csharp')?.state).toEqual(REFUSED);
+  });
+
+  it('looks again at one refused once another head is on screen, holding no room meanwhile', async () => {
+    // Room for one: C#'s, refused, goes to TypeScript.
+    const { pool, started, live } = standIns({ count: 1 }, refusing);
+    const views = [view('v1', 'a/x', 1, [CSHARP]), view('v2', 'a/x', 2, [CSHARP, TS])];
+    pool.sync(views, 'v2');
+    await settle();
+    const running = () => live().map((server) => `${server.spec.name} ${server.spec.root}`);
+    expect(running()).toEqual(['TypeScript /cache/a/x/pull-2']);
+    expect(pool.shown('a/x', 'csharp')?.state).toEqual(REFUSED);
+    // Restart on the same head finds it refused again, and takes no room.
+    await pool.restart('a/x', CSHARP, { folder: '/cache/a/x/pull-2', pull: 2 });
+    await settle();
+    expect(started).toHaveLength(1);
+    expect(pool.shown('a/x', 'csharp')?.state).toEqual(REFUSED);
+    // A head it may run on comes on screen: it starts there by itself.
+    pool.sync(views, 'v1');
+    await settle();
+    expect(running()).toEqual(['csharp /cache/a/x/pull-1']);
+  });
+
+  it('says once that Lo won’t run a server, whether the reason says so or not', () => {
+    const rust =
+      'The checkout’s .cargo/config.toml has an [env] table, which cargo sets on the rustc it runs, so Lo won’t run rust-analyzer on it.';
+    const java =
+      'Java isn’t available for a repository that commits Eclipse’s .settings folder at its root.';
+    const go =
+      '/src/go.work is a go.work in a folder above the checkout, which Go would take as the checkout’s workspace.';
+    expect(whyRefused('Rust', rust)).toBe(rust);
+    expect(whyRefused('Java', java)).toBe(java);
+    expect(whyRefused('Go', go)).toBe(`Lo won’t run Go on this checkout. ${go}`);
+    expect(whyRefused('C#', 'x'.repeat(500))).toHaveLength(400);
   });
 
   it('never runs the SDK a checkout’s global.json plants for dotnet to find', async () => {
@@ -822,15 +873,11 @@ describe('checkouts a server won’t run on', () => {
       ],
       'v1',
     );
-    await vi.waitFor(() => expect(pool.shown('a/x', 'csharp')?.state.kind).toBe('failed'));
+    await vi.waitFor(() => expect(pool.shown('a/x', 'csharp')?.state.kind).toBe('refused'));
     expect(existsSync(marker)).toBe(false);
     expect(pool.shown('a/x', 'csharp')?.state).toEqual({
-      kind: 'failed',
-      why: {
-        kind: 'error',
-        message:
-          'The checkout’s global.json names folders to look for an SDK in, so it could choose a .NET SDK other than Lo’s.',
-      },
+      kind: 'refused',
+      why: 'Lo won’t run csharp on this checkout. The checkout’s global.json names folders to look for an SDK in, so it could choose a .NET SDK other than Lo’s.',
     });
   });
 
@@ -862,14 +909,11 @@ describe('checkouts a server won’t run on', () => {
       wants: [CSHARP],
     };
     pool.sync([view1], 'v1');
-    await vi.waitFor(() => expect(pool.shown('a/x', 'csharp')?.state.kind).toBe('failed'));
+    await vi.waitFor(() => expect(pool.shown('a/x', 'csharp')?.state.kind).toBe('refused'));
     expect(started).toEqual([]);
     expect(pool.shown('a/x', 'csharp')?.state).toEqual({
-      kind: 'failed',
-      why: {
-        kind: 'error',
-        message: `${join(folder, 'Directory.Build.props')} is in a folder above the checkout, and MSBuild would read it for every project below it.`,
-      },
+      kind: 'refused',
+      why: `Lo won’t run csharp on this checkout. ${join(folder, 'Directory.Build.props')} is in a folder above the checkout, and MSBuild would read it for every project below it.`,
     });
   });
 });
@@ -968,7 +1012,7 @@ describe('waiting for room', () => {
       await made.pool.restart('r/1', each, ROOT);
       await settle();
     };
-    return { ...made, running, last, restart };
+    return { ...made, views, running, last, restart };
   }
 
   it('starts the next in line as soon as one on screen is refused, or fails', async () => {
@@ -979,10 +1023,7 @@ describe('waiting for room', () => {
     await settle();
     // b was refused once it had room: e, first in line, runs in its place, and f waits.
     expect(running()).toEqual(['a', 'c', 'd', 'e']);
-    expect(pool.shown('r/1', 'b')?.state).toEqual({
-      kind: 'failed',
-      why: { kind: 'error', message: WHY },
-    });
+    expect(pool.shown('r/1', 'b')?.state).toEqual({ kind: 'refused', why: WHY });
     expect(pool.find('r/1', 'b', ROOT.folder)).toEqual({ kind: 'refused', why: WHY });
     expect(pool.shown('r/1', 'f')?.state).toEqual({ kind: 'waiting', count: 4, next: true });
 
@@ -1025,6 +1066,31 @@ describe('waiting for room', () => {
       expect(pool.shown('r/1', 'e')?.state).toEqual({ kind: 'waiting', count: 4, next: false });
     }
     expect(started).toHaveLength(4);
+  });
+
+  it('keeps a healthy server’s room through Restart, and gives none to one whose crash let its own go', async () => {
+    const { pool, views, running, last, restart } = sixOnScreen();
+    await settle();
+    // d fails within a minute: e runs in its place.
+    crash(last('d'), 1_000);
+    await settle();
+    expect(running()).toEqual(['a', 'b', 'c', 'e']);
+
+    // As "Restart language servers" may ask: e, whose server stops slowly, then d.
+    const before = last('e');
+    if (before) before.slow = true;
+    pool.sync(views, 'v1');
+    void pool.restart('r/1', E, ROOT);
+    await settle();
+    await restart(D);
+    // e holds its room while its old server stops; d holds none, and waits first in line.
+    expect(pool.shown('r/1', 'e')?.state).toEqual({ kind: 'starting' });
+    expect(pool.shown('r/1', 'd')?.state).toEqual({ kind: 'waiting', count: 4, next: true });
+    before?.exit();
+    await settle();
+    expect(running()).toEqual(['a', 'b', 'c', 'e']);
+    expect(last('e')).not.toBe(before);
+    expect(pool.shown('r/1', 'd')?.state).toEqual({ kind: 'waiting', count: 4, next: true });
   });
 
   it('starts one restarted that has room, though others wait in line with it', async () => {

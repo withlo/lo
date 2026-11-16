@@ -639,7 +639,9 @@ repo. The right side of a diff navigates the new commit, and the left side the o
   never opens a place outside the checkout that an answer names. The lsp package's README lists
   each.
 - **Refusals.** A checkout that holds files a server's tools would act on gets no server for that
-  language, and the status bar says why. For Rust that's a `rust-analyzer.toml`, or a Cargo config
+  language: the status bar says it's refused, its details say why, and the syntax index answers. It
+  holds no room, and Restart isn't offered, since the checkout is the same; Lo looks again once
+  another head of the repo is on screen. For Rust that's a `rust-analyzer.toml`, or a Cargo config
   that sets an environment or unstable options, includes another file or sits above the checkout;
   for Go, a `go.work` above the checkout or one that names folders outside it; for C#, a
   `global.json` that names folders to find an SDK in, or an MSBuild or NuGet settings file, such as

@@ -122,8 +122,11 @@ function serverHints(
       return `${name} failed. Restart it from the status bar.`;
     case 'missing':
       return `${name} needs ${state.needs}.`;
+    case 'refused':
+      return state.why;
     case 'downloading':
     case 'unpacking':
+    case 'building':
     case 'waiting':
     case 'starting':
     case 'indexing':
