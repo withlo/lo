@@ -10,7 +10,14 @@ import { type Platform, PLATFORMS } from '../src/index.ts';
 import { serve, sha256, tarGz, zip } from '../test/downloads.ts';
 import { tempFolder } from '../test/support.ts';
 import { modHash, sumKey } from './go.ts';
-import { githubRelease, hashicorp, node, type RegistryKey, verifyRegistry } from './sources.ts';
+import {
+  githubRelease,
+  hashicorp,
+  jdtls,
+  node,
+  type RegistryKey,
+  verifyRegistry,
+} from './sources.ts';
 
 /** A key that signs as one of Node's releasers would, and its armored public key. */
 async function releaser() {
@@ -247,6 +254,65 @@ test('refuses an archive its checksum doesn’t list, or one stored anywhere but
     source('1.2.3', await githubServed('1.2.3', { elsewhere: 'linux-x64' })),
   ).rejects.toThrow(/example\.com/);
   await expect(source('latest', await githubServed('1.2.3'))).rejects.toThrow(
+    /isn’t a release’s version/,
+  );
+});
+
+/**
+ * A JDT LS release, served as download.eclipse.org would: its `latest.txt`, its archive, with a
+ * launcher, JDT LS's bundle and a configuration for each platform, and its checksum.
+ */
+async function eclipseServed(
+  version: string,
+  options: { tamper?: boolean; latest?: string; launchers?: number } = {},
+) {
+  const base = `https://download.eclipse.org/jdtls/milestones/${version}/`;
+  const name = `jdt-language-server-${version}-202610191322.tar.gz`;
+  const launchers = Array.from({ length: options.launchers ?? 1 }, (_, at) => ({
+    path: `plugins/org.eclipse.equinox.launcher_1.8.${at}.v20260804-1928.jar`,
+    data: 'a launcher',
+  }));
+  const archive = tarGz([
+    ...launchers,
+    { path: `plugins/org.eclipse.jdt.ls.core_${version}.202610191322.jar`, data: 'JDT LS' },
+    ...['config_linux', 'config_linux_arm', 'config_mac', 'config_mac_arm'].map((folder) => ({
+      path: `${folder}/config.ini`,
+      data: 'osgi.bundles=',
+    })),
+  ]);
+  const served = await serve({
+    [`${base}latest.txt`]: { body: Buffer.from(`${options.latest ?? name}\n`) },
+    [`${base}${name}`]: {
+      body: options.tamper === true ? Buffer.concat([archive, Buffer.from('x')]) : archive,
+    },
+    [`${base}${name}.sha256`]: { body: Buffer.from(`${sha256(archive)}\n`) },
+  });
+  return { fetch: served.fetch, folder: tempFolder(), log: () => undefined };
+}
+
+test('records JDT LS’s archive, as the checksum beside it lists, starting from its launcher', async () => {
+  const pinned = await jdtls()('1.63.0', await eclipseServed('1.63.0'));
+  expect(pinned.hosts).toEqual(['download.eclipse.org']);
+  expect(Object.keys(pinned.platforms)).toEqual(['any']);
+  expect(pinned.platforms.any).toMatchObject({
+    kind: 'tar.gz',
+    url: 'https://download.eclipse.org/jdtls/milestones/1.63.0/jdt-language-server-1.63.0-202610191322.tar.gz',
+    entry: 'plugins/org.eclipse.equinox.launcher_1.8.0.v20260804-1928.jar',
+  });
+});
+
+test('refuses an archive its checksum doesn’t list, or that isn’t one release of JDT LS', async () => {
+  const source = jdtls();
+  await expect(source('1.63.0', await eclipseServed('1.63.0', { tamper: true }))).rejects.toThrow(
+    /isn’t what jdt-language-server-1\.63\.0-202610191322\.tar\.gz\.sha256 lists/,
+  );
+  await expect(
+    source('1.63.0', await eclipseServed('1.63.0', { latest: '../../evil.tar.gz' })),
+  ).rejects.toThrow(/not an archive of 1\.63\.0/);
+  await expect(source('1.63.0', await eclipseServed('1.63.0', { launchers: 2 }))).rejects.toThrow(
+    /doesn’t hold one launcher and JDT LS 1\.63\.0/,
+  );
+  await expect(source('latest', await eclipseServed('1.63.0'))).rejects.toThrow(
     /isn’t a release’s version/,
   );
 });

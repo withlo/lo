@@ -56,7 +56,14 @@ function never(): Promise<never> {
 
 const env: Record<string, string> = {};
 for (const [name, value] of Object.entries(process.env)) if (value !== undefined) env[name] = value;
-report({ event: 'started', pid: process.pid, argv0: process.argv0, env, cwd: process.cwd() });
+report({
+  event: 'started',
+  pid: process.pid,
+  argv0: process.argv0,
+  execArgv: process.execArgv,
+  env,
+  cwd: process.cwd(),
+});
 for (const line of scenario.stderr ?? []) process.stderr.write(`${line}\n`);
 if (scenario.stubborn) process.on('SIGTERM', () => undefined);
 

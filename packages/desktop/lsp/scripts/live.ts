@@ -6,13 +6,14 @@
 // ~/.cache/lo-live/servers/, or `$LO_LIVE_CACHE/servers/`, through the same checks Lo makes, so
 // each version downloads once, and the toolchains they use beside them, in `toolchains/`. gopls is
 // built there, as Lo builds it. Then it runs each one's check below, one at a time. Node says its
-// version. A server starts as its adapter starts it, on Lo's Node or as its own program with its
-// toolchains, on the checkouts of two pull requests the code fixtures build with `--local`, so no
+// version. A server starts as its adapter starts it, on Lo's Node, on Lo's JDK or as its own
+// program with its toolchains, on the checkouts of two pull requests the code fixtures build with `--local`, so no
 // network or token is needed: the code fixture's (`testing/fixtures/code.sh`) and the hostile
 // fixture's (`code-hostile.sh`), which is the same with files planted to run code. On each it's
 // asked what `gd`, `gr`, `K`, `gh` and `gO` ask, at the places in its languages' sample projects
 // that `testing/fixtures/code/cases.json` names, printing what came back, how long it took to
-// start, the most memory its family held and each network connection any of it opened. On the
+// start, the most memory its family held, the programs it ran as and each network connection any
+// of it opened. On the
 // hostile checkout it opens the plants in its language too, as a reader's view would. A server
 // that's a program of its own has a folder of stand-ins on its `PATH` after its toolchains', as
 // Lo's git's folder can be Homebrew's: a `terraform`, a `gopackagesdriver`, `pkg-config` and C
@@ -61,7 +62,10 @@ import {
   GOPLS,
   type Installed,
   Installer,
+  JDTLS,
+  jdtlsCheckoutProblem,
   type Launch,
+  launchJdtls,
   launchNative,
   launchOnNode,
   launchRustAnalyzer,
@@ -195,6 +199,8 @@ interface CheckOptions {
   readonly standIns?: boolean | undefined;
   /** The toolchains it uses, whose checks of a checkout (`checkoutProblem`) it's held to. */
   readonly toolchains?: readonly string[] | undefined;
+  /** Why its adapter wouldn't start it on a checkout, by what the server alone reads there. */
+  readonly checkout?: ((root: string) => Promise<string | undefined>) | undefined;
 }
 
 /**
@@ -226,8 +232,10 @@ function serverCheck(
           const problem = await checkoutProblem(id, root);
           if (problem !== undefined) throw new Error(`it wouldn't start: ${problem}`);
         }
+        const refused = await options.checkout?.(root);
+        if (refused !== undefined) throw new Error(`it wouldn't start: ${refused}`);
         const languageId = places[0]?.languageId ?? '';
-        const { log, peak, connections } = await askServer({
+        const { log, peak, programs, connections } = await askServer({
           spec: {
             name: server.name,
             program: launched.program,
@@ -241,6 +249,8 @@ function serverCheck(
             git: serverGitEnvironment(),
             settings: launched.settings,
             initializationOptions: launched.initializationOptions,
+            place: launched.place,
+            stays: launched.stays,
           },
           places,
           outlines,
@@ -261,6 +271,7 @@ function serverCheck(
         );
         if (said.length > 0) console.log(`\nIts log, on those:\n${said.slice(-30).join('\n')}`);
         console.log(`\nIts family held at most ${Math.round(peak / 1024 ** 2)} MB at once.`);
+        console.log(`It ran as: ${programs.join(', ')}`);
         console.log(
           connections.length === 0
             ? 'Its family opened no network connection.'
@@ -623,6 +634,12 @@ function native(
   return serverCheck(server, launch, languages, { ...options, standIns: true });
 }
 
+/** How Java's server starts from `installed`, on Lo's JDK, which installs first. */
+async function launchOnJdk(installed: Installed, context: Context): Promise<Launch> {
+  const jdk = await context.toolchain('temurin');
+  return launchJdtls(installed, jdk.installed, jdk.use);
+}
+
 /** Each ID's check. */
 const CHECKS: Record<string, Check> = {
   node: async (installed, { pinned }) => {
@@ -654,6 +671,18 @@ const CHECKS: Record<string, Check> = {
     TERRAFORM_LS,
     { terraform: 'terraform' },
     { plants: ['hostile/terraform/main.tf', 'hostile/terraform-provider/main.tf'] },
+  ),
+  // Java's `Tally` is a class inside `Words`, whose file the pull request leaves alone. The JDK is
+  // held to its checks of a checkout, and JDT LS to its own.
+  jdtls: serverCheck(
+    JDTLS,
+    launchOnJdk,
+    { java: 'java' },
+    {
+      outlines: [{ file: 'java/src/main/java/sample/Words.java', languageId: 'java' }],
+      toolchains: ['temurin'],
+      checkout: jdtlsCheckoutProblem,
+    },
   ),
 };
 

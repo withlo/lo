@@ -7,6 +7,9 @@
 import {
   findSourceKit,
   GOPLS,
+  JDTLS,
+  jdtlsCheckoutProblem,
+  launchJdtls,
   launchNative,
   launchOnNode,
   launchRustAnalyzer,
@@ -134,8 +137,9 @@ export interface Adapter {
    */
   readonly noReferences?: string | undefined;
   /**
-   * Why its server mustn't run on the checkout at `folder`, by what the server itself reads there,
-   * or `undefined` when it may. What a toolchain it uses reads there is checked too.
+   * Why its server mustn't run on the checkout at `folder`, by what it alone reads there, such as
+   * the `.settings` at a checkout's root that Java's server would take as its own, or `undefined`
+   * when it may. What the toolchains it uses read there is asked besides.
    */
   readonly checkout?: ((folder: string) => Promise<string | undefined>) | undefined;
   /** The toolchain of the system's it comes with, for one Lo doesn't download. */
@@ -237,6 +241,25 @@ function native(
   };
 }
 
+/**
+ * The adapter for Java's server, JDT LS, which runs on Lo's Temurin JDK: the JDK downloads first,
+ * then the server, each once, on first use. It doesn't start on a checkout whose root holds a
+ * `.settings`, which it would take as its project's own.
+ */
+function onJdk(adapter: Omit<Adapter, 'prepare' | 'noHints' | 'downloads' | 'checkout'>): Adapter {
+  return {
+    ...adapter,
+    // The JDK it runs on, and the server.
+    downloads: { servers: [JDTLS.id], toolchains: ['temurin'] },
+    checkout: jdtlsCheckoutProblem,
+    async prepare(context) {
+      const jdk = await context.toolchain('temurin');
+      const installed = await context.install(JDTLS.id);
+      return { kind: 'ready', launch: launchJdtls(installed, jdk.installed, jdk) };
+    },
+  };
+}
+
 /** The adapters Lo ships on `platform`: Swift's only on macOS. */
 export function shippedAdapters(platform: NodeJS.Platform = process.platform): readonly Adapter[] {
   return platform === 'darwin' ? [...EVERYWHERE, SWIFT] : EVERYWHERE;
@@ -260,6 +283,8 @@ const EVERYWHERE: readonly Adapter[] = [
     extensions: { tfvars: 'terraform-vars' },
     referencesFromDefinition: true,
   }),
+  // A JVM answers its first definitions slower than most, while it compiles its own code.
+  onJdk({ id: 'java', name: 'Java', languages: { java: 'java' }, definitionDeadline: 5000 }),
 ];
 
 /** The adapters Lo ships on this platform. */

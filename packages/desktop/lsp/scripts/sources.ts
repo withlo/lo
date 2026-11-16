@@ -7,7 +7,7 @@
 
 import { execFile } from 'node:child_process';
 import { createHash, createPublicKey, verify } from 'node:crypto';
-import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, readFile, writeFile } from 'node:fs/promises';
 import { join, posix } from 'node:path';
 import { promisify } from 'node:util';
 
@@ -168,6 +168,63 @@ export function githubRelease(
     }
     tools.log(`Each archive is what the checksum its release lists beside it says.`);
     return { version, hosts: GITHUB_HOSTS, platforms };
+  };
+}
+
+/** Where Eclipse serves JDT LS's releases from. */
+const ECLIPSE_HOSTS = ['download.eclipse.org'];
+
+/** The folders of Equinox's configuration that JDT LS's adapter starts it with, one a platform. */
+const JDTLS_CONFIGURATIONS = ['config_mac', 'config_mac_arm', 'config_linux', 'config_linux_arm'];
+
+/**
+ * Eclipse JDT LS, as Eclipse publishes each release: one archive for every platform, which the
+ * release's `latest.txt` names, checked against the SHA-256 in the `.sha256` beside it, which the
+ * same build made. Nothing signs the archive as a whole: Eclipse signs about half the bundles in
+ * it, but not the rest, nor Equinox's configuration, so the checksum is all that covers it. That
+ * catches a download gone wrong, not a release someone else made. `entry` is Equinox's launcher in
+ * it, the jar JDT LS starts from, which is named by its own version.
+ */
+export function jdtls(): Source {
+  return async (version, tools) => {
+    if (!/^\d+\.\d+\.\d+$/.test(version)) throw new Error(`${version} isn’t a release’s version`);
+    const base = `https://download.eclipse.org/jdtls/milestones/${version}/`;
+    const latest = await fetchBytes(`${base}latest.txt`, ECLIPSE_HOSTS, tools);
+    const name = latest.toString('utf8').trim();
+    const archive = new RegExp(
+      `^jdt-language-server-${version.replaceAll('.', '\\.')}-\\d{12}\\.tar\\.gz$`,
+    );
+    if (!archive.test(name)) {
+      throw new Error(`latest.txt names ${JSON.stringify(name)}, not an archive of ${version}`);
+    }
+    const sums = await fetchBytes(`${base}${name}.sha256`, ECLIPSE_HOSTS, tools);
+    const expected = /^([0-9a-f]{64})\s*$/.exec(sums.toString('utf8'))?.[1];
+    if (expected === undefined) throw new Error(`${name}.sha256 holds no SHA-256`);
+    const { part, file } = await fetchPart(`${base}${name}`, ECLIPSE_HOSTS, tools);
+    if (part.sha256 !== expected) throw new Error(`${name} isn’t what ${name}.sha256 lists`);
+    tools.log(`${name} is what the checksum its release lists beside it says.`);
+    // What it holds: one launcher, JDT LS of this version, and a configuration a platform.
+    const into = join(await mkdtemp(join(tools.folder, 'unpacked-')), 'files');
+    await mkdir(into);
+    const configuration = `${JDTLS_CONFIGURATIONS[0]}/config.ini`;
+    await unpackDownload({ kind: 'tar.gz', ...part, entry: configuration }, [file], into);
+    const plugins = await readdir(join(into, 'plugins'));
+    const launchers = plugins.filter((each) =>
+      /^org\.eclipse\.equinox\.launcher_[\w.-]+\.jar$/.test(each),
+    );
+    const core = plugins.some((each) => each.startsWith(`org.eclipse.jdt.ls.core_${version}.`));
+    const [launcher] = launchers;
+    if (launcher === undefined || launchers.length > 1 || !core) {
+      throw new Error(`${name} doesn’t hold one launcher and JDT LS ${version}`);
+    }
+    for (const folder of JDTLS_CONFIGURATIONS) {
+      if (!(await readdir(join(into, folder))).includes('config.ini')) {
+        throw new Error(`${name} has no ${folder}/config.ini`);
+      }
+    }
+    const download: Download = { kind: 'tar.gz', ...part, entry: `plugins/${launcher}` };
+    await checkUnpacks(download, [file], tools);
+    return { version, hosts: ECLIPSE_HOSTS, platforms: { any: download } };
   };
 }
 

@@ -606,6 +606,7 @@ export class ServerPool {
         settings: launch.settings,
         initializationOptions: launch.initializationOptions,
         place: launch.place,
+        stays: launch.stays,
         rootless: launch.rootless,
       });
     } catch (error) {

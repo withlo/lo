@@ -275,20 +275,28 @@ test(
     }
     expect(wrong).toEqual([]);
 
-    // The script says each marker, so whoever checks knows what to look for, and the folders
-    // php-lsp's and SourceKit-LSP's planted settings would put their files in, which each would
-    // make in the checkout.
+    // The script says each marker, so whoever checks knows what to look for, and each folder or
+    // file planted settings would make in the checkout: php-lsp's cache, Maven's local repository
+    // and its JVM's log, Eclipse's output and generated sources, a JVM's log, and SourceKit-LSP's
+    // generated files.
     const settings: unknown = JSON.parse(contents.get('.php-lsp.json') ?? '{}');
     const cache = typeof settings === 'object' && settings !== null && 'cachePath' in settings;
     expect(cache && settings.cachePath).toBe('lo-hostile-php-lsp-cache');
-    const sourceKit: unknown = JSON.parse(contents.get('.sourcekit-lsp/config.json') ?? '{}');
-    const generated =
-      typeof sourceKit === 'object' && sourceKit !== null && 'generatedFilesPath' in sourceKit;
-    expect(generated && sourceKit.generatedFilesPath).toBe('lo-hostile-sourcekit-lsp');
+    const made = {
+      'lo-hostile-php-lsp-cache': '.php-lsp.json',
+      'lo-hostile-maven-repository': 'java/.mvn/maven.config',
+      'lo-hostile-maven-jvm': 'java/.mvn/jvm.config',
+      'lo-hostile-eclipse-output': 'java/.classpath',
+      'lo-hostile-apt-generated': 'java/.settings/org.eclipse.jdt.apt.core.prefs',
+      'lo-hostile-hotspotrc': '.hotspotrc',
+      'lo-hostile-sourcekit-lsp': '.sourcekit-lsp/config.json',
+    };
+    for (const [name, path] of Object.entries(made)) {
+      expect({ [path]: contents.get(path) }).toEqual({ [path]: expect.stringContaining(name) });
+    }
     const said = new Set(script.match(/lo-hostile-[a-z]+(?:-[a-z]+)*/g));
-    const folders = ['lo-hostile-php-lsp-cache', 'lo-hostile-sourcekit-lsp'];
-    expect([...markers, ...folders].toSorted()).toEqual([...said].toSorted());
-    expect(markers.size).toBe(34);
+    expect([...markers, ...Object.keys(made)].toSorted()).toEqual([...said].toSorted());
+    expect(markers.size).toBe(37);
   },
 );
 
@@ -299,31 +307,44 @@ test("Lo's own repository holds nothing a tool would pick up from what the hosti
   const named = new Set([
     '.bsp',
     '.cargo',
+    '.classpath',
     '.envrc',
+    '.externalToolBuilders',
+    '.factorypath',
     '.gitmodules',
+    '.hotspotrc',
+    '.java-version',
     '.mvn',
     '.npmrc',
     '.nvmrc',
     '.php-lsp.json',
     '.phpactor.json',
+    '.project',
     '.python-version',
     '.ruby-version',
+    '.sdkmanrc',
+    '.settings',
     '.sourcekit-lsp',
     '.terraform',
     '.tool-versions',
     '.vscode',
+    'build.gradle',
     'buildServer.json',
     'compile_commands.json',
     'gradle',
+    'gradle.properties',
     'gradlew',
     'global.json',
     'go.work',
+    'jdk',
     'mise.toml',
     'mvnw',
     'node_modules',
     'package.json',
+    'pom.xml',
     'rust-analyzer.toml',
     'rust-toolchain.toml',
+    'settings.gradle',
     'vendor',
   ]);
   const files = filesUnder(samples);

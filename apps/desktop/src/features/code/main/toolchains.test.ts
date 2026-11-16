@@ -1,6 +1,6 @@
 // What Settings lists of the toolchains, Lo's and the system's, removing one, what a server says
-// when its toolchain can't download or was removed, and the checkouts a server is refused, against a
-// stand-in installer and pool.
+// when its toolchain can't download or was removed, against a stand-in installer and pool, and the
+// checkouts a server is refused.
 
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -224,7 +224,7 @@ it('gives a server only the toolchains its adapter names, which “Remove” sto
   expect(asked).toEqual(['temurin']);
 });
 
-it('gives Lo’s own servers only the toolchains they name: Rust’s Rust, Go’s Go, and the rest none', async () => {
+it('gives Lo’s own servers only the toolchains they name: Rust’s Rust, Go’s Go, Java’s JDK, and the rest none', async () => {
   expect(SHIPPED.map((each) => [each.name, each.downloads?.toolchains])).toEqual([
     ['TypeScript', []],
     ['Python', []],
@@ -232,6 +232,7 @@ it('gives Lo’s own servers only the toolchains they name: Rust’s Rust, Go’
     ['PHP', []],
     ['Go', ['go']],
     ['Terraform', []],
+    ['Java', ['temurin']],
     // It downloads nothing: SourceKit-LSP comes with Xcode or Apple's Command Line Tools.
     ['Swift', undefined],
   ]);
@@ -245,14 +246,39 @@ it('gives Lo’s own servers only the toolchains they name: Rust’s Rust, Go’
       );
     }
   }
-  // So Settings lists Rust's server as using Rust, and Go's as using Go.
+  // So Settings lists Rust's server as using Rust, Go's as using Go, and Java's as using the JDK.
   const listed = await listToolchains({ ...host().given, adapters: () => SHIPPED });
   expect(listed.map((each) => [each.id, each.uses])).toEqual([
     ['dotnet', []],
     ['go', ['Go']],
     ['rust', ['Rust']],
-    ['temurin', []],
+    ['temurin', ['Java']],
   ]);
+});
+
+it('refuses a checkout by what each toolchain reads there, then by what the server reads', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'lo-refusal-'));
+  onTestFinished(() => rmSync(root, { recursive: true, force: true }));
+  const java = SHIPPED.find((each) => each.id === 'java')!;
+  expect(await checkoutRefusal(java, root)).toBeUndefined();
+  mkdirSync(join(root, '.settings'));
+  expect(await checkoutRefusal(java, root)).toBe(
+    'Java isn’t available for a repository that commits Eclipse’s .settings folder at its root. Java’s server would read its settings from that folder, and write to it.',
+  );
+  // A server that reads nothing there itself starts.
+  expect(await checkoutRefusal(SHIPPED[0]!, root)).toBeUndefined();
+  const asked: string[] = [];
+  const own = {
+    ...adapter('csharp', 'C#', ['dotnet']),
+    checkout: (folder: string) => {
+      asked.push(folder);
+      return Promise.resolve('its own reason');
+    },
+  };
+  writeFileSync(join(root, 'global.json'), '{ "sdk": { "paths": ["sdk"] } }');
+  // The toolchain's reason comes first, and the server's isn't asked.
+  expect(await checkoutRefusal(own, root)).toContain('global.json names folders');
+  expect(asked).toEqual([]);
 });
 
 it('names the toolchain and why, when one can’t download or was removed', () => {

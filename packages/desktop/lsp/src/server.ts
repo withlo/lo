@@ -34,7 +34,7 @@ import { serverEnvironment, temporaryFolder } from './environment.ts';
 import { FLOOD_BYTES, FLOOD_LINES, FLOOD_MESSAGES, FLOOD_WINDOW, FrameMeter } from './framing.ts';
 import { Log } from './log.ts';
 import { type Member, type ReadFamily, readFamily, stillRunning } from './family.ts';
-import type { Place } from './place.ts';
+import { type Place, writeInHome } from './place.ts';
 import {
   checkArguments,
   checkProgram,
@@ -82,9 +82,15 @@ export interface ServerSpec {
   readonly initializationOptions?: unknown;
   /**
    * What it's given that depends on its checkout and home, worked out once its home is made, just
-   * before it starts: more variables, and initialization options in place of these.
+   * before it starts: arguments before `args`, more variables, files Lo writes in its home, and
+   * settings and initialization options in place of these.
    */
   readonly place?: Place | undefined;
+  /**
+   * Whether it starts again to go to another checkout, rather than moving there, for a server whose
+   * project Lo works out from its checkout as it starts.
+   */
+  readonly stays?: boolean | undefined;
   /** The most resident memory its process group may hold, in bytes. */
   readonly memoryCap?: number | undefined;
   /** Lo's version, which it hears in `clientInfo`. */
@@ -234,7 +240,8 @@ export class Server {
   readonly #queue: Queue;
   /** The checkout's folder, as the system resolves it and as given. */
   #roots: string[] = [];
-  /** Its `initializationOptions`, from its spec or where it runs. */
+  /** What it's told, from its spec or where it runs. */
+  #settings: unknown;
   #initializationOptions: unknown;
   #child: ChildProcess | undefined;
   #connection: MessageConnection | undefined;
@@ -276,6 +283,7 @@ export class Server {
   constructor(spec: ServerSpec, limits: Limits, read: ReadFamily) {
     this.name = spec.name;
     this.#spec = spec;
+    this.#settings = spec.settings;
     this.#initializationOptions = spec.initializationOptions;
     this.#limits = limits;
     this.#readFamily = read;
@@ -385,12 +393,14 @@ export class Server {
    * Moves the server to the checkout at `root`, another head of the same repository, when it says
    * it takes changes to its workspace's folders. Its files are closed. It says whether it moved;
    * if it didn't, the server is as it was, and a new one is needed for `root`. `still`, asked once
-   * `root` is resolved, just before the server is told, keeps it where it is when it says no. A
-   * rootless server, told of no workspace, moves without being told: only its files change.
+   * `root` is resolved, just before the server is told, keeps it where it is when it says no. One
+   * whose spec says it stays never moves. A rootless server, told of no workspace, moves without
+   * being told: only its files change.
    */
   async moveTo(root: string, still: () => boolean = () => true): Promise<boolean> {
     const rootless = this.#spec.rootless === true;
     const changes = this.#capabilities?.workspace?.workspaceFolders?.changeNotifications;
+    if (this.#spec.stays === true) return false;
     const takes = rootless || changes === true || typeof changes === 'string';
     if (!this.#answering() || !takes) return false;
     const real = await realpath(root);
@@ -584,15 +594,20 @@ export class Server {
       // What depends on where it runs, held to the same rules.
       const placed = spec.place === undefined ? {} : await spec.place({ root, home });
       if (this.#stopRequested) return;
+      const args = [...(placed.args ?? []), ...spec.args];
+      checkArguments(spec.program, program, args);
       const variables = { ...spec.variables, ...placed.variables };
       const env = serverEnvironment({ ...given, variables, home, path });
+      await writeInHome(home, placed.files ?? {});
+      if (placed.settings !== undefined) this.#settings = placed.settings;
       if (placed.initializationOptions !== undefined) {
         this.#initializationOptions = placed.initializationOptions;
       }
+      if (this.#stopRequested) return;
       // A rootless server runs in its home, so nothing it starts begins in the checkout, and a
       // folder its options name by a relative path is one of its home's.
       const cwd = spec.rootless === true ? home : root;
-      const child = startProcess(program, spec.args, { env, cwd });
+      const child = startProcess(program, args, { env, cwd });
       this.#child = child;
       child.on('error', (error) => {
         // An error once it runs, such as a signal it can't be sent, changes nothing: its exit
@@ -702,7 +717,7 @@ export class Server {
     this.#connection = connection;
     connection.onRequest((method: string, params: unknown) => {
       const answer = reply(method, params, {
-        settings: this.#spec.settings ?? null,
+        settings: this.#settings ?? null,
         folders: this.#spec.rootless === true ? null : this.#folders(),
       });
       if (!answer.accepted) {

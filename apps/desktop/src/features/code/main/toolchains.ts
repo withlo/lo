@@ -66,7 +66,8 @@ export function listedToolchain<T>(
 /**
  * Why `adapter`'s server mustn't run on the checkout at `folder`, by what each toolchain it uses
  * reads there, such as a `global.json` that could choose a .NET SDK other than Lo's, then by what
- * the server itself reads there, such as the build servers SourceKit-LSP would run.
+ * the server itself reads there, such as the `.settings` Java's server would take as its own, or
+ * the build servers SourceKit-LSP would run.
  */
 export async function checkoutRefusal(
   adapter: Adapter,

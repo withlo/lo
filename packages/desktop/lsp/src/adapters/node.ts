@@ -36,8 +36,10 @@ export interface Launch {
   /** What it gets for `workspace/configuration`, by section. */
   readonly settings?: unknown;
   readonly initializationOptions?: unknown;
-  /** What it's given that depends on its checkout and its home, as SourceKit-LSP needs. */
+  /** What it's given that depends on its checkout and its home, as Java's server needs. */
   readonly place?: Place | undefined;
+  /** Whether it starts again to go to another checkout, rather than moving there. */
+  readonly stays?: boolean | undefined;
   /** Whether it's told of no workspace, only of the files Lo opens, as SourceKit-LSP is. */
   readonly rootless?: boolean | undefined;
   /** What it is, for its details: its name, version and license, "vtsls 0.3.0 · MIT". */
