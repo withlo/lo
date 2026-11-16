@@ -99,8 +99,9 @@ told is its adapter's alone, and the adapter says why each setting is as it is:
   automatic type acquisition off, so it runs no npm. It loads no `tsserver` plugin from the
   checkout. A plugin a checkout's `tsconfig.json` names is looked for by its package's name alone,
   in the `node_modules` beside Lo's TypeScript and, as Node finds packages, in each `node_modules`
-  above Lo's install, such as `~/node_modules`, so a checkout can load a package you already have
-  there, though it can't add one. Neither vtsls nor `tsserver` can turn those plugins off.
+  above Lo's install, so a checkout can load a package you already have there, though it can't add
+  one. Neither vtsls nor `tsserver` can turn those plugins off. On a Mac, Lo's cache is outside your
+  home folder, so those never include `~/node_modules`; on Linux it's in `~/.cache`, so they do.
   `tsserver`'s heap is capped at 3 GB and vtsls's at 512 MB, under Lo's 4 GB for the group.
 - **Pyright** is given `/dev/null` as its Python, which can't run, so it runs no interpreter: not
   the machine's, nor one a checkout's virtual environment or `.python-version` would pick. It

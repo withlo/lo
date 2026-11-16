@@ -10,10 +10,11 @@
  * - no plugin from the checkout: no plugin paths, no global plugins and no local plugin loads, so a
  *   plugin a `tsconfig.json` names is looked for by its package's name alone, never by a path, from
  *   the `node_modules` beside Lo's TypeScript, and, as Node finds packages, from each `node_modules`
- *   above Lo's install, such as `~/node_modules`: never from the checkout's own. A checkout can so
- *   load a package the user already has in one of those folders, though it can't add one, and
- *   neither vtsls nor `tsserver` has a way to turn a `tsconfig.json`'s plugins off. Which folders
- *   those are follows from where Lo installs servers (`test/plugins.test.ts`);
+ *   above Lo's install: never from the checkout's own. A checkout can so load a package the user
+ *   already has in one of those folders, though it can't add one, and neither vtsls nor `tsserver`
+ *   has a way to turn a `tsconfig.json`'s plugins off. Which folders those are follows from where
+ *   Lo installs servers, in its cache (`test/plugins.test.ts`): on a Mac that's outside the home
+ *   folder, so they never include `~/node_modules`; on Linux it's in `~/.cache`, so they do;
  * - no automatic type acquisition, so `tsserver` runs no npm and fetches nothing, whatever a
  *   `package.json` or `.npmrc` says;
  * - `tsserver` on vtsls's own Node: no `typescript.tsserver.nodePath`, and no TypeScript written in
