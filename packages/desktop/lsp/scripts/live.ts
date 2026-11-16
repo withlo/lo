@@ -21,8 +21,8 @@
 // answer; where Lo refuses a checkout (`checkoutProblem`, which the pool asks before a start), it
 // starts nothing and says why. Then the hostile checkout and that folder are searched for the
 // markers its plants write if anything runs them, and the check fails if there's one, if anything
-// in either checkout changed, or if anything connected to another machine. It fails too
-// if a server took the hostile checkout's settings: if it says it read code as the PHP its
+// in either checkout changed, or if anything connected to another machine. It fails too if a
+// server took the hostile checkout's settings: if it says it read code as the PHP its
 // `.php-lsp.json` names, or indexed a different number of files there than on the code fixture's
 // checkout. Check the machine has memory to spare before running it.
 
