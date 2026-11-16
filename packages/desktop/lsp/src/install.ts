@@ -31,12 +31,12 @@ import {
   stat,
   writeFile,
 } from 'node:fs/promises';
-import { dirname, isAbsolute, join } from 'node:path';
+import { dirname, isAbsolute, join, relative, sep } from 'node:path';
 
 import { z } from 'zod';
 
 import { atOnce, syncPath } from './disk.ts';
-import { fetchFile } from './download.ts';
+import { fetchFile, type StallLimits } from './download.ts';
 import { isInside } from './environment.ts';
 import { DownloadError } from './errors.ts';
 import {
@@ -85,11 +85,8 @@ export interface InstallerOptions {
   readonly limits?: UnpackLimits | undefined;
   /** How long to wait before each try after the first, in milliseconds. */
   readonly backoff?: readonly number[] | undefined;
-  /**
-   * The time a try's progress is counted over, in milliseconds: `STALL` unless given. Less than
-   * `LEAST` in any of it gives the try up.
-   */
-  readonly stall?: number | undefined;
+  /** What counts as a try that has stalled: `STALL` unless given. */
+  readonly stall?: StallLimits | undefined;
 }
 
 export interface InstallOptions {
@@ -123,7 +120,7 @@ export class Installer {
   readonly #platform: Platform | undefined;
   readonly #limits: UnpackLimits | undefined;
   readonly #backoff: readonly number[];
-  readonly #stall: number | undefined;
+  readonly #stall: StallLimits | undefined;
   readonly #jobs = new Map<string, Job>();
 
   constructor(options: InstallerOptions) {
@@ -339,11 +336,11 @@ export class Installer {
   ): Promise<Installed> {
     const there = await this.#whole(target, print, download);
     if (there !== undefined) return there;
-    if (await lstat(target).catch(() => undefined)) {
-      const aside = await mkdtemp(join(this.#folder, PARTIAL, 'old-'));
-      await rename(target, join(aside, 'old'));
-      await rm(aside, { recursive: true, force: true });
-    }
+    // A link, or anything else, where the version's folders go is removed itself, first, so
+    // nothing is removed through it.
+    const above = await lstat(dirname(target)).catch(() => undefined);
+    if (above !== undefined && !above.isDirectory()) await this.#discard(dirname(target));
+    if (await lstat(target).catch(() => undefined)) await this.#discard(target);
     await mkdir(dirname(target), { recursive: true, mode: 0o755 });
     try {
       await rename(work, target);
@@ -359,11 +356,24 @@ export class Installer {
     return placed;
   }
 
+  /** Moves `path` aside, into the folder for downloads, and removes it there. */
+  async #discard(path: string): Promise<void> {
+    const aside = await mkdtemp(join(this.#folder, PARTIAL, 'old-'));
+    await rename(path, join(aside, 'old'));
+    await rm(aside, { recursive: true, force: true });
+  }
+
   /**
-   * The install at `target`, if its marker says it holds `print`, each file, folder and link it
-   * records is there as it says, and its entry point is there.
+   * The install at `target`, if each folder from the installer's own down to it is a folder, not a
+   * link, its marker says it holds `print`, each file, folder and link it records is there as it
+   * says, and its entry point is there.
    */
   async #whole(target: string, print: string, download: Download): Promise<Installed | undefined> {
+    let folder = this.#folder;
+    for (const part of relative(this.#folder, target).split(sep)) {
+      folder = join(folder, part);
+      if ((await lstat(folder).catch(() => undefined))?.isDirectory() !== true) return undefined;
+    }
     const text = await readFile(join(target, MARKER), 'utf8').catch(() => undefined);
     if (text === undefined) return undefined;
     let said: unknown;

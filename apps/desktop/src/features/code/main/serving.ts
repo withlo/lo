@@ -172,11 +172,8 @@ export class ServingViews {
     if (input.trust === 'trusted') this.#readChanges(followed);
     this.#checkOut(followed);
     this.#sync();
-    if (input.trust === before) return;
-    // Decided untrusted, whatever it was before, a tab opened again included: what runs on its
-    // checkouts stops, and they go. Undecided, what runs stops.
-    if (input.trust === 'none') this.#letGo(input);
-    else if (input.trust === 'unknown') this.#stopOn(input);
+    // A change to any view's trust, a tab opened again included, is acted on with the others'.
+    if (input.trust !== before) this.#decideAgain(input);
   }
 
   /** Follows every view again, as when git changes. */
@@ -405,9 +402,9 @@ export class ServingViews {
   }
 
   /**
-   * Acts on what the views of `pull`'s pull request decided, as when the one trusted closes: one
-   * decided untrusted lets go of what runs on its checkouts, and one undecided stops it, once no
-   * view of it is trusted.
+   * Acts on what the views of `pull`'s pull request decided, once one of them changes or the one
+   * trusted closes: one decided untrusted lets go of what runs on its checkouts, and they go, and
+   * else one undecided stops what runs, once no view of it is trusted.
    */
   #decideAgain(pull: Pick<ServingInput, 'repo' | 'number'>): void {
     const key = pullKey(pull);

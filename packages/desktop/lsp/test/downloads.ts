@@ -115,8 +115,12 @@ export type Answer =
       readonly hold?: boolean | undefined;
       /** Whether to send it without saying its length. */
       readonly chunked?: boolean | undefined;
-      /** Sends the body a byte at a time, this many milliseconds apart. */
-      readonly trickle?: number | undefined;
+      /**
+       * Sends the body `bytes` at a time (1 unless given), `every` ms apart, and, after `for` ms if
+       * given, the rest at once.
+       */
+      readonly drip?:
+        { readonly every: number; readonly bytes?: number; readonly for?: number } | undefined;
     }
   | { readonly redirect: string; readonly status?: number | undefined }
   | { readonly status: number }
@@ -153,14 +157,20 @@ export async function serve(routes: Routes): Promise<Served> {
     } else if ('body' in answer) {
       const length = answer.chunked === true ? {} : { 'content-length': answer.body.length };
       response.writeHead(answer.status ?? 200, length);
-      if (answer.trickle !== undefined) {
+      if (answer.drip !== undefined) {
         const { body } = answer;
+        const { every, bytes = 1, for: until } = answer.drip;
+        const started = performance.now();
         let sent = 0;
         const timer = setInterval(() => {
-          if (sent < body.length) response.write(body.subarray(sent, sent + 1));
-          else response.end();
-          sent += 1;
-        }, answer.trickle);
+          const whole = until !== undefined && performance.now() - started >= until;
+          const next = whole ? body.length : Math.min(body.length, sent + bytes);
+          response.write(body.subarray(sent, next));
+          sent = next;
+          if (sent < body.length) return;
+          clearInterval(timer);
+          response.end();
+        }, every);
         response.on('close', () => clearInterval(timer));
       } else if (answer.cut === undefined) {
         response.end(answer.body);

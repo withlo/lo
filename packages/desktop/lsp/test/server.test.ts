@@ -687,6 +687,71 @@ test('nothing leaves the group unseen between a stop’s last read of the family
   await eventually(() => sleepers().every((pid) => !running(pid)), 2000);
 });
 
+test('a kill that begins during a stop’s frozen read keeps the group frozen until it’s killed', async () => {
+  // The server and its child ignore SIGTERM, and the child starts a sleeper outside the group
+  // (`setsid`) every 5 ms. As the stop reads the family with the group frozen, the server's memory
+  // reads past its cap, so a kill begins; the stop's read ends while the kill's second round reads.
+  let reads = 0;
+  let past = false;
+  const { promise: secondRound, resolve: reachedSecondRound } = Promise.withResolvers<void>();
+  const { server, seen } = startFake(
+    { stubborn: true, child: true, sleepers: 'child' },
+    {
+      tuning: {
+        memoryEvery: 50,
+        family: 5000,
+        freeze: 5000,
+        readFamily: async (group, also) => {
+          const family = await readFamily(group, also);
+          // A read of its memory.
+          if (also === undefined) {
+            return past ? family.map((member) => ({ ...member, resident: 8 * 1024 ** 3 })) : family;
+          }
+          reads += 1;
+          if (reads === 2) {
+            // The stop's read with the group frozen.
+            past = true;
+            await secondRound;
+          } else if (reads === 4) {
+            // The kill's second round, read.
+            reachedSecondRound();
+            await sleep(150);
+          }
+          return family;
+        },
+      },
+    },
+  );
+  expect(await server.ready).toBe(true);
+  const sleepers = () => seen().flatMap((event) => (event.event === 'sleeper' ? [event.pid] : []));
+  await eventually(() => sleepers().length >= 10);
+  await server.stop();
+  expect(reads).toBeGreaterThanOrEqual(4);
+  await eventually(() => sleepers().every((pid) => !running(pid)), 2000);
+});
+
+test('a stop whose last read of the family takes too long still signals what it found before', async () => {
+  // The read as the server shuts down finds its escapee; each read after never ends.
+  let reads = 0;
+  const { server, seen } = startFake(
+    { escapee: true },
+    {
+      tuning: {
+        memoryEvery: 60_000,
+        readFamily: (group, also) => {
+          if (also !== undefined) reads += 1;
+          return reads > 1 ? new Promise(() => undefined) : readFamily(group, also);
+        },
+      },
+    },
+  );
+  expect(await server.ready).toBe(true);
+  const escapee = await eventually(() => seen().find((event) => event.event === 'escapee'));
+  await server.stop();
+  expect(reads).toBe(2);
+  await eventually(() => !running(escapee.pid), 1000);
+});
+
 test('what a server started in a session of its own is stopped with it', async () => {
   const { server, seen } = startFake({ escapee: true });
   await server.ready;

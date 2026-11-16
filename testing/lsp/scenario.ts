@@ -45,7 +45,7 @@ export interface Scenario {
    * every few milliseconds, reporting each, until it's stopped.
    */
   readonly sleepers?: 'child' | 'escapee';
-  /** It ignores `shutdown`, `exit` and `SIGTERM`. */
+  /** It ignores `shutdown`, `exit` and `SIGTERM`, and its child ignores `SIGTERM`. */
   readonly stubborn?: boolean;
   /** Lines it writes to stderr as it starts. */
   readonly stderr?: readonly string[];

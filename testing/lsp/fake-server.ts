@@ -198,6 +198,9 @@ connection.onClose(() => {
 /** A process that waits until it's killed. */
 const IDLE = 'setInterval(() => {}, 1 << 30)';
 
+/** What makes a process ignore `SIGTERM`, before its script. */
+const STUBBORN = "process.on('SIGTERM', () => undefined);\n";
+
 /**
  * A process that starts a sleeper in a session of its own every 5 ms, reporting each to the report
  * it's given, until it's killed.
@@ -238,7 +241,8 @@ function flood(): void {
 
 async function afterInitialized(): Promise<void> {
   if (scenario.child) {
-    const script = scenario.sleepers === 'child' ? SLEEPERS : IDLE;
+    // A stubborn server's child ignores `SIGTERM` too.
+    const script = `${scenario.stubborn ? STUBBORN : ''}${scenario.sleepers === 'child' ? SLEEPERS : IDLE}`;
     const child = spawn(process.execPath, ['-e', script, scenario.report], { stdio: 'ignore' });
     report({ event: 'child', pid: child.pid ?? 0 });
   }

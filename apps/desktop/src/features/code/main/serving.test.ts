@@ -349,6 +349,26 @@ describe('following views for servers', () => {
     expect(lets).toEqual(['let go Rozed-Dev/E2E#81']);
   });
 
+  it('lets go of what runs on a PR’s head once its trusted tab can’t be worked out and another is untrusted', async () => {
+    const { repo } = repoOf(['src/a.ts']);
+    const shown = new Map([
+      ['v1', input(repo, { number: 81 })],
+      ['v3', input(repo, { id: 'v3', number: 81, trust: 'none', off: true })],
+    ]);
+    const { serving, alive, lets } = onPool(shown);
+    for (const id of shown.keys()) serving.update(id);
+    await drain();
+    expect(alive()).toHaveLength(1);
+    expect(lets).toEqual([]);
+    // GitHub can't be reached to check #81 again in the tab that trusted it: the other's decision
+    // holds, and its checkouts go.
+    shown.set('v1', input(repo, { number: 81, trust: 'unknown', off: true }));
+    serving.update('v1');
+    await drain();
+    expect(alive()).toEqual([]);
+    expect(lets).toEqual(['let go Rozed-Dev/E2E#81']);
+  });
+
   it('stops what runs, and keeps its checkouts, while trust can’t be worked out after a push', async () => {
     const { repo } = repoOf(['src/a.ts']);
     const shown = new Map([['v1', input(repo)]]);

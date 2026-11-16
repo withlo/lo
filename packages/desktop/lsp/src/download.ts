@@ -8,12 +8,13 @@
  *   `fetch` is Chromium's (`net.request`), which takes the system's proxy and keeps nothing in its
  *   cache.
  * - It stops as soon as more comes than may: the size the manifest pinned, when it's known.
- * - It gives up once less than {@link LEAST} has come in any {@link STALL} that Lo waits for the
- *   network, as a try that was cut short, so a host that stops sending, or sends a byte now and
- *   then, can't hold up the tries after it. An answer's headers count by the same rule: they come
- *   whole, so an answer must begin within {@link STALL} of being asked for, and the count starts
- *   again from it. There's no deadline for the whole file, which can be hundreds of megabytes on a
- *   slow connection.
+ * - It gives up, as a try that was cut short, once nothing at all has come for 30 s, or less than
+ *   16 KB in any 5 minutes, of the time Lo waits for the network ({@link STALL}). So a host that
+ *   stops sending, or sends a byte now and then, can't hold up the tries after it, while a proxy
+ *   that sends a byte every few seconds as it scans the file has 5 minutes to finish. An answer's
+ *   headers come whole, so each answer must begin within 30 s of being asked for, and both counts
+ *   start again from it. There's no deadline for the whole file, which can be hundreds of
+ *   megabytes on a slow connection.
  * - What arrives is only written to the file, never run or unpacked here: the caller checks the
  *   size and hash this returns before anything else reads it.
  */
@@ -27,15 +28,22 @@ import { isDownloadAddress } from './manifest.ts';
 /** The most redirects a download follows. */
 export const REDIRECTS = 5;
 
-/** The time a download's progress is counted over, in milliseconds: any 30 s it waits. */
-export const STALL = 30_000;
+/** What counts as a download that has stalled, by the time it spends waiting for the network. */
+export interface StallLimits {
+  /** How long it may wait with nothing at all coming, in milliseconds. */
+  readonly quiet: number;
+  /** The time its rate is counted over, in milliseconds. */
+  readonly window: number;
+  /** The least it must bring in any {@link StallLimits.window}, in bytes. */
+  readonly least: number;
+}
 
 /**
- * The least a download must bring in any {@link STALL} it waits, in bytes: about half a kilobyte a
- * second, so slow that only a connection that has all but stopped falls below it. It's more than
- * any host's headers, so an answer that keeps to it begins within {@link STALL}.
+ * Nothing for 30 s, or less than 16 KB in any 5 minutes. 16 KB in 5 minutes is so slow that only a
+ * connection that has all but stopped falls below it, and 5 minutes lets a proxy that holds a file
+ * back while it scans it, sending a byte every few seconds meanwhile, finish.
  */
-export const LEAST = 16 * 1024;
+export const STALL: StallLimits = { quiet: 30_000, window: 5 * 60_000, least: 16 * 1024 };
 
 /** Statuses that send a request on to a `Location`. */
 const REDIRECT_STATUSES: ReadonlySet<number> = new Set([301, 302, 303, 307, 308]);
@@ -53,11 +61,8 @@ export interface FetchOptions {
   readonly signal?: AbortSignal | undefined;
   /** Hears how many bytes of the file have come so far, as they come. */
   readonly received?: ((bytes: number) => void) | undefined;
-  /**
-   * The time its progress is counted over, in milliseconds: {@link STALL} unless given. Less than
-   * {@link LEAST} in any of it is a stall.
-   */
-  readonly stall?: number | undefined;
+  /** What counts as a stall: {@link STALL} unless given. */
+  readonly stall?: StallLimits | undefined;
 }
 
 /** What came: its size, and its SHA-256 in lowercase hex. */
@@ -80,7 +85,7 @@ export async function fetchFile(
   options: FetchOptions,
 ): Promise<Fetched> {
   options.signal?.throwIfAborted();
-  const stall = new Stall(options.stall ?? STALL, LEAST, options.signal);
+  const stall = new Stall(options.stall ?? STALL, options.signal);
   try {
     return await fetchWatched(url, file, { ...options, signal: stall.signal }, stall);
   } finally {
@@ -234,22 +239,24 @@ async function* readChunks(
 }
 
 /**
- * A watch on a download's waits for the network: once less than `least` bytes have come in any
- * `ms` of waiting, it aborts its {@link Stall.signal} with an `interrupted` error. Only the time
- * spent waiting counts, so Lo's own work between waits, such as writing what came, never does.
- * An answer's headers, which come whole, start the count again.
+ * A watch on a download's waits for the network: once nothing at all has come for
+ * {@link StallLimits.quiet}, or less than {@link StallLimits.least} in any
+ * {@link StallLimits.window}, it aborts its {@link Stall.signal} with an `interrupted` error. Only
+ * the time spent waiting counts, so Lo's own work between waits, such as writing what came, never
+ * does. An answer's headers, which come whole, start both counts again.
  */
 class Stall {
   /** Aborts once the caller's signal does, or once a wait has stalled. */
   readonly signal: AbortSignal;
-  readonly #ms: number;
-  readonly #least: number;
+  readonly #limits: StallLimits;
   readonly #controller = new AbortController();
   #timer: ReturnType<typeof setTimeout> | undefined;
   /** How long it has waited, in milliseconds, up to the end of the last wait. */
   #waited = 0;
-  /** When the count last started, in time waited. */
+  /** When the counts last started, in time waited. */
   #from = 0;
+  /** When something last came, or the counts started, in time waited. */
+  #last = 0;
   /**
    * What came, oldest first, each when its wait ended, in time waited: only the newest that
    * together reach `least`, since nothing older can be what keeps the download going.
@@ -258,9 +265,8 @@ class Stall {
   /** The bytes in {@link Stall.#came}. */
   #recent = 0;
 
-  constructor(ms: number, least: number, signal: AbortSignal | undefined) {
-    this.#ms = ms;
-    this.#least = least;
+  constructor(limits: StallLimits, signal: AbortSignal | undefined) {
+    this.#limits = limits;
     this.signal =
       signal === undefined
         ? this.#controller.signal
@@ -269,6 +275,8 @@ class Stall {
 
   /** Counts `bytes` that the last wait brought. */
   came(bytes: number): void {
+    if (bytes === 0) return;
+    this.#last = this.#waited;
     this.#came.push({ at: this.#waited, bytes });
     this.#recent += bytes;
     // What's older than the newest that reach `least` no longer counts.
@@ -276,7 +284,7 @@ class Stall {
     while (
       oldest !== undefined &&
       this.#came.length > 1 &&
-      this.#recent - oldest.bytes >= this.#least
+      this.#recent - oldest.bytes >= this.#limits.least
     ) {
       this.#came.shift();
       this.#recent -= oldest.bytes;
@@ -284,11 +292,12 @@ class Stall {
     }
   }
 
-  /** An answer has come, its headers whole: the count starts again. */
+  /** An answer has come, its headers whole: both counts start again. */
   answered(): void {
     this.#came = [];
     this.#recent = 0;
     this.#from = this.#waited;
+    this.#last = this.#waited;
   }
 
   /**
@@ -298,19 +307,21 @@ class Stall {
   async watch<T>(promise: Promise<T>): Promise<T> {
     const { promise: given, reject: stalled } = Promise.withResolvers<never>();
     const began = performance.now();
+    const { quiet, slow } = this.#due();
     clearTimeout(this.#timer);
     this.#timer = setTimeout(
       () => {
-        const seconds = (this.#ms / 1000).toLocaleString('en-US');
-        const kilobytes = (this.#least / 1024).toLocaleString('en-US');
+        const { quiet: ms, window, least } = this.#limits;
         const error = new DownloadError(
           'interrupted',
-          `The download stalled: less than ${kilobytes} KB came in ${seconds} s.`,
+          quiet <= slow
+            ? `The download stalled: nothing came for ${duration(ms)}.`
+            : `The download stalled: less than ${least / 1024} KB came in ${duration(window)}.`,
         );
         this.#controller.abort(error);
         stalled(error);
       },
-      Math.max(0, this.#due() - this.#waited),
+      Math.max(0, Math.min(quiet, slow) - this.#waited),
     );
     try {
       return await Promise.race([promise, given]);
@@ -321,19 +332,31 @@ class Stall {
   }
 
   /**
-   * When, in time waited, the download stalls unless more comes: once the oldest of what reaches
-   * `least` is `ms` old, or `ms` after the count started while nothing reaches it.
+   * When, in time waited, the download stalls unless more comes: `quiet` after anything last came,
+   * or, for its rate, once the oldest of what reaches `least` is `window` old, or `window` after the
+   * counts started while nothing reaches it.
    */
-  #due(): number {
+  #due(): { readonly quiet: number; readonly slow: number } {
+    const { quiet, window, least } = this.#limits;
     const oldest = this.#came[0];
-    if (oldest === undefined || this.#recent < this.#least) return this.#from + this.#ms;
-    return oldest.at + this.#ms;
+    const slow =
+      oldest === undefined || this.#recent < least ? this.#from + window : oldest.at + window;
+    return { quiet: this.#last + quiet, slow };
   }
 
   /** Stops watching. */
   end(): void {
     clearTimeout(this.#timer);
   }
+}
+
+/** `ms` in words: minutes when it's whole minutes, else seconds. */
+function duration(ms: number): string {
+  if (ms >= 60_000 && ms % 60_000 === 0) {
+    const minutes = ms / 60_000;
+    return minutes === 1 ? '1 minute' : `${minutes} minutes`;
+  }
+  return `${(ms / 1000).toLocaleString('en-US')} s`;
 }
 
 function tooLarge(limit: number): DownloadError {

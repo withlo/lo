@@ -224,6 +224,13 @@ export class Server {
   #stopping: Promise<void> | undefined;
   /** The end of its group after a failure. */
   #cleanup: Promise<void> | undefined;
+  /**
+   * The kill under way, once one has begun: from then on it alone signals the family, so nothing
+   * lets the group it froze go on.
+   */
+  #killing: Promise<void> | undefined;
+  /** Each process outside its group that a stop or a kill has read, by ID, for a kill to find. */
+  readonly #outside = new Map<number, Member>();
   #memory: number | undefined;
   #memoryTimer: ReturnType<typeof setInterval> | undefined;
   #readingMemory = false;
@@ -434,31 +441,44 @@ export class Server {
    * Stops what's left of the server's family, with any of `known`, read before, that's still the
    * same process: `SIGTERM`, then, if anything outlasts it, a kill. The group is frozen while
    * what's outside it is read, and until `SIGTERM` has been sent, so nothing in it can leave it, or
-   * start a process outside it, unseen in between.
+   * start a process outside it, unseen in between. A kill that begins meanwhile, as when the
+   * server's memory passes its cap, takes over: the stop signals nothing more, and waits for it.
    */
   async #endGroup(known: readonly Member[] = []): Promise<void> {
     const group = this.#child?.pid;
     if (group === undefined) return;
+    if (this.#killBegun()) return this.#kill();
     signalFamily(group, [], 'SIGSTOP');
     const others = await this.#others(group, known);
+    // The group a kill froze meanwhile stays frozen until it's killed.
+    if (this.#killBegun()) return this.#kill();
     const pids = others.map((member) => member.pid);
     const sent = signalFamily(group, pids, 'SIGTERM');
     // Each in the group goes on to the `SIGTERM` waiting for it.
     signalFamily(group, [], 'SIGCONT');
-    if (sent && !(await familyGone(group, pids, this.#limits.term))) {
-      await this.#kill(others);
-      return;
-    }
+    if (sent && !(await familyGone(group, pids, this.#limits.term))) return this.#kill();
     await Promise.race([this.#exited, sleep(this.#limits.kill)]);
+    if (this.#killBegun()) await this.#kill();
+  }
+
+  /** Whether a kill has begun, which signals the family alone from then on. */
+  #killBegun(): boolean {
+    return this.#killing !== undefined;
   }
 
   /**
-   * Kills the server's family at once, with any of `known` that's still the same process. The
-   * group is frozen first, then each process found by its parent outside it, round after round
-   * until a round finds nothing new, so nothing in the family can start a process that outlives
-   * it. Only then is everything frozen killed.
+   * Kills the server's family at once, with what a stop or an earlier read found outside its group
+   * that's still the same process. The group is frozen first, then each process found by its
+   * parent outside it, round after round until a round finds nothing new, so nothing in the family
+   * can start a process that outlives it. Only then is everything frozen killed. There's one kill:
+   * asked again, it's the one under way.
    */
-  async #kill(known: readonly Member[] = []): Promise<void> {
+  #kill(): Promise<void> {
+    this.#killing ??= this.#killFamily();
+    return this.#killing;
+  }
+
+  async #killFamily(): Promise<void> {
     const group = this.#child?.pid;
     if (group === undefined) return;
     signalFamily(group, [], 'SIGSTOP');
@@ -467,7 +487,8 @@ export class Server {
     for (let round = 0; round < FREEZE_ROUNDS; round += 1) {
       const left = until - performance.now();
       if (left <= 0) break;
-      const found = await this.#others(group, [...known, ...frozen.values()], left);
+      const known = [...this.#outside.values(), ...frozen.values()];
+      const found = await this.#others(group, known, left);
       const fresh = found.filter((member) => !frozen.has(member.pid));
       if (fresh.length === 0) break;
       for (const member of fresh) frozen.set(member.pid, member);
@@ -480,23 +501,23 @@ export class Server {
   /**
    * The processes descended from the server's group that have left it, such as a daemon in a
    * session of its own, and each of `known` that's still the same process, with what descends from
-   * it, as read within `within`. Once the group is empty, only `known` leads anywhere.
+   * it, as read within `within`. Once the group is empty, only `known` leads anywhere. A read that
+   * fails or takes longer gives `known` as it is, so what was found before is still signalled.
    */
   async #others(
     group: number,
     known: readonly Member[] = [],
     within = this.#limits.family,
-  ): Promise<Member[]> {
+  ): Promise<readonly Member[]> {
     if (!signalFamily(group, [], 0) && known.length === 0) return [];
-    try {
-      const family = await Promise.race([
-        this.#readFamily(group, known),
-        sleep(within).then(() => []),
-      ]);
-      return family.filter((member) => member.group !== group);
-    } catch {
-      return [];
-    }
+    const read = this.#readFamily(group, known).then(
+      (family) => family.filter((member) => member.group !== group),
+      () => undefined,
+    );
+    const found = await Promise.race([read, sleep(within).then(() => undefined)]);
+    if (found === undefined) return known;
+    for (const member of found) this.#outside.set(member.pid, member);
+    return found;
   }
 
   /** Checks what the server needs, then starts it. */

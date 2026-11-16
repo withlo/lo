@@ -1,11 +1,14 @@
 // Downloads and installs against a server on this machine, with archives built by each test: what
 // installs, and every way a download is refused or cut short, each leaving nothing behind.
 
+import { randomBytes } from 'node:crypto';
 import {
   existsSync,
+  lstatSync,
   mkdirSync,
   readdirSync,
   readFileSync,
+  renameSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -16,6 +19,7 @@ import { describe, expect, test, vi } from 'vitest';
 
 import * as disk from '../src/disk.ts';
 import { DownloadError, Installer, type Pinned, REDIRECTS } from '../src/index.ts';
+import type { StallLimits } from '../src/download.ts';
 import { fingerprint } from '../src/install.ts';
 import { UNPACK_RULES } from '../src/unpack.ts';
 import { pinned, serve, type Routes, sha256, tarGz } from './downloads.ts';
@@ -37,6 +41,12 @@ const ARCHIVE = tarGz([
 
 const PINNED = pinned(URL, ARCHIVE, 'tar.gz', 'server/bin/server');
 
+/**
+ * Lo's stall limits scaled down: nothing for 300 ms, or less than 256 bytes in any 1.5 s, where Lo
+ * waits 30 s and 5 minutes for 16 KB.
+ */
+const STALL: StallLimits = { quiet: 300, window: 1500, least: 256 };
+
 async function setUp(
   routes: Routes,
   fetch?: (served: typeof globalThis.fetch) => typeof globalThis.fetch,
@@ -48,7 +58,7 @@ async function setUp(
     folder,
     fetch: fetch?.(served.fetch) ?? served.fetch,
     backoff: [0, 0],
-    stall: 200,
+    stall: STALL,
   });
   /** What's in the installer's folder, but for empty folders it keeps for downloads. */
   const left = () =>
@@ -221,7 +231,7 @@ test('a download cut short is tried again, from the start', async () => {
 });
 
 test('a download that stalls, before its answer or within it, is tried again', async () => {
-  // Nothing comes for the stall's 200 ms, so each try is given up as cut short.
+  // Nothing comes for 300 ms, so each try is given up as cut short.
   const { installer, asked } = await setUp({
     [URL]: [{ silent: true }, { body: ARCHIVE, cut: 40, hold: true }, { body: ARCHIVE }],
   });
@@ -230,10 +240,33 @@ test('a download that stalls, before its answer or within it, is tried again', a
   expect(asked).toEqual([URL, URL, URL]);
 });
 
-test('a download that trickles in is given up as stalled, though something comes in time', async () => {
-  // A byte every 20 ms: never 200 ms with nothing, but far less than 16 KB in any of it.
+test('a slow download that keeps coming isn’t given up, however long it takes', async () => {
+  // 32 bytes every 50 ms: never quiet, and more than 256 bytes in any 1.5 s, for 2.4 s.
+  const data = randomBytes(1536);
+  const slow = pinned(URL, data, 'file', 'server');
   const { installer, asked } = await setUp({
-    [URL]: [{ body: ARCHIVE, trickle: 20 }, { body: ARCHIVE }],
+    [URL]: { body: data, drip: { every: 50, bytes: 32 } },
+  });
+  const installed = await installer.install('server', slow);
+  expect(readFileSync(installed.entry)).toEqual(data);
+  expect(asked).toEqual([URL]);
+});
+
+test('a download a proxy holds back as it scans it, a byte at a time, then sends whole, isn’t given up', async () => {
+  // A byte every 100 ms for 600 ms, as a proxy sends one every 10 s for 2 minutes, then the rest.
+  const { installer, asked } = await setUp({
+    [URL]: { body: ARCHIVE, drip: { every: 100, for: 600 } },
+  });
+  const installed = await installer.install('server', PINNED);
+  expect(readFileSync(installed.entry, 'utf8')).toBe('program');
+  expect(asked).toEqual([URL]);
+});
+
+test('a download that brings a byte just before each quiet limit is given up as stalled', async () => {
+  // A byte every 290 ms, as one every 29 s: never 300 ms with nothing, but far less than 256 bytes
+  // in 1.5 s.
+  const { installer, asked } = await setUp({
+    [URL]: [{ body: ARCHIVE, drip: { every: 290 } }, { body: ARCHIVE }],
   });
   const installed = await installer.install('server', PINNED);
   expect(readFileSync(installed.entry, 'utf8')).toBe('program');
@@ -298,6 +331,23 @@ test('a folder whose folders aren’t as its marker records is fetched again', a
   expect(readFileSync(join(lib, 'data'), 'utf8')).toBe('data');
   expect(asked).toEqual([URL, URL]);
 });
+
+test.each(['server', 'server/1.0.0'])(
+  'an install whose folder %s is a link to a copy elsewhere is fetched again, and the copy left',
+  async (path) => {
+    const { installer, folder, asked } = await setUp({ [URL]: { body: ARCHIVE } });
+    await installer.install('server', PINNED);
+    const copy = join(tempFolder(), 'copy');
+    renameSync(join(folder, path), copy);
+    symlinkSync(copy, join(folder, path));
+    expect(await installer.installed('server', PINNED)).toBeUndefined();
+    const installed = await installer.install('server', PINNED);
+    expect(lstatSync(join(folder, path)).isDirectory()).toBe(true);
+    expect(readFileSync(installed.entry, 'utf8')).toBe('program');
+    expect(readdirSync(copy)).not.toEqual([]);
+    expect(asked).toEqual([URL, URL]);
+  },
+);
 
 test('a folder unpacked under older rules is fetched again', async () => {
   const { installer, folder, asked } = await setUp({ [URL]: { body: ARCHIVE } });
