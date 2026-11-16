@@ -6,8 +6,8 @@ import { parseOid, type Oid, type TreeEntry } from '@lo/git';
 import { describe, expect, it, onTestFinished } from 'vitest';
 
 import type { Servers } from '../contract.ts';
-import type { Adapter } from './adapters.ts';
-import { ServerPool, type PoolView, type Root } from './servers.ts';
+import { ADAPTERS, type Adapter } from './adapters.ts';
+import { ServerPool, type Found, type PoolView, type Root } from './servers.ts';
 import {
   changedLanguages,
   repoKey,
@@ -54,14 +54,14 @@ function repoOf(changed: readonly string[]) {
   return { repo, checkouts };
 }
 
-/** A pool that notes what it's told. */
-function poolOf() {
+/** A pool that notes what it's told, and finds each server as `find` says. */
+function poolOf(find: () => Found | undefined = () => undefined) {
   const synced: { views: readonly PoolView[]; screen: string | undefined }[] = [];
   const restarted: Root[] = [];
   const pool: Pick<ServerPool, 'sync' | 'shown' | 'find' | 'restart' | 'log'> = {
     sync: (views, screen) => synced.push({ views, screen }),
     shown: () => undefined,
-    find: () => undefined,
+    find,
     async restart(_repo, _adapter, root) {
       restarted.push(root);
     },
@@ -70,8 +70,12 @@ function poolOf() {
   return { pool, synced, restarted, last: () => synced.at(-1)?.views ?? [] };
 }
 
-function follow(current: () => ServingInput | undefined, adapters: readonly Adapter[] = [TS, GO]) {
-  const { pool, synced, restarted, last } = poolOf();
+function follow(
+  current: () => ServingInput | undefined,
+  adapters: readonly Adapter[] = [TS, GO],
+  find?: () => Found | undefined,
+) {
+  const { pool, synced, restarted, last } = poolOf(find);
   const published: Servers[] = [];
   let screen: string | undefined = 'v1';
   const serving = new ServingViews({
@@ -249,6 +253,34 @@ describe('following views for servers', () => {
     // A Go file of the whole tree, asked about: its server is needed too.
     expect(serving.serverFor('v1', head, 'cmd/main.go')).toEqual({ kind: 'starting', name: 'Go' });
     expect(last()[0]?.wants).toEqual([TS, GO]);
+  });
+
+  it('gives a ready server its adapter’s word on type hints, so Pyright is never asked for them', async () => {
+    const { repo } = repoOf(['src/a.ts', 'src/b.py']);
+    const server = new StandIn({
+      name: 'stand-in',
+      program: '/bin/x',
+      args: [],
+      root: `/cache/checkouts/pull-80/${head}`,
+      home: '/home/lo',
+      path: [],
+      git: {},
+    });
+    const { serving } = follow(
+      () => input(repo),
+      ADAPTERS,
+      () => ({ kind: 'ready', server }),
+    );
+    serving.update('v1');
+    await settle();
+    expect(serving.serverFor('v1', head, 'src/b.py')).toMatchObject({
+      kind: 'ready',
+      name: 'Python',
+      noHints: 'Pyright has no type hints.',
+    });
+    const typescript = serving.serverFor('v1', head, 'src/a.ts');
+    expect(typescript).toMatchObject({ kind: 'ready', name: 'TypeScript' });
+    expect(typescript).toHaveProperty('noHints', undefined);
   });
 
   it('says a checkout that failed, and makes it again on Restart', async () => {

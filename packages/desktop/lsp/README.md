@@ -76,6 +76,42 @@ own (`setsid`) is still found.
   read again by its ID alone, and an ID that can't be told in that time to be the same process is
   left alone.
 
+## Servers
+
+The servers Lo runs, each downloaded on first use for a trusted view, as `servers.json` pins it, and
+each with its adapter in `src/adapters/`. Both run on Lo's own Node, which downloads first, and need
+nothing installed.
+
+| Server  | Version | For                    | From                                                                               | License                                              |
+| ------- | ------- | ---------------------- | ---------------------------------------------------------------------------------- | ---------------------------------------------------- |
+| vtsls   | 0.3.0   | TypeScript, JavaScript | npm: `@vtsls/language-server` and its 17 dependencies, TypeScript 5.9.3 among them | MIT; TypeScript's is Apache-2.0, the rest MIT or ISC |
+| Pyright | 1.1.414 | Python                 | npm: `pyright`                                                                     | MIT                                                  |
+| Node    | 26.13.1 | the two above          | nodejs.org                                                                         | MIT                                                  |
+
+Each starts as Node, by its absolute path, with a cap on its heap, then its own entry point inside
+its install, never the launcher npm would link, with no shell and an environment built from nothing.
+What it's told is its adapter's alone, and the adapter says why each setting is as it is:
+
+- **vtsls** runs its own TypeScript, never a workspace's (`node_modules/typescript`), and has
+  automatic type acquisition off, so it runs no npm. It loads no `tsserver` plugin from the
+  checkout. A plugin a checkout's `tsconfig.json` names is looked for by its package's name alone,
+  in the `node_modules` beside Lo's TypeScript and, as Node finds packages, in each `node_modules`
+  above Lo's install, such as `~/node_modules`, so a checkout can load a package you already have
+  there, though it can't add one. Neither vtsls nor `tsserver` can turn those plugins off.
+  `tsserver`'s heap is capped at 3 GB and vtsls's at 512 MB, under Lo's 4 GB for the group.
+- **Pyright** is given `/dev/null` as its Python, which can't run, so it runs no interpreter: not
+  the machine's, nor one a checkout's virtual environment or `.python-version` would pick. It
+  carries the standard library's stubs itself. It answers no inlay hints, so its adapter says it has
+  none (`hints: false`).
+
+Neither runs in a sandbox: each reads what you can, so an absolute import, or Pyright's
+`extraPaths`, leads it to files outside the checkout, and a hover can show what's in one. Nothing
+can send what it reads anywhere, and Lo never opens a place outside the checkout an answer names: it
+shows as outside the repository.
+
+Lo names each server's license wherever it says what the server is: a server's details in the status
+bar show its name, version and license, "Pyright 1.1.414 · MIT".
+
 ## Downloads
 
 `servers.json` pins what Lo downloads, and `scripts/pin.ts` writes it (see `AGENTS.md`). An

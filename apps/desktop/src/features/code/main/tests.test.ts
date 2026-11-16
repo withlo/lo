@@ -6,10 +6,15 @@ import { join } from 'node:path';
 
 import { describe, expect, it, onTestFinished } from 'vitest';
 
-import { readTestServers, testServersFile } from './tests.ts';
+import { ADAPTERS } from './adapters.ts';
+import { adaptersFor, readTestServers, testServersFile } from './tests.ts';
 
 function refuse(): Promise<never> {
   return Promise.reject(new Error('nothing is downloaded'));
+}
+
+function ids(adapters: readonly { id: string }[]): string[] {
+  return adapters.map((adapter) => adapter.id);
 }
 
 function manifest(value: unknown): string {
@@ -70,5 +75,26 @@ describe('test servers', () => {
       ],
     });
     expect(() => readTestServers(unknown)).toThrow("Lo can't use");
+  });
+
+  it('take the place of Lo’s own servers, which a test run never starts', () => {
+    const file = manifest({
+      servers: [
+        { id: 'typescript', name: 'TypeScript', languages: {}, program: '/bin/x', args: [] },
+      ],
+    });
+    const env = { LO_TEST_SERVERS: file };
+    const shipped = ADAPTERS;
+    expect(ids(adaptersFor({ packaged: true, env, testRun: false, shipped }))).toEqual([
+      'typescript',
+      'python',
+    ]);
+    expect(adaptersFor({ packaged: false, env: {}, testRun: false, shipped })).toBe(shipped);
+    expect(adaptersFor({ packaged: false, env: {}, testRun: true, shipped })).toEqual([]);
+    for (const testRun of [false, true]) {
+      const adapters = adaptersFor({ packaged: false, env, testRun, shipped });
+      expect(ids(adapters)).toEqual(['typescript']);
+      expect(adapters[0]).not.toBe(shipped[0]);
+    }
   });
 });
