@@ -1,0 +1,4 @@
+# `nx format:check` and `nx format:write` name each changed file on Prettier's command line, and
+# Prettier refuses a symlink named there. Every CLAUDE.md is a link to the AGENTS.md beside it,
+# which Prettier checks as itself.
+CLAUDE.md

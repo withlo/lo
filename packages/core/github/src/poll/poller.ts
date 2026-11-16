@@ -533,6 +533,11 @@ type Outcome =
       kind: 'repo';
       listed: ListedPulls;
       list: OpenPullRequestList | undefined;
+      /**
+       * When Lo started reading the open pull requests, before their pages and the rulesets and
+       * lookups that follow, in milliseconds since the Unix epoch: what the list is stamped with.
+       */
+      listedAt: number;
       rules: TrunkRuleList | undefined;
       /** The repository's count of writes when the poll was chosen. */
       written: number;
@@ -2161,7 +2166,8 @@ export class Poller {
         );
       }
       case 'repo': {
-        const listed = await settle(this.#queue.read(() => pollRepo(client, job)));
+        const now = () => this.#config.now();
+        const listed = await settle(this.#queue.read(() => pollRepo(client, job, now)));
         if (!listed.ok) return listed;
         const gated = client.gated(this.#queue.gate());
         return settle(this.#finishRepo(gated, job, listed.value));
@@ -2203,7 +2209,7 @@ export class Poller {
       const carried = job.carry ? job.list : undefined;
       await this.#lookUpMerged(client, job.repo, list, carried, inForce, this.#config.now());
     }
-    return { kind: 'repo', listed: outcome.listed, list, rules, written: job.written };
+    return { ...outcome, list, rules };
   }
 
   /** Takes in a poll's answer: updates what's known, sends events, and returns the cache writes to make. */
@@ -2335,11 +2341,12 @@ export class Poller {
     const writes: CacheWrite[] = [];
     const login = this.#login;
     const cache = this.#cache;
-    const put = (name: string, value: unknown, stamped?: string) =>
+    const put = (name: string, value: unknown, stamped?: string, at = wall) =>
       writes.push(() =>
-        cache.put(login, target.key, [{ name, entry: { value, fetchedAt: wall, stamp: stamped } }]),
+        cache.put(login, target.key, [{ name, entry: { value, fetchedAt: at, stamp: stamped } }]),
       );
-    const touch = (name: string) => writes.push(() => cache.touch(login, target.key, name, wall));
+    const touch = (name: string, at = wall) =>
+      writes.push(() => cache.touch(login, target.key, name, at));
     // Every head a poll brings is noted as seen, once for each answer that brings it anew.
     const see = (pull: PullRef, heads: (string | undefined)[]) => {
       const seen = this.#seen;
@@ -2411,7 +2418,7 @@ export class Poller {
         if (!state) return writes;
         const { watchedInterval, jitter, random } = this.#config;
         const now = this.#config.monotonic();
-        const { rules, list, listed } = outcome;
+        const { rules, list, listed, listedAt } = outcome;
         if (rules) {
           if (rules.unavailable !== undefined) {
             state.rulesFailures += 1;
@@ -2453,22 +2460,24 @@ export class Poller {
             state.lookupRetryAt = undefined;
           }
         }
+        // Stamped when their read started, not once the rulesets and lookups after them are done,
+        // so they never look newer than they are.
         if (state.listed && sameJson(state.listed.value, listed)) {
-          state.listed.fetchedAt = wall;
-          touch(LISTED);
+          state.listed.fetchedAt = listedAt;
+          touch(LISTED, listedAt);
         } else {
           // New ETags, if nothing else.
-          state.listed = { value: listed, fetchedAt: wall };
-          put(LISTED, listed);
+          state.listed = { value: listed, fetchedAt: listedAt };
+          put(LISTED, listed, undefined, listedAt);
         }
         if (list) {
           const changed = !state.list || !sameJson(state.list.value, list);
-          state.list = { value: list, fetchedAt: wall };
-          put(LIST, list);
+          state.list = { value: list, fetchedAt: listedAt };
+          put(LIST, list, undefined, listedAt);
           if (changed) this.#emit({ kind: 'openPullRequests', repo: target, list });
         } else {
-          if (state.list) state.list.fetchedAt = wall;
-          touch(LIST);
+          if (state.list) state.list.fetchedAt = listedAt;
+          touch(LIST, listedAt);
         }
         return writes;
       }
@@ -2610,8 +2619,11 @@ async function pollPull(
 async function pollRepo(
   client: GithubClient,
   job: Extract<Job, { kind: 'repo' }>,
+  now: () => number,
 ): Promise<Extract<Outcome, { kind: 'repo' }>> {
   const { repo } = job;
+  // Stamped as the read starts: a pull request opened while its pages are read may be missed.
+  const listedAt = now();
   const listed: ListedPulls = { pages: [] };
   for (let number = 1; number <= MAX_LISTED_PAGES; number++) {
     const known = job.listed?.pages[number - 1];
@@ -2639,5 +2651,5 @@ async function pollRepo(
     changed || job.list === undefined
       ? await openPullRequestsPaged(client, repo, PAGE_SIZE, RECENTLY_UPDATED_MERGED)
       : undefined;
-  return { kind: 'repo', listed, list, rules: undefined, written: job.written };
+  return { kind: 'repo', listed, list, listedAt, rules: undefined, written: job.written };
 }

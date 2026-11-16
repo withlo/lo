@@ -3,7 +3,8 @@
 // reads its rulesets, or reads the merged pull requests below layers GitHub moved; each tab's stack
 // in it, and where its layer's diff starts; the runs of layers one diff shows; and the state of the
 // layers of the stack on screen, which only its tab reads, and which of the repository's pull
-// requests have an overview, read once for the repository. Nothing here calls Electron.
+// requests have an overview, read once for the repository. Each repository's stacks are offered to
+// the features that merge, with how fresh and whole their list is. Nothing here calls Electron.
 
 import {
   openPullRequest,
@@ -20,8 +21,11 @@ import {
   type TrunkRuleList,
 } from '@lo/github';
 import {
+  planConversion,
   stackPullRequests,
   stacksOf,
+  trunksAmong,
+  trunksOf,
   type LayerStart,
   type PullRequest,
   type Stacks,
@@ -29,10 +33,12 @@ import {
 
 import type { PullState } from '../../tab/contract.ts';
 import type { Offer, StackState } from '../contract.ts';
+import type { Forest as SharedForest } from '../service.ts';
 import type { Found } from './conversion.ts';
 import { runOf, type Run } from './runs.ts';
 import { planStart, type StartForest } from './starts.ts';
 import { viewOf, type Shown } from './view.ts';
+import { calloutText, reasonsText } from './words.ts';
 
 /** A pull request's tab, as the finder follows it. */
 export interface FinderTab {
@@ -73,6 +79,7 @@ export type FinderPoller = Pick<
   | 'cachedRead'
   | 'readStackLayersAgain'
   | 'forgetStackLayers'
+  | 'listSchedule'
   | 'onChange'
 >;
 
@@ -142,6 +149,8 @@ interface Forest {
   readonly stacks: Stacks;
   /** The pull requests they were found among, as `@lo/stacks` takes them. */
   readonly prs: readonly PullRequest[];
+  /** The trunks among the branches those pull requests use. */
+  readonly trunks: readonly string[];
 }
 
 /** An account's poller, once it's been got, or that it couldn't be. */
@@ -251,6 +260,42 @@ export class StackFinder {
     if (!forest || !list) return undefined;
     const layers = poller.cachedRead(tab.pull, STACK_LAYERS)?.value;
     return { login: poller.login, forest, list, layers };
+  }
+
+  /**
+   * `repo`'s stacks as `login`'s poller lists its open pull requests now, with when that list was
+   * last confirmed, the time between lists and whether it holds every open pull request. Nothing
+   * until the list and the rulesets have been read, or before the account's poller has been got
+   * for a tab that acts as it.
+   */
+  forest(repo: RepoRef, login: string): SharedForest | undefined {
+    const entry = this.#pollers.get(login.toLowerCase());
+    if (entry?.kind !== 'ready') return undefined;
+    const { poller } = entry;
+    const listed = poller.openPullRequests(repo);
+    const found = this.#forest(poller, repo);
+    if (!listed || !found) return undefined;
+    const { list, stacks, trunks } = found;
+    // Named as GitHub names it now, as the tabs in it have it.
+    const repository =
+      [...this.#followed.values()].find(
+        ({ tab }) => sameLogin(login, tab.login) && tab.pull.repo.equals(repo),
+      )?.tab.repository ?? repo.name;
+    return {
+      stacks,
+      trunks,
+      listedAt: listed.fetchedAt,
+      listEvery: poller.listSchedule().every,
+      whole: !list.truncated,
+      conversion(number, facts) {
+        const conversion = planConversion(stacks, number, facts);
+        if (conversion.kind === 'plan') {
+          return { ...conversion, offer: calloutText(conversion.plan, stacks) };
+        }
+        const words = reasonsText(conversion.reasons, { number, repository, forest: stacks, list });
+        return { ...conversion, words };
+      },
+    };
   }
 
   /**
@@ -518,12 +563,14 @@ export class StackFinder {
       return kept;
     }
     const merged = more.flatMap((read) => read.merged);
+    const prs = stackPullRequests(list, merged);
     const forest = {
       list,
       rules,
       more,
       stacks: stacksOf(list, rules, merged),
-      prs: stackPullRequests(list, merged),
+      prs,
+      trunks: trunksAmong(trunksOf(list, rules), prs),
     };
     this.#forests.set(key, forest);
     return forest;
