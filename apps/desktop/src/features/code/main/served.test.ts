@@ -99,6 +99,7 @@ function standIn(
   hints: { offered?: boolean; none?: string } = {},
   options: {
     referencesFromDefinition?: boolean;
+    noReferences?: string;
     languages?: Readonly<Record<string, string | undefined>>;
   } = {},
 ) {
@@ -114,6 +115,7 @@ function standIn(
     languageOf: (path) => (Object.hasOwn(languages, path) ? languages[path] : 'typescript'),
     noHints: hints.none,
     referencesFromDefinition: options.referencesFromDefinition,
+    noReferences: options.noReferences,
     server: {
       capabilities: { hoverProvider: true, inlayHintProvider: hints.offered ?? true },
       open(path, languageId) {
@@ -659,6 +661,24 @@ describe('references from a definition', () => {
     expect(params[0]).toMatchObject({ path: 'src/format.ts', position: { line: 1 } });
     expect(references).toMatchObject({ name: 'parse', answers: [] });
     expect(references.fallback).toBeUndefined();
+  });
+});
+
+describe('references from the index alone', () => {
+  it('never asks a server that finds none Lo can use, and says why', async () => {
+    const { sides, answering } = await view();
+    const why = 'SourceKit-LSP finds references only from a build, which Lo never runs.';
+    const { serverOf, asked } = standIn(
+      { 'textDocument/references': { ok: true, value: [at('src/parse.ts', 2, 16)] } },
+      true,
+      {},
+      { noReferences: why },
+    );
+    const found = await servedReferences(answering, sides, PARSE_CALL, undefined, serverOf);
+    expect(asked).toEqual([]);
+    expect(found.fallback).toBe(why);
+    expect(found.answers.length).toBeGreaterThan(0);
+    expect(found.answers.every((each) => 'outside' in each || each.source === 'syntax')).toBe(true);
   });
 });
 

@@ -4,8 +4,12 @@ import { Button } from './Button.tsx';
 import { Setting } from './Settings.tsx';
 import { Spinner } from './Spinner.tsx';
 
-/** A toolchain language servers use, as Settings lists it. */
-export interface ToolchainEntry {
+/** A toolchain language servers use, as Settings lists it: one Lo downloads, or the system's. */
+export type ToolchainEntry = DownloadedToolchain | SystemToolchain;
+
+/** A toolchain Lo downloads. */
+export interface DownloadedToolchain {
+  kind?: 'download' | undefined;
   /** What identifies it, and what `onRemove` names. */
   id: string;
   /** "Go". */
@@ -22,6 +26,28 @@ export interface ToolchainEntry {
   removing?: boolean | undefined;
 }
 
+/**
+ * A toolchain of the system's, which Lo doesn't download, as Swift's comes with Xcode: it has no
+ * version of Lo's, and nothing to remove.
+ */
+export interface SystemToolchain {
+  kind: 'system';
+  id: string;
+  /** "Swift". */
+  name: string;
+  /** Where the copy Lo runs is from, "Xcode", or `undefined` while there's none. */
+  from?: string | undefined;
+  /** What it needs while there's none: "Apple’s Command Line Tools". */
+  needs: string;
+  /** The language servers that use it, by name. */
+  uses: readonly string[];
+}
+
+/** Whether `entry` is one of Lo's, downloaded, so it has a "Remove". */
+function downloaded(entry: ToolchainEntry): entry is DownloadedToolchain {
+  return entry.kind !== 'system' && entry.installed !== undefined;
+}
+
 export interface ToolchainRowProps {
   entry: ToolchainEntry;
   /** Remove was pressed: the servers that use it stop, and its files go. */
@@ -34,31 +60,41 @@ function listed(names: readonly string[]): string {
   return `${names.slice(0, -1).join(', ')} and ${names.at(-1)}`;
 }
 
-/** What a row says under its name: how large it is, and what uses it. */
+/**
+ * What a row says under its name: how large it is, or where it's from, or what it needs, and what
+ * uses it.
+ */
 function described(entry: ToolchainEntry): string {
-  const size =
-    entry.installed === undefined ? `Not downloaded · ${entry.download}` : entry.installed;
   const uses =
     entry.uses.length === 0 ? 'No language server uses it yet' : `For ${listed(entry.uses)}`;
+  if (entry.kind === 'system') {
+    return `${entry.from === undefined ? `Needs ${entry.needs}` : `From ${entry.from}`} · ${uses}`;
+  }
+  const size =
+    entry.installed === undefined ? `Not downloaded · ${entry.download}` : entry.installed;
   return `${size} · ${uses}`;
 }
 
 /**
  * One toolchain as a setting: its name and version, how much room it takes or that it isn't
  * downloaded and how large it is, what uses it, and, once it's downloaded, the button that
- * removes it.
+ * removes it. One of the system's says where it's from, or what it needs, and has no button.
  */
 export function ToolchainRow({ entry, onRemove }: ToolchainRowProps) {
   return (
     <Setting
       label={
-        <>
-          {entry.name} <span className="tabular-nums">{entry.version}</span>
-        </>
+        entry.kind === 'system' ? (
+          entry.name
+        ) : (
+          <>
+            {entry.name} <span className="tabular-nums">{entry.version}</span>
+          </>
+        )
       }
       description={<span className="tabular-nums">{described(entry)}</span>}
     >
-      {entry.installed !== undefined && (
+      {downloaded(entry) && (
         <Button
           variant="ghost"
           size="sm"
@@ -108,7 +144,7 @@ export function ToolchainList({ entries, onRemove }: ToolchainListProps) {
     const root = list.current;
     if (pending === null || root === null) return;
     const entry = entries.find((each) => each.id === pending.id);
-    if (entry?.installed !== undefined) {
+    if (entry !== undefined && downloaded(entry)) {
       // It wasn't removed: its button stays, and focus with it.
       if (entry.removing !== true) removal.current = null;
       return;
@@ -122,9 +158,9 @@ export function ToolchainList({ entries, onRemove }: ToolchainListProps) {
     target.focus();
   }, [entries]);
   const remove = (id: string) => {
-    const downloaded = entries.filter((entry) => entry.installed !== undefined);
-    const at = downloaded.findIndex((entry) => entry.id === id);
-    removal.current = { id, next: (downloaded[at + 1] ?? downloaded[at - 1])?.id };
+    const removable = entries.filter(downloaded);
+    const at = removable.findIndex((entry) => entry.id === id);
+    removal.current = { id, next: (removable[at + 1] ?? removable[at - 1])?.id };
     onRemove?.(id);
   };
   return (

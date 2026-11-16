@@ -320,5 +320,10 @@ describe('jdtlsCheckoutProblem', () => {
     const link = tempFolder();
     symlinkSync(tempFolder(), join(link, '.SETTINGS'));
     expect(await jdtlsCheckoutProblem(link)).toContain('.SETTINGS');
+
+    // A long s, which a Mac’s disk opens as .settings.
+    const long = tempFolder();
+    mkdirSync(join(long, '.\u017Fettings'));
+    expect(await jdtlsCheckoutProblem(long)).toContain('.\u017Fettings');
   });
 });

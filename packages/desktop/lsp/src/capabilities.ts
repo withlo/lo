@@ -46,9 +46,12 @@ export const CLIENT_CAPABILITIES: ClientCapabilities = {
   },
 };
 
-/** The parameters of `initialize` for a server on the checkout at `root`. */
+/**
+ * The parameters of `initialize` for a server on the checkout at `rootUri`, or, for a rootless
+ * one, `null`: then it hears of no workspace at all, only of the files Lo opens.
+ */
 export function initializeParams(options: {
-  readonly rootUri: string;
+  readonly rootUri: string | null;
   readonly name: string;
   readonly version: string | undefined;
   readonly initializationOptions: unknown;
@@ -60,7 +63,7 @@ export function initializeParams(options: {
     clientInfo: version === undefined ? { name: 'Lo' } : { name: 'Lo', version },
     locale: 'en',
     rootUri,
-    workspaceFolders: [{ uri: rootUri, name }],
+    workspaceFolders: rootUri === null ? null : [{ uri: rootUri, name }],
     capabilities: CLIENT_CAPABILITIES,
     initializationOptions,
     trace: 'off',

@@ -341,6 +341,12 @@ test('Settings lists the toolchains, and removes one that’s downloaded', async
     await openSettings(page);
     const section = page.locator('section[data-settings-section="code.toolchains"]');
     const rows = section.getByRole('listitem');
+    // On macOS, Swift's too: the system's, from Xcode or Apple's Command Line Tools, with nothing to
+    // remove.
+    const swift =
+      process.platform === 'darwin'
+        ? [/^Swift(From Xcode|From Apple’s Command Line Tools|Needs .+) · For Swift$/]
+        : [];
     await expect(rows).toHaveText(
       [
         // C#'s server runs on the .NET SDK, Go's on Go, Rust's on Rust and Java's on the JDK.
@@ -348,6 +354,7 @@ test('Settings lists the toolchains, and removes one that’s downloaded', async
         'Go 1.27.42 KB · For GoRemove',
         /^Rust 1\.100\.0Not downloaded · [\d.]+ MB/,
         /^Temurin JDK 25\.0\.5\+8Not downloaded · [\d.]+ MB/,
+        ...swift,
       ],
       { timeout: 15_000 },
     );

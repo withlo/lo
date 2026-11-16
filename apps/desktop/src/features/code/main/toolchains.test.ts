@@ -1,15 +1,15 @@
-// What Settings lists of the toolchains, removing one, what a server says when its toolchain
-// can't download or was removed, against a stand-in installer and pool, and the checkouts a server
-// is refused.
+// What Settings lists of the toolchains, Lo's and the system's, removing one, what a server says
+// when its toolchain can't download or was removed, against a stand-in installer and pool, and the
+// checkouts a server is refused.
 
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { DownloadError, Installer, partsOf, TOOLCHAINS } from '@lo/lsp';
 import { expect, it, onTestFinished } from 'vitest';
 
-import { ADAPTERS as SHIPPED, type Adapter } from './adapters.ts';
+import { type Adapter, shippedAdapters } from './adapters.ts';
 import {
   checkoutRefusal,
   listedToolchain,
@@ -20,6 +20,9 @@ import {
   toolchainFailure,
   type ToolchainHost,
 } from './toolchains.ts';
+
+/** The adapters Lo ships on macOS, Swift's among them. */
+const SHIPPED = shippedAdapters('darwin');
 
 function adapter(id: string, name: string, toolchains: readonly string[]): Adapter {
   return {
@@ -36,6 +39,24 @@ const ADAPTERS = [
   adapter('kotlin', 'Kotlin', ['temurin']),
   adapter('typescript', 'TypeScript', []),
 ];
+
+/** An adapter whose server comes with the system's Swift, found `from` there, or not found. */
+function swift(from: string | undefined): Adapter {
+  return {
+    ...adapter('swift', 'Swift', []),
+    system: {
+      id: 'swift',
+      name: 'Swift',
+      needs: 'Apple’s Command Line Tools',
+      from: () => Promise.resolve(from),
+    },
+  };
+}
+
+/** An adapter using `toolchains` whose server refuses every checkout, saying `why`, or none. */
+function reads(why: string | undefined, toolchains: readonly string[] = []): Adapter {
+  return { ...adapter('swift', 'Swift', toolchains), checkout: () => Promise.resolve(why) };
+}
 
 /** A host whose installer has `installed` downloaded, with their sizes, and what it was told. */
 function host(installed: Record<string, number> = {}) {
@@ -64,8 +85,13 @@ function host(installed: Record<string, number> = {}) {
   return { given, removed, halted, order };
 }
 
+/** Lo's own toolchains among `listed`, which Lo downloads. */
+function downloads(listed: Awaited<ReturnType<typeof listToolchains>>) {
+  return listed.flatMap((each) => ('from' in each ? [] : [each]));
+}
+
 it('lists each toolchain pinned for this system, downloaded or not, and what uses it', async () => {
-  const listed = await listToolchains(host({ go: 240_208_599 }).given);
+  const listed = downloads(await listToolchains(host({ go: 240_208_599 }).given));
   expect(listed.map((each) => [each.id, each.name, each.installed, each.uses])).toEqual([
     ['dotnet', '.NET SDK', null, []],
     ['go', 'Go', 240_208_599, []],
@@ -86,9 +112,67 @@ it('lists each toolchain pinned for this system, downloaded or not, and what use
 it('lists nothing downloaded while the cache isn’t open, and nothing for a system Lo has none for', async () => {
   const { given } = host();
   expect(
-    (await listToolchains({ ...given, installer: () => undefined })).map((each) => each.installed),
+    downloads(await listToolchains({ ...given, installer: () => undefined })).map(
+      (each) => each.installed,
+    ),
   ).toEqual([null, null, null, null]);
   expect(await listToolchains({ ...given, platform: undefined })).toEqual([]);
+});
+
+it('lists the system’s toolchain a server comes with, by where it’s from or what it needs', async () => {
+  const find = {
+    findCopy: () => Promise.resolve(undefined),
+    developerFolder: () => Promise.resolve(undefined),
+  };
+  const given: ToolchainHost = {
+    ...host().given,
+    adapters: () => [...ADAPTERS, swift('Xcode')],
+    find,
+  };
+  const listed = await listToolchains(given);
+  expect(listed.map((each) => each.id)).toEqual(['dotnet', 'go', 'rust', 'temurin', 'swift']);
+  expect(listed.at(-1)).toEqual({
+    id: 'swift',
+    name: 'Swift',
+    from: 'Xcode',
+    needs: 'Apple’s Command Line Tools',
+    uses: ['Swift'],
+  });
+  expect((await listToolchains({ ...given, adapters: () => [swift(undefined)] })).at(-1)).toEqual({
+    id: 'swift',
+    name: 'Swift',
+    from: null,
+    needs: 'Apple’s Command Line Tools',
+    uses: ['Swift'],
+  });
+  // Lo's Swift adapter finds none where there's no developer folder.
+  const shipped = SHIPPED.filter((each) => each.id === 'swift');
+  expect((await listToolchains({ ...given, adapters: () => shipped })).at(-1)).toMatchObject({
+    id: 'swift',
+    from: null,
+  });
+  // It has nothing to remove.
+  await expect(removeToolchain(given, 'swift')).rejects.toThrow(/no toolchain swift/);
+});
+
+it('refuses a checkout by what its server’s toolchains read there, then by what the server does', async () => {
+  const folder = realpathSync(mkdtempSync(join(tmpdir(), 'lo-refusal-')));
+  onTestFinished(() => rmSync(folder, { recursive: true, force: true }));
+  expect(await checkoutRefusal(reads(undefined), folder)).toBeUndefined();
+  expect(await checkoutRefusal(reads('It reads a build server.'), folder)).toBe(
+    'It reads a build server.',
+  );
+  writeFileSync(join(folder, 'global.json'), '{ "sdk": { "paths": ["sdk"] } }');
+  expect(await checkoutRefusal(reads('It reads a build server.', ['dotnet']), folder)).toBe(
+    'The checkout’s global.json names folders to look for an SDK in, so it could choose a .NET SDK other than Lo’s.',
+  );
+  // Lo's Swift adapter, by the build servers SourceKit-LSP would run.
+  const [sourceKit] = SHIPPED.filter((each) => each.id === 'swift');
+  expect(await checkoutRefusal(sourceKit!, folder)).toBeUndefined();
+  mkdirSync(join(folder, '.bsp'));
+  expect(await checkoutRefusal(sourceKit!, folder)).toBe(
+    'The checkout’s .bsp names a build server to run, so Lo won’t run SourceKit-LSP on it.',
+  );
 });
 
 it('stops the servers that use a toolchain, each saying so, before its files go', async () => {
@@ -150,6 +234,8 @@ it('gives Lo’s own servers only the toolchains they name: Rust’s Rust, Go’
     ['Terraform', []],
     ['Java', ['temurin']],
     ['C#', ['dotnet']],
+    // It downloads nothing: SourceKit-LSP comes with Xcode or Apple's Command Line Tools.
+    ['Swift', undefined],
   ]);
   for (const shipped of SHIPPED) {
     const toolchain = listedToolchain(shipped, (id) => Promise.resolve(id));

@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 // Settings' list of the toolchains language servers use: a row each, saying how much room it takes
-// or that it isn't downloaded, what uses it, and, once it's downloaded, the button that removes it.
+// or that it isn't downloaded, what uses it, and, once it's downloaded, the button that removes it;
+// or, for one of the system's, where it's from or what it needs.
 
 import { useState } from 'react';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -43,6 +44,14 @@ const ENTRIES: ToolchainEntry[] = [
     download: '222.8 MB',
     uses: ['C#'],
   },
+  {
+    kind: 'system',
+    id: 'swift',
+    name: 'Swift',
+    from: 'Xcode',
+    needs: 'Apple’s Command Line Tools',
+    uses: ['Swift'],
+  },
 ];
 
 /** The list as Settings holds it: a toolchain removed stays, no longer downloaded. */
@@ -74,8 +83,30 @@ describe('ToolchainList', () => {
       'Rust 1.100.0Not downloaded · 150.7 MB · No language server uses it yet',
       'Temurin JDK 25.0.5+8293.5 MB · For Java and KotlinRemove',
       '.NET SDK 10.0.404643.5 MB · For C#Remove',
+      'SwiftFrom Xcode · For Swift',
     ]);
     expect(host.querySelector('[role="list"]')?.getAttribute('aria-label')).toBe('Toolchains');
+  });
+
+  it('says what one of the system’s needs while there’s none, and has nothing to remove', () => {
+    const host = render(
+      <ToolchainList
+        entries={[
+          {
+            kind: 'system',
+            id: 'swift',
+            name: 'Swift',
+            needs: 'Apple’s Command Line Tools',
+            uses: ['Swift'],
+          },
+        ]}
+      />,
+    );
+    expect(host.querySelector('[role="listitem"]')?.textContent).toBe(
+      'SwiftNeeds Apple’s Command Line Tools · For Swift',
+    );
+    expect(host.querySelector('button')).toBeNull();
+    expect(remove(render(<ToolchainList entries={ENTRIES} />), 'swift')).toBeNull();
   });
 
   it('removes the toolchain whose button was pressed, naming it to a screen reader', () => {
@@ -110,6 +141,7 @@ describe('ToolchainList', () => {
     expect(remove(host, 'go')).toBeNull();
     // Past Rust, which has nothing to remove.
     expect(document.activeElement).toBe(remove(host, 'temurin'));
+    // Back past Swift, the system's, which has nothing to remove.
     click(remove(host, 'dotnet')!);
     expect(document.activeElement).toBe(remove(host, 'temurin'));
   });

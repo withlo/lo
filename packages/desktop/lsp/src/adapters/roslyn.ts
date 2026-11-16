@@ -59,7 +59,7 @@ import { pathToFileURL } from 'node:url';
 import type { Installed } from '../install.ts';
 import { MANIFEST, type Manifest } from '../manifest.ts';
 import type { Workspace, WorkspacePaths } from '../server.ts';
-import { dotnetAbove, type InstalledToolchain } from '../toolchains.ts';
+import { dotnetAbove, foldName, type InstalledToolchain } from '../toolchains.ts';
 import type { Launch } from './node.ts';
 
 /** Where in its home Lo writes the project Roslyn loads, and what it's called. */
@@ -186,7 +186,8 @@ const LEFT_OUT = new Set(['bin', 'obj', 'node_modules']);
  * The `.cs` files of the checkout at `root`, by absolute path, sorted: plain files only, never a
  * link, and none whose name, or a folder's on its way, a project can't hold as it is
  * ({@link writable}), each as MSBuild reads it ({@link inCheckout}). It never looks in a link, a
- * hidden folder, such as `.git`, or `bin`, `obj` or `node_modules`.
+ * hidden folder, such as `.git`, or `bin`, `obj` or `node_modules`. Names are matched by
+ * {@link foldName}, as a Mac's disk matches them.
  *
  * It looks in {@link CSHARP_FOLDERS} folders at most, or `limits.folders`, the nearest the root
  * first, and no further: a file only those past them hold isn't listed, so Roslyn reads it alone,
@@ -209,9 +210,9 @@ export async function csharpSources(
       if (!writable(entry.name)) continue;
       const path = join(folder, entry.name);
       if (entry.isDirectory()) {
-        const looked = !entry.name.startsWith('.') && !LEFT_OUT.has(entry.name.toLowerCase());
+        const looked = !entry.name.startsWith('.') && !LEFT_OUT.has(foldName(entry.name));
         if (looked && folders.length < limits.folders) folders.push(path);
-      } else if (entry.isFile() && entry.name.toLowerCase().endsWith('.cs')) {
+      } else if (entry.isFile() && foldName(entry.name).endsWith('.cs')) {
         found.push(path);
         if (found.length > limits.files) {
           throw new Error(

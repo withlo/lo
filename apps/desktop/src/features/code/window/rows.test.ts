@@ -1,5 +1,6 @@
 // What Settings' Toolchains section shows: sizes in the units the rest of Settings and the status bar
-// count in, the one being removed waiting, and why one wasn't removed.
+// count in, the one being removed waiting, where one of the system's is from, and why one wasn't
+// removed.
 
 import { expect, it } from 'vitest';
 
@@ -20,6 +21,24 @@ it('writes sizes as formatBytes does, and has the one being removed wait', () =>
   expect(rows).toEqual([
     { ...GO, installed: '229.1 MB', download: '65.1 MB', removing: true },
     { ...GO, id: 'rust', name: 'Rust', installed: undefined, download: '65.1 MB', removing: false },
+  ]);
+});
+
+it('says where one of the system’s is from, or what it needs while there’s none', () => {
+  const swift = {
+    id: 'swift',
+    name: 'Swift',
+    needs: 'Apple’s Command Line Tools',
+    uses: ['Swift'],
+  };
+  expect(
+    rowsOf([
+      { ...swift, from: 'Xcode' },
+      { ...swift, from: null },
+    ]),
+  ).toEqual([
+    { kind: 'system', ...swift, from: 'Xcode' },
+    { kind: 'system', ...swift, from: undefined },
   ]);
 });
 

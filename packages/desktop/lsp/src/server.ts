@@ -33,7 +33,7 @@ import { Documents } from './documents.ts';
 import { isInside, serverEnvironment, temporaryFolder } from './environment.ts';
 import { FLOOD_BYTES, FLOOD_LINES, FLOOD_MESSAGES, FLOOD_WINDOW, FrameMeter } from './framing.ts';
 import { Log } from './log.ts';
-import { type Member, type ReadFamily, readFamily, stillRunning } from './family.ts';
+import { type Member, type ReadFamily, readFamily, stillRunning, withServices } from './family.ts';
 import { type Place, writeInHome } from './place.ts';
 import {
   checkArguments,
@@ -55,8 +55,15 @@ export interface ServerSpec {
   /** The server's own program, by absolute path: a compiled program, never a launcher script. */
   readonly program: string;
   readonly args: readonly string[];
-  /** The checkout it runs on: its workspace's one folder, and where it runs. */
+  /** The checkout it runs on: its workspace's one folder, and where it runs, unless it's rootless. */
   readonly root: string;
+  /**
+   * Whether it's told of no workspace, only of the files Lo opens, for a server that would read a
+   * workspace's build files and run what they name, as SourceKit-LSP would: it answers from the
+   * files Lo opens alone. It runs in its home, not the checkout, and moves to another checkout
+   * without being told, since it was told of none. It has no {@link workspace} either.
+   */
+  readonly rootless?: boolean | undefined;
   /** A folder of its own, its `HOME`, made if it isn't there. */
   readonly home: string;
   /** The folders of the toolchain it needs, first on its `PATH`. */
@@ -84,6 +91,13 @@ export interface ServerSpec {
    * project Lo works out from its checkout as it starts.
    */
   readonly stays?: boolean | undefined;
+  /**
+   * The programs the system starts for it outside its family, by their file names, such as the
+   * `SourceKitService` that `launchd` starts for SourceKit-LSP: a process of one of these names
+   * whose `HOME` is this server's home is counted in its memory and stopped with it, as its family
+   * is. Nothing else is touched: no other process has this server's home as its `HOME`.
+   */
+  readonly services?: readonly string[] | undefined;
   /** The most resident memory its process group may hold, in bytes. */
   readonly memoryCap?: number | undefined;
   /** Lo's version, which it hears in `clientInfo`. */
@@ -256,6 +270,8 @@ export class Server {
   readonly #queue: Queue;
   /** The checkout's folder, as the system resolves it and as given. */
   #roots: string[] = [];
+  /** Its home, as the system resolves it, once it's made. */
+  #home: string | undefined;
   /** The workspace Lo made for it in its home, if its spec makes one. */
   #workspace: Workspace | undefined;
   /** What it's told, from its spec or where it runs. */
@@ -304,7 +320,9 @@ export class Server {
     this.#settings = spec.settings;
     this.#initializationOptions = spec.initializationOptions;
     this.#limits = limits;
-    this.#readFamily = read;
+    const services = spec.services ?? [];
+    this.#readFamily =
+      services.length === 0 ? read : withServices(read, services, () => this.#home);
     this.ready = new Promise((resolve) => {
       this.#resolveReady = resolve;
     });
@@ -412,14 +430,17 @@ export class Server {
    * it takes changes to its workspace's folders. Its files are closed. It says whether it moved;
    * if it didn't, the server is as it was, and a new one is needed for `root`. `still`, asked once
    * `root` is resolved, just before the server is told, keeps it where it is when it says no. One
-   * whose spec says it stays never moves.
+   * whose spec says it stays never moves. A rootless server, told of no workspace, moves without
+   * being told: only its files change.
    */
   async moveTo(root: string, still: () => boolean = () => true): Promise<boolean> {
     // A workspace Lo made is the checkout's, so a server on one starts again on another.
     if (this.#workspace !== undefined) return false;
+    const rootless = this.#spec.rootless === true;
     const changes = this.#capabilities?.workspace?.workspaceFolders?.changeNotifications;
     if (this.#spec.stays === true) return false;
-    if (!this.#answering() || (changes !== true && typeof changes !== 'string')) return false;
+    const takes = rootless || changes === true || typeof changes === 'string';
+    if (!this.#answering() || !takes) return false;
     const real = await realpath(root);
     if (!this.#answering() || !still()) return false;
     for (const uri of this.#documents.clear()) {
@@ -427,9 +448,11 @@ export class Server {
     }
     const removed = this.#folders();
     this.#roots = [...new Set([real, root])];
-    this.#notify('workspace/didChangeWorkspaceFolders', {
-      event: { added: this.#folders(), removed },
-    });
+    if (!rootless) {
+      this.#notify('workspace/didChangeWorkspaceFolders', {
+        event: { added: this.#folders(), removed },
+      });
+    }
     return true;
   }
 
@@ -556,16 +579,18 @@ export class Server {
   /**
    * The processes descended from the server's group that have left it, such as a daemon in a
    * session of its own, and each of `known` that's still the same process, with what descends from
-   * it, as read within `within`. Once the group is empty, only `known` leads anywhere. Beside the
-   * read, each of `known` is read again by its ID alone, so a read that fails or takes longer still
-   * gives what was found before that's still the same process, as far as that's known in time.
+   * it, and its services, as read within `within`. Once the group is empty, only `known` and its
+   * services lead anywhere. Beside the read, each of `known` is read again by its ID alone, so a
+   * read that fails or takes longer still gives what was found before that's still the same
+   * process, as far as that's known in time.
    */
   async #others(
     group: number,
     known: readonly Member[] = [],
     within = this.#limits.family,
   ): Promise<readonly Member[]> {
-    if (!signalFamily(group, [], 0) && known.length === 0) return [];
+    const services = (this.#spec.services ?? []).length > 0;
+    if (!signalFamily(group, [], 0) && known.length === 0 && !services) return [];
     const read = this.#readFamily(group, known).then(
       (family) => family.filter((member) => member.group !== group),
       () => undefined,
@@ -604,6 +629,7 @@ export class Server {
       serverEnvironment({ ...given, home: await resolvedAhead(spec.home), path });
       await mkdir(spec.home, { recursive: true, mode: 0o700 });
       const home = await realpath(spec.home);
+      this.#home = home;
       serverEnvironment({ ...given, home, path });
       await mkdir(temporaryFolder(home), { recursive: true, mode: 0o700 });
       // What depends on where it runs, held to the same rules.
@@ -619,6 +645,9 @@ export class Server {
         this.#initializationOptions = placed.initializationOptions;
       }
       if (this.#stopRequested) return;
+      if (spec.rootless === true && spec.workspace !== undefined) {
+        throw new Error('a rootless server is told of no workspace, so it has none of Lo’s');
+      }
       if (spec.workspace !== undefined) {
         // Its failure is Lo's, never the program's, so it keeps no code a start's error is read by.
         const workspace = await spec.workspace({ root, home }).catch((error: unknown) => {
@@ -632,8 +661,9 @@ export class Server {
         if (this.#stopRequested) return;
       }
       // A server told of a workspace of Lo's runs in it, so nothing it starts begins in the
-      // checkout either.
-      const cwd = this.#workspace?.folder ?? root;
+      // checkout either. A rootless server runs in its home, for the same reason, and so a folder
+      // its options name by a relative path is one of its home's.
+      const cwd = spec.rootless === true ? home : (this.#workspace?.folder ?? root);
       const child = startProcess(program, args, { env, cwd });
       this.#child = child;
       child.on('error', (error) => {
@@ -745,7 +775,7 @@ export class Server {
     connection.onRequest((method: string, params: unknown) => {
       const answer = reply(method, params, {
         settings: this.#settings ?? null,
-        folders: this.#folders(),
+        folders: this.#spec.rootless === true ? null : this.#folders(),
       });
       if (!answer.accepted) {
         note(`refused the server’s ${method}: ${answer.message}`);
@@ -779,13 +809,13 @@ export class Server {
 
   /**
    * Sends `initialize`, on the workspace `folder`, then `initialized` once it's answered, and then
-   * what the workspace Lo made sends.
+   * what the workspace Lo made sends. A rootless server hears of no root.
    */
   async #initialize(folder: string): Promise<void> {
     const connection = this.#connection;
     if (connection === undefined) return;
     const params = initializeParams({
-      rootUri: folderUri(folder),
+      rootUri: this.#spec.rootless === true ? null : folderUri(folder),
       name: basename(folder),
       version: this.#spec.version,
       initializationOptions: this.#initializationOptions,

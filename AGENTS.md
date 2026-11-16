@@ -442,7 +442,9 @@ toolchain and git's variables each server needs.
   never as a script (a launcher such as `bin/jdtls`), and never as a program in its checkout; what
   starts is the real path that was checked. It leads a process group of its own, and its family is
   that group with whatever descends from it, found by parent, so a stop or a kill reaches whatever
-  it started, a process in a session of its own included.
+  it started, a process in a session of its own included. A service the system starts for it, which
+  its spec names (`services`), is in its family too when its `HOME` is exactly the server's home,
+  with what it starts.
 - Its environment is built from nothing: a `HOME` of its own with `TMPDIR` inside it, a `PATH` of
   the toolchain's folders and the system's, git's variables from `@lo/git`, a proxy that leads
   nowhere (`NO_NETWORK`, port 0 on this machine) in each spelling programs read, and its adapter's
@@ -516,7 +518,9 @@ toolchain and git's variables each server needs.
   it runs. So a server that uses Go doesn't start on, or move to, a checkout with a `go.work` in a
   folder above it, or one in it that names a folder outside it, by `use` or a `replace` with a path,
   or that Lo can't read for certain (`checkoutProblem`). It looks through the checkout's own
-  folders, never through a link, which could lead anywhere on the disk.
+  folders, never through a link, which could lead anywhere on the disk. Every refusal that looks
+  through a checkout matches names as a Mac's disk does (`foldName`: NFKC, then a full case fold),
+  and reads at most `WALK_LIMIT` entries, refusing a checkout with more.
 - Some files steer rust-analyzer or `cargo` past those variables, so a server that uses Rust doesn't
   start on, or move to, a checkout with one (`checkoutProblem`). A `rust-analyzer.toml`'s workspace
   settings win over Lo's client settings and can run a program
@@ -619,6 +623,26 @@ toolchain and git's variables each server needs.
   folder (the spec's `workspace`), so it never moves with the head and never looks through the
   checkout. Its settings turn off restores, file-based programs and fetched sources. The adapter's
   comment says what reaches it and what's lost.
+- Swift's server on macOS, SourceKit-LSP, is the one Lo doesn't download: it comes with Xcode and
+  with Apple's Command Line Tools, and Lo runs the copy in the developer folder that
+  `/usr/bin/xcode-select -p` names when run with only the system's `PATH` (`developerFolder`), never
+  the `/usr/bin` shim, one on `PATH` or what `xcrun` finds, which read `DEVELOPER_DIR` and the like.
+  Given a workspace it would run what a checkout's build files name (a build server, SwiftPM's
+  manifest and plugins, a compile database's flags) and read its `.sourcekit-lsp` settings, which no
+  option turns off, so it runs rootless: told of no workspace (`rootUri` and `workspaceFolders`
+  `null`), in its home, each file Lo opens built only by the fallback settings Lo gives it and the
+  macOS SDK. What depends on where it runs comes from its adapter's `place`, once its home is made:
+  its generated files and module cache in its home, by its options, and `CFFIXED_USER_HOME`, so
+  Foundation's home folder is its home too. A checkout with a `buildServer.json`, a `.bsp` or a
+  `.sourcekit-lsp` anywhere in it is refused all the same (`sourceKitCheckoutProblem`, asked through
+  the adapter's `checkout`), against a later SourceKit-LSP that looked for them beside a file. Its
+  answers are each file's own, and it finds references only in a build's index, so `gr` answers from
+  the syntax index (`noReferences`). Its `SourceKitService` is an XPC service `launchd` starts,
+  outside the server's group, so the adapter names it (`services`) and each read of the family takes
+  in the process of that name whose `HOME` is exactly the server's home: it counts against the cap
+  and is stopped with the server. It also reads the machine's
+  `/Library/Application Support/org.swift.sourcekit-lsp/config.json`, which no option turns off;
+  Lo's options win over it key by key.
 - Tests start only the fake server, `testing/lsp/fake-server.ts`, at most two at once in a test
   file, each killed with its group when the test ends. No test starts a real server or downloads
   one: download tests serve archives they build from a server on this machine. The live check,
@@ -1333,7 +1357,10 @@ before the syntax index's. A server is whatever an adapter (`main/adapters.ts`) 
 its languages: Lo ships those for TypeScript and JavaScript, and Python, each downloaded with the
 Node it runs on; PHP, whose server is a program of its own; Go, gopls, which Lo builds with the Go
 it then runs with; Terraform, terraform-ls, which reads a `.tfvars` file as Terraform's variables;
-Java, JDT LS, which runs on Lo's Temurin JDK; and C#, Roslyn, which runs on Lo's .NET SDK.
+Java, JDT LS, which runs on Lo's Temurin JDK; C#, Roslyn, which runs on Lo's .NET SDK; and, on
+macOS, Swift, the SourceKit-LSP that comes with Xcode or Apple's Command Line Tools, which Lo
+doesn't download. Without either, Swift's item says it needs Apple's Command Line Tools, and to
+install them with `xcode-select --install`.
 
 - Nothing starts for a view nothing trusts: no download, no checkout, no server. Once a trusted view
   is on screen and a file its pull request adds or changes on the new side, or one asked about, is
@@ -1349,9 +1376,11 @@ Java, JDT LS, which runs on Lo's Temurin JDK; and C#, Roslyn, which runs on Lo's
 - One server runs per repository and adapter, on the checkout of the head on screen, and moves with
   it: by `workspace/didChangeWorkspaceFolders`, sent only once trust is checked again, where it
   takes that and its adapter doesn't say it `stays`, as Java's does, else by starting again
-  (`main/servers.ts`). It doesn't start on, or move to, a checkout its toolchains or its adapter
-  refuse (`checkoutRefusal` in `main/toolchains.ts`): .NET's for a `global.json` that steers it,
-  Go's for a `go.work` that reaches outside it, Java's for a `.settings` at the root. Its `HOME` is
+  (`main/servers.ts`). A rootless server, told of no workspace, moves with only its files closed. It
+  doesn't start on, or move to, a checkout its toolchains or its adapter refuse (`checkoutRefusal`
+  in `main/toolchains.ts`): .NET's for a `global.json` that steers it, Go's for a `go.work` that
+  reaches outside it, Java's for a `.settings` at the root, Swift's for a build server's file or
+  SourceKit-LSP's settings anywhere in it. Its `HOME` is
   `<cache>/code/homes/<owner>/<name>/<adapter>` (`Cache.homeFolder`), which the cache's cap counts
   and trims and which goes with the repository's clone, but never while a server of the repository
   runs (see Git). Its `PATH` is its toolchain's folders, then Lo's git's, then the system's, so a
@@ -1370,7 +1399,9 @@ Java, JDT LS, which runs on Lo's Temurin JDK; and C#, Roslyn, which runs on Lo's
   folder that's going. Then it stops those servers and every install of it under way, those nobody
   waits for any longer included, and once each has ended, renames its folder aside before deleting
   it. Its button waits while it runs, and a notice says why one wasn't removed
-  (`main/toolchains.ts`).
+  (`main/toolchains.ts`). On macOS it lists Swift too, the system's (`system` on its adapter), with
+  where the SourceKit-LSP Lo would run is from ("From Xcode") or what it needs, and nothing to
+  remove.
 - It stops 10 minutes after the pull request whose checkout it runs on was last on screen, once no
   tab of its repository is open, once its repository or pull request isn't trusted, and as Lo quits,
   each within 5 s; Lo's quitting waits for each one stopping. After a crash it starts again by
@@ -1382,15 +1413,17 @@ Java, JDT LS, which runs on Lo's Temurin JDK; and C#, Roslyn, which runs on Lo's
   can't (`main/served.ts`): a definition in 2 s (an adapter may allow longer), references in 10 s, a
   hover in 1.5 s, inlay hints and the outline in 3 s. An empty definition falls back to the file's
   import and the index, and an empty hover to the index; empty references or an empty outline are
-  the server's answer. A server whose adapter says it finds references only from a declaration
-  (`referencesFromDefinition`, terraform-ls) and finds none where the reader is, as at a use, is
-  asked for the definition, then for the references there, all within the 10 s; with no definition
-  in the repository the index answers, saying why, and with none at all, that the server found no
-  references there, as at a declaration nothing uses. Each file is opened on a server as its own
-  language, by its path (`languageOf`), so a `.tf` file reached from a `.tfvars` file is still
-  `terraform`. A place outside the checkout shows as "Outside this repository" and is never read;
-  the references panel counts those it doesn't list. The old side always answers from the index, and
-  a server answers only about the head it runs on, for a file whose checkout matches git's.
+  the server's answer. One whose adapter says its references can't be used (`noReferences`,
+  SourceKit-LSP's) is never asked: the index answers, saying why. A server whose adapter says it
+  finds references only from a declaration (`referencesFromDefinition`, terraform-ls) and finds none
+  where the reader is, as at a use, is asked for the definition, then for the references there, all
+  within the 10 s; with no definition in the repository the index answers, saying why, and with none
+  at all, that the server found no references there, as at a declaration nothing uses. Each file is
+  opened on a server as its own language, by its path (`languageOf`), so a `.tf` file reached from a
+  `.tfvars` file is still `terraform`. A place outside the checkout shows as "Outside this
+  repository" and is never read; the references panel counts those it doesn't list. The old side
+  always answers from the index, and a server answers only about the head it runs on, for a file
+  whose checkout matches git's.
 - A hover in Markdown is read into `@lo/markdown`'s tree by the background process (`code.render`,
   main's own job), as any text from anyone is, and the card never draws the Markdown as text: the
   code blocks it starts with, in order, are the declaration (rust-analyzer's module path, then the

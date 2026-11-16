@@ -99,6 +99,11 @@ export interface Serving {
    * asks it for them. The adapters fill it.
    */
   readonly noHints?: string | undefined;
+  /**
+   * Why it gives no references Lo can use, when its adapter says so, as of one that finds them only
+   * from a build's index: `gr` answers from the syntax index, and Lo never asks it.
+   */
+  readonly noReferences?: string | undefined;
   readonly server: Pick<Running, 'open' | 'request' | 'pathOf' | 'capabilities'>;
   /** Whether the checkout's file at `path` is blob `oid`, the head's, which the server reads too. */
   matches(path: string, oid: Oid): Promise<boolean>;
@@ -408,6 +413,7 @@ export async function servedReferences(
     withFallback(await references(answering, sides, at, signal, file), fallback);
   if (name === undefined || !serving) return syntax();
   if (serving.kind !== 'ready') return syntax(waitingFor(serving));
+  if (serving.noReferences !== undefined) return syntax(serving.noReferences);
   // One deadline for every request `gr` makes, as many as three for a server asked at a definition.
   const ends = performance.now() + DEADLINES.references;
   const left = () => Math.floor(ends - performance.now());

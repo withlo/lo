@@ -5,20 +5,34 @@ import { formatBytes, type ToolchainEntry } from '@lo/ui';
 import { IpcError } from '../../../ipc/contract.ts';
 import type { Toolchain } from '../contract.ts';
 
-/** A row for each of the toolchains main listed, with those `removing` names waiting. */
+/**
+ * A row for each of the toolchains main listed, with those `removing` names waiting: Lo's, and the
+ * system's, which say where they're from.
+ */
 export function rowsOf(
   toolchains: readonly Toolchain[],
   removing: ReadonlySet<string> = new Set(),
 ): ToolchainEntry[] {
-  return toolchains.map((toolchain) => ({
-    id: toolchain.id,
-    name: toolchain.name,
-    version: toolchain.version,
-    installed: toolchain.installed === null ? undefined : formatBytes(toolchain.installed),
-    download: formatBytes(toolchain.download),
-    uses: toolchain.uses,
-    removing: removing.has(toolchain.id),
-  }));
+  return toolchains.map((toolchain) =>
+    'from' in toolchain
+      ? {
+          kind: 'system',
+          id: toolchain.id,
+          name: toolchain.name,
+          from: toolchain.from ?? undefined,
+          needs: toolchain.needs,
+          uses: toolchain.uses,
+        }
+      : {
+          id: toolchain.id,
+          name: toolchain.name,
+          version: toolchain.version,
+          installed: toolchain.installed === null ? undefined : formatBytes(toolchain.installed),
+          download: formatBytes(toolchain.download),
+          uses: toolchain.uses,
+          removing: removing.has(toolchain.id),
+        },
+  );
 }
 
 /** What the notice says once `name` wasn't removed, from `error`, which main's answer gave. */

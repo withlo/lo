@@ -5,6 +5,7 @@
 // `@lo/lsp`'s, with the reasons. Nothing here calls Electron.
 
 import {
+  findSourceKit,
   GOPLS,
   JDTLS,
   jdtlsCheckoutProblem,
@@ -13,10 +14,14 @@ import {
   launchOnNode,
   launchRoslyn,
   launchRustAnalyzer,
+  launchSourceKit,
+  NO_SOURCEKIT,
   PHP_LSP,
   PYRIGHT,
   ROSLYN,
   RUST_ANALYZER,
+  SOURCEKIT_LSP,
+  sourceKitCheckoutProblem,
   TERRAFORM_LS,
   VTSLS,
   type Installed,
@@ -39,6 +44,8 @@ export type Prepared =
       readonly needs: string;
       /** A command that installs it, when there's one: `brew install go`. */
       readonly install?: string | undefined;
+      /** Whether `needs` names them, not it: "Apple’s Command Line Tools". */
+      readonly plural?: boolean | undefined;
     };
 
 /**
@@ -67,8 +74,30 @@ export interface PrepareContext {
   toolchain(id: string): Promise<Toolchain>;
   /** The first of `candidates` that may run as a server, by its real path: an installed copy. */
   findCopy(candidates: readonly string[]): Promise<string | undefined>;
+  /**
+   * The developer folder the system has chosen on macOS, as `xcode-select -p` names it, where
+   * Xcode or Apple's Command Line Tools are, or `undefined` when there's none.
+   */
+  developerFolder(): Promise<string | undefined>;
   /** Aborts once nothing waits for the server any longer. */
   readonly signal: AbortSignal;
+}
+
+/** What an adapter may use to find a toolchain of the system's, for Settings. */
+export type FindContext = Pick<PrepareContext, 'findCopy' | 'developerFolder'>;
+
+/**
+ * A toolchain of the system's that a server comes with, which Lo doesn't download, as SourceKit-LSP
+ * comes with Xcode: Settings lists it among Lo's, with where it's from, and has nothing to remove.
+ */
+export interface SystemToolchain {
+  /** Its row's ID and name: `swift`, "Swift". */
+  readonly id: string;
+  readonly name: string;
+  /** What it needs when there's none: "Apple’s Command Line Tools". */
+  readonly needs: string;
+  /** Where the copy Lo would run is from, "Xcode", or `undefined` when there's none. */
+  from(context: FindContext): Promise<string | undefined>;
 }
 
 export interface Adapter {
@@ -104,11 +133,19 @@ export interface Adapter {
    */
   readonly noHints?: string | undefined;
   /**
+   * Why its server gives no references Lo can use, for one that finds them only from what Lo never
+   * makes, such as a build's index: `gr` answers from the syntax index and says why, and Lo never
+   * asks the server.
+   */
+  readonly noReferences?: string | undefined;
+  /**
    * Why its server mustn't run on the checkout at `folder`, by what it alone reads there, such as
    * the `.settings` at a checkout's root that Java's server would take as its own, or `undefined`
    * when it may. What the toolchains it uses read there is asked besides.
    */
   readonly checkout?: ((folder: string) => Promise<string | undefined>) | undefined;
+  /** The toolchain of the system's it comes with, for one Lo doesn't download. */
+  readonly system?: SystemToolchain | undefined;
   /** Finds or downloads what the server starts as. */
   prepare(context: PrepareContext): Promise<Prepared>;
 }
@@ -149,6 +186,37 @@ const RUST: Adapter = {
     const server = await context.install(RUST_ANALYZER.id);
     const toolchain = await context.toolchain('rust');
     return { kind: 'ready', launch: launchRustAnalyzer(server, toolchain) };
+  },
+};
+
+/** The SourceKit-LSP Lo would run, in the developer folder `context` finds, if there's one. */
+async function sourceKitIn(context: FindContext) {
+  const developer = await context.developerFolder();
+  return findSourceKit(developer, (candidates) => context.findCopy(candidates));
+}
+
+/**
+ * The Swift adapter, on macOS: SourceKit-LSP, which Lo doesn't download. It comes with Xcode and
+ * with Apple's Command Line Tools, and Lo runs the copy in the developer folder the system has
+ * chosen, told of no workspace, as `@lo/lsp`'s adapter says why. Its answers are each file's own,
+ * and it finds references only from a build's index, so `gr` comes from the syntax index.
+ */
+const SWIFT: Adapter = {
+  id: 'swift',
+  name: 'Swift',
+  languages: { swift: 'swift' },
+  noReferences: `${SOURCEKIT_LSP.name} finds references only from a build, which Lo never runs.`,
+  checkout: sourceKitCheckoutProblem,
+  system: {
+    id: 'swift',
+    name: 'Swift',
+    needs: NO_SOURCEKIT.needs,
+    from: async (context) => (await sourceKitIn(context))?.from,
+  },
+  async prepare(context) {
+    const found = await sourceKitIn(context);
+    if (found === undefined) return { kind: 'missing', ...NO_SOURCEKIT, plural: true };
+    return { kind: 'ready', launch: launchSourceKit(found) };
   },
 };
 
@@ -212,8 +280,13 @@ const CSHARP: Adapter = {
   },
 };
 
-/** The adapters Lo ships. */
-export const ADAPTERS: readonly Adapter[] = [
+/** The adapters Lo ships on `platform`: Swift's only on macOS. */
+export function shippedAdapters(platform: NodeJS.Platform = process.platform): readonly Adapter[] {
+  return platform === 'darwin' ? [...EVERYWHERE, SWIFT] : EVERYWHERE;
+}
+
+/** The adapters Lo ships on every platform. */
+const EVERYWHERE: readonly Adapter[] = [
   onNode(VTSLS, {
     id: 'typescript',
     name: 'TypeScript',
@@ -234,6 +307,9 @@ export const ADAPTERS: readonly Adapter[] = [
   onJdk({ id: 'java', name: 'Java', languages: { java: 'java' }, definitionDeadline: 5000 }),
   CSHARP,
 ];
+
+/** The adapters Lo ships on this platform. */
+export const ADAPTERS: readonly Adapter[] = shippedAdapters();
 
 /** The adapter that reads the file at `path`, and the protocol's id for its language, if one does. */
 export function adapterFor(

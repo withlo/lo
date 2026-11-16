@@ -57,6 +57,13 @@ own (`setsid`) is still found.
   that finds nothing new has found the whole family.
 - A process read earlier is signalled only while it's the same process: the same ID, started at the
   same time. An ID that has since been taken by another process is left alone.
+- A service the system starts for a server is `launchd`'s child, not the server's, as
+  `SourceKitService` is for SourceKit-LSP's `sourcekitd`. A server's spec names the services it
+  starts (`services`), and each read of the family takes in each process by one of those names whose
+  `HOME` is exactly the server's home, read from its environment (`ps -E` on macOS,
+  `/proc/<pid>/environ` on Linux), and what descends from it: every server's home is its own, so no
+  other process matches. So its memory counts against the cap, and a stop or a kill signals it with
+  the rest.
 
 ### What can't be found
 
@@ -83,7 +90,9 @@ each with its adapter in `src/adapters/`. vtsls and Pyright run on Lo's own Node
 first; rust-analyzer is a compiled program that runs on Lo's Rust toolchain, which downloads with
 it; php-lsp and terraform-ls are programs of their own; gopls runs with Lo's Go, which Lo builds it
 with; JDT LS runs on Lo's Temurin JDK, a toolchain, which downloads first; and Roslyn runs on Lo's
-.NET SDK, which downloads first. None needs anything installed.
+.NET SDK, which downloads first. None needs anything installed but SourceKit-LSP, Swift's on macOS,
+which Lo doesn't download: it comes with Xcode and with Apple's Command Line Tools, and Lo runs the
+copy there (`src/adapters/sourcekit.ts`).
 
 | Server         | Version    | For                    | From                                                                                        | License                                                       |
 | -------------- | ---------- | ---------------------- | ------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
@@ -96,14 +105,16 @@ with; JDT LS runs on Lo's Temurin JDK, a toolchain, which downloads first; and R
 | terraform-ls   | 0.39.1     | Terraform              | releases.hashicorp.com                                                                      | MPL-2.0                                                       |
 | Eclipse JDT LS | 1.63.0     | Java                   | download.eclipse.org: its release's archive                                                 | EPL-2.0                                                       |
 | Roslyn         | 5.11.0     | C#                     | nuget.org: `roslyn-language-server.<platform>`, signed by Microsoft                         | MIT                                                           |
+| SourceKit-LSP  | Apple's    | Swift, on macOS        | Xcode or Apple's Command Line Tools, in the developer folder `xcode-select -p` names        | Apache-2.0                                                    |
 
 vtsls and Pyright each start as Node, by its absolute path, with a cap on its heap, then the
 server's own entry point inside its install, never the launcher npm would link. rust-analyzer,
 php-lsp, gopls and terraform-ls each start as its program, by its absolute path inside its install.
 JDT LS starts as the JDK's `java`, by its absolute path, with `-jar` and Equinox's launcher inside
 its install. Roslyn starts as Lo's `dotnet`, by its absolute path, with `exec` and the server's own
-assembly inside its install, never the launcher its package's tool would run. None runs through a
-shell, and each has an environment built from nothing, whose proxy leads nowhere (`NO_NETWORK` in
+assembly inside its install, never the launcher its package's tool would run. SourceKit-LSP starts
+as its program, by its absolute path in Xcode or the Command Line Tools. None runs through a shell,
+and each has an environment built from nothing, whose proxy leads nowhere (`NO_NETWORK` in
 `src/environment.ts`). What each is told is its adapter's alone, and the adapter says why each
 setting is as it is:
 
@@ -230,6 +241,33 @@ setting is as it is:
   and the installer, which checks only what it unpacked, ignores it. Roslyn writes it to a file of a
   random name there and moves that to the cache's name, so it appears whole or not at all, though
   unsynced; a move that fails leaves the other file behind.
+- **SourceKit-LSP** is the copy in the developer folder the system has chosen, which
+  `/usr/bin/xcode-select -p` names when it's run with nothing of Lo's environment: Xcode's
+  `Toolchains/XcodeDefault.xctoolchain/usr/bin/sourcekit-lsp`, or the Command Line Tools'
+  `usr/bin/sourcekit-lsp`. Never the shim in `/usr/bin`, one on `PATH` or what `xcrun` finds, which
+  read `DEVELOPER_DIR` and the like, nor a version manager's shim, which reads a checkout's
+  `.swift-version`. It's Apple's, updated with Xcode or the tools, so Lo pins no version of it.
+  Given a workspace, it runs what its build files name: a build server from `buildServer.json` or
+  `.bsp/`, SwiftPM on a `Package.swift`, which compiles and runs the manifest and its plugins and
+  fetches its dependencies, and the flags of a `compile_commands.json`, which can load code into the
+  compiler; and it reads `.sourcekit-lsp/config.json`, which can turn those on. No option turns that
+  off, so it's told of no workspace (`rootless`: `rootUri` and `workspaceFolders` are `null`) and
+  runs in its home: it reads no build files and no workspace settings, and each file Lo opens gets
+  fallback build settings, the macOS SDK and Lo's flags. So answers are each file's own and the
+  SDK's: `gd`, `K` and `gh` answer within the file and into the SDK, a use of what another file
+  declares isn't resolved, and `gr`, which needs a build's index, comes from the syntax index. Its
+  generated files and its compiler's module cache are in its home, by its options, and Foundation's
+  home folder, where it reads its own settings, is too, by `CFFIXED_USER_HOME`. It also reads the
+  machine's settings, in `/Library/Application Support/org.swift.sourcekit-lsp/config.json`, which
+  only an administrator can write, and no option turns that off; Lo's options win over it, key by
+  key. A request to `sourcekitd` gives up after 10.5 s, not 120 s, and one that hangs for 30.5 s,
+  not 300 s, has SourceKit-LSP restart `sourcekitd`. Each is given with a fraction: SourceKit-LSP
+  reads a whole number in its initialization options as an integer, which those options refuse, and
+  then drops every option Lo gives it. `SourceKitService` is counted against the cap and stopped
+  with the server, by its name and home (`services`). Lo still refuses a checkout with a
+  `buildServer.json`, a `.bsp` or a `.sourcekit-lsp` anywhere in it, so a later SourceKit-LSP that
+  looked for them beside a file finds none. Expanding a macro of the SDK's runs Apple's
+  `swift-plugin-server`; a checkout's macros are never built.
 
 None runs in a sandbox: each reads what you can, so an absolute import, Pyright's `extraPaths`, a
 Rust sysroot's sources, the folders of stubs a `.php-lsp.json` names, the paths a `composer.json`'s
@@ -294,6 +332,12 @@ the folders above the project Lo writes in its home. A server that uses Go runs 
 with no `go.work` in a folder above it, which Go would take as its workspace, and none in it that
 names a folder outside it by `use` or a `replace` with a path, or that Lo can't read for certain. It
 looks through the checkout's own folders, never a link to one.
+
+Each refusal that looks through a checkout matches a file's name at least as loosely as a Mac's
+disk, which opens `.ſourcekit-lsp`, with a long s, as `.sourcekit-lsp`, and a name with a Kelvin
+sign as one with a `k`: by `foldName`, NFKC and then a full case fold. And each reads at most
+100,000 files and folders (`WALK_LIMIT`, as many as Lo unpacks from an archive); a checkout with
+more is refused, since what it didn't read could be anything.
 
 ### gopls, built by Lo
 

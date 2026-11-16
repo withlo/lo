@@ -519,7 +519,8 @@ export class ServerPool {
     entry.progress = undefined;
     if (prepared.kind === 'missing') {
       const install = prepared.install === undefined ? {} : { install: prepared.install };
-      this.#refuse(entry, { kind: 'missing', needs: prepared.needs, ...install });
+      const plural = prepared.plural === true ? { plural: true } : {};
+      this.#refuse(entry, { kind: 'missing', needs: prepared.needs, ...install, ...plural });
       return;
     }
     const base = this.#options.base(entry.repo, adapter);
@@ -606,6 +607,8 @@ export class ServerPool {
         initializationOptions: launch.initializationOptions,
         place: launch.place,
         stays: launch.stays,
+        rootless: launch.rootless,
+        services: launch.services,
         workspace: launch.workspace,
       });
     } catch (error) {

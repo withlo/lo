@@ -6,7 +6,7 @@ import { join } from 'node:path';
 
 import { describe, expect, it, onTestFinished } from 'vitest';
 
-import { ADAPTERS } from './adapters.ts';
+import { shippedAdapters } from './adapters.ts';
 import { adaptersFor, readTestServers, testServersFile } from './tests.ts';
 
 function refuse(): Promise<never> {
@@ -56,7 +56,13 @@ describe('test servers', () => {
     });
     const signal = new AbortController().signal;
     expect(
-      await server?.prepare({ install: refuse, toolchain: refuse, findCopy: refuse, signal }),
+      await server?.prepare({
+        install: refuse,
+        toolchain: refuse,
+        findCopy: refuse,
+        developerFolder: refuse,
+        signal,
+      }),
     ).toEqual({
       kind: 'ready',
       launch: {
@@ -86,7 +92,9 @@ describe('test servers', () => {
       ],
     });
     const env = { LO_TEST_SERVERS: file };
-    const shipped = ADAPTERS;
+    // Swift's only on macOS, which is where SourceKit-LSP comes with Xcode.
+    expect(ids(shippedAdapters('linux'))).not.toContain('swift');
+    const shipped = shippedAdapters('darwin');
     expect(ids(adaptersFor({ packaged: true, env, testRun: false, shipped }))).toEqual([
       'typescript',
       'python',
@@ -96,6 +104,7 @@ describe('test servers', () => {
       'terraform',
       'java',
       'csharp',
+      'swift',
     ]);
     expect(adaptersFor({ packaged: false, env: {}, testRun: false, shipped })).toBe(shipped);
     expect(adaptersFor({ packaged: false, env: {}, testRun: true, shipped })).toEqual([]);

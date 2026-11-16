@@ -7,10 +7,16 @@
  * found by it. A process read before can be named again, and is found while it's the same process:
  * the same ID, started at the same time. Processes are read from `/proc` on Linux, and from `ps`
  * elsewhere, on macOS. The package's README says what can't be found.
+ *
+ * A server's services are in its family too: processes the system starts for it, outside its
+ * family, such as the `SourceKitService` that `launchd` starts for SourceKit-LSP. Each is found by
+ * its program's name and by its `HOME`, which is the server's own home only in a process the
+ * server's environment reached ({@link servicesOf}).
  */
 
 import { execFile } from 'node:child_process';
 import { readdir, readFile } from 'node:fs/promises';
+import { basename } from 'node:path';
 import { promisify } from 'node:util';
 
 /** How many of `/proc`'s files are read at once. */
@@ -48,7 +54,105 @@ export async function stillRunning(members: readonly Member[]): Promise<Member[]
 /** The family of the group `group`, and of each of `also`, with each member's resident memory. */
 export const readFamily: ReadFamily = async (group, also = []) => {
   if (process.platform !== 'linux') return familyOf(await fromPs(), group, also);
-  const members = familyOf(await fromProc(), group, also);
+  return withResident(familyOf(await fromProc(), group, also));
+};
+
+/**
+ * `read`, with the server's services and what descends from them: each process named one of
+ * `names` whose `HOME` is the server's home, as `home` gives it once the server has one, found by
+ * `find` at each read and read as known before (`also`), so what a service starts is family too.
+ */
+export function withServices(
+  read: ReadFamily,
+  names: readonly string[],
+  home: () => string | undefined,
+  find: (names: readonly string[], home: string) => Promise<Member[]> = servicesOf,
+): ReadFamily {
+  return async (group, also = []) => {
+    const where = home();
+    const services = where === undefined ? [] : await find(names, where);
+    return read(group, [...also, ...services]);
+  };
+}
+
+/**
+ * The processes named one of `names` whose `HOME` is `home`, exactly, with their resident memory:
+ * on Linux from `/proc`, by the name the system gives each (the first 15 characters of its
+ * program's file name, unless it renamed itself) or the file name of its first argument, and its
+ * environment; elsewhere, on macOS, by `ps`, by its program's file name, then its environment, as
+ * `ps -E` lists it, for those so named.
+ */
+export async function servicesOf(names: readonly string[], home: string): Promise<Member[]> {
+  if (names.length === 0) return [];
+  if (process.platform === 'linux') return servicesFromProc(names, home);
+  const { stdout } = await promisify(execFile)('/bin/ps', ['-A', '-o', 'pid=,comm='], PS_OPTIONS);
+  const named = namedInPs(stdout, names);
+  if (named.length === 0) return [];
+  const args = ['-E', '-ww', '-o', `${PS_COLUMNS},command=`, '-p', named.join(',')];
+  return servicesInPs(await psListing(args), home);
+}
+
+/** The IDs in `ps -o pid=,comm=`'s lines whose program's file name is one of `names`. */
+export function namedInPs(output: string, names: readonly string[]): number[] {
+  return output.split('\n').flatMap((line) => {
+    const [, pid = '', program = ''] = /^\s*(\d+)\s+(.*)$/.exec(line) ?? [];
+    return names.includes(basename(program)) ? [Number(pid)] : [];
+  });
+}
+
+/**
+ * The processes in `ps -E -o pid=,ppid=,pgid=,rss=,lstart=,command=`'s lines whose environment,
+ * after the command, holds `HOME=<home>` as one of its variables: preceded by a space and followed
+ * by another variable or the line's end, so a home that only begins with `home` isn't it.
+ */
+export function servicesInPs(output: string, home: string): Member[] {
+  const line = new RegExp(
+    String.raw`^(\s*\d+\s+\d+\s+\d+\s+\d+\s+\S+\s+\S+\s+\d+\s+[\d:]+\s+\d+)\s(.*)$`,
+  );
+  const variable = new RegExp(String.raw` HOME=${escaped(home)}(?= [A-Za-z_][A-Za-z0-9_]*=|$)`);
+  return output.split('\n').flatMap((each) => {
+    const [, columns = '', command = ''] = line.exec(each) ?? [];
+    return variable.test(command) ? membersOfPs(columns) : [];
+  });
+}
+
+/** `text`, matched as itself in a regular expression. */
+function escaped(text: string): string {
+  return text.replaceAll(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`);
+}
+
+/** The processes named one of `names` whose `HOME` is `home`, from `/proc`. */
+async function servicesFromProc(names: readonly string[], home: string): Promise<Member[]> {
+  // The system keeps the first 15 characters of a program's file name as its name.
+  const short = new Set(names.map((name) => name.slice(0, 15)));
+  const pids = (await readdir('/proc')).filter((name) => /^\d+$/.test(name));
+  const found: string[] = [];
+  for (let start = 0; start < pids.length; start += READS_AT_ONCE) {
+    await Promise.all(
+      pids.slice(start, start + READS_AT_ONCE).map(async (pid) => {
+        try {
+          const name = (await readFile(`/proc/${pid}/comm`, 'utf8')).replace(/\n$/, '');
+          // A program can rename itself, as Node names its main thread, so the file name it ran as,
+          // the first of its arguments, is asked too.
+          if (!short.has(name) && !names.includes(basename(await firstArgument(pid)))) return;
+          const environment = await readFile(`/proc/${pid}/environ`, 'utf8');
+          if (environment.split('\0').includes(`HOME=${home}`)) found.push(pid);
+        } catch {
+          // It ended while it was read, or it isn't this user's.
+        }
+      }),
+    );
+  }
+  return withResident(await fromProcIds(found));
+}
+
+/** The first argument the process `pid` was started with, from its `/proc/<pid>/cmdline`. */
+async function firstArgument(pid: string): Promise<string> {
+  return (await readFile(`/proc/${pid}/cmdline`, 'utf8')).split('\0')[0] ?? '';
+}
+
+/** `members`, each with its resident memory from its `/proc/<pid>/status`. */
+async function withResident(members: readonly Member[]): Promise<Member[]> {
   return Promise.all(
     members.map(async (member) => {
       try {
@@ -60,7 +164,7 @@ export const readFamily: ReadFamily = async (group, also = []) => {
       }
     }),
   );
-};
+}
 
 /**
  * The members of `table` in the group `group`, each of `also` that's still the same process, and
@@ -169,7 +273,11 @@ async function fromPs(): Promise<Member[]> {
 
 /** Each of `pids` that's running, from one run of `ps`. */
 async function fromPsIds(pids: readonly number[]): Promise<Member[]> {
-  const args = ['-o', PS_COLUMNS, '-p', pids.join(',')];
+  return membersOfPs(await psListing(['-o', PS_COLUMNS, '-p', pids.join(',')]));
+}
+
+/** What `ps` lists with `args`, naming processes by ID, some of which may have gone. */
+async function psListing(args: readonly string[]): Promise<string> {
   const { stdout } = await promisify(execFile)('/bin/ps', args, PS_OPTIONS).catch(
     (error: unknown) => {
       // `ps` fails when any of them has gone, and still lists the rest.
@@ -179,7 +287,7 @@ async function fromPsIds(pids: readonly number[]): Promise<Member[]> {
       throw error;
     },
   );
-  return membersOfPs(stdout);
+  return stdout;
 }
 
 /**
