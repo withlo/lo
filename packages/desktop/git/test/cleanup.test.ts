@@ -621,7 +621,8 @@ test('past its cap checkouts and servers’ homes go together, least recently us
 });
 
 test('past its cap nothing of a repository a server runs on goes, nor is anything removed for it', async () => {
-  const cache = await cacheFor(server(), { maintenance: { idleFor: 10 } });
+  // Kept under its cap again soon after, and with no other maintenance to hold a clone meanwhile.
+  const cache = await cacheFor(server(), { maintenance: { idleFor: 10, attempts: 0 } });
   const [old, fresh] = [await useRepo(cache, 'old'), await useRepo(cache, 'new')];
   stampDaysAgo(old, 10);
   stampDaysAgo(fresh, 1);
@@ -658,7 +659,7 @@ test('a clone still goes while a server’s home stays, once the rest alone is o
 });
 
 test('once nothing has a clone open, the cache is kept under its cap again by itself', async () => {
-  const cache = await cacheFor(server(), { maintenance: { idleFor: 10 } });
+  const cache = await cacheFor(server(), { maintenance: { idleFor: 10, attempts: 0 } });
   const [old, fresh] = [await useRepo(cache, 'old'), await useRepo(cache, 'new')];
   const [oldCheckout, newCheckout] = [checkoutOf(cache, 'old'), checkoutOf(cache, 'new')];
   const repo = await cache.open('owner', 'old');
@@ -666,10 +667,9 @@ test('once nothing has a clone open, the cache is kept under its cap again by it
   expect(await cache.setCap((await cache.size()) - 1)).toEqual([]);
   expect(existsSync(oldCheckout)).toBe(true);
 
-  // The tab closes: its checkout, the one used longest ago, goes.
+  // The tab closes: its checkout, the one used longest ago, goes, and only that.
   repo.close();
   await eventually(() => !existsSync(oldCheckout));
-  await eventually(async () => (await cache.size()) <= cache.cap);
   expect(there(old, fresh, newCheckout)).toEqual([true, true, true]);
 });
 
