@@ -96,10 +96,15 @@ export interface OverviewDocumentProps {
   ref?: Ref<HTMLDivElement> | undefined;
   /**
    * Whether its blocks are still drawing what they show before it's first seen: the outline and
-   * the article are laid out, so the blocks can tell where they are, but not shown, and their place
-   * on the page isn't held yet.
+   * the article are laid out, so the blocks can tell where they are, but not shown.
    */
   drawing?: boolean | undefined;
+  /**
+   * Whether it's been seen: on screen since its blocks drew. Its place on the page is held from the
+   * first frame it's seen in, so a box that moves before then, as a banner over it goes, leaves no
+   * room above it. By default, once it's drawn.
+   */
+  seen?: boolean | undefined;
 }
 
 /** A section of the outline: a heading of the article's own, by its block's number. */
@@ -130,6 +135,7 @@ export function OverviewDocument({
   container,
   ref,
   drawing = false,
+  seen = !drawing,
 }: OverviewDocumentProps) {
   const prefix = scopePrefix(useId());
   const anchors = useMemo(() => new Anchors(prefix, tree.blocks), [prefix, tree.blocks]);
@@ -155,13 +161,15 @@ export function OverviewDocument({
   );
 
   // What's on screen stays where it is on the page as the box moves without the reader, as when a
-  // banner over it comes or goes, from the first frame it's seen in. A banner that goes while its
-  // blocks draw unseen, or as it's shown, moves nothing anyone saw, so it leaves no room above it.
+  // banner over it comes or goes, from the first frame it's seen in. A banner that goes before
+  // then, as its blocks draw unseen or it waits behind another view, moves nothing anyone saw, so
+  // it leaves no room above it.
+  const held = seen && !drawing;
   useLayoutEffect(() => {
     const element = root.current;
-    if (drawing || !element || typeof ResizeObserver === 'undefined') return undefined;
+    if (!held || !element || typeof ResizeObserver === 'undefined') return undefined;
     return holdPlace(element);
-  }, [drawing]);
+  }, [held]);
 
   // The latest handler, read when a link is followed, so a new one doesn't draw the article again.
   const handler = useRef(onFollow);

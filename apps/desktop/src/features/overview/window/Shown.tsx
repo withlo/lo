@@ -403,6 +403,11 @@ export function Shown({
   useLayoutEffect(() => {
     return afterHold(openings.get(tab.id).since ?? Date.now(), () => first.open());
   }, [first, tab.id]);
+  // Seen once it's drawn and the middle view on screen, as `first.seen` says, but as it renders,
+  // so its place on the page is held from the frame that shows it. Drawn behind another view, it's
+  // seen only once it's shown.
+  const [seen, setSeen] = useState(false);
+  if (!seen && !drawing && onScreen) setSeen(true);
   return (
     <FirstDrawContext value={first}>
       <div className="relative h-full">
@@ -417,6 +422,7 @@ export function Shown({
           }
           views={views}
           drawing={drawing}
+          seen={seen}
           focused={focused}
           outline={!beside}
           hints={beside ? besideHints : undefined}

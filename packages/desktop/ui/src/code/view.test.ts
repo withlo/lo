@@ -3239,3 +3239,80 @@ describe('hints', () => {
     expect(hinted('After')).toEqual(['line: number 4']);
   });
 });
+
+/**
+ * The diff view's box, `top` pixels down the page, which a test moves as a banner over it comes or
+ * goes, and the window's animation frames, which run when the test says.
+ */
+function boxed(top: number) {
+  const box = { top };
+  vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (this: Element) {
+    return this.classList.contains('lo-diffview')
+      ? new DOMRect(0, box.top, 800, 600)
+      : new DOMRect();
+  });
+  let waiting: FrameRequestCallback[] = [];
+  vi.spyOn(globalThis, 'requestAnimationFrame').mockImplementation((callback) => {
+    waiting.push(callback);
+    return waiting.length;
+  });
+  return {
+    box,
+    /** Runs the next frame's animation callbacks. */
+    frame() {
+      const now = waiting;
+      waiting = [];
+      for (const callback of now) callback(performance.now());
+    },
+    /** The view's box. */
+    dom: () => parent!.querySelector<HTMLElement>('.lo-diffview')!,
+    /** How much room is above the first file. */
+    room: () =>
+      Number.parseFloat(parent!.querySelector<HTMLElement>('.lo-diffslack')?.style.height || '0'),
+  };
+}
+
+describe('its place on the page', () => {
+  afterEach(() => {
+    for (const undo of restore.splice(0)) undo();
+    vi.restoreAllMocks();
+  });
+
+  test('starts where it’s first seen: a banner that goes before that frame leaves no room above the first file', () => {
+    const watch = observers();
+    const page = boxed(30);
+    open();
+    // The banner goes before the frame the view is first seen in, which tells of the box's new size
+    // only after its animation callbacks.
+    page.box.top = 0;
+    page.frame();
+    watch.resize(page.dom(), 600, 800);
+    expect(page.room()).toBe(0);
+    // From there, a banner coming leaves the diff where it was seen, by the scroll.
+    page.box.top = 30;
+    watch.resize(page.dom(), 570, 800);
+    expect(page.dom().scrollTop).toBe(30);
+  });
+
+  test('drawn hidden, starts where it’s first shown: a banner that goes meanwhile leaves no room above the first file', () => {
+    const watch = observers();
+    const page = boxed(30);
+    const shown = open(events(), { hidden: true });
+    page.frame();
+    // Behind another view, the banner goes.
+    page.box.top = 0;
+    watch.resize(page.dom(), 600, 800);
+    page.frame();
+    expect(page.room()).toBe(0);
+    // Shown, in a frame that then tells of a banner that went in it.
+    page.box.top = 30;
+    shown.seen();
+    page.box.top = 0;
+    page.frame();
+    watch.resize(page.dom(), 600, 800);
+    expect(page.room()).toBe(0);
+    page.box.top = 30;
+    watch.resize(page.dom(), 570, 800);
+    expect(page.dom().scrollTop).toBe(30);
+  });
+});
