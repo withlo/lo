@@ -2,7 +2,9 @@
 // variables that hold it to Lo's copy, which a server's environment takes as they are, exactly, so
 // that leaving one out fails. And the checkouts a server that uses .NET won't run on, those with a
 // global.json, in them or above them, that could choose another SDK, and the ones a server that
-// uses Go won't: those with a go.work above them, or one in them naming a folder outside.
+// uses Go won’t: those with a go.work above them, or one in them naming a folder outside. And the
+// ones rust-analyzer won't: those with a rust-analyzer.toml, a Cargo config with a key Lo's
+// variables can't answer or that's a link, or any Cargo config above them.
 
 import { mkdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -55,6 +57,8 @@ test.each([
         CARGO: `${FILES}/bin/cargo`,
         RUSTC_WRAPPER: '',
         RUSTC_WORKSPACE_WRAPPER: '',
+        CARGO_ENCODED_RUSTFLAGS: '',
+        CARGO_ENCODED_RUSTDOCFLAGS: '',
         CARGO_NET_OFFLINE: 'true',
       },
       allowed: ['RUSTC', 'RUSTC_WRAPPER', 'RUSTC_WORKSPACE_WRAPPER'],
@@ -285,6 +289,124 @@ describe('a checkout a server that uses .NET won’t run on', () => {
     });
     writeFileSync(join(above, 'Directory.Build.props'), '<Project />');
     for (const id of ['go', 'rust', 'temurin'])
+      expect(await checkoutProblem(id, root)).toBeUndefined();
+  });
+});
+
+/** Why a Cargo config with an `[unstable]` table, or an `include`, refuses its checkout. */
+const UNSTABLE = 'has an [unstable] table, which turns on cargo’s unstable features';
+const INCLUDE = 'includes another config, which can be outside the checkout';
+
+describe('a checkout rust-analyzer won’t run on', () => {
+  test('a rust-analyzer.toml, whose settings win over Lo’s and could run a program', async () => {
+    const { root } = checkout({
+      'crate/rust-analyzer.toml': '[cargo.buildScripts]\noverrideCommand = ["./evil.sh"]\n',
+    });
+    expect(await checkoutProblem('rust', root)).toBe(
+      'The checkout’s crate/rust-analyzer.toml is a rust-analyzer.toml, whose settings win over Lo’s and could run a program, so Lo won’t run rust-analyzer on it.',
+    );
+  });
+
+  test.each([
+    ['config.toml', '[env]\nDYLD_INSERT_LIBRARIES = { value = "./evil.dylib", force = true }\n'],
+    ['config', 'env.LD_PRELOAD = "./evil.so"\n'],
+    ['config.toml', '[build]\nrustc = "x"\n[ env ]\nFOO = "bar"\n'],
+    ['config.toml', 'env = { FOO = "bar" }\n'],
+    // Keys quoted, or spelled with an escape, are the same key to cargo.
+    ['config.toml', '["env"]\nFOO = "bar"\n'],
+    ['config.toml', '\'env\'.FOO = "bar"\n'],
+    ['config.toml', '["\\u0065nv"]\nFOO = "bar"\n'],
+    ['config', '"env" = { FOO = "bar" }\n'],
+  ])('a .cargo/%s with an [env] table cargo sets on rustc: %j', async (name, text) => {
+    const { root } = checkout({ [`.cargo/${name}`]: text });
+    expect(await checkoutProblem('rust', root)).toBe(
+      `The checkout’s .cargo/${name} has an [env] table, which cargo sets on the rustc it runs, so Lo won’t run rust-analyzer on it.`,
+    );
+  });
+
+  test.each([
+    ['an [unstable] table', '[unstable]\nbuild-std = ["core"]\n', UNSTABLE],
+    ['an unstable key', 'unstable.config-include = true\n', UNSTABLE],
+    ['an include', 'include = "more.toml"\n', INCLUDE],
+    ['an include of a file outside', 'include = ["../../outside.toml"]\n', INCLUDE],
+    ['TOML that doesn’t parse', '[build\nrustc = "x"\n', 'isn’t TOML Lo can read'],
+  ])('a .cargo/config.toml with %s', async (_, text, why) => {
+    const { root } = checkout({ '.cargo/config.toml': text });
+    expect(await checkoutProblem('rust', root)).toBe(
+      `The checkout’s .cargo/config.toml ${why}, so Lo won’t run rust-analyzer on it.`,
+    );
+  });
+
+  test('a .cargo/config.toml that’s a link, which cargo follows', async () => {
+    const { root } = checkout({ 'real.toml': '[env]\nFOO = "bar"\n' });
+    mkdirSync(join(root, '.cargo'));
+    symlinkSync('../real.toml', join(root, '.cargo', 'config.toml'));
+    expect(await checkoutProblem('rust', root)).toBe(
+      'The checkout’s .cargo/config.toml isn’t a plain file, so Lo won’t run rust-analyzer on it.',
+    );
+  });
+
+  test('a .cargo that’s a link to a folder whose config Lo wouldn’t see', async () => {
+    const { root } = checkout({ 'elsewhere/config.toml': '[env]\nFOO = "bar"\n' });
+    symlinkSync('elsewhere', join(root, '.cargo'));
+    expect(await checkoutProblem('rust', root)).toBe(
+      'The checkout’s .cargo isn’t a plain folder, so Lo won’t run rust-analyzer on it.',
+    );
+  });
+
+  test('nor looks for one through a link to a folder, which may lead anywhere', async () => {
+    const { root, above } = checkout({});
+    mkdirSync(join(above, 'elsewhere'));
+    writeFileSync(join(above, 'elsewhere', 'rust-analyzer.toml'), '[cargo]\nextraEnv = {}\n');
+    symlinkSync(join(above, 'elsewhere'), join(root, 'elsewhere'));
+    symlinkSync('/', join(root, 'disk'));
+    expect(await checkoutProblem('rust', root)).toBeUndefined();
+  });
+
+  test('a .cargo/config.toml above the checkout, which cargo reads too', async () => {
+    const { root, above } = checkout({});
+    mkdirSync(join(above, '.cargo'), { recursive: true });
+    writeFileSync(join(above, '.cargo', 'config.toml'), '[build]\ntarget = "x"\n');
+    expect(await checkoutProblem('rust', root)).toBe(
+      `${join(above, '.cargo', 'config.toml')} is a Cargo config above the checkout, which cargo reads, so Lo won’t run rust-analyzer on this checkout.`,
+    );
+  });
+
+  test.each([
+    ['a link, as a dotfile manager makes', 'link'],
+    ['a folder', 'folder'],
+  ])('a Cargo config above the checkout that’s %s', async (_, kind) => {
+    const { root, above } = checkout({});
+    mkdirSync(join(above, '.cargo'), { recursive: true });
+    const file = join(above, '.cargo', 'config.toml');
+    if (kind === 'link') {
+      writeFileSync(join(above, 'dotfiles.toml'), '[build]\ntarget = "x"\n');
+      symlinkSync('../dotfiles.toml', file);
+    } else {
+      mkdirSync(file);
+    }
+    expect(await checkoutProblem('rust', root)).toBe(
+      `${file} is a Cargo config above the checkout, which cargo reads, so Lo won’t run rust-analyzer on this checkout.`,
+    );
+  });
+
+  test('but runs on one whose Cargo config holds only keys Lo’s variables answer', async () => {
+    const { root } = checkout({
+      // `rustflags`, the build's and a target's, which `CARGO_ENCODED_RUSTFLAGS` answers, and
+      // `rustdocflags`, which `CARGO_ENCODED_RUSTDOCFLAGS` does.
+      '.cargo/config.toml':
+        '# a project config\n[build]\nrustc-wrapper = "./wrap.sh"\ntarget = "wasm32-unknown-unknown"\nrustflags = ["--cfg", "x"]\nrustdocflags = ["--cfg", "x"]\n[target.x86_64-unknown-linux-gnu]\nrustflags = ["-C", "target-cpu=native"]\n[source.crates-io]\nreplace-with = "vendored"\n[registries.other]\nindex = "sparse+https://example.invalid/"\n',
+    });
+    expect(await checkoutProblem('rust', root)).toBeUndefined();
+    expect(await checkoutProblem('rust', checkout({}).root)).toBeUndefined();
+  });
+
+  test('and the other toolchains read no rust-analyzer.toml or Cargo config', async () => {
+    const { root } = checkout({
+      'rust-analyzer.toml': '[cargo]\nextraEnv = { X = "1" }\n',
+      '.cargo/config.toml': '[env]\nX = "1"\n',
+    });
+    for (const id of ['go', 'dotnet', 'temurin'])
       expect(await checkoutProblem(id, root)).toBeUndefined();
   });
 });

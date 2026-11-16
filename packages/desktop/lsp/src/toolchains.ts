@@ -14,8 +14,10 @@
  *   than a driver program the variable names or a `gopackagesdriver` on `PATH`. Its caches,
  *   `GOPATH`, `GOMODCACHE` and `GOCACHE`, are folders in the server's home.
  * - Rust: `RUSTC` and `CARGO`, and empty `RUSTC_WRAPPER` and `RUSTC_WORKSPACE_WRAPPER`, which undo
- *   a checkout's `build.rustc-wrapper`, and `CARGO_NET_OFFLINE=true`. With no rustup, nothing
- *   reads `rust-toolchain.toml`.
+ *   a checkout's `build.rustc-wrapper`, empty `CARGO_ENCODED_RUSTFLAGS` and
+ *   `CARGO_ENCODED_RUSTDOCFLAGS`, which undo every config's `rustflags` and `rustdocflags`, and
+ *   `CARGO_NET_OFFLINE=true`. With no rustup, nothing reads
+ *   `rust-toolchain.toml`.
  * - The JDK: `JAVA_HOME`.
  * - .NET: `DOTNET_ROOT`, MSBuild's SDK resolver held to Lo's SDK (`DOTNET_MSBUILD_SDK_RESOLVER_*`,
  *   and `DOTNET_HOST_PATH`), programs held to the runtime they were built for and its patches
@@ -25,7 +27,7 @@
  * Each keeps its caches and settings in the server's own `HOME` (`CARGO_HOME`, `DOTNET_CLI_HOME`
  * and `NUGET_PACKAGES` all default to folders there), which no one else uses.
  *
- * Two files in a checkout, or above it, are what the variables can't answer, and a server that
+ * Some files in a checkout, or above it, are what the variables can't answer, and a server that
  * uses the toolchain doesn't run on a checkout {@link checkoutProblem} finds one of them in:
  *
  * - A `global.json`: since .NET 10 its `sdk.paths` names folders to look for an SDK in, the
@@ -43,10 +45,31 @@
  *   `GOTOOLCHAIN=local`, as a `go.mod`'s are. A `go.mod`'s `replace` with a path outside the
  *   checkout loads only the packages the checkout imports from it, which the server reads as it
  *   reads any file outside the checkout, as the README says.
+ * - For Rust, a `rust-analyzer.toml`, whose workspace-scoped settings
+ *   (`cargo.buildScripts.enable` with an `overrideCommand`, `cargo.extraEnv`, …) win over Lo's own
+ *   client settings and can run a program; or a `.cargo/config.toml` (or `.cargo/config`), read as
+ *   TOML, with an `[env]` table, which `cargo` sets on the `rustc` it runs for `cargo metadata`,
+ *   whatever Lo's environment holds, so it can load code through the dynamic linker; with an
+ *   `[unstable]` table, which takes effect since rust-analyzer runs `cargo` with
+ *   `RUSTC_BOOTSTRAP=1`; or with an `include`, which reads another config, one outside the checkout
+ *   too. A config that isn't a plain file, or in a `.cargo` that isn't a plain folder, or that
+ *   isn't TOML Lo can read, is refused too. Lo's environment answers the config's other keys that
+ *   reach `rustc`, `rustdoc` or the network (`build.rustc*` by
+ *   `RUSTC`/`RUSTC_WRAPPER`/`RUSTC_WORKSPACE_WRAPPER`, `rustflags` and `rustdocflags` by
+ *   `CARGO_ENCODED_RUSTFLAGS` and `CARGO_ENCODED_RUSTDOCFLAGS`, the rest by `CARGO_NET_OFFLINE`),
+ *   so those don't refuse the checkout. Anything named `.cargo/config.toml` or `.cargo/config` in a
+ *   folder above the checkout is refused outright, since `cargo` reads it too and Lo can't vet
+ *   what's outside the checkout; a `rust-analyzer.toml` above the checkout isn't, since
+ *   rust-analyzer reads one only from a workspace root or under it, and its user config from
+ *   `HOME`, which is Lo's.
+ *
+ * Each walk of a checkout keeps to its own folders, never following a link to one.
  */
 
 import { lstat, open, readdir, realpath, stat } from 'node:fs/promises';
-import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
+import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
+
+import { parse as parseToml } from 'smol-toml';
 
 import { isInside } from './environment.ts';
 import type { Installed } from './install.ts';
@@ -121,6 +144,10 @@ export function toolchainUse(
           CARGO: join(bin, 'cargo'),
           RUSTC_WRAPPER: '',
           RUSTC_WORKSPACE_WRAPPER: '',
+          // Empty, it beats `RUSTFLAGS` and every config's `rustflags`, the build's and each
+          // target's, so no flag of a checkout's reaches Lo's rustc; and the same for rustdoc's.
+          CARGO_ENCODED_RUSTFLAGS: '',
+          CARGO_ENCODED_RUSTDOCFLAGS: '',
           CARGO_NET_OFFLINE: 'true',
         },
         allowed: ['RUSTC', 'RUSTC_WRAPPER', 'RUSTC_WORKSPACE_WRAPPER'],
@@ -152,7 +179,10 @@ export function toolchainUse(
   }
 }
 
-/** The largest `global.json` or `go.work` {@link checkoutProblem} reads; a larger one it refuses. */
+/**
+ * The largest `global.json`, `go.work` or Cargo config {@link checkoutProblem} reads; a larger one
+ * it refuses.
+ */
 const READ_LIMIT = 1024 * 1024;
 
 /**
@@ -166,7 +196,10 @@ const READ_LIMIT = 1024 * 1024;
  *   ({@link dotnetAbove});
  * - for Go, a `go.work` in a folder above the checkout, or one in it that names a folder outside
  *   it, by `use` or by a `replace` with a path, or that Lo can't read for certain, as one that
- *   spells a path with an escape.
+ *   spells a path with an escape;
+ * - for Rust, a `rust-analyzer.toml` in the checkout, a Cargo config in it that
+ *   {@link cargoConfigProblem} refuses or a `.cargo` that's a link, or a Cargo config of any kind
+ *   above it ({@link rustProblem}).
  *
  * The other toolchains read nothing in a checkout that their variables don't answer.
  */
@@ -176,32 +209,44 @@ export async function checkoutProblem(id: string, root: string): Promise<string 
       return dotnetProblem(root);
     case 'go':
       return goProblem(root);
+    case 'rust':
+      return rustProblem(root);
     default:
       return undefined;
   }
 }
 
 /**
- * The files named `name` in the checkout at `root`, in any case, since the disk may not tell names
- * apart by case, and each folder above it, where one by that name would be. It looks in the
+ * Every entry in the checkout at `root`, by its path, and whether it's a folder. It looks in the
  * checkout's own folders, never through a link to one, which may lead anywhere on the disk, or
- * back into the checkout without end; a file of that name that is a link is found, and refused
- * as no plain file.
+ * back into the checkout without end; a link is listed as an entry that's no folder.
  */
-async function filesNamed(
-  root: string,
-  name: string,
-): Promise<{ inside: string[]; above: string[] }> {
-  const inside: string[] = [];
+async function entriesOf(root: string): Promise<{ path: string; folder: boolean }[]> {
+  const entries: { path: string; folder: boolean }[] = [];
   const folders = [root];
   for (let folder = folders.pop(); folder !== undefined; folder = folders.pop()) {
     for (const entry of await readdir(folder, { withFileTypes: true, encoding: 'utf8' })) {
       const path = join(folder, entry.name);
       if (entry.isDirectory()) folders.push(path);
-      else if (entry.name.toLowerCase() === name) inside.push(path);
+      entries.push({ path, folder: entry.isDirectory() });
     }
   }
-  inside.sort();
+  return entries.toSorted((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+}
+
+/**
+ * The files named `name` in the checkout at `root`, in any case, since the disk may not tell names
+ * apart by case, and each folder above it, where one by that name would be. It looks in the
+ * checkout's own folders ({@link entriesOf}); a file of that name that is a link is found, and
+ * refused as no plain file.
+ */
+async function filesNamed(
+  root: string,
+  name: string,
+): Promise<{ inside: string[]; above: string[] }> {
+  const inside = (await entriesOf(root))
+    .filter((entry) => !entry.folder && basename(entry.path).toLowerCase() === name)
+    .map((entry) => entry.path);
   const above: string[] = [];
   for (let folder = dirname(root); ; folder = dirname(folder)) {
     above.push(join(folder, name));
@@ -294,6 +339,74 @@ async function steers(file: string): Promise<string | undefined> {
   if ('why' in read) return read.why;
   if (/paths/i.test(read.text)) return 'names folders to look for an SDK in';
   if (/\\u/i.test(read.text)) return 'spells a name with an escape Lo doesn’t read';
+  return undefined;
+}
+
+/** The names of the Cargo configs `cargo` reads in a `.cargo` folder. */
+const CARGO_CONFIGS = ['config.toml', 'config'];
+
+/**
+ * Why rust-analyzer mustn't run on the checkout at `root`: a `rust-analyzer.toml` in it, whose
+ * workspace settings win over Lo's and can run a program; a `.cargo` in it that's a link, to a
+ * folder whose config Lo's walk wouldn't find by that name, but `cargo` reads; a
+ * `.cargo/config.toml` (or `.cargo/config`) in it that {@link cargoConfigProblem} refuses; or
+ * anything at all named `.cargo/config.toml` or `.cargo/config` in a folder above it, which `cargo`
+ * reads, following a link, and Lo can't vet.
+ */
+async function rustProblem(root: string): Promise<string | undefined> {
+  const won = 'so Lo won’t run rust-analyzer on it.';
+  for (const { path, folder } of await entriesOf(root)) {
+    const name = basename(path).toLowerCase();
+    if (name === 'rust-analyzer.toml' && !folder) {
+      return `${nameOf(root, path)} is a rust-analyzer.toml, whose settings win over Lo’s and could run a program, ${won}`;
+    }
+    if (name === '.cargo' && !folder) return `${nameOf(root, path)} isn’t a plain folder, ${won}`;
+    if (CARGO_CONFIGS.includes(name) && basename(dirname(path)).toLowerCase() === '.cargo') {
+      const why = await cargoConfigProblem(path);
+      if (why !== undefined) return `${nameOf(root, path)} ${why}, ${won}`;
+    }
+  }
+  for (let folder = dirname(root); ; folder = dirname(folder)) {
+    for (const name of CARGO_CONFIGS) {
+      const file = join(folder, '.cargo', name);
+      // Anything there, a link to a dotfile or a file Lo can't read included.
+      if ((await lstat(file).catch(() => undefined)) !== undefined) {
+        return `${file} is a Cargo config above the checkout, which cargo reads, so Lo won’t run rust-analyzer on this checkout.`;
+      }
+    }
+    if (dirname(folder) === folder) break;
+  }
+  return undefined;
+}
+
+/**
+ * What makes the Cargo config at `file` in a checkout one Lo can't run rust-analyzer beside, if
+ * anything does: that it isn't a plain file (a link, which cargo follows), is too large, or isn't
+ * TOML Lo can read; or that it has a key Lo's variables can't answer. It's read as TOML, so a key
+ * quoted or spelled with an escape is the key cargo reads.
+ */
+async function cargoConfigProblem(file: string): Promise<string | undefined> {
+  const read = await readSmall(file);
+  if (read === undefined) return undefined;
+  if ('why' in read) return read.why;
+  let config: Record<string, unknown>;
+  try {
+    // `readSmall` reads each byte as a character, so this gives back the bytes it read.
+    const bytes = Buffer.from(read.text, 'latin1');
+    config = parseToml(new TextDecoder('utf-8', { fatal: true }).decode(bytes));
+  } catch {
+    return 'isn’t TOML Lo can read';
+  }
+  if (Object.hasOwn(config, 'env')) {
+    return 'has an [env] table, which cargo sets on the rustc it runs';
+  }
+  // rust-analyzer runs cargo with `RUSTC_BOOTSTRAP=1`, so these features would take effect.
+  if (Object.hasOwn(config, 'unstable')) {
+    return 'has an [unstable] table, which turns on cargo’s unstable features';
+  }
+  if (Object.hasOwn(config, 'include')) {
+    return 'includes another config, which can be outside the checkout';
+  }
   return undefined;
 }
 

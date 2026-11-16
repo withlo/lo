@@ -50,13 +50,28 @@
 #   (Python has no interpreter plant: Pyright takes its interpreter from the client's settings, or
 #   the `python` on PATH, and never from a file of a project. Its `venv` setting names a folder it
 #   reads, not a program it runs. python/.python-version is there for `python` on PATH, below.)
-#   Rust's compiler wrapper
-#     rust/.cargo/config.toml, `build.rustc-wrapper`, naming rust/lo-rustc-wrapper.sh
-#     cargo, checking a crate; marker rust/lo-hostile-rustc-wrapper
-#   rust-analyzer's settings
-#     rust/rust-analyzer.toml, naming rust/lo-rust-analyzer.sh as the check command and the
-#     procedural macro server
-#     rust-analyzer, checking a crate or expanding a macro; marker rust/lo-hostile-rust-analyzer
+#   Cargo's config, every key that `cargo metadata` and `cargo rustc --print` act on which chooses
+#   a program or a flag of rustc's, or reaches the network
+#     rust/.cargo/config.toml, the keys Lo's variables answer: `build.rustc`, `build.rustc-wrapper`,
+#     `build.rustc-workspace-wrapper` (Lo's RUSTC and empty wrappers), `build.rustflags` and
+#     `target.*.rustflags`, a `--cfg lo_hostile_rustflags` (an empty CARGO_ENCODED_RUSTFLAGS),
+#     `target.*`'s runner and linker (not run by `cargo metadata`), `[source]` replacement,
+#     `[registries]` and their credential-provider, `[registry]` global-credential-providers and
+#     `net.offline = false` (CARGO_NET_OFFLINE)
+#     .cargo/config.toml, which cargo reads in rust/ too, the keys Lo can't answer with a variable,
+#     so `checkoutProblem` refuses the checkout: an `[env]` table, which cargo sets on the rustc it
+#     runs; an `[unstable]` table, which takes effect since rust-analyzer runs cargo with
+#     RUSTC_BOOTSTRAP=1; and an `include` of another config
+#     Markers rust/lo-hostile-{rustc,rustc-wrapper,rustc-workspace-wrapper,runner,linker,cred}, and
+#     hosts cargo-src, cargo-reg.lo-hostile.invalid. None runs: the checkout is refused, and the
+#     live check runs rust-analyzer on it without .cargo/config.toml and rust/rust-analyzer.toml
+#     too, where every key left is answered by a variable.
+#   rust-analyzer's workspace settings
+#     rust/rust-analyzer.toml, whose workspace-scoped keys win over Lo's client settings:
+#     `cargo.extraEnv`, `cargo.buildScripts.enable` with an `overrideCommand`, a `check`
+#     `overrideCommand`, and `procMacro`, naming rust/lo-rust-analyzer.sh. Lo can't send a setting
+#     that overrides these, so `checkoutProblem` refuses the checkout; marker
+#     rust/lo-hostile-rust-analyzer
 #   Rust's toolchain
 #     rust/rust-toolchain.toml, asking for Rust 99.0.0
 #     rustup, which would download it; no marker, a request to static.rust-lang.org
@@ -173,7 +188,7 @@ IFS= read -r -d '' HOSTILE_BODY <<'EOF' || true
 
 It's the code fixture's pull request, with one more commit. That commit's files try to run code, steer a language server or a version manager, or fetch from the network, when the pull request is checked out and its servers start:
 
-- programs a tool might run: a workspace TypeScript in `node_modules`, a tsserver plugin in `typescript/node_modules`, an npm `postinstall`, `.vscode/settings.json`, a `rustc-wrapper` in `rust/.cargo/config.toml`, the program `rust/rust-analyzer.toml` names, the Gradle and Maven wrappers, `php/.phpactor.json`'s tools, PHP's tools in `vendor/bin` and the `.php-lsp.json` that turns two of them on, `mise.toml`, MSBuild's `Directory.Build.props`, `Directory.Build.targets` and `Directory.Packages.props` with an analyzer and a task compiled from C#, a file-based C# program, and a copy of it in `obj/`, a Terraform provider's plugin committed in `hostile/terraform-provider/.terraform`, a `//go:generate` line and a cgo file in `go/`, and a `terraform` and a `gopackagesdriver` in `hostile/bin`, which `.envrc` puts on `PATH`;
+- programs a tool might run: a workspace TypeScript in `node_modules`, a tsserver plugin in `typescript/node_modules`, an npm `postinstall`, `.vscode/settings.json`, a `rust/.cargo/config.toml` naming programs for `build.rustc`, its wrappers, a target's runner and linker, and a registry credential provider, and flags for rustc, a `.cargo/config.toml` with an `[env]` table, an `[unstable]` table and an `include`, the workspace settings `rust/rust-analyzer.toml` names, the Gradle and Maven wrappers, `php/.phpactor.json`'s tools, PHP's tools in `vendor/bin` and the `.php-lsp.json` that turns two of them on, `mise.toml`, MSBuild's `Directory.Build.props`, `Directory.Build.targets` and `Directory.Packages.props` with an analyzer and a task compiled from C#, a file-based C# program, and a copy of it in `obj/`, a Terraform provider's plugin committed in `hostile/terraform-provider/.terraform`, a `//go:generate` line and a cgo file in `go/`, and a `terraform` and a `gopackagesdriver` in `hostile/bin`, which `.envrc` puts on `PATH`;
 - versions that don't exist: `.tool-versions`, `.nvmrc`, `python/.python-version`, `ruby/.ruby-version`, `rust-toolchain.toml`, the `toolchain` lines of `go.mod` and `go.work`, and a `global.json` that pins an MSBuild SDK;
 - git's own settings, in folders of `git/` that look like bare repositories: a `core.fsmonitor` program, hooks, a clean and smudge filter, and a promisor remote that makes git fetch a commit it lacks; and a `.gitmodules` that points a submodule at a host that doesn't exist;
 - projects in `hostile/` whose dependencies or registries are on hosts ending `.lo-hostile.invalid`, which never resolve, a Terraform module from the Terraform Registry that doesn't exist, and a `NuGet.config` that names one for every project and puts NuGet's packages in the checkout.
@@ -363,19 +378,80 @@ EOF
 EOF
   marker_sh .vscode/lo-server.sh lo-hostile-vscode "a program an editor's settings name"
 
-  # Cargo's wrapper around rustc, which a crate's config names, relative to the crate.
+  # Cargo's config, which `cargo metadata` reads: every key that chooses a program or a flag of
+  # rustc's, or reaches the network. Lo's environment answers each of these (`build.rustc*` by
+  # RUSTC and the empty wrappers, `rustflags` by an empty CARGO_ENCODED_RUSTFLAGS, the rest by
+  # CARGO_NET_OFFLINE), so this file alone doesn't refuse the checkout.
   put rust/.cargo/config.toml <<'EOF'
 [build]
+rustc = "./lo-rustc.sh"
 rustc-wrapper = "./lo-rustc-wrapper.sh"
-EOF
-  marker_sh rust/lo-rustc-wrapper.sh lo-hostile-rustc-wrapper "a wrapper around the Rust compiler"
+rustc-workspace-wrapper = "./lo-rustc-workspace-wrapper.sh"
+rustflags = ["--cfg", "lo_hostile_rustflags"]
 
-  # rust-analyzer's settings for a crate, which name programs to run in place of cargo's.
+[target.aarch64-apple-darwin]
+runner = "./lo-runner.sh"
+linker = "./lo-linker.sh"
+rustflags = ["--cfg", "lo_hostile_rustflags"]
+[target.x86_64-unknown-linux-gnu]
+runner = "./lo-runner.sh"
+linker = "./lo-linker.sh"
+rustflags = ["--cfg", "lo_hostile_rustflags"]
+
+[source.crates-io]
+replace-with = "lo-hostile"
+[source.lo-hostile]
+registry = "sparse+https://cargo-src.lo-hostile.invalid/index/"
+
+[registries.lo-hostile]
+index = "sparse+https://cargo-reg.lo-hostile.invalid/index/"
+credential-provider = "./lo-cred.sh"
+
+[registry]
+global-credential-providers = ["./lo-cred.sh"]
+
+[net]
+offline = false
+EOF
+  marker_sh rust/lo-rustc.sh lo-hostile-rustc "a compiler a crate's config names as rustc"
+  marker_sh rust/lo-rustc-wrapper.sh lo-hostile-rustc-wrapper "a wrapper around the Rust compiler"
+  marker_sh rust/lo-rustc-workspace-wrapper.sh lo-hostile-rustc-workspace-wrapper \
+    "a workspace wrapper around the Rust compiler"
+  marker_sh rust/lo-runner.sh lo-hostile-runner "a runner a crate's config names for a target"
+  marker_sh rust/lo-linker.sh lo-hostile-linker "a linker a crate's config names for a target"
+  marker_sh rust/lo-cred.sh lo-hostile-cred "a credential provider a crate's config names"
+
+  # The keys Lo's variables can't answer, in a config of their own above rust/, which cargo reads
+  # too, so `checkoutProblem` refuses the checkout for them: cargo sets `[env]` on the rustc it runs
+  # for `cargo metadata`, so the dynamic linker would load code into it; rust-analyzer runs cargo
+  # with RUSTC_BOOTSTRAP=1, so `[unstable]` takes effect; and `include` reads another config.
+  put .cargo/config.toml <<'EOF'
+include = ["lo-include.toml"]
+
+[unstable]
+config-include = true
+
+[env]
+DYLD_INSERT_LIBRARIES = { value = "lo-env.dylib", force = true }
+LD_PRELOAD = { value = "lo-env.so", force = true }
+EOF
+
+  # rust-analyzer's settings for the workspace, which win over Lo's client settings for workspace-
+  # scoped keys and so can run a program, whatever Lo sends. `checkoutProblem` refuses a checkout
+  # that has a rust-analyzer.toml.
   put rust/rust-analyzer.toml <<'EOF'
+[cargo]
+extraEnv = { DYLD_INSERT_LIBRARIES = "lo-env.dylib" }
+
+[cargo.buildScripts]
+enable = true
+overrideCommand = ["./lo-rust-analyzer.sh"]
+
 [check]
 overrideCommand = ["./lo-rust-analyzer.sh"]
 
 [procMacro]
+enable = true
 server = "./lo-rust-analyzer.sh"
 EOF
   marker_sh rust/lo-rust-analyzer.sh lo-hostile-rust-analyzer "a program rust-analyzer's settings name"

@@ -9,9 +9,11 @@ import {
   launchNative,
   launchOnNode,
   launchRoslyn,
+  launchRustAnalyzer,
   PHP_LSP,
   PYRIGHT,
   ROSLYN,
+  RUST_ANALYZER,
   TERRAFORM_LS,
   VTSLS,
   type Installed,
@@ -126,6 +128,22 @@ function onNode(
 }
 
 /**
+ * The Rust adapter: rust-analyzer, a compiled program Lo downloads, run on Lo's Rust toolchain.
+ * Both download on first use, their progress added up from the start.
+ */
+const RUST: Adapter = {
+  id: 'rust',
+  name: 'Rust',
+  languages: { rust: 'rust' },
+  downloads: { servers: [RUST_ANALYZER.id], toolchains: ['rust'] },
+  async prepare(context) {
+    const server = await context.install(RUST_ANALYZER.id);
+    const toolchain = await context.toolchain('rust');
+    return { kind: 'ready', launch: launchRustAnalyzer(server, toolchain) };
+  },
+};
+
+/**
  * An adapter for `server`, a program of its own, which uses the toolchains `toolchains` names:
  * each downloads first, then the server, which Lo builds with its Go when it's built from Go
  * modules, as gopls is.
@@ -174,6 +192,7 @@ export const ADAPTERS: readonly Adapter[] = [
     languages: { typescript: 'typescript', tsx: 'typescriptreact', javascript: 'javascript' },
   }),
   onNode(PYRIGHT, { id: 'python', name: 'Python', languages: { python: 'python' } }),
+  RUST,
   native(PHP_LSP, { id: 'php', name: 'PHP', languages: { php: 'php' } }),
   native(GOPLS, { id: 'go', name: 'Go', languages: { go: 'go' } }, ['go']),
   native(TERRAFORM_LS, {

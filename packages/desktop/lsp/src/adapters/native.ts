@@ -30,7 +30,11 @@ export interface NativeServer {
   readonly args: readonly string[];
   /** Its own variables, such as the soft cap on a Go program's heap. */
   readonly variables?: Readonly<Record<string, string>> | undefined;
-  readonly settings: unknown;
+  /**
+   * What `launchNative` tells it, static for a server launched that way. A server with its own
+   * launcher, such as rust-analyzer on Lo's toolchain, computes these instead and leaves it unset.
+   */
+  readonly settings?: unknown;
   readonly initializationOptions?: unknown;
   /** Whether it gives inlay hints, which `gh` shows: `false` for one that answers none. */
   readonly hints: boolean;

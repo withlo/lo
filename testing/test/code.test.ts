@@ -295,7 +295,7 @@ test(
       'lo-hostile-php-lsp-cache',
     ];
     expect([...markers, ...written].toSorted()).toEqual([...said].toSorted());
-    expect(markers.size).toBe(29);
+    expect(markers.size).toBe(34);
   },
 );
 

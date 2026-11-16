@@ -40,6 +40,7 @@ import {
   ROSLYN,
   writable,
 } from './roslyn.ts';
+import { launchRustAnalyzer, RUST_ANALYZER } from './rust.ts';
 import { VTSLS } from './vtsls.ts';
 
 const SERVERS = [VTSLS, PYRIGHT];
@@ -98,7 +99,7 @@ function installed(server: NodeServer): Installed {
 }
 
 /** What `server` hears when it asks for the setting `section`. */
-function setting(server: { readonly settings: unknown }, section: string): unknown {
+function setting(server: { readonly settings?: unknown }, section: string): unknown {
   return sectionOf(server.settings, section);
 }
 
@@ -227,6 +228,113 @@ describe('Pyright', () => {
     expect(pinned(PYRIGHT).download.packages.map((pkg) => pkg.path)).toEqual([
       'node_modules/pyright',
     ]);
+  });
+});
+
+describe('rust-analyzer', () => {
+  /** The sysroot Lo's Rust toolchain installs to, with `bin/cargo` inside. */
+  const SYSROOT = '/lo/cache/toolchains/rust/1.100.0/files';
+
+  /** rust-analyzer, as the manifest pins it, installed. */
+  const RA: Installed = {
+    folder: '/lo/cache/servers/rust-analyzer/2026-11-09/files',
+    entry: '/lo/cache/servers/rust-analyzer/2026-11-09/files/rust-analyzer',
+  };
+
+  /** Lo's Rust toolchain, installed at `SYSROOT`, as a server gets it. */
+  function toolchain() {
+    const at: Installed = { folder: SYSROOT, entry: `${SYSROOT}/bin/cargo` };
+    return { ...toolchainUse('rust', '1.100.0', at), installed: at };
+  }
+
+  /** How rust-analyzer starts, on Lo's Rust toolchain. */
+  function launch() {
+    return launchRustAnalyzer(RA, toolchain());
+  }
+
+  /** What rust-analyzer hears for the setting `section`, which it reads nested under its name. */
+  function told(section: string): unknown {
+    return sectionOf(launch().initializationOptions, section);
+  }
+
+  test('starts as the downloaded program itself, with no arguments', () => {
+    const started = launch();
+    expect(started.program).toBe(RA.entry);
+    expect(started.args).toEqual([]);
+    expect(RUST_ANALYZER.args).toEqual([]);
+  });
+
+  test('runs on Lo’s Rust toolchain, held to Lo’s cargo, rustc and sysroot', () => {
+    const started = launch();
+    // The toolchain's folder first on the PATH, and its variables, as `toolchainUse` gives them.
+    expect(started.path).toEqual([`${SYSROOT}/bin`]);
+    expect(started.variables).toEqual({
+      RUSTC: `${SYSROOT}/bin/rustc`,
+      CARGO: `${SYSROOT}/bin/cargo`,
+      RUSTC_WRAPPER: '',
+      RUSTC_WORKSPACE_WRAPPER: '',
+      // Beats `RUSTFLAGS` and every config's `rustflags`, so none reaches Lo's rustc.
+      CARGO_ENCODED_RUSTFLAGS: '',
+      CARGO_ENCODED_RUSTDOCFLAGS: '',
+      CARGO_NET_OFFLINE: 'true',
+    });
+    // The wrappers and compiler it sets on purpose, which undo a checkout's `build.rustc*`.
+    expect(started.allowed).toEqual(['RUSTC', 'RUSTC_WRAPPER', 'RUSTC_WORKSPACE_WRAPPER']);
+    // The sysroot is the toolchain's root, with its bundled standard-library sources.
+    expect(told('cargo.sysroot')).toBe(SYSROOT);
+    expect(told('cargo.sysrootSrc')).toBe(`${SYSROOT}/lib/rustlib/src/rust/library`);
+  });
+
+  test('runs no build script and expands no proc-macro, a checkout’s code', () => {
+    expect(told('cargo.buildScripts.enable')).toBe(false);
+    expect(told('cargo.buildScripts.overrideCommand')).toBeNull();
+    expect(told('cargo.buildScripts.useRustcWrapper')).toBe(false);
+    expect(told('procMacro.enable')).toBe(false);
+    expect(told('procMacro.attributes.enable')).toBe(false);
+  });
+
+  test('never runs a check, and brings no environment of the checkout’s to cargo', () => {
+    expect(told('checkOnSave')).toBe(false);
+    expect(told('check.overrideCommand')).toBeNull();
+    expect(told('cargo.extraEnv')).toEqual({});
+    expect(told('diagnostics.enable')).toBe(false);
+    expect(told('cachePriming.enable')).toBe(false);
+  });
+
+  test('hears its settings in `initialize` and for the section it asks for alike', () => {
+    const started = launch();
+    expect(started.settings).toEqual({ 'rust-analyzer': started.initializationOptions });
+    // rust-analyzer asks for the `rust-analyzer` section.
+    expect(sectionOf(started.settings, 'rust-analyzer')).toEqual(started.initializationOptions);
+  });
+
+  test('gives the inlay hints gh shows', () => {
+    expect(RUST_ANALYZER.hints).toBe(true);
+  });
+
+  test('says what it is, with its version and dual license, and the README lists it', () => {
+    const version = MANIFEST[RUST_ANALYZER.id]?.version ?? '';
+    expect(launch().version).toBe(`rust-analyzer ${version} · MIT OR Apache-2.0`);
+    const readme = readFileSync(join(import.meta.dirname, '..', '..', 'README.md'), 'utf8');
+    expect(readme).toMatch(
+      new RegExp(
+        `^\\| rust-analyzer\\b[^|\\n]*\\| ${version} +\\|[^\\n]*\\| MIT OR Apache-2.0\\b`,
+        'm',
+      ),
+    );
+  });
+
+  test('is pinned as a gzipped program for every platform', () => {
+    const entry = MANIFEST[RUST_ANALYZER.id];
+    expect(entry).toBeDefined();
+    for (const download of Object.values(entry?.platforms ?? {})) {
+      expect(download.kind).toBe('gz');
+      expect(download.entry).toBe('rust-analyzer');
+    }
+  });
+
+  test('refuses a manifest with no entry for it', () => {
+    expect(() => launchRustAnalyzer(RA, toolchain(), {})).toThrow('has no rust-analyzer');
   });
 });
 

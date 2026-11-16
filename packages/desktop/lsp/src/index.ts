@@ -15,6 +15,7 @@ export {
   msbuild,
   ROSLYN,
 } from './adapters/roslyn.ts';
+export { launchRustAnalyzer, RUST_ANALYZER, rustAnalyzerSettings } from './adapters/rust.ts';
 export { NO_TERRAFORM, TERRAFORM_LS } from './adapters/terraform.ts';
 export { VTSLS } from './adapters/vtsls.ts';
 export { BUILD_TIME, buildGo, GO_TARGETS, type GoBuild, type GoDownload } from './build.ts';
