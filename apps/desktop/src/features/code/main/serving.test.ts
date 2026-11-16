@@ -138,6 +138,7 @@ function onPool(shown: ReadonlyMap<string, ServingInput>, screen: () => string =
     prepare: (adapter, _progress, signal) =>
       adapter.prepare({
         install: () => Promise.reject(new Error('no downloads in tests')),
+        toolchain: () => Promise.reject(new Error('no downloads in tests')),
         findCopy: () => Promise.resolve(undefined),
         signal,
       }),

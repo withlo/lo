@@ -55,7 +55,9 @@ describe('test servers', () => {
       languages: { typescript: 'typescript', tsx: 'typescriptreact' },
     });
     const signal = new AbortController().signal;
-    expect(await server?.prepare({ install: refuse, findCopy: refuse, signal })).toEqual({
+    expect(
+      await server?.prepare({ install: refuse, toolchain: refuse, findCopy: refuse, signal }),
+    ).toEqual({
       kind: 'ready',
       launch: {
         program: '/usr/local/bin/node',

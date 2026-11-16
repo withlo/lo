@@ -1,0 +1,36 @@
+// What Settings' Toolchains section shows: sizes in the units the rest of Settings and the status bar
+// count in, the one being removed waiting, and why one wasn't removed.
+
+import { expect, it } from 'vitest';
+
+import { IpcError } from '../../../ipc/contract.ts';
+import { notRemoved, rowsOf } from './rows.ts';
+
+const GO = {
+  id: 'go',
+  name: 'Go',
+  version: '1.27.4',
+  installed: 240_208_599,
+  download: 68_260_000,
+  uses: ['Go'],
+};
+
+it('writes sizes as formatBytes does, and has the one being removed wait', () => {
+  const rows = rowsOf([GO, { ...GO, id: 'rust', name: 'Rust', installed: null }], new Set(['go']));
+  expect(rows).toEqual([
+    { ...GO, installed: '229.1 MB', download: '65.1 MB', removing: true },
+    { ...GO, id: 'rust', name: 'Rust', installed: undefined, download: '65.1 MB', removing: false },
+  ]);
+});
+
+it('says what wasn’t removed, and why, as main said it', () => {
+  expect(
+    notRemoved('Go', new IpcError('failed', 'Lo isn’t allowed to delete /lo/toolchains/go.')),
+  ).toBe('Go wasn’t removed. Lo isn’t allowed to delete /lo/toolchains/go.');
+  expect(notRemoved('Go', new IpcError('unavailable', 'Lo is starting, or quitting.'))).toBe(
+    'Go wasn’t removed. Lo is starting, or quitting.',
+  );
+  expect(notRemoved('Go', new Error('the port closed'))).toBe(
+    'Go wasn’t removed. Lo couldn’t ask for it.',
+  );
+});

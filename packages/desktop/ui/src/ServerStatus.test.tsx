@@ -131,8 +131,9 @@ async function labels(trust: ServerTrust, state: ServerState): Promise<string[]>
 
 describe('ServerStatus', () => {
   it('says each state in the one phrase that fits, with its numbers', () => {
+    // In the units Settings counts in.
     expect(say('TypeScript', { kind: 'downloading', done: 12_300_000, total: 40_100_000 })).toBe(
-      'TypeScript downloading · 12 of 40 MB',
+      'TypeScript downloading · 11.7 MB of 38.2 MB',
     );
     expect(say('TypeScript', { kind: 'starting' })).toBe('TypeScript starting');
     expect(say('TypeScript', { kind: 'indexing', percent: 40 })).toBe('TypeScript indexing 40%');
