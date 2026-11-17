@@ -59,8 +59,10 @@ test('the header says whether each pull request can merge, and why not', async (
   await expect(status(page)).toContainText('Can’t merge');
   await expect(status(page)).toContainText('Draft');
 
-  await open(page, pulls.queuedSlow1.number);
+  await open(page, pulls.queuedSlow2.number);
+  // Its place and when GitHub expects it to merge come from its queue, which lists it.
   await expect(status(page)).toContainText('Queued, 1st');
+  await expect(status(page)).toContainText(/about \d+ min/);
 
   await open(page, pulls.gatedPassing.number);
   await expect(status(page)).toContainText('Merges when ready');
@@ -129,7 +131,7 @@ test('`Tab` steps through the methods, and a squash shows the commit GitHub woul
   const title = panel(page).getByRole('textbox').first();
   await expect(title).toHaveAttribute(
     'placeholder',
-    `Fixture M3: squash and merge (#${pulls.squash.number})`,
+    `Fixture M6: squash and merge (#${pulls.squash.number})`,
   );
   await expect(panel(page).getByRole('button', { name: /Squash and merge/ })).toBeVisible();
 
@@ -146,7 +148,7 @@ test.describe('acting as nobody', () => {
 
   test('a tab shows nothing of whether it can merge, and `m` says why', async ({ page }) => {
     await open(page, pulls.squash.number, false);
-    await expect(header(page)).toContainText('Fixture M3: squash and merge');
+    await expect(header(page)).toContainText('Fixture M6: squash and merge');
     await expect(status(page)).toHaveCount(0);
     await page.keyboard.press('m');
     await expect(said(page, 'Sign in to see whether it can merge')).toBeVisible();

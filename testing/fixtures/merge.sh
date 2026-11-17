@@ -223,6 +223,28 @@ overridden=190
 stack=191
 EOF
       ;;
+    6)
+      cat <<'EOF'
+squash=192
+merge=193
+rebase=194
+conflict=195
+draft=196
+stack-1=197
+stack-2=198
+chain-1=199
+chain-2=200
+moved=201
+gated-failing=202
+gated-passing=203
+queued-pass=204
+queued-slow-1=205
+queued-slow-2=206
+queued-fail=207
+overridden=208
+stack=209
+EOF
+      ;;
     8)
       cat <<'EOF'
 squash=222

@@ -2,10 +2,11 @@
 // account's poller and sent to the window as it changes (`./reads.ts`), mapped with the method
 // remembered for the repository (`./methods.ts`); what the merge panel reads as it opens, the
 // squash commit's text GitHub would start with; the pages its reasons link, opened in the
-// system's browser; and merging (`./merging.ts`), through the app's one `MergeJobs`, in each pull
+// system's browser; merging (`./merging.ts`), through the app's one `MergeJobs`, in each pull
 // request's turn among merge writes (`./turns.ts`), which other features take through
 // `merge.writes`: a pull request alone, a GitHub stack's layer with the layers below it, or a
-// chain's bottom layer, whose layers above Lo then moves onto the root (`./chains.ts`).
+// chain's bottom layer, whose layers above Lo then moves onto the root (`./chains.ts`); and, for a
+// pull request in a merge queue, its place there and why it left (`./queued.ts`).
 
 import { GithubError, MergeJobs, squashText } from '@lo/github';
 
@@ -22,12 +23,14 @@ import { writes } from '../service.ts';
 import { holdsIn } from './holds.ts';
 import { Merging } from './merging.ts';
 import { MethodStore } from './methods.ts';
+import { QueueReads } from './queued.ts';
 import { MergeReads } from './reads.ts';
 import { MergeTurns } from './turns.ts';
 
 const log = (line: string) => console.error(`merge: ${line}`);
 
 let reads: MergeReads | undefined;
+let queues: QueueReads | undefined;
 let merging: Merging | undefined;
 let jobs: MergeJobs | undefined;
 /** The turns of merge writes to pull requests, which other features take too. */
@@ -38,6 +41,12 @@ const stops: (() => void)[] = [];
 function started(): MergeReads {
   if (reads === undefined) throw new IpcError('stopped', 'Lo is quitting.');
   return reads;
+}
+
+/** The merge queues' reads, once `start` made them. */
+function inQueues(): QueueReads {
+  if (queues === undefined) throw new IpcError('stopped', 'Lo is quitting.');
+  return queues;
 }
 
 /** Merging, once `start` made it. */
@@ -69,10 +78,16 @@ export default defineFeature(contract, {
     },
     async open({ id, url }) {
       // Only an `https://` page this view's status links: a check's run, or the pull request.
-      if (URL.parse(url)?.protocol !== 'https:' || !started().links(id, url)) {
+      const linked = started().links(id, url) || inQueues().links(id, url);
+      if (URL.parse(url)?.protocol !== 'https:' || !linked) {
         throw new IpcError('refused', 'Lo opens only the pages the merge status links.');
       }
       await openPage(url);
+    },
+    queue: ({ id }) => inQueues().current(id),
+    ahead: ({ id }) => inQueues().ahead(id),
+    forgetLeft({ id }) {
+      queues?.forgetLeft(id);
     },
     plan: ({ id, method, title, message }) => merges().plan(id, { method, title, message }),
     confirm: ({ key }) => merges().confirm(key),
@@ -96,6 +111,14 @@ export default defineFeature(contract, {
       const on = use(comparisons).onScreen(id);
       return on.kind === 'revisions' ? on.comparing.new.head : service.pull(id)?.shown;
     };
+    const inQueue = new QueueReads({
+      poller: (login) => use(github).poller(login),
+      view: (id) => service.pull(id),
+      onScreen: () => service.list().active,
+      publish: (queued) => publish('queued', queued),
+      log,
+    });
+    queues = inQueue;
     const followed = new MergeReads({
       poller: (login) => use(github).poller(login),
       view: (id) => service.pull(id),
@@ -106,7 +129,10 @@ export default defineFeature(contract, {
         const clone = service.clone(id);
         return clone === undefined ? undefined : holdsIn(await clone, tip, head);
       },
-      publish: (status) => publish('status', status),
+      publish(status) {
+        publish('status', status);
+        inQueue.heard(status);
+      },
       log,
     });
     reads = followed;
@@ -130,10 +156,14 @@ export default defineFeature(contract, {
     stops.push(
       // A conversion to a GitHub stack doesn't change the base branches of what Lo is merging.
       stacks.holdConversions((repo, prs) => turns.busy(repo, prs)),
-      service.onPull((id) => followed.follow(id)),
+      service.onPull((id) => {
+        followed.follow(id);
+        inQueue.follow(id);
+      }),
       // The view shown reads its status, the first time it's on screen.
       service.onTabs(({ active }) => {
         if (active !== undefined) followed.shown(active);
+        inQueue.shown(active);
       }),
       use(comparisons).onChange((id) => followed.follow(id)),
     );
@@ -149,5 +179,7 @@ export default defineFeature(contract, {
     jobs = undefined;
     reads?.stop();
     reads = undefined;
+    queues?.stop();
+    queues = undefined;
   },
 });

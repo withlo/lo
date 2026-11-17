@@ -1,5 +1,5 @@
 {
-  "description": "What the app's merge tests read from GitHub, recorded from the app on generation 3 of fixtures/merge.sh's pull requests, rozed-dev/e2e#138 to #154: #138, ready, its panel opened and stepped through the methods to a squash, which read the commit GitHub would write; #148, blocked by e4/gated's rules, its panel opened and its failed check's run opened; #142, a draft; #151, first in e4/queued's queue, which rozed-bot added it to; #149, waiting for an approval with auto-merge on, which rozed-bot turned on; and #138 again with no account. Each tab stayed open long enough for its polls to repeat.",
-  "recorded_at": "2026-11-16T22:25:27Z",
+  "description": "What the app's merge tests read from GitHub, recorded from the app on generation 6 of fixtures/merge.sh's pull requests, rozed-dev/e2e#192 to #208: #192, ready, its panel opened and stepped through the methods to a squash, which read the commit GitHub would write; #202, blocked by e4/gated's rules, its panel opened and its failed check's run opened; #196, a draft; #206, first in e4/queued's queue, which rozed-bot added it to, and the queue, which listed it; #203, waiting for an approval with auto-merge on, which rozed-bot turned on; and #192 again with no account. Each tab stayed open long enough for its polls to repeat. rozed-bot then took #206 out of the queue and turned #203's auto-merge off, so neither merged.",
+  "recorded_at": "2026-11-17T03:38:02Z",
   "repo": "rozed-dev/e2e"
 }

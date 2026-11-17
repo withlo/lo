@@ -107,6 +107,7 @@ function harness(pulls: Readonly<Record<string, Acting | undefined>> = {}) {
         asked.push(`${tab.id} waiting ${branch}`);
         return { branch, pullRequests: [], total: 0, leftOut: [] };
       },
+      removal: () => Promise.reject(new Error('Nothing left the queue here.')),
       repository: () => ({ list: undefined, rules: undefined }),
       forget: () => asked.push(`${tab.id} forgets its poller`),
     }),
