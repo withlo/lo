@@ -5,7 +5,8 @@
 // with the method shown, the squash commit's title as typed, and a toast once GitHub merged it.
 // A head that moved just before the press is merged by nobody: GitHub fails it, and the dialog says
 // so. With GitHub's answer lost (`app_merge_write_lost`), Lo reads the pull request to tell, and
-// never sends the merge again.
+// never sends the merge again. Into `e4/queued`, `⏎` adds it to the merge queue
+// (`app_merge_enqueue`).
 
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -57,7 +58,7 @@ const test = base.extend<{ cassette: string; github: ReplayServer; remote: strin
 });
 
 /** Opens pull request `number`'s tab once rozed-bot's account is added, and its merge panel. */
-async function panelOf(page: Page, number: number): Promise<void> {
+async function panelOf(page: Page, number: number, ready = 'Ready to merge'): Promise<void> {
   await expect
     .poll(async () => JSON.stringify(await page.evaluate(() => window.lo.invoke('accounts.list'))))
     .toContain('rozed-bot');
@@ -67,7 +68,7 @@ async function panelOf(page: Page, number: number): Promise<void> {
     number,
   );
   if (!reply.ok) throw new Error(JSON.stringify(reply));
-  await expect(status(page)).toContainText('Ready to merge');
+  await expect(status(page)).toContainText(ready);
   await page.keyboard.press('m');
   await expect(panel(page)).toBeVisible();
 }
@@ -200,5 +201,22 @@ test.describe('with GitHub’s answer to the merge lost', () => {
       ({ method, url }) => method === 'PUT' && url.endsWith(`/pulls/${number}/merge-async`),
     );
     expect(merges).toHaveLength(1);
+  });
+});
+
+test.describe('into a branch with a merge queue', () => {
+  test.use({ cassette: 'app_merge_enqueue' });
+
+  test('`⏎` then `⏎` adds it to the queue, whose settings choose the method', async ({ page }) => {
+    const { number } = pulls.queuedSlow1;
+    await panelOf(page, number, 'Ready for the queue');
+    await page.keyboard.press('Enter');
+    await expect(dialog(page)).toContainText(`Add #${number} to the merge queue for e4/queued?`);
+    await expect(dialog(page)).toContainText('The queue’s settings choose the method');
+    expect(await facts(page)).toMatchObject({ Into: 'e4/queued' });
+    await page.keyboard.press('Enter');
+    await expect(said(page, `Added #${number} to the merge queue for e4/queued`)).toBeVisible({
+      timeout: MERGING,
+    });
   });
 });
