@@ -70,6 +70,7 @@ it('a head behind a base whose rules want it up to date is out of date, from the
       onEvent: () => () => undefined,
       onChange: () => () => undefined,
       status: () => ({ rateLimit: { kind: 'normal' }, offline: undefined, signedOut: false }),
+      writesHeldUntil: () => undefined,
       readOnce: () => Promise.reject(new Error('not here')),
     };
     const info = {

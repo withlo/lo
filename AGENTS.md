@@ -1283,6 +1283,36 @@ The `merge` feature says in the pull request's header whether it can merge (`tab
   wrote it. Text the reader types stands in front of it, kept per view in the window until the tab
   closes.
 
+### Merging
+
+`⏎` in the merge panel merges the pull request, or adds it to its base's merge queue, once the
+dialog that opens in the panel's place (`tab.dialogs`) is confirmed.
+
+- Main plans the merge from what GitHub said last (`merge.plan`, `main/merging.ts`) and keeps it
+  under a key; the window confirms the key (`merge.confirm`) and never sends a merge itself. A plan
+  runs once. Only a fresh `⏎` once the confirmation shows confirms it: the dialog drops held keys,
+  ignores a press made before it showed, and leaves one a field handled. `Esc` forgets the plan.
+- As it's confirmed, main checks again: the view still acts as its account, signed in; GitHub can be
+  reached and isn't holding writes; the head on screen is the newest push the tab knows of and
+  GitHub's head, with the merge facts whole and confirmed in the last 7 minutes, else read again;
+  the pull request is alone or a GitHub stack's bottom layer (`main/where.ts`, with the open pull
+  requests from each branch it merges into read afresh); nothing else merges it; and no conversion
+  runs on its path. When something the confirmation named changed, main asks again with a new plan;
+  otherwise it says why it didn't send. `Esc` while it checks cancels it: its reads are given up and
+  nothing is sent. Right before it sends, the tab, the account and the connection are checked again.
+- Merges go through one `MergeJobs` for the app, with the head on screen as the `sha`, and the
+  squash commit's text only as the reader typed it. One merge write to a pull request at a time,
+  app-wide and whatever the account: `merge.writes` hands out the turns (`main/turns.ts`), and
+  conversions to a GitHub stack wait for them. A merge outlives its view, and `merge.jobs` says how
+  each goes. GitHub's `409` is followed as the merge it was already running. A lost answer is
+  settled by reading the pull request, never by sending again, and the pull request takes no other
+  merge write until a read made after it ended has settled it, as when its tab opens again;
+  meanwhile a merge of it is refused with "Ask GitHub again", and "Ask GitHub again" is a read. The
+  method is remembered for the repository once GitHub takes a merge with it.
+- Done, a toast says so. Refused, or ended without Lo knowing how, the dialog says so while it's
+  open, else a banner on the pull request's tab does. The panel's main button is off, with why,
+  while GitHub can't be reached, asks Lo to hold off writing, or the account is signed out.
+
 ### Images from GitHub
 
 The window shows an image from outside Lo only as `<img src="lo-image://…">`, which main serves.

@@ -1,0 +1,72 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "https://api.github.com/graphql",
+    "operation": "PullRequest",
+    "variables": {
+      "owner": "rozed-dev",
+      "name": "e2e",
+      "number": 187,
+      "filesFirst": 100,
+      "filesAfter": null
+    },
+    "query_sha256": "faebcf58d69c5e012ebe96425bca46ad442d8bf907b11b029049c26d755fc48b"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "x-ratelimit-limit": "5000",
+      "x-ratelimit-remaining": "4984",
+      "x-ratelimit-reset": "1794883246",
+      "x-ratelimit-resource": "graphql",
+      "x-ratelimit-used": "16"
+    },
+    "body": {
+      "data": {
+        "repository": {
+          "pullRequest": {
+            "id": "PR_kwDOVleUfc8AAAABPsVnZw",
+            "number": 187,
+            "title": "Fixture M5: queued, slow (1)",
+            "url": "https://github.com/rozed-dev/e2e/pull/187",
+            "state": "OPEN",
+            "isDraft": false,
+            "updatedAt": "2026-11-17T00:46:31Z",
+            "author": {
+              "__typename": "User",
+              "login": "rozed-bot",
+              "avatarUrl": "https://avatars.githubusercontent.com/u/353226052?v=4"
+            },
+            "baseRefName": "e4/queued",
+            "baseRefOid": "be76197734f8ee252a269294e7be44c1c5fb8295",
+            "headRefName": "merge/5/queued-slow-1",
+            "headRefOid": "bd7f1e1b4c328a794633f4c473b356789c04c39b",
+            "isCrossRepository": false,
+            "headRepository": {
+              "nameWithOwner": "rozed-dev/e2e",
+              "isFork": false
+            },
+            "files": {
+              "totalCount": 2,
+              "pageInfo": {
+                "hasNextPage": false,
+                "endCursor": "Mg"
+              },
+              "nodes": [
+                {
+                  "path": "merge/5/queued-slow-1/ci-result",
+                  "viewerViewedState": "UNVIEWED"
+                },
+                {
+                  "path": "merge/5/queued-slow-1/notes.md",
+                  "viewerViewedState": "UNVIEWED"
+                }
+              ]
+            }
+          }
+        }
+      }
+    }
+  }
+}

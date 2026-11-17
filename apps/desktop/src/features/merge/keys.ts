@@ -5,7 +5,10 @@
 // commit's title and message, `]t` goes to the next unresolved conversation, and `Esc` closes it.
 // In the commit's fields, `Esc` goes back to the panel. The header's merge status has a right-click
 // menu that opens the panel, and each reason one that opens its page: both are rows to the menus,
-// which only the merge feature's commands are listed for.
+// which only the merge feature's commands are listed for. `⏎` in the panel merges, or adds the pull
+// request to the merge queue, once the dialog it opens is confirmed; that dialog takes its own
+// `⏎` and `Esc`. When Lo can't tell whether a merge it sent went, the status's menu asks GitHub
+// again, as the banner that says so does.
 
 import { defineCommands, type When } from '@lo/ui/commands';
 
@@ -71,6 +74,28 @@ export default defineCommands(
       group: 'Review',
       keys: ['] t'],
       when: panel,
+    },
+    /**
+     * Plans the merge the panel offers, and opens the dialog that confirms it in the panel's place:
+     * straight in with the method shown, or into the merge queue.
+     */
+    merge: {
+      label: 'Merge or add to the merge queue',
+      group: 'Review',
+      keys: ['enter'],
+      when: panel,
+    },
+    /**
+     * After Lo couldn't tell whether a merge it sent went: asks GitHub again, as the banner's "Ask
+     * GitHub again" does. A read: nothing is sent again.
+     */
+    askAgain: {
+      label: 'Ask GitHub whether it merged',
+      group: 'Review',
+      keys: [],
+      targets: ['row', 'none'],
+      when: { except: ['menu', 'dialog', 'palette', 'box'] },
+      menu: { on: 'row', order: 10 },
     },
     close: { label: 'Close the merge panel', group: 'Review', keys: ['esc'], when: panel },
     /** Leaves the commit's fields for the panel, keeping what was typed. */

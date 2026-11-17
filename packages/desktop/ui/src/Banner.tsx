@@ -2,6 +2,7 @@ import { cva } from 'class-variance-authority';
 import type { ReactNode } from 'react';
 
 import { Button } from './Button.tsx';
+import { Key } from './Key.tsx';
 import { Spinner } from './Spinner.tsx';
 
 const banner = cva('flex min-w-0 items-center gap-12 py-6 ps-16 pe-12 text-fg text-ui', {
@@ -29,6 +30,8 @@ export interface BannerAction {
    * turning, in place of its label, and pressing it does nothing until it's done. It keeps focus.
    */
   busy?: string | undefined;
+  /** The key that does the same from anywhere in the tab, as the system shows it: `['m']`. */
+  keys?: readonly string[] | undefined;
 }
 
 export interface BannerProps {
@@ -68,7 +71,10 @@ export function Banner({ tone, title, detail, actions = [], onDismiss }: BannerP
               }}
             >
               {action.busy === undefined ? (
-                action.label
+                <>
+                  {action.label}
+                  {action.keys && <Key keys={action.keys} decorative />}
+                </>
               ) : (
                 <span className="inline-flex items-center gap-6">
                   <Spinner size="xs" />

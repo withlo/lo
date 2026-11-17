@@ -1,0 +1,34 @@
+{
+  "request": {
+    "method": "GET",
+    "url": "https://api.github.com/repos/rozed-dev/e2e/pulls/175/files?per_page=100"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "etag": "W/\"cbf2a8d0629e81ca7cf69aecb08418993884ebdbeed0de82a577188e640cb4bd\"",
+      "last-modified": "Tue, 17 Nov 2026 00:45:37 GMT",
+      "x-github-api-version-selected": "2022-11-28",
+      "x-ratelimit-limit": "5000",
+      "x-ratelimit-remaining": "4644",
+      "x-ratelimit-reset": "1794878407",
+      "x-ratelimit-resource": "core",
+      "x-ratelimit-used": "356"
+    },
+    "body": [
+      {
+        "sha": "b33c583bfb15f4ae2bec91bb2d859301b2771dca",
+        "filename": "merge/5/merge/notes.md",
+        "status": "added",
+        "additions": 3,
+        "deletions": 0,
+        "changes": 3,
+        "blob_url": "https://github.com/rozed-dev/e2e/blob/34b784de62545d0ed01cac362adcb0e9cdd82af8/merge%2F5%2Fmerge%2Fnotes.md",
+        "raw_url": "https://github.com/rozed-dev/e2e/raw/34b784de62545d0ed01cac362adcb0e9cdd82af8/merge%2F5%2Fmerge%2Fnotes.md",
+        "contents_url": "https://api.github.com/repos/rozed-dev/e2e/contents/merge%2F5%2Fmerge%2Fnotes.md?ref=34b784de62545d0ed01cac362adcb0e9cdd82af8",
+        "patch": "@@ -0,0 +1,3 @@\n+# Fixture M5: merge\n+\n+Ready to merge, for a merge commit."
+      }
+    ]
+  }
+}

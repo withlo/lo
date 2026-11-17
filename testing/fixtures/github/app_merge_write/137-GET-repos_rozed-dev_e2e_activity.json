@@ -1,0 +1,111 @@
+{
+  "request": {
+    "method": "GET",
+    "url": "https://api.github.com/repos/rozed-dev/e2e/activity?ref=refs%2Fheads%2Fmerge%2F5%2Fbase&direction=desc&per_page=100"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "etag": "W/\"5dced4013bc8ce100026e692e6581751ebc1bd6007285e7e8f4793cf4c04c3f9\"",
+      "x-github-api-version-selected": "2022-11-28",
+      "x-ratelimit-limit": "5000",
+      "x-ratelimit-remaining": "4590",
+      "x-ratelimit-reset": "1794878407",
+      "x-ratelimit-resource": "core",
+      "x-ratelimit-used": "410"
+    },
+    "body": [
+      {
+        "id": 50607535619,
+        "node_id": "PSH_kwLOVleUfc8AAAALyHG2Aw",
+        "before": "1b3e2ea0703b41d6f9c320392f13ee4799ed77d2",
+        "after": "1a092320489aa37cbd605b8ed4eaf8d4dd179789",
+        "ref": "refs/heads/merge/5/base",
+        "timestamp": "2026-11-17T00:55:44Z",
+        "activity_type": "pr_merge",
+        "actor": {
+          "login": "rozed-bot",
+          "id": 353226052,
+          "node_id": "U_kgDOFQ3NRA",
+          "avatar_url": "https://avatars.githubusercontent.com/u/353226052?v=4",
+          "gravatar_id": "",
+          "url": "https://api.github.com/users/rozed-bot",
+          "html_url": "https://github.com/rozed-bot",
+          "followers_url": "https://api.github.com/users/rozed-bot/followers",
+          "following_url": "https://api.github.com/users/rozed-bot/following{/other_user}",
+          "gists_url": "https://api.github.com/users/rozed-bot/gists{/gist_id}",
+          "starred_url": "https://api.github.com/users/rozed-bot/starred{/owner}{/repo}",
+          "subscriptions_url": "https://api.github.com/users/rozed-bot/subscriptions",
+          "organizations_url": "https://api.github.com/users/rozed-bot/orgs",
+          "repos_url": "https://api.github.com/users/rozed-bot/repos",
+          "events_url": "https://api.github.com/users/rozed-bot/events{/privacy}",
+          "received_events_url": "https://api.github.com/users/rozed-bot/received_events",
+          "type": "User",
+          "user_view_type": "public",
+          "site_admin": false
+        }
+      },
+      {
+        "id": 50607341898,
+        "node_id": "PSH_kwLOVleUfc8AAAALyG7BSg",
+        "before": "b3fe004d917123bd7ca507eda670138554797f43",
+        "after": "1b3e2ea0703b41d6f9c320392f13ee4799ed77d2",
+        "ref": "refs/heads/merge/5/base",
+        "timestamp": "2026-11-17T00:53:33Z",
+        "activity_type": "pr_merge",
+        "actor": {
+          "login": "rozed-bot",
+          "id": 353226052,
+          "node_id": "U_kgDOFQ3NRA",
+          "avatar_url": "https://avatars.githubusercontent.com/u/353226052?v=4",
+          "gravatar_id": "",
+          "url": "https://api.github.com/users/rozed-bot",
+          "html_url": "https://github.com/rozed-bot",
+          "followers_url": "https://api.github.com/users/rozed-bot/followers",
+          "following_url": "https://api.github.com/users/rozed-bot/following{/other_user}",
+          "gists_url": "https://api.github.com/users/rozed-bot/gists{/gist_id}",
+          "starred_url": "https://api.github.com/users/rozed-bot/starred{/owner}{/repo}",
+          "subscriptions_url": "https://api.github.com/users/rozed-bot/subscriptions",
+          "organizations_url": "https://api.github.com/users/rozed-bot/orgs",
+          "repos_url": "https://api.github.com/users/rozed-bot/repos",
+          "events_url": "https://api.github.com/users/rozed-bot/events{/privacy}",
+          "received_events_url": "https://api.github.com/users/rozed-bot/received_events",
+          "type": "User",
+          "user_view_type": "public",
+          "site_admin": false
+        }
+      },
+      {
+        "id": 50606612147,
+        "node_id": "PSH_kwLOVleUfc8AAAALyGOesw",
+        "before": "0000000000000000000000000000000000000000",
+        "after": "b3fe004d917123bd7ca507eda670138554797f43",
+        "ref": "refs/heads/merge/5/base",
+        "timestamp": "2026-11-17T00:45:26Z",
+        "activity_type": "branch_creation",
+        "actor": {
+          "login": "rozed-bot",
+          "id": 353226052,
+          "node_id": "U_kgDOFQ3NRA",
+          "avatar_url": "https://avatars.githubusercontent.com/u/353226052?v=4",
+          "gravatar_id": "",
+          "url": "https://api.github.com/users/rozed-bot",
+          "html_url": "https://github.com/rozed-bot",
+          "followers_url": "https://api.github.com/users/rozed-bot/followers",
+          "following_url": "https://api.github.com/users/rozed-bot/following{/other_user}",
+          "gists_url": "https://api.github.com/users/rozed-bot/gists{/gist_id}",
+          "starred_url": "https://api.github.com/users/rozed-bot/starred{/owner}{/repo}",
+          "subscriptions_url": "https://api.github.com/users/rozed-bot/subscriptions",
+          "organizations_url": "https://api.github.com/users/rozed-bot/orgs",
+          "repos_url": "https://api.github.com/users/rozed-bot/repos",
+          "events_url": "https://api.github.com/users/rozed-bot/events{/privacy}",
+          "received_events_url": "https://api.github.com/users/rozed-bot/received_events",
+          "type": "User",
+          "user_view_type": "public",
+          "site_admin": false
+        }
+      }
+    ]
+  }
+}
