@@ -338,11 +338,14 @@ GitHub then failed. `app_merge_write_lost` is the same with that merge's answer 
 first after it, which saw the push, and `app_merge_write_polled` adds GitHub's answer to a poll of
 each merged pull request after the recording's last. `app_merge_enqueue` used it too, recorded with
 writes as Lo added #187 to `e4/queued`'s queue, which was taken out of it after, so it didn't merge.
-Generation 6 is #192 to #208, with GitHub stack #209. `app_queued` used it, recorded while #205 was
-first in `e4/queued`'s queue and #207 second, and `app_queued_left` as the queue failed #207, whose
-`ci` fails there, and GitHub took it out once rozed-bot had taken #205 out. `app_merge` used it too,
-recorded while #206 was first in the queue and #203 waited for an approval with auto-merge on. Each
-was taken out of the queue, or its auto-merge turned off, after, so none merged.
+Its queue was read only after that; `app_merge_enqueue_listed` is the same with the queue listing
+#187 once Lo added it, as the merge status then said, and #187's polls before Lo added it answered
+as the first after, as `app_merge_write_moved`'s are. Generation 6 is #192 to #208, with GitHub
+stack #209. `app_queued` used it, recorded while #205 was first in `e4/queued`'s queue and #207
+second, and `app_queued_left` as the queue failed #207, whose `ci` fails there, and GitHub took it
+out once rozed-bot had taken #205 out. `app_merge` used it too, recorded while #206 was first in the
+queue and #203 waited for an approval with auto-merge on. Each was taken out of the queue, or its
+auto-merge turned off, after, so none merged.
 
 ## The fake language server
 

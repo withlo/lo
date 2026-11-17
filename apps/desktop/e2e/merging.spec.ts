@@ -5,8 +5,8 @@
 // with the method shown, the squash commit's title as typed, and a toast once GitHub merged it.
 // A head that moved just before the press is merged by nobody: GitHub fails it, and the dialog says
 // so and offers the newer push (`app_merge_write_moved`). With GitHub's answer lost (`app_merge_write_lost`), Lo reads the pull request to tell, and
-// never sends the merge again. Into `e4/queued`, `⏎` adds it to the merge queue
-// (`app_merge_enqueue`).
+// never sends the merge again. Into `e4/queued`, `⏎` adds it to the merge queue, and the header
+// says where it is there (`app_merge_enqueue_listed`).
 
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -220,11 +220,12 @@ test.describe('with GitHub’s answer to the merge lost', () => {
 });
 
 test.describe('into a branch with a merge queue', () => {
-  test.use({ cassette: 'app_merge_enqueue' });
+  test.use({ cassette: 'app_merge_enqueue_listed' });
 
   test('`⏎` then `⏎` adds it to the queue, whose settings choose the method', async ({ page }) => {
     const { number } = pulls.queuedSlow1;
     await panelOf(page, number, 'Ready for the queue');
+    await expect(panel(page)).toContainText('none ahead');
     await page.keyboard.press('Enter');
     await expect(dialog(page)).toContainText(`Add #${number} to the merge queue for e4/queued?`);
     await expect(dialog(page)).toContainText('The queue’s settings choose the method');
@@ -233,5 +234,8 @@ test.describe('into a branch with a merge queue', () => {
     await expect(said(page, `Added #${number} to the merge queue for e4/queued`)).toBeVisible({
       timeout: MERGING,
     });
+    // Where it is, as the queue read once it's there says, with GitHub's estimate.
+    await expect(status(page)).toContainText('Queued, 1st', { timeout: MERGING });
+    await expect(status(page)).toContainText(/about \d+ min/);
   });
 });

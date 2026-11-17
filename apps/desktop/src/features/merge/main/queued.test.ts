@@ -36,13 +36,14 @@ function viewOf(
   };
 }
 
-/** A merge status: queued into e4/queued, or as `verdict` says. */
-function known(verdict: MergeState['verdict'] = 'queued'): MergeView {
+/** A merge status: queued into e4/queued, or as `verdict` says, as GitHub said it at `readAt`. */
+function known(verdict: MergeState['verdict'] = 'queued', readAt = Date.now()): MergeView {
   // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- only these are read.
   const state = {
     verdict,
     base: 'e4/queued',
     position: verdict === 'queued' ? 4 : null,
+    readAt,
   } as MergeState;
   return { kind: 'known', state };
 }
@@ -354,6 +355,22 @@ describe('a pull request that leaves the queue', () => {
       at: null,
       why: { kind: 'unknown', why: null },
       partial: false,
+    });
+  });
+
+  it('takes why it left while Lo was closed, as its status kept from before still said queued', async () => {
+    const { poller, asked } = fakePoller();
+    const { reads } = readsOf(poller, { onScreen: () => undefined });
+    // Kept from before the removal, the status is heard long after it, once Lo starts again.
+    const kept = Date.now();
+    vi.setSystemTime(Date.parse('2026-11-16T21:00:00Z'));
+    reads.heard({ id: 't1', view: known('queued', kept) });
+    reads.heard({ id: 't1', view: known('blocked') });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(asked).toEqual(['removal']);
+    expect(reads.current('t1').left).toMatchObject({
+      at: Date.parse('2026-11-16T19:24:30Z'),
+      why: { kind: 'failedChecks', checks: [{ name: 'ci', state: 'failed' }] },
     });
   });
 

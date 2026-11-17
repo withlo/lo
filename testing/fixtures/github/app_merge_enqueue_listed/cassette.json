@@ -1,0 +1,4 @@
+{
+  "description": "app_merge_enqueue with e4/queued's queue listing rozed-dev/e2e#187 once Lo added it, first, as the merge facts read then say, and #187's polls between its first and the request that added it answered as the first after it: Lo reads that it's queued at the first poll after, as when it polls less often than the recording did. The queue was read only after #187 was taken out of it, when it was empty, which stays the answer to the read before Lo added it. The entry joined when the pull request's timeline changed with the request that added it, isn't tested yet, and is estimated to merge as that read estimated the queue's next entry.",
+  "derived_from": "app_merge_enqueue"
+}

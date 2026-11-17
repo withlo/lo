@@ -42,6 +42,104 @@ function readsPull(request: Interaction['request'], number: number): boolean {
   return request.method === 'GET' && new URL(request.url).pathname.endsWith(`/pulls/${number}`);
 }
 
+/** The pull request Lo added to e4/queued's merge queue in `app_merge_enqueue`. */
+const ENQUEUED_PULL = 187;
+
+/**
+ * What `recorded` read of pull request `number`, by GraphQL's `operation`: the pull request in
+ * each answer, in order.
+ */
+function pullReads(recorded: readonly Interaction[], operation: string, number: number): Json[] {
+  return recorded.flatMap(({ request, response }) =>
+    request.operation === operation && at(request.variables, 'number') === number
+      ? [at(response.body, 'data', 'repository', 'pullRequest') ?? null]
+      : [],
+  );
+}
+
+/** Where in `recorded` the request that merged pull request `number`, or added it to a queue, is. */
+function mergedAt(recorded: readonly Interaction[], number: number): number {
+  return only(
+    recorded,
+    ({ request }) =>
+      request.method === 'PUT' && request.url.endsWith(`/pulls/${number}/merge-async`),
+    `#${number}'s merges`,
+  );
+}
+
+/**
+ * Where in `recorded` pull request `number`'s polls are: those after its first and before `merged`,
+ * and the first after it.
+ */
+function pollsAround(
+  recorded: readonly Interaction[],
+  number: number,
+  merged: number,
+): { between: number[]; after: number } {
+  const polls = recorded.flatMap((each, index) =>
+    each.request.operation === 'PullRequestCheck' && at(each.request.variables, 'number') === number
+      ? [index]
+      : [],
+  );
+  const after = polls.find((index) => index > merged);
+  const between = polls.filter((index) => index < merged).slice(1);
+  if (after === undefined || between.length === 0) {
+    throw new Error(
+      `the recording polls #${number} neither between its first poll and the merge nor after`,
+    );
+  }
+  return { between, after };
+}
+
+/**
+ * Pull request `number`'s entry in its merge queue as GitHub lists it once it joined, from what
+ * `recorded` read of it: at the place the merge facts gave it, added by the account they were read
+ * as, joined when its timeline changed in the first poll after the request that added it, not yet
+ * tested, and estimated to merge as the queue estimated its next entry (`estimate`). Nothing read
+ * names the entry's id, so it has a stand-in.
+ */
+function joinedEntry(recorded: readonly Interaction[], number: number, estimate: Json): Json {
+  const { after } = pollsAround(recorded, number, mergedAt(recorded, number));
+  const facts = pullReads(recorded, 'MergeSnapshot', number).find(
+    (each) => at(each, 'isInMergeQueue') === true,
+  );
+  const as = recorded.find(graphql('MergeSnapshot'))?.request.variables;
+  const pull = pullReads(recorded, 'PullRequest', number).at(-1);
+  const joined = at(
+    recorded[after]?.response.body,
+    'data',
+    'repository',
+    'pullRequest',
+    'timelineItems',
+    'updatedAt',
+  );
+  const author = at(facts, 'author');
+  if (!isObject(facts) || !isObject(pull) || !isObject(author) || typeof joined !== 'string') {
+    throw new Error(`the recording never read #${number} in its merge queue`);
+  }
+  return {
+    id: `stand-in for #${number}'s entry`,
+    position: at(facts, 'mergeQueueEntry', 'position') ?? null,
+    state: 'QUEUED',
+    enqueuedAt: joined,
+    estimatedTimeToMerge: estimate,
+    jump: false,
+    solo: false,
+    enqueuer: { __typename: 'User', login: at(as, 'login') ?? null },
+    baseCommit: { oid: at(facts, 'baseRef', 'target', 'oid') ?? null },
+    headCommit: null,
+    pullRequest: {
+      id: pull['id'] ?? null,
+      number,
+      title: pull['title'] ?? null,
+      url: pull['url'] ?? null,
+      headRefOid: pull['headRefOid'] ?? null,
+      viewerDidAuthor: facts['viewerDidAuthor'] ?? null,
+      author: { __typename: author['__typename'] ?? null, login: author['login'] ?? null },
+    },
+  };
+}
+
 /** The state a review submitted with each verdict has. */
 const STATES = { APPROVE: 'APPROVED', REQUEST_CHANGES: 'CHANGES_REQUESTED' } as const;
 
@@ -182,24 +280,7 @@ export const DERIVATIONS: readonly Derivation[] = [
     description:
       "app_merge_write with rozed-dev/e2e#183's polls between its first and the merge answered as the first after the merge, which saw the push: Lo reads the newer push at the first poll after GitHub failed the merge, as when it polls less often than the recording did.",
     derive(recorded) {
-      const merged = only(
-        recorded,
-        ({ request }) => request.method === 'PUT' && request.url.endsWith('/pulls/183/merge-async'),
-        "#183's merges",
-      );
-      const checks = recorded.flatMap((each, index) =>
-        each.request.operation === 'PullRequestCheck' &&
-        at(each.request.variables, 'number') === 183
-          ? [index]
-          : [],
-      );
-      const after = checks.find((index) => index > merged);
-      const between = checks.filter((index) => index < merged).slice(1);
-      if (after === undefined || between.length === 0) {
-        throw new Error(
-          'the recording polls #183 neither between its first poll and the merge nor after',
-        );
-      }
+      const { between, after } = pollsAround(recorded, 183, mergedAt(recorded, 183));
       for (const index of between)
         recorded[index] = answered(recorded[index]!, recorded[after]!.response);
       return recorded;
@@ -217,6 +298,37 @@ export const DERIVATIONS: readonly Derivation[] = [
         "#183's merges",
       );
       recorded[place] = answered(recorded[place]!, BAD_GATEWAY);
+      return recorded;
+    },
+  },
+  {
+    name: 'app_merge_enqueue_listed',
+    from: 'app_merge_enqueue',
+    description: `app_merge_enqueue with e4/queued's queue listing rozed-dev/e2e#${ENQUEUED_PULL} once Lo added it, first, as the merge facts read then say, and #${ENQUEUED_PULL}'s polls between its first and the request that added it answered as the first after it: Lo reads that it's queued at the first poll after, as when it polls less often than the recording did. The queue was read only after #${ENQUEUED_PULL} was taken out of it, when it was empty, which stays the answer to the read before Lo added it. The entry joined when the pull request's timeline changed with the request that added it, isn't tested yet, and is estimated to merge as that read estimated the queue's next entry.`,
+    derive(recorded) {
+      const { between, after } = pollsAround(
+        recorded,
+        ENQUEUED_PULL,
+        mergedAt(recorded, ENQUEUED_PULL),
+      );
+      const read = recorded[only(recorded, graphql('QueueView'), 'reads of the queue')]!;
+      const { body } = read.response;
+      const data = at(body, 'data');
+      const repository = at(data, 'repository');
+      const queue = at(repository, 'mergeQueue');
+      if (!isObject(body) || !isObject(data) || !isObject(repository) || !isObject(queue)) {
+        throw new Error('the read of the queue found none');
+      }
+      const estimate = queue['nextEntryEstimatedTimeToMerge'] ?? null;
+      const entry = joinedEntry(recorded, ENQUEUED_PULL, estimate);
+      const entries = { totalCount: 1, nodes: [entry] };
+      const listed = {
+        ...body,
+        data: { ...data, repository: { ...repository, mergeQueue: { ...queue, entries } } },
+      };
+      for (const index of between)
+        recorded[index] = answered(recorded[index]!, recorded[after]!.response);
+      recorded.push({ request: read.request, response: { ...read.response, body: listed } });
       return recorded;
     },
   },

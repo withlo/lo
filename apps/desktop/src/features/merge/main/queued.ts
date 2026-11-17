@@ -4,9 +4,11 @@
 // should merge. A read that no longer lists it says so, never the place it had, and asks the
 // poller to read the pull request again at once, once for each leaving, since the poller reads it
 // only every few minutes while Lo isn't in front: that read says whether it merged. Once the status
-// no longer says queued, for a pull request Lo saw queued while it ran, and it hasn't merged, why it
+// no longer says queued, for a pull request a status said was queued, and it hasn't merged, why it
 // left is read: a removal from before it joined the queue, or none yet, is read once more after a
-// short wait, and then Lo can't tell why. A view off screen reads nothing and keeps what it had, as
+// short wait, and then Lo can't tell why. It joined when the last read of the queue that listed it
+// says, or else no later than the first status saying it's queued was read, which for a status kept
+// from before Lo started is long before. A view off screen reads nothing and keeps what it had, as
 // does one whose account is signed out, until it's back. A queue is a branch's and read only while
 // shown, so none of it goes through the poller's cache. Nothing here calls Electron.
 
@@ -32,8 +34,8 @@ export const PLACE_MOST = 120_000;
 /** How long to wait before reading why it left once more, when GitHub's timeline hasn't caught up. */
 export const REMOVAL_AGAIN = 15_000;
 /**
- * How far Lo's clock may be from GitHub's: a pull request Lo first saw queued at a time on its own
- * clock joined the queue no later than that, on GitHub's, give or take this.
+ * How far Lo's clock may be from GitHub's: a pull request whose status said it was queued when it
+ * was read, on Lo's clock, joined the queue no later than that, on GitHub's, give or take this.
  */
 const CLOCK_SLACK = 60_000;
 
@@ -73,8 +75,11 @@ interface Watched {
   base: string | undefined;
   /** Whether its status says it's queued now. */
   queued: boolean;
-  /** When Lo first heard it queued since it last wasn't, on Lo's clock. */
-  heardQueuedAt: number | undefined;
+  /**
+   * The earliest a status said it was queued since one last didn't: when GitHub's answer was read
+   * (`readAt`), on Lo's clock, which for a status kept from before Lo started is long before.
+   */
+  queuedAt: number | undefined;
   /** When it joined the queue, on GitHub's clock, as the last read that listed it said. */
   joined: number | undefined;
   /** Whether the pull request was read again since the queue stopped listing it. */
@@ -135,7 +140,7 @@ export class QueueReads {
     switch (state.verdict) {
       case 'queued':
         watched.queued = true;
-        watched.heardQueuedAt ??= this.#now();
+        watched.queuedAt = Math.min(watched.queuedAt ?? state.readAt, state.readAt);
         // Back in the queue: why it left before is old news.
         this.#endLeaving(watched);
         watched.left = null;
@@ -255,7 +260,7 @@ export class QueueReads {
       login,
       base: undefined,
       queued: false,
-      heardQueuedAt: undefined,
+      queuedAt: undefined,
       joined: undefined,
       askedAgain: false,
       place: null,
@@ -286,7 +291,7 @@ export class QueueReads {
     this.#cancel(watched);
     this.#endLeaving(watched);
     watched.queued = false;
-    watched.heardQueuedAt = undefined;
+    watched.queuedAt = undefined;
     watched.joined = undefined;
     watched.askedAgain = false;
     watched.place = null;
@@ -411,10 +416,10 @@ export class QueueReads {
 
   /** `watched`'s status no longer says queued: why it left is read, unless Lo never saw it there. */
   #leave(watched: Watched): void {
-    const heard = watched.heardQueuedAt;
-    const since = watched.joined ?? (heard === undefined ? undefined : heard - CLOCK_SLACK);
+    const queued = watched.queuedAt;
+    const since = watched.joined ?? (queued === undefined ? undefined : queued - CLOCK_SLACK);
     watched.queued = false;
-    watched.heardQueuedAt = undefined;
+    watched.queuedAt = undefined;
     watched.joined = undefined;
     watched.askedAgain = false;
     this.#endLeaving(watched);
