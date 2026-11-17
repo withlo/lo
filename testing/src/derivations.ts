@@ -244,6 +244,33 @@ export const DERIVATIONS: readonly Derivation[] = [
     },
   },
   {
+    name: 'app_merge_placed',
+    from: 'app_merge',
+    description:
+      "app_merge with GitHub's answer to which open pull requests come from merge/3/base: none, as none ever have. The merge panel asks it as it opens, to say where a pull request on that branch sits, which it didn't when app_merge was recorded.",
+    derive(recorded) {
+      const read = recorded.find(
+        ({ request, response }) =>
+          request.method === 'GET' &&
+          request.url.includes('/pulls?') &&
+          response.status === 200 &&
+          request.if_none_match === undefined,
+      );
+      if (!read) throw new Error('the recording lists no pull requests');
+      const { link: _link, etag: _etag, ...headers } = read.response.headers;
+      return [
+        ...recorded,
+        {
+          request: {
+            method: 'GET',
+            url: 'https://api.github.com/repos/rozed-dev/e2e/pulls?head=rozed-dev%3Amerge%2F3%2Fbase&state=open&per_page=100',
+          },
+          response: { status: 200, headers, body: [] },
+        },
+      ];
+    },
+  },
+  {
     name: 'app_merge_stack_polled',
     from: 'app_merge_stack',
     description:
