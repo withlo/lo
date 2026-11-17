@@ -127,6 +127,8 @@ Each command's id is what [the keymap file](#the-keymap-file) binds keys to.
 | Edit the commit’s title and message | `e`                               | In `merge`                                                                                                | `merge.edit`           |
 | Next unresolved conversation        | `] t`                             | In `merge`                                                                                                | `merge.nextThread`     |
 | Merge or add to the merge queue     | `⏎`                               | In `merge`                                                                                                | `merge.merge`          |
+| Turn auto-merge on or off           | `a`                               | In `merge`                                                                                                | `merge.autoMerge`      |
+| Merge without the rules             | `⌥⏎`                              | In `merge`                                                                                                | `merge.override`       |
 | Ask GitHub whether it merged        | None: in its menu and the palette | Anywhere but `menu`, `dialog`, `palette` and `box`                                                        | `merge.askAgain`       |
 | Close the merge panel               | `Esc`                             | In `merge`                                                                                                | `merge.close`          |
 | Back to the merge panel             | `Esc`                             | In `commit`                                                                                               | `merge.leaveCommit`    |

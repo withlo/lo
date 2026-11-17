@@ -73,8 +73,10 @@ export default defineFeature(contract, {
       }
       await openPage(url);
     },
-    plan: ({ id, method, title, message }) => merges().plan(id, { method, title, message }),
-    confirm: ({ key }) => merges().confirm(key),
+    plan: ({ id, method, title, message, asked }) =>
+      merges().plan(id, { method, title, message, asked }),
+    confirm: ({ key, typed }) => merges().confirm(key, typed),
+    autoMergeOff: ({ id }) => merges().autoMergeOff(id),
     cancel({ key }) {
       merging?.cancel(key);
     },

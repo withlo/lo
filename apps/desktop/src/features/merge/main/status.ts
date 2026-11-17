@@ -21,6 +21,7 @@ import {
 } from '@lo/review';
 
 import type { Blocker, Check, MergeState, Off, Reviewer, Unchecked } from '../contract.ts';
+import { afterPushOf, autoActionOf, overrideActionOf } from './auto.ts';
 
 /** The longest text the contract takes from GitHub. */
 const TEXT_LIMIT = 1024;
@@ -146,6 +147,9 @@ export function stateOf({ facts, local, readAt, stale, off, pull }: StatusInput)
         : action.kind === 'enqueue'
           ? { kind: 'enqueue', method: action.method ?? null }
           : { kind: 'notPossible', reason: action.reason.kind },
+    auto: autoActionOf(snapshot),
+    override: overrideActionOf(snapshot),
+    afterPush: afterPushOf(snapshot),
     picked: pickedMethod(snapshot) ?? null,
     methods: { ...snapshot.methods },
     signedCommits: snapshot.signedCommits,

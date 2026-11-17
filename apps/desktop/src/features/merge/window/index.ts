@@ -31,7 +31,17 @@ import {
 import { main } from './main.ts';
 import { MergeConfirm } from './MergeConfirm.tsx';
 import { MergeHeader } from './MergeHeader.tsx';
-import { askAgain, canMerge, catchUpJobs, heardJob, mergeFromPanel } from './merging.ts';
+import {
+  askAgain,
+  autoMergeFromPanel,
+  canAutoMerge,
+  canMerge,
+  canOverride,
+  catchUpJobs,
+  heardJob,
+  mergeFromPanel,
+  overrideFromPanel,
+} from './merging.ts';
 import { OutcomeBanner, outcomeSwitch } from './OutcomeBanner.tsx';
 import { forgetStatus, jobOf, takeStatus } from './store.ts';
 
@@ -53,6 +63,8 @@ export default {
     edit: { run: edit, enabled: canEdit },
     nextThread: { run: nextConversation, enabled: hasConversation },
     merge: { run: mergeFromPanel, enabled: canMerge },
+    autoMerge: { run: autoMergeFromPanel, enabled: canAutoMerge },
+    override: { run: overrideFromPanel, enabled: canOverride },
     askAgain: {
       run: () => {
         const job = unsure();

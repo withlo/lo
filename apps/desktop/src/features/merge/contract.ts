@@ -6,7 +6,9 @@
 // And merging: `⏎` in the panel asks main for a plan from what GitHub said last, which main keeps
 // under a key for the reader to confirm; the window confirms the key and never sends the merge
 // itself. Main checks the plan again as it's confirmed, sends it once, and says how each merge goes
-// on `jobs`.
+// on `jobs`. `a` plans auto-merge the same way, and `⌥⏎` a merge past the base branch's rules,
+// which the reader confirms with the pull request's number typed; `a` with auto-merge on turns it
+// off at once (`autoMergeOff`), asking nothing, since that merges nothing.
 
 import { z } from 'zod';
 
@@ -117,6 +119,57 @@ export const action = z.discriminatedUnion('kind', [
 export type Action = z.output<typeof action>;
 
 /**
+ * What `a` in the merge panel does now: turn auto-merge on, so GitHub merges the pull request, or
+ * adds it to the merge queue, once only waits stand in its way; turn it off, at once; or neither,
+ * for `reason`.
+ */
+export const autoAction = z.discriminatedUnion('kind', [
+  z.strictObject({ kind: z.literal('on') }),
+  z.strictObject({ kind: z.literal('off') }),
+  z.strictObject({
+    kind: z.literal('notPossible'),
+    reason: z.enum([
+      'merged',
+      'closed',
+      'queued',
+      'ready',
+      'blocked',
+      'noPermission',
+      'notAllowed',
+      'cantTurnOff',
+      'noMethod',
+    ]),
+  }),
+]);
+export type AutoAction = z.output<typeof autoAction>;
+
+/** Whether `⌥⏎` in the merge panel merges past the base branch's rules now, or why not. */
+export const overrideAction = z.discriminatedUnion('kind', [
+  z.strictObject({ kind: z.literal('override') }),
+  z.strictObject({
+    kind: z.literal('notPossible'),
+    reason: z.enum([
+      'merged',
+      'closed',
+      'queued',
+      'nothingToSkip',
+      'noPermission',
+      'draft',
+      'conflicts',
+      'noMethod',
+    ]),
+  }),
+]);
+export type OverrideAction = z.output<typeof overrideAction>;
+
+/**
+ * What a push before it merges does to the approvals: GitHub wants a new one (`newApproval`), it
+ * merges with those already given (`keepsApprovals`), or the base branch requires no review.
+ */
+export const afterPush = z.enum(['newApproval', 'keepsApprovals', 'noReview']);
+export type AfterPush = z.output<typeof afterPush>;
+
+/**
  * Where a pull request's merge stands, from what GitHub said at `readAt`.
  *
  * - `verdict`: merged, closed, queued (at `position` when GitHub says), ready, `waiting` on what
@@ -141,6 +194,8 @@ export type Action = z.output<typeof action>;
  * - `stale`: why Lo couldn't read it again since `readAt`, while it can't: a read failed, GitHub
  *   can't be reached, the account is signed out, or the rate limit holds every read.
  * - `off`: why Lo merges nothing now, whatever GitHub says of the pull request, if it doesn't.
+ * - `auto`, `override`: what `a` and `⌥⏎` do now, as `action` is what `⏎` does; `afterPush`, what
+ *   a push before it merges does to the approvals, which turning auto-merge on warns of.
  */
 export const mergeState = z.strictObject({
   verdict: z.enum(['merged', 'closed', 'queued', 'ready', 'waiting', 'blocked']),
@@ -150,6 +205,9 @@ export const mergeState = z.strictObject({
   partial: z.boolean(),
   incomplete: z.enum(['readAgain', 'checksCutShort']).nullable(),
   action,
+  auto: autoAction,
+  override: overrideAction,
+  afterPush,
   picked: method.nullable(),
   methods: z.strictObject({ merge: z.boolean(), squash: z.boolean(), rebase: z.boolean() }),
   signedCommits: z.boolean(),
@@ -200,9 +258,28 @@ export interface SquashText {
  */
 export const planKey = z.string().regex(/^[0-9a-f-]{36}$/);
 
-/** A merge straight into the base branch, or an entry into its merge queue. */
-export const planKind = z.enum(['merge', 'enqueue']);
+/**
+ * A merge straight into the base branch, or an entry into its merge queue; auto-merge turned on,
+ * so GitHub merges it, or on a branch with a merge queue adds it to the queue (`whenReady`), once
+ * what it waits on clears; or a merge past the base branch's rules (`override`).
+ */
+export const planKind = z.enum(['merge', 'enqueue', 'autoMerge', 'whenReady', 'override']);
 export type PlanKind = z.output<typeof planKind>;
+
+/** What the reader asked of the panel: `⏎` merges, `a` turns auto-merge on, `⌥⏎` overrides. */
+export const asked = z.enum(['merge', 'autoMerge', 'override']);
+export type Asked = z.output<typeof asked>;
+
+/** A merge write: as a plan has it, or auto-merge turned off, which asks nothing first. */
+export const writeKind = z.enum([
+  'merge',
+  'enqueue',
+  'autoMerge',
+  'whenReady',
+  'override',
+  'autoMergeOff',
+]);
+export type WriteKind = z.output<typeof writeKind>;
 
 /**
  * What a merge will do, for the reader to confirm before anything is sent:
@@ -210,7 +287,8 @@ export type PlanKind = z.output<typeof planKind>;
  * - `key`: what names it, which the window confirms; `id`: the view it was asked for from;
  * - `owner`, `repo`, `number`: the pull request; `login`: the account it merges as;
  * - `kind`: straight in with `method`, or into `base`'s merge queue, whose settings choose the
- *   method: `method` when the account may read them, else `null`;
+ *   method: `method` when the account may read them, else `null`; or auto-merge on, either way,
+ *   with `method` as that goes; or straight in with `method`, past `base`'s rules;
  * - `head`: the head on screen, which GitHub merges only while it's the pull request's head;
  * - `title`, `message`: a squash commit's title and message as the reader typed them, empty for
  *   GitHub's own, which `squashTitle` is, when Lo read it.
@@ -247,7 +325,9 @@ export type Planned = z.output<typeof planned>;
  * - `rules`: each rule GitHub named, for `rules`;
  * - `until`: when GitHub allows writes again, for `paused`;
  * - `newer`: for a newer push than the one on screen, `from` the head on screen, `to` the newer
- *   one when Lo knows it, which "See r5 → r6" compares.
+ *   one when Lo knows it, which "See r5 → r6" compares;
+ * - `offer`: what Lo planned in its place, for the reader to confirm, as the merge when GitHub
+ *   won't turn auto-merge on because nothing blocks it now (`canMergeNow`).
  */
 export const refusal = z.strictObject({
   kind: z.string().max(64),
@@ -255,6 +335,7 @@ export const refusal = z.strictObject({
   rules: z.array(words),
   until: time.nullable(),
   newer: z.strictObject({ from: oid, to: oid.nullable() }).nullable(),
+  offer: plan.optional(),
 });
 export type Refusal = z.output<typeof refusal>;
 
@@ -286,6 +367,8 @@ export type Unsure = z.output<typeof unsure>;
  * - `pending`: GitHub took it and is running it; `trouble` is why Lo's last question about it got
  *   no answer, while waiting may fix it;
  * - `merged`, `enqueued`: it merged, or joined the merge queue;
+ * - `autoMergeOn`, `autoMergeOff`: auto-merge is on, or off, as GitHub answered, or as a read
+ *   showed once Lo couldn't tell;
  * - `refused`: GitHub refused it, as it took it or as it ran it, or Lo couldn't send it;
  * - `unknown`: Lo can't tell whether it merged, for `why`, which `text` says. `askAgain` says
  *   whether GitHub can still be asked about it, rather than the pull request read again; `shows`
@@ -296,6 +379,8 @@ export const jobState = z.discriminatedUnion('kind', [
   z.strictObject({ kind: z.literal('pending'), trouble: words.nullable() }),
   z.strictObject({ kind: z.literal('merged') }),
   z.strictObject({ kind: z.literal('enqueued') }),
+  z.strictObject({ kind: z.literal('autoMergeOn') }),
+  z.strictObject({ kind: z.literal('autoMergeOff') }),
   z.strictObject({ kind: z.literal('refused'), refusal }),
   z.strictObject({
     kind: z.literal('unknown'),
@@ -308,9 +393,10 @@ export const jobState = z.discriminatedUnion('kind', [
 export type JobState = z.output<typeof jobState>;
 
 /**
- * A merge Lo sent, from the plan named `key`, as it goes. `already`: GitHub was already merging
- * the pull request when Lo asked, from Lo or from elsewhere, so Lo followed that merge, which may
- * be of another head or method, rather than starting one.
+ * A merge Lo sent, from the plan named `key`, as it goes: or another merge write, as auto-merge
+ * turned off, under a key of its own. `already`: GitHub was already merging the pull request when
+ * Lo asked, from Lo or from elsewhere, so Lo followed that merge, which may be of another head or
+ * method, rather than starting one.
  */
 export const job = z.strictObject({
   key: planKey,
@@ -318,7 +404,7 @@ export const job = z.strictObject({
   repo: text,
   number,
   login: text,
-  kind: planKind,
+  kind: writeKind,
   method: method.nullable(),
   base: text,
   head: oid,
@@ -346,8 +432,9 @@ export const contract = defineContract('merge', {
     /**
      * Plans the merge the panel of view `id` offers now, from what GitHub said last, with `method`
      * when the repository allows it, and a squash's `title` and `message` as the reader typed them,
-     * empty for GitHub's own. Keeps it for the reader to confirm, in place of the view's last plan,
-     * or says why there's none.
+     * empty for GitHub's own: as `asked`, straight in or into the queue (`merge`, as without it),
+     * by auto-merge, or past the rules. Keeps it for the reader to confirm, in place of the view's
+     * last plan, or says why there's none.
      */
     plan: {
       input: z.strictObject({
@@ -355,14 +442,27 @@ export const contract = defineContract('merge', {
         method: method.nullable(),
         title: z.string().max(1024),
         message: z.string().max(65_536),
+        asked: asked.optional(),
       }),
       reply: reply<Planned>(),
     },
     /**
      * Sends the merge the plan named `key` holds, once, if it can still go as the plan says: else
-     * asks again with a new plan, when something it named changed, or refuses.
+     * asks again with a new plan, when something it named changed, or refuses. A merge past the
+     * rules goes only with `typed`, the pull request's number as the reader typed it.
      */
-    confirm: { input: byKey, reply: reply<Confirmed>() },
+    confirm: {
+      input: z.strictObject({ key: planKey, typed: z.string().max(64).optional() }),
+      reply: reply<Confirmed>(),
+    },
+    /**
+     * Turns off auto-merge for view `id`'s pull request at once, asking nothing, since that merges
+     * nothing: sent, as `jobs` then says, or refused.
+     */
+    autoMergeOff: {
+      input: z.strictObject({ id: tabId }),
+      reply: reply<Exclude<Confirmed, { kind: 'again' }>>(),
+    },
     /** Forgets the plan named `key`, unless it was confirmed. */
     cancel: { input: byKey, reply: reply<void>() },
     /** Every merge Lo sent that it still follows or hasn't been told to forget, as `jobs` has them. */

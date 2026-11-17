@@ -38,9 +38,10 @@ import {
   togglePanel,
 } from './actions.ts';
 import { main } from './main.ts';
-import { mergeFromPanel } from './merging.ts';
+import { autoMergeFromPanel, mergeFromPanel, overrideFromPanel } from './merging.ts';
 import { panels, statuses, takeStatus, type Panel } from './store.ts';
 import {
+  cantAutoMerge,
   headerLine,
   mergeLabel,
   methodLabel,
@@ -156,6 +157,20 @@ function NextThread() {
 const ENTER = ['⏎'];
 const AUTO = ['a'];
 
+/** The panel's button that merges past the rules, as `⌥⏎` does, for an account that may. */
+function Override() {
+  return (
+    <button
+      type="button"
+      className="inline-flex h-control-h-sm items-center gap-6 rounded-sm px-6 text-fg text-small hover:bg-hover"
+      onClick={overrideFromPanel}
+    >
+      Merge without the rules
+      <span className="text-fg-muted code-small">{(keyOf('merge.override') ?? []).join(' ')}</span>
+    </button>
+  );
+}
+
 /** The panel's body: its reasons, or the method and the squash commit's text; nothing for neither. */
 function bodyOf(
   tab: PullTab,
@@ -227,6 +242,13 @@ function bodyOf(
       </p>,
     );
   }
+  if (state.override.kind === 'override') {
+    parts.push(
+      <div key="override" className="flex justify-end pb-8">
+        <Override />
+      </div>,
+    );
+  }
   // Why merging is off now, whatever GitHub says.
   if (state.off !== null && (action.kind === 'merge' || action.kind === 'enqueue')) {
     parts.push(
@@ -238,18 +260,26 @@ function bodyOf(
   return parts.length > 0 ? parts : undefined;
 }
 
-/** The panel's foot: what merging would do, named for it; nothing while it's queued. */
-function footOf(state: MergeState, panel: Panel): ReactNode {
+/**
+ * The panel's foot: what merging would do, named for it, and auto-merge's switch, which `a` turns;
+ * nothing while it's queued.
+ */
+function footOf(state: MergeState, panel: Panel, number: number): ReactNode {
   const { action } = state;
   if (state.verdict === 'queued') return undefined;
   const method = shownMethod(state, panel.method);
   const enter = ENTER;
+  const turn = {
+    onChange: autoMergeFromPanel,
+    keys: AUTO,
+    disabled: cantAutoMerge(state, number) !== undefined,
+  };
   const auto =
     state.autoMerge !== null
-      ? { on: true, onChange: () => undefined, keys: AUTO }
+      ? { on: true, ...turn }
       : action.kind === 'enqueue'
         ? undefined
-        : { on: false, onChange: () => undefined, keys: AUTO };
+        : { on: false, ...turn };
   // Off, with why, while GitHub can't be reached or asked Lo to hold off writing.
   const off = state.off !== null;
   if (action.kind === 'enqueue') {
@@ -396,7 +426,7 @@ function PanelUnder({
       }
       closeKeys={keyOf('merge.close')}
       focusRef={rows.length > 0 ? listRef : undefined}
-      foot={footOf(state, panel)}
+      foot={footOf(state, panel, tab.number)}
     >
       {bodyOf(tab, state, panel, rows, { id: list, ref: listRef }, reasonMenu)}
     </MergePanel>
