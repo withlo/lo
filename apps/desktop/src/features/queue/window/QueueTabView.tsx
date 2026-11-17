@@ -235,11 +235,16 @@ export function QueueTabView({ tab }: { tab: QueueTab }) {
     if (!focused || focused === document.body || focused.hasAttribute('data-lo-middle')) focusIn();
     return setMiddle({ focus: focusIn, here: () => undefined });
   }, []);
-  // A table drawn once the queue is read takes focus that was on the page itself.
+  // A table drawn once the queue is read takes focus that was on the page itself. When the table
+  // goes, as for a branch with no queue, focus that went with it comes back to the page, so the
+  // queue's keys, such as `Tab` for the next branch, still work.
   const drawn = state?.read.kind === 'queue';
   useEffect(() => {
-    if (drawn && document.activeElement === root.current) {
+    const focused = document.activeElement;
+    if (drawn && focused === root.current) {
       root.current?.querySelector<HTMLElement>('[role="grid"]')?.focus();
+    } else if (!drawn && (focused === null || focused === document.body)) {
+      root.current?.focus();
     }
   }, [drawn]);
   useEffect(() => {

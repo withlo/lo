@@ -182,6 +182,16 @@ describe('a merge queue’s tab', () => {
     );
   });
 
+  it('keeps focus on the page as the table goes for a branch with no queue, so its keys still work', () => {
+    act(() => showQueue(stateOf(QUEUE)));
+    const host = render();
+    const grid = host.querySelector<HTMLElement>('[role="grid"]');
+    act(() => grid?.focus());
+    expect(document.activeElement).toBe(grid);
+    act(() => showQueue(stateOf({ kind: 'none' }, { branch: 'merge/4/base' })));
+    expect(document.activeElement).toBe(host.querySelector('[data-lo-scope="queue"]'));
+  });
+
   it('asks main what it has when it has heard nothing yet', () => {
     const host = render();
     expect(host.textContent).toContain('Reading the merge queue for e4/queued');
