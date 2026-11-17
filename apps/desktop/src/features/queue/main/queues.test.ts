@@ -47,6 +47,8 @@ function harness(pulls: Readonly<Record<string, Acting | undefined>> = {}) {
   const eventListeners = new Set<(event: GithubEvent) => void>();
   const changeListeners = new Set<() => void>();
   let accounts = [account('tess-okafor'), account('rozed-bot')];
+  /** While checks are held, each read of the accounts answers only when `answer` says. */
+  const checks = { held: false, waiting: [] as (() => void)[] };
   const opened: [Opening | QueueOpening, { login: string } | undefined][] = [];
   const asked: string[] = [];
   let made = 0;
@@ -81,7 +83,12 @@ function harness(pulls: Readonly<Record<string, Acting | undefined>> = {}) {
       },
     },
     github: {
-      accounts: async () => accounts,
+      accounts: () => {
+        // What the accounts are as they're read, whenever the answer comes.
+        const now = accounts;
+        if (!checks.held) return Promise.resolve(now);
+        return new Promise((resolve) => checks.waiting.push(() => resolve(now)));
+      },
       onEvent(listener) {
         eventListeners.add(listener);
         return () => eventListeners.delete(listener);
@@ -111,6 +118,11 @@ function harness(pulls: Readonly<Record<string, Acting | undefined>> = {}) {
     opened,
     asked,
     setTabs,
+    /** Holds each read of the accounts from now on, until `answer` lets the oldest one answer. */
+    holdChecks: () => {
+      checks.held = true;
+    },
+    answerCheck: () => checks.waiting.shift()?.(),
     /** Signs `login` out, as GitHub refusing its token does: the event, then the change. */
     signOut: (login: string) => {
       accounts = accounts.map((each) =>
@@ -294,5 +306,51 @@ describe('an account that goes away', () => {
     signIn('sam-lee');
     await vi.advanceTimersByTimeAsync(0);
     expect(asked).toEqual(['s view main', 's waiting main']);
+  });
+
+  it('reads again only the queues of the account that’s back, not another’s still away', async () => {
+    const { queues, asked, setTabs, signOut, signIn } = harness();
+    const both = [RECENT, queueTab('q', 'main'), queueTab('r', 'main', 'rozed-bot')];
+    setTabs({ tabs: both, active: 'q' });
+    queues.start();
+    await vi.advanceTimersByTimeAsync(0);
+    signOut('tess-okafor');
+    signOut('rozed-bot');
+    await vi.advanceTimersByTimeAsync(0);
+    asked.length = 0;
+
+    signIn('tess-okafor');
+    await vi.advanceTimersByTimeAsync(0);
+    expect(asked).toEqual(['q view main', 'q waiting main']);
+    expect(queues.state('r')?.failure?.message).toBe(
+      'rozed-bot is signed out. Lo reads the queue again once you sign in to it.',
+    );
+    asked.length = 0;
+    setTabs({ tabs: both, active: 'r' });
+    await vi.advanceTimersByTimeAsync(10 * 60_000);
+    expect(asked).toEqual([]);
+  });
+
+  it('drops a check of the accounts begun before an account was signed out', async () => {
+    const { queues, asked, setTabs, signOut, signIn, holdChecks, answerCheck } = harness();
+    setTabs({ tabs: [RECENT, queueTab('q', 'main')], active: 'q' });
+    queues.start();
+    await vi.advanceTimersByTimeAsync(0);
+    holdChecks();
+    // A check begins while tess-okafor is signed in, and answers only after it's signed out.
+    signIn('sam-lee');
+    signOut('tess-okafor');
+    answerCheck();
+    await vi.advanceTimersByTimeAsync(0);
+    const signedOut = 'tess-okafor is signed out. Lo reads the queue again once you sign in to it.';
+    expect(queues.state('q')?.failure?.message).toBe(signedOut);
+    asked.length = 0;
+    await vi.advanceTimersByTimeAsync(10 * 60_000);
+    expect(asked).toEqual([]);
+
+    // The check the sign-out began agrees.
+    answerCheck();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(queues.state('q')?.failure?.message).toBe(signedOut);
   });
 });
