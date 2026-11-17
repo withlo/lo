@@ -355,6 +355,8 @@ export class Merging {
   readonly #kept = new Map<string, Kept>();
   /** The keys of plans confirmed, which never run again. */
   readonly #used = new Set<string>();
+  /** The pull request each plan made is of, by its key. */
+  readonly #planned = new Map<string, PullRef>();
   /** The merges Lo sent, by their pull request's key, until the reader forgets them. */
   readonly #sent = new Map<string, Sent>();
   /** The checks under way at a press, by their plan's key: cancelling one stops it. */
@@ -472,7 +474,8 @@ export class Merging {
    * read: nothing is sent again.
    */
   askAgain(key: string): void {
-    const sent = this.#byKey(key);
+    // Or a plan refused while Lo couldn't tell how the last merge of its pull request ended.
+    const sent = this.#byKey(key) ?? this.#sent.get(this.#planned.get(key)?.key ?? '');
     if (!sent) return;
     const job = this.#options.jobs.job(sent.pull);
     if (!job || endedWith(job)?.kind !== 'unknown') return;
@@ -586,6 +589,7 @@ export class Merging {
       if (kept.plan.id === plan.id) this.#kept.delete(key);
     }
     this.#kept.set(plan.key, { plan, pull });
+    this.#planned.set(plan.key, pull);
   }
 
   /**
@@ -615,12 +619,7 @@ export class Merging {
     // tell the end of yet holds the pull request until a read settles it.
     const before = this.#sent.get(pull.key);
     if (before?.turn && this.#options.jobs.job(pull)?.state.kind === 'done') {
-      return refused(
-        own(
-          'unsettled',
-          `Lo can’t tell yet whether #${plan.number} merged. Ask GitHub again, then merge.`,
-        ),
-      );
+      return refused(own('unsettled', `Lo can’t tell whether #${plan.number} merged.`));
     }
     let cached = poller.cachedRead(pull, MERGE_FACTS);
     if (!this.#current(cached, head, before?.endedAt)) {
@@ -914,9 +913,13 @@ export class Merging {
     let mark = poller.readAfresh(pull, MERGE_FACTS);
     const look = () => {
       if (this.#sent.get(pull.key) !== sent) return;
-      if (!mark) mark = poller.readAfresh(pull, MERGE_FACTS);
-      if (!mark) return;
-      const since = poller.readSince(pull, MERGE_FACTS, mark);
+      const since = mark && poller.readSince(pull, MERGE_FACTS, mark);
+      if (!since || since.kind === 'stale') {
+        // Not kept, or let go, as when its tab closed: the read kept now, as when the tab opens
+        // again, runs again from here, and that settles it.
+        mark = poller.readAfresh(pull, MERGE_FACTS);
+        return;
+      }
       if (since.kind !== 'read') return;
       // A read made after the merge ended settles it: the pull request may be merged again.
       sent.turn?.give();

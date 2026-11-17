@@ -121,6 +121,15 @@ function newerPrimary(plan: MergePlan, refusal: Refusal): Shown['primary'] {
   return { label: newerLabel(plan.id, newer), run: () => seeNewer(plan.id, newer) };
 }
 
+/**
+ * Asks GitHub again how the last merge of `plan`'s pull request ended, which Lo couldn't tell, and
+ * goes back to the panel: once that read is answered, it may merge again.
+ */
+function askAgainBack(plan: MergePlan): void {
+  askAgain(plan.key);
+  leaveDialog();
+}
+
 function confirmShown(dialog: Extract<MergeDialog, { kind: 'confirm' }>): Shown {
   const { plan } = dialog;
   return {
@@ -244,7 +253,10 @@ function shownOf(dialog: MergeDialog, jobs: (key: string) => JobView | undefined
         title: confirmTitle(dialog.plan),
         step: `refused ${dialog.plan.key}`,
         close: 'Back',
-        primary: newerPrimary(dialog.plan, dialog.refusal),
+        primary:
+          dialog.refusal.kind === 'unsettled'
+            ? { label: 'Ask GitHub again', run: () => askAgainBack(dialog.plan) }
+            : newerPrimary(dialog.plan, dialog.refusal),
         body: <RefusalCallout refusal={dialog.refusal} />,
       };
     default:

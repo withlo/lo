@@ -1306,7 +1306,8 @@ dialog that opens in the panel's place (`tab.dialogs`) is confirmed.
   conversions to a GitHub stack wait for them. A merge outlives its view, and `merge.jobs` says how
   each goes. GitHub's `409` is followed as the merge it was already running. A lost answer is
   settled by reading the pull request, never by sending again, and the pull request takes no other
-  merge write until a read made after it ended has settled it, and "Ask GitHub again" is a read. The
+  merge write until a read made after it ended has settled it, as when its tab opens again;
+  meanwhile a merge of it is refused with "Ask GitHub again", and "Ask GitHub again" is a read. The
   method is remembered for the repository once GitHub takes a merge with it.
 - Done, a toast says so. Refused, or ended without Lo knowing how, the dialog says so while it's
   open, else a banner on the pull request's tab does. The panel's main button is off, with why,

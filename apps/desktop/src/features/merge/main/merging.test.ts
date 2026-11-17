@@ -120,6 +120,9 @@ function setup(options: Setup = {}) {
   const signals: (AbortSignal | undefined)[] = [];
   /** Whether the list of open pull requests is older than it's read every, so Lo lists it again. */
   let stale = false;
+  /** The read of the merge facts the poller keeps, which goes when its tab closes. */
+  let readId = 1;
+  let readKept = true;
   let closed = false;
   const results = options.results ?? [answer('merged', { sha: 'd'.repeat(40) })];
   const stand = {
@@ -144,14 +147,16 @@ function setup(options: Setup = {}) {
     },
     // Read afresh, GitHub answers with `reread`, or as before.
     readAfresh: () => {
+      if (!readKept) return undefined;
       marks += 1;
       if (!gates.reads) {
         cached = { value: options.reread ?? cached.value, fetchedAt: NOW };
         queueMicrotask(() => emit({ kind: 'read', pull: PULL, name: MERGE_FACTS.name }));
       }
-      return { read: 1, generation: marks };
+      return { read: readId, generation: marks };
     },
-    readSince<T>(_pull: PullRef, _kind: ReadKind<T>): SinceMark<Cached<T>> {
+    readSince<T>(_pull: PullRef, _kind: ReadKind<T>, mark: SinceMarkFor): SinceMark<Cached<T>> {
+      if (!readKept || mark.read !== readId) return { kind: 'stale' };
       if (gates.reads) return { kind: 'waiting' };
       // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- what MERGE_FACTS reads.
       return { kind: 'read', read: cached as Cached<T> };
@@ -269,6 +274,13 @@ function setup(options: Setup = {}) {
       closed: () => {
         closed = true;
       },
+      /** The tab closes, and the poller lets its read go; or it opens again and reads. */
+      tabRead: (kept: boolean) => {
+        readKept = kept;
+        if (!kept) return;
+        readId += 1;
+        emit({ kind: 'read', pull: PULL, name: MERGE_FACTS.name });
+      },
       acting: (acting: PullTabInfo['acting']) => {
         view = { ...view, acting };
       },
@@ -294,6 +306,16 @@ function setup(options: Setup = {}) {
 }
 
 type Run = ReturnType<typeof setup>;
+
+/** A mark the poller gave for a read. */
+type SinceMarkFor = Parameters<MergingPoller['readSince']>[2];
+
+/** A merge whose answer never reached Lo. */
+function lost(): Promise<never> {
+  return Promise.reject(
+    new GithubError({ kind: 'network', failure: 'lost', message: 'read ECONNRESET' }),
+  );
+}
 
 /** A moment, for what's under way to reach the wait it's held at. */
 function moment(): Promise<void> {
@@ -662,20 +684,54 @@ describe('how it ends', () => {
     expect(run.turns.busy(PULL.repo, [138])).toEqual([138]);
     const second = planOf(await run.merging.plan(ID, SQUASH));
     expect(await run.merging.confirm(second.key)).toMatchObject({
-      refusal: {
-        kind: 'unsettled',
-        text: 'Lo can’t tell yet whether #138 merged. Ask GitHub again, then merge.',
-      },
+      refusal: { kind: 'unsettled', text: 'Lo can’t tell whether #138 merged.' },
     });
 
-    // "Ask GitHub again" is that read: once it's answered, the pull request may merge again.
+    // "Ask GitHub again", which the refusal offers, is that read: once it's answered, the pull
+    // request may merge again.
     run.release();
-    run.merging.askAgain(plan.key);
+    run.merging.askAgain(second.key);
     await vi.waitFor(() => expect(run.turns.busy(PULL.repo, [138])).toEqual([]));
     expect(run.published.at(-1)?.state).toMatchObject({ kind: 'unknown', shows: 'open' });
     const third = planOf(await run.merging.plan(ID, SQUASH));
     expect(await run.merging.confirm(third.key)).toEqual({ kind: 'sent' });
     expect(run.sent).toHaveLength(2);
+  });
+
+  it('lets the pull request go once its tab, closed meanwhile, opens again and reads it', async () => {
+    const run = setup({ submitted: lost });
+    const plan = planOf(await run.merging.plan(ID, SQUASH));
+    run.hold.reads();
+    await run.merging.confirm(plan.key);
+    await run.ended('unknown');
+    // The tab closes, and its read goes with it, unanswered.
+    run.set.tabRead(false);
+    run.release();
+    await moment();
+    expect(run.turns.busy(PULL.repo, [138])).toEqual([138]);
+
+    // It opens again: the read it keeps is made after the merge ended.
+    run.set.tabRead(true);
+    await vi.waitFor(() => expect(run.turns.busy(PULL.repo, [138])).toEqual([]));
+    const again = planOf(await run.merging.plan(ID, SQUASH));
+    expect(await run.merging.confirm(again.key)).toEqual({ kind: 'sent' });
+    expect(run.sent).toHaveLength(2);
+  });
+
+  it('sends nothing again after a lost answer, however long Lo goes on', async () => {
+    vi.useFakeTimers();
+    try {
+      const run = setup({ submitted: lost });
+      const plan = planOf(await run.merging.plan(ID, SQUASH));
+      await run.merging.confirm(plan.key);
+      await run.ended('unknown');
+      run.merging.askAgain(plan.key);
+      // Past every wait the merge and its reads have, and the polls'.
+      await vi.advanceTimersByTimeAsync(10 * 60_000);
+      expect(run.sent).toHaveLength(1);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('settles a lost answer as merged once a read shows it merged', async () => {

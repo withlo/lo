@@ -26,6 +26,7 @@ let confirming: () => unknown = () => ({ kind: 'sent' });
 const bridge = installBridge({
   'merge.confirm': () => confirming(),
   'merge.cancel': () => undefined,
+  'merge.askAgain': () => undefined,
   'merge.dismiss': () => undefined,
   'merge.sent': () => [],
 });
@@ -307,4 +308,35 @@ it('draws the base in the title without bidi controls', async () => {
   );
   await until(() => dialog() !== null);
   expect(dialog()?.textContent).not.toMatch(/[\u202A-\u202E\u2066-\u2069]/);
+});
+
+it('offers to ask GitHub again when Lo can’t tell how the last merge went, and goes back', async () => {
+  const plan = planOf();
+  draw(<MergeConfirm />);
+  act(() =>
+    merging.setState({
+      dialog: {
+        kind: 'refused',
+        plan,
+        refusal: {
+          kind: 'unsettled',
+          text: 'Lo can’t tell whether #138 merged.',
+          rules: [],
+          until: null,
+          newer: null,
+        },
+      },
+    }),
+  );
+  await until(() => dialog() !== null);
+  expect(dialog()?.textContent).toContain('Lo can’t tell whether #138 merged.');
+  expect(dialog()?.textContent).toContain('Ask GitHub again');
+  await later();
+  act(() => {
+    dialog()!.dispatchEvent(enter());
+  });
+  await until(() => merging.getState().dialog === undefined);
+  expect(bridge.calls.find(([channel]) => channel === 'merge.askAgain')?.[1]).toEqual({
+    key: plan.key,
+  });
 });
