@@ -1,13 +1,15 @@
 // How a merge queue's tab words what main read: states, times, groups, what those waiting to join
-// wait for, the queue's settings, and the rows the keyboard moves through.
+// wait for, why those that left did, the queue's settings, and the rows the keyboard moves through.
 
 import { describe, expect, it } from 'vitest';
 
-import type { Entry, QueueRead, WaitingEntry } from '../contract.ts';
+import type { Entry, LeftEntry, QueueRead, WaitingEntry } from '../contract.ts';
 import {
+  ago,
   focusedRow,
   inQueue,
   itemsOf,
+  leftOf,
   retryIn,
   rowsOf,
   settingsOf,
@@ -64,6 +66,7 @@ function queue(extra: Partial<Extract<QueueRead, { kind: 'queue' }>> = {}): Queu
     leftOut: false,
     waiting: [],
     waitingCutShort: false,
+    left: [],
     ...extra,
   };
 }
@@ -182,14 +185,91 @@ describe('the queue’s settings', () => {
   });
 });
 
+function left(number: number, why: LeftEntry['why'], extra: Partial<LeftEntry> = {}): LeftEntry {
+  return {
+    number,
+    title: `Left ${number}`,
+    url: `https://github.com/o/r/pull/${number}`,
+    at: NOW - 5 * 60_000,
+    enqueuedAt: NOW - 28 * 60_000,
+    why,
+    partial: false,
+    ...extra,
+  };
+}
+
+describe('those that left', () => {
+  it('say why each did, when, and how long it was in the queue', () => {
+    const opened: string[] = [];
+    const rows = leftOf(
+      [
+        left(1, { kind: 'failedChecks', checks: [{ name: 'test (node 20)', url: 'https://x/1' }] }),
+        left(2, { kind: 'failedChecks', checks: [{ name: 'lint', url: null }] }),
+        left(
+          3,
+          { kind: 'removed', by: 'dee-adeyemi' },
+          { at: NOW - 3 * 3_600_000, enqueuedAt: NOW - 3 * 3_600_000 - 31 * 60_000 },
+        ),
+        left(4, { kind: 'removed', by: null }),
+        left(5, { kind: 'merged' }, { enqueuedAt: null }),
+        left(6, { kind: 'other', reason: null }),
+        left(7, { kind: 'unknown' }, { partial: true }),
+      ],
+      NOW,
+      (url) => opened.push(url),
+    );
+    expect(
+      rows.map(({ key, reason, when, inQueue: was, partial }) => ({
+        key,
+        kind: reason.kind,
+        when,
+        was,
+        partial,
+      })),
+    ).toEqual([
+      { key: 'left-1', kind: 'failed', when: '5 min ago', was: '23 min', partial: false },
+      { key: 'left-2', kind: 'failed', when: '5 min ago', was: '23 min', partial: false },
+      { key: 'left-3', kind: 'removed', when: '3 h ago', was: '31 min', partial: false },
+      { key: 'left-4', kind: 'removed', when: '5 min ago', was: '23 min', partial: false },
+      { key: 'left-5', kind: 'merged', when: '5 min ago', was: undefined, partial: false },
+      { key: 'left-6', kind: 'other', when: '5 min ago', was: '23 min', partial: false },
+      { key: 'left-7', kind: 'unknown', when: '5 min ago', was: '23 min', partial: true },
+    ]);
+    const [failed, unlinked, by, nobody, , other] = rows.map(({ reason }) => reason);
+    if (failed?.kind !== 'failed') throw new Error('expected a failed check');
+    expect(failed.check?.name).toBe('test (node 20)');
+    failed.check?.onOpen();
+    expect(opened).toEqual(['https://x/1']);
+    // A check without a run to open is said without a link.
+    expect(unlinked).toEqual({ kind: 'failed', check: undefined });
+    expect(by).toEqual({ kind: 'removed', by: 'dee-adeyemi' });
+    expect(nobody).toEqual({ kind: 'removed', by: undefined });
+    expect(other).toEqual({ kind: 'other', word: 'GitHub gave no reason' });
+  });
+
+  it('say how long ago they left in words', () => {
+    expect(ago(NOW - 20_000, NOW)).toBe('just now');
+    expect(ago(NOW - 59 * 60_000, NOW)).toBe('59 min ago');
+    expect(ago(NOW - 23 * 3_600_000, NOW)).toBe('23 h ago');
+    expect(ago(NOW - 24 * 3_600_000, NOW)).toBe('1 day ago');
+    expect(ago(NOW - 72 * 3_600_000, NOW)).toBe('3 days ago');
+  });
+});
+
 describe('the rows the keyboard moves through', () => {
   const read = queue({
     entries: [entry(1, 1), entry(2, 2)],
     waiting: [waiting(3)],
+    left: [left(4, { kind: 'merged' })],
   });
 
-  it('are the entries, then those waiting, starting on the first', () => {
-    expect(rowsOf(read).map(({ key }) => key)).toEqual(['queued-1', 'queued-2', 'waiting-3']);
+  it('are the entries, then those waiting, then those that left, starting on the first', () => {
+    expect(rowsOf(read).map(({ key }) => key)).toEqual([
+      'queued-1',
+      'queued-2',
+      'waiting-3',
+      'left-4',
+    ]);
     expect(rowsOf({ kind: 'none' })).toEqual([]);
     expect(focusedRow(rowsOf(read), undefined)?.key).toBe('queued-1');
     expect(focusedRow(rowsOf(read), 'queued-9')?.key).toBe('queued-1');
@@ -198,7 +278,8 @@ describe('the rows the keyboard moves through', () => {
   it('step one at a time, staying put at the ends', () => {
     const rows = rowsOf(read);
     expect(stepRow(rows, undefined, 1)?.key).toBe('queued-2');
-    expect(stepRow(rows, 'waiting-3', 1)?.key).toBe('waiting-3');
+    expect(stepRow(rows, 'waiting-3', 1)?.key).toBe('left-4');
+    expect(stepRow(rows, 'left-4', 1)?.key).toBe('left-4');
     expect(stepRow(rows, 'queued-1', -1)?.key).toBe('queued-1');
     expect(stepRow([], undefined, 1)).toBeUndefined();
   });

@@ -2,17 +2,23 @@
 // The header's merge status and the panel it opens, with main answered by a stand-in bridge: it
 // shows nothing until main says, then the status as main says it; a click opens the panel with a
 // row for each reason, whose runs open through main; a squash shows GitHub's commit text, read as
-// the panel opens, which the reader's own text stands in front of.
+// the panel opens, which the reader's own text stands in front of. A pull request in a merge queue
+// says its place and when it should merge, as main last read its queue, or that the queue will
+// remove it; once it left, a banner says why, and the panel's first row says it again. One ready for
+// a queue says what's ahead of it, read once as the panel opens.
 
+import { handlers } from '@lo/ui/commands';
 import { act, type ReactNode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { beforeAll, expect, it, onTestFinished } from 'vitest';
 
 import { createRegistry } from '../../../window/commands/registry.ts';
 import { installBridge } from '../../../window/test/bridge.ts';
+import queueKeys from '../../queue/keys.ts';
 import type { PullTab } from '../../tab/window/shared.ts';
-import type { MergeState, MergeView } from '../contract.ts';
+import type { InQueue, MergeState, MergeView } from '../contract.ts';
 import feature from './index.ts';
+import { LeftBanner } from './LeftBanner.tsx';
 import { MergeHeader } from './MergeHeader.tsx';
 import { panels } from './store.ts';
 
@@ -23,6 +29,11 @@ const RUN = 'https://github.com/rozed-dev/e2e/actions/runs/1';
 
 /** What main says of each view's status, by its id. */
 const views = new Map<string, MergeView>();
+/** What main says of each view's pull request in a merge queue, by its id. */
+const queues = new Map<string, InQueue>();
+
+/** Each time the merge queue was shown, as `gq` shows it. */
+let queueShown = 0;
 
 const bridge = installBridge({
   'merge.state': (input) =>
@@ -34,11 +45,27 @@ const bridge = installBridge({
     head: 'a'.repeat(40),
   }),
   'merge.open': () => undefined,
+  'merge.queue': (input) =>
+    queues.get(String(Reflect.get(Object(input), 'id'))) ?? { place: null, left: null },
+  'merge.ahead': () => ({ kind: 'queue', count: 4, atLeast: false, timeToMerge: 1080 }),
+  'merge.forgetLeft': () => undefined,
+});
+
+/** `gq`, which the merge queue's feature has, standing in. */
+const idle = { run: () => undefined };
+const queueCommands = handlers(queueKeys, {
+  show: { run: () => void queueShown++ },
+  down: idle,
+  up: idle,
+  open: idle,
+  nextBranch: idle,
+  previousBranch: idle,
+  openOnGithub: idle,
 });
 
 beforeAll(() => {
   Reflect.set(globalThis, 'IS_REACT_ACT_ENVIRONMENT', true);
-  createRegistry(feature.commands, 'mac');
+  createRegistry([...feature.commands, ...queueCommands], 'mac');
   feature.start?.();
 });
 
@@ -171,4 +198,145 @@ it('reads GitHub’s squash text as the panel opens, without what turns text aro
   expect(panel()?.textContent).toContain('Merge commits are off in this repo');
   act(() => panels.update('t3', (current) => ({ ...current, title: 'Mine' })));
   expect(panel()?.querySelector('input')?.value).toBe('Mine');
+});
+
+/** Into `e4/queued`, whose queue squashes, 2nd as GitHub last said. */
+function queued(change: Partial<MergeState> = {}): MergeView {
+  return {
+    kind: 'known',
+    state: state({
+      verdict: 'queued',
+      position: 2,
+      base: 'e4/queued',
+      action: { kind: 'notPossible', reason: 'queued' },
+      queue: { required: true, method: 'SQUASH' },
+      ...change,
+    }),
+  };
+}
+
+/** How many times the window asked main what's ahead in a queue. */
+function aheadAsked(): number {
+  return bridge.calls.filter(([channel]) => channel === 'merge.ahead').length;
+}
+
+/** A button on the page or in the panel, by what it says. */
+function buttonSaying(text: string, within: ParentNode = document): HTMLButtonElement | undefined {
+  return [...within.querySelectorAll('button')].find((button) =>
+    button.textContent?.includes(text),
+  );
+}
+
+it('says a queued pull request’s place and when it should merge, with the queue a key away', async () => {
+  views.set('t4', queued());
+  queues.set('t4', {
+    place: {
+      kind: 'listed',
+      position: 3,
+      state: 'AWAITING_CHECKS',
+      timeToMerge: 720,
+      failed: [],
+      partial: false,
+    },
+    left: null,
+  });
+  const page = draw(<MergeHeader tab={tabOf('t4', 169)} />);
+  await until(() => page.textContent?.includes('about 12 min') ?? false);
+  expect(page.querySelector('button')?.textContent).toContain('Queued, 3rd');
+  act(() => page.querySelector('button')?.click());
+  await until(() => panel() !== null);
+  expect(panel()?.textContent).toContain('In the merge queue for e4/queued · 3rd');
+  expect(panel()?.textContent).toContain(
+    'The queue’s settings choose the method and the message: squash.',
+  );
+  const see = buttonSaying('See the queue', panel() ?? undefined);
+  expect(see?.textContent).toContain('gq');
+  act(() => see?.click());
+  expect(queueShown).toBe(1);
+  expect(panels.get('t4').open).toBe(false);
+});
+
+it('says the queue will remove one whose checks failed there, and once it left, why', async () => {
+  views.set('t5', queued());
+  const page = draw(
+    <>
+      <LeftBanner tab={tabOf('t5', 134)} />
+      <MergeHeader tab={tabOf('t5', 134)} />
+    </>,
+  );
+  await until(() => page.querySelector('button') !== null);
+  const failed = { name: 'ci', state: 'failed', url: RUN } as const;
+  act(() =>
+    bridge.push('merge.queued', {
+      id: 't5',
+      queue: {
+        place: {
+          kind: 'listed',
+          position: 4,
+          state: 'UNMERGEABLE',
+          timeToMerge: null,
+          failed: [failed],
+          partial: false,
+        },
+        left: null,
+      },
+    }),
+  );
+  expect(page.textContent).toContain('Will be removed');
+  expect(page.textContent).toContain('ci failed in the queue');
+  // The queue no longer lists it, and its status hasn't caught up: it left, never its old place.
+  act(() =>
+    bridge.push('merge.queued', {
+      id: 't5',
+      queue: { place: { kind: 'unlisted', partial: false }, left: null },
+    }),
+  );
+  expect(page.querySelector('button')?.textContent).toContain('Left the queue');
+  expect(page.querySelector('button')?.textContent).not.toContain('Queued');
+  const blocked = state({
+    verdict: 'blocked',
+    base: 'e4/queued',
+    action: { kind: 'notPossible', reason: 'blocked' },
+    queue: { required: true, method: 'SQUASH' },
+  });
+  act(() => {
+    bridge.push('merge.status', { id: 't5', view: { kind: 'known', state: blocked } });
+    bridge.push('merge.queued', {
+      id: 't5',
+      queue: {
+        place: null,
+        left: { at: NOW, why: { kind: 'failedChecks', checks: [failed] }, partial: false },
+      },
+    });
+  });
+  expect(page.textContent).toContain('#134 left the merge queue:');
+  expect(page.textContent).toContain('ci failed with its group.');
+  const open = buttonSaying('Merge panel', page);
+  expect(open?.textContent).toContain('m');
+  act(() => open?.click());
+  await until(() => panel() !== null);
+  const first = panel()?.querySelector('[role="option"]');
+  expect(first?.getAttribute('data-key')).toBe('left');
+  expect(first?.textContent).toContain('1 check failed with its group.');
+  act(() => page.querySelector<HTMLButtonElement>('button[aria-label="Dismiss"]')?.click());
+  expect(page.textContent).not.toContain('left the merge queue');
+  await until(() => bridge.calls.some(([channel]) => channel === 'merge.forgetLeft'));
+});
+
+it('reads what’s ahead in the queue one ready for it would join, once, as the panel opens', async () => {
+  views.set('t6', {
+    kind: 'known',
+    state: state({
+      action: { kind: 'enqueue', method: 'MERGE' },
+      queue: { required: true, method: 'MERGE' },
+    }),
+  });
+  const page = draw(<MergeHeader tab={tabOf('t6')} />);
+  await until(() => page.textContent?.includes('Ready for the queue') ?? false);
+  expect(aheadAsked()).toBe(0);
+  act(() => page.querySelector('button')?.click());
+  await until(() => panel()?.textContent?.includes('4 ahead') ?? false);
+  expect(panel()?.textContent).toContain('main merges through a queue · 4 ahead, about 18 min');
+  expect(aheadAsked()).toBe(1);
+  expect(buttonSaying('See the queue', panel() ?? undefined)).toBeDefined();
 });

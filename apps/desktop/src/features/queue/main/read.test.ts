@@ -1,10 +1,12 @@
 // What a merge queue's tab shows of what main read, from the merge queue's recordings on
 // rozed-dev/e2e as rozed-bot, its admin: e4/queued's queue as GitHub tested a merge fixture
-// generation's four pull requests, and the open pull requests into it, one waiting to join with
-// auto-merge on.
+// generation's four pull requests, the open pull requests into it, one waiting to join with
+// auto-merge on, and why three of them left it.
 
 import {
   GithubClient,
+  PullRef,
+  queueRemoval,
   queueView,
   queueWaiting,
   RepoRef,
@@ -17,7 +19,15 @@ import {
 import { replayFetch } from '@lo/testing';
 import { describe, expect, it } from 'vitest';
 
-import { countOf, methodOf, readOf, stacksOf, switchBranches } from './read.ts';
+import {
+  countOf,
+  leftOf,
+  methodOf,
+  readOf,
+  stacksOf,
+  switchBranches,
+  type Leaver,
+} from './read.ts';
 
 const E2E = new RepoRef('rozed-dev', 'e2e');
 const BRANCH = 'e4/queued';
@@ -247,5 +257,63 @@ describe('the branches a merge queue’s tab switches between', () => {
       'merge/4/base',
     ]);
     expect(switchBranches('main', [], listOf(['main', 'dev']), undefined)).toEqual(['main']);
+  });
+});
+
+/** Pull request `number`, which Lo saw in e4/queued's queue since it joined at 19:13:38. */
+function leaver(number: number): Leaver {
+  return {
+    number,
+    title: `Fixture M2: ${number}`,
+    url: `https://github.com/rozed-dev/e2e/pull/${number}`,
+    enqueuedAt: Date.parse('2026-11-16T19:13:38Z'),
+  };
+}
+
+describe('why one left the queue', () => {
+  const client = new GithubClient({
+    fetch: replayFetch('queue_removal_e2e'),
+    token: new Token('x'),
+  });
+  const removal = (number: number) => queueRemoval(client, new PullRef('rozed-dev', 'e2e', number));
+  const SEEN = Date.parse('2026-11-16T19:30:00Z');
+
+  it('says it was taken out by hand, its checks failed with the run, or it merged, when GitHub said', async () => {
+    expect(leftOf(leaver(133), await removal(133), SEEN)).toEqual({
+      ...leaver(133),
+      at: Date.parse('2026-11-16T19:14:46Z'),
+      why: { kind: 'removed', by: 'rozed-bot' },
+      partial: false,
+    });
+    const failed = leftOf(leaver(134), await removal(134), SEEN);
+    expect(failed?.at).toBe(Date.parse('2026-11-16T19:24:30Z'));
+    expect(failed?.why).toEqual({
+      kind: 'failedChecks',
+      checks: [
+        {
+          name: 'ci',
+          url: expect.stringMatching(/^https:\/\/github\.com\/rozed-dev\/e2e\/actions\/runs\//),
+        },
+      ],
+    });
+    expect(leftOf(leaver(131), await removal(131), SEEN)?.why).toEqual({ kind: 'merged' });
+  });
+
+  it('says Lo can’t tell why when the read failed, or GitHub left the removal out, and nothing when it’s queued after all', () => {
+    expect(leftOf(leaver(1), undefined, SEEN)).toEqual({
+      ...leaver(1),
+      at: SEEN,
+      why: { kind: 'unknown' },
+      partial: false,
+    });
+    const leftOutOf = { number: 1, state: 'OPEN', inQueue: false, removal: undefined };
+    expect(
+      leftOf(leaver(1), { ...leftOutOf, leftOut: ['pullRequest.timelineItems.nodes.0'] }, SEEN),
+    ).toMatchObject({ why: { kind: 'unknown' }, partial: true });
+    expect(leftOf(leaver(1), { ...leftOutOf, leftOut: [] }, SEEN)).toMatchObject({
+      why: { kind: 'unknown' },
+      partial: false,
+    });
+    expect(leftOf(leaver(1), { ...leftOutOf, inQueue: true, leftOut: [] }, SEEN)).toBeUndefined();
   });
 });

@@ -1,6 +1,7 @@
 // A merge queue's tab: the repository, the branch and the queue's settings, with a switch of the
 // branches it can show; the queue's entries in order, those tested together in a group, then those
-// waiting to join; and a status bar of its own, with when the queue was last read.
+// waiting to join, then those Lo saw leave and why; and a status bar of its own, with when the
+// queue was last read.
 
 import {
   Branch,
@@ -22,9 +23,18 @@ import { registry, setMiddle, useKeys } from '../../../window/commands/registry.
 import type { QueueTab } from '../../tab/contract.ts';
 import { useTabState, withoutBidi } from '../../tab/window/shared.ts';
 import type { QueueRead, QueueState } from '../contract.ts';
-import { focusRow, openOnGithub, rowTarget, setTable, showBranch } from './actions.ts';
+import { focusRow, openOnGithub, openPage, rowTarget, setTable, showBranch } from './actions.ts';
 import { main } from './main.ts';
-import { focusedRow, itemsOf, retryIn, rowsOf, settingsOf, updated, waitingOf } from './rows.ts';
+import {
+  focusedRow,
+  itemsOf,
+  leftOf,
+  retryIn,
+  rowsOf,
+  settingsOf,
+  updated,
+  waitingOf,
+} from './rows.ts';
 import { focusedRows, queuesStore, showQueue } from './store.ts';
 
 /** The first key `id` has now, as this system shows it, if it has one. */
@@ -142,7 +152,7 @@ function Body({
             label={`Merge queue for ${branch}`}
             items={itemsOf(read.entries, now)}
             waiting={waitingOf(read.waiting)}
-            left={[]}
+            left={leftOf(read.left, now, openPage)}
             more={
               read.more > 0 && url !== null
                 ? { count: read.more, onOpen: () => void openOnGithub({ kind: 'none' }) }

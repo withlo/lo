@@ -6,7 +6,7 @@
     "variables": {
       "owner": "rozed-dev",
       "name": "e2e",
-      "number": 138
+      "number": 192
     },
     "query_sha256": "ca008209e496ac84a5c7317d266f8c0073cbcf8760c30f5896796e361b06bad0"
   },
@@ -15,36 +15,36 @@
     "headers": {
       "content-type": "application/json; charset=utf-8",
       "x-ratelimit-limit": "5000",
-      "x-ratelimit-remaining": "4977",
-      "x-ratelimit-reset": "1794870608",
+      "x-ratelimit-remaining": "4973",
+      "x-ratelimit-reset": "1794889860",
       "x-ratelimit-resource": "graphql",
-      "x-ratelimit-used": "23"
+      "x-ratelimit-used": "27"
     },
     "body": {
       "data": {
         "rateLimit": {
           "cost": 1,
           "limit": 5000,
-          "remaining": 4977,
-          "used": 23,
-          "resetAt": "2026-11-16T23:10:08Z"
+          "remaining": 4973,
+          "used": 27,
+          "resetAt": "2026-11-17T04:31:00Z"
         },
         "repository": {
           "pullRequest": {
-            "updatedAt": "2026-11-16T21:53:55Z",
+            "updatedAt": "2026-11-17T02:17:50Z",
             "state": "OPEN",
             "isDraft": false,
-            "baseRefName": "merge/3/base",
-            "baseRefOid": "cbea00b1af9e3237a88d830ddc722b631345813a",
-            "headRefOid": "f88750b6de9173f81decc8ad9c50a4f6560848e6",
+            "baseRefName": "merge/6/base",
+            "baseRefOid": "bcfbda2abd964ef6f338c1bb72b84e8cdf5c2b22",
+            "headRefOid": "a8086a593f20367cdacd1a65fcfae17af3672b24",
             "reviewDecision": null,
             "mergeStateStatus": "CLEAN",
             "statusCheckRollup": null,
             "checkCounts": null,
             "mergeQueueEntry": null,
             "timelineItems": {
-              "updatedAt": "2026-11-16T21:53:55Z",
-              "totalCount": 3
+              "updatedAt": "2026-11-17T02:42:09Z",
+              "totalCount": 4
             },
             "revisionEvents": {
               "filteredCount": 0
@@ -71,8 +71,8 @@
             "changedFiles": 2,
             "lastEditedAt": null,
             "timelineEvents": {
-              "filteredCount": 3,
-              "updatedAt": "2026-11-16T21:53:55Z"
+              "filteredCount": 4,
+              "updatedAt": "2026-11-17T02:42:09Z"
             }
           }
         }
