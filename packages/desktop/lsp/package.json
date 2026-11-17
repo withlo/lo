@@ -13,7 +13,7 @@
     "test": "vitest run --root ../../.. --project @lo/lsp"
   },
   "dependencies": {
-    "smol-toml": "1.9.0",
+    "smol-toml": "1.9.1",
     "tar": "7.5.22",
     "vscode-jsonrpc": "10.0.0",
     "vscode-languageserver-protocol": "3.18.5",
