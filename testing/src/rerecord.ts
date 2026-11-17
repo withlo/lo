@@ -194,6 +194,103 @@ export async function addAnswers(options: AddOptions): Promise<Map<string, numbe
   return counts;
 }
 
+/** The one place a REST read added goes: GitHub's API. */
+export const API_ORIGIN = 'https://api.github.com';
+
+export interface AddRestOptions {
+  /** The `fetch` that reaches GitHub. */
+  fetch: typeof globalThis.fetch;
+  /** The bot's token, which signs each request and must never be written. */
+  token: string;
+  /** The read's path on GitHub's API, with its query: `/repos/{owner}/{repo}/rules/branches/main`. */
+  path: string;
+  /** The cassettes' folders. */
+  dirs: readonly string[];
+  /** When, for `cassette.json`, as an ISO time to the second. */
+  at: string;
+}
+
+/**
+ * Records GitHub's answers to a REST read that `dirs`' cassettes don't hold yet, and adds them after
+ * each cassette's others: the first answer, then the `304` to the same read asked again with the
+ * first answer's ETag, as what replays them asks it again, so both are there to replay. Each
+ * cassette gets its own requests to GitHub. Nothing else changes but `cassette.json`, which notes
+ * when the read was added. As {@link addAnswers} does, it keeps only what the recorder keeps, and
+ * writes nothing unless every first answer came back `200` with an ETag, every second `304`, and
+ * nothing holds a secret; it refuses a cassette that already holds the read. Returns how many it
+ * added in each folder.
+ */
+export async function addRestAnswers(options: AddRestOptions): Promise<Map<string, number>> {
+  const { fetch, token, path, dirs, at } = options;
+  if (!path.startsWith('/') || path.startsWith('//')) {
+    throw new Error(`${path} isn’t a path on GitHub’s API`);
+  }
+  const url = new URL(path, API_ORIGIN);
+  if (url.origin !== API_ORIGIN) throw new Error(`${path} isn’t a path on GitHub’s API`);
+  const what = `GET ${url.href}`;
+  const writes: { path: string; text: string }[] = [];
+  const counts = new Map<string, number>();
+  for (const dir of dirs) {
+    const cassette = recordedCassette(dir);
+    const key = recordedKey(recordedRequest('GET', url, ''));
+    if (cassette.interactions.some(({ interaction }) => recordedKey(interaction.request) === key)) {
+      throw new Error(`${dir} holds ${what} already`);
+    }
+    const first = await get(fetch, token, url, undefined);
+    const etag = first.response.headers['etag'];
+    if (first.response.status !== 200 || etag === undefined) {
+      throw new Error(
+        `${dir}: GitHub answered ${what} ${first.response.status}${etag === undefined ? ' without an ETag' : ''}`,
+      );
+    }
+    const again = await get(fetch, token, url, etag);
+    if (again.response.status !== 304) {
+      throw new Error(
+        `${dir}: GitHub answered ${what} with its ETag ${again.response.status}, not 304`,
+      );
+    }
+    const index = Math.max(
+      0,
+      ...cassette.interactions.map(({ file }) => Number.parseInt(file, 10) || 0),
+    );
+    for (const [step, interaction] of [first, again].entries()) {
+      writes.push({
+        path: join(dir, fileName(index + step + 1, interaction.request)),
+        text: `${JSON.stringify(interaction, null, 2)}\n`,
+      });
+    }
+    const info: CassetteInfo = { ...cassette.info, added: { ...cassette.info.added, [what]: at } };
+    writes.push({ path: join(dir, 'cassette.json'), text: `${JSON.stringify(info, null, 2)}\n` });
+    counts.set(dir, 2);
+  }
+  for (const { path: file, text } of writes) {
+    const found = findSecret(text, [token]);
+    if (found) throw new Error(`${file} would contain ${found}, so nothing was written`);
+  }
+  for (const { path: file, text } of writes) writeFileSync(file, text);
+  return counts;
+}
+
+/** A GET of `url`, conditional on `etag` when given, and GitHub's answer, as the recorder keeps them. */
+async function get(
+  fetch: typeof globalThis.fetch,
+  token: string,
+  url: URL,
+  etag: string | undefined,
+): Promise<Interaction> {
+  const headers: Record<string, string> = {
+    authorization: `token ${token}`,
+    accept: 'application/vnd.github+json',
+  };
+  if (etag !== undefined) headers['if-none-match'] = etag;
+  const response = await fetch(url, { headers });
+  const bytes = new Uint8Array(await response.arrayBuffer());
+  return {
+    request: recordedRequest('GET', url, '', { ifNoneMatch: etag }),
+    response: recordedResponse(url, response.status, response.headers, bytes),
+  };
+}
+
 export interface CopyOptions {
   /** The file of the recorded interaction to copy, in another cassette. */
   from: string;

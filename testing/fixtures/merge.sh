@@ -157,6 +157,28 @@ overridden=135
 stack=136
 EOF
       ;;
+    3)
+      cat <<'EOF'
+squash=138
+merge=139
+rebase=140
+conflict=141
+draft=142
+stack-1=143
+stack-2=144
+chain-1=145
+chain-2=146
+moved=147
+gated-failing=148
+gated-passing=149
+queued-pass=150
+queued-slow-1=151
+queued-slow-2=152
+queued-fail=153
+overridden=154
+stack=155
+EOF
+      ;;
     *) ;;
   esac
 }

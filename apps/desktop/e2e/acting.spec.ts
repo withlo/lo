@@ -71,7 +71,8 @@ class Staged extends Replay {
   #at = 0;
 
   constructor(name: string) {
-    const interactions = recorded(name).interactions.map(({ interaction }) => interaction);
+    const { info, interactions: files } = recorded(name);
+    const interactions = files.map(({ interaction }) => interaction);
     super(name, interactions);
     // The images it didn't record, from the start.
     const keys = new Set(interactions.map((each) => recordedKey(each.request)));
@@ -82,8 +83,13 @@ class Staged extends Replay {
           new URL(each.request.url).host !== 'api.github.com' &&
           !keys.has(recordedKey(each.request)),
       );
-    const stages: Interaction[][] = [[...images]];
-    for (const each of interactions) {
+    // Answers added after the recording, which come after its writes but answer reads Lo sends
+    // from the start, from the start too.
+    const added = new Set(Object.keys(info.added ?? {}));
+    const isAdded = ({ request }: Interaction) =>
+      added.has(request.operation ?? `${request.method} ${request.url}`);
+    const stages: Interaction[][] = [[...images, ...interactions.filter(isAdded)]];
+    for (const each of interactions.filter((interaction) => !isAdded(interaction))) {
       stages.at(-1)!.push(each);
       if (WRITES.has(each.request.operation ?? '')) stages.push([]);
     }

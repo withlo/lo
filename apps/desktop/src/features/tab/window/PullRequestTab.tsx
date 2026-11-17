@@ -33,6 +33,7 @@ import { main } from './main.ts';
 import {
   banners as bannerSlot,
   header,
+  headerStatus,
   left,
   middle,
   over,
@@ -314,6 +315,7 @@ export function PullRequestTab({ tab }: { tab: PullTab }) {
               : { login: acting.login }
         }
         connection={headerConnection(view?.connection)}
+        status={<Slot slot={headerStatus} props={{ tab }} />}
       >
         <Slot slot={header} props={{ tab }} />
         <span className="min-w-8 flex-1" />
