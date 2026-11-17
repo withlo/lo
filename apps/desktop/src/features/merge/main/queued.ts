@@ -1,9 +1,10 @@
 // Each view's pull request in a merge queue, in main. While a view's merge status says its pull
 // request is queued and the view is on screen, the queue of the branch it merges into is read every
 // 20 s, backing off to every 2 minutes while reads fail, for its place, where it stands and when it
-// should merge. A read that no longer lists it asks for the merge status again, which says whether
-// it left. Once the status no longer says queued, for a pull request Lo saw queued while it ran,
-// and it hasn't merged, why it left is read once. A view off screen reads nothing and keeps what it
+// should merge. A read that no longer lists it shows the place the merge status last said, until
+// the status, which the poller reads as often and which says whether it merged, moves on. Once the
+// status no longer says queued, for a pull request Lo saw queued while it ran, and it hasn't merged,
+// why it left is read once. A view off screen reads nothing and keeps what it
 // had. A queue is a branch's and read only while shown, so none of it goes through the poller's
 // cache. Nothing here calls Electron.
 
@@ -27,7 +28,7 @@ export const PLACE_EVERY = 20_000;
 export const PLACE_MOST = 120_000;
 
 /** What the queue's reads use of an account's poller. */
-export type QueuePoller = Pick<Poller, 'readOnce' | 'readMergeFactsAgain'>;
+export type QueuePoller = Pick<Poller, 'readOnce'>;
 
 export interface QueueReadsOptions {
   /** The poller of each account, as the accounts feature provides it. */
@@ -55,8 +56,6 @@ interface Watched {
   seen: boolean;
   place: QueuePlace | null;
   left: LeftQueue | null;
-  /** Whether the merge status was asked for again since its place was last listed. */
-  askedAgain: boolean;
   /** When its place was last read, or failed to be. */
   doneAt: number | undefined;
   /** How long to wait after the last read. */
@@ -231,7 +230,6 @@ export class QueueReads {
       seen: false,
       place: null,
       left: null,
-      askedAgain: false,
       doneAt: undefined,
       wait: PLACE_EVERY,
       timer: undefined,
@@ -299,9 +297,8 @@ export class QueueReads {
     if (!this.#current(watched) || !watched.queued || base === undefined) return;
     watched.reading = true;
     let place: QueuePlace | undefined;
-    let poller: QueuePoller | undefined;
     try {
-      poller = await this.#options.poller(watched.login);
+      const poller = await this.#options.poller(watched.login);
       const read = await poller.readOnce(
         (client) => queueView(client, watched.pull.repo, base),
         watched.abort.signal,
@@ -321,13 +318,6 @@ export class QueueReads {
     } else {
       watched.wait = PLACE_EVERY;
       watched.place = place;
-      if (place.kind === 'listed') {
-        watched.askedAgain = false;
-      } else if (!place.partial && !watched.askedAgain && poller) {
-        // It's no longer in the queue: the merge status, read again, says whether it merged.
-        watched.askedAgain = true;
-        poller.readMergeFactsAgain(watched.pull);
-      }
       this.#send(watched);
     }
     this.#schedule(watched);

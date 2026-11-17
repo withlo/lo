@@ -3,7 +3,7 @@
 // read every 20 s while the queued view is on screen, and why one left, read once its status no
 // longer says queued. Nothing is read off screen, or for one that merged.
 
-import { GithubClient, Token, type PullRef } from '@lo/github';
+import { GithubClient, Token } from '@lo/github';
 import { replayFetch } from '@lo/testing';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -64,17 +64,13 @@ function fakePoller() {
     },
     token: new Token('x'),
   });
-  const again: string[] = [];
   const poller: QueuePoller = {
     async readOnce(request) {
       if (state.failing) throw new Error('GitHub can’t be reached.');
       return request(client);
     },
-    readMergeFactsAgain(pull: PullRef) {
-      again.push(pull.key);
-    },
   };
-  return { poller, asked, again, state };
+  return { poller, asked, state };
 }
 
 function readsOf(
@@ -164,13 +160,13 @@ describe('a queued pull request on screen', () => {
     expect(asked).toEqual(['queue', 'queue']);
   });
 
-  it('asks for the merge status again, once, when a read no longer lists it', async () => {
-    const { poller, again } = fakePoller();
+  it('says it isn’t listed once a read no longer lists it, until its status says where it went', async () => {
+    const { poller, asked } = fakePoller();
     const { reads } = readsOf(poller, { view: () => viewOf(4821) });
     reads.heard({ id: 't1', view: known() });
-    await vi.advanceTimersByTimeAsync(PLACE_EVERY * 2);
+    await vi.advanceTimersByTimeAsync(PLACE_EVERY);
+    expect(asked).toEqual(['queue', 'queue']);
     expect(reads.current('t1').place).toEqual({ kind: 'unlisted', partial: false });
-    expect(again).toEqual(['rozed-dev/e2e#4821']);
   });
 });
 
