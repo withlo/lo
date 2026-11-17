@@ -15,6 +15,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { QueueState } from '../contract.ts';
 import {
+  LEFT_AGAIN,
   LEFT_MOST,
   QUEUE_EVERY,
   QUEUE_MOST,
@@ -528,15 +529,48 @@ describe('those that left the queue', () => {
     expect(leftIn(published.at(-1))).toEqual([]);
   });
 
-  it('keep no more than the latest few', async () => {
+  it('keep no more than the latest few, and read why only for those', async () => {
     const many = Array.from({ length: LEFT_MOST + 2 }, (_, at) => at + 10);
-    const { source } = leavingSource([queueOf(many), queueOf([])], async (number) =>
+    const { source, asked } = leavingSource([queueOf(many), queueOf([])], async (number) =>
       failedIn(number, '2026-11-16T12:00:00Z'),
     );
     const { watch, published } = watchOf(source);
     watch.show();
     await vi.advanceTimersByTimeAsync(QUEUE_EVERY);
     expect(leftIn(published.at(-1))).toHaveLength(LEFT_MOST);
-    expect(leftIn(published.at(-1))[0]?.[0]).toBe(many.at(-1));
+    expect(asked.filter((each) => each.startsWith('removal'))).toHaveLength(LEFT_MOST);
+    // Those nearest the front.
+    expect(leftIn(published.at(-1)).map(([number]) => number)).not.toContain(many.at(-1));
+  });
+
+  it('read why once more when GitHub’s last removal is from before it joined, then say Lo can’t tell', async () => {
+    let reads = 0;
+    const { source, asked } = leavingSource([queueOf([1, 2]), queueOf([2])], async (number) => {
+      reads += 1;
+      // An earlier entry's removal, then still none since it joined.
+      return failedIn(number, '2026-11-16T11:00:00Z');
+    });
+    const { watch, published } = watchOf(source);
+    watch.show();
+    await vi.advanceTimersByTimeAsync(QUEUE_EVERY);
+    expect(leftIn(published.at(-1))).toEqual([]);
+    await vi.advanceTimersByTimeAsync(LEFT_AGAIN);
+    expect(reads).toBe(2);
+    expect(asked.filter((each) => each.startsWith('removal'))).toEqual(['removal 1', 'removal 1']);
+    expect(leftIn(published.at(-1))).toEqual([[1, 'unknown']]);
+  });
+
+  it('take a removal that came once the timeline caught up', async () => {
+    let reads = 0;
+    const { source } = leavingSource([queueOf([1, 2]), queueOf([2])], async (number) => {
+      reads += 1;
+      return reads === 1
+        ? { number, state: 'OPEN', inQueue: true, removal: undefined, leftOut: [] }
+        : failedIn(number, '2026-11-16T12:00:00Z');
+    });
+    const { watch, published } = watchOf(source);
+    watch.show();
+    await vi.advanceTimersByTimeAsync(QUEUE_EVERY + LEFT_AGAIN);
+    expect(leftIn(published.at(-1))).toEqual([[1, 'failedChecks']]);
   });
 });

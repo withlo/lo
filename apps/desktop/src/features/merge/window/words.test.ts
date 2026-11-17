@@ -310,6 +310,7 @@ test('a queued pull request’s place, as Lo last read its queue, says when it s
     state: 'AWAITING_CHECKS',
     timeToMerge: 720,
     failed: [],
+    partial: false,
   } satisfies QueuePlace;
   expect(headerLine(queued, NOW, { place, left: null })).toMatchObject({
     kind: 'queued',
@@ -335,10 +336,18 @@ test('a queued pull request’s place, as Lo last read its queue, says when it s
     verdict: 'Will be removed',
     detail: 'from the merge queue',
   });
-  // Not listed, GitHub's own read of its place stands.
+  // GitHub left part of the queue out: where Lo can't see it, GitHub's own read of its place stands.
   expect(
     headerLine(queued, NOW, { place: { kind: 'unlisted', partial: true }, left: null }),
   ).toMatchObject({ verdict: 'Queued, 2nd' });
+  // The queue no longer lists it: it left, never the place it had, until its status says how.
+  const gone = headerLine(queued, NOW, { place: { kind: 'unlisted', partial: false }, left: null });
+  expect(gone).toMatchObject({ kind: 'waiting', verdict: 'Left the queue', detail: 'checking' });
+  expect(gone?.title).toContain('Lo is reading whether it merged');
+  // A failure in a queue GitHub left part of says more may have failed.
+  expect(
+    headerLine(queued, NOW, { place: { ...failed, partial: true }, left: null })?.title,
+  ).toContain('more checks may have failed');
   // No longer queued, its queue's last read says nothing in the header.
   expect(headerLine({ kind: 'known', state: state() }, NOW, { place, left: null })).toMatchObject({
     verdict: 'Ready to merge',

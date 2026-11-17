@@ -28,8 +28,9 @@ function sameLogin(a: string, b: string): boolean {
 /**
  * Pull request `number`'s place in `view`, its branch's queue, as `login` reads it: where it is and
  * stands, when GitHub expects it to merge, and the checks that failed on the commit the queue tests
- * it on. Not listed, it's partly because GitHub left part of the queue out, or the queue is longer
- * than Lo reads; otherwise it's no longer there.
+ * it on, which may be missing some when GitHub left part of the queue out (`partial`). Not listed,
+ * it's partly because GitHub left part of the queue out, or the queue is longer than Lo reads;
+ * otherwise it's no longer there.
  */
 export function placeOf(view: QueueView, number: number, login: string): QueuePlace {
   const rows = queueRows(
@@ -45,7 +46,17 @@ export function placeOf(view: QueueView, number: number, login: string): QueuePl
     state: row.state,
     timeToMerge: row.timeToMerge ?? null,
     failed: row.failedChecks.map(checkOf),
+    partial: rows.leftOut,
   };
+}
+
+/**
+ * When pull request `number`'s entry in `view` joined the queue, in milliseconds since the Unix
+ * epoch on GitHub's clock, or nothing when `view` doesn't list it or GitHub didn't say.
+ */
+export function joinedAt(view: QueueView, number: number): number | undefined {
+  const entry = view.queue?.entries.find((each) => each.pullRequest?.number === number);
+  return timeOf(entry?.enqueuedAt) ?? undefined;
 }
 
 /**

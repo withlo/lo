@@ -48,6 +48,7 @@ describe('a queued pull request’s place', () => {
       state: 'MERGEABLE',
       timeToMerge: null,
       failed: [],
+      partial: false,
     });
     expect(placeOf(tested, 134, 'rozed-bot')).toEqual({
       kind: 'listed',
@@ -55,6 +56,7 @@ describe('a queued pull request’s place', () => {
       state: 'UNMERGEABLE',
       timeToMerge: null,
       failed: [{ name: 'ci', state: 'failed', url: expect.stringMatching(RUN) }],
+      partial: false,
     });
   });
 

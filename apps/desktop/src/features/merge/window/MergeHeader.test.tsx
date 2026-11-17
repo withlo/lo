@@ -230,7 +230,14 @@ function buttonSaying(text: string, within: ParentNode = document): HTMLButtonEl
 it('says a queued pull request’s place and when it should merge, with the queue a key away', async () => {
   views.set('t4', queued());
   queues.set('t4', {
-    place: { kind: 'listed', position: 3, state: 'AWAITING_CHECKS', timeToMerge: 720, failed: [] },
+    place: {
+      kind: 'listed',
+      position: 3,
+      state: 'AWAITING_CHECKS',
+      timeToMerge: 720,
+      failed: [],
+      partial: false,
+    },
     left: null,
   });
   const page = draw(<MergeHeader tab={tabOf('t4', 169)} />);
@@ -269,6 +276,7 @@ it('says the queue will remove one whose checks failed there, and once it left, 
           state: 'UNMERGEABLE',
           timeToMerge: null,
           failed: [failed],
+          partial: false,
         },
         left: null,
       },
@@ -276,6 +284,15 @@ it('says the queue will remove one whose checks failed there, and once it left, 
   );
   expect(page.textContent).toContain('Will be removed');
   expect(page.textContent).toContain('ci failed in the queue');
+  // The queue no longer lists it, and its status hasn't caught up: it left, never its old place.
+  act(() =>
+    bridge.push('merge.queued', {
+      id: 't5',
+      queue: { place: { kind: 'unlisted', partial: false }, left: null },
+    }),
+  );
+  expect(page.querySelector('button')?.textContent).toContain('Left the queue');
+  expect(page.querySelector('button')?.textContent).not.toContain('Queued');
   const blocked = state({
     verdict: 'blocked',
     base: 'e4/queued',

@@ -27,7 +27,7 @@ import {
 import { cassette, isObject, Replay, replayFetch, type Interaction, type Json } from '@lo/testing';
 import { expect, test } from 'vitest';
 
-import { leftQueue, queueRows, type QueueRow } from '../src/merge/queue.ts';
+import { leftQueue, leftSince, queueRows, type QueueRow } from '../src/merge/queue.ts';
 
 const E2E = new RepoRef('rozed-dev', 'e2e');
 const BRANCH = 'e4/queued';
@@ -334,6 +334,23 @@ test('a pull request left the queue taken out by hand, failing its checks, or me
   // In the queue again, or never out of it, it hasn't left.
   expect(leftQueue({ ...byHand, inQueue: true })).toBeUndefined();
   expect(leftQueue({ ...byHand, removal: undefined })).toBeUndefined();
+});
+
+test('a removal answers for a leaving only once it came after the entry joined, or it merged', async () => {
+  const failed = await removal('queued-fail');
+  const at = Date.parse(failed.removal?.at ?? '');
+  expect(leftSince(failed, at - 60_000)).toBe(true);
+  expect(leftSince(failed, at)).toBe(true);
+  // An earlier entry's removal, or a timeline that hasn't caught up.
+  expect(leftSince(failed, at + 60_000)).toBe(false);
+  expect(leftSince({ ...failed, removal: undefined }, at)).toBe(false);
+  expect(leftSince({ ...failed, inQueue: true }, at)).toBe(false);
+  // Merged is merged, and with nothing to compare, any removal answers.
+  expect(leftSince({ ...failed, state: 'MERGED' }, at + 60_000)).toBe(true);
+  expect(leftSince(failed, undefined)).toBe(true);
+  // GitHub leaving the removal out is all it will say.
+  const leftOut = ['pullRequest.timelineItems.nodes.0'];
+  expect(leftSince({ ...failed, removal: undefined, leftOut }, at + 60_000)).toBe(true);
 });
 
 /** Why `queued-fail` left the queue, had GitHub given `reason`. */

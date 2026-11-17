@@ -216,9 +216,10 @@ export type EntryState = z.output<typeof entryState>;
 /**
  * A queued pull request's place, as Lo last read its branch's merge queue: `listed`, at `position`,
  * with where it stands, GitHub's estimate of when it merges, and the checks that failed on the
- * commit the queue tests it on; or not listed, which with `partial` is because GitHub left part of
- * the queue out, or the queue is longer than Lo reads, so Lo can't see its place, and without it
- * means it's no longer in the queue.
+ * commit the queue tests it on, which with `partial` may be missing some, as GitHub left part of the
+ * queue out; or not listed, which with `partial` is because GitHub left part of the queue out, or
+ * the queue is longer than Lo reads, so Lo can't see its place, and without it means it's no longer
+ * in the queue, which Lo reads the pull request again to tell how.
  */
 export const queuePlace = z.discriminatedUnion('kind', [
   z.strictObject({
@@ -227,6 +228,7 @@ export const queuePlace = z.discriminatedUnion('kind', [
     state: entryState,
     timeToMerge: seconds.nullable(),
     failed: z.array(check),
+    partial: z.boolean(),
   }),
   z.strictObject({ kind: z.literal('unlisted'), partial: z.boolean() }),
 ]);

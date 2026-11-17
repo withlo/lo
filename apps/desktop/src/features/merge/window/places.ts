@@ -11,6 +11,7 @@ import {
   duration,
   listed,
   ordinal,
+  PARTIAL_CHECKS,
   rowsOf,
   type PanelHead,
   type Row,
@@ -49,6 +50,14 @@ export function queueHead(
 ): PanelHead {
   if (state.verdict === 'queued') {
     const place = queue?.place;
+    if (place?.kind === 'unlisted' && !place.partial) {
+      return {
+        kind: 'waiting',
+        verdict: 'Left the queue',
+        into: false,
+        after: `The merge queue for ${state.base} no longer lists it · Lo is reading whether it merged`,
+      };
+    }
     const position = place?.kind === 'listed' ? place.position : state.position;
     const removal = place?.kind === 'listed' && place.state === 'UNMERGEABLE';
     return {
@@ -58,9 +67,22 @@ export function queueHead(
       after: `In the merge queue for ${state.base}${position === null ? '' : ` · ${ordinal(position)}`}`,
     };
   }
-  if (state.verdict === 'ready' && state.action.kind === 'enqueue' && ahead.kind === 'read') {
-    const words = aheadWords(ahead.ahead);
-    if (words !== undefined) return { ...head, after: `${head.after ?? ''} · ${words}` };
+  if (state.verdict === 'ready' && state.action.kind === 'enqueue') {
+    const before = head.after ?? '';
+    switch (ahead.kind) {
+      case 'read': {
+        const words = aheadWords(ahead.ahead);
+        return words === undefined ? head : { ...head, after: `${before} · ${words}` };
+      }
+      case 'failed':
+        return { ...head, after: `${before} · Lo couldn’t read the queue` };
+      case 'none':
+      case 'reading':
+        return head;
+      default:
+        ahead satisfies never;
+        return head;
+    }
   }
   return head;
 }
@@ -241,7 +263,9 @@ export function queueRows(state: MergeState, queue: InQueue | undefined): Row[] 
         count > 0
           ? `${counted(count, 'check')} failed in the queue`
           : 'It can’t merge as the queue tested it',
-      detail: 'GitHub takes it out of the queue.',
+      detail: place.partial
+        ? `GitHub takes it out of the queue. ${PARTIAL_CHECKS}`
+        : 'GitHub takes it out of the queue.',
       link: undefined,
       subs: place.failed.map((check, index) => ({
         key: `${index}`,

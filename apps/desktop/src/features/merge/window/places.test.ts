@@ -60,6 +60,7 @@ const FAILED: InQueue = {
     state: 'UNMERGEABLE',
     timeToMerge: null,
     failed: [{ name: 'ci', state: 'failed', url: RUN }],
+    partial: false,
   },
   left: null,
 };
@@ -79,7 +80,14 @@ describe('the panel’s line', () => {
       after: 'In the merge queue for e4/queued · 2nd',
     });
     const third: InQueue = {
-      place: { kind: 'listed', position: 3, state: 'QUEUED', timeToMerge: null, failed: [] },
+      place: {
+        kind: 'listed',
+        position: 3,
+        state: 'QUEUED',
+        timeToMerge: null,
+        failed: [],
+        partial: false,
+      },
       left: null,
     };
     expect(queueHead(panelHead(queued), queued, third, none).after).toBe(
@@ -89,13 +97,21 @@ describe('the panel’s line', () => {
       kind: 'blocked',
       verdict: 'Will be removed',
     });
+    // The queue no longer lists it: it left, and Lo reads whether it merged.
+    const gone: InQueue = { place: { kind: 'unlisted', partial: false }, left: null };
+    expect(queueHead(panelHead(queued), queued, gone, none)).toEqual({
+      kind: 'waiting',
+      verdict: 'Left the queue',
+      into: false,
+      after: 'The merge queue for e4/queued no longer lists it · Lo is reading whether it merged',
+    });
     const unplaced = state({ position: null });
     expect(queueHead(panelHead(unplaced), unplaced, undefined, none).after).toBe(
       'In the merge queue for e4/queued',
     );
   });
 
-  it('says what’s ahead of one ready for the queue, once read', () => {
+  it('says what’s ahead of one ready for the queue, once read, or that Lo couldn’t read it', () => {
     const head = panelHead(READY);
     expect(queueHead(head, READY, undefined, { kind: 'reading' })).toEqual(head);
     const read = (ahead: Parameters<typeof aheadWords>[0]) =>
@@ -107,7 +123,9 @@ describe('the panel’s line', () => {
       'e4/queued merges through a queue · none ahead',
     );
     expect(read({ kind: 'none' })).toBe('e4/queued merges through a queue');
-    expect(queueHead(head, READY, undefined, { kind: 'failed', why: 'x' })).toEqual(head);
+    expect(queueHead(head, READY, undefined, { kind: 'failed', why: 'x' }).after).toBe(
+      'e4/queued merges through a queue · Lo couldn’t read the queue',
+    );
   });
 
   it('never reads a queue GitHub left part of out as empty', () => {
@@ -231,6 +249,9 @@ describe('the panel’s rows', () => {
     );
     expect(queueRows(state(), { place: { ...listed, state: 'MERGEABLE' }, left: null })).toEqual(
       [],
+    );
+    expect(queueRows(state(), { place: { ...listed, partial: true }, left: null })[0]?.detail).toBe(
+      'GitHub takes it out of the queue. GitHub left part of the queue out, so more checks may have failed.',
     );
   });
 

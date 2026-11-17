@@ -434,14 +434,37 @@ export function duration(seconds: number): string {
   return rest === 0 ? `${hours} h` : `${hours} h ${rest} min`;
 }
 
+/** Why a queued pull request's place may be missing failed checks, on hover. */
+export const PARTIAL_CHECKS = 'GitHub left part of the queue out, so more checks may have failed.';
+
+/** Why the header no longer says a pull request's place, on hover, once the queue stops listing it. */
+export const LEFT_CHECKING = 'The merge queue no longer lists it. Lo is reading whether it merged.';
+
+/** `line`'s hover, with `more` after it. */
+function hover(line: HeaderLine, more: string): string {
+  return line.title === undefined ? more : `${line.title}\n${more}`;
+}
+
 /**
  * `line`, from GitHub's read of a queued pull request, with what Lo last read of its entry in the
- * queue: its place, which that read has fresher, and when it should merge; or, once it failed there,
- * that it will be removed, and which checks failed.
+ * queue: its place, which that read has fresher, and when it should merge; once it failed there,
+ * that it will be removed, and which checks failed; and once the queue no longer lists it, that it
+ * left, never the place it had, until a read of the pull request says how.
  */
 function queuedLine(line: HeaderLine, state: MergeState, queue: InQueue | undefined): HeaderLine {
   const place = queue?.place;
-  if (state.verdict !== 'queued' || place?.kind !== 'listed') return line;
+  if (state.verdict !== 'queued' || !place) return line;
+  if (place.kind === 'unlisted') {
+    // Partly read, the queue may list it where Lo can't see: GitHub's place stands.
+    if (place.partial) return line;
+    return {
+      ...line,
+      kind: 'waiting',
+      verdict: 'Left the queue',
+      detail: 'checking',
+      title: hover(line, LEFT_CHECKING),
+    };
+  }
   if (place.state === 'UNMERGEABLE') {
     const names = place.failed.map((check) => check.name);
     return {
@@ -449,6 +472,7 @@ function queuedLine(line: HeaderLine, state: MergeState, queue: InQueue | undefi
       kind: 'blocked',
       verdict: 'Will be removed',
       detail: names.length > 0 ? `${listed(names)} failed in the queue` : 'from the merge queue',
+      title: place.partial ? hover(line, PARTIAL_CHECKS) : line.title,
     };
   }
   return {
