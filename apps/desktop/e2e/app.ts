@@ -564,7 +564,7 @@ export const onStacks = test.extend<{
 });
 
 /** The generation of `testing/fixtures/merge.sh`'s pull requests `app_merge` was recorded on. */
-export const MERGE = MERGE_PULLS[3];
+export const MERGE = MERGE_PULLS[6];
 
 /**
  * `test`, with Lo signed in as rozed-bot on a replay server that answers from `app_merge`, recorded
@@ -588,7 +588,7 @@ export const onMerge = test.extend<{
   remote: async ({}, use) => {
     // `merge.sh` builds nothing inside a work tree, so not in the test's output folder.
     const folder = mkdtempSync(join(tmpdir(), 'lo-merge-'));
-    await use(writeMergeRemote(join(folder, 'remote'), 3));
+    await use(writeMergeRemote(join(folder, 'remote'), 6));
     rmSync(folder, { recursive: true, force: true });
   },
   launch: async ({ github, remote, account }, use) => {

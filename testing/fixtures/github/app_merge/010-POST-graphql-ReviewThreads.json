@@ -6,7 +6,7 @@
     "variables": {
       "owner": "rozed-dev",
       "name": "e2e",
-      "number": 138,
+      "number": 192,
       "first": 100,
       "after": null
     },
@@ -17,19 +17,19 @@
     "headers": {
       "content-type": "application/json; charset=utf-8",
       "x-ratelimit-limit": "5000",
-      "x-ratelimit-remaining": "4975",
-      "x-ratelimit-reset": "1794870608",
+      "x-ratelimit-remaining": "4971",
+      "x-ratelimit-reset": "1794889860",
       "x-ratelimit-resource": "graphql",
-      "x-ratelimit-used": "25"
+      "x-ratelimit-used": "29"
     },
     "body": {
       "data": {
         "rateLimit": {
           "cost": 1,
           "limit": 5000,
-          "remaining": 4975,
-          "used": 25,
-          "resetAt": "2026-11-16T23:10:08Z"
+          "remaining": 4971,
+          "used": 29,
+          "resetAt": "2026-11-17T04:31:00Z"
         },
         "repository": {
           "pullRequest": {
