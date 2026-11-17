@@ -4,6 +4,11 @@
 // merge panel's reasons, methods and the squash commit's text, which it asks for as the panel opens.
 // While the pull request on screen is in a merge queue, main reads its place there, and once it
 // leaves without merging, why, and sends each view's on `queued`.
+//
+// And merging: `⏎` in the panel asks main for a plan from what GitHub said last, which main keeps
+// under a key for the reader to confirm; the window confirms the key and never sends the merge
+// itself. Main checks the plan again as it's confirmed, sends it once, and says how each merge goes
+// on `jobs`.
 
 import { z } from 'zod';
 
@@ -25,6 +30,23 @@ const page = z.url({ protocol: /^https$/ }).max(4096);
 /** A merge method, as GitHub names it. */
 export const method = z.enum(['MERGE', 'SQUASH', 'REBASE']);
 export type Method = z.output<typeof method>;
+
+/** A pull request's number. */
+const number = z.number().int().min(1);
+
+/** What Lo says: a sentence or two, often with GitHub's words in it. The window draws it as text. */
+const words = z.string().max(4096);
+
+/**
+ * Why Lo merges nothing now, whatever the pull request's state: GitHub can't be reached, GitHub
+ * asked Lo to hold off writing until `until`, or the account is signed out.
+ */
+export const off = z.discriminatedUnion('kind', [
+  z.strictObject({ kind: z.literal('offline') }),
+  z.strictObject({ kind: z.literal('paused'), until: time }),
+  z.strictObject({ kind: z.literal('signedOut') }),
+]);
+export type Off = z.output<typeof off>;
 
 /** Where a required check stands on the head. */
 export const checkState = z.enum(['passed', 'failed', 'running', 'awaitingApproval', 'missing']);
@@ -120,6 +142,7 @@ export type Action = z.output<typeof action>;
  *   checks passed, of how many.
  * - `stale`: why Lo couldn't read it again since `readAt`, while it can't: a read failed, GitHub
  *   can't be reached, the account is signed out, or the rate limit holds every read.
+ * - `off`: why Lo merges nothing now, whatever GitHub says of the pull request, if it doesn't.
  */
 export const mergeState = z.strictObject({
   verdict: z.enum(['merged', 'closed', 'queued', 'ready', 'waiting', 'blocked']),
@@ -142,6 +165,7 @@ export const mergeState = z.strictObject({
   head: z.union([oid, z.literal('')]),
   readAt: time,
   stale: text.nullable(),
+  off: off.nullable(),
 });
 export type MergeState = z.output<typeof mergeState>;
 
@@ -261,6 +285,141 @@ export type Ahead =
       readonly timeToMerge: number | null;
     };
 
+/**
+ * What names a merge's plan, which main keeps for the reader to confirm: the window confirms it by
+ * this, and never sends the merge itself.
+ */
+export const planKey = z.string().regex(/^[0-9a-f-]{36}$/);
+
+/** A merge straight into the base branch, or an entry into its merge queue. */
+export const planKind = z.enum(['merge', 'enqueue']);
+export type PlanKind = z.output<typeof planKind>;
+
+/**
+ * What a merge will do, for the reader to confirm before anything is sent:
+ *
+ * - `key`: what names it, which the window confirms; `id`: the view it was asked for from;
+ * - `owner`, `repo`, `number`: the pull request; `login`: the account it merges as;
+ * - `kind`: straight in with `method`, or into `base`'s merge queue, whose settings choose the
+ *   method: `method` when the account may read them, else `null`;
+ * - `head`: the head on screen, which GitHub merges only while it's the pull request's head;
+ * - `title`, `message`: a squash commit's title and message as the reader typed them, empty for
+ *   GitHub's own, which `squashTitle` is, when Lo read it.
+ */
+export const plan = z.strictObject({
+  key: planKey,
+  id: tabId,
+  owner: text,
+  repo: text,
+  number,
+  login: text,
+  kind: planKind,
+  method: method.nullable(),
+  base: text,
+  head: oid,
+  title: z.string().max(1024),
+  message: z.string().max(65_536),
+});
+export type MergePlan = z.output<typeof plan>;
+
+/** A plan to confirm, or why there's none: in Lo's words, with GitHub's text in them. */
+export const planned = z.discriminatedUnion('kind', [
+  z.strictObject({ kind: z.literal('plan'), plan }),
+  z.strictObject({ kind: z.literal('refused'), why: words }),
+]);
+export type Planned = z.output<typeof planned>;
+
+/**
+ * Why a merge didn't go, or won't, as GitHub or Lo said:
+ *
+ * - `kind`: the core's name for GitHub's refusal, such as `headMoved`, `rules` or `paused`, or
+ *   Lo's own at the press, such as `offline`, `busy` or `unread`;
+ * - `text`: what happened, and what to do, in sentences;
+ * - `rules`: each rule GitHub named, for `rules`;
+ * - `until`: when GitHub allows writes again, for `paused`;
+ * - `newer`: for a newer push than the one on screen, `from` the head on screen, `to` the newer
+ *   one when Lo knows it, which "See r5 → r6" compares.
+ */
+export const refusal = z.strictObject({
+  kind: z.string().max(64),
+  text: words,
+  rules: z.array(words),
+  until: time.nullable(),
+  newer: z.strictObject({ from: oid, to: oid.nullable() }).nullable(),
+});
+export type Refusal = z.output<typeof refusal>;
+
+/** What the reader's confirmation came to: sent, or a new plan to confirm, or refused. */
+export const confirmed = z.discriminatedUnion('kind', [
+  /** It went to GitHub, and `jobs` says how it goes. */
+  z.strictObject({ kind: z.literal('sent') }),
+  /**
+   * Something the confirmation named changed since it was shown, as `why` says: the new plan, under
+   * a key of its own, is for the reader to confirm.
+   */
+  z.strictObject({ kind: z.literal('again'), plan, why: words }),
+  z.strictObject({ kind: z.literal('refused'), refusal }),
+]);
+export type Confirmed = z.output<typeof confirmed>;
+
+/**
+ * Why Lo can't tell how a merge ended: its answer was lost (`noAnswer`); GitHub no longer answers
+ * about it (`lost`); it was still running when Lo stopped asking (`stillPending`); Lo was stopping
+ * (`stopped`); or GitHub answered a state Lo doesn't know (`status`).
+ */
+export const unsure = z.enum(['noAnswer', 'lost', 'stillPending', 'stopped', 'status']);
+export type Unsure = z.output<typeof unsure>;
+
+/**
+ * Where a merge stands:
+ *
+ * - `sending`: Lo is sending it;
+ * - `pending`: GitHub took it and is running it; `trouble` is why Lo's last question about it got
+ *   no answer, while waiting may fix it;
+ * - `merged`, `enqueued`: it merged, or joined the merge queue;
+ * - `refused`: GitHub refused it, as it took it or as it ran it, or Lo couldn't send it;
+ * - `unknown`: Lo can't tell whether it merged, for `why`, which `text` says. `askAgain` says
+ *   whether GitHub can still be asked about it, rather than the pull request read again; `shows`
+ *   is what GitHub showed of the pull request since, `open` while it doesn't settle it.
+ */
+export const jobState = z.discriminatedUnion('kind', [
+  z.strictObject({ kind: z.literal('sending') }),
+  z.strictObject({ kind: z.literal('pending'), trouble: words.nullable() }),
+  z.strictObject({ kind: z.literal('merged') }),
+  z.strictObject({ kind: z.literal('enqueued') }),
+  z.strictObject({ kind: z.literal('refused'), refusal }),
+  z.strictObject({
+    kind: z.literal('unknown'),
+    why: unsure,
+    text: words,
+    askAgain: z.boolean(),
+    shows: z.literal('open').nullable(),
+  }),
+]);
+export type JobState = z.output<typeof jobState>;
+
+/**
+ * A merge Lo sent, from the plan named `key`, as it goes. `already`: GitHub was already merging
+ * the pull request when Lo asked, from Lo or from elsewhere, so Lo followed that merge, which may
+ * be of another head or method, rather than starting one.
+ */
+export const job = z.strictObject({
+  key: planKey,
+  owner: text,
+  repo: text,
+  number,
+  login: text,
+  kind: planKind,
+  method: method.nullable(),
+  base: text,
+  head: oid,
+  already: z.boolean(),
+  state: jobState,
+});
+export type JobView = z.output<typeof job>;
+
+const byKey = z.strictObject({ key: planKey });
+
 export const contract = defineContract('merge', {
   requests: {
     /** View `id`'s merge status now, which `status` then keeps up to date. */
@@ -285,6 +444,44 @@ export const contract = defineContract('merge', {
     ahead: { input: z.strictObject({ id: tabId }), reply: reply<Ahead>() },
     /** Forgets why view `id`'s pull request left its merge queue, once the reader dismisses it. */
     forgetLeft: { input: z.strictObject({ id: tabId }), reply: reply<void>() },
+    /**
+     * Plans the merge the panel of view `id` offers now, from what GitHub said last, with `method`
+     * when the repository allows it, and a squash's `title` and `message` as the reader typed them,
+     * empty for GitHub's own. Keeps it for the reader to confirm, in place of the view's last plan,
+     * or says why there's none.
+     */
+    plan: {
+      input: z.strictObject({
+        id: tabId,
+        method: method.nullable(),
+        title: z.string().max(1024),
+        message: z.string().max(65_536),
+      }),
+      reply: reply<Planned>(),
+    },
+    /**
+     * Sends the merge the plan named `key` holds, once, if it can still go as the plan says: else
+     * asks again with a new plan, when something it named changed, or refuses.
+     */
+    confirm: { input: byKey, reply: reply<Confirmed>() },
+    /** Forgets the plan named `key`, unless it was confirmed. */
+    cancel: { input: byKey, reply: reply<void>() },
+    /** Every merge Lo sent that it still follows or hasn't been told to forget, as `jobs` has them. */
+    sent: { input: z.strictObject({}), reply: reply<JobView[]>() },
+    /**
+     * Asks GitHub again how the merge from the plan named `key` went, when Lo couldn't tell: about
+     * the merge itself while GitHub still answers about it, or else by reading the pull request
+     * again. A read: nothing is sent again.
+     */
+    askAgain: { input: byKey, reply: reply<void>() },
+    /** Forgets the merge from the plan named `key` once it has ended, as when the reader has seen how. */
+    dismiss: { input: byKey, reply: reply<void>() },
   },
-  topics: { status, queued },
+  topics: {
+    status,
+    /** A view's pull request in a merge queue, each time it changes. */
+    queued,
+    /** A merge Lo sent, each time it changes. */
+    jobs: job,
+  },
 });

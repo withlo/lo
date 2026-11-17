@@ -10,9 +10,12 @@ import type {
   Blocker,
   Check,
   InQueue,
+  JobView,
+  MergePlan,
   MergeState,
   MergeView,
   Method,
+  Off,
   Reviewer,
   Unchecked,
 } from '../contract.ts';
@@ -875,4 +878,142 @@ export function steppedMethod(
   const { methods } = state.action;
   const at = methods.indexOf(shownMethod(state, chosen) ?? state.action.method);
   return methods[(at + step + methods.length) % methods.length];
+}
+
+/** A number of minutes or hours, as a clock writes it: "05". */
+function twoDigits(value: number): string {
+  return String(value).padStart(2, '0');
+}
+
+/** A clock time as the interface writes it: "14:05". */
+function clock(at: number): string {
+  const time = new Date(at);
+  return `${twoDigits(time.getHours())}:${twoDigits(time.getMinutes())}`;
+}
+
+/** Why Lo merges nothing now, whatever the pull request's state. */
+export function offWords(off: Off): string {
+  switch (off.kind) {
+    case 'offline':
+      return 'Offline. Merging waits until you’re back.';
+    case 'paused':
+      return `GitHub asked Lo to hold off until ${clock(off.until)}. Merge then.`;
+    case 'signedOut':
+      return 'The account is signed out of GitHub. Sign in again, then merge.';
+    default:
+      off satisfies never;
+      return 'Lo can’t merge now.';
+  }
+}
+
+/** Why `⏎` in the panel can't merge now, or nothing when it can. */
+export function cantMerge(state: MergeState, number: number): string | undefined {
+  const { action } = state;
+  if (action.kind === 'notPossible') {
+    switch (action.reason) {
+      case 'merged':
+        return `#${number} is merged.`;
+      case 'closed':
+        return `#${number} is closed.`;
+      case 'queued':
+        return `#${number} is in the merge queue already.`;
+      case 'blocked': {
+        const why = inTheWay(state.blockers) || 'GitHub says no';
+        return `#${number} can’t merge yet: ${why.charAt(0).toLowerCase()}${why.slice(1)}.`;
+      }
+      case 'noPermission':
+        return `GitHub doesn’t let this account merge into ${state.base}.`;
+      case 'noMethod':
+        return 'The repository allows no merge method.';
+      default:
+        action.reason satisfies never;
+        return 'Lo can’t merge it now.';
+    }
+  }
+  return state.off === null ? undefined : offWords(state.off);
+}
+
+/** The confirmation's title: "Merge #4821 into main?", "Add #4821 to the merge queue for main?" */
+export function confirmTitle(plan: Pick<MergePlan, 'kind' | 'number' | 'base'>): string {
+  return plan.kind === 'enqueue'
+    ? `Add #${plan.number} to the merge queue for ${plan.base}?`
+    : `Merge #${plan.number} into ${plan.base}?`;
+}
+
+/** What the confirmation's main button says. */
+export function confirmLabel(plan: Pick<MergePlan, 'kind' | 'method'>): string {
+  return plan.kind === 'enqueue' ? 'Add to merge queue' : mergeLabel(plan.method ?? 'MERGE');
+}
+
+/** What a queue entry's confirmation says of the method: the queue's settings choose it. */
+export function queueLine(method: Method | null): string {
+  const said = 'The queue’s settings choose the method and the message';
+  return method === null ? `${said}.` : `${said}: ${methodLabel(method).toLowerCase()}.`;
+}
+
+/** What a merge that went says while GitHub runs it. */
+export function pendingLine(job: Pick<JobView, 'kind'>): string {
+  const doing =
+    job.kind === 'enqueue' ? 'GitHub is adding it to the merge queue.' : 'GitHub is merging it.';
+  return `${doing} You can close this; the tab shows how it ends.`;
+}
+
+/** What the toast says once a merge is done: "Merged #4821 into main". Nothing before then. */
+export function doneLine(job: JobView): string | undefined {
+  switch (job.state.kind) {
+    case 'merged':
+      return `Merged #${job.number} into ${job.base}`;
+    case 'enqueued':
+      return `Added #${job.number} to the merge queue for ${job.base}`;
+    case 'sending':
+    case 'pending':
+    case 'refused':
+    case 'unknown':
+      return undefined;
+    default:
+      job.state satisfies never;
+      return undefined;
+  }
+}
+
+/**
+ * What a merge that needs the reader says, first: it was refused, or Lo can't tell how it ended.
+ * Nothing for one that doesn't.
+ */
+export function outcomeTitle(job: JobView): string | undefined {
+  switch (job.state.kind) {
+    case 'refused':
+      return job.kind === 'enqueue'
+        ? `Couldn’t add #${job.number} to the merge queue.`
+        : `Couldn’t merge #${job.number}.`;
+    case 'unknown':
+      return `Lo can’t tell whether #${job.number} merged.`;
+    case 'sending':
+    case 'pending':
+    case 'merged':
+    case 'enqueued':
+      return undefined;
+    default:
+      job.state satisfies never;
+      return undefined;
+  }
+}
+
+/** What follows {@link outcomeTitle}: why, in the core's sentences, and what GitHub showed since. */
+export function outcomeDetail(job: JobView): string {
+  const said: string[] = [];
+  if (job.already) {
+    said.push('GitHub was already merging it, from Lo or elsewhere, so Lo followed that merge.');
+  }
+  if (job.state.kind === 'refused') said.push(job.state.refusal.text);
+  if (job.state.kind === 'unknown') {
+    said.push(job.state.text);
+    if (job.state.shows === 'open') said.push('GitHub shows it open.');
+  }
+  return said.join(' ');
+}
+
+/** What a pending merge's trouble says: why Lo's last question got no answer. */
+export function troubleLine(trouble: string): string {
+  return `Lo couldn’t ask GitHub how it’s going: ${trouble} Lo asks again.`;
 }

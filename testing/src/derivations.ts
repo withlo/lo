@@ -149,4 +149,75 @@ export const DERIVATIONS: readonly Derivation[] = [
       return recorded;
     },
   },
+  {
+    name: 'app_merge_write_polled',
+    from: 'app_merge_write',
+    description:
+      "app_merge_write with GitHub's 304 to a poll of each pull request Lo merged, rozed-dev/e2e#174, #175 and #176, made after the read that saw it closed: the copy of Lo that merged each stopped before it polled again.",
+    derive(recorded) {
+      for (const number of [174, 175, 176]) {
+        const url = `https://api.github.com/repos/rozed-dev/e2e/pulls/${number}`;
+        const closed = recorded.findLast(
+          ({ request, response }) =>
+            request.method === 'GET' &&
+            request.url === url &&
+            request.if_modified_since !== undefined &&
+            response.status === 200,
+        );
+        const since = closed?.response.headers['last-modified'];
+        if (!closed || since === undefined)
+          throw new Error(`the recording never saw #${number} change`);
+        const { 'content-type': _type, ...headers } = closed.response.headers;
+        recorded.push({
+          request: { ...closed.request, if_modified_since: since },
+          response: { status: 304, headers },
+        });
+      }
+      return recorded;
+    },
+  },
+  {
+    name: 'app_merge_write_moved',
+    from: 'app_merge_write',
+    description:
+      "app_merge_write with rozed-dev/e2e#183's polls between its first and the merge answered as the first after the merge, which saw the push: Lo reads the newer push at the first poll after GitHub failed the merge, as when it polls less often than the recording did.",
+    derive(recorded) {
+      const merged = only(
+        recorded,
+        ({ request }) => request.method === 'PUT' && request.url.endsWith('/pulls/183/merge-async'),
+        "#183's merges",
+      );
+      const checks = recorded.flatMap((each, index) =>
+        each.request.operation === 'PullRequestCheck' &&
+        at(each.request.variables, 'number') === 183
+          ? [index]
+          : [],
+      );
+      const after = checks.find((index) => index > merged);
+      const between = checks.filter((index) => index < merged).slice(1);
+      if (after === undefined || between.length === 0) {
+        throw new Error(
+          'the recording polls #183 neither between its first poll and the merge nor after',
+        );
+      }
+      for (const index of between)
+        recorded[index] = answered(recorded[index]!, recorded[after]!.response);
+      return recorded;
+    },
+  },
+  {
+    name: 'app_merge_write_lost',
+    from: 'app_merge_write',
+    description:
+      "app_merge_write with the merge of rozed-dev/e2e#183 answered 502, as when GitHub's gateway gives up whatever it did by then: Lo can't tell whether it merged, and reads the pull request to find out, which says it's open, as GitHub failed that merge.",
+    derive(recorded) {
+      const place = only(
+        recorded,
+        ({ request }) => request.method === 'PUT' && request.url.endsWith('/pulls/183/merge-async'),
+        "#183's merges",
+      );
+      recorded[place] = answered(recorded[place]!, BAD_GATEWAY);
+      return recorded;
+    },
+  },
 ];

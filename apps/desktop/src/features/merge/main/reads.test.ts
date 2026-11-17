@@ -72,6 +72,7 @@ function fakePoller(facts: MergeFacts | Error) {
       return () => changes.delete(listener);
     },
     status: () => status,
+    writesHeldUntil: () => undefined,
     readOnce: (request) => Promise.reject(new Error(`not here: ${String(request)}`)),
   };
   return {
@@ -311,23 +312,27 @@ test('a local copy that can’t tell is asked again at a later read, waiting lon
   expect([1, 2, 3, 10].map(backoff)).toEqual([10_000, 20_000, 40_000, 300_000]);
 });
 
-test('a status read before a failed read, or while GitHub can’t be reached, says why it may be old', async () => {
+test('a status read before a failed read, or while GitHub can’t be reached, says why it may be old, and merging is off while it can’t', async () => {
   const followed = reads();
   followed.followed.follow('t1');
   await settled();
-  const stale = () => {
+  const known = () => {
     const view = followed.followed.current('t1');
-    return view.kind === 'known' ? view.state.stale : 'not known';
+    if (view.kind !== 'known') throw new Error('not known');
+    return view.state;
   };
-  expect(stale()).toBeNull();
+  expect(known().stale).toBeNull();
   followed.fake.fail();
-  expect(stale()).toContain('Not Found');
+  expect(known().stale).toContain('Not Found');
   followed.fake.read(factsOf(), 3);
-  expect(stale()).toBeNull();
+  expect(known().stale).toBeNull();
+  expect(known().off).toBeNull();
   followed.fake.offline('getaddrinfo ENOTFOUND api.github.com');
-  expect(stale()).toBe('GitHub can’t be reached: getaddrinfo ENOTFOUND api.github.com');
+  expect(known().stale).toBe('GitHub can’t be reached: getaddrinfo ENOTFOUND api.github.com');
+  expect(known().off).toEqual({ kind: 'offline' });
   followed.fake.offline(undefined);
-  expect(stale()).toBeNull();
+  expect(known().stale).toBeNull();
+  expect(known().off).toBeNull();
 });
 
 test('a view whose account’s poller couldn’t be had starts again once it’s shown, or later', async () => {

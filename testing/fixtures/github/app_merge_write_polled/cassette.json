@@ -1,0 +1,4 @@
+{
+  "description": "app_merge_write with GitHub's 304 to a poll of each pull request Lo merged, rozed-dev/e2e#174, #175 and #176, made after the read that saw it closed: the copy of Lo that merged each stopped before it polled again.",
+  "derived_from": "app_merge_write"
+}

@@ -1,0 +1,30 @@
+{
+  "request": {
+    "method": "PUT",
+    "url": "https://api.github.com/repos/rozed-dev/e2e/pulls/175/merge-async",
+    "body_sha256": "16dc1dde354fd68efa2e6939c82f22ebe4782086520f0006cb44f21cf15160ab"
+  },
+  "response": {
+    "status": 202,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "x-github-api-version-selected": "2022-11-28",
+      "x-ratelimit-limit": "5000",
+      "x-ratelimit-remaining": "4853",
+      "x-ratelimit-reset": "1794878438",
+      "x-ratelimit-resource": "core",
+      "x-ratelimit-used": "147"
+    },
+    "body": {
+      "status": "pending",
+      "details": {
+        "message": "Merge request enqueued.",
+        "uuid": "457469a7-89d3-41ca-b9bb-afa13796987b",
+        "merge_method": "merge",
+        "merge_action": "direct_merge",
+        "expected_head_sha": "34b784de62545d0ed01cac362adcb0e9cdd82af8",
+        "bypass_rules": false
+      }
+    }
+  }
+}

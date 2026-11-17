@@ -20,7 +20,7 @@ import {
   type UncheckedRule,
 } from '@lo/review';
 
-import type { Blocker, Check, MergeState, Reviewer, Unchecked } from '../contract.ts';
+import type { Blocker, Check, MergeState, Off, Reviewer, Unchecked } from '../contract.ts';
 
 /** The longest text the contract takes from GitHub. */
 const TEXT_LIMIT = 1024;
@@ -111,12 +111,14 @@ export interface StatusInput {
   readonly readAt: number;
   /** Why Lo couldn't read it again since, while it can't. */
   readonly stale?: string | undefined;
+  /** Why Lo merges nothing now, whatever GitHub says, if it doesn't. */
+  readonly off?: Off | null | undefined;
   /** The pull request, for its page when GitHub's answer didn't give one. */
   readonly pull: { readonly owner: string; readonly repo: string; readonly number: number };
 }
 
 /** Where the pull request's merge stands, for the window to word. */
-export function stateOf({ facts, local, readAt, stale, pull }: StatusInput): MergeState {
+export function stateOf({ facts, local, readAt, stale, off, pull }: StatusInput): MergeState {
   const snapshot = mergeSnapshot(facts, local);
   const status = mergeStatus(snapshot);
   const url = pullPage(facts, pull.owner, pull.repo, pull.number);
@@ -162,6 +164,7 @@ export function stateOf({ facts, local, readAt, stale, pull }: StatusInput): Mer
     head: commitOf(facts.pullRequest.head),
     readAt: Math.max(0, Math.round(readAt)),
     stale: stale === undefined ? null : text(stale),
+    off: off ?? null,
   };
 }
 

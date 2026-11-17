@@ -3,13 +3,17 @@
 
 import { expect, test } from 'vitest';
 
-import type { MergeState, QueuePlace } from '../contract.ts';
+import type { JobView, MergeState, QueuePlace } from '../contract.ts';
 import {
   ago,
+  cantMerge,
+  doneLine,
   duration,
   headerLine,
   methodNote,
   ordinal,
+  outcomeDetail,
+  outcomeTitle,
   panelHead,
   rowPage,
   rowsOf,
@@ -45,6 +49,7 @@ function state(change: Partial<MergeState> = {}): MergeState {
     head: 'a'.repeat(40),
     readAt: NOW,
     stale: null,
+    off: null,
     ...change,
   };
 }
@@ -348,4 +353,76 @@ test('GitHub’s estimates read in minutes and hours', () => {
     '1 h 5 min',
     '2 h',
   ]);
+});
+
+test('merging is off, with why, offline, while GitHub asks Lo to hold off, signed out, or while it can’t merge', () => {
+  expect(cantMerge(state(), 138)).toBeUndefined();
+  expect(cantMerge(state({ off: { kind: 'offline' } }), 138)).toBe(
+    'Offline. Merging waits until you’re back.',
+  );
+  const at = new Date(2026, 10, 16, 14, 5).getTime();
+  expect(cantMerge(state({ off: { kind: 'paused', until: at } }), 138)).toBe(
+    'GitHub asked Lo to hold off until 14:05. Merge then.',
+  );
+  expect(cantMerge(state({ off: { kind: 'signedOut' } }), 138)).toContain('signed out');
+  expect(
+    cantMerge(
+      state({
+        verdict: 'blocked',
+        action: { kind: 'notPossible', reason: 'blocked' },
+        blockers: [{ kind: 'draft' }],
+      }),
+      142,
+    ),
+  ).toBe('#142 can’t merge yet: draft.');
+  expect(
+    cantMerge(state({ verdict: 'closed', action: { kind: 'notPossible', reason: 'closed' } }), 9),
+  ).toBe('#9 is closed.');
+});
+
+/** A merge of #138 into `main` that went, standing as `now`, with `change`. */
+function job(now: JobView['state'], change: Partial<JobView> = {}): JobView {
+  return {
+    key: '00000000-0000-4000-8000-000000000001',
+    owner: 'rozed-dev',
+    repo: 'e2e',
+    number: 138,
+    login: 'rozed-bot',
+    kind: 'merge',
+    method: 'SQUASH',
+    base: 'main',
+    head: 'a'.repeat(40),
+    already: false,
+    state: now,
+    ...change,
+  };
+}
+
+test('a merge that went says how it ended: done, refused, or not known', () => {
+  expect(doneLine(job({ kind: 'merged' }))).toBe('Merged #138 into main');
+  expect(doneLine(job({ kind: 'enqueued' }, { kind: 'enqueue', base: 'e4/queued' }))).toBe(
+    'Added #138 to the merge queue for e4/queued',
+  );
+  expect(doneLine(job({ kind: 'pending', trouble: null }))).toBeUndefined();
+  const refused = job({
+    kind: 'refused',
+    refusal: { kind: 'conflict', text: 'It conflicts.', rules: [], until: null, newer: null },
+  });
+  expect(outcomeTitle(refused)).toBe('Couldn’t merge #138.');
+  expect(outcomeDetail(refused)).toBe('It conflicts.');
+  const unknown = job(
+    {
+      kind: 'unknown',
+      why: 'noAnswer',
+      text: 'Its answer was lost.',
+      askAgain: false,
+      shows: 'open',
+    },
+    { already: true },
+  );
+  expect(outcomeTitle(unknown)).toBe('Lo can’t tell whether #138 merged.');
+  expect(outcomeDetail(unknown)).toBe(
+    'GitHub was already merging it, from Lo or elsewhere, so Lo followed that merge. Its answer was lost. GitHub shows it open.',
+  );
+  expect(outcomeTitle(job({ kind: 'merged' }))).toBeUndefined();
 });

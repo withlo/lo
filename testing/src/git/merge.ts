@@ -486,6 +486,104 @@ export const MERGE_PULLS = {
     pushed: 'fae597fc69e54dadc50761a647a5594f6015afab',
     githubStack: 173,
   },
+  5: {
+    owner: 'rozed-dev',
+    repo: 'e2e',
+    base: {
+      first: 'a6807a8c13176f1a09255ccc5b8df543b5ab150a',
+      tip: 'b3fe004d917123bd7ca507eda670138554797f43',
+    },
+    overrideBase: '636f111ff1340a7739b467db555534744c7243ae',
+    pulls: {
+      squash: {
+        number: 174,
+        head: '581150f0982c562431a02cc25c505e8a4c95fae1',
+        base: 'merge/5/base',
+      },
+      merge: {
+        number: 175,
+        head: '34b784de62545d0ed01cac362adcb0e9cdd82af8',
+        base: 'merge/5/base',
+      },
+      rebase: {
+        number: 176,
+        head: '427ad2298ecb1cb09a9d76c27dd2adec97e8f9d6',
+        base: 'merge/5/base',
+      },
+      conflict: {
+        number: 177,
+        head: '99798bebd596c60456a5e3be97432ef0ec15a2d2',
+        base: 'merge/5/base',
+      },
+      draft: {
+        number: 178,
+        head: '7677324b9d4317453c82c707b5dcbc9112552ffb',
+        base: 'merge/5/base',
+      },
+      stack1: {
+        number: 179,
+        head: '64da23b6bf10be568e5a37a3fbc5cb3d9006b8ab',
+        base: 'merge/5/base',
+      },
+      stack2: {
+        number: 180,
+        head: 'edea10ae270a99cc1992d06e161a17b948df2ea2',
+        base: 'merge/5/stack-1',
+      },
+      chain1: {
+        number: 181,
+        head: '6c8a37aa4cfb64c05db04eee47aab70d93976c0d',
+        base: 'merge/5/base',
+      },
+      chain2: {
+        number: 182,
+        head: 'a9b48cf6476b89b2f5ee70d34196d2b9ba078521',
+        base: 'merge/5/chain-1',
+      },
+      moved: {
+        number: 183,
+        head: 'ef7863173734b556085633a51b8c51062abaadd2',
+        base: 'merge/5/base',
+      },
+      gatedFailing: {
+        number: 184,
+        head: 'dc08798bec1c11cab657beb809dcb7ac2aacc0a6',
+        base: 'e4/gated',
+      },
+      gatedPassing: {
+        number: 185,
+        head: '021267c33f3db4e47f193d8f72cf2de54b6772d2',
+        base: 'e4/gated',
+      },
+      queuedPass: {
+        number: 186,
+        head: 'a1e9a0a6d4cc517d0f1a431c1820d2650eb60323',
+        base: 'e4/queued',
+      },
+      queuedSlow1: {
+        number: 187,
+        head: 'bd7f1e1b4c328a794633f4c473b356789c04c39b',
+        base: 'e4/queued',
+      },
+      queuedSlow2: {
+        number: 188,
+        head: 'e442334294ccc14d02027ed215266aa876a00f8e',
+        base: 'e4/queued',
+      },
+      queuedFail: {
+        number: 189,
+        head: 'bce2aaa52a7501c0750bf9de39e82af451fe3ed5',
+        base: 'e4/queued',
+      },
+      overridden: {
+        number: 190,
+        head: 'f77f14f607df37c6b22936e5a12df9ede1df6bb5',
+        base: 'merge/5/override',
+      },
+    },
+    pushed: 'e7bf0d66dbce13be9ac908d3af7eb5e49fbbacf3',
+    githubStack: 191,
+  },
   6: {
     owner: 'rozed-dev',
     repo: 'e2e',

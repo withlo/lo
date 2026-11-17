@@ -41,6 +41,7 @@ function state(change: Partial<MergeState> = {}): MergeState {
     head: 'a'.repeat(40),
     readAt: Date.now(),
     stale: null,
+    off: null,
     ...change,
   };
 }

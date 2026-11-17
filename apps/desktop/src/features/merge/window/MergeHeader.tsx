@@ -42,6 +42,7 @@ import {
   togglePanel,
 } from './actions.ts';
 import { main } from './main.ts';
+import { mergeFromPanel } from './merging.ts';
 import { panelRows, queueHead } from './places.ts';
 import { aheads, catchUpQueue, forgetAhead, queues, readAhead } from './queued.ts';
 import { panels, statuses, takeStatus, type Panel } from './store.ts';
@@ -50,6 +51,7 @@ import {
   mergeLabel,
   methodLabel,
   methodNote,
+  offWords,
   panelHead,
   shownMethod,
   type Row,
@@ -237,6 +239,14 @@ function bodyOf(
       </p>,
     );
   }
+  // Why merging is off now, whatever GitHub says.
+  if (state.off !== null && (action.kind === 'merge' || action.kind === 'enqueue')) {
+    parts.push(
+      <p key="off" role="status" className="m-0 pb-8 text-fg-muted text-small">
+        {offWords(state.off)}
+      </p>,
+    );
+  }
   return parts.length > 0 ? parts : undefined;
 }
 
@@ -266,13 +276,20 @@ function footOf(tab: PullTab, state: MergeState, panel: Panel): ReactNode {
       : action.kind === 'enqueue'
         ? undefined
         : { on: false, onChange: () => undefined, keys: AUTO };
+  // Off, with why, while GitHub can't be reached or asked Lo to hold off writing.
+  const off = state.off !== null;
   if (action.kind === 'enqueue') {
     return (
       <MergeFoot
         auto={auto}
         start={<SeeQueue id={tab.id} />}
         method={action.method === null ? undefined : methodLabel(action.method)}
-        primary={{ label: 'Add to merge queue', keys: enter }}
+        primary={{
+          label: 'Add to merge queue',
+          keys: enter,
+          disabled: off,
+          onClick: mergeFromPanel,
+        }}
       />
     );
   }
@@ -280,7 +297,12 @@ function footOf(tab: PullTab, state: MergeState, panel: Panel): ReactNode {
     return (
       <MergeFoot
         auto={auto}
-        primary={{ label: mergeLabel(method ?? action.method), keys: enter }}
+        primary={{
+          label: mergeLabel(method ?? action.method),
+          keys: enter,
+          disabled: off,
+          onClick: mergeFromPanel,
+        }}
       />
     );
   }
