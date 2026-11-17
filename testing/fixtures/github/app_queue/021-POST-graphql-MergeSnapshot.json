@@ -1,0 +1,108 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "https://api.github.com/graphql",
+    "operation": "MergeSnapshot",
+    "variables": {
+      "owner": "rozed-dev",
+      "name": "e2e",
+      "number": 156,
+      "login": "rozed-bot"
+    },
+    "query_sha256": "e03fc87c56396b3facbfb3aba9377826eda2551e1a328d5b5ae94017af5474fa"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "x-ratelimit-limit": "5000",
+      "x-ratelimit-remaining": "4966",
+      "x-ratelimit-reset": "1794879154",
+      "x-ratelimit-resource": "graphql",
+      "x-ratelimit-used": "34"
+    },
+    "body": {
+      "data": {
+        "rateLimit": {
+          "cost": 1,
+          "limit": 5000,
+          "remaining": 4966,
+          "used": 34,
+          "resetAt": "2026-11-17T01:32:34Z"
+        },
+        "repository": {
+          "isArchived": false,
+          "viewerPermission": "ADMIN",
+          "mergeCommitAllowed": true,
+          "squashMergeAllowed": true,
+          "rebaseMergeAllowed": true,
+          "viewerDefaultMergeMethod": "MERGE",
+          "squashMergeCommitTitle": "COMMIT_OR_PR_TITLE",
+          "squashMergeCommitMessage": "COMMIT_MESSAGES",
+          "pullRequest": {
+            "url": "https://github.com/rozed-dev/e2e/pull/156",
+            "state": "OPEN",
+            "isDraft": false,
+            "locked": false,
+            "mergeable": "MERGEABLE",
+            "mergeStateStatus": "CLEAN",
+            "reviewDecision": null,
+            "headRefOid": "fdaac2160f0bcb5773413a8e2583fc86d4f085f1",
+            "baseRefName": "merge/4/base",
+            "author": {
+              "__typename": "User",
+              "login": "rozed-bot"
+            },
+            "viewerDidAuthor": true,
+            "viewerCanMergeAsAdmin": false,
+            "viewerCanEnableAutoMerge": false,
+            "viewerCanDisableAutoMerge": false,
+            "baseRef": {
+              "target": {
+                "__typename": "Commit",
+                "oid": "1b397a8251a1eb40d44c83b820e866983436e40b"
+              },
+              "refUpdateRule": null,
+              "branchProtectionRule": null
+            },
+            "stackEntry": null,
+            "isMergeQueueEnabled": false,
+            "isInMergeQueue": false,
+            "mergeQueueEntry": null,
+            "mergeQueue": null,
+            "autoMergeRequest": null,
+            "latestOpinionatedReviews": {
+              "totalCount": 0,
+              "nodes": []
+            },
+            "reviewRequests": {
+              "totalCount": 0,
+              "nodes": []
+            },
+            "viewerPendingReview": {
+              "nodes": []
+            },
+            "reviewThreads": {
+              "totalCount": 0,
+              "nodes": []
+            },
+            "statusCheckRollup": null,
+            "commits": {
+              "nodes": [
+                {
+                  "commit": {
+                    "oid": "fdaac2160f0bcb5773413a8e2583fc86d4f085f1",
+                    "checkSuites": {
+                      "totalCount": 0,
+                      "nodes": []
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      }
+    }
+  }
+}

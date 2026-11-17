@@ -605,6 +605,42 @@ export const onMerge = test.extend<{
   },
 });
 
+/** The generation of `testing/fixtures/merge.sh`'s pull requests `app_queue` was recorded on. */
+export const QUEUE = MERGE_PULLS[4];
+
+/**
+ * `test`, with Lo signed in as rozed-bot on a replay server that answers from `app_queue`, recorded
+ * from the app on {@link QUEUE}'s pull requests, and fetching from their repository, built on this
+ * machine. Its `launch` starts Lo again on the test's data folder, for a test that restarts it.
+ */
+export const onQueue = test.extend<{ github: ReplayServer; remote: string }>({
+  // oxlint-disable-next-line no-empty-pattern
+  github: async ({}, use) => {
+    const server = await serveReplay('app_queue');
+    await use(server);
+    await server.close();
+  },
+  // oxlint-disable-next-line no-empty-pattern
+  remote: async ({}, use) => {
+    // `merge.sh` builds nothing inside a work tree, so not in the test's output folder.
+    const folder = mkdtempSync(join(tmpdir(), 'lo-queue-'));
+    await use(writeMergeRemote(join(folder, 'remote'), 4));
+    rmSync(folder, { recursive: true, force: true });
+  },
+  launch: async ({ github, remote }, use) => {
+    const tokenFile = base.info().outputPath('token');
+    writeFileSync(tokenFile, `${TOKEN}\n`);
+    await use({
+      args: [appFolder, ...KEYCHAIN],
+      env: {
+        LO_GITHUB: new URL(github.urls.api).origin,
+        LO_TEST_TOKEN_FILE: tokenFile,
+        LO_GIT_REMOTE: remote,
+      },
+    });
+  },
+});
+
 /** The fake language server a test's Lo runs for TypeScript, in place of a real one. */
 export interface TestServers {
   /** What Lo's environment needs to run it: where its manifest is. */

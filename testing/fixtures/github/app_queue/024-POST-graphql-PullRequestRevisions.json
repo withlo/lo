@@ -1,0 +1,97 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "https://api.github.com/graphql",
+    "operation": "PullRequestRevisions",
+    "variables": {
+      "owner": "rozed-dev",
+      "name": "e2e",
+      "number": 156,
+      "login": "rozed-bot",
+      "first": 100,
+      "timelineAfter": null,
+      "reviewsAfter": null
+    },
+    "query_sha256": "065c99fee8328c49a803d6cddb6df548ac41ab8bf293abd452d6644e04e9e1da"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "x-ratelimit-limit": "5000",
+      "x-ratelimit-remaining": "4965",
+      "x-ratelimit-reset": "1794879154",
+      "x-ratelimit-resource": "graphql",
+      "x-ratelimit-used": "35"
+    },
+    "body": {
+      "data": {
+        "rateLimit": {
+          "cost": 1,
+          "limit": 5000,
+          "remaining": 4965,
+          "used": 35,
+          "resetAt": "2026-11-17T01:32:34Z"
+        },
+        "repository": {
+          "pullRequest": {
+            "createdAt": "2026-11-17T00:20:38Z",
+            "closed": false,
+            "closedAt": null,
+            "merged": false,
+            "headRefName": "merge/4/squash",
+            "headRefOid": "fdaac2160f0bcb5773413a8e2583fc86d4f085f1",
+            "baseRefName": "merge/4/base",
+            "headRepository": {
+              "name": "e2e",
+              "owner": {
+                "__typename": "Organization",
+                "login": "rozed-dev"
+              }
+            },
+            "mergeCommit": null,
+            "timelineItems": {
+              "filteredCount": 0,
+              "pageInfo": {
+                "hasNextPage": false,
+                "endCursor": null
+              },
+              "nodes": []
+            },
+            "reviews": {
+              "totalCount": 0,
+              "pageInfo": {
+                "hasNextPage": false,
+                "endCursor": null
+              },
+              "nodes": []
+            },
+            "viewerLastReview": {
+              "nodes": []
+            },
+            "commits": {
+              "nodes": [
+                {
+                  "commit": {
+                    "oid": "9332e929a486c363a227ffdda92e7412ef3d7a46",
+                    "checkSuites": {
+                      "nodes": []
+                    }
+                  }
+                },
+                {
+                  "commit": {
+                    "oid": "fdaac2160f0bcb5773413a8e2583fc86d4f085f1",
+                    "checkSuites": {
+                      "nodes": []
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      }
+    }
+  }
+}

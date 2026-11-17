@@ -1,0 +1,39 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "https://api.github.com/graphql",
+    "operation": "QueueView",
+    "variables": {
+      "owner": "rozed-dev",
+      "name": "e2e",
+      "branch": "merge/4/base"
+    },
+    "query_sha256": "055c07cbcdfa1961e4e446cecb0d98cd42f0ee615abb90f2745506e147173d8b"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "x-ratelimit-limit": "5000",
+      "x-ratelimit-remaining": "4944",
+      "x-ratelimit-reset": "1794879154",
+      "x-ratelimit-resource": "graphql",
+      "x-ratelimit-used": "56"
+    },
+    "body": {
+      "data": {
+        "rateLimit": {
+          "cost": 1,
+          "limit": 5000,
+          "remaining": 4944,
+          "used": 56,
+          "resetAt": "2026-11-17T01:32:34Z"
+        },
+        "repository": {
+          "viewerPermission": "ADMIN",
+          "mergeQueue": null
+        }
+      }
+    }
+  }
+}

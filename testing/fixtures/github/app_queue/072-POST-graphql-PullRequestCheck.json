@@ -1,0 +1,170 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "https://api.github.com/graphql",
+    "operation": "PullRequestCheck",
+    "variables": {
+      "owner": "rozed-dev",
+      "name": "e2e",
+      "number": 168
+    },
+    "query_sha256": "ca008209e496ac84a5c7317d266f8c0073cbcf8760c30f5896796e361b06bad0"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "x-ratelimit-limit": "5000",
+      "x-ratelimit-remaining": "4950",
+      "x-ratelimit-reset": "1794879154",
+      "x-ratelimit-resource": "graphql",
+      "x-ratelimit-used": "50"
+    },
+    "body": {
+      "data": {
+        "rateLimit": {
+          "cost": 1,
+          "limit": 5000,
+          "remaining": 4950,
+          "used": 50,
+          "resetAt": "2026-11-17T01:32:34Z"
+        },
+        "repository": {
+          "pullRequest": {
+            "updatedAt": "2026-11-17T00:21:38Z",
+            "state": "OPEN",
+            "isDraft": false,
+            "baseRefName": "e4/queued",
+            "baseRefOid": "be76197734f8ee252a269294e7be44c1c5fb8295",
+            "headRefOid": "a5aa57345a74b8ea0c4a88498f9c77b77cd0c0d8",
+            "reviewDecision": null,
+            "mergeStateStatus": "CLEAN",
+            "statusCheckRollup": {
+              "state": "SUCCESS"
+            },
+            "checkCounts": {
+              "contexts": {
+                "checkRunCountsByState": [
+                  {
+                    "state": "ACTION_REQUIRED",
+                    "count": 0
+                  },
+                  {
+                    "state": "CANCELLED",
+                    "count": 0
+                  },
+                  {
+                    "state": "COMPLETED",
+                    "count": 0
+                  },
+                  {
+                    "state": "FAILURE",
+                    "count": 0
+                  },
+                  {
+                    "state": "IN_PROGRESS",
+                    "count": 0
+                  },
+                  {
+                    "state": "NEUTRAL",
+                    "count": 0
+                  },
+                  {
+                    "state": "PENDING",
+                    "count": 0
+                  },
+                  {
+                    "state": "QUEUED",
+                    "count": 0
+                  },
+                  {
+                    "state": "SKIPPED",
+                    "count": 0
+                  },
+                  {
+                    "state": "STALE",
+                    "count": 0
+                  },
+                  {
+                    "state": "STARTUP_FAILURE",
+                    "count": 0
+                  },
+                  {
+                    "state": "SUCCESS",
+                    "count": 1
+                  },
+                  {
+                    "state": "TIMED_OUT",
+                    "count": 0
+                  },
+                  {
+                    "state": "WAITING",
+                    "count": 0
+                  }
+                ],
+                "statusContextCountsByState": [
+                  {
+                    "state": "EXPECTED",
+                    "count": 0
+                  },
+                  {
+                    "state": "ERROR",
+                    "count": 0
+                  },
+                  {
+                    "state": "FAILURE",
+                    "count": 0
+                  },
+                  {
+                    "state": "PENDING",
+                    "count": 0
+                  },
+                  {
+                    "state": "SUCCESS",
+                    "count": 0
+                  }
+                ]
+              }
+            },
+            "mergeQueueEntry": {
+              "state": "MERGEABLE",
+              "position": 2
+            },
+            "timelineItems": {
+              "updatedAt": "2026-11-17T00:53:31Z",
+              "totalCount": 7
+            },
+            "revisionEvents": {
+              "filteredCount": 0
+            },
+            "commits": {
+              "totalCount": 1
+            },
+            "reviews": {
+              "totalCount": 0
+            },
+            "submittedReviews": {
+              "totalCount": 0
+            },
+            "reviewThreads": {
+              "totalCount": 0,
+              "nodes": []
+            },
+            "viewerPendingReview": {
+              "nodes": []
+            },
+            "comments": {
+              "totalCount": 0
+            },
+            "changedFiles": 2,
+            "lastEditedAt": null,
+            "timelineEvents": {
+              "filteredCount": 7,
+              "updatedAt": "2026-11-17T00:53:31Z"
+            }
+          }
+        }
+      }
+    }
+  }
+}
