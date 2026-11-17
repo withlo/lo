@@ -68,6 +68,49 @@ function submittedAs(submitted: Interaction, event: keyof typeof STATES): Intera
   };
 }
 
+/** `recorded`'s one turning on of auto-merge for pull request `number`, by its place. */
+function autoMergeOf(recorded: readonly Interaction[], number: number): number {
+  return only(
+    recorded,
+    (each) =>
+      graphql('EnablePullRequestAutoMerge')(each) &&
+      at(each.response.body, 'data', 'enablePullRequestAutoMerge', 'pullRequest', 'number') ===
+        number,
+    `#${number}'s auto-merge turned on`,
+  );
+}
+
+/**
+ * `recorded` as an account with write access reads it, below admin: every read of what decides a
+ * merge says `WRITE`, and that GitHub doesn't let it merge past the rules.
+ */
+function asWriter(recorded: Interaction[]): Interaction[] {
+  return recorded.map(({ request, response }) => {
+    const { body } = response;
+    const data = at(body, 'data');
+    const repository = at(data, 'repository');
+    const pull = at(repository, 'pullRequest');
+    if (
+      request.operation !== 'MergeSnapshot' ||
+      !isObject(body) ||
+      !isObject(data) ||
+      !isObject(repository) ||
+      !isObject(pull)
+    ) {
+      return { request, response };
+    }
+    const writer = {
+      ...repository,
+      viewerPermission: 'WRITE',
+      pullRequest: { ...pull, viewerCanMergeAsAdmin: false },
+    };
+    return {
+      request,
+      response: { ...response, body: { ...body, data: { ...data, repository: writer } } },
+    };
+  });
+}
+
 export const DERIVATIONS: readonly Derivation[] = [
   {
     name: 'app_comments_write_others',
@@ -218,6 +261,66 @@ export const DERIVATIONS: readonly Derivation[] = [
       );
       recorded[place] = answered(recorded[place]!, BAD_GATEWAY);
       return recorded;
+    },
+  },
+  {
+    name: 'app_merge_auto_not_allowed',
+    from: 'app_merge_auto',
+    description:
+      'app_merge_auto with turning on auto-merge for rozed-dev/e2e#221 refused as GitHub refuses it where "Allow auto-merge" is off: "Auto merge is not allowed for this repository", as recorded in merge_writes_e2e_auto_merge, as when the setting went off after Lo read the pull request.',
+    derive(recorded) {
+      const place = autoMergeOf(recorded, 221);
+      recorded[place] = answered(
+        recorded[place]!,
+        refused(recorded[place]!, 'Auto merge is not allowed for this repository'),
+      );
+      return recorded;
+    },
+  },
+  {
+    name: 'app_merge_auto_now',
+    from: 'app_merge_auto',
+    description:
+      'app_merge_auto with turning on auto-merge for rozed-dev/e2e#221 refused as GitHub refuses it for a pull request nothing blocks: "Pull request Pull request is in clean status", as when it became mergeable after Lo read it. Lo reads it again, which says it waits for an approval still, so Lo offers no merge in its place.',
+    derive(recorded) {
+      const place = autoMergeOf(recorded, 221);
+      recorded[place] = answered(
+        recorded[place]!,
+        refused(recorded[place]!, 'Pull request Pull request is in clean status'),
+      );
+      return recorded;
+    },
+  },
+  {
+    name: 'app_merge_override_writer',
+    from: 'app_merge_override',
+    description:
+      "app_merge_override read as an account with write access, below admin: every read of what decides rozed-dev/e2e#231's merge says WRITE, and that GitHub doesn't let it merge past merge/7/override's rules.",
+    derive: asWriter,
+  },
+  {
+    name: 'app_merge_write_writer',
+    from: 'app_merge_write',
+    description:
+      'app_merge_write read as an account with write access, below admin, whose merge of rozed-dev/e2e#174 GitHub refuses for want of permission, as it does where the base branch restricts who may push: 403, "You\'re not authorized to push to this branch."',
+    derive(recorded) {
+      const writer = asWriter(recorded);
+      const place = only(
+        writer,
+        ({ request }) => request.method === 'PUT' && request.url.endsWith('/pulls/174/merge-async'),
+        "#174's merges",
+      );
+      writer[place] = answered(writer[place]!, {
+        status: 403,
+        headers: { 'content-type': 'application/json; charset=utf-8' },
+        body: {
+          message:
+            "You're not authorized to push to this branch. Visit https://docs.github.com/articles/about-protected-branches/ for more information.",
+          documentation_url: 'https://docs.github.com/rest/pulls/pulls#merge-a-pull-request',
+          status: '403',
+        },
+      });
+      return writer;
     },
   },
 ];

@@ -1,0 +1,4 @@
+{
+  "description": "app_merge_write read as an account with write access, below admin, whose merge of rozed-dev/e2e#174 GitHub refuses for want of permission, as it does where the base branch restricts who may push: 403, \"You're not authorized to push to this branch.\"",
+  "derived_from": "app_merge_write"
+}

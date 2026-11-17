@@ -338,7 +338,15 @@ answer lost. `app_merge_write_moved` is the same with that pull request's polls 
 answered as the first after it, which saw the push, and `app_merge_write_polled` adds GitHub's
 answer to a poll of each merged pull request after the recording's last. `app_merge_enqueue` used it
 too, recorded with writes as Lo added #187 to `e4/queued`'s queue, which was taken out of it after,
-so it didn't merge.
+so it didn't merge. Generation 7 is #210 to #221 and the odd numbers from #223 to #231, with GitHub
+stack #234. `app_merge_auto` used it, recorded with writes as Lo turned on auto-merge for #221 and
+"Merge when ready" for #225 while its `ci` ran again, and `app_merge_auto_off` as Lo turned both off
+before that `ci` passed, so neither merged nor joined the queue, and `e4/queued` is still at
+`MERGE_E4.queued`. `app_merge_override` is Lo merging #231 past its base's rule. #210, #212 and #219
+were merged into `merge/7/base` through the API, to move that base while #211's tab was open: GitHub
+refuses auto-merge for a pull request nothing blocks, which Lo asks for only while it reads GitHub
+as still checking whether it merges cleanly, and GitHub had checked each time before Lo read it. So
+`app_merge_auto_now`, that refusal, is derived.
 
 ## The fake language server
 

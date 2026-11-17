@@ -1,0 +1,4 @@
+{
+  "description": "app_merge_auto with turning on auto-merge for rozed-dev/e2e#221 refused as GitHub refuses it for a pull request nothing blocks: \"Pull request Pull request is in clean status\", as when it became mergeable after Lo read it. Lo reads it again, which says it waits for an approval still, so Lo offers no merge in its place.",
+  "derived_from": "app_merge_auto"
+}

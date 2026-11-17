@@ -351,7 +351,7 @@ function readAs(change: Partial<MergeState> = {}): void {
     position: null,
     blockers: [
       { kind: 'check', check: { name: 'e2e (chromium)', state: 'running', url: null } },
-      { kind: 'check', check: { name: 'typecheck', state: 'yet', url: null } },
+      { kind: 'check', check: { name: 'typecheck', state: 'running', url: null } },
     ],
     autoMerge: null,
     partial: false,
