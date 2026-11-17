@@ -94,6 +94,11 @@ export interface GithubAccess {
   ghToken(login: string): Promise<Token | undefined>;
   /** Calls `listener` with each {@link GithubEvent}, until the returned function is called. */
   onEvent(listener: (event: GithubEvent) => void): () => void;
+  /**
+   * Calls `listener` when an account is added, removed or signed out, or how one is changes, as
+   * when it's signed in again, until the returned function is called.
+   */
+  onChange(listener: () => void): () => void;
 }
 
 export const github = defineService<GithubAccess>('accounts.github');

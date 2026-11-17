@@ -42,6 +42,8 @@ export function stripTab(tab: Tab, views: ReadonlyMap<string, PullView>): StripT
     case 'recent':
     case 'settings':
       return { kind: tab.kind, id: tab.id };
+    case 'queue':
+      return { kind: 'queue', id: tab.id, repo: tab.repo, branch: tab.branch };
     default:
       tab satisfies never;
       throw new Error(`A tab of an unknown kind: ${JSON.stringify(tab)}.`);

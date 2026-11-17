@@ -56,6 +56,29 @@ export type Run = z.output<typeof run>;
 export const stack = z.strictObject({ layers: z.array(pullNumber).min(1), root: z.string() });
 export type Stack = z.output<typeof stack>;
 
+/**
+ * Whether `name` is a branch's name as git allows one (`git check-ref-format --branch`): no control
+ * characters, spaces, `~^:?*[\`, `..`, `//` or `@{`; no part that starts with `.` or ends with
+ * `.lock`; not starting or ending with `/`, nor ending with `.`, and not empty or `@` alone.
+ */
+export function isBranchName(name: string): boolean {
+  if (
+    name === '' ||
+    name === '@' ||
+    name.startsWith('/') ||
+    name.endsWith('/') ||
+    name.endsWith('.')
+  ) {
+    return false;
+  }
+  // oxlint-disable-next-line no-control-regex -- control characters are among what it refuses.
+  if (/[\u0000- \u007f~^:?*[\\]|\.\.|@\{|\/\//.test(name)) return false;
+  return name.split('/').every((part) => !part.startsWith('.') && !part.endsWith('.lock'));
+}
+
+/** A branch's name, as git allows one, and short enough for a ref. */
+export const branchName = z.string().min(1).max(255).refine(isBranchName, 'Not a branch name.');
+
 /** Whether a pull request's owner, repository and number are as a link to it would read them. */
 function isPullRequest({ owner, repo, number }: { owner: string; repo: string; number: number }) {
   try {
@@ -64,6 +87,11 @@ function isPullRequest({ owner, repo, number }: { owner: string; repo: string; n
   } catch {
     return false;
   }
+}
+
+/** Whether a repository's owner and name are as a link to it would read them. */
+function isRepository({ owner, repo }: { owner: string; repo: string }) {
+  return isPullRequest({ owner, repo, number: 1 });
 }
 
 /**
@@ -80,6 +108,8 @@ function isPullRequest({ owner, repo, number }: { owner: string; repo: string; n
  * - `recent`, the pull requests opened recently. It stands in for an empty strip: it's there only
  *   while no other tab is, and it can't be closed.
  * - `settings`, Lo's settings, open in one tab at most.
+ * - `queue`, a repository's merge queues as an account sees them, one branch's at a time: one tab
+ *   for each repository and account, which keeps the branch it shows.
  */
 export const tab = z.discriminatedUnion('kind', [
   z.strictObject({
@@ -95,8 +125,21 @@ export const tab = z.discriminatedUnion('kind', [
   }),
   z.strictObject({ id: tabId, kind: z.literal('recent') }),
   z.strictObject({ id: tabId, kind: z.literal('settings') }),
+  z
+    .strictObject({
+      id: tabId,
+      kind: z.literal('queue'),
+      owner: pullRequest.owner,
+      repo: pullRequest.repo,
+      branch: branchName,
+      login,
+    })
+    .refine(isRepository, 'Not a repository on github.com.'),
 ]);
 export type Tab = z.output<typeof tab>;
+
+/** A repository's merge queues' tab. */
+export type QueueTab = Extract<Tab, { kind: 'queue' }>;
 
 /** Every kind of tab. */
 export type Kind = Tab['kind'];
@@ -206,6 +249,22 @@ export const opening = z.discriminatedUnion('kind', [
   z.strictObject({ kind: z.literal('settings') }),
 ]);
 export type Opening = z.output<typeof opening>;
+
+/**
+ * What a repository's merge queues' tab opens on: the repository, the branch whose queue it shows,
+ * and the account it reads as. Only main opens one, for the feature that shows queues, so the
+ * account is one main chose, never the window.
+ */
+export const queueOpening = z
+  .strictObject({
+    kind: z.literal('queue'),
+    owner: pullRequest.owner,
+    repo: pullRequest.repo,
+    branch: branchName,
+    login,
+  })
+  .refine(isRepository, 'Not a repository on github.com.');
+export type QueueOpening = z.output<typeof queueOpening>;
 
 /**
  * How many tabs the strip shows, the first in the order, while others are folded into its "N

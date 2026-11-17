@@ -327,7 +327,10 @@ head, add them to `recorded_numbers` in the script and to `MERGE_PULLS`, and tak
 `merge.sh --local <folder> <generation> --push`. Generation 1 is rozed-dev/e2e#101 to #117, with
 GitHub stack #118. Its repository didn't allow auto-merge when it was made. Generation 2 is #119 to
 #135, with GitHub stack #136; the merge queue's recordings used it. Generation 3 is #138 to #154,
-with GitHub stack #155; `app_merge` used it.
+with GitHub stack #155; `app_merge` used it. Generation 4 is #156 to #172, with GitHub stack #173;
+`app_queue` used it, recorded while #169 and #168 were tested together in `e4/queued`'s queue and
+#170, its `ci` run again, waited to join it with auto-merge on. Each was taken out of the queue, or
+its auto-merge turned off, after, so none merged and `e4/queued` is still at `MERGE_E4.queued`.
 
 ## The fake language server
 

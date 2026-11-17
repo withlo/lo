@@ -1,0 +1,46 @@
+{
+  "request": {
+    "method": "GET",
+    "url": "https://api.github.com/repos/rozed-dev/e2e/pulls/156/files?per_page=100"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "etag": "W/\"18b1459c07b582a5b3c5370b4cecc0e614dceebc46f305b33c10b22923260441\"",
+      "last-modified": "Tue, 17 Nov 2026 00:20:42 GMT",
+      "x-github-api-version-selected": "2022-11-28",
+      "x-ratelimit-limit": "5000",
+      "x-ratelimit-remaining": "4664",
+      "x-ratelimit-reset": "1794878407",
+      "x-ratelimit-resource": "core",
+      "x-ratelimit-used": "336"
+    },
+    "body": [
+      {
+        "sha": "332b87e2d498ebeea5906e9d20069945d01f8601",
+        "filename": "merge/4/squash/more.md",
+        "status": "added",
+        "additions": 3,
+        "deletions": 0,
+        "changes": 3,
+        "blob_url": "https://github.com/rozed-dev/e2e/blob/fdaac2160f0bcb5773413a8e2583fc86d4f085f1/merge%2F4%2Fsquash%2Fmore.md",
+        "raw_url": "https://github.com/rozed-dev/e2e/raw/fdaac2160f0bcb5773413a8e2583fc86d4f085f1/merge%2F4%2Fsquash%2Fmore.md",
+        "contents_url": "https://api.github.com/repos/rozed-dev/e2e/contents/merge%2F4%2Fsquash%2Fmore.md?ref=fdaac2160f0bcb5773413a8e2583fc86d4f085f1",
+        "patch": "@@ -0,0 +1,3 @@\n+# More\n+\n+A second commit, so GitHub's squash commit lists two."
+      },
+      {
+        "sha": "7cbca06a495dd25df0c4994fa3873c5bb426d8f0",
+        "filename": "merge/4/squash/notes.md",
+        "status": "added",
+        "additions": 3,
+        "deletions": 0,
+        "changes": 3,
+        "blob_url": "https://github.com/rozed-dev/e2e/blob/fdaac2160f0bcb5773413a8e2583fc86d4f085f1/merge%2F4%2Fsquash%2Fnotes.md",
+        "raw_url": "https://github.com/rozed-dev/e2e/raw/fdaac2160f0bcb5773413a8e2583fc86d4f085f1/merge%2F4%2Fsquash%2Fnotes.md",
+        "contents_url": "https://api.github.com/repos/rozed-dev/e2e/contents/merge%2F4%2Fsquash%2Fnotes.md?ref=fdaac2160f0bcb5773413a8e2583fc86d4f085f1",
+        "patch": "@@ -0,0 +1,3 @@\n+# Fixture M4: squash\n+\n+Ready to merge, for a squash."
+      }
+    ]
+  }
+}

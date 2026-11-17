@@ -18,6 +18,7 @@ import {
   isGithubPage,
   oid,
   opening as openingSchema,
+  queueOpening,
   run as runSchema,
   stack as stackSchema,
   viewsOnScreen,
@@ -85,7 +86,7 @@ export default defineFeature(contract, {
       // Checked as a request's input is: what another feature hands over may come from a link.
       open: (opening, as) =>
         tabsOf(context).open(
-          openingSchema.parse(opening),
+          opening.kind === 'queue' ? queueOpening.parse(opening) : openingSchema.parse(opening),
           as === undefined ? undefined : { login: accountLogin.parse(as.login) },
         ),
       // Checked too: the stack's numbers and branch come from GitHub.

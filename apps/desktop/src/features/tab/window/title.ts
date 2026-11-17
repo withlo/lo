@@ -1,5 +1,6 @@
 // The window's title: the pull request on screen's, and where it is in its stack, or the run of
-// its stack's layers on screen as one diff, or Lo's name while another kind of tab is.
+// its stack's layers on screen as one diff, or the merge queue on screen, or Lo's name while
+// another kind of tab is.
 
 import { layerOf, type Tab } from '../contract.ts';
 import { withoutBidi } from './shared.ts';
@@ -41,11 +42,18 @@ export function forRun(repository: string, layers: readonly number[]): string {
   return `${repository}#${layers[0] ?? ''} to #${layers.at(-1) ?? ''} — ${layerCount(layers.length)} as one diff`;
 }
 
+/** `owner/repo — Merge queue · main`, for a repository's merge queue for a branch. */
+export function forQueue(repository: string, branch: string): string {
+  return `${repository} — Merge queue · ${withoutBidi(branch)}`;
+}
+
 /**
  * The window's title while `tab` is on screen: its layer on screen's, and, once the stack it's in
- * is known, where in the stack it is; or the run of the stack's layers it shows as one diff.
+ * is known, where in the stack it is; or the run of the stack's layers it shows as one diff; or the
+ * merge queue it shows.
  */
 export function windowTitle(tab: Tab | undefined): string {
+  if (tab?.kind === 'queue') return forQueue(`${tab.owner}/${tab.repo}`, tab.branch);
   if (tab?.kind !== 'pull') return NO_PULL_REQUEST;
   if (tab.run) {
     const run = forRun(`${tab.owner}/${tab.repo}`, tab.run.layers);

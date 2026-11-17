@@ -21,6 +21,8 @@ import {
   type Moved,
   type Opening,
   type PullState,
+  type QueueOpening,
+  type QueueTab,
   type Run,
   type Stack,
   type Tab,
@@ -32,16 +34,18 @@ import { findLayer, findTab, shows, tabKey, type TabKey } from './pulls.ts';
 export const RECENT: Tab = { id: 'recent', kind: 'recent' };
 
 /**
- * A tab main keeps: a pull request's or Settings'. A pull request's also keeps the account it acts
- * as and its repository's name as GitHub last gave it, which the window isn't sent. Of its layers,
- * only the one on screen is written: its views of the others, and its stack, last while Lo runs.
+ * A tab main keeps: a pull request's, Settings' or a repository's merge queues'. A pull request's
+ * also keeps the account it acts as and its repository's name as GitHub last gave it, which the
+ * window isn't sent. Of its layers, only the one on screen is written: its views of the others, and
+ * its stack, last while Lo runs.
  */
 type Kept =
   | (Extract<Tab, { kind: 'pull' }> & {
       login?: string | undefined;
       repository?: string | undefined;
     })
-  | Extract<Tab, { kind: 'settings' }>;
+  | Extract<Tab, { kind: 'settings' }>
+  | QueueTab;
 type PullTab = Extract<Kept, { kind: 'pull' }>;
 
 /** What's kept with a pull request's tab beyond what the strip shows. */
@@ -70,9 +74,10 @@ export interface TabList {
    * what was opened. A pull request already open, by any name it's known by, shows the tab it
    * opened in, at its layer; else one a tab's stack holds shows the first such tab, at that layer.
    * Settings when it's open shows its tab. A new pull request's tab keeps `as.login` as its
-   * account, when given.
+   * account, when given. A repository's merge queues open for an account shows their tab, at the
+   * branch asked for.
    */
-  open(opening: Opening, as?: { login: string }): string;
+  open(opening: Opening | QueueOpening, as?: { login: string }): string;
   /**
    * Closes `id`, or the tab on screen, with every view it has. Closing the tab on screen shows the
    * one after it, or the one before it at the end of the strip, or Recent once nothing is open.
@@ -269,6 +274,17 @@ export function createTabs(options: TabListOptions): TabList {
           }
           return add({ id: newId(), kind: 'settings' });
         }
+        case 'queue': {
+          const { owner, repo, branch, login } = opening;
+          const index = state.kept.findIndex((tab) => isSameTab(tab, { id: '', ...opening }));
+          const found = state.kept[index];
+          if (found?.kind !== 'queue') {
+            return add({ id: newId(), kind: 'queue', owner, repo, branch, login });
+          }
+          if (found.branch === branch) show(found.id);
+          else commit({ kept: state.kept.with(index, { ...found, branch }), active: found.id });
+          return found.id;
+        }
         default:
           opening satisfies never;
           throw new Error(`There's no kind of tab for ${JSON.stringify(opening)}.`);
@@ -432,7 +448,7 @@ function shown(tab: Kept): Tab {
 function load(database: Database, log: (message: string) => void): State {
   const rows = database
     .prepare(
-      'SELECT id, kind, owner, repo, number, title, state, active, login, repository, layer FROM tab_tabs ORDER BY position, id',
+      'SELECT id, kind, owner, repo, number, title, state, active, login, repository, layer, branch FROM tab_tabs ORDER BY position, id',
     )
     .all();
   const kept: Kept[] = [];
@@ -467,8 +483,19 @@ function keyOf(tab: PullTab): TabKey {
   return { ...key, canonical: { owner: canonicalOwner, repo: canonicalRepo } };
 }
 
-/** Whether `a` and `b` hold the same thing: both Settings, or the same pull request. */
+/** Whether `one` and `other` are the same name on GitHub, which ignores case in names. */
+function sameName(one: string, other: string): boolean {
+  return one.toLowerCase() === other.toLowerCase();
+}
+
+/**
+ * Whether `a` and `b` hold the same thing: both Settings, the same pull request, or the same
+ * repository's merge queues as the same account.
+ */
 function isSameTab(a: Kept, b: Kept): boolean {
+  if (a.kind === 'queue' && b.kind === 'queue') {
+    return sameName(a.owner, b.owner) && sameName(a.repo, b.repo) && sameName(a.login, b.login);
+  }
   if (a.kind !== 'pull' || b.kind !== 'pull') return a.kind === b.kind;
   const { owner, repo, number } = a;
   return shows(tabKey({ owner, repo, number }), b);
@@ -480,7 +507,11 @@ function isSameTab(a: Kept, b: Kept): boolean {
  * made at first.
  */
 function readRow(row: Row): Kept | undefined {
-  const { id, kind, owner, repo, number, title, state, login, repository, layer } = row;
+  const { id, kind, owner, repo, number, title, state, login, repository, layer, branch } = row;
+  if (kind === 'queue') {
+    const read = tabSchema.safeParse({ id, kind, owner, repo, branch, login });
+    return read.success && read.data.kind === 'queue' ? read.data : undefined;
+  }
   if (kind === 'pull' && !openingSchema.safeParse({ kind, owner, repo, number }).success) {
     return undefined;
   }
@@ -520,41 +551,69 @@ function save(database: Database, { kept, active }: State): void {
   database.transaction(() => {
     database.prepare('DELETE FROM tab_tabs').run();
     const insert = database.prepare(
-      'INSERT INTO tab_tabs (id, position, kind, owner, repo, number, title, state, active, login, repository, layer) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      'INSERT INTO tab_tabs (id, position, kind, owner, repo, number, title, state, active, login, repository, layer, branch) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
     );
     kept.forEach((tab, position) => {
       const onScreen = tab.id === active ? 1 : 0;
-      if (tab.kind === 'pull') {
-        const { id, owner, repo, number, title, state, login, repository, layer } = tab;
-        insert.run(
-          id,
-          position,
-          'pull',
-          owner,
-          repo,
-          number,
-          title ?? null,
-          state ?? null,
-          onScreen,
-          login ?? null,
-          repository ?? null,
-          layer ?? null,
-        );
-      } else {
-        insert.run(
-          tab.id,
-          position,
-          tab.kind,
-          null,
-          null,
-          null,
-          null,
-          null,
-          onScreen,
-          null,
-          null,
-          null,
-        );
+      switch (tab.kind) {
+        case 'pull': {
+          const { id, owner, repo, number, title, state, login, repository, layer } = tab;
+          insert.run(
+            id,
+            position,
+            'pull',
+            owner,
+            repo,
+            number,
+            title ?? null,
+            state ?? null,
+            onScreen,
+            login ?? null,
+            repository ?? null,
+            layer ?? null,
+            null,
+          );
+          return;
+        }
+        case 'queue': {
+          const { id, owner, repo, login, branch } = tab;
+          insert.run(
+            id,
+            position,
+            'queue',
+            owner,
+            repo,
+            null,
+            null,
+            null,
+            onScreen,
+            login,
+            null,
+            null,
+            branch,
+          );
+          return;
+        }
+        case 'settings':
+          insert.run(
+            tab.id,
+            position,
+            tab.kind,
+            null,
+            null,
+            null,
+            null,
+            null,
+            onScreen,
+            null,
+            null,
+            null,
+            null,
+          );
+          return;
+        default:
+          tab satisfies never;
+          throw new Error(`A tab of an unknown kind: ${JSON.stringify(tab)}.`);
       }
     });
   });

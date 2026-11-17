@@ -1,0 +1,170 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "https://api.github.com/graphql",
+    "operation": "QueueWaiting",
+    "variables": {
+      "owner": "rozed-dev",
+      "name": "e2e",
+      "branch": "merge/4/base"
+    },
+    "query_sha256": "7c6feb331183f556c7bc9f8b62a8f8e57c85390ded49cb8b425a687e53037236"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "x-ratelimit-limit": "5000",
+      "x-ratelimit-remaining": "4876",
+      "x-ratelimit-reset": "1794878408",
+      "x-ratelimit-resource": "graphql",
+      "x-ratelimit-used": "124"
+    },
+    "body": {
+      "data": {
+        "rateLimit": {
+          "cost": 1,
+          "limit": 5000,
+          "remaining": 4876,
+          "used": 124,
+          "resetAt": "2026-11-17T01:20:08Z"
+        },
+        "repository": {
+          "pullRequests": {
+            "totalCount": 8,
+            "nodes": [
+              {
+                "id": "PR_kwDOVleUfc8AAAABPsDbTw",
+                "number": 165,
+                "title": "Fixture M4: its head moves",
+                "url": "https://github.com/rozed-dev/e2e/pull/165",
+                "headRefOid": "9776c43e82177ab014eca0c3ec133d66b9389d90",
+                "isInMergeQueue": false,
+                "viewerDidAuthor": true,
+                "author": {
+                  "__typename": "User",
+                  "login": "rozed-bot"
+                },
+                "reviewDecision": null,
+                "statusCheckRollup": null,
+                "autoMergeRequest": null
+              },
+              {
+                "id": "PR_kwDOVleUfc8AAAABPsDUKg",
+                "number": 163,
+                "title": "Fixture M4: chain, bottom layer",
+                "url": "https://github.com/rozed-dev/e2e/pull/163",
+                "headRefOid": "bdf876f3743df75bd986a2920bf9f2560889911e",
+                "isInMergeQueue": false,
+                "viewerDidAuthor": true,
+                "author": {
+                  "__typename": "User",
+                  "login": "rozed-bot"
+                },
+                "reviewDecision": null,
+                "statusCheckRollup": null,
+                "autoMergeRequest": null
+              },
+              {
+                "id": "PR_kwDOVleUfc8AAAABPsDMPA",
+                "number": 161,
+                "title": "Fixture M4: stack, first layer",
+                "url": "https://github.com/rozed-dev/e2e/pull/161",
+                "headRefOid": "5e954f5a6e714e61521ae86b73d093f660a1129a",
+                "isInMergeQueue": false,
+                "viewerDidAuthor": true,
+                "author": {
+                  "__typename": "User",
+                  "login": "rozed-bot"
+                },
+                "reviewDecision": null,
+                "statusCheckRollup": null,
+                "autoMergeRequest": null
+              },
+              {
+                "id": "PR_kwDOVleUfc8AAAABPsDI-Q",
+                "number": 160,
+                "title": "Fixture M4: a draft",
+                "url": "https://github.com/rozed-dev/e2e/pull/160",
+                "headRefOid": "d168853e0a03ed8931e31a8cbe90ffd672c11725",
+                "isInMergeQueue": false,
+                "viewerDidAuthor": true,
+                "author": {
+                  "__typename": "User",
+                  "login": "rozed-bot"
+                },
+                "reviewDecision": null,
+                "statusCheckRollup": null,
+                "autoMergeRequest": null
+              },
+              {
+                "id": "PR_kwDOVleUfc8AAAABPsDFJA",
+                "number": 159,
+                "title": "Fixture M4: conflicts with its base",
+                "url": "https://github.com/rozed-dev/e2e/pull/159",
+                "headRefOid": "ba353a6429854af69e4ae9ec88f8b15d3f804d14",
+                "isInMergeQueue": false,
+                "viewerDidAuthor": true,
+                "author": {
+                  "__typename": "User",
+                  "login": "rozed-bot"
+                },
+                "reviewDecision": null,
+                "statusCheckRollup": null,
+                "autoMergeRequest": null
+              },
+              {
+                "id": "PR_kwDOVleUfc8AAAABPsDBzg",
+                "number": 158,
+                "title": "Fixture M4: rebase and merge",
+                "url": "https://github.com/rozed-dev/e2e/pull/158",
+                "headRefOid": "92f3492bf9b3346de28306ae88014fb94f4f8ae0",
+                "isInMergeQueue": false,
+                "viewerDidAuthor": true,
+                "author": {
+                  "__typename": "User",
+                  "login": "rozed-bot"
+                },
+                "reviewDecision": null,
+                "statusCheckRollup": null,
+                "autoMergeRequest": null
+              },
+              {
+                "id": "PR_kwDOVleUfc8AAAABPsC9iQ",
+                "number": 157,
+                "title": "Fixture M4: merge commit",
+                "url": "https://github.com/rozed-dev/e2e/pull/157",
+                "headRefOid": "924f211c75df157304e4d22fe0f710ee863a334b",
+                "isInMergeQueue": false,
+                "viewerDidAuthor": true,
+                "author": {
+                  "__typename": "User",
+                  "login": "rozed-bot"
+                },
+                "reviewDecision": null,
+                "statusCheckRollup": null,
+                "autoMergeRequest": null
+              },
+              {
+                "id": "PR_kwDOVleUfc8AAAABPsC5Pw",
+                "number": 156,
+                "title": "Fixture M4: squash and merge",
+                "url": "https://github.com/rozed-dev/e2e/pull/156",
+                "headRefOid": "fdaac2160f0bcb5773413a8e2583fc86d4f085f1",
+                "isInMergeQueue": false,
+                "viewerDidAuthor": true,
+                "author": {
+                  "__typename": "User",
+                  "login": "rozed-bot"
+                },
+                "reviewDecision": null,
+                "statusCheckRollup": null,
+                "autoMergeRequest": null
+              }
+            ]
+          }
+        }
+      }
+    }
+  }
+}

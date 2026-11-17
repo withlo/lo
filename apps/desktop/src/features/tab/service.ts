@@ -1,7 +1,7 @@
 import type { Repo } from '@lo/git';
 
 import { defineService } from '../../main/services.ts';
-import type { Acting, LocalState, Opening, Stack, Tabs } from './contract.ts';
+import type { Acting, LocalState, Opening, QueueOpening, Stack, Tabs } from './contract.ts';
 
 /**
  * A view of a pull request's tab, as features in main that show what's in it follow it: the tab's
@@ -79,9 +79,11 @@ export interface TabService {
    * request already open, by any name it's known by, shows the tab it opened in, at its layer; else
    * one a tab's stack holds ({@link TabService.setLayers}) shows the first such tab, at that layer.
    * Settings when it's open shows its tab. A new pull request's tab acts as `as.login` when given,
-   * an account that can see its repository, and otherwise works out its account itself.
+   * an account that can see its repository, and otherwise works out its account itself. A
+   * repository's merge queues open in one tab for each repository and account, which shows the
+   * branch asked for: the tab open for them shows it, else a new one does.
    */
-  open(opening: Opening, as?: { login: string }): string;
+  open(opening: Opening | QueueOpening, as?: { login: string }): string;
   /**
    * Keeps the stack the pull request's tab of view `id` holds, `undefined` once it holds none, so a
    * link to any of its layers shows that tab, at that layer, and the window's title says where in

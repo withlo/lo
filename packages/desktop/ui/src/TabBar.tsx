@@ -11,10 +11,11 @@ import {
   type RefObject,
 } from 'react';
 
+import { withoutBidi } from './controls.ts';
 import { Skeleton, Spinner } from './Spinner.tsx';
 
 /** A tab in the strip: a pull request's (or a whole stack's), or one of Lo's own. */
-export type Tab = PullTab | RecentTab | SettingsTab;
+export type Tab = PullTab | RecentTab | SettingsTab | QueueTab;
 
 /** A pull request, or a whole stack, open in a tab. */
 export interface PullTab {
@@ -46,6 +47,16 @@ export interface RecentTab {
 export interface SettingsTab {
   kind: 'settings';
   id: string;
+}
+
+/** A repository's merge queue for one branch. */
+export interface QueueTab {
+  kind: 'queue';
+  id: string;
+  /** The repository's name, without its owner. */
+  repo: string;
+  /** The branch whose queue it shows. */
+  branch: string;
 }
 
 export interface TabBarProps {
@@ -670,7 +681,7 @@ function MoreTabs({
 }
 
 /** A tab as words, for typing ahead in the menu of tabs that don't fit. */
-function labelOf(item: Tab): string {
+export function labelOf(item: Tab): string {
   switch (item.kind) {
     case 'pull':
       return `${item.repo} #${item.number} ${item.title ?? ''}`.trim();
@@ -678,6 +689,8 @@ function labelOf(item: Tab): string {
       return 'Recent pull requests';
     case 'settings':
       return 'Settings';
+    case 'queue':
+      return `${item.repo} Merge queue · ${withoutBidi(item.branch)}`;
     default:
       item satisfies never;
       throw new Error(`A tab of an unknown kind: ${JSON.stringify(item)}.`);
@@ -807,6 +820,20 @@ function TabLabel({ tab: item, selected }: { tab: Tab; selected: boolean }) {
             <path d="M8 1.75v2M8 12.25v2M1.75 8h2M12.25 8h2M3.6 3.6l1.4 1.4M11 11l1.4 1.4M3.6 12.4 5 11M11 5l1.4-1.4" />
           </svg>
           <span className={title}>Settings</span>
+        </>
+      );
+    case 'queue':
+      return (
+        <>
+          <svg
+            className="lo-i lo-i--sm flex-none text-queue"
+            viewBox="0 0 16 16"
+            aria-hidden="true"
+          >
+            <path d="M3 4h10M3 8h10M3 12h6" />
+          </svg>
+          <span className="max-w-1/2 min-w-16 shrink truncate text-fg-muted">{item.repo}</span>
+          <span className={title}>Merge queue · {withoutBidi(item.branch)}</span>
         </>
       );
     default:

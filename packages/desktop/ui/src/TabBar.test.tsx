@@ -7,6 +7,7 @@ import {
   dragOffset,
   dragPlace,
   foldTabs,
+  labelOf,
   slideOf,
   TabBar,
   tabsThatFit,
@@ -156,6 +157,25 @@ describe('TabBar', () => {
     expect(recent).not.toContain('Close tab');
     expect(settings).toContain('Settings');
     expect(settings).toContain('aria-label="Close tab"');
+  });
+
+  it('names a merge queue by its repository and branch, the branch without bidi controls', () => {
+    const markup = renderToStaticMarkup(
+      <TabBar
+        tabs={[{ kind: 'queue', id: 'q', repo: 'atlas-api', branch: 'main\u202E' }]}
+        selected="q"
+      />,
+    );
+    const [queue] = tabsIn(markup);
+    expect(queue).toContain('atlas-api');
+    expect(queue).toContain('Merge queue · main<');
+    expect(queue).toContain('aria-label="Close tab"');
+  });
+
+  it('types ahead to a merge queue in the menu of tabs that don’t fit by its words, without bidi controls', () => {
+    expect(labelOf({ kind: 'queue', id: 'q', repo: 'atlas-api', branch: 'rel\u202Eease' })).toBe(
+      'atlas-api Merge queue · release',
+    );
   });
 });
 

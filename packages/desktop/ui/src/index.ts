@@ -2,6 +2,7 @@ export {
   TabBar,
   type PullTab,
   type RecentTab,
+  type QueueTab,
   type SettingsTab,
   type Tab,
   type TabBarProps,
