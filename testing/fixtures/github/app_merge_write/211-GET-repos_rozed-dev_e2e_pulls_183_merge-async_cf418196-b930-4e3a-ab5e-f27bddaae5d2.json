@@ -1,0 +1,25 @@
+{
+  "request": {
+    "method": "GET",
+    "url": "https://api.github.com/repos/rozed-dev/e2e/pulls/183/merge-async/cf418196-b930-4e3a-ab5e-f27bddaae5d2"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "etag": "W/\"ba7be9f9e935ecf1cee9b897167560fd1d8faa11c3fa0aeae90fdeafea9786e5\"",
+      "x-github-api-version-selected": "2022-11-28",
+      "x-ratelimit-limit": "5000",
+      "x-ratelimit-remaining": "4843",
+      "x-ratelimit-reset": "1794878438",
+      "x-ratelimit-resource": "core",
+      "x-ratelimit-used": "157"
+    },
+    "body": {
+      "status": "failed",
+      "details": {
+        "message": "Pull Request is not mergeable"
+      }
+    }
+  }
+}

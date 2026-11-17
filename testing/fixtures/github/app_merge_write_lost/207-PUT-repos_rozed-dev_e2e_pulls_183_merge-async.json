@@ -1,0 +1,16 @@
+{
+  "request": {
+    "method": "PUT",
+    "url": "https://api.github.com/repos/rozed-dev/e2e/pulls/183/merge-async",
+    "body_sha256": "3c0076595d37a137a45dbd0b991ccd9dfe68c0f320d3b7240a477e6ffc62a2e6"
+  },
+  "response": {
+    "status": 502,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "message": "Server Error"
+    }
+  }
+}

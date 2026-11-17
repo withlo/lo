@@ -7,11 +7,11 @@ import { keyLabels } from '@lo/ui/commands';
 import { useStore } from 'zustand';
 
 import { registry } from '../../../window/commands/registry.ts';
-import { withoutBidi, type BannerSwitch, type PullTab } from '../../tab/window/shared.ts';
+import { usePull, withoutBidi, type BannerSwitch, type PullTab } from '../../tab/window/shared.ts';
 import type { JobView } from '../contract.ts';
 import { openPanel } from './actions.ts';
 import { askAgain, dismissJob, newerLabel, newerOf, seeNewer } from './merging.ts';
-import { jobOf, merging } from './store.ts';
+import { jobOf, merging, statuses } from './store.ts';
 import { outcomeDetail, outcomeTitle } from './words.ts';
 
 /** The merge of `tab`'s pull request whose end needs the reader, unless the dialog shows it. */
@@ -31,13 +31,15 @@ function keyOf(id: string): readonly string[] | undefined {
 }
 
 export function OutcomeBanner({ tab }: { tab: PullTab }) {
-  // Read for their changes.
+  // Read for their changes: the merge, and a newer push read since.
   useStore(merging);
+  useStore(statuses);
+  usePull(tab.id);
   const job = outcomeOf(tab);
   if (!job) return null;
   const actions: BannerAction[] = [];
   if (job.state.kind === 'refused') {
-    const newer = newerOf(tab.id, job.state.refusal);
+    const newer = newerOf(tab.id, job.state.refusal, job.head);
     if (newer) {
       actions.push({
         label: newerLabel(tab.id, newer),

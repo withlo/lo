@@ -78,14 +78,20 @@ export const panels = tabState<Panel>(() => ({
 /**
  * The merge's dialog, in the panel's place:
  *
- * - `planning`: main is planning the merge view `id` offers, for pull request `number`;
+ * - `planning`: main is planning the merge view `id` offers, for pull request `number`, which the
+ *   panel's main button named `label`;
  * - `confirm`: the plan, for the reader to confirm, with `note`, what changed since one before it,
  *   while `sending` the confirmation to main;
  * - `sent`: the plan went, and the merge from it goes as `jobs` says;
  * - `refused`: main refused the plan as it was confirmed, for `refusal`.
  */
 export type MergeDialog =
-  | { readonly kind: 'planning'; readonly id: string; readonly number: number }
+  | {
+      readonly kind: 'planning';
+      readonly id: string;
+      readonly number: number;
+      readonly label: string;
+    }
   | {
       readonly kind: 'confirm';
       readonly plan: MergePlan;

@@ -21,7 +21,7 @@ import { useEffect, useRef, type KeyboardEvent, type ReactNode, type RefObject }
 import { useStore } from 'zustand';
 
 import { registry } from '../../../window/commands/registry.ts';
-import { withoutBidi } from '../../tab/window/shared.ts';
+import { usePull, withoutBidi } from '../../tab/window/shared.ts';
 import { revisionLabel, revisionsOf } from '../../revisions/window/shared.ts';
 import type { JobView, MergePlan, Refusal } from '../contract.ts';
 import {
@@ -33,7 +33,7 @@ import {
   newerOf,
   seeNewer,
 } from './merging.ts';
-import { merging, panels, type MergeDialog } from './store.ts';
+import { merging, panels, statuses, type MergeDialog } from './store.ts';
 import {
   confirmLabel,
   confirmTitle,
@@ -116,7 +116,7 @@ function RefusalCallout({ refusal, title }: { refusal: Refusal; title?: string |
 
 /** "See r5 → r6", for a refusal that names a newer push, else nothing. */
 function newerPrimary(plan: MergePlan, refusal: Refusal): Shown['primary'] {
-  const newer = newerOf(plan.id, refusal);
+  const newer = newerOf(plan.id, refusal, plan.head);
   if (newer === undefined) return undefined;
   return { label: newerLabel(plan.id, newer), run: () => seeNewer(plan.id, newer) };
 }
@@ -220,7 +220,8 @@ function shownOf(dialog: MergeDialog, jobs: (key: string) => JobView | undefined
         title: `Merge #${dialog.number}`,
         step: 'planning',
         close: 'Cancel',
-        primary: undefined,
+        // There from the start, so focus is on it, not on Cancel, when the plan comes.
+        primary: { label: dialog.label, run: () => undefined, busy: true },
         body: (
           <div role="status" className="flex items-center gap-8 text-fg-muted text-small">
             <Spinner />
@@ -281,8 +282,10 @@ function stampNow(): number {
 /** The dialog, open while the store says. */
 export function MergeConfirm() {
   const dialog = useStore(merging, (state) => state.dialog);
-  // Read for its changes: the dialog follows the merge it sent.
+  // Read for their changes: the dialog follows the merge it sent, and a newer push read since.
   useStore(merging, (state) => state.jobs);
+  useStore(statuses);
+  usePull(dialog && dialog.kind !== 'planning' ? dialog.plan.id : '');
   const button = useRef<HTMLButtonElement>(null);
   /** When what the dialog shows now came up: a press before then isn't one for it. */
   const shownAt = useRef(Number.POSITIVE_INFINITY);

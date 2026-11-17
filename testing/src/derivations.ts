@@ -149,4 +149,19 @@ export const DERIVATIONS: readonly Derivation[] = [
       return recorded;
     },
   },
+  {
+    name: 'app_merge_write_lost',
+    from: 'app_merge_write',
+    description:
+      "app_merge_write with the merge of rozed-dev/e2e#183 answered 502, as when GitHub's gateway gives up whatever it did by then: Lo can't tell whether it merged, and reads the pull request to find out, which says it's open, as GitHub failed that merge.",
+    derive(recorded) {
+      const place = only(
+        recorded,
+        ({ request }) => request.method === 'PUT' && request.url.endsWith('/pulls/183/merge-async'),
+        "#183's merges",
+      );
+      recorded[place] = answered(recorded[place]!, BAD_GATEWAY);
+      return recorded;
+    },
+  },
 ];

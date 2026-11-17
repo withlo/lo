@@ -15,7 +15,7 @@ import { installBridge } from '../../../window/test/bridge.ts';
 import type { JobView, MergePlan } from '../contract.ts';
 import feature from './index.ts';
 import { MergeConfirm } from './MergeConfirm.tsx';
-import { heardJob } from './merging.ts';
+import { heardJob, newerFrom } from './merging.ts';
 import { merging } from './store.ts';
 
 const HEAD = 'a'.repeat(40);
@@ -236,4 +236,21 @@ it('forgets the plan on `Esc` before it’s confirmed', async () => {
     key: plan.key,
   });
   expect(confirms()).toBe(0);
+});
+
+it('offers the newer push a refusal names, or one Lo read since a refusal that names none', () => {
+  const refusal = { kind: 'failed', text: 'Pull Request is not mergeable', rules: [], until: null };
+  const NEWER = 'b'.repeat(40);
+  // GitHub's "not mergeable" just after a push names none: only a newer push read since is offered.
+  expect(newerFrom({ ...refusal, newer: null }, HEAD, undefined)).toBeUndefined();
+  expect(newerFrom({ ...refusal, newer: null }, HEAD, HEAD)).toBeUndefined();
+  expect(newerFrom({ ...refusal, newer: null }, HEAD, NEWER)).toEqual({ from: HEAD, to: NEWER });
+  // One that names it offers it, with the newer head as GitHub said, else as Lo read it since.
+  const moved = { ...refusal, kind: 'newerPush', newer: { from: HEAD, to: null } };
+  expect(newerFrom(moved, HEAD, undefined)).toEqual({ from: HEAD, to: undefined });
+  expect(newerFrom(moved, HEAD, NEWER)).toEqual({ from: HEAD, to: NEWER });
+  expect(newerFrom({ ...moved, newer: { from: HEAD, to: 'c'.repeat(40) } }, HEAD, NEWER)).toEqual({
+    from: HEAD,
+    to: 'c'.repeat(40),
+  });
 });

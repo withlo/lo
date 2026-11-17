@@ -1,0 +1,4 @@
+{
+  "description": "app_merge_write with the merge of rozed-dev/e2e#183 answered 502, as when GitHub's gateway gives up whatever it did by then: Lo can't tell whether it merged, and reads the pull request to find out, which says it's open, as GitHub failed that merge.",
+  "derived_from": "app_merge_write"
+}

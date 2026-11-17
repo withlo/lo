@@ -13,7 +13,7 @@ import type { JobView, MergePlan, Refusal } from '../contract.ts';
 import { closePanel, openPanel, opened } from './actions.ts';
 import { main } from './main.ts';
 import { merging, panels, pullKey, statuses, type MergeDialog } from './store.ts';
-import { cantMerge, doneLine, shownMethod } from './words.ts';
+import { cantMerge, doneLine, mergeLabel, shownMethod } from './words.ts';
 
 function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -47,7 +47,14 @@ export function mergeFromPanel(): void {
     return;
   }
   const panel = panels.get(open.id);
-  const planning: MergeDialog = { kind: 'planning', id: open.id, number: tab.number };
+  const { action } = open.state;
+  const method = shownMethod(open.state, panel.method);
+  const planning: MergeDialog = {
+    kind: 'planning',
+    id: open.id,
+    number: tab.number,
+    label: action.kind === 'merge' ? mergeLabel(method ?? action.method) : 'Add to merge queue',
+  };
   closePanel(open.id);
   setDialog(planning);
   const back = (said: string) => {
@@ -59,7 +66,7 @@ export function mergeFromPanel(): void {
   main()
     .plan({
       id: open.id,
-      method: shownMethod(open.state, panel.method) ?? null,
+      method: method ?? null,
       title: panel.title,
       message: panel.message,
     })
@@ -173,25 +180,38 @@ export function askAgain(key: string): void {
     .catch((error: unknown) => notify('Ask GitHub again', messageOf(error)));
 }
 
+/** A newer push than the one a merge was confirmed at: from that head, to the newer one if known. */
+export interface Newer {
+  readonly from: string;
+  readonly to: string | undefined;
+}
+
 /**
- * The newer push `refusal` names, from the head on screen to the newer one: the newer one as
- * GitHub said, else as view `id`'s status or tab has it since. Nothing when Lo has none.
+ * The newer push to offer after `refusal` of a merge of `head`: the one the refusal names, with the
+ * newer head as GitHub said, else as Lo read it since (`latest`). A refusal that names none, such
+ * as GitHub's "not mergeable" just after a push, offers the newer push Lo read since, if any.
  */
-export function newerOf(
-  id: string,
+export function newerFrom(
   refusal: Refusal,
-): { from: string; to: string | undefined } | undefined {
+  head: string,
+  latest: string | undefined,
+): Newer | undefined {
   const { newer } = refusal;
-  if (newer === null) return undefined;
-  if (newer.to !== null) return { from: newer.from, to: newer.to };
+  const since = latest !== undefined && latest !== (newer?.from ?? head) ? latest : undefined;
+  if (newer === null) return since === undefined ? undefined : { from: head, to: since };
+  return { from: newer.from, to: newer.to ?? since };
+}
+
+/** The newer push to offer in view `id` after `refusal` of a merge of `head`, as {@link newerFrom}. */
+export function newerOf(id: string, refusal: Refusal, head: string): Newer | undefined {
   const status = statuses.getState().views.get(id);
-  const head = status?.kind === 'known' ? status.state.head : '';
-  if (head !== '' && head !== newer.from) return { from: newer.from, to: head };
-  return { from: newer.from, to: pullOf(id)?.newer ?? undefined };
+  const read = status?.kind === 'known' ? status.state.head : '';
+  const latest = read !== '' && read !== head ? read : (pullOf(id)?.newer ?? undefined);
+  return newerFrom(refusal, head, latest);
 }
 
 /** "See r5 → r6", or "See the newer push" when Lo can't name both revisions. */
-export function newerLabel(id: string, newer: { from: string; to: string | undefined }): string {
+export function newerLabel(id: string, newer: Newer): string {
   const view = revisionsOf(id);
   const from = revisionLabel(view, newer.from);
   const to = newer.to === undefined ? undefined : revisionLabel(view, newer.to);
@@ -199,7 +219,7 @@ export function newerLabel(id: string, newer: { from: string; to: string | undef
 }
 
 /** Shows what the newer push changed in view `id`: from the head on screen to the newer one. */
-export function seeNewer(id: string, newer: { from: string; to: string | undefined }): void {
+export function seeNewer(id: string, newer: Newer): void {
   setDialog(undefined);
   const { to } = newer;
   if (to === undefined) {
