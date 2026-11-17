@@ -1,0 +1,77 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "https://api.github.com/graphql",
+    "operation": "MergedPullRequests",
+    "variables": {
+      "owner": "rozed-dev",
+      "name": "e2e",
+      "b0": "merge/1/base",
+      "b1": "merge/2/base",
+      "b2": "merge/3/base",
+      "b3": "merge/4/base",
+      "b4": "merge/6/base",
+      "b5": "merge/5/base",
+      "b6": "code/base",
+      "b7": "stack/root",
+      "b8": "app/base",
+      "b9": "comments/base",
+      "first": 5
+    },
+    "query_sha256": "8b17e59a6697df65d96fef132e12626f70283bebeb7f4aaec98a3c753c4a8794"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "x-ratelimit-limit": "5000",
+      "x-ratelimit-remaining": "4912",
+      "x-ratelimit-reset": "1794883246",
+      "x-ratelimit-resource": "graphql",
+      "x-ratelimit-used": "88"
+    },
+    "body": {
+      "data": {
+        "rateLimit": {
+          "cost": 1,
+          "limit": 5000,
+          "remaining": 4912,
+          "used": 88,
+          "resetAt": "2026-11-17T02:40:46Z"
+        },
+        "repository": {
+          "b0": {
+            "nodes": []
+          },
+          "b1": {
+            "nodes": []
+          },
+          "b2": {
+            "nodes": []
+          },
+          "b3": {
+            "nodes": []
+          },
+          "b4": {
+            "nodes": []
+          },
+          "b5": {
+            "nodes": []
+          },
+          "b6": {
+            "nodes": []
+          },
+          "b7": {
+            "nodes": []
+          },
+          "b8": {
+            "nodes": []
+          },
+          "b9": {
+            "nodes": []
+          }
+        }
+      }
+    }
+  }
+}

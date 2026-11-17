@@ -331,6 +331,9 @@ with GitHub stack #155; `app_merge` used it. Generation 4 is #156 to #172, with 
 `app_queue` used it, recorded while #169 and #168 were tested together in `e4/queued`'s queue and
 #170, its `ci` run again, waited to join it with auto-merge on. Each was taken out of the queue, or
 its auto-merge turned off, after, so none merged and `e4/queued` is still at `MERGE_E4.queued`.
+Generation 6 is #192 to #208, with GitHub stack #209. `app_queued` used it, recorded while #205 was
+first in `e4/queued`'s queue and #207 second, and `app_queued_left` as the queue failed #207, whose
+`ci` fails there, and GitHub took it out once rozed-bot had taken #205 out. Neither merged.
 
 ## The fake language server
 
