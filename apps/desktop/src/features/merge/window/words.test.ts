@@ -481,6 +481,8 @@ test('the merge panel’s `⏎` doesn’t merge a chain stacks could make a GitH
   expect(placedWhy({ kind: 'convert', offer: 'These PRs share commits.' })).toBe(
     'These PRs share commits. Make this a GitHub stack, then merge it.',
   );
-  expect(placedWhy({ kind: 'refused', why: 'Merge #137 first.' })).toBe('Merge #137 first.');
+  expect(placedWhy({ kind: 'refused', why: 'Merge #137 first.', again: false })).toBe(
+    'Merge #137 first.',
+  );
   expect(placedWhy({ kind: 'chain', into: 'main', above: [139], reasons: [] })).toBeUndefined();
 });

@@ -68,6 +68,44 @@ function submittedAs(submitted: Interaction, event: keyof typeof STATES): Intera
   };
 }
 
+/** How many branches one lookup of merged pull requests asks about, as Lo pads it. */
+const LOOKUP_BATCH = 10;
+
+/**
+ * A lookup of the merged pull requests from `branches`, as Lo asks it, the batch padded with the
+ * first branch, answered with what the recording last answered for each.
+ */
+function lookedUp(recorded: readonly Interaction[], branches: readonly string[]): Interaction {
+  const lookups = recorded.filter(graphql('MergedPullRequests'));
+  const last = lookups.at(-1);
+  if (!last || !isObject(last.request.variables)) throw new Error('the recording looks up nothing');
+  const answers = new Map<string, Json>();
+  for (const { request, response } of lookups) {
+    for (let slot = 0; slot < LOOKUP_BATCH; slot++) {
+      const branch = at(request.variables, `b${slot}`);
+      const answer = at(response.body, 'data', 'repository', `b${slot}`);
+      if (typeof branch === 'string' && answer !== undefined) answers.set(branch, answer);
+    }
+  }
+  const variables: Record<string, Json> = { ...last.request.variables };
+  const repository: Record<string, Json> = {};
+  for (let slot = 0; slot < LOOKUP_BATCH; slot++) {
+    const branch = branches[slot] ?? branches[0]!;
+    const answer = answers.get(branch);
+    if (answer === undefined) throw new Error(`the recording never looked up ${branch}`);
+    variables[`b${slot}`] = branch;
+    repository[`b${slot}`] = answer;
+  }
+  const data = at(last.response.body, 'data');
+  return {
+    request: { ...last.request, variables },
+    response: {
+      ...last.response,
+      body: { data: { ...(isObject(data) ? data : {}), repository } },
+    },
+  };
+}
+
 export const DERIVATIONS: readonly Derivation[] = [
   {
     name: 'app_comments_write_others',
@@ -203,6 +241,40 @@ export const DERIVATIONS: readonly Derivation[] = [
       for (const index of between)
         recorded[index] = answered(recorded[index]!, recorded[after]!.response);
       return recorded;
+    },
+  },
+  {
+    name: 'app_merge_stack_polled',
+    from: 'app_merge_stack',
+    description:
+      "app_merge_stack with the check of rozed-dev/e2e's open pull requests that GitHub answered before the merge with a new ETag, though none of them had changed, answered as unchanged: Lo here may check them more often before the merge than the recording did, and would otherwise read the list from after the merge before confirming it. And Lo here merges before it looks up again the merged pull requests from the branches its first list left out, e9e/2/base and stack/mroot, so after the merge it looks them up with merge/8/base: that lookup is answered as the recording answered each branch.",
+    derive(recorded) {
+      const merged = only(
+        recorded,
+        ({ request }) => request.method === 'PUT' && request.url.endsWith('/merge-async'),
+        'merges',
+      );
+      const changed = recorded.flatMap(({ request, response }, index) =>
+        index < merged &&
+        request.method === 'GET' &&
+        request.url.includes('/pulls?state=open') &&
+        request.if_none_match !== undefined &&
+        response.status === 200
+          ? [index]
+          : [],
+      );
+      if (changed.length === 0) {
+        throw new Error(
+          'the recording holds no check of the list answered as changed before the merge',
+        );
+      }
+      for (const index of changed) {
+        const check = recorded[index]!;
+        const { 'content-type': _type, link: _link, ...headers } = check.response.headers;
+        const etag = check.request.if_none_match!.replace(/^W\//, '');
+        recorded[index] = answered(check, { status: 304, headers: { ...headers, etag } });
+      }
+      return [...recorded, lookedUp(recorded, ['merge/8/base', 'e9e/2/base', 'stack/mroot'])];
     },
   },
   {

@@ -426,6 +426,19 @@ describe('where a pull request sits is unknown', () => {
     });
     // A stack on a trunk sits on no merged pull request's branch.
     expect(where(view(29, {}, unlooked))).toEqual({ kind: 'alone' });
+    // A GitHub stack's layers are GitHub's to say, wherever its stack sits.
+    const native = repository(
+      [
+        pull(70, 'm30', 'g70', { nativeStack: { stack: 97, position: 1 } }),
+        pull(71, 'g70', 'g71', { nativeStack: { stack: 97, position: 2 } }),
+      ],
+      [{ kind: 'mergedPullRequests' }],
+    );
+    expect(where(view(71, {}, native))).toEqual({
+      kind: 'githubStack',
+      stack: 97,
+      below: [70],
+    });
     // Rulesets that weren't read only add links, which never makes a layer look alone.
     const unruled = repository(pulls, [{ kind: 'rulesets', why: 'Forbidden' }]);
     expect(where(view(31, {}, unruled))).toEqual({ kind: 'alone' });

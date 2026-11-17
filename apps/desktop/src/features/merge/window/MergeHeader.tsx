@@ -132,6 +132,17 @@ function placeAt(state: MergeState): string {
 }
 
 /**
+ * How long the panel waits to ask again where a pull request sits, while listing may settle it: 3 s
+ * the first few times, then 10 s, as when merged pull requests are looked up over several lists.
+ */
+function placeAgain(tries: number): number {
+  return tries < 5 ? 3_000 : 10_000;
+}
+
+/** How many times the panel asks again, while it's open: for 8 minutes or so. */
+const PLACE_TRIES = 50;
+
+/**
  * Asks main where view `id`'s pull request sits, unless it was asked, or is being asked, at `at`.
  * What main can't say leaves the panel as for one alone: `⏎` asks again, and says why.
  */
@@ -434,9 +445,24 @@ export function MergeHeader({ tab }: { tab: PullTab }) {
   const placing =
     panel.open && known !== undefined && known.verdict !== 'merged' && known.verdict !== 'closed';
   const placeKey = known && placeAt(known);
+  // Asked again a while later, while Lo lists the open pull requests again, which may settle it.
+  const [tries, setTries] = useState(0);
+  const unsettled =
+    panel.place.kind === 'read' &&
+    panel.place.placement.kind === 'refused' &&
+    panel.place.placement.again;
   useEffect(() => {
-    if (placing && placeKey !== undefined) readPlace(tab.id, placeKey);
-  }, [placing, placeKey, tab.id]);
+    if (!placing) {
+      setTries(0);
+      return undefined;
+    }
+    if (!unsettled || tries >= PLACE_TRIES) return undefined;
+    const timer = setTimeout(() => setTries((count) => count + 1), placeAgain(tries));
+    return () => clearTimeout(timer);
+  }, [placing, unsettled, tries]);
+  useEffect(() => {
+    if (placing && placeKey !== undefined) readPlace(tab.id, `${placeKey}\n${tries}`);
+  }, [placing, placeKey, tab.id, tries]);
   const line = headerLine(view, now);
   if (!line) return null;
   const keys = keyOf('merge.panel');

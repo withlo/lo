@@ -338,7 +338,12 @@ answer lost. `app_merge_write_moved` is the same with that pull request's polls 
 answered as the first after it, which saw the push, and `app_merge_write_polled` adds GitHub's
 answer to a poll of each merged pull request after the recording's last. `app_merge_enqueue` used it
 too, recorded with writes as Lo added #187 to `e4/queued`'s queue, which was taken out of it after,
-so it didn't merge.
+so it didn't merge. Generation 8 is #222 to #244, with GitHub stack #245. `app_merge_stack` used it,
+recorded with writes as Lo merged #233, the stack's top layer, with #232 below it, as one, into
+`merge/8/base`; `app_merge_stack_polled` adds the answers Lo may ask for that the recording didn't.
+`app_merge_chain` used it too: #230, the draft, was moved onto `merge/8/chain-1` first, so #235, the
+chain's bottom layer, had two layers on it, #236 and #230, and couldn't be made a GitHub stack. It
+was recorded with writes as Lo merged #235 alone and then moved #230 and #236 onto `merge/8/base`.
 
 ## The fake language server
 

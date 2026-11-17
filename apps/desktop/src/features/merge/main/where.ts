@@ -168,8 +168,12 @@ export function where(view: WhereView): Where {
   if (!samePlace(listed, facts)) return unknown({ kind: 'moved', listed }, view);
   const cycle = stacks.cycles.find((each) => each.prs.some((pr) => stack.layers.includes(pr)));
   if (cycle) return unknown({ kind: 'cycle', prs: cycle.prs }, view);
+  // What merges with a GitHub stack's layer is GitHub's to say, and its Stacks API is read again
+  // before the merge: a merged pull request its stack sits on changes none of it.
   const unlooked = stacks.gaps.some((gap) => gap.kind === 'mergedPullRequests');
-  if (unlooked && !trunks.includes(stack.root)) return unknown({ kind: 'lookups' }, view);
+  if (unlooked && !entry && !trunks.includes(stack.root)) {
+    return unknown({ kind: 'lookups' }, view);
+  }
   return readAfresh(view, stacks, trunks, layer) ?? placed(stacks, layer);
 }
 

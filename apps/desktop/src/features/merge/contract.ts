@@ -252,7 +252,8 @@ export type Together = z.output<typeof together>;
  *   makes before it merges any of it;
  * - `chain`: the bottom layer of a chain that can't be a GitHub stack, for `reasons`: it merges
  *   into `into` alone, and then Lo moves the `above` layers on it onto `into`;
- * - `refused`: Lo doesn't merge it from here, for `why`.
+ * - `refused`: Lo doesn't merge it from here, for `why`; `again` when Lo is listing the open pull
+ *   requests again, which may settle it, so asking again soon may say otherwise.
  */
 export const placement = z.discriminatedUnion('kind', [
   z.strictObject({ kind: z.literal('alone') }),
@@ -264,7 +265,7 @@ export const placement = z.discriminatedUnion('kind', [
     above: z.array(number),
     reasons: z.array(words),
   }),
-  z.strictObject({ kind: z.literal('refused'), why: words }),
+  z.strictObject({ kind: z.literal('refused'), why: words, again: z.boolean() }),
 ]);
 export type Placement = z.output<typeof placement>;
 

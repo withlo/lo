@@ -34,8 +34,11 @@ export type Taking =
    * by `plan`, and the layers on it move onto the root once it has.
    */
   | { readonly kind: 'chain'; readonly plan: MergeBottom; readonly reasons: readonly string[] }
-  /** Lo doesn't merge it from here, for `why`. */
-  | { readonly kind: 'refused'; readonly why: string };
+  /**
+   * Lo doesn't merge it from here, for `why`; `again` when Lo is listing the open pull requests
+   * again, which may settle it.
+   */
+  | { readonly kind: 'refused'; readonly why: string; readonly again?: boolean };
 
 /** What {@link takingOf} is worked out from. */
 export interface TakingView {
@@ -88,7 +91,7 @@ export function takingOf(view: TakingView): Taking {
       };
     }
     case 'unknown':
-      return { kind: 'refused', why: where.text };
+      return { kind: 'refused', why: where.text, again: where.listAgain };
     default:
       where satisfies never;
       throw new Error(`a place Lo doesn't know: ${JSON.stringify(where)}`);
@@ -216,7 +219,7 @@ export function placementOf(taking: Taking): Placement {
         reasons: [...taking.reasons],
       };
     case 'refused':
-      return { kind: 'refused', why: taking.why };
+      return { kind: 'refused', why: taking.why, again: taking.again ?? false };
     default:
       taking satisfies never;
       throw new Error(`a merge Lo doesn't know: ${JSON.stringify(taking)}`);

@@ -377,7 +377,7 @@ function stateOf(job: Job): JobState {
 /** The outcome a job ended with, as the merge GitHub was already running when it answered `409`. */
 /** Where Lo doesn't merge a pull request from, for `why`, as the merge panel says it. */
 function notPlaced(why: string): Placement {
-  return { kind: 'refused', why };
+  return { kind: 'refused', why, again: false };
 }
 
 function endedWith(job: Job): Outcome | undefined {

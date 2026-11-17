@@ -1,0 +1,122 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "https://api.github.com/graphql",
+    "operation": "StackLayers",
+    "variables": {
+      "ids": [
+        "PR_kwDOVleUfc8AAAABPuet1w",
+        "PR_kwDOVleUfc8AAAABPuejbA",
+        "PR_kwDOVleUfc8AAAABPuexVw"
+      ]
+    },
+    "query_sha256": "095c3e85eea36b83ab9ae99c7ef12a09b61c598cd065fb1decf711fd952194af"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "x-ratelimit-limit": "5000",
+      "x-ratelimit-remaining": "4784",
+      "x-ratelimit-reset": "1794889860",
+      "x-ratelimit-resource": "graphql",
+      "x-ratelimit-used": "216"
+    },
+    "body": {
+      "data": {
+        "rateLimit": {
+          "cost": 1,
+          "limit": 5000,
+          "remaining": 4784,
+          "used": 216,
+          "resetAt": "2026-11-17T04:31:00Z"
+        },
+        "nodes": [
+          {
+            "__typename": "PullRequest",
+            "id": "PR_kwDOVleUfc8AAAABPuet1w",
+            "number": 235,
+            "state": "OPEN",
+            "headRefOid": "2b43b64f1e5aa796d5b6cc86e40d7fb3c693165a",
+            "reviewDecision": null,
+            "statusCheckRollup": null,
+            "isInMergeQueue": false,
+            "mergeQueueEntry": null,
+            "files": {
+              "totalCount": 1,
+              "nodes": [
+                {
+                  "viewerViewedState": "UNVIEWED"
+                }
+              ]
+            },
+            "reviewThreads": {
+              "totalCount": 0,
+              "nodes": []
+            },
+            "movedFrom": {
+              "nodes": []
+            }
+          },
+          {
+            "__typename": "PullRequest",
+            "id": "PR_kwDOVleUfc8AAAABPuejbA",
+            "number": 230,
+            "state": "OPEN",
+            "headRefOid": "b03c667fb31f5397e14278daac2580f824c998da",
+            "reviewDecision": null,
+            "statusCheckRollup": null,
+            "isInMergeQueue": false,
+            "mergeQueueEntry": null,
+            "files": {
+              "totalCount": 1,
+              "nodes": [
+                {
+                  "viewerViewedState": "UNVIEWED"
+                }
+              ]
+            },
+            "reviewThreads": {
+              "totalCount": 0,
+              "nodes": []
+            },
+            "movedFrom": {
+              "nodes": [
+                {
+                  "__typename": "BaseRefChangedEvent",
+                  "previousRefName": "merge/8/base"
+                }
+              ]
+            }
+          },
+          {
+            "__typename": "PullRequest",
+            "id": "PR_kwDOVleUfc8AAAABPuexVw",
+            "number": 236,
+            "state": "OPEN",
+            "headRefOid": "e6ce3d710f1951f48db99a5b5fd30b7008ec5b83",
+            "reviewDecision": null,
+            "statusCheckRollup": null,
+            "isInMergeQueue": false,
+            "mergeQueueEntry": null,
+            "files": {
+              "totalCount": 1,
+              "nodes": [
+                {
+                  "viewerViewedState": "UNVIEWED"
+                }
+              ]
+            },
+            "reviewThreads": {
+              "totalCount": 0,
+              "nodes": []
+            },
+            "movedFrom": {
+              "nodes": []
+            }
+          }
+        ]
+      }
+    }
+  }
+}

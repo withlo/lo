@@ -8,7 +8,7 @@
 
 import { act, type ReactNode } from 'react';
 import { createRoot } from 'react-dom/client';
-import { beforeAll, expect, it, onTestFinished } from 'vitest';
+import { beforeAll, expect, it, onTestFinished, vi } from 'vitest';
 
 import { createRegistry } from '../../../window/commands/registry.ts';
 import { installBridge } from '../../../window/test/bridge.ts';
@@ -231,4 +231,27 @@ it('says a chain’s bottom layer merges alone, and why it can’t be a GitHub s
   expect(panel()?.textContent).toContain('Then Lo moves #139 onto main, while Lo is open.');
   expect(panel()?.textContent).toContain('This repo has no stacks.');
   expect(primary()?.getAttribute('aria-disabled')).toBeNull();
+});
+
+it('asks again where it sits while Lo lists the open pull requests again', async () => {
+  views.set('t7', { kind: 'known', state: state() });
+  places.set('t7', {
+    kind: 'refused',
+    why: 'Some merged pull requests weren’t looked up yet. Lo is listing the open pull requests again.',
+    again: true,
+  });
+  const page = draw(<MergeHeader tab={tabOf('t7')} />);
+  await until(() => page.querySelector('button') !== null);
+  vi.useFakeTimers({ shouldAdvanceTime: true });
+  onTestFinished(() => {
+    vi.useRealTimers();
+  });
+  act(() => page.querySelector('button')?.click());
+  await until(() => panel()?.textContent?.includes('weren’t looked up yet') === true);
+  places.set('t7', { kind: 'stack', stack: 90, below: [136] });
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(3_000);
+  });
+  await until(() => panel()?.textContent?.includes('GitHub stack #90') === true);
+  expect(primary()?.textContent).toContain('Merge 2 layers');
 });
