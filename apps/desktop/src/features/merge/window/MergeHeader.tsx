@@ -1,11 +1,16 @@
 // The header's merge status, a dot and one line, and the merge panel it opens under it, as `m`
 // does: the verdict and what it merges into, a row for each reason it can't merge, the methods the
-// repository allows, the squash commit's text, and what merging would do.
+// repository allows, the squash commit's text, and what merging would do: with the layers below it
+// in a GitHub stack, or, for a chain that isn't one, after making it one, which `gS` does from here
+// as from anywhere in the tab, or a layer at a time from its bottom one.
 
 import {
   Branch,
+  Button,
+  Callout,
   Checklist,
   CommitText,
+  Key,
   MergeFoot,
   MergeMethods,
   MergePanel,
@@ -26,8 +31,9 @@ import { useStore } from 'zustand';
 
 import { currentMenu, useMenuTarget } from '../../../window/commands/menus.tsx';
 import { registry, useKeys } from '../../../window/commands/registry.ts';
+import stacks from '../../stacks/keys.ts';
 import { usePull, useTabState, withoutBidi, type PullTab } from '../../tab/window/shared.ts';
-import type { MergeState } from '../contract.ts';
+import type { MergeState, Placement } from '../contract.ts';
 import {
   closePanel,
   keepTitleField,
@@ -39,18 +45,23 @@ import {
 } from './actions.ts';
 import { main } from './main.ts';
 import { mergeFromPanel } from './merging.ts';
-import { panels, statuses, takeStatus, type Panel } from './store.ts';
+import { panels, placementOf, statuses, takeStatus, type Panel } from './store.ts';
 import {
   headerLine,
   mergeLabel,
   methodLabel,
   methodNote,
+  numbers,
   offWords,
   panelHead,
+  placedLabel,
   rowsOf,
   shownMethod,
   type Row,
 } from './words.ts';
+
+/** The stacks feature's `gS`, which makes the chain on screen a GitHub stack. */
+const CONVERT = `${stacks.feature}.${'convert' satisfies keyof typeof stacks.commands}`;
 
 /** The first key of command `id`, as this system shows it. */
 function keyOf(id: string): string[] | undefined {
@@ -115,6 +126,100 @@ function readSquash(id: string, at: string): void {
     );
 }
 
+/** Where the place is asked about: at a head, into a base, with a verdict. */
+function placeAt(state: MergeState): string {
+  return `${state.head}\n${state.base}\n${state.verdict}`;
+}
+
+/**
+ * Asks main where view `id`'s pull request sits, unless it was asked, or is being asked, at `at`.
+ * What main can't say leaves the panel as for one alone: `⏎` asks again, and says why.
+ */
+function readPlace(id: string, at: string): void {
+  const now = panels.get(id).place;
+  if (now.kind !== 'none' && now.at === at) return;
+  panels.update(id, (panel) => ({ ...panel, place: { kind: 'reading', at } }));
+  const settle = (placement: Placement | undefined) => {
+    const current = panels.get(id).place;
+    if (current.kind !== 'reading' || current.at !== at) return;
+    panels.update(id, (panel) => ({
+      ...panel,
+      place: placement === undefined ? { kind: 'none' } : { kind: 'read', at, placement },
+    }));
+  };
+  main()
+    .place({ id })
+    .then(settle)
+    .catch((error: unknown) => {
+      console.error('Lo couldn’t ask where the pull request sits:', error);
+      settle(undefined);
+    });
+}
+
+/** Closes the panel and asks to make the chain on screen a GitHub stack, as `gS` does. */
+function convert(id: string): void {
+  closePanel(id);
+  registry().run(CONVERT, { kind: 'none' });
+}
+
+/** What the panel says of where the pull request sits, when that changes what merging does. */
+function placeOf(tab: PullTab, placement: Placement | undefined): ReactNode {
+  switch (placement?.kind) {
+    case undefined:
+    case 'alone':
+      return undefined;
+    case 'stack':
+      return (
+        <p key="place" className="m-0 pb-8 text-fg-muted text-small">
+          {numbers(placement.below)}, below it in GitHub stack #{placement.stack}, merge with it.
+          GitHub merges them together.
+        </p>
+      );
+    case 'convert': {
+      const keys = keyOf(CONVERT);
+      return (
+        <div key="place" className="pb-8">
+          <Callout tone="info">
+            <p className="m-0">{withoutBidi(placement.offer)}</p>
+            <div className="mt-8">
+              <Button size="sm" onClick={() => convert(tab.id)}>
+                Make this a GitHub stack
+                {keys && <Key keys={keys} decorative />}
+              </Button>
+            </div>
+          </Callout>
+        </div>
+      );
+    }
+    case 'chain':
+      return (
+        <div key="place" className="pb-8 text-fg-muted text-small">
+          <p className="m-0">
+            #{tab.number} merges into {withoutBidi(placement.into)} alone. Then Lo moves{' '}
+            {numbers(placement.above)} onto {withoutBidi(placement.into)}, while Lo is open. These
+            PRs can’t be a GitHub stack:
+          </p>
+          <ul className="m-0 ps-16">
+            {placement.reasons.map((reason) => (
+              <li key={reason}>{withoutBidi(reason)}</li>
+            ))}
+          </ul>
+        </div>
+      );
+    case 'refused':
+      return (
+        <div key="place" className="pb-8">
+          <Callout tone="warning" role="status">
+            {withoutBidi(placement.why)}
+          </Callout>
+        </div>
+      );
+    default:
+      placement satisfies never;
+      return undefined;
+  }
+}
+
 /** A row of the reasons, as the checklist draws it, its links opening through main. */
 function itemOf(id: string, row: Row): CheckItem {
   const open = (url: string) => () => openPage(id, url);
@@ -168,6 +273,10 @@ function bodyOf(
   const method = shownMethod(state, panel.method);
   const { action } = state;
   const parts: ReactNode[] = [];
+  const place = placeOf(tab, placementOf(tab.id));
+  if (place !== undefined && (action.kind === 'merge' || action.kind === 'enqueue')) {
+    parts.push(place);
+  }
   if (rows.length > 0) {
     parts.push(
       <div key="reasons" {...menu}>
@@ -239,11 +348,13 @@ function bodyOf(
 }
 
 /** The panel's foot: what merging would do, named for it; nothing while it's queued. */
-function footOf(state: MergeState, panel: Panel): ReactNode {
+function footOf(state: MergeState, panel: Panel, placement: Placement | undefined): ReactNode {
   const { action } = state;
   if (state.verdict === 'queued') return undefined;
   const method = shownMethod(state, panel.method);
   const enter = ENTER;
+  // Where it sits keeps it from merging from here: a chain that becomes a GitHub stack first.
+  const placed = placement?.kind === 'convert' || placement?.kind === 'refused';
   const auto =
     state.autoMerge !== null
       ? { on: true, onChange: () => undefined, keys: AUTO }
@@ -258,9 +369,9 @@ function footOf(state: MergeState, panel: Panel): ReactNode {
         auto={auto}
         method={action.method === null ? undefined : methodLabel(action.method)}
         primary={{
-          label: 'Add to merge queue',
+          label: placedLabel(placement, true, 'Add to merge queue'),
           keys: enter,
-          disabled: off,
+          disabled: off || placed,
           onClick: mergeFromPanel,
         }}
       />
@@ -271,9 +382,9 @@ function footOf(state: MergeState, panel: Panel): ReactNode {
       <MergeFoot
         auto={auto}
         primary={{
-          label: mergeLabel(method ?? action.method),
+          label: placedLabel(placement, false, mergeLabel(method ?? action.method)),
           keys: enter,
-          disabled: off,
+          disabled: off || placed,
           onClick: mergeFromPanel,
         }}
       />
@@ -319,6 +430,13 @@ export function MergeHeader({ tab }: { tab: PullTab }) {
   useEffect(() => {
     if (squashing && at !== undefined) readSquash(tab.id, at);
   }, [squashing, at, tab.id]);
+  // Where it sits, asked as the panel opens on one that can merge, and again when it moves.
+  const placing =
+    panel.open && known !== undefined && known.verdict !== 'merged' && known.verdict !== 'closed';
+  const placeKey = known && placeAt(known);
+  useEffect(() => {
+    if (placing && placeKey !== undefined) readPlace(tab.id, placeKey);
+  }, [placing, placeKey, tab.id]);
   const line = headerLine(view, now);
   if (!line) return null;
   const keys = keyOf('merge.panel');
@@ -396,7 +514,7 @@ function PanelUnder({
       }
       closeKeys={keyOf('merge.close')}
       focusRef={rows.length > 0 ? listRef : undefined}
-      foot={footOf(state, panel)}
+      foot={footOf(state, panel, placementOf(tab.id))}
     >
       {bodyOf(tab, state, panel, rows, { id: list, ref: listRef }, reasonMenu)}
     </MergePanel>

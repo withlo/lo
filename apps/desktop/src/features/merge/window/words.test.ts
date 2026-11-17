@@ -1,12 +1,16 @@
 // How the window words a merge status: the header's line for each kind, the panel's head and
-// reasons, and the methods.
+// reasons, and the methods; and a GitHub stack's merge, as one, and a chain's, a layer at a time.
 
 import { expect, test } from 'vitest';
 
-import type { JobView, MergeState } from '../contract.ts';
+import type { JobView, MergeState, Placement, Progress, Together } from '../contract.ts';
 import {
   ago,
   cantMerge,
+  chainSteps,
+  confirmLabel,
+  confirmTitle,
+  doneDetail,
   doneLine,
   headerLine,
   methodNote,
@@ -14,9 +18,13 @@ import {
   outcomeDetail,
   outcomeTitle,
   panelHead,
+  placedLabel,
+  placedWhy,
   rowPage,
   rowsOf,
+  secondsAgo,
   shownMethod,
+  stackLine,
   steppedMethod,
 } from './words.ts';
 
@@ -338,6 +346,7 @@ function job(now: JobView['state'], change: Partial<JobView> = {}): JobView {
     base: 'main',
     head: 'a'.repeat(40),
     already: false,
+    together: null,
     state: now,
     ...change,
   };
@@ -370,4 +379,108 @@ test('a merge that went says how it ended: done, refused, or not known', () => {
     'GitHub was already merging it, from Lo or elsewhere, so Lo followed that merge. Its answer was lost. GitHub shows it open.',
   );
   expect(outcomeTitle(job({ kind: 'merged' }))).toBeUndefined();
+});
+
+const STACK: Together = {
+  kind: 'stack',
+  stack: 90,
+  below: [
+    { number: 136, title: '', head: 'c'.repeat(40) },
+    { number: 137, title: '', head: 'd'.repeat(40) },
+  ],
+  above: [139],
+};
+
+/** How #90's merge went, its three layers as the Stacks API said. */
+function stacked(landed: number[] | null): Progress {
+  return {
+    kind: 'stack',
+    layers: [136, 137, 138].map((number) => ({ number, title: '', state: 'open' })),
+    above: [139],
+    takenAt: NOW,
+    landed,
+  };
+}
+
+test('a GitHub stack’s merge names its layers', () => {
+  const plan = { kind: 'merge', number: 138, base: 'main', method: 'SQUASH' } as const;
+  expect(confirmTitle({ ...plan, together: STACK })).toBe('Merge 3 layers into main?');
+  expect(confirmLabel({ ...plan, together: STACK })).toBe('Merge 3 layers');
+  expect(confirmTitle({ ...plan, kind: 'enqueue', together: STACK })).toBe(
+    'Add 3 layers to the merge queue for main?',
+  );
+  expect(confirmLabel({ ...plan, together: null })).toBe('Squash and merge');
+  const placed: Placement = { kind: 'stack', stack: 90, below: [136, 137] };
+  expect(placedLabel(placed, false, 'Squash and merge')).toBe('Merge 3 layers');
+  expect(placedLabel(placed, true, 'Add to merge queue')).toBe('Add 3 layers to the merge queue');
+  expect(placedLabel({ kind: 'alone' }, false, 'Squash and merge')).toBe('Squash and merge');
+
+  const going = job({ kind: 'pending', trouble: null }, { together: stacked(null) });
+  if (going.together?.kind !== 'stack') throw new Error('a stack');
+  expect(stackLine(going, going.together)).toBe('Merging 3 layers into main');
+  expect(secondsAgo(NOW - 40_000, NOW)).toBe('40 s ago');
+  expect(doneLine(job({ kind: 'merged' }, { together: stacked(null) }))).toBe(
+    'Merged 3 layers into main',
+  );
+});
+
+test('a GitHub stack’s merge GitHub stopped says which layers went in, if any did', () => {
+  const refusal = { kind: 'failed', text: 'GitHub stopped.', rules: [], until: null, newer: null };
+  const stopped = (landed: number[] | null) =>
+    job({ kind: 'refused', refusal }, { together: stacked(landed) });
+  expect(outcomeTitle(stopped([]))).toBe('Nothing merged.');
+  expect(outcomeDetail(stopped([]))).toBe('GitHub stopped. No layer went in.');
+  expect(outcomeTitle(stopped([136]))).toBe('Merged #136 only.');
+  expect(outcomeDetail(stopped([136]))).toBe(
+    'GitHub stopped. #136 went in all the same, and the layers above it didn’t.',
+  );
+  expect(outcomeDetail(stopped(null))).toBe(
+    'GitHub stopped. Lo couldn’t read which layers went in.',
+  );
+});
+
+/** #138's merge, which went, its chain's run as far as `phase`, saying `text`. */
+function ran(phase: 'moving' | 'done' | 'stopped', text: string | null): JobView {
+  return job(
+    { kind: 'merged' },
+    { together: { kind: 'chain', phase, moves: [], needsRebase: [139], text } },
+  );
+}
+
+test('a chain’s merge a layer at a time lists each move, and says how its run ended', () => {
+  const chain: Extract<Together, { kind: 'chain' }> = {
+    kind: 'chain',
+    before: { pr: 138, from: 'feature', to: 'main' },
+    after: [{ pr: 139, from: 'chain-1', to: 'main' }],
+    needsRebase: [139, 140],
+  };
+  expect(chainSteps({ number: 138, base: 'main' }, chain)).toEqual([
+    {
+      key: 'before',
+      title: 'Move #138 onto main',
+      detail: 'From feature, so it merges under main’s rules',
+    },
+    { key: 'merge', title: 'Merge #138 into main', detail: 'Alone' },
+    { key: 'after-139', title: 'Move #139 onto main', detail: 'From chain-1 · needs rebase' },
+    { key: 'rebase-140', title: '#140 stays on main', detail: 'Needs rebase' },
+  ]);
+
+  expect(doneLine(ran('moving', null))).toBeUndefined();
+  expect(doneLine(ran('done', '#139 now points at main and needs a rebase.'))).toBe(
+    'Merged #138, one layer at a time',
+  );
+  expect(doneDetail(ran('done', '#139 now points at main and needs a rebase.'))).toBe(
+    '#139 now points at main and needs a rebase.',
+  );
+  const stopped = ran('stopped', '#138 merged, but Lo stopped moving the layers on it.');
+  expect(outcomeTitle(stopped)).toBe('Lo stopped moving the layers on #138.');
+  expect(outcomeDetail(stopped)).toBe('#138 merged, but Lo stopped moving the layers on it.');
+});
+
+test('the merge panel’s `⏎` doesn’t merge a chain stacks could make a GitHub stack first', () => {
+  expect(placedWhy({ kind: 'convert', offer: 'These PRs share commits.' })).toBe(
+    'These PRs share commits. Make this a GitHub stack, then merge it.',
+  );
+  expect(placedWhy({ kind: 'refused', why: 'Merge #137 first.' })).toBe('Merge #137 first.');
+  expect(placedWhy({ kind: 'chain', into: 'main', above: [139], reasons: [] })).toBeUndefined();
 });

@@ -4,7 +4,8 @@
 // squash commit's text GitHub would start with; the pages its reasons link, opened in the
 // system's browser; and merging (`./merging.ts`), through the app's one `MergeJobs`, in each pull
 // request's turn among merge writes (`./turns.ts`), which other features take through
-// `merge.writes`.
+// `merge.writes`: a pull request alone, a GitHub stack's layer with the layers below it, or a
+// chain's bottom layer, whose layers above Lo then moves onto the root (`./chains.ts`).
 
 import { GithubError, MergeJobs, squashText } from '@lo/github';
 
@@ -85,6 +86,7 @@ export default defineFeature(contract, {
     dismiss({ key }) {
       merging?.dismiss(key);
     },
+    place: ({ id }) => merges().place(id),
   },
   start({ use, publish, database }) {
     const service = use(tabs);
