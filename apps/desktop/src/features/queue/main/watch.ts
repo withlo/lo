@@ -3,14 +3,22 @@
 // are read every 2 minutes, backing off to every 10. The queues of the other branches it can switch
 // to are counted on a schedule of their own, each once its count is 2 minutes old, backing off the
 // same way. Nothing is read while the tab isn't on screen, or while its account is signed out or
-// gone, and what was read last is kept for when it's back. A queue is a branch's, and read only
-// while shown, so none of it goes through the poller's cache. Nothing here calls Electron.
+// gone, and what was read last is kept for when it's back. An entry a read no longer lists, when it
+// lists every entry, left the queue: why is read once. A queue is a branch's, and read only while
+// shown, so none of it goes through the poller's cache. Nothing here calls Electron.
 
-import type { OpenPullRequestList, QueueView, QueueWaiting, TrunkRuleList } from '@lo/github';
+import {
+  queueViewCutShort,
+  type OpenPullRequestList,
+  type QueueRemoval,
+  type QueueView,
+  type QueueWaiting,
+  type TrunkRuleList,
+} from '@lo/github';
 import type { Stacks } from '@lo/stacks';
 
-import type { QueueState } from '../contract.ts';
-import { countOf, readOf, stacksOf, switchBranches } from './read.ts';
+import type { LeftEntry, QueueState } from '../contract.ts';
+import { countOf, leftOf, readOf, stacksOf, switchBranches, timeOf, type Leaver } from './read.ts';
 
 /** How often the queue on screen is read while reads succeed. */
 export const QUEUE_EVERY = 20_000;
@@ -26,6 +34,8 @@ export const WAITING_EVERY = 120_000;
  * they fail.
  */
 export const WAITING_MOST = 600_000;
+/** How many of those Lo saw leave a branch's queue the tab lists, the latest first. */
+export const LEFT_MOST = 20;
 
 /** Where a merge queue's tab reads from: GitHub, as the tab's account, through its poller. */
 export interface QueueSource {
@@ -33,6 +43,8 @@ export interface QueueSource {
   view(branch: string, signal: AbortSignal): Promise<QueueView>;
   /** The open pull requests into `branch`, with their auto-merge. */
   waiting(branch: string, signal: AbortSignal): Promise<QueueWaiting>;
+  /** Why pull request `number` last left its merge queue. */
+  removal(number: number, signal: AbortSignal): Promise<QueueRemoval>;
   /**
    * The repository's open pull requests and rulesets, as the account's poller last read them, and
    * the stacks found among them.
@@ -142,6 +154,10 @@ export class QueueWatch {
   #failure: string | undefined;
   #waiting: QueueWaiting | undefined;
   #waitingFailed = false;
+  /** Those Lo saw leave each branch's queue, by branch, the latest first. */
+  readonly #left = new Map<string, LeftEntry[]>();
+  /** The pull requests whose leaving is being read, as `<branch>#<number>`. */
+  readonly #leaving = new Set<string>();
   /** Bumped as the branch changes, so a read of the one before is dropped as it answers. */
   #generation = 0;
   readonly #queue = new Cadence(QUEUE_EVERY, QUEUE_MOST);
@@ -174,7 +190,14 @@ export class QueueWatch {
         name,
         count: this.#counts.get(name)?.count ?? null,
       })),
-      read: readOf(this.#view, this.#waiting, this.#waitingFailed, login, stacksOf(stacks)),
+      read: readOf(
+        this.#view,
+        this.#waiting,
+        this.#waitingFailed,
+        login,
+        stacksOf(stacks),
+        this.#left.get(this.#branch),
+      ),
       readAt: this.#readAt ?? null,
       failure:
         this.#held !== undefined
@@ -311,6 +334,7 @@ export class QueueWatch {
     const now = this.#now();
     let wait: number;
     if ('view' in read) {
+      this.#saw(branch, this.#view, read.view, now);
       this.#view = read.view;
       this.#readAt = now;
       this.#failure = undefined;
@@ -322,6 +346,63 @@ export class QueueWatch {
     }
     this.#publish();
     this.#again(this.#queue, wait, () => this.#readQueue());
+  }
+
+  /**
+   * Notes what left `branch`'s queue between `before` and `after`, two reads of it: each entry
+   * `before` listed that `after` doesn't, when `after` lists every entry, left, and why is read once.
+   * Those `after` lists are in the queue again, and are no longer listed as having left.
+   */
+  #saw(branch: string, before: QueueView | undefined, after: QueueView, now: number): void {
+    const listed = new Set(
+      (after.queue?.entries ?? []).flatMap((entry) =>
+        entry.pullRequest ? [entry.pullRequest.number] : [],
+      ),
+    );
+    const left = this.#left.get(branch);
+    if (left?.some((each) => listed.has(each.number))) {
+      this.#left.set(
+        branch,
+        left.filter((each) => !listed.has(each.number)),
+      );
+    }
+    // A read that may not list every entry says nothing of what left.
+    if (before === undefined || queueViewCutShort(after)) return;
+    for (const entry of before.queue?.entries ?? []) {
+      const pull = entry.pullRequest;
+      if (!pull || listed.has(pull.number)) continue;
+      void this.#readLeft(
+        branch,
+        {
+          number: pull.number,
+          title: pull.title,
+          url: pull.url,
+          enqueuedAt: timeOf(entry.enqueuedAt),
+        },
+        now,
+      );
+    }
+  }
+
+  /** Reads once why `leaver` left `branch`'s queue, which Lo saw at `seenAt`, and lists it. */
+  async #readLeft(branch: string, leaver: Leaver, seenAt: number): Promise<void> {
+    const key = `${branch}#${leaver.number}`;
+    if (this.#leaving.has(key)) return;
+    this.#leaving.add(key);
+    let removal: QueueRemoval | undefined;
+    try {
+      removal = await this.#options.source.removal(leaver.number, this.#abort.signal);
+    } catch {
+      // Lo can't tell why it left, which the row says.
+      removal = undefined;
+    }
+    this.#leaving.delete(key);
+    if (this.#stopped) return;
+    const left = leftOf(leaver, removal, seenAt);
+    if (left === undefined) return;
+    const others = (this.#left.get(branch) ?? []).filter((each) => each.number !== left.number);
+    this.#left.set(branch, [left, ...others].slice(0, LEFT_MOST));
+    if (branch === this.#branch) this.#publish();
   }
 
   async #readWaiting(): Promise<void> {

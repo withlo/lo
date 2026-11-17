@@ -1,16 +1,18 @@
 // What a merge queue's tab shows of what main read: the queue's rows, as `@lo/review` puts them in
-// order and groups them, with the queue's settings, and the branches the tab can switch between.
-// Nothing here reads GitHub or calls Electron.
+// order and groups them, with the queue's settings, why each entry Lo saw leave left, and the
+// branches the tab can switch between. Nothing here reads GitHub or calls Electron.
 
 import {
   queueLeftOut,
   type OpenPullRequestList,
+  type QueueRemoval,
   type QueueView,
   type QueueWaiting,
   type TrunkRuleList,
 } from '@lo/github';
 import {
   knownGithubValue,
+  leftQueue,
   outsideCase,
   queueRows,
   type QueueRow,
@@ -19,7 +21,14 @@ import {
 } from '@lo/review';
 import { queueBranches, type Stacks } from '@lo/stacks';
 
-import type { Entry, QueueMethod, QueueRead, WaitingEntry } from '../contract.ts';
+import type {
+  Entry,
+  LeftEntry,
+  LeftWhy,
+  QueueMethod,
+  QueueRead,
+  WaitingEntry,
+} from '../contract.ts';
 
 /** GitHub's merge methods, as the queue's settings name them. */
 const METHODS = ['MERGE', 'SQUASH', 'REBASE'] as const;
@@ -46,7 +55,8 @@ export function methodOf(method: string | undefined): QueueMethod | null {
 }
 
 /** GitHub's time, in milliseconds since the Unix epoch, or null when it can't be read. */
-function timeOf(at: string): number | null {
+export function timeOf(at: string | undefined): number | null {
+  if (at === undefined) return null;
   const parsed = Date.parse(at);
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
 }
@@ -121,6 +131,79 @@ function waitingOf(row: WaitingRow): WaitingEntry {
   };
 }
 
+/** A pull request Lo saw leave a queue: what it showed of it as it was last read there. */
+export interface Leaver {
+  readonly number: number;
+  readonly title: string;
+  readonly url: string;
+  readonly enqueuedAt: number | null;
+}
+
+/** Why the entry `removal` names left, as the tab shows it. */
+function whyOf(
+  removal: QueueRemoval,
+): { why: LeftWhy; at: string | undefined; partial: boolean } | undefined {
+  const found = leftQueue(removal);
+  if (found === undefined) {
+    // Still in the queue, or in it again: it hasn't left.
+    if (removal.inQueue) return undefined;
+    // GitHub lists no removal, though Lo saw it go: Lo can't tell why.
+    return { why: { kind: 'unknown' }, at: undefined, partial: removal.leftOut.length > 0 };
+  }
+  const { at } = found;
+  const partial = found.leftOut;
+  switch (found.kind) {
+    case 'merged':
+    case 'conflict':
+    case 'timedOut':
+      return { why: { kind: found.kind }, at, partial };
+    case 'failedChecks':
+      return {
+        why: {
+          kind: 'failedChecks',
+          checks: found.checks.map((check) => ({ name: check.name, url: check.url ?? null })),
+        },
+        at,
+        partial,
+      };
+    case 'removed':
+      return { why: { kind: 'removed', by: found.by ?? null }, at, partial };
+    case 'other':
+      return { why: { kind: 'other', reason: found.reason ?? null }, at, partial };
+    case 'unknown':
+      return { why: { kind: 'unknown' }, at, partial: true };
+    default:
+      found satisfies never;
+      throw new Error(`A reason for leaving the queue Lo doesn't know: ${JSON.stringify(found)}`);
+  }
+}
+
+/**
+ * What the tab shows of `leaver`, which Lo saw leave the queue at `seenAt`, from `removal`, GitHub's
+ * read of why it left, or none when that read failed, so Lo can't tell why: nothing when it hasn't
+ * left after all, as when it's in the queue again.
+ */
+export function leftOf(
+  leaver: Leaver,
+  removal: QueueRemoval | undefined,
+  seenAt: number,
+): LeftEntry | undefined {
+  const found =
+    removal === undefined
+      ? { why: { kind: 'unknown' as const }, at: undefined, partial: false }
+      : whyOf(removal);
+  if (found === undefined) return undefined;
+  return {
+    number: leaver.number,
+    title: leaver.title,
+    url: leaver.url,
+    at: timeOf(found.at) ?? seenAt,
+    enqueuedAt: leaver.enqueuedAt,
+    why: found.why,
+    partial: found.partial,
+  };
+}
+
 /** No pull requests into a branch, for a queue whose waiting ones haven't been read. */
 function noneWaiting(branch: string): QueueWaiting {
   return { branch, pullRequests: [], total: 0, leftOut: [] };
@@ -129,9 +212,9 @@ function noneWaiting(branch: string): QueueWaiting {
 /**
  * What the tab shows of a branch's queue, as `login` reads it: nothing yet until `view` is read;
  * no queue when GitHub has none for the branch and left none out; else its rows, each with the
- * GitHub stack `stackOf` says it's a layer of, and those waiting to join from `waiting`. Until
- * `waiting` is read none are listed, and when its read failed (`waitingFailed`) the rows say one
- * may be missing.
+ * GitHub stack `stackOf` says it's a layer of, those waiting to join from `waiting`, and those Lo
+ * saw leave it, `left`. Until `waiting` is read none are listed, and when its read failed
+ * (`waitingFailed`) the rows say one may be missing.
  */
 export function readOf(
   view: QueueView | undefined,
@@ -139,6 +222,7 @@ export function readOf(
   waitingFailed: boolean,
   login: string,
   stackOf: StackOf = () => null,
+  left: readonly LeftEntry[] = [],
 ): QueueRead {
   if (view === undefined) return { kind: 'reading' };
   const { queue } = view;
@@ -156,6 +240,7 @@ export function readOf(
     waiting: rows.waiting.map(waitingOf),
     // Not read yet is no sign one is missing: the first read is on its way.
     waitingCutShort: waitingFailed || (waiting !== undefined && rows.waitingCutShort),
+    left: [...left],
   };
 }
 

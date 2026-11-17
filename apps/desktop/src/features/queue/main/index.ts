@@ -1,8 +1,9 @@
 // The merge queue feature in main: it opens a repository's merge queues in a tab of their own, as
 // the account a pull request's tab acts as, and reads the queue of the branch each such tab shows
-// while that tab is on screen, telling the window what it read.
+// while that tab is on screen, and why each entry it saw leave left, telling the window what it
+// read.
 
-import { queueView, queueWaiting, RepoRef, type Poller } from '@lo/github';
+import { PullRef, queueRemoval, queueView, queueWaiting, RepoRef, type Poller } from '@lo/github';
 
 import { IpcError } from '../../../ipc/contract.ts';
 import { defineFeature } from '../../../main/features.ts';
@@ -31,6 +32,11 @@ function sourceFor(access: GithubAccess, stacks: ForestService, tab: QueueTab): 
       (await poller()).readOnce((client) => queueView(client, repo, branch), signal),
     waiting: async (branch, signal) =>
       (await poller()).readOnce((client) => queueWaiting(client, repo, branch), signal),
+    removal: async (number, signal) =>
+      (await poller()).readOnce(
+        (client) => queueRemoval(client, new PullRef(tab.owner, tab.repo, number)),
+        signal,
+      ),
     repository: () => ({
       list: known?.openPullRequests(repo)?.value,
       rules: known?.trunkRules(repo)?.value,

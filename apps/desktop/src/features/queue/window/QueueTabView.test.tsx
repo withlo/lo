@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 // A merge queue's tab, drawn from what main said of it: the queue's settings and the branches it
-// can show, its entries with those tested together grouped, those waiting to join, and what stands
-// in for the queue when the branch has none, or GitHub left part of it out.
+// can show, its entries with those tested together grouped, those waiting to join, those Lo saw
+// leave with why, and what stands in for the queue when the branch has none, or GitHub left part
+// of it out.
 
 import { menuSections, type Registry } from '@lo/ui/commands';
 import { act } from 'react';
@@ -30,8 +31,14 @@ let registry: Registry;
 
 beforeAll(() => {
   Reflect.set(globalThis, 'IS_REACT_ACT_ENVIRONMENT', true);
+  // jsdom lays nothing out, so it has nothing to scroll a row into view in.
+  Element.prototype.scrollIntoView = () => undefined;
   registry = createRegistry(feature.commands, 'mac');
-  bridge = installBridge({ 'queue.state': () => undefined, 'queue.show': () => 'q' });
+  bridge = installBridge({
+    'queue.state': () => undefined,
+    'queue.show': () => 'q',
+    'tab.openExternal': () => undefined,
+  });
 });
 
 afterEach(() => {
@@ -97,6 +104,29 @@ const QUEUE: QueueRead = {
     },
   ],
   waitingCutShort: false,
+  left: [
+    {
+      number: 154,
+      title: 'Fixture M4: queued, fails in the queue',
+      url: 'https://github.com/rozed-dev/e2e/pull/154',
+      at: Date.now() - 5 * 60_000,
+      enqueuedAt: Date.now() - 28 * 60_000,
+      why: {
+        kind: 'failedChecks',
+        checks: [{ name: 'ci', url: 'https://github.com/rozed-dev/e2e/actions/runs/1' }],
+      },
+      partial: false,
+    },
+    {
+      number: 149,
+      title: 'Fixture M4: gone',
+      url: 'https://github.com/rozed-dev/e2e/pull/149',
+      at: Date.now() - 60 * 60_000,
+      enqueuedAt: null,
+      why: { kind: 'unknown' },
+      partial: true,
+    },
+  ],
 };
 
 function render(): HTMLElement {
@@ -129,16 +159,41 @@ describe('a merge queue’s tab', () => {
     expect(tabs[0]?.getAttribute('aria-selected')).toBe('true');
   });
 
-  it('lists the entries, those tested together in a group, then those waiting to join', () => {
+  it('lists the entries, those tested together in a group, then those waiting to join, then those that left', () => {
     act(() => showQueue(stateOf(QUEUE)));
     const host = render();
-    expect(rowsIn(host)).toEqual(['queued-150', 'queued-151', 'queued-152', 'waiting-153']);
+    expect(rowsIn(host)).toEqual([
+      'queued-150',
+      'queued-151',
+      'queued-152',
+      'waiting-153',
+      'left-154',
+      'left-149',
+    ]);
     const group = host.querySelector('[role="rowgroup"][aria-label^="Testing together"]');
     expect(group?.querySelectorAll('[data-key]')).toHaveLength(2);
     const joining = host.querySelector('[role="rowgroup"][aria-label="Waiting to join"]');
     expect(joining?.textContent).toContain('Auto-merge on');
     expect(joining?.textContent).toContain('when checks pass');
     expect(host.querySelector('footer')?.textContent).toContain('Updated just now');
+  });
+
+  it('says why each that left did, its failed check’s run opening on GitHub, and never that one Lo can’t tell about stayed', () => {
+    act(() => showQueue(stateOf(QUEUE)));
+    const host = render();
+    const left = host.querySelector('[role="rowgroup"][aria-label="Left the queue"]');
+    const failed = left?.querySelector('[data-key="left-154"]');
+    expect(failed?.textContent).toContain('removed 5 min ago: ci failed with its group');
+    expect(failed?.textContent).toContain('Checks failed');
+    expect(failed?.textContent).toContain('23 min');
+    const unknown = left?.querySelector('[data-key="left-149"]');
+    expect(unknown?.textContent).toContain('left 1 h ago: Lo can’t tell why');
+    expect(unknown?.textContent).toContain('GitHub left part of why out');
+    act(() => failed?.querySelector('button')?.click());
+    expect(bridge.calls).toContainEqual([
+      'tab.openExternal',
+      { url: 'https://github.com/rozed-dev/e2e/actions/runs/1' },
+    ]);
   });
 
   it('switches branch from the header, through main', () => {
@@ -212,6 +267,7 @@ describe('a row’s right-click menu', () => {
     render();
     expect(listed('queued-150')).toEqual(['queue.open', 'queue.openOnGithub']);
     expect(listed('waiting-153')).toEqual(['queue.open', 'queue.openOnGithub']);
+    expect(listed('left-154')).toEqual(['queue.open', 'queue.openOnGithub']);
   });
 
   it('lists none of them on another list’s rows, as a pull request’s timeline’s', () => {

@@ -159,6 +159,11 @@ export async function openOnGithub(target: RowTarget | NoTarget): Promise<void> 
   await tabs().openExternal({ url }).catch(failed('Open on GitHub'));
 }
 
+/** Opens `url`, a page on GitHub a row links, such as a failed check's run. */
+export function openPage(url: string): void {
+  tabs().openExternal({ url }).catch(failed('Open on GitHub'));
+}
+
 /**
  * The branches the merge queue's tab on screen can show, and the one it shows, if it can show
  * another.

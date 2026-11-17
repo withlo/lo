@@ -69,7 +69,9 @@ export type LeftReason =
   /** Someone took it out. */
   | { kind: 'removed'; by?: string | undefined }
   /** GitHub gave a reason Lo has no word for: its own word. */
-  | { kind: 'other'; word: string };
+  | { kind: 'other'; word: string }
+  /** It left without merging, and Lo can't tell why. */
+  | { kind: 'unknown' };
 
 /** A pull request Lo saw leave the queue while it ran. */
 export interface LeftEntry {
@@ -81,6 +83,8 @@ export interface LeftEntry {
   when: string;
   /** How long it was in the queue: "23 min". */
   inQueue?: string | undefined;
+  /** GitHub left part of why it left out, so there may be more to it. */
+  partial?: boolean | undefined;
 }
 
 export interface QueueTableProps extends Omit<
@@ -137,6 +141,8 @@ function leftState(reason: LeftReason): { word: string; tone: string } {
     case 'removed':
     case 'other':
       return { word: 'Removed', tone: 'text-fg-muted' };
+    case 'unknown':
+      return { word: 'Left', tone: 'text-fg-muted' };
     default:
       reason satisfies never;
       throw new Error(`A reason for leaving the queue Lo doesn't know: ${JSON.stringify(reason)}.`);
@@ -183,6 +189,7 @@ function LeftIcon({ reason }: { reason: LeftReason }) {
         </span>
       );
     case 'other':
+    case 'unknown':
       return (
         <span className={tone}>
           <CheckIcon glyph="unknown" />
@@ -233,6 +240,8 @@ function Why({ entry }: { entry: LeftEntry }) {
           removed {when}: {withoutBidi(reason.word)}
         </>
       );
+    case 'unknown':
+      return <>left {when}: Lo can’t tell why</>;
     default:
       reason satisfies never;
       throw new Error(`A reason for leaving the queue Lo doesn't know: ${JSON.stringify(reason)}.`);
@@ -423,6 +432,7 @@ function LeftRow({
           <span className="lo-num flex-none">#{entry.number}</span>
           <span className="min-w-0">
             <Why entry={entry} />
+            {entry.partial === true && <> · GitHub left part of why out</>}
           </span>
         </span>
       </span>

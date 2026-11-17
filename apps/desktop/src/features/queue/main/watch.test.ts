@@ -1,13 +1,21 @@
 // Reading a merge queue's tab: only while it's on screen and its account is there, the queue every
 // 20 s backing off to every 2 minutes while reads fail, those waiting to join and the other
-// branches' counts every 2 minutes backing off to every 10, and nothing of a branch it no longer
-// shows.
+// branches' counts every 2 minutes backing off to every 10, nothing of a branch it no longer shows,
+// and why each entry Lo saw leave left, read once.
 
-import type { OpenPullRequestList, QueueView, QueueWaiting, TrunkRuleList } from '@lo/github';
+import type {
+  OpenPullRequestList,
+  QueueEntryFacts,
+  QueueRemoval,
+  QueueView,
+  QueueWaiting,
+  TrunkRuleList,
+} from '@lo/github';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { QueueState } from '../contract.ts';
 import {
+  LEFT_MOST,
   QUEUE_EVERY,
   QUEUE_MOST,
   QueueWatch,
@@ -65,6 +73,7 @@ function fakeSource(options: { list?: OpenPullRequestList; rules?: TrunkRuleList
       if (state.failing) throw new Error('GitHub couldn’t be reached.');
       return waitingOf(branch);
     },
+    removal: (number) => Promise.reject(new Error(`#${number} never left the queue.`)),
     repository: () => ({ list: options.list, rules: options.rules }),
   };
   return { source, asked, state };
@@ -343,5 +352,191 @@ describe('a merge queue’s tab', () => {
     await vi.advanceTimersByTimeAsync(10 * 60_000);
     expect(asked).toEqual([]);
     expect(published).toHaveLength(heard);
+  });
+});
+
+/** When the entries the tests read joined their queue. */
+const JOINED = '2026-11-16T11:40:00Z';
+
+/** Pull request `number`'s entry at `position`. */
+function entryOf(number: number, position: number): QueueEntryFacts {
+  return {
+    id: `MQE_${number}`,
+    position,
+    state: 'AWAITING_CHECKS',
+    enqueuedAt: JOINED,
+    estimate: undefined,
+    jump: false,
+    solo: false,
+    enqueuer: 'tess-okafor',
+    base: undefined,
+    tested: undefined,
+    checks: [],
+    pullRequest: {
+      id: `PR_${number}`,
+      number,
+      title: `Pull request ${number}`,
+      url: `https://github.com/o/r/pull/${number}`,
+      head: 'a'.repeat(40),
+      author: 'mira-chen',
+      viewerDidAuthor: false,
+    },
+  };
+}
+
+/** `main`'s queue holding `numbers`, in order, read whole unless `total` says it holds more. */
+function queueOf(
+  numbers: readonly number[],
+  extra: Partial<QueueView> = {},
+  total = numbers.length,
+): QueueView {
+  const view = viewOf('main', total);
+  if (view.queue) view.queue.entries = numbers.map((number, at) => entryOf(number, at + 1));
+  return { ...view, ...extra };
+}
+
+/** Why `number` left: its checks failed in the queue, as GitHub's queue removed it at `at`. */
+function failedIn(number: number, at: string): QueueRemoval {
+  return {
+    number,
+    state: 'OPEN',
+    inQueue: false,
+    removal: {
+      at,
+      reason: 'failed_checks',
+      by: 'github-merge-queue',
+      tested: 'b'.repeat(40),
+      checks: [
+        {
+          kind: 'checkRun',
+          name: 'ci',
+          status: 'COMPLETED',
+          conclusion: 'FAILURE',
+          url: 'https://github.com/o/r/actions/runs/1',
+        },
+      ],
+    },
+    leftOut: [],
+  };
+}
+
+/** A source whose queue reads answer `reads` in turn, the last again, and why each left `removals`. */
+function leavingSource(
+  reads: readonly QueueView[],
+  removals: (number: number) => Promise<QueueRemoval>,
+) {
+  const asked: string[] = [];
+  let at = 0;
+  const source: QueueSource = {
+    async view(branch) {
+      asked.push(`view ${branch}`);
+      const read = reads[Math.min(at, reads.length - 1)];
+      at += 1;
+      if (!read) throw new Error('nothing to read');
+      return read;
+    },
+    async waiting(branch) {
+      return waitingOf(branch);
+    },
+    removal(number) {
+      asked.push(`removal ${number}`);
+      return removals(number);
+    },
+    repository: () => ({ list: undefined, rules: undefined }),
+  };
+  return { source, asked };
+}
+
+/** The pull requests the tab lists as having left, the latest first, with why. */
+function leftIn(state: QueueState | undefined): [number, string][] {
+  return state?.read.kind === 'queue'
+    ? state.read.left.map(({ number, why }) => [number, why.kind])
+    : [];
+}
+
+describe('those that left the queue', () => {
+  it('are read once each, as a later read no longer lists them, and listed with why, the latest first', async () => {
+    const { source, asked } = leavingSource(
+      [queueOf([1, 2, 3]), queueOf([2, 3]), queueOf([3])],
+      async (number) => failedIn(number, '2026-11-16T12:00:00Z'),
+    );
+    const { watch, published } = watchOf(source);
+    watch.show();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(leftIn(published.at(-1))).toEqual([]);
+    await vi.advanceTimersByTimeAsync(QUEUE_EVERY);
+    expect(leftIn(published.at(-1))).toEqual([[1, 'failedChecks']]);
+    const read = published.at(-1)?.read;
+    const [first] = read?.kind === 'queue' ? read.left : [];
+    expect(first).toEqual({
+      number: 1,
+      title: 'Pull request 1',
+      url: 'https://github.com/o/r/pull/1',
+      at: Date.parse('2026-11-16T12:00:00Z'),
+      enqueuedAt: Date.parse(JOINED),
+      why: {
+        kind: 'failedChecks',
+        checks: [{ name: 'ci', url: 'https://github.com/o/r/actions/runs/1' }],
+      },
+      partial: false,
+    });
+    await vi.advanceTimersByTimeAsync(QUEUE_EVERY * 3);
+    expect(leftIn(published.at(-1))).toEqual([
+      [2, 'failedChecks'],
+      [1, 'failedChecks'],
+    ]);
+    expect(asked.filter((each) => each.startsWith('removal'))).toEqual(['removal 1', 'removal 2']);
+  });
+
+  it('are none when a read may not list every entry: GitHub left part of it out, or it holds more than Lo reads', async () => {
+    const { source, asked } = leavingSource(
+      [
+        queueOf([1, 2]),
+        queueOf([2], { leftOut: ['mergeQueue.entries.nodes.0'] }),
+        queueOf([2], {}, 150),
+      ],
+      async (number) => failedIn(number, '2026-11-16T12:00:00Z'),
+    );
+    const { watch, published } = watchOf(source);
+    watch.show();
+    await vi.advanceTimersByTimeAsync(QUEUE_EVERY * 3);
+    expect(asked.filter((each) => each.startsWith('removal'))).toEqual([]);
+    expect(leftIn(published.at(-1))).toEqual([]);
+  });
+
+  it('are listed as Lo can’t tell why when the read of why fails, and not at all when GitHub says one is queued after all', async () => {
+    const { source } = leavingSource([queueOf([1, 2, 3]), queueOf([3])], async (number) => {
+      if (number === 1) throw new Error('GitHub couldn’t be reached.');
+      return { number, state: 'OPEN', inQueue: true, removal: undefined, leftOut: [] };
+    });
+    const { watch, published } = watchOf(source);
+    watch.show();
+    await vi.advanceTimersByTimeAsync(QUEUE_EVERY);
+    expect(leftIn(published.at(-1))).toEqual([[1, 'unknown']]);
+  });
+
+  it('drop one in the queue again', async () => {
+    const { source } = leavingSource(
+      [queueOf([1, 2]), queueOf([2]), queueOf([2, 1])],
+      async (number) => failedIn(number, '2026-11-16T12:00:00Z'),
+    );
+    const { watch, published } = watchOf(source);
+    watch.show();
+    await vi.advanceTimersByTimeAsync(QUEUE_EVERY);
+    expect(leftIn(published.at(-1))).toEqual([[1, 'failedChecks']]);
+    await vi.advanceTimersByTimeAsync(QUEUE_EVERY);
+    expect(leftIn(published.at(-1))).toEqual([]);
+  });
+
+  it('keep no more than the latest few', async () => {
+    const many = Array.from({ length: LEFT_MOST + 2 }, (_, at) => at + 10);
+    const { source } = leavingSource([queueOf(many), queueOf([])], async (number) =>
+      failedIn(number, '2026-11-16T12:00:00Z'),
+    );
+    const { watch, published } = watchOf(source);
+    watch.show();
+    await vi.advanceTimersByTimeAsync(QUEUE_EVERY);
+    expect(leftIn(published.at(-1))).toHaveLength(LEFT_MOST);
+    expect(leftIn(published.at(-1))[0]?.[0]).toBe(many.at(-1));
   });
 });

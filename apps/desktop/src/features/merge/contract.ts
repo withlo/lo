@@ -2,6 +2,8 @@
 // screen, through its account's poller, maps it with `@lo/review`'s merge rules, and sends each
 // view's status on `status` as it changes. The window words it: the header's one line, and the
 // merge panel's reasons, methods and the squash commit's text, which it asks for as the panel opens.
+// While the pull request on screen is in a merge queue, main reads its place there, and once it
+// leaves without merging, why, and sends each view's on `queued`.
 
 import { z } from 'zod';
 
@@ -170,6 +172,95 @@ export interface SquashText {
   readonly head: string;
 }
 
+/** A length of time GitHub estimates, in seconds. */
+const seconds = z.number().nonnegative();
+
+/**
+ * Where an entry stands in its merge queue, as GitHub names it: waiting to be tested (`QUEUED`), its
+ * checks running (`AWAITING_CHECKS`), passed and waiting for those ahead (`MERGEABLE`), failed and
+ * about to be taken out (`UNMERGEABLE`), or locked as GitHub merges it (`LOCKED`).
+ */
+export const entryState = z.enum([
+  'QUEUED',
+  'AWAITING_CHECKS',
+  'MERGEABLE',
+  'UNMERGEABLE',
+  'LOCKED',
+]);
+export type EntryState = z.output<typeof entryState>;
+
+/**
+ * A queued pull request's place, as Lo last read its branch's merge queue: `listed`, at `position`,
+ * with where it stands, GitHub's estimate of when it merges, and the checks that failed on the
+ * commit the queue tests it on; or not listed, which with `partial` is because GitHub left part of
+ * the queue out, or the queue is longer than Lo reads, so Lo can't see its place, and without it
+ * means it's no longer in the queue.
+ */
+export const queuePlace = z.discriminatedUnion('kind', [
+  z.strictObject({
+    kind: z.literal('listed'),
+    position: z.number().int().positive(),
+    state: entryState,
+    timeToMerge: seconds.nullable(),
+    failed: z.array(check),
+  }),
+  z.strictObject({ kind: z.literal('unlisted'), partial: z.boolean() }),
+]);
+export type QueuePlace = z.output<typeof queuePlace>;
+
+/** Why a pull request left its merge queue without merging, as `@lo/review`'s `leftQueue` says. */
+export const leftWhy = z.discriminatedUnion('kind', [
+  /** Its checks failed in the queue: those that did, which may be none Lo can name. */
+  z.strictObject({ kind: z.literal('failedChecks'), checks: z.array(check) }),
+  /** It conflicted with the branch, or with the entries ahead of it. */
+  z.strictObject({ kind: z.literal('conflict') }),
+  /** Its checks took longer than the queue allows. */
+  z.strictObject({ kind: z.literal('timedOut') }),
+  /** Someone took it out: `by` whom, when GitHub says, and whether that's the account read as. */
+  z.strictObject({ kind: z.literal('removed'), by: text.nullable(), you: z.boolean() }),
+  /** A reason Lo has no word for, in GitHub's own, or none when GitHub gave none. */
+  z.strictObject({ kind: z.literal('other'), reason: text.nullable() }),
+  /** Lo can't tell why: GitHub didn't say, or Lo couldn't read it, for `why`. */
+  z.strictObject({ kind: z.literal('unknown'), why: z.string().max(4096).nullable() }),
+]);
+export type LeftWhy = z.output<typeof leftWhy>;
+
+/**
+ * A pull request Lo saw leave its merge queue without merging, while it showed it: when, as GitHub
+ * says, why, and whether GitHub left part of why out (`partial`), so Lo may not see all of it.
+ */
+export const leftQueue = z.strictObject({
+  at: time.nullable(),
+  why: leftWhy,
+  partial: z.boolean(),
+});
+export type LeftQueue = z.output<typeof leftQueue>;
+
+/** A view's pull request in a merge queue: its place while it's queued, and why it last left one. */
+export const inQueue = z.strictObject({
+  place: queuePlace.nullable(),
+  left: leftQueue.nullable(),
+});
+export type InQueue = z.output<typeof inQueue>;
+
+/** A view's place in a merge queue, each time it changes. */
+export const queued = z.strictObject({ id: tabId, queue: inQueue });
+export type Queued = z.output<typeof queued>;
+
+/**
+ * What's ahead in the merge queue of the branch a pull request merges into: no queue there now, or
+ * `count` entries, at least that many with `atLeast`, as GitHub left part of the queue out, and
+ * GitHub's estimate of when the last of them merges, when it has one for each.
+ */
+export type Ahead =
+  | { readonly kind: 'none' }
+  | {
+      readonly kind: 'queue';
+      readonly count: number;
+      readonly atLeast: boolean;
+      readonly timeToMerge: number | null;
+    };
+
 export const contract = defineContract('merge', {
   requests: {
     /** View `id`'s merge status now, which `status` then keeps up to date. */
@@ -184,6 +275,16 @@ export const contract = defineContract('merge', {
      * pull request on GitHub. Anything else is refused.
      */
     open: { input: z.strictObject({ id: tabId, url: page }), reply: reply<void>() },
+    /** View `id`'s place in a merge queue now, which `queued` then keeps up to date. */
+    queue: { input: z.strictObject({ id: tabId }), reply: reply<InQueue>() },
+    /**
+     * What's ahead in the merge queue of the branch view `id`'s pull request merges into, read as
+     * the merge panel opens on one ready for the queue. Fails as `unavailable`, saying why, when
+     * GitHub can't say now.
+     */
+    ahead: { input: z.strictObject({ id: tabId }), reply: reply<Ahead>() },
+    /** Forgets why view `id`'s pull request left its merge queue, once the reader dismisses it. */
+    forgetLeft: { input: z.strictObject({ id: tabId }), reply: reply<void>() },
   },
-  topics: { status },
+  topics: { status, queued },
 });

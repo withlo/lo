@@ -1,15 +1,18 @@
 // The header's merge status, a dot and one line, and the merge panel it opens under it, as `m`
 // does: the verdict and what it merges into, a row for each reason it can't merge, the methods the
-// repository allows, the squash commit's text, and what merging would do.
+// repository allows, the squash commit's text, and what merging would do. For a pull request in a
+// merge queue, or ready to join one, its place there or what's ahead, and why it left.
 
 import {
   Branch,
+  Button,
   Checklist,
   CommitText,
   MergeFoot,
   MergeMethods,
   MergePanel,
   MergeStatus,
+  Key,
   type CheckItem,
 } from '@lo/ui';
 import { keyLabels } from '@lo/ui/commands';
@@ -27,17 +30,20 @@ import { useStore } from 'zustand';
 import { currentMenu, useMenuTarget } from '../../../window/commands/menus.tsx';
 import { registry, useKeys } from '../../../window/commands/registry.ts';
 import { usePull, useTabState, withoutBidi, type PullTab } from '../../tab/window/shared.ts';
-import type { MergeState } from '../contract.ts';
+import type { InQueue, MergeState } from '../contract.ts';
 import {
   closePanel,
   keepTitleField,
   nextConversation,
   openPage,
   reasonRow,
+  seeQueue,
   STATUS_ROW,
   togglePanel,
 } from './actions.ts';
 import { main } from './main.ts';
+import { panelRows, queueHead } from './places.ts';
+import { aheads, catchUpQueue, forgetAhead, queues, readAhead } from './queued.ts';
 import { panels, statuses, takeStatus, type Panel } from './store.ts';
 import {
   headerLine,
@@ -45,7 +51,6 @@ import {
   methodLabel,
   methodNote,
   panelHead,
-  rowsOf,
   shownMethod,
   type Row,
 } from './words.ts';
@@ -217,21 +222,42 @@ function bodyOf(
       </div>,
     );
   }
-  if (state.verdict === 'ready' && action.kind === 'enqueue') {
+  // The queue's own method, which merges it whatever its auto-merge says.
+  const queueMethod =
+    state.verdict === 'queued'
+      ? state.queue.method
+      : state.verdict === 'ready' && action.kind === 'enqueue'
+        ? action.method
+        : undefined;
+  if (queueMethod !== undefined) {
     parts.push(
       <p key="queue" className="m-0 pb-8 text-fg-muted text-small">
         The queue’s settings choose the method and the message
-        {action.method === null ? '.' : `: ${methodLabel(action.method).toLowerCase()}.`}
+        {queueMethod === null ? '.' : `: ${methodLabel(queueMethod).toLowerCase()}.`}
       </p>,
     );
   }
   return parts.length > 0 ? parts : undefined;
 }
 
-/** The panel's foot: what merging would do, named for it; nothing while it's queued. */
-function footOf(state: MergeState, panel: Panel): ReactNode {
+/** The button that shows the branch's merge queue, as `gq` does. */
+function SeeQueue({ id }: { id: string }) {
+  const keys = keyOf('queue.show');
+  return (
+    <Button variant="ghost" size="sm" onClick={() => seeQueue(id)}>
+      See the queue
+      {keys && <Key keys={keys} decorative />}
+    </Button>
+  );
+}
+
+/**
+ * The panel's foot: what merging would do, named for it, with the queue it would join; while it's
+ * queued, only the queue.
+ */
+function footOf(tab: PullTab, state: MergeState, panel: Panel): ReactNode {
   const { action } = state;
-  if (state.verdict === 'queued') return undefined;
+  if (state.verdict === 'queued') return <SeeQueue id={tab.id} />;
   const method = shownMethod(state, panel.method);
   const enter = ENTER;
   const auto =
@@ -244,6 +270,7 @@ function footOf(state: MergeState, panel: Panel): ReactNode {
     return (
       <MergeFoot
         auto={auto}
+        start={<SeeQueue id={tab.id} />}
         method={action.method === null ? undefined : methodLabel(action.method)}
         primary={{ label: 'Add to merge queue', keys: enter }}
       />
@@ -275,6 +302,7 @@ function footOf(state: MergeState, panel: Panel): ReactNode {
 export function MergeHeader({ tab }: { tab: PullTab }) {
   useKeys();
   const view = useStore(statuses, (state) => state.views.get(tab.id));
+  const queue = useStore(queues, (state) => state.views.get(tab.id));
   const panel = useTabState(panels, tab.id);
   const title = usePull(tab.id)?.header?.title;
   const [button, setButton] = useState<HTMLButtonElement | null>(null);
@@ -288,16 +316,23 @@ export function MergeHeader({ tab }: { tab: PullTab }) {
     known.action.kind === 'merge' &&
     shownMethod(known, panel.method) === 'SQUASH';
   const at = known && squashAt(known, title);
+  const joining = panel.open && known?.verdict === 'ready' && known.action.kind === 'enqueue';
   useEffect(() => {
     if (!statuses.getState().views.has(tab.id)) catchUp(tab.id);
+    if (!queues.getState().views.has(tab.id)) catchUpQueue(tab.id);
     // The panel closes as its tab leaves the screen.
     return () => closePanel(tab.id);
   }, [tab.id]);
+  // What's ahead in the queue it would join, read once as the panel opens on it.
+  useEffect(() => {
+    if (joining) readAhead(tab.id);
+    else forgetAhead(tab.id);
+  }, [joining, tab.id]);
   // Read as the panel opens on a squash, and again when the head or the title moves.
   useEffect(() => {
     if (squashing && at !== undefined) readSquash(tab.id, at);
   }, [squashing, at, tab.id]);
-  const line = headerLine(view, now);
+  const line = headerLine(view, now, queue);
   if (!line) return null;
   const keys = keyOf('merge.panel');
   return (
@@ -318,6 +353,7 @@ export function MergeHeader({ tab }: { tab: PullTab }) {
         <PanelUnder
           tab={tab}
           state={known}
+          queue={queue}
           panel={panel}
           anchor={button}
           listRef={listRef}
@@ -332,6 +368,7 @@ export function MergeHeader({ tab }: { tab: PullTab }) {
 function PanelUnder({
   tab,
   state,
+  queue,
   panel,
   anchor,
   listRef,
@@ -339,14 +376,16 @@ function PanelUnder({
 }: {
   tab: PullTab;
   state: MergeState;
+  queue: InQueue | undefined;
   panel: Panel;
   anchor: HTMLButtonElement | null;
   listRef: RefObject<HTMLUListElement | null>;
   now: number;
 }) {
   const list = `merge-${useId()}`;
-  const head = panelHead(state);
-  const rows = rowsOf(state, now);
+  const ahead = useTabState(aheads, tab.id);
+  const head = queueHead(panelHead(state), state, queue, ahead);
+  const rows = panelRows(state, queue, now);
   const reasonMenu = useMenuTarget(reasonAt);
   return (
     <MergePanel
@@ -374,7 +413,7 @@ function PanelUnder({
       }
       closeKeys={keyOf('merge.close')}
       focusRef={rows.length > 0 ? listRef : undefined}
-      foot={footOf(state, panel)}
+      foot={footOf(tab, state, panel)}
     >
       {bodyOf(tab, state, panel, rows, { id: list, ref: listRef }, reasonMenu)}
     </MergePanel>

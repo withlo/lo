@@ -1,8 +1,9 @@
 // The merge feature in main: each view's merge status, read for the view on screen through its
 // account's poller and sent to the window as it changes (`./reads.ts`), mapped with the method
 // remembered for the repository (`./methods.ts`); what the merge panel reads as it opens, the
-// squash commit's text GitHub would start with; and the pages its reasons link, opened in the
-// system's browser.
+// squash commit's text GitHub would start with; the pages its reasons link, opened in the
+// system's browser; and, for a pull request in a merge queue, its place there and why it left
+// (`./queued.ts`).
 
 import { GithubError, squashText } from '@lo/github';
 
@@ -15,17 +16,25 @@ import { tabs } from '../../tab/service.ts';
 import { contract } from '../contract.ts';
 import { holdsIn } from './holds.ts';
 import { MethodStore } from './methods.ts';
+import { QueueReads } from './queued.ts';
 import { MergeReads } from './reads.ts';
 
 const log = (line: string) => console.error(`merge: ${line}`);
 
 let reads: MergeReads | undefined;
+let queues: QueueReads | undefined;
 const stops: (() => void)[] = [];
 
 /** What `start` made, for a handler: the window asks nothing before main has started. */
 function started(): MergeReads {
   if (reads === undefined) throw new IpcError('stopped', 'Lo is quitting.');
   return reads;
+}
+
+/** The merge queues' reads, once `start` made them. */
+function inQueues(): QueueReads {
+  if (queues === undefined) throw new IpcError('stopped', 'Lo is quitting.');
+  return queues;
 }
 
 export default defineFeature(contract, {
@@ -50,15 +59,29 @@ export default defineFeature(contract, {
     },
     async open({ id, url }) {
       // Only an `https://` page this view's status links: a check's run, or the pull request.
-      if (URL.parse(url)?.protocol !== 'https:' || !started().links(id, url)) {
+      const linked = started().links(id, url) || inQueues().links(id, url);
+      if (URL.parse(url)?.protocol !== 'https:' || !linked) {
         throw new IpcError('refused', 'Lo opens only the pages the merge status links.');
       }
       await openPage(url);
+    },
+    queue: ({ id }) => inQueues().current(id),
+    ahead: ({ id }) => inQueues().ahead(id),
+    forgetLeft({ id }) {
+      queues?.forgetLeft(id);
     },
   },
   start({ use, publish, database }) {
     const service = use(tabs);
     const methods = new MethodStore(database);
+    const inQueue = new QueueReads({
+      poller: (login) => use(github).poller(login),
+      view: (id) => service.pull(id),
+      onScreen: () => service.list().active,
+      publish: (queued) => publish('queued', queued),
+      log,
+    });
+    queues = inQueue;
     const followed = new MergeReads({
       poller: (login) => use(github).poller(login),
       view: (id) => service.pull(id),
@@ -72,15 +95,22 @@ export default defineFeature(contract, {
         const clone = service.clone(id);
         return clone === undefined ? undefined : holdsIn(await clone, tip, head);
       },
-      publish: (status) => publish('status', status),
+      publish(status) {
+        publish('status', status);
+        inQueue.heard(status);
+      },
       log,
     });
     reads = followed;
     stops.push(
-      service.onPull((id) => followed.follow(id)),
+      service.onPull((id) => {
+        followed.follow(id);
+        inQueue.follow(id);
+      }),
       // The view shown reads its status, the first time it's on screen.
       service.onTabs(({ active }) => {
         if (active !== undefined) followed.shown(active);
+        inQueue.shown(active);
       }),
       use(comparisons).onChange((id) => followed.follow(id)),
     );
@@ -92,5 +122,7 @@ export default defineFeature(contract, {
     for (const stop of stops.splice(0)) stop();
     reads?.stop();
     reads = undefined;
+    queues?.stop();
+    queues = undefined;
   },
 });

@@ -9,6 +9,7 @@ import type {
   Action,
   Blocker,
   Check,
+  InQueue,
   MergeState,
   MergeView,
   Method,
@@ -81,17 +82,17 @@ export interface PanelHead {
 const SEE_ON_GITHUB = 'See it on GitHub ↗';
 
 /** `count` and `word`, with an s for any count but one: "2 checks". */
-function counted(count: number, word: string): string {
+export function counted(count: number, word: string): string {
   return `${count} ${word}${count === 1 ? '' : 's'}`;
 }
 
 /** `text` with its first letter capitalized. */
-function capitalized(text: string): string {
+export function capitalized(text: string): string {
   return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
 /** Names joined as a sentence says them: "a", "a and b", "a, b and c". */
-function listed(names: readonly string[]): string {
+export function listed(names: readonly string[]): string {
   if (names.length <= 1) return names.join('');
   return `${names.slice(0, -1).join(', ')} and ${names.at(-1) ?? ''}`;
 }
@@ -319,12 +320,14 @@ export function staleness(
 }
 
 /**
- * The header's merge status for `view` at `now`, or nothing while there's nothing to show: before
- * the first read, and for a view that reads none.
+ * The header's merge status for `view` at `now`, with its place in the merge queue as `queue` last
+ * read it, or nothing while there's nothing to show: before the first read, and for a view that
+ * reads none.
  */
 export function headerLine(
   view: MergeView | undefined,
   now: number = Date.now(),
+  queue?: InQueue,
 ): HeaderLine | undefined {
   if (view === undefined) return undefined;
   switch (view.kind) {
@@ -340,7 +343,7 @@ export function headerLine(
         opens: false,
       };
     case 'known':
-      return dated(knownLine(view.state), view.state, now);
+      return dated(queuedLine(knownLine(view.state), view.state, queue), view.state, now);
     default:
       view satisfies never;
       return undefined;
@@ -417,6 +420,39 @@ function knownLine(state: MergeState): HeaderLine {
       state.verdict satisfies never;
       return { kind: 'blocked', verdict: 'Can’t merge', detail: undefined, title, opens: true };
   }
+}
+
+/** A length of time GitHub estimates, in seconds, in words: "12 min", "2 h", "1 h 5 min". */
+export function duration(seconds: number): string {
+  const minutes = Math.max(1, Math.round(seconds / 60));
+  if (minutes < 60) return `${minutes} min`;
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  return rest === 0 ? `${hours} h` : `${hours} h ${rest} min`;
+}
+
+/**
+ * `line`, from GitHub's read of a queued pull request, with what Lo last read of its entry in the
+ * queue: its place, which that read has fresher, and when it should merge; or, once it failed there,
+ * that it will be removed, and which checks failed.
+ */
+function queuedLine(line: HeaderLine, state: MergeState, queue: InQueue | undefined): HeaderLine {
+  const place = queue?.place;
+  if (state.verdict !== 'queued' || place?.kind !== 'listed') return line;
+  if (place.state === 'UNMERGEABLE') {
+    const names = place.failed.map((check) => check.name);
+    return {
+      ...line,
+      kind: 'blocked',
+      verdict: 'Will be removed',
+      detail: names.length > 0 ? `${listed(names)} failed in the queue` : 'from the merge queue',
+    };
+  }
+  return {
+    ...line,
+    verdict: `Queued, ${ordinal(place.position)}`,
+    detail: place.timeToMerge === null ? line.detail : `about ${duration(place.timeToMerge)}`,
+  };
 }
 
 /** The merge panel's head for `state`. */
