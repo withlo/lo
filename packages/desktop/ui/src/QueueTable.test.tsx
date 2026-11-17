@@ -349,6 +349,14 @@ describe('QueueTable', () => {
     expect(rows(host)).toHaveLength(0);
   });
 
+  it('says what it’s given in place of an empty queue, when the entries couldn’t all be read', () => {
+    const host = render(
+      <QueueTable label="Merge queue for main" items={[]} empty="Lo couldn’t read the entries." />,
+    );
+    expect(host.textContent).toContain('Lo couldn’t read the entries.');
+    expect(host.textContent).not.toContain('Nothing is in the merge queue.');
+  });
+
   it('is one focusable element, whose active descendant is the row the keyboard is on', () => {
     const table = createRef<HTMLDivElement>();
     const host = render(

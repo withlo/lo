@@ -96,6 +96,11 @@ export interface QueueTableProps extends Omit<
   left?: readonly LeftEntry[] | undefined;
   /** The queue has more entries than it lists: how many, and a way to see them on GitHub. */
   more?: { count: number; onOpen: () => void } | undefined;
+  /**
+   * What the table says while it lists no entries: that nothing is in the queue, unless Lo couldn't
+   * read them all, which this says instead.
+   */
+  empty?: ReactNode;
   /** The row the keyboard is on, by key. */
   focused?: string | undefined;
   /** A row was clicked, by key. */
@@ -458,6 +463,7 @@ export function QueueTable({
   waiting = [],
   left = [],
   more,
+  empty = 'Nothing is in the merge queue.',
   focused,
   onRowClick,
   tableRef,
@@ -498,7 +504,7 @@ export function QueueTable({
       {items.length === 0 && (
         <div role="row">
           <div role="gridcell" aria-colspan={6} className="px-12 py-16 text-fg-muted text-ui">
-            Nothing is in the merge queue.
+            {empty}
           </div>
         </div>
       )}

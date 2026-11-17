@@ -1,0 +1,5119 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "https://api.github.com/graphql",
+    "operation": "OpenPullRequests",
+    "variables": {
+      "owner": "rozed-dev",
+      "name": "e2e",
+      "first": 100,
+      "after": null,
+      "merged": 20
+    },
+    "query_sha256": "a7542ff223cb2a6e50a6fddbb632a27df0c23c22b62afb2c06fe408878d05861"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "x-ratelimit-limit": "5000",
+      "x-ratelimit-remaining": "4951",
+      "x-ratelimit-reset": "1794879154",
+      "x-ratelimit-resource": "graphql",
+      "x-ratelimit-used": "49"
+    },
+    "body": {
+      "data": {
+        "rateLimit": {
+          "cost": 1,
+          "limit": 5000,
+          "remaining": 4951,
+          "used": 49,
+          "resetAt": "2026-11-17T01:32:34Z"
+        },
+        "repository": {
+          "defaultBranchRef": {
+            "name": "main"
+          },
+          "pullRequests": {
+            "totalCount": 128,
+            "pageInfo": {
+              "hasNextPage": true,
+              "endCursor": "Y3Vyc29yOnYyOpK0MjAyNi0xMS0wOVQwMToxOTo1MlrPAAAAATb4QIA="
+            },
+            "nodes": [
+              {
+                "id": "PR_kwDOVleUfc8AAAABPsVyDQ",
+                "number": 190,
+                "title": "Fixture M5: needs an approval an admin may skip",
+                "isDraft": false,
+                "createdAt": "2026-11-17T00:46:41Z",
+                "updatedAt": "2026-11-17T00:46:44Z",
+                "author": {
+                  "__typename": "User",
+                  "login": "rozed-bot"
+                },
+                "baseRefName": "merge/5/override",
+                "baseRefOid": "636f111ff1340a7739b467db555534744c7243ae",
+                "baseRef": {
+                  "target": {
+                    "__typename": "Commit",
+                    "oid": "636f111ff1340a7739b467db555534744c7243ae"
+                  },
+                  "refUpdateRule": null
+                },
+                "headRefName": "merge/5/overridden",
+                "headRefOid": "f77f14f607df37c6b22936e5a12df9ede1df6bb5",
+                "headRef": {
+                  "refUpdateRule": null
+                },
+                "isCrossRepository": false,
+                "headRepositoryOwner": {
+                  "__typename": "Organization",
+                  "login": "rozed-dev"
+                },
+                "commits": {
+                  "nodes": [
+                    {
+                      "commit": {
+                        "oid": "f77f14f607df37c6b22936e5a12df9ede1df6bb5"
+                      }
+                    }
+                  ]
+                },
+                "stackEntry": null
+              },
+              {
+                "id": "PR_kwDOVleUfc8AAAABPsVucA",
+                "number": 189,
+                "title": "Fixture M5: queued, fails in the queue",
+                "isDraft": false,
+                "createdAt": "2026-11-17T00:46:36Z",
+                "updatedAt": "2026-11-17T00:46:40Z",
+                "author": {
+                  "__typename": "User",
+                  "login": "rozed-bot"
+                },
+                "baseRefName": "e4/queued",
+                "baseRefOid": "be76197734f8ee252a269294e7be44c1c5fb8295",
+                "baseRef": {
+                  "target": {
+                    "__typename": "Commit",
+                    "oid": "be76197734f8ee252a269294e7be44c1c5fb8295"
+                  },
+                  "refUpdateRule": null
+                },
+                "headRefName": "merge/5/queued-fail",
+                "headRefOid": "bce2aaa52a7501c0750bf9de39e82af451fe3ed5",
+                "headRef": {
+                  "refUpdateRule": null
+                },
+                "isCrossRepository": false,
+                "headRepositoryOwner": {
+                  "__typename": "Organization",
+                  "login": "rozed-dev"
+                },
+                "commits": {
+                  "nodes": [
+                    {
+                      "commit": {
+                        "oid": "bce2aaa52a7501c0750bf9de39e82af451fe3ed5"
+                      }
+                    }
+                  ]
+                },
+                "stackEntry": null
+              },
+              {
+                "id": "PR_kwDOVleUfc8AAAABPsVq6w",
+                "number": 188,
+                "title": "Fixture M5: queued, slow (2)",
+                "isDraft": false,
+                "createdAt": "2026-11-17T00:46:32Z",
+                "updatedAt": "2026-11-17T00:46:35Z",
+                "author": {
+                  "__typename": "User",
+                  "login": "rozed-bot"
+                },
+                "baseRefName": "e4/queued",
+                "baseRefOid": "be76197734f8ee252a269294e7be44c1c5fb8295",
+                "baseRef": {
+                  "target": {
+                    "__typename": "Commit",
+                    "oid": "be76197734f8ee252a269294e7be44c1c5fb8295"
+                  },
+                  "refUpdateRule": null
+                },
+                "headRefName": "merge/5/queued-slow-2",
+                "headRefOid": "e442334294ccc14d02027ed215266aa876a00f8e",
+                "headRef": {
+                  "refUpdateRule": null
+                },
+                "isCrossRepository": false,
+                "headRepositoryOwner": {
+                  "__typename": "Organization",
+                  "login": "rozed-dev"
+                },
+                "commits": {
+                  "nodes": [
+                    {
+                      "commit": {
+                        "oid": "e442334294ccc14d02027ed215266aa876a00f8e"
+                      }
+                    }
+                  ]
+                },
+                "stackEntry": null
+              },
+              {
+                "id": "PR_kwDOVleUfc8AAAABPsVnZw",
+                "number": 187,
+                "title": "Fixture M5: queued, slow (1)",
+                "isDraft": false,
+                "createdAt": "2026-11-17T00:46:28Z",
+                "updatedAt": "2026-11-17T00:46:31Z",
+                "author": {
+                  "__typename": "User",
+                  "login": "rozed-bot"
+                },
+                "baseRefName": "e4/queued",
+                "baseRefOid": "be76197734f8ee252a269294e7be44c1c5fb8295",
+                "baseRef": {
+                  "target": {
+                    "__typename": "Commit",
+                    "oid": "be76197734f8ee252a269294e7be44c1c5fb8295"
+                  },
+                  "refUpdateRule": null
+                },
+                "headRefName": "merge/5/queued-slow-1",
+                "headRefOid": "bd7f1e1b4c328a794633f4c473b356789c04c39b",
+                "headRef": {
+                  "refUpdateRule": null
+                },
+                "isCrossRepository": false,
+                "headRepositoryOwner": {
+                  "__typename": "Organization",
+                  "login": "rozed-dev"
+                },
+                "commits": {
+                  "nodes": [
+                    {
+                      "commit": {
+                        "oid": "bd7f1e1b4c328a794633f4c473b356789c04c39b"
+                      }
+                    }
+                  ]
+                },
+                "stackEntry": null
+              },
+              {
+                "id": "PR_kwDOVleUfc8AAAABPsVjgw",
+                "number": 186,
+                "title": "Fixture M5: queued, passing",
+                "isDraft": false,
+                "createdAt": "2026-11-17T00:46:23Z",
+                "updatedAt": "2026-11-17T00:46:26Z",
+                "author": {
+                  "__typename": "User",
+                  "login": "rozed-bot"
+                },
+                "baseRefName": "e4/queued",
+                "baseRefOid": "be76197734f8ee252a269294e7be44c1c5fb8295",
+                "baseRef": {
+                  "target": {
+                    "__typename": "Commit",
+                    "oid": "be76197734f8ee252a269294e7be44c1c5fb8295"
+                  },
+                  "refUpdateRule": null
+                },
+                "headRefName": "merge/5/queued-pass",
+                "headRefOid": "a1e9a0a6d4cc517d0f1a431c1820d2650eb60323",
+                "headRef": {
+                  "refUpdateRule": null
+                },
+                "isCrossRepository": false,
+                "headRepositoryOwner": {
+                  "__typename": "Organization",
+                  "login": "rozed-dev"
+                },
+                "commits": {
+                  "nodes": [
+                    {
+                      "commit": {
+                        "oid": "a1e9a0a6d4cc517d0f1a431c1820d2650eb60323"
+                      }
+                    }
+                  ]
+                },
+                "stackEntry": null
+              },
+              {
+                "id": "PR_kwDOVleUfc8AAAABPsVgBw",
+                "number": 185,
+                "title": "Fixture M5: gated, waiting for an approval",
+                "isDraft": false,
+                "createdAt": "2026-11-17T00:46:19Z",
+                "updatedAt": "2026-11-17T00:46:22Z",
+                "author": {
+                  "__typename": "User",
+                  "login": "rozed-bot"
+                },
+                "baseRefName": "e4/gated",
+                "baseRefOid": "f8fd826d4615edfc580009f2aaf9ddc55f514ee2",
+                "baseRef": {
+                  "target": {
+                    "__typename": "Commit",
+                    "oid": "f8fd826d4615edfc580009f2aaf9ddc55f514ee2"
+                  },
+                  "refUpdateRule": null
+                },
+                "headRefName": "merge/5/gated-passing",
+                "headRefOid": "021267c33f3db4e47f193d8f72cf2de54b6772d2",
+                "headRef": {
+                  "refUpdateRule": null
+                },
+                "isCrossRepository": false,
+                "headRepositoryOwner": {
+                  "__typename": "Organization",
+                  "login": "rozed-dev"
+                },
+                "commits": {
+                  "nodes": [
+                    {
+                      "commit": {
+                        "oid": "021267c33f3db4e47f193d8f72cf2de54b6772d2"
+                      }
+                    }
+                  ]
+                },
+                "stackEntry": null
+              },
+              {
+                "id": "PR_kwDOVleUfc8AAAABPsVc2A",
+                "number": 184,
+                "title": "Fixture M5: gated, checks failing and a conversation open",
+                "isDraft": false,
+                "createdAt": "2026-11-17T00:46:14Z",
+                "updatedAt": "2026-11-17T00:46:46Z",
+                "author": {
+                  "__typename": "User",
+                  "login": "rozed-bot"
+                },
+                "baseRefName": "e4/gated",
+                "baseRefOid": "f8fd826d4615edfc580009f2aaf9ddc55f514ee2",
+                "baseRef": {
+                  "target": {
+                    "__typename": "Commit",
+                    "oid": "f8fd826d4615edfc580009f2aaf9ddc55f514ee2"
+                  },
+                  "refUpdateRule": null
+                },
+                "headRefName": "merge/5/gated-failing",
+                "headRefOid": "dc08798bec1c11cab657beb809dcb7ac2aacc0a6",
+                "headRef": {
+                  "refUpdateRule": null
+                },
+                "isCrossRepository": false,
+                "headRepositoryOwner": {
+                  "__typename": "Organization",
+                  "login": "rozed-dev"
+                },
+                "commits": {
+                  "nodes": [
+                    {
+                      "commit": {
+                        "oid": "dc08798bec1c11cab657beb809dcb7ac2aacc0a6"
+                      }
+                    }
+                  ]
+                },
+                "stackEntry": null
+              },
+              {
+                "id": "PR_kwDOVleUfc8AAAABPsVZbQ",
+                "number": 183,
+                "title": "Fixture M5: its head moves",
+                "isDraft": false,
+                "createdAt": "2026-11-17T00:46:10Z",
+                "updatedAt": "2026-11-17T00:46:13Z",
+                "author": {
+                  "__typename": "User",
+                  "login": "rozed-bot"
+                },
+                "baseRefName": "merge/5/base",
+                "baseRefOid": "b3fe004d917123bd7ca507eda670138554797f43",
+                "baseRef": {
+                  "target": {
+                    "__typename": "Commit",
+                    "oid": "1a092320489aa37cbd605b8ed4eaf8d4dd179789"
+                  },
+                  "refUpdateRule": null
+                },
+                "headRefName": "merge/5/moved",
+                "headRefOid": "ef7863173734b556085633a51b8c51062abaadd2",
+                "headRef": {
+                  "refUpdateRule": null
+                },
+                "isCrossRepository": false,
+                "headRepositoryOwner": {
+                  "__typename": "Organization",
+                  "login": "rozed-dev"
+                },
+                "commits": {
+                  "nodes": [
+                    {
+                      "commit": {
+                        "oid": "ef7863173734b556085633a51b8c51062abaadd2"
+                      }
+                    }
+                  ]
+                },
+                "stackEntry": null
+              },
+              {
+                "id": "PR_kwDOVleUfc8AAAABPsVWFQ",
+                "number": 182,
+                "title": "Fixture M5: chain, top layer",
+                "isDraft": false,
+                "createdAt": "2026-11-17T00:46:05Z",
+                "updatedAt": "2026-11-17T00:46:08Z",
+                "author": {
+                  "__typename": "User",
+                  "login": "rozed-bot"
+                },
+                "baseRefName": "merge/5/chain-1",
+                "baseRefOid": "6c8a37aa4cfb64c05db04eee47aab70d93976c0d",
+                "baseRef": {
+                  "target": {
+                    "__typename": "Commit",
+                    "oid": "6c8a37aa4cfb64c05db04eee47aab70d93976c0d"
+                  },
+                  "refUpdateRule": null
+                },
+                "headRefName": "merge/5/chain-2",
+                "headRefOid": "a9b48cf6476b89b2f5ee70d34196d2b9ba078521",
+                "headRef": {
+                  "refUpdateRule": null
+                },
+                "isCrossRepository": false,
+                "headRepositoryOwner": {
+                  "__typename": "Organization",
+                  "login": "rozed-dev"
+                },
+                "commits": {
+                  "nodes": [
+                    {
+                      "commit": {
+                        "oid": "a9b48cf6476b89b2f5ee70d34196d2b9ba078521"
+                      }
+                    }
+                  ]
+                },
+                "stackEntry": null
+              },
+              {
+                "id": "PR_kwDOVleUfc8AAAABPsVS3Q",
+                "number": 181,
+                "title": "Fixture M5: chain, bottom layer",
+                "isDraft": false,
+                "createdAt": "2026-11-17T00:46:01Z",
+                "updatedAt": "2026-11-17T00:46:04Z",
+                "author": {
+                  "__typename": "User",
+                  "login": "rozed-bot"
+                },
+                "baseRefName": "merge/5/base",
+                "baseRefOid": "b3fe004d917123bd7ca507eda670138554797f43",
+                "baseRef": {
+                  "target": {
+                    "__typename": "Commit",
+                    "oid": "1a092320489aa37cbd605b8ed4eaf8d4dd179789"
+                  },
+                  "refUpdateRule": null
+                },
+                "headRefName": "merge/5/chain-1",
+                "headRefOid": "6c8a37aa4cfb64c05db04eee47aab70d93976c0d",
+                "headRef": {
+                  "refUpdateRule": null
+                },
+                "isCrossRepository": false,
+                "headRepositoryOwner": {
+                  "__typename": "Organization",
+                  "login": "rozed-dev"
+                },
+                "commits": {
+                  "nodes": [
+                    {
+                      "commit": {
+                        "oid": "6c8a37aa4cfb64c05db04eee47aab70d93976c0d"
+                      }
+                    }
+                  ]
+                },
+                "stackEntry": null
+              },
+              {
+                "id": "PR_kwDOVleUfc8AAAABPsVPKw",
+                "number": 180,
+                "title": "Fixture M5: stack, second layer",
+                "isDraft": false,
+                "createdAt": "2026-11-17T00:45:56Z",
+                "updatedAt": "2026-11-17T00:45:59Z",
+                "author": {
+                  "__typename": "User",
+                  "login": "rozed-bot"
+                },
+                "baseRefName": "merge/5/stack-1",
+                "baseRefOid": "64da23b6bf10be568e5a37a3fbc5cb3d9006b8ab",
+                "baseRef": {
+                  "target": {
+                    "__typename": "Commit",
+                    "oid": "64da23b6bf10be568e5a37a3fbc5cb3d9006b8ab"
+                  },
+                  "refUpdateRule": null
+                },
+                "headRefName": "merge/5/stack-2",
+                "headRefOid": "edea10ae270a99cc1992d06e161a17b948df2ea2",
+                "headRef": {
+                  "refUpdateRule": null
+                },
+                "isCrossRepository": false,
+                "headRepositoryOwner": {
+                  "__typename": "Organization",
+                  "login": "rozed-dev"
+                },
+                "commits": {
+                  "nodes": [
+                    {
+                      "commit": {
+                        "oid": "edea10ae270a99cc1992d06e161a17b948df2ea2"
+                      }
+                    }
+                  ]
+                },
+                "stackEntry": {
+                  "position": 2,
+                  "stack": {
+                    "number": 191,
+                    "size": 2,
+                    "baseRefName": "merge/5/base"
+                  }
+                }
+              },
+              {
+                "id": "PR_kwDOVleUfc8AAAABPsVLsw",
+                "number": 179,
+                "title": "Fixture M5: stack, first layer",
+                "isDraft": false,
+                "createdAt": "2026-11-17T00:45:52Z",
+                "updatedAt": "2026-11-17T00:45:55Z",
+                "author": {
+                  "__typename": "User",
+                  "login": "rozed-bot"
+                },
+                "baseRefName": "merge/5/base",
+                "baseRefOid": "b3fe004d917123bd7ca507eda670138554797f43",
+                "baseRef": {
+                  "target": {
+                    "__typename": "Commit",
+                    "oid": "1a092320489aa37cbd605b8ed4eaf8d4dd179789"
+                  },
+                  "refUpdateRule": null
+                },
+                "headRefName": "merge/5/stack-1",
+                "headRefOid": "64da23b6bf10be568e5a37a3fbc5cb3d9006b8ab",
+                "headRef": {
+                  "refUpdateRule": null
+                },
+                "isCrossRepository": false,
+                "headRepositoryOwner": {
+                  "__typename": "Organization",
+                  "login": "rozed-dev"
+                },
+                "commits": {
+                  "nodes": [
+                    {
+                      "commit": {
+                        "oid": "64da23b6bf10be568e5a37a3fbc5cb3d9006b8ab"
+                      }
+                    }
+                  ]
+                },
+                "stackEntry": {
+                  "position": 1,
+                  "stack": {
+                    "number": 191,
+                    "size": 2,
+                    "baseRefName": "merge/5/base"
+                  }
+                }
+              },
+              {
+                "id": "PR_kwDOVleUfc8AAAABPsVIQw",
+                "number": 178,
+                "title": "Fixture M5: a draft",
+                "isDraft": true,
+                "createdAt": "2026-11-17T00:45:47Z",
+                "updatedAt": "2026-11-17T00:45:50Z",
+                "author": {
+                  "__typename": "User",
+                  "login": "rozed-bot"
+                },
+                "baseRefName": "merge/5/base",
+                "baseRefOid": "b3fe004d917123bd7ca507eda670138554797f43",
+                "baseRef": {
+                  "target": {
+                    "__typename": "Commit",
+                    "oid": "1a092320489aa37cbd605b8ed4eaf8d4dd179789"
+                  },
+                  "refUpdateRule": null
+                },
+                "headRefName": "merge/5/draft",
+                "headRefOid": "7677324b9d4317453c82c707b5dcbc9112552ffb",
+                "headRef": {
+                  "refUpdateRule": null
+                },
+                "isCrossRepository": false,
+                "headRepositoryOwner": {
+                  "__typename": "Organization",
+                  "login": "rozed-dev"
+                },
+                "commits": {
+                  "nodes": [
+                    {
+                      "commit": {
+                        "oid": "7677324b9d4317453c82c707b5dcbc9112552ffb"
+                      }
+                    }
+                  ]
+                },
+                "stackEntry": null
+              },
+              {
+                "id": "PR_kwDOVleUfc8AAAABPsVE8g",
+                "number": 177,
+                "title": "Fixture M5: conflicts with its base",
+                "isDraft": false,
+                "createdAt": "2026-11-17T00:45:43Z",
+                "updatedAt": "2026-11-17T00:45:46Z",
+                "author": {
+                  "__typename": "User",
+                  "login": "rozed-bot"
+                },
+                "baseRefName": "merge/5/base",
+                "baseRefOid": "b3fe004d917123bd7ca507eda670138554797f43",
+                "baseRef": {
+                  "target": {
+                    "__typename": "Commit",
+                    "oid": "1a092320489aa37cbd605b8ed4eaf8d4dd179789"
+                  },
+                  "refUpdateRule": null
+                },
+                "headRefName": "merge/5/conflict",
+                "headRefOid": "99798bebd596c60456a5e3be97432ef0ec15a2d2",
+                "headRef": {
+                  "refUpdateRule": null
+                },
+                "isCrossRepository": false,
+                "headRepositoryOwner": {
+                  "__typename": "Organization",
+                  "login": "rozed-dev"
+                },
+                "commits": {
+                  "nodes": [
+                    {
+                      "commit": {
+                        "oid": "99798bebd596c60456a5e3be97432ef0ec15a2d2"
+                      }
+                    }
+                  ]
+                },
+                "stackEntry": null
+              },
+              {
+                "id": "PR_kwDOVleUfc8AAAABPsVBng",
+                "number": 176,
+                "title": "Fixture M5: rebase and merge",
+                "isDraft": false,
+                "createdAt": "2026-11-17T00:45:38Z",
+                "updatedAt": "2026-11-17T00:45:41Z",
+                "author": {
+                  "__typename": "User",
+                  "login": "rozed-bot"
+                },
+                "baseRefName": "merge/5/base",
+                "baseRefOid": "b3fe004d917123bd7ca507eda670138554797f43",
+                "baseRef": {
+                  "target": {
+                    "__typename": "Commit",
+                    "oid": "1a092320489aa37cbd605b8ed4eaf8d4dd179789"
+                  },
+                  "refUpdateRule": null
+                },
+                "headRefName": "merge/5/rebase",
+                "headRefOid": "427ad2298ecb1cb09a9d76c27dd2adec97e8f9d6",
+                "headRef": {
+                  "refUpdateRule": null
+                },
+                "isCrossRepository": false,
+                "headRepositoryOwner": {
+                  "__typename": "Organization",
+                  "login": "rozed-dev"
+                },
+                "commits": {
+                  "nodes": [
+                    {
+                      "commit": {
+                        "oid": "d049dabcb4f0e747af6f8bddcf89b245297a298e"
+                      }
+                    },
+                    {
+                      "commit": {
+                        "oid": "427ad2298ecb1cb09a9d76c27dd2adec97e8f9d6"
+                      }
+                    }
+                  ]
+                },
+                "stackEntry": null
+              },
+              {
+                "id": "PR_kwDOVleUfc8AAAABPsD2pw",
+                "number": 172,
+                "title": "Fixture M4: needs an approval an admin may skip",
+                "isDraft": false,
+                "createdAt": "2026-11-17T00:21:54Z",
+                "updatedAt": "2026-11-17T00:21:57Z",
+                "author": {
+                  "__typename": "User",
+                  "login": "rozed-bot"
+                },
+                "baseRefName": "merge/4/override",
+                "baseRefOid": "141c5ce7d03bf28d143e350fcd0395637c9d6bfe",
+                "baseRef": {
+                  "target": {
+                    "__typename": "Commit",
+                    "oid": "141c5ce7d03bf28d143e350fcd0395637c9d6bfe"
+                  },
+                  "refUpdateRule": null
+                },
+                "headRefName": "merge/4/overridden",
+                "headRefOid": "4b805554f86e1d936c3239418f9801f5dc4ad644",
+                "headRef": {
+                  "refUpdateRule": null
+                },
+                "isCrossRepository": false,
+                "headRepositoryOwner": {
+                  "__typename": "Organization",
+                  "login": "rozed-dev"
+                },
+                "commits": {
+                  "nodes": [
+                    {
+                      "commit": {
+                        "oid": "4b805554f86e1d936c3239418f9801f5dc4ad644"
+                      }
+                    }
+                  ]
+                },
+                "stackEntry": null
+              },
+              {
+                "id": "PR_kwDOVleUfc8AAAABPsDzCw",
+                "number": 171,
+                "title": "Fixture M4: queued, fails in the queue",
+                "isDraft": false,
+                "createdAt": "2026-11-17T00:21:49Z",
+                "updatedAt": "2026-11-17T00:21:52Z",
+                "author": {
+                  "__typename": "User",
+                  "login": "rozed-bot"
+                },
+                "baseRefName": "e4/queued",
+                "baseRefOid": "be76197734f8ee252a269294e7be44c1c5fb8295",
+                "baseRef": {
+                  "target": {
+                    "__typename": "Commit",
+                    "oid": "be76197734f8ee252a269294e7be44c1c5fb8295"
+                  },
+                  "refUpdateRule": null
+                },
+                "headRefName": "merge/4/queued-fail",
+                "headRefOid": "69855603fae5693567879f012825f2480e2ad7cb",
+                "headRef": {
+                  "refUpdateRule": null
+                },
+                "isCrossRepository": false,
+                "headRepositoryOwner": {
+                  "__typename": "Organization",
+                  "login": "rozed-dev"
+                },
+                "commits": {
+                  "nodes": [
+                    {
+                      "commit": {
+                        "oid": "69855603fae5693567879f012825f2480e2ad7cb"
+                      }
+                    }
+                  ]
+                },
+                "stackEntry": null
+              },
+              {
+                "id": "PR_kwDOVleUfc8AAAABPsDvEQ",
+                "number": 170,
+                "title": "Fixture M4: queued, slow (2)",
+                "isDraft": false,
+                "createdAt": "2026-11-17T00:21:45Z",
+                "updatedAt": "2026-11-17T00:21:48Z",
+                "author": {
+                  "__typename": "User",
+                  "login": "rozed-bot"
+                },
+                "baseRefName": "e4/queued",
+                "baseRefOid": "be76197734f8ee252a269294e7be44c1c5fb8295",
+                "baseRef": {
+                  "target": {
+                    "__typename": "Commit",
+                    "oid": "be76197734f8ee252a269294e7be44c1c5fb8295"
+                  },
+                  "refUpdateRule": null
+                },
+                "headRefName": "merge/4/queued-slow-2",
+                "headRefOid": "5cbdabb854d2bffb45f86b9352b53cfda4050d12",
+                "headRef": {
+                  "refUpdateRule": null
+                },
+                "isCrossRepository": false,
+                "headRepositoryOwner": {
+                  "__typename": "Organization",
+                  "login": "rozed-dev"
+                },
+                "commits": {
+                  "nodes": [
+                    {
+                      "commit": {
+                        "oid": "5cbdabb854d2bffb45f86b9352b53cfda4050d12"
+                      }
+                    }
+                  ]
+                },
+                "stackEntry": null
+              },
+              {
+                "id": "PR_kwDOVleUfc8AAAABPsDrPA",
+                "number": 169,
+                "title": "Fixture M4: queued, slow (1)",
+                "isDraft": false,
+                "createdAt": "2026-11-17T00:21:40Z",
+                "updatedAt": "2026-11-17T00:21:43Z",
+                "author": {
+                  "__typename": "User",
+                  "login": "rozed-bot"
+                },
+                "baseRefName": "e4/queued",
+                "baseRefOid": "be76197734f8ee252a269294e7be44c1c5fb8295",
+                "baseRef": {
+                  "target": {
+                    "__typename": "Commit",
+                    "oid": "be76197734f8ee252a269294e7be44c1c5fb8295"
+                  },
+                  "refUpdateRule": null
+                },
+                "headRefName": "merge/4/queued-slow-1",
+                "headRefOid": "4ea510d6d98923ba9e77ca526c183748af9b36aa",
+                "headRef": {
+                  "refUpdateRule": null
+                },
+                "isCrossRepository": false,
+                "headRepositoryOwner": {
+                  "__typename": "Organization",
+                  "login": "rozed-dev"
+                },
+                "commits": {
+                  "nodes": [
+                    {
+                      "commit": {
+                        "oid": "4ea510d6d98923ba9e77ca526c183748af9b36aa"
+                      }
+                    }
+                  ]
+                },
+                "stackEntry": null
+              },
+              {
+                "id": "PR_kwDOVleUfc8AAAABPsDm-g",
+                "number": 168,
+                "title": "Fixture M4: queued, passing",
+                "isDraft": false,
+                "createdAt": "2026-11-17T00:21:35Z",
+                "updatedAt": "2026-11-17T00:21:38Z",
+                "author": {
+                  "__typename": "User",
+                  "login": "rozed-bot"
+                },
+                "baseRefName": "e4/queued",
+                "baseRefOid": "be76197734f8ee252a269294e7be44c1c5fb8295",
+                "baseRef": {
+                  "target": {
+                    "__typename": "Commit",
+                    "oid": "be76197734f8ee252a269294e7be44c1c5fb8295"
+                  },
+                  "refUpdateRule": null
+                },
+                "headRefName": "merge/4/queued-pass",
+                "headRefOid": "a5aa57345a74b8ea0c4a88498f9c77b77cd0c0d8",
+                "headRef": {
+                  "refUpdateRule": null
+                },
+                "isCrossRepository": false,
+                "headRepositoryOwner": {
+                  "__typename": "Organization",
+                  "login": "rozed-dev"
+                },
+                "commits": {
+                  "nodes": [
+                    {
+                      "commit": {
+                        "oid": "a5aa57345a74b8ea0c4a88498f9c77b77cd0c0d8"
+                      }
+                    }
+                  ]
+                },
+                "stackEntry": null
+              },
+              {
+                "id": "PR_kwDOVleUfc8AAAABPsDioQ",
+                "number": 167,
+                "title": "Fixture M4: gated, waiting for an approval",
+                "isDraft": false,
+                "createdAt": "2026-11-17T00:21:30Z",
+                "updatedAt": "2026-11-17T00:21:33Z",
+                "author": {
+                  "__typename": "User",
+                  "login": "rozed-bot"
+                },
+                "baseRefName": "e4/gated",
+                "baseRefOid": "f8fd826d4615edfc580009f2aaf9ddc55f514ee2",
+                "baseRef": {
+                  "target": {
+                    "__typename": "Commit",
+                    "oid": "f8fd826d4615edfc580009f2aaf9ddc55f514ee2"
+                  },
+                  "refUpdateRule": null
+                },
+                "headRefName": "merge/4/gated-passing",
+                "headRefOid": "e4c43d1768a456def5e01cb6ee02f00f315404c0",
+                "headRef": {
+                  "refUpdateRule": null
+                },
+                "isCrossRepository": false,
+                "headRepositoryOwner": {
+                  "__typename": "Organization",
+                  "login": "rozed-dev"
+                },
+                "commits": {
+                  "nodes": [
+                    {
+                      "commit": {
+                        "oid": "e4c43d1768a456def5e01cb6ee02f00f315404c0"
+                      }
+                    }
+                  ]
+                },
+                "stackEntry": null
+              },
+              {
+                "id": "PR_kwDOVleUfc8AAAABPsDebA",
+                "number": 166,
+                "title": "Fixture M4: gated, checks failing and a conversation open",
+                "isDraft": false,
+                "createdAt": "2026-11-17T00:21:25Z",
+                "updatedAt": "2026-11-17T00:22:00Z",
+                "author": {
+                  "__typename": "User",
+                  "login": "rozed-bot"
+                },
+                "baseRefName": "e4/gated",
+                "baseRefOid": "f8fd826d4615edfc580009f2aaf9ddc55f514ee2",
+                "baseRef": {
+                  "target": {
+                    "__typename": "Commit",
+                    "oid": "f8fd826d4615edfc580009f2aaf9ddc55f514ee2"
+                  },
+                  "refUpdateRule": null
+                },
+                "headRefName": "merge/4/gated-failing",
+                "headRefOid": "7c920daa63edd121abf25b0e54c40f9f694aadf1",
+                "headRef": {
+                  "refUpdateRule": null
+                },
+                "isCrossRepository": false,
+                "headRepositoryOwner": {
+                  "__typename": "Organization",
+                  "login": "rozed-dev"
+                },
+                "commits": {
+                  "nodes": [
+                    {
+                      "commit": {
+                        "oid": "7c920daa63edd121abf25b0e54c40f9f694aadf1"
+                      }
+                    }
+                  ]
+                },
+                "stackEntry": null
+              },
+              {
+                "id": "PR_kwDOVleUfc8AAAABPsDbTw",
+                "number": 165,
+                "title": "Fixture M4: its head moves",
+                "isDraft": false,
+                "createdAt": "2026-11-17T00:21:21Z",
+                "updatedAt": "2026-11-17T00:21:24Z",
+                "author": {
+                  "__typename": "User",
+                  "login": "rozed-bot"
+                },
+                "baseRefName": "merge/4/base",
+                "baseRefOid": "1b397a8251a1eb40d44c83b820e866983436e40b",
+                "baseRef": {
+                  "target": {
+                    "__typename": "Commit",
+                    "oid": "1b397a8251a1eb40d44c83b820e866983436e40b"
+                  },
+                  "refUpdateRule": null
+                },
+                "headRefName": "merge/4/moved",
+                "headRefOid": "9776c43e82177ab014eca0c3ec133d66b9389d90",
+                "headRef": {
+                  "refUpdateRule": null
+                },
+                "isCrossRepository": false,
+                "headRepositoryOwner": {
+                  "__typename": "Organization",
+                  "login": "rozed-dev"
+                },
+                "commits": {
+                  "nodes": [
+                    {
+                      "commit": {
+                        "oid": "9776c43e82177ab014eca0c3ec133d66b9389d90"
+                      }
+                    }
+                  ]
+                },
+                "stackEntry": null
+              },
+              {
+                "id": "PR_kwDOVleUfc8AAAABPsDXfw",
+                "number": 164,
+                "title": "Fixture M4: chain, top layer",
+                "isDraft": false,
+                "createdAt": "2026-11-17T00:21:16Z",
+                "updatedAt": "2026-11-17T00:21:19Z",
+                "author": {
+                  "__typename": "User",
+                  "login": "rozed-bot"
+                },
+                "baseRefName": "merge/4/chain-1",
+                "baseRefOid": "bdf876f3743df75bd986a2920bf9f2560889911e",
+                "baseRef": {
+                  "target": {
+                    "__typename": "Commit",
+                    "oid": "bdf876f3743df75bd986a2920bf9f2560889911e"
+                  },
+                  "refUpdateRule": null
+                },
+                "headRefName": "merge/4/chain-2",
+                "headRefOid": "8dcfe37bcf56f2a388ec1aff34c167e5c1fb4016",
+                "headRef": {
+                  "refUpdateRule": null
+                },
+                "isCrossRepository": false,
+                "headRepositoryOwner": {
+                  "__typename": "Organization",
+                  "login": "rozed-dev"
+                },
+                "commits": {
+                  "nodes": [
+                    {
+                      "commit": {
+                        "oid": "8dcfe37bcf56f2a388ec1aff34c167e5c1fb4016"
+                      }
+                    }
+                  ]
+                },
+                "stackEntry": null
+              },
+              {
+                "id": "PR_kwDOVleUfc8AAAABPsDUKg",
+                "number": 163,
+                "title": "Fixture M4: chain, bottom layer",
+                "isDraft": false,
+                "createdAt": "2026-11-17T00:21:11Z",
+                "updatedAt": "2026-11-17T00:21:14Z",
+                "author": {
+                  "__typename": "User",
+                  "login": "rozed-bot"
+                },
+                "baseRefName": "merge/4/base",
+                "baseRefOid": "1b397a8251a1eb40d44c83b820e866983436e40b",
+                "baseRef": {
+                  "target": {
+                    "__typename": "Commit",
+                    "oid": "1b397a8251a1eb40d44c83b820e866983436e40b"
+                  },
+                  "refUpdateRule": null
+                },
+                "headRefName": "merge/4/chain-1",
+                "headRefOid": "bdf876f3743df75bd986a2920bf9f2560889911e",
+                "headRef": {
+                  "refUpdateRule": null
+                },
+                "isCrossRepository": false,
+                "headRepositoryOwner": {
+                  "__typename": "Organization",
+                  "login": "rozed-dev"
+                },
+                "commits": {
+                  "nodes": [
+                    {
+                      "commit": {
+                        "oid": "bdf876f3743df75bd986a2920bf9f2560889911e"
+                      }
+                    }
+                  ]
+                },
+                "stackEntry": null
+              },
+              {
+                "id": "PR_kwDOVleUfc8AAAABPsDQSw",
+                "number": 162,
+                "title": "Fixture M4: stack, second layer",
+                "isDraft": false,
+                "createdAt": "2026-11-17T00:21:06Z",
+                "updatedAt": "2026-11-17T00:21:10Z",
+                "author": {
+                  "__typename": "User",
+                  "login": "rozed-bot"
+                },
+                "baseRefName": "merge/4/stack-1",
+                "baseRefOid": "5e954f5a6e714e61521ae86b73d093f660a1129a",
+                "baseRef": {
+                  "target": {
+                    "__typename": "Commit",
+                    "oid": "5e954f5a6e714e61521ae86b73d093f660a1129a"
+                  },
+                  "refUpdateRule": null
+                },
+                "headRefName": "merge/4/stack-2",
+                "headRefOid": "15bb69aff5bf11f8f43663b457a2eccd5f10d49e",
+                "headRef": {
+                  "refUpdateRule": null
+                },
+                "isCrossRepository": false,
+                "headRepositoryOwner": {
+                  "__typename": "Organization",
+                  "login": "rozed-dev"
+                },
+                "commits": {
+                  "nodes": [
+                    {
+                      "commit": {
+                        "oid": "15bb69aff5bf11f8f43663b457a2eccd5f10d49e"
+                      }
+                    }
+                  ]
+                },
+                "stackEntry": {
+                  "position": 2,
+                  "stack": {
+                    "number": 173,
+                    "size": 2,
+                    "baseRefName": "merge/4/base"
+                  }
+                }
+              },
+              {
+                "id": "PR_kwDOVleUfc8AAAABPsDMPA",
+                "number": 161,
+                "title": "Fixture M4: stack, first layer",
+                "isDraft": false,
+                "createdAt": "2026-11-17T00:21:02Z",
+                "updatedAt": "2026-11-17T00:21:05Z",
+                "author": {
+                  "__typename": "User",
+                  "login": "rozed-bot"
+                },
+                "baseRefName": "merge/4/base",
+                "baseRefOid": "1b397a8251a1eb40d44c83b820e866983436e40b",
+                "baseRef": {
+                  "target": {
+                    "__typename": "Commit",
+                    "oid": "1b397a8251a1eb40d44c83b820e866983436e40b"
+                  },
+                  "refUpdateRule": null
+                },
+                "headRefName": "merge/4/stack-1",
+                "headRefOid": "5e954f5a6e714e61521ae86b73d093f660a1129a",
+                "headRef": {
+                  "refUpdateRule": null
+                },
+                "isCrossRepository": false,
+                "headRepositoryOwner": {
+                  "__typename": "Organization",
+                  "login": "rozed-dev"
+                },
+                "commits": {
+                  "nodes": [
+                    {
+                      "commit": {
+                        "oid": "5e954f5a6e714e61521ae86b73d093f660a1129a"
+                      }
+                    }
+                  ]
+                },
+                "stackEntry": {
+                  "position": 1,
+                  "stack": {
+                    "number": 173,
+                    "size": 2,
+                    "baseRefName": "merge/4/base"
+                  }
+                }
+              },
+              {
+                "id": "PR_kwDOVleUfc8AAAABPsDI-Q",
+                "number": 160,
+                "title": "Fixture M4: a draft",
+                "isDraft": true,
+                "createdAt": "2026-11-17T00:20:57Z",
+                "updatedAt": "2026-11-17T00:21:00Z",
+                "author": {
+                  "__typename": "User",
+                  "login": "rozed-bot"
+                },
+                "baseRefName": "merge/4/base",
+                "baseRefOid": "1b397a8251a1eb40d44c83b820e866983436e40b",
+                "baseRef": {
+                  "target": {
+                    "__typename": "Commit",
+                    "oid": "1b397a8251a1eb40d44c83b820e866983436e40b"
+                  },
+                  "refUpdateRule": null
+                },
+                "headRefName": "merge/4/draft",
+                "headRefOid": "d168853e0a03ed8931e31a8cbe90ffd672c11725",
+                "headRef": {
+                  "refUpdateRule": null
+                },
+                "isCrossRepository": false,
+                "headRepositoryOwner": {
+                  "__typename": "Organization",
+                  "login": "rozed-dev"
+                },
+                "commits": {
+                  "nodes": [
+                    {
+                      "commit": {
+                        "oid": "d168853e0a03ed8931e31a8cbe90ffd672c11725"
+                      }
+                    }
+                  ]
+                },
+                "stackEntry": null
+              },
+              {
+                "id": "PR_kwDOVleUfc8AAAABPsDFJA",
+                "number": 159,
+                "title": "Fixture M4: conflicts with its base",
+                "isDraft": false,
+                "createdAt": "2026-11-17T00:20:52Z",
+                "updatedAt": "2026-11-17T00:20:56Z",
+                "author": {
+                  "__typename": "User",
+                  "login": "rozed-bot"
+                },
+                "baseRefName": "merge/4/base",
+                "baseRefOid": "1b397a8251a1eb40d44c83b820e866983436e40b",
+                "baseRef": {
+                  "target": {
+                    "__typename": "Commit",
+                    "oid": "1b397a8251a1eb40d44c83b820e866983436e40b"
+                  },
+                  "refUpdateRule": null
+                },
+                "headRefName": "merge/4/conflict",
+                "headRefOid": "ba353a6429854af69e4ae9ec88f8b15d3f804d14",
+                "headRef": {
+                  "refUpdateRule": null
+                },
+                "isCrossRepository": false,
+                "headRepositoryOwner": {
+                  "__typename": "Organization",
+                  "login": "rozed-dev"
+                },
+                "commits": {
+                  "nodes": [
+                    {
+                      "commit": {
+                        "oid": "ba353a6429854af69e4ae9ec88f8b15d3f804d14"
+                      }
+                    }
+                  ]
+                },
+                "stackEntry": null
+              },
+              {
+                "id": "PR_kwDOVleUfc8AAAABPsDBzg",
+                "number": 158,
+                "title": "Fixture M4: rebase and merge",
+                "isDraft": false,
+                "createdAt": "2026-11-17T00:20:48Z",
+                "updatedAt": "2026-11-17T00:20:51Z",
+                "author": {
+                  "__typename": "User",
+                  "login": "rozed-bot"
+                },
+                "baseRefName": "merge/4/base",
+                "baseRefOid": "1b397a8251a1eb40d44c83b820e866983436e40b",
+                "baseRef": {
+                  "target": {
+                    "__typename": "Commit",
+                    "oid": "1b397a8251a1eb40d44c83b820e866983436e40b"
+                  },
+                  "refUpdateRule": null
+                },
+                "headRefName": "merge/4/rebase",
+                "headRefOid": "92f3492bf9b3346de28306ae88014fb94f4f8ae0",
+                "headRef": {
+                  "refUpdateRule": null
+                },
+                "isCrossRepository": false,
+                "headRepositoryOwner": {
+                  "__typename": "Organization",
+                  "login": "rozed-dev"
+                },
+                "commits": {
+                  "nodes": [
+                    {
+                      "commit": {
+                        "oid": "1b36806fa1789679a2e96103f1d9e7c9a81083d4"
+                      }
+                    },
+                    {
+                      "commit": {
+                        "oid": "92f3492bf9b3346de28306ae88014fb94f4f8ae0"
+                      }
+                    }
+                  ]
+                },
+                "stackEntry": null
+              },
+              {
+                "id": "PR_kwDOVleUfc8AAAABPsC9iQ",
+                "number": 157,
+                "title": "Fixture M4: merge commit",
+                "isDraft": false,
+                "createdAt": "2026-11-17T00:20:43Z",
+                "updatedAt": "2026-11-17T00:20:46Z",
+                "author": {
+                  "__typename": "User",
+                  "login": "rozed-bot"
+                },
+                "baseRefName": "merge/4/base",
+                "baseRefOid": "1b397a8251a1eb40d44c83b820e866983436e40b",
+                "baseRef": {
+                  "target": {
+                    "__typename": "Commit",
+                    "oid": "1b397a8251a1eb40d44c83b820e866983436e40b"
+                  },
+                  "refUpdateRule": null
+                },
+                "headRefName": "merge/4/merge",
+                "headRefOid": "924f211c75df157304e4d22fe0f710ee863a334b",
+                "headRef": {
+                  "refUpdateRule": null
+                },
+                "isCrossRepository": false,
+                "headRepositoryOwner": {
+                  "__typename": "Organization",
+                  "login": "rozed-dev"
+                },
+                "commits": {
+                  "nodes": [
+                    {
+                      "commit": {
+                        "oid": "924f211c75df157304e4d22fe0f710ee863a334b"
+                      }
+                    }
+                  ]
+                },
+                "stackEntry": null
+              },
+              {
+                "id": "PR_kwDOVleUfc8AAAABPsC5Pw",
+                "number": 156,
+                "title": "Fixture M4: squash and merge",
+                "isDraft": false,
+                "createdAt": "2026-11-17T00:20:38Z",
+                "updatedAt": "2026-11-17T00:20:42Z",
+                "author": {
+                  "__typename": "User",
+                  "login": "rozed-bot"
+                },
+                "baseRefName": "merge/4/base",
+                "baseRefOid": "1b397a8251a1eb40d44c83b820e866983436e40b",
+                "baseRef": {
+                  "target": {
+                    "__typename": "Commit",
+                    "oid": "1b397a8251a1eb40d44c83b820e866983436e40b"
+                  },
+                  "refUpdateRule": null
+                },
+                "headRefName": "merge/4/squash",
+                "headRefOid": "fdaac2160f0bcb5773413a8e2583fc86d4f085f1",
+                "headRef": {
+                  "refUpdateRule": null
+                },
+                "isCrossRepository": false,
+                "headRepositoryOwner": {
+                  "__typename": "Organization",
+                  "login": "rozed-dev"
+                },
+                "commits": {
+                  "nodes": [
+                    {
+                      "commit": {
+                        "oid": "9332e929a486c363a227ffdda92e7412ef3d7a46"
+                      }
+                    },
+                    {
+                      "commit": {
+                        "oid": "fdaac2160f0bcb5773413a8e2583fc86d4f085f1"
+                      }
+                    }
+                  ]
+                },
+                "stackEntry": null
+              },
+              {
+                "id": "PR_kwDOVleUfc8AAAABPqOTmQ",
+                "number": 154,
+                "title": "Fixture M3: needs an approval an admin may skip",
+                "isDraft": false,
+                "createdAt": "2026-11-16T21:55:06Z",
+                "updatedAt": "2026-11-16T21:55:09Z",
+                "author": {
+                  "__typename": "User",
+                  "login": "rozed-bot"
+                },
+                "baseRefName": "merge/3/override",
+                "baseRefOid": "2fcea26e376962849cd5f1537476673e372a4504",
+                "baseRef": {
+                  "target": {
+                    "__typename": "Commit",
+                    "oid": "2fcea26e376962849cd5f1537476673e372a4504"
+                  },
+                  "refUpdateRule": null
+                },
+                "headRefName": "merge/3/overridden",
+                "headRefOid": "9d41eb9e3a0c2b122faaa28124c35b926c1a129a",
+                "headRef": {
+                  "refUpdateRule": null
+                },
+                "isCrossRepository": false,
+                "headRepositoryOwner": {
+                  "__typename": "Organization",
+                  "login": "rozed-dev"
+                },
+                "commits": {
+                  "nodes": [
+                    {
+                      "commit": {
+                        "oid": "9d41eb9e3a0c2b122faaa28124c35b926c1a129a"
+                      }
+                    }
+                  ]
+                },
+                "stackEntry": null
+              },
+              {
+                "id": "PR_kwDOVleUfc8AAAABPqOPBw",
+                "number": 153,
+                "title": "Fixture M3: queued, fails in the queue",
+                "isDraft": false,
+                "createdAt": "2026-11-16T21:55:01Z",
+                "updatedAt": "2026-11-16T21:55:05Z",
+                "author": {
+                  "__typename": "User",
+                  "login": "rozed-bot"
+                },
+                "baseRefName": "e4/queued",
+                "baseRefOid": "be76197734f8ee252a269294e7be44c1c5fb8295",
+                "baseRef": {
+                  "target": {
+                    "__typename": "Commit",
+                    "oid": "be76197734f8ee252a269294e7be44c1c5fb8295"
+                  },
+                  "refUpdateRule": null
+                },
+                "headRefName": "merge/3/queued-fail",
+                "headRefOid": "262ba8a53c9ee99ae74c1934b5c234d4fe5934bb",
+                "headRef": {
+                  "refUpdateRule": null
+                },
+                "isCrossRepository": false,
+                "headRepositoryOwner": {
+                  "__typename": "Organization",
+                  "login": "rozed-dev"
+                },
+                "commits": {
+                  "nodes": [
+                    {
+                      "commit": {
+                        "oid": "262ba8a53c9ee99ae74c1934b5c234d4fe5934bb"
+                      }
+                    }
+                  ]
+                },
+                "stackEntry": null
+              },
+              {
+                "id": "PR_kwDOVleUfc8AAAABPqOKtg",
+                "number": 152,
+                "title": "Fixture M3: queued, slow (2)",
+                "isDraft": false,
+                "createdAt": "2026-11-16T21:54:57Z",
+                "updatedAt": "2026-11-16T21:55:00Z",
+                "author": {
+                  "__typename": "User",
+                  "login": "rozed-bot"
+                },
+                "baseRefName": "e4/queued",
+                "baseRefOid": "be76197734f8ee252a269294e7be44c1c5fb8295",
+                "baseRef": {
+                  "target": {
+                    "__typename": "Commit",
+                    "oid": "be76197734f8ee252a269294e7be44c1c5fb8295"
+                  },
+                  "refUpdateRule": null
+                },
+                "headRefName": "merge/3/queued-slow-2",
+                "headRefOid": "d5a8b3b02ee2282fd1eadb96bf6f7a627ef9116e",
+                "headRef": {
+                  "refUpdateRule": null
+                },
+                "isCrossRepository": false,
+                "headRepositoryOwner": {
+                  "__typename": "Organization",
+                  "login": "rozed-dev"
+                },
+                "commits": {
+                  "nodes": [
+                    {
+                      "commit": {
+                        "oid": "d5a8b3b02ee2282fd1eadb96bf6f7a627ef9116e"
+                      }
+                    }
+                  ]
+                },
+                "stackEntry": null
+              },
+              {
+                "id": "PR_kwDOVleUfc8AAAABPqOGJw",
+                "number": 151,
+                "title": "Fixture M3: queued, slow (1)",
+                "isDraft": false,
+                "createdAt": "2026-11-16T21:54:52Z",
+                "updatedAt": "2026-11-16T21:54:56Z",
+                "author": {
+                  "__typename": "User",
+                  "login": "rozed-bot"
+                },
+                "baseRefName": "e4/queued",
+                "baseRefOid": "be76197734f8ee252a269294e7be44c1c5fb8295",
+                "baseRef": {
+                  "target": {
+                    "__typename": "Commit",
+                    "oid": "be76197734f8ee252a269294e7be44c1c5fb8295"
+                  },
+                  "refUpdateRule": null
+                },
+                "headRefName": "merge/3/queued-slow-1",
+                "headRefOid": "e1ff564a0ddd3ae4623856e99fdf79a6e66981c0",
+                "headRef": {
+                  "refUpdateRule": null
+                },
+                "isCrossRepository": false,
+                "headRepositoryOwner": {
+                  "__typename": "Organization",
+                  "login": "rozed-dev"
+                },
+                "commits": {
+                  "nodes": [
+                    {
+                      "commit": {
+                        "oid": "e1ff564a0ddd3ae4623856e99fdf79a6e66981c0"
+                      }
+                    }
+                  ]
+                },
+                "stackEntry": null
+              },
+              {
+                "id": "PR_kwDOVleUfc8AAAABPqOB1w",
+                "number": 150,
+                "title": "Fixture M3: queued, passing",
+                "isDraft": false,
+                "createdAt": "2026-11-16T21:54:48Z",
+                "updatedAt": "2026-11-16T21:54:51Z",
+                "author": {
+                  "__typename": "User",
+                  "login": "rozed-bot"
+                },
+                "baseRefName": "e4/queued",
+                "baseRefOid": "be76197734f8ee252a269294e7be44c1c5fb8295",
+                "baseRef": {
+                  "target": {
+                    "__typename": "Commit",
+                    "oid": "be76197734f8ee252a269294e7be44c1c5fb8295"
+                  },
+                  "refUpdateRule": null
+                },
+                "headRefName": "merge/3/queued-pass",
+                "headRefOid": "7f6f323de66c06b0169f066a952c9809861e1c85",
+                "headRef": {
+                  "refUpdateRule": null
+                },
+                "isCrossRepository": false,
+                "headRepositoryOwner": {
+                  "__typename": "Organization",
+                  "login": "rozed-dev"
+                },
+                "commits": {
+                  "nodes": [
+                    {
+                      "commit": {
+                        "oid": "7f6f323de66c06b0169f066a952c9809861e1c85"
+                      }
+                    }
+                  ]
+                },
+                "stackEntry": null
+              },
+              {
+                "id": "PR_kwDOVleUfc8AAAABPqN9jA",
+                "number": 149,
+                "title": "Fixture M3: gated, waiting for an approval",
+                "isDraft": false,
+                "createdAt": "2026-11-16T21:54:43Z",
+                "updatedAt": "2026-11-16T21:54:46Z",
+                "author": {
+                  "__typename": "User",
+                  "login": "rozed-bot"
+                },
+                "baseRefName": "e4/gated",
+                "baseRefOid": "f8fd826d4615edfc580009f2aaf9ddc55f514ee2",
+                "baseRef": {
+                  "target": {
+                    "__typename": "Commit",
+                    "oid": "f8fd826d4615edfc580009f2aaf9ddc55f514ee2"
+                  },
+                  "refUpdateRule": null
+                },
+                "headRefName": "merge/3/gated-passing",
+                "headRefOid": "bf0f68001486ab1de4be339cf386729a8db951e4",
+                "headRef": {
+                  "refUpdateRule": null
+                },
+                "isCrossRepository": false,
+                "headRepositoryOwner": {
+                  "__typename": "Organization",
+                  "login": "rozed-dev"
+                },
+                "commits": {
+                  "nodes": [
+                    {
+                      "commit": {
+                        "oid": "bf0f68001486ab1de4be339cf386729a8db951e4"
+                      }
+                    }
+                  ]
+                },
+                "stackEntry": null
+              },
+              {
+                "id": "PR_kwDOVleUfc8AAAABPqN40A",
+                "number": 148,
+                "title": "Fixture M3: gated, checks failing and a conversation open",
+                "isDraft": false,
+                "createdAt": "2026-11-16T21:54:38Z",
+                "updatedAt": "2026-11-16T21:55:12Z",
+                "author": {
+                  "__typename": "User",
+                  "login": "rozed-bot"
+                },
+                "baseRefName": "e4/gated",
+                "baseRefOid": "f8fd826d4615edfc580009f2aaf9ddc55f514ee2",
+                "baseRef": {
+                  "target": {
+                    "__typename": "Commit",
+                    "oid": "f8fd826d4615edfc580009f2aaf9ddc55f514ee2"
+                  },
+                  "refUpdateRule": null
+                },
+                "headRefName": "merge/3/gated-failing",
+                "headRefOid": "19adef4c441e9f16f8f9867721a28aae24559103",
+                "headRef": {
+                  "refUpdateRule": null
+                },
+                "isCrossRepository": false,
+                "headRepositoryOwner": {
+                  "__typename": "Organization",
+                  "login": "rozed-dev"
+                },
+                "commits": {
+                  "nodes": [
+                    {
+                      "commit": {
+                        "oid": "19adef4c441e9f16f8f9867721a28aae24559103"
+                      }
+                    }
+                  ]
+                },
+                "stackEntry": null
+              },
+              {
+                "id": "PR_kwDOVleUfc8AAAABPqNz6g",
+                "number": 147,
+                "title": "Fixture M3: its head moves",
+                "isDraft": false,
+                "createdAt": "2026-11-16T21:54:33Z",
+                "updatedAt": "2026-11-16T21:54:37Z",
+                "author": {
+                  "__typename": "User",
+                  "login": "rozed-bot"
+                },
+                "baseRefName": "merge/3/base",
+                "baseRefOid": "cbea00b1af9e3237a88d830ddc722b631345813a",
+                "baseRef": {
+                  "target": {
+                    "__typename": "Commit",
+                    "oid": "cbea00b1af9e3237a88d830ddc722b631345813a"
+                  },
+                  "refUpdateRule": null
+                },
+                "headRefName": "merge/3/moved",
+                "headRefOid": "73821f56a53c63a0e652c324afce2dc2f8fe35cc",
+                "headRef": {
+                  "refUpdateRule": null
+                },
+                "isCrossRepository": false,
+                "headRepositoryOwner": {
+                  "__typename": "Organization",
+                  "login": "rozed-dev"
+                },
+                "commits": {
+                  "nodes": [
+                    {
+                      "commit": {
+                        "oid": "73821f56a53c63a0e652c324afce2dc2f8fe35cc"
+                      }
+                    }
+                  ]
+                },
+                "stackEntry": null
+              },
+              {
+                "id": "PR_kwDOVleUfc8AAAABPqNvdw",
+                "number": 146,
+                "title": "Fixture M3: chain, top layer",
+                "isDraft": false,
+                "createdAt": "2026-11-16T21:54:29Z",
+                "updatedAt": "2026-11-16T21:54:32Z",
+                "author": {
+                  "__typename": "User",
+                  "login": "rozed-bot"
+                },
+                "baseRefName": "merge/3/chain-1",
+                "baseRefOid": "7a2a02f7d9cdcaae02f4e47538c64f52e0c0ff8c",
+                "baseRef": {
+                  "target": {
+                    "__typename": "Commit",
+                    "oid": "7a2a02f7d9cdcaae02f4e47538c64f52e0c0ff8c"
+                  },
+                  "refUpdateRule": null
+                },
+                "headRefName": "merge/3/chain-2",
+                "headRefOid": "52c08d4ffb63e6d472508c91aac0730157c03d19",
+                "headRef": {
+                  "refUpdateRule": null
+                },
+                "isCrossRepository": false,
+                "headRepositoryOwner": {
+                  "__typename": "Organization",
+                  "login": "rozed-dev"
+                },
+                "commits": {
+                  "nodes": [
+                    {
+                      "commit": {
+                        "oid": "52c08d4ffb63e6d472508c91aac0730157c03d19"
+                      }
+                    }
+                  ]
+                },
+                "stackEntry": null
+              },
+              {
+                "id": "PR_kwDOVleUfc8AAAABPqNrcA",
+                "number": 145,
+                "title": "Fixture M3: chain, bottom layer",
+                "isDraft": false,
+                "createdAt": "2026-11-16T21:54:24Z",
+                "updatedAt": "2026-11-16T21:54:28Z",
+                "author": {
+                  "__typename": "User",
+                  "login": "rozed-bot"
+                },
+                "baseRefName": "merge/3/base",
+                "baseRefOid": "cbea00b1af9e3237a88d830ddc722b631345813a",
+                "baseRef": {
+                  "target": {
+                    "__typename": "Commit",
+                    "oid": "cbea00b1af9e3237a88d830ddc722b631345813a"
+                  },
+                  "refUpdateRule": null
+                },
+                "headRefName": "merge/3/chain-1",
+                "headRefOid": "7a2a02f7d9cdcaae02f4e47538c64f52e0c0ff8c",
+                "headRef": {
+                  "refUpdateRule": null
+                },
+                "isCrossRepository": false,
+                "headRepositoryOwner": {
+                  "__typename": "Organization",
+                  "login": "rozed-dev"
+                },
+                "commits": {
+                  "nodes": [
+                    {
+                      "commit": {
+                        "oid": "7a2a02f7d9cdcaae02f4e47538c64f52e0c0ff8c"
+                      }
+                    }
+                  ]
+                },
+                "stackEntry": null
+              },
+              {
+                "id": "PR_kwDOVleUfc8AAAABPqNnMg",
+                "number": 144,
+                "title": "Fixture M3: stack, second layer",
+                "isDraft": false,
+                "createdAt": "2026-11-16T21:54:20Z",
+                "updatedAt": "2026-11-16T21:54:23Z",
+                "author": {
+                  "__typename": "User",
+                  "login": "rozed-bot"
+                },
+                "baseRefName": "merge/3/stack-1",
+                "baseRefOid": "0a4ffbccbed57deb49b1b92e730c6de32355e78c",
+                "baseRef": {
+                  "target": {
+                    "__typename": "Commit",
+                    "oid": "0a4ffbccbed57deb49b1b92e730c6de32355e78c"
+                  },
+                  "refUpdateRule": null
+                },
+                "headRefName": "merge/3/stack-2",
+                "headRefOid": "c5798b3b5df6fc44da0359b34e44a454ed322450",
+                "headRef": {
+                  "refUpdateRule": null
+                },
+                "isCrossRepository": false,
+                "headRepositoryOwner": {
+                  "__typename": "Organization",
+                  "login": "rozed-dev"
+                },
+                "commits": {
+                  "nodes": [
+                    {
+                      "commit": {
+                        "oid": "c5798b3b5df6fc44da0359b34e44a454ed322450"
+                      }
+                    }
+                  ]
+                },
+                "stackEntry": {
+                  "position": 2,
+                  "stack": {
+                    "number": 155,
+                    "size": 2,
+                    "baseRefName": "merge/3/base"
+                  }
+                }
+              },
+              {
+                "id": "PR_kwDOVleUfc8AAAABPqNi5g",
+                "number": 143,
+                "title": "Fixture M3: stack, first layer",
+                "isDraft": false,
+                "createdAt": "2026-11-16T21:54:15Z",
+                "updatedAt": "2026-11-16T21:54:18Z",
+                "author": {
+                  "__typename": "User",
+                  "login": "rozed-bot"
+                },
+                "baseRefName": "merge/3/base",
+                "baseRefOid": "cbea00b1af9e3237a88d830ddc722b631345813a",
+                "baseRef": {
+                  "target": {
+                    "__typename": "Commit",
+                    "oid": "cbea00b1af9e3237a88d830ddc722b631345813a"
+                  },
+                  "refUpdateRule": null
+                },
+                "headRefName": "merge/3/stack-1",
+                "headRefOid": "0a4ffbccbed57deb49b1b92e730c6de32355e78c",
+                "headRef": {
+                  "refUpdateRule": null
+                },
+                "isCrossRepository": false,
+                "headRepositoryOwner": {
+                  "__typename": "Organization",
+                  "login": "rozed-dev"
+                },
+                "commits": {
+                  "nodes": [
+                    {
+                      "commit": {
+                        "oid": "0a4ffbccbed57deb49b1b92e730c6de32355e78c"
+                      }
+                    }
+                  ]
+                },
+                "stackEntry": {
+                  "position": 1,
+                  "stack": {
+                    "number": 155,
+                    "size": 2,
+                    "baseRefName": "merge/3/base"
+                  }
+                }
+              },
+              {
+                "id": "PR_kwDOVleUfc8AAAABPqNeuA",
+                "number": 142,
+                "title": "Fixture M3: a draft",
+                "isDraft": true,
+                "createdAt": "2026-11-16T21:54:10Z",
+                "updatedAt": "2026-11-16T21:54:13Z",
+                "author": {
+                  "__typename": "User",
+                  "login": "rozed-bot"
+                },
+                "baseRefName": "merge/3/base",
+                "baseRefOid": "cbea00b1af9e3237a88d830ddc722b631345813a",
+                "baseRef": {
+                  "target": {
+                    "__typename": "Commit",
+                    "oid": "cbea00b1af9e3237a88d830ddc722b631345813a"
+                  },
+                  "refUpdateRule": null
+                },
+                "headRefName": "merge/3/draft",
+                "headRefOid": "5ce26f04c7b20b3996b069b388150beecb9f5ad6",
+                "headRef": {
+                  "refUpdateRule": null
+                },
+                "isCrossRepository": false,
+                "headRepositoryOwner": {
+                  "__typename": "Organization",
+                  "login": "rozed-dev"
+                },
+                "commits": {
+                  "nodes": [
+                    {
+                      "commit": {
+                        "oid": "5ce26f04c7b20b3996b069b388150beecb9f5ad6"
+                      }
+                    }
+                  ]
+                },
+                "stackEntry": null
+              },
+              {
+                "id": "PR_kwDOVleUfc8AAAABPqNaAQ",
+                "number": 141,
+                "title": "Fixture M3: conflicts with its base",
+                "isDraft": false,
+                "createdAt": "2026-11-16T21:54:06Z",
+                "updatedAt": "2026-11-16T21:54:09Z",
+                "author": {
+                  "__typename": "User",
+                  "login": "rozed-bot"
+                },
+                "baseRefName": "merge/3/base",
+                "baseRefOid": "cbea00b1af9e3237a88d830ddc722b631345813a",
+                "baseRef": {
+                  "target": {
+                    "__typename": "Commit",
+                    "oid": "cbea00b1af9e3237a88d830ddc722b631345813a"
+                  },
+                  "refUpdateRule": null
+                },
+                "headRefName": "merge/3/conflict",
+                "headRefOid": "b2ca0486bd82221c22860c01d89121387dc53db2",
+                "headRef": {
+                  "refUpdateRule": null
+                },
+                "isCrossRepository": false,
+                "headRepositoryOwner": {
+                  "__typename": "Organization",
+                  "login": "rozed-dev"
+                },
+                "commits": {
+                  "nodes": [
+                    {
+                      "commit": {
+                        "oid": "b2ca0486bd82221c22860c01d89121387dc53db2"
+                      }
+                    }
+                  ]
+                },
+                "stackEntry": null
+              },
+              {
+                "id": "PR_kwDOVleUfc8AAAABPqNVRA",
+                "number": 140,
+                "title": "Fixture M3: rebase and merge",
+                "isDraft": false,
+                "createdAt": "2026-11-16T21:54:01Z",
+                "updatedAt": "2026-11-16T21:54:04Z",
+                "author": {
+                  "__typename": "User",
+                  "login": "rozed-bot"
+                },
+                "baseRefName": "merge/3/base",
+                "baseRefOid": "cbea00b1af9e3237a88d830ddc722b631345813a",
+                "baseRef": {
+                  "target": {
+                    "__typename": "Commit",
+                    "oid": "cbea00b1af9e3237a88d830ddc722b631345813a"
+                  },
+                  "refUpdateRule": null
+                },
+                "headRefName": "merge/3/rebase",
+                "headRefOid": "eb83e86d54d651bb4a0685b3be4254492ab5d1f3",
+                "headRef": {
+                  "refUpdateRule": null
+                },
+                "isCrossRepository": false,
+                "headRepositoryOwner": {
+                  "__typename": "Organization",
+                  "login": "rozed-dev"
+                },
+                "commits": {
+                  "nodes": [
+                    {
+                      "commit": {
+                        "oid": "4aa9ab603c4a1e36494ddd4a016b137554cf4561"
+                      }
+                    },
+                    {
+                      "commit": {
+                        "oid": "eb83e86d54d651bb4a0685b3be4254492ab5d1f3"
+                      }
+                    }
+                  ]
+                },
+                "stackEntry": null
+              },
+              {
+                "id": "PR_kwDOVleUfc8AAAABPqNQuA",
+                "number": 139,
+                "title": "Fixture M3: merge commit",
+                "isDraft": false,
+                "createdAt": "2026-11-16T21:53:56Z",
+                "updatedAt": "2026-11-16T21:53:59Z",
+                "author": {
+                  "__typename": "User",
+                  "login": "rozed-bot"
+                },
+                "baseRefName": "merge/3/base",
+                "baseRefOid": "cbea00b1af9e3237a88d830ddc722b631345813a",
+                "baseRef": {
+                  "target": {
+                    "__typename": "Commit",
+                    "oid": "cbea00b1af9e3237a88d830ddc722b631345813a"
+                  },
+                  "refUpdateRule": null
+                },
+                "headRefName": "merge/3/merge",
+                "headRefOid": "17c08d408e097673f11609136ad3cdf055ade434",
+                "headRef": {
+                  "refUpdateRule": null
+                },
+                "isCrossRepository": false,
+                "headRepositoryOwner": {
+                  "__typename": "Organization",
+                  "login": "rozed-dev"
+                },
+                "commits": {
+                  "nodes": [
+                    {
+                      "commit": {
+                        "oid": "17c08d408e097673f11609136ad3cdf055ade434"
+                      }
+                    }
+                  ]
+                },
+                "stackEntry": null
+              },
+              {
+                "id": "PR_kwDOVleUfc8AAAABPqNMjg",
+                "number": 138,
+                "title": "Fixture M3: squash and merge",
+                "isDraft": false,
+                "createdAt": "2026-11-16T21:53:52Z",
+                "updatedAt": "2026-11-16T21:53:55Z",
+                "author": {
+                  "__typename": "User",
+                  "login": "rozed-bot"
+                },
+                "baseRefName": "merge/3/base",
+                "baseRefOid": "cbea00b1af9e3237a88d830ddc722b631345813a",
+                "baseRef": {
+                  "target": {
+                    "__typename": "Commit",
+                    "oid": "cbea00b1af9e3237a88d830ddc722b631345813a"
+                  },
+                  "refUpdateRule": null
+                },
+                "headRefName": "merge/3/squash",
+                "headRefOid": "f88750b6de9173f81decc8ad9c50a4f6560848e6",
+                "headRef": {
+                  "refUpdateRule": null
+                },
+                "isCrossRepository": false,
+                "headRepositoryOwner": {
+                  "__typename": "Organization",
+                  "login": "rozed-dev"
+                },
+                "commits": {
+                  "nodes": [
+                    {
+                      "commit": {
+                        "oid": "e9ddc4f9cda78212a9ef3a892fbc8b5616adfb70"
+                      }
+                    },
+                    {
+                      "commit": {
+                        "oid": "f88750b6de9173f81decc8ad9c50a4f6560848e6"
+                      }
+                    }
+                  ]
+                },
+                "stackEntry": null
+              },
+              {
+                "id": "PR_kwDOVleUfc8AAAABPorzkQ",
+                "number": 137,
+                "title": "test pr for approvals",
+                "isDraft": false,
+                "createdAt": "2026-11-16T20:10:36Z",
+                "updatedAt": "2026-11-16T20:10:36Z",
+                "author": {
+                  "__typename": "User",
+                  "login": "scornz"
+                },
+                "baseRefName": "main",
+                "baseRefOid": "4bc87281f47234fc959197ed593116d7ddcdb4e8",
+                "baseRef": {
+                  "target": {
+                    "__typename": "Commit",
+                    "oid": "4bc87281f47234fc959197ed593116d7ddcdb4e8"
+                  },
+                  "refUpdateRule": null
+                },
+                "headRefName": "acc2/base",
+                "headRefOid": "239a99116b7ee8d6dd10de7317210b93ab3eb5b7",
+                "headRef": {
+                  "refUpdateRule": null
+                },
+                "isCrossRepository": false,
+                "headRepositoryOwner": {
+                  "__typename": "Organization",
+                  "login": "rozed-dev"
+                },
+                "commits": {
+                  "nodes": [
+                    {
+                      "commit": {
+                        "oid": "b1145ac653b06d62540fc20320c0b9f02bb7024e"
+                      }
+                    },
+                    {
+                      "commit": {
+                        "oid": "239a99116b7ee8d6dd10de7317210b93ab3eb5b7"
+                      }
+                    }
+                  ]
+                },
+                "stackEntry": null
+              },
+              {
+                "id": "PR_kwDOVleUfc8AAAABPnrz4Q",
+                "number": 135,
+                "title": "Fixture M2: needs an approval an admin may skip",
+                "isDraft": false,
+                "createdAt": "2026-11-16T19:03:25Z",
+                "updatedAt": "2026-11-16T19:03:28Z",
+                "author": {
+                  "__typename": "User",
+                  "login": "rozed-bot"
+                },
+                "baseRefName": "merge/2/override",
+                "baseRefOid": "4171bff019a1c878eba2f738ccf7db2d9f75d924",
+                "baseRef": {
+                  "target": {
+                    "__typename": "Commit",
+                    "oid": "4171bff019a1c878eba2f738ccf7db2d9f75d924"
+                  },
+                  "refUpdateRule": null
+                },
+                "headRefName": "merge/2/overridden",
+                "headRefOid": "606809177adf2b721e2584ccede5ee802cb72bb9",
+                "headRef": {
+                  "refUpdateRule": null
+                },
+                "isCrossRepository": false,
+                "headRepositoryOwner": {
+                  "__typename": "Organization",
+                  "login": "rozed-dev"
+                },
+                "commits": {
+                  "nodes": [
+                    {
+                      "commit": {
+                        "oid": "606809177adf2b721e2584ccede5ee802cb72bb9"
+                      }
+                    }
+                  ]
+                },
+                "stackEntry": null
+              },
+              {
+                "id": "PR_kwDOVleUfc8AAAABPnru6w",
+                "number": 134,
+                "title": "Fixture M2: queued, fails in the queue",
+                "isDraft": false,
+                "createdAt": "2026-11-16T19:03:20Z",
+                "updatedAt": "2026-11-16T19:03:23Z",
+                "author": {
+                  "__typename": "User",
+                  "login": "rozed-bot"
+                },
+                "baseRefName": "e4/queued",
+                "baseRefOid": "8dc8bc3d0b901efe4c2dd5e69d41c366da9aa49e",
+                "baseRef": {
+                  "target": {
+                    "__typename": "Commit",
+                    "oid": "be76197734f8ee252a269294e7be44c1c5fb8295"
+                  },
+                  "refUpdateRule": null
+                },
+                "headRefName": "merge/2/queued-fail",
+                "headRefOid": "1cd1ca9351bb8bf8ce0a4e89f1dfe75ef720d060",
+                "headRef": {
+                  "refUpdateRule": null
+                },
+                "isCrossRepository": false,
+                "headRepositoryOwner": {
+                  "__typename": "Organization",
+                  "login": "rozed-dev"
+                },
+                "commits": {
+                  "nodes": [
+                    {
+                      "commit": {
+                        "oid": "1cd1ca9351bb8bf8ce0a4e89f1dfe75ef720d060"
+                      }
+                    }
+                  ]
+                },
+                "stackEntry": null
+              },
+              {
+                "id": "PR_kwDOVleUfc8AAAABPnrpmQ",
+                "number": 133,
+                "title": "Fixture M2: queued, slow (2)",
+                "isDraft": false,
+                "createdAt": "2026-11-16T19:03:15Z",
+                "updatedAt": "2026-11-16T19:03:18Z",
+                "author": {
+                  "__typename": "User",
+                  "login": "rozed-bot"
+                },
+                "baseRefName": "e4/queued",
+                "baseRefOid": "8dc8bc3d0b901efe4c2dd5e69d41c366da9aa49e",
+                "baseRef": {
+                  "target": {
+                    "__typename": "Commit",
+                    "oid": "be76197734f8ee252a269294e7be44c1c5fb8295"
+                  },
+                  "refUpdateRule": null
+                },
+                "headRefName": "merge/2/queued-slow-2",
+                "headRefOid": "3230ff8eaabe0f4f6d0ebc6fa5188a1b6e51dfcd",
+                "headRef": {
+                  "refUpdateRule": null
+                },
+                "isCrossRepository": false,
+                "headRepositoryOwner": {
+                  "__typename": "Organization",
+                  "login": "rozed-dev"
+                },
+                "commits": {
+                  "nodes": [
+                    {
+                      "commit": {
+                        "oid": "3230ff8eaabe0f4f6d0ebc6fa5188a1b6e51dfcd"
+                      }
+                    }
+                  ]
+                },
+                "stackEntry": null
+              },
+              {
+                "id": "PR_kwDOVleUfc8AAAABPnrbSw",
+                "number": 130,
+                "title": "Fixture M2: gated, waiting for an approval",
+                "isDraft": false,
+                "createdAt": "2026-11-16T19:03:00Z",
+                "updatedAt": "2026-11-16T19:03:04Z",
+                "author": {
+                  "__typename": "User",
+                  "login": "rozed-bot"
+                },
+                "baseRefName": "e4/gated",
+                "baseRefOid": "f8fd826d4615edfc580009f2aaf9ddc55f514ee2",
+                "baseRef": {
+                  "target": {
+                    "__typename": "Commit",
+                    "oid": "f8fd826d4615edfc580009f2aaf9ddc55f514ee2"
+                  },
+                  "refUpdateRule": null
+                },
+                "headRefName": "merge/2/gated-passing",
+                "headRefOid": "d276853431c1ea349b9f58140f51e418260eb7d8",
+                "headRef": {
+                  "refUpdateRule": null
+                },
+                "isCrossRepository": false,
+                "headRepositoryOwner": {
+                  "__typename": "Organization",
+                  "login": "rozed-dev"
+                },
+                "commits": {
+                  "nodes": [
+                    {
+                      "commit": {
+                        "oid": "d276853431c1ea349b9f58140f51e418260eb7d8"
+                      }
+                    }
+                  ]
+                },
+                "stackEntry": null
+              },
+              {
+                "id": "PR_kwDOVleUfc8AAAABPnrWkQ",
+                "number": 129,
+                "title": "Fixture M2: gated, checks failing and a conversation open",
+                "isDraft": false,
+                "createdAt": "2026-11-16T19:02:56Z",
+                "updatedAt": "2026-11-16T19:03:30Z",
+                "author": {
+                  "__typename": "User",
+                  "login": "rozed-bot"
+                },
+                "baseRefName": "e4/gated",
+                "baseRefOid": "f8fd826d4615edfc580009f2aaf9ddc55f514ee2",
+                "baseRef": {
+                  "target": {
+                    "__typename": "Commit",
+                    "oid": "f8fd826d4615edfc580009f2aaf9ddc55f514ee2"
+                  },
+                  "refUpdateRule": null
+                },
+                "headRefName": "merge/2/gated-failing",
+                "headRefOid": "779e2dd28431d812fed986b8c940d0c0f04ea026",
+                "headRef": {
+                  "refUpdateRule": null
+                },
+                "isCrossRepository": false,
+                "headRepositoryOwner": {
+                  "__typename": "Organization",
+                  "login": "rozed-dev"
+                },
+                "commits": {
+                  "nodes": [
+                    {
+                      "commit": {
+                        "oid": "779e2dd28431d812fed986b8c940d0c0f04ea026"
+                      }
+                    }
+                  ]
+                },
+                "stackEntry": null
+              },
+              {
+                "id": "PR_kwDOVleUfc8AAAABPnrSAQ",
+                "number": 128,
+                "title": "Fixture M2: its head moves",
+                "isDraft": false,
+                "createdAt": "2026-11-16T19:02:51Z",
+                "updatedAt": "2026-11-16T19:02:55Z",
+                "author": {
+                  "__typename": "User",
+                  "login": "rozed-bot"
+                },
+                "baseRefName": "merge/2/base",
+                "baseRefOid": "6280615445b3b10372e7055ba63cfba6f335d0df",
+                "baseRef": {
+                  "target": {
+                    "__typename": "Commit",
+                    "oid": "6280615445b3b10372e7055ba63cfba6f335d0df"
+                  },
+                  "refUpdateRule": null
+                },
+                "headRefName": "merge/2/moved",
+                "headRefOid": "35802f1ddbaa9793fd98a110cc8e589264142e9d",
+                "headRef": {
+                  "refUpdateRule": null
+                },
+                "isCrossRepository": false,
+                "headRepositoryOwner": {
+                  "__typename": "Organization",
+                  "login": "rozed-dev"
+                },
+                "commits": {
+                  "nodes": [
+                    {
+                      "commit": {
+                        "oid": "35802f1ddbaa9793fd98a110cc8e589264142e9d"
+                      }
+                    }
+                  ]
+                },
+                "stackEntry": null
+              },
+              {
+                "id": "PR_kwDOVleUfc8AAAABPnrNTQ",
+                "number": 127,
+                "title": "Fixture M2: chain, top layer",
+                "isDraft": false,
+                "createdAt": "2026-11-16T19:02:47Z",
+                "updatedAt": "2026-11-16T19:02:50Z",
+                "author": {
+                  "__typename": "User",
+                  "login": "rozed-bot"
+                },
+                "baseRefName": "merge/2/chain-1",
+                "baseRefOid": "b1632bf56fcec603901bc28b5647f3f2e8083c91",
+                "baseRef": {
+                  "target": {
+                    "__typename": "Commit",
+                    "oid": "b1632bf56fcec603901bc28b5647f3f2e8083c91"
+                  },
+                  "refUpdateRule": null
+                },
+                "headRefName": "merge/2/chain-2",
+                "headRefOid": "d5b56e4b5ebd507f4710ed0b6b7c07833a7de8bc",
+                "headRef": {
+                  "refUpdateRule": null
+                },
+                "isCrossRepository": false,
+                "headRepositoryOwner": {
+                  "__typename": "Organization",
+                  "login": "rozed-dev"
+                },
+                "commits": {
+                  "nodes": [
+                    {
+                      "commit": {
+                        "oid": "d5b56e4b5ebd507f4710ed0b6b7c07833a7de8bc"
+                      }
+                    }
+                  ]
+                },
+                "stackEntry": null
+              },
+              {
+                "id": "PR_kwDOVleUfc8AAAABPnrImQ",
+                "number": 126,
+                "title": "Fixture M2: chain, bottom layer",
+                "isDraft": false,
+                "createdAt": "2026-11-16T19:02:42Z",
+                "updatedAt": "2026-11-16T19:02:46Z",
+                "author": {
+                  "__typename": "User",
+                  "login": "rozed-bot"
+                },
+                "baseRefName": "merge/2/base",
+                "baseRefOid": "6280615445b3b10372e7055ba63cfba6f335d0df",
+                "baseRef": {
+                  "target": {
+                    "__typename": "Commit",
+                    "oid": "6280615445b3b10372e7055ba63cfba6f335d0df"
+                  },
+                  "refUpdateRule": null
+                },
+                "headRefName": "merge/2/chain-1",
+                "headRefOid": "b1632bf56fcec603901bc28b5647f3f2e8083c91",
+                "headRef": {
+                  "refUpdateRule": null
+                },
+                "isCrossRepository": false,
+                "headRepositoryOwner": {
+                  "__typename": "Organization",
+                  "login": "rozed-dev"
+                },
+                "commits": {
+                  "nodes": [
+                    {
+                      "commit": {
+                        "oid": "b1632bf56fcec603901bc28b5647f3f2e8083c91"
+                      }
+                    }
+                  ]
+                },
+                "stackEntry": null
+              },
+              {
+                "id": "PR_kwDOVleUfc8AAAABPnrD6g",
+                "number": 125,
+                "title": "Fixture M2: stack, second layer",
+                "isDraft": false,
+                "createdAt": "2026-11-16T19:02:38Z",
+                "updatedAt": "2026-11-16T19:02:41Z",
+                "author": {
+                  "__typename": "User",
+                  "login": "rozed-bot"
+                },
+                "baseRefName": "merge/2/stack-1",
+                "baseRefOid": "7d030a43597ba5e7f8c53e4461be8e206b04656c",
+                "baseRef": {
+                  "target": {
+                    "__typename": "Commit",
+                    "oid": "7d030a43597ba5e7f8c53e4461be8e206b04656c"
+                  },
+                  "refUpdateRule": null
+                },
+                "headRefName": "merge/2/stack-2",
+                "headRefOid": "25873551216ec5b5bd14b8b825881264dbe08539",
+                "headRef": {
+                  "refUpdateRule": null
+                },
+                "isCrossRepository": false,
+                "headRepositoryOwner": {
+                  "__typename": "Organization",
+                  "login": "rozed-dev"
+                },
+                "commits": {
+                  "nodes": [
+                    {
+                      "commit": {
+                        "oid": "25873551216ec5b5bd14b8b825881264dbe08539"
+                      }
+                    }
+                  ]
+                },
+                "stackEntry": {
+                  "position": 2,
+                  "stack": {
+                    "number": 136,
+                    "size": 2,
+                    "baseRefName": "merge/2/base"
+                  }
+                }
+              },
+              {
+                "id": "PR_kwDOVleUfc8AAAABPnq9uA",
+                "number": 124,
+                "title": "Fixture M2: stack, first layer",
+                "isDraft": false,
+                "createdAt": "2026-11-16T19:02:33Z",
+                "updatedAt": "2026-11-16T19:02:36Z",
+                "author": {
+                  "__typename": "User",
+                  "login": "rozed-bot"
+                },
+                "baseRefName": "merge/2/base",
+                "baseRefOid": "6280615445b3b10372e7055ba63cfba6f335d0df",
+                "baseRef": {
+                  "target": {
+                    "__typename": "Commit",
+                    "oid": "6280615445b3b10372e7055ba63cfba6f335d0df"
+                  },
+                  "refUpdateRule": null
+                },
+                "headRefName": "merge/2/stack-1",
+                "headRefOid": "7d030a43597ba5e7f8c53e4461be8e206b04656c",
+                "headRef": {
+                  "refUpdateRule": null
+                },
+                "isCrossRepository": false,
+                "headRepositoryOwner": {
+                  "__typename": "Organization",
+                  "login": "rozed-dev"
+                },
+                "commits": {
+                  "nodes": [
+                    {
+                      "commit": {
+                        "oid": "7d030a43597ba5e7f8c53e4461be8e206b04656c"
+                      }
+                    }
+                  ]
+                },
+                "stackEntry": {
+                  "position": 1,
+                  "stack": {
+                    "number": 136,
+                    "size": 2,
+                    "baseRefName": "merge/2/base"
+                  }
+                }
+              },
+              {
+                "id": "PR_kwDOVleUfc8AAAABPnq5AA",
+                "number": 123,
+                "title": "Fixture M2: a draft",
+                "isDraft": true,
+                "createdAt": "2026-11-16T19:02:28Z",
+                "updatedAt": "2026-11-16T19:02:31Z",
+                "author": {
+                  "__typename": "User",
+                  "login": "rozed-bot"
+                },
+                "baseRefName": "merge/2/base",
+                "baseRefOid": "6280615445b3b10372e7055ba63cfba6f335d0df",
+                "baseRef": {
+                  "target": {
+                    "__typename": "Commit",
+                    "oid": "6280615445b3b10372e7055ba63cfba6f335d0df"
+                  },
+                  "refUpdateRule": null
+                },
+                "headRefName": "merge/2/draft",
+                "headRefOid": "69730d285e52dcba553efd99fe7b0bce3b229a3a",
+                "headRef": {
+                  "refUpdateRule": null
+                },
+                "isCrossRepository": false,
+                "headRepositoryOwner": {
+                  "__typename": "Organization",
+                  "login": "rozed-dev"
+                },
+                "commits": {
+                  "nodes": [
+                    {
+                      "commit": {
+                        "oid": "69730d285e52dcba553efd99fe7b0bce3b229a3a"
+                      }
+                    }
+                  ]
+                },
+                "stackEntry": null
+              },
+              {
+                "id": "PR_kwDOVleUfc8AAAABPnqz6w",
+                "number": 122,
+                "title": "Fixture M2: conflicts with its base",
+                "isDraft": false,
+                "createdAt": "2026-11-16T19:02:24Z",
+                "updatedAt": "2026-11-16T19:02:27Z",
+                "author": {
+                  "__typename": "User",
+                  "login": "rozed-bot"
+                },
+                "baseRefName": "merge/2/base",
+                "baseRefOid": "6280615445b3b10372e7055ba63cfba6f335d0df",
+                "baseRef": {
+                  "target": {
+                    "__typename": "Commit",
+                    "oid": "6280615445b3b10372e7055ba63cfba6f335d0df"
+                  },
+                  "refUpdateRule": null
+                },
+                "headRefName": "merge/2/conflict",
+                "headRefOid": "77b7cf46c0a49b5f1b775502b14791f6335c4c1f",
+                "headRef": {
+                  "refUpdateRule": null
+                },
+                "isCrossRepository": false,
+                "headRepositoryOwner": {
+                  "__typename": "Organization",
+                  "login": "rozed-dev"
+                },
+                "commits": {
+                  "nodes": [
+                    {
+                      "commit": {
+                        "oid": "77b7cf46c0a49b5f1b775502b14791f6335c4c1f"
+                      }
+                    }
+                  ]
+                },
+                "stackEntry": null
+              },
+              {
+                "id": "PR_kwDOVleUfc8AAAABPnquig",
+                "number": 121,
+                "title": "Fixture M2: rebase and merge",
+                "isDraft": false,
+                "createdAt": "2026-11-16T19:02:19Z",
+                "updatedAt": "2026-11-16T19:02:22Z",
+                "author": {
+                  "__typename": "User",
+                  "login": "rozed-bot"
+                },
+                "baseRefName": "merge/2/base",
+                "baseRefOid": "6280615445b3b10372e7055ba63cfba6f335d0df",
+                "baseRef": {
+                  "target": {
+                    "__typename": "Commit",
+                    "oid": "6280615445b3b10372e7055ba63cfba6f335d0df"
+                  },
+                  "refUpdateRule": null
+                },
+                "headRefName": "merge/2/rebase",
+                "headRefOid": "6227ffb26e6d367833af7b7343d4b50aa3a106f3",
+                "headRef": {
+                  "refUpdateRule": null
+                },
+                "isCrossRepository": false,
+                "headRepositoryOwner": {
+                  "__typename": "Organization",
+                  "login": "rozed-dev"
+                },
+                "commits": {
+                  "nodes": [
+                    {
+                      "commit": {
+                        "oid": "cac58484a56dfcf3b1f4777ab82cf33c910003a4"
+                      }
+                    },
+                    {
+                      "commit": {
+                        "oid": "6227ffb26e6d367833af7b7343d4b50aa3a106f3"
+                      }
+                    }
+                  ]
+                },
+                "stackEntry": null
+              },
+              {
+                "id": "PR_kwDOVleUfc8AAAABPnqo-w",
+                "number": 120,
+                "title": "Fixture M2: merge commit",
+                "isDraft": false,
+                "createdAt": "2026-11-16T19:02:14Z",
+                "updatedAt": "2026-11-16T19:02:17Z",
+                "author": {
+                  "__typename": "User",
+                  "login": "rozed-bot"
+                },
+                "baseRefName": "merge/2/base",
+                "baseRefOid": "6280615445b3b10372e7055ba63cfba6f335d0df",
+                "baseRef": {
+                  "target": {
+                    "__typename": "Commit",
+                    "oid": "6280615445b3b10372e7055ba63cfba6f335d0df"
+                  },
+                  "refUpdateRule": null
+                },
+                "headRefName": "merge/2/merge",
+                "headRefOid": "39d578b2965ce211ebdfb2ba7bceba229fc32417",
+                "headRef": {
+                  "refUpdateRule": null
+                },
+                "isCrossRepository": false,
+                "headRepositoryOwner": {
+                  "__typename": "Organization",
+                  "login": "rozed-dev"
+                },
+                "commits": {
+                  "nodes": [
+                    {
+                      "commit": {
+                        "oid": "39d578b2965ce211ebdfb2ba7bceba229fc32417"
+                      }
+                    }
+                  ]
+                },
+                "stackEntry": null
+              },
+              {
+                "id": "PR_kwDOVleUfc8AAAABPnqjww",
+                "number": 119,
+                "title": "Fixture M2: squash and merge",
+                "isDraft": false,
+                "createdAt": "2026-11-16T19:02:09Z",
+                "updatedAt": "2026-11-16T19:02:12Z",
+                "author": {
+                  "__typename": "User",
+                  "login": "rozed-bot"
+                },
+                "baseRefName": "merge/2/base",
+                "baseRefOid": "6280615445b3b10372e7055ba63cfba6f335d0df",
+                "baseRef": {
+                  "target": {
+                    "__typename": "Commit",
+                    "oid": "6280615445b3b10372e7055ba63cfba6f335d0df"
+                  },
+                  "refUpdateRule": null
+                },
+                "headRefName": "merge/2/squash",
+                "headRefOid": "88c6e0ae5d22b0fa50fefde94c610cd3831c564d",
+                "headRef": {
+                  "refUpdateRule": null
+                },
+                "isCrossRepository": false,
+                "headRepositoryOwner": {
+                  "__typename": "Organization",
+                  "login": "rozed-dev"
+                },
+                "commits": {
+                  "nodes": [
+                    {
+                      "commit": {
+                        "oid": "210272c574c877bbd2e4062741aec62b1327c113"
+                      }
+                    },
+                    {
+                      "commit": {
+                        "oid": "88c6e0ae5d22b0fa50fefde94c610cd3831c564d"
+                      }
+                    }
+                  ]
+                },
+                "stackEntry": null
+              },
+              {
+                "id": "PR_kwDOVleUfc8AAAABPnS7NQ",
+                "number": 117,
+                "title": "Fixture M1: needs an approval an admin may skip",
+                "isDraft": false,
+                "createdAt": "2026-11-16T18:37:04Z",
+                "updatedAt": "2026-11-16T18:40:25Z",
+                "author": {
+                  "__typename": "User",
+                  "login": "rozed-bot"
+                },
+                "baseRefName": "merge/1/override",
+                "baseRefOid": "0ca89a8ea08e6a342399cfce20df2cdcdcff93f0",
+                "baseRef": {
+                  "target": {
+                    "__typename": "Commit",
+                    "oid": "0ca89a8ea08e6a342399cfce20df2cdcdcff93f0"
+                  },
+                  "refUpdateRule": null
+                },
+                "headRefName": "merge/1/overridden",
+                "headRefOid": "33204c2ced6be61fc60e545873b06ec1efc8b5e1",
+                "headRef": {
+                  "refUpdateRule": null
+                },
+                "isCrossRepository": false,
+                "headRepositoryOwner": {
+                  "__typename": "Organization",
+                  "login": "rozed-dev"
+                },
+                "commits": {
+                  "nodes": [
+                    {
+                      "commit": {
+                        "oid": "33204c2ced6be61fc60e545873b06ec1efc8b5e1"
+                      }
+                    }
+                  ]
+                },
+                "stackEntry": null
+              },
+              {
+                "id": "PR_kwDOVleUfc8AAAABPnS3AQ",
+                "number": 116,
+                "title": "Fixture M1: queued, fails in the queue",
+                "isDraft": false,
+                "createdAt": "2026-11-16T18:36:59Z",
+                "updatedAt": "2026-11-16T18:40:24Z",
+                "author": {
+                  "__typename": "User",
+                  "login": "rozed-bot"
+                },
+                "baseRefName": "e4/queued",
+                "baseRefOid": "8dc8bc3d0b901efe4c2dd5e69d41c366da9aa49e",
+                "baseRef": {
+                  "target": {
+                    "__typename": "Commit",
+                    "oid": "be76197734f8ee252a269294e7be44c1c5fb8295"
+                  },
+                  "refUpdateRule": null
+                },
+                "headRefName": "merge/1/queued-fail",
+                "headRefOid": "3592f87c479da9684c4a4ed4ed9c3f1286b2304a",
+                "headRef": {
+                  "refUpdateRule": null
+                },
+                "isCrossRepository": false,
+                "headRepositoryOwner": {
+                  "__typename": "Organization",
+                  "login": "rozed-dev"
+                },
+                "commits": {
+                  "nodes": [
+                    {
+                      "commit": {
+                        "oid": "3592f87c479da9684c4a4ed4ed9c3f1286b2304a"
+                      }
+                    }
+                  ]
+                },
+                "stackEntry": null
+              },
+              {
+                "id": "PR_kwDOVleUfc8AAAABPnSyyw",
+                "number": 115,
+                "title": "Fixture M1: queued, slow (2)",
+                "isDraft": false,
+                "createdAt": "2026-11-16T18:36:55Z",
+                "updatedAt": "2026-11-16T18:40:23Z",
+                "author": {
+                  "__typename": "User",
+                  "login": "rozed-bot"
+                },
+                "baseRefName": "e4/queued",
+                "baseRefOid": "8dc8bc3d0b901efe4c2dd5e69d41c366da9aa49e",
+                "baseRef": {
+                  "target": {
+                    "__typename": "Commit",
+                    "oid": "be76197734f8ee252a269294e7be44c1c5fb8295"
+                  },
+                  "refUpdateRule": null
+                },
+                "headRefName": "merge/1/queued-slow-2",
+                "headRefOid": "fddbd4a7589138e112c58c1eef3ebb6c1d0b0d06",
+                "headRef": {
+                  "refUpdateRule": null
+                },
+                "isCrossRepository": false,
+                "headRepositoryOwner": {
+                  "__typename": "Organization",
+                  "login": "rozed-dev"
+                },
+                "commits": {
+                  "nodes": [
+                    {
+                      "commit": {
+                        "oid": "fddbd4a7589138e112c58c1eef3ebb6c1d0b0d06"
+                      }
+                    }
+                  ]
+                },
+                "stackEntry": null
+              },
+              {
+                "id": "PR_kwDOVleUfc8AAAABPnSuiA",
+                "number": 114,
+                "title": "Fixture M1: queued, slow (1)",
+                "isDraft": false,
+                "createdAt": "2026-11-16T18:36:50Z",
+                "updatedAt": "2026-11-16T18:40:22Z",
+                "author": {
+                  "__typename": "User",
+                  "login": "rozed-bot"
+                },
+                "baseRefName": "e4/queued",
+                "baseRefOid": "8dc8bc3d0b901efe4c2dd5e69d41c366da9aa49e",
+                "baseRef": {
+                  "target": {
+                    "__typename": "Commit",
+                    "oid": "be76197734f8ee252a269294e7be44c1c5fb8295"
+                  },
+                  "refUpdateRule": null
+                },
+                "headRefName": "merge/1/queued-slow-1",
+                "headRefOid": "aef1f85367a25820f9af2a871bade8c2d6df1908",
+                "headRef": {
+                  "refUpdateRule": null
+                },
+                "isCrossRepository": false,
+                "headRepositoryOwner": {
+                  "__typename": "Organization",
+                  "login": "rozed-dev"
+                },
+                "commits": {
+                  "nodes": [
+                    {
+                      "commit": {
+                        "oid": "aef1f85367a25820f9af2a871bade8c2d6df1908"
+                      }
+                    }
+                  ]
+                },
+                "stackEntry": null
+              },
+              {
+                "id": "PR_kwDOVleUfc8AAAABPnSp4g",
+                "number": 113,
+                "title": "Fixture M1: queued, passing",
+                "isDraft": false,
+                "createdAt": "2026-11-16T18:36:46Z",
+                "updatedAt": "2026-11-16T18:40:21Z",
+                "author": {
+                  "__typename": "User",
+                  "login": "rozed-bot"
+                },
+                "baseRefName": "e4/queued",
+                "baseRefOid": "8dc8bc3d0b901efe4c2dd5e69d41c366da9aa49e",
+                "baseRef": {
+                  "target": {
+                    "__typename": "Commit",
+                    "oid": "be76197734f8ee252a269294e7be44c1c5fb8295"
+                  },
+                  "refUpdateRule": null
+                },
+                "headRefName": "merge/1/queued-pass",
+                "headRefOid": "40c63f907b051d5fd26f9cb0b46f3f36b0c10368",
+                "headRef": {
+                  "refUpdateRule": null
+                },
+                "isCrossRepository": false,
+                "headRepositoryOwner": {
+                  "__typename": "Organization",
+                  "login": "rozed-dev"
+                },
+                "commits": {
+                  "nodes": [
+                    {
+                      "commit": {
+                        "oid": "40c63f907b051d5fd26f9cb0b46f3f36b0c10368"
+                      }
+                    }
+                  ]
+                },
+                "stackEntry": null
+              },
+              {
+                "id": "PR_kwDOVleUfc8AAAABPnSloQ",
+                "number": 112,
+                "title": "Fixture M1: gated, waiting for an approval",
+                "isDraft": false,
+                "createdAt": "2026-11-16T18:36:41Z",
+                "updatedAt": "2026-11-16T18:40:20Z",
+                "author": {
+                  "__typename": "User",
+                  "login": "rozed-bot"
+                },
+                "baseRefName": "e4/gated",
+                "baseRefOid": "f8fd826d4615edfc580009f2aaf9ddc55f514ee2",
+                "baseRef": {
+                  "target": {
+                    "__typename": "Commit",
+                    "oid": "f8fd826d4615edfc580009f2aaf9ddc55f514ee2"
+                  },
+                  "refUpdateRule": null
+                },
+                "headRefName": "merge/1/gated-passing",
+                "headRefOid": "96cdd75ba628f281351fa505c42182c509fc9e48",
+                "headRef": {
+                  "refUpdateRule": null
+                },
+                "isCrossRepository": false,
+                "headRepositoryOwner": {
+                  "__typename": "Organization",
+                  "login": "rozed-dev"
+                },
+                "commits": {
+                  "nodes": [
+                    {
+                      "commit": {
+                        "oid": "96cdd75ba628f281351fa505c42182c509fc9e48"
+                      }
+                    }
+                  ]
+                },
+                "stackEntry": null
+              },
+              {
+                "id": "PR_kwDOVleUfc8AAAABPnSgoQ",
+                "number": 111,
+                "title": "Fixture M1: gated, checks failing and a conversation open",
+                "isDraft": false,
+                "createdAt": "2026-11-16T18:36:36Z",
+                "updatedAt": "2026-11-16T18:40:19Z",
+                "author": {
+                  "__typename": "User",
+                  "login": "rozed-bot"
+                },
+                "baseRefName": "e4/gated",
+                "baseRefOid": "f8fd826d4615edfc580009f2aaf9ddc55f514ee2",
+                "baseRef": {
+                  "target": {
+                    "__typename": "Commit",
+                    "oid": "f8fd826d4615edfc580009f2aaf9ddc55f514ee2"
+                  },
+                  "refUpdateRule": null
+                },
+                "headRefName": "merge/1/gated-failing",
+                "headRefOid": "ca9e9a896119b12cd2176c9242dd8ff1806cd88f",
+                "headRef": {
+                  "refUpdateRule": null
+                },
+                "isCrossRepository": false,
+                "headRepositoryOwner": {
+                  "__typename": "Organization",
+                  "login": "rozed-dev"
+                },
+                "commits": {
+                  "nodes": [
+                    {
+                      "commit": {
+                        "oid": "ca9e9a896119b12cd2176c9242dd8ff1806cd88f"
+                      }
+                    }
+                  ]
+                },
+                "stackEntry": null
+              },
+              {
+                "id": "PR_kwDOVleUfc8AAAABPnScEw",
+                "number": 110,
+                "title": "Fixture M1: its head moves",
+                "isDraft": false,
+                "createdAt": "2026-11-16T18:36:31Z",
+                "updatedAt": "2026-11-16T18:40:18Z",
+                "author": {
+                  "__typename": "User",
+                  "login": "rozed-bot"
+                },
+                "baseRefName": "merge/1/base",
+                "baseRefOid": "02f20a233b5cfc9700e8dc7692117783c0854fc2",
+                "baseRef": {
+                  "target": {
+                    "__typename": "Commit",
+                    "oid": "02f20a233b5cfc9700e8dc7692117783c0854fc2"
+                  },
+                  "refUpdateRule": null
+                },
+                "headRefName": "merge/1/moved",
+                "headRefOid": "d5a7ad7c621b421e0af2f731f20a7a110c022604",
+                "headRef": {
+                  "refUpdateRule": null
+                },
+                "isCrossRepository": false,
+                "headRepositoryOwner": {
+                  "__typename": "Organization",
+                  "login": "rozed-dev"
+                },
+                "commits": {
+                  "nodes": [
+                    {
+                      "commit": {
+                        "oid": "d5a7ad7c621b421e0af2f731f20a7a110c022604"
+                      }
+                    }
+                  ]
+                },
+                "stackEntry": null
+              },
+              {
+                "id": "PR_kwDOVleUfc8AAAABPnSX8w",
+                "number": 109,
+                "title": "Fixture M1: chain, top layer",
+                "isDraft": false,
+                "createdAt": "2026-11-16T18:36:27Z",
+                "updatedAt": "2026-11-16T18:40:17Z",
+                "author": {
+                  "__typename": "User",
+                  "login": "rozed-bot"
+                },
+                "baseRefName": "merge/1/chain-1",
+                "baseRefOid": "90d9028b65f737425591f43fac99dbea4c48db9b",
+                "baseRef": {
+                  "target": {
+                    "__typename": "Commit",
+                    "oid": "90d9028b65f737425591f43fac99dbea4c48db9b"
+                  },
+                  "refUpdateRule": null
+                },
+                "headRefName": "merge/1/chain-2",
+                "headRefOid": "89ef5c7e4d67a47d224c82c090aded598e48d5df",
+                "headRef": {
+                  "refUpdateRule": null
+                },
+                "isCrossRepository": false,
+                "headRepositoryOwner": {
+                  "__typename": "Organization",
+                  "login": "rozed-dev"
+                },
+                "commits": {
+                  "nodes": [
+                    {
+                      "commit": {
+                        "oid": "89ef5c7e4d67a47d224c82c090aded598e48d5df"
+                      }
+                    }
+                  ]
+                },
+                "stackEntry": null
+              },
+              {
+                "id": "PR_kwDOVleUfc8AAAABPnST6g",
+                "number": 108,
+                "title": "Fixture M1: chain, bottom layer",
+                "isDraft": false,
+                "createdAt": "2026-11-16T18:36:22Z",
+                "updatedAt": "2026-11-16T18:40:16Z",
+                "author": {
+                  "__typename": "User",
+                  "login": "rozed-bot"
+                },
+                "baseRefName": "merge/1/base",
+                "baseRefOid": "02f20a233b5cfc9700e8dc7692117783c0854fc2",
+                "baseRef": {
+                  "target": {
+                    "__typename": "Commit",
+                    "oid": "02f20a233b5cfc9700e8dc7692117783c0854fc2"
+                  },
+                  "refUpdateRule": null
+                },
+                "headRefName": "merge/1/chain-1",
+                "headRefOid": "90d9028b65f737425591f43fac99dbea4c48db9b",
+                "headRef": {
+                  "refUpdateRule": null
+                },
+                "isCrossRepository": false,
+                "headRepositoryOwner": {
+                  "__typename": "Organization",
+                  "login": "rozed-dev"
+                },
+                "commits": {
+                  "nodes": [
+                    {
+                      "commit": {
+                        "oid": "90d9028b65f737425591f43fac99dbea4c48db9b"
+                      }
+                    }
+                  ]
+                },
+                "stackEntry": null
+              },
+              {
+                "id": "PR_kwDOVleUfc8AAAABPnSPeA",
+                "number": 107,
+                "title": "Fixture M1: stack, second layer",
+                "isDraft": false,
+                "createdAt": "2026-11-16T18:36:17Z",
+                "updatedAt": "2026-11-16T18:40:15Z",
+                "author": {
+                  "__typename": "User",
+                  "login": "rozed-bot"
+                },
+                "baseRefName": "merge/1/stack-1",
+                "baseRefOid": "94ed6e73afacded69dda9e26005b9773a667d7b5",
+                "baseRef": {
+                  "target": {
+                    "__typename": "Commit",
+                    "oid": "94ed6e73afacded69dda9e26005b9773a667d7b5"
+                  },
+                  "refUpdateRule": null
+                },
+                "headRefName": "merge/1/stack-2",
+                "headRefOid": "f1033f87a0854ca57fc24934f45826d75e66da75",
+                "headRef": {
+                  "refUpdateRule": null
+                },
+                "isCrossRepository": false,
+                "headRepositoryOwner": {
+                  "__typename": "Organization",
+                  "login": "rozed-dev"
+                },
+                "commits": {
+                  "nodes": [
+                    {
+                      "commit": {
+                        "oid": "f1033f87a0854ca57fc24934f45826d75e66da75"
+                      }
+                    }
+                  ]
+                },
+                "stackEntry": {
+                  "position": 2,
+                  "stack": {
+                    "number": 118,
+                    "size": 2,
+                    "baseRefName": "merge/1/base"
+                  }
+                }
+              },
+              {
+                "id": "PR_kwDOVleUfc8AAAABPnSLCA",
+                "number": 106,
+                "title": "Fixture M1: stack, first layer",
+                "isDraft": false,
+                "createdAt": "2026-11-16T18:36:13Z",
+                "updatedAt": "2026-11-16T18:40:14Z",
+                "author": {
+                  "__typename": "User",
+                  "login": "rozed-bot"
+                },
+                "baseRefName": "merge/1/base",
+                "baseRefOid": "02f20a233b5cfc9700e8dc7692117783c0854fc2",
+                "baseRef": {
+                  "target": {
+                    "__typename": "Commit",
+                    "oid": "02f20a233b5cfc9700e8dc7692117783c0854fc2"
+                  },
+                  "refUpdateRule": null
+                },
+                "headRefName": "merge/1/stack-1",
+                "headRefOid": "94ed6e73afacded69dda9e26005b9773a667d7b5",
+                "headRef": {
+                  "refUpdateRule": null
+                },
+                "isCrossRepository": false,
+                "headRepositoryOwner": {
+                  "__typename": "Organization",
+                  "login": "rozed-dev"
+                },
+                "commits": {
+                  "nodes": [
+                    {
+                      "commit": {
+                        "oid": "94ed6e73afacded69dda9e26005b9773a667d7b5"
+                      }
+                    }
+                  ]
+                },
+                "stackEntry": {
+                  "position": 1,
+                  "stack": {
+                    "number": 118,
+                    "size": 2,
+                    "baseRefName": "merge/1/base"
+                  }
+                }
+              },
+              {
+                "id": "PR_kwDOVleUfc8AAAABPnSG2w",
+                "number": 105,
+                "title": "Fixture M1: a draft",
+                "isDraft": true,
+                "createdAt": "2026-11-16T18:36:08Z",
+                "updatedAt": "2026-11-16T18:40:13Z",
+                "author": {
+                  "__typename": "User",
+                  "login": "rozed-bot"
+                },
+                "baseRefName": "merge/1/base",
+                "baseRefOid": "02f20a233b5cfc9700e8dc7692117783c0854fc2",
+                "baseRef": {
+                  "target": {
+                    "__typename": "Commit",
+                    "oid": "02f20a233b5cfc9700e8dc7692117783c0854fc2"
+                  },
+                  "refUpdateRule": null
+                },
+                "headRefName": "merge/1/draft",
+                "headRefOid": "5e4435b08dcd45af05f2fe056d93aef3983d30cc",
+                "headRef": {
+                  "refUpdateRule": null
+                },
+                "isCrossRepository": false,
+                "headRepositoryOwner": {
+                  "__typename": "Organization",
+                  "login": "rozed-dev"
+                },
+                "commits": {
+                  "nodes": [
+                    {
+                      "commit": {
+                        "oid": "5e4435b08dcd45af05f2fe056d93aef3983d30cc"
+                      }
+                    }
+                  ]
+                },
+                "stackEntry": null
+              },
+              {
+                "id": "PR_kwDOVleUfc8AAAABPnSCjg",
+                "number": 104,
+                "title": "Fixture M1: conflicts with its base",
+                "isDraft": false,
+                "createdAt": "2026-11-16T18:36:04Z",
+                "updatedAt": "2026-11-16T18:40:12Z",
+                "author": {
+                  "__typename": "User",
+                  "login": "rozed-bot"
+                },
+                "baseRefName": "merge/1/base",
+                "baseRefOid": "02f20a233b5cfc9700e8dc7692117783c0854fc2",
+                "baseRef": {
+                  "target": {
+                    "__typename": "Commit",
+                    "oid": "02f20a233b5cfc9700e8dc7692117783c0854fc2"
+                  },
+                  "refUpdateRule": null
+                },
+                "headRefName": "merge/1/conflict",
+                "headRefOid": "f7c81d8f975023d71206297db2219b098d58c8c4",
+                "headRef": {
+                  "refUpdateRule": null
+                },
+                "isCrossRepository": false,
+                "headRepositoryOwner": {
+                  "__typename": "Organization",
+                  "login": "rozed-dev"
+                },
+                "commits": {
+                  "nodes": [
+                    {
+                      "commit": {
+                        "oid": "f7c81d8f975023d71206297db2219b098d58c8c4"
+                      }
+                    }
+                  ]
+                },
+                "stackEntry": null
+              },
+              {
+                "id": "PR_kwDOVleUfc8AAAABPnR-Cw",
+                "number": 103,
+                "title": "Fixture M1: rebase and merge",
+                "isDraft": false,
+                "createdAt": "2026-11-16T18:35:59Z",
+                "updatedAt": "2026-11-16T18:40:11Z",
+                "author": {
+                  "__typename": "User",
+                  "login": "rozed-bot"
+                },
+                "baseRefName": "merge/1/base",
+                "baseRefOid": "02f20a233b5cfc9700e8dc7692117783c0854fc2",
+                "baseRef": {
+                  "target": {
+                    "__typename": "Commit",
+                    "oid": "02f20a233b5cfc9700e8dc7692117783c0854fc2"
+                  },
+                  "refUpdateRule": null
+                },
+                "headRefName": "merge/1/rebase",
+                "headRefOid": "0c108a0e6a15e8dc79f4e354fdca2cac4818c6e2",
+                "headRef": {
+                  "refUpdateRule": null
+                },
+                "isCrossRepository": false,
+                "headRepositoryOwner": {
+                  "__typename": "Organization",
+                  "login": "rozed-dev"
+                },
+                "commits": {
+                  "nodes": [
+                    {
+                      "commit": {
+                        "oid": "7ef4d2a1e03f2535dc686a47d0d8b2692b45e43b"
+                      }
+                    },
+                    {
+                      "commit": {
+                        "oid": "0c108a0e6a15e8dc79f4e354fdca2cac4818c6e2"
+                      }
+                    }
+                  ]
+                },
+                "stackEntry": null
+              },
+              {
+                "id": "PR_kwDOVleUfc8AAAABPnR5dQ",
+                "number": 102,
+                "title": "Fixture M1: merge commit",
+                "isDraft": false,
+                "createdAt": "2026-11-16T18:35:54Z",
+                "updatedAt": "2026-11-16T18:40:10Z",
+                "author": {
+                  "__typename": "User",
+                  "login": "rozed-bot"
+                },
+                "baseRefName": "merge/1/base",
+                "baseRefOid": "02f20a233b5cfc9700e8dc7692117783c0854fc2",
+                "baseRef": {
+                  "target": {
+                    "__typename": "Commit",
+                    "oid": "02f20a233b5cfc9700e8dc7692117783c0854fc2"
+                  },
+                  "refUpdateRule": null
+                },
+                "headRefName": "merge/1/merge",
+                "headRefOid": "04957b1eba7d2604d4672d0ebcab6fa8df61eeab",
+                "headRef": {
+                  "refUpdateRule": null
+                },
+                "isCrossRepository": false,
+                "headRepositoryOwner": {
+                  "__typename": "Organization",
+                  "login": "rozed-dev"
+                },
+                "commits": {
+                  "nodes": [
+                    {
+                      "commit": {
+                        "oid": "04957b1eba7d2604d4672d0ebcab6fa8df61eeab"
+                      }
+                    }
+                  ]
+                },
+                "stackEntry": null
+              },
+              {
+                "id": "PR_kwDOVleUfc8AAAABPnR0Qg",
+                "number": 101,
+                "title": "Fixture M1: squash and merge",
+                "isDraft": false,
+                "createdAt": "2026-11-16T18:35:50Z",
+                "updatedAt": "2026-11-16T18:40:09Z",
+                "author": {
+                  "__typename": "User",
+                  "login": "rozed-bot"
+                },
+                "baseRefName": "merge/1/base",
+                "baseRefOid": "02f20a233b5cfc9700e8dc7692117783c0854fc2",
+                "baseRef": {
+                  "target": {
+                    "__typename": "Commit",
+                    "oid": "02f20a233b5cfc9700e8dc7692117783c0854fc2"
+                  },
+                  "refUpdateRule": null
+                },
+                "headRefName": "merge/1/squash",
+                "headRefOid": "ca7f115846906eac4abe80788be165f330b65605",
+                "headRef": {
+                  "refUpdateRule": null
+                },
+                "isCrossRepository": false,
+                "headRepositoryOwner": {
+                  "__typename": "Organization",
+                  "login": "rozed-dev"
+                },
+                "commits": {
+                  "nodes": [
+                    {
+                      "commit": {
+                        "oid": "b403dce0c08cb4b8ab80a4a933f828a44fe0339d"
+                      }
+                    },
+                    {
+                      "commit": {
+                        "oid": "ca7f115846906eac4abe80788be165f330b65605"
+                      }
+                    }
+                  ]
+                },
+                "stackEntry": null
+              },
+              {
+                "id": "PR_kwDOVleUfc8AAAABPYS9oA",
+                "number": 100,
+                "title": "Code fixture: files that try to run code",
+                "isDraft": false,
+                "createdAt": "2026-11-15T20:53:01Z",
+                "updatedAt": "2026-11-16T17:58:28Z",
+                "author": {
+                  "__typename": "User",
+                  "login": "rozed-bot"
+                },
+                "baseRefName": "code/base",
+                "baseRefOid": "f77b6912122a51dd10332949fe07a4f9b472a6f7",
+                "baseRef": {
+                  "target": {
+                    "__typename": "Commit",
+                    "oid": "f77b6912122a51dd10332949fe07a4f9b472a6f7"
+                  },
+                  "refUpdateRule": null
+                },
+                "headRefName": "code/hostile",
+                "headRefOid": "9a273c0373f8576c3af7b8799a45c3b00ca49a9c",
+                "headRef": {
+                  "refUpdateRule": null
+                },
+                "isCrossRepository": false,
+                "headRepositoryOwner": {
+                  "__typename": "Organization",
+                  "login": "rozed-dev"
+                },
+                "commits": {
+                  "nodes": [
+                    {
+                      "commit": {
+                        "oid": "6ece1cd3cb5a0df9b654c34eb8a923ea6ebca6b9"
+                      }
+                    },
+                    {
+                      "commit": {
+                        "oid": "9a273c0373f8576c3af7b8799a45c3b00ca49a9c"
+                      }
+                    }
+                  ]
+                },
+                "stackEntry": null
+              },
+              {
+                "id": "PR_kwDOVleUfc8AAAABPYSzfQ",
+                "number": 99,
+                "title": "Code fixture: from a fork",
+                "isDraft": false,
+                "createdAt": "2026-11-15T20:52:42Z",
+                "updatedAt": "2026-11-16T17:58:26Z",
+                "author": {
+                  "__typename": "User",
+                  "login": "rozed-bot"
+                },
+                "baseRefName": "code/base",
+                "baseRefOid": "f77b6912122a51dd10332949fe07a4f9b472a6f7",
+                "baseRef": {
+                  "target": {
+                    "__typename": "Commit",
+                    "oid": "f77b6912122a51dd10332949fe07a4f9b472a6f7"
+                  },
+                  "refUpdateRule": null
+                },
+                "headRefName": "code/fork",
+                "headRefOid": "6ece1cd3cb5a0df9b654c34eb8a923ea6ebca6b9",
+                "headRef": {
+                  "refUpdateRule": null
+                },
+                "isCrossRepository": true,
+                "headRepositoryOwner": {
+                  "__typename": "User",
+                  "login": "rozed-bot"
+                },
+                "commits": {
+                  "nodes": [
+                    {
+                      "commit": {
+                        "oid": "6ece1cd3cb5a0df9b654c34eb8a923ea6ebca6b9"
+                      }
+                    }
+                  ]
+                },
+                "stackEntry": null
+              },
+              {
+                "id": "PR_kwDOVleUfc8AAAABPYSx6w",
+                "number": 98,
+                "title": "Code fixture: count and summarize words",
+                "isDraft": false,
+                "createdAt": "2026-11-15T20:52:39Z",
+                "updatedAt": "2026-11-16T17:58:24Z",
+                "author": {
+                  "__typename": "User",
+                  "login": "rozed-bot"
+                },
+                "baseRefName": "code/base",
+                "baseRefOid": "f77b6912122a51dd10332949fe07a4f9b472a6f7",
+                "baseRef": {
+                  "target": {
+                    "__typename": "Commit",
+                    "oid": "f77b6912122a51dd10332949fe07a4f9b472a6f7"
+                  },
+                  "refUpdateRule": null
+                },
+                "headRefName": "code/feature",
+                "headRefOid": "6ece1cd3cb5a0df9b654c34eb8a923ea6ebca6b9",
+                "headRef": {
+                  "refUpdateRule": null
+                },
+                "isCrossRepository": false,
+                "headRepositoryOwner": {
+                  "__typename": "Organization",
+                  "login": "rozed-dev"
+                },
+                "commits": {
+                  "nodes": [
+                    {
+                      "commit": {
+                        "oid": "6ece1cd3cb5a0df9b654c34eb8a923ea6ebca6b9"
+                      }
+                    }
+                  ]
+                },
+                "stackEntry": null
+              },
+              {
+                "id": "PR_kwDOVleUfc8AAAABPAr3CA",
+                "number": 95,
+                "title": "Comments fixture: rename the usage notes",
+                "isDraft": false,
+                "createdAt": "2026-11-13T20:24:41Z",
+                "updatedAt": "2026-11-13T20:24:57Z",
+                "author": {
+                  "__typename": "User",
+                  "login": "rozed-bot"
+                },
+                "baseRefName": "comments/base",
+                "baseRefOid": "821ed37fcaa08351275aa23203ed36569d0a8446",
+                "baseRef": {
+                  "target": {
+                    "__typename": "Commit",
+                    "oid": "821ed37fcaa08351275aa23203ed36569d0a8446"
+                  },
+                  "refUpdateRule": null
+                },
+                "headRefName": "comments/renamed",
+                "headRefOid": "c94f2a0782f2ca1e42a5ed0c5c04cbb4cb0e3dc1",
+                "headRef": {
+                  "refUpdateRule": null
+                },
+                "isCrossRepository": false,
+                "headRepositoryOwner": {
+                  "__typename": "Organization",
+                  "login": "rozed-dev"
+                },
+                "commits": {
+                  "nodes": [
+                    {
+                      "commit": {
+                        "oid": "c94f2a0782f2ca1e42a5ed0c5c04cbb4cb0e3dc1"
+                      }
+                    }
+                  ]
+                },
+                "stackEntry": null
+              },
+              {
+                "id": "PR_kwDOVleUfc8AAAABO_mnJQ",
+                "number": 94,
+                "title": "Comments fixture: back off between retries",
+                "isDraft": false,
+                "createdAt": "2026-11-13T18:57:42Z",
+                "updatedAt": "2026-11-14T06:16:45Z",
+                "author": {
+                  "__typename": "User",
+                  "login": "rozed-bot"
+                },
+                "baseRefName": "comments/base",
+                "baseRefOid": "821ed37fcaa08351275aa23203ed36569d0a8446",
+                "baseRef": {
+                  "target": {
+                    "__typename": "Commit",
+                    "oid": "821ed37fcaa08351275aa23203ed36569d0a8446"
+                  },
+                  "refUpdateRule": null
+                },
+                "headRefName": "comments/feature",
+                "headRefOid": "cd44b64496be1a5e43c30aa48c8ed98edbbd7b3c",
+                "headRef": {
+                  "refUpdateRule": null
+                },
+                "isCrossRepository": false,
+                "headRepositoryOwner": {
+                  "__typename": "Organization",
+                  "login": "rozed-dev"
+                },
+                "commits": {
+                  "nodes": [
+                    {
+                      "commit": {
+                        "oid": "df679fae278ca2498e20e066e4bbd5456aa9748b"
+                      }
+                    },
+                    {
+                      "commit": {
+                        "oid": "cd44b64496be1a5e43c30aa48c8ed98edbbd7b3c"
+                      }
+                    }
+                  ]
+                },
+                "stackEntry": null
+              },
+              {
+                "id": "PR_kwDOVleUfc8AAAABOzOKiA",
+                "number": 89,
+                "title": "Stack G2: retry reads that time out",
+                "isDraft": false,
+                "createdAt": "2026-11-13T01:17:42Z",
+                "updatedAt": "2026-11-13T01:17:42Z",
+                "author": {
+                  "__typename": "User",
+                  "login": "rozed-bot"
+                },
+                "baseRefName": "stack/g1",
+                "baseRefOid": "1727dc85d2e6e6f24d49b47b1397b69aa16ef1af",
+                "baseRef": {
+                  "target": {
+                    "__typename": "Commit",
+                    "oid": "1727dc85d2e6e6f24d49b47b1397b69aa16ef1af"
+                  },
+                  "refUpdateRule": null
+                },
+                "headRefName": "stack/g2",
+                "headRefOid": "973eab4d84b2a6f6f8660d10ebdcc4c852810627",
+                "headRef": {
+                  "refUpdateRule": null
+                },
+                "isCrossRepository": false,
+                "headRepositoryOwner": {
+                  "__typename": "Organization",
+                  "login": "rozed-dev"
+                },
+                "commits": {
+                  "nodes": [
+                    {
+                      "commit": {
+                        "oid": "973eab4d84b2a6f6f8660d10ebdcc4c852810627"
+                      }
+                    }
+                  ]
+                },
+                "stackEntry": {
+                  "position": 2,
+                  "stack": {
+                    "number": 90,
+                    "size": 2,
+                    "baseRefName": "stack/root"
+                  }
+                }
+              },
+              {
+                "id": "PR_kwDOVleUfc8AAAABOzOJqg",
+                "number": 88,
+                "title": "Stack G1: add a retry helper",
+                "isDraft": false,
+                "createdAt": "2026-11-13T01:17:40Z",
+                "updatedAt": "2026-11-13T01:17:40Z",
+                "author": {
+                  "__typename": "User",
+                  "login": "rozed-bot"
+                },
+                "baseRefName": "stack/root",
+                "baseRefOid": "28c4eeff168c2baf91d2b902b85d06e94f8a90c9",
+                "baseRef": {
+                  "target": {
+                    "__typename": "Commit",
+                    "oid": "28c4eeff168c2baf91d2b902b85d06e94f8a90c9"
+                  },
+                  "refUpdateRule": null
+                },
+                "headRefName": "stack/g1",
+                "headRefOid": "1727dc85d2e6e6f24d49b47b1397b69aa16ef1af",
+                "headRef": {
+                  "refUpdateRule": null
+                },
+                "isCrossRepository": false,
+                "headRepositoryOwner": {
+                  "__typename": "Organization",
+                  "login": "rozed-dev"
+                },
+                "commits": {
+                  "nodes": [
+                    {
+                      "commit": {
+                        "oid": "1727dc85d2e6e6f24d49b47b1397b69aa16ef1af"
+                      }
+                    }
+                  ]
+                },
+                "stackEntry": {
+                  "position": 1,
+                  "stack": {
+                    "number": 90,
+                    "size": 2,
+                    "baseRefName": "stack/root"
+                  }
+                }
+              },
+              {
+                "id": "PR_kwDOVleUfc8AAAABOzOI9A",
+                "number": 87,
+                "title": "Stack E: expire cached plans",
+                "isDraft": false,
+                "createdAt": "2026-11-13T01:17:39Z",
+                "updatedAt": "2026-11-13T01:17:39Z",
+                "author": {
+                  "__typename": "User",
+                  "login": "rozed-bot"
+                },
+                "baseRefName": "stack/m",
+                "baseRefOid": "a5f519461fbac8b315f978b48deb5cf66ca22a22",
+                "baseRef": {
+                  "target": {
+                    "__typename": "Commit",
+                    "oid": "a5f519461fbac8b315f978b48deb5cf66ca22a22"
+                  },
+                  "refUpdateRule": null
+                },
+                "headRefName": "stack/e",
+                "headRefOid": "b0e71e0b3274ad2bba7ddd21c6bcf04810d056f2",
+                "headRef": {
+                  "refUpdateRule": null
+                },
+                "isCrossRepository": false,
+                "headRepositoryOwner": {
+                  "__typename": "Organization",
+                  "login": "rozed-dev"
+                },
+                "commits": {
+                  "nodes": [
+                    {
+                      "commit": {
+                        "oid": "b0e71e0b3274ad2bba7ddd21c6bcf04810d056f2"
+                      }
+                    }
+                  ]
+                },
+                "stackEntry": null
+              },
+              {
+                "id": "PR_kwDOVleUfc8AAAABOzOHXA",
+                "number": 85,
+                "title": "Stack D: log when a plan's limit is reached",
+                "isDraft": false,
+                "createdAt": "2026-11-13T01:17:37Z",
+                "updatedAt": "2026-11-13T01:17:37Z",
+                "author": {
+                  "__typename": "User",
+                  "login": "rozed-bot"
+                },
+                "baseRefName": "stack/a",
+                "baseRefOid": "59b27c734c12089f5a795fe1f30bb1b5cad89650",
+                "baseRef": {
+                  "target": {
+                    "__typename": "Commit",
+                    "oid": "59b27c734c12089f5a795fe1f30bb1b5cad89650"
+                  },
+                  "refUpdateRule": null
+                },
+                "headRefName": "stack/d",
+                "headRefOid": "00003e523dc4a621fc94e0af286f9212ed4e30c0",
+                "headRef": {
+                  "refUpdateRule": null
+                },
+                "isCrossRepository": false,
+                "headRepositoryOwner": {
+                  "__typename": "Organization",
+                  "login": "rozed-dev"
+                },
+                "commits": {
+                  "nodes": [
+                    {
+                      "commit": {
+                        "oid": "00003e523dc4a621fc94e0af286f9212ed4e30c0"
+                      }
+                    }
+                  ]
+                },
+                "stackEntry": null
+              },
+              {
+                "id": "PR_kwDOVleUfc8AAAABOzOGjw",
+                "number": 84,
+                "title": "Stack C: count a query's nodes",
+                "isDraft": false,
+                "createdAt": "2026-11-13T01:17:35Z",
+                "updatedAt": "2026-11-13T09:27:50Z",
+                "author": {
+                  "__typename": "User",
+                  "login": "rozed-bot"
+                },
+                "baseRefName": "stack/root",
+                "baseRefOid": "28c4eeff168c2baf91d2b902b85d06e94f8a90c9",
+                "baseRef": {
+                  "target": {
+                    "__typename": "Commit",
+                    "oid": "28c4eeff168c2baf91d2b902b85d06e94f8a90c9"
+                  },
+                  "refUpdateRule": null
+                },
+                "headRefName": "stack/c",
+                "headRefOid": "f9db1743681826e72f3b31e3d9967d28a55af20d",
+                "headRef": {
+                  "refUpdateRule": null
+                },
+                "isCrossRepository": false,
+                "headRepositoryOwner": {
+                  "__typename": "Organization",
+                  "login": "rozed-dev"
+                },
+                "commits": {
+                  "nodes": [
+                    {
+                      "commit": {
+                        "oid": "59b27c734c12089f5a795fe1f30bb1b5cad89650"
+                      }
+                    },
+                    {
+                      "commit": {
+                        "oid": "57dbd43bc2ea7a521b1f9218a22cdd96b4c4f5d1"
+                      }
+                    },
+                    {
+                      "commit": {
+                        "oid": "f9db1743681826e72f3b31e3d9967d28a55af20d"
+                      }
+                    }
+                  ]
+                },
+                "stackEntry": null
+              },
+              {
+                "id": "PR_kwDOVleUfc8AAAABOzOF4Q",
+                "number": 83,
+                "title": "Stack B: rate limit GraphQL queries by cost",
+                "isDraft": false,
+                "createdAt": "2026-11-13T01:17:34Z",
+                "updatedAt": "2026-11-13T18:58:59Z",
+                "author": {
+                  "__typename": "User",
+                  "login": "rozed-bot"
+                },
+                "baseRefName": "stack/a",
+                "baseRefOid": "59b27c734c12089f5a795fe1f30bb1b5cad89650",
+                "baseRef": {
+                  "target": {
+                    "__typename": "Commit",
+                    "oid": "59b27c734c12089f5a795fe1f30bb1b5cad89650"
+                  },
+                  "refUpdateRule": null
+                },
+                "headRefName": "stack/b",
+                "headRefOid": "57dbd43bc2ea7a521b1f9218a22cdd96b4c4f5d1",
+                "headRef": {
+                  "refUpdateRule": null
+                },
+                "isCrossRepository": false,
+                "headRepositoryOwner": {
+                  "__typename": "Organization",
+                  "login": "rozed-dev"
+                },
+                "commits": {
+                  "nodes": [
+                    {
+                      "commit": {
+                        "oid": "57dbd43bc2ea7a521b1f9218a22cdd96b4c4f5d1"
+                      }
+                    }
+                  ]
+                },
+                "stackEntry": null
+              },
+              {
+                "id": "PR_kwDOVleUfc8AAAABOzOFHw",
+                "number": 82,
+                "title": "Stack A: load per-plan limits",
+                "isDraft": false,
+                "createdAt": "2026-11-13T01:17:33Z",
+                "updatedAt": "2026-11-13T01:17:33Z",
+                "author": {
+                  "__typename": "User",
+                  "login": "rozed-bot"
+                },
+                "baseRefName": "stack/root",
+                "baseRefOid": "28c4eeff168c2baf91d2b902b85d06e94f8a90c9",
+                "baseRef": {
+                  "target": {
+                    "__typename": "Commit",
+                    "oid": "28c4eeff168c2baf91d2b902b85d06e94f8a90c9"
+                  },
+                  "refUpdateRule": null
+                },
+                "headRefName": "stack/a",
+                "headRefOid": "59b27c734c12089f5a795fe1f30bb1b5cad89650",
+                "headRef": {
+                  "refUpdateRule": null
+                },
+                "isCrossRepository": false,
+                "headRepositoryOwner": {
+                  "__typename": "Organization",
+                  "login": "rozed-dev"
+                },
+                "commits": {
+                  "nodes": [
+                    {
+                      "commit": {
+                        "oid": "59b27c734c12089f5a795fe1f30bb1b5cad89650"
+                      }
+                    }
+                  ]
+                },
+                "stackEntry": null
+              },
+              {
+                "id": "PR_kwDOVleUfc8AAAABOwhieA",
+                "number": 81,
+                "title": "Acc2: requests over the limit wait for a token",
+                "isDraft": false,
+                "createdAt": "2026-11-12T21:17:58Z",
+                "updatedAt": "2026-11-12T21:33:02Z",
+                "author": {
+                  "__typename": "User",
+                  "login": "rozed-bot"
+                },
+                "baseRefName": "acc2/base",
+                "baseRefOid": "239a99116b7ee8d6dd10de7317210b93ab3eb5b7",
+                "baseRef": {
+                  "target": {
+                    "__typename": "Commit",
+                    "oid": "239a99116b7ee8d6dd10de7317210b93ab3eb5b7"
+                  },
+                  "refUpdateRule": null
+                },
+                "headRefName": "acc2/feature",
+                "headRefOid": "2bc2a44541f18f07be208a8c9d46d217e7a78886",
+                "headRef": {
+                  "refUpdateRule": null
+                },
+                "isCrossRepository": false,
+                "headRepositoryOwner": {
+                  "__typename": "Organization",
+                  "login": "rozed-dev"
+                },
+                "commits": {
+                  "nodes": [
+                    {
+                      "commit": {
+                        "oid": "5f1a24a717a12bab67e8e539ce55dc87d4e20777"
+                      }
+                    },
+                    {
+                      "commit": {
+                        "oid": "595d2269c9d9c2004af39a6922760d21d0d4bcaa"
+                      }
+                    },
+                    {
+                      "commit": {
+                        "oid": "2bc2a44541f18f07be208a8c9d46d217e7a78886"
+                      }
+                    }
+                  ]
+                },
+                "stackEntry": null
+              },
+              {
+                "id": "PR_kwDOVleUfc8AAAABOgnSkg",
+                "number": 80,
+                "title": "App: the pull request Lo's end-to-end tests open",
+                "isDraft": false,
+                "createdAt": "2026-11-11T23:58:17Z",
+                "updatedAt": "2026-11-11T23:58:37Z",
+                "author": {
+                  "__typename": "User",
+                  "login": "rozed-bot"
+                },
+                "baseRefName": "app/base",
+                "baseRefOid": "dccd782aff9cd7a5088122cd3fb4a515964acee7",
+                "baseRef": {
+                  "target": {
+                    "__typename": "Commit",
+                    "oid": "dccd782aff9cd7a5088122cd3fb4a515964acee7"
+                  },
+                  "refUpdateRule": null
+                },
+                "headRefName": "app/feature",
+                "headRefOid": "57cc4a6dadfa23849df45e1084fd4869401bec53",
+                "headRef": {
+                  "refUpdateRule": null
+                },
+                "isCrossRepository": false,
+                "headRepositoryOwner": {
+                  "__typename": "Organization",
+                  "login": "rozed-dev"
+                },
+                "commits": {
+                  "nodes": [
+                    {
+                      "commit": {
+                        "oid": "0d64a8db0e7c0bd2a1ff238ed43b220c7fea79b3"
+                      }
+                    },
+                    {
+                      "commit": {
+                        "oid": "7e787551d107032a501659219139e21c03459837"
+                      }
+                    },
+                    {
+                      "commit": {
+                        "oid": "57cc4a6dadfa23849df45e1084fd4869401bec53"
+                      }
+                    }
+                  ]
+                },
+                "stackEntry": null
+              },
+              {
+                "id": "PR_kwDOVleUfc8AAAABOcFC3A",
+                "number": 79,
+                "title": "feat(overview): retry a call that fails for a moment",
+                "isDraft": false,
+                "createdAt": "2026-11-11T17:30:34Z",
+                "updatedAt": "2026-11-11T17:30:34Z",
+                "author": {
+                  "__typename": "User",
+                  "login": "rozed-bot"
+                },
+                "baseRefName": "main",
+                "baseRefOid": "4bc87281f47234fc959197ed593116d7ddcdb4e8",
+                "baseRef": {
+                  "target": {
+                    "__typename": "Commit",
+                    "oid": "4bc87281f47234fc959197ed593116d7ddcdb4e8"
+                  },
+                  "refUpdateRule": null
+                },
+                "headRefName": "overview/retry",
+                "headRefOid": "dcecae612d55b6676fe7d86a7de877cadbde0a01",
+                "headRef": {
+                  "refUpdateRule": null
+                },
+                "isCrossRepository": false,
+                "headRepositoryOwner": {
+                  "__typename": "Organization",
+                  "login": "rozed-dev"
+                },
+                "commits": {
+                  "nodes": [
+                    {
+                      "commit": {
+                        "oid": "dcecae612d55b6676fe7d86a7de877cadbde0a01"
+                      }
+                    }
+                  ]
+                },
+                "stackEntry": null
+              },
+              {
+                "id": "PR_kwDOVleUfc8AAAABOZALvg",
+                "number": 78,
+                "title": "App: the pull request Lo's end-to-end tests open",
+                "isDraft": false,
+                "createdAt": "2026-11-11T13:54:06Z",
+                "updatedAt": "2026-11-11T13:58:00Z",
+                "author": {
+                  "__typename": "User",
+                  "login": "rozed-bot"
+                },
+                "baseRefName": "app/base",
+                "baseRefOid": "dccd782aff9cd7a5088122cd3fb4a515964acee7",
+                "baseRef": {
+                  "target": {
+                    "__typename": "Commit",
+                    "oid": "dccd782aff9cd7a5088122cd3fb4a515964acee7"
+                  },
+                  "refUpdateRule": null
+                },
+                "headRefName": "app/head",
+                "headRefOid": "5530830f535b2947f1b50a184dc58a9c7b2845ad",
+                "headRef": {
+                  "refUpdateRule": null
+                },
+                "isCrossRepository": false,
+                "headRepositoryOwner": {
+                  "__typename": "Organization",
+                  "login": "rozed-dev"
+                },
+                "commits": {
+                  "nodes": [
+                    {
+                      "commit": {
+                        "oid": "2fc1668bf1b628d045e00702891a2214850e2c59"
+                      }
+                    },
+                    {
+                      "commit": {
+                        "oid": "45e4f22d09ea29631f43d3f8c1e05b7fb4001099"
+                      }
+                    },
+                    {
+                      "commit": {
+                        "oid": "95865d1c93efb9ef052d91edd1f9a118648a27a5"
+                      }
+                    },
+                    {
+                      "commit": {
+                        "oid": "5530830f535b2947f1b50a184dc58a9c7b2845ad"
+                      }
+                    }
+                  ]
+                },
+                "stackEntry": null
+              },
+              {
+                "id": "PR_kwDOVleUfc8AAAABNvhBQw",
+                "number": 72,
+                "title": "E9e 2: layer b",
+                "isDraft": false,
+                "createdAt": "2026-11-09T01:19:54Z",
+                "updatedAt": "2026-11-09T01:19:54Z",
+                "author": {
+                  "__typename": "User",
+                  "login": "rozed-bot"
+                },
+                "baseRefName": "e9e/2/a",
+                "baseRefOid": "fe486bc72ed92bff5a70dbc4d58ce005376ccbd2",
+                "baseRef": {
+                  "target": {
+                    "__typename": "Commit",
+                    "oid": "fe486bc72ed92bff5a70dbc4d58ce005376ccbd2"
+                  },
+                  "refUpdateRule": null
+                },
+                "headRefName": "e9e/2/b",
+                "headRefOid": "43844d9cba1097064226ada46806891018876d92",
+                "headRef": {
+                  "refUpdateRule": null
+                },
+                "isCrossRepository": false,
+                "headRepositoryOwner": {
+                  "__typename": "Organization",
+                  "login": "rozed-dev"
+                },
+                "commits": {
+                  "nodes": [
+                    {
+                      "commit": {
+                        "oid": "43844d9cba1097064226ada46806891018876d92"
+                      }
+                    }
+                  ]
+                },
+                "stackEntry": {
+                  "position": 2,
+                  "stack": {
+                    "number": 73,
+                    "size": 2,
+                    "baseRefName": "e9e/2/base"
+                  }
+                }
+              },
+              {
+                "id": "PR_kwDOVleUfc8AAAABNvhAgA",
+                "number": 71,
+                "title": "E9e 2: layer a",
+                "isDraft": false,
+                "createdAt": "2026-11-09T01:19:52Z",
+                "updatedAt": "2026-11-09T01:19:52Z",
+                "author": {
+                  "__typename": "User",
+                  "login": "rozed-bot"
+                },
+                "baseRefName": "e9e/2/base",
+                "baseRefOid": "ef23615846afbb774731bac26ad74ee7c16fa9c6",
+                "baseRef": {
+                  "target": {
+                    "__typename": "Commit",
+                    "oid": "ef23615846afbb774731bac26ad74ee7c16fa9c6"
+                  },
+                  "refUpdateRule": null
+                },
+                "headRefName": "e9e/2/a",
+                "headRefOid": "fe486bc72ed92bff5a70dbc4d58ce005376ccbd2",
+                "headRef": {
+                  "refUpdateRule": null
+                },
+                "isCrossRepository": false,
+                "headRepositoryOwner": {
+                  "__typename": "Organization",
+                  "login": "rozed-dev"
+                },
+                "commits": {
+                  "nodes": [
+                    {
+                      "commit": {
+                        "oid": "fe486bc72ed92bff5a70dbc4d58ce005376ccbd2"
+                      }
+                    }
+                  ]
+                },
+                "stackEntry": {
+                  "position": 1,
+                  "stack": {
+                    "number": 73,
+                    "size": 2,
+                    "baseRefName": "e9e/2/base"
+                  }
+                }
+              }
+            ]
+          },
+          "mergedPullRequests": {
+            "nodes": [
+              {
+                "number": 175,
+                "createdAt": "2026-11-17T00:45:34Z",
+                "baseRefName": "merge/5/base",
+                "baseRef": {
+                  "target": {
+                    "__typename": "Commit",
+                    "oid": "1a092320489aa37cbd605b8ed4eaf8d4dd179789"
+                  },
+                  "refUpdateRule": null
+                },
+                "headRefName": "merge/5/merge",
+                "headRefOid": "34b784de62545d0ed01cac362adcb0e9cdd82af8",
+                "isCrossRepository": false,
+                "commits": {
+                  "nodes": [
+                    {
+                      "commit": {
+                        "oid": "34b784de62545d0ed01cac362adcb0e9cdd82af8"
+                      }
+                    }
+                  ]
+                },
+                "mergeCommit": {
+                  "oid": "1a092320489aa37cbd605b8ed4eaf8d4dd179789",
+                  "parents": {
+                    "nodes": [
+                      {
+                        "oid": "1b3e2ea0703b41d6f9c320392f13ee4799ed77d2"
+                      },
+                      {
+                        "oid": "34b784de62545d0ed01cac362adcb0e9cdd82af8"
+                      }
+                    ]
+                  }
+                },
+                "stackEntry": null
+              },
+              {
+                "number": 174,
+                "createdAt": "2026-11-17T00:45:29Z",
+                "baseRefName": "merge/5/base",
+                "baseRef": {
+                  "target": {
+                    "__typename": "Commit",
+                    "oid": "1a092320489aa37cbd605b8ed4eaf8d4dd179789"
+                  },
+                  "refUpdateRule": null
+                },
+                "headRefName": "merge/5/squash",
+                "headRefOid": "581150f0982c562431a02cc25c505e8a4c95fae1",
+                "isCrossRepository": false,
+                "commits": {
+                  "nodes": [
+                    {
+                      "commit": {
+                        "oid": "e3b58aafc033e8839610d32e710b5a3832635d16"
+                      }
+                    },
+                    {
+                      "commit": {
+                        "oid": "581150f0982c562431a02cc25c505e8a4c95fae1"
+                      }
+                    }
+                  ]
+                },
+                "mergeCommit": {
+                  "oid": "1b3e2ea0703b41d6f9c320392f13ee4799ed77d2",
+                  "parents": {
+                    "nodes": [
+                      {
+                        "oid": "b3fe004d917123bd7ca507eda670138554797f43"
+                      }
+                    ]
+                  }
+                },
+                "stackEntry": null
+              },
+              {
+                "number": 132,
+                "createdAt": "2026-11-16T19:03:10Z",
+                "baseRefName": "e4/queued",
+                "baseRef": {
+                  "target": {
+                    "__typename": "Commit",
+                    "oid": "be76197734f8ee252a269294e7be44c1c5fb8295"
+                  },
+                  "refUpdateRule": null
+                },
+                "headRefName": "merge/2/queued-slow-1",
+                "headRefOid": "bdcd224a9a0300449aa711cfabfec1d5668ddb5c",
+                "isCrossRepository": false,
+                "commits": {
+                  "nodes": [
+                    {
+                      "commit": {
+                        "oid": "bdcd224a9a0300449aa711cfabfec1d5668ddb5c"
+                      }
+                    }
+                  ]
+                },
+                "mergeCommit": {
+                  "oid": "0d887de816ee0edfe9aeaa1e11e83237b67fee4c",
+                  "parents": {
+                    "nodes": [
+                      {
+                        "oid": "8dc8bc3d0b901efe4c2dd5e69d41c366da9aa49e"
+                      }
+                    ]
+                  }
+                },
+                "stackEntry": null
+              },
+              {
+                "number": 131,
+                "createdAt": "2026-11-16T19:03:05Z",
+                "baseRefName": "e4/queued",
+                "baseRef": {
+                  "target": {
+                    "__typename": "Commit",
+                    "oid": "be76197734f8ee252a269294e7be44c1c5fb8295"
+                  },
+                  "refUpdateRule": null
+                },
+                "headRefName": "merge/2/queued-pass",
+                "headRefOid": "684f2b1321be9652168cdb77a3c23a4a463df7bf",
+                "isCrossRepository": false,
+                "commits": {
+                  "nodes": [
+                    {
+                      "commit": {
+                        "oid": "684f2b1321be9652168cdb77a3c23a4a463df7bf"
+                      }
+                    }
+                  ]
+                },
+                "mergeCommit": {
+                  "oid": "be76197734f8ee252a269294e7be44c1c5fb8295",
+                  "parents": {
+                    "nodes": [
+                      {
+                        "oid": "0d887de816ee0edfe9aeaa1e11e83237b67fee4c"
+                      }
+                    ]
+                  }
+                },
+                "stackEntry": null
+              },
+              {
+                "number": 86,
+                "createdAt": "2026-11-13T01:17:38Z",
+                "baseRefName": "stack/mroot",
+                "baseRef": {
+                  "target": {
+                    "__typename": "Commit",
+                    "oid": "b9050e628da6814abaf5ccf553627bdd627910d0"
+                  },
+                  "refUpdateRule": null
+                },
+                "headRefName": "stack/m",
+                "headRefOid": "a5f519461fbac8b315f978b48deb5cf66ca22a22",
+                "isCrossRepository": false,
+                "commits": {
+                  "nodes": [
+                    {
+                      "commit": {
+                        "oid": "f172f534665fa9972cb7efc8ed4881b381bcd304"
+                      }
+                    },
+                    {
+                      "commit": {
+                        "oid": "a5f519461fbac8b315f978b48deb5cf66ca22a22"
+                      }
+                    }
+                  ]
+                },
+                "mergeCommit": {
+                  "oid": "b9050e628da6814abaf5ccf553627bdd627910d0",
+                  "parents": {
+                    "nodes": [
+                      {
+                        "oid": "28c4eeff168c2baf91d2b902b85d06e94f8a90c9"
+                      }
+                    ]
+                  }
+                },
+                "stackEntry": null
+              },
+              {
+                "number": 51,
+                "createdAt": "2026-11-08T11:12:44Z",
+                "baseRefName": "e4/queued",
+                "baseRef": {
+                  "target": {
+                    "__typename": "Commit",
+                    "oid": "be76197734f8ee252a269294e7be44c1c5fb8295"
+                  },
+                  "refUpdateRule": null
+                },
+                "headRefName": "e4/queue-pass-3",
+                "headRefOid": "e7e93c447fc200a62dd200a26b0db5b8d80dce4f",
+                "isCrossRepository": false,
+                "commits": {
+                  "nodes": [
+                    {
+                      "commit": {
+                        "oid": "e7e93c447fc200a62dd200a26b0db5b8d80dce4f"
+                      }
+                    }
+                  ]
+                },
+                "mergeCommit": {
+                  "oid": "8dc8bc3d0b901efe4c2dd5e69d41c366da9aa49e",
+                  "parents": {
+                    "nodes": [
+                      {
+                        "oid": "f7d754c5716b4913e6b20c54cb8a4b3aac8d5142"
+                      }
+                    ]
+                  }
+                },
+                "stackEntry": null
+              },
+              {
+                "number": 69,
+                "createdAt": "2026-11-08T23:13:16Z",
+                "baseRefName": "e9e/1/b",
+                "baseRef": {
+                  "target": {
+                    "__typename": "Commit",
+                    "oid": "1577910a3d9eb7019013295b9ecd78e2700c42ec"
+                  },
+                  "refUpdateRule": null
+                },
+                "headRefName": "e9e/1/c",
+                "headRefOid": "ea6d9e1762779275828ff462c5802e869d20fc35",
+                "isCrossRepository": false,
+                "commits": {
+                  "nodes": [
+                    {
+                      "commit": {
+                        "oid": "ea6d9e1762779275828ff462c5802e869d20fc35"
+                      }
+                    }
+                  ]
+                },
+                "mergeCommit": {
+                  "oid": "9fc365b11f2597aa3c38e6da3ac646812eb8934f",
+                  "parents": {
+                    "nodes": [
+                      {
+                        "oid": "87d206d13b1677fd225b2c19e1e62bce8568f33f"
+                      }
+                    ]
+                  }
+                },
+                "stackEntry": {
+                  "position": 3,
+                  "stack": {
+                    "number": 70
+                  }
+                }
+              },
+              {
+                "number": 68,
+                "createdAt": "2026-11-08T23:13:14Z",
+                "baseRefName": "e9e/1/a",
+                "baseRef": {
+                  "target": {
+                    "__typename": "Commit",
+                    "oid": "4c6975999e8d67ca97f17fb577780f40e16a5309"
+                  },
+                  "refUpdateRule": null
+                },
+                "headRefName": "e9e/1/b",
+                "headRefOid": "1577910a3d9eb7019013295b9ecd78e2700c42ec",
+                "isCrossRepository": false,
+                "commits": {
+                  "nodes": [
+                    {
+                      "commit": {
+                        "oid": "1577910a3d9eb7019013295b9ecd78e2700c42ec"
+                      }
+                    }
+                  ]
+                },
+                "mergeCommit": {
+                  "oid": "87d206d13b1677fd225b2c19e1e62bce8568f33f",
+                  "parents": {
+                    "nodes": [
+                      {
+                        "oid": "8b6c05b241931e9e6ad0c6032a00c99d5dcf378a"
+                      }
+                    ]
+                  }
+                },
+                "stackEntry": {
+                  "position": 2,
+                  "stack": {
+                    "number": 70
+                  }
+                }
+              },
+              {
+                "number": 67,
+                "createdAt": "2026-11-08T23:13:13Z",
+                "baseRefName": "e9e/1/base",
+                "baseRef": {
+                  "target": {
+                    "__typename": "Commit",
+                    "oid": "9fc365b11f2597aa3c38e6da3ac646812eb8934f"
+                  },
+                  "refUpdateRule": null
+                },
+                "headRefName": "e9e/1/a",
+                "headRefOid": "4c6975999e8d67ca97f17fb577780f40e16a5309",
+                "isCrossRepository": false,
+                "commits": {
+                  "nodes": [
+                    {
+                      "commit": {
+                        "oid": "4c6975999e8d67ca97f17fb577780f40e16a5309"
+                      }
+                    }
+                  ]
+                },
+                "mergeCommit": {
+                  "oid": "8b6c05b241931e9e6ad0c6032a00c99d5dcf378a",
+                  "parents": {
+                    "nodes": [
+                      {
+                        "oid": "0b1130511451a71a75c5dabbcae6d9ac6b157d00"
+                      }
+                    ]
+                  }
+                },
+                "stackEntry": {
+                  "position": 1,
+                  "stack": {
+                    "number": 70
+                  }
+                }
+              },
+              {
+                "number": 44,
+                "createdAt": "2026-11-08T11:00:07Z",
+                "baseRefName": "e9b/base",
+                "baseRef": {
+                  "target": {
+                    "__typename": "Commit",
+                    "oid": "9169df24d9346bd14d9c7dad312dfcfe8c0a2578"
+                  },
+                  "refUpdateRule": null
+                },
+                "headRefName": "e9b/open-1",
+                "headRefOid": "f6e96befd3667ee10bfb9b8652ad55906ec3e2c6",
+                "isCrossRepository": false,
+                "commits": {
+                  "nodes": [
+                    {
+                      "commit": {
+                        "oid": "f6e96befd3667ee10bfb9b8652ad55906ec3e2c6"
+                      }
+                    }
+                  ]
+                },
+                "mergeCommit": {
+                  "oid": "9169df24d9346bd14d9c7dad312dfcfe8c0a2578",
+                  "parents": {
+                    "nodes": [
+                      {
+                        "oid": "20a3839e4c8582baa50280f4e07faadb92fdcad5"
+                      }
+                    ]
+                  }
+                },
+                "stackEntry": null
+              },
+              {
+                "number": 65,
+                "createdAt": "2026-11-08T17:33:05Z",
+                "baseRefName": "e9b/base",
+                "baseRef": {
+                  "target": {
+                    "__typename": "Commit",
+                    "oid": "9169df24d9346bd14d9c7dad312dfcfe8c0a2578"
+                  },
+                  "refUpdateRule": null
+                },
+                "headRefName": "e9b/panel-2",
+                "headRefOid": "3875b63aa35cb4bfe8cf2d584498bed378d08c0b",
+                "isCrossRepository": false,
+                "commits": {
+                  "nodes": [
+                    {
+                      "commit": {
+                        "oid": "ca6944dd671dffcb3c995f415a0bb2bc28f2928f"
+                      }
+                    },
+                    {
+                      "commit": {
+                        "oid": "3875b63aa35cb4bfe8cf2d584498bed378d08c0b"
+                      }
+                    }
+                  ]
+                },
+                "mergeCommit": {
+                  "oid": "20a3839e4c8582baa50280f4e07faadb92fdcad5",
+                  "parents": {
+                    "nodes": [
+                      {
+                        "oid": "28168d6bc8e5d3b80fc585e044a8ee02ca377797"
+                      }
+                    ]
+                  }
+                },
+                "stackEntry": null
+              },
+              {
+                "number": 63,
+                "createdAt": "2026-11-08T14:05:12Z",
+                "baseRefName": "e9b/base",
+                "baseRef": {
+                  "target": {
+                    "__typename": "Commit",
+                    "oid": "9169df24d9346bd14d9c7dad312dfcfe8c0a2578"
+                  },
+                  "refUpdateRule": null
+                },
+                "headRefName": "e9b/panel-1",
+                "headRefOid": "42c5e5d563701899178f7469cd68b2e16ebcb6f4",
+                "isCrossRepository": false,
+                "commits": {
+                  "nodes": [
+                    {
+                      "commit": {
+                        "oid": "eb98e18c9bc5ab18b40daf25c92308b400b1171b"
+                      }
+                    },
+                    {
+                      "commit": {
+                        "oid": "42c5e5d563701899178f7469cd68b2e16ebcb6f4"
+                      }
+                    }
+                  ]
+                },
+                "mergeCommit": {
+                  "oid": "28168d6bc8e5d3b80fc585e044a8ee02ca377797",
+                  "parents": {
+                    "nodes": [
+                      {
+                        "oid": "9b5563440dc636a58a840f0011c8f14857dd38d1"
+                      }
+                    ]
+                  }
+                },
+                "stackEntry": null
+              },
+              {
+                "number": 62,
+                "createdAt": "2026-11-08T13:03:28Z",
+                "baseRefName": "main",
+                "baseRef": {
+                  "target": {
+                    "__typename": "Commit",
+                    "oid": "4bc87281f47234fc959197ed593116d7ddcdb4e8"
+                  },
+                  "refUpdateRule": null
+                },
+                "headRefName": "e1/move-main-5",
+                "headRefOid": "b41b367d2bd1e96063668ad0ee5d4f683d1959de",
+                "isCrossRepository": false,
+                "commits": {
+                  "nodes": [
+                    {
+                      "commit": {
+                        "oid": "b41b367d2bd1e96063668ad0ee5d4f683d1959de"
+                      }
+                    }
+                  ]
+                },
+                "mergeCommit": {
+                  "oid": "4bc87281f47234fc959197ed593116d7ddcdb4e8",
+                  "parents": {
+                    "nodes": [
+                      {
+                        "oid": "d2218b52ea1e82ed3be4d020034aba700fc81a7b"
+                      }
+                    ]
+                  }
+                },
+                "stackEntry": null
+              },
+              {
+                "number": 55,
+                "createdAt": "2026-11-08T12:12:09Z",
+                "baseRefName": "e9b/s2-2",
+                "baseRef": {
+                  "target": {
+                    "__typename": "Commit",
+                    "oid": "1aec7d8e3e0962d55fc496008b38d93ab58049f9"
+                  },
+                  "refUpdateRule": null
+                },
+                "headRefName": "e9b/s3-2",
+                "headRefOid": "1abeef5d36e43ad600fb34f1565e4e2f443c8c76",
+                "isCrossRepository": false,
+                "commits": {
+                  "nodes": [
+                    {
+                      "commit": {
+                        "oid": "1abeef5d36e43ad600fb34f1565e4e2f443c8c76"
+                      }
+                    }
+                  ]
+                },
+                "mergeCommit": {
+                  "oid": "9b5563440dc636a58a840f0011c8f14857dd38d1",
+                  "parents": {
+                    "nodes": [
+                      {
+                        "oid": "0c10c6a0a727d6bcf378dc4cf74ab83c1a28976f"
+                      }
+                    ]
+                  }
+                },
+                "stackEntry": {
+                  "position": 3,
+                  "stack": {
+                    "number": 60
+                  }
+                }
+              },
+              {
+                "number": 54,
+                "createdAt": "2026-11-08T12:12:06Z",
+                "baseRefName": "e9b/s1-2",
+                "baseRef": {
+                  "target": {
+                    "__typename": "Commit",
+                    "oid": "a1a6c087ff0522ddd2caa430b94e6dfbebc53f4a"
+                  },
+                  "refUpdateRule": null
+                },
+                "headRefName": "e9b/s2-2",
+                "headRefOid": "1aec7d8e3e0962d55fc496008b38d93ab58049f9",
+                "isCrossRepository": false,
+                "commits": {
+                  "nodes": [
+                    {
+                      "commit": {
+                        "oid": "1aec7d8e3e0962d55fc496008b38d93ab58049f9"
+                      }
+                    }
+                  ]
+                },
+                "mergeCommit": {
+                  "oid": "0c10c6a0a727d6bcf378dc4cf74ab83c1a28976f",
+                  "parents": {
+                    "nodes": [
+                      {
+                        "oid": "32a9990cac35763f3f5eee076b7a9dd53a9119de"
+                      }
+                    ]
+                  }
+                },
+                "stackEntry": {
+                  "position": 2,
+                  "stack": {
+                    "number": 60
+                  }
+                }
+              },
+              {
+                "number": 53,
+                "createdAt": "2026-11-08T12:12:03Z",
+                "baseRefName": "e9b/base",
+                "baseRef": {
+                  "target": {
+                    "__typename": "Commit",
+                    "oid": "9169df24d9346bd14d9c7dad312dfcfe8c0a2578"
+                  },
+                  "refUpdateRule": null
+                },
+                "headRefName": "e9b/s1-2",
+                "headRefOid": "a1a6c087ff0522ddd2caa430b94e6dfbebc53f4a",
+                "isCrossRepository": false,
+                "commits": {
+                  "nodes": [
+                    {
+                      "commit": {
+                        "oid": "a1a6c087ff0522ddd2caa430b94e6dfbebc53f4a"
+                      }
+                    }
+                  ]
+                },
+                "mergeCommit": {
+                  "oid": "32a9990cac35763f3f5eee076b7a9dd53a9119de",
+                  "parents": {
+                    "nodes": [
+                      {
+                        "oid": "125fb1b9f1045d3dea6512f2ccf114e713c71025"
+                      }
+                    ]
+                  }
+                },
+                "stackEntry": {
+                  "position": 1,
+                  "stack": {
+                    "number": 60
+                  }
+                }
+              },
+              {
+                "number": 41,
+                "createdAt": "2026-11-08T10:05:26Z",
+                "baseRefName": "e4/queued",
+                "baseRef": {
+                  "target": {
+                    "__typename": "Commit",
+                    "oid": "be76197734f8ee252a269294e7be44c1c5fb8295"
+                  },
+                  "refUpdateRule": null
+                },
+                "headRefName": "e4/queue-pass-2",
+                "headRefOid": "920809a9ad9f7e16c616a4fc4c5f5b526bd96e09",
+                "isCrossRepository": false,
+                "commits": {
+                  "nodes": [
+                    {
+                      "commit": {
+                        "oid": "920809a9ad9f7e16c616a4fc4c5f5b526bd96e09"
+                      }
+                    }
+                  ]
+                },
+                "mergeCommit": {
+                  "oid": "f7d754c5716b4913e6b20c54cb8a4b3aac8d5142",
+                  "parents": {
+                    "nodes": [
+                      {
+                        "oid": "fb2aa0532b97e0c0335c07f3bcbd66b4225e3309"
+                      }
+                    ]
+                  }
+                },
+                "stackEntry": null
+              },
+              {
+                "number": 40,
+                "createdAt": "2026-11-08T10:05:22Z",
+                "baseRefName": "e4/queued",
+                "baseRef": {
+                  "target": {
+                    "__typename": "Commit",
+                    "oid": "be76197734f8ee252a269294e7be44c1c5fb8295"
+                  },
+                  "refUpdateRule": null
+                },
+                "headRefName": "e4/queue-2",
+                "headRefOid": "640b349783abc975e9d82808a3f33a59a10a90b7",
+                "isCrossRepository": false,
+                "commits": {
+                  "nodes": [
+                    {
+                      "commit": {
+                        "oid": "640b349783abc975e9d82808a3f33a59a10a90b7"
+                      }
+                    }
+                  ]
+                },
+                "mergeCommit": {
+                  "oid": "fb2aa0532b97e0c0335c07f3bcbd66b4225e3309",
+                  "parents": {
+                    "nodes": [
+                      {
+                        "oid": "703628d27fe5553d0203be85aa105a77ad9991a5"
+                      }
+                    ]
+                  }
+                },
+                "stackEntry": null
+              },
+              {
+                "number": 43,
+                "createdAt": "2026-11-08T11:00:04Z",
+                "baseRefName": "e9b/base",
+                "baseRef": {
+                  "target": {
+                    "__typename": "Commit",
+                    "oid": "9169df24d9346bd14d9c7dad312dfcfe8c0a2578"
+                  },
+                  "refUpdateRule": null
+                },
+                "headRefName": "e9b/moved-1",
+                "headRefOid": "1f987b98175bf5da8ffe0d2f3cf8ac3378481f11",
+                "isCrossRepository": false,
+                "commits": {
+                  "nodes": [
+                    {
+                      "commit": {
+                        "oid": "4e6e667c0250335bed15d71a69668fdd0f47503d"
+                      }
+                    },
+                    {
+                      "commit": {
+                        "oid": "1f987b98175bf5da8ffe0d2f3cf8ac3378481f11"
+                      }
+                    }
+                  ]
+                },
+                "mergeCommit": {
+                  "oid": "125fb1b9f1045d3dea6512f2ccf114e713c71025",
+                  "parents": {
+                    "nodes": [
+                      {
+                        "oid": "38dafe7d4b60764e86f9a5faa2651468acf72043"
+                      },
+                      {
+                        "oid": "1f987b98175bf5da8ffe0d2f3cf8ac3378481f11"
+                      }
+                    ]
+                  }
+                },
+                "stackEntry": null
+              },
+              {
+                "number": 42,
+                "createdAt": "2026-11-08T10:59:59Z",
+                "baseRefName": "e9b/base",
+                "baseRef": {
+                  "target": {
+                    "__typename": "Commit",
+                    "oid": "9169df24d9346bd14d9c7dad312dfcfe8c0a2578"
+                  },
+                  "refUpdateRule": null
+                },
+                "headRefName": "e9b/merge-1",
+                "headRefOid": "1c320a8fdea55a1322333aa89b2fe7a52bd49e20",
+                "isCrossRepository": false,
+                "commits": {
+                  "nodes": [
+                    {
+                      "commit": {
+                        "oid": "1c320a8fdea55a1322333aa89b2fe7a52bd49e20"
+                      }
+                    }
+                  ]
+                },
+                "mergeCommit": {
+                  "oid": "38dafe7d4b60764e86f9a5faa2651468acf72043",
+                  "parents": {
+                    "nodes": [
+                      {
+                        "oid": "1a677c04663a07cda25419ea26596bb2265e42eb"
+                      }
+                    ]
+                  }
+                },
+                "stackEntry": null
+              }
+            ]
+          }
+        }
+      }
+    }
+  }
+}

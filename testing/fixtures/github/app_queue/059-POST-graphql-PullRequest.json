@@ -1,0 +1,72 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "https://api.github.com/graphql",
+    "operation": "PullRequest",
+    "variables": {
+      "owner": "rozed-dev",
+      "name": "e2e",
+      "number": 168,
+      "filesFirst": 100,
+      "filesAfter": null
+    },
+    "query_sha256": "faebcf58d69c5e012ebe96425bca46ad442d8bf907b11b029049c26d755fc48b"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "x-ratelimit-limit": "5000",
+      "x-ratelimit-remaining": "4851",
+      "x-ratelimit-reset": "1794878408",
+      "x-ratelimit-resource": "graphql",
+      "x-ratelimit-used": "149"
+    },
+    "body": {
+      "data": {
+        "repository": {
+          "pullRequest": {
+            "id": "PR_kwDOVleUfc8AAAABPsDm-g",
+            "number": 168,
+            "title": "Fixture M4: queued, passing",
+            "url": "https://github.com/rozed-dev/e2e/pull/168",
+            "state": "OPEN",
+            "isDraft": false,
+            "updatedAt": "2026-11-17T00:21:38Z",
+            "author": {
+              "__typename": "User",
+              "login": "rozed-bot",
+              "avatarUrl": "https://avatars.githubusercontent.com/u/353226052?v=4"
+            },
+            "baseRefName": "e4/queued",
+            "baseRefOid": "be76197734f8ee252a269294e7be44c1c5fb8295",
+            "headRefName": "merge/4/queued-pass",
+            "headRefOid": "a5aa57345a74b8ea0c4a88498f9c77b77cd0c0d8",
+            "isCrossRepository": false,
+            "headRepository": {
+              "nameWithOwner": "rozed-dev/e2e",
+              "isFork": false
+            },
+            "files": {
+              "totalCount": 2,
+              "pageInfo": {
+                "hasNextPage": false,
+                "endCursor": "Mg"
+              },
+              "nodes": [
+                {
+                  "path": "merge/4/queued-pass/ci-result",
+                  "viewerViewedState": "UNVIEWED"
+                },
+                {
+                  "path": "merge/4/queued-pass/notes.md",
+                  "viewerViewedState": "UNVIEWED"
+                }
+              ]
+            }
+          }
+        }
+      }
+    }
+  }
+}

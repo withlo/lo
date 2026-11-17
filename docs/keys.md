@@ -106,6 +106,7 @@ Each command's id is what [the keymap file](#the-keymap-file) binds keys to.
 | Open on GitHub                            | `g x`                             | In `diff` and `file`; in code views, only in normal mode            | `diff.openOnGithub`           |
 | Overview note                             | None: in its menu and the palette | In `diff`; in code views, only in normal mode                       | `diff.overviewNote`           |
 | Copy the overview skill’s install command | `y c`                             | In `settings`                                                       | `overview.copyInstallCommand` |
+| Open on GitHub                            | `g x`                             | In `queue`                                                          | `queue.openOnGithub`          |
 | Open on GitHub                            | `g x`                             | In `stack`                                                          | `stacks.openOnGithub`         |
 | See the older events on GitHub            | None: in its menu and the palette | In `timeline`                                                       | `timeline.seeOlder`           |
 | Open on GitHub                            | `g x`                             | In `timeline`                                                       | `timeline.openOnGithub`       |
@@ -129,6 +130,7 @@ Each command's id is what [the keymap file](#the-keymap-file) binds keys to.
 | Ask GitHub whether it merged        | None: in its menu and the palette | Anywhere but `menu`, `dialog`, `palette` and `box`                                                        | `merge.askAgain`       |
 | Close the merge panel               | `Esc`                             | In `merge`                                                                                                | `merge.close`          |
 | Back to the merge panel             | `Esc`                             | In `commit`                                                                                               | `merge.leaveCommit`    |
+| Merge queue                         | `g q`                             | Anywhere but `menu`, `dialog`, `palette` and `box`; in code views, only in normal mode                    | `queue.show`           |
 | Submit review                       | `⌘⏎`                              | Anywhere but `box`, `dialog`, `palette` and `menu`                                                        | `review.submit`        |
 | Make this a GitHub stack            | `g S`                             | Anywhere but `menu`, `dialog`, `palette` and `box`; in code views, only in normal mode                    | `stacks.convert`       |
 
@@ -256,6 +258,16 @@ pull request's own box and an edit's, as `⌘⏎` does. `Esc` leaves insert mode
 in normal mode, `Esc` closes the box and keeps the draft. In the box's preview, or on its frame,
 `Esc` closes it at once, from any mode.
 
+## Merge queue
+
+| Action                             | Keys     | Where      | Command                |
+| ---------------------------------- | -------- | ---------- | ---------------------- |
+| Next pull request in the queue     | `j`, `↓` | In `queue` | `queue.down`           |
+| Previous pull request in the queue | `k`, `↑` | In `queue` | `queue.up`             |
+| Open the pull request              | `⏎`      | In `queue` | `queue.open`           |
+| Next branch’s queue                | `Tab`    | In `queue` | `queue.nextBranch`     |
+| Previous branch’s queue            | `⇧Tab`   | In `queue` | `queue.previousBranch` |
+
 ## Revision picker
 
 | Action                         | Keys     | Where          | Command                 |
@@ -331,6 +343,7 @@ comment box and another elsewhere.
 | `commit`     | Named by `merge`.                                                                     |
 | `recent`     | Named by `open`.                                                                      |
 | `overview`   | Named by `overview`.                                                                  |
+| `queue`      | Named by `queue`.                                                                     |
 | `revisions`  | Named by `revisions`.                                                                 |
 | `settings`   | Named by `settings`.                                                                  |
 | `stack`      | Named by `stacks`.                                                                    |
@@ -416,6 +429,7 @@ these, which run Lo's command in place of Vim's key:
 | `⌃i`             | Forward                         | `⌃i`      | `diff`, `file` and `peek`                                            | `keys.forward`            |
 | `m`              | Merge panel                     | `m`       | `diff` (normal), `file` (normal) and `peek` (normal)                 | `merge.panel`             |
 | `y a`            | Copy prompt for an agent        | `y`       | `diff` (normal), `file` (normal) and `peek` (normal)                 | `overview.copyPrompt`     |
+| `g q`            | Merge queue                     | `g q`     | `diff` (normal), `file` (normal) and `peek` (normal)                 | `queue.show`              |
 | `g v`            | Compare revisions               | `g v`     | `diff` (normal), `file` (normal) and `peek` (normal)                 | `revisions.picker`        |
 | `` ` ``          | Next middle view                | `` ` ``   | `diff` (normal), `file` (normal) and `peek` (normal)                 | `tab.nextView`            |
 | `~`              | Previous middle view            | `~`       | `diff` (normal), `file` (normal) and `peek` (normal)                 | `tab.previousView`        |
