@@ -4,7 +4,7 @@
 // merges, how, into what and which revision; a held `⏎` confirms nothing, and a fresh one merges
 // with the method shown, the squash commit's title as typed, and a toast once GitHub merged it.
 // A head that moved just before the press is merged by nobody: GitHub fails it, and the dialog says
-// so. With GitHub's answer lost (`app_merge_write_lost`), Lo reads the pull request to tell, and
+// so and offers the newer push (`app_merge_write_moved`). With GitHub's answer lost (`app_merge_write_lost`), Lo reads the pull request to tell, and
 // never sends the merge again. Into `e4/queued`, `⏎` adds it to the merge queue
 // (`app_merge_enqueue`).
 
@@ -26,11 +26,12 @@ const MERGING = 20_000;
 
 /**
  * `test`, with Lo signed in as rozed-bot on a replay server that answers from `cassette`,
- * `app_merge_write` unless a test says, and fetching from the generation's repository, built on
- * this machine, with `moved`'s newer push.
+ * `app_merge_write_polled` unless a test says: `app_merge_write` with GitHub's answer to a poll after
+ * each merge, which Lo here may make sooner than the recording did. It fetches from the
+ * generation's repository, built on this machine, with `moved`'s newer push.
  */
 const test = base.extend<{ cassette: string; github: ReplayServer; remote: string }>({
-  cassette: ['app_merge_write', { option: true }],
+  cassette: ['app_merge_write_polled', { option: true }],
   github: async ({ cassette }, use) => {
     const server = await serveReplay(cassette);
     await use(server);
@@ -85,6 +86,11 @@ const dialog = (page: Page) => page.getByTestId('merge-confirm');
 
 /** The note Lo says at the bottom of the window. */
 const said = (page: Page, text: string) => page.getByRole('status').filter({ hasText: text });
+
+/** Whether `request` reads what decides a merge: the merge facts' query. */
+function readsFacts({ body }: { body: Uint8Array }): boolean {
+  return new TextDecoder().decode(body).includes('query MergeSnapshot');
+}
 
 /** Steps the panel's method round to `method`, whichever it opened on. */
 async function roundTo(page: Page, method: string): Promise<void> {
@@ -158,22 +164,28 @@ for (const [{ number }, method, button] of [
   });
 }
 
-test('a merge whose head moved just before the press fails, and the dialog says so', async ({
-  page,
-}) => {
-  const { number } = pulls.moved;
-  await panelOf(page, number);
-  await page.keyboard.press('Enter');
-  await expect(dialog(page)).toContainText(`Merge #${number} into merge/5/base?`);
-  await page.keyboard.press('Enter');
-  const alert = dialog(page).getByRole('alert');
-  await expect(alert).toContainText(`Couldn’t merge #${number}.`);
-  await expect(alert).toContainText('Pull Request is not mergeable');
+test.describe('with its head moved just before the press', () => {
+  // Lo reads the push at its first poll after the merge, not after the polls the recording waited.
+  test.use({ cassette: 'app_merge_write_moved' });
 
-  // Seen in the dialog, it leaves no banner.
-  await page.keyboard.press('Escape');
-  await expect(dialog(page)).toBeHidden();
-  await expect(page.getByText(`Couldn’t merge #${number}.`)).toHaveCount(0);
+  test('GitHub fails the merge, and the dialog says so and offers the newer push', async ({
+    page,
+  }) => {
+    const { number } = pulls.moved;
+    await panelOf(page, number);
+    await page.keyboard.press('Enter');
+    await expect(dialog(page)).toContainText(`Merge #${number} into merge/5/base?`);
+    await page.keyboard.press('Enter');
+    const alert = dialog(page).getByRole('alert');
+    await expect(alert).toContainText(`Couldn’t merge #${number}.`);
+    await expect(alert).toContainText('Pull Request is not mergeable');
+    await expect(dialog(page).getByRole('button', { name: /See r1 → r2/ })).toBeVisible();
+
+    // Seen in the dialog, it leaves no banner.
+    await page.keyboard.press('Escape');
+    await expect(dialog(page)).toBeHidden();
+    await expect(page.getByText(`Couldn’t merge #${number}.`)).toHaveCount(0);
+  });
 });
 
 test.describe('with GitHub’s answer to the merge lost', () => {
@@ -192,10 +204,13 @@ test.describe('with GitHub’s answer to the merge lost', () => {
     await expect(alert).toContainText(`Lo can’t tell whether #${number} merged.`);
     await expect(alert).toContainText('GitHub shows it open.');
 
-    // Asking again is a read.
+    // Asking again is a read: once GitHub has answered it, nothing more was sent.
+    const reads = () => github.replay.seen.filter(readsFacts).length;
+    const before = reads();
     await dialog(page)
       .getByRole('button', { name: /Ask GitHub again/ })
       .click();
+    await expect.poll(reads).toBeGreaterThan(before);
     await expect(alert).toContainText('GitHub shows it open.');
     const merges = github.replay.seen.filter(
       ({ method, url }) => method === 'PUT' && url.endsWith(`/pulls/${number}/merge-async`),

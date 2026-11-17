@@ -139,6 +139,12 @@ function confirmShown(dialog: Extract<MergeDialog, { kind: 'confirm' }>): Shown 
             {withoutBidi(dialog.note)}
           </Callout>
         )}
+        {dialog.sending && (
+          <div role="status" className="flex items-center gap-8 text-fg-muted text-small">
+            <Spinner />
+            Checking #{plan.number} with GitHub before it’s sent. Cancel stops it.
+          </div>
+        )}
         <Callout tone="info">Lo deletes no branches; the repo’s own setting applies.</Callout>
       </>
     ),
@@ -331,7 +337,7 @@ export function MergeConfirm() {
       onOpenChange={(next) => {
         if (!next) leaveDialog();
       }}
-      title={shown?.title ?? 'Merge'}
+      title={withoutBidi(shown?.title ?? 'Merge')}
       foot={
         shown && (
           <>

@@ -86,6 +86,9 @@ interface Setup {
   latest?: string;
   acting?: PullTabInfo['acting'];
   method?: Method;
+  /** How long a read at the press, and a list again, may take: 50 ms and 1 ms. */
+  readWait?: number;
+  listWait?: number;
 }
 
 const merges: Merging[] = [];
@@ -109,14 +112,24 @@ function setup(options: Setup = {}) {
   let status: PollStatus = { rateLimit: { kind: 'normal' }, offline: undefined, signedOut: false };
   let held: number | undefined;
   let marks = 0;
+  /** What a wait holds back, once a test holds it: the poller, the reads, or GitHub's answer. */
+  const gates = { poller: false, reads: false, fromHead: false };
+  let pollerGiven: (() => void) | undefined;
+  let fromHeadGiven: (() => void) | undefined;
+  /** The signals the reads at the press were given, to give them up. */
+  const signals: (AbortSignal | undefined)[] = [];
+  /** Whether the list of open pull requests is older than it's read every, so Lo lists it again. */
+  let stale = false;
+  let closed = false;
   const results = options.results ?? [answer('merged', { sha: 'd'.repeat(40) })];
   const stand = {
-    send: (_method: string, path: string) => {
+    send: async (_method: string, path: string) => {
       reads.push(path);
-      return Promise.resolve({
+      if (gates.fromHead) await new Promise<void>((resolve) => (fromHeadGiven = resolve));
+      return {
         header: () => undefined,
         json: (parse: (json: unknown) => unknown) => parse(options.fromHead ?? []),
-      });
+      };
     },
   };
   // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- what `openPullsFromHead` uses.
@@ -132,11 +145,14 @@ function setup(options: Setup = {}) {
     // Read afresh, GitHub answers with `reread`, or as before.
     readAfresh: () => {
       marks += 1;
-      cached = { value: options.reread ?? cached.value, fetchedAt: NOW };
-      queueMicrotask(() => emit({ kind: 'read', pull: PULL, name: MERGE_FACTS.name }));
+      if (!gates.reads) {
+        cached = { value: options.reread ?? cached.value, fetchedAt: NOW };
+        queueMicrotask(() => emit({ kind: 'read', pull: PULL, name: MERGE_FACTS.name }));
+      }
       return { read: 1, generation: marks };
     },
     readSince<T>(_pull: PullRef, _kind: ReadKind<T>): SinceMark<Cached<T>> {
+      if (gates.reads) return { kind: 'waiting' };
       // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- what MERGE_FACTS reads.
       return { kind: 'read', read: cached as Cached<T> };
     },
@@ -148,7 +164,13 @@ function setup(options: Setup = {}) {
     status: () => status,
     writesHeldUntil: () => held,
     listAgain: () => undefined,
-    readOnce: (request) => request(client),
+    readOnce: (request, signal) => {
+      signals.push(signal);
+      return new Promise((resolve, reject) => {
+        signal?.addEventListener('abort', () => reject(new Error('given up')));
+        request(client).then(resolve, reject);
+      });
+    },
     mergeAsync(_pull, request) {
       sent.push(request);
       return (
@@ -162,7 +184,7 @@ function setup(options: Setup = {}) {
   function emit(event: PollEvent) {
     for (const listener of listeners) listener(event);
   }
-  const view: PullTabInfo = {
+  let view: PullTabInfo = {
     id: ID,
     repository: { owner: 'rozed-dev', name: 'e2e' },
     number: 138,
@@ -181,21 +203,29 @@ function setup(options: Setup = {}) {
   jobsMade.push(jobs);
   let converting: string[] = [];
   const merging = new Merging({
-    poller: () => Promise.resolve(poller),
-    view: (id) => (id === ID ? view : undefined),
+    poller: async () => {
+      if (gates.poller) await new Promise<void>((resolve) => (pollerGiven = resolve));
+      return poller;
+    },
+    view: (id) => (id === ID && !closed ? view : undefined),
     headOnScreen: () => HEAD,
     headContainsBase: () => undefined,
     method: () => options.method,
     remember: (repo: RepoRef, method) => remembered.push([repo.toString(), method]),
-    forest: () => ('forest' in options ? options.forest : forestOf(cached.value.pullRequest.base)),
+    forest: () =>
+      stale
+        ? { ...forestOf(cached.value.pullRequest.base), listedAt: 0 }
+        : 'forest' in options
+          ? options.forest
+          : forestOf(cached.value.pullRequest.base),
     converting: () => (converting.length > 0 ? { kind: 'running', prs: [138] } : undefined),
     turns,
     jobs,
     publish: (job) => published.push(job),
     log: () => undefined,
     now: () => NOW,
-    readWait: 50,
-    listWait: 1,
+    readWait: options.readWait ?? 50,
+    listWait: options.listWait ?? 1,
   });
   merges.push(merging);
   return {
@@ -207,7 +237,41 @@ function setup(options: Setup = {}) {
     published,
     remembered,
     emit,
+    signals,
+    /** Holds back each wait at the press until it's let go: the account's poller, a read again, or GitHub's list of open pull requests from a branch. */
+    hold: {
+      poller: () => {
+        gates.poller = true;
+      },
+      reads: () => {
+        gates.reads = true;
+      },
+      fromHead: () => {
+        gates.fromHead = true;
+      },
+    },
+    /** Lets every held wait go on. */
+    release() {
+      gates.poller = false;
+      gates.fromHead = false;
+      pollerGiven?.();
+      fromHeadGiven?.();
+      if (gates.reads) {
+        gates.reads = false;
+        cached = { value: options.reread ?? cached.value, fetchedAt: NOW };
+        emit({ kind: 'read', pull: PULL, name: MERGE_FACTS.name });
+      }
+    },
     set: {
+      stale: () => {
+        stale = true;
+      },
+      closed: () => {
+        closed = true;
+      },
+      acting: (acting: PullTabInfo['acting']) => {
+        view = { ...view, acting };
+      },
       offline: () => {
         status = { ...status, offline: { error: 'down', since: NOW, retryAt: NOW } };
       },
@@ -227,6 +291,13 @@ function setup(options: Setup = {}) {
       return published.at(-1)!;
     },
   };
+}
+
+type Run = ReturnType<typeof setup>;
+
+/** A moment, for what's under way to reach the wait it's held at. */
+function moment(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, 5));
 }
 
 /** The plan `planned` holds, or a failure naming why there's none. */
@@ -342,7 +413,7 @@ describe('a merge', () => {
 
 describe('at the press', () => {
   it('refuses what keeps a merge from going, sending nothing', async () => {
-    const cases: [string, (run: ReturnType<typeof setup>) => void, Setup?][] = [
+    const cases: [string, (run: Run) => void, Setup?][] = [
       ['offline', (run) => run.set.offline()],
       ['signedOut', (run) => run.set.signedOut()],
       ['paused', (run) => run.set.paused(NOW + 60_000)],
@@ -415,6 +486,70 @@ describe('at the press', () => {
     expect(confirmed.why).toContain('The method it merges with changed.');
     expect(run.sent).toEqual([]);
     expect(await run.merging.confirm(confirmed.plan.key)).toEqual({ kind: 'sent' });
+  });
+
+  it('sends nothing once cancelled during any wait at the press, and gives up its reads', async () => {
+    const waits: [string, (run: Run) => void, Setup?][] = [
+      ['the account’s poller', (run) => run.hold.poller()],
+      ['a read again', (run) => run.hold.reads(), { fetchedAt: 0, readWait: 60_000 }],
+      [
+        'the open pull requests from its base',
+        (run) => run.hold.fromHead(),
+        { facts: factsOf({ base: 'merge/5/base' }) },
+      ],
+      ['the list again', (run) => run.set.stale(), { listWait: 60_000 }],
+    ];
+    for (const [wait, hold, options] of waits) {
+      const run = setup(options);
+      const plan = planOf(await run.merging.plan(ID, SQUASH));
+      hold(run);
+      const confirming = run.merging.confirm(plan.key);
+      await moment();
+      run.merging.cancel(plan.key);
+      const confirmed = await confirming;
+      // What it waited for comes after all.
+      run.release();
+      await moment();
+      const given = run.signals.filter((signal) => signal !== undefined);
+      expect({
+        wait,
+        confirmed,
+        sent: run.sent,
+        given: given.every(({ aborted }) => aborted),
+      }).toEqual({
+        wait,
+        confirmed: { kind: 'refused', refusal: expect.objectContaining({ kind: 'cancelled' }) },
+        sent: [],
+        given: true,
+      });
+      // Nor does the plan go later.
+      expect(await run.merging.confirm(plan.key)).toMatchObject({ refusal: { kind: 'used' } });
+    }
+  });
+
+  it('checks the tab, the account and the connection again right before it sends', async () => {
+    const changes: [string, (run: Run) => void][] = [
+      ['closed', (run) => run.set.closed()],
+      ['account', (run) => run.set.acting({ kind: 'anonymous' })],
+      ['offline', (run) => run.set.offline()],
+      ['signedOut', (run) => run.set.signedOut()],
+      ['paused', (run) => run.set.paused(NOW + 60_000)],
+    ];
+    for (const [kind, change] of changes) {
+      const run = setup({ fetchedAt: 0, readWait: 60_000 });
+      const plan = planOf(await run.merging.plan(ID, SQUASH));
+      // It changes while GitHub answers the read at the press.
+      run.hold.reads();
+      const confirming = run.merging.confirm(plan.key);
+      await moment();
+      change(run);
+      run.release();
+      expect({ kind, confirmed: await confirming, sent: run.sent }).toMatchObject({
+        kind,
+        confirmed: { kind: 'refused', refusal: { kind } },
+        sent: [],
+      });
+    }
   });
 
   it('refuses until Lo knows where the pull request sits, and above a chain’s bottom layer', async () => {
@@ -510,6 +645,37 @@ describe('how it ends', () => {
       expect(run.published.at(-1)?.state).toMatchObject({ kind: 'unknown', shows: 'open' }),
     );
     expect(run.sent).toHaveLength(1);
+  });
+
+  it('holds the pull request after a lost answer until a read made after it ended settles it', async () => {
+    const run = setup({
+      submitted: () =>
+        Promise.reject(
+          new GithubError({ kind: 'network', failure: 'lost', message: 'read ECONNRESET' }),
+        ),
+    });
+    const plan = planOf(await run.merging.plan(ID, SQUASH));
+    // The reads made after it ended wait.
+    run.hold.reads();
+    await run.merging.confirm(plan.key);
+    await run.ended('unknown');
+    expect(run.turns.busy(PULL.repo, [138])).toEqual([138]);
+    const second = planOf(await run.merging.plan(ID, SQUASH));
+    expect(await run.merging.confirm(second.key)).toMatchObject({
+      refusal: {
+        kind: 'unsettled',
+        text: 'Lo can’t tell yet whether #138 merged. Ask GitHub again, then merge.',
+      },
+    });
+
+    // "Ask GitHub again" is that read: once it's answered, the pull request may merge again.
+    run.release();
+    run.merging.askAgain(plan.key);
+    await vi.waitFor(() => expect(run.turns.busy(PULL.repo, [138])).toEqual([]));
+    expect(run.published.at(-1)?.state).toMatchObject({ kind: 'unknown', shows: 'open' });
+    const third = planOf(await run.merging.plan(ID, SQUASH));
+    expect(await run.merging.confirm(third.key)).toEqual({ kind: 'sent' });
+    expect(run.sent).toHaveLength(2);
   });
 
   it('settles a lost answer as merged once a read shows it merged', async () => {

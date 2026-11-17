@@ -8,7 +8,7 @@ import { announce, notify } from '../../../window/commands/notices.tsx';
 import { client } from '../../../window/ipc.ts';
 import { contract as revisionsContract } from '../../revisions/contract.ts';
 import { revisionLabel, revisionsOf } from '../../revisions/window/shared.ts';
-import { activeTab, pullOf } from '../../tab/window/shared.ts';
+import { activeTab, pullOf, withoutBidi } from '../../tab/window/shared.ts';
 import type { JobView, MergePlan, Refusal } from '../contract.ts';
 import { closePanel, openPanel, opened } from './actions.ts';
 import { main } from './main.ts';
@@ -43,7 +43,7 @@ export function mergeFromPanel(): void {
   if (!open || tab?.kind !== 'pull') return;
   const why = canMerge();
   if (why !== true) {
-    notify('Merge', why);
+    notify('Merge', withoutBidi(why));
     return;
   }
   const panel = panels.get(open.id);
@@ -61,7 +61,7 @@ export function mergeFromPanel(): void {
     if (merging.getState().dialog !== planning) return;
     setDialog(undefined);
     openPanel(open.id, tab.number);
-    notify('Merge', said);
+    notify('Merge', withoutBidi(said));
   };
   main()
     .plan({
@@ -98,7 +98,16 @@ export function confirmMerge(): void {
   main()
     .confirm({ key: plan.key })
     .then((confirmed) => {
-      if (!still()) return;
+      if (!still()) {
+        // Left as main sent it: it goes on, and the tab shows how it ends.
+        if (confirmed.kind === 'sent') {
+          notify(
+            'Merge',
+            `Lo had sent #${plan.number}’s merge already. The tab shows how it ends.`,
+          );
+        }
+        return;
+      }
       switch (confirmed.kind) {
         case 'sent':
           setDialog({ kind: 'sent', plan });
@@ -260,7 +269,7 @@ function settled(job: JobView | undefined): void {
   // What was typed went with it.
   const plan = dialog && dialog.kind !== 'planning' ? dialog.plan : undefined;
   if (plan?.key === job.key && job.state.kind === 'merged') forgetTyped(plan);
-  announce(line);
+  announce(withoutBidi(line));
 }
 
 /** Forgets the squash text typed for `plan`'s view, which went with the merge. */

@@ -1,0 +1,4 @@
+{
+  "description": "app_merge_write with rozed-dev/e2e#183's polls between its first and the merge answered as the first after the merge, which saw the push: Lo reads the newer push at the first poll after GitHub failed the merge, as when it polls less often than the recording did.",
+  "derived_from": "app_merge_write"
+}

@@ -334,8 +334,11 @@ its auto-merge turned off, after, so none merged and `e4/queued` is still at `ME
 Generation 5 is #174 to #190, with GitHub stack #191; `app_merge_write` used it, recorded with
 writes as Lo merged #174, #175 and #176, one way each, and confirmed #183's merge just after
 `merge.sh 5 --push`, which GitHub then failed. `app_merge_write_lost` is the same with that merge's
-answer lost. `app_merge_enqueue` used it too, recorded with writes as Lo added #187 to `e4/queued`'s
-queue, which was taken out of it after, so it didn't merge.
+answer lost. `app_merge_write_moved` is the same with that pull request's polls before the merge
+answered as the first after it, which saw the push, and `app_merge_write_polled` adds GitHub's
+answer to a poll of each merged pull request after the recording's last. `app_merge_enqueue` used it
+too, recorded with writes as Lo added #187 to `e4/queued`'s queue, which was taken out of it after,
+so it didn't merge.
 
 ## The fake language server
 

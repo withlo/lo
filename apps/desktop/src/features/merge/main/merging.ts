@@ -6,13 +6,15 @@
 // sits is known, from the stacks' list and the open pull requests read afresh from each branch the
 // merge goes into, and it's alone or a GitHub stack's bottom layer; nothing else merges it; no
 // conversion to a GitHub stack runs on its path; and GitHub can be reached and isn't holding writes.
-// When something the confirmation named changed, it asks again with a new plan.
+// When something the confirmation named changed, it asks again with a new plan. Cancelled while it
+// checks, it stops, its reads given up, and sends nothing; right before it sends, the tab, the
+// account and the connection are checked once more.
 //
 // The merge goes through the app's one `MergeJobs`, in the pull request's turn among merge writes,
 // with the head on screen as its `sha`, so GitHub merges only that head. A job outlives its view.
 // The method is remembered for the repository once GitHub takes a merge with it. A merge whose end
-// Lo can't tell is settled by reading the pull request, never by sending it again. Nothing here
-// calls Electron.
+// Lo can't tell is settled by reading the pull request, never by sending it again, and holds the
+// pull request's turn until a read made after it ended does. Nothing here calls Electron.
 
 import {
   describeMergeRefusal,
@@ -156,6 +158,10 @@ interface Sent {
   shows: 'merged' | 'enqueued' | 'open' | undefined;
   /** Stops listening for the reads that settle it. */
   unwatch: (() => void) | undefined;
+  /** When it ended, by {@link MergingOptions.now}: what Lo acts on next is read after then. */
+  endedAt: number | undefined;
+  /** The reader dismissed it while Lo couldn't tell yet: forgotten once a read settles it. */
+  dismissed: boolean;
 }
 
 /** Whether two logins name one account: GitHub's ignore case. */
@@ -351,6 +357,8 @@ export class Merging {
   readonly #used = new Set<string>();
   /** The merges Lo sent, by their pull request's key, until the reader forgets them. */
   readonly #sent = new Map<string, Sent>();
+  /** The checks under way at a press, by their plan's key: cancelling one stops it. */
+  readonly #checking = new Map<string, AbortController>();
   readonly #stopJobs: () => void;
   #stopped = false;
 
@@ -411,27 +419,48 @@ export class Merging {
     this.#kept.delete(key);
     this.#used.add(key);
     if (this.#stopped) return refused(own('stopped', 'Lo is quitting.'));
-    let checked;
+    const checking = new AbortController();
+    this.#checking.set(key, checking);
     try {
-      checked = await this.#guard(kept);
-    } catch (error) {
-      this.#options.log(`${kept.pull.toString()}: ${describe(error)}`);
-      return refused(
-        own('failed', `Lo couldn’t check the merge, so it didn’t send it: ${describe(error)}`),
-      );
+      const { signal } = checking;
+      let checked;
+      try {
+        checked = await this.#guard(kept, signal);
+      } catch (error) {
+        if (signal.aborted) return refused(cancelled());
+        this.#options.log(`${kept.pull.toString()}: ${describe(error)}`);
+        return refused(
+          own('failed', `Lo couldn’t check the merge, so it didn’t send it: ${describe(error)}`),
+        );
+      }
+      // Cancelled while it checked: nothing goes, and no plan is kept in its place.
+      if (signal.aborted || this.#stopped) {
+        if (checked.kind === 'again') this.#kept.delete(checked.plan.key);
+        return refused(this.#stopped ? own('stopped', 'Lo is quitting.') : cancelled());
+      }
+      if (checked.kind !== 'send') return checked;
+      // What the checks found at their start, once more, right before it goes.
+      const still = this.#holds(kept, checked.poller);
+      if (still) return refused(still);
+      return this.#send(kept, checked.poller);
+    } finally {
+      this.#checking.delete(key);
     }
-    if (checked.kind !== 'send') return checked;
-    return this.#send(kept, checked.poller);
   }
 
-  /** Forgets the plan named `key`, unless it was confirmed. */
+  /**
+   * Forgets the plan named `key`. While its press is being checked, stops that: its reads are given
+   * up, and nothing is sent. Once it was sent, it goes on.
+   */
   cancel(key: string): void {
     this.#kept.delete(key);
+    this.#checking.get(key)?.abort();
   }
 
   /** Every merge Lo sent that it still has, as the window shows them. */
   list(): JobView[] {
     return [...this.#sent.values()].flatMap((sent) => {
+      if (sent.dismissed) return [];
       const view = this.#viewOf(sent);
       return view ? [view] : [];
     });
@@ -449,19 +478,32 @@ export class Merging {
     if (!job || endedWith(job)?.kind !== 'unknown') return;
     if (this.#options.jobs.followAgain(sent.pull)) {
       // Following it again holds the pull request's turn, as the merge may still be running.
-      const turn = this.#options.turns.take(sent.pull.repo, [sent.pull.number]);
-      if (!('busy' in turn)) sent.turn = turn;
+      if (!sent.turn) {
+        const turn = this.#options.turns.take(sent.pull.repo, [sent.pull.number]);
+        if (!('busy' in turn)) sent.turn = turn;
+      }
       return;
     }
     this.#settle(sent);
   }
 
-  /** Forgets the merge from the plan named `key` once it has ended. */
+  /**
+   * Forgets the merge from the plan named `key` once it has ended. One Lo can't tell the end of yet
+   * goes from the list, and is forgotten once a read settles it: until then it holds its turn.
+   */
   dismiss(key: string): void {
     const sent = this.#byKey(key);
     if (!sent) return;
     const job = this.#options.jobs.job(sent.pull);
     if (job && job.state.kind !== 'done') return;
+    if (sent.turn) {
+      sent.dismissed = true;
+      return;
+    }
+    this.#forget(sent);
+  }
+
+  #forget(sent: Sent): void {
     this.#options.jobs.forget(sent.pull);
     sent.unwatch?.();
     this.#sent.delete(sent.pull.key);
@@ -472,6 +514,7 @@ export class Merging {
     this.#stopped = true;
     this.#stopJobs();
     this.#kept.clear();
+    for (const checking of this.#checking.values()) checking.abort();
     for (const sent of this.#sent.values()) {
       sent.unwatch?.();
       sent.turn?.give();
@@ -549,41 +592,39 @@ export class Merging {
    * Checks `kept` as it's confirmed: sends it with `poller` when everything holds; asks again with
    * a new plan when something it named changed; else refuses.
    */
-  async #guard(kept: Kept): Promise<Confirmed | { kind: 'send'; poller: MergingPoller }> {
+  async #guard(
+    kept: Kept,
+    signal: AbortSignal,
+  ): Promise<Confirmed | { kind: 'send'; poller: MergingPoller }> {
     const { plan, pull } = kept;
-    const view = this.#options.view(plan.id);
-    if (
-      !view ||
-      !new PullRef(view.repository.owner, view.repository.name, view.number).equals(pull)
-    ) {
-      return refused(own('closed', `#${plan.number}’s tab is closed. Merge from its panel again.`));
-    }
-    const acting = actingOf(view);
-    if (typeof acting === 'string' || !sameLogin(acting.login, plan.login)) {
-      return refused(
-        own('account', `The tab no longer acts as ${plan.login}. Merge from the panel again.`),
-      );
-    }
+    const tab = this.#tabHolds(kept);
+    if (tab) return refused(tab);
     let poller: MergingPoller;
     try {
-      poller = await this.#options.poller(plan.login);
+      poller = await untilAborted(this.#options.poller(plan.login), signal);
     } catch (error) {
+      signal.throwIfAborted();
       return refused(own('account', describe(error)));
     }
-    const off = offOf(poller);
-    if (off) {
+    const held = this.#holds(kept, poller);
+    if (held) return refused(held);
+    const view = this.#options.view(plan.id);
+    if (!view) return refused(closed(plan));
+    const head = this.#options.headOnScreen(plan.id) ?? '';
+    // A merge of it that ended before: what Lo acts on now is read after that, and one Lo can't
+    // tell the end of yet holds the pull request until a read settles it.
+    const before = this.#sent.get(pull.key);
+    if (before?.turn && this.#options.jobs.job(pull)?.state.kind === 'done') {
       return refused(
-        own(off.kind, offText(off), { until: off.kind === 'paused' ? off.until : null }),
+        own(
+          'unsettled',
+          `Lo can’t tell yet whether #${plan.number} merged. Ask GitHub again, then merge.`,
+        ),
       );
     }
-    const head = this.#options.headOnScreen(plan.id) ?? '';
-    // The tab knows of a newer push than the one on screen.
-    if (head === plan.head && view.latest !== undefined && view.latest !== head) {
-      return refused(newerPush(plan.number, head, view.latest));
-    }
     let cached = poller.cachedRead(pull, MERGE_FACTS);
-    if (!this.#current(cached, head)) {
-      const read = await this.#readAgain(poller, pull);
+    if (!this.#current(cached, head, before?.endedAt)) {
+      const read = await this.#readAgain(poller, pull, signal);
       if (typeof read === 'string') {
         return refused(
           own('unread', `Lo couldn’t read #${plan.number} again, so it didn’t merge: ${read}`),
@@ -619,7 +660,8 @@ export class Merging {
       this.#keep(now, pull);
       return { kind: 'again', plan: now, why: `${why} Check what it does now, then confirm.` };
     }
-    const placed = await this.#whereNow(poller, plan.login, pull, facts);
+    const placed = await this.#whereNow(poller, plan.login, pull, facts, signal);
+    signal.throwIfAborted();
     const unplaced = whereText(placed, plan.number);
     if (unplaced !== undefined) return refused(own('where', unplaced));
     if (this.#options.turns.busy(pull.repo, [pull.number]).length > 0) {
@@ -637,34 +679,82 @@ export class Merging {
     return { kind: 'send', poller };
   }
 
+  /** Why `kept` can't go from its tab now: it's closed, or acts as another account, or as none. */
+  #tabHolds(kept: Kept): Refusal | undefined {
+    const { plan, pull } = kept;
+    const view = this.#options.view(plan.id);
+    if (
+      !view ||
+      !new PullRef(view.repository.owner, view.repository.name, view.number).equals(pull)
+    ) {
+      return closed(plan);
+    }
+    const acting = actingOf(view);
+    if (typeof acting === 'string' || !sameLogin(acting.login, plan.login)) {
+      return own('account', `The tab no longer acts as ${plan.login}. Merge from the panel again.`);
+    }
+    return undefined;
+  }
+
+  /**
+   * Why `kept` can't go now, as its tab, its account's `poller` and the head on screen say: what
+   * the checks at the press start with, and what's checked again right before it goes.
+   */
+  #holds(kept: Kept, poller: MergingPoller): Refusal | undefined {
+    const { plan } = kept;
+    const tab = this.#tabHolds(kept);
+    if (tab) return tab;
+    const off = offOf(poller);
+    if (off)
+      return own(off.kind, offText(off), { until: off.kind === 'paused' ? off.until : null });
+    const view = this.#options.view(plan.id);
+    const head = this.#options.headOnScreen(plan.id) ?? '';
+    // The tab knows of a newer push than the one on screen.
+    if (head === plan.head && view?.latest !== undefined && view.latest !== head) {
+      return newerPush(plan.number, head, view.latest);
+    }
+    return undefined;
+  }
+
   /**
    * Whether `cached` can be acted on at the press: whole, confirmed in the last
-   * {@link FRESH_FOR}, and at `head`.
+   * {@link FRESH_FOR}, after a merge of it that ended at `endedAt`, and at `head`.
    */
-  #current(cached: Cached<MergeFacts> | undefined, head: string): cached is Cached<MergeFacts> {
+  #current(
+    cached: Cached<MergeFacts> | undefined,
+    head: string,
+    endedAt: number | undefined,
+  ): cached is Cached<MergeFacts> {
     return (
       cached !== undefined &&
       this.#now() - cached.fetchedAt <= FRESH_FOR &&
+      (endedAt === undefined || cached.fetchedAt > endedAt) &&
       cached.value.leftOut.length === 0 &&
       cached.value.pullRequest.head === head
     );
   }
 
-  /** What decides `pull`'s merge, read again now, or why it couldn't be. */
-  async #readAgain(poller: MergingPoller, pull: PullRef): Promise<Cached<MergeFacts> | string> {
+  /** What decides `pull`'s merge, read again now, or why it couldn't be; given up on `signal`. */
+  async #readAgain(
+    poller: MergingPoller,
+    pull: PullRef,
+    signal: AbortSignal,
+  ): Promise<Cached<MergeFacts> | string> {
     let mark = poller.readAfresh(pull, MERGE_FACTS);
     if (!mark) {
-      await poller.mergeFacts(pull);
+      await untilAborted(poller.mergeFacts(pull), signal);
       mark = poller.readAfresh(pull, MERGE_FACTS);
     }
     if (!mark) return 'the read isn’t kept.';
     const deadline = this.#now() + (this.#options.readWait ?? 20_000);
     for (;;) {
       if (this.#stopped) return 'Lo is quitting.';
+      signal.throwIfAborted();
       const since = poller.readSince(pull, MERGE_FACTS, mark);
       if (since.kind === 'read') return since.read;
       if (since.kind === 'stale') return 'the read was let go of.';
-      const heard = await nextRead(poller, pull, deadline - this.#now());
+      const heard = await nextRead(poller, pull, deadline - this.#now(), signal);
+      signal.throwIfAborted();
       if (heard === 'failed') return 'GitHub didn’t answer it.';
       if (heard === 'late') return 'GitHub took too long to answer.';
     }
@@ -680,6 +770,7 @@ export class Merging {
     login: string,
     pull: PullRef,
     facts: MergeFacts,
+    signal?: AbortSignal,
   ): Promise<Where> {
     const placed = placedBy(facts);
     const openFrom = new Map<string, OpenFromHead>();
@@ -699,11 +790,12 @@ export class Merging {
         try {
           const read = await poller.readOnce(
             (client) => openPullsFromHead(client, pull.repo, why.branch),
-            undefined,
+            signal,
             'foreground',
           );
           openFrom.set(why.branch, read);
         } catch (error) {
+          signal?.throwIfAborted();
           return {
             kind: 'unknown',
             why,
@@ -716,7 +808,8 @@ export class Merging {
       if (!found.listAgain || listed) return found;
       listed = true;
       poller.listAgain(pull.repo);
-      await this.#relisted(pull.repo, login, forest?.listedAt);
+      await this.#relisted(pull.repo, login, forest?.listedAt, signal);
+      signal?.throwIfAborted();
     }
   }
 
@@ -724,10 +817,15 @@ export class Merging {
    * Waits for `login`'s list of `repo`'s open pull requests to be confirmed after `since`, looking
    * every quarter second, for {@link MergingOptions.listWait} at most.
    */
-  async #relisted(repo: RepoRef, login: string, since: number | undefined): Promise<void> {
+  async #relisted(
+    repo: RepoRef,
+    login: string,
+    since: number | undefined,
+    signal: AbortSignal | undefined,
+  ): Promise<void> {
     const every = 250;
     for (let waited = 0; waited < (this.#options.listWait ?? 15_000); waited += every) {
-      if (this.#stopped) return;
+      if (this.#stopped || signal?.aborted) return;
       const listedAt = this.#options.forest(repo, login)?.listedAt;
       if (listedAt !== undefined && listedAt !== since) return;
       await new Promise((resolve) => setTimeout(resolve, every));
@@ -758,6 +856,8 @@ export class Merging {
       remembered: false,
       shows: undefined,
       unwatch: undefined,
+      endedAt: undefined,
+      dismissed: false,
     };
     this.#sent.set(pull.key, sent);
     const refusal = this.#options.jobs.merge(poller, pull, request);
@@ -777,10 +877,15 @@ export class Merging {
     if (!job) return;
     this.#rememberIfTaken(sent, job);
     if (done) {
-      sent.turn?.give();
-      sent.turn = undefined;
+      sent.endedAt = this.#now();
       sent.shows = undefined;
-      if (endedWith(job)?.kind === 'unknown') this.#settle(sent);
+      if (endedWith(job)?.kind === 'unknown') {
+        // It may have merged, or still be merging: the turn stays until a read settles it.
+        this.#settle(sent);
+      } else {
+        sent.turn?.give();
+        sent.turn = undefined;
+      }
     }
     this.#publish(sent);
   }
@@ -813,8 +918,15 @@ export class Merging {
       if (!mark) return;
       const since = poller.readSince(pull, MERGE_FACTS, mark);
       if (since.kind !== 'read') return;
+      // A read made after the merge ended settles it: the pull request may be merged again.
+      sent.turn?.give();
+      sent.turn = undefined;
       const shown = since.read.value.pullRequest;
       const shows = shown.state === 'MERGED' ? 'merged' : shown.inQueue ? 'enqueued' : 'open';
+      if (sent.dismissed) {
+        this.#forget(sent);
+        return;
+      }
       if (shows === sent.shows) return;
       sent.shows = shows;
       if (shows !== 'open') {
@@ -895,6 +1007,14 @@ function refused(refusal: Refusal): Confirmed {
   return { kind: 'refused', refusal };
 }
 
+function closed(plan: MergePlan): Refusal {
+  return own('closed', `#${plan.number}’s tab is closed. Merge from its panel again.`);
+}
+
+function cancelled(): Refusal {
+  return own('cancelled', 'Cancelled. Nothing was sent.');
+}
+
 /** A newer push than the one on screen: "See r5 → r6" compares them. */
 function newerPush(number: number, from: string, to: string): Refusal {
   const valid = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
@@ -971,22 +1091,46 @@ function whereText(placed: Where, number: number): string | undefined {
   }
 }
 
+/** What `promise` gives, unless `signal` gives up first: then its reason, at once. */
+function untilAborted<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
+  signal.throwIfAborted();
+  return new Promise<T>((resolve, reject) => {
+    const given = () =>
+      reject(signal.reason instanceof Error ? signal.reason : new Error('Given up.'));
+    signal.addEventListener('abort', given, { once: true });
+    promise.then(
+      (value) => {
+        signal.removeEventListener('abort', given);
+        resolve(value);
+      },
+      (error: unknown) => {
+        signal.removeEventListener('abort', given);
+        reject(error instanceof Error ? error : new Error(String(error)));
+      },
+    );
+  });
+}
+
 /** The next read of `pull`'s merge facts, or why there's none within `wait` milliseconds. */
 function nextRead(
   poller: Pick<Poller, 'onEvent'>,
   pull: PullRef,
   wait: number,
+  signal: AbortSignal,
 ): Promise<'read' | 'failed' | 'late'> {
   return new Promise((resolve) => {
-    if (wait <= 0) {
+    if (wait <= 0 || signal.aborted) {
       resolve('late');
       return;
     }
     const done = (how: 'read' | 'failed' | 'late') => {
       clearTimeout(timer);
       stop();
+      signal.removeEventListener('abort', given);
       resolve(how);
     };
+    const given = () => done('late');
+    signal.addEventListener('abort', given);
     const timer = setTimeout(() => done('late'), wait);
     const stop = poller.onEvent((event: PollEvent) => {
       if (event.kind !== 'read' && event.kind !== 'confirmed' && event.kind !== 'readFailed') {

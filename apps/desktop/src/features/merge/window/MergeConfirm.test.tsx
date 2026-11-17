@@ -20,8 +20,11 @@ import { merging } from './store.ts';
 
 const HEAD = 'a'.repeat(40);
 
+/** How main answers a confirmation: sent, unless a test says. */
+let confirming: () => unknown = () => ({ kind: 'sent' });
+
 const bridge = installBridge({
-  'merge.confirm': () => ({ kind: 'sent' }),
+  'merge.confirm': () => confirming(),
   'merge.cancel': () => undefined,
   'merge.dismiss': () => undefined,
   'merge.sent': () => [],
@@ -33,6 +36,7 @@ beforeAll(() => {
 });
 
 beforeEach(() => {
+  confirming = () => ({ kind: 'sent' });
   bridge.calls.length = 0;
   merging.setState({ dialog: undefined, jobs: new Map(), seen: new Set() });
 });
@@ -253,4 +257,54 @@ it('offers the newer push a refusal names, or one Lo read since a refusal that n
     from: HEAD,
     to: 'c'.repeat(40),
   });
+});
+
+it('says it’s checking once confirmed, and `Esc` then cancels it in main', async () => {
+  const plan = planOf();
+  let answer: ((confirmed: unknown) => void) | undefined;
+  confirming = () => new Promise((resolve) => (answer = resolve));
+  draw(<MergeConfirm />);
+  act(() =>
+    merging.setState({ dialog: { kind: 'confirm', plan, note: undefined, sending: false } }),
+  );
+  await until(() => dialog() !== null);
+  await later();
+  act(() => {
+    dialog()!.dispatchEvent(enter());
+  });
+  await until(() => dialog()?.textContent?.includes('Checking #138 with GitHub') === true);
+
+  act(() => {
+    dialog()!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  });
+  await until(() => merging.getState().dialog === undefined);
+  expect(bridge.calls.find(([channel]) => channel === 'merge.cancel')?.[1]).toEqual({
+    key: plan.key,
+  });
+
+  // Had main sent it before the cancel reached it, the reader is told it went.
+  await act(async () => {
+    answer?.({ kind: 'sent' });
+    await Promise.resolve();
+  });
+  await until(() => notice()?.body.startsWith('Lo had sent') === true);
+  expect(notice()).toMatchObject({
+    body: 'Lo had sent #138’s merge already. The tab shows how it ends.',
+  });
+});
+
+it('draws the base in the title without bidi controls', async () => {
+  draw(<MergeConfirm />);
+  act(() =>
+    merging.setState({
+      dialog: {
+        kind: 'confirm',
+        plan: planOf({ base: 'main\u202Eevil' }),
+        note: undefined,
+        sending: false,
+      },
+    }),
+  );
+  await until(() => dialog() !== null);
+  expect(dialog()?.textContent).not.toMatch(/[\u202A-\u202E\u2066-\u2069]/);
 });
