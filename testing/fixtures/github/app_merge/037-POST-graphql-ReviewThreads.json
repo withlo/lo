@@ -6,7 +6,7 @@
     "variables": {
       "owner": "rozed-dev",
       "name": "e2e",
-      "number": 138,
+      "number": 202,
       "first": 100,
       "after": null
     },
@@ -17,29 +17,76 @@
     "headers": {
       "content-type": "application/json; charset=utf-8",
       "x-ratelimit-limit": "5000",
-      "x-ratelimit-remaining": "4967",
-      "x-ratelimit-reset": "1794870608",
+      "x-ratelimit-remaining": "4995",
+      "x-ratelimit-reset": "1794889861",
       "x-ratelimit-resource": "graphql",
-      "x-ratelimit-used": "33"
+      "x-ratelimit-used": "5"
     },
     "body": {
       "data": {
         "rateLimit": {
           "cost": 1,
           "limit": 5000,
-          "remaining": 4967,
-          "used": 33,
-          "resetAt": "2026-11-16T23:10:08Z"
+          "remaining": 4995,
+          "used": 5,
+          "resetAt": "2026-11-17T04:31:01Z"
         },
         "repository": {
           "pullRequest": {
             "reviewThreads": {
-              "totalCount": 0,
+              "totalCount": 1,
               "pageInfo": {
                 "hasNextPage": false,
-                "endCursor": null
+                "endCursor": "Y3Vyc29yOnYyOpK0MjAyNi0xMS0xN1QwMjoxOTowNlrOuD0yOg=="
               },
-              "nodes": []
+              "nodes": [
+                {
+                  "id": "PRRT_kwDOVleUfc64PTI6",
+                  "path": "merge/6/gated-failing/notes.md",
+                  "subjectType": "LINE",
+                  "diffSide": "RIGHT",
+                  "startDiffSide": null,
+                  "line": 1,
+                  "startLine": 1,
+                  "originalLine": 1,
+                  "originalStartLine": null,
+                  "isOutdated": false,
+                  "isResolved": false,
+                  "viewerCanReply": true,
+                  "viewerCanResolve": true,
+                  "viewerCanUnresolve": false,
+                  "comments": {
+                    "totalCount": 1,
+                    "pageInfo": {
+                      "hasNextPage": false,
+                      "endCursor": "Y3Vyc29yOnYyOpK0MjAyNi0xMS0xN1QwMjoxOTowNlrPAAAAARHZp68="
+                    },
+                    "nodes": [
+                      {
+                        "id": "PRRC_kwDOVleUfc8AAAABEdmnrw",
+                        "author": {
+                          "__typename": "User",
+                          "login": "rozed-bot"
+                        },
+                        "body": "Fixture M6: this conversation stays open.",
+                        "state": "SUBMITTED",
+                        "createdAt": "2026-11-17T02:19:06Z",
+                        "url": "https://github.com/rozed-dev/e2e/pull/202#discussion_r4594444207",
+                        "isMinimized": false,
+                        "minimizedReason": null,
+                        "viewerCanUpdate": true,
+                        "viewerCanDelete": true,
+                        "commit": {
+                          "oid": "a83a16ddb5ea1750f2ad5e6d32eaba7e1ff3033a"
+                        },
+                        "originalCommit": {
+                          "oid": "a83a16ddb5ea1750f2ad5e6d32eaba7e1ff3033a"
+                        }
+                      }
+                    ]
+                  }
+                }
+              ]
             }
           }
         }

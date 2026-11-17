@@ -1,0 +1,46 @@
+{
+  "request": {
+    "method": "GET",
+    "url": "https://api.github.com/repos/rozed-dev/e2e/pulls/203/files?per_page=100"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "etag": "W/\"ccf03cf5b0943878b2a951b2ee282d6e5d62c6c2c34f55a0ad3c5baf76fd1eb5\"",
+      "last-modified": "Tue, 17 Nov 2026 02:18:42 GMT",
+      "x-github-api-version-selected": "2022-11-28",
+      "x-ratelimit-limit": "5000",
+      "x-ratelimit-remaining": "4940",
+      "x-ratelimit-reset": "1794889860",
+      "x-ratelimit-resource": "core",
+      "x-ratelimit-used": "60"
+    },
+    "body": [
+      {
+        "sha": "2ae28399f5fda2dfb1b04405f4a3b4895f5fac1e",
+        "filename": "merge/6/gated-passing/ci-result",
+        "status": "added",
+        "additions": 1,
+        "deletions": 0,
+        "changes": 1,
+        "blob_url": "https://github.com/rozed-dev/e2e/blob/d756da6087d999c0ea59447c0e65e693c4c3d92f/merge%2F6%2Fgated-passing%2Fci-result",
+        "raw_url": "https://github.com/rozed-dev/e2e/raw/d756da6087d999c0ea59447c0e65e693c4c3d92f/merge%2F6%2Fgated-passing%2Fci-result",
+        "contents_url": "https://api.github.com/repos/rozed-dev/e2e/contents/merge%2F6%2Fgated-passing%2Fci-result?ref=d756da6087d999c0ea59447c0e65e693c4c3d92f",
+        "patch": "@@ -0,0 +1 @@\n+pass"
+      },
+      {
+        "sha": "4d4f63645f7cc0a64a037ab461c759c7ec88e8ea",
+        "filename": "merge/6/gated-passing/notes.md",
+        "status": "added",
+        "additions": 3,
+        "deletions": 0,
+        "changes": 3,
+        "blob_url": "https://github.com/rozed-dev/e2e/blob/d756da6087d999c0ea59447c0e65e693c4c3d92f/merge%2F6%2Fgated-passing%2Fnotes.md",
+        "raw_url": "https://github.com/rozed-dev/e2e/raw/d756da6087d999c0ea59447c0e65e693c4c3d92f/merge%2F6%2Fgated-passing%2Fnotes.md",
+        "contents_url": "https://api.github.com/repos/rozed-dev/e2e/contents/merge%2F6%2Fgated-passing%2Fnotes.md?ref=d756da6087d999c0ea59447c0e65e693c4c3d92f",
+        "patch": "@@ -0,0 +1,3 @@\n+# Fixture M6: gated-passing\n+\n+Into e4/gated: ci passes, so it waits only for an approval."
+      }
+    ]
+  }
+}

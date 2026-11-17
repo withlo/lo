@@ -349,3 +349,19 @@ export function leftQueue(removal: QueueRemoval): LeftQueue | undefined {
       return outsideCase(kind, { kind: 'other', at, leftOut, reason });
   }
 }
+
+/**
+ * Whether `removal` answers for a leaving of the queue's entry that joined it at `joined`, in
+ * milliseconds since the Unix epoch on GitHub's clock: it merged, or GitHub's last removal came at
+ * or after `joined`, or GitHub left the removal out, which is all it will say. A removal from before
+ * `joined` is of an earlier entry, and none at all, or GitHub still saying it's in the queue, is a
+ * timeline that hasn't caught up: worth reading again before saying Lo can't tell why. With no
+ * `joined`, or no time to compare, any removal answers.
+ */
+export function leftSince(removal: QueueRemoval, joined: number | undefined): boolean {
+  const found = leftQueue(removal);
+  if (found === undefined) return false;
+  if (found.kind === 'merged' || joined === undefined || found.at === undefined) return true;
+  const at = Date.parse(found.at);
+  return !Number.isFinite(at) || at >= joined;
+}

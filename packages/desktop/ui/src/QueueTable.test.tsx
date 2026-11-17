@@ -286,6 +286,26 @@ describe('QueueTable', () => {
       expect(said('4762')[2]).toBe('Removed');
     });
 
+    it('says Lo can’t tell why, and that GitHub left part of why out, never that it stayed', () => {
+      const host = render(
+        <QueueTable
+          label="Merge queue for main"
+          items={[]}
+          left={[
+            left('4763', { kind: 'unknown' }),
+            left('4764', { kind: 'conflict' }, { partial: true }),
+          ]}
+        />,
+      );
+      const said = (key: string) =>
+        [...row(host, key).querySelectorAll('[role="gridcell"]')].map((each) => each.textContent);
+      expect(said('4763')[1]).toContain('left 5 h ago: Lo can’t tell why');
+      expect(said('4763')[2]).toBe('Left');
+      expect(said('4764')[1]).toContain(
+        'it conflicts with the branch or an entry ahead of it · GitHub left part of why out',
+      );
+    });
+
     it('links the check that failed, to its run', () => {
       const host = render(<QueueTable label="Merge queue for main" items={[]} left={entries} />);
       const link = row(host, '4821').querySelector('button');

@@ -10,8 +10,10 @@ import { focusMiddle, registry } from '../../../window/commands/registry.ts';
 import { activeTab, pullOf } from '../../tab/window/shared.ts';
 import type { MergeState } from '../contract.ts';
 import { main } from './main.ts';
+import { panelRows } from './places.ts';
+import { queueOf } from './queued.ts';
 import { panels, statuses } from './store.ts';
-import { rowPage, rowsOf, shownMethod, steppedMethod } from './words.ts';
+import { rowPage, shownMethod, steppedMethod, type Row } from './words.ts';
 
 /** Why the panel can't open before the first read of whether it can merge. */
 const NO_STATUS_YET = 'Lo is still reading whether it can merge.';
@@ -66,6 +68,11 @@ function onScreen(): { id: string; state: MergeState } | string {
   return statusOf(tab.id, tab.number);
 }
 
+/** The merge panel's reasons for view `id`'s status `state`, its merge queue's first. */
+function reasonsOf(id: string, state: MergeState): Row[] {
+  return panelRows(state, queueOf(id));
+}
+
 /** The view whose panel is open, with its status. */
 export function opened(): { id: string; state: MergeState } | undefined {
   const found = onScreen();
@@ -91,7 +98,7 @@ export function isOpen(): true | string {
 export function openPanel(id?: string, number = 0): void {
   const found = id === undefined ? onScreen() : statusOf(id, number);
   if (typeof found === 'string') return;
-  const [first] = rowsOf(found.state);
+  const [first] = reasonsOf(found.id, found.state);
   panels.update(found.id, (panel) => ({ ...panel, open: true, focused: first?.key }));
 }
 
@@ -113,7 +120,7 @@ export function closePanel(id?: string): void {
 export function move(step: 1 | -1): void {
   const open = opened();
   if (!open) return;
-  const rows = rowsOf(open.state);
+  const rows = reasonsOf(open.id, open.state);
   if (rows.length === 0) return;
   const at = rows.findIndex((row) => row.key === panels.get(open.id).focused);
   const next = rows[Math.min(rows.length - 1, Math.max(0, at < 0 ? 0 : at + step))];
@@ -130,7 +137,7 @@ function pageOf(target: Target): { id: string; page: string } | string {
   const open = right === undefined ? opened() : onScreen();
   if (!open || typeof open === 'string') return open ?? 'The merge panel isn’t open.';
   const key = right ?? panels.get(open.id).focused;
-  const row = rowsOf(open.state).find((each) => each.key === key);
+  const row = reasonsOf(open.id, open.state).find((each) => each.key === key);
   const page = row && rowPage(row);
   return page === undefined ? 'This reason has no page to open.' : { id: open.id, page };
 }
@@ -235,4 +242,13 @@ export function nextConversation(): void {
     registry().run('diff.nextThread', focusedTarget());
   };
   requestAnimationFrame(go);
+}
+
+/**
+ * Closes view `id`'s merge panel and shows its branch's merge queue, as `gq` does. A queue that
+ * can't be shown says why, as the command does.
+ */
+export function seeQueue(id: string): void {
+  closePanel(id);
+  registry().run('queue.show', { kind: 'none' });
 }

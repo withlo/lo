@@ -1,0 +1,492 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "https://api.github.com/graphql",
+    "operation": "QueueWaiting",
+    "variables": {
+      "owner": "rozed-dev",
+      "name": "e2e",
+      "branch": "e4/queued"
+    },
+    "query_sha256": "7c6feb331183f556c7bc9f8b62a8f8e57c85390ded49cb8b425a687e53037236"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "x-ratelimit-limit": "5000",
+      "x-ratelimit-remaining": "4981",
+      "x-ratelimit-reset": "1794883293",
+      "x-ratelimit-resource": "graphql",
+      "x-ratelimit-used": "19"
+    },
+    "body": {
+      "data": {
+        "rateLimit": {
+          "cost": 1,
+          "limit": 5000,
+          "remaining": 4981,
+          "used": 19,
+          "resetAt": "2026-11-17T02:41:33Z"
+        },
+        "repository": {
+          "pullRequests": {
+            "totalCount": 25,
+            "nodes": [
+              {
+                "id": "PR_kwDOVleUfc8AAAABPtZnZg",
+                "number": 207,
+                "title": "Fixture M6: queued, fails in the queue",
+                "url": "https://github.com/rozed-dev/e2e/pull/207",
+                "headRefOid": "6cf713df7dcf2a771e95d53fc3fda8b9037e9239",
+                "isInMergeQueue": true,
+                "viewerDidAuthor": true,
+                "author": {
+                  "__typename": "User",
+                  "login": "rozed-bot"
+                },
+                "reviewDecision": null,
+                "statusCheckRollup": {
+                  "state": "SUCCESS"
+                },
+                "autoMergeRequest": null
+              },
+              {
+                "id": "PR_kwDOVleUfc8AAAABPtZkeg",
+                "number": 206,
+                "title": "Fixture M6: queued, slow (2)",
+                "url": "https://github.com/rozed-dev/e2e/pull/206",
+                "headRefOid": "2be7ebd833bb383c7e05052b9c606f8a15ae43b6",
+                "isInMergeQueue": false,
+                "viewerDidAuthor": true,
+                "author": {
+                  "__typename": "User",
+                  "login": "rozed-bot"
+                },
+                "reviewDecision": null,
+                "statusCheckRollup": {
+                  "state": "SUCCESS"
+                },
+                "autoMergeRequest": null
+              },
+              {
+                "id": "PR_kwDOVleUfc8AAAABPtZhlQ",
+                "number": 205,
+                "title": "Fixture M6: queued, slow (1)",
+                "url": "https://github.com/rozed-dev/e2e/pull/205",
+                "headRefOid": "34d1ed5ea1429e5f907aac4e633ffcf40bf0f679",
+                "isInMergeQueue": true,
+                "viewerDidAuthor": true,
+                "author": {
+                  "__typename": "User",
+                  "login": "rozed-bot"
+                },
+                "reviewDecision": null,
+                "statusCheckRollup": {
+                  "state": "SUCCESS"
+                },
+                "autoMergeRequest": null
+              },
+              {
+                "id": "PR_kwDOVleUfc8AAAABPtZd4g",
+                "number": 204,
+                "title": "Fixture M6: queued, passing",
+                "url": "https://github.com/rozed-dev/e2e/pull/204",
+                "headRefOid": "94470dc98ff89940bca087c872794972d2d8d92d",
+                "isInMergeQueue": false,
+                "viewerDidAuthor": true,
+                "author": {
+                  "__typename": "User",
+                  "login": "rozed-bot"
+                },
+                "reviewDecision": null,
+                "statusCheckRollup": {
+                  "state": "SUCCESS"
+                },
+                "autoMergeRequest": null
+              },
+              {
+                "id": "PR_kwDOVleUfc8AAAABPsVucA",
+                "number": 189,
+                "title": "Fixture M5: queued, fails in the queue",
+                "url": "https://github.com/rozed-dev/e2e/pull/189",
+                "headRefOid": "bce2aaa52a7501c0750bf9de39e82af451fe3ed5",
+                "isInMergeQueue": false,
+                "viewerDidAuthor": true,
+                "author": {
+                  "__typename": "User",
+                  "login": "rozed-bot"
+                },
+                "reviewDecision": null,
+                "statusCheckRollup": {
+                  "state": "SUCCESS"
+                },
+                "autoMergeRequest": null
+              },
+              {
+                "id": "PR_kwDOVleUfc8AAAABPsVq6w",
+                "number": 188,
+                "title": "Fixture M5: queued, slow (2)",
+                "url": "https://github.com/rozed-dev/e2e/pull/188",
+                "headRefOid": "e442334294ccc14d02027ed215266aa876a00f8e",
+                "isInMergeQueue": false,
+                "viewerDidAuthor": true,
+                "author": {
+                  "__typename": "User",
+                  "login": "rozed-bot"
+                },
+                "reviewDecision": null,
+                "statusCheckRollup": {
+                  "state": "SUCCESS"
+                },
+                "autoMergeRequest": null
+              },
+              {
+                "id": "PR_kwDOVleUfc8AAAABPsVnZw",
+                "number": 187,
+                "title": "Fixture M5: queued, slow (1)",
+                "url": "https://github.com/rozed-dev/e2e/pull/187",
+                "headRefOid": "bd7f1e1b4c328a794633f4c473b356789c04c39b",
+                "isInMergeQueue": false,
+                "viewerDidAuthor": true,
+                "author": {
+                  "__typename": "User",
+                  "login": "rozed-bot"
+                },
+                "reviewDecision": null,
+                "statusCheckRollup": {
+                  "state": "SUCCESS"
+                },
+                "autoMergeRequest": null
+              },
+              {
+                "id": "PR_kwDOVleUfc8AAAABPsVjgw",
+                "number": 186,
+                "title": "Fixture M5: queued, passing",
+                "url": "https://github.com/rozed-dev/e2e/pull/186",
+                "headRefOid": "a1e9a0a6d4cc517d0f1a431c1820d2650eb60323",
+                "isInMergeQueue": false,
+                "viewerDidAuthor": true,
+                "author": {
+                  "__typename": "User",
+                  "login": "rozed-bot"
+                },
+                "reviewDecision": null,
+                "statusCheckRollup": {
+                  "state": "SUCCESS"
+                },
+                "autoMergeRequest": null
+              },
+              {
+                "id": "PR_kwDOVleUfc8AAAABPsDzCw",
+                "number": 171,
+                "title": "Fixture M4: queued, fails in the queue",
+                "url": "https://github.com/rozed-dev/e2e/pull/171",
+                "headRefOid": "69855603fae5693567879f012825f2480e2ad7cb",
+                "isInMergeQueue": false,
+                "viewerDidAuthor": true,
+                "author": {
+                  "__typename": "User",
+                  "login": "rozed-bot"
+                },
+                "reviewDecision": null,
+                "statusCheckRollup": {
+                  "state": "SUCCESS"
+                },
+                "autoMergeRequest": null
+              },
+              {
+                "id": "PR_kwDOVleUfc8AAAABPsDvEQ",
+                "number": 170,
+                "title": "Fixture M4: queued, slow (2)",
+                "url": "https://github.com/rozed-dev/e2e/pull/170",
+                "headRefOid": "5cbdabb854d2bffb45f86b9352b53cfda4050d12",
+                "isInMergeQueue": false,
+                "viewerDidAuthor": true,
+                "author": {
+                  "__typename": "User",
+                  "login": "rozed-bot"
+                },
+                "reviewDecision": null,
+                "statusCheckRollup": {
+                  "state": "SUCCESS"
+                },
+                "autoMergeRequest": null
+              },
+              {
+                "id": "PR_kwDOVleUfc8AAAABPsDrPA",
+                "number": 169,
+                "title": "Fixture M4: queued, slow (1)",
+                "url": "https://github.com/rozed-dev/e2e/pull/169",
+                "headRefOid": "4ea510d6d98923ba9e77ca526c183748af9b36aa",
+                "isInMergeQueue": false,
+                "viewerDidAuthor": true,
+                "author": {
+                  "__typename": "User",
+                  "login": "rozed-bot"
+                },
+                "reviewDecision": null,
+                "statusCheckRollup": {
+                  "state": "SUCCESS"
+                },
+                "autoMergeRequest": null
+              },
+              {
+                "id": "PR_kwDOVleUfc8AAAABPsDm-g",
+                "number": 168,
+                "title": "Fixture M4: queued, passing",
+                "url": "https://github.com/rozed-dev/e2e/pull/168",
+                "headRefOid": "a5aa57345a74b8ea0c4a88498f9c77b77cd0c0d8",
+                "isInMergeQueue": false,
+                "viewerDidAuthor": true,
+                "author": {
+                  "__typename": "User",
+                  "login": "rozed-bot"
+                },
+                "reviewDecision": null,
+                "statusCheckRollup": {
+                  "state": "SUCCESS"
+                },
+                "autoMergeRequest": null
+              },
+              {
+                "id": "PR_kwDOVleUfc8AAAABPqOPBw",
+                "number": 153,
+                "title": "Fixture M3: queued, fails in the queue",
+                "url": "https://github.com/rozed-dev/e2e/pull/153",
+                "headRefOid": "262ba8a53c9ee99ae74c1934b5c234d4fe5934bb",
+                "isInMergeQueue": false,
+                "viewerDidAuthor": true,
+                "author": {
+                  "__typename": "User",
+                  "login": "rozed-bot"
+                },
+                "reviewDecision": null,
+                "statusCheckRollup": {
+                  "state": "SUCCESS"
+                },
+                "autoMergeRequest": null
+              },
+              {
+                "id": "PR_kwDOVleUfc8AAAABPqOKtg",
+                "number": 152,
+                "title": "Fixture M3: queued, slow (2)",
+                "url": "https://github.com/rozed-dev/e2e/pull/152",
+                "headRefOid": "d5a8b3b02ee2282fd1eadb96bf6f7a627ef9116e",
+                "isInMergeQueue": false,
+                "viewerDidAuthor": true,
+                "author": {
+                  "__typename": "User",
+                  "login": "rozed-bot"
+                },
+                "reviewDecision": null,
+                "statusCheckRollup": {
+                  "state": "SUCCESS"
+                },
+                "autoMergeRequest": null
+              },
+              {
+                "id": "PR_kwDOVleUfc8AAAABPqOGJw",
+                "number": 151,
+                "title": "Fixture M3: queued, slow (1)",
+                "url": "https://github.com/rozed-dev/e2e/pull/151",
+                "headRefOid": "e1ff564a0ddd3ae4623856e99fdf79a6e66981c0",
+                "isInMergeQueue": false,
+                "viewerDidAuthor": true,
+                "author": {
+                  "__typename": "User",
+                  "login": "rozed-bot"
+                },
+                "reviewDecision": null,
+                "statusCheckRollup": {
+                  "state": "SUCCESS"
+                },
+                "autoMergeRequest": null
+              },
+              {
+                "id": "PR_kwDOVleUfc8AAAABPqOB1w",
+                "number": 150,
+                "title": "Fixture M3: queued, passing",
+                "url": "https://github.com/rozed-dev/e2e/pull/150",
+                "headRefOid": "7f6f323de66c06b0169f066a952c9809861e1c85",
+                "isInMergeQueue": false,
+                "viewerDidAuthor": true,
+                "author": {
+                  "__typename": "User",
+                  "login": "rozed-bot"
+                },
+                "reviewDecision": null,
+                "statusCheckRollup": {
+                  "state": "SUCCESS"
+                },
+                "autoMergeRequest": null
+              },
+              {
+                "id": "PR_kwDOVleUfc8AAAABPnru6w",
+                "number": 134,
+                "title": "Fixture M2: queued, fails in the queue",
+                "url": "https://github.com/rozed-dev/e2e/pull/134",
+                "headRefOid": "1cd1ca9351bb8bf8ce0a4e89f1dfe75ef720d060",
+                "isInMergeQueue": false,
+                "viewerDidAuthor": true,
+                "author": {
+                  "__typename": "User",
+                  "login": "rozed-bot"
+                },
+                "reviewDecision": null,
+                "statusCheckRollup": {
+                  "state": "SUCCESS"
+                },
+                "autoMergeRequest": null
+              },
+              {
+                "id": "PR_kwDOVleUfc8AAAABPnrpmQ",
+                "number": 133,
+                "title": "Fixture M2: queued, slow (2)",
+                "url": "https://github.com/rozed-dev/e2e/pull/133",
+                "headRefOid": "3230ff8eaabe0f4f6d0ebc6fa5188a1b6e51dfcd",
+                "isInMergeQueue": false,
+                "viewerDidAuthor": true,
+                "author": {
+                  "__typename": "User",
+                  "login": "rozed-bot"
+                },
+                "reviewDecision": null,
+                "statusCheckRollup": {
+                  "state": "SUCCESS"
+                },
+                "autoMergeRequest": null
+              },
+              {
+                "id": "PR_kwDOVleUfc8AAAABPnS3AQ",
+                "number": 116,
+                "title": "Fixture M1: queued, fails in the queue",
+                "url": "https://github.com/rozed-dev/e2e/pull/116",
+                "headRefOid": "3592f87c479da9684c4a4ed4ed9c3f1286b2304a",
+                "isInMergeQueue": false,
+                "viewerDidAuthor": true,
+                "author": {
+                  "__typename": "User",
+                  "login": "rozed-bot"
+                },
+                "reviewDecision": null,
+                "statusCheckRollup": {
+                  "state": "SUCCESS"
+                },
+                "autoMergeRequest": null
+              },
+              {
+                "id": "PR_kwDOVleUfc8AAAABPnSyyw",
+                "number": 115,
+                "title": "Fixture M1: queued, slow (2)",
+                "url": "https://github.com/rozed-dev/e2e/pull/115",
+                "headRefOid": "fddbd4a7589138e112c58c1eef3ebb6c1d0b0d06",
+                "isInMergeQueue": false,
+                "viewerDidAuthor": true,
+                "author": {
+                  "__typename": "User",
+                  "login": "rozed-bot"
+                },
+                "reviewDecision": null,
+                "statusCheckRollup": {
+                  "state": "SUCCESS"
+                },
+                "autoMergeRequest": null
+              },
+              {
+                "id": "PR_kwDOVleUfc8AAAABPnSuiA",
+                "number": 114,
+                "title": "Fixture M1: queued, slow (1)",
+                "url": "https://github.com/rozed-dev/e2e/pull/114",
+                "headRefOid": "aef1f85367a25820f9af2a871bade8c2d6df1908",
+                "isInMergeQueue": false,
+                "viewerDidAuthor": true,
+                "author": {
+                  "__typename": "User",
+                  "login": "rozed-bot"
+                },
+                "reviewDecision": null,
+                "statusCheckRollup": {
+                  "state": "SUCCESS"
+                },
+                "autoMergeRequest": null
+              },
+              {
+                "id": "PR_kwDOVleUfc8AAAABPnSp4g",
+                "number": 113,
+                "title": "Fixture M1: queued, passing",
+                "url": "https://github.com/rozed-dev/e2e/pull/113",
+                "headRefOid": "40c63f907b051d5fd26f9cb0b46f3f36b0c10368",
+                "isInMergeQueue": false,
+                "viewerDidAuthor": true,
+                "author": {
+                  "__typename": "User",
+                  "login": "rozed-bot"
+                },
+                "reviewDecision": null,
+                "statusCheckRollup": {
+                  "state": "SUCCESS"
+                },
+                "autoMergeRequest": null
+              },
+              {
+                "id": "PR_kwDOVleUfc8AAAABNpbuFQ",
+                "number": 50,
+                "title": "E4: for the queue, ci slow (3)",
+                "url": "https://github.com/rozed-dev/e2e/pull/50",
+                "headRefOid": "97e5aab8e9bab36e1b6e2f7c731a92c2708bedc4",
+                "isInMergeQueue": false,
+                "viewerDidAuthor": true,
+                "author": {
+                  "__typename": "User",
+                  "login": "rozed-bot"
+                },
+                "reviewDecision": null,
+                "statusCheckRollup": {
+                  "state": "SUCCESS"
+                },
+                "autoMergeRequest": null
+              },
+              {
+                "id": "PR_kwDOVleUfc8AAAABNo81KA",
+                "number": 36,
+                "title": "E4: for the queue, ci fails in the queue",
+                "url": "https://github.com/rozed-dev/e2e/pull/36",
+                "headRefOid": "e334820658aed00ba43e08c203bd481e0431aa07",
+                "isInMergeQueue": false,
+                "viewerDidAuthor": true,
+                "author": {
+                  "__typename": "User",
+                  "login": "rozed-bot"
+                },
+                "reviewDecision": null,
+                "statusCheckRollup": {
+                  "state": "SUCCESS"
+                },
+                "autoMergeRequest": null
+              },
+              {
+                "id": "PR_kwDOVleUfc8AAAABNo8x_A",
+                "number": 34,
+                "title": "E4: flaky check",
+                "url": "https://github.com/rozed-dev/e2e/pull/34",
+                "headRefOid": "32a706a9740928a18c8de8b481d960c6682ad488",
+                "isInMergeQueue": false,
+                "viewerDidAuthor": true,
+                "author": {
+                  "__typename": "User",
+                  "login": "rozed-bot"
+                },
+                "reviewDecision": null,
+                "statusCheckRollup": {
+                  "state": "SUCCESS"
+                },
+                "autoMergeRequest": null
+              }
+            ]
+          }
+        }
+      }
+    }
+  }
+}

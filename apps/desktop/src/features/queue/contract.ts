@@ -1,7 +1,7 @@
 // The merge queue's tab: `gq` opens a repository's merge queue for the base branch of the pull
 // request on screen, as the account its tab acts as, in a tab of its own. While that tab is on
-// screen, main reads the queue of the branch it shows, and the pull requests waiting to join it,
-// and tells the window what it read, in rows the window words.
+// screen, main reads the queue of the branch it shows, the pull requests waiting to join it, and
+// why each it saw leave left, and tells the window what it read, in rows the window words.
 
 import { z } from 'zod';
 
@@ -74,6 +74,41 @@ export const waitingEntry = z.strictObject({
 });
 export type WaitingEntry = z.output<typeof waitingEntry>;
 
+/**
+ * Why a pull request left the queue, as `@lo/review`'s `leftQueue` says: it merged; its checks
+ * failed in the queue, those that did, which may be none Lo can name; it conflicted; its checks
+ * ran too long; someone took it out, `by` whom when GitHub says; a reason Lo has no word for, in
+ * GitHub's own; or Lo can't tell why, as GitHub left it out or Lo couldn't read it.
+ */
+export const leftWhy = z.discriminatedUnion('kind', [
+  z.strictObject({ kind: z.literal('merged') }),
+  z.strictObject({
+    kind: z.literal('failedChecks'),
+    checks: z.array(z.strictObject({ name: z.string(), url: z.string().nullable() })),
+  }),
+  z.strictObject({ kind: z.literal('conflict') }),
+  z.strictObject({ kind: z.literal('timedOut') }),
+  z.strictObject({ kind: z.literal('removed'), by: z.string().nullable() }),
+  z.strictObject({ kind: z.literal('other'), reason: z.string().nullable() }),
+  z.strictObject({ kind: z.literal('unknown') }),
+]);
+export type LeftWhy = z.output<typeof leftWhy>;
+
+/**
+ * A pull request Lo saw leave the queue while the tab showed it: when, as GitHub says, or when Lo
+ * saw it go; when it had joined; why; and whether GitHub left part of why out (`partial`).
+ */
+export const leftEntry = z.strictObject({
+  number: pullNumber,
+  title: z.string(),
+  url: z.string(),
+  at: time,
+  enqueuedAt: time.nullable(),
+  why: leftWhy,
+  partial: z.boolean(),
+});
+export type LeftEntry = z.output<typeof leftEntry>;
+
 /** How the queue merges, when the account may read its settings. */
 export const queueMethod = z.enum(['merge', 'squash', 'rebase']);
 export type QueueMethod = z.output<typeof queueMethod>;
@@ -83,7 +118,8 @@ export type QueueMethod = z.output<typeof queueMethod>;
  *
  * - `reading` before the first read of the branch shown has answered;
  * - `none` when the branch has no merge queue;
- * - `queue`, its entries in order, those past the 100 read (`more`), and those waiting to join.
+ * - `queue`, its entries in order, those past the 100 read (`more`), those waiting to join, and
+ *   those Lo saw leave it while the tab showed it (`left`), the latest first.
  *   `leftOut` says GitHub left part of the queue out with an error, so the entries may not be all
  *   of them, even when there are none; `waitingCutShort` that one waiting to join may be missing.
  *   `method` and `groups` are the queue's settings, which GitHub shows only to those who can write
@@ -106,6 +142,7 @@ export const queueRead = z.discriminatedUnion('kind', [
     leftOut: z.boolean(),
     waiting: z.array(waitingEntry),
     waitingCutShort: z.boolean(),
+    left: z.array(leftEntry),
   }),
 ]);
 export type QueueRead = z.output<typeof queueRead>;

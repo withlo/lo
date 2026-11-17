@@ -1,11 +1,24 @@
 // How a merge queue's tab words what main read: each entry's state and times, the entries GitHub
-// tests together as one group, those waiting to join and what they wait for, the queue's settings,
-// and how long ago it was read. And the rows the keyboard moves through, in the table's order.
-// Nothing here touches the DOM.
+// tests together as one group, those waiting to join and what they wait for, those Lo saw leave
+// and why, the queue's settings, and how long ago it was read. And the rows the keyboard moves
+// through, in the table's order. Nothing here touches the DOM.
 
-import type { QueueItem, QueueEntry as TableEntry, WaitingEntry as TableWaiting } from '@lo/ui';
+import type {
+  LeftEntry as TableLeft,
+  LeftReason,
+  QueueItem,
+  QueueEntry as TableEntry,
+  WaitingEntry as TableWaiting,
+} from '@lo/ui';
 
-import type { Entry, EntryState, QueueMethod, QueueRead, WaitingEntry } from '../contract.ts';
+import type {
+  Entry,
+  EntryState,
+  LeftEntry,
+  QueueMethod,
+  QueueRead,
+  WaitingEntry,
+} from '../contract.ts';
 
 /** A row the keyboard can be on: a pull request in the queue, or one waiting to join it. */
 export interface Row {
@@ -26,15 +39,21 @@ export function waitingKey(number: number): string {
   return `waiting-${number}`;
 }
 
+/** A pull request that left the queue's key in the table. */
+export function leftKey(number: number): string {
+  return `left-${number}`;
+}
+
 /**
  * The rows the keyboard moves through, in the table's order: the entries, then those waiting to
- * join. Those Lo saw leave the queue would follow them, but none are listed yet.
+ * join, then those Lo saw leave the queue.
  */
 export function rowsOf(read: QueueRead | undefined): Row[] {
   if (read?.kind !== 'queue') return [];
   return [
     ...read.entries.map(({ number, url }) => ({ key: entryKey(number), number, url })),
     ...read.waiting.map(({ number, url }) => ({ key: waitingKey(number), number, url })),
+    ...read.left.map(({ number, url }) => ({ key: leftKey(number), number, url })),
   ];
 }
 
@@ -161,6 +180,67 @@ export function waitingOf(waiting: readonly WaitingEntry[]): TableWaiting[] {
     author: entry.author ?? 'A deleted account',
     yours: entry.yours,
     until: waitsFor(entry),
+  }));
+}
+
+/** How long ago `at` was, from `now`: "just now", "3 min ago", "2 h ago", "3 days ago". */
+export function ago(at: number, now: number): string {
+  const count = Math.floor(Math.max(0, now - at) / 60_000);
+  if (count < 1) return 'just now';
+  if (count < 60) return `${count} min ago`;
+  const hours = Math.floor(count / 60);
+  if (hours < 24) return `${hours} h ago`;
+  const days = Math.floor(hours / 24);
+  return `${days} ${days === 1 ? 'day' : 'days'} ago`;
+}
+
+/** Why a pull request left, as the table says it, its failed check's run opening with `open`. */
+function reasonOf(left: LeftEntry, open: (url: string) => void): LeftReason {
+  const { why } = left;
+  switch (why.kind) {
+    case 'merged':
+    case 'conflict':
+    case 'timedOut':
+    case 'unknown':
+      return { kind: why.kind };
+    case 'failedChecks': {
+      const [check] = why.checks;
+      const url = check?.url ?? null;
+      return {
+        kind: 'failed',
+        check:
+          check === undefined || url === null
+            ? undefined
+            : { name: check.name, onOpen: () => open(url) },
+      };
+    }
+    case 'removed':
+      return { kind: 'removed', by: why.by ?? undefined };
+    case 'other':
+      return { kind: 'other', word: why.reason ?? 'GitHub gave no reason' };
+    default:
+      why satisfies never;
+      return { kind: 'unknown' };
+  }
+}
+
+/**
+ * Those Lo saw leave the queue as the table lists them at `now`, the latest first, each with why,
+ * when, and how long it had been in the queue; a failed check's run opens with `open`.
+ */
+export function leftOf(
+  left: readonly LeftEntry[],
+  now: number,
+  open: (url: string) => void,
+): TableLeft[] {
+  return left.map((entry) => ({
+    key: leftKey(entry.number),
+    title: entry.title,
+    number: entry.number,
+    reason: reasonOf(entry, open),
+    when: ago(entry.at, now),
+    inQueue: entry.enqueuedAt === null ? undefined : inQueue(entry.enqueuedAt, entry.at),
+    partial: entry.partial,
   }));
 }
 

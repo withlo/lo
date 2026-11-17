@@ -1,0 +1,46 @@
+{
+  "request": {
+    "method": "GET",
+    "url": "https://api.github.com/repos/rozed-dev/e2e/pulls/206/files?per_page=100"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "etag": "W/\"df75881d38a2e9258720b304246e1653bb654e77efdfb16e1bccda92a2349e3d\"",
+      "last-modified": "Tue, 17 Nov 2026 02:18:55 GMT",
+      "x-github-api-version-selected": "2022-11-28",
+      "x-ratelimit-limit": "5000",
+      "x-ratelimit-remaining": "4953",
+      "x-ratelimit-reset": "1794889860",
+      "x-ratelimit-resource": "core",
+      "x-ratelimit-used": "47"
+    },
+    "body": [
+      {
+        "sha": "9737ef923d460158aa755d6144eb62681ada3c1b",
+        "filename": "merge/6/queued-slow-2/ci-result",
+        "status": "added",
+        "additions": 1,
+        "deletions": 0,
+        "changes": 1,
+        "blob_url": "https://github.com/rozed-dev/e2e/blob/2be7ebd833bb383c7e05052b9c606f8a15ae43b6/merge%2F6%2Fqueued-slow-2%2Fci-result",
+        "raw_url": "https://github.com/rozed-dev/e2e/raw/2be7ebd833bb383c7e05052b9c606f8a15ae43b6/merge%2F6%2Fqueued-slow-2%2Fci-result",
+        "contents_url": "https://api.github.com/repos/rozed-dev/e2e/contents/merge%2F6%2Fqueued-slow-2%2Fci-result?ref=2be7ebd833bb383c7e05052b9c606f8a15ae43b6",
+        "patch": "@@ -0,0 +1 @@\n+slow"
+      },
+      {
+        "sha": "4c359ff9f47e2a2cb306b9cbffbd17d87b089476",
+        "filename": "merge/6/queued-slow-2/notes.md",
+        "status": "added",
+        "additions": 3,
+        "deletions": 0,
+        "changes": 3,
+        "blob_url": "https://github.com/rozed-dev/e2e/blob/2be7ebd833bb383c7e05052b9c606f8a15ae43b6/merge%2F6%2Fqueued-slow-2%2Fnotes.md",
+        "raw_url": "https://github.com/rozed-dev/e2e/raw/2be7ebd833bb383c7e05052b9c606f8a15ae43b6/merge%2F6%2Fqueued-slow-2%2Fnotes.md",
+        "contents_url": "https://api.github.com/repos/rozed-dev/e2e/contents/merge%2F6%2Fqueued-slow-2%2Fnotes.md?ref=2be7ebd833bb383c7e05052b9c606f8a15ae43b6",
+        "patch": "@@ -0,0 +1,3 @@\n+# Fixture M6: queued-slow-2\n+\n+Into e4/queued: ci passes after ten minutes."
+      }
+    ]
+  }
+}

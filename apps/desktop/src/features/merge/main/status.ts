@@ -46,7 +46,8 @@ function commitOf(value: string): string {
   return /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/.test(value) ? value : '';
 }
 
-function checkOf(found: RequiredCheck): Check {
+/** A required check, as the contract takes it. */
+export function checkOf(found: RequiredCheck): Check {
   return { name: text(found.name), state: found.state, url: pageOf(found.url) };
 }
 
