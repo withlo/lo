@@ -21,16 +21,17 @@ import {
   type ReadKind,
   type RepoRef,
 } from '@lo/github';
-import { requiresUpToDate } from '@lo/review';
+import { requiresUpToDate, type Local } from '@lo/review';
 
 import type { PullTabInfo } from '../../tab/service.ts';
-import type { MergeStatusView, MergeView, Method } from '../contract.ts';
+import type { MergeStatusView, MergeView, Method, Off } from '../contract.ts';
+import { offOf } from './merging.ts';
 import { pagesOf, stateOf } from './status.ts';
 
 /** What the merge status uses of an account's poller. */
 export interface MergePoller extends Pick<
   Poller,
-  'mergeFacts' | 'onEvent' | 'onChange' | 'status' | 'readOnce'
+  'mergeFacts' | 'onEvent' | 'onChange' | 'status' | 'readOnce' | 'writesHeldUntil'
 > {
   cachedRead<T>(pull: PullRef, kind: ReadKind<T>): Cached<T> | undefined;
 }
@@ -100,6 +101,10 @@ interface Followed {
   failedAgain: string | undefined;
   /** Why the poller can't read now, as its status says, once `facts` are in. */
   stall: string | undefined;
+  /** Why Lo merges nothing now, as the poller last said, once `facts` are in. */
+  off: Off | null;
+  /** What GitHub doesn't say, as `facts` were last mapped with. */
+  local: Local | undefined;
   held: Map<string, Held>;
   view: MergeView;
   /** The view as last sent, to send nothing that didn't change. */
@@ -225,6 +230,14 @@ export class MergeReads {
     };
   }
 
+  /**
+   * Whether view `id`'s head holds its base branch's tip, as its status was last mapped with:
+   * nothing where the rules don't ask, or the local copy couldn't tell.
+   */
+  headContainsBase(id: string): boolean | undefined {
+    return this.#views.get(id)?.local?.headContainsBase;
+  }
+
   /** Whether view `id`'s status links `url`: only such a page opens. */
   links(id: string, url: string): boolean {
     const view = this.#views.get(id)?.view;
@@ -252,6 +265,8 @@ export class MergeReads {
       facts: undefined,
       failedAgain: undefined,
       stall: undefined,
+      off: null,
+      local: undefined,
       held: new Map(),
       view: { kind: 'loading' },
       sent: undefined,
@@ -313,15 +328,30 @@ export class MergeReads {
   #stalled(followed: Followed, poller: MergePoller): void {
     if (!this.#current(followed) || followed.poller !== poller) return;
     const why = stallOf(poller.status());
-    if (followed.facts) this.#stale(followed, why, followed.failedAgain);
+    if (followed.facts) this.#stale(followed, why, followed.failedAgain, offOf(poller));
     else if (why !== undefined) this.#fail(followed, why);
   }
 
-  /** Notes why a status already read may be out of date, and maps it again if that changed. */
-  #stale(followed: Followed, stall: string | undefined, failedAgain: string | undefined): void {
-    if (followed.stall === stall && followed.failedAgain === failedAgain) return;
+  /**
+   * Notes why a status already read may be out of date, and why Lo merges nothing now, and maps it
+   * again if either changed.
+   */
+  #stale(
+    followed: Followed,
+    stall: string | undefined,
+    failedAgain: string | undefined,
+    off = followed.off,
+  ): void {
+    if (
+      followed.stall === stall &&
+      followed.failedAgain === failedAgain &&
+      JSON.stringify(followed.off) === JSON.stringify(off)
+    ) {
+      return;
+    }
     followed.stall = stall;
     followed.failedAgain = failedAgain;
+    followed.off = off;
     const info = this.#options.view(followed.id);
     if (info) this.#map(followed, info);
   }
@@ -367,6 +397,7 @@ export class MergeReads {
       return;
     }
     followed.facts = cached;
+    if (followed.poller) followed.off = offOf(followed.poller);
     const info = this.#options.view(followed.id);
     if (info) this.#map(followed, info);
   }
@@ -376,15 +407,18 @@ export class MergeReads {
     const cached = followed.facts;
     if (!cached) return;
     const facts = cached.value;
+    const local: Local = {
+      headOnScreen: this.#options.headOnScreen(followed.id) ?? '',
+      preferredMethod: this.#options.method(followed.pull.repo),
+      headContainsBase: this.#holds(followed, info, facts),
+    };
+    followed.local = local;
     const state = stateOf({
       facts,
-      local: {
-        headOnScreen: this.#options.headOnScreen(followed.id) ?? '',
-        preferredMethod: this.#options.method(followed.pull.repo),
-        headContainsBase: this.#holds(followed, info, facts),
-      },
+      local,
       readAt: cached.fetchedAt,
       stale: followed.stall ?? followed.failedAgain,
+      off: followed.off,
       pull: {
         owner: followed.pull.repo.owner,
         repo: followed.pull.repo.name,

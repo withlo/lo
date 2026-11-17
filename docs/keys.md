@@ -115,20 +115,22 @@ Each command's id is what [the keymap file](#the-keymap-file) binds keys to.
 
 ## Review
 
-| Action                              | Keys     | Where                                                                                                     | Command                |
-| ----------------------------------- | -------- | --------------------------------------------------------------------------------------------------------- | ---------------------- |
-| Merge panel                         | `m`      | Anywhere but `menu`, `dialog`, `palette`, `box`, `merge` and `commit`; in code views, only in normal mode | `merge.panel`          |
-| Next reason                         | `j`, `↓` | In `merge`                                                                                                | `merge.down`           |
-| Previous reason                     | `k`, `↑` | In `merge`                                                                                                | `merge.up`             |
-| Open the reason’s page              | `o`      | In `merge`                                                                                                | `merge.open`           |
-| Next merge method                   | `Tab`    | In `merge`                                                                                                | `merge.nextMethod`     |
-| Previous merge method               | `⇧Tab`   | In `merge`                                                                                                | `merge.previousMethod` |
-| Edit the commit’s title and message | `e`      | In `merge`                                                                                                | `merge.edit`           |
-| Next unresolved conversation        | `] t`    | In `merge`                                                                                                | `merge.nextThread`     |
-| Close the merge panel               | `Esc`    | In `merge`                                                                                                | `merge.close`          |
-| Back to the merge panel             | `Esc`    | In `commit`                                                                                               | `merge.leaveCommit`    |
-| Submit review                       | `⌘⏎`     | Anywhere but `box`, `dialog`, `palette` and `menu`                                                        | `review.submit`        |
-| Make this a GitHub stack            | `g S`    | Anywhere but `menu`, `dialog`, `palette` and `box`; in code views, only in normal mode                    | `stacks.convert`       |
+| Action                              | Keys                              | Where                                                                                                     | Command                |
+| ----------------------------------- | --------------------------------- | --------------------------------------------------------------------------------------------------------- | ---------------------- |
+| Merge panel                         | `m`                               | Anywhere but `menu`, `dialog`, `palette`, `box`, `merge` and `commit`; in code views, only in normal mode | `merge.panel`          |
+| Next reason                         | `j`, `↓`                          | In `merge`                                                                                                | `merge.down`           |
+| Previous reason                     | `k`, `↑`                          | In `merge`                                                                                                | `merge.up`             |
+| Open the reason’s page              | `o`                               | In `merge`                                                                                                | `merge.open`           |
+| Next merge method                   | `Tab`                             | In `merge`                                                                                                | `merge.nextMethod`     |
+| Previous merge method               | `⇧Tab`                            | In `merge`                                                                                                | `merge.previousMethod` |
+| Edit the commit’s title and message | `e`                               | In `merge`                                                                                                | `merge.edit`           |
+| Next unresolved conversation        | `] t`                             | In `merge`                                                                                                | `merge.nextThread`     |
+| Merge or add to the merge queue     | `⏎`                               | In `merge`                                                                                                | `merge.merge`          |
+| Ask GitHub whether it merged        | None: in its menu and the palette | Anywhere but `menu`, `dialog`, `palette` and `box`                                                        | `merge.askAgain`       |
+| Close the merge panel               | `Esc`                             | In `merge`                                                                                                | `merge.close`          |
+| Back to the merge panel             | `Esc`                             | In `commit`                                                                                               | `merge.leaveCommit`    |
+| Submit review                       | `⌘⏎`                              | Anywhere but `box`, `dialog`, `palette` and `menu`                                                        | `review.submit`        |
+| Make this a GitHub stack            | `g S`                             | Anywhere but `menu`, `dialog`, `palette` and `box`; in code views, only in normal mode                    | `stacks.convert`       |
 
 ## Find
 

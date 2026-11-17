@@ -67,7 +67,7 @@ function onScreen(): { id: string; state: MergeState } | string {
 }
 
 /** The view whose panel is open, with its status. */
-function opened(): { id: string; state: MergeState } | undefined {
+export function opened(): { id: string; state: MergeState } | undefined {
   const found = onScreen();
   if (typeof found === 'string' || !panels.get(found.id).open) return undefined;
   return found;

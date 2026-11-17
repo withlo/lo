@@ -1,12 +1,20 @@
 // What the window knows of each view's merge status, as main last said, and of its merge panel:
 // whether it's open, the reason the keyboard is on, the method chosen, the squash commit's text as
-// GitHub would start it and as the reader typed it. What's typed is kept until the tab closes.
-// Only this feature writes here.
+// GitHub would start it and as the reader typed it. What's typed is kept until the tab closes, or
+// the merge it went with merged. And of merging: the dialog that confirms a merge and follows it,
+// and each merge Lo sent, by its pull request, as main last said. Only this feature writes here.
 
 import { createStore } from 'zustand/vanilla';
 
 import { tabState } from '../../tab/window/shared.ts';
-import type { MergeStatusView, MergeView, Method } from '../contract.ts';
+import type {
+  JobView,
+  MergePlan,
+  MergeStatusView,
+  MergeView,
+  Method,
+  Refusal,
+} from '../contract.ts';
 
 export interface StatusState {
   /** Each view's status, by its id, as main last said. */
@@ -66,3 +74,47 @@ export const panels = tabState<Panel>(() => ({
   message: '',
   squash: { kind: 'none' },
 }));
+
+/**
+ * The merge's dialog, in the panel's place:
+ *
+ * - `planning`: main is planning the merge view `id` offers, for pull request `number`;
+ * - `confirm`: the plan, for the reader to confirm, with `note`, what changed since one before it,
+ *   while `sending` the confirmation to main;
+ * - `sent`: the plan went, and the merge from it goes as `jobs` says;
+ * - `refused`: main refused the plan as it was confirmed, for `refusal`.
+ */
+export type MergeDialog =
+  | { readonly kind: 'planning'; readonly id: string; readonly number: number }
+  | {
+      readonly kind: 'confirm';
+      readonly plan: MergePlan;
+      readonly note: string | undefined;
+      readonly sending: boolean;
+    }
+  | { readonly kind: 'sent'; readonly plan: MergePlan }
+  | { readonly kind: 'refused'; readonly plan: MergePlan; readonly refusal: Refusal };
+
+export interface MergingState {
+  readonly dialog: MergeDialog | undefined;
+  /** The merges Lo sent, by their pull request ({@link pullKey}), as main last said. */
+  readonly jobs: ReadonlyMap<string, JobView>;
+  /** The keys of the merges whose end the reader dismissed, or saw in the dialog. */
+  readonly seen: ReadonlySet<string>;
+}
+
+export const merging = createStore<MergingState>()(() => ({
+  dialog: undefined,
+  jobs: new Map(),
+  seen: new Set(),
+}));
+
+/** What names a pull request among the merges: its repository, ignoring case, and its number. */
+export function pullKey(owner: string, repo: string, number: number): string {
+  return `${owner.toLowerCase()}/${repo.toLowerCase()}#${number}`;
+}
+
+/** The merge Lo sent of view `tab`'s pull request, if it has one. */
+export function jobOf(tab: { owner: string; repo: string; number: number }): JobView | undefined {
+  return merging.getState().jobs.get(pullKey(tab.owner, tab.repo, tab.number));
+}
