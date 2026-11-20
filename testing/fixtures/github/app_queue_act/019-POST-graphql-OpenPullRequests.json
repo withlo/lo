@@ -1,0 +1,274 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "https://api.github.com/graphql",
+    "operation": "OpenPullRequests",
+    "variables": {
+      "owner": "rozed-dev",
+      "name": "e2e",
+      "first": 100,
+      "after": "Y3Vyc29yOnYyOpK0MjAyNi0xMS0wNlQxODo0NDo0NFrPAAAAATWFRfM=",
+      "merged": 0
+    },
+    "query_sha256": "a7542ff223cb2a6e50a6fddbb632a27df0c23c22b62afb2c06fe408878d05861"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "x-ratelimit-limit": "5000",
+      "x-ratelimit-remaining": "4964",
+      "x-ratelimit-reset": "1795151607",
+      "x-ratelimit-resource": "graphql",
+      "x-ratelimit-used": "36"
+    },
+    "body": {
+      "data": {
+        "rateLimit": {
+          "cost": 1,
+          "limit": 5000,
+          "remaining": 4964,
+          "used": 36,
+          "resetAt": "2026-11-20T05:13:27Z"
+        },
+        "repository": {
+          "defaultBranchRef": {
+            "name": "main"
+          },
+          "pullRequests": {
+            "totalCount": 205,
+            "pageInfo": {
+              "hasNextPage": false,
+              "endCursor": "Y3Vyc29yOnYyOpK0MjAyNi0xMS0wNlQxODo0NDoyNVrPAAAAATWFNWI="
+            },
+            "nodes": [
+              {
+                "id": "PR_kwDOVleUfc8AAAABNYVCQg",
+                "number": 6,
+                "title": "E2: layer d",
+                "isDraft": false,
+                "createdAt": "2026-11-06T18:44:40Z",
+                "updatedAt": "2026-11-06T18:44:40Z",
+                "author": {
+                  "__typename": "User",
+                  "login": "rozed-bot"
+                },
+                "baseRefName": "main",
+                "baseRefOid": "03fa28bc03ef0b1e44cefb32af67134cd37ddc8b",
+                "baseRef": {
+                  "target": {
+                    "__typename": "Commit",
+                    "oid": "4bc87281f47234fc959197ed593116d7ddcdb4e8"
+                  },
+                  "refUpdateRule": null
+                },
+                "headRefName": "e2/d",
+                "headRefOid": "8bb8daed45b4c4ceeaa9f90c55aeb26e512f8506",
+                "headRef": {
+                  "refUpdateRule": null
+                },
+                "isCrossRepository": false,
+                "headRepositoryOwner": {
+                  "__typename": "Organization",
+                  "login": "rozed-dev"
+                },
+                "commits": {
+                  "nodes": [
+                    {
+                      "commit": {
+                        "oid": "78af6b6c595b22b6a58b5d99b3bd8e2862459ced"
+                      }
+                    },
+                    {
+                      "commit": {
+                        "oid": "fd3d9a4102c1371a42100297822828c8cd12255c"
+                      }
+                    },
+                    {
+                      "commit": {
+                        "oid": "4b18a1a61f29869e0665318e518ed79a9957fcc8"
+                      }
+                    },
+                    {
+                      "commit": {
+                        "oid": "8bb8daed45b4c4ceeaa9f90c55aeb26e512f8506"
+                      }
+                    }
+                  ]
+                },
+                "stackEntry": null
+              },
+              {
+                "id": "PR_kwDOVleUfc8AAAABNYU_Cg",
+                "number": 5,
+                "title": "E2: layer e",
+                "isDraft": false,
+                "createdAt": "2026-11-06T18:44:36Z",
+                "updatedAt": "2026-11-06T18:44:36Z",
+                "author": {
+                  "__typename": "User",
+                  "login": "rozed-bot"
+                },
+                "baseRefName": "e2/b",
+                "baseRefOid": "fd3d9a4102c1371a42100297822828c8cd12255c",
+                "baseRef": {
+                  "target": {
+                    "__typename": "Commit",
+                    "oid": "fd3d9a4102c1371a42100297822828c8cd12255c"
+                  },
+                  "refUpdateRule": null
+                },
+                "headRefName": "e2/e",
+                "headRefOid": "b1c25057a6f94e9fe1c2eddc6458ed84c84629d3",
+                "headRef": {
+                  "refUpdateRule": null
+                },
+                "isCrossRepository": false,
+                "headRepositoryOwner": {
+                  "__typename": "Organization",
+                  "login": "rozed-dev"
+                },
+                "commits": {
+                  "nodes": [
+                    {
+                      "commit": {
+                        "oid": "b1c25057a6f94e9fe1c2eddc6458ed84c84629d3"
+                      }
+                    }
+                  ]
+                },
+                "stackEntry": null
+              },
+              {
+                "id": "PR_kwDOVleUfc8AAAABNYU7vQ",
+                "number": 4,
+                "title": "E2: layer c",
+                "isDraft": false,
+                "createdAt": "2026-11-06T18:44:32Z",
+                "updatedAt": "2026-11-06T18:44:32Z",
+                "author": {
+                  "__typename": "User",
+                  "login": "rozed-bot"
+                },
+                "baseRefName": "e2/b",
+                "baseRefOid": "fd3d9a4102c1371a42100297822828c8cd12255c",
+                "baseRef": {
+                  "target": {
+                    "__typename": "Commit",
+                    "oid": "fd3d9a4102c1371a42100297822828c8cd12255c"
+                  },
+                  "refUpdateRule": null
+                },
+                "headRefName": "e2/c",
+                "headRefOid": "4b18a1a61f29869e0665318e518ed79a9957fcc8",
+                "headRef": {
+                  "refUpdateRule": null
+                },
+                "isCrossRepository": false,
+                "headRepositoryOwner": {
+                  "__typename": "Organization",
+                  "login": "rozed-dev"
+                },
+                "commits": {
+                  "nodes": [
+                    {
+                      "commit": {
+                        "oid": "4b18a1a61f29869e0665318e518ed79a9957fcc8"
+                      }
+                    }
+                  ]
+                },
+                "stackEntry": null
+              },
+              {
+                "id": "PR_kwDOVleUfc8AAAABNYU4cQ",
+                "number": 3,
+                "title": "E2: layer b",
+                "isDraft": false,
+                "createdAt": "2026-11-06T18:44:28Z",
+                "updatedAt": "2026-11-06T18:44:28Z",
+                "author": {
+                  "__typename": "User",
+                  "login": "rozed-bot"
+                },
+                "baseRefName": "e2/a",
+                "baseRefOid": "78af6b6c595b22b6a58b5d99b3bd8e2862459ced",
+                "baseRef": {
+                  "target": {
+                    "__typename": "Commit",
+                    "oid": "78af6b6c595b22b6a58b5d99b3bd8e2862459ced"
+                  },
+                  "refUpdateRule": null
+                },
+                "headRefName": "e2/b",
+                "headRefOid": "fd3d9a4102c1371a42100297822828c8cd12255c",
+                "headRef": {
+                  "refUpdateRule": null
+                },
+                "isCrossRepository": false,
+                "headRepositoryOwner": {
+                  "__typename": "Organization",
+                  "login": "rozed-dev"
+                },
+                "commits": {
+                  "nodes": [
+                    {
+                      "commit": {
+                        "oid": "fd3d9a4102c1371a42100297822828c8cd12255c"
+                      }
+                    }
+                  ]
+                },
+                "stackEntry": null
+              },
+              {
+                "id": "PR_kwDOVleUfc8AAAABNYU1Yg",
+                "number": 2,
+                "title": "E2: layer a",
+                "isDraft": false,
+                "createdAt": "2026-11-06T18:44:25Z",
+                "updatedAt": "2026-11-06T18:44:25Z",
+                "author": {
+                  "__typename": "User",
+                  "login": "rozed-bot"
+                },
+                "baseRefName": "main",
+                "baseRefOid": "03fa28bc03ef0b1e44cefb32af67134cd37ddc8b",
+                "baseRef": {
+                  "target": {
+                    "__typename": "Commit",
+                    "oid": "4bc87281f47234fc959197ed593116d7ddcdb4e8"
+                  },
+                  "refUpdateRule": null
+                },
+                "headRefName": "e2/a",
+                "headRefOid": "78af6b6c595b22b6a58b5d99b3bd8e2862459ced",
+                "headRef": {
+                  "refUpdateRule": null
+                },
+                "isCrossRepository": false,
+                "headRepositoryOwner": {
+                  "__typename": "Organization",
+                  "login": "rozed-dev"
+                },
+                "commits": {
+                  "nodes": [
+                    {
+                      "commit": {
+                        "oid": "78af6b6c595b22b6a58b5d99b3bd8e2862459ced"
+                      }
+                    }
+                  ]
+                },
+                "stackEntry": null
+              }
+            ]
+          },
+          "mergedPullRequests": {
+            "nodes": []
+          }
+        }
+      }
+    }
+  }
+}

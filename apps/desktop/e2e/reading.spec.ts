@@ -958,9 +958,15 @@ test('says when the overview couldn’t be fetched, and reads it again on Retry 
       newer.getByRole('heading', { name: 'This overview needs a newer Lo' }),
     ).toBeVisible();
     await expect(newer).toContainText('format 2');
-    // ⏎ presses the button that has focus, with no overview drawn for it to follow.
+    // ⏎ presses the button that has focus, with no overview drawn for it to follow. It checks for a
+    // newer Lo, and this one, built from source with no feed, says it doesn't check.
     await newer.getByRole('button', { name: 'Get a newer Lo' }).focus();
     await page.keyboard.press('Enter');
+    const checked = page.getByRole('status').filter({ hasText: 'Lo couldn’t check for updates' });
+    await expect(checked).toContainText('built from source, so it doesn’t check for updates');
+    expect(browsed()).toEqual([]);
+    // The way on for a Lo that doesn't check: the releases page.
+    await newer.getByRole('button', { name: 'Open the releases page' }).click();
     await expect.poll(browsed).toEqual(['https://github.com/withlo/lo/releases']);
   });
 
@@ -980,7 +986,6 @@ test('says when the overview couldn’t be fetched, and reads it again on Retry 
       .click({ timeout: 20_000 });
     const link = overview(page, 'shown').getByRole('link', { name: 'design notes' });
     await link.click();
-    // The page the first step's button opened is the first.
     await expect
       .poll(browsed)
       .toEqual(['https://github.com/withlo/lo/releases', 'https://example.com/design']);

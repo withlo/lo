@@ -61,6 +61,11 @@ export interface KeyPress {
 export interface KeyPlace {
   readonly scope: FoundScope;
   readonly text: TextKind | undefined;
+  /**
+   * Focus is nowhere in particular, as `isNowhere` says, so keys held there go on where Lo moves
+   * focus. Unsaid, it's somewhere.
+   */
+  readonly nowhere?: boolean;
 }
 
 /** What the listener does with the event. */
@@ -93,6 +98,8 @@ export class Registry {
   private pending: Pending | undefined;
   /** The scope's source the pending keys were typed in. */
   private holder: ScopeSource | undefined;
+  /** Whether the pending keys were typed with focus nowhere in particular. */
+  private nowhere = false;
   /** Tells that the pending keys are the reader's input, should they be dropped before they end. */
   private unheard: (() => void) | undefined;
   /** The code view the last key was pressed in, whose Vim a tab switch leaves. */
@@ -272,7 +279,7 @@ export class Registry {
     let seen = focus();
     let step = matchAny(this.bindings, this.pending, { ...press, time }, seen);
     if (step?.outcome.kind === 'replay') {
-      this.replay(step.outcome.strokes);
+      this.replay(step.outcome.strokes, this.carriedTo(place, seen, time));
       // Vim has the held keys now, and may be in the middle of a command.
       seen = focus();
       step = matchAny(this.bindings, undefined, { ...press, time }, seen);
@@ -288,6 +295,7 @@ export class Registry {
     switch (outcome.kind) {
       case 'hold':
         this.holder = place.scope.source;
+        this.nowhere = place.nowhere === true;
         // In a code view held keys wait for the next however long it takes, as Vim's own do.
         if (isKeySource(source)) this.disarm();
         else this.arm();
@@ -328,14 +336,15 @@ export class Registry {
   }
 
   /**
-   * Drops the pending sequence, as a pointer down does, and tells that its keys were the reader's
-   * input.
+   * Drops the pending sequence, as a press or a click does, and tells that its keys were the
+   * reader's input.
    */
   drop(): void {
     const unheard = this.unheard;
     this.unheard = undefined;
     this.pending = undefined;
     this.holder = undefined;
+    this.nowhere = false;
     this.disarm();
     this.tellHeld();
     unheard?.();
@@ -356,6 +365,7 @@ export class Registry {
    * in `place`: then it waits there. Keys are held across a focus move only when Lo makes it, as a
    * view that has drawn takes focus that was nowhere in particular, since the reader's click, key
    * or command from the app menu ends them first. So keys typed as a tab finishes loading count.
+   * Keys typed on a control were typed there, and are dropped as focus leaves it.
    */
   focusMoved(place: KeyPlace, left: ScopeSource | undefined): void {
     if (!this.goesOn(place)) this.drop();
@@ -365,7 +375,7 @@ export class Registry {
   /** Whether the pending keys were typed with focus nowhere in particular, and go on at `place`. */
   private goesOn(place: KeyPlace): boolean {
     const { pending } = this;
-    if (pending?.scope !== 'window') return false;
+    if (pending?.scope !== 'window' || !this.nowhere) return false;
     try {
       return this.bindings.find(pending.strokes, this.focus(place)).longer;
     } catch (error) {
@@ -443,16 +453,35 @@ export class Registry {
     return { scope: name, text: place.text !== undefined };
   }
 
-  /** Hands held keys back to the code view they were typed in, and forgets them. */
-  private replay(strokes: readonly Stroke[]): void {
-    const holder = this.holder;
+  /**
+   * Hands held keys back to the code view they were typed in, or to `carried`, the one keys typed
+   * with focus nowhere in particular went on in, and forgets them.
+   */
+  private replay(strokes: readonly Stroke[], carried?: KeySource): void {
+    const view = isKeySource(this.holder) ? this.holder : carried;
     this.drop();
-    if (!isKeySource(holder)) return;
+    if (!view) return;
     try {
-      holder.passKeys(strokes.map(vimKey));
+      view.passKeys(strokes.map(vimKey));
     } catch (error) {
       this.onError(error, undefined);
     }
+  }
+
+  /**
+   * The code view at `place` that keys typed with focus nowhere in particular go to when the key
+   * pressed there at `time` doesn't go on with them, as if they'd been typed there: typed there,
+   * they'd have been held, and gone to its Vim as the sequence broke. Only where Vim takes keys as
+   * commands, so never as text in insert mode, and not once their wait has run out, which drops
+   * them wherever they are.
+   */
+  private carriedTo(place: KeyPlace, seen: Focus, time: number): KeySource | undefined {
+    const { pending } = this;
+    const { source } = place.scope;
+    if (!this.nowhere || !pending || !isKeySource(source)) return undefined;
+    if (seen.view === undefined || seen.view.mode === 'insert') return undefined;
+    // Keys held outside a code view wait a second wherever they go on, as `match` has it.
+    return time - pending.at < this.timeout ? source : undefined;
   }
 
   /** After the timeout, held keys outside a code view are dropped. */
@@ -473,6 +502,7 @@ export class Registry {
   private settle(): void {
     if (this.pending) return;
     this.holder = undefined;
+    this.nowhere = false;
     this.disarm();
   }
 

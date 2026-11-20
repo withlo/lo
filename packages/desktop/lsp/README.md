@@ -103,31 +103,37 @@ other server needs anything installed: what one needs is Lo's own copy, download
 column says what a server can't do, and a checkout one won't run on is under "Checkouts a server
 refuses".
 
-| Server         | Version    | For                    | From                                                                                        | License                                                       | Needs                               | Can't do                                                                                                                                                                                  |
-| -------------- | ---------- | ---------------------- | ------------------------------------------------------------------------------------------- | ------------------------------------------------------------- | ----------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| vtsls          | 0.3.0      | TypeScript, JavaScript | npm: `@vtsls/language-server` and its 17 dependencies, TypeScript 5.9.3 among them          | MIT; TypeScript's is Apache-2.0, the rest MIT or ISC          | Node                                | Run a workspace's TypeScript or load a `tsserver` plugin from the checkout. It fetches no types, so a dependency's symbols show their import only.                                        |
-| Pyright        | 1.1.414    | Python                 | npm: `pyright`                                                                              | MIT                                                           | Node                                | Run an interpreter, so it reads packages only from a virtual environment the checkout's config names. It gives no type hints.                                                             |
-| rust-analyzer  | 2026-11-09 | Rust                   | GitHub releases: `rust-lang/rust-analyzer`                                                  | MIT OR Apache-2.0                                             | Rust                                | Run build scripts or proc macros, or fetch crates: generated code, macro expansions and dependencies it can't resolve offline are missing. Refuses some checkouts.                        |
-| php-lsp        | 0.33.0     | PHP                    | GitHub: the releases of [jorgsowa/php-lsp](https://github.com/jorgsowa/php-lsp)             | MIT                                                           | None                                | Run PHP, so code is read as PHP 8.5, and a function PHP 8 removed has no hover. `gr` never looks in `vendor/`.                                                                            |
-| gopls          | 0.24.0     | Go                     | proxy.golang.org: `golang.org/x/tools/gopls` and the 23 modules it builds with, built by Lo | BSD-3-Clause; the rest BSD-3-Clause, MIT, MIT-0 or Apache-2.0 | Go                                  | Fetch modules, run cgo or `go generate`: a dependency not in the checkout shows its import only, and a file that imports `"C"` is left out. Refuses some checkouts.                       |
-| terraform-ls   | 0.39.1     | Terraform              | releases.hashicorp.com                                                                      | MPL-2.0                                                       | None                                | Run Terraform or a provider: its schemas are the ones it carries, not the versions a lock file pins, and other providers have none. It gives no type hints.                               |
-| Eclipse JDT LS | 1.63.0     | Java                   | download.eclipse.org: its release's archive                                                 | EPL-2.0                                                       | Temurin JDK                         | Import a Gradle or Maven build, so what a build brings has no definition. A source folder past the nearest 20,000 folders and 20,000 files gets fewer answers. Refuses some checkouts.    |
-| Roslyn         | 5.11.0     | C#                     | nuget.org: `roslyn-language-server.<platform>`, signed by Microsoft                         | MIT                                                           | .NET SDK                            | Load the checkout's projects: a package's types and what a source generator writes have no definition, and every `.cs` file is one project at the SDK's defaults. Refuses some checkouts. |
-| SourceKit-LSP  | Apple's    | Swift, on macOS        | Xcode or Apple's Command Line Tools, in the developer folder `xcode-select -p` names        | Apache-2.0                                                    | Xcode or Apple's Command Line Tools | Read a build: each file is read alone with the macOS SDK, so a use of what another file declares isn't resolved, and `gr` comes from the syntax index. Refuses some checkouts.            |
-| SourceKit-LSP  | 6.4.2      | Swift, on Linux        | download.swift.org: in the Swift toolchain for the distribution                             | Apache-2.0                                                    | Swift, and the packages it lists    | Read a build: each file is read alone with the system's headers, so a use of what another file declares isn't resolved, and `gr` comes from the syntax index. Refuses some checkouts.     |
+| Server         | Version          | For                    | From                                                                                                                                                                                        | License                                                       | Needs                               | Can't do                                                                                                                                                                                  |
+| -------------- | ---------------- | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- | ----------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| vtsls          | 0.3.0            | TypeScript, JavaScript | npm: `@vtsls/language-server` and its 17 dependencies, TypeScript 5.9.3 among them                                                                                                          | MIT; TypeScript's is Apache-2.0, the rest MIT or ISC          | Node                                | Run a workspace's TypeScript or load a `tsserver` plugin from the checkout. It fetches no types, so a dependency's symbols show their import only.                                        |
+| Pyright        | 1.1.414          | Python                 | npm: `pyright`                                                                                                                                                                              | MIT                                                           | Node                                | Run an interpreter, so it reads packages only from a virtual environment the checkout's config names. It gives no type hints.                                                             |
+| rust-analyzer  | 2026-11-16       | Rust                   | GitHub releases: `rust-lang/rust-analyzer`                                                                                                                                                  | MIT OR Apache-2.0                                             | Rust                                | Run build scripts or proc macros, or fetch crates: generated code, macro expansions and dependencies it can't resolve offline are missing. Refuses some checkouts.                        |
+| php-lsp        | 0.33.0           | PHP                    | GitHub: the releases of [jorgsowa/php-lsp](https://github.com/jorgsowa/php-lsp)                                                                                                             | MIT                                                           | None                                | Run PHP, so code is read as PHP 8.5, and a function PHP 8 removed has no hover. `gr` never looks in `vendor/`.                                                                            |
+| gopls          | 0.24.0           | Go                     | proxy.golang.org: `golang.org/x/tools/gopls` and the 23 modules it builds with, built by Lo                                                                                                 | BSD-3-Clause; the rest BSD-3-Clause, MIT, MIT-0 or Apache-2.0 | Go                                  | Fetch modules, run cgo or `go generate`: a dependency not in the checkout shows its import only, and a file that imports `"C"` is left out. Refuses some checkouts.                       |
+| terraform-ls   | 0.39.1           | Terraform              | releases.hashicorp.com                                                                                                                                                                      | MPL-2.0                                                       | None                                | Run Terraform or a provider: its schemas are the ones it carries, not the versions a lock file pins, and other providers have none. It gives no type hints.                               |
+| Eclipse JDT LS | 1.63.0           | Java                   | download.eclipse.org: its release's archive                                                                                                                                                 | EPL-2.0                                                       | Temurin JDK                         | Import a Gradle or Maven build, so what a build brings has no definition. A source folder past the nearest 20,000 folders and 20,000 files gets fewer answers. Refuses some checkouts.    |
+| Roslyn         | 5.12.0-1.26452.1 | C#                     | Microsoft's `msft_consumption` feed on pkgs.dev.azure.com: `roslyn-language-server.<platform>` at the build the C# extension for VS Code's newest stable release ships, signed by Microsoft | MIT                                                           | .NET SDK                            | Load the checkout's projects: a package's types and what a source generator writes have no definition, and every `.cs` file is one project at the SDK's defaults. Refuses some checkouts. |
+| SourceKit-LSP  | Apple's          | Swift, on macOS        | Xcode or Apple's Command Line Tools, in the developer folder `xcode-select -p` names                                                                                                        | Apache-2.0                                                    | Xcode or Apple's Command Line Tools | Read a build: each file is read alone with the macOS SDK, so a use of what another file declares isn't resolved, and `gr` comes from the syntax index. Refuses some checkouts.            |
+| SourceKit-LSP  | 6.4.2            | Swift, on Linux        | download.swift.org: in the Swift toolchain for the distribution                                                                                                                             | Apache-2.0                                                    | Swift, and the packages it lists    | Read a build: each file is read alone with the system's headers, so a use of what another file declares isn't resolved, and `gr` comes from the syntax index. Refuses some checkouts.     |
 
 What a server needs is pinned and downloaded the same way, but for Apple's. Node is in
 `servers.json`, beside the servers. The toolchains, which Settings lists and removes, are in
 `toolchains.json`; on macOS Settings lists Apple's Swift too, with nothing to remove.
 
-| Needs       | Version  | From                          | License                              | For                     |
-| ----------- | -------- | ----------------------------- | ------------------------------------ | ----------------------- |
-| Node        | 26.13.1  | nodejs.org                    | MIT                                  | vtsls and Pyright       |
-| Rust        | 1.100.0  | static.rust-lang.org          | MIT OR Apache-2.0                    | rust-analyzer           |
-| Go          | 1.27.4   | dl.google.com                 | BSD-3-Clause                         | gopls                   |
-| Temurin JDK | 25.0.5+8 | Adoptium's releases on GitHub | GPL-2.0 with the Classpath Exception | JDT LS                  |
-| .NET SDK    | 10.0.404 | builds.dotnet.microsoft.com   | MIT                                  | Roslyn                  |
-| Swift       | 6.4.2    | download.swift.org            | Apache-2.0                           | SourceKit-LSP, on Linux |
+| Needs       | Version                                           | From                          | License                              | For                     |
+| ----------- | ------------------------------------------------- | ----------------------------- | ------------------------------------ | ----------------------- |
+| Node        | 26.13.1                                           | nodejs.org                    | MIT                                  | vtsls and Pyright       |
+| Rust        | 1.100.0                                           | static.rust-lang.org          | MIT OR Apache-2.0                    | rust-analyzer           |
+| Go          | 1.27.4                                            | dl.google.com                 | BSD-3-Clause                         | gopls                   |
+| Temurin JDK | 25.0.5.1+2; 25.0.5+8 on macOS x64 and Linux arm64 | Adoptium's releases on GitHub | GPL-2.0 with the Classpath Exception | JDT LS                  |
+| .NET SDK    | 10.0.404                                          | builds.dotnet.microsoft.com   | MIT                                  | Roslyn                  |
+| Swift       | 6.4.2                                             | download.swift.org            | Apache-2.0                           | SourceKit-LSP, on Linux |
+
+A toolchain's vendor can publish a version a platform at a time. Where `lsp:pin` finds a platform's
+archive isn't out yet, that platform keeps the build pinned for it before, under its own `version`
+in `toolchains.json`, which names its folder and what Settings shows, and the next pin moves it.
+Temurin 25.0.5.1+2, which fixes security issues in 25.0.5, has no archive yet for macOS on Intel or
+Linux on Arm, so those stay on 25.0.5+8.
 
 Swift is pinned once for each Linux distribution swift.org builds it for and gives install
 instructions for, since each build links its distribution's libraries: Ubuntu 22.04, 24.04 and
@@ -147,9 +153,9 @@ distribution, which Lo checks before it downloads anything, by dpkg's list or by
 that installs them. Lo installs nothing on the system. `pnpm nx run lsp:sourcekit`
 (`scripts/sourcekit.ts`) tries it for real on a Linux a build fits: it installs that build as Lo
 does, starts SourceKit-LSP on the code fixture's checkout, and fails unless a hover on `countWords`
-gives its signature, its logs are in its own home and nothing appeared in the user's. CI's `swift`
-job runs it on Ubuntu 24.04 when Swift's pins change, or the code that installs it or starts its
-server.
+gives its signature, its logs are in its own home and nothing appeared in the user's, in any folder
+of it (`scripts/home.ts` lists the home before and after). CI's `swift` job runs it on Ubuntu 24.04
+when Swift's pins change, or anything it runs does: the workflow lists them.
 
 vtsls and Pyright each start as Node, by its absolute path, with a cap on its heap, then the
 server's own entry point inside its install, never the launcher npm would link. rust-analyzer,
@@ -283,7 +289,12 @@ alone, and the adapter says why each setting is as it is:
   beside its program, in its install, with no option to move it: nothing of a checkout's reaches it,
   and the installer, which checks only what it unpacked, ignores it. Roslyn writes it to a file of a
   random name there and moves that to the cache's name, so it appears whole or not at all, though
-  unsynced; a move that fails leaves the other file behind.
+  unsynced; a move that fails leaves the other file behind. `DOTNET_PROJECTDATA_DONOR_ENABLED=0`
+  keeps it from borrowing build data from a "donor" worktree, which it would otherwise look for by
+  walking up from its project to `/`, reading the donor index and `.lscache` files of any repository
+  it meets there, such as a dotfiles repository in the user's home, and running `git`. It sends no
+  telemetry: this build takes its level only from `COPILOT_TELEMETRY_LEVEL`, which its environment
+  never has, and reports nothing without it.
 - **SourceKit-LSP** is the copy in the developer folder the system has chosen, which
   `/usr/bin/xcode-select -p` names when it's run with nothing of Lo's environment: Xcode's
   `Toolchains/XcodeDefault.xctoolchain/usr/bin/sourcekit-lsp`, or the Command Line Tools'
@@ -460,11 +471,15 @@ wrong, not a release someone else made. JDT LS's is the same: Eclipse publishes 
 each archive, on the same host, and signs about half the jars inside it, not the archive or the
 launcher's configuration.
 
-Whether Microsoft's certificate was revoked: `pin.ts` takes Roslyn's packages only as nuget.org's
-catalog lists them, by their SHA-512, signed as their author's by a certificate whose organization
-is Microsoft's, with a timestamp, both chaining to DigiCert's root, pinned by its key, and each good
-when the timestamp says the package was signed, and as the package their signature signs. It asks no
-one whether a certificate has since been revoked.
+Whether Microsoft's certificate was revoked: `pin.ts` takes Roslyn's packages only signed as their
+author's by a certificate whose organization is Microsoft's, with a timestamp, both chaining to
+DigiCert's root, pinned by its key, and each good when the timestamp says the package was signed,
+and as the package their signature signs. It asks no one whether a certificate has since been
+revoked. The feed they come from lists no hash of its own to check them against.
+
+Where Roslyn's packages are kept: the feed sends each download on to the store that holds it, a host
+of its own for each file, which `servers.json` names. If the feed moves a file to another store, Lo
+refuses the redirect, and C# fails to download until Roslyn is pinned again.
 
 An installed file's bytes: before each use, its size is checked, not its hash, which would read
 every byte. On macOS, `fsync` leaves what the drive itself caches, and Node can't ask for more

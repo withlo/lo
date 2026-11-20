@@ -62,15 +62,17 @@ function waitingOf(branch: string): QueueWaiting {
 /** A source that answers at once, counting what it's asked, and fails while `failing` is set. */
 function fakeSource(options: { list?: OpenPullRequestList; rules?: TrunkRuleList } = {}) {
   const asked: string[] = [];
-  const state = { failing: false, total: 3 };
+  const state = { failing: false, total: 3, delay: 0 };
   const source: QueueSource = {
     async view(branch) {
       asked.push(`view ${branch}`);
+      if (state.delay > 0) await new Promise((resolve) => setTimeout(resolve, state.delay));
       if (state.failing) throw new Error('GitHub couldn’t be reached.');
       return viewOf(branch, branch === 'main' ? state.total : 1);
     },
     async waiting(branch) {
       asked.push(`waiting ${branch}`);
+      if (state.delay > 0) await new Promise((resolve) => setTimeout(resolve, state.delay));
       if (state.failing) throw new Error('GitHub couldn’t be reached.');
       return waitingOf(branch);
     },
@@ -572,5 +574,111 @@ describe('those that left the queue', () => {
     watch.show();
     await vi.advanceTimersByTimeAsync(QUEUE_EVERY + LEFT_AGAIN);
     expect(leftIn(published.at(-1))).toEqual([[1, 'failedChecks']]);
+  });
+});
+
+describe('what a change to the queue acts on', () => {
+  it('is the last read while it’s no older than asked and made since, else a read made now', async () => {
+    const { source, asked } = fakeSource();
+    const { watch } = watchOf(source);
+    watch.show();
+    await vi.advanceTimersByTimeAsync(0);
+    asked.length = 0;
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(await watch.fresh(40_000)).toMatchObject({ branch: 'main' });
+    expect(asked).toEqual([]);
+    // Made before the change it follows ended: read again.
+    expect(await watch.fresh(40_000, 1_005_000)).toMatchObject({ branch: 'main' });
+    expect(asked).toEqual(['view main']);
+    // Older than asked: read again.
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(await watch.fresh(1_000)).toMatchObject({ branch: 'main' });
+    expect(asked).toEqual(['view main', 'view main']);
+  });
+
+  it('reads now while the tab is off screen, and says why when that read fails', async () => {
+    const { source, asked, state } = fakeSource();
+    const { watch } = watchOf(source);
+    state.failing = true;
+    expect(await watch.fresh(40_000)).toBe('GitHub couldn’t be reached.');
+    expect(asked).toEqual(['view main']);
+    // A failed read is never acted on: read again.
+    state.failing = false;
+    expect(await watch.fresh(40_000)).toMatchObject({ branch: 'main' });
+    expect(asked).toEqual(['view main', 'view main']);
+    // Off screen, nothing more is read on its own.
+    await vi.advanceTimersByTimeAsync(QUEUE_MOST * 2);
+    expect(asked).toHaveLength(2);
+  });
+
+  it('shares the read under way, and reads nothing while its account is away', async () => {
+    const { source, asked } = fakeSource();
+    const { watch } = watchOf(source);
+    const [one, two] = await Promise.all([watch.fresh(0), watch.fresh(0)]);
+    expect(one).toBe(two);
+    expect(asked).toEqual(['view main']);
+    watch.hold('rozed-bot is signed out.');
+    expect(await watch.fresh(0)).toBe('rozed-bot is signed out.');
+    expect(await watch.freshWaiting(0)).toBe('rozed-bot is signed out.');
+    expect(asked).toEqual(['view main']);
+  });
+
+  it('reads those waiting to join afresh the same way', async () => {
+    const { source, asked } = fakeSource();
+    const { watch } = watchOf(source);
+    expect(await watch.freshWaiting(40_000)).toMatchObject({ branch: 'main' });
+    expect(await watch.freshWaiting(40_000)).toMatchObject({ branch: 'main' });
+    expect(asked).toEqual(['waiting main']);
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(await watch.freshWaiting(40_000, 1_000_500)).toMatchObject({ branch: 'main' });
+    expect(asked).toEqual(['waiting main', 'waiting main']);
+  });
+
+  it('takes the one read it waited for, however long it took, and reads again only after an older one', async () => {
+    const { source, asked, state } = fakeSource();
+    const { watch } = watchOf(source);
+    state.delay = 2_000;
+    const queue = watch.fresh(0, 999_000);
+    const waiting = watch.freshWaiting(0, 999_000);
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(await queue).toMatchObject({ branch: 'main' });
+    expect(await waiting).toMatchObject({ branch: 'main' });
+    expect(asked).toEqual(['view main', 'waiting main']);
+    // One under way, asked for before the change it follows ended: waited for, then one more.
+    asked.length = 0;
+    const first = watch.fresh(0);
+    await vi.advanceTimersByTimeAsync(1_000);
+    const second = watch.fresh(0, 1_005_500);
+    await vi.advanceTimersByTimeAsync(5_000);
+    await first;
+    expect(await second).toMatchObject({ branch: 'main' });
+    expect(asked).toEqual(['view main', 'view main']);
+  });
+
+  it('says so when the tab shows another branch by the time the read answers', async () => {
+    const { source } = fakeSource();
+    const { watch } = watchOf(source);
+    const read = watch.fresh(0);
+    watch.setBranch('release/2.8');
+    expect(await read).toBe('The tab shows release/2.8’s queue now.');
+  });
+
+  it('tells who listens of each read that answered, and when it was asked for', async () => {
+    const { source } = fakeSource();
+    const heard: unknown[] = [];
+    const watch = new QueueWatch({
+      id: 'q',
+      login: 'tess-okafor',
+      branch: 'main',
+      source,
+      publish: () => undefined,
+      heard: (read) => heard.push([read.kind, read.from]),
+    });
+    await watch.fresh(0);
+    await watch.freshWaiting(0);
+    expect(heard).toEqual([
+      ['queue', 1_000_000],
+      ['waiting', 1_000_000],
+    ]);
   });
 });

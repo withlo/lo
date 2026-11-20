@@ -3,7 +3,10 @@
 // views in normal mode, where `gq` would format lines, which Lo's read-only code never does. In the
 // queue's tab, `j` and `k` move between the pull requests, `⏎` opens the one the keyboard is on in
 // its own tab, `Tab` and `⇧Tab` show the next and previous branch's queue, and `gx` opens the pull
-// request on GitHub, or the queue itself when there's none to open.
+// request on GitHub, or the queue itself when there's none to open. `x` takes the entry the keyboard
+// is on out of the queue and `J` moves it to the front, each once the dialog it opens is confirmed;
+// `a` turns auto-merge off at once for one waiting to join, and for one that left the queue opens
+// its tab and asks to turn auto-merge on there, as `a` in its merge panel does.
 
 import { defineCommands, type When } from '@lo/ui/commands';
 
@@ -42,6 +45,40 @@ export default defineCommands(
       targets: ['row'],
       when: queue,
       menu: { on: 'row', order: 0 },
+    },
+    /** Takes the entry the keyboard is on, or the one right-clicked, out of the queue, once confirmed. */
+    remove: {
+      label: 'Remove from the queue',
+      group: 'Merge queue',
+      keys: ['x'],
+      targets: ['row'],
+      when: queue,
+      menu: { on: 'row', order: 10, label: 'Remove' },
+    },
+    /**
+     * Moves the entry the keyboard is on to the front of the queue, once confirmed: GitHub takes it
+     * out and adds it again at the front. Only for the repository's admins, and not for the entry
+     * at the front.
+     */
+    jump: {
+      label: 'Move to the front of the queue',
+      group: 'Merge queue',
+      keys: ['J'],
+      targets: ['row'],
+      when: queue,
+      menu: { on: 'row', order: 20, label: 'To the front' },
+    },
+    /**
+     * Auto-merge for the pull request the keyboard is on: turns it off at once for one waiting to
+     * join, and for one that left the queue, asks to turn it on from its own tab.
+     */
+    autoMerge: {
+      label: 'Turn auto-merge on or off',
+      group: 'Merge queue',
+      keys: ['a'],
+      targets: ['row'],
+      when: queue,
+      menu: { on: 'row', order: 30, label: 'Auto-merge' },
     },
     /** Shows the queue of the next branch the header's switch lists, round the end. */
     nextBranch: {

@@ -11,7 +11,7 @@ import { app, autoUpdater, BrowserWindow, dialog, type MessageBoxSyncOptions } f
 import { IpcError } from '../../../ipc/contract.ts';
 import { defineFeature } from '../../../main/features.ts';
 import { settings } from '../../settings/service.ts';
-import { checkAnswer, contract, updateState } from '../contract.ts';
+import { checkAnswer, contract, how as howSchema, updateState } from '../contract.ts';
 import { check as checkSetting } from '../settings.ts';
 import { feedFor } from './feed.ts';
 import { howItUpdates, howItUpdatesNow, type Place } from './how.ts';
@@ -88,6 +88,7 @@ export default defineFeature(contract, {
   handlers: {
     // Checked as a push is, so the window gets nothing but what the contract says.
     read: () => updateState.parse(running().state),
+    how: () => howSchema.parse(running().howNow()),
     async check() {
       schedule?.checked();
       return checkAnswer.parse(await running().check(true));

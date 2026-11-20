@@ -138,6 +138,7 @@ describe('what a merge queue’s tab shows', () => {
         url: 'https://github.com/rozed-dev/e2e/pull/133',
         author: 'rozed-bot',
         yours: true,
+        head: '3230ff8eaabe0f4f6d0ebc6fa5188a1b6e51dfcd',
         review: null,
         checks: 'running',
       },

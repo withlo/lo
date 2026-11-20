@@ -1,6 +1,13 @@
 import { expect, test } from 'vitest';
 
-import { MANIFEST, parseManifest, parseToolchains, PLATFORMS, TOOLCHAINS } from './manifest.ts';
+import {
+  MANIFEST,
+  parseManifest,
+  parseToolchains,
+  PLATFORMS,
+  TOOLCHAINS,
+  versionFor,
+} from './manifest.ts';
 import { SWIFT_DISTROS, SWIFT_PLATFORMS, swiftToolchainId } from './swift.ts';
 
 const NODE = MANIFEST.node;
@@ -57,6 +64,31 @@ test('refuses a toolchain that doesn’t say what it unpacks to', () => {
   expect(() => parseToolchains({ go: changed })).toThrow(/doesn't say what it unpacks to/);
   // A server needn't.
   expect(() => parseManifest({ go: changed })).not.toThrow();
+});
+
+test('a toolchain’s platform may stay on an older version of its own, and a server’s may not', () => {
+  const temurin = TOOLCHAINS.temurin;
+  if (temurin === undefined) throw new Error('no Temurin');
+  const download = temurin.platforms['darwin-x64'];
+  const behind = {
+    ...temurin,
+    version: '99.0.0+1',
+    platforms: { ...temurin.platforms, 'darwin-x64': { ...download, version: '98.0.0+1' } },
+  };
+  const parsed = parseToolchains({ temurin: behind }).temurin;
+  if (parsed === undefined) throw new Error('no Temurin');
+  expect(versionFor(parsed, 'darwin-x64')).toBe('98.0.0+1');
+  expect(versionFor(parsed, 'linux-x64')).toBe('99.0.0+1');
+  expect(() =>
+    parseToolchains({
+      temurin: { ...behind, platforms: { 'darwin-x64': { ...download, version: '../98' } } },
+    }),
+  ).toThrow(/a version/);
+  const node = {
+    ...NODE,
+    platforms: { 'linux-x64': { ...NODE?.platforms['linux-x64'], version: '1.0.0' } },
+  };
+  expect(() => parseManifest({ node })).toThrow(/names a version of its own on linux-x64/);
 });
 
 test.each([

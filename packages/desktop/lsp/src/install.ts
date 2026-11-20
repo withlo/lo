@@ -53,6 +53,7 @@ import {
   downloadFor,
   isPlainPath,
   partsOf,
+  versionFor,
   type Download,
   type Manifest,
   type Pinned,
@@ -208,12 +209,13 @@ export class Installer {
     // Nothing installs it while it's being removed, so nothing gets the folder that goes.
     const removing = this.#removing.get(id)?.at(-1);
     if (removing !== undefined) throw removing.reason;
-    const key = `${id}/${pinned.version}`;
+    const version = this.#versionOf(pinned);
+    const key = `${id}/${version}`;
     let job = this.#jobs.get(key);
     if (job === undefined) {
       const controller = new AbortController();
       const created: Job = {
-        version: pinned.version,
+        version,
         controller,
         listeners: new Set(),
         partial: new Set(),
@@ -264,7 +266,7 @@ export class Installer {
   async installed(id: string, pinned: Pinned): Promise<Installed | undefined> {
     const download = this.#downloadOf(pinned);
     return this.#whole(
-      this.folderOf(id, pinned.version),
+      this.folderOf(id, this.#versionOf(pinned)),
       fingerprint(id, pinned, download),
       download,
     );
@@ -277,7 +279,7 @@ export class Installer {
    */
   async recorded(id: string, pinned: Pinned): Promise<number | undefined> {
     const download = this.#downloadOf(pinned);
-    const marker = await readMarker(this.folderOf(id, pinned.version));
+    const marker = await readMarker(this.folderOf(id, this.#versionOf(pinned)));
     if (marker?.fingerprint !== fingerprint(id, pinned, download)) return undefined;
     return marker.files.reduce((sum, [, bytes]) => sum + bytes, 0);
   }
@@ -350,7 +352,8 @@ export class Installer {
         const installing = [...(this.#running.get(name) ?? [])].some(
           (job) => job.version === version,
         );
-        if (version !== pinned?.version && !installing) await remove(join(folder, version));
+        const wanted = pinned === undefined ? undefined : this.#versionOf(pinned);
+        if (version !== wanted && !installing) await remove(join(folder, version));
       }
       if ((await readdir(folder).catch(() => [])).length === 0) {
         await rm(folder, { force: true, recursive: true });
@@ -361,7 +364,7 @@ export class Installer {
   async #run(id: string, pinned: Pinned, job: Job, go: InstallOptions['go']): Promise<Installed> {
     const download = this.#downloadOf(pinned);
     const print = fingerprint(id, pinned, download);
-    const target = this.folderOf(id, pinned.version);
+    const target = this.folderOf(id, this.#versionOf(pinned));
     const found = await this.#whole(target, print, download);
     if (found !== undefined) return found;
     const { signal } = job.controller;
@@ -460,7 +463,7 @@ export class Installer {
       const { files: unpacked, folders, links } = unpacker.unpacked;
       const marker = {
         id,
-        version: pinned.version,
+        version: this.#versionOf(pinned),
         fingerprint: print,
         files: unpacked,
         folders,
@@ -469,7 +472,7 @@ export class Installer {
       await writeFile(join(work, MARKER), `${JSON.stringify(marker)}\n`, { flag: 'wx' });
       await syncPath(join(work, MARKER));
       await syncPath(work);
-      return await this.#place(work, this.folderOf(id, pinned.version), print, download);
+      return await this.#place(work, this.folderOf(id, this.#versionOf(pinned)), print, download);
     } finally {
       await rm(work, { recursive: true, force: true });
       job.partial.delete(work);
@@ -560,6 +563,11 @@ export class Installer {
     return entry === undefined ? undefined : { folder: files, entry };
   }
 
+  /** The version of `pinned` this platform installs, which names its folder. */
+  #versionOf(pinned: Pinned): string {
+    return this.#platform === undefined ? pinned.version : versionFor(pinned, this.#platform);
+  }
+
   #downloadOf(pinned: Pinned): Download {
     const download = this.#platform === undefined ? undefined : downloadFor(pinned, this.#platform);
     // A Go program builds only for the platforms its builds are pinned for.
@@ -615,7 +623,8 @@ export function fingerprint(
   download: Download,
   rules = UNPACK_RULES,
 ): string {
-  const installed = { id, version: pinned.version, download, rules };
+  const own = 'version' in download ? download.version : undefined;
+  const installed = { id, version: own ?? pinned.version, download, rules };
   return createHash('sha256').update(JSON.stringify(installed, sortedKeys)).digest('hex');
 }
 

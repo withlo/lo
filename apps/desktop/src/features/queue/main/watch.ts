@@ -6,7 +6,9 @@
 // gone, and what was read last is kept for when it's back. An entry a read no longer lists, when it
 // lists every entry, left the queue: why is read, once more after a short wait when GitHub's
 // timeline hasn't caught up. A queue is a branch's, and read only while shown, so none of it goes
-// through the poller's cache. Nothing here calls Electron.
+// through the poller's cache. What a change to the queue acts on is read afresh when the last read
+// is too old or failed, on screen or not, and so is what settles a change whose answer was lost.
+// Nothing here calls Electron.
 
 import {
   queueViewCutShort,
@@ -87,7 +89,23 @@ export interface QueueWatchOptions {
   readonly source: QueueSource;
   /** Hears the tab's state each time it changes. */
   readonly publish: (state: QueueState) => void;
+  /**
+   * Hears each read of the branch shown that answered: of its queue, or of those waiting to join
+   * it, with what it read and when it was asked for.
+   */
+  readonly heard?: (read: Heard) => void;
   readonly now?: () => number;
+}
+
+/** A read of the branch a merge queue's tab shows that answered, and when it was asked for. */
+export type Heard =
+  | { readonly kind: 'queue'; readonly view: QueueView; readonly from: number }
+  | { readonly kind: 'waiting'; readonly waiting: QueueWaiting; readonly from: number };
+
+/** A read under way: what answers once it's done, and when it was asked for. */
+interface Run {
+  readonly done: Promise<void>;
+  readonly from: number;
 }
 
 /** Why `error` failed a read, in words. */
@@ -171,10 +189,20 @@ export class QueueWatch {
   readonly #counts = new Map<string, { count: number | null; at: number }>();
   #view: QueueView | undefined;
   #readAt: number | undefined;
+  /** When the read that gave {@link #view} was asked for. */
+  #viewFrom: number | undefined;
+  /** The read of the queue under way, while one is, and when it was asked for. */
+  #queueRun: Run | undefined;
   /** Why the last read of the queue failed, while reads of it fail. */
   #failure: string | undefined;
   #waiting: QueueWaiting | undefined;
   #waitingFailed = false;
+  /** When the read that gave {@link #waiting} was asked for. */
+  #waitingFrom: number | undefined;
+  /** Why the last read of those waiting failed, while reads of them fail. */
+  #waitingFailure: string | undefined;
+  /** The read of those waiting under way, while one is, and when it was asked for. */
+  #waitingRun: Run | undefined;
   /** Those Lo saw leave each branch's queue, by branch, the latest first. */
   readonly #left = new Map<string, LeftEntry[]>();
   /** The pull requests whose leaving is being read, as `<branch>#<number>`. */
@@ -198,6 +226,16 @@ export class QueueWatch {
   /** The account the tab reads as. */
   get login(): string {
     return this.#options.login;
+  }
+
+  /** The branch the tab shows. */
+  get branch(): string {
+    return this.#branch;
+  }
+
+  /** Why nothing is read, while the account is signed out or gone. */
+  get away(): string | undefined {
+    return this.#held;
   }
 
   /** What the tab shows now. */
@@ -226,7 +264,116 @@ export class QueueWatch {
           : this.#failure === undefined
             ? null
             : { message: this.#failure, retryAt: this.#queue.retryAt ?? null },
+      away: this.#held !== undefined,
     };
+  }
+
+  /**
+   * The branch's queue, as read no longer than `within` ago, and after `since` when it's given: the
+   * last read when it answered then, else a read made now, on screen or not; or why there's none,
+   * as when that read fails, the account is away, or the tab shows another branch by the time it
+   * answers.
+   */
+  async fresh(within: number, since?: number): Promise<QueueView | string> {
+    const branch = this.#branch;
+    for (let tries = 0; tries < 2; tries++) {
+      const why = this.#unreadable(branch);
+      if (why !== undefined) return why;
+      const from = this.#viewFrom;
+      const now = this.#now();
+      if (
+        this.#view !== undefined &&
+        this.#failure === undefined &&
+        from !== undefined &&
+        now - from <= within &&
+        (since === undefined || from > since)
+      ) {
+        return this.#view;
+      }
+      const awaited = this.#queueRunAfter(since);
+      await awaited?.done;
+      const after = this.#unreadable(branch);
+      if (after !== undefined) return after;
+      if (this.#failure !== undefined) return this.#failure;
+      // The read awaited answered, however long it took: no other is needed.
+      const read = this.#viewFrom;
+      if (
+        this.#view !== undefined &&
+        read !== undefined &&
+        awaited !== undefined &&
+        read >= awaited.from &&
+        (since === undefined || read > since)
+      ) {
+        return this.#view;
+      }
+    }
+    return this.#view ?? 'Lo hasn’t read the queue yet.';
+  }
+
+  /**
+   * Those waiting to join the branch's queue, as {@link fresh} reads the queue: read no longer than
+   * `within` ago and after `since`, else read now; or why there's none.
+   */
+  async freshWaiting(within: number, since?: number): Promise<QueueWaiting | string> {
+    const branch = this.#branch;
+    for (let tries = 0; tries < 2; tries++) {
+      const why = this.#unreadable(branch);
+      if (why !== undefined) return why;
+      const from = this.#waitingFrom;
+      const now = this.#now();
+      if (
+        this.#waiting !== undefined &&
+        !this.#waitingFailed &&
+        from !== undefined &&
+        now - from <= within &&
+        (since === undefined || from > since)
+      ) {
+        return this.#waiting;
+      }
+      const awaited = this.#waitingRunAfter(since);
+      await awaited?.done;
+      const after = this.#unreadable(branch);
+      if (after !== undefined) return after;
+      if (this.#waitingFailed) return this.#waitingFailure ?? 'GitHub didn’t answer.';
+      const read = this.#waitingFrom;
+      if (
+        this.#waiting !== undefined &&
+        read !== undefined &&
+        awaited !== undefined &&
+        read >= awaited.from &&
+        (since === undefined || read > since)
+      ) {
+        return this.#waiting;
+      }
+    }
+    return this.#waiting ?? 'Lo hasn’t read those waiting to join yet.';
+  }
+
+  /**
+   * The read of the queue to wait for: the one under way when it began after `since`, else one begun
+   * now, or, while an older one is under way, that one, after which one is begun.
+   */
+  #queueRunAfter(since: number | undefined): Run | undefined {
+    const run = this.#queueRun;
+    if (run !== undefined && (since === undefined || run.from > since)) return run;
+    void this.#readQueue();
+    return this.#queueRun;
+  }
+
+  /** The read of those waiting to join to wait for, as {@link #queueRunAfter} picks the queue's. */
+  #waitingRunAfter(since: number | undefined): Run | undefined {
+    const run = this.#waitingRun;
+    if (run !== undefined && (since === undefined || run.from > since)) return run;
+    void this.#readWaiting();
+    return this.#waitingRun;
+  }
+
+  /** Why nothing of `branch` can be read now: the tab closed, the account is away, or it moved on. */
+  #unreadable(branch: string): string | undefined {
+    if (this.#stopped) return 'The merge queue’s tab is closed.';
+    if (this.#held !== undefined) return this.#held;
+    if (branch !== this.#branch) return `The tab shows ${this.#branch}’s queue now.`;
+    return undefined;
   }
 
   /**
@@ -282,9 +429,15 @@ export class QueueWatch {
     this.#generation += 1;
     this.#view = undefined;
     this.#readAt = undefined;
+    this.#viewFrom = undefined;
     this.#failure = undefined;
     this.#waiting = undefined;
     this.#waitingFailed = false;
+    this.#waitingFrom = undefined;
+    this.#waitingFailure = undefined;
+    // A read of the branch before that's under way is dropped as it answers.
+    this.#queueRun = undefined;
+    this.#waitingRun = undefined;
     this.#queue.reset();
     this.#joining.reset();
     this.#publish();
@@ -338,9 +491,23 @@ export class QueueWatch {
     if (!this.#stopped) this.#options.publish(this.state());
   }
 
-  async #readQueue(): Promise<void> {
+  /** Reads the queue now, or waits for the read of it under way, for the branch shown. */
+  #readQueue(): Promise<void> {
+    const run = this.#queueRun;
+    if (run !== undefined) return run.done;
+    const from = this.#now();
+    const done = this.#runQueueRead(from).finally(() => {
+      if (this.#queueRun?.done === done) this.#queueRun = undefined;
+    });
+    this.#queueRun = { done, from };
+    return done;
+  }
+
+  async #runQueueRead(from: number): Promise<void> {
     const generation = this.#generation;
     const branch = this.#branch;
+    // Read now: the one that was due goes, and the next is due from this one.
+    this.#queue.cancel();
     this.#queue.inFlight = generation;
     let read: { view: QueueView } | { error: unknown };
     try {
@@ -358,6 +525,7 @@ export class QueueWatch {
       this.#saw(branch, this.#view, read.view, now);
       this.#view = read.view;
       this.#readAt = now;
+      this.#viewFrom = from;
       this.#failure = undefined;
       this.#counts.set(branch, { count: countOf(read.view), at: now });
       wait = this.#queue.succeeded(now);
@@ -366,6 +534,7 @@ export class QueueWatch {
       wait = this.#queue.failed(now);
     }
     this.#publish();
+    if ('view' in read) this.#options.heard?.({ kind: 'queue', view: read.view, from });
     this.#again(this.#queue, wait, () => this.#readQueue());
   }
 
@@ -442,29 +611,46 @@ export class QueueWatch {
     if (branch === this.#branch) this.#publish();
   }
 
-  async #readWaiting(): Promise<void> {
+  /** Reads those waiting to join now, or waits for the read of them under way. */
+  #readWaiting(): Promise<void> {
+    const run = this.#waitingRun;
+    if (run !== undefined) return run.done;
+    const from = this.#now();
+    const done = this.#runWaitingRead(from).finally(() => {
+      if (this.#waitingRun?.done === done) this.#waitingRun = undefined;
+    });
+    this.#waitingRun = { done, from };
+    return done;
+  }
+
+  async #runWaitingRead(from: number): Promise<void> {
     const generation = this.#generation;
     const branch = this.#branch;
+    this.#joining.cancel();
     this.#joining.inFlight = generation;
-    let waiting: QueueWaiting | undefined;
+    let read: { waiting: QueueWaiting } | { error: unknown };
     try {
-      waiting = await this.#options.source.waiting(branch, this.#abort.signal);
-    } catch {
-      waiting = undefined;
+      read = { waiting: await this.#options.source.waiting(branch, this.#abort.signal) };
+    } catch (error) {
+      read = { error };
     }
     if (this.#joining.inFlight === generation) this.#joining.inFlight = undefined;
     if (!this.#current(generation)) return;
     const now = this.#now();
     let wait: number;
-    if (waiting === undefined) {
+    if ('error' in read) {
       this.#waitingFailed = true;
+      this.#waitingFailure = messageOf(read.error);
       wait = this.#joining.failed(now);
     } else {
-      this.#waiting = waiting;
+      this.#waiting = read.waiting;
       this.#waitingFailed = false;
+      this.#waitingFailure = undefined;
+      this.#waitingFrom = from;
       wait = this.#joining.succeeded(now);
     }
     this.#publish();
+    if ('waiting' in read) this.#options.heard?.({ kind: 'waiting', waiting: read.waiting, from });
     this.#again(this.#joining, wait, () => this.#readWaiting());
   }
 

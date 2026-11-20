@@ -39,8 +39,11 @@ export const groups = [
 
 export type Group = (typeof groups)[number];
 
-/** The macOS app menu's menus a command can sit in. `App` is the menu named after Lo. */
-export type BarMenu = 'App' | 'File' | 'View' | 'Go' | 'Review' | 'Window';
+/**
+ * The macOS app menu's menus a command can sit in. `App` is the menu named after Lo, and `Update`
+ * is a submenu of it, for the commands of one thing that are too many to list there.
+ */
+export type BarMenu = 'App' | 'Update' | 'File' | 'View' | 'Go' | 'Review' | 'Window';
 
 /** A default key sequence in Lo's notation, for both systems or for one. */
 export type KeySpec = string | { readonly keys: string; readonly on: System };

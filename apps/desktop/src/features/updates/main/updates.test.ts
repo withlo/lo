@@ -568,6 +568,28 @@ describe('moving to Applications', () => {
     expect(move).toHaveBeenCalledTimes(1);
   });
 
+  it('says how it takes an update with none on offer, decided each time it’s asked', () => {
+    const { updater } = fakeUpdater();
+    let how: How = 'move';
+    const updates = start(updater, () => how);
+    expect(updates.howNow()).toBe('move');
+    how = 'brew';
+    expect(updates.howNow()).toBe('brew');
+    how = 'page';
+    expect(updates.howNow()).toBe('page');
+    expect(updates.state).toEqual({ status: 'idle' });
+  });
+
+  it('says an offer’s new way when it’s asked how, as it does when it moves', async () => {
+    const { updater } = fakeUpdater();
+    let how: How = 'install';
+    const updates = start(updater, () => how);
+    await updates.check(true);
+    how = 'move';
+    expect(updates.howNow()).toBe('move');
+    expect(updates.state).toEqual({ ...OFFER, how: 'move' });
+  });
+
   it('says why when the move fails', () => {
     const { updater } = fakeUpdater();
     move.mockImplementation(() => {

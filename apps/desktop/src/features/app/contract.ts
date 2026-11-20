@@ -39,6 +39,11 @@ export const appInfo = z.strictObject({
   /** Whether Lo runs as it ships, rather than built from source, as for its tests. */
   packaged: z.boolean(),
   /**
+   * The first digits of the commit this build is of, which Settings shows beside the version.
+   * Absent when none could be found, as for a copy of the source with no history.
+   */
+  commit: z.string().min(1).optional(),
+  /**
    * The nonce in the page's content security policy, new each time the page loads, which lets in
    * the style elements that carry it: the code views hand it to theirs.
    */
