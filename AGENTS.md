@@ -19,7 +19,7 @@ These bind every change (design section 1).
 
 - **Read-only.** Lo never edits files or pushes commits. It writes to GitHub only to review and
   merge: comments and their attachments, reviews, viewed marks, merges, queue and auto-merge
-  changes, and changing a PR's base branch to form a stack.
+  changes, and changing a PR's base branch to form a stack or to merge a chain.
 - **No AI inside Lo.** Lo calls no model and runs no agent. It displays what agents write elsewhere.
 - **No backend, no telemetry.** Lo talks only to GitHub and to language servers' official download
   sources. Updates come from GitHub Releases.
