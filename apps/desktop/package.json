@@ -29,6 +29,7 @@
     "@lo/syntax": "workspace:*",
     "@lo/ui": "workspace:*",
     "@withlo/overview": "workspace:*",
+    "electron-updater": "6.8.12",
     "jsonc-parser": "3.3.1",
     "react": "19.3.1",
     "react-dom": "19.3.1",
