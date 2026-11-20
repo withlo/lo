@@ -138,10 +138,13 @@ test('offers a newer Lo in a toast that waits and never takes focus, over nothin
   });
 
   await test.step('the middle of the window ends above it, so it sits over nothing', async () => {
-    const card = await toast.locator('.toast').boundingBox();
-    const above = await middle.boundingBox();
-    if (!card || !above) throw new Error('The toast or the middle has no box.');
-    expect(above.y + above.height).toBeLessThanOrEqual(card.y);
+    await expect
+      .poll(async () => {
+        const card = await toast.locator('.toast').boundingBox();
+        const above = await middle.boundingBox();
+        return card !== null && above !== null && above.y + above.height <= card.y;
+      })
+      .toBe(true);
   });
 
   await test.step('“Go to the update” focuses its first button, Tab and ⇧Tab move between them, and Esc leaves', async () => {
@@ -185,9 +188,13 @@ test('offers a newer Lo in a toast that waits and never takes focus, over nothin
     await expect(said(page, 'is the newest version')).toHaveText('Lo 0.0.0 is the newest version.');
     await expect(toast).toHaveCount(0);
     // The room it took is the middle's again.
-    const whole = await middle.boundingBox();
-    const height = await page.evaluate(() => window.innerHeight);
-    expect(whole && whole.y + whole.height >= height - 1).toBe(true);
+    await expect
+      .poll(async () => {
+        const whole = await middle.boundingBox();
+        const height = await page.evaluate(() => window.innerHeight);
+        return whole !== null && whole.y + whole.height >= height - 1;
+      })
+      .toBe(true);
   });
 });
 
@@ -276,6 +283,8 @@ test('Settings checks on "Check now", and turns checking by itself off and on', 
   await page.evaluate(() => window.lo.invoke('tab.open', { kind: 'settings' }));
   const updates = page.getByRole('region', { name: 'Updates' });
   await expect(updates).toContainText('Lo 0.0.0');
+  // The e2e build is run from source, so it has no commit to show.
+  await expect(updates).toContainText('Run from source');
   // Lo's own first check has come and gone by the time the toast shows; ask again from Settings.
   await expect(said(page, 'Lo 0.9.0 is out')).toBeVisible({ timeout: 20_000 });
   const before = feed.asked.length;

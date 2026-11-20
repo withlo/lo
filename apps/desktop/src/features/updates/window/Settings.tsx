@@ -1,5 +1,5 @@
-// Settings' Updates section: the version of this Lo with a button that checks now, and whether Lo
-// checks by itself, which is the `updates.check` setting.
+// Settings' Updates section: the version of this Lo and the commit it's built from, with a button
+// that checks now, and whether Lo checks by itself, which is the `updates.check` setting.
 
 import { Button, Setting, Switch } from '@lo/ui';
 import { useStore } from 'zustand';
@@ -9,12 +9,13 @@ import { check as checkSetting } from '../settings.ts';
 import { check } from './actions.ts';
 import { updatesStore } from './store.ts';
 
-/** This Lo's version, with the button that asks GitHub for a newer one now. */
+/** This Lo's version and the commit it's built from, with the button that asks GitHub for a newer one. */
 function Version() {
   const version = useStore(updatesStore, (state) => state.version);
+  const build = useStore(updatesStore, (state) => state.build);
   const checking = useStore(updatesStore, (state) => state.checking);
   return (
-    <Setting label={version === undefined ? 'Lo' : `Lo ${version}`}>
+    <Setting label={version === undefined ? 'Lo' : `Lo ${version}`} description={build}>
       {/* Still on the button, with focus, while the check goes: it does nothing more until it ends. */}
       <Button aria-disabled={checking || undefined} onClick={() => void check()}>
         {checking ? 'Checking' : 'Check now'}

@@ -39,14 +39,18 @@ const WEBSITE = 'https://github.com/withlo/lo';
 /** How many digits of a commit's hash the panel shows. */
 const SHORT_HASH = 7;
 
+/** The first digits of a commit's hash, which is how a build is named. Absent for no commit. */
+export function shortHash(commit: string): string | undefined {
+  return commit === '' ? undefined : commit.slice(0, SHORT_HASH);
+}
+
 /**
  * What names the build in the panel: the first digits of the commit a packaged Lo was built from,
  * and `from source` for one run from source, which has no release to name. Absent for a packaged
  * Lo that was built where no commit could be found.
  */
 export function buildOf(options: { packaged: boolean; commit: string }): string | undefined {
-  if (!options.packaged) return 'from source';
-  return options.commit === '' ? undefined : options.commit.slice(0, SHORT_HASH);
+  return options.packaged ? shortHash(options.commit) : 'from source';
 }
 
 export interface About {

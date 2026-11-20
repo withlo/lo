@@ -42,6 +42,7 @@ import {
 import { Offer } from './Offer.tsx';
 import Settings from './Settings.tsx';
 import { showVersion, updatesStore } from './store.ts';
+import { buildText } from './words.ts';
 
 /** Where updates stand, for what a command applies to. */
 const now = () => updatesStore.getState();
@@ -84,7 +85,9 @@ export default {
       .catch((error: unknown) => console.error("Lo couldn't read where updates stand:", error));
     client(app)
       .info()
-      .then(({ version }) => showVersion(version))
+      .then(({ version, packaged, commit }) =>
+        showVersion(version, buildText({ packaged, commit })),
+      )
       .catch((error: unknown) => console.error("Lo couldn't read its version:", error));
     // The app menu greys what doesn't apply, so it's made again when what applies changes.
     updatesStore.subscribe((next, before) => {

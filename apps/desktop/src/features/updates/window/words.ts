@@ -3,6 +3,19 @@
 import { formatBytes } from '@lo/ui';
 
 /**
+ * What names a build beside its version, as Settings says it: `Run from source` for a build run
+ * from source, which has no release to name, else the commit a packaged Lo was built from. Nothing
+ * for a packaged Lo built where no commit could be found.
+ */
+export function buildText(info: {
+  packaged: boolean;
+  commit?: string | undefined;
+}): string | undefined {
+  if (!info.packaged) return 'Run from source';
+  return info.commit === undefined ? undefined : `Commit ${info.commit}`;
+}
+
+/**
  * How much of a download has come, as the toast says it: `38 of 112 MB`, with the unit said once
  * when both sizes share it, and `38 MB` while GitHub hasn't said how large it is, which a total of
  * 0 means. Nothing has come yet: `Starting`.

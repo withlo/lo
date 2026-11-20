@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { progressText } from './words.ts';
+import { buildText, progressText } from './words.ts';
 
 const MB = 1024 * 1024;
 
@@ -20,5 +20,20 @@ describe('progressText', () => {
     expect(progressText(38 * MB, 0)).toBe('38 MB');
     expect(progressText(0, 112 * MB)).toBe('Starting');
     expect(progressText(0, 0)).toBe('Starting');
+  });
+});
+
+describe('buildText', () => {
+  it('names a packaged Lo by the commit it was built from', () => {
+    expect(buildText({ packaged: true, commit: '0123456' })).toBe('Commit 0123456');
+  });
+
+  it('says a build run from source is, whatever commit it was built at', () => {
+    expect(buildText({ packaged: false, commit: '0123456' })).toBe('Run from source');
+    expect(buildText({ packaged: false })).toBe('Run from source');
+  });
+
+  it('says nothing for a packaged Lo built where no commit could be found', () => {
+    expect(buildText({ packaged: true })).toBeUndefined();
   });
 });
