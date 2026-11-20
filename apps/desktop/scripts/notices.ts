@@ -2,7 +2,7 @@
 // what else Lo ships that isn't a package. It fails when a bundled package has no license, or one
 // Lo can't carry. Run after electron-vite, which leaves each bundle's package list beside it:
 //
-//   node scripts/notices.ts
+//   node scripts/notices.ts [dist]
 //
 // electron-builder installs the file in the app's resources, outside the asar, so the system can
 // open it. The lists are removed after: nothing but the notices need them.
@@ -15,8 +15,9 @@ import { z } from 'zod';
 
 import { COPYRIGHT, FREE_SOFTWARE } from '../src/features/app/main/about.ts';
 import { licenseProblems } from './notices/check.ts';
+import { inlinedCode } from './notices/inlined.ts';
 import { keptNotices } from './notices/kept.ts';
-import { sorted, type Bundled } from './notices/packages.ts';
+import { merged, type Bundled } from './notices/packages.ts';
 import { renderNotices } from './notices/render.ts';
 
 /** Where each bundle writes its package list, in the build's output. */
@@ -30,6 +31,9 @@ const bundled = z.array(
     license: z.string().optional(),
     text: z.string().optional(),
     notice: z.string().optional(),
+    dir: z.string(),
+    files: z.array(z.string()),
+    nested: z.array(z.object({ path: z.string(), text: z.string() })),
   }),
 );
 
@@ -41,11 +45,13 @@ function readList(path: string): Bundled[] {
 /**
  * Writes `licenses.txt` in `dist` from the lists the bundles left there, with the licenses of the
  * repository at `root`, then removes the lists. Returns what's wrong with the bundled packages'
- * licenses, written nothing if there is any.
+ * licenses, and what a person has to look at in their files, written nothing if there is any.
  */
 export function writeNotices(root: string, dist: string): string[] {
-  const packages = sorted(LISTS.flatMap((list) => readList(join(dist, list))));
-  const problems = licenseProblems(packages);
+  const listed = merged(LISTS.flatMap((list) => readList(join(dist, list))));
+  const found = inlinedCode(listed);
+  const packages = merged(found.packages);
+  const problems = [...licenseProblems(packages), ...found.problems];
   if (problems.length > 0) return problems;
   const text = (path: string) => readFileSync(join(root, path), 'utf8').trim();
   writeFileSync(
@@ -56,7 +62,7 @@ export function writeNotices(root: string, dist: string): string[] {
       gpl: text('LICENSE'),
       apache: text('packages/desktop/syntax/queries/LICENSE-APACHE'),
       packages,
-      kept: keptNotices(root),
+      kept: [...keptNotices(root), ...found.kept],
     }),
   );
   for (const list of LISTS) rmSync(join(dist, list));
@@ -65,11 +71,9 @@ export function writeNotices(root: string, dist: string): string[] {
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const app = join(import.meta.dirname, '..');
-  const problems = writeNotices(join(app, '..', '..'), join(app, 'dist'));
+  const problems = writeNotices(join(app, '..', '..'), process.argv[2] ?? join(app, 'dist'));
   if (problems.length > 0) {
-    console.error(
-      `Lo can't bundle what it has no license for:\n${problems.map((each) => `- ${each}`).join('\n')}`,
-    );
+    console.error(`Lo can't write its notices:\n${problems.map((each) => `- ${each}`).join('\n')}`);
     process.exit(1);
   }
 }

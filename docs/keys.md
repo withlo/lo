@@ -74,25 +74,25 @@ Each command's id is what [the keymap file](#the-keymap-file) binds keys to.
 
 ## Code
 
-| Action                                    | Keys                                  | Where                                                            | Command               |
-| ----------------------------------------- | ------------------------------------- | ---------------------------------------------------------------- | --------------------- |
-| Definition                                | `g d`                                 | In `diff` and `file`; in code views, only in normal mode         | `code.definition`     |
-| References                                | `g r`                                 | In `diff`, `file` and `peek`; in code views, only in normal mode | `code.references`     |
-| Type                                      | `K`                                   | In `diff` and `file`; in code views, only in normal mode         | `code.type`           |
-| Type hints                                | `g h`                                 | In `diff` and `file`; in code views, only in normal mode         | `code.hints`          |
-| Outline                                   | `g O`                                 | In `diff` and `file`; in code views, only in normal mode         | `code.outline`        |
-| Next answer in the peek                   | `j`, `↓`                              | In `peek`; in code views, only in normal mode                    | `code.nextAnswer`     |
-| Previous answer in the peek               | `k`, `↑`                              | In `peek`; in code views, only in normal mode                    | `code.previousAnswer` |
-| Go to the answer                          | `⏎`                                   | In `peek`; in code views, only in normal mode                    | `code.goAnswer`       |
-| Close the peek                            | `Esc`                                 | In `peek`; in code views, only in normal mode                    | `code.closePeek`      |
-| Trust this repo…                          | None: in the app menu and the palette | Anywhere                                                         | `code.trust`          |
-| Trust this PR…                            | None: in the app menu and the palette | Anywhere                                                         | `code.trustPull`      |
-| Stop trusting this repo                   | None: in the app menu and the palette | Anywhere                                                         | `code.untrust`        |
-| Dismiss the banner about language servers | None: in the app menu and the palette | Anywhere                                                         | `code.dismiss`        |
-| Restart language servers                  | None: in the app menu and the palette | Anywhere                                                         | `code.restart`        |
-| Show the language server’s log            | None: in the app menu and the palette | Anywhere                                                         | `code.log`            |
-| Back                                      | `⌃o`                                  | Anywhere but `box`                                               | `keys.back`           |
-| Forward                                   | `⌃i`                                  | Anywhere but `box`                                               | `keys.forward`        |
+| Action                                    | Keys                                           | Where                                                            | Command               |
+| ----------------------------------------- | ---------------------------------------------- | ---------------------------------------------------------------- | --------------------- |
+| Definition                                | `g d`                                          | In `diff` and `file`; in code views, only in normal mode         | `code.definition`     |
+| References                                | `g r`                                          | In `diff`, `file` and `peek`; in code views, only in normal mode | `code.references`     |
+| Type                                      | `K`                                            | In `diff` and `file`; in code views, only in normal mode         | `code.type`           |
+| Type hints                                | `g h`                                          | In `diff` and `file`; in code views, only in normal mode         | `code.hints`          |
+| Outline                                   | `g O`                                          | In `diff` and `file`; in code views, only in normal mode         | `code.outline`        |
+| Next answer in the peek                   | `j`, `↓`                                       | In `peek`; in code views, only in normal mode                    | `code.nextAnswer`     |
+| Previous answer in the peek               | `k`, `↑`                                       | In `peek`; in code views, only in normal mode                    | `code.previousAnswer` |
+| Go to the answer                          | `⏎`                                            | In `peek`; in code views, only in normal mode                    | `code.goAnswer`       |
+| Close the peek                            | `Esc`                                          | In `peek`; in code views, only in normal mode                    | `code.closePeek`      |
+| Trust this repo…                          | None: in the app menu on macOS and the palette | Anywhere                                                         | `code.trust`          |
+| Trust this PR…                            | None: in the app menu on macOS and the palette | Anywhere                                                         | `code.trustPull`      |
+| Stop trusting this repo                   | None: in the app menu on macOS and the palette | Anywhere                                                         | `code.untrust`        |
+| Dismiss the banner about language servers | None: in the app menu on macOS and the palette | Anywhere                                                         | `code.dismiss`        |
+| Restart language servers                  | None: in the app menu on macOS and the palette | Anywhere                                                         | `code.restart`        |
+| Show the language server’s log            | None: in the app menu on macOS and the palette | Anywhere                                                         | `code.log`            |
+| Back                                      | `⌃o`                                           | Anywhere but `box`                                               | `keys.back`           |
+| Forward                                   | `⌃i`                                           | Anywhere but `box`                                               | `keys.forward`        |
 
 ## Copy and open
 
@@ -150,16 +150,16 @@ Each command's id is what [the keymap file](#the-keymap-file) binds keys to.
 
 ## View
 
-| Action                                 | Keys                                  | Where                                                                                               | Command               |
-| -------------------------------------- | ------------------------------------- | --------------------------------------------------------------------------------------------------- | --------------------- |
-| Load the newer push                    | None: in its menu and the palette     | In `box`                                                                                            | `comments.loadNewer`  |
-| Show the latest push                   | None: in its menu and the palette     | In `box`                                                                                            | `comments.showLatest` |
-| Show where kept drafts are             | None: in the app menu and the palette | Anywhere                                                                                            | `comments.keptDrafts` |
-| Compare revisions                      | `g v`                                 | Anywhere but `menu`, `dialog`, `palette`, `box` and `revisions`; in code views, only in normal mode | `revisions.picker`    |
-| Next middle view                       | `` ` ``                               | Anywhere but `menu`, `dialog`, `palette` and `box`; in code views, only in normal mode              | `tab.nextView`        |
-| Previous middle view                   | `~`                                   | Anywhere but `menu`, `dialog`, `palette` and `box`; in code views, only in normal mode              | `tab.previousView`    |
-| Show the review’s comments in the diff | None: in its menu and the palette     | In `timeline`                                                                                       | `timeline.showInDiff` |
-| Compare the force-push’s revisions     | None: in its menu and the palette     | In `timeline`                                                                                       | `timeline.compare`    |
+| Action                                 | Keys                                           | Where                                                                                               | Command               |
+| -------------------------------------- | ---------------------------------------------- | --------------------------------------------------------------------------------------------------- | --------------------- |
+| Load the newer push                    | None: in its menu and the palette              | In `box`                                                                                            | `comments.loadNewer`  |
+| Show the latest push                   | None: in its menu and the palette              | In `box`                                                                                            | `comments.showLatest` |
+| Show where kept drafts are             | None: in the app menu on macOS and the palette | Anywhere                                                                                            | `comments.keptDrafts` |
+| Compare revisions                      | `g v`                                          | Anywhere but `menu`, `dialog`, `palette`, `box` and `revisions`; in code views, only in normal mode | `revisions.picker`    |
+| Next middle view                       | `` ` ``                                        | Anywhere but `menu`, `dialog`, `palette` and `box`; in code views, only in normal mode              | `tab.nextView`        |
+| Previous middle view                   | `~`                                            | Anywhere but `menu`, `dialog`, `palette` and `box`; in code views, only in normal mode              | `tab.previousView`    |
+| Show the review’s comments in the diff | None: in its menu and the palette              | In `timeline`                                                                                       | `timeline.showInDiff` |
+| Compare the force-push’s revisions     | None: in its menu and the palette              | In `timeline`                                                                                       | `timeline.compare`    |
 
 ## Files
 
@@ -291,36 +291,36 @@ in normal mode, `Esc` closes the box and keeps the draft. In the box's preview, 
 
 ## Tabs and window
 
-| Action                    | Keys                                  | Where                                                                                  | Command                 |
-| ------------------------- | ------------------------------------- | -------------------------------------------------------------------------------------- | ----------------------- |
-| Add an account            | None: in the app menu and the palette | Anywhere                                                                               | `accounts.addAccount`   |
-| Sign out…                 | None: in the app menu and the palette | Anywhere                                                                               | `accounts.signOut`      |
-| Zoom in                   | `⌘=`, `⌘⇧=`                           | Anywhere                                                                               | `app.zoomIn`            |
-| Zoom out                  | `⌘-`                                  | Anywhere                                                                               | `app.zoomOut`           |
-| Actual size               | `⌘0`                                  | Anywhere                                                                               | `app.actualSize`        |
-| Show licenses             | None: in the app menu and the palette | Anywhere                                                                               | `app.licenses`          |
-| Every key                 | `?`                                   | Anywhere                                                                               | `keys.help`             |
-| Show the right-click menu | `Menu`, `⇧F10`                        | Anywhere but `menu`, `dialog` and `palette`                                            | `keys.menu`             |
-| Back to the middle view   | `Esc`                                 | Anywhere but `menu`, `dialog`, `palette` and `box`; in code views, only in normal mode | `keys.escape`           |
-| Open the keymap file      | `g ,`                                 | Anywhere but `menu`, `dialog`, `palette` and `box`; in code views, only in normal mode | `keys.openKeymap`       |
-| Install command-line tool | None: in the app menu and the palette | Anywhere                                                                               | `open.installCommand`   |
-| Install overview skill    | None: in the app menu and the palette | Anywhere                                                                               | `overview.installSkill` |
-| Open Settings             | `⌘,`                                  | Anywhere but `dialog` and `palette`                                                    | `settings.open`         |
-| Tab 1                     | `⌘1`                                  | Anywhere but `dialog` and `palette`                                                    | `tab.show1`             |
-| Tab 2                     | `⌘2`                                  | Anywhere but `dialog` and `palette`                                                    | `tab.show2`             |
-| Tab 3                     | `⌘3`                                  | Anywhere but `dialog` and `palette`                                                    | `tab.show3`             |
-| Tab 4                     | `⌘4`                                  | Anywhere but `dialog` and `palette`                                                    | `tab.show4`             |
-| Tab 5                     | `⌘5`                                  | Anywhere but `dialog` and `palette`                                                    | `tab.show5`             |
-| Tab 6                     | `⌘6`                                  | Anywhere but `dialog` and `palette`                                                    | `tab.show6`             |
-| Tab 7                     | `⌘7`                                  | Anywhere but `dialog` and `palette`                                                    | `tab.show7`             |
-| Tab 8                     | `⌘8`                                  | Anywhere but `dialog` and `palette`                                                    | `tab.show8`             |
-| Last tab                  | `⌘9`                                  | Anywhere but `dialog` and `palette`                                                    | `tab.showLast`          |
-| Next tab                  | `⌘⇧]`, `⌃⇥`                           | Anywhere but `dialog` and `palette`                                                    | `tab.next`              |
-| Previous tab              | `⌘⇧[`, `⌃⇧⇥`                          | Anywhere but `dialog` and `palette`                                                    | `tab.previous`          |
-| Move tab left             | `⌃⇧PgUp`                              | Anywhere but `dialog` and `palette`                                                    | `tab.moveLeft`          |
-| Move tab right            | `⌃⇧PgDn`                              | Anywhere but `dialog` and `palette`                                                    | `tab.moveRight`         |
-| Tabs that don’t fit       | `⌘⇧A`                                 | Anywhere but `dialog`, `palette` and `box`                                             | `tab.more`              |
-| Close tab                 | `⌘W`                                  | Anywhere but `dialog` and `palette`                                                    | `tab.close`             |
+| Action                    | Keys                                                     | Where                                                                                  | Command                 |
+| ------------------------- | -------------------------------------------------------- | -------------------------------------------------------------------------------------- | ----------------------- |
+| Add an account            | None: in the app menu on macOS and the palette           | Anywhere                                                                               | `accounts.addAccount`   |
+| Sign out…                 | None: in the app menu on macOS and the palette           | Anywhere                                                                               | `accounts.signOut`      |
+| Zoom in                   | `⌘=`, `⌘⇧=`                                              | Anywhere                                                                               | `app.zoomIn`            |
+| Zoom out                  | `⌘-`                                                     | Anywhere                                                                               | `app.zoomOut`           |
+| Actual size               | `⌘0`                                                     | Anywhere                                                                               | `app.actualSize`        |
+| Show licenses             | None: in the app menu on macOS, its menu and the palette | Anywhere                                                                               | `app.licenses`          |
+| Every key                 | `?`                                                      | Anywhere                                                                               | `keys.help`             |
+| Show the right-click menu | `Menu`, `⇧F10`                                           | Anywhere but `menu`, `dialog` and `palette`                                            | `keys.menu`             |
+| Back to the middle view   | `Esc`                                                    | Anywhere but `menu`, `dialog`, `palette` and `box`; in code views, only in normal mode | `keys.escape`           |
+| Open the keymap file      | `g ,`                                                    | Anywhere but `menu`, `dialog`, `palette` and `box`; in code views, only in normal mode | `keys.openKeymap`       |
+| Install command-line tool | None: in the app menu on macOS and the palette           | Anywhere                                                                               | `open.installCommand`   |
+| Install overview skill    | None: in the app menu on macOS and the palette           | Anywhere                                                                               | `overview.installSkill` |
+| Open Settings             | `⌘,`                                                     | Anywhere but `dialog` and `palette`                                                    | `settings.open`         |
+| Tab 1                     | `⌘1`                                                     | Anywhere but `dialog` and `palette`                                                    | `tab.show1`             |
+| Tab 2                     | `⌘2`                                                     | Anywhere but `dialog` and `palette`                                                    | `tab.show2`             |
+| Tab 3                     | `⌘3`                                                     | Anywhere but `dialog` and `palette`                                                    | `tab.show3`             |
+| Tab 4                     | `⌘4`                                                     | Anywhere but `dialog` and `palette`                                                    | `tab.show4`             |
+| Tab 5                     | `⌘5`                                                     | Anywhere but `dialog` and `palette`                                                    | `tab.show5`             |
+| Tab 6                     | `⌘6`                                                     | Anywhere but `dialog` and `palette`                                                    | `tab.show6`             |
+| Tab 7                     | `⌘7`                                                     | Anywhere but `dialog` and `palette`                                                    | `tab.show7`             |
+| Tab 8                     | `⌘8`                                                     | Anywhere but `dialog` and `palette`                                                    | `tab.show8`             |
+| Last tab                  | `⌘9`                                                     | Anywhere but `dialog` and `palette`                                                    | `tab.showLast`          |
+| Next tab                  | `⌘⇧]`, `⌃⇥`                                              | Anywhere but `dialog` and `palette`                                                    | `tab.next`              |
+| Previous tab              | `⌘⇧[`, `⌃⇧⇥`                                             | Anywhere but `dialog` and `palette`                                                    | `tab.previous`          |
+| Move tab left             | `⌃⇧PgUp`                                                 | Anywhere but `dialog` and `palette`                                                    | `tab.moveLeft`          |
+| Move tab right            | `⌃⇧PgDn`                                                 | Anywhere but `dialog` and `palette`                                                    | `tab.moveRight`         |
+| Tabs that don’t fit       | `⌘⇧A`                                                    | Anywhere but `dialog`, `palette` and `box`                                             | `tab.more`              |
+| Close tab                 | `⌘W`                                                     | Anywhere but `dialog` and `palette`                                                    | `tab.close`             |
 
 ## Where keys apply
 

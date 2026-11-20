@@ -50,13 +50,15 @@ export default defineCommands('app', {
     menu: { on: 'none', order: 30 },
   },
   /**
-   * Opens the file of licenses: Lo's, and those of the packages and files it ships. It has no key,
-   * and sits under About in the app menu on macOS.
+   * Opens the file of licenses: Lo's, and those of the packages and files it ships. It's how the
+   * About panel says to read Lo's license, as GPL-3.0 asks, so it has no key and sits where About
+   * does: under it in the app menu on macOS, and beside it in Linux's right-click menu.
    */
   licenses: {
     label: 'Show licenses',
     group: 'Tabs and window',
     keys: [],
     bar: { menu: 'App', order: 5 },
+    menu: { on: 'none', order: 40 },
   },
 });

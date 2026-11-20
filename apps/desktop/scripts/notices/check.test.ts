@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { ALLOWED, allowed, licenseProblems } from './check.ts';
+import { ALLOWED, accepted, allowed, licenseProblems } from './check.ts';
 
 describe('allowed', () => {
   it('takes every license on the list', () => {
@@ -45,6 +45,24 @@ describe('allowed', () => {
       '()',
     ].filter((expression) => allowed(expression));
     expect(taken).toEqual([]);
+  });
+});
+
+describe('accepted', () => {
+  it('says which license a package is taken under, the first of an OR that is allowed', () => {
+    expect(accepted('MIT')).toEqual({ ok: true, ids: ['MIT'] });
+    expect(accepted('(apache-2.0 OR MIT)')).toEqual({ ok: true, ids: ['Apache-2.0'] });
+    expect(accepted('GPL-3.0-only OR ISC OR MIT')).toEqual({ ok: true, ids: ['ISC'] });
+    expect(accepted('(MIT OR Apache-2.0) AND BSD-3-Clause')).toEqual({
+      ok: true,
+      ids: ['MIT', 'BSD-3-Clause'],
+    });
+  });
+
+  it('names none when the expression is not satisfied', () => {
+    expect(accepted('MIT AND GPL-3.0-only')).toMatchObject({ ok: false });
+    expect(accepted('Apache-2.0 WITH LLVM-exception')).toEqual({ ok: false, ids: [] });
+    expect(accepted('(MIT')).toEqual({ ok: false, ids: [] });
   });
 });
 

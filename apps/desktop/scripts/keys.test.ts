@@ -19,6 +19,13 @@ const diff = defineCommands('diff', {
   files: { label: 'Files', group: 'Find', keys: ['cmd+p'], overVim: true },
   quit: { label: 'Quit', group: 'Tabs and window', keys: ['cmd+q'], when: { system: 'linux' } },
   install: { label: 'Install', group: 'Tabs and window', keys: [], bar: { menu: 'App', order: 1 } },
+  licenses: {
+    label: 'Licenses',
+    group: 'Tabs and window',
+    keys: [],
+    bar: { menu: 'App', order: 2 },
+    menu: { on: 'none', order: 2 },
+  },
   about: {
     label: 'About',
     group: 'Tabs and window',
@@ -94,7 +101,13 @@ describe('docs/keys.md', () => {
 
   it('says where a command with no key is found instead', () => {
     expect(section('## Tabs and window')).toContain(
-      '| Install | None: in the app menu and the palette | Anywhere | `diff.install` |',
+      '| Install | None: in the app menu on macOS and the palette | Anywhere | `diff.install` |',
+    );
+  });
+
+  it('says where a command with no key in both the app menu and a right-click menu is found, noting that only macOS has the app menu', () => {
+    expect(section('## Tabs and window')).toContain(
+      '| Licenses | None: in the app menu on macOS, its menu and the palette | Anywhere | `diff.licenses` |',
     );
   });
 

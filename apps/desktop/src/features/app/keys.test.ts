@@ -103,4 +103,14 @@ describe('About and the licenses', () => {
     expect(find('app.licenses')?.bar).toEqual({ menu: 'App', order: 5 });
     expect(find('app.licenses')?.when).toBeUndefined();
   });
+
+  it('Show licenses is in the right-click menu of the window, after About Lo, which Linux has there', () => {
+    const about = find('app.about')?.menu;
+    const licenses = find('app.licenses')?.menu;
+    expect(licenses).toMatchObject({ on: 'none' });
+    expect(about).toMatchObject({ on: 'none' });
+    expect(licenses && 'order' in licenses ? licenses.order : 0).toBeGreaterThan(
+      about && 'order' in about ? about.order : Infinity,
+    );
+  });
 });

@@ -107,12 +107,19 @@ function commandsIn(features: readonly Declarations[]): Command[] {
   return features.flatMap(commandsOf);
 }
 
-/** What a command with no key says in place of one: where it's found instead. */
+/**
+ * What a command with no key says in place of one: where it's found instead. Only macOS has an app
+ * menu, so a command in one says so, and a command in a right-click menu is in `its menu`, which
+ * both systems have.
+ */
 function noKey(command: Command): string {
   if (!keyless(command)) return 'None';
-  return command.bar
-    ? 'None: in the app menu and the palette'
-    : 'None: in its menu and the palette';
+  const places = [
+    ...(command.bar ? ['the app menu on macOS'] : []),
+    ...(command.menu ? ['its menu'] : []),
+    'the palette',
+  ];
+  return `None: in ${listed(places)}`;
 }
 
 /**

@@ -33,6 +33,19 @@ const LICENSES: readonly KeptLicense[] = ['MIT', 'Apache-2.0', 'GPL-3.0-or-later
 /** What `grammars.json` holds of each grammar that the notices need. */
 const pins = z.object({ grammars: z.array(z.object({ repo: z.string(), commit: z.string() })) });
 
+/** The version a `package.json`, the one at `path` from the repository's root, pins `name` to. */
+function pinned(path: string, name: string): string {
+  const manifest = z
+    .object({
+      dependencies: z.record(z.string(), z.string()).optional(),
+      devDependencies: z.record(z.string(), z.string()).optional(),
+    })
+    .parse(JSON.parse(readFileSync(join(root, path), 'utf8')));
+  const version = manifest.dependencies?.[name] ?? manifest.devDependencies?.[name];
+  if (version === undefined) throw new Error(`${path} doesn't depend on ${name}.`);
+  return version;
+}
+
 describe('the kept list', () => {
   it('has an entry for every grammar grammars.json pins, at its commit', () => {
     const { grammars } = pins.parse(
@@ -74,6 +87,32 @@ describe('the kept list', () => {
         .map((line) => `${name}: its header doesn't say "${line}"`);
     });
     expect(problems).toEqual([]);
+  });
+
+  it('has the tree-sitter runtime at the release web-tree-sitter is of: its code runs every parse, and its standard library is in every grammar', () => {
+    const version = pinned('packages/desktop/syntax/package.json', 'web-tree-sitter');
+    expect(
+      KEPT.find((entry) => entry.repo === 'tree-sitter/tree-sitter' && entry.license === 'MIT'),
+    ).toMatchObject({ at: `v${version}`, copyright: ['Copyright (c) 2018 Max Brunsfeld'] });
+  });
+
+  it("has Tailwind CSS at the release the window's stylesheet is built with", () => {
+    const version = pinned('apps/desktop/package.json', '@tailwindcss/vite');
+    expect(
+      KEPT.find((entry) => entry.repo === 'tailwindlabs/tailwindcss' && entry.license === 'MIT'),
+    ).toMatchObject({ at: `v${version}`, copyright: ['Copyright (c) Tailwind Labs, Inc.'] });
+  });
+
+  it('has nvim-treesitter, which queries say they are based on, under the Apache License', () => {
+    const based = queryFiles(join(syntax, 'queries')).filter((file) =>
+      readFileSync(file, 'utf8').includes('nvim-treesitter'),
+    );
+    expect(based.length).toBeGreaterThan(3);
+    expect(
+      KEPT.filter((entry) => entry.repo === 'nvim-treesitter/nvim-treesitter').map(
+        (entry) => entry.license,
+      ),
+    ).toEqual(['Apache-2.0']);
   });
 
   it('names whose copyright each MIT entry is, once per repository, commit and license', () => {

@@ -4,7 +4,7 @@ import { dirname, join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { bundledPackages, collector, packageReader, sorted } from './packages.ts';
+import { bundledPackages, collector, merged, packageReader, type Bundled } from './packages.ts';
 
 let root: string;
 
@@ -41,6 +41,58 @@ describe('packageReader', () => {
       license: 'MIT',
       text: 'MIT License\n\nCopyright (c) A',
       notice: 'a notice',
+      dir: join(root, 'node_modules/a'),
+    });
+  });
+
+  describe('the license file it keeps', () => {
+    const files = {
+      'LICENSE-APACHE': 'Apache License\nVersion 2.0',
+      'LICENSE-MIT': 'Permission is hereby granted, free of charge',
+      'LICENSE-BSD': 'Redistribution and use in source and binary forms',
+    };
+
+    let count = 0;
+
+    /** The text kept of a package that carries `carried` and says it's under `license`. */
+    function kept(license: string, carried: Record<string, string> = files): string | undefined {
+      const folder = `node_modules/p${count++}`;
+      put({
+        [`${folder}/package.json`]: manifest({ name: 'p', version: '1.0.0', license }),
+        [`${folder}/index.js`]: '',
+        ...Object.fromEntries(
+          Object.entries(carried).map(([name, text]) => [`${folder}/${name}`, text]),
+        ),
+      });
+      return packageReader()(join(root, `${folder}/index.js`))?.text;
+    }
+
+    it('is that of the license an OR is taken under, the first of those allowed, whatever the order of the files by name', () => {
+      expect(kept('MIT OR Apache-2.0')).toBe('Permission is hereby granted, free of charge');
+      expect(kept('(Apache-2.0 OR MIT)')).toBe('Apache License\nVersion 2.0');
+      expect(kept('GPL-3.0-only OR BSD-3-Clause')).toBe(
+        'Redistribution and use in source and binary forms',
+      );
+    });
+
+    it('is that of each license an AND is taken under', () => {
+      expect(kept('MIT AND Apache-2.0')).toBe(
+        'Apache License\nVersion 2.0\n\nPermission is hereby granted, free of charge',
+      );
+    });
+
+    it('is found by what a file says when its name does not say, and is the only file there is when there is one', () => {
+      const named = {
+        'LICENSE.one': 'Apache License 2.0',
+        'LICENSE.two': 'Permission is hereby granted, free of charge',
+      };
+      expect(kept('MIT OR Apache-2.0', named)).toBe('Permission is hereby granted, free of charge');
+      expect(kept('Apache-2.0 OR MIT', named)).toBe('Apache License 2.0');
+      expect(kept('MIT', { LICENSE: 'whatever it says' })).toBe('whatever it says');
+    });
+
+    it('is the first file by name when no file is the one', () => {
+      expect(kept('ISC', { 'LICENSE-A': 'a', 'LICENSE-B': 'b' })).toBe('a');
     });
   });
 
@@ -96,6 +148,7 @@ describe('packageReader', () => {
       license: undefined,
       text: undefined,
       notice: undefined,
+      dir: join(root, 'node_modules/none'),
     });
     expect(read(join(root, 'node_modules/legacy/index.js'))?.license).toBeUndefined();
   });
@@ -124,12 +177,30 @@ describe('packageReader', () => {
   });
 });
 
-describe('sorted', () => {
-  it('lists each package and version once, in order', () => {
-    const a1 = { name: 'a', version: '1.0.0' };
-    const a2 = { name: 'a', version: '2.0.0' };
-    const b = { name: 'b', version: '1.0.0' };
-    expect(sorted([b, a2, a1, { ...a1 }, b])).toEqual([a1, a2, b]);
+/** A bundled package, with the files and nested licenses it has none of unless said. */
+function pack(fields: Pick<Bundled, 'name' | 'version'> & Partial<Bundled>): Bundled {
+  return { dir: '/x', files: [], nested: [], ...fields };
+}
+
+describe('merged', () => {
+  it('lists each package and version once, in order, with the files and nested licenses of every copy', () => {
+    const a1 = pack({ name: 'a', version: '1.0.0', files: ['x.js'] });
+    const a2 = pack({ name: 'a', version: '2.0.0' });
+    const b = pack({ name: 'b', version: '1.0.0' });
+    const nested = { path: 'lib/LICENSE', text: 'L' };
+    expect(
+      merged([
+        b,
+        a2,
+        a1,
+        { ...a1, files: ['y.js', 'x.js'], nested: [nested] },
+        { ...b, nested: [nested] },
+      ]),
+    ).toEqual([
+      { ...a1, files: ['x.js', 'y.js'], nested: [nested] },
+      a2,
+      { ...b, nested: [nested] },
+    ]);
   });
 });
 
@@ -152,6 +223,10 @@ function hooks() {
     emitFile,
     resolve: (folder: string) => Reflect.apply(configResolved, {}, [{ root: folder }]),
     generate: async (modules: string[], isWrite: boolean) => {
+      // Each build starts as the build does, with whichever of these hooks the plugin has.
+      for (const hook of [made.buildStart, made.renderStart]) {
+        if (typeof hook === 'function') await Reflect.apply(hook, {}, [{}]);
+      }
       const bundle = { 'index.js': { type: 'chunk', moduleIds: modules } };
       await Reflect.apply(generateBundle, { emitFile }, [{}, bundle, isWrite]);
     },
@@ -179,8 +254,49 @@ describe('collector', () => {
       'f.woff2': { type: 'asset', originalFileNames: ['../../node_modules/f/files/f.woff2'] },
     });
     expect(found.list()).toEqual([
-      { name: 'a', version: '1.0.0', license: 'MIT', text: undefined, notice: undefined },
-      { name: 'f', version: '2.0.0', license: 'OFL-1.1', text: undefined, notice: undefined },
+      {
+        name: 'a',
+        version: '1.0.0',
+        license: 'MIT',
+        text: undefined,
+        notice: undefined,
+        dir: join(root, 'node_modules/a'),
+        files: ['index.js'],
+        nested: [],
+      },
+      {
+        name: 'f',
+        version: '2.0.0',
+        license: 'OFL-1.1',
+        text: undefined,
+        notice: undefined,
+        dir: join(root, 'node_modules/f'),
+        files: ['files/f.woff2'],
+        nested: [],
+      },
+    ]);
+  });
+
+  it("lists the files of a package that a build has, and the licenses in the folders they're in below the package's root", () => {
+    put({
+      'node_modules/a/LICENSE': 'A',
+      'node_modules/a/lib/NOTICE.txt': 'its own notice',
+      'node_modules/a/lib/deep/LICENSE.md': 'DEEP',
+      'node_modules/a/lib/deep/more/x.js': '',
+      'node_modules/a/lib/other/COPYING': 'A',
+      'node_modules/a/lib/other/y.js': '',
+      'node_modules/a/lib/plain/z.js': '',
+    });
+    const found = collector(() => root);
+    found.add(chunk('node_modules/a/lib/deep/more/x.js'));
+    found.add(chunk('node_modules/a/lib/other/y.js'));
+    found.add(chunk('node_modules/a/lib/plain/z.js'));
+    const [listed] = found.list();
+    expect(listed?.files).toEqual(['lib/deep/more/x.js', 'lib/other/y.js', 'lib/plain/z.js']);
+    // The license beside y.js is the package's own, as its text is.
+    expect(listed?.nested).toEqual([
+      { path: 'lib/NOTICE.txt', text: 'its own notice' },
+      { path: 'lib/deep/LICENSE.md', text: 'DEEP' },
     ]);
   });
 
@@ -216,8 +332,46 @@ describe('bundledPackages', () => {
     expect(file?.fileName).toBe('bundled.json');
     const listed: unknown = JSON.parse(file?.source ?? 'null');
     expect(listed).toEqual([
-      { name: 'a', version: '1.0.0', license: 'MIT' },
-      { name: 'f', version: '2.0.0', license: 'OFL-1.1' },
+      {
+        name: 'a',
+        version: '1.0.0',
+        license: 'MIT',
+        dir: join(root, 'node_modules/a'),
+        files: ['index.js'],
+        nested: [],
+      },
+      {
+        name: 'f',
+        version: '2.0.0',
+        license: 'OFL-1.1',
+        dir: join(root, 'node_modules/f'),
+        files: ['index.js'],
+        nested: [],
+      },
     ]);
+  });
+
+  it('keeps what every build held, though each resolves its configuration again and the builds nest', async () => {
+    const { emitFile, resolve, generate } = hooks();
+    // The plugin is one instance for the root build and each build it nests, which each configure it.
+    resolve(root);
+    resolve(root);
+    await generate([join(root, 'node_modules/f/index.js')], false);
+    resolve(root);
+    await generate([], false);
+    resolve(root);
+    await generate([join(root, 'node_modules/a/index.js')], true);
+    const [file] = emitFile.mock.calls[0] ?? [];
+    const listed: unknown = JSON.parse(file?.source ?? 'null');
+    expect(
+      Array.isArray(listed) ? listed.map((each: { name: string }) => each.name) : listed,
+    ).toEqual(['a', 'f']);
+  });
+
+  it('does not write while a build nested in the root build is writing nothing, however many it has', async () => {
+    const { emitFile, generate } = hooks();
+    await generate([join(root, 'node_modules/f/index.js')], false);
+    await generate([join(root, 'node_modules/a/index.js')], false);
+    expect(emitFile).not.toHaveBeenCalled();
   });
 });

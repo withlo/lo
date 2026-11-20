@@ -77,13 +77,22 @@ function keptSection(entry: KeptNotice): string {
   return lines.join('\n');
 }
 
-/** A bundled package's section: its name, version and license, and the license's text. */
+/**
+ * A bundled package's section: its name, version and license, and the license's text, then what
+ * else it carries of its own: its NOTICE, the licenses of code in its folders, and the copyright
+ * lines in its files that its license doesn't hold.
+ */
 function packageSection(bundled: Bundled): string {
   const lines = [
     heading(`${bundled.name}@${bundled.version} (${bundled.license ?? 'no license'})`, '-'),
-    bundled.text ?? '',
   ];
+  if (bundled.in !== undefined) lines.push(`Built into ${bundled.in}.`, '');
+  lines.push(bundled.text ?? '');
   if (bundled.notice !== undefined) lines.push('', 'Its NOTICE file says:', '', bundled.notice);
+  for (const { path, text } of bundled.nested) lines.push('', `Its ${path} says:`, '', text);
+  if (bundled.says !== undefined && bundled.says.length > 0) {
+    lines.push('', 'Its files also say:', '', ...bundled.says);
+  }
   return lines.join('\n');
 }
 

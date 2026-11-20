@@ -24,3 +24,13 @@ test('Show licenses in the palette opens the licenses file the build wrote, as t
   // The test's stand-in for the system's editor is given the file's path.
   await expect.poll(opened).toEqual([realpathSync(licenses)]);
 });
+
+test('Show licenses in the right-click menu, where the About panel says to look, opens the same file', async ({
+  page,
+}) => {
+  await middleOf(page).click({ button: 'right' });
+  const menu = page.getByRole('menu', { name: 'Actions' });
+  await menu.getByRole('menuitem', { name: 'Show licenses', exact: true }).click();
+  await expect(menu).toBeHidden();
+  await expect.poll(opened).toEqual([realpathSync(join(appFolder, 'dist', 'licenses.txt'))]);
+});

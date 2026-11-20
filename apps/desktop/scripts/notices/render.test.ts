@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
+import type { Bundled } from './packages.ts';
 import { renderNotices } from './render.ts';
+
+/** A bundled package, with the files and nested licenses it has none of unless said. */
+function pack(fields: Pick<Bundled, 'name' | 'version'> & Partial<Bundled>): Bundled {
+  return { dir: '/node_modules/x', files: [], nested: [], ...fields };
+}
 
 const base = {
   copyright: 'Copyright © 2026 Someone',
@@ -16,14 +22,14 @@ describe('renderNotices', () => {
     const text = renderNotices({
       ...base,
       packages: [
-        { name: 'zod', version: '4.6.7', license: 'MIT', text: 'ZOD LICENSE' },
-        {
+        pack({ name: 'zod', version: '4.6.7', license: 'MIT', text: 'ZOD LICENSE' }),
+        pack({
           name: 'thing',
           version: '1.0.0',
           license: 'Apache-2.0',
           text: 'THING LICENSE',
           notice: 'THING NOTICE',
-        },
+        }),
       ],
       kept: [
         {
@@ -96,8 +102,41 @@ describe('renderNotices', () => {
   });
 
   it('says a package has no license when it has none, rather than leaving the heading short', () => {
-    expect(renderNotices({ ...base, packages: [{ name: 'x', version: '1.0.0' }] })).toContain(
+    expect(renderNotices({ ...base, packages: [pack({ name: 'x', version: '1.0.0' })] })).toContain(
       'x@1.0.0 (no license)',
     );
+  });
+
+  it('puts what a package holds of its own after its license: licenses in its folders, and copyright lines in its files, and says what it is built into', () => {
+    const text = renderNotices({
+      ...base,
+      packages: [
+        pack({
+          name: 'outer',
+          version: '1.0.0',
+          license: 'MIT',
+          text: 'OUTER LICENSE',
+          nested: [{ path: 'lib/inner/LICENSE.md', text: 'INNER LICENSE' }],
+          says: ['Copyright (c) Somebody Else', 'Copyright (c) Another'],
+        }),
+        pack({
+          name: 'inner',
+          version: '2.0.0',
+          license: 'ISC',
+          text: 'ISC LICENSE',
+          in: 'outer@1.0.0',
+        }),
+      ],
+    });
+    const order = [
+      'outer@1.0.0 (MIT)',
+      'OUTER LICENSE',
+      'Its lib/inner/LICENSE.md says:\n\nINNER LICENSE',
+      'Its files also say:\n\nCopyright (c) Somebody Else\nCopyright (c) Another',
+      'inner@2.0.0 (ISC)\n-----------------\nBuilt into outer@1.0.0.\n\nISC LICENSE',
+    ];
+    const at = order.map((part) => text.indexOf(part));
+    expect(order.filter((_, index) => at[index] === -1)).toEqual([]);
+    expect(at).toEqual(at.toSorted((a, b) => a - b));
   });
 });
