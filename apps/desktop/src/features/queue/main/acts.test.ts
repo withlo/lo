@@ -137,14 +137,20 @@ class FakeWatch implements ActWatch {
   view: QueueView | string = viewOf([entry(1, 259), entry(2, 260)]);
   waiting: QueueWaiting | string = waitingOf([{ number: 258 }]);
   readonly asked: { kind: 'queue' | 'waiting'; within: number; since: number | undefined }[] = [];
+  /** Runs as the queue is read, before it answers. */
+  onFresh: (() => void) | undefined;
+  /** Runs as those waiting to join are read, before they answer. */
+  onWaiting: (() => void) | undefined;
 
   fresh(within: number, since?: number): Promise<QueueView | string> {
     this.asked.push({ kind: 'queue', within, since });
+    this.onFresh?.();
     return Promise.resolve(this.view);
   }
 
   freshWaiting(within: number, since?: number): Promise<QueueWaiting | string> {
     this.asked.push({ kind: 'waiting', within, since });
+    this.onWaiting?.();
     return Promise.resolve(this.waiting);
   }
 }
@@ -273,13 +279,29 @@ function setup() {
   const watch = new FakeWatch();
   const poller = new FakePoller();
   const writes = new FakeWrites();
-  const state = { open: true, converting: undefined as Converting | undefined };
+  const state = {
+    open: true,
+    converting: undefined as Converting | undefined,
+    /** Whether Lo has the tab's account. */
+    account: true,
+    /** How a read apart from the tab answers: it does, unless set. */
+    readBranch: undefined as Error | undefined,
+    /** The reads apart from the tab, in order. */
+    reads: [] as { branch: string; kind: string }[],
+  };
   let keys = 0;
   const acts = new QueueActs({
     tab: (id) => (state.open && id === TAB.id ? { tab: TAB, watch } : undefined),
-    poller: () => Promise.resolve(poller),
+    poller: () =>
+      state.account
+        ? Promise.resolve(poller)
+        : Promise.reject(new Error('Lo has no account rozed-bot.')),
     writes,
     converting: () => state.converting,
+    readBranch: (_on, branch, kind) => {
+      state.reads.push({ branch, kind });
+      return state.readBranch ? Promise.reject(state.readBranch) : Promise.resolve();
+    },
     log: () => undefined,
     newKey: () => `00000000-0000-0000-0000-${String(++keys).padStart(12, '0')}`,
   });
@@ -297,12 +319,15 @@ async function planned(
   return answer.plan;
 }
 
-/** A lost answer: GitHub may have done it. */
-const LOST = new GithubError({
+/** A lost answer, as GitHub's client says it: GitHub may have done it. */
+const LOST_DETAIL = {
   kind: 'network',
   failure: 'lost',
   message: 'The connection closed.',
-});
+} as const;
+
+/** A lost answer: GitHub may have done it. */
+const LOST = new GithubError(LOST_DETAIL);
 
 describe('planning a change to the queue', () => {
   it('plans taking an entry out from a read no older than 40 s, naming who, where and what', async () => {
@@ -380,6 +405,15 @@ describe('planning a change to the queue', () => {
       why: 'GitHub lets only the repository’s admins move a pull request to the front of the merge queue, and rozed-bot isn’t one.',
     });
     expect((await planned(acts, 260, 'remove')).kind).toBe('remove');
+  });
+
+  it('doesn’t move the entry at the front to the front', async () => {
+    const { acts } = setup();
+    expect(await acts.plan(TAB.id, 259, 'jump')).toEqual({
+      kind: 'refused',
+      why: '#259 is at the front of the merge queue already.',
+    });
+    expect((await planned(acts, 259, 'remove')).kind).toBe('remove');
   });
 
   it('takes a GitHub stack out from its bottom layer, naming the layers above that leave with it', async () => {
@@ -568,6 +602,42 @@ describe('confirming a change to the queue', () => {
     expect(poller.sent).toEqual([]);
   });
 
+  it('doesn’t move an entry that reached the front since it asked', async () => {
+    const { acts, watch, poller, writes } = setup();
+    const plan = await planned(acts, 260, 'jump');
+    watch.view = viewOf([entry(1, 260)]);
+    expect(await acts.confirm(plan.key)).toEqual({
+      kind: 'refused',
+      why: '#260 is at the front of the merge queue already.',
+    });
+    expect(poller.sent).toEqual([]);
+    expect(writes.taken.size).toBe(0);
+  });
+
+  it('checks the tab and the connection once more, right before it sends', async () => {
+    const { acts, watch, poller, state } = setup();
+    let plan = await planned(acts, 260);
+    // Each goes as the queue is read again for the press.
+    watch.onFresh = () => {
+      poller.offline = true;
+    };
+    expect(await acts.confirm(plan.key)).toEqual({
+      kind: 'refused',
+      why: 'Offline. Change the queue once you’re back.',
+    });
+    watch.onFresh = undefined;
+    poller.offline = false;
+    plan = await planned(acts, 260);
+    watch.onFresh = () => {
+      state.open = false;
+    };
+    expect(await acts.confirm(plan.key)).toEqual({
+      kind: 'refused',
+      why: 'The merge queue’s tab is closed. Nothing was sent.',
+    });
+    expect(poller.sent).toEqual([]);
+  });
+
   it('asks again when the layers that leave with it changed', async () => {
     const { acts, watch, poller } = setup();
     watch.view = viewOf([entry(1, 251), entry(2, 252), entry(3, 253)]);
@@ -683,6 +753,81 @@ describe('confirming a change to the queue', () => {
     expect(writes.taken.size).toBe(0);
   });
 
+  it('holds the turn of an entry GitHub took out to move while its answer to adding it back was lost', async () => {
+    const { acts, watch, poller, writes } = setup();
+    poller.jumped = new Later(() => {
+      watch.view = 'GitHub couldn’t be reached';
+      return Promise.resolve({ kind: 'notBack' as const, failure: LOST_DETAIL });
+    });
+    expect(await acts.confirm((await planned(acts, 260, 'jump')).key)).toMatchObject({
+      kind: 'unknown',
+      why: expect.stringContaining('Lo can’t tell whether it added it back') as unknown,
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(writes.busy(REPO, [260])).toEqual([260]);
+    watch.view = viewOf([entry(1, 260)]);
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(writes.taken.size).toBe(0);
+    expect(poller.sent).toHaveLength(1);
+  });
+
+  it('settles a lost change by a read of the branch it changed, not of the one the tab shows since', async () => {
+    const { acts, watch, poller, writes, state } = setup();
+    poller.dequeued = new Later(() => {
+      watch.view = 'GitHub couldn’t be reached';
+      return Promise.reject(LOST);
+    });
+    await acts.confirm((await planned(acts, 260)).key);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(writes.busy(REPO, [260])).toEqual([260]);
+    // The tab moves on to main, whose queue it reads; e4/queued's can't be read yet.
+    watch.branch = 'main';
+    watch.view = viewOf([], { branch: 'main' });
+    state.readBranch = new Error('GitHub couldn’t be reached.');
+    acts.drop(TAB.id);
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(writes.busy(REPO, [260])).toEqual([260]);
+    expect(state.reads.length).toBeGreaterThan(1);
+    expect(new Set(state.reads.map(({ branch, kind }) => `${kind} ${branch}`))).toEqual(
+      new Set(['queue e4/queued']),
+    );
+    state.readBranch = undefined;
+    await vi.advanceTimersByTimeAsync(20_000);
+    expect(writes.taken.size).toBe(0);
+  });
+
+  it('settles a lost change at once when its tab closes, by a read of its own', async () => {
+    const { acts, watch, poller, writes, state } = setup();
+    poller.dequeued = new Later(() => {
+      watch.view = 'GitHub couldn’t be reached';
+      return Promise.reject(LOST);
+    });
+    await acts.confirm((await planned(acts, 260)).key);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(writes.busy(REPO, [260])).toEqual([260]);
+    state.open = false;
+    acts.drop(TAB.id);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(state.reads).toEqual([{ branch: 'e4/queued', kind: 'queue' }]);
+    expect(writes.taken.size).toBe(0);
+  });
+
+  it('gives a lost change’s turn back once its account is gone', async () => {
+    const { acts, watch, poller, writes, state } = setup();
+    poller.dequeued = new Later(() => {
+      watch.view = 'GitHub couldn’t be reached';
+      return Promise.reject(LOST);
+    });
+    await acts.confirm((await planned(acts, 260)).key);
+    await vi.advanceTimersByTimeAsync(0);
+    state.open = false;
+    state.account = false;
+    acts.drop(TAB.id);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(state.reads).toEqual([]);
+    expect(writes.taken.size).toBe(0);
+  });
+
   it('gives the turns back once Lo stops', async () => {
     const { acts, watch, poller, writes } = setup();
     poller.jumped = new Later(() => {
@@ -768,6 +913,18 @@ describe('`a` on a pull request waiting to join', () => {
     poller.offline = true;
     expect(await acts.autoMergeOff(TAB.id, 258)).toMatchObject({
       why: 'Offline. Change the queue once you’re back.',
+    });
+    expect(poller.sent).toEqual([]);
+  });
+
+  it('turns nothing off when the tab shows another branch by the time those waiting are read', async () => {
+    const { acts, watch, poller } = setup();
+    watch.onWaiting = () => {
+      watch.branch = 'main';
+    };
+    expect(await acts.autoMergeOff(TAB.id, 258)).toEqual({
+      kind: 'refused',
+      why: 'The merge queue’s tab changed. Turn off auto-merge from it again.',
     });
     expect(poller.sent).toEqual([]);
   });

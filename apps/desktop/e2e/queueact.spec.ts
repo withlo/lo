@@ -2,8 +2,8 @@
 // 9 of `testing/fixtures/merge.sh`'s pull requests in rozed-dev/e2e, as recorded from the app with
 // writes while two of them were in `e4/queued`'s queue (`app_queue_act`). `J` on the second moves
 // it to the front and `x` on the first takes it out, each once its confirmation says what it does
-// and `⏎` confirms it. An account below admin isn't offered `J`, which GitHub lets only admins do
-// (`app_queue_act_writer`).
+// and `⏎` confirms it; the first, at the front, has nowhere to move. An account below admin isn't
+// offered `J`, which GitHub lets only admins do (`app_queue_act_writer`).
 
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -124,6 +124,10 @@ test('`J` moves a pull request to the front of the queue, and `x` takes one out,
   // GitHub listed the move in its queue two reads after it, which Lo makes every 20 s.
   test.setTimeout(120_000);
   await openQueue(page);
+  // The front entry has nowhere to move.
+  const front = queue(page).locator(`[data-key="${first}"]`);
+  await expect(front.getByRole('button', { name: /Remove/ })).toBeVisible();
+  await expect(front.getByRole('button', { name: /To the front/ })).toHaveCount(0);
   await focus(page, second);
   const row = queue(page).locator(`[data-key="${second}"]`);
   await expect(row.getByRole('button', { name: /To the front/ })).toBeVisible();
@@ -138,7 +142,7 @@ test('`J` moves a pull request to the front of the queue, and `x` takes one out,
   await expect(dialog(page)).toContainText('rozed-bot');
   await expect(dialog(page)).toContainText('2nd');
   await expect(dialog(page)).toContainText(
-    'It leaves the queue and joins again at the front, so it’s tested again from the start.',
+    'It leaves the queue and joins again at the front, so GitHub tests it, and the entries tested with it, again from the start.',
   );
   await page.keyboard.press('Enter');
   await expect(

@@ -119,8 +119,7 @@ export function effectsOf(plan: ActPlan): string[] {
           ];
     case 'jump':
       return [
-        ...(plan.position === 1 ? [`#${plan.number} is at the front already.`] : []),
-        'It leaves the queue and joins again at the front, so it’s tested again from the start.',
+        'It leaves the queue and joins again at the front, so GitHub tests it, and the entries tested with it, again from the start.',
       ];
     default:
       plan.kind satisfies never;
@@ -207,7 +206,18 @@ export function actOn(asked: ActKind, row: Row, read: QueueRead | undefined): tr
   if (asked === 'jump' && (read?.kind !== 'queue' || !read.admin)) {
     return 'GitHub lets only the repository’s admins move a pull request to the front of the merge queue.';
   }
+  if (asked === 'jump' && atFront(read, row.number)) {
+    return `#${row.number} is at the front of the merge queue already.`;
+  }
   return true;
+}
+
+/** Whether pull request `number` is the front entry of a queue Lo read as `read`. */
+export function atFront(read: QueueRead | undefined, number: number): boolean {
+  return (
+    read?.kind === 'queue' &&
+    read.entries.some((each) => each.number === number && each.position <= 1)
+  );
 }
 
 /** Why `x` or `J` can't act on the row `target` names, as `asked`, or `true`. */
@@ -219,14 +229,16 @@ export function canAct(asked: ActKind, target: RowTarget): true | string {
 
 /**
  * Whether the right-click menu of a row of the queue's table drawn now offers `J`: only on the
- * queue's entries, and only to the repository's admins.
+ * queue's entries behind the front one, and only to the repository's admins.
  */
 export function offersJump(target: RowTarget | NoTarget): boolean {
   const tab = drawnQueue();
   if (target.kind !== 'row' || tab === undefined) return false;
   const row = rowsIn(tab).find((each) => each.key === target.row);
   const read = queueOf(tab)?.read;
-  return row?.kind === 'entry' && read?.kind === 'queue' && read.admin;
+  return (
+    row?.kind === 'entry' && read?.kind === 'queue' && read.admin && !atFront(read, row.number)
+  );
 }
 
 /**

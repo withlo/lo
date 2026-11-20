@@ -15,7 +15,7 @@ import type { QueueTab } from '../../tab/contract.ts';
 import type { Entry, QueueRead, QueueState } from '../contract.ts';
 import feature from './index.ts';
 import { QueueTabView } from './QueueTabView.tsx';
-import { forgetQueue, showQueue } from './store.ts';
+import { focusedRows, forgetQueue, showQueue } from './store.ts';
 
 const TAB: QueueTab = {
   id: 'q',
@@ -269,15 +269,16 @@ describe('a row’s right-click menu', () => {
   it('lists the queue’s commands on the queue’s own rows', () => {
     act(() => showQueue(stateOf(QUEUE)));
     render();
-    expect(listed('queued-150')).toEqual([
+    expect(listed('queued-151')).toEqual([
       'queue.open',
       'queue.remove',
       'queue.jump',
       'queue.autoMerge',
       'queue.openOnGithub',
     ]);
-    // Moving to the front is for entries only.
+    // Moving to the front is for entries behind the front one only.
     const others = ['queue.open', 'queue.remove', 'queue.autoMerge', 'queue.openOnGithub'];
+    expect(listed('queued-150')).toEqual(others);
     expect(listed('waiting-153')).toEqual(others);
     expect(listed('left-154')).toEqual(others);
   });
@@ -285,12 +286,28 @@ describe('a row’s right-click menu', () => {
   it('offers moving to the front only to the repository’s admins', () => {
     act(() => showQueue(stateOf({ ...QUEUE, admin: false })));
     render();
-    expect(listed('queued-150')).toEqual([
+    expect(listed('queued-151')).toEqual([
       'queue.open',
       'queue.remove',
       'queue.autoMerge',
       'queue.openOnGithub',
     ]);
+  });
+
+  it('offers no button to move the front entry to the front, only one behind it', () => {
+    act(() => showQueue(stateOf(QUEUE)));
+    const host = render();
+    const buttons = (key: string) =>
+      [...(host.querySelector(`[data-key="${key}"]`)?.querySelectorAll('button') ?? [])].map(
+        (button) => button.textContent,
+      );
+    act(() => focusedRows.set(TAB.id, 'queued-150'));
+    onTestFinished(() => focusedRows.set(TAB.id, undefined));
+    expect(buttons('queued-150').join()).toContain('Remove');
+    expect(buttons('queued-150').join()).not.toContain('To the front');
+    act(() => focusedRows.set(TAB.id, 'queued-151'));
+    expect(buttons('queued-151').join()).toContain('To the front');
+    expect(buttons('queued-151').join()).toContain('Remove');
   });
 
   it('lists none of them on another list’s rows, as a pull request’s timeline’s', () => {

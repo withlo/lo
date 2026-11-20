@@ -11,10 +11,13 @@
 // Each change takes the turns of the pull requests it changes among merge writes, app-wide, which
 // the merge feature hands out (`merge.writes`), so it never races a merge, an auto-merge change or
 // another change to the queue of the same pull request. A change whose answer was lost holds them
-// until a read of the queue made after it answers, which shows what GitHub did; it's never sent
-// again by itself. Before it's sent, a GitHub stack's layer above its bottom one isn't taken out,
-// since GitHub takes a stack out from its bottom layer, and a layer of a stack with other open
-// layers isn't moved, since GitHub queues a stack's layers in order.
+// until a read of the branch it changed, made after it, answers, which shows what GitHub did: the
+// tab's own read while it shows that branch, else one of its own, at once when the tab closes or
+// moves on. It's never sent again by itself. Before it's sent, a GitHub stack's layer above its
+// bottom one isn't taken out, since GitHub takes a stack out from its bottom layer, and a layer of a
+// stack with other open layers isn't moved, since GitHub queues a stack's layers in order. Nor is
+// the entry at the front: moving it gains nothing, and GitHub tests it, and those tested with it,
+// again from the start.
 //
 // `a` on a pull request waiting to join turns its auto-merge off at once, asking nothing, since
 // that merges nothing, in its turn too. Nothing here calls Electron.
@@ -82,6 +85,12 @@ export interface QueueActsOptions {
   readonly writes: MergeWrites;
   /** The conversion to a GitHub stack changing `repo`'s base branches, if one is. */
   readonly converting: (repo: RepoRef) => Converting | undefined;
+  /**
+   * Reads `branch`'s merge queue, or those waiting to join it, in `on`'s repository as its account,
+   * apart from any tab: what settles a change once its tab closed or shows another branch. Throws
+   * when it can't.
+   */
+  readonly readBranch: (on: ActOn, branch: string, kind: SettleKind) => Promise<void>;
   readonly log: (line: string) => void;
   /** The time, in milliseconds since the Unix epoch. */
   readonly now?: () => number;
@@ -98,10 +107,27 @@ interface Kept {
   readonly layers: readonly number[];
 }
 
+/** The repository and account a change was made in, as a tab names them. */
+export type ActOn = Pick<QueueTab, 'owner' | 'repo' | 'login'>;
+
+/** What a read that settles a change reads: the queue, or those waiting to join it. */
+export type SettleKind = 'queue' | 'waiting';
+
 /** A change whose answer was lost, holding its pull requests' turns until a read shows what it did. */
 interface Unsettled {
+  /** The tab it was made from. */
   readonly id: string;
+  readonly on: ActOn;
+  /** The branch whose queue it changed. */
+  readonly branch: string;
+  readonly kind: SettleKind;
+  /** When it ended: a read made after then settles it. */
+  readonly endedAt: number;
   readonly turn: MergeTurn;
+  /** Ends the wait before the next read, while it waits. */
+  wake: (() => void) | undefined;
+  /** Its tab closed or moved on while it read: the next read comes without a wait. */
+  nudged: boolean;
 }
 
 function describe(error: unknown): string {
@@ -186,9 +212,9 @@ function notAdmin(login: string): string {
   return `GitHub lets only the repository’s admins move a pull request to the front of the merge queue, and ${login} isn’t one.`;
 }
 
-/** Waits `ms`. */
-function pause(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+/** Why the entry of pull request `number`, at the front, isn't moved there. */
+function atFront(number: number): string {
+  return `#${number} is at the front of the merge queue already.`;
 }
 
 export class QueueActs {
@@ -330,7 +356,7 @@ export class QueueActs {
         turn.give();
         return refused(`${sentence(error.message)} Nothing was sent.`);
       }
-      this.#settle(id, 'waiting', endedAt, turn);
+      this.#settle({ id, on: tab, branch, kind: 'waiting', endedAt }, turn);
       return {
         kind: 'unknown',
         why: `Lo can’t tell whether auto-merge is off for #${number}: ${this.#lost(error)} Lo reads the pull requests waiting to join again, which shows whether it is, and sends nothing again.`,
@@ -355,7 +381,7 @@ export class QueueActs {
       this.#refresh(id, endedAt);
       return { kind: 'autoMergeOff' };
     }
-    this.#settle(id, 'waiting', endedAt, turn);
+    this.#settle({ id, on: tab, branch, kind: 'waiting', endedAt }, turn);
     return {
       kind: 'unknown',
       why: `GitHub answered, but not with auto-merge off for #${number}. Lo reads the pull requests waiting to join again, which shows whether it is.`,
@@ -373,10 +399,18 @@ export class QueueActs {
     }
   }
 
-  /** Merge queue tab `id` closed, or its account went: its question is dropped. */
+  /**
+   * Merge queue tab `id` closed, shows another branch, or its account went: its question is
+   * dropped, and a change from it whose answer was lost is read again at once, apart from the tab.
+   */
   drop(id: string): void {
     for (const [key, kept] of this.#kept) {
       if (kept.plan.id === id) this.#kept.delete(key);
+    }
+    for (const unsettled of this.#unsettled) {
+      if (unsettled.id !== id) continue;
+      if (unsettled.wake) unsettled.wake();
+      else unsettled.nudged = true;
     }
   }
 
@@ -385,7 +419,10 @@ export class QueueActs {
     this.#stopped = true;
     this.#kept.clear();
     for (const checking of this.#checking.values()) checking.abort();
-    for (const unsettled of this.#unsettled) unsettled.turn.give();
+    for (const unsettled of this.#unsettled) {
+      unsettled.turn.give();
+      unsettled.wake?.();
+    }
     this.#unsettled.clear();
   }
 
@@ -428,6 +465,7 @@ export class QueueActs {
     const pull = entry?.pullRequest;
     if (!entry || !pull) return unlisted(view, number);
     if (kind === 'jump' && view.viewerPermission !== 'ADMIN') return notAdmin(tab.login);
+    if (kind === 'jump' && entry.position <= 1) return atFront(number);
     if (!isFullSha(pull.head)) return `Lo hasn’t read #${number}’s head.`;
     const repo = new RepoRef(tab.owner, tab.repo);
     // Its GitHub stack as GitHub has it now, which decides what leaves with it.
@@ -531,6 +569,7 @@ export class QueueActs {
     if (plan.kind === 'jump' && view.viewerPermission !== 'ADMIN') {
       return refused(notAdmin(plan.login));
     }
+    if (plan.kind === 'jump' && entry.position <= 1) return refused(atFront(plan.number));
     if (plan.kind === 'remove') {
       const above = aboveIn(view, kept.layers.slice(1));
       if (!same(above, plan.above)) {
@@ -578,7 +617,7 @@ export class QueueActs {
         turn.give();
         return refused(`${sentence(error.message)} Nothing was sent.`);
       }
-      this.#settle(plan.id, 'queue', endedAt, turn);
+      this.#settle(this.#changeOf(plan, endedAt), turn);
       const lost = this.#lost(error);
       return {
         kind: 'unknown',
@@ -620,7 +659,7 @@ export class QueueActs {
             why: `${out}, then Lo couldn’t add it back: ${sentence(error.message)} It’s out of the queue. Add it again from its merge panel.`,
           });
         }
-        this.#settle(plan.id, 'queue', endedAt, turn);
+        this.#settle(this.#changeOf(plan, endedAt), turn);
         return {
           kind: 'unknown',
           why: `${out}, and Lo can’t tell whether it added it back: ${sentence(error.message)} It may be out. Lo reads the queue again, which shows it, and sends nothing again.`,
@@ -655,30 +694,25 @@ export class QueueActs {
     void found.watch.freshWaiting(0, endedAt);
   }
 
+  /** What a change to the queue `plan` names, which ended at `endedAt`, is settled by reading. */
+  #changeOf(plan: ActPlan, endedAt: number): Omit<Unsettled, 'turn' | 'wake' | 'nudged'> {
+    return { id: plan.id, on: plan, branch: plan.branch, kind: 'queue', endedAt };
+  }
+
   /**
-   * Holds `turn` for a change from tab `id` that ended at `endedAt` and whose answer was lost, until
-   * a read of what it changed (`kind`), made after then, answers; read now, and again while they
-   * fail, waiting longer each time. The turn goes back once the tab closes, or Lo stops.
+   * Holds `turn` for `change`, whose answer was lost, until a read of what it changed, of the branch
+   * it changed, made after it ended, answers; read now, and again while they fail, waiting longer
+   * each time, but not once its tab closes or moves on. The turn goes back once a read answers, its
+   * account is gone, or Lo stops.
    */
-  #settle(id: string, kind: 'queue' | 'waiting', endedAt: number, turn: MergeTurn): void {
-    const unsettled: Unsettled = { id, turn };
+  #settle(change: Omit<Unsettled, 'turn' | 'wake' | 'nudged'>, turn: MergeTurn): void {
+    const unsettled: Unsettled = { ...change, turn, wake: undefined, nudged: false };
     this.#unsettled.add(unsettled);
     void (async () => {
       let wait = SETTLE_AGAIN;
-      for (;;) {
-        if (this.#stopped || !this.#unsettled.has(unsettled)) break;
-        const found = this.#options.tab(id);
-        if (!found) break;
-        const read =
-          kind === 'queue'
-            ? await found.watch.fresh(0, endedAt)
-            : await found.watch.freshWaiting(0, endedAt);
-        if (typeof read !== 'string') {
-          // Those waiting say whether auto-merge is off; the queue, whether it joined.
-          if (kind === 'waiting') void found.watch.fresh(0, endedAt);
-          break;
-        }
-        await pause(wait);
+      while (!this.#stopped && this.#unsettled.has(unsettled)) {
+        if (await this.#settled(unsettled)) break;
+        await this.#rest(unsettled, wait);
         wait = Math.min(wait * 2, SETTLE_MOST);
       }
       this.#unsettled.delete(unsettled);
@@ -687,6 +721,57 @@ export class QueueActs {
       this.#options.log(`settling a change to a merge queue: ${describe(error)}`);
       this.#unsettled.delete(unsettled);
       turn.give();
+    });
+  }
+
+  /**
+   * Reads what `unsettled` changed, of the branch it changed, and says whether that settles it: the
+   * tab's own read while the tab shows that branch, else one apart from the tab; or none, once the
+   * account it was made as is gone.
+   */
+  async #settled(unsettled: Unsettled): Promise<boolean> {
+    const { id, on, branch, kind, endedAt } = unsettled;
+    const found = this.#options.tab(id);
+    if (found && found.watch.branch === branch && found.watch.away === undefined) {
+      // A read the tab finishes on another branch answers as a failure.
+      const read =
+        kind === 'queue'
+          ? await found.watch.fresh(0, endedAt)
+          : await found.watch.freshWaiting(0, endedAt);
+      if (typeof read === 'string') return false;
+      // Those waiting say whether auto-merge is off; the queue, whether it joined.
+      if (kind === 'waiting') void found.watch.fresh(0, endedAt);
+      return true;
+    }
+    try {
+      await this.#options.poller(on.login);
+    } catch {
+      // The account is gone: nothing it sends can follow, and nothing it reads can settle it.
+      return true;
+    }
+    try {
+      await this.#options.readBranch(on, branch, kind);
+      return true;
+    } catch (error) {
+      this.#options.log(`settling a change to ${branch}’s merge queue: ${describe(error)}`);
+      return false;
+    }
+  }
+
+  /** Waits `ms` before `unsettled` is read again, or less, once its tab closes or moves on. */
+  #rest(unsettled: Unsettled, ms: number): Promise<void> {
+    if (unsettled.nudged) {
+      unsettled.nudged = false;
+      return Promise.resolve();
+    }
+    return new Promise((resolve) => {
+      const done = () => {
+        clearTimeout(timer);
+        unsettled.wake = undefined;
+        resolve();
+      };
+      const timer = setTimeout(done, ms);
+      unsettled.wake = done;
     });
   }
 }

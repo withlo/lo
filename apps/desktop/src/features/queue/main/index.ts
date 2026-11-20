@@ -96,6 +96,13 @@ export default defineFeature(contract, {
       poller: (login) => access.poller(login),
       writes: context.use(writes),
       converting: (repo) => stacks.converting(repo),
+      readBranch: async (on, branch, kind) => {
+        const repo = new RepoRef(on.owner, on.repo);
+        const poller = await access.poller(on.login);
+        await (kind === 'queue'
+          ? poller.readOnce((client) => queueView(client, repo, branch))
+          : poller.readOnce((client) => queueWaiting(client, repo, branch)));
+      },
       log: (line) => console.error(`queue: ${line}`),
     });
     shown.start();

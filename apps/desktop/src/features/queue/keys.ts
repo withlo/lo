@@ -57,7 +57,8 @@ export default defineCommands(
     },
     /**
      * Moves the entry the keyboard is on to the front of the queue, once confirmed: GitHub takes it
-     * out and adds it again at the front. Only for the repository's admins.
+     * out and adds it again at the front. Only for the repository's admins, and not for the entry
+     * at the front.
      */
     jump: {
       label: 'Move to the front of the queue',

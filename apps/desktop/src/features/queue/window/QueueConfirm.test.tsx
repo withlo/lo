@@ -18,6 +18,7 @@ import {
   actOn,
   autoMergeOn,
   canAct,
+  closedQueue,
   doneLine,
   dropWhy,
   effectsOf,
@@ -183,13 +184,10 @@ describe('the question', () => {
     expect(box.textContent).toContain('Remove from the queue');
   });
 
-  it('says moving to the front tests it again from the start', () => {
+  it('says moving to the front tests it, and those tested with it, again from the start', () => {
     expect(effectsOf(planOf({ kind: 'jump' }))).toEqual([
-      'It leaves the queue and joins again at the front, so it’s tested again from the start.',
+      'It leaves the queue and joins again at the front, so GitHub tests it, and the entries tested with it, again from the start.',
     ]);
-    expect(effectsOf(planOf({ kind: 'jump', position: 1 }))[0]).toBe(
-      '#260 is at the front already.',
-    );
     expect(doneLine(planOf({ kind: 'jump' }), { kind: 'moved', position: 1 })).toBe(
       'Moved #260 to the front of the merge queue for e4/queued',
     );
@@ -286,6 +284,28 @@ describe('confirming', () => {
     expect(confirms()).toBe(1);
   });
 
+  it('confirms nothing on a double click’s second click, which lands on what came up in its place', async () => {
+    draw(<QueueConfirm />);
+    act(() =>
+      acting.setState({
+        dialog: { kind: 'confirm', plan: planOf(), note: undefined, sending: false },
+      }),
+    );
+    await until(() => dialog() !== null);
+    const button = [...dialog()!.querySelectorAll('button')].find((each) =>
+      each.textContent?.includes('Remove from the queue'),
+    );
+    act(() => {
+      button!.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 2 }));
+    });
+    expect(confirms()).toBe(0);
+    act(() => {
+      button!.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 }));
+    });
+    await until(() => acting.getState().dialog === undefined);
+    expect(confirms()).toBe(1);
+  });
+
   it('forgets the question on `Esc` before it’s confirmed', async () => {
     const plan = planOf();
     draw(<QueueConfirm />);
@@ -332,6 +352,20 @@ describe('a question that no longer stands', () => {
     expect(dropWhy(plan, undefined)).toBe('The merge queue’s tab is closed.');
   });
 
+  it('closes with its tab, and main forgets it, but not with another tab', async () => {
+    const plan = planOf();
+    draw(<QueueConfirm />);
+    act(() =>
+      acting.setState({ dialog: { kind: 'confirm', plan, note: undefined, sending: false } }),
+    );
+    await until(() => dialog() !== null);
+    act(() => closedQueue('other'));
+    expect(acting.getState().dialog).toMatchObject({ kind: 'confirm' });
+    act(() => closedQueue('q'));
+    expect(acting.getState().dialog).toBeUndefined();
+    expect(bridge.calls).toContainEqual(['queue.cancel', { key: plan.key }]);
+  });
+
   it('closes the dialog and says why, and main forgets it', async () => {
     const plan = planOf();
     draw(<QueueConfirm />);
@@ -350,22 +384,28 @@ describe('a question that no longer stands', () => {
 });
 
 describe('what each key acts on', () => {
-  const read = stateOf([entry(1, 259)]).read;
+  const read = stateOf([entry(1, 259), entry(2, 260)]).read;
   const entryRow = { key: 'queued-259', kind: 'entry', number: 259, url: '' } as const;
+  const behindRow = { key: 'queued-260', kind: 'entry', number: 260, url: '' } as const;
   const waitingRow = { key: 'waiting-258', kind: 'waiting', number: 258, url: '' } as const;
   const leftRow = { key: 'left-261', kind: 'left', number: 261, url: '' } as const;
 
   it('takes out and moves only entries in the queue, and moves them only for an admin', () => {
     expect(actOn('remove', entryRow, read)).toBe(true);
-    expect(actOn('jump', entryRow, read)).toBe(true);
+    expect(actOn('jump', behindRow, read)).toBe(true);
     if (read.kind !== 'queue') throw new Error('expected a queue');
-    expect(actOn('jump', entryRow, { ...read, admin: false })).toBe(
+    expect(actOn('jump', behindRow, { ...read, admin: false })).toBe(
       'GitHub lets only the repository’s admins move a pull request to the front of the merge queue.',
     );
     expect(actOn('remove', waitingRow, read)).toBe(
       '#258 isn’t in the queue yet: it joins once it’s ready, with auto-merge on.',
     );
     expect(actOn('jump', leftRow, read)).toBe('#261 isn’t in the queue any more.');
+  });
+
+  it('doesn’t move the front entry to the front', () => {
+    expect(actOn('jump', entryRow, read)).toBe('#259 is at the front of the merge queue already.');
+    expect(actOn('remove', entryRow, read)).toBe(true);
   });
 
   it('turns auto-merge off for one waiting, on for one that left, and says one queued is queued', () => {

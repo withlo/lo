@@ -107,17 +107,17 @@ function target(key: string): { kind: 'row'; row: string } {
 
 /**
  * The queue's entries, with what can be done to the one the keyboard is on, `focused`: its move to
- * the front, for an `admin`, and its removal.
+ * the front, for an `admin`, unless it's there already, and its removal.
  */
 function withEntryActions(
   items: readonly QueueItem[],
   focused: string | undefined,
   admin: boolean,
 ): QueueItem[] {
-  const actions = (key: string): ReactNode =>
+  const actions = ({ key, position }: { key: string; position: number }): ReactNode =>
     key !== focused ? undefined : (
       <>
-        {admin && (
+        {admin && position > 1 && (
           <RowButton id="queue.jump" run={() => act('jump', target(key))}>
             To the front
           </RowButton>
@@ -129,14 +129,14 @@ function withEntryActions(
     );
   return items.map((item) =>
     item.kind === 'entry'
-      ? { kind: 'entry', entry: { ...item.entry, actions: actions(item.entry.key) } }
+      ? { kind: 'entry', entry: { ...item.entry, actions: actions(item.entry) } }
       : {
           kind: 'group',
           group: {
             ...item.group,
             entries: item.group.entries.map((entry) => ({
               ...entry,
-              actions: actions(entry.key),
+              actions: actions(entry),
             })),
           },
         },

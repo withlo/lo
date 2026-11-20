@@ -62,15 +62,17 @@ function waitingOf(branch: string): QueueWaiting {
 /** A source that answers at once, counting what it's asked, and fails while `failing` is set. */
 function fakeSource(options: { list?: OpenPullRequestList; rules?: TrunkRuleList } = {}) {
   const asked: string[] = [];
-  const state = { failing: false, total: 3 };
+  const state = { failing: false, total: 3, delay: 0 };
   const source: QueueSource = {
     async view(branch) {
       asked.push(`view ${branch}`);
+      if (state.delay > 0) await new Promise((resolve) => setTimeout(resolve, state.delay));
       if (state.failing) throw new Error('GitHub couldn’t be reached.');
       return viewOf(branch, branch === 'main' ? state.total : 1);
     },
     async waiting(branch) {
       asked.push(`waiting ${branch}`);
+      if (state.delay > 0) await new Promise((resolve) => setTimeout(resolve, state.delay));
       if (state.failing) throw new Error('GitHub couldn’t be reached.');
       return waitingOf(branch);
     },
@@ -630,6 +632,27 @@ describe('what a change to the queue acts on', () => {
     await vi.advanceTimersByTimeAsync(1_000);
     expect(await watch.freshWaiting(40_000, 1_000_500)).toMatchObject({ branch: 'main' });
     expect(asked).toEqual(['waiting main', 'waiting main']);
+  });
+
+  it('takes the one read it waited for, however long it took, and reads again only after an older one', async () => {
+    const { source, asked, state } = fakeSource();
+    const { watch } = watchOf(source);
+    state.delay = 2_000;
+    const queue = watch.fresh(0, 999_000);
+    const waiting = watch.freshWaiting(0, 999_000);
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(await queue).toMatchObject({ branch: 'main' });
+    expect(await waiting).toMatchObject({ branch: 'main' });
+    expect(asked).toEqual(['view main', 'waiting main']);
+    // One under way, asked for before the change it follows ended: waited for, then one more.
+    asked.length = 0;
+    const first = watch.fresh(0);
+    await vi.advanceTimersByTimeAsync(1_000);
+    const second = watch.fresh(0, 1_005_500);
+    await vi.advanceTimersByTimeAsync(5_000);
+    await first;
+    expect(await second).toMatchObject({ branch: 'main' });
+    expect(asked).toEqual(['view main', 'view main']);
   });
 
   it('says so when the tab shows another branch by the time the read answers', async () => {
