@@ -83,6 +83,15 @@ installed() {
       fail "AppArmor runs, and $PROFILE isn't Lo's profile"
     as_root cat /sys/kernel/security/apparmor/profiles | grep -qxF 'lo (unconfined)' ||
       fail "AppArmor runs, and Lo's profile isn't loaded"
+    restricted=$(cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns 2> /dev/null) ||
+      restricted=
+    if [ "$restricted" = 1 ]; then
+      echo "AppArmor runs, and stops unprivileged user namespaces but for profiles such as Lo's."
+    else
+      echo "AppArmor runs, and lets any program make user namespaces. Lo's profile is loaded."
+    fi
+  else
+    echo "AppArmor doesn't run here, so Lo has no profile."
   fi
   missing=$(ldd "$PROGRAM" | grep 'not found' || true)
   [ -z "$missing" ] || fail "$PROGRAM needs libraries the package's dependencies didn't bring: $missing"
