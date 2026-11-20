@@ -774,6 +774,9 @@ describe('Lo’s own servers', () => {
     expect(serverEnvironment({ ...spec, roots: [spec.root] })).toEqual({
       ...toolchainUse('dotnet', '10.0.404', DOTNET, 'darwin').variables,
       DOTNET_GCHeapHardLimit: DOTNET_HEAP,
+      // No project data borrowed from a repository above its project; and, with no
+      // `COPILOT_TELEMETRY_LEVEL`, no telemetry.
+      DOTNET_PROJECTDATA_DONOR_ENABLED: '0',
       GIT_CONFIG_COUNT: '0',
       HOME: '/home/lo',
       TMPDIR: '/home/lo/tmp',

@@ -32,6 +32,11 @@ export interface Tools {
   readonly folder: string;
   /** Says what's happening, a line at a time. */
   readonly log: (line: string) => void;
+  /**
+   * What the manifest pins for it now, if anything: what a platform its vendor hasn't published
+   * the version for yet keeps, where its source allows that.
+   */
+  readonly pinned?: Pinned | undefined;
 }
 
 /** Records `version` of something, checked, as the manifest's entry for it. */
@@ -85,7 +90,7 @@ const RUST_ANALYZER_TARGETS: Record<Platform, string> = {
 };
 
 /** What `pin.ts` reads of a GitHub release: each asset's name, its address, and its digest. */
-const GITHUB_RELEASE = z.object({
+export const GITHUB_RELEASE = z.object({
   assets: z.array(
     z.object({
       name: z.string(),

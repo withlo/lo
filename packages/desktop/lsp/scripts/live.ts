@@ -62,6 +62,7 @@ import { z } from 'zod';
 
 import {
   checkoutProblem,
+  currentPlatform,
   developerFolder,
   findCopy,
   findSourceKit,
@@ -96,6 +97,7 @@ import {
   TOOLCHAINS,
   toolchainUse,
   type ToolchainUse,
+  versionFor,
   VTSLS,
 } from '../src/index.ts';
 import { askServer, type Place } from './ask.ts';
@@ -869,8 +871,10 @@ async function toolchain(id: string): Promise<Toolchain> {
   const pinned = TOOLCHAINS[id];
   if (pinned === undefined) throw new Error(`toolchains.json has no ${id}`);
   const installed = await toolchainInstaller.install(id, pinned);
-  const use = toolchainUse(id, pinned.version, installed);
-  return { id, version: pinned.version, installed, use };
+  const platform = currentPlatform();
+  const version = platform === undefined ? pinned.version : versionFor(pinned, platform);
+  const use = toolchainUse(id, version, installed);
+  return { id, version, installed, use };
 }
 
 const asked = process.argv.slice(2);

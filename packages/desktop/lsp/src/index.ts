@@ -83,6 +83,7 @@ export {
   partsOf,
   PLATFORMS,
   TOOLCHAINS,
+  versionFor,
   type Download,
   type Manifest,
   type Part,

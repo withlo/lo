@@ -438,6 +438,31 @@ test('pruning removes other versions and half-done downloads, but not one in use
   expect(existsSync(installed.entry)).toBe(true);
 });
 
+test('a platform pinned at a version of its own installs and keeps that version', async () => {
+  const { installer, folder } = await setUp({ [URL]: { body: ARCHIVE } }, undefined, {
+    platform: 'darwin-x64',
+  });
+  const download = {
+    kind: 'tar.gz' as const,
+    url: URL,
+    size: ARCHIVE.length,
+    sha256: sha256(ARCHIVE),
+    entry: 'server/bin/server',
+  };
+  // The vendor has 1.1.0 out for Linux only, so this Mac stays on 1.0.0.
+  const behind: Pinned = {
+    version: '1.1.0',
+    hosts: PINNED.hosts,
+    platforms: { 'darwin-x64': { ...download, version: '1.0.0' }, 'linux-x64': download },
+  };
+  const installed = await installer.install('jdk', behind);
+  expect(installed.folder).toBe(join(folder, 'jdk', '1.0.0', 'files'));
+  expect(await installer.installed('jdk', behind)).toEqual(installed);
+  mkdirSync(join(folder, 'jdk', '1.1.0'));
+  await installer.prune({ jdk: behind });
+  expect(readdirSync(join(folder, 'jdk'))).toEqual(['1.0.0']);
+});
+
 /** A layer of rust-installer's, its component's files in `<package>/<component>/`. */
 function layer(component: string, path: string, data: string): Buffer {
   return tarGz([

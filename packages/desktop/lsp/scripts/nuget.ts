@@ -1,7 +1,6 @@
-// A package from nuget.org, as `pin.ts` checks one before recording its hash: a `.nupkg` for each
-// platform, from the registry's own host. Each must be
+// A NuGet package, as `pin.ts` checks one before recording its hash: a `.nupkg` for each
+// platform, which must be
 //
-// - the file nuget.org's catalog lists, by its SHA-512;
 // - signed by its author, the one `signer` names, with a certificate that chains to one of
 //   `roots`, a root pinned here by its SHA-256, and that was good when a timestamp authority, whose
 //   own certificate chains to one of `roots` too, says the package was signed;
@@ -9,28 +8,18 @@
 //   package but its own file, `.signature.p7s`, as NuGet hashes it.
 //
 // NuGet's package signatures are CMS (RFC 5652) in a file of the package itself, with the
-// timestamp (RFC 3161) as an unsigned attribute of the author's signature. nuget.org adds its own
-// signature as a countersignature, which isn't checked: the author's is the one that says who made
-// the package. Each certificate is read by Node's `X509Certificate`, and the rest of the CMS by a
-// reader of DER here, which takes only DER's definite lengths.
+// timestamp (RFC 3161) as an unsigned attribute of the author's signature. A registry may add its
+// own signature as a countersignature, which isn't checked: the author's is the one that says who
+// made the package. Each certificate is read by Node's `X509Certificate`, and the rest of the CMS
+// by a reader of DER here, which takes only DER's definite lengths. Where its packages come from
+// is the source's: Roslyn's, as the C# extension for VS Code gets them, are in csharp.ts.
 
 import { createHash, verify, X509Certificate } from 'node:crypto';
 import { mkdir, mkdtemp, readFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 
-import { z } from 'zod';
-
-import {
-  type Download,
-  type Pinned,
-  type Platform,
-  PLATFORMS,
-  unpackMeasured,
-} from '../src/index.ts';
-import { fetchJson, fetchPart, type Source } from './sources.ts';
-
-/** nuget.org's host, which serves both what it lists and the packages. */
-const HOSTS = ['api.nuget.org'];
+import { type Download, unpackMeasured } from '../src/index.ts';
+import { fetchPart, type Tools } from './sources.ts';
 
 /** Who must have signed a package, and the roots its certificate, and its timestamp's, chain to. */
 export interface Signer {
@@ -50,67 +39,33 @@ export interface Signer {
  */
 export const DIGICERT_G4 = 'Wd8xe/qfTwq3ylFNd3IpaqLHZbh2ZNCLluVzmeNkcpw=';
 
-/** What nuget.org's catalog says of a version of a package. */
-const CATALOG_ENTRY = z.object({
-  id: z.string(),
-  version: z.string(),
-  packageHash: z.string(),
-  packageHashAlgorithm: z.literal('SHA512'),
-});
-
-/** What nuget.org's registration says of a version of a package: where its catalog entry is. */
-const REGISTRATION = z.object({ catalogEntry: z.string() });
-
 /**
- * A package for each platform from nuget.org: `packages` names each platform's package, and
- * `entry` the file the server starts from in it, signed by `signer`.
+ * The package at `url`, `name` in what it says, downloaded from `hosts` as Lo would, signed by
+ * `signer`, recorded as a download with `entry` inside and what it unpacks to.
  */
-export function nuget(
-  packages: Readonly<Record<Platform, string>>,
-  entry: (platform: Platform) => string,
+export async function checkedPackage(
+  url: string,
+  hosts: readonly string[],
+  name: string,
+  entry: string,
   signer: Signer,
-): Source {
-  return async (version, tools) => {
-    if (!/^\d+\.\d+\.\d+$/.test(version)) throw new Error(`${version} isn’t a stable version`);
-    const platforms: Partial<Record<Platform, Download>> = {};
-    for (const platform of PLATFORMS) {
-      const id = packages[platform].toLowerCase();
-      const registration = await fetchJson(
-        `https://api.nuget.org/v3/registration5-semver1/${id}/${version}.json`,
-        REGISTRATION,
-        HOSTS,
-        tools,
-      );
-      const catalog = await fetchJson(registration.catalogEntry, CATALOG_ENTRY, HOSTS, tools);
-      if (catalog.id.toLowerCase() !== id || catalog.version !== version) {
-        throw new Error(`nuget.org’s catalog lists ${catalog.id} ${catalog.version}, not ${id}`);
-      }
-      const url = `https://api.nuget.org/v3-flatcontainer/${id}/${version}/${id}.${version}.nupkg`;
-      const folder = await mkdtemp(join(tools.folder, 'nuget-'));
-      try {
-        const inside = { ...tools, folder };
-        const { part, file } = await fetchPart(url, HOSTS, inside);
-        const data = await readFile(file);
-        if (createHash('sha512').update(data).digest('base64') !== catalog.packageHash) {
-          throw new Error(`${id} ${version} isn’t the package nuget.org’s catalog lists`);
-        }
-        const signed = verifyPackage(data, signer);
-        tools.log(
-          `${id} ${version} is signed by ${signed.subject}, at ${signed.at.toISOString()}.`,
-        );
-        const download: Download = { kind: 'zip', ...part, entry: entry(platform) };
-        const into = join(await mkdtemp(join(folder, 'unpacked-')), 'files');
-        await mkdir(into);
-        const { bytes } = await unpackMeasured(download, [file], into);
-        tools.log(`It unpacks as Lo would, to ${bytes} bytes, with ${download.entry} inside.`);
-        platforms[platform] = { ...download, unpacked: bytes };
-      } finally {
-        await rm(folder, { recursive: true, force: true });
-      }
-    }
-    const pinned: Pinned = { version, hosts: HOSTS, platforms };
-    return pinned;
-  };
+  tools: Tools,
+): Promise<Download> {
+  const folder = await mkdtemp(join(tools.folder, 'nuget-'));
+  try {
+    const inside = { ...tools, folder };
+    const { part, file } = await fetchPart(url, hosts, inside);
+    const signed = verifyPackage(await readFile(file), signer);
+    tools.log(`${name} is signed by ${signed.subject}, at ${signed.at.toISOString()}.`);
+    const download: Download = { kind: 'zip', ...part, entry };
+    const into = join(await mkdtemp(join(folder, 'unpacked-')), 'files');
+    await mkdir(into);
+    const { bytes } = await unpackMeasured(download, [file], into);
+    tools.log(`It unpacks as Lo would, to ${bytes} bytes, with ${download.entry} inside.`);
+    return { ...download, unpacked: bytes };
+  } finally {
+    await rm(folder, { recursive: true, force: true });
+  }
 }
 
 /** The signature file of a signed package, the last of its entries. */

@@ -537,11 +537,14 @@ toolchain and git's variables each server needs.
   entry for each Linux distribution swift.org builds it for and lists packages for
   (`swift-<distribution>`, `src/swift.ts`), x64 and arm64, each pinned on its own, all to one
   version, and measured within a limit of its own, since it unpacks to about 3.5 GB. Pins are
-  renewed before each release. A server uses only Lo's copy, never the machine's, nor a version its
-  checkout asks for: `toolchainUse` gives it the folder of programs for its `PATH` and the variables
-  that hold the toolchain to Lo's copy (`GOTOOLCHAIN=local`, `GOPROXY=off`, an empty `GOFLAGS`,
-  `GOPACKAGESDRIVER=off`, an empty `RUSTC_WRAPPER`, `JAVA_HOME`, `DOTNET_ROOT`, MSBuild's
-  `DOTNET_MSBUILD_SDK_RESOLVER_*`, and the rest), and the caches it keeps in the server's home.
+  renewed before each release. A platform whose archive of a new version its vendor hasn't published
+  yet keeps the one pinned before, under a `version` of its own that names its folder
+  (`versionFor`), and the next pin moves it; a server is one version everywhere. A server uses only
+  Lo's copy, never the machine's, nor a version its checkout asks for: `toolchainUse` gives it the
+  folder of programs for its `PATH` and the variables that hold the toolchain to Lo's copy
+  (`GOTOOLCHAIN=local`, `GOPROXY=off`, an empty `GOFLAGS`, `GOPACKAGESDRIVER=off`, an empty
+  `RUSTC_WRAPPER`, `JAVA_HOME`, `DOTNET_ROOT`, MSBuild's `DOTNET_MSBUILD_SDK_RESOLVER_*`, and the
+  rest), and the caches it keeps in the server's home.
 - A `global.json` can steer `dotnet` past those variables: since .NET 10 its `sdk.paths` names
   folders to find an SDK in, the checkout's own among them, and the SDK's commands and MSBuild read
   the one nearest where they run. So `dotnet` starts a server only as `dotnet exec`, which reads
@@ -654,15 +657,17 @@ toolchain and git's variables each server needs.
   Java's server would read and write as its project's (the adapter's `checkout`, asked after the
   toolchains' `checkoutProblem`). It finds its folders only as it starts, so it starts again rather
   than moving (`stays`).
-- C#'s server, Roslyn, is a package per platform from nuget.org, which `lsp:pin` takes only signed
-  by Microsoft. It starts as Lo's `dotnet exec` on its own assembly, with the SDK's variables and
-  `DOTNET_GCHeapHardLimit`. It never loads a project of the checkout's, since MSBuild runs what a
-  project and the files above it bring: Lo writes `project/checkout.csproj` in its home, listing the
-  checkout's `.cs` files and importing only the SDK's own files, with no restore, package, analyzer
-  or source generator, sends it that project (`project/open`), and tells it, and runs it in, that
-  folder (the spec's `workspace`), so it never moves with the head and never looks through the
-  checkout. Its settings turn off restores, file-based programs and fetched sources. The adapter's
-  comment says what reaches it and what's lost.
+- C#'s server, Roslyn, is a package per platform at the build the C# extension for VS Code's newest
+  stable release ships, from the feed that extension gets it from, Microsoft's `msft_consumption` on
+  Azure DevOps, which `lsp:pin` takes only signed by Microsoft. It starts as Lo's `dotnet exec` on
+  its own assembly, with the SDK's variables and `DOTNET_GCHeapHardLimit`. It never loads a project
+  of the checkout's, since MSBuild runs what a project and the files above it bring: Lo writes
+  `project/checkout.csproj` in its home, listing the checkout's `.cs` files and importing only the
+  SDK's own files, with no restore, package, analyzer or source generator, sends it that project
+  (`project/open`), and tells it, and runs it in, that folder (the spec's `workspace`), so it never
+  moves with the head and never looks through the checkout. Its settings turn off restores,
+  file-based programs and fetched sources. The adapter's comment says what reaches it and what's
+  lost.
 - Swift's server on macOS, SourceKit-LSP, is the one Lo doesn't download: it comes with Xcode and
   with Apple's Command Line Tools, and Lo runs the copy in the developer folder that
   `/usr/bin/xcode-select -p` names when run with only the system's `PATH` (`developerFolder`), never
