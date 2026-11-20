@@ -88,6 +88,11 @@ function readsOf(
   );
 }
 
+/** What a poll counts of a timeline: every item, and the items Lo watches. */
+function timeline(pull: Json | undefined): (Json | undefined)[] {
+  return [at(pull, 'timelineItems'), at(pull, 'timelineEvents')];
+}
+
 test('auto-merge refused as not allowed leaves the timeline as it was, and turns on for no one after', () => {
   const interactions = answers('app_merge_auto_not_allowed');
   const place = turnedOn(interactions, nodeId(interactions, 221));
@@ -95,9 +100,7 @@ test('auto-merge refused as not allowed leaves the timeline as it was, and turns
   const before = polls.filter(({ index }) => index < place).at(-1)?.pull;
   const after = polls.filter(({ index }) => index > place).map(({ pull }) => pull);
   expect(after.length).toBeGreaterThan(0);
-  expect(after.map((pull) => at(pull, 'timelineItems'))).toEqual(
-    after.map(() => at(before, 'timelineItems')),
-  );
+  expect(after.map(timeline)).toEqual(after.map(() => timeline(before)));
   const enable = interactions
     .slice(place + 1)
     .filter(graphql('MergeSnapshot'))

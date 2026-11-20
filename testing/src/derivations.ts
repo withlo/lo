@@ -286,7 +286,11 @@ function autoMergeStaysOff(
   place: number,
   number: number,
 ): ReadsChange {
-  const timelineItems = lastPoll(recorded, place, number)['timelineItems'] ?? null;
+  const before = lastPoll(recorded, place, number);
+  const timeline = {
+    timelineItems: before['timelineItems'] ?? null,
+    timelineEvents: before['timelineEvents'] ?? null,
+  };
   return {
     graphql: {
       MergeSnapshot: (pull) => ({
@@ -294,7 +298,7 @@ function autoMergeStaysOff(
         autoMergeRequest: null,
         viewerCanDisableAutoMerge: false,
       }),
-      PullRequestCheck: (pull) => ({ ...pull, timelineItems }),
+      PullRequestCheck: (pull) => ({ ...pull, ...timeline }),
     },
     rest: (pull) => ({ ...pull, auto_merge: null }),
   };
