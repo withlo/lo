@@ -378,7 +378,9 @@ function lookedUp(run: readonly Interaction[]): Map<string, Json> {
  * up with others, found for it.
  */
 function lookupsOf(run: readonly Interaction[], branches: Map<string, Json>): Interaction[] {
-  const [{ request, response }] = run as [Interaction, ...Interaction[]];
+  const [first] = run;
+  if (!first) return [];
+  const { request, response } = first;
   const names = [...branches.keys()];
   const requests: Interaction[] = [];
   for (let start = 0; start < names.length; start += LOOKUP_ALIASES.length) {
