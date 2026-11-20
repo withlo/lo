@@ -41,9 +41,11 @@ describe('the first line of the notes', () => {
     expect(firstLine('Faster\u0007 diffs‮.txt‬⁦ now⁩')).toBe('Faster diffs.txt now');
   });
 
-  it('drops what has no width and changes what the reader reads', () => {
+  it('drops what the reader can\u2019t see and changes what they read', () => {
     // Zero-width space and non-joiner, word joiner, the invisible operators, the Mongolian vowel
-    // separator and the byte order mark; the direction marks; and tags, which spell out "hi".
+    // separator and the byte order mark; the soft hyphen and the combining grapheme joiner; the
+    // Hangul fillers; the marks that set off an annotation; the direction marks; and tags, which
+    // spell out "hi".
     const hidden = [
       '\u200B',
       '\u200C',
@@ -52,6 +54,15 @@ describe('the first line of the notes', () => {
       '\u2064',
       '\u180E',
       '\uFEFF',
+      '\u00AD',
+      '\u034F',
+      '\u115F',
+      '\u1160',
+      '\u3164',
+      '\uFFA0',
+      '\uFFF9',
+      '\uFFFA',
+      '\uFFFB',
       '\u200E',
       '\u200F',
       '\u061C',
@@ -61,6 +72,12 @@ describe('the first line of the notes', () => {
       expect(firstLine(`<p>Faster${character} diffs.${character}txt</p>`)).toBe('Faster diffs.txt');
     }
     expect(firstLine('\uFEFF\u200B\n<p>Lo\uFEFFreads</p>')).toBe('Loreads');
+  });
+
+  it('spaces the words a next line, line separator or paragraph separator splits', () => {
+    expect(firstLine('Faster\u0085diffs\u2028and\u2029quieter toasts')).toBe(
+      'Faster diffs and quieter toasts',
+    );
   });
 
   it('keeps what emoji are made of', () => {
