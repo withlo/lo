@@ -1838,8 +1838,9 @@ the pins first (see "Language servers"), and run a dry run on `main` before tagg
   where Lo keeps data changes it too. The tap's own checks, on a macOS runner, run `brew style`,
   `brew audit --cask --strict --online` for both architectures (with `--new` while `main` has no
   cask, leaving out `github_repository`, the check of how widely the repository is followed, which
-  only Homebrew's own cask list needs), `brew install --cask` and `brew uninstall --cask --zap` on
-  each pull request.
+  only Homebrew's own cask list needs), `brew install --cask`, a check that the installed app is
+  signed by Lo's Developer ID team and notarized, and `brew uninstall --cask --zap` on each pull
+  request.
 - **No cache, nothing floating.** The workflow uses no Actions cache and pins each action by its
   SHA. It installs pnpm with `scripts/install-pnpm.sh`, checked against the SHA-512 the lockfile
   holds, and the dependencies from the lockfile alone, since `pnpm/setup` restores and saves a cache
