@@ -10,6 +10,7 @@
     "lint": "oxlint",
     "live": "node scripts/live.ts",
     "pin": "node scripts/pin.ts",
+    "sourcekit": "node scripts/sourcekit.ts",
     "test": "vitest run --root ../../.. --project @lo/lsp"
   },
   "dependencies": {

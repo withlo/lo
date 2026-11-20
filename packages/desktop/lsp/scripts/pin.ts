@@ -18,7 +18,14 @@ import { join } from 'node:path';
 
 import { format, resolveConfig } from 'prettier';
 
-import { parseManifest, parseToolchains, PLATFORMS, versionFor } from '../src/index.ts';
+import {
+  parseManifest,
+  parseToolchains,
+  PLATFORMS,
+  SWIFT_DISTROS,
+  swiftToolchainId,
+  versionFor,
+} from '../src/index.ts';
 import { csharpExtension } from './csharp.ts';
 import { goProgram } from './go.ts';
 import { DIGICERT_G4 } from './nuget.ts';
@@ -31,7 +38,7 @@ import {
   rustAnalyzer,
   type Source,
 } from './sources.ts';
-import { dotnet, go, rust, temurin } from './toolchains.ts';
+import { dotnet, go, rust, swift, temurin } from './toolchains.ts';
 
 /** .NET's names for the platforms, its runtime identifiers. */
 const RIDS = {
@@ -90,12 +97,18 @@ const SOURCES: Record<string, Source> = {
   ),
 };
 
-/** Where each toolchain's files come from. */
+/**
+ * Where each toolchain's files come from. Swift has an entry for each Linux distribution swift.org
+ * builds for, `swift-<distribution>`, each pinned on its own, all to one version.
+ */
 const TOOLCHAIN_SOURCES: Record<string, Source> = {
   go: go(keys('go')),
   rust: rust(keys('rust')),
   temurin: temurin(keys('temurin')),
   dotnet: dotnet(),
+  ...Object.fromEntries(
+    SWIFT_DISTROS.map((distro) => [swiftToolchainId(distro), swift(distro, keys('swift'))]),
+  ),
 };
 
 const [id, version, ...rest] = process.argv.slice(2);

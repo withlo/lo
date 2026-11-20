@@ -1,0 +1,4 @@
+{
+  "description": "app_merge_auto as if \"Allow auto-merge\" went off in rozed-dev/e2e's settings after Lo read #221: turning on auto-merge for it is refused as GitHub refuses it then, \"Auto merge is not allowed for this repository\", as recorded in merge_writes_e2e_auto_merge, and so is \"Merge when ready\" for #225 after. From the first refusal on, every read of what decides a merge says the account can't turn auto-merge on, and every read of either pull request after its refusal says auto-merge is off, with the timeline Lo polled before it, which turning it on added an event to when recorded.",
+  "derived_from": "app_merge_auto"
+}

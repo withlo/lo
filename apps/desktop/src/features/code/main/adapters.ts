@@ -2,9 +2,13 @@
 // starts as. A server here is whatever an adapter describes: one pinned in `@lo/lsp`'s manifest
 // and downloaded, or an installed copy from a place the adapter names. An adapter never runs
 // anything itself, and nothing in a checkout chooses what it starts: what each server is told is
-// `@lo/lsp`'s, with the reasons. Nothing here calls Electron.
+// `@lo/lsp`'s, with the reasons. Nothing here calls Electron. Swift's differs by system: on macOS
+// it's the SourceKit-LSP of Xcode or Apple's Command Line Tools, and on Linux the one in the Swift
+// toolchain Lo downloads for the distribution, by `/etc/os-release`.
 
 import {
+  currentPlatform,
+  developerFolder,
   findSourceKit,
   GOPLS,
   JDTLS,
@@ -15,19 +19,26 @@ import {
   launchRoslyn,
   launchRustAnalyzer,
   launchSourceKit,
+  launchSourceKitOnLinux,
+  missingPackages,
   NO_SOURCEKIT,
+  packagesNeeded,
   PHP_LSP,
   PYRIGHT,
   ROSLYN,
+  readOsRelease,
   RUST_ANALYZER,
   SOURCEKIT_LSP,
   sourceKitCheckoutProblem,
+  swiftDistroFor,
+  swiftToolchainId,
   TERRAFORM_LS,
   VTSLS,
   type Installed,
   type Launch,
   type NativeServer,
   type NodeServer,
+  type SwiftDistro,
   type ToolchainUse,
 } from '@lo/lsp';
 import { languageOfPath, type LanguageName } from '@lo/syntax';
@@ -79,8 +90,25 @@ export interface PrepareContext {
    * Xcode or Apple's Command Line Tools are, or `undefined` when there's none.
    */
   developerFolder(): Promise<string | undefined>;
+  /**
+   * Those of the packages Swift's toolchain needs on Linux distribution `distro` that aren't
+   * installed: those swift.org lists for it, in its order, and any the system's release needs
+   * besides.
+   */
+  missingPackages(distro: SwiftDistro): Promise<readonly string[]>;
   /** Aborts once nothing waits for the server any longer. */
   readonly signal: AbortSignal;
+}
+
+/**
+ * An adapter's {@link PrepareContext}: `parts`, from what Lo has, with what it finds on the system
+ * itself, the developer folder `xcode-select -p` names and the packages Swift needs that aren't
+ * installed.
+ */
+export function prepareContext(
+  parts: Omit<PrepareContext, 'developerFolder' | 'missingPackages'>,
+): PrepareContext {
+  return { ...parts, developerFolder, missingPackages };
 }
 
 /** What an adapter may use to find a toolchain of the system's, for Settings. */
@@ -222,6 +250,31 @@ const SWIFT: Adapter = {
 };
 
 /**
+ * The Swift adapter, on Linux distribution `distro`: the SourceKit-LSP in the Swift toolchain Lo
+ * downloads for it, from swift.org, which it runs told of no workspace, as on macOS. The toolchain
+ * needs some of the distribution's packages, so when any is missing it says which, and the command
+ * that installs them, and downloads nothing.
+ */
+function swiftOnLinux(distro: SwiftDistro): Adapter {
+  const toolchain = swiftToolchainId(distro);
+  return {
+    id: 'swift',
+    name: 'Swift',
+    languages: { swift: 'swift' },
+    noReferences: `${SOURCEKIT_LSP.name} finds references only from a build, which Lo never runs.`,
+    checkout: sourceKitCheckoutProblem,
+    // The server comes in the toolchain.
+    downloads: { servers: [], toolchains: [toolchain] },
+    async prepare(context) {
+      const missing = await context.missingPackages(distro);
+      if (missing.length > 0) return { kind: 'missing', ...packagesNeeded(distro, missing) };
+      const swift = await context.toolchain(toolchain);
+      return { kind: 'ready', launch: launchSourceKitOnLinux(swift, swift.version) };
+    },
+  };
+}
+
+/**
  * An adapter for `server`, a program of its own, which uses the toolchains `toolchains` names:
  * each downloads first, then the server, which Lo builds with its Go when it's built from Go
  * modules, as gopls is.
@@ -281,9 +334,17 @@ const CSHARP: Adapter = {
   },
 };
 
-/** The adapters Lo ships on `platform`: Swift's only on macOS. */
-export function shippedAdapters(platform: NodeJS.Platform = process.platform): readonly Adapter[] {
-  return platform === 'darwin' ? [...EVERYWHERE, SWIFT] : EVERYWHERE;
+/**
+ * The adapters Lo ships on `platform`: Swift's on macOS, and on Linux when `distro`, the
+ * distribution of swift.org's builds the system takes, is given.
+ */
+export function shippedAdapters(
+  platform: NodeJS.Platform,
+  distro?: SwiftDistro,
+): readonly Adapter[] {
+  if (platform === 'darwin') return [...EVERYWHERE, SWIFT];
+  if (platform === 'linux' && distro !== undefined) return [...EVERYWHERE, swiftOnLinux(distro)];
+  return EVERYWHERE;
 }
 
 /** The adapters Lo ships on every platform. */
@@ -309,8 +370,16 @@ const EVERYWHERE: readonly Adapter[] = [
   CSHARP,
 ];
 
+/**
+ * The Linux distribution whose build of Swift this system takes, by its `/etc/os-release`, if it's
+ * a Linux Lo downloads for and one fits.
+ */
+export const SWIFT_DISTRO: SwiftDistro | undefined = currentPlatform()?.startsWith('linux-')
+  ? swiftDistroFor(readOsRelease())
+  : undefined;
+
 /** The adapters Lo ships on this platform. */
-export const ADAPTERS: readonly Adapter[] = shippedAdapters();
+export const ADAPTERS: readonly Adapter[] = shippedAdapters(process.platform, SWIFT_DISTRO);
 
 /** The adapter that reads the file at `path`, and the protocol's id for its language, if one does. */
 export function adapterFor(

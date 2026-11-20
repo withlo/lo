@@ -1,0 +1,20 @@
+{
+  "request": {
+    "method": "GET",
+    "url": "https://api.github.com/repos/rozed-dev/e2e/pulls/221",
+    "if_modified_since": "Tue, 17 Nov 2026 03:58:45 GMT"
+  },
+  "response": {
+    "status": 304,
+    "headers": {
+      "etag": "\"a94140dc16d7e25f205a7dfe0299d90f69889f3ef9ce4cfac3e9da76f6f0a821\"",
+      "last-modified": "Tue, 17 Nov 2026 03:58:45 GMT",
+      "x-github-api-version-selected": "2022-11-28",
+      "x-ratelimit-limit": "5000",
+      "x-ratelimit-remaining": "4860",
+      "x-ratelimit-reset": "1794889860",
+      "x-ratelimit-resource": "core",
+      "x-ratelimit-used": "140"
+    }
+  }
+}

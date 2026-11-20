@@ -29,13 +29,16 @@
 // checkout, or if Roslyn's log says it loaded a project but Lo's or looked for programs, or its
 // home holds NuGet's folders, which a restore writes.
 //
-// On macOS it checks SourceKit-LSP too, `sourcekit-lsp` among the IDs, which Lo doesn't download:
-// it finds the copy in the developer folder `xcode-select -p` names, as Lo does, and starts it
-// rootless on both checkouts. On the hostile one it says why Lo refuses the checkout, then starts
-// it all the same, opening the Swift plants, to show none of them runs. The system starts
-// `SourceKitService` for it, outside its group, which Lo takes into its family by its home, and
-// that starts `swift-plugin-server`; the check watches those, the ones that appear while it runs,
-// for memory and network too. Check the machine has memory to spare before running it.
+// It checks SourceKit-LSP too, `sourcekit-lsp` among the IDs. On macOS Lo doesn't download it: it
+// finds the copy in the developer folder `xcode-select -p` names, as Lo does. On Linux it's in the
+// Swift toolchain toolchains.json pins for the distribution the system takes, by /etc/os-release,
+// installed once the packages swift.org lists for it are, and the check fails, saying which, when
+// any is missing. Either way it starts it rootless on both checkouts. On the hostile one it says
+// why Lo refuses the checkout, then starts it all the same, opening the Swift plants, to show none
+// of them runs. On macOS the system starts `SourceKitService` for it, outside its group, which Lo
+// takes into its family by its home, and that starts `swift-plugin-server`; the check watches
+// those, the ones that appear while it runs, for memory and network too. Check the machine has
+// memory to spare before running it.
 
 import { execFile } from 'node:child_process';
 import {
@@ -75,15 +78,21 @@ import {
   launchRoslyn,
   launchRustAnalyzer,
   launchSourceKit,
+  launchSourceKitOnLinux,
   MANIFEST,
+  missingPackages,
   type NativeServer,
   type NodeServer,
+  packagesNeeded,
   PHP_LSP,
   type Pinned,
   PYRIGHT,
+  readOsRelease,
   ROSLYN,
   RUST_ANALYZER,
   sourceKitCheckoutProblem,
+  swiftDistroFor,
+  swiftToolchainId,
   TERRAFORM_LS,
   TOOLCHAINS,
   toolchainUse,
@@ -556,9 +565,8 @@ async function watchOutside(names: readonly string[]) {
 
 /**
  * The check of SourceKit-LSP, on macOS: the copy in the developer folder, found as Lo finds it,
- * started rootless as its adapter starts it on each fixture's checkout, the hostile one included,
- * though Lo refuses that one, and asked each place in its `languages`. It opens `plants` on the
- * hostile checkout, as a reader's view would.
+ * started rootless as its adapter starts it ({@link checkSourceKit}). The system starts
+ * `SourceKitService` and `swift-plugin-server` for it, outside its group, which are watched too.
  */
 async function onSourceKit(
   languages: Readonly<Record<string, string>>,
@@ -580,6 +588,56 @@ async function onSourceKit(
   }
   const launch = launchSourceKit(found);
   console.log(`${launch.version}: ${launch.program}, in ${developer}, with ${found.sdk}`);
+  await checkSourceKit(launch, languages, plants, OUTSIDE);
+}
+
+/**
+ * The check of SourceKit-LSP on Linux: the one in the Swift toolchain pinned for the distribution
+ * this system takes, by its /etc/os-release, installed as Lo installs it once the packages
+ * swift.org lists for it are, and started rootless as its adapter starts it
+ * ({@link checkSourceKit}). It runs `sourcekitd` in its own process, and nothing outside its
+ * family.
+ */
+async function onLinuxSourceKit(
+  languages: Readonly<Record<string, string>>,
+  plants: readonly string[],
+): Promise<void> {
+  const release = readOsRelease();
+  const distro = swiftDistroFor(release);
+  if (distro === undefined) {
+    throw new Error(
+      `${release.get('PRETTY_NAME') ?? 'This Linux'} takes none of swift.org's builds`,
+    );
+  }
+  const missing = await missingPackages(distro);
+  if (missing.length > 0) {
+    const needed = packagesNeeded(distro, missing);
+    throw new Error(`Swift needs ${needed.needs}, which \`${needed.install}\` installs`);
+  }
+  console.log(
+    `${release.get('PRETTY_NAME') ?? 'This Linux'} takes the build for ${distro.name}, whose packages are installed.`,
+  );
+  const swift = await toolchain(swiftToolchainId(distro));
+  const launch = launchSourceKitOnLinux(
+    { installed: swift.installed, ...swift.use },
+    swift.version,
+  );
+  console.log(`${launch.version}: ${launch.program}`);
+  await checkSourceKit(launch, languages, plants, []);
+}
+
+/**
+ * SourceKit-LSP, started as `launch` says, rootless, on each fixture's checkout, the hostile one
+ * included, though Lo refuses that one, and asked each place in its `languages`. It opens `plants`
+ * on the hostile checkout, as a reader's view would. `services` are the programs the system starts
+ * for it, outside its group, watched for memory and network, and for outliving it.
+ */
+async function checkSourceKit(
+  launch: Launch,
+  languages: Readonly<Record<string, string>>,
+  plants: readonly string[],
+  services: readonly string[],
+): Promise<void> {
   const places = await placesFor(languages);
   const languageId = places[0]?.languageId ?? 'swift';
   const folder = await realpath(await mkdtemp(join(tmpdir(), 'lo-live-sourcekit-lsp-')));
@@ -596,7 +654,7 @@ async function onSourceKit(
           `Lo refuses it: ${refusal} Started all the same, to show nothing planted runs.`,
         );
       }
-      const outside = await watchOutside(OUTSIDE);
+      const outside = await watchOutside(services);
       const { peak, connections } = await askServer({
         spec: {
           name: 'SourceKit-LSP',
@@ -606,7 +664,7 @@ async function onSourceKit(
           rootless: launch.rootless,
           services: launch.services,
           home: join(folder, `home-${script}`),
-          path: [],
+          path: launch.path ?? [],
           git: serverGitEnvironment(),
           place: launch.place,
         },
@@ -660,21 +718,27 @@ async function onSourceKit(
   }
 }
 
-/** The checks of servers Lo doesn't download, by their IDs: SourceKit-LSP's, on macOS. */
+/**
+ * A macro whose plugin compile commands name, a package's build tool plugin, and a package's
+ * manifest, which SwiftPM would compile and run: the hostile fixture's plants SourceKit-LSP opens.
+ */
+const SWIFT_PLANTS = [
+  'hostile/swift-commands/Lo.swift',
+  'hostile/swift-plugin/Plugins/plugin.swift',
+  'hostile/swift-plugin/Sources/main.swift',
+  'hostile/swift/Package.swift',
+];
+
+/**
+ * The checks of servers servers.json doesn't pin, by their IDs: SourceKit-LSP's, which on macOS is
+ * the system's, and on Linux comes in the Swift toolchain toolchains.json pins.
+ */
 const SYSTEM_CHECKS: Record<string, () => Promise<void>> =
   process.platform === 'darwin'
-    ? {
-        // A macro whose plugin compile commands name, a package's build tool plugin, and a
-        // package's manifest, which SwiftPM would compile and run.
-        'sourcekit-lsp': () =>
-          onSourceKit({ swift: 'swift' }, [
-            'hostile/swift-commands/Lo.swift',
-            'hostile/swift-plugin/Plugins/plugin.swift',
-            'hostile/swift-plugin/Sources/main.swift',
-            'hostile/swift/Package.swift',
-          ]),
-      }
-    : {};
+    ? { 'sourcekit-lsp': () => onSourceKit({ swift: 'swift' }, SWIFT_PLANTS) }
+    : process.platform === 'linux'
+      ? { 'sourcekit-lsp': () => onLinuxSourceKit({ swift: 'swift' }, SWIFT_PLANTS) }
+      : {};
 
 /** The check of a server on Lo's Node, which installs first. */
 function onNode(server: NodeServer, languages: Readonly<Record<string, string>>): Check {

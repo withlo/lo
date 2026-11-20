@@ -7,11 +7,15 @@
 // and neither keeps an id of this copy of Lo to send.
 //
 // Both change two things about electron-updater's checks. Lo can give up on one, which then fails
-// at once, so the next asks the feed again: under Electron, electron-updater's own time limit never
-// fires, and it hands every later check the one still waiting. And a prerelease of Lo is offered
-// the newest release as well as its channel's newest prerelease, where electron-updater offers it
-// only the prerelease. This module doesn't call Electron itself, so it runs under unit tests;
-// electron-updater's own updaters do.
+// at once, with its requests cancelled, so the next asks the feed again: under Electron,
+// electron-updater's own time limit never fires, so a request the feed never answers would stay
+// open for good, and electron-updater would hand every later check the one still waiting. And a
+// prerelease of Lo is offered the newest release as well as its channel's newest prerelease, where
+// electron-updater offers it only the prerelease. This module doesn't call Electron itself, so it
+// runs under unit tests; electron-updater's own updaters and requests do.
+
+import { AsyncLocalStorage } from 'node:async_hooks';
+import type { RequestOptions } from 'node:http';
 
 import {
   AppUpdater,
@@ -26,6 +30,7 @@ import type {
   DownloadUpdateOptions,
   UpdateInfoAndProvider,
 } from 'electron-updater/out/AppUpdater.js';
+import { ElectronHttpExecutor } from 'electron-updater/out/electronHttpExecutor.js';
 
 import { isVersion } from '../contract.ts';
 import type { Feed } from './feed.ts';
@@ -76,8 +81,8 @@ function newer(a: string, b: string): boolean {
  * electron-updater offers only the next prerelease of its own channel (`rc`), never a release, so
  * Lo reads the feed twice: for that prerelease, and, with prereleases off, for the latest release;
  * the newer counts, or whichever was found. electron-updater reads `allowPrerelease` as it goes, so
- * each reading sets it first, and none does once `signal` has given up on the check: a reading
- * given up on may still be going when the next check starts.
+ * each reading sets it first, and none does once `signal` has given up on the check: a check given
+ * up on may still be finishing when the next starts.
  */
 async function newest<T extends Found>(
   updater: AppUpdater,
@@ -112,15 +117,23 @@ function until<T>(signal: AbortSignal, promise: Promise<T>): Promise<T> {
 
 /**
  * The checks Lo's updaters make: each until Lo gives up on it, and, for a prerelease of Lo, of the
- * newest release too. One for each updater, whose `getUpdateInfoAndProvider` reads through it.
+ * newest release too. One for each updater, whose `getUpdateInfoAndProvider` reads through it, and
+ * whose requests it sends.
  */
 class Checks {
   /** What gives up on the check electron-updater is making. */
   #signal: AbortSignal | undefined;
+  /**
+   * What gives up on the check each reading of the feed is for, kept through every step the reading
+   * takes: electron-updater sends a reading's requests from deep in its own code, which knows
+   * nothing of Lo's checks, and a check given up on may still be finishing when the next starts.
+   */
+  readonly #reading = new AsyncLocalStorage<AbortSignal>();
 
   /**
-   * Runs `check`, electron-updater's `checkForUpdates`, until `signal` gives up on it: then its
-   * reading of the feed fails, so electron-updater's check does, and electron-updater forgets it.
+   * Runs `check`, electron-updater's `checkForUpdates`, until `signal` gives up on it: then the
+   * requests its reading of the feed sends are cancelled, and the reading fails, so
+   * electron-updater's check does, and electron-updater forgets it.
    */
   async run(signal: AbortSignal, check: () => Promise<UpdateCheckResult | null>) {
     this.#signal = signal;
@@ -135,8 +148,76 @@ class Checks {
   read<T extends Found>(updater: AppUpdater, read: () => Promise<T>): Promise<T> {
     // electron-updater checks by itself only when told to, which Lo never does.
     const signal = this.#signal ?? new AbortController().signal;
-    return until(signal, newest(updater, read, signal));
+    return until(
+      signal,
+      this.#reading.run(signal, () => newest(updater, read, signal)),
+    );
   }
+
+  /**
+   * Sends a request (`send`) with `token`, the cancellation token electron-updater makes for the
+   * reading of the feed that sends it, and never cancels itself. Once Lo gives up on the check the
+   * reading is for, Lo cancels it: that aborts the request, and fails at once every request the
+   * reading sends after.
+   */
+  async send<T>(token: CancellationToken, send: () => Promise<T>): Promise<T> {
+    const signal = this.#reading.getStore();
+    if (signal === undefined) return send();
+    const cancel = () => token.cancel();
+    if (signal.aborted) cancel();
+    else signal.addEventListener('abort', cancel, { once: true });
+    try {
+      return await send();
+    } finally {
+      signal.removeEventListener('abort', cancel);
+    }
+  }
+}
+
+/**
+ * Electron's requests, as electron-updater sends them, each through `checks`, so a request for a
+ * check Lo gives up on is cancelled.
+ */
+class Requests extends ElectronHttpExecutor {
+  readonly #checks: Checks;
+
+  constructor(checks: Checks, login: ConstructorParameters<typeof ElectronHttpExecutor>[0]) {
+    super(login);
+    this.#checks = checks;
+  }
+
+  override request(
+    options: RequestOptions,
+    token = new CancellationToken(),
+    data?: Record<string, unknown> | null,
+  ): Promise<string | null> {
+    return this.#checks.send(token, () => super.request(options, token, data));
+  }
+}
+
+/**
+ * Has `updater` send its requests through {@link Requests}, for `checks`, in place of the ones
+ * electron-updater made for it, Electron's own. Like those, they pass a proxy's request for
+ * credentials on as the updater's `login` event. They're its `httpExecutor`, which
+ * electron-updater's types leave out, and which it hands the provider that reads the feed when Lo
+ * sets the feed. When it holds anything but electron-updater's executor for Electron itself, as a
+ * later electron-updater might, Lo leaves it be and says so in `log`: a check Lo gives up on then
+ * still fails at once, but its request may stay open.
+ */
+function sendThrough(updater: AppUpdater, checks: Checks, log: (line: string) => void): void {
+  const made: unknown = Reflect.get(updater, 'httpExecutor');
+  if (
+    typeof made !== 'object' ||
+    made === null ||
+    Object.getPrototypeOf(made) !== ElectronHttpExecutor.prototype
+  ) {
+    log(
+      "electron-updater doesn't send its requests as Lo knows it to, so Lo leaves them be: a check Lo gives up on may leave its request open",
+    );
+    return;
+  }
+  const requests = new Requests(checks, (info, callback) => updater.emit('login', info, callback));
+  Object.assign(updater, { httpExecutor: requests });
 }
 
 /** electron-updater's checks, with no installer: for every copy of Lo that updates another way. */
@@ -146,6 +227,11 @@ export class CheckingUpdater extends AppUpdater {
   constructor(app?: AppAdapter) {
     super(null, app);
     this.stagingUserIdPromise.value = Promise.resolve(NO_ID);
+  }
+
+  /** Sends electron-updater's requests through this updater's checks, as {@link sendThrough} says. */
+  takeRequests(log: (line: string) => void): void {
+    sendThrough(this, this.#checks, log);
   }
 
   /** electron-updater's check, until `signal` gives up on it. */
@@ -173,6 +259,11 @@ export class InstallingUpdater extends MacUpdater {
   constructor(app?: AppAdapter) {
     super(undefined, app);
     this.stagingUserIdPromise.value = Promise.resolve(NO_ID);
+  }
+
+  /** Sends electron-updater's requests through this updater's checks, as {@link sendThrough} says. */
+  takeRequests(log: (line: string) => void): void {
+    sendThrough(this, this.#checks, log);
   }
 
   /** electron-updater's check, until `signal` gives up on it. */
@@ -214,12 +305,13 @@ export type LoUpdater = CheckingUpdater | InstallingUpdater;
 
 /**
  * Sets `updater` up as Lo uses it, to check `feed`: it downloads only when asked to, never offers
- * an older version, reads only the newest release's notes, logs to `log`, and, where Lo installs
- * updates itself (`installs`), installs a downloaded update as Lo quits. A feed on this machine is
- * checked from a build run from source, which electron-updater otherwise leaves alone.
+ * an older version, reads only the newest release's notes, logs to `log`, cancels the requests of a
+ * check Lo gives up on, and, where Lo installs updates itself (`installs`), installs a downloaded
+ * update as Lo quits. A feed on this machine is checked from a build run from source, which
+ * electron-updater otherwise leaves alone.
  */
 export function configure(
-  updater: AppUpdater,
+  updater: LoUpdater,
   options: { feed: Feed; installs: boolean; log: (line: string) => void },
 ): void {
   updater.logger = updaterLogger(options.log);
@@ -228,6 +320,8 @@ export function configure(
   updater.allowDowngrade = false;
   updater.fullChangelog = false;
   updater.forceDevUpdateConfig = options.feed.host !== undefined;
+  // Before the feed is set, which hands what sends the requests to the provider that reads it.
+  updater.takeRequests(options.log);
   updater.setFeedURL({ ...options.feed });
 }
 

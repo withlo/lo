@@ -95,11 +95,13 @@ own (`setsid`) is still found.
 ## Servers
 
 The servers Lo runs, each with its adapter in `src/adapters/`. All but one are downloaded on first
-use for a trusted view, as `servers.json` pins them. The exception is SourceKit-LSP, Swift's on
-macOS, which is Apple's: it comes with Xcode and with Apple's Command Line Tools, and Lo runs the
-copy there (`src/adapters/sourcekit.ts`). So no other server needs anything installed: what one
-needs is Lo's own copy, downloaded with it. The last column says what a server can't do, and a
-checkout one won't run on is under "Checkouts a server refuses".
+use for a trusted view, as `servers.json` pins them. The exception is SourceKit-LSP, Swift's: on
+macOS it's Apple's, which comes with Xcode and with Apple's Command Line Tools, and Lo runs the copy
+there (`src/adapters/sourcekit.ts`); on Linux it comes in the Swift toolchain Lo downloads for the
+distribution (`src/swift.ts`), which needs some of the distribution's packages installed. So no
+other server needs anything installed: what one needs is Lo's own copy, downloaded with it. The last
+column says what a server can't do, and a checkout one won't run on is under "Checkouts a server
+refuses".
 
 | Server         | Version          | For                    | From                                                                                                                                                                                        | License                                                       | Needs                               | Can't do                                                                                                                                                                                  |
 | -------------- | ---------------- | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- | ----------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -112,18 +114,20 @@ checkout one won't run on is under "Checkouts a server refuses".
 | Eclipse JDT LS | 1.63.0           | Java                   | download.eclipse.org: its release's archive                                                                                                                                                 | EPL-2.0                                                       | Temurin JDK                         | Import a Gradle or Maven build, so what a build brings has no definition. A source folder past the nearest 20,000 folders and 20,000 files gets fewer answers. Refuses some checkouts.    |
 | Roslyn         | 5.12.0-1.26452.1 | C#                     | Microsoft's `msft_consumption` feed on pkgs.dev.azure.com: `roslyn-language-server.<platform>` at the build the C# extension for VS Code's newest stable release ships, signed by Microsoft | MIT                                                           | .NET SDK                            | Load the checkout's projects: a package's types and what a source generator writes have no definition, and every `.cs` file is one project at the SDK's defaults. Refuses some checkouts. |
 | SourceKit-LSP  | Apple's          | Swift, on macOS        | Xcode or Apple's Command Line Tools, in the developer folder `xcode-select -p` names                                                                                                        | Apache-2.0                                                    | Xcode or Apple's Command Line Tools | Read a build: each file is read alone with the macOS SDK, so a use of what another file declares isn't resolved, and `gr` comes from the syntax index. Refuses some checkouts.            |
+| SourceKit-LSP  | 6.4.2            | Swift, on Linux        | download.swift.org: in the Swift toolchain for the distribution                                                                                                                             | Apache-2.0                                                    | Swift, and the packages it lists    | Read a build: each file is read alone with the system's headers, so a use of what another file declares isn't resolved, and `gr` comes from the syntax index. Refuses some checkouts.     |
 
 What a server needs is pinned and downloaded the same way, but for Apple's. Node is in
 `servers.json`, beside the servers. The toolchains, which Settings lists and removes, are in
 `toolchains.json`; on macOS Settings lists Apple's Swift too, with nothing to remove.
 
-| Needs       | Version                                           | From                          | License                              | For               |
-| ----------- | ------------------------------------------------- | ----------------------------- | ------------------------------------ | ----------------- |
-| Node        | 26.13.1                                           | nodejs.org                    | MIT                                  | vtsls and Pyright |
-| Rust        | 1.100.0                                           | static.rust-lang.org          | MIT OR Apache-2.0                    | rust-analyzer     |
-| Go          | 1.27.4                                            | dl.google.com                 | BSD-3-Clause                         | gopls             |
-| Temurin JDK | 25.0.5.1+2; 25.0.5+8 on macOS x64 and Linux arm64 | Adoptium's releases on GitHub | GPL-2.0 with the Classpath Exception | JDT LS            |
-| .NET SDK    | 10.0.404                                          | builds.dotnet.microsoft.com   | MIT                                  | Roslyn            |
+| Needs       | Version                                           | From                          | License                              | For                     |
+| ----------- | ------------------------------------------------- | ----------------------------- | ------------------------------------ | ----------------------- |
+| Node        | 26.13.1                                           | nodejs.org                    | MIT                                  | vtsls and Pyright       |
+| Rust        | 1.100.0                                           | static.rust-lang.org          | MIT OR Apache-2.0                    | rust-analyzer           |
+| Go          | 1.27.4                                            | dl.google.com                 | BSD-3-Clause                         | gopls                   |
+| Temurin JDK | 25.0.5.1+2; 25.0.5+8 on macOS x64 and Linux arm64 | Adoptium's releases on GitHub | GPL-2.0 with the Classpath Exception | JDT LS                  |
+| .NET SDK    | 10.0.404                                          | builds.dotnet.microsoft.com   | MIT                                  | Roslyn                  |
+| Swift       | 6.4.2                                             | download.swift.org            | Apache-2.0                           | SourceKit-LSP, on Linux |
 
 A toolchain's vendor can publish a version a platform at a time. Where `lsp:pin` finds a platform's
 archive isn't out yet, that platform keeps the build pinned for it before, under its own `version`
@@ -131,16 +135,38 @@ in `toolchains.json`, which names its folder and what Settings shows, and the ne
 Temurin 25.0.5.1+2, which fixes security issues in 25.0.5, has no archive yet for macOS on Intel or
 Linux on Arm, so those stay on 25.0.5+8.
 
+Swift is pinned once for each Linux distribution swift.org builds it for and gives install
+instructions for, since each build links its distribution's libraries: Ubuntu 22.04, 24.04 and
+26.04, Debian 12 and 13, Fedora 41 and Red Hat Enterprise Linux 9, each for x64 and arm64, all
+installed with deb or rpm packages, as Lo is. `/etc/os-release` says which a system takes
+(`swiftDistroFor`): its own release, or for a distribution built on one of them, the one it names
+(`UBUNTU_CODENAME`, `DEBIAN_CODENAME`, or `rhel` in `ID_LIKE` and the major version), and for
+Fedora, Fedora 41's build for it and every release after, since swift.org builds for no later
+Fedora. Of the system's libraries, SourceKit-LSP and what it loads link only glibc's, GCC's runtime,
+libstdc++, libcurl, libxml2, SQLite, ncurses, libuuid and zlib, and later Fedoras keep each under
+the name it links; Fedora 45 keeps libxml2's in `libxml2_2.13`, which it needs besides. A
+distribution built on Fedora doesn't say which Fedora, so it takes none. Settings lists only the one
+a system takes. A Linux none fits, such as Arch or Ubuntu 25.10, has no Swift server, and Swift
+answers from the syntax index. Each build needs the packages swift.org's instructions list for its
+distribution, which Lo checks before it downloads anything, by dpkg's list or by asking rpm
+(`missingPackages`): with any missing, Swift's server says which, and the `apt-get` or `dnf` command
+that installs them. Lo installs nothing on the system. `pnpm nx run lsp:sourcekit`
+(`scripts/sourcekit.ts`) tries it for real on a Linux a build fits: it installs that build as Lo
+does, starts SourceKit-LSP on the code fixture's checkout, and fails unless a hover on `countWords`
+gives its signature, its logs are in its own home and nothing appeared in the user's. CI's `swift`
+job runs it on Ubuntu 24.04 when Swift's pins change, or the code that installs it or starts its
+server.
+
 vtsls and Pyright each start as Node, by its absolute path, with a cap on its heap, then the
 server's own entry point inside its install, never the launcher npm would link. rust-analyzer,
 php-lsp, gopls and terraform-ls each start as its program, by its absolute path inside its install.
 JDT LS starts as the JDK's `java`, by its absolute path, with `-jar` and Equinox's launcher inside
 its install. Roslyn starts as Lo's `dotnet`, by its absolute path, with `exec` and the server's own
 assembly inside its install, never the launcher its package's tool would run. SourceKit-LSP starts
-as its program, by its absolute path in Xcode or the Command Line Tools. None runs through a shell,
-and each has an environment built from nothing, whose proxy leads nowhere (`NO_NETWORK` in
-`src/environment.ts`). What each is told is its adapter's alone, and the adapter says why each
-setting is as it is:
+as its program, by its absolute path in Xcode or the Command Line Tools on macOS, and in Lo's Swift
+toolchain on Linux. None runs through a shell, and each has an environment built from nothing, whose
+proxy leads nowhere (`NO_NETWORK` in `src/environment.ts`). What each is told is its adapter's
+alone, and the adapter says why each setting is as it is:
 
 - **vtsls** runs its own TypeScript, never a workspace's (`node_modules/typescript`), and has
   automatic type acquisition off, so it runs no npm. It loads no `tsserver` plugin from the
@@ -293,7 +319,17 @@ setting is as it is:
   SourceKit-LSP restart `sourcekitd`. Each is given with a fraction: SourceKit-LSP reads a whole
   number in its initialization options as an integer, which those options refuse, and then drops
   every option Lo gives it. Its `SourceKitService` is in its family. Expanding a macro of the SDK's
-  runs Apple's `swift-plugin-server`; a checkout's macros are never built.
+  runs Apple's `swift-plugin-server`; a checkout's macros are never built. On Linux it's the
+  `usr/bin/sourcekit-lsp` of Lo's Swift toolchain, told and kept the same way, but for what Linux
+  lacks: there's no SDK, so the compiler reads the system's headers, from the packages Lo checks are
+  installed; `sourcekitd` runs in its own process, from the toolchain's `libsourcekitdInProc.so`, so
+  there's no service, and `swift-plugin-server` is in its family; and Foundation's home folder, in
+  its home by `CFFIXED_USER_HOME` as on macOS, is where it writes its logs too. Foundation on Linux
+  takes that folder from the variable, then from the user's entry in the system's list of users, and
+  from `HOME` only when there's no entry, so without the variable it would read the user's
+  `~/.sourcekit-lsp/config.json`, and write its logs in `~/.sourcekit-lsp/logs`, deleting theirs
+  over an hour old. It reads nothing of the machine's, and
+  `$XDG_CONFIG_HOME/sourcekit-lsp/config.json` only when that's set, which it isn't.
 
 None runs in a sandbox: each reads what you can, so an absolute import, Pyright's `extraPaths`, a
 Rust sysroot's sources, the folders of stubs a `.php-lsp.json` names, the paths a `composer.json`'s
@@ -368,7 +404,11 @@ more is refused, since what it didn't read could be anything.
 | Tries                      | 3, when the connection fails, the file comes short or a 5xx                              |
 | A stall                    | nothing for 30 s, or under 16 KB in any 5 minutes                                        |
 | What an archive unpacks to | 100,000 entries, and what it's recorded to unpack to and 5% more, or 2 GB where it isn't |
-| A symbolic link's target   | 1 KB, relative, resolving inside                                                         |
+
+Every toolchain records what it unpacks to, so each is held to its own size. Swift's, at about 3.5
+GB, is past the 2 GB the rest share even as it's pinned, so `pin.ts` measures it within 6 GB of its
+own (`SWIFT_UNPACK_LIMITS`), and Lo holds each install to what it measured and 5% more. | A symbolic
+link's target | 1 KB, relative, resolving inside |
 
 A stall counts as a failed connection, and is either of two things, in the time Lo waits for the
 network: nothing at all for 30 s, or less than 16 KB in any 5 minutes. The first gives up on a host

@@ -1,0 +1,19 @@
+{
+  "request": {
+    "method": "GET",
+    "url": "https://api.github.com/repos/rozed-dev/e2e/rules/branches/merge/7/override?per_page=100",
+    "if_none_match": "W/\"5aaac63e0288fd45d0fa2e4a5f0311937e3494b125e37a7bb7155dffd76a47b0\""
+  },
+  "response": {
+    "status": 304,
+    "headers": {
+      "etag": "\"5aaac63e0288fd45d0fa2e4a5f0311937e3494b125e37a7bb7155dffd76a47b0\"",
+      "x-github-api-version-selected": "2022-11-28",
+      "x-ratelimit-limit": "5000",
+      "x-ratelimit-remaining": "4839",
+      "x-ratelimit-reset": "1794889860",
+      "x-ratelimit-resource": "core",
+      "x-ratelimit-used": "161"
+    }
+  }
+}

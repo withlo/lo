@@ -19,11 +19,12 @@
  * - where it's recorded, what it `unpacked` to, in bytes, which caps its install at that and 5%
  *   more, in place of the limit every download shares.
  *
- * `toolchains.json` pins the toolchains language servers use, Go, Rust, a JDK and the .NET SDK,
- * the same way, each with what it unpacks to ({@link TOOLCHAINS}). A toolchain's archive for a
- * platform may name a `version` of its own, older than the entry's, when its vendor hasn't
- * published the entry's version for that platform yet: that platform installs and names that
- * version ({@link versionFor}), and the rest the entry's. A server's never does.
+ * `toolchains.json` pins the toolchains language servers use, Go, Rust, a JDK, the .NET SDK and,
+ * for Linux, Swift (`swift.ts`), the same way, each with what it unpacks to ({@link TOOLCHAINS}).
+ * A toolchain's archive for a platform may name a `version` of its own, older than the entry's,
+ * when its vendor hasn't published the entry's version for that platform yet: that platform
+ * installs and names that version ({@link versionFor}), and the rest the entry's. A server's never
+ * does.
  */
 
 import { z } from 'zod';

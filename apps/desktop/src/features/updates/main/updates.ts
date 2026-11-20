@@ -41,8 +41,8 @@ export interface Release {
 /** What Lo needs of electron-updater, so everything else here runs without it. */
 export interface Updater {
   /**
-   * Asks the feed for its newest release, until `signal` aborts: then the check is dropped, so it
-   * fails, and the next one asks the feed again.
+   * Asks the feed for its newest release, until `signal` aborts: then the check is dropped, with
+   * its requests cancelled, so it fails, and the next one asks the feed again.
    */
   check(signal: AbortSignal): Promise<Release>;
   /**

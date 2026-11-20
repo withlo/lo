@@ -8,6 +8,7 @@ import {
   TOOLCHAINS,
   versionFor,
 } from './manifest.ts';
+import { SWIFT_DISTROS, SWIFT_PLATFORMS, swiftToolchainId } from './swift.ts';
 
 const NODE = MANIFEST.node;
 
@@ -39,9 +40,13 @@ test('refuses a version that isn’t a folder’s name', () => {
 });
 
 test('Lo’s toolchains are pinned for every platform, each with what it unpacks to', () => {
-  expect(Object.keys(TOOLCHAINS).toSorted()).toEqual(['dotnet', 'go', 'rust', 'temurin']);
-  for (const entry of Object.values(TOOLCHAINS)) {
-    for (const platform of PLATFORMS) {
+  const swift = SWIFT_DISTROS.map(swiftToolchainId);
+  expect(Object.keys(TOOLCHAINS).toSorted()).toEqual(
+    ['dotnet', 'go', 'rust', 'temurin', ...swift].toSorted(),
+  );
+  for (const [id, entry] of Object.entries(TOOLCHAINS)) {
+    // Swift's, for Linux alone.
+    for (const platform of swift.includes(id) ? SWIFT_PLATFORMS : PLATFORMS) {
       expect(entry.platforms[platform]?.unpacked).toBeGreaterThan(0);
     }
   }

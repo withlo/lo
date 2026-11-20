@@ -4,7 +4,7 @@
  * it; `nx run testing:codegen` writes them all again, as after their recorded cassettes change.
  */
 
-import { isObject, type Interaction, type Json } from './cassette.ts';
+import { isObject, recordedKey, type Interaction, type Json } from './cassette.ts';
 import { answered, at, BAD_GATEWAY, graphql, only, refused, type Derivation } from './derive.ts';
 
 /** Who the derived reads say opened a pull request: GitHub's stand-in for an account it no longer has. */
@@ -166,6 +166,197 @@ function submittedAs(submitted: Interaction, event: keyof typeof STATES): Intera
   };
 }
 
+/** `recorded`'s one turning on of auto-merge for pull request `number`, by its place. */
+function autoMergeOf(recorded: readonly Interaction[], number: number): number {
+  return only(
+    recorded,
+    (each) =>
+      graphql('EnablePullRequestAutoMerge')(each) &&
+      at(each.response.body, 'data', 'enablePullRequestAutoMerge', 'pullRequest', 'number') ===
+        number,
+    `#${number}'s auto-merge turned on`,
+  );
+}
+
+/** A JSON object. */
+type JsonObject = { [key: string]: Json };
+
+/** `json` with `change` made to it, when it's an object. */
+function reshaped(json: Json | undefined, change: (object: JsonObject) => Json): Json {
+  return isObject(json) ? change(json) : (json ?? null);
+}
+
+/** `interaction`'s answer with its body as `change` makes it. */
+function withBody(interaction: Interaction, change: (body: Json) => Json): Interaction {
+  const { request, response } = interaction;
+  if (response.body === undefined) return interaction;
+  return { request, response: { ...response, body: change(response.body) } };
+}
+
+/** A GraphQL answer's `repository`, as `change` makes it. */
+function inRepository(body: Json, change: (repository: JsonObject) => Json): Json {
+  return reshaped(body, (whole) => ({
+    ...whole,
+    data: reshaped(whole['data'], (data) => ({
+      ...data,
+      repository: reshaped(data['repository'], change),
+    })),
+  }));
+}
+
+/** A GraphQL answer's `repository.pullRequest`, as `change` makes it. */
+function inPull(body: Json, change: (pull: JsonObject) => Json): Json {
+  return inRepository(body, (repository) => ({
+    ...repository,
+    pullRequest: reshaped(repository['pullRequest'], change),
+  }));
+}
+
+/** Whether `interaction` is GraphQL's `operation` about pull request `number`, by its variables. */
+function about(interaction: Interaction, operation: string, number: number): boolean {
+  return graphql(operation)(interaction) && at(interaction.request.variables, 'number') === number;
+}
+
+/** How the reads of a pull request after a write change: GraphQL's, by operation, and REST's. */
+interface ReadsChange {
+  readonly graphql: Readonly<Record<string, (pull: JsonObject) => JsonObject>>;
+  readonly rest: (pull: JsonObject) => JsonObject;
+}
+
+/**
+ * `recorded` with every read of pull request `number` after the interaction at `place` as `change`
+ * makes it: GraphQL's that name it by their variables, and REST's of it, alone or in a list.
+ */
+function readsAfter(
+  recorded: Interaction[],
+  place: number,
+  number: number,
+  change: ReadsChange,
+): Interaction[] {
+  return recorded.map((each, index) => {
+    if (index <= place) return each;
+    const { request } = each;
+    const operation = request.operation;
+    if (operation !== undefined) {
+      const graphqlChange = change.graphql[operation];
+      if (graphqlChange === undefined || at(request.variables, 'number') !== number) return each;
+      return withBody(each, (body) => inPull(body, graphqlChange));
+    }
+    if (request.method !== 'GET') return each;
+    const path = new URL(request.url).pathname;
+    if (path.endsWith(`/pulls/${number}`)) {
+      return withBody(each, (body) => reshaped(body, change.rest));
+    }
+    if (!path.endsWith('/pulls')) return each;
+    return withBody(each, (body) =>
+      Array.isArray(body)
+        ? body.map((pull) =>
+            isObject(pull) && pull['number'] === number ? change.rest(pull) : pull,
+          )
+        : body,
+    );
+  });
+}
+
+/**
+ * The pull requests `app_merge_auto` turned auto-merge on for, each from a copy of Lo of its own:
+ * first into `e4/gated`, then "Merge when ready" into `e4/queued`, which has a merge queue.
+ */
+const GATED_PULL = 221;
+const QUEUED_PULL = 225;
+
+/** GitHub's refusal to turn on auto-merge where the repository doesn't allow it. */
+const AUTO_MERGE_NOT_ALLOWED = 'Auto merge is not allowed for this repository';
+
+/** What `recorded` polled of pull request `number` last before the interaction at `place`. */
+function lastPoll(recorded: readonly Interaction[], place: number, number: number): JsonObject {
+  const poll = recorded.slice(0, place).findLast((each) => about(each, 'PullRequestCheck', number));
+  const pull = at(poll?.response.body, 'data', 'repository', 'pullRequest');
+  if (!isObject(pull)) throw new Error(`the recording never polled #${number} before that`);
+  return pull;
+}
+
+/**
+ * Pull request `number`'s reads after `recorded` turned on its auto-merge at `place`, as if GitHub
+ * had refused it: auto-merge is off, and the timeline, which turning it on added an event to, is as
+ * Lo polled it last before.
+ */
+function autoMergeStaysOff(
+  recorded: readonly Interaction[],
+  place: number,
+  number: number,
+): ReadsChange {
+  const before = lastPoll(recorded, place, number);
+  const timeline = {
+    timelineItems: before['timelineItems'] ?? null,
+    timelineEvents: before['timelineEvents'] ?? null,
+  };
+  return {
+    graphql: {
+      MergeSnapshot: (pull) => ({
+        ...pull,
+        autoMergeRequest: null,
+        viewerCanDisableAutoMerge: false,
+      }),
+      PullRequestCheck: (pull) => ({ ...pull, ...timeline }),
+    },
+    rest: (pull) => ({ ...pull, auto_merge: null }),
+  };
+}
+
+/** The account `recorded` read as: the login its merge facts were read with. */
+function readAs(recorded: readonly Interaction[]): string {
+  const login = at(recorded.find(graphql('MergeSnapshot'))?.request.variables, 'login');
+  if (typeof login !== 'string') throw new Error('the recording reads no merge facts');
+  return login;
+}
+
+/**
+ * `recorded` as an account with write access reads it, below admin: every read of what decides a
+ * merge says `WRITE`, and that GitHub doesn't let it merge past the rules, and the repository's own
+ * read gives it push access without admin's, and leaves out its security settings, which GitHub
+ * shows only to admins.
+ */
+function asWriter(recorded: Interaction[]): Interaction[] {
+  return recorded.map((each) => {
+    const { request } = each;
+    if (request.operation === 'MergeSnapshot') {
+      return withBody(each, (body) =>
+        inRepository(body, (repository) => ({
+          ...repository,
+          viewerPermission: 'WRITE',
+          pullRequest: reshaped(repository['pullRequest'], (pull) => ({
+            ...pull,
+            viewerCanMergeAsAdmin: false,
+          })),
+        })),
+      );
+    }
+    if (request.method === 'GET' && new URL(request.url).pathname === '/repos/rozed-dev/e2e') {
+      return withBody(each, (body) =>
+        reshaped(body, ({ security_and_analysis: _admins, ...repository }) => ({
+          ...repository,
+          permissions: { admin: false, maintain: false, push: true, triage: true, pull: true },
+        })),
+      );
+    }
+    return each;
+  });
+}
+
+/** The base branch generation 5's pull requests merge into. */
+const WRITE_BASE = 'merge/5/base';
+
+/** The pull requests `app_merge_write` merged into {@link WRITE_BASE}, each from a copy of Lo of its own. */
+const WRITE_MERGED = [174, 175, 176];
+
+/**
+ * GitHub's words for a merge a ruleset's "Restrict updates" rule refuses, as it fails an async merge
+ * for a ruleset's rules (`merge_writes_e2e_refused`).
+ */
+const UPDATE_RESTRICTED =
+  'Repository rule violations found\n\nCannot update this protected ref.\n\n';
+
 /** How many branches one lookup of merged pull requests asks about, as Lo pads it. */
 const LOOKUP_BATCH = 10;
 
@@ -202,6 +393,152 @@ function lookedUp(recorded: readonly Interaction[], branches: readonly string[])
       body: { data: { ...(isObject(data) ? data : {}), repository } },
     },
   };
+}
+
+/** The branches a run of `MergedPullRequests` requests looks up, in order, each once. */
+function branchesIn(run: readonly Interaction[]): string[] {
+  const found = new Set<string>();
+  for (const { request } of run) {
+    for (let slot = 0; slot < LOOKUP_BATCH; slot++) {
+      const branch = at(request.variables, `b${slot}`);
+      if (typeof branch === 'string') found.add(branch);
+    }
+  }
+  return [...found];
+}
+
+/**
+ * `recorded` with a ruleset on `branch` whose one rule, "Restrict updates", lets only those who may
+ * bypass it update the branch: every read of the repository's rulesets, and of `branch`'s rules,
+ * holds it. Nothing names the ruleset's id, so it has a stand-in. The account `recorded` reads as
+ * can't bypass it, so GitHub blocks every pull request into `branch`, and each read of what decides
+ * one's merge says so. A ruleset that restricts updates makes its branch a trunk, so finding stacks
+ * no longer looks up which pull requests from `branch` merged: each run of lookups that did is added
+ * after the recording without it, answered as the run answered for the other branches.
+ */
+function restricted(recorded: Interaction[], branch: string): Interaction[] {
+  const rule: Json = {
+    type: 'update',
+    parameters: { update_allows_fetch_and_merge: false },
+    ruleset_source_type: 'Repository',
+    ruleset_source: 'rozed-dev/e2e',
+    ruleset_id: 1,
+  };
+  const ruleset: Json = {
+    enforcement: 'ACTIVE',
+    conditions: { refName: { include: [`refs/heads/${branch}`], exclude: [] } },
+    rules: { nodes: [{ type: 'UPDATE' }] },
+  };
+  const lookups: Interaction[] = [];
+  const lookup = graphql('MergedPullRequests');
+  recorded.forEach((each, index) => {
+    if (!lookup(each) || (index > 0 && lookup(recorded[index - 1]!))) return;
+    const after = recorded.slice(index).findIndex((later) => !lookup(later));
+    const run = recorded.slice(index, after === -1 ? recorded.length : index + after);
+    const branches = branchesIn(run);
+    const others = branches.filter((other) => other !== branch);
+    if (others.length === branches.length || others.length === 0) return;
+    for (let start = 0; start < others.length; start += LOOKUP_BATCH) {
+      lookups.push(lookedUp(run, others.slice(start, start + LOOKUP_BATCH)));
+    }
+  });
+  const changed = recorded.map((each) => {
+    const { request, response } = each;
+    if (graphql('TrunkRules')(each)) {
+      return withBody(each, (body) =>
+        inRepository(body, (repository) => ({
+          ...repository,
+          rulesets: reshaped(repository['rulesets'], (rulesets) => {
+            const nodes = rulesets['nodes'];
+            return { ...rulesets, nodes: [...(Array.isArray(nodes) ? nodes : []), ruleset] };
+          }),
+        })),
+      );
+    }
+    if (
+      request.method === 'GET' &&
+      new URL(request.url).pathname.endsWith(`/rules/branches/${branch}`) &&
+      Array.isArray(response.body)
+    ) {
+      return { request, response: { ...response, body: [...response.body, rule] } };
+    }
+    return each;
+  });
+  let blocked = changed;
+  for (const number of intoBranch(recorded, branch)) {
+    blocked = readsAfter(blocked, -1, number, {
+      graphql: {
+        MergeSnapshot: (pull) => ({ ...pull, mergeStateStatus: 'BLOCKED' }),
+        PullRequestCheck: (pull) => ({ ...pull, mergeStateStatus: 'BLOCKED' }),
+      },
+      // A list of pull requests says nothing of whether each can merge.
+      rest: (pull) => ({
+        ...pull,
+        ...('mergeable_state' in pull && { mergeable_state: 'blocked' }),
+      }),
+    });
+  }
+  return [...blocked, ...lookups];
+}
+
+/** The pull requests into `branch` whose merge facts `recorded` read. */
+function intoBranch(recorded: readonly Interaction[], branch: string): Set<number> {
+  const numbers = new Set<number>();
+  for (const each of recorded.filter(graphql('MergeSnapshot'))) {
+    const number = at(each.request.variables, 'number');
+    const base = at(each.response.body, 'data', 'repository', 'pullRequest', 'baseRefName');
+    if (typeof number === 'number' && base === branch) numbers.add(number);
+  }
+  return numbers;
+}
+
+/** Whether `interaction` starts a copy of Lo in a recording: it asks who it's signed in as first. */
+function signsIn({ request }: Interaction): boolean {
+  return request.method === 'GET' && request.url === 'https://api.github.com/user';
+}
+
+/**
+ * `recorded` with GitHub failing the merge of pull request `number`, as `message` says, where it
+ * last said it merged; and every read the copy of Lo that sent it made after answered as the last
+ * one it made the same way before it sent the merge, since nothing merged. A conditional read it
+ * didn't make before is answered as unchanged.
+ */
+function mergeFailed(recorded: Interaction[], number: number, message: string): Interaction[] {
+  const sent = mergedAt(recorded, number);
+  const ended = recorded.findLastIndex(
+    ({ request }) =>
+      request.method === 'GET' && request.url.includes(`/pulls/${number}/merge-async/`),
+  );
+  if (ended < sent || at(recorded[ended]!.response.body, 'status') !== 'merged') {
+    throw new Error(`the recording never saw #${number} merge`);
+  }
+  const start = Math.max(0, recorded.slice(0, sent).findLastIndex(signsIn));
+  const next = recorded.findIndex((each, index) => index > ended && signsIn(each));
+  const end = next === -1 ? recorded.length : next;
+  const before = recorded.slice(start, sent);
+  return recorded.map((each, index) => {
+    if (index === ended) {
+      return answered(each, { ...each.response, body: { status: 'failed', details: { message } } });
+    }
+    if (index < ended || index >= end) return each;
+    const { request, response } = each;
+    const key = recordedKey(request);
+    const same = before.findLast((earlier) => recordedKey(earlier.request) === key);
+    if (same) return answered(each, same.response);
+    const conditional = request.if_none_match ?? request.if_modified_since;
+    if (request.method !== 'GET' || conditional === undefined) return each;
+    const {
+      'content-type': _type,
+      'last-modified': _modified,
+      etag: _etag,
+      ...headers
+    } = response.headers;
+    return answered(each, {
+      status: 304,
+      headers:
+        request.if_none_match === undefined ? headers : { ...headers, etag: request.if_none_match },
+    });
+  });
 }
 
 export const DERIVATIONS: readonly Derivation[] = [
@@ -429,6 +766,117 @@ export const DERIVATIONS: readonly Derivation[] = [
         recorded[index] = answered(recorded[index]!, recorded[after]!.response);
       recorded.push({ request: read.request, response: { ...read.response, body: listed } });
       return recorded;
+    },
+  },
+  {
+    name: 'app_merge_auto_not_allowed',
+    from: 'app_merge_auto',
+    description: `app_merge_auto as if "Allow auto-merge" went off in rozed-dev/e2e's settings after Lo read #${GATED_PULL}: turning on auto-merge for it is refused as GitHub refuses it then, "${AUTO_MERGE_NOT_ALLOWED}", as recorded in merge_writes_e2e_auto_merge, and so is "Merge when ready" for #${QUEUED_PULL} after. From the first refusal on, every read of what decides a merge says the account can't turn auto-merge on, and every read of either pull request after its refusal says auto-merge is off, with the timeline Lo polled before it, which turning it on added an event to when recorded.`,
+    derive(recorded) {
+      const first = autoMergeOf(recorded, GATED_PULL);
+      let derived = recorded;
+      for (const number of [GATED_PULL, QUEUED_PULL]) {
+        const place = autoMergeOf(derived, number);
+        derived[place] = answered(
+          derived[place]!,
+          refused(derived[place]!, AUTO_MERGE_NOT_ALLOWED),
+        );
+        derived = readsAfter(derived, place, number, autoMergeStaysOff(derived, place, number));
+      }
+      // The repository no longer allows it, so no account may turn it on.
+      return derived.map((each, index) =>
+        index > first && graphql('MergeSnapshot')(each)
+          ? withBody(each, (body) =>
+              inPull(body, (pull) => ({ ...pull, viewerCanEnableAutoMerge: false })),
+            )
+          : each,
+      );
+    },
+  },
+  {
+    name: 'app_merge_auto_now',
+    from: 'app_merge_auto',
+    description: `app_merge_auto as if ${SOMEONE_ELSE} had opened rozed-dev/e2e#${GATED_PULL}: every read names ${SOMEONE_ELSE} as its author, and its merge facts ask rozed-bot, which owns everything on e4/gated, for a code owner's review, until rozed-bot approved it on GitHub after Lo read it. So GitHub refused to turn on auto-merge for it as it refuses it for a pull request nothing blocks, "Pull request Pull request is in clean status", and every read of what decides #${GATED_PULL}'s merge after says so: approved by rozed-bot, no review asked for, clean, and auto-merge off, which no account can turn on while nothing blocks the merge. Its timeline grew by that approval, as it grew by an event when the recording turned auto-merge on, and so did the count of its submitted reviews. Lo, reading it again, offers the merge in auto-merge's place; nothing merged #${GATED_PULL}, so no answer to that merge was recorded.`,
+    derive(recorded) {
+      const owner = readAs(recorded);
+      const opened = recorded.map((each) =>
+        about(each, 'MergeSnapshot', GATED_PULL)
+          ? withBody(each, (body) =>
+              inPull(body, (pull) => ({
+                ...pull,
+                author: { __typename: 'User', login: SOMEONE_ELSE },
+                viewerDidAuthor: false,
+                reviewRequests: {
+                  totalCount: 1,
+                  nodes: [
+                    { asCodeOwner: true, requestedReviewer: { __typename: 'User', login: owner } },
+                  ],
+                },
+              })),
+            )
+          : withBody(each, (body) => openedBy(body, GATED_PULL, SOMEONE_ELSE)),
+      );
+      const place = autoMergeOf(opened, GATED_PULL);
+      opened[place] = answered(
+        opened[place]!,
+        refused(opened[place]!, 'Pull request Pull request is in clean status'),
+      );
+      const off = autoMergeStaysOff(opened, place, GATED_PULL);
+      const reviews = at(lastPoll(opened, place, GATED_PULL), 'submittedReviews', 'totalCount');
+      if (typeof reviews !== 'number') {
+        throw new Error(`the recording counts no reviews of #${GATED_PULL}`);
+      }
+      return readsAfter(opened, place, GATED_PULL, {
+        graphql: {
+          MergeSnapshot: (pull) => ({
+            ...off.graphql['MergeSnapshot']!(pull),
+            mergeStateStatus: 'CLEAN',
+            reviewDecision: 'APPROVED',
+            viewerCanEnableAutoMerge: false,
+            reviewRequests: { totalCount: 0, nodes: [] },
+            latestOpinionatedReviews: {
+              totalCount: 1,
+              nodes: [
+                {
+                  author: { __typename: 'User', login: owner },
+                  state: 'APPROVED',
+                  commit: { oid: pull['headRefOid'] ?? null },
+                  authorCanPushToRepository: true,
+                  onBehalfOf: { totalCount: 0, nodes: [] },
+                },
+              ],
+            },
+          }),
+          PullRequestCheck: (pull) => ({
+            ...pull,
+            mergeStateStatus: 'CLEAN',
+            reviewDecision: 'APPROVED',
+            submittedReviews: { totalCount: reviews + 1 },
+          }),
+        },
+        // A list of pull requests says nothing of whether each can merge.
+        rest: (pull) => ({
+          ...off.rest(pull),
+          ...('mergeable_state' in pull && { mergeable_state: 'clean' }),
+        }),
+      });
+    },
+  },
+  {
+    name: 'app_merge_override_writer',
+    from: 'app_merge_override',
+    description:
+      "app_merge_override read as an account with write access, below admin: every read of what decides rozed-dev/e2e#231's merge says WRITE, and that GitHub doesn't let it merge past merge/7/override's rules, and the repository's own read gives it push access without admin's, and no security settings, which GitHub shows only to admins.",
+    derive: asWriter,
+  },
+  {
+    name: 'app_merge_write_writer',
+    from: 'app_merge_write',
+    description: `app_merge_write read as an account with write access, below admin, as app_merge_override_writer is, on a ${WRITE_BASE} that a ruleset's "Restrict updates" rule covers, which the account can't bypass: every read of the repository's rulesets and of ${WRITE_BASE}'s rules holds it, every read of what decides the merge of a pull request into ${WRITE_BASE} says GitHub blocks it, and Lo, which takes a branch such a rule covers as a trunk, looks up which pull requests merged from the other branches only, as recorded for them. GitHub fails each merge Lo sent into ${WRITE_BASE}, of rozed-dev/e2e#174, #175 and #176, for that rule, where it said it merged, as it fails an async merge for a ruleset's rules: "Repository rule violations found", then "Cannot update this protected ref.". The reads each copy of Lo made after answer as before it sent the merge, since nothing merged. The copies after the first, which no derived test opens, read ${WRITE_BASE}'s commits as recorded, moved by the merges before them. These answers are derived: the recorders accept only rozed-bot's token, an admin's, and no account below admin merged anything.`,
+    derive(recorded) {
+      let writer = asWriter(recorded);
+      for (const number of WRITE_MERGED) writer = mergeFailed(writer, number, UPDATE_RESTRICTED);
+      return restricted(writer, WRITE_BASE);
     },
   },
 ];

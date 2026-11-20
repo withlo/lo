@@ -1,0 +1,72 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "https://api.github.com/graphql",
+    "operation": "PullRequest",
+    "variables": {
+      "owner": "rozed-dev",
+      "name": "e2e",
+      "number": 221,
+      "filesFirst": 100,
+      "filesAfter": null
+    },
+    "query_sha256": "faebcf58d69c5e012ebe96425bca46ad442d8bf907b11b029049c26d755fc48b"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "x-ratelimit-limit": "5000",
+      "x-ratelimit-remaining": "4913",
+      "x-ratelimit-reset": "1794889860",
+      "x-ratelimit-resource": "graphql",
+      "x-ratelimit-used": "87"
+    },
+    "body": {
+      "data": {
+        "repository": {
+          "pullRequest": {
+            "id": "PR_kwDOVleUfc8AAAABPueUmA",
+            "number": 221,
+            "title": "Fixture M7: gated, waiting for an approval",
+            "url": "https://github.com/rozed-dev/e2e/pull/221",
+            "state": "OPEN",
+            "isDraft": false,
+            "updatedAt": "2026-11-17T03:58:45Z",
+            "author": {
+              "__typename": "User",
+              "login": "ghost",
+              "avatarUrl": "https://avatars.githubusercontent.com/u/353226052?v=4"
+            },
+            "baseRefName": "e4/gated",
+            "baseRefOid": "f8fd826d4615edfc580009f2aaf9ddc55f514ee2",
+            "headRefName": "merge/7/gated-passing",
+            "headRefOid": "f61986d3615a8509a6ed1e4e1492cd5c9af81390",
+            "isCrossRepository": false,
+            "headRepository": {
+              "nameWithOwner": "rozed-dev/e2e",
+              "isFork": false
+            },
+            "files": {
+              "totalCount": 2,
+              "pageInfo": {
+                "hasNextPage": false,
+                "endCursor": "Mg"
+              },
+              "nodes": [
+                {
+                  "path": "merge/7/gated-passing/ci-result",
+                  "viewerViewedState": "UNVIEWED"
+                },
+                {
+                  "path": "merge/7/gated-passing/notes.md",
+                  "viewerViewedState": "UNVIEWED"
+                }
+              ]
+            }
+          }
+        }
+      }
+    }
+  }
+}

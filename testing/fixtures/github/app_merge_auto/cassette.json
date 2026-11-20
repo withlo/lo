@@ -1,0 +1,5 @@
+{
+  "description": "What the app’s merge tests send and read as Lo turns on auto-merge, recorded from the app with writes on generation 7 of fixtures/merge.sh’s pull requests, each pull request from a copy of Lo of its own: Lo turned on auto-merge for rozed-dev/e2e#221, into e4/gated, which waits only for an approval, then “Merge when ready” for #225, into e4/queued, while its ci ran again, with each tab open long enough for its polls to repeat before and after. app_merge_auto_off turned both off before #225’s ci passed, so neither merged, neither joined the queue, and e4/queued is still at MERGE_E4.queued.",
+  "recorded_at": "2026-11-17T04:13:43Z",
+  "repo": "rozed-dev/e2e"
+}
