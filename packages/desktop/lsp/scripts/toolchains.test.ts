@@ -255,23 +255,41 @@ describe('Go', () => {
 });
 
 /** Temurin's names for the platforms. */
-const TEMURIN_ARCH = ['aarch64_mac', 'x64_mac', 'x64_linux', 'aarch64_linux'] as const;
+const TEMURIN_ARCH = {
+  'darwin-arm64': 'aarch64_mac',
+  'darwin-x64': 'x64_mac',
+  'linux-x64': 'x64_linux',
+  'linux-arm64': 'aarch64_linux',
+} as const;
 
 /**
- * The Temurin JDK 25.0.1+8, served as GitHub would, each archive with its binary signature, or a
- * signature of another file when `signs` says.
+ * Temurin JDK `version`, served as GitHub would, each archive with its binary signature, or a
+ * signature of another file when `signs` says, and the release's files as its API lists them:
+ * for every platform but those `missing` names.
  */
-async function temurinRelease(options: { signs?: Buffer } = {}) {
+async function temurinRelease(
+  options: { version?: string; signs?: Buffer; missing?: readonly string[] } = {},
+) {
+  const { version = '25.0.1+8', missing = [] } = options;
   const signer = await publisher();
   const routes: Routes = {};
-  const base = 'https://github.com/adoptium/temurin25-binaries/releases/download/jdk-25.0.1%2B8/';
-  for (const arch of TEMURIN_ARCH) {
-    const name = `OpenJDK25U-jdk_${arch}_hotspot_25.0.1_8.tar.gz`;
-    const home = arch.endsWith('_mac') ? 'jdk-25.0.1+8/Contents/Home' : 'jdk-25.0.1+8';
+  const tag = encodeURIComponent(`jdk-${version}`);
+  const base = `https://github.com/adoptium/temurin25-binaries/releases/download/${tag}/`;
+  const assets = [];
+  for (const [platform, arch] of Object.entries(TEMURIN_ARCH)) {
+    if (missing.includes(platform)) continue;
+    const name = `OpenJDK25U-jdk_${arch}_hotspot_${version.replace('+', '_')}.tar.gz`;
+    const home = arch.endsWith('_mac') ? `jdk-${version}/Contents/Home` : `jdk-${version}`;
     const archive = tarGz([{ path: `${home}/bin/java`, data: `java for ${arch}`, mode: 0o755 }]);
     routes[`${base}${name}`] = { body: archive };
     routes[`${base}${name}.sig`] = { body: await signer.signDetached(options.signs ?? archive) };
+    for (const each of [name, `${name}.sig`]) {
+      assets.push({ name: each, browser_download_url: `${base}${each}`, digest: null });
+    }
   }
+  routes[`https://api.github.com/repos/adoptium/temurin25-binaries/releases/tags/${tag}`] = {
+    body: Buffer.from(JSON.stringify({ assets })),
+  };
   return { signer, ...(await tools(routes)) };
 }
 
@@ -285,6 +303,72 @@ describe('Temurin', () => {
       entry: 'jdk-25.0.1+8/Contents/Home/bin/java',
     });
     expect(pinned.platforms['linux-x64']).toMatchObject({ entry: 'jdk-25.0.1+8/bin/java' });
+    expect(pinned.platforms['linux-x64']).not.toHaveProperty('version');
+  });
+
+  test('takes an update out of the usual cycle, with a fourth part to its version', async () => {
+    const { signer, tools: given } = await temurinRelease({ version: '25.0.1.1+2' });
+    const pinned = await temurin([signer.publicKey])('25.0.1.1+2', given);
+    expect(pinned.version).toBe('25.0.1.1+2');
+    expect(pinned.platforms['linux-arm64']).toMatchObject({
+      url: 'https://github.com/adoptium/temurin25-binaries/releases/download/jdk-25.0.1.1%2B2/OpenJDK25U-jdk_aarch64_linux_hotspot_25.0.1.1_2.tar.gz',
+      entry: 'jdk-25.0.1.1+2/bin/java',
+    });
+    await expect(temurin([signer.publicKey])('25.0.1.1.1+2', given)).rejects.toThrow(
+      /isn’t a Temurin version/,
+    );
+  });
+
+  test('keeps what’s pinned for a platform the release has no archive for yet, saying so', async () => {
+    const before = await temurinRelease();
+    const old = await temurin([before.signer.publicKey])('25.0.1+8', before.tools);
+    const missing = ['darwin-x64', 'linux-arm64'];
+    const after = await temurinRelease({ version: '25.0.1.1+2', missing });
+    const given = { ...after.tools, pinned: old };
+    const pinned = await temurin([after.signer.publicKey])('25.0.1.1+2', given);
+    expect(pinned.version).toBe('25.0.1.1+2');
+    expect(pinned.platforms['darwin-x64']).toEqual({
+      ...old.platforms['darwin-x64'],
+      version: '25.0.1+8',
+    });
+    expect(pinned.platforms['linux-arm64']).toEqual({
+      ...old.platforms['linux-arm64'],
+      version: '25.0.1+8',
+    });
+    expect(pinned.platforms['linux-x64']).toMatchObject({ entry: 'jdk-25.0.1.1+2/bin/java' });
+    expect(pinned.platforms['linux-x64']).not.toHaveProperty('version');
+    expect(after.lines).toContain(
+      "Adoptium's jdk-25.0.1.1+2 has no OpenJDK25U-jdk_x64_mac_hotspot_25.0.1.1_2.tar.gz yet, so darwin-x64 stays on 25.0.1+8, as pinned. Pin temurin 25.0.1.1+2 again once it has.",
+    );
+    // Pinned again once the archives are out, every platform moves.
+    const later = await temurinRelease({ version: '25.0.1.1+2' });
+    const moved = await temurin([later.signer.publicKey])('25.0.1.1+2', {
+      ...later.tools,
+      pinned,
+    });
+    expect(moved.platforms['darwin-x64']).toMatchObject({
+      entry: 'jdk-25.0.1.1+2/Contents/Home/bin/java',
+    });
+    expect(moved.platforms['darwin-x64']).not.toHaveProperty('version');
+    // And run again while they're still missing, they stay on what they had.
+    const again = await temurin([after.signer.publicKey])('25.0.1.1+2', { ...after.tools, pinned });
+    expect(again.platforms['linux-arm64']).toEqual(pinned.platforms['linux-arm64']);
+  });
+
+  test('refuses a release missing a platform with nothing pinned to keep, or missing all', async () => {
+    const some = await temurinRelease({ missing: ['linux-arm64'] });
+    await expect(temurin([some.signer.publicKey])('25.0.1+8', some.tools)).rejects.toThrow(
+      /has no OpenJDK25U-jdk_aarch64_linux_hotspot_25\.0\.1_8\.tar\.gz, and nothing is pinned for linux-arm64/,
+    );
+    const before = await temurinRelease();
+    const old = await temurin([before.signer.publicKey])('25.0.1+8', before.tools);
+    const none = await temurinRelease({
+      version: '25.0.1.1+2',
+      missing: Object.keys(TEMURIN_ARCH),
+    });
+    await expect(
+      temurin([none.signer.publicKey])('25.0.1.1+2', { ...none.tools, pinned: old }),
+    ).rejects.toThrow(/has no archive for any platform Lo pins/);
   });
 
   test('refuses an archive signed by another key, or whose signature is of another file', async () => {

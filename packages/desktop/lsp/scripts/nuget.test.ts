@@ -1,6 +1,6 @@
-// pin.ts's checks of a package from nuget.org: what it hashes of a package, and Microsoft's real
-// signature of Roslyn's package for macOS on Arm, from `signatures/`, checked as pin.ts checks it,
-// in packages the test makes, so none is downloaded.
+// pin.ts's checks of a NuGet package: what it hashes of a package, and Microsoft's real signature
+// of Roslyn's package for macOS on Arm, from `signatures/`, checked as pin.ts checks it, in
+// packages the test makes, so none is downloaded.
 
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
@@ -8,14 +8,11 @@ import { join } from 'node:path';
 
 import { expect, test } from 'vitest';
 
-import { PLATFORMS } from '../src/index.ts';
-import { serve, zip, type ZipEntry } from '../test/downloads.ts';
-import { tempFolder } from '../test/support.ts';
+import { zip, type ZipEntry } from '../test/downloads.ts';
 import {
   chain,
   contentHash,
   DIGICERT_G4,
-  nuget,
   parse,
   signatureFile,
   signedData,
@@ -124,43 +121,4 @@ test('refuses a certificate that wasn’t good when the timestamp says it signed
       `wasn’t good at ${when.toISOString()}`,
     );
   }
-});
-
-test('refuses a package that isn’t the file nuget.org’s catalog lists', async () => {
-  const pkg = signed(SIGNATURE);
-  const routes: Record<string, { body: Buffer }> = {};
-  for (const platform of PLATFORMS) {
-    const id = `server.${platform}`;
-    const catalog = `https://api.nuget.org/v3/catalog0/data/${id}.1.0.0.json`;
-    routes[`https://api.nuget.org/v3/registration5-semver1/${id}/1.0.0.json`] = {
-      body: Buffer.from(JSON.stringify({ catalogEntry: catalog })),
-    };
-    routes[catalog] = {
-      body: Buffer.from(
-        JSON.stringify({
-          id,
-          version: '1.0.0',
-          packageHash: createHash('sha512').update('another package').digest('base64'),
-          packageHashAlgorithm: 'SHA512',
-        }),
-      ),
-    };
-    routes[`https://api.nuget.org/v3-flatcontainer/${id}/1.0.0/${id}.1.0.0.nupkg`] = { body: pkg };
-  }
-  const { fetch } = await serve(routes);
-  const source = nuget(
-    {
-      'darwin-arm64': 'server.darwin-arm64',
-      'darwin-x64': 'server.darwin-x64',
-      'linux-x64': 'server.linux-x64',
-      'linux-arm64': 'server.linux-arm64',
-    },
-    () => 'tools/net10.0/server.dll',
-    MICROSOFT,
-  );
-  const tools = { fetch, folder: tempFolder(), log: () => undefined };
-  await expect(source('1.0.0', tools)).rejects.toThrow(
-    'server.darwin-arm64 1.0.0 isn’t the package nuget.org’s catalog lists',
-  );
-  await expect(source('1.0.0-preview', tools)).rejects.toThrow('isn’t a stable version');
 });

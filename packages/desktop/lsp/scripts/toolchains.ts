@@ -7,7 +7,9 @@
 //   key, which lists each component's SHA-256. rustc, cargo, the standard library and its sources
 //   are layers of one sysroot.
 // - The Temurin JDK, from Adoptium's releases on GitHub: each archive's detached `.sig`, made with
-//   Adoptium's key.
+//   Adoptium's key. Adoptium publishes a release's archives a platform at a time, so a platform
+//   whose archive isn't out yet keeps the build pinned for it before, under its own version, and
+//   the next run moves it.
 // - The .NET SDK, from builds.dotnet.microsoft.com, which publishes no signature: each archive's
 //   SHA-512 must be the one both Microsoft's download site and the dotnet/core repository list in
 //   their `releases.json`.
@@ -33,6 +35,7 @@ import {
   fetchBytes,
   fetchJson,
   fetchPart,
+  GITHUB_RELEASE,
   type Source,
   type Tools,
   verifySigned,
@@ -326,20 +329,47 @@ const TEMURIN_PLATFORMS: Record<Platform, string> = {
 };
 
 /**
- * The Temurin JDK, from Adoptium's releases on GitHub, `<feature>.<interim>.<update>+<build>`: each
- * archive signed with `keys`, Adoptium's.
+ * The Temurin JDK, from Adoptium's releases on GitHub, `<feature>.<interim>.<update>+<build>`, or
+ * with a fourth part for an update out of the usual cycle (`25.0.5.1+2`): each archive signed with
+ * `keys`, Adoptium's. A platform the release has no archive and signature for yet, as the GitHub
+ * API lists its files, keeps what the manifest pins for it now, which was checked when it was
+ * pinned, naming that build's version as its own; with nothing pinned for it, or no platform
+ * the release has, it throws.
  */
 export function temurin(keys: readonly string[]): Source {
   return async (version, tools) => {
-    const parts = /^(\d+)\.\d+\.\d+\+(\d+)$/.exec(version);
+    const parts = /^(\d+)\.\d+\.\d+(?:\.\d+)?\+(\d+)$/.exec(version);
     const feature = parts?.[1];
     if (feature === undefined) throw new Error(`${version} isn’t a Temurin version`);
     // GitHub sends each download on to its host for release files.
     const hosts = ['github.com', 'release-assets.githubusercontent.com'];
+    const repo = `adoptium/temurin${feature}-binaries`;
     const tag = encodeURIComponent(`jdk-${version}`);
-    const base = `https://github.com/adoptium/temurin${feature}-binaries/releases/download/${tag}/`;
-    return everyPlatform(version, hosts, tools, async (platform, inside) => {
+    const base = `https://github.com/${repo}/releases/download/${tag}/`;
+    const release = await fetchJson(
+      `https://api.github.com/repos/${repo}/releases/tags/${tag}`,
+      GITHUB_RELEASE,
+      ['api.github.com'],
+      tools,
+    );
+    const listed = new Set(release.assets.map((asset) => asset.name));
+    const behind: string[] = [];
+    const pinned = await everyPlatform(version, hosts, tools, async (platform, inside) => {
       const name = `OpenJDK${feature}U-jdk_${TEMURIN_PLATFORMS[platform]}_hotspot_${version.replace('+', '_')}.tar.gz`;
+      if (!listed.has(name) || !listed.has(`${name}.sig`)) {
+        const kept = tools.pinned?.platforms[platform];
+        if (kept?.kind !== 'tar.gz') {
+          throw new Error(
+            `Adoptium's jdk-${version} has no ${name}, and nothing is pinned for ${platform} to keep`,
+          );
+        }
+        const was = kept.version ?? tools.pinned?.version ?? '';
+        behind.push(platform);
+        inside.log(
+          `Adoptium's jdk-${version} has no ${name} yet, so ${platform} stays on ${was}, as pinned. Pin temurin ${version} again once it has.`,
+        );
+        return was === version ? kept : { ...kept, version: was };
+      }
       const signature = await fetchBytes(`${base}${name}.sig`, hosts, inside);
       const { part, file } = await fetchPart(`${base}${name}`, hosts, inside);
       await verifyDetached(await readFile(file), signature, keys);
@@ -349,6 +379,10 @@ export function temurin(keys: readonly string[]): Source {
         : `jdk-${version}`;
       return measured({ kind: 'tar.gz', ...part, entry: `${home}/bin/java` }, [file], inside);
     });
+    if (behind.length === PLATFORMS.length) {
+      throw new Error(`Adoptium's jdk-${version} has no archive for any platform Lo pins`);
+    }
+    return pinned;
   };
 }
 

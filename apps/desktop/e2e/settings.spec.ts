@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
-import { currentPlatform, downloadFor, fingerprint, TOOLCHAINS } from '@lo/lsp';
+import { currentPlatform, downloadFor, fingerprint, TOOLCHAINS, versionFor } from '@lo/lsp';
 import { gitProgram } from '@lo/testing/git';
 import { _electron as electron, type ElectronApplication, type Page } from '@playwright/test';
 
@@ -347,13 +347,17 @@ test('Settings lists the toolchains, and removes one that’s downloaded', async
       process.platform === 'darwin'
         ? [/^Swift(From Xcode|From Apple’s Command Line Tools|Needs .+) · For Swift$/]
         : [];
+    // Temurin's version can differ by platform, while one's archive is still to come.
+    const platform = currentPlatform();
+    if (!TOOLCHAINS.temurin || !platform) throw new Error('Lo pins no Temurin for this system');
+    const jdk = versionFor(TOOLCHAINS.temurin, platform).replaceAll(/[.+]/g, '\\$&');
     await expect(rows).toHaveText(
       [
         // C#'s server runs on the .NET SDK, Go's on Go, Rust's on Rust and Java's on the JDK.
         /^\.NET SDK 10\.0\.404Not downloaded · [\d.]+ MB · For C#$/,
         'Go 1.27.42 KB · For GoRemove',
         /^Rust 1\.100\.0Not downloaded · [\d.]+ MB/,
-        /^Temurin JDK 25\.0\.5\+8Not downloaded · [\d.]+ MB/,
+        new RegExp(`^Temurin JDK ${jdk}Not downloaded · [\\d.]+ MB`),
         ...swift,
       ],
       { timeout: 15_000 },

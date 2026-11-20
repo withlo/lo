@@ -1,8 +1,8 @@
 /**
- * C#: Roslyn's language server, `Microsoft.CodeAnalysis.LanguageServer`, the one the C# extension
- * for VS Code runs, from nuget.org's `roslyn-language-server.<platform>` packages. It's a program
- * for .NET 10, which starts as `dotnet exec` on Lo's .NET SDK, with the SDK's variables
- * (`toolchainUse`).
+ * C#: Roslyn's language server, `Microsoft.CodeAnalysis.LanguageServer`, the build the C# extension
+ * for VS Code's newest stable release runs, from the `roslyn-language-server.<platform>` packages
+ * of the feed that extension gets it from (`scripts/csharp.ts`). It's a program for .NET 10, which
+ * starts as `dotnet exec` on Lo's .NET SDK, with the SDK's variables (`toolchainUse`).
  *
  * A C# server knows a project through MSBuild, and MSBuild runs a project's own code as it loads
  * it: targets hooked into the build and their `Exec` tasks, inline tasks compiled from the project

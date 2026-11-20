@@ -460,7 +460,11 @@ describe('Roslyn', () => {
 
   test('starts as `dotnet exec` on its own program, from its package for each platform', () => {
     const pinnedRoslyn = MANIFEST.roslyn;
-    expect(pinnedRoslyn?.hosts).toEqual(['api.nuget.org']);
+    // The feed the C# extension for VS Code gets it from, and the stores that sends each on to.
+    const [feed, ...stores] = pinnedRoslyn?.hosts ?? [];
+    expect(feed).toBe('pkgs.dev.azure.com');
+    expect(stores).toHaveLength(4);
+    for (const store of stores) expect(store).toMatch(/^[a-z0-9]+\.vsblob\.vsassets\.io$/);
     expect(Object.keys(pinnedRoslyn?.platforms ?? {}).toSorted()).toEqual(
       [...PLATFORMS].toSorted(),
     );
@@ -469,7 +473,7 @@ describe('Roslyn', () => {
       const id = `roslyn-language-server.${rid}`;
       expect(pinnedRoslyn?.platforms[platform]).toMatchObject({
         kind: 'zip',
-        url: `https://api.nuget.org/v3-flatcontainer/${id}/${ROSLYN_VERSION}/${id}.${ROSLYN_VERSION}.nupkg`,
+        url: `https://pkgs.dev.azure.com/azure-public/3ccf6661-f8ce-4e8a-bb2e-eff943ddd3c7/_packaging/36a629e1-6c5b-4bcd-aa2e-6018802d6b99/nuget/v3/flat2/${id}/${ROSLYN_VERSION}/${id}.${ROSLYN_VERSION}.nupkg`,
         entry: `tools/net10.0/${rid}/Microsoft.CodeAnalysis.LanguageServer.dll`,
       });
     }

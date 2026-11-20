@@ -20,7 +20,10 @@
  *   more, in place of the limit every download shares.
  *
  * `toolchains.json` pins the toolchains language servers use, Go, Rust, a JDK and the .NET SDK,
- * the same way, each with what it unpacks to ({@link TOOLCHAINS}).
+ * the same way, each with what it unpacks to ({@link TOOLCHAINS}). A toolchain's archive for a
+ * platform may name a `version` of its own, older than the entry's, when its vendor hasn't
+ * published the entry's version for that platform yet: that platform installs and names that
+ * version ({@link versionFor}), and the rest the entry's. A server's never does.
  */
 
 import { z } from 'zod';
@@ -83,6 +86,8 @@ const archive = file.extend({
   kind: z.enum(['tar.gz', 'zip']),
   entry: path,
   unpacked,
+  /** The version this platform has, where it isn't the entry's: a toolchain's only. */
+  version: z.string().regex(NAME, 'a version').optional(),
 });
 
 /** A program alone, gzipped or as it is: `entry` is the name it's installed by. */
@@ -222,11 +227,29 @@ export function partsOf(download: Download): readonly Part[] {
   }
 }
 
-/** Reads a manifest, and throws with what's wrong with one Lo can't use. */
-export function parseManifest(json: unknown): Manifest {
+/** Reads a manifest of either kind, and throws with what's wrong with one Lo can't use. */
+function parseEntries(json: unknown): Manifest {
   const parsed = manifest.safeParse(json);
   if (!parsed.success) throw new Error(`the manifest is invalid: ${z.prettifyError(parsed.error)}`);
   return parsed.data;
+}
+
+/**
+ * Reads a manifest of servers, and throws with what's wrong with one Lo can't use: a server is
+ * one version on every platform, so none names a version of its own for one.
+ */
+export function parseManifest(json: unknown): Manifest {
+  const parsed = parseEntries(json);
+  for (const [id, entry] of Object.entries(parsed)) {
+    for (const [platform, download] of Object.entries(entry.platforms)) {
+      if ('version' in download && download.version !== undefined) {
+        throw new Error(
+          `the manifest is invalid: ${id} names a version of its own on ${platform}, which only a toolchain may`,
+        );
+      }
+    }
+  }
+  return parsed;
 }
 
 /** Lo's own manifest. */
@@ -237,7 +260,7 @@ export const MANIFEST: Manifest = parseManifest(servers);
  * throws with what's wrong with one Lo can't use.
  */
 export function parseToolchains(json: unknown): Manifest {
-  const parsed = parseManifest(json);
+  const parsed = parseEntries(json);
   for (const [id, entry] of Object.entries(parsed)) {
     for (const [platform, download] of Object.entries(entry.platforms)) {
       if (download.unpacked === undefined) {
@@ -256,4 +279,14 @@ export const TOOLCHAINS: Manifest = parseToolchains(toolchains);
 /** What `entry` downloads on `platform`, or `undefined` when it has nothing for it. */
 export function downloadFor(entry: Pinned, platform: Platform): Download | undefined {
   return entry.platforms[platform] ?? entry.platforms.any;
+}
+
+/**
+ * The version of `entry` that `platform` installs: the one its download names, where its vendor
+ * hasn't published the entry's for it yet, else the entry's.
+ */
+export function versionFor(entry: Pinned, platform: Platform): string {
+  const download = downloadFor(entry, platform);
+  const own = download !== undefined && 'version' in download ? download.version : undefined;
+  return own ?? entry.version;
 }
