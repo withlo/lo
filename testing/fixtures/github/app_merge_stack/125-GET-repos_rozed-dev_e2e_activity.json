@@ -1,0 +1,19 @@
+{
+  "request": {
+    "method": "GET",
+    "url": "https://api.github.com/repos/rozed-dev/e2e/activity?ref=refs%2Fheads%2Fmerge%2F8%2Fstack-1&direction=desc&per_page=100",
+    "if_none_match": "W/\"b0dee56f33e9e0e893aba63c3b34ad31d33bdab0a107ad3c56dd06120748411b\""
+  },
+  "response": {
+    "status": 304,
+    "headers": {
+      "etag": "\"b0dee56f33e9e0e893aba63c3b34ad31d33bdab0a107ad3c56dd06120748411b\"",
+      "x-github-api-version-selected": "2022-11-28",
+      "x-ratelimit-limit": "5000",
+      "x-ratelimit-remaining": "4744",
+      "x-ratelimit-reset": "1794889860",
+      "x-ratelimit-resource": "core",
+      "x-ratelimit-used": "256"
+    }
+  }
+}

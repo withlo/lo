@@ -60,6 +60,7 @@ list.
 | `diff.whitespace` | show or hide                           | `"show"`     | Whether the diff shows changes to whitespace alone. `gw` switches it. GitHub's diff, shown until the local copy is ready, shows them either way. |
 | `code.trusted`    | a list of trusted repos and PRs        | `[]`         | The repos, and pull requests from forks, that language servers may run on, as below.                                                             |
 | `overview.open`   | overview or diff                       | `"overview"` | What a pull request opens on when it has an overview Lo can show: the overview, or the diff. Without one, it always opens on the diff.           |
+| `updates.check`   | true or false                          | `true`       | Whether Lo checks GitHub Releases for a newer version by itself: 30 s after it starts, then every 6 hours. Off, it checks only when you ask.     |
 
 ## Trusted repos and pull requests
 

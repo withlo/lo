@@ -13,6 +13,7 @@ import type {
   MergeStatusView,
   MergeView,
   Method,
+  Placement,
   Refusal,
 } from '../contract.ts';
 
@@ -53,6 +54,15 @@ export type Squash =
     }
   | { readonly kind: 'failed'; readonly at: string; readonly why: string };
 
+/**
+ * Where the pull request sits, as main said when the panel asked, for the status it was asked at:
+ * being asked, or what main said.
+ */
+export type Place =
+  | { readonly kind: 'none' }
+  | { readonly kind: 'reading'; readonly at: string }
+  | { readonly kind: 'read'; readonly at: string; readonly placement: Placement };
+
 /** A view's merge panel. */
 export interface Panel {
   readonly open: boolean;
@@ -64,6 +74,8 @@ export interface Panel {
   readonly title: string;
   readonly message: string;
   readonly squash: Squash;
+  /** Where it sits: a stack's layer, a chain's, or alone. */
+  readonly place: Place;
 }
 
 export const panels = tabState<Panel>(() => ({
@@ -73,7 +85,14 @@ export const panels = tabState<Panel>(() => ({
   title: '',
   message: '',
   squash: { kind: 'none' },
+  place: { kind: 'none' },
 }));
+
+/** Where view `id`'s pull request sits, as main last said, if it has. */
+export function placementOf(id: string): Placement | undefined {
+  const { place } = panels.get(id);
+  return place.kind === 'read' ? place.placement : undefined;
+}
 
 /**
  * The merge's dialog, in the panel's place:

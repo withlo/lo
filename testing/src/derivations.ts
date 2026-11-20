@@ -357,57 +357,54 @@ const WRITE_MERGED = [174, 175, 176];
 const UPDATE_RESTRICTED =
   'Repository rule violations found\n\nCannot update this protected ref.\n\n';
 
-/** The aliases of a `MergedPullRequests` request, one a branch: ten, as Lo asks. */
-const LOOKUP_ALIASES = Array.from({ length: 10 }, (_, index) => `b${index}`);
+/** How many branches one lookup of merged pull requests asks about, as Lo pads it. */
+const LOOKUP_BATCH = 10;
 
 /**
- * The branches a run of `MergedPullRequests` requests looks up, in order, each once, with what
- * GitHub answered for each.
+ * A lookup of the merged pull requests from `branches`, as Lo asks it, the batch padded with the
+ * first branch, answered with what the recording last answered for each.
  */
-function lookedUp(run: readonly Interaction[]): Map<string, Json> {
-  const found = new Map<string, Json>();
-  for (const { request, response } of run) {
-    for (const alias of LOOKUP_ALIASES) {
-      const branch = at(request.variables, alias);
-      const answer = at(response.body, 'data', 'repository', alias);
-      if (typeof branch === 'string' && !found.has(branch)) found.set(branch, answer ?? null);
+function lookedUp(recorded: readonly Interaction[], branches: readonly string[]): Interaction {
+  const lookups = recorded.filter(graphql('MergedPullRequests'));
+  const last = lookups.at(-1);
+  if (!last || !isObject(last.request.variables)) throw new Error('the recording looks up nothing');
+  const answers = new Map<string, Json>();
+  for (const { request, response } of lookups) {
+    for (let slot = 0; slot < LOOKUP_BATCH; slot++) {
+      const branch = at(request.variables, `b${slot}`);
+      const answer = at(response.body, 'data', 'repository', `b${slot}`);
+      if (typeof branch === 'string' && answer !== undefined) answers.set(branch, answer);
     }
   }
-  return found;
+  const variables: Record<string, Json> = { ...last.request.variables };
+  const repository: Record<string, Json> = {};
+  for (let slot = 0; slot < LOOKUP_BATCH; slot++) {
+    const branch = branches[slot] ?? branches[0]!;
+    const answer = answers.get(branch);
+    if (answer === undefined) throw new Error(`the recording never looked up ${branch}`);
+    variables[`b${slot}`] = branch;
+    repository[`b${slot}`] = answer;
+  }
+  const data = at(last.response.body, 'data');
+  return {
+    request: { ...last.request, variables },
+    response: {
+      ...last.response,
+      body: { data: { ...(isObject(data) ? data : {}), repository } },
+    },
+  };
 }
 
-/**
- * The `MergedPullRequests` requests that look up `branches` as Lo asks them, ten a request, a
- * request of fewer asking about its first again, each answered with what `run`, which looked them
- * up with others, found for it.
- */
-function lookupsOf(run: readonly Interaction[], branches: Map<string, Json>): Interaction[] {
-  const [first] = run;
-  if (!first) return [];
-  const { request, response } = first;
-  const names = [...branches.keys()];
-  const requests: Interaction[] = [];
-  for (let start = 0; start < names.length; start += LOOKUP_ALIASES.length) {
-    const batch = names.slice(start, start + LOOKUP_ALIASES.length);
-    const variables: JsonObject = isObject(request.variables) ? { ...request.variables } : {};
-    const repository: JsonObject = {};
-    for (const [index, alias] of LOOKUP_ALIASES.entries()) {
-      const branch = batch[index] ?? batch[0]!;
-      variables[alias] = branch;
-      repository[alias] = branches.get(branch) ?? null;
+/** The branches a run of `MergedPullRequests` requests looks up, in order, each once. */
+function branchesIn(run: readonly Interaction[]): string[] {
+  const found = new Set<string>();
+  for (const { request } of run) {
+    for (let slot = 0; slot < LOOKUP_BATCH; slot++) {
+      const branch = at(request.variables, `b${slot}`);
+      if (typeof branch === 'string') found.add(branch);
     }
-    requests.push({
-      request: { ...request, variables },
-      response: {
-        ...response,
-        body: reshaped(response.body, (body) => ({
-          ...body,
-          data: reshaped(body['data'], (data) => ({ ...data, repository })),
-        })),
-      },
-    });
   }
-  return requests;
+  return [...found];
 }
 
 /**
@@ -438,9 +435,12 @@ function restricted(recorded: Interaction[], branch: string): Interaction[] {
     if (!lookup(each) || (index > 0 && lookup(recorded[index - 1]!))) return;
     const after = recorded.slice(index).findIndex((later) => !lookup(later));
     const run = recorded.slice(index, after === -1 ? recorded.length : index + after);
-    const branches = lookedUp(run);
-    if (!branches.delete(branch) || branches.size === 0) return;
-    lookups.push(...lookupsOf(run, branches));
+    const branches = branchesIn(run);
+    const others = branches.filter((other) => other !== branch);
+    if (others.length === branches.length || others.length === 0) return;
+    for (let start = 0; start < others.length; start += LOOKUP_BATCH) {
+      lookups.push(lookedUp(run, others.slice(start, start + LOOKUP_BATCH)));
+    }
   });
   const changed = recorded.map((each) => {
     const { request, response } = each;
@@ -659,6 +659,67 @@ export const DERIVATIONS: readonly Derivation[] = [
       for (const index of between)
         recorded[index] = answered(recorded[index]!, recorded[after]!.response);
       return recorded;
+    },
+  },
+  {
+    name: 'app_merge_placed',
+    from: 'app_merge',
+    description:
+      "app_merge with GitHub's answer to which open pull requests come from merge/6/base: none, as none ever have. The merge panel asks it as it opens, to say where a pull request on that branch sits, which it didn't when app_merge was recorded.",
+    derive(recorded) {
+      const read = recorded.find(
+        ({ request, response }) =>
+          request.method === 'GET' &&
+          request.url.includes('/pulls?') &&
+          response.status === 200 &&
+          request.if_none_match === undefined,
+      );
+      if (!read) throw new Error('the recording lists no pull requests');
+      const { link: _link, etag: _etag, ...headers } = read.response.headers;
+      return [
+        ...recorded,
+        {
+          request: {
+            method: 'GET',
+            url: 'https://api.github.com/repos/rozed-dev/e2e/pulls?head=rozed-dev%3Amerge%2F6%2Fbase&state=open&per_page=100',
+          },
+          response: { status: 200, headers, body: [] },
+        },
+      ];
+    },
+  },
+  {
+    name: 'app_merge_stack_polled',
+    from: 'app_merge_stack',
+    description:
+      "app_merge_stack with the check of rozed-dev/e2e's open pull requests that GitHub answered before the merge with a new ETag answered as unchanged: the one change it held was auto-merge turned off on #225, another generation's pull request no test here reads. Lo here may check them more often before the merge than the recording did, and would otherwise read the list from after the merge before confirming it. And Lo here merges before it looks up again the merged pull requests from the branches its first list left out, e9e/2/base and stack/mroot, so after the merge it looks them up with merge/8/base: that lookup is answered as the recording answered each branch.",
+    derive(recorded) {
+      const merged = only(
+        recorded,
+        ({ request }) => request.method === 'PUT' && request.url.endsWith('/merge-async'),
+        'merges',
+      );
+      const changed = recorded.flatMap(({ request, response }, index) =>
+        index < merged &&
+        request.method === 'GET' &&
+        request.url.includes('/pulls?state=open') &&
+        request.if_none_match !== undefined &&
+        response.status === 200
+          ? [index]
+          : [],
+      );
+      if (changed.length === 0) {
+        throw new Error(
+          'the recording holds no check of the list answered as changed before the merge',
+        );
+      }
+      for (const index of changed) {
+        const check = recorded[index]!;
+        const { 'content-type': _type, link: _link, ...headers } = check.response.headers;
+        const etag = check.request.if_none_match!.replace(/^W\//, '');
+        recorded[index] = answered(check, { status: 304, headers: { ...headers, etag } });
+      }
+      return [...recorded, lookedUp(recorded, ['merge/8/base', 'e9e/2/base', 'stack/mroot'])];
     },
   },
   {

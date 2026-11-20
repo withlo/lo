@@ -1,8 +1,9 @@
 // What merging does in the window: `⏎` in the merge panel asks main for a plan and shows it in the
 // dialog in the panel's place; the dialog confirms its key, and `Esc` goes back to the panel. Main
 // says how each merge goes on `jobs`: done, a toast says so; refused, or ended without Lo knowing
-// how, the dialog says so while it's open, else a banner on the pull request's tab does. The
-// window never sends a merge itself. `a` plans auto-merge, and `⌥⏎` a merge past the rules, which
+// how, the dialog says so while it's open, else a banner on the pull request's tab does. A chain's
+// run, which goes on after its merge, says in a toast how it ended, done or stopped. The window
+// never sends a merge itself. `a` plans auto-merge, and `⌥⏎` a merge past the rules, which
 // confirms only with the pull request's number typed, the same way; with auto-merge on, `a` asks
 // main to turn it off at once. When GitHub won't turn auto-merge on because nothing blocks the
 // merge now, the dialog shows the merge main planned in its place.
@@ -10,18 +11,24 @@
 import { announce, notify } from '../../../window/commands/notices.tsx';
 import { client } from '../../../window/ipc.ts';
 import { contract as revisionsContract } from '../../revisions/contract.ts';
+import { contract as tabContract } from '../../tab/contract.ts';
 import { revisionLabel, revisionsOf } from '../../revisions/window/shared.ts';
 import { activeTab, pullOf, withoutBidi } from '../../tab/window/shared.ts';
 import type { Asked, JobView, MergePlan, Refusal } from '../contract.ts';
 import { closePanel, openPanel, opened } from './actions.ts';
 import { main } from './main.ts';
-import { merging, panels, pullKey, statuses, type MergeDialog } from './store.ts';
+import { merging, panels, placementOf, pullKey, statuses, type MergeDialog } from './store.ts';
 import {
   cantAutoMerge,
   cantMerge,
   cantOverride,
+  doneDetail,
   doneLine,
   mergeLabel,
+  outcomeDetail,
+  outcomeTitle,
+  placedLabel,
+  placedWhy,
   shownMethod,
 } from './words.ts';
 
@@ -42,9 +49,12 @@ function canAsk(cant: typeof cantMerge): true | string {
   return cant(open.state, tab?.kind === 'pull' ? tab.number : 0) ?? true;
 }
 
-/** Whether `⏎` in the open panel can merge, or why not. */
+/** Whether `⏎` in the open panel can merge, or why not: where it sits may say. */
 export function canMerge(): true | string {
-  return canAsk(cantMerge);
+  const can = canAsk(cantMerge);
+  const open = opened();
+  if (can !== true || !open) return can;
+  return placedWhy(placementOf(open.id)) ?? true;
 }
 
 /** Whether `a` in the open panel can turn auto-merge on, or off, or why not. */
@@ -143,7 +153,11 @@ function planFromPanel(asked: Asked): void {
     ...planningOf(
       asked,
       tab.number,
-      action.kind === 'merge' ? mergeLabel(method ?? action.method) : 'Add to merge queue',
+      placedLabel(
+        placementOf(open.id),
+        action.kind !== 'merge',
+        action.kind === 'merge' ? mergeLabel(method ?? action.method) : 'Add to merge queue',
+      ),
     ),
   };
   closePanel(open.id);
@@ -260,12 +274,20 @@ export function leaveDialog(): void {
     case 'sent': {
       // Seen in the dialog, it needs no banner.
       const job = jobsByKey(dialog.plan.key);
-      if (job && (job.state.kind === 'refused' || job.state.kind === 'unknown')) seen(job.key);
+      if (job && outcomeTitle(job) !== undefined) seen(job.key);
       return;
     }
     default:
       dialog satisfies never;
   }
+}
+
+/** Opens pull request `number` of `job`'s repository in its tab, as "Open #4824" does. */
+export function openPull(job: Pick<JobView, 'owner' | 'repo'>, number: number): void {
+  setDialog(undefined);
+  client(tabContract)
+    .open({ kind: 'pull', owner: job.owner, repo: job.repo, number })
+    .catch((error: unknown) => notify(`Open #${number}`, messageOf(error)));
 }
 
 /** The merge from the plan named `key`, as main last said. */
@@ -356,10 +378,20 @@ export function heardJob(job: JobView, quiet = false): void {
   jobs.set(pullKey(job.owner, job.repo, job.number), job);
   merging.setState({ jobs });
   if (quiet) {
-    if (doneLine(job) !== undefined) toasted.add(job.key);
+    const stopped = job.together?.kind === 'chain' && job.together.phase === 'stopped';
+    if (doneLine(job) !== undefined || stopped) toasted.add(job.key);
     return;
   }
   settled(job);
+}
+
+/**
+ * Whether a merge that's done stays in the dialog showing it, to offer what comes next: a GitHub
+ * stack's merge, with the layers above it, which moved onto the base.
+ */
+export function staysShown(job: JobView): boolean {
+  const { together } = job;
+  return together?.kind === 'stack' && together.above.length > 0 && job.state.kind === 'merged';
 }
 
 /**
@@ -382,13 +414,23 @@ function settled(job: JobView | undefined): void {
     return;
   }
   const line = doneLine(job);
-  if (line === undefined || toasted.has(job.key)) return;
+  if (toasted.has(job.key)) return;
+  const shown = dialog && dialog.kind !== 'planning' && dialog.plan.key === job.key;
+  if (line === undefined) {
+    // A chain's run that stopped after its merge went says so wherever the reader is.
+    const { together } = job;
+    if (together?.kind !== 'chain' || together.phase !== 'stopped') return;
+    if (job.state.kind === 'refused') return;
+    toasted.add(job.key);
+    if (!shown) notify(outcomeTitle(job) ?? '', withoutBidi(outcomeDetail(job)));
+    return;
+  }
   toasted.add(job.key);
-  if (dialog && dialog.kind !== 'planning' && dialog.plan.key === job.key) setDialog(undefined);
+  if (shown && !staysShown(job)) setDialog(undefined);
   // What was typed went with it.
   const plan = dialog && dialog.kind !== 'planning' ? dialog.plan : undefined;
   if (plan?.key === job.key && job.state.kind === 'merged') forgetTyped(plan);
-  announce(withoutBidi(line));
+  announce(withoutBidi(line), withoutBidi(doneDetail(job)));
 }
 
 /** Forgets the squash text typed for `plan`'s view, which went with the merge. */

@@ -1,0 +1,72 @@
+{
+  "request": {
+    "method": "GET",
+    "url": "https://api.github.com/repos/rozed-dev/e2e/git/trees/2b43b64f1e5aa796d5b6cc86e40d7fb3c693165a?recursive=1"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "etag": "W/\"1ad4ede41779ae9ea1d7b2245c0b9fb7e02f0ba8b63c682c9b3dfbf0c8e3d809\"",
+      "last-modified": "Sun, 08 Nov 2026 13:03:37 GMT",
+      "x-github-api-version-selected": "2022-11-28",
+      "x-ratelimit-limit": "5000",
+      "x-ratelimit-remaining": "4714",
+      "x-ratelimit-reset": "1794889860",
+      "x-ratelimit-resource": "core",
+      "x-ratelimit-used": "286"
+    },
+    "body": {
+      "sha": "2b43b64f1e5aa796d5b6cc86e40d7fb3c693165a",
+      "url": "https://api.github.com/repos/rozed-dev/e2e/git/trees/2b43b64f1e5aa796d5b6cc86e40d7fb3c693165a",
+      "tree": [
+        {
+          "path": "merge",
+          "mode": "040000",
+          "type": "tree",
+          "sha": "6b95896d469aec1786a587f5f051e403f070cae5",
+          "url": "https://api.github.com/repos/rozed-dev/e2e/git/trees/6b95896d469aec1786a587f5f051e403f070cae5"
+        },
+        {
+          "path": "merge/8",
+          "mode": "040000",
+          "type": "tree",
+          "sha": "fc20d37723d6fdcdb306bbebcf7b8c938289cd4c",
+          "url": "https://api.github.com/repos/rozed-dev/e2e/git/trees/fc20d37723d6fdcdb306bbebcf7b8c938289cd4c"
+        },
+        {
+          "path": "merge/8/README.md",
+          "mode": "100644",
+          "type": "blob",
+          "sha": "dcc0c852a4daf7201bda78dd44fb0b52e9b61b60",
+          "size": 267,
+          "url": "https://api.github.com/repos/rozed-dev/e2e/git/blobs/dcc0c852a4daf7201bda78dd44fb0b52e9b61b60"
+        },
+        {
+          "path": "merge/8/chain-1",
+          "mode": "040000",
+          "type": "tree",
+          "sha": "115fc56860f99073ab96847e00c34108b18b0e33",
+          "url": "https://api.github.com/repos/rozed-dev/e2e/git/trees/115fc56860f99073ab96847e00c34108b18b0e33"
+        },
+        {
+          "path": "merge/8/chain-1/notes.md",
+          "mode": "100644",
+          "type": "blob",
+          "sha": "fb7884f36c3e4a35d3bde1f470e4f5e60552372f",
+          "size": 88,
+          "url": "https://api.github.com/repos/rozed-dev/e2e/git/blobs/fb7884f36c3e4a35d3bde1f470e4f5e60552372f"
+        },
+        {
+          "path": "merge/8/conflict.txt",
+          "mode": "100644",
+          "type": "blob",
+          "sha": "307461013e489be84ce3b986a1147671d8e31cdf",
+          "size": 55,
+          "url": "https://api.github.com/repos/rozed-dev/e2e/git/blobs/307461013e489be84ce3b986a1147671d8e31cdf"
+        }
+      ],
+      "truncated": false
+    }
+  }
+}
