@@ -295,9 +295,9 @@ jobs:
   # toolchains.json pins for it, checks it as Lo does, and starts the SourceKit-LSP in it as Lo
   # does, on the code fixture's Swift project, which must answer a hover, and write nothing in the
   # runner's home (packages/desktop/lsp/scripts/sourcekit.ts). It downloads over a gigabyte, so it
-  # runs only when Swift's pins change, or the code that installs it or starts its server. Nothing
-  # comes from or goes to a cache: pnpm/setup restores and saves one of its own, whatever it's
-  # told, so pnpm comes from scripts/install-pnpm.sh, as in package.yml.
+  # runs only when Swift's pins change, or anything the check runs does. Nothing comes from or goes
+  # to a cache: pnpm/setup restores and saves one of its own, whatever it's told, so pnpm comes from
+  # scripts/install-pnpm.sh, as in package.yml.
   swift:
     name: swift
     runs-on: ubuntu-24.04
@@ -311,20 +311,26 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      # Swift's entries in toolchains.json, and what installs and starts it: the toolchains' code,
-      # the installer, Swift's adapter, the check and the project it asks about.
+      # Swift's entries in toolchains.json, and everything else the check runs: this workflow, what
+      # installs pnpm, Node and the dependencies (package.json, pnpm-workspace.yaml, the lockfile
+      # and the two packages' own package.json), the check and its listing of the home, the source
+      # of @lo/lsp and @lo/git, which it imports through their indexes, the scripts that make the
+      # code fixture and the Swift project it asks about. Tests aren't run, so they don't count.
       - name: Decide whether the check runs
         id: changed
         run: |
           set -o pipefail
           base=$(git merge-base "$BASE_SHA" "$HEAD_SHA")
-          if ! git diff --quiet "$base" "$HEAD_SHA" -- .github/workflows/ci.yml \
-            scripts/install-pnpm.sh testing/fixtures/code/swift testing/fixtures/code/cases.json \
-            packages/desktop/lsp/scripts/sourcekit.ts packages/desktop/lsp/src/swift.ts \
-            packages/desktop/lsp/src/toolchains.ts packages/desktop/lsp/src/install.ts \
-            packages/desktop/lsp/src/unpack.ts packages/desktop/lsp/src/download.ts \
-            packages/desktop/lsp/src/adapters/sourcekit.ts; then
-            echo "Swift's code changed, so the check runs."
+          if ! git diff --quiet "$base" "$HEAD_SHA" -- \
+            .github/workflows/ci.yml scripts/install-pnpm.sh \
+            package.json pnpm-workspace.yaml pnpm-lock.yaml \
+            packages/desktop/lsp/package.json packages/desktop/git/package.json \
+            packages/desktop/lsp/scripts/sourcekit.ts packages/desktop/lsp/scripts/home.ts \
+            packages/desktop/lsp/src packages/desktop/git/src \
+            testing/fixtures/code.sh testing/fixtures/code-lib.sh \
+            testing/fixtures/code/swift testing/fixtures/code/cases.json \
+            ':(exclude,glob)**/*.test.ts'; then
+            echo "What the check runs changed, so it runs."
             echo run=true >> "$GITHUB_OUTPUT"
             exit 0
           fi
@@ -333,7 +339,7 @@ jobs:
               jq -S 'with_entries(select(.key | startswith("swift-")))'
           }
           if before=$(pins "$base") && after=$(pins "$HEAD_SHA") && [ "$before" = "$after" ]; then
-            echo "Neither Swift's pins nor its code changed, so the check doesn't run."
+            echo "Neither Swift's pins nor what the check runs changed, so it doesn't run."
             echo run=false >> "$GITHUB_OUTPUT"
           else
             echo "Swift's pins changed, or can't be compared, so the check runs."
