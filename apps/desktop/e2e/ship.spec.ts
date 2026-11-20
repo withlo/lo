@@ -107,25 +107,35 @@ async function open(page: Page, number: number, shown: string): Promise<void> {
  * `⌘⇧⏎`, until Lo plans it. Lo places a pull request on a branch other than a trunk only once it
  * has looked up every merged pull request its stacks may link through, and rozed-dev/e2e has more
  * branches than one listing looks up: the rest are looked up a while later, as recorded. Until
- * then each press is refused, saying so, and it presses again every 2 s.
+ * then each press is refused, saying so, and it presses again every 2 s. A refusal can close the
+ * dialog before it's seen, and then it presses again too, unless the dialog has come up since.
  */
 async function ship(page: Page, number: number): Promise<void> {
   const planned = `Approve and ship #${number}?`;
   const deadline = Date.now() + LOOKUPS;
   for (;;) {
-    await page.keyboard.press(SHIP);
-    await expect(dialog(page)).toBeVisible();
-    // Planned, or refused, which closes the dialog and says why.
-    await expect
-      .poll(
-        async () =>
-          (await dialog(page).isVisible()) ? ((await dialog(page).textContent()) ?? '') : 'closed',
-        { timeout: 30_000 },
-      )
-      .toMatch(new RegExp(`${planned.replace('?', '\\?')}|^closed$`));
-    if ((await dialog(page).isVisible()) || Date.now() > deadline) break;
-    await expect(said(page, 'looked up yet')).toBeVisible();
-    // Soon after the lookups, as recorded: the polls meanwhile follow the recording.
+    if (!(await dialog(page).isVisible())) await page.keyboard.press(SHIP);
+    const shown = await dialog(page)
+      .waitFor({ timeout: 5_000 })
+      .then(
+        () => true,
+        () => false,
+      );
+    if (shown) {
+      // Planned, or refused, which closes the dialog and says why.
+      await expect
+        .poll(
+          async () =>
+            (await dialog(page).isVisible())
+              ? ((await dialog(page).textContent()) ?? '')
+              : 'closed',
+          { timeout: 30_000 },
+        )
+        .toMatch(new RegExp(`${planned.replace('?', '\\?')}|^closed$`));
+      if (await dialog(page).isVisible()) break;
+      await expect(said(page, 'looked up yet')).toBeVisible();
+    }
+    if (Date.now() > deadline) break;
     await page.waitForTimeout(2_000);
   }
   await expect(dialog(page)).toContainText(planned);
