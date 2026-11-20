@@ -305,6 +305,8 @@ test.each([
   ['app_queue_polled', [156, 169, 168]],
   ['app_queued_polled', [205, 204]],
   ['app_queued_left_polled', [207]],
+  ['app_queue_act_polled', [259]],
+  ['app_queue_act_writer', [259]],
 ])(
   'in %s, each overview ref read is answered again as unchanged, with the ETag of its first read',
   (name, numbers) => {

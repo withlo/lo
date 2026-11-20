@@ -1124,8 +1124,15 @@ export const DERIVATIONS: readonly Derivation[] = [
   {
     name: 'app_queue_act_writer',
     from: 'app_queue_act',
-    description: `app_queue_act read as an account with write access, below admin, as app_merge_override_writer is: every read of e4/queued's merge queue says WRITE, and GitHub lets only admins move a pull request to the front, so Lo offers no J. Only the reads before J was pressed are meant for such an account: the rest are as recorded, the move included. These answers are derived: the recorders accept only rozed-bot's token, an admin's.`,
-    derive: asWriter,
+    description: `app_queue_act read as an account with write access, below admin, as app_merge_override_writer is: every read of e4/queued's merge queue says WRITE, and GitHub lets only admins move a pull request to the front, so Lo offers no J. Only the reads before J was pressed are meant for such an account: the rest are as recorded, the move included. These answers are derived: the recorders accept only rozed-bot's token, an admin's. Its overview ref read again is answered as app_queue_act_polled answers it.`,
+    derive: (recorded) => refsReadAgain(asWriter(recorded)),
+  },
+  {
+    name: 'app_queue_act_polled',
+    from: 'app_queue_act',
+    description:
+      "app_queue_act with GitHub's 304 to rozed-dev/e2e#259's overview ref read again with the ETag of its first read: Lo reads the ref on screen again as its window comes to the front, and on a timer, which a test can reach when the recording didn't. It has no overview, so nothing changed.",
+    derive: refsReadAgain,
   },
   {
     name: 'app_queue_polled',
