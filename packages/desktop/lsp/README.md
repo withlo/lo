@@ -120,20 +120,18 @@ What a server needs is pinned and downloaded the same way, but for Apple's. Node
 `servers.json`, beside the servers. The toolchains, which Settings lists and removes, are in
 `toolchains.json`; on macOS Settings lists Apple's Swift too, with nothing to remove.
 
-| Needs       | Version                                           | From                          | License                              | For                     |
-| ----------- | ------------------------------------------------- | ----------------------------- | ------------------------------------ | ----------------------- |
-| Node        | 26.13.1                                           | nodejs.org                    | MIT                                  | vtsls and Pyright       |
-| Rust        | 1.100.0                                           | static.rust-lang.org          | MIT OR Apache-2.0                    | rust-analyzer           |
-| Go          | 1.27.4                                            | dl.google.com                 | BSD-3-Clause                         | gopls                   |
-| Temurin JDK | 25.0.5.1+2; 25.0.5+8 on macOS x64 and Linux arm64 | Adoptium's releases on GitHub | GPL-2.0 with the Classpath Exception | JDT LS                  |
-| .NET SDK    | 10.0.404                                          | builds.dotnet.microsoft.com   | MIT                                  | Roslyn                  |
-| Swift       | 6.4.2                                             | download.swift.org            | Apache-2.0                           | SourceKit-LSP, on Linux |
+| Needs       | Version    | From                          | License                              | For                     |
+| ----------- | ---------- | ----------------------------- | ------------------------------------ | ----------------------- |
+| Node        | 26.13.1    | nodejs.org                    | MIT                                  | vtsls and Pyright       |
+| Rust        | 1.100.0    | static.rust-lang.org          | MIT OR Apache-2.0                    | rust-analyzer           |
+| Go          | 1.27.4     | dl.google.com                 | BSD-3-Clause                         | gopls                   |
+| Temurin JDK | 25.0.5.1+2 | Adoptium's releases on GitHub | GPL-2.0 with the Classpath Exception | JDT LS                  |
+| .NET SDK    | 10.0.404   | builds.dotnet.microsoft.com   | MIT                                  | Roslyn                  |
+| Swift       | 6.4.2      | download.swift.org            | Apache-2.0                           | SourceKit-LSP, on Linux |
 
 A toolchain's vendor can publish a version a platform at a time. Where `lsp:pin` finds a platform's
 archive isn't out yet, that platform keeps the build pinned for it before, under its own `version`
 in `toolchains.json`, which names its folder and what Settings shows, and the next pin moves it.
-Temurin 25.0.5.1+2, which fixes security issues in 25.0.5, has no archive yet for macOS on Intel or
-Linux on Arm, so those stay on 25.0.5+8.
 
 Swift is pinned once for each Linux distribution swift.org builds it for and gives install
 instructions for, since each build links its distribution's libraries: Ubuntu 22.04, 24.04 and

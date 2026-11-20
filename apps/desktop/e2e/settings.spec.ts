@@ -9,7 +9,6 @@ import {
   swiftDistroFor,
   swiftToolchainId,
   TOOLCHAINS,
-  versionFor,
 } from '@lo/lsp';
 import { gitProgram } from '@lo/testing/git';
 import { _electron as electron, type ElectronApplication, type Page } from '@playwright/test';
@@ -387,10 +386,6 @@ test('Settings lists the toolchains, and removes one that’s downloaded', async
           ),
         ]
       : [];
-    // Temurin's version can differ by platform, while one's archive is still to come.
-    const platform = currentPlatform();
-    if (!TOOLCHAINS.temurin || !platform) throw new Error('Lo pins no Temurin for this system');
-    const jdk = versionFor(TOOLCHAINS.temurin, platform).replaceAll(/[.+]/g, '\\$&');
     await expect(rows).toHaveText(
       [
         // C#'s server runs on the .NET SDK, Go's on Go, Rust's on Rust and Java's on the JDK.
@@ -398,7 +393,7 @@ test('Settings lists the toolchains, and removes one that’s downloaded', async
         'Go 1.27.42 KB · For GoRemove',
         /^Rust 1\.100\.0Not downloaded · [\d.]+ MB/,
         ...downloaded,
-        new RegExp(`^Temurin JDK ${jdk}Not downloaded · [\\d.]+ MB`),
+        /^Temurin JDK 25\.0\.5\.1\+2Not downloaded · [\d.]+ MB/,
         ...swift,
       ],
       { timeout: 15_000 },
