@@ -30,8 +30,9 @@
 # - quitting at once, saying why, when started with anything but a link, a switch after whitespace
 #   included, or with a variable set that would write out or expose its traffic, such as
 #   SSLKEYLOGFILE;
-# - never reading the test servers' manifest LO_TEST_SERVERS names, nor asking the update feed
-#   LO_UPDATES_FEED names for anything: only a build run from source uses either.
+# - drawing its window, once its page has loaded, and never reading the test servers' manifest
+#   LO_TEST_SERVERS names, nor asking the update feed LO_UPDATES_FEED names for anything: only a
+#   build run from source uses either.
 # Usage: sh scripts/check-package.sh <zip>
 #        sh scripts/check-package.sh --release [--ad-hoc] <dmg or zip>
 set -euf
@@ -304,7 +305,7 @@ if [ "$machine" = x86_64 ]; then
   fi
   limit=300
 else
-  limit=30
+  limit=60
 fi
 
 # Runs "$@", Lo as some launch would start it, and succeeds when Lo ends with status 1, saying $1,
@@ -352,10 +353,12 @@ done
 [ ! -e "$work/keys.log" ] || fail "started with SSLKEYLOGFILE or --ssl-key-log-file, Lo wrote to it"
 [ ! -e "$work/net.json" ] || fail "started with --log-net-log, Lo wrote to it"
 
-# Nor does it read a manifest of test servers, or ask an update feed other than GitHub's.
-# LO_TEST_SERVERS names a pipe, which a writer waits to open until something opens it to read, and
-# LO_UPDATES_FEED a feed on a port of 127.0.0.1 where a listener notes every connection. Lo, run
-# until it has opened its database and started its features, and 10 seconds more, does neither.
+# Started with neither, Lo draws its window, and it doesn't read a manifest of test servers or ask
+# an update feed other than GitHub's. LO_TEST_SERVERS names a pipe, which a writer waits to open
+# until something opens it to read, and LO_UPDATES_FEED a feed on a port of 127.0.0.1 where a
+# listener notes every connection. Lo runs until its window is on screen, which it shows once its
+# page has loaded, and 10 seconds more: a build run from source would have read the manifest as
+# its features started, and asked the feed a second after its window came up.
 node=$(pnpm --silent --filter @lo/desktop exec node -p process.execPath)
 "$node" -e "
 const { appendFileSync, writeFileSync } = require('node:fs');
@@ -381,33 +384,52 @@ env LO_TEST_SERVERS="$manifest" LO_UPDATES_FEED="http://127.0.0.1:$port/" \
 lo=$!
 (printf '{ "servers": [] }\n' > "$manifest" && touch "$work/servers.read") &
 writer=$!
-database="$work/home/Library/Application Support/Lo/lo.db"
+# Whether process $1 has a window on screen. macOS lists every process's windows to any other.
+on_screen() {
+  # The $ is JavaScript's, not the shell's.
+  # shellcheck disable=SC2016
+  osascript -l JavaScript -e '
+    ObjC.import("CoreGraphics");
+    function run(argv) {
+      const list = $.CGWindowListCopyWindowInfo($.kCGWindowListOptionOnScreenOnly, 0);
+      return ObjC.deepUnwrap(ObjC.castRefToObject(list)).some(
+        (window) => window.kCGWindowOwnerPID === Number(argv[0]) && window.kCGWindowLayer === 0,
+      );
+    }' "$1" 2> /dev/null || true
+}
+up=
 waited=0
-while [ ! -e "$database" ] && [ "$waited" -lt "$limit" ] && kill -0 "$lo" 2> /dev/null; do
+while [ "$waited" -lt "$limit" ] && kill -0 "$lo" 2> /dev/null; do
+  if [ "$(on_screen "$lo")" = true ]; then
+    up=true
+    break
+  fi
   sleep 1
   waited=$((waited + 1))
 done
-[ ! -e "$database" ] || sleep 10
+[ -z "$up" ] || sleep 10
 if kill -0 "$lo" 2> /dev/null; then
   kill "$lo" && wait "$lo" || true
 else
-  fail "started with LO_TEST_SERVERS and LO_UPDATES_FEED, Lo ended before its features had started"
+  fail "started with LO_TEST_SERVERS and LO_UPDATES_FEED, Lo ended before its window came up"
 fi
 { kill "$writer" && wait "$writer"; } 2> /dev/null || true
 { kill "$listener" && wait "$listener"; } 2> /dev/null || true
 listener=
-[ -e "$database" ] ||
-  fail "started with LO_TEST_SERVERS and LO_UPDATES_FEED, Lo hadn't opened its database in $limit seconds"
+[ -n "$up" ] || fail "Lo's window wasn't on screen within $limit seconds"
+[ -e "$work/home/Library/Application Support/Lo/lo.db" ] || fail "Lo didn't open its database"
+! grep -q "couldn't load its window" "$work/variables.log" ||
+  fail "$(grep "couldn't load its window" "$work/variables.log")"
 [ ! -e "$work/servers.read" ] || fail "started with LO_TEST_SERVERS, Lo read the manifest it names"
 [ ! -s "$work/feed.connections" ] || fail "started with LO_UPDATES_FEED, Lo asked the feed it names"
 
 if [ "$status" -eq 0 ]; then
   if [ -z "$release" ]; then
-    echo "$file passed: arm64, ad hoc with the hardened runtime, no update feed, fuses, asar and links, it refuses switches, files and variables, and it reads no test servers or feed."
+    echo "$file passed: arm64, ad hoc with the hardened runtime, no update feed, fuses, asar and links, it refuses switches, files and variables, and it draws its window and reads no test servers or feed."
   elif [ -n "$adhoc" ]; then
-    echo "$file passed: $arch, $version, ad hoc with the hardened runtime, GitHub's update feed, fuses, asar and links, it refuses switches, files and variables, and it reads no test servers or other feed."
+    echo "$file passed: $arch, $version, ad hoc with the hardened runtime, GitHub's update feed, fuses, asar and links, it refuses switches, files and variables, and it draws its window and reads no test servers or other feed."
   else
-    echo "$file passed: $arch, $version, a Developer ID of team $signer with the hardened runtime, notarized and stapled, GitHub's update feed, fuses, asar and links, it refuses switches, files and variables, and it reads no test servers or other feed."
+    echo "$file passed: $arch, $version, a Developer ID of team $signer with the hardened runtime, notarized and stapled, GitHub's update feed, fuses, asar and links, it refuses switches, files and variables, and it draws its window and reads no test servers or other feed."
   fi
 fi
 exit "$status"

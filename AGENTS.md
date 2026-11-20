@@ -189,9 +189,10 @@ pnpm nx run desktop:release  # build it, then make a release's DMGs and zips (ne
   flag and opens as it is. The `package` workflow, which only a person starts, builds the same zip
   on a Mac runner and uploads it as an artifact. `scripts/check-package.sh` checks a zip: the
   signature and its flags, the entitlements, every fuse, the asar's contents and hash, the
-  registered links, that it holds no `app-update.yml`, so it never looks for updates, and that the
-  app quits when given switches or the variables below. electron-vite bundles everything the app
-  imports, so the package holds only `dist/` and `package.json`, and no `node_modules`.
+  registered links, that it holds no `app-update.yml`, so it never looks for updates, that its
+  window draws, and that the app quits when given switches or the variables below. electron-vite
+  bundles everything the app imports, so the package holds only `dist/` and `package.json`, and no
+  `node_modules`.
 - `desktop:release` makes a release from `build/release.yml`, which extends the package's config
   with what a release needs: a DMG and a zip each for arm64 and x64, `Lo-<version>-<arch>.<ext>`,
   with `latest-mac.yml` and blockmaps beside them. The app and its helpers are signed with the
