@@ -4,34 +4,34 @@
     "hosts": ["builds.dotnet.microsoft.com"],
     "platforms": {
       "darwin-arm64": {
-        "kind": "tar.gz",
         "url": "https://builds.dotnet.microsoft.com/dotnet/Sdk/10.0.404/dotnet-sdk-10.0.404-osx-arm64.tar.gz",
         "size": 233588093,
         "sha256": "acf7ebe726a030fa3d2bd03b06196971bd9ef123c579b9345d380bc0ef0d4e44",
+        "kind": "tar.gz",
         "entry": "dotnet",
         "unpacked": 674743890
       },
       "darwin-x64": {
-        "kind": "tar.gz",
         "url": "https://builds.dotnet.microsoft.com/dotnet/Sdk/10.0.404/dotnet-sdk-10.0.404-osx-x64.tar.gz",
         "size": 241580911,
         "sha256": "43975ff4e35960556072da9300f4a77bc8dfa2dbe688b8812af32861a47069d5",
+        "kind": "tar.gz",
         "entry": "dotnet",
         "unpacked": 641918684
       },
       "linux-x64": {
-        "kind": "tar.gz",
         "url": "https://builds.dotnet.microsoft.com/dotnet/Sdk/10.0.404/dotnet-sdk-10.0.404-linux-x64.tar.gz",
         "size": 243138887,
         "sha256": "c0610757a818fde4b960d27a0ac421f273068a05dc5ec7abafc01dbf84e9cb4d",
+        "kind": "tar.gz",
         "entry": "dotnet",
         "unpacked": 644980579
       },
       "linux-arm64": {
-        "kind": "tar.gz",
         "url": "https://builds.dotnet.microsoft.com/dotnet/Sdk/10.0.404/dotnet-sdk-10.0.404-linux-arm64.tar.gz",
         "size": 235410674,
         "sha256": "dcc820a4277ab6bb3f648c609d86f2a7912ba9a3d166545e7b95dff419c12f0f",
+        "kind": "tar.gz",
         "entry": "dotnet",
         "unpacked": 676941626
       }
@@ -276,18 +276,18 @@
     "hosts": ["download.swift.org"],
     "platforms": {
       "linux-x64": {
-        "kind": "tar.gz",
         "url": "https://download.swift.org/swift-6.4.2-release/ubi9/swift-6.4.2-RELEASE/swift-6.4.2-RELEASE-ubi9.tar.gz",
         "size": 1124603294,
         "sha256": "eddef6430467da665abc4d91f947e0bf5fe00fb2fafe465910a8879be81613be",
+        "kind": "tar.gz",
         "entry": "swift-6.4.2-RELEASE-ubi9/usr/bin/sourcekit-lsp",
         "unpacked": 3698685485
       },
       "linux-arm64": {
-        "kind": "tar.gz",
         "url": "https://download.swift.org/swift-6.4.2-release/ubi9-aarch64/swift-6.4.2-RELEASE/swift-6.4.2-RELEASE-ubi9-aarch64.tar.gz",
         "size": 1111841550,
         "sha256": "d5a20569173239b501dade2f353ec7625d58fb97f2ed4e32a4579cf429571ef9",
+        "kind": "tar.gz",
         "entry": "swift-6.4.2-RELEASE-ubi9-aarch64/usr/bin/sourcekit-lsp",
         "unpacked": 3664990073
       }
@@ -364,38 +364,36 @@
     "hosts": ["github.com", "release-assets.githubusercontent.com"],
     "platforms": {
       "darwin-arm64": {
+        "kind": "tar.gz",
         "url": "https://github.com/adoptium/temurin25-binaries/releases/download/jdk-25.0.5.1%2B2/OpenJDK25U-jdk_aarch64_mac_hotspot_25.0.5.1_2.tar.gz",
         "size": 136452381,
         "sha256": "248353ea41be39d5d2c1c67c7ce0ae4d1668966aacd0c5308464bc1be42f677b",
-        "kind": "tar.gz",
         "entry": "jdk-25.0.5.1+2/Contents/Home/bin/java",
         "unpacked": 307813618
       },
       "darwin-x64": {
-        "url": "https://github.com/adoptium/temurin25-binaries/releases/download/jdk-25.0.5%2B8/OpenJDK25U-jdk_x64_mac_hotspot_25.0.5_8.tar.gz",
-        "size": 120336964,
-        "sha256": "32cd4d2151c91aa00d0fc911edfd05245ed40fa6b1aa894d5f35c928cd67a59d",
         "kind": "tar.gz",
-        "entry": "jdk-25.0.5+8/Contents/Home/bin/java",
-        "unpacked": 245688617,
-        "version": "25.0.5+8"
+        "url": "https://github.com/adoptium/temurin25-binaries/releases/download/jdk-25.0.5.1%2B2/OpenJDK25U-jdk_x64_mac_hotspot_25.0.5.1_2.tar.gz",
+        "size": 120339006,
+        "sha256": "b4b96fb7b9babd1b4faab1238e1835d0d7dd77b0690d220643c749a9ac00db36",
+        "entry": "jdk-25.0.5.1+2/Contents/Home/bin/java",
+        "unpacked": 245719236
       },
       "linux-x64": {
+        "kind": "tar.gz",
         "url": "https://github.com/adoptium/temurin25-binaries/releases/download/jdk-25.0.5.1%2B2/OpenJDK25U-jdk_x64_linux_hotspot_25.0.5.1_2.tar.gz",
         "size": 141362230,
         "sha256": "760f91b22c3efc9bd1b64ff950598231be82928cc807e30691a0e7a2995a62c0",
-        "kind": "tar.gz",
         "entry": "jdk-25.0.5.1+2/bin/java",
         "unpacked": 316675383
       },
       "linux-arm64": {
-        "url": "https://github.com/adoptium/temurin25-binaries/releases/download/jdk-25.0.5%2B8/OpenJDK25U-jdk_aarch64_linux_hotspot_25.0.5_8.tar.gz",
-        "size": 140178170,
-        "sha256": "bb5b2ded252f21c6090cf780b0a408ad0d83bbb557e702955643557f13231880",
         "kind": "tar.gz",
-        "entry": "jdk-25.0.5+8/bin/java",
-        "unpacked": 316783668,
-        "version": "25.0.5+8"
+        "url": "https://github.com/adoptium/temurin25-binaries/releases/download/jdk-25.0.5.1%2B2/OpenJDK25U-jdk_aarch64_linux_hotspot_25.0.5.1_2.tar.gz",
+        "size": 140197557,
+        "sha256": "c37879e0d08eeb1baa69fcbb7758cd455b7b1c0ceab1e2a136ccb1713c530984",
+        "entry": "jdk-25.0.5.1+2/bin/java",
+        "unpacked": 316863426
       }
     }
   }
