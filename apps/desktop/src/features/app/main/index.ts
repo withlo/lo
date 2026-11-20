@@ -8,7 +8,9 @@ import { holdLimit, keymapEditor } from '../../../main/environment.ts';
 import { defineFeature } from '../../../main/features.ts';
 import { pageNonce } from '../../../main/security.ts';
 import { IpcError } from '../../../ipc/contract.ts';
+import { settings } from '../../settings/service.ts';
 import { appInfo, contract, type GitInfo, type Theme } from '../contract.ts';
+import { gpu } from '../settings.ts';
 import { aboutOptions, buildOf, shortHash } from './about.ts';
 import { licensesPath, openLicenses } from './licenses.ts';
 import { zoomed } from './zoom.ts';
@@ -38,6 +40,7 @@ function gitInfo(status: GitStatus | undefined): GitInfo {
 }
 
 export default defineFeature(contract, {
+  uses: [settings],
   handlers: {
     // Checked as a push is, so the window gets nothing but what the contract says.
     info: (_input, { git }) =>
@@ -83,7 +86,10 @@ export default defineFeature(contract, {
       if (!result.ok) throw new IpcError('unopened', result.reason);
     },
   },
-  start({ publish, git }) {
+  start({ publish, git, use }) {
+    // Main read `app.gpu` before `ready`. Declared, a value it took as on because it wasn't true
+    // or false is reported in Settings.
+    use(settings).declare(gpu);
     app.setAboutPanelOptions(
       aboutOptions({
         platform: process.platform,

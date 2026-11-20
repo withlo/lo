@@ -1,8 +1,10 @@
 # electron-builder's settings for a release of Lo, run from apps/desktop by the release workflow
-# (`pnpm run release`, after `nx run desktop:build`). It extends electron-builder.yml and changes
-# only what a release needs: a DMG and a zip for Apple silicon and for Intel, signed with a
-# Developer ID and notarized, which say where their updates come from. The workflow passes the
-# version, from the tag, as `-c.extraMetadata.version=<version>`; package.json's stays 0.0.0.
+# (`pnpm run release` on the Mac and `pnpm run release:linux` on Linux, after
+# `nx run desktop:build`). It extends electron-builder.yml and changes only what a release needs: a
+# DMG and a zip for Apple silicon and for Intel, signed with a Developer ID and notarized, and a deb
+# and an rpm for each architecture of Linux, as a preview, all of which say where their updates
+# come from. The workflow passes the version, from the tag, as `-c.extraMetadata.version=<version>`;
+# package.json's stays 0.0.0.
 #
 # The Developer ID certificate comes from CSC_LINK and CSC_KEY_PASSWORD, and the App Store Connect
 # key that notarizes from APPLE_API_KEY (the key file's path), APPLE_API_KEY_ID and
@@ -22,6 +24,12 @@ forceCodeSigning: true
 # @lodesktop-updater. The app still goes by its productName, Lo.
 extraMetadata:
   name: lo
+  # The name of Lo's desktop file on Linux, which Electron takes as Lo's own there: when Lo makes
+  # itself the handler of lo:// links, it names this file, and desktops match its windows to it.
+  # Without it, Electron would name Lo.desktop, which no package installs.
+  desktopName: lo.desktop
+  # The Linux packages' homepage.
+  homepage: https://github.com/withlo/lo
 
 # Writes app-update.yml into the app and latest-mac.yml beside the files, which name GitHub
 # Releases of withlo/lo as where updates come from. Nothing is uploaded from this build: the
@@ -59,3 +67,71 @@ mac:
 dmg:
   # Signed with the same certificate, so the workflow can notarize it.
   sign: true
+
+# Lo for Linux, a preview: a deb and an rpm, made on a runner of the architecture they're for (the
+# workflow runs `--x64` on one and `--arm64` on another), each run writing latest-linux.yml (x64) or
+# latest-linux-arm64.yml. Both put Lo in /opt/Lo, its program as /opt/Lo/lo, and link /usr/bin/lo,
+# the lo command, to it. Their desktop file, which opens Lo as `/opt/Lo/lo %U`, registers Lo for
+# lo:// links alone (electron-builder.yml leaves web links to the Mac). They're unsigned, and Lo
+# updates itself from neither: it says when there's a newer one, and links its release.
+# scripts/check-linux.sh checks both.
+linux:
+  target: [deb, rpm]
+  executableName: lo
+  category: Development
+  icon: ../../brand/Lo.icns
+  synopsis: Review GitHub pull requests
+  description: >-
+    Lo is a desktop app for reviewing GitHub pull requests, for people who read far more code than
+    they write. It talks to GitHub directly, with no backend.
+  maintainer: Mike Scornavacca <52425912+scornz@users.noreply.github.com>
+  vendor: Mike Scornavacca
+
+# Both hold Chromium's sandbox helper, /opt/Lo/chrome-sandbox, setuid root: this hook makes it so
+# in the folder they're made from, and the rpm also says so of the file.
+afterPack: ./build/linux/after-pack.ts
+
+# Each package's scripts (build/linux/) make what the package can't hold: the lo command's link,
+# and on Ubuntu, AppArmor's profile for Lo; they set the sandbox helper again too. The dependencies
+# are electron-builder's, and what Electron's program loads that they don't bring: libsecret, for
+# the Secret Service Lo keeps its tokens with, ALSA and GBM. Lo has no tray icon, so it doesn't
+# recommend the app indicator's library.
+deb:
+  packageCategory: devel
+  afterInstall: build/linux/after-install.sh
+  afterRemove: build/linux/after-remove.sh
+  depends:
+    - libgtk-3-0
+    - libnotify4
+    - libnss3
+    - libxss1
+    - libxtst6
+    - xdg-utils
+    - libatspi2.0-0
+    - libuuid1
+    - libsecret-1-0
+    - libasound2
+    - libgbm1
+  recommends: []
+rpm:
+  afterInstall: build/linux/after-install.sh
+  afterRemove: build/linux/after-remove.sh
+  # The rpm owns its folders, so removing it leaves none behind, holds none of rpmbuild's links in
+  # /usr/lib/.build-id, which would clash with another app built on the same Electron, and says the
+  # sandbox helper is setuid root, so `rpm -V` finds it so and `rpm --setperms` keeps it so.
+  fpm:
+    - --rpm-auto-add-directories
+    - --rpm-rpmbuild-define=_build_id_links none
+    - --rpm-attr=4755,root,root:/opt/Lo/chrome-sandbox
+  depends:
+    - gtk3
+    - libnotify
+    - nss
+    - libXScrnSaver
+    - (libXtst or libXtst6)
+    - xdg-utils
+    - at-spi2-core
+    - (libuuid or libuuid1)
+    - libsecret
+    - alsa-lib
+    - mesa-libgbm

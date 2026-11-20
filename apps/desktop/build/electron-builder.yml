@@ -56,11 +56,20 @@ mac:
   entitlements: build/entitlements.plist
   entitlementsInherit: build/entitlements.plist
   notarize: false
+  # Web links too, on the Mac alone, where link routers such as Finicky send pull requests' links
+  # on to Lo. The Viewer role makes Lo a choice among the apps that open `http` and `https`, and
+  # leaves the default browser as it is. A Linux desktop file has no such role: on a desktop with no
+  # default browser set, a Lo registered for them could take every web link.
+  protocols:
+    - name: Web link
+      schemes: [http, https]
+      role: Viewer
 
 # Fuses are switches in Electron's binary, flipped just before it's signed. These close what a
 # process that can start Lo with arguments or an environment could use to run code in it: the
 # debugger, NODE_OPTIONS and ELECTRON_RUN_AS_NODE. Lo loads its code only from the asar, whose
-# contents Electron checks against a hash in Info.plist, and its window is never served from file:.
+# contents Electron checks against a hash in Info.plist (on the Mac: Electron checks no hash on
+# Linux), and its window is never served from file:.
 electronFuses:
   runAsNode: false
   enableNodeOptionsEnvironmentVariable: false
@@ -70,12 +79,8 @@ electronFuses:
   enableCookieEncryption: true
   grantFileProtocolExtraPrivileges: false
 
-# Registers Lo for `lo://` links and for web links. The Viewer role makes Lo a choice among the apps
-# that open `http` and `https`, and leaves the default browser as it is.
+# Registers Lo for `lo://` links, everywhere, and on the Mac for web links too (`mac.protocols`).
 protocols:
   - name: Lo link
     schemes: [lo]
-    role: Viewer
-  - name: Web link
-    schemes: [http, https]
     role: Viewer

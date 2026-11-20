@@ -1,7 +1,8 @@
-# Builds Lo for the Mac from a version tag: a DMG and a zip for Apple silicon and for Intel, signed
-# with the Developer ID, notarized and checked. Then it drafts the GitHub release that holds them,
-# with their checksums and notes GitHub writes from the merged pull requests. A maintainer reads
-# the draft and publishes it; nothing here publishes a release.
+# Builds Lo from a version tag: for the Mac, a DMG and a zip for Apple silicon and for Intel, signed
+# with the Developer ID, notarized and checked; for Linux, as a preview, a deb and an rpm for x64 and
+# for arm64, each installed, started and checked. Then it drafts the GitHub release that holds
+# them, with their checksums and notes GitHub writes from the merged pull requests. A maintainer
+# reads the draft and publishes it; nothing here publishes a release.
 #
 # Pushing a tag v<version>, such as v0.1.0 or v0.1.0-rc.1, on a commit main holds, starts it.
 # package.json's version stays 0.0.0, and the tag's is the one built in. The mac job is the only one
@@ -12,7 +13,8 @@
 # Started by hand (`gh workflow run release.yml --ref <branch or tag>`), or by a pull request that
 # changes how Lo is packaged, it's a dry run: the same build as 0.0.0-dry.<run>, signed ad hoc with
 # the ad hoc entitlements and checked as far as an ad hoc build can be, in no environment, reading
-# no secret and drafting nothing. Its files are the run's `mac` artifact for 14 days.
+# no secret and drafting nothing. Its files are the run's `mac`, `linux-x64` and `linux-arm64`
+# artifacts for 14 days. The Linux packages are never signed, so they're built the same either way.
 name: release
 
 on:
@@ -24,6 +26,7 @@ on:
       - .github/workflows/release.yml
       - apps/desktop/build/**
       - apps/desktop/package.json
+      - scripts/check-linux.sh
       - scripts/check-package.sh
       - scripts/release/**
 
@@ -237,12 +240,97 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+  # Builds the deb and the rpm for one architecture of Linux on a runner of that architecture, so
+  # that each one's latest-linux*.yml lists both, and installs and starts each there: the deb on the
+  # runner, an Ubuntu where AppArmor stops user namespaces, and the rpm in a Fedora container.
+  linux:
+    name: linux (${{ matrix.arch }})
+    needs: version
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            runner: ubuntu-24.04
+            deb: amd64
+            rpm: x86_64
+            updates: latest-linux.yml
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+            deb: arm64
+            rpm: aarch64
+            updates: latest-linux-arm64.yml
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+      ARCH: ${{ matrix.arch }}
+      DEB: Lo-${{ needs.version.outputs.version }}-${{ matrix.deb }}.deb
+      RPM: Lo-${{ needs.version.outputs.version }}-${{ matrix.rpm }}.rpm
+      UPDATES: ${{ matrix.updates }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # As the mac job installs them, from nothing cached.
+      - name: Install pnpm and the dependencies
+        run: |
+          sh scripts/install-pnpm.sh "$RUNNER_TEMP/pnpm"
+          echo "$RUNNER_TEMP/pnpm" >> "$GITHUB_PATH"
+          "$RUNNER_TEMP/pnpm/pnpm" install --frozen-lockfile
+
+      # rpmbuild, which electron-builder makes the rpm with, and what check-linux.sh needs: rpm2cpio
+      # and cpio to read the rpm, Xvfb to start Lo, and xwininfo to see its window.
+      - name: Install the tools that package and check Lo
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q --no-install-recommends rpm rpm2cpio cpio xvfb x11-utils
+
+      - name: Build the app
+        run: pnpm nx run desktop:build --output-style=static
+
+      - name: Package
+        working-directory: apps/desktop
+        run: pnpm run release:linux "-c.extraMetadata.version=$VERSION" "--$ARCH"
+
+      # Both, so one run shows each failure.
+      - name: Check the deb and the rpm
+        run: |
+          failed=0
+          sh scripts/check-linux.sh "apps/desktop/release/$DEB" || failed=1
+          sh scripts/check-linux.sh "apps/desktop/release/$RPM" || failed=1
+          exit "$failed"
+
+      # Lo on Linux only says a newer version is out, from this file, so it must be this version's
+      # and list both packages with their SHA-512s.
+      - name: Check ${{ matrix.updates }}
+        working-directory: apps/desktop/release
+        run: |
+          grep -qx "version: $VERSION" "$UPDATES" ||
+            { echo "::error::$UPDATES isn't for $VERSION."; exit 1; }
+          for name in "$DEB" "$RPM"; do
+            hash=$(openssl dgst -sha512 -binary "$name" | base64 -w 0)
+            grep -A 1 -x "  - url: $name" "$UPDATES" | grep -qxF "    sha512: $hash" ||
+              { echo "::error::$UPDATES doesn't list $name with its SHA-512."; exit 1; }
+          done
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: linux-${{ matrix.arch }}
+          path: |
+            apps/desktop/release/${{ env.DEB }}
+            apps/desktop/release/${{ env.RPM }}
+            apps/desktop/release/${{ env.UPDATES }}
+          if-no-files-found: error
+          retention-days: 14
+
   # Drafts the release from the files the build jobs checked, with their SHA-256 checksums and
   # notes GitHub writes (.github/release.yml says what they leave out). A re-run replaces a draft's
   # files, and never touches a published release.
   draft:
     name: draft
-    needs: [version, mac]
+    needs: [version, mac, linux]
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -256,6 +344,16 @@ jobs:
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: mac
+          path: ${{ runner.temp }}/release
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: linux-x64
+          path: ${{ runner.temp }}/release
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: linux-arm64
           path: ${{ runner.temp }}/release
 
       - name: Write SHA256SUMS
