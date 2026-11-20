@@ -2,6 +2,12 @@
 // request on screen, as the account its tab acts as, in a tab of its own. While that tab is on
 // screen, main reads the queue of the branch it shows, the pull requests waiting to join it, and
 // why each it saw leave left, and tells the window what it read, in rows the window words.
+//
+// And changing the queue: `x` takes an entry out and `J` moves it to the front. Each asks main for a
+// plan from what it read, which main keeps under a key for the reader to confirm; the window
+// confirms the key and never sends the change itself. Main checks the plan again as it's confirmed,
+// sends it once, and answers how it went. `a` on a pull request waiting to join turns its auto-merge
+// off at once (`autoMergeOff`), asking nothing, since that merges nothing.
 
 import { z } from 'zod';
 
@@ -48,6 +54,8 @@ export const entry = z.strictObject({
   yours: z.boolean(),
   /** Whether that account added it to the queue. */
   queuedByYou: z.boolean(),
+  /** Its head, as the queue has it: a push since drops a question about it. */
+  head: z.string().max(64),
   /** Whether GitHub tests it together with the entries around it, from the front of the queue. */
   testedTogether: z.boolean(),
   /**
@@ -67,6 +75,8 @@ export const waitingEntry = z.strictObject({
   url: z.string(),
   author: z.string().nullable(),
   yours: z.boolean(),
+  /** Its head. */
+  head: z.string().max(64),
   /** Its review, when the branch's rules require one. */
   review: z.enum(['approved', 'changesRequested', 'required']).nullable(),
   /** Its checks together, or null when it has none. */
@@ -124,7 +134,9 @@ export type QueueMethod = z.output<typeof queueMethod>;
  *   of them, even when there are none; `waitingCutShort` that one waiting to join may be missing.
  *   `method` and `groups` are the queue's settings, which GitHub shows only to those who can write
  *   to the repository: the method is always the queue's own, which decides how those waiting merge
- *   once they join. `nextMerge` is GitHub's estimate of when the next entry merges.
+ *   once they join. `nextMerge` is GitHub's estimate of when the next entry merges. `admin` says
+ *   the account is one of the repository's admins, which GitHub requires to move an entry to the
+ *   front.
  */
 export const queueRead = z.discriminatedUnion('kind', [
   z.strictObject({ kind: z.literal('reading') }),
@@ -137,6 +149,7 @@ export const queueRead = z.discriminatedUnion('kind', [
     /** How many entries GitHub tests at once. */
     groups: z.number().int().positive().nullable(),
     nextMerge: seconds.nullable(),
+    admin: z.boolean(),
     entries: z.array(entry),
     more: z.number().int().nonnegative(),
     leftOut: z.boolean(),
@@ -157,7 +170,8 @@ export type BranchCount = z.output<typeof branchCount>;
 /**
  * A merge queue's tab as main has it, sent each time it changes: the branch it shows, the branches
  * it can show, what was read of the branch's queue and when, and why the last read failed, with
- * when Lo reads again.
+ * when Lo reads again. `away` says its account is signed out or gone, so nothing is read, and
+ * nothing in the queue is changed, until it's back.
  */
 export const queueState = z.strictObject({
   id: tabId,
@@ -166,8 +180,72 @@ export const queueState = z.strictObject({
   read: queueRead,
   readAt: time.nullable(),
   failure: z.strictObject({ message: z.string(), retryAt: time.nullable() }).nullable(),
+  away: z.boolean(),
 });
 export type QueueState = z.output<typeof queueState>;
+
+/** What names a change's plan, which main keeps for the reader to confirm. */
+export const planKey = z.string().regex(/^[0-9a-f-]{36}$/);
+
+/** What `x` and `J` change: take an entry out of the queue, or move it to the front. */
+export const actKind = z.enum(['remove', 'jump']);
+export type ActKind = z.output<typeof actKind>;
+
+/**
+ * A change to the queue, for the reader to confirm before anything is sent:
+ *
+ * - `key`: what names it, which the window confirms; `id`: the merge queue's tab it was asked from;
+ * - `owner`, `repo`, `branch`: the queue; `login`: the account that changes it;
+ * - `number`, `title`, `position`: the entry, and where it stood as Lo read it;
+ * - `head`: its head as the queue has it, which a push since drops the question;
+ * - `stack`: the GitHub stack it's a layer of, when it's in one with other open layers;
+ * - `above`: for `remove`, that stack's layers above it in the queue, bottom up, which GitHub takes
+ *   out with it.
+ */
+export interface ActPlan {
+  readonly key: string;
+  readonly id: string;
+  readonly owner: string;
+  readonly repo: string;
+  readonly branch: string;
+  readonly login: string;
+  readonly kind: ActKind;
+  readonly number: number;
+  readonly title: string;
+  readonly position: number;
+  readonly head: string;
+  readonly stack: number | null;
+  readonly above: readonly number[];
+}
+
+/** A change to confirm, or why there's none, in Lo's words. */
+export type ActPlanned =
+  | { readonly kind: 'plan'; readonly plan: ActPlan }
+  | { readonly kind: 'refused'; readonly why: string };
+
+/**
+ * How a change to the queue went:
+ *
+ * - `removed`: those pull requests left the queue, the one asked for first;
+ * - `moved`: it's back in the queue at `position`, the front or as near it as GitHub puts it, behind
+ *   entries GitHub is testing;
+ * - `autoMergeOff`: auto-merge is off;
+ * - `again`: something the confirmation named changed since it was shown, as `why` says: the new
+ *   plan, under a key of its own, is for the reader to confirm;
+ * - `refused`: nothing changed, for `why`;
+ * - `partly`: GitHub did part of it, as `why` says, such as taking an entry out to move it to the
+ *   front and not adding it back;
+ * - `unknown`: Lo can't tell what GitHub did, as `why` says. Main reads the queue again, which
+ *   shows it, and sends nothing again.
+ */
+export type Acted =
+  | { readonly kind: 'removed'; readonly numbers: readonly number[] }
+  | { readonly kind: 'moved'; readonly position: number }
+  | { readonly kind: 'autoMergeOff' }
+  | { readonly kind: 'again'; readonly plan: ActPlan; readonly why: string }
+  | { readonly kind: 'refused'; readonly why: string }
+  | { readonly kind: 'partly'; readonly why: string }
+  | { readonly kind: 'unknown'; readonly why: string };
 
 export const contract = defineContract('queue', {
   requests: {
@@ -185,6 +263,31 @@ export const contract = defineContract('queue', {
      * account the queue's tab reads as, and replies with that tab's id.
      */
     open: { input: z.strictObject({ id: tabId, number: pullNumber }), reply: reply<string>() },
+    /**
+     * Plans `kind` for pull request `number` in merge queue tab `id`'s queue, from a read of it no
+     * older than 40 s, read again first when there's none, and keeps it for the reader to confirm,
+     * in place of the tab's last plan; or says why there's none.
+     */
+    plan: {
+      input: z.strictObject({ id: tabId, number: pullNumber, kind: actKind }),
+      reply: reply<ActPlanned>(),
+    },
+    /**
+     * Sends the change the plan named `key` holds, once, if it can still go as the plan says, and
+     * answers how it went; else asks again with a new plan, when something it named changed, or
+     * refuses.
+     */
+    confirm: { input: z.strictObject({ key: planKey }), reply: reply<Acted>() },
+    /** Forgets the plan named `key`, and stops its confirmation while it's checked, before it's sent. */
+    cancel: { input: z.strictObject({ key: planKey }), reply: reply<void>() },
+    /**
+     * Turns off auto-merge for pull request `number`, waiting to join merge queue tab `id`'s queue,
+     * at once, asking nothing, since that merges nothing.
+     */
+    autoMergeOff: {
+      input: z.strictObject({ id: tabId, number: pullNumber }),
+      reply: reply<Acted>(),
+    },
   },
   topics: {
     /** A merge queue's tab, each time what it shows changes. */

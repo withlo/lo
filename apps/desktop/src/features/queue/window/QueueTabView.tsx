@@ -1,10 +1,13 @@
 // A merge queue's tab: the repository, the branch and the queue's settings, with a switch of the
 // branches it can show; the queue's entries in order, those tested together in a group, then those
 // waiting to join, then those Lo saw leave and why; and a status bar of its own, with when the
-// queue was last read.
+// queue was last read. The row the keyboard is on carries what can be done to it, each with its
+// key: an entry's removal and, for the repository's admins, its move to the front; the auto-merge
+// of one waiting to join.
 
 import {
   Branch,
+  Button,
   Callout,
   Key,
   QueueTable,
@@ -13,6 +16,9 @@ import {
   StatusBar,
   StatusItem,
   StatusKeys,
+  Switch,
+  type QueueItem,
+  type WaitingEntry as TableWaiting,
 } from '@lo/ui';
 import { keyLabels, setScopeSource } from '@lo/ui/commands';
 import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
@@ -23,6 +29,7 @@ import { registry, setMiddle, useKeys } from '../../../window/commands/registry.
 import type { QueueTab } from '../../tab/contract.ts';
 import { useTabState, withoutBidi } from '../../tab/window/shared.ts';
 import type { QueueRead, QueueState } from '../contract.ts';
+import { act, autoMerge } from './acting.ts';
 import { focusRow, openOnGithub, openPage, rowTarget, setTable, showBranch } from './actions.ts';
 import { main } from './main.ts';
 import {
@@ -71,6 +78,89 @@ function Hint({ id, children }: { id: string; children: ReactNode }) {
       <Key keys={keys} decorative />
       {children}
     </StatusItem>
+  );
+}
+
+/** A row's button for command `id`, with its key, as the row the keyboard is on shows it. */
+function RowButton({ id, run, children }: { id: string; run: () => void; children: ReactNode }) {
+  const keys = keyOf(id);
+  return (
+    <Button
+      variant="ghost"
+      size="sm"
+      tabIndex={-1}
+      onClick={(event) => {
+        event.stopPropagation();
+        run();
+      }}
+    >
+      {children}
+      {keys !== undefined && <Key keys={keys} decorative />}
+    </Button>
+  );
+}
+
+/** A row as a command's target. */
+function target(key: string): { kind: 'row'; row: string } {
+  return { kind: 'row', row: key };
+}
+
+/**
+ * The queue's entries, with what can be done to the one the keyboard is on, `focused`: its move to
+ * the front, for an `admin`, and its removal.
+ */
+function withEntryActions(
+  items: readonly QueueItem[],
+  focused: string | undefined,
+  admin: boolean,
+): QueueItem[] {
+  const actions = (key: string): ReactNode =>
+    key !== focused ? undefined : (
+      <>
+        {admin && (
+          <RowButton id="queue.jump" run={() => act('jump', target(key))}>
+            To the front
+          </RowButton>
+        )}
+        <RowButton id="queue.remove" run={() => act('remove', target(key))}>
+          Remove
+        </RowButton>
+      </>
+    );
+  return items.map((item) =>
+    item.kind === 'entry'
+      ? { kind: 'entry', entry: { ...item.entry, actions: actions(item.entry.key) } }
+      : {
+          kind: 'group',
+          group: {
+            ...item.group,
+            entries: item.group.entries.map((entry) => ({
+              ...entry,
+              actions: actions(entry.key),
+            })),
+          },
+        },
+  );
+}
+
+/** Those waiting to join, with the auto-merge switch of the one the keyboard is on, `focused`. */
+function withWaitingActions(
+  waiting: readonly TableWaiting[],
+  focused: string | undefined,
+): TableWaiting[] {
+  return waiting.map((entry) =>
+    entry.key !== focused
+      ? entry
+      : {
+          ...entry,
+          actions: (
+            <Switch
+              checked
+              aria-label="Auto-merge"
+              onCheckedChange={() => autoMerge(target(entry.key))}
+            />
+          ),
+        },
   );
 }
 
@@ -146,12 +236,13 @@ function Body({
       );
     case 'queue': {
       const { url } = read;
+      const on = focusedRow(rowsOf(read), focused)?.key;
       return (
         <>
           <QueueTable
             label={`Merge queue for ${branch}`}
-            items={itemsOf(read.entries, now)}
-            waiting={waitingOf(read.waiting)}
+            items={withEntryActions(itemsOf(read.entries, now), on, read.admin)}
+            waiting={withWaitingActions(waitingOf(read.waiting), on)}
             left={leftOf(read.left, now, openPage)}
             more={
               read.more > 0 && url !== null
@@ -163,7 +254,7 @@ function Body({
                 ? 'Lo couldn’t read the queue’s entries.'
                 : 'Nothing is in the merge queue.'
             }
-            focused={focusedRow(rowsOf(read), focused)?.key}
+            focused={on}
             onRowClick={(key) => focusRow(tab.id, key)}
             tableRef={table}
             className="focus-visible:shadow-none"
@@ -303,6 +394,11 @@ export function QueueTabView({ tab }: { tab: QueueTab }) {
         end={
           <>
             <Hint id="queue.open">Open</Hint>
+            <Hint id="queue.remove">Remove</Hint>
+            {state?.read.kind === 'queue' && state.read.admin && (
+              <Hint id="queue.jump">To the front</Hint>
+            )}
+            <Hint id="queue.autoMerge">Auto-merge</Hint>
             <Hint id="queue.openOnGithub">On GitHub</Hint>
             <HeldKeys />
           </>

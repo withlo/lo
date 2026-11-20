@@ -57,7 +57,7 @@ export function queueOnScreen(): QueueTab | string {
 }
 
 /** The rows of the merge queue's tab `tab`, as main last said. */
-function rowsIn(tab: string): Row[] {
+export function rowsIn(tab: string): Row[] {
   return rowsOf(queueOf(tab)?.read);
 }
 
@@ -104,6 +104,11 @@ function rowAt(target: RowTarget): { tab: QueueTab; row: Row } | string {
   if (typeof tab === 'string') return tab;
   const row = rowsIn(tab.id).find((each) => each.key === target.row);
   return row ? { tab, row } : 'That pull request isn’t in the queue any more.';
+}
+
+/** The merge queue tab whose table is drawn now, if one is. */
+export function drawnQueue(): string | undefined {
+  return table?.tab;
 }
 
 /**

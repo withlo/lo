@@ -174,7 +174,7 @@ test("GitHub blocks a writer's merge for the rule its reads list, fails one sent
   expect(new Set(verdicts)).toEqual(new Set(['BLOCKED']));
 });
 
-test.each(['app_merge_override_writer', 'app_merge_write_writer'])(
+test.each(['app_merge_override_writer', 'app_merge_write_writer', 'app_queue_act_writer'])(
   '%s reads as an account with write access, below admin',
   (name) => {
     const interactions = answers(name);
@@ -201,3 +201,17 @@ test.each(['app_merge_override_writer', 'app_merge_write_writer'])(
     );
   },
 );
+
+/** What the cassette `name`'s reads of a merge queue say the account may do in its repository. */
+function queuePermissions(name: string): Set<Json | undefined> {
+  return new Set(
+    answers(name)
+      .filter(graphql('QueueView'))
+      .map((each) => at(each.response.body, 'data', 'repository', 'viewerPermission')),
+  );
+}
+
+test('a writer reads every merge queue as one it can’t move a pull request to the front of', () => {
+  expect(queuePermissions('app_queue_act')).toEqual(new Set(['ADMIN']));
+  expect(queuePermissions('app_queue_act_writer')).toEqual(new Set(['WRITE']));
+});

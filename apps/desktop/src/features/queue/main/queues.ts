@@ -9,7 +9,7 @@ import type { AccountState, GithubEvent } from '../../accounts/service.ts';
 import type { QueueTab, Tabs } from '../../tab/contract.ts';
 import type { PullTabInfo, TabService } from '../../tab/service.ts';
 import type { QueueState } from '../contract.ts';
-import { QueueWatch, type QueueSource } from './watch.ts';
+import { QueueWatch, type Heard, type QueueSource } from './watch.ts';
 
 /** What a merge queue's tab reads from, which can drop what it kept of its account. */
 export interface TabSource extends QueueSource {
@@ -32,6 +32,13 @@ export interface QueuesOptions {
   readonly sourceFor: (tab: QueueTab) => TabSource;
   /** Tells the window a tab's state, each time it changes. */
   readonly publish: (state: QueueState) => void;
+  /** Hears each read of the branch tab `id` shows that answered. */
+  readonly heard?: (id: string, read: Heard) => void;
+  /**
+   * Tab `id` closed, shows another branch, or its account went: what was asked of its queue no
+   * longer stands.
+   */
+  readonly moved?: (id: string) => void;
 }
 
 /** `login` as accounts are told apart, whatever its case. */
@@ -94,6 +101,13 @@ export class Queues {
     return this.#followed.get(id)?.watch.state();
   }
 
+  /** The merge queue's tab `id`, while it's open, and what reads its queue. */
+  found(id: string): { tab: QueueTab; watch: QueueWatch } | undefined {
+    const tab = this.#queueTab(id);
+    const followed = this.#followed.get(id);
+    return tab && followed && { tab, watch: followed.watch };
+  }
+
   /**
    * Shows `branch`'s merge queue: in the merge queue's tab `id`, as its account, or from the pull
    * request's tab `id`, as the account it acts as. Returns the id of the tab that shows it.
@@ -151,16 +165,19 @@ export class Queues {
       open.add(tab.id);
       const followed = this.#followed.get(tab.id);
       if (followed) {
+        if (followed.watch.branch !== tab.branch) this.#options.moved?.(tab.id);
         followed.watch.setBranch(tab.branch);
         continue;
       }
       const source = this.#options.sourceFor(tab);
+      const { id } = tab;
       const watch = new QueueWatch({
-        id: tab.id,
+        id,
         login: tab.login,
         branch: tab.branch,
         source,
         publish: this.#options.publish,
+        heard: (read) => this.#options.heard?.(id, read),
       });
       const why = this.#away.get(keyOf(tab.login));
       if (why !== undefined) watch.hold(why);
@@ -170,6 +187,7 @@ export class Queues {
       if (!open.has(id)) {
         watch.stop();
         this.#followed.delete(id);
+        this.#options.moved?.(id);
       } else if (id === value.active) watch.show();
       else watch.hide();
     }
@@ -229,6 +247,9 @@ export class Queues {
     if (this.#away.get(key) === why) return;
     this.#away.set(key, why);
     for (const { watch } of this.#of(key)) watch.hold(why);
+    for (const [id, { watch }] of this.#followed) {
+      if (keyOf(watch.login) === key) this.#options.moved?.(id);
+    }
   }
 
   /** Account `key` is back: its queues are read again. */

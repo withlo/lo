@@ -313,13 +313,18 @@ function readAs(recorded: readonly Interaction[]): string {
 
 /**
  * `recorded` as an account with write access reads it, below admin: every read of what decides a
- * merge says `WRITE`, and that GitHub doesn't let it merge past the rules, and the repository's own
- * read gives it push access without admin's, and leaves out its security settings, which GitHub
- * shows only to admins.
+ * merge, or of a merge queue, says `WRITE`, and that GitHub doesn't let it merge past the rules, and
+ * the repository's own read gives it push access without admin's, and leaves out its security
+ * settings, which GitHub shows only to admins.
  */
 function asWriter(recorded: Interaction[]): Interaction[] {
   return recorded.map((each) => {
     const { request } = each;
+    if (request.operation === 'QueueView') {
+      return withBody(each, (body) =>
+        inRepository(body, (repository) => ({ ...repository, viewerPermission: 'WRITE' })),
+      );
+    }
     if (request.operation === 'MergeSnapshot') {
       return withBody(each, (body) =>
         inRepository(body, (repository) => ({
@@ -878,5 +883,11 @@ export const DERIVATIONS: readonly Derivation[] = [
       for (const number of WRITE_MERGED) writer = mergeFailed(writer, number, UPDATE_RESTRICTED);
       return restricted(writer, WRITE_BASE);
     },
+  },
+  {
+    name: 'app_queue_act_writer',
+    from: 'app_queue_act',
+    description: `app_queue_act read as an account with write access, below admin, as app_merge_override_writer is: every read of e4/queued's merge queue says WRITE, and GitHub lets only admins move a pull request to the front, so Lo offers no J. Only the reads before J was pressed are meant for such an account: the rest are as recorded, the move included. These answers are derived: the recorders accept only rozed-bot's token, an admin's.`,
+    derive: asWriter,
   },
 ];

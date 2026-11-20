@@ -58,6 +58,7 @@ function entry(position: number, number: number, extra: Partial<Entry> = {}): En
     timeToMerge: null,
     yours: true,
     queuedByYou: true,
+    head: 'a'.repeat(40),
     testedTogether: false,
     stack: null,
     ...extra,
@@ -75,6 +76,7 @@ function stateOf(read: QueueRead, extra: Partial<QueueState> = {}): QueueState {
     read,
     readAt: Date.now(),
     failure: null,
+    away: false,
     ...extra,
   };
 }
@@ -85,6 +87,7 @@ const QUEUE: QueueRead = {
   method: 'squash',
   groups: 5,
   nextMerge: null,
+  admin: true,
   entries: [
     entry(1, 150, { testedTogether: true }),
     entry(2, 151, { testedTogether: true }),
@@ -99,6 +102,7 @@ const QUEUE: QueueRead = {
       url: 'https://github.com/rozed-dev/e2e/pull/153',
       author: 'rozed-bot',
       yours: true,
+      head: 'b'.repeat(40),
       review: null,
       checks: 'running',
     },
@@ -265,9 +269,28 @@ describe('a row’s right-click menu', () => {
   it('lists the queue’s commands on the queue’s own rows', () => {
     act(() => showQueue(stateOf(QUEUE)));
     render();
-    expect(listed('queued-150')).toEqual(['queue.open', 'queue.openOnGithub']);
-    expect(listed('waiting-153')).toEqual(['queue.open', 'queue.openOnGithub']);
-    expect(listed('left-154')).toEqual(['queue.open', 'queue.openOnGithub']);
+    expect(listed('queued-150')).toEqual([
+      'queue.open',
+      'queue.remove',
+      'queue.jump',
+      'queue.autoMerge',
+      'queue.openOnGithub',
+    ]);
+    // Moving to the front is for entries only.
+    const others = ['queue.open', 'queue.remove', 'queue.autoMerge', 'queue.openOnGithub'];
+    expect(listed('waiting-153')).toEqual(others);
+    expect(listed('left-154')).toEqual(others);
+  });
+
+  it('offers moving to the front only to the repository’s admins', () => {
+    act(() => showQueue(stateOf({ ...QUEUE, admin: false })));
+    render();
+    expect(listed('queued-150')).toEqual([
+      'queue.open',
+      'queue.remove',
+      'queue.autoMerge',
+      'queue.openOnGithub',
+    ]);
   });
 
   it('lists none of them on another list’s rows, as a pull request’s timeline’s', () => {
