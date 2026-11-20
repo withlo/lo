@@ -704,12 +704,12 @@ toolchain and git's variables each server needs.
   hostile fixture plants, wrote in a checkout or held an internet socket. One real server runs in
   CI: the `swift` job, on Ubuntu 24.04, runs `pnpm nx run lsp:sourcekit` (`scripts/sourcekit.ts`)
   when Swift's pins change, or anything it runs does (the workflow lists them: `@lo/lsp`'s and
-  `@lo/git`'s source, the lockfile, the code fixture's script and its Swift project). It installs
-  the distribution's Swift with Lo's installer and the packages swift.org lists with `apt-get`,
-  starts SourceKit-LSP as Lo does on the code fixture's checkout, and fails unless it answers a
-  hover on `countWords` with its signature, keeps its logs in its own home and writes nothing, at
-  any depth, in the runner's: it lists the home before and after, and names what was added, changed
-  or removed, but in the runner's own folders (its work folder and its logs).
+  `@lo/git`'s source, the lockfile, the code fixture's script and projects). It installs the
+  distribution's Swift with Lo's installer and the packages swift.org lists with `apt-get`, starts
+  SourceKit-LSP as Lo does on the code fixture's checkout, and fails unless it answers a hover on
+  `countWords` with its signature, keeps its logs in its own home and writes nothing, at any depth,
+  in the runner's: it lists the home before and after, and names what was added, changed or removed,
+  but in the runner's own folders (its work folder and its logs).
 
 ### Accounts
 

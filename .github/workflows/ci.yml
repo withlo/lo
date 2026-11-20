@@ -315,7 +315,8 @@ jobs:
       # installs pnpm, Node and the dependencies (package.json, pnpm-workspace.yaml, the lockfile
       # and the two packages' own package.json), the check and its listing of the home, the source
       # of @lo/lsp and @lo/git, which it imports through their indexes, the scripts that make the
-      # code fixture and the Swift project it asks about. Tests aren't run, so they don't count.
+      # code fixture and every project in it, which they copy into the checkout the server reads.
+      # Tests aren't run, so they don't count.
       - name: Decide whether the check runs
         id: changed
         run: |
@@ -328,7 +329,7 @@ jobs:
             packages/desktop/lsp/scripts/sourcekit.ts packages/desktop/lsp/scripts/home.ts \
             packages/desktop/lsp/src packages/desktop/git/src \
             testing/fixtures/code.sh testing/fixtures/code-lib.sh \
-            testing/fixtures/code/swift testing/fixtures/code/cases.json \
+            testing/fixtures/code \
             ':(exclude,glob)**/*.test.ts'; then
             echo "What the check runs changed, so it runs."
             echo run=true >> "$GITHUB_OUTPUT"
