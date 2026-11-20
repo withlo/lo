@@ -2,7 +2,8 @@
 // and only what the reader typed, runs once, and goes with the head on screen; each check at the
 // press refuses, reads again or asks again; a merge write to a pull request waits for the one
 // under way, whatever its account; a `409` is followed, never sent again; a lost answer is settled
-// by a read; and the method is remembered once GitHub takes it.
+// by a read; and the method is remembered once GitHub takes it. Auto-merge, on and off, and a merge
+// past the rules take the same turns, and a lost answer about either is settled by a read too.
 
 import {
   GithubError,
@@ -11,6 +12,8 @@ import {
   noBranchRules,
   PullRef,
   type AsyncMerge,
+  type AutoMergeRequest,
+  type AutoMergeState,
   type Cached,
   type GithubClient,
   type MergeFacts,
@@ -22,6 +25,7 @@ import {
   type Retarget,
   type StepDone,
   type PollStatus,
+  type PullRequestAnswer,
   type ReadKind,
   type RepoRef,
   type SinceMark,
@@ -118,6 +122,19 @@ interface Setup {
   followFor?: number;
   /** How often a chain's merge reads its bottom layer while it waits for it to merge: 1 ms. */
   chainEvery?: number;
+  /** What GitHub answers to turning auto-merge on, and off. */
+  autoOn?: () => Promise<AutoMergeState | MergeRefusal>;
+  autoOff?: () => Promise<AutoMergeState | MergeRefusal>;
+}
+
+/** Auto-merge as GitHub answers a write of it: on, with `method`, or off. */
+function autoState(on: AutoMergeRequest['method'] | undefined, inQueue = false): AutoMergeState {
+  return {
+    number: 138,
+    head: HEAD,
+    autoMerge: on === undefined ? undefined : { method: on, enabledBy: 'rozed-bot' },
+    inQueue,
+  };
 }
 
 const merges: Merging[] = [];
@@ -135,6 +152,8 @@ function setup(options: Setup = {}) {
   };
   const listeners = new Set<(event: PollEvent) => void>();
   const sent: MergeRequest[] = [];
+  /** Each auto-merge write, with the pull request's node ID and what it asked. */
+  const auto: [string, string, AutoMergeRequest | undefined][] = [];
   const reads: string[] = [];
   const published: JobView[] = [];
   const remembered: [string, Method][] = [];
@@ -259,6 +278,21 @@ function setup(options: Setup = {}) {
       );
     },
     mergeAsyncResult: () => Promise.resolve(results.length > 1 ? results.shift()! : results[0]!),
+    pullRequest: () =>
+      // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- only its node ID is read.
+      ({
+        details: { id: 'PR_138' },
+        fetchedAt: NOW,
+        offlineAge: undefined,
+      }) as unknown as PullRequestAnswer,
+    enableAutoMerge(_pull, id, request) {
+      auto.push(['on', id, request]);
+      return options.autoOn?.() ?? Promise.resolve(autoState(request.method));
+    },
+    disableAutoMerge(_pull, id) {
+      auto.push(['off', id, undefined]);
+      return options.autoOff?.() ?? Promise.resolve(autoState(undefined));
+    },
     changed: () => Promise.resolve(),
   };
   function emit(event: PollEvent) {
@@ -320,6 +354,7 @@ function setup(options: Setup = {}) {
     poller,
     turns,
     sent,
+    auto,
     moves,
     onto,
     reads,
@@ -339,6 +374,10 @@ function setup(options: Setup = {}) {
         gates.fromHead = true;
       },
     },
+    /** Lets the held read of the open pull requests from a branch go, holding the next. */
+    step() {
+      fromHeadGiven?.();
+    },
     /** Lets every held wait go on. */
     release() {
       gates.poller = false;
@@ -354,6 +393,11 @@ function setup(options: Setup = {}) {
     set: {
       stale: () => {
         stale = true;
+      },
+      /** A poll lands, and the poller keeps what it read. */
+      facts: (facts: MergeFacts) => {
+        cached = { value: facts, fetchedAt: NOW };
+        emit({ kind: 'read', pull: PULL, name: MERGE_FACTS.name });
       },
       closed: () => {
         closed = true;
@@ -881,6 +925,383 @@ describe('how it ends', () => {
         newer: { from: HEAD, to: null },
       },
     });
+  });
+});
+
+/** #138 waiting on `ci`, still running: what auto-merge waits for. */
+const WAITING: Partial<MergeFacts['pullRequest']> = {
+  mergeState: 'BLOCKED',
+  checksPending: true,
+  checks: [
+    { kind: 'checkRun', name: 'ci', status: 'IN_PROGRESS', conclusion: undefined, url: undefined },
+  ],
+};
+
+/** #138 with auto-merge on, waiting on `ci`, which the account may turn off. */
+const AUTO_ON: Partial<MergeFacts['pullRequest']> = {
+  ...WAITING,
+  autoMerge: { method: 'SQUASH', enabledBy: 'rozed-bot' },
+  viewerCanDisableAutoMerge: true,
+};
+
+describe('auto-merge', () => {
+  it('goes once, as one request in the pull request’s turn, with the head on screen and the method chosen', async () => {
+    const run = setup({ facts: factsOf(WAITING) });
+    const plan = planOf(await run.merging.plan(ID, { ...SQUASH, asked: 'autoMerge' }));
+    expect(plan).toMatchObject({ kind: 'autoMerge', method: 'SQUASH', head: HEAD, base: 'main' });
+    expect(await run.merging.confirm(plan.key)).toEqual({ kind: 'sent' });
+    expect(run.auto).toEqual([['on', 'PR_138', { expectedHead: HEAD, method: 'SQUASH' }]]);
+    expect(await run.ended('autoMergeOn')).toMatchObject({ key: plan.key, number: 138 });
+    expect(run.sent).toEqual([]);
+    // Its turn is given back once GitHub answered.
+    expect(run.turns.busy(PULL.repo, [138])).toEqual([]);
+    expect(await run.merging.confirm(plan.key)).toMatchObject({ refusal: { kind: 'used' } });
+  });
+
+  it('on a branch with a merge queue is "Merge when ready", by the queue’s method, and may join it at once', async () => {
+    const run = setup({
+      facts: factsOf({ ...WAITING, base: 'e4/queued', queueRequired: true, queueMethod: 'SQUASH' }),
+      // GitHub answers a queue's auto-merge with a merge commit, whatever the queue does.
+      autoOn: () => Promise.resolve(autoState('MERGE', true)),
+    });
+    const plan = planOf(await run.merging.plan(ID, { ...SQUASH, asked: 'autoMerge' }));
+    expect(plan).toMatchObject({ kind: 'whenReady', method: 'SQUASH', base: 'e4/queued' });
+    await run.merging.confirm(plan.key);
+    await run.ended('enqueued');
+  });
+
+  it('isn’t planned for a pull request nothing blocks: that merges as it is', async () => {
+    const run = setup();
+    expect(await run.merging.plan(ID, { ...SQUASH, asked: 'autoMerge' })).toEqual({
+      kind: 'refused',
+      why: 'Nothing blocks #138 now, so it can merge as it is.',
+    });
+  });
+
+  it('that GitHub won’t turn on because it can merge now offers the merge, read again, with the text typed', async () => {
+    const run = setup({
+      facts: factsOf(WAITING),
+      reread: factsOf(),
+      autoOn: () => Promise.resolve({ refusal: 'canMergeNow' }),
+    });
+    const plan = planOf(
+      await run.merging.plan(ID, { ...SQUASH, title: 'Typed', asked: 'autoMerge' }),
+    );
+    await run.merging.confirm(plan.key);
+    const done = await run.ended('refused');
+    expect(done.state).toMatchObject({
+      refusal: {
+        kind: 'canMergeNow',
+        text: 'Nothing blocks #138 now, so GitHub didn’t turn on auto-merge. It can merge as it is.',
+        offer: { kind: 'merge', method: 'SQUASH', head: HEAD, title: 'Typed' },
+      },
+    });
+    const offer = done.state.kind === 'refused' ? done.state.refusal.offer : undefined;
+    expect(await run.merging.confirm(offer!.key)).toEqual({ kind: 'sent' });
+    await run.ended('merged');
+    expect(run.sent).toEqual([expect.objectContaining({ commitTitle: 'Typed' })]);
+  });
+
+  it('offers no merge in place of a plan the reader made meanwhile', async () => {
+    let refuse: ((value: MergeRefusal) => void) | undefined;
+    const run = setup({
+      facts: factsOf(WAITING),
+      reread: factsOf(),
+      autoOn: () => new Promise((resolve) => (refuse = resolve)),
+    });
+    const first = planOf(await run.merging.plan(ID, { ...SQUASH, asked: 'autoMerge' }));
+    await run.merging.confirm(first.key);
+    const second = planOf(await run.merging.plan(ID, { ...SQUASH, asked: 'autoMerge' }));
+    refuse!({ refusal: 'canMergeNow' });
+    const done = await run.ended('refused');
+    expect(done.state).toMatchObject({
+      refusal: { kind: 'canMergeNow', text: expect.stringContaining('Merge it from the panel.') },
+    });
+    expect(done.state.kind === 'refused' && done.state.refusal.offer).toBeFalsy();
+    // The reader's own plan is still there to confirm: as nothing blocks it now, the merge itself.
+    expect(await run.merging.confirm(second.key)).toMatchObject({
+      kind: 'again',
+      plan: { kind: 'merge' },
+    });
+  });
+
+  it('asks again, sending nothing, when what it waits for changed by the press', async () => {
+    const run = setup({
+      facts: factsOf(WAITING),
+      fetchedAt: 0,
+      reread: factsOf({ ...WAITING, reviewDecision: 'REVIEW_REQUIRED' }),
+    });
+    const plan = planOf(await run.merging.plan(ID, { ...SQUASH, asked: 'autoMerge' }));
+    expect(plan.named?.blockers.map((blocker) => blocker.kind)).toEqual(['check']);
+    const confirmed = await run.merging.confirm(plan.key);
+    if (confirmed.kind !== 'again') throw new Error(JSON.stringify(confirmed));
+    expect(confirmed.why).toContain('What auto-merge waits for on #138 changed.');
+    expect(confirmed.plan.named?.blockers.map((blocker) => blocker.kind)).toEqual([
+      'approvals',
+      'check',
+    ]);
+    expect(run.auto).toEqual([]);
+  });
+
+  it('refused as not allowed says so in GitHub’s words, and gives the turn back', async () => {
+    const run = setup({
+      facts: factsOf(WAITING),
+      autoOn: () => Promise.resolve({ refusal: 'autoMergeNotAllowed' }),
+    });
+    await run.merging.confirm(
+      planOf(await run.merging.plan(ID, { ...SQUASH, asked: 'autoMerge' })).key,
+    );
+    expect((await run.ended('refused')).state).toMatchObject({
+      refusal: {
+        kind: 'autoMergeNotAllowed',
+        text: 'This repository doesn’t allow auto-merge. A maintainer turns it on in its settings.',
+      },
+    });
+    expect(run.turns.busy(PULL.repo, [138])).toEqual([]);
+  });
+
+  it('turns off at once, asking nothing, in the pull request’s turn', async () => {
+    const run = setup({ facts: factsOf(AUTO_ON) });
+    expect(await run.merging.autoMergeOff(ID)).toEqual({ kind: 'sent' });
+    expect(run.auto).toEqual([['off', 'PR_138', undefined]]);
+    expect(await run.ended('autoMergeOff')).toMatchObject({ number: 138 });
+    expect(run.turns.busy(PULL.repo, [138])).toEqual([]);
+  });
+
+  it('turned off after it joined the queue says it merges once the queue’s checks pass', async () => {
+    const run = setup({
+      facts: factsOf(AUTO_ON),
+      autoOff: () => Promise.resolve(autoState(undefined, true)),
+    });
+    await run.merging.autoMergeOff(ID);
+    expect((await run.ended('refused')).state).toMatchObject({
+      refusal: {
+        kind: 'queued',
+        text: expect.stringContaining('Take it out of the queue on GitHub to stop it.'),
+      },
+    });
+  });
+
+  it('waits for a merge under way, and a merge waits for it', async () => {
+    const run = setup({ facts: factsOf(AUTO_ON), autoOff: () => new Promise(() => undefined) });
+    expect(await run.merging.autoMergeOff(ID)).toEqual({ kind: 'sent' });
+    expect(run.turns.take(PULL.repo, [138])).toEqual({ busy: 138 });
+    expect(await run.merging.autoMergeOff(ID)).toMatchObject({ refusal: { kind: 'busy' } });
+    expect(run.auto).toHaveLength(1);
+  });
+
+  it('can’t tell after a lost answer, sends nothing again, and settles by reading the pull request', async () => {
+    const run = setup({ facts: factsOf(WAITING), reread: factsOf(AUTO_ON), autoOn: lost });
+    run.hold.reads();
+    await run.merging.confirm(
+      planOf(await run.merging.plan(ID, { ...SQUASH, asked: 'autoMerge' })).key,
+    );
+    expect((await run.ended('unknown')).state).toMatchObject({ why: 'noAnswer' });
+    expect(run.turns.busy(PULL.repo, [138])).toEqual([138]);
+    run.release();
+    await run.ended('autoMergeOn');
+    expect(run.turns.busy(PULL.repo, [138])).toEqual([]);
+    expect(run.auto).toHaveLength(1);
+  });
+});
+
+/** #138 waiting on a review GitHub requires, which the account may merge past. */
+const REVIEW_OWED: Partial<MergeFacts['pullRequest']> = {
+  mergeState: 'BLOCKED',
+  reviewDecision: 'REVIEW_REQUIRED',
+  viewerCanMergeAsAdmin: true,
+};
+
+describe('a merge past the rules', () => {
+  it('goes only with the number typed, bypassing the rules, with the method chosen', async () => {
+    const run = setup({ facts: factsOf(REVIEW_OWED) });
+    const plan = planOf(
+      await run.merging.plan(ID, {
+        method: 'SQUASH',
+        title: 'Typed',
+        message: '',
+        asked: 'override',
+      }),
+    );
+    expect(plan).toMatchObject({ kind: 'override', method: 'SQUASH', title: 'Typed' });
+    expect(await run.merging.confirm(plan.key)).toMatchObject({
+      refusal: { kind: 'typed', text: 'Type 138 to merge it past the rules.' },
+    });
+    expect(await run.merging.confirm(plan.key, '13')).toMatchObject({ refusal: { kind: 'typed' } });
+    // Not typed right, the plan stays.
+    expect(await run.merging.confirm(plan.key, '138')).toEqual({ kind: 'sent' });
+    expect(run.sent).toEqual([
+      expect.objectContaining({
+        sha: HEAD,
+        method: 'SQUASH',
+        commitTitle: 'Typed',
+        bypassRules: true,
+      }),
+    ]);
+    await run.ended('merged');
+  });
+
+  it('asks again, sending nothing, when a rule it would skip appeared by the press', async () => {
+    const run = setup({
+      facts: factsOf(REVIEW_OWED),
+      fetchedAt: 0,
+      reread: factsOf({ ...REVIEW_OWED, checksPending: true, checks: WAITING.checks ?? [] }),
+    });
+    const plan = planOf(
+      await run.merging.plan(ID, { method: 'SQUASH', title: '', message: '', asked: 'override' }),
+    );
+    expect(plan.named?.blockers.map((blocker) => blocker.kind)).toEqual(['approvals']);
+    const confirmed = await run.merging.confirm(plan.key, '138');
+    if (confirmed.kind !== 'again') throw new Error(JSON.stringify(confirmed));
+    expect(confirmed.why).toContain('What merging #138 past the rules skips changed.');
+    expect(confirmed.plan.named?.blockers.map((blocker) => blocker.kind)).toEqual([
+      'approvals',
+      'check',
+    ]);
+    expect(run.sent).toEqual([]);
+    // The new plan goes only with the number typed again.
+    expect(await run.merging.confirm(confirmed.plan.key)).toMatchObject({
+      refusal: { kind: 'typed' },
+    });
+    expect(await run.merging.confirm(confirmed.plan.key, '138')).toEqual({ kind: 'sent' });
+  });
+
+  it('isn’t planned for an account GitHub doesn’t let bypass them', async () => {
+    const run = setup({ facts: factsOf({ ...REVIEW_OWED, viewerCanMergeAsAdmin: false }) });
+    expect(await run.merging.plan(ID, { ...SQUASH, asked: 'override' })).toMatchObject({
+      kind: 'refused',
+    });
+  });
+});
+
+describe('auto-merge and a merge past the rules', () => {
+  /** What each is asked with, and the facts it's offered for. */
+  const KINDS = [
+    ['autoMerge', WAITING],
+    ['override', REVIEW_OWED],
+  ] as const;
+
+  /** #138 as the bottom layer of a chain, with #139 on its branch. */
+  const CHAIN = forestOf('main', [
+    {
+      number: 139,
+      state: { kind: 'open' },
+      baseRef: 'merge/5/squash',
+      baseTip: undefined,
+      headRef: 'merge/5/top',
+      headInBaseRepo: true,
+      headOid: 'f'.repeat(40),
+      commits: [],
+      createdAt: 2,
+      nativeStack: undefined,
+    },
+  ]);
+  const BOTTOM =
+    '#138 is the bottom layer of a chain that isn’t a GitHub stack: once it merged, the layers above would still sit on its branch.';
+
+  it('go only once Lo knows where the pull request sits, and never from a chain’s bottom layer', async () => {
+    for (const [asked, pull] of KINDS) {
+      const choice = { ...SQUASH, asked };
+      const unread = setup({ facts: factsOf(pull), forest: undefined });
+      const bottom = setup({ facts: factsOf(pull), forest: CHAIN });
+      // A chain grew on it by the press.
+      const grew = setup({ facts: factsOf(pull) });
+      const plan = planOf(await grew.merging.plan(ID, choice));
+      grew.set.forest(CHAIN);
+      expect({
+        asked,
+        unread: await unread.merging.plan(ID, choice),
+        bottom: await bottom.merging.plan(ID, choice),
+        grew: await grew.merging.confirm(plan.key, '138'),
+        sent: [...grew.sent, ...grew.auto],
+      }).toEqual({
+        asked,
+        unread: {
+          kind: 'refused',
+          why: "Lo is still listing this repository's open pull requests.",
+        },
+        bottom: { kind: 'refused', why: BOTTOM },
+        grew: {
+          kind: 'refused',
+          refusal: expect.objectContaining({ kind: 'where', text: BOTTOM }),
+        },
+        sent: [],
+      });
+    }
+  });
+
+  it('ask again, sending nothing, when what they name changed while Lo asked where it sits', async () => {
+    for (const [asked, pull] of KINDS) {
+      const base = { ...pull, base: 'merge/5/base' };
+      const run = setup({ facts: factsOf(base) });
+      const plan = planOf(await run.merging.plan(ID, { ...SQUASH, asked }));
+      run.hold.fromHead();
+      const confirming = run.merging.confirm(plan.key, '138');
+      await moment();
+      // A poll lands meanwhile: a review is owed, and a check started.
+      run.set.facts(
+        factsOf({
+          ...base,
+          reviewDecision: 'REVIEW_REQUIRED',
+          checksPending: true,
+          checks: WAITING.checks ?? [],
+        }),
+      );
+      run.release();
+      const confirmed = await confirming;
+      expect({
+        asked,
+        kind: confirmed.kind,
+        blockers:
+          confirmed.kind === 'again'
+            ? confirmed.plan.named?.blockers.map((blocker) => blocker.kind)
+            : confirmed,
+        sent: [...run.sent, ...run.auto],
+      }).toEqual({ asked, kind: 'again', blockers: ['approvals', 'check'], sent: [] });
+    }
+  });
+
+  it('weigh a read that lands while Lo asks where it sits only for what they name', async () => {
+    const base = { ...WAITING, base: 'merge/5/base' };
+    const run = setup({ facts: factsOf(base) });
+    const plan = planOf(await run.merging.plan(ID, { ...SQUASH, asked: 'autoMerge' }));
+    run.hold.fromHead();
+    const confirming = run.merging.confirm(plan.key);
+    await moment();
+    // A poll lands meanwhile: a check auto-merge doesn't wait for passed.
+    const lint = {
+      ...WAITING.checks![0]!,
+      name: 'lint',
+      status: 'COMPLETED',
+      conclusion: 'SUCCESS',
+    };
+    run.set.facts(factsOf({ ...base, checks: [...(WAITING.checks ?? []), lint] }));
+    run.release();
+    expect(await confirming).toEqual({ kind: 'sent' });
+    // Lo asked where it sits at the plan and once at the press: the read cost no round.
+    expect(run.reads).toHaveLength(2);
+  });
+
+  it('refuse, sending nothing, when what they name keeps changing while Lo asks where it sits', async () => {
+    const base = { ...WAITING, base: 'merge/5/base' };
+    const run = setup({ facts: factsOf(base) });
+    const plan = planOf(await run.merging.plan(ID, { ...SQUASH, asked: 'autoMerge' }));
+    run.hold.fromHead();
+    const confirming = run.merging.confirm(plan.key);
+    // A review is asked for, given, then asked for again, each while Lo asks where it sits.
+    for (const reviewDecision of ['REVIEW_REQUIRED', 'APPROVED', 'REVIEW_REQUIRED'] as const) {
+      await moment();
+      run.set.facts(factsOf({ ...base, reviewDecision }));
+      run.step();
+    }
+    expect(await confirming).toMatchObject({
+      kind: 'refused',
+      refusal: {
+        kind: 'changing',
+        text: 'What GitHub says of #138 kept changing while Lo checked it, so Lo sent nothing. Start again from the merge panel.',
+      },
+    });
+    expect(run.auto).toEqual([]);
   });
 });
 

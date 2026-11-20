@@ -1,6 +1,6 @@
 // SourceKit-LSP, as its adapter finds and starts it: the developer folder `xcode-select -p` names,
-// the copy and SDK in it, what it's told, and the checkouts Lo refuses it. No server runs here, and
-// no `xcode-select` but a stand-in.
+// the copy and SDK in it, what it's told, on macOS and from Lo's Swift toolchain on Linux, and the
+// checkouts Lo refuses it. No server runs here, and no `xcode-select` but a stand-in.
 
 import {
   chmodSync,
@@ -16,10 +16,12 @@ import { describe, expect, onTestFinished, test, vi } from 'vitest';
 
 import { GIT, tempFolder } from '../../test/support.ts';
 import { serverEnvironment } from '../environment.ts';
+import { toolchainUse } from '../toolchains.ts';
 import {
   developerFolder,
   findSourceKit,
   launchSourceKit,
+  launchSourceKitOnLinux,
   placeSourceKit,
   SOURCEKIT_LSP,
   sourceKitArguments,
@@ -224,6 +226,59 @@ describe('starting SourceKit-LSP', () => {
       expect(typeof time).toBe('number');
       expect(Number.isInteger(time)).toBe(false);
     }
+  });
+});
+
+describe('starting SourceKit-LSP on Linux', () => {
+  const files = '/lo/cache/toolchains/swift-ubuntu2604/6.4.2/files';
+  const installed = {
+    folder: files,
+    entry: `${files}/swift-6.4.2-RELEASE-ubuntu26.04/usr/bin/sourcekit-lsp`,
+  };
+  const swift = { installed, ...toolchainUse('swift-ubuntu2604', '6.4.2', installed, 'linux') };
+
+  test('starts the toolchain’s, its folder of programs first, told of no workspace', () => {
+    const launch = launchSourceKitOnLinux(swift, '6.4.2');
+    expect(launch).toMatchObject({ program: installed.entry, args: [], rootless: true });
+    expect(launch.path).toEqual([`${files}/swift-6.4.2-RELEASE-ubuntu26.04/usr/bin`]);
+    // `sourcekitd` runs in its process: no service outside its family. Its one variable of its own
+    // comes once its home is made, below.
+    expect(launch.services).toBeUndefined();
+    expect(launch.variables).toBeUndefined();
+    expect(launch.version).toBe('SourceKit-LSP from Swift 6.4.2 · Apache-2.0');
+    expect(swift.variables).toEqual({});
+    expect(swift.allowed).toEqual([]);
+  });
+
+  test('is told and kept to its home as on macOS, but for the SDK, which Linux has none of', async () => {
+    const where = { root: '/lo/checkouts/work', home: '/lo/homes/swift' };
+    const placed = await launchSourceKitOnLinux(swift, '6.4.2').place?.(where);
+    const options = sourceKitOptions(where.home, '/lo/MacOSX.sdk');
+    expect(placed).toEqual({
+      args: sourceKitArguments(where.home),
+      // Foundation on Linux takes its home folder from this, then from the user's entry in the
+      // system's list of users, before `HOME`: without it, SourceKit-LSP reads the user's
+      // `~/.sourcekit-lsp/config.json` and writes its logs in `~/.sourcekit-lsp/logs`.
+      variables: { CFFIXED_USER_HOME: where.home },
+      initializationOptions: {
+        ...options,
+        fallbackBuildSystem: {
+          swiftCompilerFlags: ['-module-cache-path', '/lo/homes/swift/cache/modules'],
+          cCompilerFlags: [],
+          cxxCompilerFlags: [],
+        },
+      },
+    });
+    expect(sourceKitOptions(where.home)).toEqual(placed?.initializationOptions);
+    expect(await placeSourceKit(where)).toEqual(placed);
+    const env = serverEnvironment({
+      home: where.home,
+      roots: [where.root],
+      path: [...swift.path],
+      variables: placed?.variables,
+      git: GIT,
+    });
+    expect(env).toMatchObject({ HOME: where.home, CFFIXED_USER_HOME: where.home });
   });
 });
 

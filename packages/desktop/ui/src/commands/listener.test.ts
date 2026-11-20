@@ -2,7 +2,7 @@
 
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
-import { FakeView, testCommands, type Ran } from '../../test/commands.ts';
+import { FakeView, queue, testCommands, type Ran } from '../../test/commands.ts';
 import { KEY_EVENT, listen } from './listener.ts';
 import { Registry } from './registry.ts';
 import { setScopeSource } from './scopes.ts';
@@ -26,6 +26,14 @@ function press(id: string, key: string, init: KeyboardEventInit = {}): KeyboardE
   if (document.activeElement !== target) target.focus();
   const event = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true, ...init });
   target.dispatchEvent(event);
+  return event;
+}
+
+/** Presses `key` with focus nowhere in particular, as before a tab's view has drawn. */
+function pressNowhere(key: string): KeyboardEvent {
+  if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+  const event = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true });
+  document.body.dispatchEvent(event);
   return event;
 }
 
@@ -366,6 +374,58 @@ describe('a pending sequence', () => {
     expect(after.defaultPrevented).toBe(false);
     expect(ids()).toEqual([]);
     expect(log).toEqual(['clearPending', 'editor i']);
+  });
+});
+
+describe('a sequence started with focus nowhere in particular', () => {
+  beforeEach(() => {
+    stop();
+    registry = new Registry({ system: 'mac', commands: testCommands(ran, [queue]) });
+    stop = listen(window, registry);
+  });
+
+  test('goes on in the view Lo gives focus to, as a diff that has drawn takes it', () => {
+    widget('editor');
+    expect(pressNowhere('g').defaultPrevented).toBe(true);
+    element('editor').focus();
+    expect(registry.heldKeys()).toBe('g');
+    expect(press('editor', 'q').defaultPrevented).toBe(true);
+    expect(ids()).toEqual(['queue.show']);
+    // Vim saw neither key.
+    expect(log).toEqual([]);
+  });
+
+  test('goes on through each move Lo makes, as a view drawn anew takes focus from the last', () => {
+    pressNowhere('g');
+    element('block').focus();
+    element('editor').focus();
+    press('editor', 'q');
+    expect(ids()).toEqual(['queue.show']);
+  });
+
+  test('is dropped where focus goes that it can’t go on, as a dialog’s field', () => {
+    widget('name');
+    pressNowhere('g');
+    element('name').focus();
+    expect(registry.isPending()).toBe(false);
+    expect(press('name', 'q').defaultPrevented).toBe(false);
+    expect(log).toEqual(['name q']);
+    expect(ids()).toEqual([]);
+  });
+
+  test('is dropped by a click, the window losing focus and a tab switch, as any is', () => {
+    const drops = [
+      () => element('editor').dispatchEvent(new MouseEvent('pointerdown', { bubbles: true })),
+      () => window.dispatchEvent(new FocusEvent('blur')),
+      () => registry.tab('two'),
+    ];
+    for (const drop of drops) {
+      pressNowhere('g');
+      drop();
+      expect(registry.isPending()).toBe(false);
+    }
+    press('editor', 'q');
+    expect(ids()).toEqual([]);
   });
 });
 

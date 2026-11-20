@@ -27,6 +27,10 @@
 # - an asar of only the build's output (dist/ and package.json), whose header hash is the one in
 #   Info.plist, which Electron checks as it loads the asar;
 # - registered, with the Viewer role, for `lo:` links and web links;
+# - holding in Info.plist the copyright the builder's config gives
+#   (apps/desktop/build/electron-builder.yml), and the licenses beside its asar: licenses.txt, which
+#   isn't empty, opens with Lo's own GPL-3.0 notice and names the packages and fonts that must always
+#   be there, with Electron's license and Chromium's, and none of it in the asar;
 # - quitting at once, saying why, when started with anything but a link, a switch after whitespace
 #   included, or with a variable set that would write out or expose its traffic, such as
 #   SSLKEYLOGFILE;
@@ -125,6 +129,16 @@ if [ -n "$release" ]; then
     value=$(plutil -extract "$key" raw -o - "$plist" 2> /dev/null) || value=
     [ "$value" = "$version" ] || fail "Info.plist's $key is \"$value\", not $version"
   done
+fi
+
+# Info.plist's copyright, which the About panel shows, is the one the builder's config gives. The
+# release config extends that one and doesn't set its own.
+copyright=$(sed -n 's/^copyright: //p' apps/desktop/build/electron-builder.yml)
+plist_copyright=$(plutil -extract NSHumanReadableCopyright raw -o - "$plist" 2> /dev/null) || plist_copyright=
+if [ -z "$copyright" ]; then
+  fail "the builder's config says no copyright"
+elif [ "$plist_copyright" != "$copyright" ]; then
+  fail "Info.plist's NSHumanReadableCopyright is \"$plist_copyright\", and the builder's config says \"$copyright\""
 fi
 
 # macOS won't open an app on a system older than Info.plist's minimum, and Electron's framework
@@ -281,6 +295,36 @@ for entry in /dist/main/index.js /dist/preload/index.cjs /dist/window/index.html
   printf '%s\n' "$entries" | grep -qxF -- "$entry" || fail "the asar lacks $entry"
 done
 
+# The licenses of what Lo ships are in a file beside the asar, where the system can open it, and not
+# in the asar. The file opens with Lo's own notice: its heading, its copyright and the sentence that
+# says Lo is free software under the GPL, version 3, followed by that license's text. It names what
+# no build of Lo is without: a package from each bundle that bundles any, and the fonts. Electron's
+# license and Chromium's are beside it, as it says.
+! printf '%s\n' "$entries" | grep -qxF -- /dist/licenses.txt || fail "the asar holds licenses.txt"
+resources=$app/Contents/Resources
+licenses=$resources/licenses.txt
+for notice in LICENSE.electron.txt LICENSES.chromium.html; do
+  [ -s "$resources/$notice" ] || fail "the app holds no $notice, which licenses.txt says is installed with it"
+done
+if [ ! -f "$licenses" ]; then
+  fail "the app holds no licenses.txt beside its asar"
+elif [ ! -s "$licenses" ]; then
+  fail "licenses.txt is empty"
+else
+  [ "$(sed -n 1p "$licenses")" = Lo ] || fail "licenses.txt doesn't open with Lo's heading"
+  [ "$(sed -n 4p "$licenses")" = "$copyright" ] ||
+    fail "licenses.txt's fourth line isn't the copyright \"$copyright\": $(sed -n 4p "$licenses")"
+  case $(sed -n 6p "$licenses") in
+    "Lo is free software."*"GNU General Public License, version 3."*) ;;
+    *) fail "licenses.txt's sixth line doesn't say Lo is free software under the GPL, version 3" ;;
+  esac
+  grep -q '^GNU GENERAL PUBLIC LICENSE$' "$licenses" || fail "licenses.txt lacks GPL-3.0's text"
+  for package in electron-updater react react-dom @codemirror/view \
+    @fontsource-variable/host-grotesk @fontsource/fragment-mono; do
+    grep -q "^$package@[0-9][^ ]* (" "$licenses" || fail "licenses.txt doesn't name $package"
+  done
+fi
+
 # Each scheme must be in a URL type whose role is Viewer. plutil's keypaths index an array.
 for scheme in lo http https; do
   found=
@@ -425,11 +469,11 @@ listener=
 
 if [ "$status" -eq 0 ]; then
   if [ -z "$release" ]; then
-    echo "$file passed: arm64, ad hoc with the hardened runtime, no update feed, fuses, asar and links, it refuses switches, files and variables, and it draws its window and reads no test servers or feed."
+    echo "$file passed: arm64, ad hoc with the hardened runtime, no update feed, fuses, asar, copyright, licenses and links, it refuses switches, files and variables, and it draws its window and reads no test servers or feed."
   elif [ -n "$adhoc" ]; then
-    echo "$file passed: $arch, $version, ad hoc with the hardened runtime, GitHub's update feed, fuses, asar and links, it refuses switches, files and variables, and it draws its window and reads no test servers or other feed."
+    echo "$file passed: $arch, $version, ad hoc with the hardened runtime, GitHub's update feed, fuses, asar, copyright, licenses and links, it refuses switches, files and variables, and it draws its window and reads no test servers or other feed."
   else
-    echo "$file passed: $arch, $version, a Developer ID of team $signer with the hardened runtime, notarized and stapled, GitHub's update feed, fuses, asar and links, it refuses switches, files and variables, and it draws its window and reads no test servers or other feed."
+    echo "$file passed: $arch, $version, a Developer ID of team $signer with the hardened runtime, notarized and stapled, GitHub's update feed, fuses, asar, copyright, licenses and links, it refuses switches, files and variables, and it draws its window and reads no test servers or other feed."
   fi
 fi
 exit "$status"

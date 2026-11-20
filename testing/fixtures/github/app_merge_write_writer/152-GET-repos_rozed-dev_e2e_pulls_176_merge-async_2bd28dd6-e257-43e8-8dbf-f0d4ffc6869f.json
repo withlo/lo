@@ -1,0 +1,25 @@
+{
+  "request": {
+    "method": "GET",
+    "url": "https://api.github.com/repos/rozed-dev/e2e/pulls/176/merge-async/2bd28dd6-e257-43e8-8dbf-f0d4ffc6869f"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "etag": "W/\"fe2917569e7efdb1d536733a26f9c28635b889f0b3e3d0f1c0c635d4f244e0ad\"",
+      "x-github-api-version-selected": "2022-11-28",
+      "x-ratelimit-limit": "5000",
+      "x-ratelimit-remaining": "4846",
+      "x-ratelimit-reset": "1794878438",
+      "x-ratelimit-resource": "core",
+      "x-ratelimit-used": "154"
+    },
+    "body": {
+      "status": "failed",
+      "details": {
+        "message": "Repository rule violations found\n\nCannot update this protected ref.\n\n"
+      }
+    }
+  }
+}

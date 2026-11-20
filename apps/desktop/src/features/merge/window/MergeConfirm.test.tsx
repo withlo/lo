@@ -3,9 +3,12 @@
 // how, into what and which revision; only a fresh `⏎` once it shows confirms, never a held one, the
 // press that opened it or one a field took; the merge goes on as main says, and once it merged the
 // dialog goes and a toast says so; a refusal says why and offers the newer push; and `Esc` before
-// confirming forgets the plan. A GitHub stack's merge lists its layers, then how GitHub gets on with
-// each, and offers the layer above once they merged; a chain's lists each base branch Lo moves, then
-// how each went, and a toast says how its run ended.
+// confirming forgets the plan. Auto-merge's says what GitHub waits for and what a push would do; a
+// merge past the rules lists what it skips and goes only with the number typed, asked afresh each
+// time; and auto-merge GitHub won't turn on, as it can merge now, shows the merge in its place. A
+// GitHub stack's merge lists its layers, then how GitHub gets on with each, and offers the layer
+// above once they merged; a chain's lists each base branch Lo moves, then how each went, and a toast
+// says how its run ended.
 
 import { act, type ReactNode } from 'react';
 import { createRoot } from 'react-dom/client';
@@ -14,11 +17,11 @@ import { beforeAll, beforeEach, expect, it, onTestFinished } from 'vitest';
 import { notice } from '../../../window/commands/notices.tsx';
 import { createRegistry } from '../../../window/commands/registry.ts';
 import { installBridge } from '../../../window/test/bridge.ts';
-import type { JobView, MergePlan, Progress, Together } from '../contract.ts';
+import type { JobView, MergePlan, Named, Progress, Together } from '../contract.ts';
 import feature from './index.ts';
 import { MergeConfirm } from './MergeConfirm.tsx';
-import { heardJob, newerFrom } from './merging.ts';
-import { merging } from './store.ts';
+import { heardJob, newerFrom, typeNumber } from './merging.ts';
+import { merging, statuses } from './store.ts';
 
 const HEAD = 'a'.repeat(40);
 
@@ -43,6 +46,7 @@ beforeEach(() => {
   confirming = () => ({ kind: 'sent' });
   bridge.calls.length = 0;
   merging.setState({ dialog: undefined, jobs: new Map(), seen: new Set() });
+  statuses.setState({ views: new Map() });
 });
 
 function planOf(change: Partial<MergePlan> = {}): MergePlan {
@@ -59,6 +63,7 @@ function planOf(change: Partial<MergePlan> = {}): MergePlan {
     head: HEAD,
     title: 'Rate limit by cost',
     message: '',
+    named: null,
     together: null,
     ...change,
   };
@@ -354,6 +359,162 @@ it('offers to ask GitHub again when Lo can’t tell how the last merge went, and
   });
   await until(() => merging.getState().dialog === undefined);
   expect(bridge.calls.find(([channel]) => channel === 'merge.askAgain')?.[1]).toEqual({
+    key: plan.key,
+  });
+});
+
+/**
+ * What a confirmation names, as main planned it: #138 waiting on two checks, into a base whose
+ * approvals a push keeps, with `change`.
+ */
+function namedOf(change: Partial<Named> = {}): Named {
+  return {
+    blockers: [
+      { kind: 'check', check: { name: 'e2e (chromium)', state: 'running', url: null } },
+      { kind: 'check', check: { name: 'typecheck', state: 'running', url: null } },
+    ],
+    unchecked: [],
+    partial: false,
+    afterPush: 'keepsApprovals',
+    queue: { required: false, method: null },
+    ...change,
+  };
+}
+
+it('turning on auto-merge says what GitHub waits for, and what a push before then would do', async () => {
+  draw(<MergeConfirm />);
+  act(() =>
+    merging.setState({
+      dialog: {
+        kind: 'confirm',
+        plan: planOf({ kind: 'autoMerge', title: '', named: namedOf() }),
+        note: undefined,
+        sending: false,
+      },
+    }),
+  );
+  await until(() => dialog() !== null);
+  const box = dialog()!;
+  expect(box.textContent).toContain('Merge #138 when it’s ready?');
+  expect(box.textContent).toContain(
+    'GitHub squashes #138 into main once e2e (chromium) and typecheck pass.',
+  );
+  expect(box.textContent).toContain(
+    'A push before it merges would merge with the approvals already given.',
+  );
+  expect(box.textContent).toContain('Merge when ready');
+
+  // On a branch with a merge queue, GitHub adds it to the queue once they pass.
+  act(() =>
+    merging.setState({
+      dialog: {
+        kind: 'confirm',
+        plan: planOf({
+          kind: 'whenReady',
+          base: 'e4/queued',
+          title: '',
+          named: namedOf({
+            queue: { required: true, method: 'SQUASH' },
+            afterPush: 'newApproval',
+          }),
+        }),
+        note: undefined,
+        sending: false,
+      },
+    }),
+  );
+  expect(box.textContent).toContain(
+    'GitHub adds #138 to the merge queue for e4/queued once e2e (chromium) and typecheck pass.',
+  );
+  expect(box.textContent).toContain(
+    'The queue’s settings choose the method and the message: squash.',
+  );
+  expect(box.textContent).not.toContain('A push before it merges');
+  expect(box.textContent).not.toContain('Method');
+});
+
+it('merges past the rules only with the number typed, which it asks for afresh when it asks again', async () => {
+  const plan = planOf({ kind: 'override', named: namedOf() });
+  draw(<MergeConfirm />);
+  act(() =>
+    merging.setState({ dialog: { kind: 'confirm', plan, note: undefined, sending: false } }),
+  );
+  await until(() => dialog() !== null);
+  const box = dialog()!;
+  expect(box.textContent).toContain('Merge #138 without the rules?');
+  expect(box.textContent).toContain('You can bypass main’s rules in rozed-dev/e2e.');
+  expect(box.textContent).toContain('This skips:');
+  expect(box.textContent).toContain('2 required checks');
+  expect(box.textContent).toContain('Type 138 to confirm');
+  const field = () => box.querySelector('input')!;
+  const button = [...box.querySelectorAll('button')].find((each) =>
+    each.textContent?.includes('Merge anyway'),
+  )!;
+  expect(button.getAttribute('aria-disabled')).toBe('true');
+  await later();
+
+  // Not typed, or typed wrong, neither `⏎` nor the button confirms.
+  act(() => {
+    box.dispatchEvent(enter());
+  });
+  act(() => typeNumber('13'));
+  act(() => {
+    field().dispatchEvent(enter());
+  });
+  act(() => button.click());
+  expect(confirms()).toBe(0);
+
+  // Typed, `⏎` in the field confirms once, with the number.
+  const again = planOf({
+    kind: 'override',
+    key: '00000000-0000-4000-8000-000000000002',
+    named: namedOf(),
+  });
+  confirming = () => ({ kind: 'again', plan: again, why: 'Someone approved #138.' });
+  act(() => typeNumber('138'));
+  expect(field().value).toBe('138');
+  act(() => {
+    field().dispatchEvent(enter());
+  });
+  await until(() => {
+    const now = merging.getState().dialog;
+    return now?.kind === 'confirm' && now.plan.key === again.key;
+  });
+  expect(bridge.calls.find(([channel]) => channel === 'merge.confirm')?.[1]).toEqual({
+    key: plan.key,
+    typed: '138',
+  });
+  // Asked again, the field is empty again.
+  expect(field().value).toBe('');
+  expect(box.textContent).toContain('Someone approved #138.');
+});
+
+it('shows the merge main planned in auto-merge’s place when GitHub says it can merge now', async () => {
+  const plan = planOf({ kind: 'autoMerge', title: '' });
+  const offer = planOf({ kind: 'merge', key: '00000000-0000-4000-8000-000000000003' });
+  draw(<MergeConfirm />);
+  act(() => merging.setState({ dialog: { kind: 'sent', plan } }));
+  await until(() => dialog() !== null);
+  act(() =>
+    heardJob(
+      jobOf(plan, {
+        kind: 'refused',
+        refusal: {
+          kind: 'canMergeNow',
+          text: 'Nothing blocks #138 now, so GitHub didn’t turn on auto-merge. It can merge as it is.',
+          rules: [],
+          until: null,
+          newer: null,
+          offer,
+        },
+      }),
+    ),
+  );
+  await until(() => merging.getState().dialog?.kind === 'confirm');
+  expect(dialog()?.textContent).toContain('Merge #138 into main?');
+  expect(dialog()?.textContent).toContain('It can merge as it is.');
+  // Seen here, it needs no banner.
+  expect(bridge.calls.find(([channel]) => channel === 'merge.dismiss')?.[1]).toEqual({
     key: plan.key,
   });
 });

@@ -128,7 +128,8 @@ function texts(folder: string, files: readonly string[]): Record<string, string>
   return Object.fromEntries(files.map((file) => [file, readFileSync(join(folder, file), 'utf8')]));
 }
 
-test('every derived cassette is as its derivation writes it from its recording now', () => {
+// It writes each derived cassette's recording out and derives it again, which takes CI some seconds.
+test('every derived cassette is as its derivation writes it now', { timeout: 30_000 }, () => {
   for (const derivation of DERIVATIONS) {
     const dir = mkdtempSync(join(tmpdir(), 'lo-derived-'));
     onTestFinished(() => rmSync(dir, { recursive: true, force: true }));

@@ -1,0 +1,34 @@
+{
+  "request": {
+    "method": "GET",
+    "url": "https://api.github.com/repos/rozed-dev/e2e/pulls/231/files?per_page=100"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "etag": "W/\"3eeb28ffb4a739ca2c0d71338a0d612ae05a3a6d173b39a8a61f37b1fb0f68ac\"",
+      "last-modified": "Tue, 17 Nov 2026 03:59:08 GMT",
+      "x-github-api-version-selected": "2022-11-28",
+      "x-ratelimit-limit": "5000",
+      "x-ratelimit-remaining": "4847",
+      "x-ratelimit-reset": "1794889860",
+      "x-ratelimit-resource": "core",
+      "x-ratelimit-used": "153"
+    },
+    "body": [
+      {
+        "sha": "b5472f5a1c10beb7b32767be8297668e638aac1e",
+        "filename": "merge/7/overridden/notes.md",
+        "status": "added",
+        "additions": 3,
+        "deletions": 0,
+        "changes": 3,
+        "blob_url": "https://github.com/rozed-dev/e2e/blob/fc12dfaeb99ae7f26b332bf150c7b373c05525c1/merge%2F7%2Foverridden%2Fnotes.md",
+        "raw_url": "https://github.com/rozed-dev/e2e/raw/fc12dfaeb99ae7f26b332bf150c7b373c05525c1/merge%2F7%2Foverridden%2Fnotes.md",
+        "contents_url": "https://api.github.com/repos/rozed-dev/e2e/contents/merge%2F7%2Foverridden%2Fnotes.md?ref=fc12dfaeb99ae7f26b332bf150c7b373c05525c1",
+        "patch": "@@ -0,0 +1,3 @@\n+# Fixture M7: overridden\n+\n+Needs an approval, which an admin may bypass."
+      }
+    ]
+  }
+}

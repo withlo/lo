@@ -343,10 +343,39 @@ export class Registry {
 
   /**
    * Drops the pending sequence and whatever `left`, a code view focus is leaving, has Vim waiting
-   * on, as a focus change and the window's blur do.
+   * on, as the window's blur and a tab switch do.
    */
   leave(left: ScopeSource | undefined): void {
     this.drop();
+    this.release(left);
+  }
+
+  /**
+   * Focus moved to `place`, from `left` if that was a code view, whose Vim stops waiting. The
+   * pending sequence is dropped, unless it was typed with focus nowhere in particular and goes on
+   * in `place`: then it waits there. Keys are held across a focus move only when Lo makes it, as a
+   * view that has drawn takes focus that was nowhere in particular, since the reader's click, key
+   * or command from the app menu ends them first. So keys typed as a tab finishes loading count.
+   */
+  focusMoved(place: KeyPlace, left: ScopeSource | undefined): void {
+    if (!this.goesOn(place)) this.drop();
+    this.release(left);
+  }
+
+  /** Whether the pending keys were typed with focus nowhere in particular, and go on at `place`. */
+  private goesOn(place: KeyPlace): boolean {
+    const { pending } = this;
+    if (pending?.scope !== 'window') return false;
+    try {
+      return this.bindings.find(pending.strokes, this.focus(place)).longer;
+    } catch (error) {
+      this.onError(error, undefined);
+      return false;
+    }
+  }
+
+  /** Drops whatever `left`, a code view focus is leaving, has Vim waiting on. */
+  private release(left: ScopeSource | undefined): void {
     if (!isKeySource(left)) return;
     if (left === this.active) this.active = undefined;
     this.clear(left);
