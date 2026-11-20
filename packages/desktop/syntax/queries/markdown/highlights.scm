@@ -1,20 +1,43 @@
-; From Zed (https://github.com/zed-industries/zed), crates/grammars/src/markdown/highlights.scm
-; at c84af5b99cbc366d675064e52b23664a015b6e35. Copyright Zed Industries, Inc. GPL-3.0-or-later.
+; From tree-sitter-markdown (https://github.com/zed-industries/tree-sitter-markdown), tree-sitter-markdown/queries/highlights.scm
+; at b596e737286780d7bfa9fcddceaeeb754574b352. Copyright (c) 2021 Matthias Deiml. MIT.
+; Changed for Lo: a fenced code block isn't `@text.literal` as a whole, which Lo can't take away
+; from its code with `@none` as the grammar does, so the code takes the style of its own language.
+; Its first line says it's from nvim-treesitter (https://github.com/nvim-treesitter/nvim-treesitter),
+; which is under the Apache License 2.0.
+
+;From nvim-treesitter/nvim-treesitter
+(atx_heading (inline) @text.title)
+(setext_heading (paragraph) @text.title)
 
 [
-  (paragraph)
+  (atx_h1_marker)
+  (atx_h2_marker)
+  (atx_h3_marker)
+  (atx_h4_marker)
+  (atx_h5_marker)
+  (atx_h6_marker)
+  (setext_h1_underline)
+  (setext_h2_underline)
+] @punctuation.special
+
+[
+  (link_title)
   (indented_code_block)
-  (pipe_table)
-] @text
+] @text.literal
 
 [
-  (atx_heading)
-  (setext_heading)
-  (thematic_break)
-] @title.markup
+  (fenced_code_block_delimiter)
+] @punctuation.delimiter
 
-(setext_heading
-  (paragraph) @title.markup)
+(code_fence_content) @none
+
+[
+  (link_destination)
+] @text.uri
+
+[
+  (link_label)
+] @text.reference
 
 [
   (list_marker_plus)
@@ -22,30 +45,14 @@
   (list_marker_star)
   (list_marker_dot)
   (list_marker_parenthesis)
-] @punctuation.list_marker.markup
+  (thematic_break)
+] @punctuation.special
 
 [
-  (block_quote_marker)
   (block_continuation)
-] @punctuation.markup
-
-(pipe_table_header
-  "|" @punctuation.markup)
-
-(pipe_table_row
-  "|" @punctuation.markup)
-
-(pipe_table_delimiter_row
-  "|" @punctuation.markup)
-
-(pipe_table_delimiter_cell
-  "-" @punctuation.markup)
+  (block_quote_marker)
+] @punctuation.special
 
 [
-  (fenced_code_block_delimiter)
-  (info_string)
-] @punctuation.embedded.markup
-
-(link_reference_definition) @link_text.markup
-
-(link_destination) @link_uri.markup
+  (backslash_escape)
+] @string.escape

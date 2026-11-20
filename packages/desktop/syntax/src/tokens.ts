@@ -10,36 +10,40 @@ export const tokens: readonly string[] = names;
 const numbers = new Map<string, number>(tokens.map((token, index) => [token, index]));
 
 /**
- * Captures that are meant to have no style, by their full names: whole paragraphs and JSX text,
- * which keep the plain text color, markup Lo doesn't style, a capture that only takes a style
- * away (`@none`), and names that ride beside another capture of the same text (`@type @module`,
- * `@comment @spell`). Captures starting with `_` only feed predicates.
+ * Captures that are meant to have no style, by their full names: names that ride beside another
+ * capture of the same text (`@type @module`, `@comment @spell`), a capture that only takes a style
+ * away (`@none`), and code embedded in a string, such as an interpolation (`@embedded`), whose
+ * parts have styles of their own. Captures starting with `_` only feed predicates.
  */
 export const unstyled: ReadonlySet<string> = new Set([
   'embedded',
   'modifier',
   'module',
   'module.struct',
-  'nested',
   'none',
   'spell',
-  'strikethrough.markup',
-  'text',
-  'text.jsx',
 ]);
 
 /**
- * Older names for tokens that some queries still use: Kotlin's `@float` is every other query's
- * `@number`, and its `@include` a `@keyword`. Rust's lifetimes take the style of labels, which
- * they're written like (`'outer: loop`).
+ * Other names for tokens that some queries use: Kotlin's `@float` is every other query's `@number`,
+ * and its `@include` a `@keyword`. Rust's lifetimes take the style of labels, which they're written
+ * like (`'outer: loop`). The grammars' own queries say `@escape` for an escape sequence,
+ * `@text.title` and the like for Markdown's markup, and `@string.special.key` for the keys of JSON.
  */
 const aliases = new Map<string, number>(
   Object.entries({
     character: 'string',
+    escape: 'string-escape',
     float: 'number',
     include: 'keyword',
     lifetime: 'label',
     parameter: 'variable-parameter',
+    'string-special-key': 'property',
+    'text-emphasis': 'emphasis',
+    'text-reference': 'link_text',
+    'text-strong': 'emphasis-strong',
+    'text-title': 'title',
+    'text-uri': 'link_uri',
   }).map(([alias, token]) => [alias, numbers.get(token)!]),
 );
 

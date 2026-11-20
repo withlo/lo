@@ -9,7 +9,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 /** The licenses the kept entries are under. */
-export type KeptLicense = 'MIT' | 'Apache-2.0' | 'GPL-3.0-or-later';
+export type KeptLicense = 'MIT' | 'Apache-2.0';
 
 export interface Kept {
   /** The GitHub repository it comes from, `owner/name`. */
@@ -187,7 +187,7 @@ export const KEPT: readonly Kept[] = [
   mit(
     'tree-sitter/tree-sitter-bash',
     'a06c2e4415e9bc0346c6b86d401879ffb44058f7',
-    'the Bash grammar',
+    'the Bash grammar and its highlights query',
     'Copyright (c) 2017 Max Brunsfeld',
   ),
   mit(
@@ -199,7 +199,7 @@ export const KEPT: readonly Kept[] = [
   mit(
     'tree-sitter/tree-sitter-css',
     'c0d581e32d183a536731ed6c3a72758b27e20411',
-    'the CSS grammar',
+    'the CSS grammar and its highlights query',
     'Copyright (c) 2018 Max Brunsfeld',
   ),
   mit(
@@ -217,13 +217,13 @@ export const KEPT: readonly Kept[] = [
   mit(
     'tree-sitter/tree-sitter-javascript',
     '3a837b6f3658ca3618f2022f8707e29739c91364',
-    "JavaScript's tags query",
+    "JavaScript's highlights, injections and tags queries, which the TypeScript grammars build on",
     'Copyright (c) 2014 Max Brunsfeld',
   ),
   mit(
     'tree-sitter/tree-sitter-json',
     'ee35a6ebefcef0c5c416c0d1ccec7370cfca5a24',
-    'the JSON grammar',
+    'the JSON grammar and its highlights query, which JSONC takes too',
     'Copyright (c) 2014 Max Brunsfeld',
   ),
   mit(
@@ -236,7 +236,7 @@ export const KEPT: readonly Kept[] = [
   mit(
     'tree-sitter/tree-sitter-python',
     '293fdc02038ee2bf0e2e206711b69c90ac0d413f',
-    'the Python grammar and its tags query',
+    'the Python grammar and its highlights and tags queries',
     'Copyright (c) 2016 Max Brunsfeld',
   ),
   mit(
@@ -248,7 +248,7 @@ export const KEPT: readonly Kept[] = [
   mit(
     'tree-sitter/tree-sitter-rust',
     '77a3747266f4d621d0757825e6b11edcbf991ca5',
-    'the Rust grammar and its tags query',
+    'the Rust grammar and its highlights, injections and tags queries',
     'Copyright (c) 2017 Maxim Sokolov',
   ),
   mit(
@@ -266,38 +266,30 @@ export const KEPT: readonly Kept[] = [
   mit(
     'zed-industries/tree-sitter-go',
     '6862a49e3c5a7567a6c576420e9a8f944e198a85',
-    'the Go grammar and its tags query',
+    'the Go grammar and its highlights and tags queries',
     'Copyright (c) 2014 Max Brunsfeld',
   ),
   mit(
     'zed-industries/tree-sitter-markdown',
     'b596e737286780d7bfa9fcddceaeeb754574b352',
-    'the Markdown and Markdown inline grammars',
+    'the Markdown and Markdown inline grammars and their highlights and injections queries',
     'Copyright (c) 2021 Matthias Deiml',
   ),
   mit(
     'zed-industries/tree-sitter-typescript',
     'e2c53597d6a5d9cf7bbe8dccde576fe1e46c5899',
-    'the TypeScript and TSX grammars and their tags query',
+    'the TypeScript and TSX grammars and their highlights and tags queries, which JavaScript takes too',
     'Copyright (c) 2017 Max Brunsfeld',
   ),
   mit(
     'zed-industries/tree-sitter-yaml',
     'baff0b51c64ef6a1fb1f8390f3ad6015b83ec13a',
-    'the YAML grammar',
+    'the YAML grammar and its highlights query',
     'Copyright (c) 2024 tree-sitter-grammars contributors',
     'Copyright (c) 2019-2021 Ika',
   ),
 
   // The highlight and injection queries, from Zed and from the extensions it installs.
-  {
-    repo: 'zed-industries/zed',
-    at: ZED,
-    provides:
-      'the highlight and injection queries for Bash, CSS, Go, JavaScript, JSON, JSONC, Markdown, Python, Rust, TSX, TypeScript and YAML (crates/grammars/src)',
-    license: 'GPL-3.0-or-later',
-    copyright: ['Copyright Zed Industries, Inc.'],
-  },
   apache(
     'zed-industries/zed',
     ZED,
@@ -358,11 +350,11 @@ export const KEPT: readonly Kept[] = [
     'the TOML queries',
     'Copyright 2022-2025 Zed Industries, Inc.',
   ),
-  // The Kotlin and Terraform queries say they're based on nvim-treesitter's.
+  // The Kotlin, Terraform and Markdown queries say they're based on or from nvim-treesitter's.
   apache(
     'nvim-treesitter/nvim-treesitter',
     undefined,
-    'the queries the Kotlin and Terraform ones are based on',
+    'the queries the Kotlin, Terraform and Markdown ones are based on',
   ),
 ];
 

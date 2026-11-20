@@ -47,12 +47,6 @@ describe('renderNotices', () => {
           notice: 'KEPT NOTICE',
         },
         {
-          repo: 'o/gpl',
-          provides: 'more queries',
-          license: 'GPL-3.0-or-later',
-          copyright: ['Copyright X'],
-        },
-        {
           repo: 'o/file',
           provides: 'a diff',
           license: 'MIT',
@@ -82,7 +76,6 @@ describe('renderNotices', () => {
       'https://github.com/o/apache\n',
       'whose text is at the end of this file.',
       'KEPT NOTICE',
-      'Licensed under the GNU General Public License, version 3 or later.',
       'ITS OWN FILE',
       'THE APACHE LICENSE',
     ];
