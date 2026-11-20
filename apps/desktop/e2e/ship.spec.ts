@@ -36,8 +36,9 @@ function merging({ method, url }: Asked): boolean {
 
 /**
  * `test`, with Lo signed in as rozed-bot on a replay server that answers from `cassette`, a stage
- * at a time when `staged` says, each ending with a merge (`./staged.ts`), fetching from generation
- * 10's repository, built on this machine.
+ * at a time when `staged` says, each ending with a merge (`./staged.ts`), and a read Lo makes
+ * sooner than recorded getting its first answer, fetching from generation 10's repository, built
+ * on this machine.
  */
 const test = base.extend<{
   cassette: string;
@@ -48,7 +49,9 @@ const test = base.extend<{
   cassette: ['app_merge_ship', { option: true }],
   staged: [false, { option: true }],
   github: async ({ cassette, staged }, use) => {
-    const server = await serveReplay(staged ? new Staged(cassette, merging) : cassette);
+    const server = await serveReplay(
+      staged ? new Staged(cassette, merging, { sooner: true }) : cassette,
+    );
     await use(server);
     await server.close();
   },
@@ -107,21 +110,20 @@ async function open(page: Page, number: number, shown: string): Promise<void> {
  * `⌘⇧⏎`, until Lo plans it. Lo places a pull request on a branch other than a trunk only once it
  * has looked up every merged pull request its stacks may link through, and rozed-dev/e2e has more
  * branches than one listing looks up: the rest are looked up a while later, as recorded. Until
- * then each press is refused, saying so, and it presses again every 2 s. A refusal can close the
- * dialog before it's seen, and then it presses again too, unless the dialog has come up since.
+ * then each press is refused, saying so, which can close the dialog before it's seen, and it
+ * presses again once that note goes, so the next note is the next press's own. Anything else
+ * fails.
  */
 async function ship(page: Page, number: number): Promise<void> {
   const planned = `Approve and ship #${number}?`;
+  const refused = said(page, 'looked up yet');
   const deadline = Date.now() + LOOKUPS;
   for (;;) {
-    if (!(await dialog(page).isVisible())) await page.keyboard.press(SHIP);
-    const shown = await dialog(page)
-      .waitFor({ timeout: 5_000 })
-      .then(
-        () => true,
-        () => false,
-      );
-    if (shown) {
+    await page.keyboard.press(SHIP);
+    await expect
+      .poll(async () => (await dialog(page).isVisible()) || (await refused.isVisible()))
+      .toBe(true);
+    if (await dialog(page).isVisible()) {
       // Planned, or refused, which closes the dialog and says why.
       await expect
         .poll(
@@ -133,10 +135,10 @@ async function ship(page: Page, number: number): Promise<void> {
         )
         .toMatch(new RegExp(`${planned.replace('?', '\\?')}|^closed$`));
       if (await dialog(page).isVisible()) break;
-      await expect(said(page, 'looked up yet')).toBeVisible();
     }
+    await expect(refused).toBeVisible();
     if (Date.now() > deadline) break;
-    await page.waitForTimeout(2_000);
+    await expect(refused).toBeHidden({ timeout: 10_000 });
   }
   await expect(dialog(page)).toContainText(planned);
 }

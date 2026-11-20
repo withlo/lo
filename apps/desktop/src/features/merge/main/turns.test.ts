@@ -20,3 +20,24 @@ it('holds each pull request a turn names until it’s given back, once', () => {
   expect(turns.busy(repo, [4818, 4819])).toEqual([]);
   expect('busy' in turns.take(repo, [4819])).toBe(false);
 });
+
+it('says each time a turn is given back, until told to stop', () => {
+  const turns = new MergeTurns();
+  const repo = new RepoRef('rozed-dev', 'e2e');
+  let given = 0;
+  const stop = turns.onGiven(() => {
+    given += 1;
+    // Free by then, for the write that waits for it.
+    expect(turns.busy(repo, [4818])).toEqual([]);
+  });
+  const first = turns.take(repo, [4818]);
+  if ('busy' in first) throw new Error('taken');
+  first.give();
+  first.give();
+  expect(given).toBe(1);
+  stop();
+  const second = turns.take(repo, [4818]);
+  if ('busy' in second) throw new Error('taken');
+  second.give();
+  expect(given).toBe(1);
+});

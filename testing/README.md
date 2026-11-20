@@ -30,9 +30,11 @@ Each key's responses come back in the order they were recorded, and the last one
 state of a poll. Where an app's test could poll past the answers recorded before a write, it serves
 its cassette a stage at a time (`apps/desktop/e2e/staged.ts`): until Lo sends the next write the
 test names, each request gets the answers recorded before that write, and once it's sent, those
-after it. A request the cassette can't answer fails the test, even when the code under test catches
-the error, and the message names the nearest recorded request and, for a write, the body that was
-sent. The server answers such a request with a 500, and `close()` then rejects.
+after it. For a test that asks, it also answers a read recorded only after a write, which the app
+may make sooner, with the first answer recorded for it, but never a write. A request the cassette
+can't answer fails the test, even when the code under test catches the error, and the message names
+the nearest recorded request and, for a write, the body that was sent. The server answers such a
+request with a 500, and `close()` then rejects.
 
 ### When a query changes
 

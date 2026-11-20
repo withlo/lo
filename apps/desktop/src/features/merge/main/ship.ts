@@ -1136,18 +1136,6 @@ export class Shipping {
       this.#stopAt(run, own('where', plan.likely.stop.text), plan.likely.stop);
       return;
     }
-    // GitHub merges into the base it has when the merge goes, which has to be the one confirmed.
-    const base = rulesBase(after.facts);
-    if (kindOf(now) && base !== plan.base) {
-      this.#stopAt(
-        run,
-        own(
-          'base',
-          `#${plan.number} merges into ${base} now, not ${plan.base}, so Lo merged nothing. Merge it from the panel.`,
-        ),
-      );
-      return;
-    }
     if (!asAsked(core, now)) {
       const text = unwarnedAutoMerge(core, now)
         ? `#${plan.number} can’t merge yet, so Lo would turn on auto-merge, and the confirmation didn’t say a push could then merge with your approval. Turn it on from the merge panel if you mean to.`
@@ -1192,6 +1180,19 @@ export class Shipping {
     const kind = kindOf(step);
     const { goes, snapshot } = after;
     if (kind === undefined || goes === undefined) return;
+    // GitHub merges into the base it has when the merge goes, which has to be the one confirmed,
+    // whichever way the write comes to be sent.
+    const base = rulesBase(facts);
+    if (base !== plan.base) {
+      this.#stopAt(
+        run,
+        own(
+          'base',
+          `#${plan.number} merges into ${base} now, not ${plan.base}, so Lo merged nothing. Merge it from the panel.`,
+        ),
+      );
+      return;
+    }
     if (goes.kind === 'unread') {
       this.#stopAt(run, own('unread', goes.why));
       return;
@@ -1228,7 +1229,7 @@ export class Shipping {
       login: plan.login,
       kind,
       method: step.method,
-      base: rulesBase(facts),
+      base,
       head: run.core.head.toLowerCase(),
       title: '',
       message: '',

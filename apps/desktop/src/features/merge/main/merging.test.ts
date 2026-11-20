@@ -1525,10 +1525,59 @@ describe('a stack’s merge', () => {
     run.merging.askAgain(plan.key);
     // Auto-merge, a merge of #138 alone and a conversion on its path wait for it.
     expect(run.turns.busy(PULL.repo, [138])).toEqual([138]);
+    // Given back, it's taken at once, before GitHub answers again.
     other.give();
-    await vi.waitFor(() => expect(run.turns.busy(PULL.repo, [137, 138])).toEqual([137, 138]));
+    expect(run.turns.busy(PULL.repo, [137, 138])).toEqual([137, 138]);
     expect(run.sent).toHaveLength(1);
   });
+
+  it('asked again, and unsure again, takes a layer given back meanwhile, until a read settles it', async () => {
+    const run = stacked({
+      results: [
+        answer({ unknown: 'held' }, { uuid: UUID }),
+        answer({ unknown: 'held' }, { uuid: UUID }),
+      ],
+    });
+    const plan = planOf(await run.merging.plan(ID, SQUASH));
+    await run.merging.confirm(plan.key);
+    await run.ended('unknown');
+    await vi.waitFor(() => expect(run.turns.busy(PULL.repo, [137, 138])).toEqual([]));
+    const other = run.turns.take(PULL.repo, [137]);
+    if ('busy' in other) throw new Error('taken');
+    // The read that would settle it waits.
+    run.hold.reads();
+    run.merging.askAgain(plan.key);
+    await vi.waitFor(() => expect(run.published.at(-1)?.state.kind).toBe('unknown'));
+    await moment();
+    expect(run.turns.busy(PULL.repo, [137, 138])).toEqual([137, 138]);
+    other.give();
+    expect(run.turns.busy(PULL.repo, [137, 138])).toEqual([137, 138]);
+
+    // A read made after it ended lets both go.
+    run.release();
+    await vi.waitFor(() => expect(run.turns.busy(PULL.repo, [137, 138])).toEqual([]));
+    expect(run.sent).toHaveLength(1);
+  });
+
+  it.each([
+    ['settled by a read', answer({ unknown: 'held' }, { uuid: UUID })],
+    ['merged', answer('merged', { sha: 'd'.repeat(40) })],
+  ])(
+    '%s while another write holds a layer, takes it no more once that’s given back',
+    async (_, then) => {
+      const run = stacked({ results: [answer({ unknown: 'held' }, { uuid: UUID }), then] });
+      const plan = planOf(await run.merging.plan(ID, SQUASH));
+      await run.merging.confirm(plan.key);
+      await run.ended('unknown');
+      await vi.waitFor(() => expect(run.turns.busy(PULL.repo, [137, 138])).toEqual([]));
+      const other = run.turns.take(PULL.repo, [137]);
+      if ('busy' in other) throw new Error('taken');
+      run.merging.askAgain(plan.key);
+      await vi.waitFor(() => expect(run.turns.busy(PULL.repo, [138])).toEqual([]));
+      other.give();
+      expect(run.turns.busy(PULL.repo, [137, 138])).toEqual([]);
+    },
+  );
 
   it('sends no typed squash text: each layer keeps its own commit’s words', async () => {
     const run = stacked({ submitted: () => new Promise(() => undefined) });

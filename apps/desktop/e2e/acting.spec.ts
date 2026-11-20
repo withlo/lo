@@ -60,7 +60,7 @@ function staged(name: string): Staged {
       (each) =>
         new URL(each.request.url).host !== 'api.github.com' && !keys.has(recordedKey(each.request)),
     );
-  return new Staged(name, ({ operation }) => WRITES.has(operation ?? ''), images);
+  return new Staged(name, ({ operation }) => WRITES.has(operation ?? ''), { first: images });
 }
 
 const test = base.extend<{

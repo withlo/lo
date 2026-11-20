@@ -595,6 +595,49 @@ describe('running', () => {
     expect(sent).toEqual([]);
   });
 
+  it('stops where it can’t tell at once when its tab closed before the answer was lost', async () => {
+    const run = setup({
+      reads: [waiting(), approved()],
+      settleWait: 20,
+      approve: (_id, _head, heard) => {
+        run.set.closed();
+        heard();
+        return new Promise(() => undefined);
+      },
+    });
+    await run.shipping.confirm((await run.plan()).key);
+    await expect(run.settled()).resolves.toMatchObject({
+      phase: {
+        kind: 'stopped',
+        at: 'unsure',
+        refusal: { text: expect.stringContaining('its tab closed') },
+      },
+    });
+    expect(run.sent).toEqual([]);
+  });
+
+  it('waits for nothing once the answer is lost while Lo quits', async () => {
+    const run = setup({
+      reads: [waiting(), approved()],
+      approve: (_id, _head, heard) => {
+        run.shipping.stop();
+        // From here, the wait a lost answer starts is one to see.
+        vi.useFakeTimers();
+        heard();
+        return new Promise(() => undefined);
+      },
+    });
+    try {
+      await run.shipping.confirm((await run.plan()).key);
+      await vi.waitFor(() => expect(run.approvals).toHaveLength(1));
+      expect(vi.getTimerCount()).toBe(0);
+      expect(run.published.map((each) => each.phase.kind)).toEqual(['approving']);
+      expect(run.sent).toEqual([]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('stops after approving, saying so, when GitHub then allows other than what was confirmed', async () => {
     // A check started after the approval: merging now would be auto-merge, which wasn't confirmed.
     const pending = approved(RUNNING);
@@ -767,5 +810,27 @@ describe('auto-merge', () => {
     await vi.waitFor(() =>
       expect(published.at(-1)?.phase).toMatchObject({ kind: 'sending', step: { kind: 'merge' } }),
     );
+  });
+
+  it('refused since it can merge now, merges nothing into another branch than the one confirmed', async () => {
+    const facts = factsOf(running);
+    const { shipping, plan, sent, published } = setup({
+      facts,
+      reads: [facts, factsOf({ base: 'release' })],
+      send(_plan, heard) {
+        heard?.({ refused: { refusal: 'canMergeNow' } });
+      },
+    });
+    await shipping.confirm((await plan()).key);
+    await vi.waitFor(() =>
+      expect(published.at(-1)?.phase).toMatchObject({
+        kind: 'stopped',
+        refusal: {
+          kind: 'base',
+          text: '#138 merges into release now, not main, so Lo merged nothing. Merge it from the panel.',
+        },
+      }),
+    );
+    expect(sent.map((each) => [each.kind, each.base])).toEqual([['autoMerge', 'main']]);
   });
 });

@@ -122,6 +122,7 @@ import {
   togetherOf,
   type Taking,
 } from './together.ts';
+import type { MergeTurns } from './turns.ts';
 import { placedBy, unmergedIn, where, type OpenFromHead, type Where } from './where.ts';
 
 /** How long what GitHub said of a merge is taken as current at the press: 7 minutes. */
@@ -181,8 +182,8 @@ export interface MergingOptions {
   readonly forest: (repo: RepoRef, login: string) => Forest | undefined;
   /** The conversion to a GitHub stack changing `repo`'s base branches, if one is. */
   readonly converting: (repo: RepoRef) => Converting | undefined;
-  /** The turns of merge writes to pull requests, app-wide. */
-  readonly turns: MergeWrites;
+  /** The turns of merge writes to pull requests, app-wide, and when one is given back. */
+  readonly turns: MergeWrites & Pick<MergeTurns, 'onGiven'>;
   /** The app's merge jobs. */
   readonly jobs: Jobs;
   /** Sends a merge to the window, each time it changes. */
@@ -227,8 +228,8 @@ interface Sent {
   readonly poller: MergingPoller;
   turn: MergeTurn | undefined;
   /**
-   * While GitHub is asked again how a merge went, the pull requests it names whose turns another
-   * write held then: each is taken once it's given back, as the merge changes.
+   * While GitHub is asked again how a merge went, and until a read settles it, the pull requests it
+   * names whose turns another write held then: each is taken as soon as it's given back.
    */
   lacking: readonly number[];
   /** Whether the method was remembered for the repository. */
@@ -634,6 +635,7 @@ export class Merging {
   /** The checks under way at a press, by their plan's key: cancelling one stops it. */
   readonly #checking = new Map<string, AbortController>();
   readonly #stopJobs: () => void;
+  readonly #stopTurns: () => void;
   #stopped = false;
 
   constructor(options: MergingOptions) {
@@ -641,6 +643,12 @@ export class Merging {
     this.#now = options.now ?? Date.now;
     this.#newKey = options.newKey ?? (() => crypto.randomUUID());
     this.#stopJobs = options.jobs.onChange(({ pull, done }) => this.#heard(pull, done));
+    this.#stopTurns = options.turns.onGiven(() => {
+      if (this.#stopped) return;
+      for (const sent of this.#sent.values()) {
+        if (sent.lacking.length > 0) this.#holdLacking(sent);
+      }
+    });
   }
 
   /**
@@ -999,6 +1007,7 @@ export class Merging {
   stop(): void {
     this.#stopped = true;
     this.#stopJobs();
+    this.#stopTurns();
     this.#kept.clear();
     for (const checking of this.#checking.values()) checking.abort();
     for (const sent of this.#sent.values()) {
@@ -1895,8 +1904,6 @@ export class Merging {
           run.failed();
       }
     }
-    // Asked again while another write held a pull request it names: taken once that's given back.
-    if (!done && sent.lacking.length > 0) this.#holdLacking(sent);
     if (done) {
       sent.endedAt = this.#now();
       sent.shows = undefined;
@@ -1904,6 +1911,7 @@ export class Merging {
         // It may have merged, or still be merging: the turn stays until a read settles it.
         this.#settle(sent);
       } else {
+        sent.lacking = [];
         sent.turn?.give();
         sent.turn = undefined;
       }
@@ -1945,6 +1953,7 @@ export class Merging {
       }
       if (since.kind !== 'read') return;
       // A read made after the merge ended settles it: the pull request may be merged again.
+      sent.lacking = [];
       sent.turn?.give();
       sent.turn = undefined;
       const shown = since.read.value.pullRequest;
