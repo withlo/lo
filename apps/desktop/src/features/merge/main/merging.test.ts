@@ -139,6 +139,9 @@ function setup(options: Setup = {}) {
   const signals: (AbortSignal | undefined)[] = [];
   /** Whether the list of open pull requests is older than it's read every, so Lo lists it again. */
   let stale = false;
+  /** The forest Lo has, once a test gives one: else #138 alone on its base. */
+  let forest: { given: Forest | undefined } | undefined =
+    'forest' in options ? { given: options.forest } : undefined;
   /** The read of the merge facts the poller keeps, which goes when its tab closes. */
   let readId = 1;
   let readKept = true;
@@ -254,8 +257,8 @@ function setup(options: Setup = {}) {
     forest: () =>
       stale
         ? { ...forestOf(cached.value.pullRequest.base), listedAt: 0 }
-        : 'forest' in options
-          ? options.forest
+        : forest
+          ? forest.given
           : forestOf(cached.value.pullRequest.base),
     converting: () => (converting.length > 0 ? { kind: 'running', prs: [138] } : undefined),
     turns,
@@ -310,6 +313,9 @@ function setup(options: Setup = {}) {
       facts: (facts: MergeFacts) => {
         cached = { value: facts, fetchedAt: NOW };
         emit({ kind: 'read', pull: PULL, name: MERGE_FACTS.name });
+      },
+      forest: (given: Forest | undefined) => {
+        forest = { given };
       },
       closed: () => {
         closed = true;
@@ -1081,6 +1087,55 @@ describe('auto-merge and a merge past the rules', () => {
     ['autoMerge', WAITING],
     ['override', REVIEW_OWED],
   ] as const;
+
+  /** #138 as the bottom layer of a chain, with #139 on its branch. */
+  const CHAIN = forestOf('main', [
+    {
+      number: 139,
+      state: { kind: 'open' },
+      baseRef: 'merge/5/squash',
+      baseTip: undefined,
+      headRef: 'merge/5/top',
+      headInBaseRepo: true,
+      headOid: 'f'.repeat(40),
+      commits: [],
+      createdAt: 2,
+      nativeStack: undefined,
+    },
+  ]);
+  const BOTTOM =
+    '#138 is the bottom layer of a chain that isn’t a GitHub stack: once it merged, the layers above would still sit on its branch.';
+
+  it('go only once Lo knows where the pull request sits, and never from a chain’s bottom layer', async () => {
+    for (const [asked, pull] of KINDS) {
+      const choice = { ...SQUASH, asked };
+      const unread = setup({ facts: factsOf(pull), forest: undefined });
+      const bottom = setup({ facts: factsOf(pull), forest: CHAIN });
+      // A chain grew on it by the press.
+      const grew = setup({ facts: factsOf(pull) });
+      const plan = planOf(await grew.merging.plan(ID, choice));
+      grew.set.forest(CHAIN);
+      expect({
+        asked,
+        unread: await unread.merging.plan(ID, choice),
+        bottom: await bottom.merging.plan(ID, choice),
+        grew: await grew.merging.confirm(plan.key, '138'),
+        sent: [...grew.sent, ...grew.auto],
+      }).toEqual({
+        asked,
+        unread: {
+          kind: 'refused',
+          why: "Lo is still listing this repository's open pull requests.",
+        },
+        bottom: { kind: 'refused', why: BOTTOM },
+        grew: {
+          kind: 'refused',
+          refusal: expect.objectContaining({ kind: 'where', text: BOTTOM }),
+        },
+        sent: [],
+      });
+    }
+  });
 
   it('ask again, sending nothing, when what they name changed while Lo asked where it sits', async () => {
     for (const [asked, pull] of KINDS) {

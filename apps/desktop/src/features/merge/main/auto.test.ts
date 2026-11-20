@@ -81,6 +81,10 @@ test('`⌥⏎` merges past the rules for an account that may bypass them, when r
       mergeState: 'DIRTY',
     }).override,
   ).toEqual({ kind: 'notPossible', reason: 'conflicts' });
+  // In the merge queue, it merges once the queue's checks pass.
+  expect(
+    stateFor({ ...owed, viewerCanMergeAsAdmin: true, inQueue: true, queueRequired: true }).override,
+  ).toEqual({ kind: 'notPossible', reason: 'queued' });
   // GitHub merges past the rules only a GitHub stack's bottom layer.
   const stack = {
     number: 7,
