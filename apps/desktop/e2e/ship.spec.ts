@@ -118,7 +118,9 @@ async function ship(page: Page, number: number): Promise<void> {
   const planned = `Approve and ship #${number}?`;
   const refused = said(page, 'looked up yet');
   const deadline = Date.now() + LOOKUPS;
+  let presses = 0;
   for (;;) {
+    presses += 1;
     await page.keyboard.press(SHIP);
     await expect
       .poll(async () => (await dialog(page).isVisible()) || (await refused.isVisible()))
@@ -139,6 +141,7 @@ async function ship(page: Page, number: number): Promise<void> {
     await expect(refused).toBeHidden({ timeout: 10_000 });
   }
   await expect(dialog(page)).toContainText(planned);
+  console.log(`SHIP PRESSES ${presses}`);
 }
 
 /** Lo's GraphQL writes so far, by operation. */
@@ -158,27 +161,31 @@ function merges(github: ReplayServer, number: number): number {
 test.describe('on your own pull request', () => {
   test.use({ staged: true });
 
-  test('`⌘⇧⏎` approves nothing and merges it, from one confirmation', async ({ page, github }) => {
-    test.setTimeout(LOOKUPS + 60_000);
-    const { number } = pulls.squash;
-    await open(page, number, 'Ready to merge');
-    await ship(page, number);
-    await expect(steps(page).nth(0)).toContainText('Check that r1 is still the newest push');
-    await expect(steps(page).nth(1)).toContainText(
-      'It’s your pull request, so GitHub takes no approval from you.',
-    );
-    await expect(steps(page).nth(2)).toContainText('into merge/10/base');
-    await expect(dialog(page).getByRole('button', { name: /^Ship/ })).toBeVisible();
-    expect(merges(github, number)).toBe(0);
+  for (const round of [1, 2, 3, 4])
+    test(`\`⌘⇧⏎\` approves nothing and merges it, from one confirmation (${round})`, async ({
+      page,
+      github,
+    }) => {
+      test.setTimeout(LOOKUPS + 60_000);
+      const { number } = pulls.squash;
+      await open(page, number, 'Ready to merge');
+      await ship(page, number);
+      await expect(steps(page).nth(0)).toContainText('Check that r1 is still the newest push');
+      await expect(steps(page).nth(1)).toContainText(
+        'It’s your pull request, so GitHub takes no approval from you.',
+      );
+      await expect(steps(page).nth(2)).toContainText('into merge/10/base');
+      await expect(dialog(page).getByRole('button', { name: /^Ship/ })).toBeVisible();
+      expect(merges(github, number)).toBe(0);
 
-    await page.keyboard.press('Enter');
-    await expect(said(page, `Merged #${number} into merge/10/base`)).toBeVisible({
-      timeout: MERGING,
+      await page.keyboard.press('Enter');
+      await expect(said(page, `Merged #${number} into merge/10/base`)).toBeVisible({
+        timeout: MERGING,
+      });
+      await expect(dialog(page)).toBeHidden();
+      expect(merges(github, number)).toBe(1);
+      expect(writes(github, 'AddPullRequestReview')).toBe(0);
     });
-    await expect(dialog(page)).toBeHidden();
-    expect(merges(github, number)).toBe(1);
-    expect(writes(github, 'AddPullRequestReview')).toBe(0);
-  });
 });
 
 test.describe('into a branch with a merge queue, while its checks run', () => {
