@@ -182,7 +182,7 @@ export default defineFeature(contract, {
     });
     watch = watching;
     const reviewing = use(submissions);
-    shipping = new Shipping({
+    const shipper = new Shipping({
       poller: (login) => use(github).poller(login),
       view: (id) => service.pull(id),
       headOnScreen,
@@ -192,11 +192,12 @@ export default defineFeature(contract, {
       turns,
       merging: made,
       summary: (id) => reviewing.summary(id),
-      approve: (id, head) => reviewing.approve(id, head),
+      approve: (id, head, lost) => reviewing.approve(id, head, lost),
       keep: (shipped) => watching.keep(shipped),
       publish: (ship) => publish('ships', ship),
       log,
     });
+    shipping = shipper;
     // Auto-merge turned on after your approval before Lo last quit is watched again.
     watching.start();
     stops.push(
@@ -205,6 +206,7 @@ export default defineFeature(contract, {
       service.onPull((id) => {
         followed.follow(id);
         inQueue.follow(id);
+        shipper.viewChanged(id);
       }),
       // The view shown reads its status, the first time it's on screen.
       service.onTabs(({ active }) => {

@@ -601,7 +601,7 @@ describe('approving, as approve and ship does', () => {
     expect(sent).toEqual([]);
   });
 
-  test('a lost answer resolves once a read of your reviews finds the approval, and nothing goes meanwhile', async () => {
+  test('a lost answer is heard at once, resolves once a read of your reviews finds the approval, and nothing goes meanwhile', async () => {
     vi.useFakeTimers();
     const { made, sent } = setup({
       answers: [lost()],
@@ -609,8 +609,10 @@ describe('approving, as approve and ship does', () => {
     });
     made.draft('t1', 'Ship it.');
     let approved: unknown;
-    void made.approve('t1', HEAD).then((answer) => (approved = answer));
+    let heard = 0;
+    void made.approve('t1', HEAD, () => (heard += 1)).then((answer) => (approved = answer));
     await vi.advanceTimersByTimeAsync(0);
+    expect(heard).toBe(1);
     expect(approved).toBeUndefined();
     await expect(made.approve('t1', HEAD)).resolves.toMatchObject({ kind: 'refused' });
     await expect(made.submit('t1', 'APPROVE', 'Ship it.', true)).resolves.toEqual({

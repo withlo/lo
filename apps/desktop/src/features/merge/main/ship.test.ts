@@ -67,10 +67,15 @@ interface Setup {
   facts?: MergeFacts;
   /** What each read afresh gets, in turn; the last again. */
   reads?: MergeFacts[];
-  approve?: (id: string, head: string) => Promise<Approved>;
+  /** Approves, and calls `heard` when GitHub's answer is lost. */
+  approve?: (id: string, head: string, heard: () => void) => Promise<Approved>;
+  /** How long Lo waits for an approval whose answer was lost to settle: a minute. */
+  settleWait?: number;
+  /** How long what a plan asks GitHub may take: 20 s. */
+  planWait?: number;
   summary?: SummaryKept;
   /** Where #138 sits, and what its merge takes with it, at each ask: the first, the press's, … */
-  goes?: Goes | ((asked: number) => Goes);
+  goes?: Goes | ((asked: number) => Goes | Promise<Goes>);
   /** What GitHub says in a read that lands while Lo asks where #138 sits, the `at`th time. */
   landing?: { facts: MergeFacts; at: number };
   /** What sending the step after the approval comes to. */
@@ -162,6 +167,7 @@ function setup(options: Setup = {}) {
     run: undefined,
   };
   let onScreen = HEAD;
+  let closed = false;
   let converting: number[] = [];
   const turns = new MergeTurns();
   const approvals: [string, string][] = [];
@@ -176,7 +182,7 @@ function setup(options: Setup = {}) {
   const given = poller as unknown as MergingPoller;
   const merging = new Merging({
     poller: () => Promise.resolve(given),
-    view: (id) => (id === ID ? view : undefined),
+    view: (id) => (id === ID && !closed ? view : undefined),
     headOnScreen: () => onScreen,
     headContainsBase: () => undefined,
     method: () => 'SQUASH',
@@ -193,7 +199,7 @@ function setup(options: Setup = {}) {
   made.push(jobs, merging);
   const shipping = new Shipping({
     poller: () => Promise.resolve(given),
-    view: (id) => (id === ID ? view : undefined),
+    view: (id) => (id === ID && !closed ? view : undefined),
     headOnScreen: () => onScreen,
     headContainsBase: () => undefined,
     method: () => 'SQUASH',
@@ -218,9 +224,9 @@ function setup(options: Setup = {}) {
       },
     },
     summary: () => options.summary ?? 'none',
-    approve(id, head) {
+    approve(id, head, heard) {
       approvals.push([id, head]);
-      return options.approve?.(id, head) ?? Promise.resolve({ kind: 'approved' });
+      return options.approve?.(id, head, heard) ?? Promise.resolve({ kind: 'approved' });
     },
     keep(shipped) {
       kept.push(shipped);
@@ -233,6 +239,8 @@ function setup(options: Setup = {}) {
     readWait: 50,
     showWait: 30,
     showEvery: 1,
+    ...(options.settleWait === undefined ? {} : { settleWait: options.settleWait }),
+    ...(options.planWait === undefined ? {} : { planWait: options.planWait }),
   });
   made.push(shipping);
   /** Plans for #138, as `⌘⇧⏎` asks. */
@@ -275,11 +283,27 @@ function setup(options: Setup = {}) {
       converting: (prs: number[]) => {
         converting = prs;
       },
+      /** The tab closes, and says so. */
+      closed: () => {
+        closed = true;
+        shipping.viewChanged(ID);
+      },
     },
   };
 }
 
 describe('the plan', () => {
+  it('says Lo couldn’t check when GitHub takes too long to answer what it asks, and plans nothing', async () => {
+    const { shipping } = setup({ planWait: 20, goes: () => new Promise(() => undefined) });
+    await expect(shipping.plan(ID)).resolves.toEqual({
+      kind: 'refused',
+      refusal: expect.objectContaining({
+        kind: 'late',
+        text: 'GitHub took too long to answer, so Lo couldn’t check #138. Try again.',
+      }),
+    });
+  });
+
   it('names the revision it approves, the summary that goes with it, and what follows', async () => {
     const { plan } = setup({ summary: 'text' });
     await expect(plan()).resolves.toMatchObject({
@@ -533,6 +557,101 @@ describe('running', () => {
     await expect(settled()).resolves.toMatchObject({ phase: { kind: 'stopped', at: 'approve' } });
   });
 
+  it('stops where it can’t tell whether GitHub took the approval when a read of your reviews doesn’t settle it in time, and merges nothing after', async () => {
+    let answer: ((approved: Approved) => void) | undefined;
+    const { shipping, plan, settled, sent, turns, published } = setup({
+      reads: [waiting(), approved()],
+      settleWait: 20,
+      approve: (_id, _head, heard) => {
+        heard();
+        return new Promise((resolve) => (answer = resolve));
+      },
+    });
+    await shipping.confirm((await plan()).key);
+    await expect(settled()).resolves.toMatchObject({
+      approved: false,
+      phase: {
+        kind: 'stopped',
+        at: 'unsure',
+        refusal: {
+          kind: 'unknown',
+          text: 'GitHub’s answer to your approval of #138 was lost, and Lo couldn’t tell within a minute whether GitHub took it, so Lo merged nothing. Look at its reviews before you approve it again.',
+        },
+      },
+    });
+    expect(turns.busy(new PullRef('rozed-dev', 'e2e', 138).repo, [138])).toEqual([]);
+    // The review feature settles it after all.
+    const before = published.length;
+    answer?.({ kind: 'approved' });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(published).toHaveLength(before);
+    expect(sent).toEqual([]);
+  });
+
+  it('stops where it can’t tell whether GitHub took the approval once its tab closes', async () => {
+    const { shipping, plan, settled, sent, turns, set } = setup({
+      reads: [waiting(), approved()],
+      approve: (_id, _head, heard) => {
+        heard();
+        queueMicrotask(() => set.closed());
+        return new Promise(() => undefined);
+      },
+    });
+    await shipping.confirm((await plan()).key);
+    await expect(settled()).resolves.toMatchObject({
+      phase: {
+        kind: 'stopped',
+        at: 'unsure',
+        refusal: { text: expect.stringContaining('its tab closed') },
+      },
+    });
+    expect(turns.busy(new PullRef('rozed-dev', 'e2e', 138).repo, [138])).toEqual([]);
+    expect(sent).toEqual([]);
+  });
+
+  it('stops where it can’t tell at once when its tab closed before the answer was lost', async () => {
+    const run = setup({
+      reads: [waiting(), approved()],
+      settleWait: 20,
+      approve: (_id, _head, heard) => {
+        run.set.closed();
+        heard();
+        return new Promise(() => undefined);
+      },
+    });
+    await run.shipping.confirm((await run.plan()).key);
+    await expect(run.settled()).resolves.toMatchObject({
+      phase: {
+        kind: 'stopped',
+        at: 'unsure',
+        refusal: { text: expect.stringContaining('its tab closed') },
+      },
+    });
+    expect(run.sent).toEqual([]);
+  });
+
+  it('waits for nothing once the answer is lost while Lo quits', async () => {
+    const run = setup({
+      reads: [waiting(), approved()],
+      approve: (_id, _head, heard) => {
+        run.shipping.stop();
+        // From here, the wait a lost answer starts is one to see.
+        vi.useFakeTimers();
+        heard();
+        return new Promise(() => undefined);
+      },
+    });
+    try {
+      await run.shipping.confirm((await run.plan()).key);
+      await vi.waitFor(() => expect(run.approvals).toHaveLength(1));
+      expect(vi.getTimerCount()).toBe(0);
+      expect(run.published.map((each) => each.phase.kind)).toEqual(['approving']);
+      expect(run.sent).toEqual([]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('stops after approving, saying so, when GitHub then allows other than what was confirmed', async () => {
     // A check started after the approval: merging now would be auto-merge, which wasn't confirmed.
     const pending = approved(RUNNING);
@@ -581,6 +700,38 @@ describe('running', () => {
     await expect(settled()).resolves.toMatchObject({
       approved: true,
       phase: { kind: 'stopped', at: 'ship', stop: { kind: 'headMoved' } },
+    });
+    expect(sent).toEqual([]);
+  });
+
+  it('after approving, merges nothing into another branch than the one confirmed', async () => {
+    const { shipping, plan, settled, sent } = setup({
+      reads: [waiting(), approved({ base: 'release' })],
+    });
+    await shipping.confirm((await plan()).key);
+    await expect(settled()).resolves.toMatchObject({
+      approved: true,
+      phase: {
+        kind: 'stopped',
+        at: 'ship',
+        refusal: {
+          kind: 'base',
+          text: '#138 merges into release now, not main, so Lo merged nothing. Merge it from the panel.',
+        },
+      },
+    });
+    expect(sent).toEqual([]);
+  });
+
+  it('after approving, plans again from a read that lands with another base while it asks where the pull request sits', async () => {
+    const { shipping, plan, settled, sent } = setup({
+      reads: [waiting(), approved()],
+      landing: { facts: approved({ base: 'release' }), at: 3 },
+    });
+    await shipping.confirm((await plan()).key);
+    await expect(settled()).resolves.toMatchObject({
+      approved: true,
+      phase: { kind: 'stopped', at: 'ship', refusal: { kind: 'base' } },
     });
     expect(sent).toEqual([]);
   });
@@ -673,5 +824,27 @@ describe('auto-merge', () => {
     await vi.waitFor(() =>
       expect(published.at(-1)?.phase).toMatchObject({ kind: 'sending', step: { kind: 'merge' } }),
     );
+  });
+
+  it('refused since it can merge now, merges nothing into another branch than the one confirmed', async () => {
+    const facts = factsOf(running);
+    const { shipping, plan, sent, published } = setup({
+      facts,
+      reads: [facts, factsOf({ base: 'release' })],
+      send(_plan, heard) {
+        heard?.({ refused: { refusal: 'canMergeNow' } });
+      },
+    });
+    await shipping.confirm((await plan()).key);
+    await vi.waitFor(() =>
+      expect(published.at(-1)?.phase).toMatchObject({
+        kind: 'stopped',
+        refusal: {
+          kind: 'base',
+          text: '#138 merges into release now, not main, so Lo merged nothing. Merge it from the panel.',
+        },
+      }),
+    );
+    expect(sent.map((each) => [each.kind, each.base])).toEqual([['autoMerge', 'main']]);
   });
 });

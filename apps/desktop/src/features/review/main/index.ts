@@ -33,9 +33,9 @@ export default defineFeature(contract, {
   provide: () => [
     provides(submissions, {
       summary: (id) => submitter?.summaryOf(id) ?? 'none',
-      approve: (id, head) =>
+      approve: (id, head, lost) =>
         submitter
-          ? submitter.approve(id, head)
+          ? submitter.approve(id, head, lost)
           : Promise.resolve({ kind: 'refused', why: 'Lo is quitting.' }),
     }),
   ],

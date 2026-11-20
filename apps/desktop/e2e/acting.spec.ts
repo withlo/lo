@@ -7,13 +7,7 @@
 // `app_comments_box` recorded, `c` puts focus in the box at its end, and `⌘⏎` posts a comment on
 // the pull request itself, which `i` edits in its card and `dd` deletes.
 
-import {
-  cassette as recorded,
-  type Interaction,
-  recordedKey,
-  Replay,
-  type SeenRequest,
-} from '@lo/testing';
+import { cassette as recorded, recordedKey } from '@lo/testing';
 import { COMMENTS_PULL, writeCommentsRemote } from '@lo/testing/git';
 import { serveReplay, type ReplayServer } from '@lo/testing/server';
 import type { Page } from '@playwright/test';
@@ -21,6 +15,7 @@ import { writeFileSync } from 'node:fs';
 
 import { DIFF_FIRST, expect, test as base } from './app.ts';
 import { type BodiesServer, serveBodies } from './bodies.ts';
+import { Staged } from './staged.ts';
 
 /** A stand-in token, never a real one: the cassettes were recorded with the same. */
 const TOKEN = 'gho_FAKE_E2E_ACCOUNT';
@@ -51,66 +46,21 @@ const WRITES = new Set([
   'DeleteIssueComment',
 ]);
 
-/** The GraphQL operation a request names, if it names one. */
-function operationOf(request: SeenRequest): string | undefined {
-  if (request.method !== 'POST' || new URL(request.url).pathname !== '/graphql') return undefined;
-  const body: unknown = JSON.parse(new TextDecoder().decode(request.body));
-  const name =
-    typeof body === 'object' && body !== null ? Reflect.get(body, 'operationName') : undefined;
-  return typeof name === 'string' ? name : undefined;
-}
-
 /**
- * The cassette a stage at a time, a stage ending with each write: until Lo sends the next write,
- * each request gets the answers recorded before it, the last repeating, and once it's sent, those
- * recorded after. However many polls come between, a read never gets an answer from past a write
- * Lo hasn't sent yet, nor one from before a write it has.
+ * The cassette `name` a stage at a time, a stage ending with each write (`./staged.ts`), with the
+ * images it didn't record from the start.
  */
-class Staged extends Replay {
-  readonly #stages: Replay[];
-  #at = 0;
-
-  constructor(name: string) {
-    const { info, interactions: files } = recorded(name);
-    const interactions = files.map(({ interaction }) => interaction);
-    super(name, interactions);
-    // The images it didn't record, from the start.
-    const keys = new Set(interactions.map((each) => recordedKey(each.request)));
-    const images = recorded(IMAGES)
-      .interactions.map(({ interaction }) => interaction)
-      .filter(
-        (each) =>
-          new URL(each.request.url).host !== 'api.github.com' &&
-          !keys.has(recordedKey(each.request)),
-      );
-    // Answers added after the recording, which come after its writes but answer reads Lo sends
-    // from the start, from the start too.
-    const added = new Set(Object.keys(info.added ?? {}));
-    const isAdded = ({ request }: Interaction) =>
-      added.has(request.operation ?? `${request.method} ${request.url}`);
-    const stages: Interaction[][] = [[...images, ...interactions.filter(isAdded)]];
-    for (const each of interactions.filter((interaction) => !isAdded(interaction))) {
-      stages.at(-1)!.push(each);
-      if (WRITES.has(each.request.operation ?? '')) stages.push([]);
-    }
-    // A request a stage has no answer for gets the last one recorded before it.
-    const last = new Map<string, Interaction>();
-    this.#stages = stages.map((stage, index) => {
-      const own = new Set(stage.map((each) => recordedKey(each.request)));
-      const carried = [...last].filter(([key]) => !own.has(key)).map(([, each]) => each);
-      for (const each of stage) last.set(recordedKey(each.request), each);
-      return new Replay(`${name}, stage ${index}`, [...carried, ...stage]);
-    });
-  }
-
-  override answer(request: SeenRequest): Response {
-    this.seen.push(request);
-    const response = this.#stages[this.#at]!.answer(request);
-    if (WRITES.has(operationOf(request) ?? '')) {
-      this.#at = Math.min(this.#at + 1, this.#stages.length - 1);
-    }
-    return response;
-  }
+function staged(name: string): Staged {
+  const keys = new Set(
+    recorded(name).interactions.map(({ interaction }) => recordedKey(interaction.request)),
+  );
+  const images = recorded(IMAGES)
+    .interactions.map(({ interaction }) => interaction)
+    .filter(
+      (each) =>
+        new URL(each.request.url).host !== 'api.github.com' && !keys.has(recordedKey(each.request)),
+    );
+  return new Staged(name, ({ operation }) => WRITES.has(operation ?? ''), { first: images });
 }
 
 const test = base.extend<{
@@ -121,7 +71,7 @@ const test = base.extend<{
 }>({
   cassette: [CASSETTE, { option: true }],
   github: async ({ cassette }, use) => {
-    const server = await serveReplay(new Staged(cassette));
+    const server = await serveReplay(staged(cassette));
     await use(server);
     await server.close();
   },

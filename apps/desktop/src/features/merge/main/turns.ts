@@ -8,6 +8,7 @@ import type { MergeTurn, MergeWrites } from '../service.ts';
 export class MergeTurns implements MergeWrites {
   /** The pull requests with a merge write under way, by their key, which ignores case. */
   readonly #taken = new Set<string>();
+  readonly #given = new Set<() => void>();
 
   take(repo: RepoRef, prs: readonly number[]): MergeTurn | { readonly busy: number } {
     const [busy] = this.busy(repo, prs);
@@ -20,7 +21,16 @@ export class MergeTurns implements MergeWrites {
         if (given) return;
         given = true;
         for (const key of keys) this.#taken.delete(key);
+        for (const listener of this.#given) listener();
       },
+    };
+  }
+
+  /** Calls `listener` each time a turn is given back. Returns a function that stops it. */
+  onGiven(listener: () => void): () => void {
+    this.#given.add(listener);
+    return () => {
+      this.#given.delete(listener);
     };
   }
 

@@ -43,6 +43,8 @@ function run(
     lookTakes?: number;
     /** How long each read takes to answer, in real milliseconds: none. */
     lookWait?: number;
+    /** Called as each read is made, with how many there have been. */
+    onLook?: (read: number) => void;
   } = {},
 ) {
   const sent: number[] = [];
@@ -67,6 +69,7 @@ function run(
       // Each read takes a minute, unless the test says.
       clock += options.lookTakes ?? 60_000;
       read += 1;
+      options.onLook?.(read);
       reading += 1;
       mostReading = Math.max(mostReading, reading);
       const looked = looks.length > 1 ? looks.shift()! : (looks[0] ?? 'open');
@@ -161,13 +164,32 @@ describe('a chain’s merge a layer at a time', () => {
     found.chain.unsure();
     expect((await found.over()).phase).toBe('done');
 
+    // A read a minute.
     const never = run(CHAIN, { looks: ['open'] });
     never.chain.unsure();
     expect(await never.over()).toMatchObject({
       phase: 'stopped',
       text: 'Lo couldn’t tell within 15 minutes whether #5 merged, so it moved nothing.',
     });
+    expect(never.reads()).toBe(15);
     expect(never.sent).toEqual([]);
+  });
+
+  it('after another lost answer, as GitHub was asked again, reads for 15 minutes from then', async () => {
+    const chain = run(CHAIN, {
+      looks: ['open'],
+      onLook(read) {
+        // Ten minutes on, GitHub's answer is lost again.
+        if (read === 10) chain.chain.unsure();
+      },
+    });
+    chain.chain.unsure();
+    expect(await chain.over()).toMatchObject({
+      phase: 'stopped',
+      text: 'Lo couldn’t tell within 15 minutes whether #5 merged, so it moved nothing.',
+    });
+    expect(chain.reads()).toBe(25);
+    expect(chain.sent).toEqual([]);
   });
 
   it('stops at a base someone else moved, saying what moved, and sends nothing after it', async () => {

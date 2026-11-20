@@ -938,10 +938,11 @@ and how old it is, and a PR that looks ready reads "Lo may not see everything" b
 
 `⌘⇧⏎` opens one confirmation that lists each step: check that the revision on screen is still the
 newest push, approve (with your summary and pending comments, and skipped on your own PRs), then
-what Lo expects to follow: merge, join the queue, or turn on auto-merge. If it's only waiting on
-checks or other approvals, that is auto-merge, so the PR goes in once ready. If something waiting
-won't fix blocks it (conflicts, failed checks, changes requested), Lo stops after approving and
-shows why. Your approval stays.
+what Lo expects to follow: merge, join the queue, or turn on auto-merge. Lo checks with GitHub for
+20 seconds at most before it shows that, and otherwise says GitHub took too long. If it's only
+waiting on checks or other approvals, that is auto-merge, so the PR goes in once ready. If something
+waiting won't fix blocks it (conflicts, failed checks, changes requested), Lo stops after approving
+and shows why. Your approval stays.
 
 - **What it approves.** Only the revision on screen, so it merges only a PR alone or the bottom
   layer of a GitHub stack, and nothing with it. Where a merge would take others along, as for a
@@ -949,9 +950,11 @@ shows why. Your approval stays.
   merge from, Lo approves and stops, says why, and leaves the merge to the merge panel (`m`).
 - **Running it.** Lo reads GitHub again as you confirm. If anyone pushed since the revision you saw,
   it stops before approving and offers "See r2 → r3". Otherwise it approves, waits until GitHub
-  shows the approval, and goes on only if GitHub then allows what you confirmed. The merge, queue
-  entry or auto-merge goes through the same checks as the merge panel's. An approval whose answer is
-  lost is settled by reading your reviews, and nothing more is sent until it is.
+  shows the approval, and goes on only if GitHub then allows what you confirmed, into the branch you
+  confirmed. The merge, queue entry or auto-merge goes through the same checks as the merge panel's.
+  An approval whose answer is lost is settled by reading your reviews, and nothing more is sent
+  until it is. Lo waits a minute at most for that, and only while the tab is open: then it stops,
+  says it can't tell whether GitHub took the approval, and merges nothing.
 - **The watch.** GitHub keeps auto-merge on after a push, and unless the base branch wants a new
   approval, the push merges with your approval. So Lo watches the auto-merge it turned on after
   approving someone else's PR. The watch survives a restart, and reads the PR every 2 minutes, or 5
@@ -979,10 +982,10 @@ bottom PR's own tab. It moves the bottom PR's base to the root branch if it isn'
 then points each layer on it at the root branch and marks it "needs rebase." The confirmation lists
 every move. Lo makes the moves only while it's open, once GitHub says the PR merged. After a queue
 entry it reads the PR until it merges, for up to 6 hours, or until it leaves the queue, and after a
-lost answer for up to 15 minutes. Each move reads the base branch first, and doesn't move one
-someone else moved. The first move that fails stops the rest and says what moved, and Lo puts
-nothing back. A layer above the bottom is refused, naming the layer to merge first, and so is a
-bottom layer that needs a rebase.
+lost answer for up to 15 minutes from the last one. Each move reads the base branch first, and
+doesn't move one someone else moved. The first move that fails stops the rest and says what moved,
+and Lo puts nothing back. A layer above the bottom is refused, naming the layer to merge first, and
+so is a bottom layer that needs a rebase.
 
 Lo merges a PR only once it knows where it sits, from the stack list (section 4) and, for a GitHub
 stack, GitHub's own answer. Until then the panel says why and asks again by itself.

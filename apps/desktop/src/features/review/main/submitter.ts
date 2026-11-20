@@ -464,10 +464,11 @@ export class Submitter {
    * summary kept, which goes with it, in its turn among the writes to the pull request. It goes only
    * while `head` is the revision on screen and GitHub's head as Lo last read it, and never while a
    * review is being submitted, or one whose answer was lost isn't settled. A summary holding a file
-   * that may still be on its way in isn't sent from here. When GitHub's answer is lost, it resolves
-   * once a read of your reviews says how it went, as submitting does.
+   * that may still be on its way in isn't sent from here. When GitHub's answer is lost, `lost`
+   * hears so at once, and it resolves once a read of your reviews says how it went, as submitting
+   * does.
    */
-  async approve(id: string, head: string): Promise<Approved> {
+  async approve(id: string, head: string, lost?: () => void): Promise<Approved> {
     const info = this.#options.view(id);
     if (!info) return notApproved('There’s no pull request in that tab.');
     if (info.run) return notApproved(IN_A_LAYER);
@@ -522,6 +523,11 @@ export class Submitter {
             this.#settling.set(key, [...(this.#settling.get(key) ?? []), resolve]);
           });
           this.#lost(target, body, sentAt);
+          try {
+            lost?.();
+          } catch (heard) {
+            this.#options.log(`approving: ${describe(heard)}`);
+          }
           return { kind: 'unknown', why: 'GitHub’s answer was lost.' };
         }
         if ('refusal' in answer) {

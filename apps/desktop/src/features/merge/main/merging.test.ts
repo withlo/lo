@@ -1460,6 +1460,19 @@ describe('a stack’s merge', () => {
     expect(run.sent).toEqual([]);
   });
 
+  it('names the merge write under way on a layer it names, ahead of a conversion on it', async () => {
+    const run = stacked();
+    const plan = planOf(await run.merging.plan(ID, SQUASH));
+    const other = run.turns.take(PULL.repo, [137]);
+    run.set.converting([137]);
+    expect(await run.merging.confirm(plan.key)).toEqual({
+      kind: 'refused',
+      refusal: expect.objectContaining({ kind: 'busy', text: 'Lo is already merging #137.' }),
+    });
+    if ('give' in other) other.give();
+    expect(run.sent).toEqual([]);
+  });
+
   it('refuses while a conversion to a GitHub stack runs on a layer it names', async () => {
     const run = stacked();
     const plan = planOf(await run.merging.plan(ID, SQUASH));
@@ -1497,6 +1510,109 @@ describe('a stack’s merge', () => {
     run.merging.askAgain(plan.key);
     expect(run.turns.busy(PULL.repo, [137, 138])).toEqual([137, 138]);
   });
+
+  it('asked again while another write holds a layer, holds its own turn, and the layer’s once it’s free', async () => {
+    // GitHub answers with a status Lo doesn't know, then, asked again, that it's still merging.
+    const run = stacked({
+      results: [answer({ unknown: 'held' }, { uuid: UUID }), answer('pending', { uuid: UUID })],
+    });
+    const plan = planOf(await run.merging.plan(ID, SQUASH));
+    await run.merging.confirm(plan.key);
+    await run.ended('unknown');
+    await vi.waitFor(() => expect(run.turns.busy(PULL.repo, [137, 138])).toEqual([]));
+    const other = run.turns.take(PULL.repo, [137]);
+    if ('busy' in other) throw new Error('taken');
+    run.merging.askAgain(plan.key);
+    // Auto-merge, a merge of #138 alone and a conversion on its path wait for it.
+    expect(run.turns.busy(PULL.repo, [138])).toEqual([138]);
+    // Given back, it's taken at once, before GitHub answers again.
+    other.give();
+    expect(run.turns.busy(PULL.repo, [137, 138])).toEqual([137, 138]);
+    expect(run.sent).toHaveLength(1);
+  });
+
+  it('asked again, and unsure again, takes a layer given back meanwhile, until a read settles it', async () => {
+    const run = stacked({
+      results: [
+        answer({ unknown: 'held' }, { uuid: UUID }),
+        answer({ unknown: 'held' }, { uuid: UUID }),
+      ],
+    });
+    const plan = planOf(await run.merging.plan(ID, SQUASH));
+    await run.merging.confirm(plan.key);
+    await run.ended('unknown');
+    await vi.waitFor(() => expect(run.turns.busy(PULL.repo, [137, 138])).toEqual([]));
+    const other = run.turns.take(PULL.repo, [137]);
+    if ('busy' in other) throw new Error('taken');
+    // The read that would settle it waits.
+    run.hold.reads();
+    run.merging.askAgain(plan.key);
+    await vi.waitFor(() => expect(run.published.at(-1)?.state.kind).toBe('unknown'));
+    await moment();
+    expect(run.turns.busy(PULL.repo, [137, 138])).toEqual([137, 138]);
+    other.give();
+    expect(run.turns.busy(PULL.repo, [137, 138])).toEqual([137, 138]);
+
+    // A read made after it ended lets both go.
+    run.release();
+    await vi.waitFor(() => expect(run.turns.busy(PULL.repo, [137, 138])).toEqual([]));
+    expect(run.sent).toHaveLength(1);
+  });
+
+  it('asked again, holds every layer’s turn through the polls until GitHub says how it ended', async () => {
+    const run = stacked({
+      results: [answer({ unknown: 'held' }, { uuid: UUID }), answer('pending', { uuid: UUID })],
+    });
+    const plan = planOf(await run.merging.plan(ID, SQUASH));
+    await run.merging.confirm(plan.key);
+    await run.ended('unknown');
+    // A read made after it ended lets the layers go, and it shows as still open.
+    await vi.waitFor(() =>
+      expect(run.published.at(-1)?.state).toMatchObject({ kind: 'unknown', shows: 'open' }),
+    );
+    expect(run.turns.busy(PULL.repo, [137, 138])).toEqual([]);
+    run.merging.askAgain(plan.key);
+    expect(run.turns.busy(PULL.repo, [137, 138])).toEqual([137, 138]);
+    // A poll of the pull request, while GitHub still says it's merging.
+    run.emit({ kind: 'read', pull: PULL, name: MERGE_FACTS.name });
+    await moment();
+    expect(run.turns.busy(PULL.repo, [137, 138])).toEqual([137, 138]);
+  });
+
+  it('asked again about a merge GitHub can’t be asked about, takes no layer given back meanwhile', async () => {
+    const run = stacked({ submitted: lost });
+    const plan = planOf(await run.merging.plan(ID, SQUASH));
+    await run.merging.confirm(plan.key);
+    await run.ended('unknown');
+    await vi.waitFor(() => expect(run.turns.busy(PULL.repo, [137, 138])).toEqual([]));
+    // The read that settles it waits, while another pull request's write ends.
+    run.hold.reads();
+    run.merging.askAgain(plan.key);
+    const other = run.turns.take(PULL.repo, [500]);
+    if ('busy' in other) throw new Error('taken');
+    other.give();
+    expect(run.turns.busy(PULL.repo, [137, 138])).toEqual([]);
+  });
+
+  it.each([
+    ['settled by a read', answer({ unknown: 'held' }, { uuid: UUID })],
+    ['merged', answer('merged', { sha: 'd'.repeat(40) })],
+  ])(
+    '%s while another write holds a layer, takes it no more once that’s given back',
+    async (_, then) => {
+      const run = stacked({ results: [answer({ unknown: 'held' }, { uuid: UUID }), then] });
+      const plan = planOf(await run.merging.plan(ID, SQUASH));
+      await run.merging.confirm(plan.key);
+      await run.ended('unknown');
+      await vi.waitFor(() => expect(run.turns.busy(PULL.repo, [137, 138])).toEqual([]));
+      const other = run.turns.take(PULL.repo, [137]);
+      if ('busy' in other) throw new Error('taken');
+      run.merging.askAgain(plan.key);
+      await vi.waitFor(() => expect(run.turns.busy(PULL.repo, [138])).toEqual([]));
+      other.give();
+      expect(run.turns.busy(PULL.repo, [137, 138])).toEqual([]);
+    },
+  );
 
   it('sends no typed squash text: each layer keeps its own commit’s words', async () => {
     const run = stacked({ submitted: () => new Promise(() => undefined) });
