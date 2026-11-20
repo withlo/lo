@@ -173,6 +173,7 @@ pnpm nx run desktop:dev      # run it with hot reloading
 pnpm nx run desktop:start    # build it, then run the build
 pnpm nx run desktop:e2e      # build it, then run its smoke test
 pnpm nx run desktop:package  # build it, then make the Mac zip in apps/desktop/release/
+pnpm nx run desktop:release  # build it, then make a release's DMGs and zips (needs a Developer ID)
 ```
 
 - The `electron` package downloads Electron's binary the first time it's needed.
@@ -188,9 +189,26 @@ pnpm nx run desktop:package  # build it, then make the Mac zip in apps/desktop/r
   flag and opens as it is. The `package` workflow, which only a person starts, builds the same zip
   on a Mac runner and uploads it as an artifact. `scripts/check-package.sh` checks a zip: the
   signature and its flags, the entitlements, every fuse, the asar's contents and hash, the
-  registered links, and that the app quits when given switches or the variables below. electron-vite
+  registered links, that it holds no `app-update.yml`, so it never looks for updates, that its
+  window draws, and that the app quits when given switches or the variables below. electron-vite
   bundles everything the app imports, so the package holds only `dist/` and `package.json`, and no
   `node_modules`.
+- `desktop:release` makes a release from `build/release.yml`, which extends the package's config
+  with what a release needs: a DMG and a zip each for arm64 and x64, `Lo-<version>-<arch>.<ext>`,
+  with `latest-mac.yml` and blockmaps beside them. The app and its helpers are signed with the
+  Developer ID certificate in `CSC_LINK`, with only `allow-jit`
+  (`build/entitlements.release.plist`), then notarized and stapled, and the DMGs signed. The app
+  holds an `app-update.yml` naming GitHub Releases of `withlo/lo`, and the build never publishes
+  (`--publish never`). The `release` workflow runs it when a tag `v<version>` is pushed: `version`
+  checks the tag (`scripts/release/version.sh`: SemVer without build metadata, on a commit main
+  holds) and gives the version, which electron-builder writes into the app (`package.json` stays
+  `0.0.0`); `mac` builds in the `release` environment, the only place the signing secrets are read,
+  which takes `v*` tags only and waits for a maintainer's approval, notarizes the DMGs, unstapled,
+  and checks all four files with `check-package.sh --release`; `draft` makes a draft release with
+  `SHA256SUMS` and generated notes (`.github/release.yml` leaves out dependency bumps), which a
+  maintainer publishes. Started by hand, or by a pull request that changes the packaging files, the
+  workflow is a dry run: the same build, signed ad hoc with the ad hoc entitlements, checked with
+  `check-package.sh --release --ad-hoc`, with no environment, no secret and no release.
 - A packaged Lo takes no command-line switches: first of all in main, before `ready`, it quits with
   status 1 on any argument that isn't a `lo://`, `https://` or `http://` link from its first
   character (`src/main/arguments.ts`). Chromium's switches can send main's requests, with their
@@ -1295,11 +1313,12 @@ dialog that opens in the panel's place (`tab.dialogs`) is confirmed.
 - As it's confirmed, main checks again: the view still acts as its account, signed in; GitHub can be
   reached and isn't holding writes; the head on screen is the newest push the tab knows of and
   GitHub's head, with the merge facts whole and confirmed in the last 7 minutes, else read again;
-  the pull request is alone or a GitHub stack's bottom layer (`main/where.ts`, with the open pull
-  requests from each branch it merges into read afresh); nothing else merges it; and no conversion
-  runs on its path. When something the confirmation named changed, main asks again with a new plan;
-  otherwise it says why it didn't send. `Esc` while it checks cancels it: its reads are given up and
-  nothing is sent. Right before it sends, the tab, the account and the connection are checked again.
+  where the pull request sits is known (`main/where.ts`, with the open pull requests from each
+  branch it merges into read afresh), and what goes with it is read again (`main/together.ts`);
+  nothing else merges it or the pull requests it names; and no conversion runs on their path. When
+  something the confirmation named changed, main asks again with a new plan; otherwise it says why
+  it didn't send. `Esc` while it checks cancels it: its reads are given up and nothing is sent.
+  Right before it sends, the tab, the account and the connection are checked again.
 - Merges go through one `MergeJobs` for the app, with the head on screen as the `sha`, and the
   squash commit's text only as the reader typed it. One merge write to a pull request at a time,
   app-wide and whatever the account: `merge.writes` hands out the turns (`main/turns.ts`), and
@@ -1312,6 +1331,22 @@ dialog that opens in the panel's place (`tab.dialogs`) is confirmed.
 - Done, a toast says so. Refused, or ended without Lo knowing how, the dialog says so while it's
   open, else a banner on the pull request's tab does. The panel's main button is off, with why,
   while GitHub can't be reached, asks Lo to hold off writing, or the account is signed out.
+- As the panel opens, main says where the pull request sits (`merge.place`), and the main button
+  says what it merges. A GitHub stack's layer merges with the open layers below it, as GitHub's
+  Stacks API names them, at the heads it gave as the confirmation opened, read again at the press,
+  where a stack that merges into another branch than the rules Lo read were for is refused and read
+  again; the merge holds the turn of every layer, those above included, again while GitHub is asked
+  again how it went, and the dialog shows each layer as the Stacks API says at each change of the
+  merge, and which went in when GitHub stops partway. A chain that stacks could make a GitHub stack
+  is made one first (`gS`, offered in the panel). One that can't merges from its bottom layer alone
+  (`@lo/stacks`' `mergeOneLayerAtATime`): its base moves onto the root first when it isn't there,
+  and the merge is planned under the root's rules; once GitHub says it merged, a run in main
+  (`main/chains.ts`), while Lo is open, moves each layer on it onto the root, in order, once,
+  whether GitHub's answer or a read of the pull request says first that it merged, holding their
+  turns until then. After a queue entry it reads the pull request until it merges, for 6 hours at
+  most, or leaves the queue; after a lost answer, for 15 minutes. Each move reads the base first and
+  leaves one someone else moved; the first move that doesn't go stops the run, and nothing is put
+  back. Above a chain's bottom layer, and on a bottom layer that needs a rebase, `⏎` is refused.
 
 ### Images from GitHub
 

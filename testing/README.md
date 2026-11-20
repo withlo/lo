@@ -344,8 +344,15 @@ as the first after, as `app_merge_write_moved`'s are. Generation 6 is #192 to #2
 stack #209. `app_queued` used it, recorded while #205 was first in `e4/queued`'s queue and #207
 second, and `app_queued_left` as the queue failed #207, whose `ci` fails there, and GitHub took it
 out once rozed-bot had taken #205 out. `app_merge` used it too, recorded while #206 was first in the
-queue and #203 waited for an approval with auto-merge on. Each was taken out of the queue, or its
-auto-merge turned off, after, so none merged.
+queue and #203 waited for an approval with auto-merge on; `app_merge_placed` adds the read of which
+open pull requests come from `merge/6/base` that the merge panel makes as it opens. Each was taken
+out of the queue, or its auto-merge turned off, after, so none merged. Generation 8 is #222 to #244,
+with GitHub stack #245. `app_merge_stack` used it, recorded with writes as Lo merged #233, the
+stack's top layer, with #232 below it, as one, into `merge/8/base`; `app_merge_stack_polled` adds
+the answers Lo may ask for that the recording didn't. `app_merge_chain` used it too: #230, the
+draft, was moved onto `merge/8/chain-1` first, so #235, the chain's bottom layer, had two layers on
+it, #236 and #230, and couldn't be made a GitHub stack. It was recorded with writes as Lo merged
+#235 alone and then moved #230 and #236 onto `merge/8/base`.
 
 ## The fake language server
 

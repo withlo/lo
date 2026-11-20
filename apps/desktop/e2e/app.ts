@@ -567,9 +567,10 @@ export const onStacks = test.extend<{
 export const MERGE = MERGE_PULLS[6];
 
 /**
- * `test`, with Lo signed in as rozed-bot on a replay server that answers from `app_merge`, recorded
- * from the app on {@link MERGE}'s pull requests, and fetching from their repository, built on this
- * machine. With `account` false, Lo starts with no account.
+ * `test`, with Lo signed in as rozed-bot on a replay server that answers from `app_merge_placed`:
+ * `app_merge`, recorded from the app on {@link MERGE}'s pull requests, with what the merge panel
+ * asks to say where a pull request sits. It fetches from their repository, built on this machine.
+ * With `account` false, Lo starts with no account.
  */
 export const onMerge = test.extend<{
   /** Whether Lo starts with rozed-bot's account. */
@@ -580,7 +581,7 @@ export const onMerge = test.extend<{
   account: [true, { option: true }],
   // oxlint-disable-next-line no-empty-pattern
   github: async ({}, use) => {
-    const server = await serveReplay('app_merge');
+    const server = await serveReplay('app_merge_placed');
     await use(server);
     await server.close();
   },

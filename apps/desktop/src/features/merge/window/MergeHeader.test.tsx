@@ -5,18 +5,20 @@
 // the panel opens, which the reader's own text stands in front of. A pull request in a merge queue
 // says its place and when it should merge, as main last read its queue, or that the queue will
 // remove it; once it left, a banner says why, and the panel's first row says it again. One ready for
-// a queue says what's ahead of it, read once as the panel opens.
+// a queue says what's ahead of it, read once as the panel opens. Where the pull request sits says
+// what its main button merges: a GitHub stack's layers below it too, a chain's bottom layer alone,
+// or nothing until the chain is a GitHub stack.
 
 import { handlers } from '@lo/ui/commands';
 import { act, type ReactNode } from 'react';
 import { createRoot } from 'react-dom/client';
-import { beforeAll, expect, it, onTestFinished } from 'vitest';
+import { beforeAll, expect, it, onTestFinished, vi } from 'vitest';
 
 import { createRegistry } from '../../../window/commands/registry.ts';
 import { installBridge } from '../../../window/test/bridge.ts';
 import queueKeys from '../../queue/keys.ts';
 import type { PullTab } from '../../tab/window/shared.ts';
-import type { InQueue, MergeState, MergeView } from '../contract.ts';
+import type { InQueue, MergeState, MergeView, Placement } from '../contract.ts';
 import feature from './index.ts';
 import { LeftBanner } from './LeftBanner.tsx';
 import { MergeHeader } from './MergeHeader.tsx';
@@ -35,6 +37,9 @@ const queues = new Map<string, InQueue>();
 /** Each time the merge queue was shown, as `gq` shows it. */
 let queueShown = 0;
 
+/** Where main says each view's pull request sits, by its id: alone unless a test says. */
+const places = new Map<string, Placement>();
+
 const bridge = installBridge({
   'merge.state': (input) =>
     views.get(String(Reflect.get(Object(input), 'id'))) ?? { kind: 'loading' },
@@ -45,6 +50,8 @@ const bridge = installBridge({
     head: 'a'.repeat(40),
   }),
   'merge.open': () => undefined,
+  'merge.place': (input) =>
+    places.get(String(Reflect.get(Object(input), 'id'))) ?? { kind: 'alone' },
   'merge.queue': (input) =>
     queues.get(String(Reflect.get(Object(input), 'id'))) ?? { place: null, left: null },
   'merge.ahead': () => ({ kind: 'queue', count: 4, atLeast: false, timeToMerge: 1080 }),
@@ -198,6 +205,82 @@ it('reads GitHub’s squash text as the panel opens, without what turns text aro
   expect(panel()?.textContent).toContain('Merge commits are off in this repo');
   act(() => panels.update('t3', (current) => ({ ...current, title: 'Mine' })));
   expect(panel()?.querySelector('input')?.value).toBe('Mine');
+});
+
+/** The panel's main button, at its foot. */
+function primary(): HTMLButtonElement | undefined {
+  const buttons = [...(panel()?.querySelectorAll('button') ?? [])];
+  return buttons.at(-1);
+}
+
+it('says what the main button merges, by where the pull request sits', async () => {
+  views.set('t14', { kind: 'known', state: state() });
+  places.set('t14', { kind: 'stack', stack: 90, below: [136, 137] });
+  const page = draw(<MergeHeader tab={tabOf('t14')} />);
+  await until(() => page.querySelector('button') !== null);
+  act(() => page.querySelector('button')?.click());
+  await until(() => panel()?.textContent?.includes('GitHub stack #90') === true);
+  expect(panel()?.textContent).toContain(
+    '#136 and #137, below it in GitHub stack #90, merge with it.',
+  );
+  expect(primary()?.textContent).toContain('Merge 3 layers');
+});
+
+it('offers to make a chain a GitHub stack first, and merges nothing until it is one', async () => {
+  views.set('t15', { kind: 'known', state: state() });
+  places.set('t15', {
+    kind: 'convert',
+    offer: 'These PRs share commits but aren’t a GitHub stack. As one, they’d merge together.',
+  });
+  const page = draw(<MergeHeader tab={tabOf('t15')} />);
+  await until(() => page.querySelector('button') !== null);
+  act(() => page.querySelector('button')?.click());
+  await until(() => panel()?.textContent?.includes('As one, they’d merge together.') === true);
+  const make = [...(panel()?.querySelectorAll('button') ?? [])].find((button) =>
+    button.textContent?.startsWith('Make this a GitHub stack'),
+  );
+  expect(make).toBeDefined();
+  expect(primary()?.getAttribute('aria-disabled')).toBe('true');
+});
+
+it('says a chain’s bottom layer merges alone, and why it can’t be a GitHub stack', async () => {
+  views.set('t16', { kind: 'known', state: state() });
+  places.set('t16', {
+    kind: 'chain',
+    into: 'main',
+    above: [139],
+    reasons: ['This repo has no stacks.'],
+  });
+  const page = draw(<MergeHeader tab={tabOf('t16')} />);
+  await until(() => page.querySelector('button') !== null);
+  act(() => page.querySelector('button')?.click());
+  await until(() => panel()?.textContent?.includes('merges into main alone') === true);
+  expect(panel()?.textContent).toContain('Then Lo moves #139 onto main, while Lo is open.');
+  expect(panel()?.textContent).toContain('This repo has no stacks.');
+  expect(primary()?.getAttribute('aria-disabled')).toBeNull();
+});
+
+it('asks again where it sits while Lo lists the open pull requests again', async () => {
+  views.set('t17', { kind: 'known', state: state() });
+  places.set('t17', {
+    kind: 'refused',
+    why: 'Some merged pull requests weren’t looked up yet. Lo is listing the open pull requests again.',
+    again: true,
+  });
+  const page = draw(<MergeHeader tab={tabOf('t17')} />);
+  await until(() => page.querySelector('button') !== null);
+  vi.useFakeTimers({ shouldAdvanceTime: true });
+  onTestFinished(() => {
+    vi.useRealTimers();
+  });
+  act(() => page.querySelector('button')?.click());
+  await until(() => panel()?.textContent?.includes('weren’t looked up yet') === true);
+  places.set('t17', { kind: 'stack', stack: 90, below: [136] });
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(3_000);
+  });
+  await until(() => panel()?.textContent?.includes('GitHub stack #90') === true);
+  expect(primary()?.textContent).toContain('Merge 2 layers');
 });
 
 /** Into `e4/queued`, whose queue squashes, 2nd as GitHub last said. */
