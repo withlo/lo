@@ -24,6 +24,15 @@ const items: BarItem[] = [
   { id: 'view.inline', label: 'Inline or side by side', menu: 'View', order: 5, enabled: true },
 ];
 
+/** A command in the app menu's Update submenu. */
+const update = (id: string, order: number, enabled: boolean): BarItem => ({
+  id,
+  label: id,
+  menu: 'Update',
+  order,
+  enabled,
+});
+
 function menuOf(template: MenuItemConstructorOptions[], label: string) {
   const found = template.find((each) => each.label === label);
   return Array.isArray(found?.submenu) ? found.submenu : undefined;
@@ -108,6 +117,47 @@ describe('the macOS app menu', () => {
       'separator',
       'quit',
     ]);
+  });
+
+  it('puts the commands of the Update menu in a submenu of the app’s own, after its others', () => {
+    const check: BarItem = {
+      id: 'updates.check',
+      label: 'Check for updates',
+      menu: 'App',
+      order: 1,
+      enabled: true,
+    };
+    const build = (...rest: BarItem[]) =>
+      menuOf(
+        macMenu([check, ...rest], { name: 'Lo', devTools: false, run: () => undefined }),
+        'Lo',
+      );
+    const withUpdate = build(update('updates.copy', 2, false), update('updates.move', 1, true));
+    expect(withUpdate?.map((each) => each.id ?? each.label ?? each.role ?? each.type)).toEqual([
+      'about',
+      'separator',
+      'updates.check',
+      'Update',
+      'separator',
+      'services',
+      'separator',
+      'hide',
+      'hideOthers',
+      'unhide',
+      'separator',
+      'quit',
+    ]);
+    const submenu = withUpdate?.find((each) => each.label === 'Update');
+    expect(Array.isArray(submenu?.submenu) && submenu.submenu.map((each) => each.id)).toEqual([
+      'updates.move',
+      'updates.copy',
+    ]);
+    // It can be opened while something in it can run, and is greyed when nothing can.
+    expect(submenu?.enabled).toBe(true);
+    const greyed = build(update('updates.copy', 2, false), update('updates.move', 1, false));
+    expect(greyed?.find((each) => each.label === 'Update')?.enabled).toBe(false);
+    // And it isn't there when no command is in it.
+    expect(build()?.some((each) => each.label === 'Update')).toBe(false);
   });
 
   it("puts Lo's commands in their menus, in order, with their keys and states", () => {

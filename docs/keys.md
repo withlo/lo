@@ -328,6 +328,10 @@ in normal mode, `Esc` closes the box and keeps the draft. In the box's preview, 
 | Restart to update                 | None: in the app menu on macOS and the palette           | Anywhere                                                                               | `updates.restart`       |
 | Move Lo to Applications           | None: in the app menu on macOS and the palette           | Anywhere                                                                               | `updates.move`          |
 | Hide the update until Lo restarts | None: in the app menu on macOS and the palette           | Anywhere                                                                               | `updates.later`         |
+| Open what’s new in the update     | None: in the app menu on macOS and the palette           | Anywhere                                                                               | `updates.whatsNew`      |
+| Download the update from its page | None: in the app menu on macOS and the palette           | Anywhere                                                                               | `updates.download`      |
+| Copy the Homebrew update command  | None: in the app menu on macOS and the palette           | Anywhere                                                                               | `updates.copy`          |
+| Go to the update                  | None: in the app menu on macOS and the palette           | Anywhere                                                                               | `updates.focus`         |
 
 ## Where keys apply
 
@@ -357,6 +361,7 @@ comment box and another elsewhere.
 | `stack`      | Named by `stacks`.                                                                    |
 | `timeline`   | Named by `timeline`.                                                                  |
 | `tree`       | Named by `tree`.                                                                      |
+| `toasts`     | Named by `updates`.                                                                   |
 | `welcome`    | Named by `welcome`.                                                                   |
 
 In a code view, keys follow Vim's mode. In insert mode, and while Vim waits for the rest of a
@@ -368,10 +373,13 @@ A key that starts one of Lo's sequences waits for the rest. In a code view it wa
 takes, as Vim's own `y` and `g` do, and a key that doesn't go on with it goes to Vim after it, so
 `y w` still yanks a word. Anywhere else it waits up to 1 s, and if the rest doesn't come it's
 dropped, and the next key counts on its own. A chord Lo runs drops the waiting key, as do `Esc`,
-focus leaving, a click and a tab switch. A key typed with focus nowhere in particular, as while a
+focus leaving, a click, by the pointer or as VoiceOver and Voice Control click, and a tab switch. A
+key typed with focus nowhere in particular, rather than on a button or another control, as while a
 pull request's tab is still loading, isn't dropped when Lo gives a view focus: it goes on there, if
-one of the view's sequences starts with it, still for up to 1 s. The status bar shows the keys
-waiting, after any count, as Vim shows a command it's waiting on the rest of.
+one of the view's sequences starts with it, still for up to 1 s, and in a code view a key that
+doesn't go on with it goes to Vim after it, as if both were typed there, so `g g` still goes to the
+top. The status bar shows the keys waiting, after any count, as Vim shows a command it's waiting on
+the rest of.
 
 `Tab` doesn't move focus out of a scope; only dialogs and forms keep the browser's `Tab`.
 

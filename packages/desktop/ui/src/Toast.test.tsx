@@ -45,7 +45,26 @@ describe('Toast', () => {
 
   it('floats in a live region that is there with nothing in it', () => {
     const empty = renderToStaticMarkup(<ToastRegion />);
-    expect(empty).toBe('<div role="status" aria-atomic="true" class="toast-floating"></div>');
+    expect(empty).toBe(
+      '<div class="toast-floating"><div role="status" aria-atomic="true"></div></div>',
+    );
+  });
+
+  it('keeps the toasts that wait in a live region of their own, below the note', () => {
+    const markup = renderToStaticMarkup(
+      <ToastRegion waiting={<Toast tone="info" icon={icon} title="Lo 0.10 is out" />}>
+        <Toast tone="success" icon={icon} title="Copied" />
+      </ToastRegion>,
+    );
+    // Two regions, not one: the note's is read whole, and a toast's text changing isn't. A status
+    // region is atomic unless it says it isn't, so the toasts' says so itself.
+    expect(markup.match(/role="status"/g)).toHaveLength(2);
+    expect(markup.match(/aria-atomic="true"/g)).toHaveLength(1);
+    expect(markup.match(/aria-atomic="false"/g)).toHaveLength(1);
+    expect(markup.indexOf('Copied')).toBeLessThan(markup.indexOf('Lo 0.10 is out'));
+    expect(markup).toMatch(
+      /<div role="status" aria-atomic="false" class="mt-8 [^"]*">.*Lo 0\.10 is out/,
+    );
   });
 
   it("only uses utilities that Lo's stylesheet has, and gives the design's measures", async () => {

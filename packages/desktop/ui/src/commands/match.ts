@@ -4,12 +4,13 @@
 // - A command for the focused scope beats one for anywhere; at each level a keymap binding beats
 //   a default one, and a later binding an earlier one.
 // - A key that starts one of Lo's sequences is held, and the next completes it. If it doesn't, the
-//   held keys go back to the code view they were typed in, and the key is matched afresh, so
-//   `y w` still yanks a word. A chord Lo runs drops the held keys instead, so Vim isn't left in
-//   the middle of a command it never sees finished. One sequence is pending for the window, never
-//   one per editor. In a code view held keys wait for the next key however long it takes, as
-//   Vim's own `y` and `g` do; anywhere else, for a second. Keys held in a scope go on only there;
-//   those held with focus nowhere in particular (`window`) go on wherever focus has moved since.
+//   held keys go back to the code view they were typed in, or went on in, and the key is matched
+//   afresh, so `y w` still yanks a word. A chord Lo runs drops the held keys instead, so Vim isn't
+//   left in the middle of a command it never sees finished. One sequence is pending for the
+//   window, never one per editor. In a code view held keys wait for the next key however long it
+//   takes, as Vim's own `y` and `g` do; anywhere else, for a second. Keys held in a scope go on
+//   only there; those held with focus nowhere in particular (in `window`, on no control) go on
+//   wherever Lo has moved focus since.
 // - In a code view in insert mode or in the middle of a command (a count, an operator), only
 //   chords are Lo's: the rest go to Vim. Vim's own keys (`vim: 'own'`) are never taken, nor the
 //   comment box editor's (`editor`), and Lo's motions (`vim: 'motion'`) are Vim's to run in a code

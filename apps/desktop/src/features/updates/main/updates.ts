@@ -192,6 +192,14 @@ export class Updates {
   }
 
   /**
+   * How this copy of Lo takes a newer version now, decided again. An offer that says otherwise is
+   * said again with what it is now.
+   */
+  howNow(): How {
+    return this.#decide();
+  }
+
+  /**
    * Downloads the update on offer, where Lo installs updates itself. A download that fails goes
    * back to the offer, with why.
    */

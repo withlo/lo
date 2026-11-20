@@ -33,6 +33,7 @@ afterEach(() => {
 });
 
 const status = () => document.querySelector('[role="status"]');
+const region = () => document.querySelector('.toast-floating');
 
 /** The toast's parts, as a screen reader hears them in order. */
 function toast(): { title: string | null; body: string | null; icon: boolean } | undefined {
@@ -74,7 +75,7 @@ describe('notices', () => {
 
   it('float at the bottom right, above the status bar, as the design’s toast does', () => {
     act(() => notify('Back', 'Nowhere.'));
-    expect(status()?.className).toContain('toast-floating');
+    expect(status()?.closest('.toast-floating')).not.toBeNull();
     expect(status()?.querySelector('.toast')?.className).toContain('shadow-pop');
   });
 
@@ -92,6 +93,26 @@ describe('notices', () => {
       icon: true,
     });
     expect(status()?.querySelector('.toast .text-success')).not.toBeNull();
+  });
+});
+
+describe('toasts that wait', () => {
+  it('stay below a note that passes, in a region of their own, and are there before and after it', () => {
+    act(() => root?.render(<Notices waiting={<div data-testid="waiting">Lo 0.2.0 is out</div>} />));
+    const waiting = () => region()?.querySelector('[data-testid="waiting"]');
+    expect(waiting()?.textContent).toBe('Lo 0.2.0 is out');
+    act(() => notify('Back', 'Nowhere.'));
+    // Not inside the note's atomic region, which a screen reader reads whole as a note comes.
+    expect(status()?.contains(waiting() ?? null)).toBe(false);
+    expect(waiting()?.closest('[role="status"]')).not.toBe(status());
+    const [note, held] = [...(region()?.children ?? [])];
+    expect(note?.textContent).toBe('BackNowhere.');
+    expect(held?.contains(waiting() ?? null)).toBe(true);
+    act(() => {
+      vi.advanceTimersByTime(NOTICE_TIME);
+    });
+    expect(status()?.textContent).toBe('');
+    expect(waiting()?.textContent).toBe('Lo 0.2.0 is out');
   });
 });
 

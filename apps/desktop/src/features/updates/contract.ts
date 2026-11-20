@@ -140,6 +140,11 @@ export const contract = defineContract('updates', {
     /** Where updates stand now. The `state` topic then keeps the window up to date. */
     read: { input: z.undefined(), reply: reply<UpdateState>() },
     /**
+     * How this copy of Lo takes a newer version now, decided again, which an offer says too: for
+     * what depends on it with no offer, such as whether Lo can be moved to Applications.
+     */
+    how: { input: z.undefined(), reply: reply<How>() },
+    /**
      * Checks GitHub Releases for a newer Lo now, whether or not `updates.check` is on, and answers
      * what it found. A check already going is shared, one GitHub doesn't answer within a minute
      * fails, and none is made while an update downloads or waits to install.

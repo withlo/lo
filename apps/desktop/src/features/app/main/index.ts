@@ -11,7 +11,7 @@ import { IpcError } from '../../../ipc/contract.ts';
 import { settings } from '../../settings/service.ts';
 import { appInfo, contract, type GitInfo, type Theme } from '../contract.ts';
 import { gpu } from '../settings.ts';
-import { aboutOptions, buildOf } from './about.ts';
+import { aboutOptions, buildOf, shortHash } from './about.ts';
 import { licensesPath, openLicenses } from './licenses.ts';
 import { zoomed } from './zoom.ts';
 
@@ -50,6 +50,7 @@ export default defineFeature(contract, {
         theme: currentTheme(),
         git: gitInfo(git.status),
         packaged: app.isPackaged,
+        commit: shortHash(LO_COMMIT),
         nonce: pageNonce(),
         holdLimit: holdLimit({ packaged: app.isPackaged, env: process.env }),
       }),
