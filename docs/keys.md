@@ -366,8 +366,10 @@ A key that starts one of Lo's sequences waits for the rest. In a code view it wa
 takes, as Vim's own `y` and `g` do, and a key that doesn't go on with it goes to Vim after it, so
 `y w` still yanks a word. Anywhere else it waits up to 1 s, and if the rest doesn't come it's
 dropped, and the next key counts on its own. A chord Lo runs drops the waiting key, as do `Esc`,
-focus leaving, a click and a tab switch. The status bar shows the keys waiting, after any count, as
-Vim shows a command it's waiting on the rest of.
+focus leaving, a click and a tab switch. A key typed with focus nowhere in particular, as while a
+pull request's tab is still loading, isn't dropped when Lo gives a view focus: it goes on there, if
+one of the view's sequences starts with it, still for up to 1 s. The status bar shows the keys
+waiting, after any count, as Vim shows a command it's waiting on the rest of.
 
 `Tab` doesn't move focus out of a scope; only dialogs and forms keep the browser's `Tab`.
 

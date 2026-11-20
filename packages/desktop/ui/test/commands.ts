@@ -187,15 +187,29 @@ export const overview = defineCommands(
 
 export const all: readonly Declarations[] = [diff, vim, review, keys, tab, tree, palette, overview];
 
+/**
+ * A sequence for anywhere, over Vim in normal mode, as the merge queue's `g q` is. It isn't in
+ * `all`, since a `g` for anywhere would change what the other tests see: a test adds it.
+ */
+export const queue = defineCommands('queue', {
+  show: {
+    label: 'Merge queue',
+    group: 'Review',
+    keys: ['g q'],
+    overVim: true,
+    when: { except: ['menu', 'dialog', 'palette', 'box'], mode: 'normal' },
+  },
+});
+
 /** A run of a command: its id and the target it got. */
 export type Ran = readonly [string, Target];
 
 /**
- * Every test command, each with a handler that records its runs in `ran`. `vim.*` have none, as
- * Vim's own keys have none.
+ * Every test command, and those `more` declares, each with a handler that records its runs in
+ * `ran`. `vim.*` have none, as Vim's own keys have none.
  */
-export function testCommands(ran: Ran[] = []): Command[] {
-  return all.flatMap((declarations) =>
+export function testCommands(ran: Ran[] = [], more: readonly Declarations[] = []): Command[] {
+  return [...all, ...more].flatMap((declarations) =>
     commandsOf(declarations).map((command) =>
       command.vim === 'own'
         ? command

@@ -8,7 +8,8 @@
 //   `y w` still yanks a word. A chord Lo runs drops the held keys instead, so Vim isn't left in
 //   the middle of a command it never sees finished. One sequence is pending for the window, never
 //   one per editor. In a code view held keys wait for the next key however long it takes, as
-//   Vim's own `y` and `g` do; anywhere else, for a second.
+//   Vim's own `y` and `g` do; anywhere else, for a second. Keys held in a scope go on only there;
+//   those held with focus nowhere in particular (`window`) go on wherever focus has moved since.
 // - In a code view in insert mode or in the middle of a command (a count, an operator), only
 //   chords are Lo's: the rest go to Vim. Vim's own keys (`vim: 'own'`) are never taken, nor the
 //   comment box editor's (`editor`), and Lo's motions (`vim: 'motion'`) are Vim's to run in a code
@@ -275,10 +276,13 @@ export function match(
 ): Step {
   if (press.composing) return { pending, outcome: PASS };
   const { stroke } = press;
-  // Keys held in another scope can't be completed here. Focus changes drop them before this.
-  if (pending && pending.scope !== focus.scope) pending = undefined;
-  // In a code view held keys wait however long it takes, as Vim's own `y` and `g` do.
-  if (pending && !focus.view && press.time - pending.at >= bindings.timeout) {
+  // Keys held in another scope can't be completed here: focus leaving it drops them before this.
+  // Those held with focus nowhere in particular can, once Lo has moved focus to where they go on.
+  if (pending && pending.scope !== focus.scope && pending.scope !== 'window') pending = undefined;
+  // In a code view held keys wait however long it takes, as Vim's own `y` and `g` do. Those held
+  // elsewhere wait a second wherever they go on.
+  const inView = focus.view !== undefined && pending?.scope === focus.scope;
+  if (pending && !inView && press.time - pending.at >= bindings.timeout) {
     return { pending: undefined, outcome: { kind: 'replay', strokes: pending.strokes } };
   }
   // Digits before a key are its count, where Lo keeps one; one bound to a command is that command.

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 
-import { testCommands } from '../../test/commands.ts';
+import { queue, testCommands } from '../../test/commands.ts';
 import {
   Bindings,
   declaredBindings,
@@ -165,6 +165,18 @@ describe('sequences', () => {
     const { pending } = type(['z'], tree);
     expect(pending).toBeDefined();
     expect(type(['R'], diff, { pending }).said).toEqual(['pass']);
+  });
+
+  test('keys held with focus nowhere in particular go on where it has moved, for a second', () => {
+    const bindings = new Bindings('mac', declaredBindings(testCommands([], [queue]), 'mac'));
+    const { pending } = type(['g'], anywhere, { bindings });
+    expect(pending).toBeDefined();
+    expect(type(['q'], diff, { bindings, pending, times: [20] }).said).toEqual(['run queue.show']);
+    // Held outside a code view, they don't wait on in one.
+    expect(type(['q'], diff, { bindings, pending, times: [SEQUENCE_TIMEOUT] }).said).toEqual([
+      'replay g',
+      'pass',
+    ]);
   });
 });
 
