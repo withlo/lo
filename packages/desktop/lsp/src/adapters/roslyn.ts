@@ -38,6 +38,17 @@
  *   though nothing syncs it to the disk first. A move that fails, as when another Roslyn has just
  *   written the same cache, leaves the other file behind, about half a megabyte, and a cache it
  *   can't read, it makes again.
+ * - It never borrows a project's data from another checkout. Left on, as it is unless
+ *   `DOTNET_PROJECTDATA_DONOR_ENABLED` is `0` or `false`, Roslyn looks for a "donor", a sibling
+ *   worktree whose cached build data it could start from: it walks up from the project's folder,
+ *   out of its home, to `/`, and at any folder with a `.git` it finds, such as a dotfiles
+ *   repository in the user's home, reads that repository's donor index and the `.lscache` files it
+ *   names, whose compiler arguments can load an analyzer (`/analyzer:`), and runs `git` there. Lo
+ *   sets it to `0`.
+ * - It sends no telemetry. Outside the C# Dev Kit, this build takes its telemetry level only from
+ *   `COPILOT_TELEMETRY_LEVEL`, ignoring `--telemetryLevel`, and with none set it reports nothing.
+ *   Lo's servers start with an environment built from nothing, with no such variable, so it's
+ *   never set; Lo still passes `--telemetryLevel off`, which later builds read again.
  *
  * What the checkout still gives it is its `.cs` files, read as text. A package's types are
  * unknown, so a name from one has no definition or hover, nor do types a source generator would
@@ -116,11 +127,13 @@ export const ROSLYN = {
   id: 'roslyn',
   name: 'Roslyn',
   license: 'MIT',
-  // It speaks the protocol over its stdio, logs what it does, sends no telemetry, and loads no
-  // project until it's sent one: no `--autoLoadProjects`.
+  // It speaks the protocol over its stdio, logs what it does, and loads no project until it's
+  // sent one: no `--autoLoadProjects`. It sends no telemetry, though this build ignores the flag:
+  // see above.
   args: ['--stdio', '--logLevel', 'Information', '--telemetryLevel', 'off'],
   settings: SETTINGS,
-  variables: { DOTNET_GCHeapHardLimit: DOTNET_HEAP },
+  // A cap on each heap, and no project data borrowed from a repository above its project.
+  variables: { DOTNET_GCHeapHardLimit: DOTNET_HEAP, DOTNET_PROJECTDATA_DONOR_ENABLED: '0' },
   // Parameters' names at a call, and inferred types.
   hints: true,
 } as const;

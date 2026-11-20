@@ -263,7 +263,12 @@ setting is as it is:
   beside its program, in its install, with no option to move it: nothing of a checkout's reaches it,
   and the installer, which checks only what it unpacked, ignores it. Roslyn writes it to a file of a
   random name there and moves that to the cache's name, so it appears whole or not at all, though
-  unsynced; a move that fails leaves the other file behind.
+  unsynced; a move that fails leaves the other file behind. `DOTNET_PROJECTDATA_DONOR_ENABLED=0`
+  keeps it from borrowing build data from a "donor" worktree, which it would otherwise look for by
+  walking up from its project to `/`, reading the donor index and `.lscache` files of any repository
+  it meets there, such as a dotfiles repository in the user's home, and running `git`. It sends no
+  telemetry: this build takes its level only from `COPILOT_TELEMETRY_LEVEL`, which its environment
+  never has, and reports nothing without it.
 - **SourceKit-LSP** is the copy in the developer folder the system has chosen, which
   `/usr/bin/xcode-select -p` names when it's run with nothing of Lo's environment: Xcode's
   `Toolchains/XcodeDefault.xctoolchain/usr/bin/sourcekit-lsp`, or the Command Line Tools'

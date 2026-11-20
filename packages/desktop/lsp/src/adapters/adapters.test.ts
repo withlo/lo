@@ -16,7 +16,7 @@ import {
 import { basename, dirname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-import { describe, expect, test } from 'vitest';
+import { describe, expect, test, vi } from 'vitest';
 
 import { GIT, tempFolder } from '../../test/support.ts';
 import { serverEnvironment } from '../environment.ts';
@@ -508,11 +508,41 @@ describe('Roslyn', () => {
   test('gets .NET’s folder and variables, and a cap on each heap under Lo’s on its group', () => {
     const launch = launchRoslyn(ROSLYN_INSTALLED, DOTNET);
     expect(launch.path).toEqual([DOTNET_INSTALLED.folder]);
-    expect(launch.variables).toEqual({ ...DOTNET.variables, DOTNET_GCHeapHardLimit: 'c0000000' });
+    expect(launch.variables).toEqual({
+      ...DOTNET.variables,
+      DOTNET_GCHeapHardLimit: 'c0000000',
+      DOTNET_PROJECTDATA_DONOR_ENABLED: '0',
+    });
     expect(launch.allowed).toEqual([]);
     // 3 GB, in hex as .NET reads it.
     expect(Number.parseInt(DOTNET_HEAP, 16)).toBe(3 * 1024 ** 3);
     expect(Number.parseInt(DOTNET_HEAP, 16)).toBeLessThan(LIMITS.memoryCap);
+  });
+
+  test('runs with no project data borrowed from a repository above it, and no telemetry on', () => {
+    // Lo's own environment asking for telemetry doesn't reach the server's.
+    vi.stubEnv('COPILOT_TELEMETRY_LEVEL', 'all');
+    try {
+      const launch = launchRoslyn(ROSLYN_INSTALLED, DOTNET);
+      const env = serverEnvironment({
+        home: tempFolder(),
+        roots: ['/lo/cache/checkouts/github.com/a/b/pull-1/abc'],
+        path: launch.path ?? [],
+        variables: launch.variables,
+        allowed: launch.allowed,
+        git: GIT,
+      });
+      // Roslyn reads `0` or `false` as off, and anything else, or nothing, as on.
+      expect(env.DOTNET_PROJECTDATA_DONOR_ENABLED).toBe('0');
+      // Outside the C# Dev Kit, Roslyn takes its telemetry level only from this, and reports
+      // nothing without it. The only switch it has of telemetry's is .NET's CLI's, opted out.
+      expect(env).not.toHaveProperty('COPILOT_TELEMETRY_LEVEL');
+      const switches = Object.keys(env).filter((name) => /TELEMETRY|TRACK/i.test(name));
+      expect(switches).toEqual(['DOTNET_CLI_TELEMETRY_OPTOUT']);
+      expect(env.DOTNET_CLI_TELEMETRY_OPTOUT).toBe('1');
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 
   test('restores nothing, builds no file as a program, and fetches no sources', () => {
