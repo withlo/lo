@@ -945,10 +945,13 @@ export class Merging {
     }
     const job = this.#options.jobs.job(sent.pull);
     if (!job || endedWith(job)?.kind !== 'unknown') return;
-    // Following it again holds the turns it held as it was sent, as the merge may still be running:
-    // a stack's merge holds every layer's.
-    if (!sent.turn) sent.lacking = sentNames(sent.plan);
     if (this.#options.jobs.followAgain(sent.pull)) {
+      // A read since the last end settles nothing of this ask: only its own end gives turns back.
+      sent.unwatch?.();
+      sent.unwatch = undefined;
+      // Following it again holds the turns it held as it was sent, as the merge may still be
+      // running: a stack's merge holds every layer's.
+      if (!sent.turn) sent.lacking = sentNames(sent.plan);
       this.#holdLacking(sent);
       return;
     }

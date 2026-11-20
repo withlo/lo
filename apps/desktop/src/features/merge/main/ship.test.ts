@@ -71,9 +71,11 @@ interface Setup {
   approve?: (id: string, head: string, heard: () => void) => Promise<Approved>;
   /** How long Lo waits for an approval whose answer was lost to settle: a minute. */
   settleWait?: number;
+  /** How long what a plan asks GitHub may take: 20 s. */
+  planWait?: number;
   summary?: SummaryKept;
   /** Where #138 sits, and what its merge takes with it, at each ask: the first, the press's, … */
-  goes?: Goes | ((asked: number) => Goes);
+  goes?: Goes | ((asked: number) => Goes | Promise<Goes>);
   /** What GitHub says in a read that lands while Lo asks where #138 sits, the `at`th time. */
   landing?: { facts: MergeFacts; at: number };
   /** What sending the step after the approval comes to. */
@@ -238,6 +240,7 @@ function setup(options: Setup = {}) {
     showWait: 30,
     showEvery: 1,
     ...(options.settleWait === undefined ? {} : { settleWait: options.settleWait }),
+    ...(options.planWait === undefined ? {} : { planWait: options.planWait }),
   });
   made.push(shipping);
   /** Plans for #138, as `⌘⇧⏎` asks. */
@@ -290,6 +293,17 @@ function setup(options: Setup = {}) {
 }
 
 describe('the plan', () => {
+  it('says Lo couldn’t check when GitHub takes too long to answer what it asks, and plans nothing', async () => {
+    const { shipping } = setup({ planWait: 20, goes: () => new Promise(() => undefined) });
+    await expect(shipping.plan(ID)).resolves.toEqual({
+      kind: 'refused',
+      refusal: expect.objectContaining({
+        kind: 'late',
+        text: 'GitHub took too long to answer, so Lo couldn’t check #138. Try again.',
+      }),
+    });
+  });
+
   it('names the revision it approves, the summary that goes with it, and what follows', async () => {
     const { plan } = setup({ summary: 'text' });
     await expect(plan()).resolves.toMatchObject({

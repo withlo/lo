@@ -938,10 +938,11 @@ and how old it is, and a PR that looks ready reads "Lo may not see everything" b
 
 `⌘⇧⏎` opens one confirmation that lists each step: check that the revision on screen is still the
 newest push, approve (with your summary and pending comments, and skipped on your own PRs), then
-what Lo expects to follow: merge, join the queue, or turn on auto-merge. If it's only waiting on
-checks or other approvals, that is auto-merge, so the PR goes in once ready. If something waiting
-won't fix blocks it (conflicts, failed checks, changes requested), Lo stops after approving and
-shows why. Your approval stays.
+what Lo expects to follow: merge, join the queue, or turn on auto-merge. Lo checks with GitHub for
+20 seconds at most before it shows that, and otherwise says GitHub took too long. If it's only
+waiting on checks or other approvals, that is auto-merge, so the PR goes in once ready. If something
+waiting won't fix blocks it (conflicts, failed checks, changes requested), Lo stops after approving
+and shows why. Your approval stays.
 
 - **What it approves.** Only the revision on screen, so it merges only a PR alone or the bottom
   layer of a GitHub stack, and nothing with it. Where a merge would take others along, as for a

@@ -1,12 +1,13 @@
 // Approve and ship, in main: `⌘⇧⏎` reads what decides the merge, and `@lo/review`'s
 // `approveAndShip` plans it: whether to approve the revision on screen, and what Lo expects to
-// follow, from where the pull request sits, as the merge panel asks it (`Merging.goesAs`). The plan is kept under a key for the reader to confirm in one
-// confirmation; the window confirms the key and never sends anything itself. A plan runs once. As
-// it's confirmed, main weighs it as a merge's press is weighed (`Merging.weigh`), reading GitHub
-// again whatever it read before, and planning again from a read that lands meanwhile: someone
-// pushed since the revision on screen, and it stops before approving; anything else the
-// confirmation named changed, and it asks again with a new plan. From the press on it holds the
-// pull request's turn among merge writes.
+// follow, from where the pull request sits, as the merge panel asks it (`Merging.goesAs`). What
+// planning asks GitHub takes 20 s at most: then Lo says it couldn't check. The plan is kept under a
+// key for the reader to confirm in one confirmation; the window confirms the key and never sends
+// anything itself. A plan runs once. As it's confirmed, main weighs it as a merge's press is
+// weighed (`Merging.weigh`), reading GitHub again whatever it read before, and planning again from
+// a read that lands meanwhile: someone pushed since the revision on screen, and it stops before
+// approving; anything else the confirmation named changed, and it asks again with a new plan. From
+// the press on it holds the pull request's turn among merge writes.
 //
 // It approves through the review feature, in its turn among the writes to the pull request,
 // comments included. An answer that's lost is settled by reading your reviews, and nothing more is
@@ -141,6 +142,8 @@ export interface ShippingOptions {
   readonly newKey?: () => string;
   /** How long a read of GitHub may take before Lo gives up on it, in milliseconds: 20 s. */
   readonly readWait?: number;
+  /** How long what a plan asks GitHub may take before Lo gives up on it, in milliseconds: 20 s. */
+  readonly planWait?: number;
   /** How long Lo reads GitHub again for it to show your approval, in milliseconds: 30 s. */
   readonly showWait?: number;
   /** How long between those reads, in milliseconds: 2 s. */
@@ -530,7 +533,8 @@ export class Shipping {
 
   /**
    * Plans approve and ship for view `id`, from what GitHub said last, and keeps it for the reader
-   * to confirm, in place of the view's last plan; or says why there's none.
+   * to confirm, in place of the view's last plan; or says why there's none. What it asks GitHub
+   * takes {@link ShippingOptions.planWait} at most, as a read does: then Lo says it couldn't check.
    */
   async plan(id: string): Promise<ShipPlanned> {
     if (this.#stopped) return refused(own('stopped', 'Lo is quitting.'));
@@ -539,7 +543,38 @@ export class Shipping {
     if (typeof acting === 'string' || !view) {
       return refused(own('account', typeof acting === 'string' ? acting : 'No tab.'));
     }
-    const { login } = acting;
+    const pull = new PullRef(view.repository.owner, view.repository.name, view.number);
+    const checking = new AbortController();
+    const timer = setTimeout(() => checking.abort(), this.#options.planWait ?? 20_000);
+    let planned: PressPlan<Kept> | { kind: 'refused'; refusal: Refusal };
+    try {
+      planned = await untilAborted(
+        this.#planFor(id, acting.login, pull, checking.signal),
+        checking.signal,
+      );
+    } catch (error) {
+      if (!checking.signal.aborted) throw error;
+      return refused(
+        own(
+          'late',
+          `GitHub took too long to answer, so Lo couldn’t check #${view.number}. Try again.`,
+        ),
+      );
+    } finally {
+      clearTimeout(timer);
+    }
+    if (planned.kind === 'refused') return planned;
+    this.#keep(planned.plan);
+    return { kind: 'plan', plan: planned.plan.plan };
+  }
+
+  /** What `plan` plans for view `id`'s pull request `pull`, as `login`; given up on `signal`. */
+  async #planFor(
+    id: string,
+    login: string,
+    pull: PullRef,
+    signal: AbortSignal,
+  ): Promise<PressPlan<Kept> | { kind: 'refused'; refusal: Refusal }> {
     let poller: MergingPoller;
     try {
       poller = await this.#options.poller(login);
@@ -548,18 +583,14 @@ export class Shipping {
     }
     const off = offOf(poller);
     if (off) return refused(own(off.kind, offText(off)));
-    const pull = new PullRef(view.repository.owner, view.repository.name, view.number);
     const head = this.#options.headOnScreen(id) ?? '';
     if (!FULL.test(head))
-      return refused(own('unread', `Lo hasn’t shown #${view.number}’s head yet.`));
+      return refused(own('unread', `Lo hasn’t shown #${pull.number}’s head yet.`));
     const cached = poller.cachedRead(pull, MERGE_FACTS) ?? (await poller.mergeFacts(pull));
     if (!cached) {
-      return refused(own('unread', `Lo hasn’t read whether #${view.number} can merge yet.`));
+      return refused(own('unread', `Lo hasn’t read whether #${pull.number} can merge yet.`));
     }
-    const planned = await this.#planOf(id, login, pull, poller, cached.value);
-    if (planned.kind === 'refused') return planned;
-    this.#keep(planned.plan);
-    return { kind: 'plan', plan: planned.plan.plan };
+    return this.#planOf(id, login, pull, poller, cached.value, signal);
   }
 
   /**
