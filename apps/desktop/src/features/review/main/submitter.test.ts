@@ -72,6 +72,8 @@ interface Setup {
   threads?: ThreadRow[];
   /** The summaries kept on this computer, as the database keeps them through a restart. */
   kept?: Map<string, SummaryDraft>;
+  /** GitHub's head, as Lo last read it. */
+  latest?: string;
 }
 
 function setup({
@@ -82,6 +84,7 @@ function setup({
   view = info(),
   threads = [],
   kept = new Map(),
+  latest = HEAD,
 }: Setup = {}) {
   const sent: ReviewWrite[] = [];
   const published: Submission[] = [];
@@ -89,7 +92,7 @@ function setup({
   const readAt: number[] = [];
   const fake = {
     pullRequest: () => ({
-      details: { id: 'PR_94', headRefOid: HEAD, author: { login: author } },
+      details: { id: 'PR_94', headRefOid: latest, author: { login: author } },
     }),
     cachedRead: () => ({ value: pending, fetchedAt: 0 }),
     pendingReview: () => Promise.resolve({ value: pending, fetchedAt: 0 }),
@@ -527,4 +530,108 @@ test('a review is found by its pending review, or else by when it was submitted,
   expect(
     submittedAmong([review({ id: 'PRR_1', state: 'DISMISSED', body: '' })], 'x', at, pending),
   ).toEqual({ event: null });
+});
+
+describe('approving, as approve and ship does', () => {
+  test('approves the revision on screen, with the summary kept, which then goes', async () => {
+    const { made, sent, summary, published } = setup({ answers: [{ review: 'PRR_3' }] });
+    made.draft('t1', 'Ship it.');
+    expect(made.summaryOf('t1')).toBe('text');
+    await expect(made.approve('t1', HEAD.toUpperCase())).resolves.toEqual({ kind: 'approved' });
+    expect(sent).toEqual([
+      {
+        kind: 'review',
+        head: HEAD,
+        variables: {
+          pullRequestId: 'PR_94',
+          commitOID: HEAD,
+          event: 'APPROVE',
+          body: 'Ship it.',
+          threads: undefined,
+        },
+      },
+    ]);
+    expect(summary()).toBeUndefined();
+    expect(published.at(-1)).toMatchObject({ state: null, submitted: { event: 'APPROVE' } });
+  });
+
+  test('submits your pending review on that revision as the approval', async () => {
+    const { made, sent } = setup({ pending: pendingOn(HEAD), answers: [{ review: 'PRR_1' }] });
+    await expect(made.approve('t1', HEAD)).resolves.toEqual({ kind: 'approved' });
+    expect(sent).toEqual([
+      {
+        kind: 'submitReview',
+        head: HEAD,
+        variables: { pullRequestReviewId: 'PRR_1', event: 'APPROVE', body: undefined },
+      },
+    ]);
+  });
+
+  test('a push GitHub has that the reader didn’t see approves nothing', async () => {
+    const { made, sent, state } = setup({ latest: OLDER });
+    await expect(made.approve('t1', HEAD)).resolves.toEqual({ kind: 'moved', head: OLDER });
+    expect(sent).toEqual([]);
+    expect(state()).toBeNull();
+  });
+
+  test('another revision on screen than the one confirmed approves nothing', async () => {
+    const { made, sent } = setup({ view: info({ shown: OLDER, latest: HEAD }) });
+    await expect(made.approve('t1', HEAD)).resolves.toMatchObject({ kind: 'refused' });
+    expect(sent).toEqual([]);
+  });
+
+  test('your own pull request, a pending review on another revision, a view acting as nobody, or a run approve nothing', async () => {
+    const cases = [
+      setup({ author: 'rozed-bot' }),
+      setup({ pending: pendingOn(OLDER) }),
+      setup({ view: info({ acting: { kind: 'anonymous' } }) }),
+      setup({ view: info({ run: [82, 83] }) }),
+    ];
+    for (const each of cases) {
+      await expect(each.made.approve('t1', HEAD)).resolves.toMatchObject({ kind: 'refused' });
+      expect(each.sent).toEqual([]);
+    }
+  });
+
+  test('a summary holding a file that may still be on its way in isn’t sent from here', async () => {
+    const { made, sent } = setup();
+    made.draft('t1', 'See ![shot](lo-upload:0123456789abcdef)');
+    expect(made.summaryOf('t1')).toBe('uploading');
+    await expect(made.approve('t1', HEAD)).resolves.toMatchObject({ kind: 'refused' });
+    expect(sent).toEqual([]);
+  });
+
+  test('a lost answer resolves once a read of your reviews finds the approval, and nothing goes meanwhile', async () => {
+    vi.useFakeTimers();
+    const { made, sent } = setup({
+      answers: [lost()],
+      reads: [{ reviews: [review({ state: 'APPROVED', body: 'Ship it.' })], ahead: 0 }],
+    });
+    made.draft('t1', 'Ship it.');
+    let approved: unknown;
+    void made.approve('t1', HEAD).then((answer) => (approved = answer));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(approved).toBeUndefined();
+    await expect(made.approve('t1', HEAD)).resolves.toMatchObject({ kind: 'refused' });
+    await expect(made.submit('t1', 'APPROVE', 'Ship it.', true)).resolves.toEqual({
+      kind: 'refused',
+      refusal: { kind: 'busy', why: 'checking' },
+    });
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(approved).toEqual({ kind: 'approved' });
+    expect(sent).toHaveLength(1);
+  });
+
+  test('a lost answer found not submitted approves nothing, and Lo quitting leaves it unknown', async () => {
+    vi.useFakeTimers();
+    const missing = setup({ answers: [lost()], reads: [{ reviews: [], ahead: 0 }] });
+    const notFound = missing.made.approve('t1', HEAD);
+    await vi.advanceTimersByTimeAsync(10_000);
+    await expect(notFound).resolves.toMatchObject({ kind: 'refused' });
+    const quitting = setup({ answers: [lost()] });
+    const unknown = quitting.made.approve('t1', HEAD);
+    await vi.advanceTimersByTimeAsync(0);
+    quitting.made.stop();
+    await expect(unknown).resolves.toMatchObject({ kind: 'unknown' });
+  });
 });

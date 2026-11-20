@@ -1,0 +1,4 @@
+{
+  "description": "app_merge_ship_queued_others with every read of what decides rozed-dev/e2e#277's merge after the press saying it conflicts with e4/queued, as after a push to the base meanwhile, and auto-merge off: approve and ship approves it, then stops, and turns nothing on.",
+  "derived_from": "app_merge_ship_queued"
+}

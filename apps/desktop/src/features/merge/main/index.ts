@@ -5,8 +5,11 @@
 // system's browser; merging (`./merging.ts`), through the app's one `MergeJobs`, in each pull
 // request's turn among merge writes (`./turns.ts`), which other features take through
 // `merge.writes`: a pull request alone, a GitHub stack's layer with the layers below it, or a
-// chain's bottom layer, whose layers above Lo then moves onto the root (`./chains.ts`); and, for a
-// pull request in a merge queue, its place there and why it left (`./queued.ts`).
+// chain's bottom layer, whose layers above Lo then moves onto the root (`./chains.ts`); for a pull
+// request in a merge queue, its place there and why it left (`./queued.ts`); approve and ship
+// (`./ship.ts`), which approves through the review feature and merges through the same jobs; and
+// the watch over auto-merge it turned on after your approval (`./watch.ts`), kept in
+// `merge_shipped` for a Lo started again.
 
 import { GithubError, MergeJobs, squashText } from '@lo/github';
 
@@ -15,6 +18,7 @@ import { openPage } from '../../../main/browser.ts';
 import { defineFeature } from '../../../main/features.ts';
 import { provides } from '../../../main/services.ts';
 import { github } from '../../accounts/service.ts';
+import { submissions } from '../../review/service.ts';
 import { comparisons } from '../../revisions/service.ts';
 import { forest } from '../../stacks/service.ts';
 import { tabs } from '../../tab/service.ts';
@@ -25,7 +29,9 @@ import { Merging } from './merging.ts';
 import { MethodStore } from './methods.ts';
 import { QueueReads } from './queued.ts';
 import { MergeReads } from './reads.ts';
+import { Shipping } from './ship.ts';
 import { MergeTurns } from './turns.ts';
+import { ShippedStore, ShipWatch } from './watch.ts';
 
 const log = (line: string) => console.error(`merge: ${line}`);
 
@@ -33,6 +39,8 @@ let reads: MergeReads | undefined;
 let queues: QueueReads | undefined;
 let merging: Merging | undefined;
 let jobs: MergeJobs | undefined;
+let shipping: Shipping | undefined;
+let watch: ShipWatch | undefined;
 /** The turns of merge writes to pull requests, which other features take too. */
 const turns = new MergeTurns();
 const stops: (() => void)[] = [];
@@ -55,8 +63,14 @@ function merges(): Merging {
   return merging;
 }
 
+/** Approve and ship, once `start` made it. */
+function ships(): Shipping {
+  if (shipping === undefined) throw new IpcError('stopped', 'Lo is quitting.');
+  return shipping;
+}
+
 export default defineFeature(contract, {
-  uses: [github, tabs, comparisons, forest],
+  uses: [github, tabs, comparisons, forest, submissions],
   provide: () => [provides(writes, turns)],
   handlers: {
     state: ({ id }) => started().current(id),
@@ -95,6 +109,7 @@ export default defineFeature(contract, {
     autoMergeOff: ({ id }) => merges().autoMergeOff(id),
     cancel({ key }) {
       merging?.cancel(key);
+      shipping?.cancel(key);
     },
     sent: () => merging?.list() ?? [],
     askAgain({ key }) {
@@ -104,6 +119,8 @@ export default defineFeature(contract, {
       merging?.dismiss(key);
     },
     place: ({ id }) => merges().place(id),
+    ship: ({ id }) => ships().plan(id),
+    shipConfirm: ({ key }) => ships().confirm(key),
   },
   start({ use, publish, database }) {
     const service = use(tabs);
@@ -141,7 +158,7 @@ export default defineFeature(contract, {
     const following = new MergeJobs();
     jobs = following;
     const stacks = use(forest);
-    merging = new Merging({
+    const made = new Merging({
       poller: (login) => use(github).poller(login),
       view: (id) => service.pull(id),
       headOnScreen,
@@ -155,6 +172,33 @@ export default defineFeature(contract, {
       publish: (job) => publish('jobs', job),
       log,
     });
+    merging = made;
+    const watching = new ShipWatch({
+      store: new ShippedStore(database),
+      poller: (login) => use(github).poller(login),
+      turnOff: (pull, login, poller, heard) => made.turnOffWatched(pull, login, poller, heard),
+      publish: (notice) => publish('watched', notice),
+      log,
+    });
+    watch = watching;
+    const reviewing = use(submissions);
+    shipping = new Shipping({
+      poller: (login) => use(github).poller(login),
+      view: (id) => service.pull(id),
+      headOnScreen,
+      headContainsBase: (id) => followed.headContainsBase(id),
+      method: (repo) => methods.get(repo),
+      converting: (repo) => stacks.converting(repo),
+      turns,
+      merging: made,
+      summary: (id) => reviewing.summary(id),
+      approve: (id, head) => reviewing.approve(id, head),
+      keep: (shipped) => watching.keep(shipped),
+      publish: (ship) => publish('ships', ship),
+      log,
+    });
+    // Auto-merge turned on after your approval before Lo last quit is watched again.
+    watching.start();
     stops.push(
       // A conversion to a GitHub stack doesn't change the base branches of what Lo is merging.
       stacks.holdConversions((repo, prs) => turns.busy(repo, prs)),
@@ -175,6 +219,10 @@ export default defineFeature(contract, {
   },
   stop() {
     for (const stop of stops.splice(0)) stop();
+    shipping?.stop();
+    shipping = undefined;
+    watch?.stop();
+    watch = undefined;
     merging?.stop();
     merging = undefined;
     jobs?.stop();

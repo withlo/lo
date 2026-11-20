@@ -2,16 +2,19 @@
 // summary, kept through the comments feature's drafts; and submitting your review, in its turn
 // among the comments feature's writes to the pull request (`./submitter.ts`). When GitHub's answer
 // is lost, your latest reviews are read afresh (`YourReviews`) to find out whether it was
-// submitted, with GitHub's clock as that answer gives it.
+// submitted, with GitHub's clock as that answer gives it. Other features approve the same way,
+// through `review.submissions`, as approve and ship does before it merges.
 
 import { YourReviewsDocument } from '@lo/github';
 
 import { defineFeature } from '../../../main/features.ts';
+import { provides } from '../../../main/services.ts';
 import { github } from '../../accounts/service.ts';
 import { drafts, reviews } from '../../comments/service.ts';
 import { comparisons } from '../../revisions/service.ts';
 import { tabs } from '../../tab/service.ts';
 import { contract } from '../contract.ts';
+import { submissions } from '../service.ts';
 import { type ReviewNode, Submitter } from './submitter.ts';
 
 const log = (line: string) => console.error(`review: ${line}`);
@@ -27,6 +30,15 @@ function started(): Submitter {
 
 export default defineFeature(contract, {
   uses: [github, tabs, comparisons, reviews, drafts],
+  provide: () => [
+    provides(submissions, {
+      summary: (id) => submitter?.summaryOf(id) ?? 'none',
+      approve: (id, head) =>
+        submitter
+          ? submitter.approve(id, head)
+          : Promise.resolve({ kind: 'refused', why: 'Lo is quitting.' }),
+    }),
+  ],
   handlers: {
     dialog: ({ id }) => started().dialog(id),
     draft({ id, text }) {

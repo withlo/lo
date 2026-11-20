@@ -1494,3 +1494,14 @@ export function stackLine(job: JobView, progress: Extract<Progress, { kind: 'sta
 export function troubleLine(trouble: string): string {
   return `Lo couldn’t ask GitHub how it’s going: ${trouble} Lo asks again.`;
 }
+
+/**
+ * What's in the way among `blockers`, as the header names it after the verdict, but starting in
+ * lowercase, to follow other words: "review required · 2 checks running".
+ */
+export function inTheWayOf(blockers: readonly Blocker[]): string {
+  const said = inTheWay(blockers);
+  // A rule's own words keep their case.
+  if (blockers[0]?.kind === 'rule') return said;
+  return said.charAt(0).toLowerCase() + said.slice(1);
+}

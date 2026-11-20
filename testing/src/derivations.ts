@@ -4,7 +4,7 @@
  * it; `nx run testing:codegen` writes them all again, as after their recorded cassettes change.
  */
 
-import { isObject, recordedKey, type Interaction, type Json } from './cassette.ts';
+import { cassette, isObject, recordedKey, type Interaction, type Json } from './cassette.ts';
 import { answered, at, BAD_GATEWAY, graphql, only, refused, type Derivation } from './derive.ts';
 
 /** Who the derived reads say opened a pull request: GitHub's stand-in for an account it no longer has. */
@@ -546,6 +546,164 @@ function mergeFailed(recorded: Interaction[], number: number, message: string): 
   });
 }
 
+/**
+ * The pull request approve and ship turned "Merge when ready" on for in `app_merge_ship_queued`:
+ * rozed-dev/e2e#277, generation 10's `queued-slow-1`, into `e4/queued`, while its `ci` ran.
+ */
+const SHIPPED_PULL = 277;
+
+/**
+ * A push to it after Lo read it, in the derived reads: generation 10's `queued-slow-2` head, which
+ * its repository has, so Lo can fetch it.
+ */
+const SHIPPED_NEWER = 'f81c007f901ca6da725764f0306c50585f89799b';
+
+/**
+ * `recorded` as if {@link SOMEONE_ELSE} had opened pull request `number`: every read names them as
+ * its author, and the reads of what decides its merge say the account didn't.
+ */
+function openedBySomeoneElse(recorded: readonly Interaction[], number: number): Interaction[] {
+  return recorded.map((each) =>
+    about(each, 'MergeSnapshot', number)
+      ? withBody(each, (body) =>
+          inPull(body, (pull) => ({
+            ...pull,
+            author: { __typename: 'User', login: SOMEONE_ELSE },
+            viewerDidAuthor: false,
+          })),
+        )
+      : withBody(each, (body) => openedBy(body, number, SOMEONE_ELSE)),
+  );
+}
+
+/** A read of what decides a merge, `pull`, with `login`'s approval of its head as their latest review. */
+function approvedBy(pull: JsonObject, login: string): JsonObject {
+  const reviews = pull['latestOpinionatedReviews'];
+  const others = isObject(reviews) && Array.isArray(reviews['nodes']) ? reviews['nodes'] : [];
+  const nodes = [
+    ...others.filter((review) => at(review, 'author', 'login') !== login),
+    {
+      author: { __typename: 'User', login },
+      state: 'APPROVED',
+      commit: { oid: pull['headRefOid'] ?? null },
+      authorCanPushToRepository: true,
+      onBehalfOf: { totalCount: 0, nodes: [] },
+    },
+  ];
+  return { ...pull, latestOpinionatedReviews: { totalCount: nodes.length, nodes } };
+}
+
+/**
+ * GitHub's answer to `login`'s approval of pull request `number` at its head, posted at once as a
+ * review with no body, as approve and ship sends it: `addPullRequestReview` as `app_comments_now`
+ * recorded it for a comment, approving.
+ */
+function approvalAnswer(recorded: readonly Interaction[], number: number): Interaction {
+  const read = recorded.find((each) => about(each, 'PullRequest', number));
+  const id = at(read?.response.body, 'data', 'repository', 'pullRequest', 'id');
+  const snapshot = recorded.find((each) => about(each, 'MergeSnapshot', number));
+  const head = at(snapshot?.response.body, 'data', 'repository', 'pullRequest', 'headRefOid');
+  if (typeof id !== 'string' || typeof head !== 'string') {
+    throw new Error(`the recording never read #${number}`);
+  }
+  const posted = cassette('app_comments_now').interactions.find(({ interaction }) =>
+    graphql('AddPullRequestReview')(interaction),
+  )?.interaction;
+  if (!posted) throw new Error('app_comments_now posted no review');
+  return {
+    request: {
+      ...posted.request,
+      variables: { pullRequestId: id, commitOID: head, event: 'APPROVE' },
+    },
+    response: {
+      ...posted.response,
+      body: {
+        data: {
+          addPullRequestReview: {
+            pullRequestReview: {
+              id: 'PRR_kwDOVleUfc8AAAABdErIvA',
+              state: 'APPROVED',
+              comments: { nodes: [] },
+            },
+          },
+        },
+      },
+    },
+  };
+}
+
+/**
+ * The places in `recorded` of each read of what decides pull request `number`'s merge, in order.
+ */
+function snapshotsOf(recorded: readonly Interaction[], number: number): number[] {
+  return recorded.flatMap((each, index) => (about(each, 'MergeSnapshot', number) ? [index] : []));
+}
+
+/**
+ * `app_merge_ship_queued`, `recorded`, as if {@link SOMEONE_ELSE} had opened {@link SHIPPED_PULL},
+ * so approve and ship approves it before anything more: GitHub's answer to that approval, and its
+ * reads of what decides the merge after the press one later than recorded, each with the approval
+ * and as `change` makes it. The first of them, the read Lo makes once it approved, is the one before
+ * "Merge when ready" went on, and the last is read twice.
+ */
+function approvedShip(
+  recorded: Interaction[],
+  change: (pull: JsonObject) => JsonObject = (pull) => pull,
+): Interaction[] {
+  const owner = readAs(recorded);
+  const opened = openedBySomeoneElse(recorded, SHIPPED_PULL);
+  const places = snapshotsOf(opened, SHIPPED_PULL);
+  // The first read is the tab's, the second the press's; the approval comes after it.
+  const after = places.slice(2);
+  if (after.length === 0) throw new Error(`no read of #${SHIPPED_PULL} after the press`);
+  const approved = (each: Interaction) =>
+    withBody(each, (body) => inPull(body, (pull) => change(approvedBy(pull, owner))));
+  const answers = places.map((place) => opened[place]!.response);
+  for (const [index, place] of after.entries()) {
+    opened[place] = approved({ request: opened[place]!.request, response: answers[index + 1]! });
+  }
+  // The last as recorded, after the approval, again.
+  const again = approved({ request: opened[places.at(-1)!]!.request, response: answers.at(-1)! });
+  return [...opened, approvalAnswer(recorded, SHIPPED_PULL), again];
+}
+
+/**
+ * GitHub's answer to turning auto-merge off for pull request `number`, at `head`: as
+ * `app_merge_auto_off` recorded it for another pull request, auto-merge off.
+ */
+function autoMergeOffAnswer(
+  recorded: readonly Interaction[],
+  number: number,
+  head: string,
+): Interaction {
+  const read = recorded.find((each) => about(each, 'PullRequest', number));
+  const id = at(read?.response.body, 'data', 'repository', 'pullRequest', 'id');
+  if (typeof id !== 'string') throw new Error(`the recording never read #${number}`);
+  const off = cassette('app_merge_auto_off').interactions.find(({ interaction }) =>
+    graphql('DisablePullRequestAutoMerge')(interaction),
+  )?.interaction;
+  if (!off) throw new Error('app_merge_auto_off turned no auto-merge off');
+  return {
+    request: { ...off.request, variables: { pullRequestId: id } },
+    response: {
+      ...off.response,
+      body: {
+        data: {
+          disablePullRequestAutoMerge: {
+            pullRequest: {
+              number,
+              headRefOid: head,
+              state: 'OPEN',
+              isInMergeQueue: false,
+              autoMergeRequest: null,
+            },
+          },
+        },
+      },
+    },
+  };
+}
+
 export const DERIVATIONS: readonly Derivation[] = [
   {
     name: 'app_comments_write_others',
@@ -882,6 +1040,53 @@ export const DERIVATIONS: readonly Derivation[] = [
       let writer = asWriter(recorded);
       for (const number of WRITE_MERGED) writer = mergeFailed(writer, number, UPDATE_RESTRICTED);
       return restricted(writer, WRITE_BASE);
+    },
+  },
+  {
+    name: 'app_merge_ship_queued_others',
+    from: 'app_merge_ship_queued',
+    description: `app_merge_ship_queued as if ${SOMEONE_ELSE} had opened rozed-dev/e2e#${SHIPPED_PULL}: every read names ${SOMEONE_ELSE} as its author, so approve and ship approves the revision on screen first, as rozed-bot, which GitHub takes from no pull request's author. GitHub answers that approval as it answered app_comments_now's review posted at once, approving, and every read of what decides #${SHIPPED_PULL}'s merge after the press holds it. The first of them is the read before "Merge when ready" went on, which Lo makes once it approved; the rest are one later than recorded, the last read twice.`,
+    derive: (recorded) => approvedShip(recorded),
+  },
+  {
+    name: 'app_merge_ship_queued_conflict',
+    from: 'app_merge_ship_queued',
+    description: `app_merge_ship_queued_others with every read of what decides rozed-dev/e2e#${SHIPPED_PULL}'s merge after the press saying it conflicts with e4/queued, as after a push to the base meanwhile, and auto-merge off: approve and ship approves it, then stops, and turns nothing on.`,
+    derive: (recorded) =>
+      approvedShip(recorded, (pull) => ({
+        ...pull,
+        mergeable: 'CONFLICTING',
+        mergeStateStatus: 'DIRTY',
+        autoMergeRequest: null,
+      })),
+  },
+  {
+    name: 'app_merge_ship_queued_moved',
+    from: 'app_merge_ship_queued',
+    description: `app_merge_ship_queued as if ${SOMEONE_ELSE} had opened rozed-dev/e2e#${SHIPPED_PULL}, so approve and ship would approve it first, and had pushed ${SHIPPED_NEWER} to it after Lo planned it: every read of what decides its merge from the press on has that head, so the press approves nothing and turns nothing on.`,
+    derive(recorded) {
+      const opened = openedBySomeoneElse(recorded, SHIPPED_PULL);
+      const places = snapshotsOf(opened, SHIPPED_PULL).slice(1);
+      return opened.map((each, index) =>
+        places.includes(index)
+          ? withBody(each, (body) =>
+              inPull(body, (pull) => ({ ...pull, headRefOid: SHIPPED_NEWER })),
+            )
+          : each,
+      );
+    },
+  },
+  {
+    name: 'app_merge_ship_watched',
+    from: 'app_merge_ship_queued',
+    description: `app_merge_ship_queued_others with ${SOMEONE_ELSE} pushing ${SHIPPED_NEWER} to rozed-dev/e2e#${SHIPPED_PULL} once "Merge when ready" went on: the reads of what decides its merge from then on have that head, with auto-merge still on as rozed-bot turned it on and rozed-bot's approval of the revision before. e4/queued's rules want no new approval after a push, so the push would merge with it, and the watch turns auto-merge off: GitHub answers as it answered app_merge_auto_off's, for #${SHIPPED_PULL} at that head. GitHub can't be made to push as someone else, nor take rozed-bot's approval of its own pull request.`,
+    derive(recorded) {
+      const shipped = approvedShip(recorded);
+      const last = shipped.length - 1;
+      shipped[last] = withBody(shipped[last]!, (body) =>
+        inPull(body, (pull) => ({ ...pull, headRefOid: SHIPPED_NEWER })),
+      );
+      return [...shipped, autoMergeOffAnswer(recorded, SHIPPED_PULL, SHIPPED_NEWER)];
     },
   },
   {

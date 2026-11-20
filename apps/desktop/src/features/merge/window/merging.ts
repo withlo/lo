@@ -17,7 +17,15 @@ import { activeTab, pullOf, withoutBidi } from '../../tab/window/shared.ts';
 import type { Asked, JobView, MergePlan, Refusal } from '../contract.ts';
 import { closePanel, openPanel, opened } from './actions.ts';
 import { main } from './main.ts';
-import { merging, panels, placementOf, pullKey, statuses, type MergeDialog } from './store.ts';
+import {
+  merging,
+  panels,
+  placementOf,
+  pullKey,
+  shipSent,
+  statuses,
+  type MergeDialog,
+} from './store.ts';
 import {
   cantAutoMerge,
   cantMerge,
@@ -426,6 +434,8 @@ function settled(job: JobView | undefined): void {
     return;
   }
   toasted.add(job.key);
+  // The auto-merge watch's banner says what it did, and approve and ship's toast what it did.
+  if (job.watch === true || shipSent(job.key)) return;
   if (shown && !staysShown(job)) setDialog(undefined);
   // What was typed went with it.
   const plan = dialog && dialog.kind !== 'planning' ? dialog.plan : undefined;

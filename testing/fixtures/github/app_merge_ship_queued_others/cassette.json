@@ -1,0 +1,4 @@
+{
+  "description": "app_merge_ship_queued as if ghost had opened rozed-dev/e2e#277: every read names ghost as its author, so approve and ship approves the revision on screen first, as rozed-bot, which GitHub takes from no pull request's author. GitHub answers that approval as it answered app_comments_now's review posted at once, approving, and every read of what decides #277's merge after the press holds it. The first of them is the read before \"Merge when ready\" went on, which Lo makes once it approved; the rest are one later than recorded, the last read twice.",
+  "derived_from": "app_merge_ship_queued"
+}

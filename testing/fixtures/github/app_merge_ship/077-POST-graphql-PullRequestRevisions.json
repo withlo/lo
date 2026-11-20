@@ -1,0 +1,109 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "https://api.github.com/graphql",
+    "operation": "PullRequestRevisions",
+    "variables": {
+      "owner": "rozed-dev",
+      "name": "e2e",
+      "number": 264,
+      "login": "rozed-bot",
+      "first": 100,
+      "timelineAfter": null,
+      "reviewsAfter": null
+    },
+    "query_sha256": "065c99fee8328c49a803d6cddb6df548ac41ab8bf293abd452d6644e04e9e1da"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "x-ratelimit-limit": "5000",
+      "x-ratelimit-remaining": "4967",
+      "x-ratelimit-reset": "1795152004",
+      "x-ratelimit-resource": "graphql",
+      "x-ratelimit-used": "33"
+    },
+    "body": {
+      "data": {
+        "rateLimit": {
+          "cost": 1,
+          "limit": 5000,
+          "remaining": 4967,
+          "used": 33,
+          "resetAt": "2026-11-20T05:20:04Z"
+        },
+        "repository": {
+          "pullRequest": {
+            "createdAt": "2026-11-20T04:26:03Z",
+            "closed": true,
+            "closedAt": "2026-11-20T04:38:31Z",
+            "merged": true,
+            "headRefName": "merge/10/squash",
+            "headRefOid": "a1611c5f377f2ea7e093707165eef8710ddf0706",
+            "baseRefName": "merge/10/base",
+            "headRepository": {
+              "name": "e2e",
+              "owner": {
+                "__typename": "Organization",
+                "login": "rozed-dev"
+              }
+            },
+            "mergeCommit": {
+              "oid": "7a5c17c43758e27b7d3af117909a56ceed9fbecf",
+              "parents": {
+                "nodes": [
+                  {
+                    "oid": "ccfd467435ee45ebb4043a2d58e8b7026ad38f7e"
+                  },
+                  {
+                    "oid": "a1611c5f377f2ea7e093707165eef8710ddf0706"
+                  }
+                ]
+              }
+            },
+            "timelineItems": {
+              "filteredCount": 0,
+              "pageInfo": {
+                "hasNextPage": false,
+                "endCursor": null
+              },
+              "nodes": []
+            },
+            "reviews": {
+              "totalCount": 0,
+              "pageInfo": {
+                "hasNextPage": false,
+                "endCursor": null
+              },
+              "nodes": []
+            },
+            "viewerLastReview": {
+              "nodes": []
+            },
+            "commits": {
+              "nodes": [
+                {
+                  "commit": {
+                    "oid": "f214a359f6999c85ff2491d741aea3296ed3d8d4",
+                    "checkSuites": {
+                      "nodes": []
+                    }
+                  }
+                },
+                {
+                  "commit": {
+                    "oid": "a1611c5f377f2ea7e093707165eef8710ddf0706",
+                    "checkSuites": {
+                      "nodes": []
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      }
+    }
+  }
+}

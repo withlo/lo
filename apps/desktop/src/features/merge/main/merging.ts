@@ -29,6 +29,11 @@
 // offers the merge in its place, for the reader to confirm. With auto-merge on, `a` turns it off at
 // once, in the turn too. An answer to either that Lo can't read is settled by reading the pull
 // request, as a merge's is.
+//
+// Approve and ship (`./ship.ts`) weighs its press as a merge's press is weighed, asks what its
+// merge takes with it the same way, and sends the step after its approval here too, in the turns it
+// took at the press; the auto-merge watch (`./watch.ts`) turns auto-merge off the same way, each
+// hearing GitHub's answer to auto-merge's write.
 
 import {
   adminOverride,
@@ -122,7 +127,7 @@ import { placedBy, unmergedIn, where, type OpenFromHead, type Where } from './wh
 export const FRESH_FOR = 7 * 60_000;
 
 /** How many times the checks at a press weigh it, when reads land while they wait: 3. */
-const LOOKS = 3;
+export const LOOKS = 3;
 
 /** What merging uses of an account's poller. */
 export interface MergingPoller
@@ -242,6 +247,10 @@ interface Sent {
   stack: StackRead | undefined;
   /** For a chain's, its run, and the turns of the layers it moves. */
   chain: { readonly run: ChainRun; turn: MergeTurn | undefined } | undefined;
+  /** Hears GitHub's answer to a write Lo follows itself, or nothing once that's lost. */
+  heard?: ((answer: AutoAnswer) => void) | undefined;
+  /** Whether the auto-merge watch sent it, by itself. */
+  watch?: boolean;
 }
 
 /** A GitHub stack's layers, read as its merge goes. */
@@ -254,6 +263,71 @@ interface StackRead {
   reading: boolean;
   again: boolean;
 }
+
+/**
+ * What GitHub answered a write to auto-merge: auto-merge as it has it now; its refusal, or none
+ * when Lo couldn't send it; or nothing Lo could read, as the answer was lost, which a read settles.
+ */
+export type AutoAnswer = AutoMergeState | { readonly refused: MergeRefusal | undefined } | 'lost';
+
+/** What else a write Lo follows itself takes: who hears its answer, and whether the watch sent it. */
+interface OwnOptions {
+  readonly heard?: ((answer: AutoAnswer) => void) | undefined;
+  readonly watch?: boolean;
+}
+
+/**
+ * What a merge takes with it, from where its pull request sits, read afresh, and what decides it
+ * once it goes so, as {@link Merging.goesAs} says; or why Lo doesn't merge it so: `unknown` when Lo
+ * can't tell yet where it sits, which a read again may settle.
+ */
+export type Goes =
+  | {
+      readonly kind: 'goes';
+      readonly onto: (facts: MergeFacts) => MergeFacts;
+      readonly together: Together | null;
+    }
+  | { readonly kind: 'where'; readonly why: string; readonly unknown: boolean }
+  | { readonly kind: 'unread'; readonly why: string };
+
+/** A press's plan, and how a read that lands meanwhile plans: nothing when it plans none. */
+export interface PressPlan<P> {
+  readonly kind: 'plan';
+  readonly plan: P;
+  readonly again: (facts: MergeFacts) => P | undefined;
+}
+
+/** What {@link Merging.weigh} weighs a press with. */
+export interface Press<P> {
+  /** The view it was pressed in. */
+  readonly id: string;
+  readonly pull: PullRef;
+  /** Whether what Lo read is read again whatever it is, as approve and ship's press does. */
+  readonly afresh: boolean;
+  /** Why what decides the merge can't be acted on, at `head`, the head on screen, if it can't. */
+  readonly vet?: (facts: MergeFacts, head: string) => Refusal | undefined;
+  /** The plan `facts` give in `view`, with where the pull request sits read afresh; or why not. */
+  readonly plan: (
+    facts: MergeFacts,
+    view: PullTabInfo,
+    signal: AbortSignal,
+  ) => Promise<PressPlan<P> | { readonly kind: 'refused'; readonly refusal: Refusal }>;
+  /** Whether `now` goes as `was` does, as its confirmation names it. */
+  readonly same: (was: P, now: P) => boolean;
+}
+
+/**
+ * How {@link Merging.weigh} weighed a press: its plan, from `facts`, the newest read; refused; the
+ * tab closed; GitHub couldn't be read again; someone pushed `to`, past `from`, the head on screen;
+ * or what GitHub says kept changing while Lo checked it.
+ */
+export type Weighed<P> =
+  | { readonly kind: 'plan'; readonly plan: P; readonly facts: MergeFacts }
+  | { readonly kind: 'refused'; readonly refusal: Refusal }
+  | { readonly kind: 'closed' }
+  | { readonly kind: 'unread'; readonly why: string }
+  | { readonly kind: 'moved'; readonly from: string; readonly to: string }
+  | { readonly kind: 'changing' };
 
 /** Whether two logins name one account: GitHub's ignore case. */
 function sameLogin(a: string, b: string): boolean {
@@ -578,21 +652,15 @@ export class Merging {
         why: `Nothing blocks #${view.number} now, so it can merge as it is.`,
       };
     }
+    const goes = await this.goesAs(first.kind, poller, login, pull, cached.value);
+    if (goes.kind !== 'goes') return { kind: 'refused', why: goes.why };
     // Auto-merge and a merge past the rules take nothing with them.
     if (goesAlone(first.kind)) {
-      const placed = await this.#whereNow(poller, login, pull, cached.value);
-      const why = aloneOrBottom(placed, view.number, first.kind === 'override');
-      if (why !== undefined) return { kind: 'refused', why };
       this.#keep(first, pull);
       return { kind: 'plan', plan: first };
     }
-    const taking = await this.#takingNow(poller, login, pull, cached.value);
-    const why = takingText(taking);
-    if (why !== undefined) return { kind: 'refused', why };
     // A chain's bottom layer that moves onto the root first merges under the root's rules.
-    const onto = await this.#rulesFor(poller, pull, taking);
-    if (typeof onto === 'string') return { kind: 'refused', why: onto };
-    const planned = this.#planOf(id, view, login, onto(cached.value), choice, togetherOf(taking));
+    const planned = this.#planOf(id, view, login, goes.onto(cached.value), choice, goes.together);
     if (typeof planned === 'string') return { kind: 'refused', why: planned };
     this.#keep(planned, pull);
     return { kind: 'plan', plan: planned };
@@ -746,6 +814,78 @@ export class Merging {
     return this.#sendOwn(plan, pull, poller, (pullRequestId) =>
       poller.disableAutoMerge(pull, pullRequestId),
     );
+  }
+
+  /**
+   * Turns off auto-merge for `pull`, as `login`, with `poller`, for the auto-merge watch: a push
+   * came after your approval that would merge with it. It goes as `a` turns it off, in the pull
+   * request's turn, asking nothing, once the account is signed in, GitHub can be reached and isn't
+   * holding writes, and no other merge write to the pull request is under way or unsettled; `heard`
+   * hears GitHub's answer, or nothing once it's lost, and `jobs` says how it went.
+   */
+  turnOffWatched(
+    pull: PullRef,
+    login: string,
+    poller: MergingPoller,
+    heard: (answer: AutoAnswer) => void,
+  ): Exclude<Confirmed, { kind: 'again' }> {
+    if (this.#stopped) return refused(own('stopped', 'Lo is quitting.'));
+    const off = offOf(poller);
+    if (off) {
+      return refused(
+        own(off.kind, offText(off), { until: off.kind === 'paused' ? off.until : null }),
+      );
+    }
+    const facts = poller.cachedRead(pull, MERGE_FACTS)?.value;
+    if (!facts || !isFullSha(facts.pullRequest.head)) {
+      return refused(own('unread', `Lo hasn’t read #${pull.number} from GitHub yet.`));
+    }
+    const before = this.#sent.get(pull.key);
+    if (before?.turn && this.#ended(before)) return refused(own('unsettled', unsure(before.plan)));
+    const plan: SentPlan = {
+      key: this.#newKey(),
+      id: '',
+      owner: pull.repo.owner,
+      repo: pull.repo.name,
+      number: pull.number,
+      login,
+      kind: 'autoMergeOff',
+      method: null,
+      base: rulesBase(facts),
+      head: facts.pullRequest.head,
+      title: '',
+      message: '',
+      named: null,
+      together: null,
+    };
+    return this.#sendOwn(
+      plan,
+      pull,
+      poller,
+      (pullRequestId) => poller.disableAutoMerge(pull, pullRequestId),
+      { heard, watch: true },
+    );
+  }
+
+  /**
+   * Sends `plan`, approve and ship's step after its approval, for `pull` with `poller`, in the pull
+   * request's turn, `turn`, which approve and ship took at the press and hands on here, so no other
+   * merge write goes between: a merge or a queue entry through the jobs, or auto-merge as its own
+   * write, whose answer `heard` hears. Approve and ship made its own checks just before.
+   */
+  sendShipped(
+    plan: MergePlan,
+    pull: PullRef,
+    poller: MergingPoller,
+    turn: MergeTurn,
+    heard?: (answer: AutoAnswer) => void,
+  ): Exclude<Confirmed, { kind: 'again' }> {
+    // Handed on: nothing waits between this and the send's own turn.
+    turn.give();
+    if (this.#stopped) return refused(own('stopped', 'Lo is quitting.'));
+    const kept = { plan, pull };
+    this.#planned.set(plan.key, pull);
+    return isAuto(plan.kind) ? this.#sendAuto(kept, poller, heard) : this.#send(kept, poller);
   }
 
   /** Every merge Lo sent that it still has, as the window shows them. */
@@ -937,98 +1077,81 @@ export class Merging {
     }
     const held = this.#holds(kept, poller);
     if (held) return refused(held);
-    // A merge of it that ended before: what Lo acts on now is read after that, and one Lo can't
-    // tell the end of yet holds the pull request until a read settles it.
-    const before = this.#sent.get(pull.key);
-    if (before?.turn && this.#ended(before)) return refused(own('unsettled', unsure(before.plan)));
-    let cached = poller.cachedRead(pull, MERGE_FACTS);
-    // What the press is weighed against is what Lo last read: a read that lands while Lo asks
-    // GitHub where the pull request sits, and what goes with it, is weighed too, when it changes
-    // what the confirmation named.
-    let now: MergePlan | undefined;
-    for (let round = 1; now === undefined; round++) {
-      const view = this.#options.view(plan.id);
-      if (!view) return refused(closed(plan));
-      const head = this.#options.headOnScreen(plan.id) ?? '';
-      if (!this.#current(cached, head, before?.endedAt)) {
-        const read = await this.#readAgain(poller, pull, signal);
-        if (typeof read === 'string') {
-          return refused(
-            own('unread', `Lo couldn’t read #${plan.number} again, so it didn’t merge: ${read}`),
-          );
-        }
-        cached = read;
-      }
-      const facts = cached.value;
-      if (checksCutShort(facts)) {
-        return refused(own('checks', 'GitHub has over 1,000 checks here. Merge it on GitHub.'));
-      }
-      const snapshot: MergeSnapshot = mergeSnapshot(facts, {
-        headOnScreen: head,
-        preferredMethod: this.#options.method(pull.repo),
-        headContainsBase: this.#options.headContainsBase(plan.id),
-      });
-      if (incomplete(snapshot) !== undefined) {
-        poller.readMergeFactsAgain(pull);
-        return refused(
-          own(
+    const choice = { ...plan, asked: askedOf(plan.kind) };
+    const weighed = await this.weigh<MergePlan>(
+      {
+        id: plan.id,
+        pull,
+        afresh: false,
+        vet: (facts, head) => {
+          if (checksCutShort(facts)) {
+            return own('checks', 'GitHub has over 1,000 checks here. Merge it on GitHub.');
+          }
+          const snapshot: MergeSnapshot = mergeSnapshot(facts, {
+            headOnScreen: head,
+            preferredMethod: this.#options.method(pull.repo),
+            headContainsBase: this.#options.headContainsBase(plan.id),
+          });
+          if (incomplete(snapshot) === undefined) return undefined;
+          poller.readMergeFactsAgain(pull);
+          return own(
             'incomplete',
             `GitHub left part of what decides #${plan.number}’s merge out of its answer, so Lo didn’t merge. Lo reads it again; merge once it has.`,
+          );
+        },
+        plan: async (facts, view) => {
+          const first = this.#planOf(plan.id, view, plan.login, facts, choice);
+          if (typeof first === 'string') return refused(own('notPossible', first));
+          // Where it sits, and what goes with it, read afresh: GitHub's stack holds what merges
+          // with it.
+          const goes = await this.goesAs(plan.kind, poller, plan.login, pull, facts, signal);
+          if (goes.kind !== 'goes') return refused(own(goes.kind, goes.why));
+          const planned = (read: MergeFacts) =>
+            this.#planOf(plan.id, view, plan.login, goes.onto(read), choice, goes.together);
+          const now = planned(facts);
+          if (typeof now === 'string') return refused(own('notPossible', now));
+          return {
+            kind: 'plan',
+            plan: now,
+            again: (read) => {
+              const newest = planned(read);
+              return typeof newest === 'string' ? undefined : newest;
+            },
+          };
+        },
+        same: (was, now) => changed(was, now) === undefined,
+      },
+      poller,
+      signal,
+    );
+    switch (weighed.kind) {
+      case 'plan':
+        break;
+      case 'refused':
+        return weighed;
+      case 'closed':
+        return refused(closed(plan));
+      case 'unread':
+        return refused(
+          own(
+            'unread',
+            `Lo couldn’t read #${plan.number} again, so it didn’t merge: ${weighed.why}`,
           ),
         );
-      }
-      if (facts.pullRequest.head !== head) {
-        return refused(newerPush(plan.number, head, facts.pullRequest.head));
-      }
-      const choice = { ...plan, asked: askedOf(plan.kind) };
-      const first = this.#planOf(plan.id, view, plan.login, facts, choice);
-      if (typeof first === 'string') return refused(own('notPossible', first));
-      let onto = asTheyAre;
-      let together: Together | null = null;
-      if (goesAlone(plan.kind)) {
-        const placed = await this.#whereNow(poller, plan.login, pull, facts, signal);
-        signal.throwIfAborted();
-        const unplaced = aloneOrBottom(placed, plan.number, plan.kind === 'override');
-        if (unplaced !== undefined) return refused(own('where', unplaced));
-      } else {
-        // Where it sits, and what goes with it, read afresh: GitHub's stack holds what merges
-        // with it.
-        const taking = await this.#takingNow(poller, plan.login, pull, facts, signal);
-        signal.throwIfAborted();
-        const unplaced = takingText(taking);
-        if (unplaced !== undefined) return refused(own('where', unplaced));
-        const rules = await this.#rulesFor(poller, pull, taking, signal);
-        signal.throwIfAborted();
-        if (typeof rules === 'string') return refused(own('unread', rules));
-        onto = rules;
-        together = togetherOf(taking);
-      }
-      const planned = this.#planOf(plan.id, view, plan.login, onto(facts), choice, together);
-      if (typeof planned === 'string') return refused(own('notPossible', planned));
-      // What a read that landed meanwhile plans: the same, or another round on it.
-      const latest = poller.cachedRead(pull, MERGE_FACTS);
-      const newest =
-        latest === undefined || latest.value === facts
-          ? planned
-          : this.#planOf(plan.id, view, plan.login, onto(latest.value), choice, together);
-      if (
-        latest === undefined ||
-        (latest.value.pullRequest.head === head &&
-          typeof newest !== 'string' &&
-          changed(planned, newest) === undefined)
-      ) {
-        now = planned;
-      } else if (round === LOOKS) {
+      case 'moved':
+        return refused(newerPush(plan.number, weighed.from, weighed.to));
+      case 'changing':
         return refused(
           own(
             'changing',
             `What GitHub says of #${plan.number} kept changing while Lo checked it, so Lo sent nothing. Start again from the merge panel.`,
           ),
         );
-      } else {
-        cached = latest;
-      }
+      default:
+        weighed satisfies never;
+        throw new Error(`a press Lo doesn't know: ${JSON.stringify(weighed)}`);
     }
+    const now = weighed.plan;
     const why = changed(plan, now);
     if (why !== undefined) {
       this.#keep(now, pull);
@@ -1047,6 +1170,102 @@ export class Merging {
       );
     }
     return { kind: 'send', poller };
+  }
+
+  /**
+   * Weighs a press of `press`'s pull request, with `poller`, as a merge's press is weighed: a merge
+   * of it Lo can't tell the end of yet holds it until a read settles that; what GitHub said is
+   * whole, at the head on screen, which is still GitHub's head, confirmed in the last
+   * {@link FRESH_FOR} and after the last merge of it ended, else it's read again, as it always is
+   * with `afresh`; and a read that lands while Lo asks GitHub where the pull request sits, and what
+   * goes with it, is weighed too, another round, when it changes what the confirmation named. Given
+   * up on `signal`.
+   */
+  async weigh<P>(press: Press<P>, poller: MergingPoller, signal: AbortSignal): Promise<Weighed<P>> {
+    const { pull } = press;
+    // A merge of it that ended before: what Lo acts on now is read after that, and one Lo can't
+    // tell the end of yet holds the pull request until a read settles it.
+    const before = this.#sent.get(pull.key);
+    if (before?.turn && this.#ended(before)) {
+      return refused(own('unsettled', unsure(before.plan)));
+    }
+    let cached = press.afresh ? undefined : poller.cachedRead(pull, MERGE_FACTS);
+    // What the press is weighed against is what Lo last read: a read that lands while Lo asks
+    // GitHub where the pull request sits, and what goes with it, is weighed too, when it changes
+    // what the confirmation named.
+    for (let round = 1; ; round++) {
+      const view = this.#options.view(press.id);
+      if (!view) return { kind: 'closed' };
+      const head = this.#options.headOnScreen(press.id) ?? '';
+      if (!this.#current(cached, head, before?.endedAt)) {
+        const read = await this.#readAgain(poller, pull, signal);
+        if (typeof read === 'string') return { kind: 'unread', why: read };
+        cached = read;
+      }
+      const facts = cached.value;
+      const vetted = press.vet?.(facts, head);
+      if (vetted) return refused(vetted);
+      if (facts.pullRequest.head !== head) {
+        return { kind: 'moved', from: head, to: facts.pullRequest.head };
+      }
+      const planned = await press.plan(facts, view, signal);
+      signal.throwIfAborted();
+      if (planned.kind === 'refused') return planned;
+      // What a read that landed meanwhile plans: the same, or another round on it.
+      const latest = poller.cachedRead(pull, MERGE_FACTS);
+      const newest =
+        latest === undefined || latest.value === facts ? planned.plan : planned.again(latest.value);
+      if (
+        latest === undefined ||
+        (latest.value.pullRequest.head === head &&
+          newest !== undefined &&
+          press.same(planned.plan, newest))
+      ) {
+        return { kind: 'plan', plan: planned.plan, facts };
+      }
+      if (round === LOOKS) return { kind: 'changing' };
+      cached = latest;
+    }
+  }
+
+  /**
+   * What `pull`'s merge of `kind` takes with it, as `login`, with where it sits read afresh, as a
+   * press reads it, and GitHub's stacks holding it read where they decide that; and what decides
+   * the merge once it goes so. Or why Lo doesn't merge it so: auto-merge and a merge past the rules
+   * take nothing with them, so go only alone or as a GitHub stack's bottom layer.
+   */
+  async goesAs(
+    kind: PlanKind,
+    poller: MergingPoller,
+    login: string,
+    pull: PullRef,
+    facts: MergeFacts,
+    signal?: AbortSignal,
+  ): Promise<Goes> {
+    const placed = await this.#whereNow(poller, login, pull, facts, signal);
+    signal?.throwIfAborted();
+    const unknown = placed.kind === 'unknown';
+    if (goesAlone(kind)) {
+      const why = aloneOrBottom(placed, pull.number, kind === 'override');
+      return why === undefined
+        ? { kind: 'goes', onto: asTheyAre, together: null }
+        : { kind: 'where', why, unknown };
+    }
+    const taking = await this.#takingNow(poller, login, pull, facts, signal, placed);
+    signal?.throwIfAborted();
+    const why = takingText(taking);
+    if (why !== undefined) {
+      return {
+        kind: 'where',
+        why,
+        unknown: unknown || (taking.kind === 'refused' && taking.again === true),
+      };
+    }
+    // A chain's bottom layer that moves onto the root first merges under the root's rules.
+    const onto = await this.#rulesFor(poller, pull, taking, signal);
+    signal?.throwIfAborted();
+    if (typeof onto === 'string') return { kind: 'unread', why: onto };
+    return { kind: 'goes', onto, together: togetherOf(taking) };
   }
 
   /** Why `kept` can't go from its tab now: it's closed, or acts as another account, or as none. */
@@ -1185,8 +1404,9 @@ export class Merging {
   }
 
   /**
-   * What `pull`'s merge takes with it, where it sits as {@link Merging.#whereNow} says, with
-   * GitHub's stacks holding it read afresh where they decide that; or why Lo doesn't merge it here.
+   * What `pull`'s merge takes with it, where it sits as {@link Merging.#whereNow} says, or `known`
+   * when that was asked already, with GitHub's stacks holding it read afresh where they decide
+   * that; or why Lo doesn't merge it here.
    */
   async #takingNow(
     poller: MergingPoller,
@@ -1194,8 +1414,9 @@ export class Merging {
     pull: PullRef,
     facts: MergeFacts,
     signal?: AbortSignal,
+    known?: Where,
   ): Promise<Taking> {
-    const placed = await this.#whereNow(poller, login, pull, facts, signal);
+    const placed = known ?? (await this.#whereNow(poller, login, pull, facts, signal));
     let github: Awaited<ReturnType<typeof stacksHolding>> | 'unread' = 'unread';
     if (needsStacks(placed)) {
       try {
@@ -1274,7 +1495,7 @@ export class Merging {
   }
 
   /** Sends `kept`'s merge, in its pull request's turn, through the app's jobs. */
-  #send(kept: Kept, poller: MergingPoller): Confirmed {
+  #send(kept: Kept, poller: MergingPoller): Exclude<Confirmed, { kind: 'again' }> {
     const { plan, pull } = kept;
     const request = requestOf(plan);
     if (isRefusal(request)) return refused(refusalOf(request, plan.head));
@@ -1351,12 +1572,21 @@ export class Merging {
    * Turns on auto-merge as `kept` says, in its pull request's turn, with the head on screen, which
    * GitHub turns it on for only while it's the head. Sent at once: nothing waits before it goes.
    */
-  #sendAuto(kept: Kept, poller: MergingPoller): Confirmed {
+  #sendAuto(
+    kept: Kept,
+    poller: MergingPoller,
+    heard?: (answer: AutoAnswer) => void,
+  ): Exclude<Confirmed, { kind: 'again' }> {
     const { plan, pull } = kept;
     // A queue's settings choose its method, whatever is asked.
     const method = plan.method ?? 'MERGE';
-    return this.#sendOwn(plan, pull, poller, (pullRequestId) =>
-      poller.enableAutoMerge(pull, pullRequestId, { expectedHead: plan.head, method }),
+    return this.#sendOwn(
+      plan,
+      pull,
+      poller,
+      (pullRequestId) =>
+        poller.enableAutoMerge(pull, pullRequestId, { expectedHead: plan.head, method }),
+      { heard },
     );
   }
 
@@ -1370,6 +1600,7 @@ export class Merging {
     pull: PullRef,
     poller: MergingPoller,
     write: (pullRequestId: string) => Promise<AutoMergeState | MergeRefusal>,
+    options: OwnOptions = {},
   ): Exclude<Confirmed, { kind: 'again' }> {
     const pullRequestId = poller.pullRequest(pull)?.details.id;
     if (pullRequestId === undefined) {
@@ -1399,6 +1630,8 @@ export class Merging {
       dismissed: false,
       stack: undefined,
       chain: undefined,
+      heard: options.heard,
+      watch: options.watch === true,
     };
     this.#sent.set(pull.key, sent);
     this.#publish(sent);
@@ -1413,11 +1646,13 @@ export class Merging {
   #answered(sent: Sent, answer: AutoMergeState | MergeRefusal): void {
     if (this.#sent.get(sent.pull.key) !== sent) return;
     sent.endedAt = this.#now();
+    this.#tell(sent, isRefusal(answer) ? { refused: answer } : answer);
     const on = sent.plan.kind !== 'autoMergeOff';
     if (isRefusal(answer)) {
       sent.turn?.give();
       sent.turn = undefined;
-      if (answer.refusal === 'canMergeNow' && on) {
+      // Approve and ship, which hears it, reads again and goes on itself.
+      if (answer.refusal === 'canMergeNow' && on && !sent.heard) {
         void this.#offerMerge(sent);
         return;
       }
@@ -1467,6 +1702,8 @@ export class Merging {
   #unanswered(sent: Sent, error: unknown): void {
     if (this.#sent.get(sent.pull.key) !== sent) return;
     sent.endedAt = this.#now();
+    const unsent = error instanceof GithubError && !error.mayHavePosted();
+    this.#tell(sent, unsent ? { refused: undefined } : 'lost');
     if (error instanceof GithubError && !error.mayHavePosted()) {
       sent.turn?.give();
       sent.turn = undefined;
@@ -1529,6 +1766,15 @@ export class Merging {
       ),
     };
     this.#publish(sent);
+  }
+
+  /** Tells who sent `sent` how GitHub answered it, or that the answer is lost. */
+  #tell(sent: Sent, answer: AutoAnswer): void {
+    try {
+      sent.heard?.(answer);
+    } catch (error) {
+      this.#options.log(`${sent.pull.toString()}: ${describe(error)}`);
+    }
   }
 
   /** Whether `sent`'s write has ended, as far as Lo knows. */
@@ -1735,6 +1981,7 @@ export class Merging {
       ...jobOf(plan, job?.running !== undefined),
       state,
       together: job ? this.#progressOf(sent, job) : null,
+      ...(sent.watch === true && { watch: true as const }),
     };
   }
 

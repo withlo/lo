@@ -1,0 +1,4 @@
+{
+  "description": "app_merge_ship_queued_others with ghost pushing f81c007f901ca6da725764f0306c50585f89799b to rozed-dev/e2e#277 once \"Merge when ready\" went on: the reads of what decides its merge from then on have that head, with auto-merge still on as rozed-bot turned it on and rozed-bot's approval of the revision before. e4/queued's rules want no new approval after a push, so the push would merge with it, and the watch turns auto-merge off: GitHub answers as it answered app_merge_auto_off's, for #277 at that head. GitHub can't be made to push as someone else, nor take rozed-bot's approval of its own pull request.",
+  "derived_from": "app_merge_ship_queued"
+}

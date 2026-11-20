@@ -224,3 +224,17 @@ export function pagesOf(state: MergeState): Set<string> {
   }
   return pages;
 }
+
+/**
+ * `found`, what's in the way of `snapshot`'s merge as `@lo/review` gave it, as the contract takes
+ * it: for approve and ship's steps, which name what they wait for or stop at.
+ */
+export function blockersOf(
+  found: readonly ReviewBlocker[],
+  snapshot: MergeSnapshot,
+  facts: MergeFacts,
+  pull: StatusInput['pull'],
+): Blocker[] {
+  const url = pullPage(facts, pull.owner, pull.repo, pull.number);
+  return found.map((each) => blockerOf(each, snapshot.threadsCutShort, url));
+}

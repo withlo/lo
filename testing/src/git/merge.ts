@@ -976,6 +976,104 @@ export const MERGE_PULLS = {
     pushed: '3fac8be1326e608154764f21521be8b315e71122',
     githubStack: 263,
   },
+  10: {
+    owner: 'rozed-dev',
+    repo: 'e2e',
+    base: {
+      first: 'affa345bcdbc8f275c35ea647d6f0af0c7207c47',
+      tip: 'ccfd467435ee45ebb4043a2d58e8b7026ad38f7e',
+    },
+    overrideBase: '58074cdf3024bb7329cb2433ff641800320a27cd',
+    pulls: {
+      squash: {
+        number: 264,
+        head: 'a1611c5f377f2ea7e093707165eef8710ddf0706',
+        base: 'merge/10/base',
+      },
+      merge: {
+        number: 265,
+        head: 'c921d04fab74f5b8e10b5018e5efc45f4bcd4e45',
+        base: 'merge/10/base',
+      },
+      rebase: {
+        number: 266,
+        head: '8a567f798c02d69625e18925d0d23f1d105f2723',
+        base: 'merge/10/base',
+      },
+      conflict: {
+        number: 267,
+        head: '6c5ad0beeb8e70fcd28d357fab11d9e7b39f2661',
+        base: 'merge/10/base',
+      },
+      draft: {
+        number: 268,
+        head: '5fce8d2cf6b630f992b3028f39b02c912fcf3b92',
+        base: 'merge/10/base',
+      },
+      stack1: {
+        number: 269,
+        head: '65e467b7e7904dbe31eb1f2fe212d681d54f2e20',
+        base: 'merge/10/base',
+      },
+      stack2: {
+        number: 270,
+        head: '85304119e8e0d49bdd09293931d57ba49570c81f',
+        base: 'merge/10/stack-1',
+      },
+      chain1: {
+        number: 271,
+        head: '338d7aff301ac7835ba423e401a0fcb47b90aa62',
+        base: 'merge/10/base',
+      },
+      chain2: {
+        number: 272,
+        head: '5a2c711f6f0bd0689076385c4606fab231d88c86',
+        base: 'merge/10/chain-1',
+      },
+      moved: {
+        number: 273,
+        head: '4334677b555730a6b6d3255c2a054c86cc1621ab',
+        base: 'merge/10/base',
+      },
+      gatedFailing: {
+        number: 274,
+        head: 'a8ed036b2132a191e368f08ae205214b33dc13b0',
+        base: 'e4/gated',
+      },
+      gatedPassing: {
+        number: 275,
+        head: '679113ff92e8f1b64a3a39b957fd94b4161e39c4',
+        base: 'e4/gated',
+      },
+      queuedPass: {
+        number: 276,
+        head: '86efb53af67d6e3986d24bfb34c582504da20b53',
+        base: 'e4/queued',
+      },
+      queuedSlow1: {
+        number: 277,
+        head: '7243013b61d35e4c1b8b69b4f1868fbfdd33a0cc',
+        base: 'e4/queued',
+      },
+      queuedSlow2: {
+        number: 278,
+        head: 'f81c007f901ca6da725764f0306c50585f89799b',
+        base: 'e4/queued',
+      },
+      queuedFail: {
+        number: 279,
+        head: '4874c018f0379b318eda0288bd2b8c0d1a1254e1',
+        base: 'e4/queued',
+      },
+      overridden: {
+        number: 280,
+        head: '5216e93a800ae1cc4c5a949013e3ba83eb73195f',
+        base: 'merge/10/override',
+      },
+    },
+    pushed: 'f6ceb32b4db6dad502d388228eada3340c41c6c7',
+    githubStack: 281,
+  },
 } as const satisfies Record<number, MergeGeneration>;
 
 /** A generation `MERGE_PULLS` records. */

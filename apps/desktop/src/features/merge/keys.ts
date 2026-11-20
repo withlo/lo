@@ -10,7 +10,10 @@
 // `⏎` and `Esc`. `a` turns auto-merge on the same way, through the dialog, or with it on turns it
 // off at once, and `⌥⏎` merges past the base branch's rules, which its dialog confirms only with the
 // pull request's number typed. When Lo can't tell whether a merge it sent went, the status's menu
-// asks GitHub again, as the banner that says so does.
+// asks GitHub again, as the banner that says so does. `⌘⇧⏎` approves and ships the pull request on
+// screen, from anywhere in its tab but where a box, a dialog, the palette or a menu has the keys,
+// through one dialog that lists each step and takes its own `⏎` and `Esc`; the status's menu
+// offers it too.
 
 import { defineCommands, type When } from '@lo/ui/commands';
 
@@ -118,6 +121,20 @@ export default defineCommands(
       targets: ['row', 'none'],
       when: { except: ['menu', 'dialog', 'palette', 'box'] },
       menu: { on: 'row', order: 10 },
+    },
+    /**
+     * Approves the revision on screen and merges it, adds it to the merge queue or turns on
+     * auto-merge, as GitHub allows once approved, through one dialog that lists each step to
+     * confirm.
+     */
+    ship: {
+      label: 'Approve and ship',
+      group: 'Review',
+      keys: ['cmd+shift+enter'],
+      targets: ['row', 'none'],
+      when: { except: ['box', 'dialog', 'palette', 'menu'] },
+      menu: { on: 'row', order: 5 },
+      bar: { menu: 'Review', order: 20 },
     },
     close: { label: 'Close the merge panel', group: 'Review', keys: ['esc'], when: panel },
     /** Leaves the commit's fields for the panel, keeping what was typed. */

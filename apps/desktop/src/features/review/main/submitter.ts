@@ -42,6 +42,7 @@ import {
   type SubmitRefusal,
   type Submitting,
 } from '../contract.ts';
+import type { Approved, SummaryKept } from '../service.ts';
 
 /** What submitting uses of an account's poller. */
 export type SubmitPoller = Pick<
@@ -133,6 +134,58 @@ function describe(error: unknown): string {
 /** Whether two logins name one account: GitHub's ignore case. */
 function sameLogin(a: string | null | undefined, b: string): boolean {
   return a != null && a.toLowerCase() === b.toLowerCase();
+}
+
+/**
+ * What marks a placeholder for a file on its way into a comment box, the summary's included: its
+ * address, which holds a token made for that upload alone. Only the window can tell whether that
+ * upload is still under way, so a summary holding one doesn't go with an approval from here.
+ */
+const UPLOAD = /lo-upload:[0-9a-f]{16}(?![0-9a-z])/;
+
+/** A number of minutes or hours, as a clock writes it: "05". */
+function twoDigits(value: number): string {
+  return String(value).padStart(2, '0');
+}
+
+/** A clock time as the interface writes it: "14:05". */
+function clock(at: number): string {
+  const time = new Date(at);
+  return `${twoDigits(time.getHours())}:${twoDigits(time.getMinutes())}`;
+}
+
+/** An approval that didn't go, for `why`. */
+function notApproved(why: string): Approved {
+  return { kind: 'refused', why };
+}
+
+/** Why an approval didn't go, as a sentence. */
+export function approvalRefusal(refusal: SubmitRefusal): string {
+  switch (refusal.kind) {
+    case 'otherRevision':
+      return 'Your pending review is on another revision, so it can’t approve the one on screen.';
+    case 'nothingToSubmit':
+      return 'There was nothing to submit.';
+    case 'pendingUnknown':
+      return 'Lo couldn’t tell whether you have a pending review.';
+    case 'ownPullRequest':
+      return 'It’s your pull request, which GitHub doesn’t let you approve.';
+    case 'paused':
+      return `GitHub asked Lo to hold off until ${clock(refusal.until)}.`;
+    case 'busy':
+      return refusal.why === 'unknown'
+        ? 'Lo can’t tell whether your last review was submitted. Check on GitHub first.'
+        : 'Your last review is still being submitted.';
+    case 'signIn':
+      return SIGN_IN;
+    case 'run':
+      return IN_A_LAYER;
+    case 'github':
+      return refusal.message;
+    default:
+      refusal satisfies never;
+      return 'GitHub didn’t take it.';
+  }
 }
 
 /** `@lo/review`'s refusal to plan a review, as the dialog says it. */
@@ -247,6 +300,8 @@ export class Submitter {
   readonly #asked = new Map<string, Asked>();
   /** The waits before looking for reviews whose answers were lost. */
   readonly #looking = new Set<ReturnType<typeof setTimeout>>();
+  /** Who waits to hear how an approval whose answer was lost settles, by account and pull request. */
+  readonly #settling = new Map<string, ((approved: Approved) => void)[]>();
   #stopped = false;
 
   constructor(options: SubmitterOptions) {
@@ -395,11 +450,105 @@ export class Submitter {
     }
   }
 
+  /** What would go with an approval from view `id` as its summary, as {@link Submitter.approve} sends it. */
+  summaryOf(id: string): SummaryKept {
+    const target = this.#targetOf(id);
+    const text = target && this.#options.drafts.summary(target.login, target.pull)?.text;
+    if (text === undefined || text.trim() === '') return 'none';
+    return UPLOAD.test(text) ? 'uploading' : 'text';
+  }
+
+  /**
+   * Approves `head`, the revision on screen in view `id`, as approve and ship does: your pending
+   * review submitted as the approval, when it's recorded on `head`, else an approval with the
+   * summary kept, which goes with it, in its turn among the writes to the pull request. It goes only
+   * while `head` is the revision on screen and GitHub's head as Lo last read it, and never while a
+   * review is being submitted, or one whose answer was lost isn't settled. A summary holding a file
+   * that may still be on its way in isn't sent from here. When GitHub's answer is lost, it resolves
+   * once a read of your reviews says how it went, as submitting does.
+   */
+  async approve(id: string, head: string): Promise<Approved> {
+    const info = this.#options.view(id);
+    if (!info) return notApproved('There’s no pull request in that tab.');
+    if (info.run) return notApproved(IN_A_LAYER);
+    const target = this.#targetOf(id);
+    if (!target) return notApproved(SIGN_IN);
+    const { login, pull } = target;
+    const key = keyOf(target);
+    const kept = this.#options.drafts.summary(login, pull);
+    const stands = this.#standing(key, kept?.sent ?? null);
+    if (stands === 'sending' || stands === 'checking' || stands === 'unknown') {
+      return notApproved(approvalRefusal({ kind: 'busy', why: stands }));
+    }
+    const body = kept?.text ?? '';
+    if (UPLOAD.test(body)) {
+      return notApproved(
+        'Your summary holds a file that may not be in yet. Submit your review from its dialog.',
+      );
+    }
+    this.#settled(target, 'sending', null);
+    const asked = head.toLowerCase();
+    let settling: Promise<Approved> | undefined;
+    try {
+      const sent = await this.#options.reviews.inTurn(id, async (turn): Promise<Approved> => {
+        const poller = await this.#options.poller(login);
+        const details = poller.pullRequest(pull)?.details;
+        const not = (approved: Approved): Approved => {
+          this.#settled(target, null, null);
+          return approved;
+        };
+        if (!details) return not(notApproved('Lo hasn’t read the pull request from GitHub yet.'));
+        if (sameLogin(details.author?.login, login)) {
+          return not(notApproved(approvalRefusal({ kind: 'ownPullRequest' })));
+        }
+        const latest = details.headRefOid.toLowerCase();
+        if (latest !== asked) return not({ kind: 'moved', head: latest });
+        if ((this.#options.onScreen(id) ?? '').toLowerCase() !== asked) {
+          return not(notApproved('The revision on screen changed, so nothing was approved.'));
+        }
+        const review = yourReview(details.id, turn.review ?? { kind: 'unknown', why: 'not read' });
+        const planned = review.submit('APPROVE', body, false, asked, details.headRefOid);
+        if ('refusal' in planned) return not(notApproved(approvalRefusal(planRefusal(planned))));
+        // From here it may be on GitHub, until GitHub says otherwise: a restart keeps that.
+        const sentAt = this.#now();
+        this.#options.drafts.markSummarySent(login, pull, body, sentAt);
+        this.#asked.set(key, { event: 'APPROVE', pending: review.pending?.id });
+        let answer;
+        try {
+          answer = await turn.send(planned);
+        } catch (error) {
+          if (!(error instanceof GithubError) || !error.mayHavePosted()) throw error;
+          settling = new Promise((resolve) => {
+            this.#settling.set(key, [...(this.#settling.get(key) ?? []), resolve]);
+          });
+          this.#lost(target, body, sentAt);
+          return { kind: 'unknown', why: 'GitHub’s answer was lost.' };
+        }
+        if ('refusal' in answer) {
+          this.#unsent(target);
+          return notApproved(approvalRefusal(writeRefusal(answer)));
+        }
+        this.#submitted(target, body, 'APPROVE');
+        return { kind: 'approved' };
+      });
+      return await (settling ?? sent);
+    } catch (error) {
+      // It didn't go: anything that may have came back as lost.
+      this.#options.log(`approving: ${describe(error)}`);
+      this.#unsent(target);
+      return notApproved(error instanceof Error ? error.message : describe(error));
+    }
+  }
+
   /** Sends nothing more, looks for nothing more, and tells nothing more. */
   stop(): void {
     this.#stopped = true;
     for (const timer of this.#looking) clearTimeout(timer);
     this.#looking.clear();
+    for (const waiting of this.#settling.values()) {
+      for (const resolve of waiting) resolve({ kind: 'unknown', why: 'Lo is quitting.' });
+    }
+    this.#settling.clear();
   }
 
   /** The review sent with the summary `sent` was submitted: the summary goes, unless it changed. */
@@ -488,10 +637,40 @@ export class Submitter {
     const key = keyOf(target);
     if (now === null) this.#submitting.delete(key);
     else this.#submitting.set(key, now);
+    this.#heard(key, now, submitted);
     for (const id of this.#views) {
       const other = this.#targetOf(id);
       if (other && keyOf(other) === key) this.#publish(id, now, submitted);
     }
+  }
+
+  /**
+   * Tells who waits on an approval whose answer was lost how it settled, once it has: submitted, as
+   * an approval or not; found not submitted; or Lo can't tell.
+   */
+  #heard(key: string, now: Submitting | null, submitted: Submission['submitted']): void {
+    const waiting = this.#settling.get(key);
+    if (!waiting) return;
+    let approved: Approved;
+    if (submitted) {
+      approved =
+        submitted.event === 'APPROVE'
+          ? { kind: 'approved' }
+          : { kind: 'refused', why: 'GitHub recorded your review, but not as an approval.' };
+    } else if (now === 'notSubmitted') {
+      approved = { kind: 'refused', why: 'GitHub didn’t take the approval: it isn’t among yours.' };
+    } else if (now === 'unknown') {
+      approved = {
+        kind: 'unknown',
+        why: 'Lo couldn’t read your reviews to tell whether GitHub took the approval.',
+      };
+    } else if (now === null) {
+      approved = { kind: 'refused', why: 'It wasn’t submitted.' };
+    } else {
+      return;
+    }
+    this.#settling.delete(key);
+    for (const resolve of waiting) resolve(approved);
   }
 
   #publish(id: string, state: Submitting | null, submitted: Submission['submitted']): void {

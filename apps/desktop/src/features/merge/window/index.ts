@@ -2,7 +2,8 @@
 // the panel's keys; the dialog that confirms a merge and follows it, and the banners for one that
 // needs the reader and for a pull request that left its merge queue. Main sends each view's
 // status, its place in a merge queue, and each merge it sent, as they change; a closed view's
-// status and place are forgotten.
+// status and place are forgotten. And approve and ship, `⌘⇧⏎`: its dialog, and the banner for what
+// the auto-merge watch did about a push after your approval.
 
 import { handlers } from '@lo/ui/commands';
 import { createElement } from 'react';
@@ -46,7 +47,10 @@ import {
 } from './merging.ts';
 import { OutcomeBanner, outcomeSwitch } from './OutcomeBanner.tsx';
 import { forgetQueued, takeQueued } from './queued.ts';
+import { ShipDialog } from './ShipDialog.tsx';
+import { canShip, followShipJobs, heardShip, heardWatched, shipFromTab } from './shipping.ts';
 import { forgetStatus, jobOf, takeStatus } from './store.ts';
+import { WatchedBanner, watchedSwitch } from './WatchedBanner.tsx';
 
 /** The merge of the pull request on screen whose end Lo can't tell, or why there's none. */
 function unsure(): { key: string } | string {
@@ -68,6 +72,7 @@ export default {
     merge: { run: mergeFromPanel, enabled: canMerge },
     autoMerge: { run: autoMergeFromPanel, enabled: canAutoMerge },
     override: { run: overrideFromPanel, enabled: canOverride },
+    ship: { run: shipFromTab, enabled: canShip, listed: onStatus },
     askAgain: {
       run: () => {
         const job = unsure();
@@ -94,6 +99,11 @@ export default {
       order: 40,
       render: () => createElement(MergeConfirm),
     }),
+    defineView(dialogs, {
+      id: 'merge.ship',
+      order: 41,
+      render: () => createElement(ShipDialog),
+    }),
     // Before the other features' banners: a merge that failed matters more than any of them.
     defineView(banners, {
       id: 'merge.outcome',
@@ -109,11 +119,21 @@ export default {
       render: ({ tab }) => createElement(LeftBanner, { tab }),
       ...leftSwitch,
     }),
+    // After those: a push that would have merged with your approval, and what Lo did about it.
+    defineView(banners, {
+      id: 'merge.watched',
+      order: 7,
+      render: ({ tab }) => createElement(WatchedBanner, { tab }),
+      ...watchedSwitch,
+    }),
   ],
   start() {
     main().subscribe('status', takeStatus);
     main().subscribe('jobs', (job) => heardJob(job));
     main().subscribe('queued', takeQueued);
+    main().subscribe('ships', heardShip);
+    main().subscribe('watched', heardWatched);
+    followShipJobs();
     onClosed(forgetStatus);
     onClosed(forgetQueued);
     catchUpJobs();
