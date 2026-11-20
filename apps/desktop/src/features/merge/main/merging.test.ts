@@ -1688,6 +1688,26 @@ describe('a chain’s merge a layer at a time', () => {
     expect(run.turns.busy(PULL.repo, [138, 139])).toEqual([]);
   });
 
+  it('plans no rebase of the layers it moves after a merge commit, which lands its commits as they are', async () => {
+    const run = chained();
+    const plan = planOf(await run.merging.plan(ID, { method: 'MERGE', title: '', message: '' }));
+    expect(plan.together).toEqual({
+      kind: 'chain',
+      before: null,
+      after: [{ pr: 139, from: 'merge/5/squash', to: 'main' }],
+      needsRebase: [],
+    });
+    await run.merging.confirm(plan.key);
+    await vi.waitFor(() =>
+      expect(run.published.at(-1)?.together).toMatchObject({ kind: 'chain', phase: 'done' }),
+    );
+    expect(run.moves).toEqual([{ pr: 139, from: 'merge/5/squash', to: 'main' }]);
+    expect(run.published.at(-1)?.together).toMatchObject({
+      needsRebase: [],
+      text: '#139 now points at main.',
+    });
+  });
+
   it('moves nothing after a merge GitHub refused', async () => {
     const run = chained({ submitted: () => Promise.resolve({ refusal: 'conflict' }) });
     const plan = planOf(await run.merging.plan(ID, SQUASH));

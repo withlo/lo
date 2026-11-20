@@ -7,22 +7,36 @@
 // remove it; once it left, a banner says why, and the panel's first row says it again. One ready for
 // a queue says what's ahead of it, read once as the panel opens. Where the pull request sits says
 // what its main button merges: a GitHub stack's layers below it too, a chain's bottom layer alone,
-// or nothing until the chain is a GitHub stack.
+// or nothing until the chain is a GitHub stack. That's asked each time the panel opens and as the
+// stack's layers move, the button says it's checking until the first answer, and `⏎` asks again
+// where what the panel heard keeps it from merging.
 
 import { handlers } from '@lo/ui/commands';
 import { act, type ReactNode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { beforeAll, expect, it, onTestFinished, vi } from 'vitest';
 
+import { notice } from '../../../window/commands/notices.tsx';
 import { createRegistry } from '../../../window/commands/registry.ts';
 import { installBridge } from '../../../window/test/bridge.ts';
 import queueKeys from '../../queue/keys.ts';
+import type { StackView } from '../../stacks/contract.ts';
+import type * as TabShared from '../../tab/window/shared.ts';
 import type { PullTab } from '../../tab/window/shared.ts';
 import type { InQueue, MergeState, MergeView, Placement } from '../contract.ts';
+import { closePanel } from './actions.ts';
 import feature from './index.ts';
 import { LeftBanner } from './LeftBanner.tsx';
 import { MergeHeader } from './MergeHeader.tsx';
+import { mergeFromPanel } from './merging.ts';
 import { panels } from './store.ts';
+
+// The tab on screen, as the tab feature names it: none, unless a test says.
+const on = vi.hoisted(() => ({ tab: undefined as unknown }));
+vi.mock('../../tab/window/shared.ts', async (original) => ({
+  ...(await original<typeof TabShared>()),
+  activeTab: () => on.tab,
+}));
 
 /** When the tests' statuses were read: now, so none is out of date unless a test says. */
 const NOW = Date.now();
@@ -39,6 +53,8 @@ let queueShown = 0;
 
 /** Where main says each view's pull request sits, by its id: alone unless a test says. */
 const places = new Map<string, Placement>();
+/** What main waits on before it says where a view's pull request sits, by its id. */
+const holds = new Map<string, Promise<void>>();
 
 const bridge = installBridge({
   'merge.state': (input) =>
@@ -50,8 +66,12 @@ const bridge = installBridge({
     head: 'a'.repeat(40),
   }),
   'merge.open': () => undefined,
-  'merge.place': (input) =>
-    places.get(String(Reflect.get(Object(input), 'id'))) ?? { kind: 'alone' },
+  'merge.place': async (input) => {
+    const id = String(Reflect.get(Object(input), 'id'));
+    await holds.get(id);
+    return places.get(id) ?? { kind: 'alone' };
+  },
+  'merge.plan': () => ({ kind: 'refused', why: 'Main planned it.' }),
   'merge.queue': (input) =>
     queues.get(String(Reflect.get(Object(input), 'id'))) ?? { place: null, left: null },
   'merge.ahead': () => ({ kind: 'queue', count: 4, atLeast: false, timeToMerge: 1080 }),
@@ -287,6 +307,126 @@ it('asks again where it sits while Lo lists the open pull requests again', async
   });
   await until(() => panel()?.textContent?.includes('GitHub stack #90') === true);
   expect(primary()?.textContent).toContain('Merge 2 layers');
+});
+
+/** A chain of `layers` on `main`, bottom first, with #138 on screen. */
+function chainOf(layers: readonly number[]): StackView {
+  return {
+    kind: 'stack',
+    root: 'main',
+    githubStack: false,
+    found: ['baseBranch'],
+    rows: layers.map((number, index) => ({
+      number,
+      title: `Layer ${number}`,
+      author: 'rozed-bot',
+      head: `chain/${number}`,
+      state: 'open',
+      current: number === 138,
+      branch: false,
+      on: null,
+      path: layers.slice(0, index + 1),
+      review: null,
+      checks: null,
+      queue: null,
+      needsRebase: false,
+      overview: null,
+      viewed: null,
+      threads: null,
+    })),
+    notes: [],
+    callout: null,
+  };
+}
+
+/** How many times the window asked main where view `id`'s pull request sits. */
+function placeAsked(id: string): number {
+  return bridge.calls.filter(
+    ([channel, input]) => channel === 'merge.place' && Reflect.get(Object(input), 'id') === id,
+  ).length;
+}
+
+/** How many times the window asked main for a merge's plan. */
+function planAsked(): number {
+  return bridge.calls.filter(([channel]) => channel === 'merge.plan').length;
+}
+
+const CONVERT: Placement = {
+  kind: 'convert',
+  offer: 'These PRs share commits but aren’t a GitHub stack. As one, they’d merge together.',
+};
+
+it('asks afresh where it sits each time the panel opens, and as its stack’s layers move', async () => {
+  views.set('t18', { kind: 'known', state: state() });
+  places.set('t18', CONVERT);
+  act(() =>
+    bridge.push('stacks.stack', { id: 't18', stack: chainOf([137, 138, 139]), offer: null }),
+  );
+  const page = draw(<MergeHeader tab={tabOf('t18')} />);
+  await until(() => page.querySelector('button') !== null);
+  act(() => page.querySelector('button')?.click());
+  await until(() => panel()?.textContent?.includes('As one, they’d merge together.') === true);
+  // #137 merged, and the stack's tree heard it: #138 is now the bottom of a chain on main.
+  places.set('t18', { kind: 'chain', into: 'main', above: [139], reasons: [] });
+  act(() => bridge.push('stacks.stack', { id: 't18', stack: chainOf([138, 139]), offer: null }));
+  await until(() => panel()?.textContent?.includes('merges into main alone') === true);
+  expect(primary()?.getAttribute('aria-disabled')).toBeNull();
+  // What it sits on changed with nothing the stack's tree says: opened again, it asks again.
+  act(() => closePanel('t18'));
+  await until(() => panel() === null);
+  places.set('t18', { kind: 'stack', stack: 91, below: [137] });
+  act(() => page.querySelector('button')?.click());
+  await until(() => panel()?.textContent?.includes('GitHub stack #91') === true);
+  expect(primary()?.textContent).toContain('Merge 2 layers');
+});
+
+it('says it’s checking what merges with it until main first says, and `⏎` waits for that', async () => {
+  views.set('t19', { kind: 'known', state: state() });
+  places.set('t19', { kind: 'stack', stack: 90, below: [137] });
+  const answer = Promise.withResolvers<void>();
+  holds.set('t19', answer.promise);
+  on.tab = tabOf('t19');
+  onTestFinished(() => {
+    on.tab = undefined;
+  });
+  const page = draw(<MergeHeader tab={tabOf('t19')} />);
+  await until(() => page.querySelector('button') !== null);
+  act(() => page.querySelector('button')?.click());
+  await until(() => primary()?.textContent === 'Checking what merges with it');
+  expect(primary()?.getAttribute('aria-busy')).toBe('true');
+  expect(primary()?.getAttribute('aria-disabled')).toBe('true');
+  // `⏎` waits for the answer, and a second one says what it waits for.
+  act(() => mergeFromPanel());
+  act(() => mergeFromPanel());
+  expect(notice()?.body).toBe('Lo is checking what merges with #138.');
+  expect(planAsked()).toBe(0);
+  expect(placeAsked('t19')).toBe(1);
+  holds.delete('t19');
+  answer.resolve();
+  await until(() => planAsked() === 1);
+});
+
+it('`⏎` asks again where it sits when what the panel heard keeps it from merging', async () => {
+  views.set('t20', { kind: 'known', state: state() });
+  places.set('t20', CONVERT);
+  on.tab = tabOf('t20');
+  onTestFinished(() => {
+    on.tab = undefined;
+  });
+  const page = draw(<MergeHeader tab={tabOf('t20')} />);
+  await until(() => page.querySelector('button') !== null);
+  act(() => page.querySelector('button')?.click());
+  await until(() => panel()?.textContent?.includes('As one, they’d merge together.') === true);
+  const plans = planAsked();
+  // Still so, it says why.
+  act(() => mergeFromPanel());
+  await until(() => placeAsked('t20') === 2);
+  await until(() => notice()?.body.endsWith('Make this a GitHub stack, then merge it.') === true);
+  expect(planAsked()).toBe(plans);
+  // It moved, which the panel hadn't heard: it asks main for the merge.
+  places.set('t20', { kind: 'chain', into: 'main', above: [139], reasons: [] });
+  act(() => mergeFromPanel());
+  await until(() => planAsked() === plans + 1);
 });
 
 /** Into `e4/queued`, whose queue squashes, 2nd as GitHub last said. */

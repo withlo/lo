@@ -316,6 +316,19 @@ describe('MergePanel', () => {
     expect(keyOf('Merge')?.className).toContain('text-fg-muted');
   });
 
+  it('says what Lo is checking in the main button’s place, and takes no click until it’s done', () => {
+    const onClick = vi.fn<() => void>();
+    const busy = { label: 'Merge', keys: ['⏎'], busy: 'Checking what merges with it', onClick };
+    frame({ kind: 'ready', verdict: 'Ready to merge', foot: <MergeFoot primary={busy} /> });
+    const button = [...panel().querySelectorAll('button')].at(-1);
+    expect(button?.textContent).toBe('Checking what merges with it');
+    expect(button?.querySelector('kbd')).toBeNull();
+    expect(button?.getAttribute('aria-busy')).toBe('true');
+    expect(button?.getAttribute('aria-disabled')).toBe('true');
+    click(button!);
+    expect(onClick).not.toHaveBeenCalled();
+  });
+
   it('lets a key focus the commit’s fields, and hands on the keys pressed in them', () => {
     const title = createRef<HTMLInputElement>();
     const message = createRef<HTMLTextAreaElement>();
@@ -601,7 +614,7 @@ describe('MergePanel', () => {
           auto={{ on: false, onChange: () => undefined, keys: ['a'] }}
           start={<span>start</span>}
           method="Squash"
-          primary={{ label: 'Merge', keys: ['⏎'] }}
+          primary={{ label: 'Merge', keys: ['⏎'], busy: 'Checking what merges with it' }}
         />
       ),
     });

@@ -2,8 +2,10 @@
 // does: the verdict and what it merges into, a row for each reason it can't merge, the methods the
 // repository allows, the squash commit's text, and what merging would do: with the layers below it
 // in a GitHub stack, or, for a chain that isn't one, after making it one, which `gS` does from here
-// as from anywhere in the tab, or a layer at a time from its bottom one. For a pull request in a
-// merge queue, or ready to join one, its place there or what's ahead, and why it left.
+// as from anywhere in the tab, or a layer at a time from its bottom one. Where it sits is asked each
+// time the panel opens and as its stack's layers move, and until main first says, the main button
+// says Lo is checking what merges with it. For a pull request in a merge queue, or ready to join
+// one, its place there or what's ahead, and why it left.
 
 import {
   Branch,
@@ -49,7 +51,8 @@ import { main } from './main.ts';
 import { autoMergeFromPanel, mergeFromPanel, overrideFromPanel } from './merging.ts';
 import { panelRows, queueHead } from './places.ts';
 import { aheads, catchUpQueue, forgetAhead, queues, readAhead } from './queued.ts';
-import { panels, placementOf, statuses, takeStatus, type Panel } from './store.ts';
+import { placeKey, readPlace, shapes } from './placing.ts';
+import { panels, placementOf, placeUnknown, statuses, takeStatus, type Panel } from './store.ts';
 import {
   cantAutoMerge,
   headerLine,
@@ -130,11 +133,6 @@ function readSquash(id: string, at: string): void {
     );
 }
 
-/** Where the place is asked about: at a head, into a base, with a verdict. */
-function placeAt(state: MergeState): string {
-  return `${state.head}\n${state.base}\n${state.verdict}`;
-}
-
 /**
  * How long the panel waits to ask again where a pull request sits, while listing may settle it: 3 s
  * the first few times, then 10 s, as when merged pull requests are looked up over several lists.
@@ -145,31 +143,6 @@ function placeAgain(tries: number): number {
 
 /** How many times the panel asks again, while it's open: for 8 minutes or so. */
 const PLACE_TRIES = 50;
-
-/**
- * Asks main where view `id`'s pull request sits, unless it was asked, or is being asked, at `at`.
- * What main can't say leaves the panel as for one alone: `⏎` asks again, and says why.
- */
-function readPlace(id: string, at: string): void {
-  const now = panels.get(id).place;
-  if (now.kind !== 'none' && now.at === at) return;
-  panels.update(id, (panel) => ({ ...panel, place: { kind: 'reading', at } }));
-  const settle = (placement: Placement | undefined) => {
-    const current = panels.get(id).place;
-    if (current.kind !== 'reading' || current.at !== at) return;
-    panels.update(id, (panel) => ({
-      ...panel,
-      place: placement === undefined ? { kind: 'none' } : { kind: 'read', at, placement },
-    }));
-  };
-  main()
-    .place({ id })
-    .then(settle)
-    .catch((error: unknown) => {
-      console.error('Lo couldn’t ask where the pull request sits:', error);
-      settle(undefined);
-    });
-}
 
 /** Closes the panel and asks to make the chain on screen a GitHub stack, as `gS` does. */
 function convert(id: string): void {
@@ -275,6 +248,9 @@ function NextThread() {
 /** The keys the panel's buttons show, which merging will take. */
 const ENTER = ['⏎'];
 const AUTO = ['a'];
+
+/** What the main button says until Lo knows where the pull request sits. */
+const CHECKING = 'Checking what merges with it';
 
 /** The panel's button that merges past the rules, as `⌥⏎` does, for an account that may. */
 function Override() {
@@ -422,6 +398,8 @@ function footOf(
   };
   // Where it sits keeps it from merging from here: a chain that becomes a GitHub stack first.
   const placed = placement?.kind === 'convert' || placement?.kind === 'refused';
+  // Until Lo knows where it sits, it can't say what merges with it: a GitHub stack's layers below.
+  const busy = placeUnknown(panel.place) ? CHECKING : undefined;
   const auto =
     state.autoMerge !== null
       ? { on: true, ...turn }
@@ -440,6 +418,7 @@ function footOf(
           label: placedLabel(placement, true, 'Add to merge queue'),
           keys: enter,
           disabled: off || placed,
+          busy,
           onClick: mergeFromPanel,
         }}
       />
@@ -453,6 +432,7 @@ function footOf(
           label: placedLabel(placement, false, mergeLabel(method ?? action.method)),
           keys: enter,
           disabled: off || placed,
+          busy,
           onClick: mergeFromPanel,
         }}
       />
@@ -506,10 +486,12 @@ export function MergeHeader({ tab }: { tab: PullTab }) {
   useEffect(() => {
     if (squashing && at !== undefined) readSquash(tab.id, at);
   }, [squashing, at, tab.id]);
-  // Where it sits, asked as the panel opens on one that can merge, and again when it moves.
+  // Where it sits, asked each time the panel opens on one that can merge, and again when it moves
+  // or its stack's layers do.
   const placing =
     panel.open && known !== undefined && known.verdict !== 'merged' && known.verdict !== 'closed';
-  const placeKey = known && placeAt(known);
+  const shape = useTabState(shapes, tab.id);
+  const asked = known && placeKey(known, panel.round, shape);
   // Asked again a while later, while Lo lists the open pull requests again, which may settle it.
   const [tries, setTries] = useState(0);
   const unsettled =
@@ -522,12 +504,15 @@ export function MergeHeader({ tab }: { tab: PullTab }) {
       return undefined;
     }
     if (!unsettled || tries >= PLACE_TRIES) return undefined;
-    const timer = setTimeout(() => setTries((count) => count + 1), placeAgain(tries));
+    const timer = setTimeout(() => {
+      setTries((count) => count + 1);
+      panels.update(tab.id, (current) => ({ ...current, round: current.round + 1 }));
+    }, placeAgain(tries));
     return () => clearTimeout(timer);
-  }, [placing, unsettled, tries]);
+  }, [placing, unsettled, tries, tab.id]);
   useEffect(() => {
-    if (placing && placeKey !== undefined) readPlace(tab.id, `${placeKey}\n${tries}`);
-  }, [placing, placeKey, tab.id, tries]);
+    if (placing && asked !== undefined) void readPlace(tab.id, asked);
+  }, [placing, asked, tab.id]);
   const line = headerLine(view, now, queue);
   if (!line) return null;
   const keys = keyOf('merge.panel');

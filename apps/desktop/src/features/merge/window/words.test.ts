@@ -83,7 +83,12 @@ const GATED = state({
   blockers: [
     { kind: 'check', check: { name: 'ci', state: 'failed', url: RUN } },
     { kind: 'conversations', unresolved: 1, cutShort: false },
-    { kind: 'approvals', more: 1, codeOwners: [{ kind: 'user', login: 'rozed-bot' }] },
+    {
+      kind: 'approvals',
+      more: 1,
+      codeOwners: [{ kind: 'user', login: 'rozed-bot' }],
+      codeOwnerRule: true,
+    },
     { kind: 'check', check: { name: 'e2e', state: 'running', url: null } },
     { kind: 'check', check: { name: 'lint', state: 'running', url: null } },
   ],
@@ -109,7 +114,7 @@ test('the header says each kind in one line, and opens the panel while it can me
       state({
         verdict: 'waiting',
         blockers: [
-          { kind: 'approvals', more: 1, codeOwners: [] },
+          { kind: 'approvals', more: 1, codeOwners: [], codeOwnerRule: false },
           { kind: 'check', check: { name: 'ci', state: 'running', url: null } },
         ],
       }),
@@ -137,7 +142,7 @@ test('the header says each kind in one line, and opens the panel while it can me
       state({
         verdict: 'waiting',
         autoMerge: { method: 'SQUASH', by: 'rozed-bot' },
-        blockers: [{ kind: 'approvals', more: 1, codeOwners: [] }],
+        blockers: [{ kind: 'approvals', more: 1, codeOwners: [], codeOwnerRule: false }],
       }),
     ),
   ).toMatchObject({ kind: 'auto', verdict: 'Merges when ready', detail: 'Auto-merge on' });
@@ -269,7 +274,7 @@ test('the panel’s head says what it merges into and how it stands', () => {
       state({
         verdict: 'waiting',
         autoMerge: { method: 'SQUASH', by: 'tess-okafor' },
-        blockers: [{ kind: 'approvals', more: 1, codeOwners: [] }],
+        blockers: [{ kind: 'approvals', more: 1, codeOwners: [], codeOwnerRule: false }],
       }),
     ),
   ).toEqual({
@@ -305,6 +310,25 @@ test('the methods step round those allowed, and say which are off', () => {
     'main needs signed commits, so no rebase',
   );
   expect(methodNote(state())).toBeUndefined();
+});
+
+test('a pull request blocked from a merge queue shows the queue’s method, or none', () => {
+  const blocked = {
+    verdict: 'blocked',
+    base: 'e4/queued',
+    action: { kind: 'notPossible', reason: 'blocked' },
+    picked: 'MERGE',
+  } as const;
+  // The queue squashes, whatever was picked for the repository.
+  expect(
+    shownMethod(state({ ...blocked, queue: { required: true, method: 'SQUASH' } }), 'MERGE'),
+  ).toBe('SQUASH');
+  // Its settings hidden from the account, it names none.
+  expect(
+    shownMethod(state({ ...blocked, queue: { required: true, method: null } }), undefined),
+  ).toBeUndefined();
+  // Straight in, it's the one picked.
+  expect(shownMethod(state(blocked), undefined)).toBe('MERGE');
 });
 
 test('places in a queue read as ordinals', () => {
@@ -532,7 +556,7 @@ test('a chain’s merge a layer at a time lists each move, and says how its run 
     after: [{ pr: 139, from: 'chain-1', to: 'main' }],
     needsRebase: [139, 140],
   };
-  expect(chainSteps({ number: 138, base: 'main' }, chain)).toEqual([
+  expect(chainSteps({ number: 138, base: 'main', method: 'SQUASH' }, chain)).toEqual([
     {
       key: 'before',
       title: 'Move #138 onto main',
@@ -541,6 +565,27 @@ test('a chain’s merge a layer at a time lists each move, and says how its run 
     { key: 'merge', title: 'Merge #138 into main', detail: 'Alone' },
     { key: 'after-139', title: 'Move #139 onto main', detail: 'From chain-1 · needs rebase' },
     { key: 'rebase-140', title: '#140 stays on main', detail: 'Needs rebase' },
+  ]);
+  // A merge commit lands #138's commits as they are: main plans no rebase after one.
+  expect(
+    chainSteps({ number: 138, base: 'main', method: 'MERGE' }, { ...chain, needsRebase: [] }),
+  ).toEqual([
+    {
+      key: 'before',
+      title: 'Move #138 onto main',
+      detail: 'From feature, so it merges under main’s rules',
+    },
+    { key: 'merge', title: 'Merge #138 into main', detail: 'Alone' },
+    { key: 'after-139', title: 'Move #139 onto main', detail: 'From chain-1' },
+  ]);
+  // Into a merge queue whose method Lo can't read, they may.
+  expect(chainSteps({ number: 138, base: 'main', method: null }, chain).slice(2)).toEqual([
+    {
+      key: 'after-139',
+      title: 'Move #139 onto main',
+      detail: 'From chain-1 · may need a rebase',
+    },
+    { key: 'rebase-140', title: '#140 stays on main', detail: 'May need a rebase' },
   ]);
 
   expect(doneLine(ran('moving', null))).toBeUndefined();
@@ -578,7 +623,7 @@ test('a GitHub stack’s layer says where it stands in its confirmation, once it
 test('a merge past the rules skips each reason, and the merge queue it merges straight past', () => {
   const said: Omit<Said, 'queue'> = {
     blockers: [
-      { kind: 'approvals', more: 1, codeOwners: [] },
+      { kind: 'approvals', more: 1, codeOwners: [], codeOwnerRule: false },
       { kind: 'check', check: { name: 'ci', state: 'running', url: null } },
     ],
     unchecked: [],
@@ -595,4 +640,40 @@ test('a merge past the rules skips each reason, and the merge queue it merges st
     '1 more approval',
     '1 required check still running: ci',
   ]);
+  // The rules want a code owner's approval GitHub asked nobody for.
+  expect(
+    skipsOf({
+      ...said,
+      blockers: [{ kind: 'approvals', more: 1, codeOwners: [], codeOwnerRule: true }],
+      queue: { required: false, method: null },
+    }),
+  ).toEqual(['1 more approval, and a code owner’s for changed files that have an owner']);
+});
+
+/**
+ * What the panel says of the review blocked `e4/gated`'s pull request needs, with `more` approvals
+ * to come and no code owner asked: the only one is its author, so GitHub requests nobody.
+ */
+function gated(more: number, codeOwnerRule: boolean): string | undefined {
+  return rowsOf(
+    state({
+      verdict: 'blocked',
+      base: 'e4/gated',
+      action: { kind: 'notPossible', reason: 'blocked' },
+      blockers: [{ kind: 'approvals', more, codeOwners: [], codeOwnerRule }],
+    }),
+  ).find((row) => row.key === 'approvals')?.detail;
+}
+
+test('a code owner’s approval the rules require is named, though GitHub asked no one for it', () => {
+  expect(gated(1, true)).toBe(
+    '1 more approval. e4/gated also requires a code owner’s approval for changed files that have an owner.',
+  );
+  expect(gated(1, false)).toBe('1 more approval.');
+  expect(gated(0, true)).toBe(
+    'GitHub requires a review it doesn’t name. e4/gated also requires a code owner’s approval for changed files that have an owner, which may be it.',
+  );
+  expect(gated(0, false)).toBe(
+    'GitHub requires a review it doesn’t name, such as one of the latest push.',
+  );
 });

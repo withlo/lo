@@ -46,6 +46,7 @@ import {
   overrideFromPanel,
 } from './merging.ts';
 import { OutcomeBanner, outcomeSwitch } from './OutcomeBanner.tsx';
+import { followStacks } from './placing.ts';
 import { forgetQueued, takeQueued } from './queued.ts';
 import { ShipDialog } from './ShipDialog.tsx';
 import { canShip, followShipJobs, heardShip, heardWatched, shipFromTab } from './shipping.ts';
@@ -133,6 +134,9 @@ export default {
     main().subscribe('queued', takeQueued);
     main().subscribe('ships', heardShip);
     main().subscribe('watched', heardWatched);
+    // Where a pull request sits among its stack's layers, which the merge panel asks again as they
+    // move.
+    followStacks();
     followShipJobs();
     onClosed(forgetStatus);
     onClosed(forgetQueued);

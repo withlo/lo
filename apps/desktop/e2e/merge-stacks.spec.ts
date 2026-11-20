@@ -151,11 +151,14 @@ test.describe('a chain that can’t be a GitHub stack', () => {
 
     await page.keyboard.press('Enter');
     await expect(dialog(page)).toContainText(`Merge #${chain1.number} into merge/8/base?`);
+    // With a merge commit, GitHub's default here, the layers moved need no rebase.
+    await expect(dialog(page)).toContainText('Merge commit');
     await expect(rows(page)).toHaveText([
       new RegExp(`Merge #${chain1.number} into merge/8/base`),
-      new RegExp(`Move #${draft.number} onto merge/8/base.*needs rebase`),
-      new RegExp(`Move #${chain2.number} onto merge/8/base.*needs rebase`),
+      new RegExp(`Move #${draft.number} onto merge/8/base`),
+      new RegExp(`Move #${chain2.number} onto merge/8/base`),
     ]);
+    await expect(dialog(page)).not.toContainText('rebase');
     await expect(dialog(page)).toContainText(
       'Lo moves the layers above once it has merged, while Lo is open.',
     );
@@ -165,8 +168,9 @@ test.describe('a chain that can’t be a GitHub stack', () => {
       timeout: MERGING,
     });
     await expect(
-      said(page, `#${draft.number} and #${chain2.number} now point at merge/8/base`),
+      said(page, `#${draft.number} and #${chain2.number} now point at merge/8/base.`),
     ).toBeVisible();
+    await expect(said(page, 'rebase')).toHaveCount(0);
 
     // Each moved once, after the merge.
     const sent = github.replay.seen.flatMap(({ method, url }) =>

@@ -83,7 +83,16 @@ export const blocker = z.discriminatedUnion('kind', [
   z.strictObject({ kind: z.literal('outOfDate') }),
   /** By whom: empty when GitHub says so but Lo can't see who. */
   z.strictObject({ kind: z.literal('changesRequested'), by: z.array(text) }),
-  z.strictObject({ kind: z.literal('approvals'), more: count, codeOwners: z.array(reviewer) }),
+  /**
+   * `codeOwnerRule`: the base's rules require a code owner's approval of the files that have one,
+   * which GitHub may ask nobody for, as when the only code owner is the pull request's author.
+   */
+  z.strictObject({
+    kind: z.literal('approvals'),
+    more: count,
+    codeOwners: z.array(reviewer),
+    codeOwnerRule: z.boolean(),
+  }),
   z.strictObject({ kind: z.literal('check'), check }),
   z.strictObject({ kind: z.literal('notReported'), check }),
   /** With `cutShort`, there were more threads than Lo read, so at least this many. */
@@ -427,7 +436,9 @@ export type BaseMove = z.output<typeof baseMove>;
  *   `above` are its open layers above, which stay open and move onto the base;
  * - `chain`: a chain that can't be a GitHub stack, merged a layer at a time from its bottom one:
  *   `before` moves that onto the root first, when it isn't there; once it has merged, `after` move
- *   the layers on it onto the root, and those layers, `needsRebase`, then need a rebase.
+ *   the layers on it onto the root, and those layers, `needsRebase`, then need a rebase: after a
+ *   squash or a rebase, which leave its commits out of the root, and maybe after a merge queue's
+ *   merge whose method Lo can't read, but not after a merge commit.
  */
 export const together = z.discriminatedUnion('kind', [
   z.strictObject({

@@ -6,8 +6,22 @@
 // pull request opened since the list, from a branch its merge would go into, would sit below it, so
 // those branches are asked about afresh. Nothing here calls Electron or GitHub.
 
-import { MAX_OPEN_PULL_REQUESTS, type BranchLookup, type MergeFacts } from '@lo/github';
-import { layerOf, stackOf, type Layer, type NativeStackEntry, type Stacks } from '@lo/stacks';
+import {
+  MAX_BRANCH_LOOKUPS,
+  MAX_OPEN_PULL_REQUESTS,
+  type BranchLookup,
+  type MergeFacts,
+  type OpenPullRequestList,
+} from '@lo/github';
+import {
+  branchesToLookUp,
+  layerOf,
+  stackOf,
+  stackPullRequests,
+  type Layer,
+  type NativeStackEntry,
+  type Stacks,
+} from '@lo/stacks';
 
 import type { Forest } from '../../stacks/service.ts';
 
@@ -35,6 +49,16 @@ export function unmergedIn(
   lookups: readonly Pick<BranchLookup, 'branch' | 'found'>[],
 ): ReadonlySet<string> {
   return new Set(lookups.flatMap((lookup) => (lookup.found.length === 0 ? [lookup.branch] : [])));
+}
+
+/**
+ * How many of the branches whose merged pull requests `list`'s stacks may link through, with
+ * `trunks`, weren't looked up yet: for {@link WhereView.toLookUp}.
+ */
+export function leftToLookUp(list: OpenPullRequestList, trunks: readonly string[]): number {
+  const looked = new Set(list.lookups.map((lookup) => lookup.branch));
+  return branchesToLookUp(stackPullRequests(list), trunks).filter((branch) => !looked.has(branch))
+    .length;
 }
 
 /** Where `facts` put their pull request. */
@@ -85,6 +109,11 @@ export interface WhereView {
    * lookups left out elsewhere. None by default.
    */
   readonly unmerged?: ReadonlySet<string>;
+  /**
+   * How many branches' merged pull requests are left to look up ({@link leftToLookUp}), which says
+   * how long Lo may take to know, or nothing when Lo can't count them: counted only when asked.
+   */
+  readonly toLookUp?: (() => number | undefined) | undefined;
   /** The time, in milliseconds since the Unix epoch. */
   readonly now: number;
 }
@@ -337,7 +366,7 @@ function settlesByListing(why: Unsure): boolean {
 }
 
 /** Why Lo can't tell where the pull request `view` shows sits, as the merge panel says it. */
-function unsureText(why: Unsure, { number, facts, now }: WhereView): string {
+function unsureText(why: Unsure, { number, facts, now, toLookUp }: WhereView): string {
   const again = 'Lo is listing the open pull requests again.';
   switch (why.kind) {
     case 'unread':
@@ -352,8 +381,12 @@ function unsureText(why: Unsure, { number, facts, now }: WhereView): string {
       return `${movedText(number, facts, why.listed)} ${again}`;
     case 'cycle':
       return `${loopText(why.prs)}, so Lo can't tell what this one sits on. Merge it on GitHub.`;
-    case 'lookups':
-      return `Some merged pull requests weren't looked up yet, so Lo can't tell what #${number} sits on. ${again}`;
+    case 'lookups': {
+      // Listing again looks up more only once the list changes, or a while after the last lookups.
+      const count = toLookUp?.();
+      const left = count === undefined || count === 0 ? '' : `, and has ${counted(count)} to go`;
+      return `Some merged pull requests weren't looked up yet, so Lo can't tell what #${number} sits on. Lo looks them up ${MAX_BRANCH_LOOKUPS} branches at a time, minutes apart${left}.`;
+    }
     case 'unconfirmed':
       return `Lo hasn't asked GitHub yet which open pull requests come from ${why.branch}.`;
     case 'cutShort':

@@ -1,5 +1,7 @@
-// What merging does in the window: `⏎` in the merge panel asks main for a plan and shows it in the
-// dialog in the panel's place; the dialog confirms its key, and `Esc` goes back to the panel. Main
+// What merging does in the window: `⏎` in the merge panel, once Lo knows where the pull request
+// sits, asking again where what the panel heard keeps it from merging, asks main for a plan and
+// shows it in the dialog in the panel's place, or says why not; the dialog confirms its key, and
+// `Esc` goes back to the panel. Main
 // says how each merge goes on `jobs`: done, a toast says so; refused, or ended without Lo knowing
 // how, the dialog says so while it's open, else a banner on the pull request's tab does. A chain's
 // run, which goes on after its merge, says in a toast how it ended, done or stopped. The window
@@ -17,6 +19,7 @@ import { activeTab, pullOf, withoutBidi } from '../../tab/window/shared.ts';
 import type { Asked, JobView, MergePlan, Refusal } from '../contract.ts';
 import { closePanel, openPanel, opened } from './actions.ts';
 import { main } from './main.ts';
+import { placeNow } from './placing.ts';
 import {
   merging,
   panels,
@@ -57,12 +60,12 @@ function canAsk(cant: typeof cantMerge): true | string {
   return cant(open.state, tab?.kind === 'pull' ? tab.number : 0) ?? true;
 }
 
-/** Whether `⏎` in the open panel can merge, or why not: where it sits may say. */
+/**
+ * Whether `⏎` in the open panel can ask for a merge, or why not. Where the pull request sits is
+ * asked as it's pressed, since what the panel last heard may be out of date.
+ */
 export function canMerge(): true | string {
-  const can = canAsk(cantMerge);
-  const open = opened();
-  if (can !== true || !open) return can;
-  return placedWhy(placementOf(open.id)) ?? true;
+  return canAsk(cantMerge);
 }
 
 /** Whether `a` in the open panel can turn auto-merge on, or off, or why not. */
@@ -82,13 +85,36 @@ export function canOverride(): true | string {
   return canAsk(cantOverride);
 }
 
+/** The views whose `⏎` waits to hear where their pull request sits. */
+const pressed = new Set<string>();
+
 /**
  * Asks main for the merge the open panel offers, with the method shown and the squash text typed,
- * and shows it in the dialog, in the panel's place, to confirm. A plan main refuses says why, and
- * the panel stays.
+ * and shows it in the dialog, in the panel's place, to confirm, once Lo knows where the pull
+ * request sits: as the panel heard it, unless that keeps the merge from going, which main is asked
+ * again, so it never refuses for where the pull request sat. Where it sits, or a plan main refuses,
+ * says why, and the panel stays.
  */
 export function mergeFromPanel(): void {
-  planFromPanel('merge');
+  const open = opened();
+  const tab = activeTab();
+  if (!open || tab?.kind !== 'pull') return;
+  const { id, state } = open;
+  if (pressed.has(id)) {
+    notify('Merge', `Lo is checking what merges with #${tab.number}.`);
+    return;
+  }
+  pressed.add(id);
+  placeNow(id, state)
+    .then((placement) => {
+      // The panel closed, or another tab came on screen, while it was asked.
+      if (opened()?.id !== id || merging.getState().dialog !== undefined) return;
+      const why = placedWhy(placement);
+      if (why === undefined) planFromPanel('merge');
+      else notify('Merge', withoutBidi(why));
+    })
+    .catch((error: unknown) => notify('Merge', messageOf(error)))
+    .finally(() => pressed.delete(id));
 }
 
 /**
