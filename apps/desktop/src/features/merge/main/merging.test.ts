@@ -1207,7 +1207,9 @@ describe('a chain’s merge a layer at a time', () => {
  * it to the queue, and a read of it says it's queued until a test says it merged.
  */
 function queuedChain(more: Setup = {}) {
-  const states = [{ state: 'OPEN', mergeQueueEntry: { position: 1 } }];
+  const states: { state: string; mergeQueueEntry: { position: number } | null }[] = [
+    { state: 'OPEN', mergeQueueEntry: { position: 1 } },
+  ];
   const run = chained({
     facts: factsOf({ queueRequired: true, queueMethod: 'SQUASH' }),
     results: [answer('enqueued')],
@@ -1223,8 +1225,8 @@ function queuedChain(more: Setup = {}) {
 }
 
 /** The last state published of the chain's run, once it's `phase`. */
-async function phase(run: Run, phase: string): Promise<void> {
-  await vi.waitFor(() => expect(run.published.at(-1)?.together).toMatchObject({ phase }));
+async function phase(run: Run, named: string): Promise<void> {
+  await vi.waitFor(() => expect(run.published.at(-1)?.together).toMatchObject({ phase: named }));
 }
 
 describe('a chain’s merge that waits', () => {
