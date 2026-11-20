@@ -124,15 +124,13 @@ async function ship(page: Page, number: number): Promise<void> {
       .poll(async () => (await dialog(page).isVisible()) || (await refused.isVisible()))
       .toBe(true);
     if (await dialog(page).isVisible()) {
-      // Planned, or refused, which closes the dialog and says why.
+      // Planned, or refused, which closes the dialog and says why. Its text is read in one call
+      // that doesn't wait: a dialog that closed after a check that it's open would leave
+      // `textContent` waiting for one to come back, past the poll's own time.
       await expect
-        .poll(
-          async () =>
-            (await dialog(page).isVisible())
-              ? ((await dialog(page).textContent()) ?? '')
-              : 'closed',
-          { timeout: 30_000 },
-        )
+        .poll(async () => (await dialog(page).allTextContents())[0] ?? 'closed', {
+          timeout: 30_000,
+        })
         .toMatch(new RegExp(`${planned.replace('?', '\\?')}|^closed$`));
       if (await dialog(page).isVisible()) break;
     }

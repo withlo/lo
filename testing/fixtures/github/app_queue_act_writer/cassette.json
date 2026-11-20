@@ -1,4 +1,4 @@
 {
-  "description": "app_queue_act read as an account with write access, below admin, as app_merge_override_writer is: every read of e4/queued's merge queue says WRITE, and GitHub lets only admins move a pull request to the front, so Lo offers no J. Only the reads before J was pressed are meant for such an account: the rest are as recorded, the move included. These answers are derived: the recorders accept only rozed-bot's token, an admin's.",
+  "description": "app_queue_act read as an account with write access, below admin, as app_merge_override_writer is: every read of e4/queued's merge queue says WRITE, and GitHub lets only admins move a pull request to the front, so Lo offers no J. Only the reads before J was pressed are meant for such an account: the rest are as recorded, the move included. These answers are derived: the recorders accept only rozed-bot's token, an admin's. Its overview ref read again is answered as app_queue_act_polled answers it.",
   "derived_from": "app_queue_act"
 }

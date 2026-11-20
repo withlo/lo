@@ -610,14 +610,16 @@ export const onMerge = test.extend<{
 export const QUEUE = MERGE_PULLS[4];
 
 /**
- * `test`, with Lo signed in as rozed-bot on a replay server that answers from `app_queue`, recorded
- * from the app on {@link QUEUE}'s pull requests, and fetching from their repository, built on this
- * machine. Its `launch` starts Lo again on the test's data folder, for a test that restarts it.
+ * `test`, with Lo signed in as rozed-bot on a replay server that answers from `app_queue_polled`:
+ * `app_queue`, recorded from the app on {@link QUEUE}'s pull requests, with GitHub's answer to
+ * each overview ref read again, which Lo does as its window comes to the front. It fetches from
+ * their repository, built on this machine. Its `launch` starts Lo again on the test's data folder,
+ * for a test that restarts it.
  */
 export const onQueue = test.extend<{ github: ReplayServer; remote: string }>({
   // oxlint-disable-next-line no-empty-pattern
   github: async ({}, use) => {
-    const server = await serveReplay('app_queue');
+    const server = await serveReplay('app_queue_polled');
     await use(server);
     await server.close();
   },
@@ -647,11 +649,12 @@ export const QUEUED = MERGE_PULLS[6];
 
 /**
  * `test`, with Lo signed in as rozed-bot on a replay server that answers from `cassette`, recorded
- * from the app on {@link QUEUED}'s pull requests in `e4/queued`'s merge queue, and fetching from
- * their repository, built on this machine.
+ * from the app on {@link QUEUED}'s pull requests in `e4/queued`'s merge queue, with GitHub's
+ * answer to each overview ref read again (`app_queued_polled` unless a test says), and fetching
+ * from their repository, built on this machine.
  */
 export const onQueued = test.extend<{ cassette: string; github: ReplayServer; remote: string }>({
-  cassette: ['app_queued', { option: true }],
+  cassette: ['app_queued_polled', { option: true }],
   github: async ({ cassette }, use) => {
     const server = await serveReplay(cassette);
     await use(server);
