@@ -3,10 +3,12 @@
 // a block Lo can't explain, which may be one: GitHub then merges the pull request, or on a branch
 // with a merge queue adds it to the queue, once they clear. With auto-merge on, `a` turns it off.
 // `⌥⏎` merges past the base branch's rules, for an account GitHub lets bypass them, when they're
-// what's in the way: not a draft, nor conflicts, which no rule makes. Either is a merge's write, so
-// it goes where a merge does: alone, or from a GitHub stack's bottom layer, never with layers below
-// it, which its write can't name. Nothing here calls Electron or GitHub.
+// what's in the way: not a draft, nor conflicts, which no rule makes, and not from a GitHub stack's
+// layer above its bottom one. Either is a merge's write, so it goes where a merge does: alone, or
+// from a GitHub stack's bottom layer, never with layers below it, which its write can't name.
+// Nothing here calls Electron or GitHub.
 
+import type { MergeFacts } from '@lo/github';
 import {
   blockers,
   isWait,
@@ -55,8 +57,19 @@ export function autoActionOf(snapshot: MergeSnapshot): AutoAction {
   return { kind: 'on' };
 }
 
-/** Whether `⌥⏎` merges the pull request `snapshot` holds past its base branch's rules now. */
-export function overrideActionOf(snapshot: MergeSnapshot): OverrideAction {
+/**
+ * Whether the pull request `facts` are of is a layer of a GitHub stack above its bottom one: it
+ * merges into another layer's branch, not the stack's base.
+ */
+export function aboveStackBottom(facts: MergeFacts): boolean {
+  return facts.stack !== undefined && facts.stack.base !== facts.pullRequest.base;
+}
+
+/**
+ * Whether `⌥⏎` merges the pull request `snapshot` holds past its base branch's rules now: never
+ * from a GitHub stack's layer above its bottom one (`aboveBottom`).
+ */
+export function overrideActionOf(snapshot: MergeSnapshot, aboveBottom: boolean): OverrideAction {
   const no = noOverride;
   if (snapshot.state === 'MERGED') return no('merged');
   if (snapshot.state === 'CLOSED') return no('closed');
@@ -64,6 +77,7 @@ export function overrideActionOf(snapshot: MergeSnapshot): OverrideAction {
   const found = blockers(snapshot);
   if (found.length === 0) return no('nothingToSkip');
   if (!snapshot.viewer.canMergeAsAdmin) return no('noPermission');
+  if (aboveBottom) return no('stackLayer');
   // Neither is a rule: GitHub merges neither past its rules.
   if (found.some((blocker) => blocker.kind === 'draft')) return no('draft');
   if (found.some((blocker) => blocker.kind === 'conflicts')) return no('conflicts');

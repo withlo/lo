@@ -874,26 +874,69 @@ describe('auto-merge', () => {
     });
   });
 
-  it('that GitHub won’t turn on because it can merge now offers the merge, read again, to confirm', async () => {
+  it('that GitHub won’t turn on because it can merge now offers the merge, read again, with the text typed', async () => {
     const run = setup({
       facts: factsOf(WAITING),
       reread: factsOf(),
       autoOn: () => Promise.resolve({ refusal: 'canMergeNow' }),
     });
-    const plan = planOf(await run.merging.plan(ID, { ...SQUASH, asked: 'autoMerge' }));
+    const plan = planOf(
+      await run.merging.plan(ID, { ...SQUASH, title: 'Typed', asked: 'autoMerge' }),
+    );
     await run.merging.confirm(plan.key);
     const done = await run.ended('refused');
     expect(done.state).toMatchObject({
       refusal: {
         kind: 'canMergeNow',
         text: 'Nothing blocks #138 now, so GitHub didn’t turn on auto-merge. It can merge as it is.',
-        offer: { kind: 'merge', method: 'SQUASH', head: HEAD },
+        offer: { kind: 'merge', method: 'SQUASH', head: HEAD, title: 'Typed' },
       },
     });
     const offer = done.state.kind === 'refused' ? done.state.refusal.offer : undefined;
     expect(await run.merging.confirm(offer!.key)).toEqual({ kind: 'sent' });
     await run.ended('merged');
-    expect(run.sent).toHaveLength(1);
+    expect(run.sent).toEqual([expect.objectContaining({ commitTitle: 'Typed' })]);
+  });
+
+  it('offers no merge in place of a plan the reader made meanwhile', async () => {
+    let refuse: ((value: MergeRefusal) => void) | undefined;
+    const run = setup({
+      facts: factsOf(WAITING),
+      reread: factsOf(),
+      autoOn: () => new Promise((resolve) => (refuse = resolve)),
+    });
+    const first = planOf(await run.merging.plan(ID, { ...SQUASH, asked: 'autoMerge' }));
+    await run.merging.confirm(first.key);
+    const second = planOf(await run.merging.plan(ID, { ...SQUASH, asked: 'autoMerge' }));
+    refuse!({ refusal: 'canMergeNow' });
+    const done = await run.ended('refused');
+    expect(done.state).toMatchObject({
+      refusal: { kind: 'canMergeNow', text: expect.stringContaining('Merge it from the panel.') },
+    });
+    expect(done.state.kind === 'refused' && done.state.refusal.offer).toBeFalsy();
+    // The reader's own plan is still there to confirm: as nothing blocks it now, the merge itself.
+    expect(await run.merging.confirm(second.key)).toMatchObject({
+      kind: 'again',
+      plan: { kind: 'merge' },
+    });
+  });
+
+  it('asks again, sending nothing, when what it waits for changed by the press', async () => {
+    const run = setup({
+      facts: factsOf(WAITING),
+      fetchedAt: 0,
+      reread: factsOf({ ...WAITING, reviewDecision: 'REVIEW_REQUIRED' }),
+    });
+    const plan = planOf(await run.merging.plan(ID, { ...SQUASH, asked: 'autoMerge' }));
+    expect(plan.named?.blockers.map((blocker) => blocker.kind)).toEqual(['check']);
+    const confirmed = await run.merging.confirm(plan.key);
+    if (confirmed.kind !== 'again') throw new Error(JSON.stringify(confirmed));
+    expect(confirmed.why).toContain('What auto-merge waits for on #138 changed.');
+    expect(confirmed.plan.named?.blockers.map((blocker) => blocker.kind)).toEqual([
+      'approvals',
+      'check',
+    ]);
+    expect(run.auto).toEqual([]);
   });
 
   it('refused as not allowed says so in GitHub’s words, and gives the turn back', async () => {
@@ -992,6 +1035,31 @@ describe('a merge past the rules', () => {
       }),
     ]);
     await run.ended('merged');
+  });
+
+  it('asks again, sending nothing, when a rule it would skip appeared by the press', async () => {
+    const run = setup({
+      facts: factsOf(REVIEW_OWED),
+      fetchedAt: 0,
+      reread: factsOf({ ...REVIEW_OWED, checksPending: true, checks: WAITING.checks ?? [] }),
+    });
+    const plan = planOf(
+      await run.merging.plan(ID, { method: 'SQUASH', title: '', message: '', asked: 'override' }),
+    );
+    expect(plan.named?.blockers.map((blocker) => blocker.kind)).toEqual(['approvals']);
+    const confirmed = await run.merging.confirm(plan.key, '138');
+    if (confirmed.kind !== 'again') throw new Error(JSON.stringify(confirmed));
+    expect(confirmed.why).toContain('What merging #138 past the rules skips changed.');
+    expect(confirmed.plan.named?.blockers.map((blocker) => blocker.kind)).toEqual([
+      'approvals',
+      'check',
+    ]);
+    expect(run.sent).toEqual([]);
+    // The new plan goes only with the number typed again.
+    expect(await run.merging.confirm(confirmed.plan.key)).toMatchObject({
+      refusal: { kind: 'typed' },
+    });
+    expect(await run.merging.confirm(confirmed.plan.key, '138')).toEqual({ kind: 'sent' });
   });
 
   it('isn’t planned for an account GitHub doesn’t let bypass them', async () => {

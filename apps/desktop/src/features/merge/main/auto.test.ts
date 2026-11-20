@@ -81,6 +81,22 @@ test('`⌥⏎` merges past the rules for an account that may bypass them, when r
       mergeState: 'DIRTY',
     }).override,
   ).toEqual({ kind: 'notPossible', reason: 'conflicts' });
+  // GitHub merges past the rules only a GitHub stack's bottom layer.
+  const stack = {
+    number: 7,
+    position: 2,
+    base: 'main',
+    baseRead: true,
+    queueRequired: false,
+    queueMethod: undefined,
+  };
+  expect(
+    stateFor({ ...owed, viewerCanMergeAsAdmin: true, base: 'merge/7/stack-1' }, { stack }).override,
+  ).toEqual({ kind: 'notPossible', reason: 'stackLayer' });
+  expect(
+    stateFor({ ...owed, viewerCanMergeAsAdmin: true }, { stack: { ...stack, position: 1 } })
+      .override,
+  ).toEqual({ kind: 'override' });
 });
 
 test('a push before auto-merge merges keeps the approvals unless the rules dismiss them', () => {

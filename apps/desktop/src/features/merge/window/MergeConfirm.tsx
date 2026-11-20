@@ -26,7 +26,7 @@ import { useStore } from 'zustand';
 import { registry } from '../../../window/commands/registry.ts';
 import { usePull, withoutBidi } from '../../tab/window/shared.ts';
 import { revisionLabel, revisionsOf } from '../../revisions/window/shared.ts';
-import type { JobView, MergePlan, MergeState, Refusal } from '../contract.ts';
+import type { JobView, MergePlan, Refusal } from '../contract.ts';
 import {
   askAgain,
   confirmMerge,
@@ -48,6 +48,7 @@ import {
   pendingLine,
   pushWarning,
   queueLine,
+  saidOf,
   skipsOf,
   troubleLine,
 } from './words.ts';
@@ -157,24 +158,20 @@ function askAgainBack(plan: MergePlan): void {
   leaveDialog();
 }
 
-/** What Lo last read of `plan`'s pull request, if it's of the revision the plan merges. */
-function stateOf(plan: MergePlan): MergeState | undefined {
-  const status = statuses.getState().views.get(plan.id);
-  return status?.kind === 'known' && status.state.head === plan.head ? status.state : undefined;
-}
-
-/** What turning auto-merge on waits for, and what a push before then would do. */
+/**
+ * What turning auto-merge on waits for, and what a push before then would do, as main planned it:
+ * what the press checks again.
+ */
 function AutoLines({ plan }: { plan: MergePlan }) {
-  const state = stateOf(plan);
-  const warning = state && pushWarning(state);
-  const panel = panels.get(plan.id);
+  const said = saidOf(plan);
+  const warning = said && pushWarning(said);
   return (
     <>
-      <p className="m-0 text-fg text-small">{withoutBidi(onceLine(plan, state))}</p>
+      <p className="m-0 text-fg text-small">{withoutBidi(onceLine(plan))}</p>
       {plan.kind === 'whenReady' && (
         <p className="m-0 text-fg-muted text-small">{queueLine(plan.method)}</p>
       )}
-      {plan.kind === 'autoMerge' && (panel.title !== '' || panel.message !== '') && (
+      {plan.kind === 'autoMerge' && (plan.title !== '' || plan.message !== '') && (
         <p className="m-0 text-fg-muted text-small">
           Auto-merge uses GitHub’s own commit message, not the one typed.
         </p>
@@ -188,10 +185,10 @@ function AutoLines({ plan }: { plan: MergePlan }) {
   );
 }
 
-/** What a merge past the rules skips, a line each. */
+/** What a merge past the rules skips, a line each, as main planned it: what the press checks again. */
 function Skips({ plan }: { plan: MergePlan }) {
-  const state = stateOf(plan);
-  const skips = state ? skipsOf(state) : [];
+  const said = saidOf(plan);
+  const skips = said ? skipsOf(said) : [];
   return (
     <Callout tone="danger">
       <strong className="block font-semibold">This skips:</strong>

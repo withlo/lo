@@ -84,7 +84,8 @@ import type {
   WriteKind,
 } from '../contract.ts';
 import type { MergeTurn, MergeWrites } from '../service.ts';
-import { aloneOrBottom, autoActionOf, overrideActionOf } from './auto.ts';
+import { aboveStackBottom, aloneOrBottom, autoActionOf, overrideActionOf } from './auto.ts';
+import { namedOf } from './status.ts';
 import { placedBy, where, type OpenFromHead, type Where } from './where.ts';
 
 /** How long what GitHub said of a merge is taken as current at the press: 7 minutes. */
@@ -448,6 +449,12 @@ function changed(was: MergePlan, now: MergePlan): string | undefined {
   if (was.base !== now.base) return `#${now.number} merges into ${now.base} now.`;
   if (was.method !== now.method) return 'The method it merges with changed.';
   if (was.head !== now.head) return 'The revision on screen changed.';
+  // What the confirmation listed, as Lo read it then: anything new or gone asks again.
+  if (JSON.stringify(was.named) !== JSON.stringify(now.named)) {
+    return now.kind === 'override'
+      ? `What merging #${now.number} past the rules skips changed.`
+      : `What auto-merge waits for on #${now.number} changed.`;
+  }
   return undefined;
 }
 
@@ -634,6 +641,7 @@ export class Merging {
       head: facts.pullRequest.head,
       title: '',
       message: '',
+      named: null,
     };
     return this.#sendOwn(plan, pull, poller, (pullRequestId) =>
       poller.disableAutoMerge(pull, pullRequestId),
@@ -735,7 +743,12 @@ export class Merging {
     });
     const action = mergeAction(snapshot);
     const base = rulesBase(facts);
-    const way = otherWay(snapshot, choice, number, login, base);
+    const way = otherWay(snapshot, choice, {
+      number,
+      login,
+      base,
+      aboveBottom: aboveStackBottom(facts),
+    });
     if (typeof way === 'string') return way;
     let kind: PlanKind;
     let method: Method | null;
@@ -762,8 +775,10 @@ export class Merging {
       }
     }
     // Only what the reader typed goes, and only for a squash straight in: an empty field leaves
-    // GitHub's own.
-    const squash = (kind === 'merge' || kind === 'override') && method === 'SQUASH';
+    // GitHub's own. Auto-merge keeps it for the merge Lo may offer in its place.
+    const squash =
+      (kind === 'merge' || kind === 'override' || kind === 'autoMerge') && method === 'SQUASH';
+    const names = kind === 'autoMerge' || kind === 'whenReady' || kind === 'override';
     return {
       key: this.#newKey(),
       id,
@@ -777,6 +792,13 @@ export class Merging {
       head,
       title: squash ? choice.title.trim() : '',
       message: squash ? choice.message.trim() : '',
+      named: names
+        ? namedOf(snapshot, facts, {
+            owner: view.repository.owner,
+            repo: view.repository.name,
+            number,
+          })
+        : null,
     };
   }
 
@@ -1209,8 +1231,9 @@ export class Merging {
 
   /**
    * GitHub won't turn on auto-merge for `sent` because nothing blocks the merge now: Lo reads the
-   * pull request again, and offers the merge in its place, kept for the reader to confirm, when the
-   * read agrees. The refusal says so either way.
+   * pull request again, and offers the merge in its place, with the squash text typed, kept for the
+   * reader to confirm, when the read agrees and the reader hasn't planned anything else for the view
+   * since. The refusal says so either way.
    */
   async #offerMerge(sent: Sent): Promise<void> {
     const { plan, pull, poller } = sent;
@@ -1222,8 +1245,8 @@ export class Merging {
       if (typeof read !== 'string' && view && !this.#stopped) {
         const planned = this.#planOf(plan.id, view, plan.login, read.value, {
           method: plan.method,
-          title: '',
-          message: '',
+          title: plan.title,
+          message: plan.message,
           asked: 'merge',
         });
         if (typeof planned !== 'string' && planned.head === plan.head) offer = planned;
@@ -1232,6 +1255,8 @@ export class Merging {
       this.#options.log(`${pull.toString()}: ${describe(error)}`);
     }
     if (this.#sent.get(pull.key) !== sent) return;
+    // A plan the reader made since stays: it isn't replaced unseen.
+    if ([...this.#kept.values()].some((kept) => kept.plan.id === plan.id)) offer = undefined;
     if (offer) this.#keep(offer, pull);
     sent.own = {
       kind: 'refused',
@@ -1570,6 +1595,8 @@ function overrideText(
       return `#${number} is a draft, which GitHub doesn’t merge, past the rules or not.`;
     case 'conflicts':
       return `#${number} conflicts with ${base}, which no rule skips.`;
+    case 'stackLayer':
+      return `#${number} sits on another layer of its GitHub stack, and GitHub merges past the rules only a stack’s bottom layer.`;
     default:
       action.reason satisfies never;
       throw new Error(`a reason Lo doesn't know: ${String(action.reason)}`);
@@ -1592,9 +1619,12 @@ function chosenMethod(snapshot: MergeSnapshot, choice: Choice): Method | null {
 function otherWay(
   snapshot: MergeSnapshot,
   choice: Choice,
-  number: number,
-  login: string,
-  base: string,
+  {
+    number,
+    login,
+    base,
+    aboveBottom,
+  }: { number: number; login: string; base: string; aboveBottom: boolean },
 ): { kind: PlanKind; method: Method | null } | string | undefined {
   const asked = choice.asked ?? 'merge';
   switch (asked) {
@@ -1611,7 +1641,7 @@ function otherWay(
       return { kind: 'autoMerge', method: chosenMethod(snapshot, choice) };
     }
     case 'override': {
-      const override = overrideActionOf(snapshot);
+      const override = overrideActionOf(snapshot, aboveBottom);
       if (override.kind === 'notPossible') return overrideText(override, number, login, base);
       return { kind: 'override', method: chosenMethod(snapshot, choice) };
     }

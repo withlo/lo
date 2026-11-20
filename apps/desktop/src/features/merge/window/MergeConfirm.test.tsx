@@ -14,7 +14,7 @@ import { beforeAll, beforeEach, expect, it, onTestFinished } from 'vitest';
 import { notice } from '../../../window/commands/notices.tsx';
 import { createRegistry } from '../../../window/commands/registry.ts';
 import { installBridge } from '../../../window/test/bridge.ts';
-import type { JobView, MergePlan, MergeState } from '../contract.ts';
+import type { JobView, MergePlan, Named } from '../contract.ts';
 import feature from './index.ts';
 import { MergeConfirm } from './MergeConfirm.tsx';
 import { heardJob, newerFrom, typeNumber } from './merging.ts';
@@ -59,6 +59,7 @@ function planOf(change: Partial<MergePlan> = {}): MergePlan {
     head: HEAD,
     title: 'Rate limit by cost',
     message: '',
+    named: null,
     ...change,
   };
 }
@@ -344,48 +345,31 @@ it('offers to ask GitHub again when Lo can’t tell how the last merge went, and
   });
 });
 
-/** #138 as Lo last read it in view `t1`, waiting on two checks, at the head the plans merge. */
-function readAs(change: Partial<MergeState> = {}): void {
-  const state: MergeState = {
-    verdict: 'waiting',
-    position: null,
+/**
+ * What a confirmation names, as main planned it: #138 waiting on two checks, into a base whose
+ * approvals a push keeps, with `change`.
+ */
+function namedOf(change: Partial<Named> = {}): Named {
+  return {
     blockers: [
       { kind: 'check', check: { name: 'e2e (chromium)', state: 'running', url: null } },
       { kind: 'check', check: { name: 'typecheck', state: 'running', url: null } },
     ],
-    autoMerge: null,
-    partial: false,
-    incomplete: null,
-    action: { kind: 'notPossible', reason: 'blocked' },
-    auto: { kind: 'on' },
-    override: { kind: 'notPossible', reason: 'noPermission' },
-    afterPush: 'keepsApprovals',
-    picked: 'SQUASH',
-    methods: { merge: true, squash: true, rebase: true },
-    signedCommits: false,
     unchecked: [],
-    base: 'main',
+    partial: false,
+    afterPush: 'keepsApprovals',
     queue: { required: false, method: null },
-    approvedBy: ['jun-park'],
-    checks: { passed: 0, total: 2 },
-    url: 'https://github.com/rozed-dev/e2e/pull/138',
-    head: HEAD,
-    readAt: Date.now(),
-    stale: null,
-    off: null,
     ...change,
   };
-  statuses.setState({ views: new Map([['t1', { kind: 'known', state }]]) });
 }
 
 it('turning on auto-merge says what GitHub waits for, and what a push before then would do', async () => {
-  readAs();
   draw(<MergeConfirm />);
   act(() =>
     merging.setState({
       dialog: {
         kind: 'confirm',
-        plan: planOf({ kind: 'autoMerge', title: '' }),
+        plan: planOf({ kind: 'autoMerge', title: '', named: namedOf() }),
         note: undefined,
         sending: false,
       },
@@ -403,16 +387,19 @@ it('turning on auto-merge says what GitHub waits for, and what a push before the
   expect(box.textContent).toContain('Merge when ready');
 
   // On a branch with a merge queue, GitHub adds it to the queue once they pass.
-  readAs({
-    base: 'e4/queued',
-    queue: { required: true, method: 'SQUASH' },
-    afterPush: 'newApproval',
-  });
   act(() =>
     merging.setState({
       dialog: {
         kind: 'confirm',
-        plan: planOf({ kind: 'whenReady', base: 'e4/queued', title: '' }),
+        plan: planOf({
+          kind: 'whenReady',
+          base: 'e4/queued',
+          title: '',
+          named: namedOf({
+            queue: { required: true, method: 'SQUASH' },
+            afterPush: 'newApproval',
+          }),
+        }),
         note: undefined,
         sending: false,
       },
@@ -429,8 +416,7 @@ it('turning on auto-merge says what GitHub waits for, and what a push before the
 });
 
 it('merges past the rules only with the number typed, which it asks for afresh when it asks again', async () => {
-  readAs({ verdict: 'blocked', override: { kind: 'override' } });
-  const plan = planOf({ kind: 'override' });
+  const plan = planOf({ kind: 'override', named: namedOf() });
   draw(<MergeConfirm />);
   act(() =>
     merging.setState({ dialog: { kind: 'confirm', plan, note: undefined, sending: false } }),
@@ -461,7 +447,11 @@ it('merges past the rules only with the number typed, which it asks for afresh w
   expect(confirms()).toBe(0);
 
   // Typed, `⏎` in the field confirms once, with the number.
-  const again = planOf({ kind: 'override', key: '00000000-0000-4000-8000-000000000002' });
+  const again = planOf({
+    kind: 'override',
+    key: '00000000-0000-4000-8000-000000000002',
+    named: namedOf(),
+  });
   confirming = () => ({ kind: 'again', plan: again, why: 'Someone approved #138.' });
   act(() => typeNumber('138'));
   expect(field().value).toBe('138');

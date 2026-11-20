@@ -156,6 +156,7 @@ export const overrideAction = z.discriminatedUnion('kind', [
       'queued',
       'nothingToSkip',
       'noPermission',
+      'stackLayer',
       'draft',
       'conflicts',
       'noMethod',
@@ -375,6 +376,21 @@ export const writeKind = z.enum([
 export type WriteKind = z.output<typeof writeKind>;
 
 /**
+ * What the confirmation of auto-merge, or of a merge past the rules, names beyond the plan itself,
+ * as Lo read it when it planned: what's in the way, the rules Lo can't check and whether it may not
+ * see every rule, what a push before it merges does to the approvals, and the base branch's merge
+ * queue. The press asks again when any of it changed.
+ */
+export const named = z.strictObject({
+  blockers: z.array(blocker),
+  unchecked: z.array(unchecked),
+  partial: z.boolean(),
+  afterPush,
+  queue: z.strictObject({ required: z.boolean(), method: method.nullable() }),
+});
+export type Named = z.output<typeof named>;
+
+/**
  * What a merge will do, for the reader to confirm before anything is sent:
  *
  * - `key`: what names it, which the window confirms; `id`: the view it was asked for from;
@@ -384,7 +400,10 @@ export type WriteKind = z.output<typeof writeKind>;
  *   with `method` as that goes; or straight in with `method`, past `base`'s rules;
  * - `head`: the head on screen, which GitHub merges only while it's the pull request's head;
  * - `title`, `message`: a squash commit's title and message as the reader typed them, empty for
- *   GitHub's own, which `squashTitle` is, when Lo read it.
+ *   GitHub's own, which `squashTitle` is, when Lo read it. Auto-merge keeps them only for the merge
+ *   Lo may offer in its place: GitHub's own go with auto-merge;
+ * - `named`: what its confirmation names, for auto-merge and a merge past the rules; nothing for
+ *   a merge or a queue entry.
  */
 export const plan = z.strictObject({
   key: planKey,
@@ -399,6 +418,7 @@ export const plan = z.strictObject({
   head: oid,
   title: z.string().max(1024),
   message: z.string().max(65_536),
+  named: named.nullable(),
 });
 export type MergePlan = z.output<typeof plan>;
 

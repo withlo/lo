@@ -15,6 +15,7 @@ import type {
   MergeState,
   MergeView,
   Method,
+  Named,
   Off,
   Reviewer,
   Unchecked,
@@ -1013,10 +1014,21 @@ function merges(method: Method | null): string {
 }
 
 /**
+ * What a confirmation of auto-merge or of a merge past the rules names, and the branch it merges
+ * into: as the plan carries it, or a view's status says it.
+ */
+export type Said = Named & { readonly base: string };
+
+/** What the confirmation of `plan` names, as main planned it. */
+export function saidOf(plan: MergePlan): Said | undefined {
+  return plan.named === null ? undefined : { ...plan.named, base: plan.base };
+}
+
+/**
  * What auto-merge waits on, from `state`'s reasons: "it’s approved and e2e (chromium) and
  * typecheck pass". A block Lo can't see all of waits on the base branch's rules.
  */
-export function waitsFor(state: MergeState): string {
+export function waitsFor(state: Said): string {
   const parts: string[] = [];
   if (state.blockers.some((blocker) => blocker.kind === 'approvals')) parts.push('it’s approved');
   const checks = [
@@ -1047,18 +1059,16 @@ export function waitsFor(state: MergeState): string {
  * e2e (chromium) and typecheck pass.", or on a branch with a merge queue, "GitHub adds #4821 to the
  * merge queue for main once ci passes."
  */
-export function onceLine(
-  plan: Pick<MergePlan, 'kind' | 'number' | 'base' | 'method'>,
-  state: MergeState | undefined,
-): string {
-  const once = state === undefined ? 'it’s ready' : waitsFor(state);
+export function onceLine(plan: MergePlan): string {
+  const said = saidOf(plan);
+  const once = said === undefined ? 'it’s ready' : waitsFor(said);
   return plan.kind === 'whenReady'
     ? `GitHub adds #${plan.number} to the merge queue for ${plan.base} once ${once}.`
     : `GitHub ${merges(plan.method)} #${plan.number} into ${plan.base} once ${once}.`;
 }
 
 /** What turning auto-merge on warns of a push before it merges, if anything. */
-export function pushWarning(state: Pick<MergeState, 'afterPush' | 'base'>): string | undefined {
+export function pushWarning(state: Pick<Said, 'afterPush' | 'base'>): string | undefined {
   switch (state.afterPush) {
     case 'keepsApprovals':
       return 'A push before it merges would merge with the approvals already given.';
@@ -1072,9 +1082,13 @@ export function pushWarning(state: Pick<MergeState, 'afterPush' | 'base'>): stri
   }
 }
 
-/** What a merge past the rules skips, a line each: "1 required check that failed: test (node 20)". */
-export function skipsOf(state: MergeState): string[] {
+/**
+ * What a merge past the rules skips, a line each: "1 required check that failed: test (node 20)".
+ * It merges straight in, so past a merge queue too.
+ */
+export function skipsOf(state: Said): string[] {
   const lines: string[] = [];
+  if (state.queue.required) lines.push(`The merge queue for ${state.base}`);
   const checks = checksOf(state.blockers);
   for (const blocker of reasons(state.blockers)) {
     switch (blocker.kind) {
@@ -1198,6 +1212,8 @@ export function cantOverride(state: MergeState, number: number): string | undefi
         return `#${number} is a draft, which GitHub doesn’t merge, past the rules or not.`;
       case 'conflicts':
         return `#${number} conflicts with ${state.base}, which no rule skips.`;
+      case 'stackLayer':
+        return `#${number} sits on another layer of its GitHub stack, and GitHub merges past the rules only a stack’s bottom layer.`;
       case 'noMethod':
         return 'The repository allows no merge method.';
       default:

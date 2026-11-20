@@ -18,7 +18,9 @@ import {
   rowPage,
   rowsOf,
   shownMethod,
+  skipsOf,
   steppedMethod,
+  type Said,
 } from './words.ts';
 
 /** When the tests' statuses were read: now, so none is out of date unless a test says. */
@@ -437,4 +439,26 @@ test('a merge that went says how it ended: done, refused, or not known', () => {
     'GitHub was already merging it, from Lo or elsewhere, so Lo followed that merge. Its answer was lost. GitHub shows it open.',
   );
   expect(outcomeTitle(job({ kind: 'merged' }))).toBeUndefined();
+});
+
+test('a merge past the rules skips each reason, and the merge queue it merges straight past', () => {
+  const said: Omit<Said, 'queue'> = {
+    blockers: [
+      { kind: 'approvals', more: 1, codeOwners: [] },
+      { kind: 'check', check: { name: 'ci', state: 'running', url: null } },
+    ],
+    unchecked: [],
+    partial: false,
+    afterPush: 'keepsApprovals',
+    base: 'e4/queued',
+  };
+  expect(skipsOf({ ...said, queue: { required: false, method: null } })).toEqual([
+    '1 more approval',
+    '1 required check still running: ci',
+  ]);
+  expect(skipsOf({ ...said, queue: { required: true, method: 'SQUASH' } })).toEqual([
+    'The merge queue for e4/queued',
+    '1 more approval',
+    '1 required check still running: ci',
+  ]);
 });
