@@ -7,7 +7,8 @@
 // it says exactly what was meant, so a change never leaves the file meaning anything but what
 // Settings shows. A key given twice is read as the last one says, as JavaScript reads JSON; Lo
 // won't change it, since the file then says one thing where a person may read another. A byte
-// order mark, which some editors write first, is kept.
+// order mark, which some editors write first, is kept. Lo writes no header of its own, and takes
+// out the one older versions wrote, which says what Lo no longer does.
 
 import { isDeepStrictEqual } from 'node:util';
 
@@ -59,6 +60,30 @@ export const SETTINGS_DEPTH_LIMIT = 100;
 
 /** The byte order mark some editors start a file with, which Lo reads past and keeps. */
 const BOM = '\uFEFF';
+
+/**
+ * Headers older versions of Lo wrote at the top of a settings file they made, each exactly as
+ * written. They said which settings Lo applied, which is no longer so, and a new file has no
+ * header, so a change Lo makes to a file that starts with one takes it out. A header a person
+ * wrote, or changed even by a word, isn't one of these and stays.
+ */
+const RETIRED_HEADERS = [
+  `// Lo's settings. Lo applies only these from this file and ignores the rest: "theme",
+// "ui_font_family", "ui_font_size", "buffer_font_family" and "buffer_font_size".
+// A theme's file goes in ~/.config/lo/themes, and "theme" names it. Lo's README says more.
+`,
+];
+
+/** `text` without the retired header it starts with, in either kind of line break, if it does. */
+function withoutRetiredHeader(text: string): string {
+  for (const header of RETIRED_HEADERS) {
+    for (const eol of ['\n', '\r\n']) {
+      const lines = header.replaceAll('\n', eol);
+      if (text.startsWith(lines)) return text.slice(lines.length);
+    }
+  }
+  return text;
+}
 
 /**
  * A change Lo couldn't make to the file's text, and why, in words for the person, to follow
@@ -249,7 +274,8 @@ function json(value: Json, step: string, indent: string | undefined, eol: string
  * person would by hand. A key the file has keeps its place, and only its value changes. A new one
  * goes after the last key, on a line of its own in the file's indent (two spaces when the file has
  * none), with a comma after it if the last had one; in an object on one line, it goes on that line.
- * Everything else stays as it was, a byte order mark included. Throws {@link SettingsUneditable}
+ * Everything else stays as it was, a byte order mark included, but for a header an older Lo wrote,
+ * which goes (see {@link RETIRED_HEADERS}). Throws {@link SettingsUneditable}
  * for a file it can't read, a key the file has more than once, or a change that would leave the
  * file saying anything but what it did with `key` set to `value`.
  */
@@ -297,7 +323,8 @@ export function editSettings(text: string, key: string, value: Json): string {
           ]
         : added(text, root, entry, step, eol);
   }
-  const changed = applyEdits(text, edits);
+  // The edits are all past the file's start, so the header is still there to take out.
+  const changed = withoutRetiredHeader(applyEdits(text, edits));
   const after = read(changed);
   // Through JSON, as the file holds it: -0 is 0 there.
   const meant: unknown = { ...tree.values, [key]: JSON.parse(JSON.stringify(value)) };
