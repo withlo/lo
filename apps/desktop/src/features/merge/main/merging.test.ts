@@ -114,6 +114,10 @@ interface Setup {
   looked?: () => Promise<{ state: string; mergeQueueEntry: unknown }>;
   /** The merge queue of the branch a chain's bottom layer moves onto first: none by default. */
   ontoQueue?: { configuration: { mergeMethod: string } | null } | null;
+  /** How long the jobs follow a merge GitHub keeps pending: 10 minutes. */
+  followFor?: number;
+  /** How often a chain's merge reads its bottom layer while it waits for it to merge: 1 ms. */
+  chainEvery?: number;
 }
 
 const merges: Merging[] = [];
@@ -149,6 +153,8 @@ function setup(options: Setup = {}) {
   let readId = 1;
   let readKept = true;
   let closed = false;
+  /** How many times the merge facts were asked to be read again. */
+  let factsReadAgain = 0;
   const results = options.results ?? [answer('merged', { sha: 'd'.repeat(40) })];
   const moves: Retarget[] = [];
   /** The branches whose rules were read, for a chain's bottom layer that moves onto one first. */
@@ -214,7 +220,9 @@ function setup(options: Setup = {}) {
       // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- what MERGE_FACTS reads.
       return { kind: 'read', read: cached as Cached<T> };
     },
-    readMergeFactsAgain: () => undefined,
+    readMergeFactsAgain: () => {
+      factsReadAgain += 1;
+    },
     onEvent(listener) {
       listeners.add(listener);
       return () => listeners.delete(listener);
@@ -271,7 +279,12 @@ function setup(options: Setup = {}) {
     run: undefined,
   };
   const turns = new MergeTurns();
-  const jobs = new MergeJobs({ firstWait: 1, maxWait: 1, now: () => NOW });
+  const jobs = new MergeJobs({
+    firstWait: 1,
+    maxWait: 1,
+    now: () => NOW,
+    ...(options.followFor === undefined ? {} : { followFor: options.followFor }),
+  });
   jobsMade.push(jobs);
   let converting: number[] = [];
   let forestNow: Forest | undefined | 'default' = 'forest' in options ? options.forest : 'default';
@@ -299,6 +312,7 @@ function setup(options: Setup = {}) {
     now: () => NOW,
     readWait: options.readWait ?? 50,
     listWait: options.listWait ?? 1,
+    chainEvery: options.chainEvery ?? 1,
   });
   merges.push(merging);
   return {
@@ -371,6 +385,8 @@ function setup(options: Setup = {}) {
         forestNow = forest;
       },
     },
+    /** How many times the merge facts were asked to be read again. */
+    factsReadAgain: () => factsReadAgain,
     /** The repository's stacks, as the stacks feature has them now. */
     get forest(): Forest {
       if (forestNow === undefined) throw new Error('no forest');
@@ -1034,6 +1050,33 @@ describe('a stack’s merge', () => {
     expect(run.sent).toEqual([]);
   });
 
+  it('refuses at the press when GitHub’s stack merges into another branch now, and reads it again', async () => {
+    const run = stacked();
+    const plan = planOf(await run.merging.plan(ID, SQUASH));
+    // #137 was moved onto release since: what decides the merge named main's rules.
+    run.api.stack.base.ref = 'release';
+    expect(await run.merging.confirm(plan.key)).toMatchObject({
+      kind: 'refused',
+      refusal: {
+        kind: 'where',
+        text: 'GitHub stack #90 merges into release now, not main. Lo reads #138 again; merge once it has.',
+      },
+    });
+    expect(run.sent).toEqual([]);
+    expect(run.factsReadAgain()).toBe(1);
+  });
+
+  it('holds every layer’s turn again while GitHub is asked again how it went', async () => {
+    const run = stacked({ followFor: 0 });
+    const plan = planOf(await run.merging.plan(ID, SQUASH));
+    await run.merging.confirm(plan.key);
+    await run.ended('unknown');
+    // A read made after it ended lets the layers go.
+    await vi.waitFor(() => expect(run.turns.busy(PULL.repo, [137, 138])).toEqual([]));
+    run.merging.askAgain(plan.key);
+    expect(run.turns.busy(PULL.repo, [137, 138])).toEqual([137, 138]);
+  });
+
   it('sends no typed squash text: each layer keeps its own commit’s words', async () => {
     const run = stacked({ submitted: () => new Promise(() => undefined) });
     const plan = planOf(
@@ -1156,6 +1199,81 @@ describe('a chain’s merge a layer at a time', () => {
       refusal: { kind: 'converting' },
     });
     expect([...run.sent, ...converting.sent, ...run.moves, ...converting.moves]).toEqual([]);
+  });
+});
+
+/**
+ * #138 at the bottom of a chain into main, which merges through a queue, as `chained`: GitHub adds
+ * it to the queue, and a read of it says it's queued until a test says it merged.
+ */
+function queuedChain(more: Setup = {}) {
+  const states = [{ state: 'OPEN', mergeQueueEntry: { position: 1 } }];
+  const run = chained({
+    facts: factsOf({ queueRequired: true, queueMethod: 'SQUASH' }),
+    results: [answer('enqueued')],
+    looked: () => Promise.resolve(states.at(-1)!),
+    ...more,
+  });
+  return {
+    ...run,
+    merged: () => {
+      states.push({ state: 'MERGED', mergeQueueEntry: null });
+    },
+  };
+}
+
+/** The last state published of the chain's run, once it's `phase`. */
+async function phase(run: Run, phase: string): Promise<void> {
+  await vi.waitFor(() => expect(run.published.at(-1)?.together).toMatchObject({ phase }));
+}
+
+describe('a chain’s merge that waits', () => {
+  it('after joining the queue, moves the layer on it only once a read shows it merged', async () => {
+    const run = queuedChain();
+    const plan = planOf(await run.merging.plan(ID, SQUASH));
+    expect(plan.kind).toBe('enqueue');
+    await run.merging.confirm(plan.key);
+    await phase(run, 'waiting');
+    await moment();
+    expect(run.moves).toEqual([]);
+    run.merged();
+    await phase(run, 'done');
+    expect(run.moves.map((move) => move.pr)).toEqual([139]);
+  });
+
+  it('after a lost answer, moves nothing while a read shows it open', async () => {
+    const run = chained({ submitted: lost });
+    const plan = planOf(await run.merging.plan(ID, SQUASH));
+    await run.merging.confirm(plan.key);
+    await run.ended('unknown');
+    await phase(run, 'waiting');
+    await moment();
+    expect(run.moves).toEqual([]);
+    expect(run.turns.busy(PULL.repo, [139])).toEqual([139]);
+  });
+
+  it('goes on after the reader closes its dialog, until it has moved the layer on it', async () => {
+    const run = queuedChain();
+    const plan = planOf(await run.merging.plan(ID, SQUASH));
+    await run.merging.confirm(plan.key);
+    await phase(run, 'waiting');
+    run.merging.dismiss(plan.key);
+    expect(run.merging.list()).toMatchObject([{ key: plan.key, together: { phase: 'waiting' } }]);
+    run.merged();
+    await phase(run, 'done');
+    expect(run.moves.map((move) => move.pr)).toEqual([139]);
+  });
+
+  it('moves nothing once Lo stops, though it merges after', async () => {
+    const run = queuedChain();
+    const plan = planOf(await run.merging.plan(ID, SQUASH));
+    await run.merging.confirm(plan.key);
+    await phase(run, 'waiting');
+    run.merging.stop();
+    run.merged();
+    await moment();
+    expect(run.moves).toEqual([]);
+    expect(run.published.at(-1)?.together).toMatchObject({ phase: 'stopped' });
   });
 });
 

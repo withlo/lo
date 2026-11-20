@@ -1167,7 +1167,8 @@ export function outcomeTitle(job: JobView): string | undefined {
     }
   }
   if (together?.kind === 'stack' && job.state.kind === 'refused' && job.kind === 'merge') {
-    const landed = together.landed ?? [];
+    const { landed } = together;
+    if (landed === null) return 'Lo can’t tell which layers merged.';
     return landed.length > 0 ? `Merged ${numbers(landed)} only.` : 'Nothing merged.';
   }
   switch (job.state.kind) {

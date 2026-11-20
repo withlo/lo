@@ -555,9 +555,10 @@ export class Merging {
     const job = this.#options.jobs.job(sent.pull);
     if (!job || endedWith(job)?.kind !== 'unknown') return;
     if (this.#options.jobs.followAgain(sent.pull)) {
-      // Following it again holds the pull request's turn, as the merge may still be running.
+      // Following it again holds the turns it held as it was sent, as the merge may still be
+      // running: a stack's merge holds every layer's.
       if (!sent.turn) {
-        const turn = this.#options.turns.take(sent.pull.repo, [sent.pull.number]);
+        const turn = this.#options.turns.take(sent.pull.repo, sentNames(sent.plan));
         if (!('busy' in turn)) sent.turn = turn;
       }
       return;
@@ -929,8 +930,9 @@ export class Merging {
     }
     const list = poller.openPullRequests(pull.repo)?.value;
     const layers = poller.cachedRead(pull, STACK_LAYERS)?.value.layers ?? [];
-    return takingOf({
+    const taking = takingOf({
       number: pull.number,
+      base: rulesBase(facts),
       where: placed,
       forest: this.#options.forest(pull.repo, login),
       github,
@@ -938,6 +940,8 @@ export class Merging {
       state: (number) => layerState(layers.find((layer) => layer.number === number)),
       queued: layers.flatMap((layer) => (layer.isInMergeQueue ? [layer.number] : [])),
     });
+    if (taking.kind === 'refused' && taking.readAgain === true) poller.readMergeFactsAgain(pull);
+    return taking;
   }
 
   /**
@@ -997,10 +1001,7 @@ export class Merging {
     const { together } = plan;
     // A stack's layers take their turns with it. The layers on a chain's bottom one take theirs
     // apart, which the chain's run holds until it has moved them.
-    const turn = this.#options.turns.take(
-      pull.repo,
-      together?.kind === 'stack' ? namesOf(plan.number, together) : [pull.number],
-    );
+    const turn = this.#options.turns.take(pull.repo, sentNames(plan));
     if ('busy' in turn) return refused(own('busy', `Lo is already merging #${turn.busy}.`));
     let layersTurn: MergeTurn | undefined;
     if (together?.kind === 'chain') {
@@ -1425,6 +1426,15 @@ function notPossibleText(
       reason satisfies never;
       throw new Error(`a reason Lo doesn't know: ${String(reason)}`);
   }
+}
+
+/**
+ * The pull requests whose turns a merge from `plan` holds while GitHub runs it: a stack's layers
+ * with it. The layers on a chain's bottom one take theirs apart, which its run holds until it has
+ * moved them.
+ */
+function sentNames(plan: MergePlan): number[] {
+  return plan.together?.kind === 'stack' ? namesOf(plan.number, plan.together) : [plan.number];
 }
 
 /** Why Lo doesn't merge as `taking` says: nothing when it goes. */

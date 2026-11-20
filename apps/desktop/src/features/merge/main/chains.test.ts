@@ -41,6 +41,8 @@ function run(
     looks?: Looked[];
     /** How long each read takes, in milliseconds: a minute. */
     lookTakes?: number;
+    /** How long each read takes to answer, in real milliseconds: none. */
+    lookWait?: number;
   } = {},
 ) {
   const sent: number[] = [];
@@ -48,6 +50,9 @@ function run(
   let clock = 0;
   let ended = 0;
   let read = 0;
+  /** The reads under way now, and the most there were at once. */
+  let reading = 0;
+  let mostReading = 0;
   const views: Progress[] = [];
   const config: ChainOptions = {
     repo: REPO,
@@ -58,11 +63,18 @@ function run(
       sent.push(step.retarget.pr);
       return options.answer?.(step.retarget.pr) ?? moved();
     },
-    look: () => {
+    look: async () => {
       // Each read takes a minute, unless the test says.
       clock += options.lookTakes ?? 60_000;
       read += 1;
-      return Promise.resolve(looks.length > 1 ? looks.shift()! : (looks[0] ?? 'open'));
+      reading += 1;
+      mostReading = Math.max(mostReading, reading);
+      const looked = looks.length > 1 ? looks.shift()! : (looks[0] ?? 'open');
+      if (options.lookWait !== undefined) {
+        await new Promise((resolve) => setTimeout(resolve, options.lookWait));
+      }
+      reading -= 1;
+      return looked;
     },
     changed: () => views.push(chain.view()),
     ended: () => {
@@ -80,6 +92,8 @@ function run(
     ended: () => ended,
     /** How many times it read the pull request. */
     reads: () => read,
+    /** The most reads of the pull request under way at once. */
+    mostReading: () => mostReading,
     async over(): Promise<Extract<Progress, { kind: 'chain' }>> {
       await vi.waitFor(() => expect(chain.over).toBe(true));
       const view = chain.view();
@@ -210,6 +224,64 @@ describe('a chain’s merge a layer at a time', () => {
       phase: 'stopped',
       text: 'Lo didn’t merge #5, since its base branch didn’t move.',
     });
+  });
+
+  it('moves the layers once, however many times and ways it hears the merge', async () => {
+    // GitHub's answer, asked again, and a read of the pull request both say it merged, while #6's
+    // move is refused: #7 stays where it is.
+    let refuse: (() => void) | undefined;
+    const twice = run(CHAIN, {
+      looks: ['merged'],
+      answer: (pr) =>
+        pr === 6
+          ? new Promise((resolve) => {
+              refuse = () => resolve({ refusal: 'baseChanged', now: 'feature' });
+            })
+          : moved(),
+    });
+    twice.chain.unsure();
+    await vi.waitFor(() => expect(twice.sent).toEqual([6]));
+    twice.chain.merged();
+    twice.chain.merged();
+    refuse?.();
+    expect(await twice.over()).toMatchObject({
+      phase: 'stopped',
+      moves: [{ status: 'failed' }, { status: 'skipped' }],
+    });
+    expect(twice.sent).toEqual([6]);
+    expect(twice.ended()).toBe(1);
+
+    // Once a read showed it merged, GitHub's answer that it failed stops nothing.
+    let move: (() => void) | undefined;
+    const late = run(CHAIN, {
+      looks: ['merged'],
+      answer: (pr) =>
+        pr === 6
+          ? new Promise((resolve) => {
+              move = () => void moved().then(resolve);
+            })
+          : moved(),
+    });
+    late.chain.unsure();
+    await vi.waitFor(() => expect(late.sent).toEqual([6]));
+    late.chain.failed();
+    move?.();
+    expect((await late.over()).phase).toBe('done');
+    expect(late.sent).toEqual([6, 7]);
+  });
+
+  it('reads the pull request in one wait at a time, which a queue entry makes longer', async () => {
+    const chain = run(CHAIN, { looks: ['queued', 'queued', 'merged'], lookWait: 5 });
+    chain.chain.unsure();
+    chain.chain.unsure();
+    chain.chain.enqueued();
+    expect(chain.chain.view()).toMatchObject({
+      phase: 'waiting',
+      text: '#5 is in the merge queue. Lo moves the layers on it once it merges, while Lo is open.',
+    });
+    expect((await chain.over()).phase).toBe('done');
+    expect(chain.mostReading()).toBe(1);
+    expect(chain.sent).toEqual([6, 7]);
   });
 
   it('sends nothing more once Lo stops it', async () => {

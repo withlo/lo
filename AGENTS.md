@@ -1315,18 +1315,20 @@ dialog that opens in the panel's place (`tab.dialogs`) is confirmed.
   while GitHub can't be reached, asks Lo to hold off writing, or the account is signed out.
 - As the panel opens, main says where the pull request sits (`merge.place`), and the main button
   says what it merges. A GitHub stack's layer merges with the open layers below it, as GitHub's
-  Stacks API names them, at the heads it gave as the confirmation opened, read again at the press;
-  the merge holds the turn of every layer, those above included, and the dialog shows each layer as
-  the Stacks API says at each change of the merge, and which went in when GitHub stops partway. A
-  chain that stacks could make a GitHub stack is made one first (`gS`, offered in the panel). One
-  that can't merges from its bottom layer alone (`@lo/stacks`' `mergeOneLayerAtATime`): its base
-  moves onto the root first when it isn't there, and the merge is planned under the root's rules;
-  once GitHub says it merged, a run in main (`main/chains.ts`), while Lo is open, moves each layer
-  on it onto the root, in order, holding their turns until then. After a queue entry it reads the
-  pull request until it merges, for 6 hours at most, or leaves the queue; after a lost answer, for
-  15 minutes. Each move reads the base first and leaves one someone else moved; the first move that
-  doesn't go stops the run, and nothing is put back. Above a chain's bottom layer, and on a bottom
-  layer that needs a rebase, `⏎` is refused.
+  Stacks API names them, at the heads it gave as the confirmation opened, read again at the press,
+  where a stack that merges into another branch than the rules Lo read were for is refused and read
+  again; the merge holds the turn of every layer, those above included, again while GitHub is asked
+  again how it went, and the dialog shows each layer as the Stacks API says at each change of the
+  merge, and which went in when GitHub stops partway. A chain that stacks could make a GitHub stack
+  is made one first (`gS`, offered in the panel). One that can't merges from its bottom layer alone
+  (`@lo/stacks`' `mergeOneLayerAtATime`): its base moves onto the root first when it isn't there,
+  and the merge is planned under the root's rules; once GitHub says it merged, a run in main
+  (`main/chains.ts`), while Lo is open, moves each layer on it onto the root, in order, once,
+  whether GitHub's answer or a read of the pull request says first that it merged, holding their
+  turns until then. After a queue entry it reads the pull request until it merges, for 6 hours at
+  most, or leaves the queue; after a lost answer, for 15 minutes. Each move reads the base first and
+  leaves one someone else moved; the first move that doesn't go stops the run, and nothing is put
+  back. Above a chain's bottom layer, and on a bottom layer that needs a rebase, `⏎` is refused.
 
 ### Images from GitHub
 

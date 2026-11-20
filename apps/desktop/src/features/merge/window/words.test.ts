@@ -506,6 +506,7 @@ test('a GitHub stack’s merge GitHub stopped says which layers went in, if any 
   expect(outcomeDetail(stopped([136]))).toBe(
     'GitHub stopped. #136 went in all the same, and the layers above it didn’t.',
   );
+  expect(outcomeTitle(stopped(null))).toBe('Lo can’t tell which layers merged.');
   expect(outcomeDetail(stopped(null))).toBe(
     'GitHub stopped. Lo couldn’t read which layers went in.',
   );

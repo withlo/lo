@@ -355,7 +355,7 @@ export const DERIVATIONS: readonly Derivation[] = [
     name: 'app_merge_stack_polled',
     from: 'app_merge_stack',
     description:
-      "app_merge_stack with the check of rozed-dev/e2e's open pull requests that GitHub answered before the merge with a new ETag, though none of them had changed, answered as unchanged: Lo here may check them more often before the merge than the recording did, and would otherwise read the list from after the merge before confirming it. And Lo here merges before it looks up again the merged pull requests from the branches its first list left out, e9e/2/base and stack/mroot, so after the merge it looks them up with merge/8/base: that lookup is answered as the recording answered each branch.",
+      "app_merge_stack with the check of rozed-dev/e2e's open pull requests that GitHub answered before the merge with a new ETag answered as unchanged: the one change it held was auto-merge turned off on #225, another generation's pull request no test here reads. Lo here may check them more often before the merge than the recording did, and would otherwise read the list from after the merge before confirming it. And Lo here merges before it looks up again the merged pull requests from the branches its first list left out, e9e/2/base and stack/mroot, so after the merge it looks them up with merge/8/base: that lookup is answered as the recording answered each branch.",
     derive(recorded) {
       const merged = only(
         recorded,

@@ -96,6 +96,7 @@ function stack90(layers: ReturnType<typeof stacked>[]): GithubStack[] {
 function view(number: number, where: Where, more: Partial<TakingView> = {}): TakingView {
   return {
     number,
+    base: 'main',
     where,
     forest: FOREST,
     github: [],
@@ -152,6 +153,20 @@ describe('a GitHub stack’s layer', () => {
         ),
       ),
     ).toEqual({ kind: 'alone' });
+  });
+
+  it('refuses when GitHub’s stack merges into another branch than Lo read, which Lo reads again', () => {
+    const github = stack90([stacked(10), stacked(11), stacked(12)]);
+    expect(
+      takingOf(
+        view(12, { kind: 'githubStack', stack: 90, below: [10, 11] }, { github, base: 'release' }),
+      ),
+    ).toEqual({
+      kind: 'refused',
+      why: 'GitHub stack #90 merges into main now, not release. Lo reads #12 again; merge once it has.',
+      again: true,
+      readAgain: true,
+    });
   });
 
   it('refuses when GitHub’s stack no longer holds it, or the Stacks API doesn’t answer', () => {

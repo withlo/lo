@@ -36,14 +36,25 @@ export type Taking =
   | { readonly kind: 'chain'; readonly plan: MergeBottom; readonly reasons: readonly string[] }
   /**
    * Lo doesn't merge it from here, for `why`; `again` when Lo is listing the open pull requests
-   * again, which may settle it.
+   * again, or reading what decides its merge again, which may settle it; `readAgain` when what
+   * decides its merge is older than what GitHub's Stacks API says, so Lo reads it again.
    */
-  | { readonly kind: 'refused'; readonly why: string; readonly again?: boolean };
+  | {
+      readonly kind: 'refused';
+      readonly why: string;
+      readonly again?: boolean;
+      readonly readAgain?: boolean;
+    };
 
 /** What {@link takingOf} is worked out from. */
 export interface TakingView {
   /** The pull request. */
   readonly number: number;
+  /**
+   * The branch it merges into, as what decides its merge says: its GitHub stack's base for a
+   * stack's layer. A merge is planned on that branch's rules.
+   */
+  readonly base: string;
   /** Where it sits, as `where` says. */
   readonly where: Where;
   /** Its repository's stacks, as `where` had them. */
@@ -167,6 +178,16 @@ function stackTaking(view: TakingView, stack: number): Taking {
     openLayers(found).some((layer) => layer.number === number),
   );
   if (!holding) return changed;
+  // Its bottom layer moved onto another branch since what decides the merge was read, which then
+  // named this one's rules: they're read again.
+  if (holding.base.ref !== view.base) {
+    return {
+      kind: 'refused',
+      why: `GitHub stack #${holding.number} merges into ${holding.base.ref} now, not ${view.base}. Lo reads #${number} again; merge once it has.`,
+      again: true,
+      readAgain: true,
+    };
+  }
   const open = openLayers(holding);
   const at = open.findIndex((layer) => layer.number === number);
   const below = open.slice(0, at).map((layer) => ({

@@ -73,6 +73,13 @@ export class ChainRun {
   #phase: Phase;
   #text: string | null = null;
   #over = false;
+  /**
+   * Whether the layers on it began to move, which happens once: whichever hears first that it
+   * merged, GitHub's answer or a read of the pull request, starts it, and nothing after can.
+   */
+  #moving = false;
+  /** While a wait reads the pull request, what it waits for, and how to make it wait for more. */
+  #waiting: { readonly why: 'queue' | 'lost'; readonly to: (why: 'queue') => void } | undefined;
 
   constructor(options: ChainOptions) {
     this.#options = options;
@@ -130,27 +137,34 @@ export class ChainRun {
     return true;
   }
 
-  /** GitHub says the bottom layer merged: the layers on it move onto the root. */
+  /**
+   * GitHub says the bottom layer merged, or a read shows it: the layers on it move onto the root,
+   * once, however many times it's heard.
+   */
   merged(): void {
-    if (this.#over) return;
+    if (this.#over || this.#moving) return;
+    this.#moving = true;
     void this.#moveAfter();
   }
 
   /** It joined the merge queue: the layers on it move once it merges. */
   enqueued(): void {
-    if (this.#over) return;
+    if (this.#over || this.#moving) return;
     this.#waitFor('queue');
   }
 
   /** Lo can't tell whether it merged: it reads the pull request for a while to find out. */
   unsure(): void {
-    if (this.#over) return;
+    if (this.#over || this.#moving) return;
     this.#waitFor('lost');
   }
 
-  /** GitHub refused the merge, or it failed: nothing more is done, and nothing is put back. */
+  /**
+   * GitHub refused the merge, or it failed: nothing more is done, and nothing is put back. Once a
+   * read showed it merged, the layers on it go on moving.
+   */
   failed(): void {
-    if (this.#over) return;
+    if (this.#over || this.#moving) return;
     this.#skipRest();
     const kept = this.#moves.some((move) => move.before && move.status === 'done');
     this.#stop(
@@ -173,11 +187,17 @@ export class ChainRun {
    * hours at most, and after a lost answer, for 15 minutes, or 6 hours once it shows in the queue.
    */
   #waitFor(first: 'queue' | 'lost'): void {
+    // One wait at a time: one already reading waits for the queue from now, when it's asked to.
+    if (this.#waiting) {
+      if (first === 'queue' && this.#waiting.why === 'lost') this.#waiting.to('queue');
+      return;
+    }
     const { number } = this.#options;
     let why = first;
     let deadline = 0;
     const waiting = (now: 'queue' | 'lost') => {
       why = now;
+      this.#waiting = { why: now, to: waiting };
       deadline =
         this.#monotonic() +
         (now === 'queue'
@@ -195,7 +215,7 @@ export class ChainRun {
     const { signal } = this.#stopping;
     const look = async (): Promise<void> => {
       for (;;) {
-        if (this.#over) return;
+        if (this.#over || this.#moving) return;
         if (this.#monotonic() >= deadline) {
           this.#skipRest();
           this.#stop(
@@ -206,7 +226,7 @@ export class ChainRun {
           return;
         }
         await pause(Math.min(every, Math.max(0, deadline - this.#monotonic())), signal);
-        if (this.#over) return;
+        if (this.#over || this.#moving) return;
         let looked: Looked;
         try {
           looked = await this.#options.look(signal);
@@ -215,10 +235,10 @@ export class ChainRun {
           this.#options.log(`reading #${number}: ${describe(error)}`);
           continue;
         }
-        if (this.#over) return;
+        if (this.#over || this.#moving) return;
         switch (looked) {
           case 'merged':
-            await this.#moveAfter();
+            this.merged();
             return;
           case 'queued':
             if (why === 'lost') waiting('queue');
@@ -241,10 +261,15 @@ export class ChainRun {
         }
       }
     };
-    void look();
+    void look().finally(() => {
+      this.#waiting = undefined;
+    });
   }
 
-  /** Moves each layer on the merged one onto the root, in order, stopping at the first that fails. */
+  /**
+   * Moves each layer on the merged one onto the root, in order, stopping at the first that fails.
+   * Only {@link ChainRun.merged} starts it, once.
+   */
   async #moveAfter(): Promise<void> {
     if (this.#over) return;
     this.#phase = 'moving';
