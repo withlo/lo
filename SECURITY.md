@@ -69,6 +69,13 @@ drafts a release, and a maintainer reads the draft and publishes it. "Releasing"
 - **`SHA256SUMS`** lists the SHA-256 of every file in the release. It's published beside them, so it
   shows that a download is the file the release lists, not that the release is genuine: on the Mac,
   the signature and notarization show that.
+- **Homebrew** installs Lo from the cask in
+  [withlo/homebrew-tap](https://github.com/withlo/homebrew-tap), which holds the SHA-256 of each
+  DMG, and checks a download against it before it installs. When a release is published, the release
+  workflow's `cask` job downloads both DMGs, checks each against the release's `SHA256SUMS`, and
+  proposes the new cask in a pull request on the tap. The tap's checks audit and install it, and
+  check the installed app's Developer ID team and notarization, before a maintainer merges it. The
+  job's token, `TAP_TOKEN`, is kept in the `tap` environment and can write only to the tap.
 - **Updates** come from GitHub's release hosts alone. On a Mac, Lo checks the zip it downloads
   against the SHA-512 in the release's `latest-mac.yml`, and Squirrel.Mac, which Electron's updater
   uses there, installs it only if the same team signed it as signed the running Lo. Nothing

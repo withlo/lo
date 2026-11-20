@@ -408,13 +408,67 @@ jobs:
         if: steps.npm.outputs.published == 'true'
         run: sh scripts/overview-npm.sh compare
 
+  # Renders Lo's Homebrew cask with fixed values, as the release workflow's cask job renders a
+  # release's, and checks it against Homebrew's rules with `brew style`, so a template Homebrew
+  # would refuse fails here rather than in the tap's checks after a release. It runs when the
+  # template, the script that renders it or this workflow changes.
+  cask-style:
+    name: cask-style
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      # The whole history, to compare against the base.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Decide whether the check runs
+        id: changed
+        run: |
+          if git diff --quiet "$BASE_SHA...$HEAD_SHA" -- scripts/release/lo.rb.in \
+            scripts/release/cask.sh scripts/release/semver.sh .github/workflows/ci.yml; then
+            echo "Neither the cask's template, its script nor this workflow changed, so it doesn't run."
+            echo run=false >> "$GITHUB_OUTPUT"
+          else
+            echo "The cask's template, its script or this workflow changed, so it runs."
+            echo run=true >> "$GITHUB_OUTPUT"
+          fi
+
+      - if: steps.changed.outputs.run == 'true'
+        uses: Homebrew/actions/setup-homebrew@ceec4e8419bb3c97ce96e9dda7738499ed5f869d # 2026.11.14.1
+
+      # In a Casks folder, where Homebrew's rules for casks apply, with cask.test.ts's values.
+      - name: Render the cask and check its style
+        if: steps.changed.outputs.run == 'true'
+        run: |
+          mkdir -p "$RUNNER_TEMP/tap/Casks"
+          sh scripts/release/cask.sh 0.1.0 \
+            0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef \
+            fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210 \
+            > "$RUNNER_TEMP/tap/Casks/lo.rb"
+          cat "$RUNNER_TEMP/tap/Casks/lo.rb"
+          brew style "$RUNNER_TEMP/tap/Casks/lo.rb"
+
   # The one check to require besides pr-title, so adding jobs never changes the ruleset. Skipped
   # jobs pass. A job with a matrix, like app, has one result: failure if any of its jobs failed.
   ci-ok:
     name: ci-ok
     if: always()
     needs:
-      [changes, commitlint, symlinks, shellcheck, format, check, app, oldest-git, swift, overview]
+      [
+        changes,
+        commitlint,
+        symlinks,
+        shellcheck,
+        format,
+        check,
+        app,
+        oldest-git,
+        swift,
+        overview,
+        cask-style,
+      ]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
