@@ -17,9 +17,10 @@
 // if the home of the user it runs as, by `HOME` or by the system's list of users, holds a
 // `.sourcekit-lsp`, or anything it didn't before, however deep: it lists every folder in the home
 // before it starts and after it stops (`home.ts`), and names the paths added, changed or removed,
-// but for the runner's own work folder, where the job's checkout is. It fails too if
-// SourceKit-LSP's logs aren't in the server's own home: Foundation, on Linux, takes its home folder
-// from the system's list of users before `HOME`, unless `CFFIXED_USER_HOME` names one.
+// other than in the runner's own folders: its work folder, where the job's checkout is, and the
+// one its logs are in. It fails too if SourceKit-LSP's logs aren't in the server's own home:
+// Foundation, on Linux, takes its home folder from the system's list of users before `HOME`,
+// unless `CFFIXED_USER_HOME` names one.
 
 import { execFile } from 'node:child_process';
 import { lstat, mkdtemp, readFile, realpath, rm } from 'node:fs/promises';
@@ -94,7 +95,7 @@ async function check(taken: SwiftDistro): Promise<void> {
     // The user's home, as `HOME` names it and as the system's list of users does, listed before
     // anything is installed or started.
     const homes = [...new Set([homedir(), userInfo().homedir])];
-    const ignored = [folder, ...runnerFolders()];
+    const ignored = [folder, ...runnerFolders(homes)];
     const before = new Map<string, Listing>();
     for (const home of homes) {
       if (await exists(join(home, '.sourcekit-lsp'))) {
@@ -181,14 +182,18 @@ async function check(taken: SwiftDistro): Promise<void> {
 }
 
 /**
- * The folders of the user's home that the runner this runs on keeps changing, which none of what's
- * checked has a hand in: its work folder, which holds the job's checkout, its temporary folder and
- * the actions it downloaded. GitHub names two of them. Anywhere else, there are none.
+ * The folders of the user's `homes` that the runner this runs on keeps changing, which none of
+ * what's checked has a hand in: its work folder, which holds the job's checkout, its temporary
+ * folder and the actions it downloaded, and the one GitHub's images install the runner in, whose
+ * logs it writes as the job runs. GitHub names the first through two variables; anywhere that's
+ * not a runner, there are none.
  */
-function runnerFolders(): string[] {
+function runnerFolders(homes: readonly string[]): string[] {
   const { RUNNER_TEMP: temp, GITHUB_WORKSPACE: checkout } = process.env;
   const folders: string[] = [];
-  if (temp !== undefined && temp !== '') folders.push(dirname(temp));
+  if (temp !== undefined && temp !== '') {
+    folders.push(dirname(temp), ...homes.map((home) => join(home, 'actions-runner')));
+  }
   if (checkout !== undefined && checkout !== '') folders.push(checkout);
   return folders;
 }
