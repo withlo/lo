@@ -37,6 +37,7 @@ import {
   PullRef,
   queueMerge,
   rulesBase,
+  sameJson,
   withCommit,
   type Cached,
   type GithubClient,
@@ -90,6 +91,9 @@ import { placedBy, where, type OpenFromHead, type Where } from './where.ts';
 
 /** How long what GitHub said of a merge is taken as current at the press: 7 minutes. */
 export const FRESH_FOR = 7 * 60_000;
+
+/** How many times the checks at a press weigh it, when reads land while they wait: 3. */
+const LOOKS = 3;
 
 /** What merging uses of an account's poller. */
 export interface MergingPoller
@@ -831,58 +835,73 @@ export class Merging {
     }
     const held = this.#holds(kept, poller);
     if (held) return refused(held);
-    const view = this.#options.view(plan.id);
-    if (!view) return refused(closed(plan));
-    const head = this.#options.headOnScreen(plan.id) ?? '';
     // A merge of it that ended before: what Lo acts on now is read after that, and one Lo can't
     // tell the end of yet holds the pull request until a read settles it.
     const before = this.#sent.get(pull.key);
     if (before?.turn && this.#ended(before)) return refused(own('unsettled', unsure(before.plan)));
     let cached = poller.cachedRead(pull, MERGE_FACTS);
-    if (!this.#current(cached, head, before?.endedAt)) {
-      const read = await this.#readAgain(poller, pull, signal);
-      if (typeof read === 'string') {
+    // What the press is weighed against is what Lo last read: a read that lands while Lo asks
+    // GitHub where the pull request sits is weighed too, before anything goes.
+    for (let round = 1; ; round++) {
+      const view = this.#options.view(plan.id);
+      if (!view) return refused(closed(plan));
+      const head = this.#options.headOnScreen(plan.id) ?? '';
+      if (!this.#current(cached, head, before?.endedAt)) {
+        const read = await this.#readAgain(poller, pull, signal);
+        if (typeof read === 'string') {
+          return refused(
+            own('unread', `Lo couldn’t read #${plan.number} again, so it didn’t merge: ${read}`),
+          );
+        }
+        cached = read;
+      }
+      const facts = cached.value;
+      if (checksCutShort(facts)) {
+        return refused(own('checks', 'GitHub has over 1,000 checks here. Merge it on GitHub.'));
+      }
+      const snapshot: MergeSnapshot = mergeSnapshot(facts, {
+        headOnScreen: head,
+        preferredMethod: this.#options.method(pull.repo),
+        headContainsBase: this.#options.headContainsBase(plan.id),
+      });
+      if (incomplete(snapshot) !== undefined) {
+        poller.readMergeFactsAgain(pull);
         return refused(
-          own('unread', `Lo couldn’t read #${plan.number} again, so it didn’t merge: ${read}`),
+          own(
+            'incomplete',
+            `GitHub left part of what decides #${plan.number}’s merge out of its answer, so Lo didn’t merge. Lo reads it again; merge once it has.`,
+          ),
         );
       }
-      cached = read;
+      if (facts.pullRequest.head !== head) {
+        return refused(newerPush(plan.number, head, facts.pullRequest.head));
+      }
+      const now = this.#planOf(plan.id, view, plan.login, facts, {
+        ...plan,
+        asked: askedOf(plan.kind),
+      });
+      if (typeof now === 'string') return refused(own('notPossible', now));
+      const why = changed(plan, now);
+      if (why !== undefined) {
+        this.#keep(now, pull);
+        return { kind: 'again', plan: now, why: `${why} Check what it does now, then confirm.` };
+      }
+      const placed = await this.#whereNow(poller, plan.login, pull, facts, signal);
+      signal.throwIfAborted();
+      const unplaced = placeText(placed, plan);
+      if (unplaced !== undefined) return refused(own('where', unplaced));
+      const latest = poller.cachedRead(pull, MERGE_FACTS);
+      if (latest === undefined || sameJson(latest.value, facts)) break;
+      if (round === LOOKS) {
+        return refused(
+          own(
+            'changing',
+            `What GitHub says of #${plan.number} kept changing while Lo checked it, so it didn’t merge. Confirm again.`,
+          ),
+        );
+      }
+      cached = latest;
     }
-    const facts = cached.value;
-    if (checksCutShort(facts)) {
-      return refused(own('checks', 'GitHub has over 1,000 checks here. Merge it on GitHub.'));
-    }
-    const snapshot: MergeSnapshot = mergeSnapshot(facts, {
-      headOnScreen: head,
-      preferredMethod: this.#options.method(pull.repo),
-      headContainsBase: this.#options.headContainsBase(plan.id),
-    });
-    if (incomplete(snapshot) !== undefined) {
-      poller.readMergeFactsAgain(pull);
-      return refused(
-        own(
-          'incomplete',
-          `GitHub left part of what decides #${plan.number}’s merge out of its answer, so Lo didn’t merge. Lo reads it again; merge once it has.`,
-        ),
-      );
-    }
-    if (facts.pullRequest.head !== head) {
-      return refused(newerPush(plan.number, head, facts.pullRequest.head));
-    }
-    const now = this.#planOf(plan.id, view, plan.login, facts, {
-      ...plan,
-      asked: askedOf(plan.kind),
-    });
-    if (typeof now === 'string') return refused(own('notPossible', now));
-    const why = changed(plan, now);
-    if (why !== undefined) {
-      this.#keep(now, pull);
-      return { kind: 'again', plan: now, why: `${why} Check what it does now, then confirm.` };
-    }
-    const placed = await this.#whereNow(poller, plan.login, pull, facts, signal);
-    signal.throwIfAborted();
-    const unplaced = placeText(placed, plan);
-    if (unplaced !== undefined) return refused(own('where', unplaced));
     if (this.#options.turns.busy(pull.repo, [pull.number]).length > 0) {
       return refused(own('busy', `Lo is already merging #${plan.number}.`));
     }

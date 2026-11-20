@@ -306,6 +306,11 @@ function setup(options: Setup = {}) {
       stale: () => {
         stale = true;
       },
+      /** A poll lands, and the poller keeps what it read. */
+      facts: (facts: MergeFacts) => {
+        cached = { value: facts, fetchedAt: NOW };
+        emit({ kind: 'read', pull: PULL, name: MERGE_FACTS.name });
+      },
       closed: () => {
         closed = true;
       },
@@ -1067,5 +1072,44 @@ describe('a merge past the rules', () => {
     expect(await run.merging.plan(ID, { ...SQUASH, asked: 'override' })).toMatchObject({
       kind: 'refused',
     });
+  });
+});
+
+describe('auto-merge and a merge past the rules', () => {
+  /** What each is asked with, and the facts it's offered for. */
+  const KINDS = [
+    ['autoMerge', WAITING],
+    ['override', REVIEW_OWED],
+  ] as const;
+
+  it('ask again, sending nothing, when what they name changed while Lo asked where it sits', async () => {
+    for (const [asked, pull] of KINDS) {
+      const base = { ...pull, base: 'merge/5/base' };
+      const run = setup({ facts: factsOf(base) });
+      const plan = planOf(await run.merging.plan(ID, { ...SQUASH, asked }));
+      run.hold.fromHead();
+      const confirming = run.merging.confirm(plan.key, '138');
+      await moment();
+      // A poll lands meanwhile: a review is owed, and a check started.
+      run.set.facts(
+        factsOf({
+          ...base,
+          reviewDecision: 'REVIEW_REQUIRED',
+          checksPending: true,
+          checks: WAITING.checks ?? [],
+        }),
+      );
+      run.release();
+      const confirmed = await confirming;
+      expect({
+        asked,
+        kind: confirmed.kind,
+        blockers:
+          confirmed.kind === 'again'
+            ? confirmed.plan.named?.blockers.map((blocker) => blocker.kind)
+            : confirmed,
+        sent: [...run.sent, ...run.auto],
+      }).toEqual({ asked, kind: 'again', blockers: ['approvals', 'check'], sent: [] });
+    }
   });
 });
