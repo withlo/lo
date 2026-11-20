@@ -43,6 +43,7 @@ beforeAll(() => {
 beforeEach(() => {
   answers = { ...defaults };
   bridge.calls.length = 0;
+  act(() => showState({ status: 'idle' }));
 });
 
 afterEach(() => {
@@ -141,12 +142,21 @@ describe('Check for updates', () => {
 });
 
 describe('the other commands', () => {
+  /** What each applies to, since the app menu and the palette refuse one that doesn't. */
+  const WHEN: Record<string, UpdateState> = {
+    'updates.install': OFFER,
+    'updates.restart': { status: 'ready', version: '0.2.0' },
+    'updates.move': { ...OFFER, how: 'move' },
+    'updates.later': OFFER,
+  };
+
   it.each([
     ['updates.install', 'Lo couldn’t install the update'],
     ['updates.restart', 'Lo couldn’t restart to update'],
     ['updates.move', 'Lo couldn’t move to Applications'],
     ['updates.later', 'Lo couldn’t hide the update'],
   ])('%s asks main for it alone, and says why when main refuses', async (id, title) => {
+    act(() => showState(WHEN[id] ?? OFFER));
     await run(id);
     expect(bridge.calls).toEqual([[id, undefined]]);
     expect(notice()).toBeUndefined();
@@ -160,7 +170,12 @@ describe('the other commands', () => {
   it('never ask for more than they say: no command installs or restarts but its own', async () => {
     act(() => showState({ status: 'ready', version: '0.2.0' }));
     await run('updates.check');
+    // Hiding applies to an offer, not to an update that's ready: it's refused before main hears.
     await run('updates.later');
-    expect(bridge.calls.map(([channel]) => channel)).toEqual(['updates.check', 'updates.later']);
+    expect(bridge.calls.map(([channel]) => channel)).toEqual(['updates.check']);
+    expect(notice()).toEqual({
+      title: 'Hide the update until Lo restarts',
+      body: 'Lo 0.2.0 is ready. It installs when you quit, or now.',
+    });
   });
 });

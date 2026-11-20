@@ -1,10 +1,11 @@
 // @vitest-environment jsdom
 // The toasts that offer a newer Lo, with main answered by a stand-in bridge: each state from the
-// design in both themes, each button asking main for what it says and only when pressed, a toast
-// that never takes focus and gives it back to the middle when it goes with focus in it, and the
-// toast region keeping it below a note that passes.
+// design in both themes, each button asking main for what it says and only when pressed, and not in
+// the moment after a toast comes; a toast that never takes focus, that `Tab` moves through once it
+// has it, and that gives it back to the middle when it goes with focus in it; and the toast region
+// keeping it below a note that passes.
 
-import { NO_TARGET } from '@lo/ui/commands';
+import { endsTab, findScope, NO_TARGET } from '@lo/ui/commands';
 import { act, type ReactNode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
@@ -18,7 +19,8 @@ import { Slot } from '../../../window/slots.tsx';
 import { toasts } from '../../tab/window/shared.ts';
 import { BREW_UPGRADE, releasePage, type UpdateState } from '../contract.ts';
 import feature from './index.ts';
-import { COPIED_TIME, Offer, UpdateToast } from './Offer.tsx';
+import { hear } from './actions.ts';
+import { COPIED_TIME, GUARD_TIME, Offer, UpdateToast } from './Offer.tsx';
 import { showState, updatesStore } from './store.ts';
 
 /** What main answers on each channel, as `main` has it: a test changes what a channel says. */
@@ -50,12 +52,14 @@ beforeAll(() => {
 });
 
 beforeEach(() => {
+  vi.useFakeTimers();
   answers = { ...defaults };
   bridge.calls.length = 0;
   act(() => showState({ status: 'idle' }));
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   document.body.replaceChildren();
   // A note from the test goes with it, as its timer would take it.
   const note = notice();
@@ -82,8 +86,18 @@ const downloading: UpdateState = {
 
 const ready: UpdateState = { status: 'ready', version: '0.2.0' };
 
-/** Draws `node` on the page, until the test ends. */
-function draw(node: ReactNode): HTMLElement {
+/** Lets the moment after a toast comes pass, in which its buttons ignore a press. */
+function settle(): void {
+  act(() => {
+    vi.advanceTimersByTime(GUARD_TIME);
+  });
+}
+
+/**
+ * Draws `node` on the page, until the test ends, and lets the moment after it comes pass, unless
+ * the test is about that moment.
+ */
+function draw(node: ReactNode, options: { settled?: boolean } = {}): HTMLElement {
   const host = document.createElement('div');
   document.body.append(host);
   const root = createRoot(host);
@@ -92,6 +106,7 @@ function draw(node: ReactNode): HTMLElement {
     act(() => root.unmount());
     host.remove();
   });
+  if (options.settled !== false) settle();
   return host;
 }
 
@@ -159,14 +174,6 @@ const STATES: readonly {
     body: LINE,
     buttons: ['Download', 'Later'],
     tone: 'info',
-  },
-  {
-    name: 'a download that failed',
-    state: offer('install', 'The download stopped before it finished. Try again.'),
-    title: 'Lo couldn’t download 0.2.0',
-    body: 'The download stopped before it finished. Try again.',
-    buttons: ['Try again', 'What’s new', 'Later'],
-    tone: 'warning',
   },
   {
     name: 'a download going',
@@ -256,12 +263,6 @@ describe('the buttons', () => {
   it('install: Install downloads the update, and only that', async () => {
     const page = draw(<UpdateToast state={offer('install')} />);
     await act(async () => button(page, 'Install')?.click());
-    expect(asked()).toEqual([['updates.install', undefined]]);
-  });
-
-  it('try again: after a download failed, Try again downloads it again', async () => {
-    const page = draw(<UpdateToast state={offer('install', 'The download stopped.')} />);
-    await act(async () => button(page, 'Try again')?.click());
     expect(asked()).toEqual([['updates.install', undefined]]);
   });
 
@@ -451,5 +452,222 @@ describe('the toast region', () => {
     // What main answered to `read` came after the push and is older: it doesn't take its place.
     expect(updatesStore.getState().state).toEqual({ status: 'idle' });
     expect(updatesStore.getState().version).toBe('0.1.0');
+  });
+});
+
+describe('a download that failed', () => {
+  it('is said in a note, with why, since the reader asked for it, and the offer is back as it was', () => {
+    const page = draw(
+      <>
+        <Offer />
+        <Notices />
+      </>,
+    );
+    act(() => hear(offer('install')));
+    act(() => hear(downloading));
+    expect(notice()).toBeUndefined();
+    act(() => hear(offer('install', 'The download stopped before it finished. Try again.')));
+    expect(notice()).toEqual({
+      title: 'Lo 0.2.0 didn’t download',
+      body: 'The download stopped before it finished. Try again.',
+    });
+    // A toast that waits, saying only what's on offer: an error that needs action isn't a toast.
+    expect(toastOf(page)).toMatchObject({
+      title: 'Lo 0.2.0 is out',
+      body: LINE,
+      buttons: ['Install', 'What’s new', 'Later'],
+      tone: 'info',
+    });
+  });
+
+  it('says nothing for an offer that arrives with a failure it wasn’t downloading', () => {
+    act(() => hear(offer('install', 'The download stopped.')));
+    expect(notice()).toBeUndefined();
+    act(() => hear({ status: 'idle' }));
+    act(() => hear(offer('install', 'The download stopped.')));
+    expect(notice()).toBeUndefined();
+  });
+});
+
+describe('a press in the moment after a toast comes or changes', () => {
+  it('does nothing, pointer or key, until the moment has passed', async () => {
+    const page = draw(<UpdateToast state={offer('install')} />, { settled: false });
+    await act(async () => button(page, 'Install')?.click());
+    expect(asked()).toEqual([]);
+    act(() => {
+      vi.advanceTimersByTime(GUARD_TIME - 1);
+    });
+    await act(async () => button(page, 'Install')?.click());
+    expect(asked()).toEqual([]);
+    settle();
+    await act(async () => button(page, 'Install')?.click());
+    expect(asked()).toEqual([['updates.install', undefined]]);
+  });
+
+  it('starts again with each state, so a click meant for the one before lands on nothing', async () => {
+    const page = draw(<Offer />);
+    act(() => showState(offer('install')));
+    settle();
+    // The download is ready as the reader's pointer comes down on where Install was.
+    act(() => showState(ready));
+    await act(async () => button(page, 'Restart now')?.click());
+    expect(asked()).toEqual([]);
+    settle();
+    await act(async () => button(page, 'Restart now')?.click());
+    expect(asked()).toEqual([['updates.restart', undefined]]);
+  });
+
+  it('holds for a new offer too, and not for a press on Copy once the toast is up', async () => {
+    const page = draw(<Offer />);
+    act(() => showState(offer('brew')));
+    await act(async () => button(page, 'Copy')?.click());
+    expect(asked()).toEqual([]);
+    settle();
+    await act(async () => button(page, 'Copy')?.click());
+    expect(asked()).toEqual([['tab.copy', { text: BREW_UPGRADE }]]);
+    // "Copied" is the same toast: pressing again isn't held.
+    act(() => {
+      vi.advanceTimersByTime(COPIED_TIME);
+    });
+    await act(async () => button(page, 'Copy')?.click());
+    expect(asked()).toHaveLength(2);
+  });
+});
+
+describe('the keyboard', () => {
+  it('moves between a toast’s buttons with Tab, which no other part of the window lets it do', () => {
+    const page = draw(<UpdateToast state={offer('install')} />);
+    for (const each of page.querySelectorAll('button')) {
+      expect(findScope(each).name).toBe('toasts');
+      expect(endsTab(findScope(each), each)).toBe(false);
+    }
+    // Where it isn't in a scope of its own, Lo's `Tab` stops at a button.
+    const outside = document.createElement('button');
+    expect(endsTab(findScope(outside), outside)).toBe(true);
+  });
+
+  it('goes to the toast on "Go to the update", which puts focus on its first button and no more', () => {
+    const page = draw(<Offer />);
+    act(() => showState(offer('install')));
+    settle();
+    expect(document.activeElement).toBe(document.body);
+    expect(registry().enabled('updates.focus', NO_TARGET)).toBe(true);
+    act(() => {
+      registry().run('updates.focus', NO_TARGET);
+    });
+    expect(document.activeElement).toBe(button(page, 'Install'));
+    // Install wasn't pressed by focus coming to it.
+    expect(asked()).toEqual([]);
+  });
+
+  it('has nowhere to go while there’s no toast, and says so', () => {
+    expect(registry().enabled('updates.focus', NO_TARGET)).toBe('There’s no update to go to.');
+  });
+});
+
+describe('the commands for the other buttons', () => {
+  it('open what’s new for an update on offer, downloading or ready, from its release’s page', async () => {
+    const url = 'https://github.com/withlo/lo/releases/tag/v0.2.0';
+    expect(registry().enabled('updates.whatsNew', NO_TARGET)).toBe(
+      'There’s no update to read about.',
+    );
+    for (const state of [offer('install'), offer('brew'), downloading, ready]) {
+      act(() => showState(state));
+      bridge.calls.length = 0;
+      await act(async () => {
+        registry().run('updates.whatsNew', NO_TARGET);
+      });
+      expect(asked()).toEqual([['tab.openExternal', { url }]]);
+    }
+  });
+
+  it('download where Lo can only offer the page, and say why they don’t elsewhere', async () => {
+    act(() => showState(offer('page')));
+    await act(async () => {
+      registry().run('updates.download', NO_TARGET);
+    });
+    expect(asked()).toEqual([
+      ['tab.openExternal', { url: 'https://github.com/withlo/lo/releases/tag/v0.2.0' }],
+    ]);
+    act(() => showState(offer('install')));
+    expect(registry().enabled('updates.download', NO_TARGET)).toBe(
+      'Lo installs this update itself. Use "Install the update".',
+    );
+    act(() => showState(offer('brew')));
+    expect(registry().enabled('updates.download', NO_TARGET)).toBe(
+      `You installed Lo with Homebrew, so update it there: ${BREW_UPGRADE}`,
+    );
+  });
+
+  it('copy the Homebrew command, and say so in a note', async () => {
+    const page = draw(<Notices />);
+    act(() => showState(offer('brew')));
+    await act(async () => {
+      registry().run('updates.copy', NO_TARGET);
+    });
+    expect(asked()).toEqual([['tab.copy', { text: BREW_UPGRADE }]]);
+    expect(page.textContent).toContain('Copied the Homebrew command');
+    act(() => showState(offer('page')));
+    expect(registry().enabled('updates.copy', NO_TARGET)).toBe(
+      'Lo can’t install updates here. Download it from its release page.',
+    );
+  });
+});
+
+describe('which commands apply', () => {
+  const ids = [
+    'check',
+    'install',
+    'restart',
+    'move',
+    'later',
+    'whatsNew',
+    'download',
+    'copy',
+    'focus',
+  ] as const;
+  /** The commands that apply to each state, the others being greyed in the app menu. */
+  const APPLY: readonly [string, UpdateState, readonly (typeof ids)[number][]][] = [
+    ['nothing on offer', { status: 'idle' }, ['check', 'move']],
+    [
+      'an offer Lo installs itself',
+      offer('install'),
+      ['check', 'install', 'later', 'whatsNew', 'focus'],
+    ],
+    ['an offer for Homebrew', offer('brew'), ['check', 'later', 'whatsNew', 'copy', 'focus']],
+    [
+      'an offer Lo can’t install from where it is',
+      offer('move'),
+      ['check', 'move', 'later', 'whatsNew', 'focus'],
+    ],
+    ['an offer for its page', offer('page'), ['check', 'later', 'whatsNew', 'download', 'focus']],
+    ['a download going', downloading, ['check', 'whatsNew', 'focus']],
+    ['a download that’s ready', ready, ['check', 'restart', 'whatsNew', 'focus']],
+  ];
+
+  it.each(APPLY)('for %s are only those that do', (_name, state, applying) => {
+    act(() => showState(state));
+    const enabled = ids.filter((id) => registry().enabled(`updates.${id}`, NO_TARGET) === true);
+    expect(enabled).toEqual(ids.filter((id) => applying.includes(id)));
+  });
+
+  it('say why one doesn’t, in words that name the update', () => {
+    act(() => showState({ status: 'idle' }));
+    expect(registry().enabled('updates.restart', NO_TARGET)).toBe('No update is ready to install.');
+    expect(registry().enabled('updates.install', NO_TARGET)).toBe('There’s no update to install.');
+    act(() => showState(offer('page')));
+    expect(registry().enabled('updates.restart', NO_TARGET)).toBe('Lo 0.2.0 isn’t downloaded yet.');
+    expect(registry().enabled('updates.install', NO_TARGET)).toBe(
+      'Lo can’t install updates here. Download it from its release page.',
+    );
+    act(() => showState(downloading));
+    expect(registry().enabled('updates.later', NO_TARGET)).toBe('Lo 0.2.0 is downloading.');
+  });
+
+  it('is refused from the palette with its reason, and asks main nothing', () => {
+    act(() => showState({ status: 'idle' }));
+    const refused = registry().run('updates.restart', NO_TARGET);
+    expect(refused).toBe('No update is ready to install.');
+    expect(asked()).toEqual([]);
   });
 });

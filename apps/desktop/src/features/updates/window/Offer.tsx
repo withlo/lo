@@ -1,9 +1,11 @@
 // The toasts that say a newer Lo is out, downloading or ready, in the window's toast region, below
-// a note that passes. A toast waits until it's acted on and never takes focus, wherever it is when
-// it comes: its buttons are reached by Tab like any other, and each is also a command in the
-// palette. No button installs or restarts but by its own press. When a toast goes while one of its
-// buttons has focus, as it does on pressing Install or Later, focus goes back to the middle of the
-// window, rather than to nowhere.
+// a note that passes. A toast waits until it's acted on and never takes focus by itself, wherever
+// it is when it comes. Its buttons are reached with the keyboard from "Go to the update", which
+// focuses the first, and `Tab` and `⇧Tab` move between them from there; and each button is also a
+// command in the palette. No button installs or restarts but by its own press, and a press in the
+// moment after a toast comes or changes is ignored, since the reader's click may have been meant
+// for what was there before. When a toast goes while one of its buttons has focus, as it does on
+// pressing Install or Later, focus goes back to the middle of the window, rather than to nowhere.
 
 import { Button, Meter, Spinner, Toast } from '@lo/ui';
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
@@ -32,14 +34,6 @@ const TICK = (
   </svg>
 );
 
-/** A download that failed. */
-const WARNING = (
-  <svg className="lo-i" viewBox="0 0 16 16" aria-hidden="true">
-    <path d="M7.13 2.5a1 1 0 0 1 1.74 0l5.2 9.5a1 1 0 0 1-.87 1.5H2.8a1 1 0 0 1-.87-1.5Z" />
-    <path d="M8 6.25v3M8 11.25v.01" />
-  </svg>
-);
-
 /** A spinner in the icon's place, centered on the icon's 16 px. */
 const WAITING = (
   <span className="ms-2 mt-2 inline-flex">
@@ -47,20 +41,40 @@ const WAITING = (
   </span>
 );
 
+/** How long a toast's buttons ignore a press after it comes or changes, in ms. */
+export const GUARD_TIME = 500;
+
 /**
- * Holds one toast, and takes focus back to the middle of the window when the toast goes while
- * something in it has focus. Each state of the offer is its own toast, so its buttons go with it.
+ * Holds one toast, which is its own scope of keys where `Tab` moves between its buttons. A press
+ * on a button in the first {@link GUARD_TIME} ms after the toast comes is ignored, pointer or key:
+ * each state draws in the same place, so a click meant for the one before lands on the next.
+ * Takes focus back to the middle of the window when the toast goes while something in it has
+ * focus. Each state of the offer is its own toast, so its buttons go with it.
  */
 function Held({ children }: { children: ReactNode }) {
   const box = useRef<HTMLDivElement>(null);
-  // A layout effect, whose cleanup runs before the toast leaves the page, with focus still in it.
-  useLayoutEffect(
-    () => () => {
+  const came = useRef(0);
+  useLayoutEffect(() => {
+    came.current = Date.now();
+    // A layout effect, whose cleanup runs before the toast leaves the page, with focus still in it.
+    return () => {
       if (box.current?.contains(document.activeElement)) focusMiddle();
-    },
-    [],
+    };
+  }, []);
+  return (
+    <div
+      ref={box}
+      data-lo-scope="toasts"
+      data-lo-tab="browser"
+      onClickCapture={(event) => {
+        if (Date.now() - came.current >= GUARD_TIME) return;
+        event.preventDefault();
+        event.stopPropagation();
+      }}
+    >
+      {children}
+    </div>
   );
-  return <div ref={box}>{children}</div>;
 }
 
 /** How long "Copied" stays on the button, in ms. */
@@ -105,25 +119,6 @@ function Available({ offer }: { offer: Offered }) {
   );
   switch (offer.how) {
     case 'install':
-      if (offer.failed !== undefined) {
-        return (
-          <Toast
-            tone="warning"
-            icon={WARNING}
-            title={`Lo couldn’t download ${offer.version}`}
-            body={offer.failed}
-            actions={
-              <>
-                <Button variant="primary" size="sm" onClick={() => void install()}>
-                  Try again
-                </Button>
-                {whatsNew}
-                {hide}
-              </>
-            }
-          />
-        );
-      }
       return (
         <Toast
           tone="info"
@@ -212,14 +207,14 @@ export function UpdateToast({ state }: { state: UpdateState }) {
       return null;
     case 'available':
       return (
-        <Held key={`${state.how}-${state.failed === undefined ? 'offer' : 'failed'}`}>
+        <Held key={`offer-${state.version}-${state.how}`}>
           <Available offer={state} />
         </Held>
       );
     case 'downloading': {
       const known = state.total > 0;
       return (
-        <Held key="downloading">
+        <Held key={`downloading-${state.version}`}>
           <Toast
             tone="info"
             icon={WAITING}
@@ -245,7 +240,7 @@ export function UpdateToast({ state }: { state: UpdateState }) {
     }
     case 'ready':
       return (
-        <Held key="ready">
+        <Held key={`ready-${state.version}`}>
           <Toast
             tone="success"
             icon={TICK}

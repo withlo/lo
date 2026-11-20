@@ -56,11 +56,15 @@ describe('Toast', () => {
         <Toast tone="success" icon={icon} title="Copied" />
       </ToastRegion>,
     );
-    // Two regions, not one: the note's is read whole, and a toast's text changing isn't.
+    // Two regions, not one: the note's is read whole, and a toast's text changing isn't. A status
+    // region is atomic unless it says it isn't, so the toasts' says so itself.
     expect(markup.match(/role="status"/g)).toHaveLength(2);
-    expect(markup.match(/aria-atomic/g)).toHaveLength(1);
+    expect(markup.match(/aria-atomic="true"/g)).toHaveLength(1);
+    expect(markup.match(/aria-atomic="false"/g)).toHaveLength(1);
     expect(markup.indexOf('Copied')).toBeLessThan(markup.indexOf('Lo 0.10 is out'));
-    expect(markup).toMatch(/<div role="status" class="mt-8 [^"]*">.*Lo 0\.10 is out/);
+    expect(markup).toMatch(
+      /<div role="status" aria-atomic="false" class="mt-8 [^"]*">.*Lo 0\.10 is out/,
+    );
   });
 
   it("only uses utilities that Lo's stylesheet has, and gives the design's measures", async () => {

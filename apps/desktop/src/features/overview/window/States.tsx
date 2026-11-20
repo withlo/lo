@@ -12,6 +12,7 @@ import { showDiff } from '../../diff/window/shared.ts';
 import { client } from '../../../window/ipc.ts';
 import { contract as tabContract } from '../../tab/contract.ts';
 import { useTabState, withoutBidi, type PullTab } from '../../tab/window/shared.ts';
+import { RELEASES } from '../../updates/contract.ts';
 import updates from '../../updates/keys.ts';
 import type { Problem, SkillAgent, SkillState } from '../contract.ts';
 import type { Standing } from './facts.ts';
@@ -426,6 +427,16 @@ export function CantShow({
             <>
               <Button variant="primary" onClick={() => registry().run(CHECK, NO_TARGET)}>
                 Get a newer Lo
+              </Button>
+              {/* The way on for a Lo that can't check: one built from source, or offline. */}
+              <Button
+                onClick={() => {
+                  client(tabContract)
+                    .openExternal({ url: RELEASES })
+                    .catch((error: unknown) => console.error("Lo couldn't open the page:", error));
+                }}
+              >
+                Open the releases page
               </Button>
               <ToDiff tab={tab} primary={false} />
               {newer}

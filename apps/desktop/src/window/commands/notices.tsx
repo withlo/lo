@@ -99,12 +99,19 @@ function lines(body: string) {
 
 /**
  * The window's notes, as toasts: an info icon, what was asked for and why it didn't happen; or a
- * tick, and what's done. `waiting` holds the toasts that stay until they're acted on, below a note.
+ * tick, and what's done. `waiting` holds the toasts that stay until they're acted on, below a note,
+ * and `onWaitingHeight` hears how tall they are, for the window to leave room for them.
  */
-export function Notices({ waiting }: { waiting?: ReactNode }) {
+export function Notices({
+  waiting,
+  onWaitingHeight,
+}: {
+  waiting?: ReactNode;
+  onWaitingHeight?: (height: number) => void;
+}) {
   const note = useSyncExternalStore(subscribe, notice);
   return (
-    <ToastRegion waiting={waiting}>
+    <ToastRegion waiting={waiting} onWaitingHeight={onWaitingHeight}>
       {note !== undefined && (
         <Toast
           tone={note.done ? 'success' : 'info'}

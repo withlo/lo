@@ -7,8 +7,14 @@ import { IpcError } from '../../../ipc/contract.ts';
 import { announce, notify } from '../../../window/commands/notices.tsx';
 import { client, type Client } from '../../../window/ipc.ts';
 import { contract as tabs } from '../../tab/contract.ts';
-import { BREW_UPGRADE, contract, type CheckAnswer } from '../contract.ts';
-import { setChecking, updatesStore } from './store.ts';
+import {
+  BREW_UPGRADE,
+  contract,
+  releasePage,
+  type CheckAnswer,
+  type UpdateState,
+} from '../contract.ts';
+import { setChecking, showState, updatesStore } from './store.ts';
 
 let connected: Client<typeof contract> | undefined;
 
@@ -71,6 +77,18 @@ export async function check(): Promise<void> {
   }
 }
 
+/**
+ * Takes in where updates stand, as main says. A download that failed says why in a note: the offer
+ * is back, and Install tries again, but the reader asked for the download and should hear.
+ */
+export function hear(state: UpdateState): void {
+  const before = updatesStore.getState().state;
+  showState(state);
+  if (before.status === 'downloading' && state.status === 'available' && state.failed) {
+    notify(`Lo ${state.version} didn’t download`, state.failed);
+  }
+}
+
 /** Downloads the update on offer, to install as Lo quits. */
 export function install(): Promise<void> {
   return asking('Lo couldn’t install the update', () => main().install());
@@ -111,4 +129,31 @@ export async function copyBrewCommand(): Promise<boolean> {
     notify('Copy the command', 'Lo couldn’t copy it.');
     return false;
   }
+}
+
+/** The page of the release of the update on offer, downloading or ready, if there is one. */
+export function pageOfUpdate(state: UpdateState): string | undefined {
+  switch (state.status) {
+    case 'idle':
+      return undefined;
+    case 'available':
+      return state.page;
+    case 'downloading':
+    case 'ready':
+      return releasePage(state.version);
+    default:
+      throw new Error(`An update state Lo doesn't know: ${JSON.stringify(state satisfies never)}`);
+  }
+}
+
+/** Opens the page of the release of the update now, if there is one: What's new, and Download. */
+export async function openUpdatePage(): Promise<void> {
+  const page = pageOfUpdate(updatesStore.getState().state);
+  if (page !== undefined) await openPage(page);
+}
+
+/** Puts the toast's first button in focus, which `Tab` then moves from. The toast never does. */
+export function goToToast(): void {
+  const first = document.querySelector<HTMLElement>('[data-lo-scope="toasts"] button');
+  first?.focus();
 }

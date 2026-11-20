@@ -1,7 +1,7 @@
 import { handlers } from '@lo/ui/commands';
 
 import { IpcError } from '../../../ipc/contract.ts';
-import { barItems, focusedTarget, runFromBar } from '../../../window/commands/bar.ts';
+import { barItems, focusedTarget, onMenuStale, runFromBar } from '../../../window/commands/bar.ts';
 import { applyKeymapFile, keymapOpenable } from '../../../window/commands/keymap.ts';
 import { currentMenu, openMenuAtFocus } from '../../../window/commands/menus.tsx';
 import { notify } from '../../../window/commands/notices.tsx';
@@ -14,7 +14,8 @@ import keys from '../keys.ts';
 
 /**
  * Keeps main's app menu in step with the registry: its commands' labels, keys and whether they
- * can run where focus is. Sends only when something changed.
+ * can run where focus is, and when a feature says that has changed. Sends only when something
+ * changed.
  */
 function syncMenu(menu: Client<typeof contract>): void {
   let sent = '';
@@ -35,6 +36,7 @@ function syncMenu(menu: Client<typeof contract>): void {
     queueMicrotask(send);
   };
   registry().subscribe(soon);
+  onMenuStale(soon);
   window.addEventListener('focusin', soon);
   window.addEventListener('focusout', soon);
   send();

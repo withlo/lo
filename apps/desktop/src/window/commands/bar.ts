@@ -44,6 +44,25 @@ export function barItems(registry: Registry, target: Target, blocked = false): B
   });
 }
 
+const stale = new Set<() => void>();
+
+/**
+ * Says that whether some command can run changed with nothing the menu watches changing, as when
+ * an update finishes downloading: the app menu is made again from the registry as it is now.
+ * Focus, and the keys the registry holds, tell the menu themselves.
+ */
+export function menuStale(): void {
+  for (const listener of stale) listener();
+}
+
+/** Calls `listener` each time {@link menuStale} is called. Returns a function that stops it. */
+export function onMenuStale(listener: () => void): () => void {
+  stale.add(listener);
+  return () => {
+    stale.delete(listener);
+  };
+}
+
 /**
  * Runs the command a click in the app menu chose, on `target`, through the registry: only one the
  * menu lists, one that declares `bar`. `true`, or why it didn't run. The click is the reader's input,

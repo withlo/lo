@@ -127,6 +127,7 @@ const SKILL: SkillState = {
 
 const bridge = installBridge({
   'tab.copy': () => undefined,
+  'tab.openExternal': () => undefined,
   'overview.currentSkill': () => SKILL,
   'overview.retry': () => undefined,
 });
@@ -527,6 +528,33 @@ describe('an overview that can’t be shown', () => {
     act(() => get?.click());
     expect(checkUpdates).toHaveBeenCalledTimes(1);
     expect(bridge.calls.filter(([channel]) => channel === 'tab.openExternal')).toEqual([]);
+  });
+
+  it('opens the releases page on "Open the releases page", the way on for a Lo that can’t check', () => {
+    const tab = tabOf();
+    const commit = commitOf();
+    act(() => {
+      states.set(tab.id, stateOf(tab, { overview: commit }));
+      checked.set(tab.id, {
+        kind: 'checked',
+        key: 'k',
+        commit,
+        parsed: undefined,
+        checked: { outcome: { kind: 'newer', format: 3 }, findings: [] },
+        figures: new Map(),
+        coming: [],
+        code: { kind: 'none' },
+      });
+    });
+    const view = render(tab);
+    const open = [...view.querySelectorAll('button')].find(
+      (each) => each.textContent === 'Open the releases page',
+    );
+    act(() => open?.click());
+    expect(bridge.calls.filter(([channel]) => channel === 'tab.openExternal')).toEqual([
+      ['tab.openExternal', { url: 'https://github.com/withlo/lo/releases' }],
+    ]);
+    expect(checkUpdates).not.toHaveBeenCalled();
   });
 
   it('says when it couldn’t be read and when Lo tries again, with Retry now', async () => {
