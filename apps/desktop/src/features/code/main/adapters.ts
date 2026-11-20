@@ -8,6 +8,7 @@
 
 import {
   currentPlatform,
+  developerFolder,
   findSourceKit,
   GOPLS,
   JDTLS,
@@ -19,6 +20,7 @@ import {
   launchRustAnalyzer,
   launchSourceKit,
   launchSourceKitOnLinux,
+  missingPackages,
   NO_SOURCEKIT,
   packagesNeeded,
   PHP_LSP,
@@ -96,6 +98,17 @@ export interface PrepareContext {
   missingPackages(distro: SwiftDistro): Promise<readonly string[]>;
   /** Aborts once nothing waits for the server any longer. */
   readonly signal: AbortSignal;
+}
+
+/**
+ * An adapter's {@link PrepareContext}: `parts`, from what Lo has, with what it finds on the system
+ * itself, the developer folder `xcode-select -p` names and the packages Swift needs that aren't
+ * installed.
+ */
+export function prepareContext(
+  parts: Omit<PrepareContext, 'developerFolder' | 'missingPackages'>,
+): PrepareContext {
+  return { ...parts, developerFolder, missingPackages };
 }
 
 /** What an adapter may use to find a toolchain of the system's, for Settings. */

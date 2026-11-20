@@ -10,6 +10,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import {
+  developerFolder,
   GOPLS,
   type Installed,
   jdtlsCheckoutProblem,
@@ -19,6 +20,7 @@ import {
   launchRoslyn,
   launchRustAnalyzer,
   launchSourceKitOnLinux,
+  missingPackages,
   PHP_LSP,
   PYRIGHT,
   ROSLYN,
@@ -37,6 +39,7 @@ import {
   type Adapter,
   adapterFor,
   type PrepareContext,
+  prepareContext,
   shippedAdapters,
   type Toolchain,
 } from './adapters.ts';
@@ -442,6 +445,19 @@ describe('Lo’s adapters', () => {
     expect(launch.services).toBeUndefined();
     const where = { root: '/checkout', home: '/home' };
     expect(await place?.(where)).toEqual(await lsp?.(where));
+    // Foundation's home folder is its home, not the user's from the system's list of users.
+    expect(await place?.(where)).toMatchObject({ variables: { CFFIXED_USER_HOME: '/home' } });
+  });
+
+  it('find the developer folder and the packages Swift needs on the system itself, as Lo runs', () => {
+    const parts: Omit<PrepareContext, 'developerFolder' | 'missingPackages'> = {
+      install: () => Promise.reject(new Error('nothing is installed')),
+      toolchain: () => Promise.reject(new Error('no toolchain is installed')),
+      findCopy: () => Promise.resolve(undefined),
+      signal: new AbortController().signal,
+    };
+    // `xcode-select -p`, and dpkg's list or rpm, not a stand-in that says none is missing.
+    expect(prepareContext(parts)).toEqual({ ...parts, developerFolder, missingPackages });
   });
 
   it('start nothing when a download fails', async () => {

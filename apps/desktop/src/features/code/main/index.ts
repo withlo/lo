@@ -30,7 +30,6 @@ import {
   type InstallProgress,
   MANIFEST,
   type Manifest,
-  missingPackages,
   partsOf,
   startServer,
   TOOLCHAINS,
@@ -52,7 +51,13 @@ import { tabs } from '../../tab/service.ts';
 import { contract } from '../contract.ts';
 import { contract as codeJobs } from '../jobs.ts';
 import { readTrusted, trusted, type TrustEntry } from '../settings.ts';
-import { ADAPTERS, type Adapter, SWIFT_DISTRO, type Toolchain } from './adapters.ts';
+import {
+  ADAPTERS,
+  type Adapter,
+  prepareContext,
+  SWIFT_DISTRO,
+  type Toolchain,
+} from './adapters.ts';
 import { letGo, letGoUntrusted } from './checkouts.ts';
 import { TrustAsker, type AskWindow } from './confirm.ts';
 import { readRepositories, type RepositoryReading } from './repositories.ts';
@@ -568,17 +573,17 @@ async function prepareServer(
     part.done();
     return done;
   };
-  return adapter.prepare({
-    install: (id, options) =>
-      counted(`server:${id}`, (heard) => install(context, id, heard, signal, options?.go)),
-    toolchain: listedToolchain(adapter, (id) =>
-      counted(`toolchain:${id}`, (heard) => installToolchain(context, id, heard, signal)),
-    ),
-    findCopy: (candidates) => installedCopy(context, candidates),
-    developerFolder,
-    missingPackages: (distro) => missingPackages(distro),
-    signal,
-  });
+  return adapter.prepare(
+    prepareContext({
+      install: (id, options) =>
+        counted(`server:${id}`, (heard) => install(context, id, heard, signal, options?.go)),
+      toolchain: listedToolchain(adapter, (id) =>
+        counted(`toolchain:${id}`, (heard) => installToolchain(context, id, heard, signal)),
+      ),
+      findCopy: (candidates) => installedCopy(context, candidates),
+      signal,
+    }),
+  );
 }
 
 /** The first of `candidates` that may run as a server: a copy the user installed. */

@@ -687,11 +687,13 @@ toolchain and git's variables each server needs.
   distribution built on Ubuntu, Debian or Red Hat Enterprise Linux names, or for Fedora, the newest
   swift.org builds for, Fedora 41, with `libxml2_2.13` besides from Fedora 45, which moved libxml2
   past the library the build links. It's started and told as on macOS, rootless and refusing the
-  same checkouts, with no SDK and no service: `sourcekitd` runs in its process. The toolchain needs
-  some of the distribution's packages, those swift.org's install instructions list, so before
-  anything downloads Lo looks for them in dpkg's list or asks rpm (`missingPackages`), and with any
-  missing, Swift's item says which and the command that installs them. A Linux none of swift.org's
-  builds fits has no Swift server.
+  same checkouts, with no SDK and no service: `sourcekitd` runs in its process. `CFFIXED_USER_HOME`
+  matters more there: Foundation on Linux takes its home folder from that, then from the user's
+  entry in the system's list of users, and from `HOME` only without one, and SourceKit-LSP writes
+  its logs in `.sourcekit-lsp/logs` there. The toolchain needs some of the distribution's packages,
+  those swift.org's install instructions list, so before anything downloads Lo looks for them in
+  dpkg's list or asks rpm (`missingPackages`), and with any missing, Swift's item says which and the
+  command that installs them. A Linux none of swift.org's builds fits has no Swift server.
 - Tests start only the fake server, `testing/lsp/fake-server.ts`, at most two at once in a test
   file, each killed with its group when the test ends. No test starts a real server or downloads
   one: download tests serve archives they build from a server on this machine. The live check,
@@ -699,7 +701,13 @@ toolchain and git's variables each server needs.
   `~/.cache/lo-live/`, or the folder `LO_LIVE_CACHE` names, starts each server as its adapter does
   on the checkouts the code fixtures build with `--local`, asks what `gd`, `gr`, `K`, `gh` and `gO`
   ask at the places `testing/fixtures/code/cases.json` names, and fails if anything ran what the
-  hostile fixture plants, wrote in a checkout or held an internet socket.
+  hostile fixture plants, wrote in a checkout or held an internet socket. One real server runs in
+  CI: the `swift` job, on Ubuntu 24.04, runs `pnpm nx run lsp:sourcekit` (`scripts/sourcekit.ts`)
+  when Swift's pins change, or the code that installs it or starts its server. It installs the
+  distribution's Swift with Lo's installer and the packages swift.org lists with `apt-get`, starts
+  SourceKit-LSP as Lo does on the code fixture's checkout, and fails unless it answers a hover on
+  `countWords` with its signature, keeps its logs in its own home and writes nothing in the
+  runner's.
 
 ### Accounts
 

@@ -17,6 +17,7 @@ import {
   packagesNeeded,
   parseOsRelease,
   readOsRelease,
+  RPM_WAIT,
   SWIFT_DISTROS,
   SWIFT_PLATFORMS,
   type SwiftDistro,
@@ -112,11 +113,26 @@ describe('the build a Linux takes', () => {
       expect(taken('ID=fedora', `VERSION_ID=${version}`)).toBe('fedora41');
     }
     expect(taken('ID=fedora', 'VERSION_ID=40')).toBeUndefined();
+    // A version that isn't a whole number isn't one of Fedora's.
+    for (const version of ['', '42.1', '42a', ' 42', 'rawhide']) {
+      expect(taken('ID=fedora', `VERSION_ID="${version}"`)).toBeUndefined();
+    }
     // Fedora itself: a distribution built on it doesn't say which Fedora, and its versions are its
     // own, as Amazon Linux 2023's and CentOS Stream 10's are.
     expect(taken('ID=ultramarine', 'ID_LIKE=fedora', 'VERSION_ID=43')).toBeUndefined();
     expect(taken('ID="amzn"', 'ID_LIKE="fedora"', 'VERSION_ID="2023"')).toBeUndefined();
     expect(taken('ID="centos"', 'ID_LIKE="rhel fedora"', 'VERSION_ID="10"')).toBeUndefined();
+  });
+
+  test('is Red Hat’s for a version of its 9, as Red Hat writes versions, and for no other', () => {
+    const rhel = (version: string) =>
+      taken('ID="rhel"', 'ID_LIKE="fedora"', `VERSION_ID="${version}"`);
+    for (const version of ['9', '9.0', '9.6', '9.6.1']) expect(rhel(version)).toBe('ubi9');
+    // Not one that starts with 9 but isn't a version, nor one whose first part is 9 and more.
+    for (const version of ['', '9.', '.9', '9a', '9.6-beta', ' 9', 'v9', '9,6', '19', '99']) {
+      expect(rhel(version)).toBeUndefined();
+    }
+    expect(taken('ID="rhel"', 'ID_LIKE="fedora"')).toBeUndefined();
   });
 
   test('is none for a Linux swift.org builds nothing for, or one Lo can’t tell', () => {
@@ -291,6 +307,21 @@ describe('the packages missing', () => {
     ]);
     // With no rpm, Lo can't tell.
     expect(await missingPackages(fedora, { rpm: join(folder, 'none'), release })).toEqual([]);
+  });
+
+  test('are none when rpm doesn’t say in time, since Lo can’t tell, whatever it said by then', async () => {
+    expect(RPM_WAIT).toBe(30_000);
+    const rpm = join(tempFolder(), 'rpm');
+    // A stand-in that says one isn't installed, then hangs.
+    writeFileSync(
+      rpm,
+      ['#!/bin/sh', 'echo "no package provides libxml2-devel"', 'exec sleep 60'].join('\n'),
+    );
+    chmodSync(rpm, 0o755);
+    const release = parseOsRelease('ID=fedora\nVERSION_ID=44');
+    const started = performance.now();
+    expect(await missingPackages(fedora, { rpm, release, rpmWait: 300 })).toEqual([]);
+    expect(performance.now() - started).toBeLessThan(5000);
   });
 
   test('are named, with the command that installs them', () => {

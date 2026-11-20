@@ -144,7 +144,12 @@ a system takes. A Linux none fits, such as Arch or Ubuntu 25.10, has no Swift se
 answers from the syntax index. Each build needs the packages swift.org's instructions list for its
 distribution, which Lo checks before it downloads anything, by dpkg's list or by asking rpm
 (`missingPackages`): with any missing, Swift's server says which, and the `apt-get` or `dnf` command
-that installs them. Lo installs nothing on the system.
+that installs them. Lo installs nothing on the system. `pnpm nx run lsp:sourcekit`
+(`scripts/sourcekit.ts`) tries it for real on a Linux a build fits: it installs that build as Lo
+does, starts SourceKit-LSP on the code fixture's checkout, and fails unless a hover on `countWords`
+gives its signature, its logs are in its own home and nothing appeared in the user's. CI's `swift`
+job runs it on Ubuntu 24.04 when Swift's pins change, or the code that installs it or starts its
+server.
 
 vtsls and Pyright each start as Node, by its absolute path, with a cap on its heap, then the
 server's own entry point inside its install, never the launcher npm would link. rust-analyzer,
@@ -307,10 +312,13 @@ alone, and the adapter says why each setting is as it is:
   `usr/bin/sourcekit-lsp` of Lo's Swift toolchain, told and kept the same way, but for what Linux
   lacks: there's no SDK, so the compiler reads the system's headers, from the packages Lo checks are
   installed; `sourcekitd` runs in its own process, from the toolchain's `libsourcekitdInProc.so`, so
-  there's no service, and `swift-plugin-server` is in its family; and Foundation's home folder is
-  its `HOME`, where it would read its settings and writes its logs. It reads nothing of the
-  machine's there, and `$XDG_CONFIG_HOME/sourcekit-lsp/config.json` only when that's set, which it
-  isn't.
+  there's no service, and `swift-plugin-server` is in its family; and Foundation's home folder, in
+  its home by `CFFIXED_USER_HOME` as on macOS, is where it writes its logs too. Foundation on Linux
+  takes that folder from the variable, then from the user's entry in the system's list of users, and
+  from `HOME` only when there's no entry, so without the variable it would read the user's
+  `~/.sourcekit-lsp/config.json`, and write its logs in `~/.sourcekit-lsp/logs`, deleting theirs
+  over an hour old. It reads nothing of the machine's, and
+  `$XDG_CONFIG_HOME/sourcekit-lsp/config.json` only when that's set, which it isn't.
 
 None runs in a sandbox: each reads what you can, so an absolute import, Pyright's `extraPaths`, a
 Rust sysroot's sources, the folders of stubs a `.php-lsp.json` names, the paths a `composer.json`'s

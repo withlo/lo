@@ -399,10 +399,12 @@ export interface PackageQuery {
   readonly dpkgStatus?: string | undefined;
   /** rpm, which Fedora and Red Hat's distributions are asked theirs with: `/usr/bin/rpm`. */
   readonly rpm?: string | undefined;
+  /** How long rpm may take to say, in milliseconds: {@link RPM_WAIT}. */
+  readonly rpmWait?: number | undefined;
 }
 
-/** How long rpm may take to say which packages are installed. */
-const RPM_WAIT = 30_000;
+/** How long rpm may take to say which packages are installed, in milliseconds. */
+export const RPM_WAIT = 30_000;
 
 /**
  * The packages `distro`'s build needs that aren't installed ({@link packagesFor}), by the name each
@@ -429,7 +431,7 @@ export async function missingPackages(
       return names.filter((name) => !installed.has(name));
     }
     case 'dnf':
-      return missingRpms(names, query.rpm ?? '/usr/bin/rpm');
+      return missingRpms(names, query.rpm ?? '/usr/bin/rpm', query.rpmWait ?? RPM_WAIT);
     default:
       manager satisfies never;
       return [];
@@ -458,8 +460,12 @@ export function installedDebs(text: string): ReadonlySet<string> {
   return installed;
 }
 
-/** Those of `names` no installed package provides, as `rpm` at `program` says. */
-async function missingRpms(names: readonly string[], program: string): Promise<string[]> {
+/** Those of `names` no installed package provides, as `rpm` at `program` says within `wait` ms. */
+async function missingRpms(
+  names: readonly string[],
+  program: string,
+  wait: number,
+): Promise<string[]> {
   let output: string;
   try {
     const { stdout } = await promisify(execFile)(
@@ -470,7 +476,7 @@ async function missingRpms(names: readonly string[], program: string): Promise<s
         cwd: '/',
         encoding: 'utf8',
         maxBuffer: 1024 * 1024,
-        timeout: RPM_WAIT,
+        timeout: wait,
       },
     );
     output = stdout;

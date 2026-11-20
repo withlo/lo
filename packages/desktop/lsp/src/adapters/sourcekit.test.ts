@@ -241,7 +241,8 @@ describe('starting SourceKit-LSP on Linux', () => {
     const launch = launchSourceKitOnLinux(swift, '6.4.2');
     expect(launch).toMatchObject({ program: installed.entry, args: [], rootless: true });
     expect(launch.path).toEqual([`${files}/swift-6.4.2-RELEASE-ubuntu26.04/usr/bin`]);
-    // `sourcekitd` runs in its process: no service outside its family, and no variable of its own.
+    // `sourcekitd` runs in its process: no service outside its family. Its one variable of its own
+    // comes once its home is made, below.
     expect(launch.services).toBeUndefined();
     expect(launch.variables).toBeUndefined();
     expect(launch.version).toBe('SourceKit-LSP from Swift 6.4.2 · Apache-2.0');
@@ -249,12 +250,16 @@ describe('starting SourceKit-LSP on Linux', () => {
     expect(swift.allowed).toEqual([]);
   });
 
-  test('is told as on macOS, but for the SDK, which Linux has none of', async () => {
+  test('is told and kept to its home as on macOS, but for the SDK, which Linux has none of', async () => {
     const where = { root: '/lo/checkouts/work', home: '/lo/homes/swift' };
     const placed = await launchSourceKitOnLinux(swift, '6.4.2').place?.(where);
     const options = sourceKitOptions(where.home, '/lo/MacOSX.sdk');
     expect(placed).toEqual({
       args: sourceKitArguments(where.home),
+      // Foundation on Linux takes its home folder from this, then from the user's entry in the
+      // system's list of users, before `HOME`: without it, SourceKit-LSP reads the user's
+      // `~/.sourcekit-lsp/config.json` and writes its logs in `~/.sourcekit-lsp/logs`.
+      variables: { CFFIXED_USER_HOME: where.home },
       initializationOptions: {
         ...options,
         fallbackBuildSystem: {
@@ -265,6 +270,15 @@ describe('starting SourceKit-LSP on Linux', () => {
       },
     });
     expect(sourceKitOptions(where.home)).toEqual(placed?.initializationOptions);
+    expect(await placeSourceKit(where)).toEqual(placed);
+    const env = serverEnvironment({
+      home: where.home,
+      roots: [where.root],
+      path: [...swift.path],
+      variables: placed?.variables,
+      git: GIT,
+    });
+    expect(env).toMatchObject({ HOME: where.home, CFFIXED_USER_HOME: where.home });
   });
 });
 
