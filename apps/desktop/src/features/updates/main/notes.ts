@@ -6,8 +6,8 @@
 
 import { characters, LINE_LIMIT } from '../contract.ts';
 
-/** The most of the notes Lo reads to find their first line. */
-const READ_LIMIT = 64 * 1024;
+/** The most of the notes Lo reads to find their first line, in UTF-16 code units. */
+export const READ_LIMIT = 64 * 1024;
 
 /** Tags that end a line of text where they stand. */
 const BREAKS =
@@ -53,11 +53,22 @@ function textOf(html: string): string {
 }
 
 /**
- * Controls, and the characters that turn the direction of the text after them around until they're
- * closed (embeddings, overrides and isolates), as Lo takes them out of what others write. The marks
- * right-to-left text places numbers with, and the joiners emoji are made of, stay.
+ * What Lo takes out of the line, before it makes each run of spaces one: what a reader can't see,
+ * with no width, but that changes what they read. That's the characters that turn the direction of
+ * the text after them around until they're closed (embeddings, overrides and isolates); the marks
+ * that set the direction of what's around them (left-to-right, right-to-left and Arabic letter
+ * marks); characters that join or split nothing a reader sees (the zero-width space and
+ * non-joiner, the word joiner and the invisible operators, the Mongolian vowel separator, and the
+ * byte order mark, which would otherwise count as a space); and tag characters, which can spell
+ * out hidden text. A flag of a country's part, which tags make, shows as the black flag it's drawn
+ * on. The zero-width joiner, which emoji are made of, and the variation selectors that choose how
+ * an emoji is drawn, stay.
  */
-const UNSEEN = /[\p{Cc}\u2028\u2029\u202A-\u202E\u2066-\u2069]/gu;
+const UNSEEN =
+  /[\u061C\u180E\u200B\u200C\u200E\u200F\u202A-\u202E\u2060-\u2064\u2066-\u2069\uFEFF\u{E0000}-\u{E007F}]/gu;
+
+/** Controls, which Lo takes out once the ones that space words, such as tabs, are spaces. */
+const CONTROLS = /\p{Cc}/gu;
 
 /** `text` cut to {@link LINE_LIMIT} characters as a person counts them, ending in `…` if cut. */
 export function cut(text: string): string {
@@ -90,8 +101,9 @@ export function firstLine(notes: unknown): string {
   const text = textOf(notesOf(notes).slice(0, READ_LIMIT));
   for (const raw of text.split(/\r\n|\r|\n/)) {
     const line = raw
-      .replace(/\s+/g, ' ')
       .replace(UNSEEN, '')
+      .replace(/\s+/g, ' ')
+      .replace(CONTROLS, '')
       .trim()
       .replace(/^(?:#{1,6}|[-*+>])\s+/, '');
     if (line !== '') return cut(line);

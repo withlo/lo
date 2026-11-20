@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { characters, LINE_LIMIT } from '../contract.ts';
-import { cut, firstLine } from './notes.ts';
+import { cut, firstLine, READ_LIMIT } from './notes.ts';
 
 describe('the first line of the notes', () => {
   it('is the first line of text in GitHub’s HTML', () => {
@@ -41,6 +41,34 @@ describe('the first line of the notes', () => {
     expect(firstLine('Faster\u0007 diffs‮.txt‬⁦ now⁩')).toBe('Faster diffs.txt now');
   });
 
+  it('drops what has no width and changes what the reader reads', () => {
+    // Zero-width space and non-joiner, word joiner, the invisible operators, the Mongolian vowel
+    // separator and the byte order mark; the direction marks; and tags, which spell out "hi".
+    const hidden = [
+      '\u200B',
+      '\u200C',
+      '\u2060',
+      '\u2061',
+      '\u2064',
+      '\u180E',
+      '\uFEFF',
+      '\u200E',
+      '\u200F',
+      '\u061C',
+      '\u{E0001}\u{E0068}\u{E0069}\u{E007F}',
+    ];
+    for (const character of hidden) {
+      expect(firstLine(`<p>Faster${character} diffs.${character}txt</p>`)).toBe('Faster diffs.txt');
+    }
+    expect(firstLine('\uFEFF\u200B\n<p>Lo\uFEFFreads</p>')).toBe('Loreads');
+  });
+
+  it('keeps what emoji are made of', () => {
+    const family = '👨\u200D👩\u200D👧';
+    const heart = '❤\uFE0F';
+    expect(firstLine(`<p>${family} ${heart}</p>`)).toBe(`${family} ${heart}`);
+  });
+
   it('is the newest release’s, when electron-updater gives the notes of several', () => {
     expect(
       firstLine([
@@ -55,6 +83,12 @@ describe('the first line of the notes', () => {
     for (const notes of [null, undefined, '', '<p></p>', [], 42]) {
       expect(firstLine(notes)).toBe('');
     }
+  });
+
+  it('reads no further than the first 64 KiB of the notes', () => {
+    expect(firstLine(`${' '.repeat(READ_LIMIT - 4)}Late`)).toBe('Late');
+    expect(firstLine(`${' '.repeat(READ_LIMIT - 3)}Late`)).toBe('Lat');
+    expect(firstLine(`${'\n'.repeat(READ_LIMIT)}Too late`)).toBe('');
   });
 
   it('is cut to 140 characters', () => {
