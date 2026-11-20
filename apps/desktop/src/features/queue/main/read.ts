@@ -230,12 +230,14 @@ export function readOf(
   const { queue } = view;
   if (queue === undefined && !queueLeftOut(view)) return { kind: 'none' };
   const rows = queueRows(view, waiting ?? noneWaiting(view.branch), login);
+  // GitHub may still estimate the next merge of a queue that holds nothing.
+  const empty = rows.entries.length === 0 && rows.more === 0 && !rows.leftOut;
   return {
     kind: 'queue',
     url: queue?.url ?? null,
     method: methodOf(queue?.settings?.method),
     groups: queue?.settings?.building ?? null,
-    nextMerge: queue?.nextEstimate ?? null,
+    nextMerge: empty ? null : (queue?.nextEstimate ?? null),
     admin: view.viewerPermission === 'ADMIN',
     entries: rows.entries.map((row) => entryOf(row, stackOf)),
     more: rows.more,

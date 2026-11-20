@@ -154,3 +154,39 @@ test('only an https page with a host is one the panel links', () => {
   expect(pageOf(undefined)).toBeNull();
   expect(pageOf(`https://github.com/${'a'.repeat(5000)}`)).toBeNull();
 });
+
+test('the approvals it needs say whether the base’s rules want a code owner’s too', () => {
+  const rule = {
+    requiredApprovals: 1,
+    codeOwnerReview: true,
+    conversationResolution: false,
+    dismissStaleReviews: false,
+    lastPushApproval: false,
+    allowedMethods: undefined,
+    requiredReviewers: false,
+    extraApprovalForCopilot: false,
+  };
+  const approvals = (codeOwnerReview: boolean) =>
+    stateFor(
+      { mergeState: 'BLOCKED', reviewDecision: 'REVIEW_REQUIRED' },
+      {
+        rules: {
+          ...noBranchRules('main'),
+          rules: [{ kind: 'pullRequest', rule: { ...rule, codeOwnerReview } }],
+        },
+      },
+    ).blockers.find((blocker) => blocker.kind === 'approvals');
+  // GitHub asked no code owner, as when the only one is the pull request's author.
+  expect(approvals(true)).toEqual({
+    kind: 'approvals',
+    more: 1,
+    codeOwners: [],
+    codeOwnerRule: true,
+  });
+  expect(approvals(false)).toEqual({
+    kind: 'approvals',
+    more: 1,
+    codeOwners: [],
+    codeOwnerRule: false,
+  });
+});

@@ -60,13 +60,16 @@ export type Squash =
   | { readonly kind: 'failed'; readonly at: string; readonly why: string };
 
 /**
- * Where the pull request sits, as main said when the panel asked, for the status it was asked at:
- * being asked, or what main said.
+ * Where the pull request sits, as main said when the panel asked, for what it was asked at (the
+ * status, the panel's round of asking and the stack's layers): being asked, with what main said
+ * the time before, if anything, which stands until it answers; what main said; or that it couldn't
+ * say.
  */
 export type Place =
   | { readonly kind: 'none' }
-  | { readonly kind: 'reading'; readonly at: string }
-  | { readonly kind: 'read'; readonly at: string; readonly placement: Placement };
+  | { readonly kind: 'reading'; readonly at: string; readonly last: Placement | undefined }
+  | { readonly kind: 'read'; readonly at: string; readonly placement: Placement }
+  | { readonly kind: 'failed'; readonly at: string };
 
 /** A view's merge panel. */
 export interface Panel {
@@ -81,6 +84,11 @@ export interface Panel {
   readonly squash: Squash;
   /** Where it sits: a stack's layer, a chain's, or alone. */
   readonly place: Place;
+  /**
+   * How many times the panel has asked where it sits afresh, whatever it was asked at: as it
+   * opens, while Lo lists the open pull requests again, and as `⏎` asks again.
+   */
+  readonly round: number;
 }
 
 export const panels = tabState<Panel>(() => ({
@@ -91,12 +99,35 @@ export const panels = tabState<Panel>(() => ({
   message: '',
   squash: { kind: 'none' },
   place: { kind: 'none' },
+  round: 0,
 }));
 
-/** Where view `id`'s pull request sits, as main last said, if it has. */
+/**
+ * Where view `id`'s pull request sits, as main last said, if it has: while it's asked again, what
+ * it said the time before.
+ */
 export function placementOf(id: string): Placement | undefined {
   const { place } = panels.get(id);
-  return place.kind === 'read' ? place.placement : undefined;
+  switch (place.kind) {
+    case 'read':
+      return place.placement;
+    case 'reading':
+      return place.last;
+    case 'none':
+    case 'failed':
+      return undefined;
+    default:
+      place satisfies never;
+      throw new Error(`A place Lo doesn't know: ${JSON.stringify(place)}`);
+  }
+}
+
+/**
+ * Whether a panel at `place` is still waiting to hear where its pull request sits for the first
+ * time, so it can't yet say what its main button merges.
+ */
+export function placeUnknown(place: Place): boolean {
+  return place.kind === 'none' || (place.kind === 'reading' && place.last === undefined);
 }
 
 /**

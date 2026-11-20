@@ -13,7 +13,7 @@ import {
 } from '@lo/github';
 import { describe, expect, it, vi } from 'vitest';
 
-import type { Progress, Together } from '../contract.ts';
+import type { Method, Progress, Together } from '../contract.ts';
 import { ChainRun, type ChainOptions, type Looked } from './chains.ts';
 
 const REPO = new RepoRef('rozed-dev', 'e2e');
@@ -45,6 +45,8 @@ function run(
     lookWait?: number;
     /** Called as each read is made, with how many there have been. */
     onLook?: (read: number) => void;
+    /** The method it merges with: a squash. */
+    method?: Method | null;
   } = {},
 ) {
   const sent: number[] = [];
@@ -60,6 +62,7 @@ function run(
     repo: REPO,
     number: 5,
     together,
+    method: options.method === undefined ? 'SQUASH' : options.method,
     retarget: (_repo, step: ConversionStep) => {
       if (step.kind !== 'retarget') throw new Error('only base branches move');
       sent.push(step.retarget.pr);
@@ -120,6 +123,17 @@ describe('a chain’s merge a layer at a time', () => {
       text: '#6 and #7 now point at main and need a rebase.',
     });
     expect(chain.ended()).toBe(1);
+  });
+
+  it('says the layers it moved need a rebase only when the method leaves their commits out', async () => {
+    // A merge commit lands #5's commits as they are, so they need no rebase.
+    const merged = run(CHAIN, { method: 'MERGE' });
+    merged.chain.merged();
+    expect((await merged.over()).text).toBe('#6 and #7 now point at main.');
+    // A queue whose method the account can't read may squash.
+    const queued = run(CHAIN, { method: null });
+    queued.chain.merged();
+    expect((await queued.over()).text).toBe('#6 and #7 now point at main and may need a rebase.');
   });
 
   it('after a queue entry, waits for the merge, and moves nothing when it leaves the queue', async () => {

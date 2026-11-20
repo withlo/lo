@@ -58,7 +58,11 @@ function reviewerOf(found: ReviewReviewer): Reviewer {
     : { kind: 'team', slug: text(found.slug) };
 }
 
-function blockerOf(found: ReviewBlocker, threadsCutShort: boolean, url: string): Blocker {
+/**
+ * `found` as the contract takes it, from `snapshot`: whether it read only some threads, and whether
+ * the base's rules require a code owner's approval.
+ */
+function blockerOf(found: ReviewBlocker, snapshot: MergeSnapshot, url: string): Blocker {
   switch (found.kind) {
     case 'merged':
     case 'closed':
@@ -70,12 +74,21 @@ function blockerOf(found: ReviewBlocker, threadsCutShort: boolean, url: string):
     case 'changesRequested':
       return { kind: 'changesRequested', by: found.by.map(text) };
     case 'approvals':
-      return { kind: 'approvals', more: found.more, codeOwners: found.codeOwners.map(reviewerOf) };
+      return {
+        kind: 'approvals',
+        more: found.more,
+        codeOwners: found.codeOwners.map(reviewerOf),
+        codeOwnerRule: snapshot.rules.codeOwnerReview,
+      };
     case 'check':
     case 'notReported':
       return { kind: found.kind, check: checkOf(found.check) };
     case 'conversations':
-      return { kind: 'conversations', unresolved: found.unresolved, cutShort: threadsCutShort };
+      return {
+        kind: 'conversations',
+        unresolved: found.unresolved,
+        cutShort: snapshot.threadsCutShort,
+      };
     case 'rule':
       return {
         kind: 'rule',
@@ -115,7 +128,7 @@ export function namedOf(
   const url = pullPage(facts, pull.owner, pull.repo, pull.number);
   const { queue } = snapshot;
   return {
-    blockers: blockers(snapshot).map((each) => blockerOf(each, snapshot.threadsCutShort, url)),
+    blockers: blockers(snapshot).map((each) => blockerOf(each, snapshot, url)),
     unchecked: snapshot.uncheckedRules.map(uncheckedOf),
     partial: mayNotSeeEveryRule(snapshot),
     afterPush: afterPushOf(snapshot),
@@ -144,7 +157,7 @@ export function stateOf({ facts, local, readAt, stale, off, pull }: StatusInput)
   const snapshot = mergeSnapshot(facts, local);
   const status = mergeStatus(snapshot);
   const url = pullPage(facts, pull.owner, pull.repo, pull.number);
-  const found = blockers(snapshot).map((each) => blockerOf(each, snapshot.threadsCutShort, url));
+  const found = blockers(snapshot).map((each) => blockerOf(each, snapshot, url));
   const action = mergeAction(snapshot);
   const { queue } = snapshot;
   const auto = snapshot.autoMerge;
@@ -236,5 +249,5 @@ export function blockersOf(
   pull: StatusInput['pull'],
 ): Blocker[] {
   const url = pullPage(facts, pull.owner, pull.repo, pull.number);
-  return found.map((each) => blockerOf(each, snapshot.threadsCutShort, url));
+  return found.map((each) => blockerOf(each, snapshot, url));
 }

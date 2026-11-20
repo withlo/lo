@@ -572,15 +572,29 @@ function subOf(check: Check, index: number, failed: boolean): RowSub {
   };
 }
 
-/** What the review a pull request still needs says: "1 more approval, and one from a code owner: @a." */
-function approvalsDetail(more: number, owners: readonly Reviewer[]): string {
-  const names = listed(owners.map(reviewerName));
-  if (more > 0 && owners.length > 0) {
+/**
+ * What the review a pull request still needs says: "1 more approval, and one from a code owner: @a."
+ * With no code owner asked, `base`'s rule is named, hedged: GitHub asks nobody when the only code
+ * owner is the pull request's author, and drops its request once a code owner approved.
+ */
+function approvalsDetail(
+  { more, codeOwners, codeOwnerRule }: Extract<Blocker, { kind: 'approvals' }>,
+  base: string,
+): string {
+  const names = listed(codeOwners.map(reviewerName));
+  if (more > 0 && codeOwners.length > 0) {
     return `${counted(more, 'more approval')}, and one from a code owner: ${names}.`;
   }
-  if (more > 0) return `${counted(more, 'more approval')}.`;
-  if (owners.length > 0) return `An approval from a code owner: ${names}.`;
-  return 'GitHub requires a review it doesn’t name, such as one of the latest push.';
+  if (codeOwners.length > 0) return `An approval from a code owner: ${names}.`;
+  const rule = `${base} also requires a code owner’s approval for changed files that have an owner`;
+  if (more > 0) {
+    return codeOwnerRule
+      ? `${counted(more, 'more approval')}. ${rule}, which may be one of them or given already.`
+      : `${counted(more, 'more approval')}.`;
+  }
+  return codeOwnerRule
+    ? `GitHub requires a review it doesn’t name. ${rule}, which may be it.`
+    : 'GitHub requires a review it doesn’t name, such as one of the latest push.';
 }
 
 /** The row for a group of checks. */
@@ -697,7 +711,7 @@ function reasonRow(
         kind: 'wait',
         glyph: 'review',
         title: 'Review required',
-        detail: approvalsDetail(blocker.more, blocker.codeOwners),
+        detail: approvalsDetail(blocker, base),
       };
     case 'conversations':
       return {
@@ -898,13 +912,18 @@ export function methodNote(state: MergeState): string | undefined {
   return said.length > 0 ? said.join('. ') : undefined;
 }
 
-/** The method the panel shows: the one chosen there, if still allowed, else the one picked first. */
+/**
+ * The method the panel shows: the one chosen there, if still allowed, else the one picked first.
+ * Into a merge queue, the queue's own, which merges it whatever was picked, or none when the
+ * account may not read it.
+ */
 export function shownMethod(state: MergeState, chosen: Method | undefined): Method | undefined {
   const { action } = state;
   if (action.kind === 'merge') {
     return chosen !== undefined && action.methods.includes(chosen) ? chosen : action.method;
   }
   if (action.kind === 'enqueue') return action.method ?? undefined;
+  if (state.queue.required) return state.queue.method ?? undefined;
   return state.picked ?? undefined;
 }
 
@@ -1133,16 +1152,24 @@ export function skipsOf(state: Said): string[] {
       }
       case 'approvals': {
         const owners = listed(blocker.codeOwners.map(reviewerName));
+        // A code owner's approval GitHub asked nobody for, which the rules still require.
+        const rule = blocker.codeOwners.length === 0 && blocker.codeOwnerRule;
         if (blocker.more > 0 && blocker.codeOwners.length > 0) {
           lines.push(
             `${counted(blocker.more, 'more approval')}, and a code owner review from ${owners}`,
           );
         } else if (blocker.more > 0) {
-          lines.push(counted(blocker.more, 'more approval'));
+          lines.push(
+            rule
+              ? `${counted(blocker.more, 'more approval')}, maybe a code owner’s`
+              : counted(blocker.more, 'more approval'),
+          );
         } else if (blocker.codeOwners.length > 0) {
           lines.push(`A code owner review from ${owners}`);
         } else {
-          lines.push('A review GitHub requires');
+          lines.push(
+            rule ? 'A review GitHub requires, maybe a code owner’s' : 'A review GitHub requires',
+          );
         }
         break;
       }
@@ -1277,13 +1304,18 @@ export function placedWhy(placement: Placement | undefined): string | undefined 
 
 /**
  * What a chain's confirmation says of its base branch moves, each on its own line: "Move #4818
- * onto main", then the merge, then "Move #4819 onto main".
+ * onto main", then the merge, then "Move #4819 onto main", each layer on it marked "needs rebase"
+ * when the merge leaves its commits out of the base, as a squash or a rebase does, or "may need a
+ * rebase" into a merge queue whose method Lo can't read. After a merge commit, which lands them,
+ * the layers on it it doesn't move aren't listed.
  */
 export function chainSteps(
-  plan: Pick<MergePlan, 'number' | 'base'>,
+  plan: Pick<MergePlan, 'number' | 'base' | 'method'>,
   together: Extract<Together, { kind: 'chain' }>,
 ): { readonly key: string; readonly title: string; readonly detail: string }[] {
   const steps = [];
+  const rebase = plan.method === null ? 'may need a rebase' : 'needs rebase';
+  const needsRebase = plan.method === 'MERGE' ? [] : together.needsRebase;
   if (together.before) {
     steps.push({
       key: 'before',
@@ -1293,18 +1325,19 @@ export function chainSteps(
   }
   steps.push({ key: 'merge', title: `Merge #${plan.number} into ${plan.base}`, detail: 'Alone' });
   for (const move of together.after) {
+    const rebased = needsRebase.includes(move.pr);
     steps.push({
       key: `after-${move.pr}`,
       title: `Move #${move.pr} onto ${move.to}`,
-      detail: `From ${move.from} · needs rebase`,
+      detail: rebased ? `From ${move.from} · ${rebase}` : `From ${move.from}`,
     });
   }
-  for (const pr of together.needsRebase) {
+  for (const pr of needsRebase) {
     if (together.after.some((move) => move.pr === pr)) continue;
     steps.push({
       key: `rebase-${pr}`,
       title: `#${pr} stays on ${plan.base}`,
-      detail: 'Needs rebase',
+      detail: capitalized(rebase),
     });
   }
   return steps;

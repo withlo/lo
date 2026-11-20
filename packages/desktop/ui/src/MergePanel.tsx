@@ -16,6 +16,7 @@ import { Key } from './Key.tsx';
 import { MergeDot, type MergeKind } from './MergeStatus.tsx';
 import { useReturnFocus } from './returnFocus.ts';
 import { SegmentedControl } from './SegmentedControl.tsx';
+import { Spinner } from './Spinner.tsx';
 import { Switch } from './Switch.tsx';
 
 export interface MergePanelProps {
@@ -161,6 +162,12 @@ export interface MergePrimary {
   disabled?: boolean | undefined;
   /** `quiet` where merging isn't the next thing, as while auto-merge waits. */
   quiet?: boolean | undefined;
+  /**
+   * What Lo is doing before it can name the merge, while it does: "Checking what merges with it".
+   * The button says so, with a ring turning, in place of its label, which might not hold once it's
+   * done, and pressing it does nothing until then.
+   */
+  busy?: string | undefined;
   onClick?: (() => void) | undefined;
 }
 
@@ -205,18 +212,28 @@ export function MergeFoot({ auto, start, method, primary }: MergeFootProps) {
       {method !== undefined && <span>{method}</span>}
       <Button
         variant={primary.quiet ? 'secondary' : 'primary'}
-        aria-disabled={primary.disabled || undefined}
+        aria-disabled={primary.disabled || primary.busy !== undefined || undefined}
+        aria-busy={primary.busy === undefined ? undefined : true}
         onClick={() => {
-          if (!primary.disabled) primary.onClick?.();
+          if (!primary.disabled && primary.busy === undefined) primary.onClick?.();
         }}
       >
-        {primary.label}
-        {primary.keys && (
-          <Key
-            keys={primary.keys}
-            decorative
-            className={primary.quiet || primary.disabled ? undefined : 'text-on-accent'}
-          />
+        {primary.busy === undefined ? (
+          <>
+            {primary.label}
+            {primary.keys && (
+              <Key
+                keys={primary.keys}
+                decorative
+                className={primary.quiet || primary.disabled ? undefined : 'text-on-accent'}
+              />
+            )}
+          </>
+        ) : (
+          <span className="inline-flex items-center gap-6">
+            <Spinner size="xs" />
+            {primary.busy}
+          </span>
         )}
       </Button>
     </>

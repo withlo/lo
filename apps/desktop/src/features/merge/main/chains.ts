@@ -16,7 +16,7 @@ import {
   type StepDone,
 } from '@lo/github';
 
-import type { BaseMove, MoveStatus, Progress, Together } from '../contract.ts';
+import type { BaseMove, Method, MoveStatus, Progress, Together } from '../contract.ts';
 import { numbers } from './together.ts';
 
 /** Where the merged pull request stands, as a read of it says. */
@@ -27,6 +27,11 @@ export interface ChainOptions {
   /** The bottom layer, which merges. */
   readonly number: number;
   readonly together: Extract<Together, { kind: 'chain' }>;
+  /**
+   * The method it merges with, which says whether the layers on it need a rebase once they've
+   * moved: `null` into a merge queue whose method the account may not read, when they may.
+   */
+  readonly method: Method | null;
   /** Moves a pull request's base branch, as a conversion's step does, checking it first. */
   readonly retarget: (
     repo: RepoRef,
@@ -297,13 +302,28 @@ export class ChainRun {
       }
     }
     this.#phase = 'done';
-    const { needsRebase } = this.#options.together;
-    const into = this.#moves.at(-1)?.move.to ?? this.#options.together.before?.to;
-    this.#text =
-      needsRebase.length === 0 || into === undefined
-        ? null
-        : `${numbers(needsRebase)} now ${needsRebase.length === 1 ? 'points' : 'point'} at ${into} and ${needsRebase.length === 1 ? 'needs' : 'need'} a rebase.`;
+    this.#text = this.#doneText();
     this.#end();
+  }
+
+  /**
+   * Where the layers on it went, once they have: "#2266 now points at main and needs a rebase.",
+   * which only a squash or a rebase calls for; after a merge commit, only the layers it moved.
+   * Nothing when none moved or needs a rebase.
+   */
+  #doneText(): string | null {
+    const { together, method } = this.#options;
+    const into = this.#moves.at(-1)?.move.to ?? together.before?.to;
+    const rebase = method !== 'MERGE' && together.needsRebase.length > 0;
+    const named = rebase
+      ? together.needsRebase
+      : this.#moves.flatMap((move) => (move.before ? [] : [move.move.pr]));
+    if (named.length === 0 || into === undefined) return null;
+    const one = named.length === 1;
+    const points = `${numbers(named)} now ${one ? 'points' : 'point'} at ${into}`;
+    if (!rebase) return `${points}.`;
+    if (method === null) return `${points} and may need a rebase.`;
+    return `${points} and ${one ? 'needs' : 'need'} a rebase.`;
   }
 
   /** Sends one move, saying how it went: whether it's where the plan wants it now. */

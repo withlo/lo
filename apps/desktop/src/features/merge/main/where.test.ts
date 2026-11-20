@@ -22,7 +22,10 @@ import {
 } from '@lo/stacks';
 import { describe, expect, it } from 'vitest';
 
+import type { OpenPullRequestList } from '@lo/github';
+
 import {
+  leftToLookUp,
   LIST_SLACK,
   unmergedIn,
   where,
@@ -35,6 +38,26 @@ import {
 const NOW = 1_800_000_000_000;
 const EVERY = 120_000;
 const TRUNKS = ['main'];
+
+/** An open pull request from `head` into `base`, as GitHub lists it, with what stacks read. */
+function open(
+  number: number,
+  base: string,
+  head: string,
+): OpenPullRequestList['pullRequests'][number] {
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- only what stacks read.
+  return {
+    number,
+    baseRefName: base,
+    baseRef: null,
+    headRefName: head,
+    isCrossRepository: false,
+    headRefOid: String(number).padStart(40, '0'),
+    commits: { nodes: [] },
+    createdAt: '2026-11-20T00:00:00Z',
+    stackEntry: null,
+  } as unknown as OpenPullRequestList['pullRequests'][number];
+}
 
 /** An open pull request from `head` into `base`. */
 function pull(
@@ -422,9 +445,13 @@ describe('where a pull request sits is unknown', () => {
     expect(where(view(31, {}, unlooked))).toEqual({
       kind: 'unknown',
       why: { kind: 'lookups' },
-      text: "Some merged pull requests weren't looked up yet, so Lo can't tell what #31 sits on. Lo is listing the open pull requests again.",
+      text: "Some merged pull requests weren't looked up yet, so Lo can't tell what #31 sits on. Lo looks them up 20 branches at a time, minutes apart.",
       listAgain: true,
     });
+    // With how many branches are left, which says how long it may take.
+    expect(unsure(where(view(31, { toLookUp: () => 16 }, unlooked))).text).toBe(
+      "Some merged pull requests weren't looked up yet, so Lo can't tell what #31 sits on. Lo looks them up 20 branches at a time, minutes apart, and has 16 to go.",
+    );
     // A stack on a trunk sits on no merged pull request's branch.
     expect(where(view(29, {}, unlooked))).toEqual({ kind: 'alone' });
     // A GitHub stack on m30, #30's branch, would merge into it: GitHub's stack doesn't say.
@@ -461,6 +488,27 @@ describe('where a pull request sits is unknown', () => {
     // Rulesets that weren't read only add links, which never makes a layer look alone.
     const unruled = repository(pulls, [{ kind: 'rulesets', why: 'Forbidden' }]);
     expect(where(view(31, {}, unruled))).toEqual({ kind: 'alone' });
+  });
+
+  it('counts the branches whose merged pull requests are left to look up', () => {
+    const list: OpenPullRequestList = {
+      // On main, a trunk; on a, looked up; on b and d, not yet; on c, #1's branch, an open one's.
+      pullRequests: [
+        open(1, 'main', 'c'),
+        open(2, 'a', 'e'),
+        open(3, 'b', 'f'),
+        open(4, 'c', 'g'),
+        open(5, 'd', 'h'),
+      ],
+      totalCount: 5,
+      truncated: false,
+      defaultBranch: 'main',
+      merged: [],
+      lookups: [{ branch: 'a', tip: undefined, found: [], at: NOW }],
+      mergedTruncated: true,
+    };
+    expect(leftToLookUp(list, TRUNKS)).toBe(2);
+    expect(leftToLookUp({ ...list, lookups: [] }, TRUNKS)).toBe(3);
   });
 
   it('until the open pull requests from its base branch are read, unless that’s a trunk', () => {

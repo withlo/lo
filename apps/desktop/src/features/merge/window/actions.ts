@@ -99,7 +99,13 @@ export function openPanel(id?: string, number = 0): void {
   const found = id === undefined ? onScreen() : statusOf(id, number);
   if (typeof found === 'string') return;
   const [first] = reasonsOf(found.id, found.state);
-  panels.update(found.id, (panel) => ({ ...panel, open: true, focused: first?.key }));
+  // Each time it opens, it asks afresh where the pull request sits.
+  panels.update(found.id, (panel) => ({
+    ...panel,
+    open: true,
+    focused: first?.key,
+    round: panel.round + 1,
+  }));
 }
 
 /** Opens or closes view `id`'s merge panel, as a click on the header's status does. */

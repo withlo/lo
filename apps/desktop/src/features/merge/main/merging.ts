@@ -123,7 +123,14 @@ import {
   type Taking,
 } from './together.ts';
 import type { MergeTurns } from './turns.ts';
-import { placedBy, unmergedIn, where, type OpenFromHead, type Where } from './where.ts';
+import {
+  leftToLookUp,
+  placedBy,
+  unmergedIn,
+  where,
+  type OpenFromHead,
+  type Where,
+} from './where.ts';
 
 /** How long what GitHub said of a merge is taken as current at the press: 7 minutes. */
 export const FRESH_FOR = 7 * 60_000;
@@ -1416,12 +1423,14 @@ export class Merging {
     let listed = false;
     for (;;) {
       const forest = this.#options.forest(pull.repo, login);
+      const list = poller.openPullRequests(pull.repo)?.value;
       const found = where({
         number: pull.number,
         facts: placed,
         forest,
         openFrom,
-        unmerged: unmergedIn(poller.openPullRequests(pull.repo)?.value.lookups ?? []),
+        unmerged: unmergedIn(list?.lookups ?? []),
+        toLookUp: () => (list && forest ? leftToLookUp(list, forest.trunks) : undefined),
         now: this.#now(),
       });
       if (found.kind !== 'unknown') return found;
@@ -1842,6 +1851,7 @@ export class Merging {
       repo: pull.repo,
       number: pull.number,
       together,
+      method: sent.plan.method,
       retarget: (repo, step, signal) => poller.runConversionStep(repo, step, signal),
       look: async (signal): Promise<Looked> => {
         const check = await poller.readOnce(

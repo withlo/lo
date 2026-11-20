@@ -171,6 +171,23 @@ describe('what a merge queue’s tab shows', () => {
     expect(countOf(none)).toBeNull();
   });
 
+  it('says when the next entry merges only while the queue holds one', async () => {
+    const [view] = await recordedViews();
+    if (!view?.queue) throw new Error('expected a queue');
+    const estimated: QueueView = { ...view, queue: { ...view.queue, nextEstimate: 660 } };
+    expect(readOf(estimated, undefined, false, 'rozed-bot')).toMatchObject({ nextMerge: 660 });
+    // Emptied, GitHub still estimates the next merge: there's none to say.
+    const empty: QueueView = {
+      ...estimated,
+      queue: { ...estimated.queue!, entries: [], total: 0 },
+    };
+    expect(readOf(empty, undefined, false, 'rozed-bot')).toMatchObject({
+      kind: 'queue',
+      entries: [],
+      nextMerge: null,
+    });
+  });
+
   it('names a method newer than Lo as none, rather than guess', () => {
     expect([
       methodOf('MERGE'),

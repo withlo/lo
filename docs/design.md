@@ -979,16 +979,19 @@ neither. If GitHub stops partway, Lo says which layers landed ("Merged #232 only
 Other chains are offered "Make this a GitHub stack" first (section 4), and nothing merges until it
 is one. When that isn't possible, the panel lists why, and Lo merges one layer at a time, from the
 bottom PR's own tab. It moves the bottom PR's base to the root branch if it isn't there, merges it,
-then points each layer on it at the root branch and marks it "needs rebase." The confirmation lists
-every move. Lo makes the moves only while it's open, once GitHub says the PR merged. After a queue
-entry it reads the PR until it merges, for up to 6 hours, or until it leaves the queue, and after a
-lost answer for up to 15 minutes from the last one. Each move reads the base branch first, and
-doesn't move one someone else moved. The first move that fails stops the rest and says what moved,
-and Lo puts nothing back. A layer above the bottom is refused, naming the layer to merge first, and
-so is a bottom layer that needs a rebase.
+then points each layer on it at the root branch. After a squash or a rebase it marks each "needs
+rebase," and after a merge commit, which keeps the layers' commits, it doesn't. The confirmation
+lists every move. Lo makes the moves only while it's open, once GitHub says the PR merged. After a
+queue entry it reads the PR until it merges, for up to 6 hours, or until it leaves the queue, and
+after a lost answer for up to 15 minutes from the last one. Each move reads the base branch first,
+and doesn't move one someone else moved. The first move that fails stops the rest and says what
+moved, and Lo puts nothing back. A layer above the bottom is refused, naming the layer to merge
+first, and so is a bottom layer that needs a rebase.
 
 Lo merges a PR only once it knows where it sits, from the stack list (section 4) and, for a GitHub
-stack, GitHub's own answer. Until then the panel says why and asks again by itself.
+stack, GitHub's own answer. Until then the panel says why and asks again by itself. It asks afresh
+each time it opens and as the stack's layers move, and `⏎` asks once more before it refuses, so a
+chain that changed since never leaves `⏎` doing nothing.
 
 ### The merge queue
 
