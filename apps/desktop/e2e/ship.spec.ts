@@ -66,6 +66,9 @@ const test = base.extend<{
 const status = (page: Page) =>
   page.locator('header.pr-header:visible').locator('button[aria-haspopup="dialog"]');
 
+/** `⌘⇧⏎`, which is Ctrl+Shift+Enter on Linux. */
+const SHIP = process.platform === 'darwin' ? 'Meta+Shift+Enter' : 'Control+Shift+Enter';
+
 /** Approve and ship's dialog. */
 const dialog = (page: Page) => page.getByTestId('ship-confirm');
 
@@ -100,7 +103,7 @@ async function ship(page: Page, number: number): Promise<void> {
   const planned = `Approve and ship #${number}?`;
   const deadline = Date.now() + LOOKUPS;
   for (;;) {
-    await page.keyboard.press('Meta+Shift+Enter');
+    await page.keyboard.press(SHIP);
     await expect(dialog(page)).toBeVisible();
     // Planned, or refused, which closes the dialog and says why.
     await expect
