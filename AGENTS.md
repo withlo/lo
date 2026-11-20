@@ -1133,10 +1133,14 @@ its own app, installs it when the reader says so.
   moves or downloads (`main/how.ts`): `install` on a packaged Mac in an Applications folder it can
   write (`/Applications` or `~/Applications`), where electron-updater downloads the zip, checks its
   SHA-512 and hands it to Squirrel.Mac, which installs it only if its signature is the running Lo's;
-  `move` on a Mac anywhere else, such as the disk image or a translocated download, where "Move to
-  Applications" asks before it replaces a Lo already there; `page` on Linux, from source, or where
-  Lo can't write its own folder, where "Download" opens the release's page. Only `install` builds
-  electron-updater's Mac updater: the rest get one that can check and has no way to download.
+  `brew`, checked first, in an Applications folder while Homebrew's Caskroom has `lo`
+  (`/opt/homebrew/Caskroom/lo` or `/usr/local/Caskroom/lo`), where Lo never replaces itself, since
+  Homebrew's record of the version would go stale, and the toast gives `BREW_UPGRADE`,
+  `brew upgrade --cask withlo/tap/lo`; `move` on a Mac anywhere else, such as the disk image or a
+  translocated download, where "Move to Applications" asks before it replaces a Lo already there;
+  `page` on Linux, from source, or where Lo can't write its own folder, where "Download" opens the
+  release's page. Only `install` builds electron-updater's Mac updater: the rest get one that can
+  check and has no way to download.
 - **When.** 30 s after the window is up, then every 6 hours, and on `updates.check`, the command,
   the overview's "Get a newer Lo" and Settings' "Check now". The `updates.check` setting (on) turns
   off only the timed checks. A timed check that fails is logged and tried at the next, and one the
@@ -1766,8 +1770,9 @@ used or edited, only deleted and added again. So add it just before the next ver
 ## Releasing
 
 The `release` workflow (`.github/workflows/release.yml`) builds Lo from a version tag and drafts the
-release on GitHub. It publishes nothing: a maintainer reads the draft and publishes it. Renew the
-pins first (see "Language servers"), and run a dry run on `main` before tagging.
+release on GitHub. It publishes nothing: a maintainer reads the draft and publishes it. Publishing
+it starts the workflow's `cask` job, which proposes the release's Homebrew cask to the tap. Renew
+the pins first (see "Language servers"), and run a dry run on `main` before tagging.
 
 - **The tag is the version.** Push `v<version>`: a `v` and SemVer 2.0.0 with no build metadata, such
   as `v0.1.0` or `v0.1.0-rc.1`, on a commit `main` holds. `scripts/release/version.sh` checks it,
@@ -1791,6 +1796,14 @@ pins first (see "Language servers"), and run a dry run on `main` before tagging.
     them has passed: it downloads the artifacts, writes `SHA256SUMS` over every file, and runs
     `gh release create v<version> --draft --verify-tag --generate-notes`, with `--prerelease` for a
     prerelease. A re-run replaces a draft's files, and refuses a tag that has a published release.
+  - `cask` runs alone when a release is published (`release: published`), and only for one that
+    isn't a prerelease, by the release's flag and by its tag, and is GitHub's latest. `version`
+    checks the release's tag as it checks a pushed one, and the version, the branch and every file
+    name come from that tag alone. The job downloads the two DMGs from the addresses the cask names,
+    checks each against the release's `SHA256SUMS`, renders `Casks/lo.rb` with
+    `scripts/release/cask.sh`, and opens a pull request on `withlo/homebrew-tap` from
+    `lo-<version>`, titled `lo <version>` (`(new cask)` the first time), through GitHub's API. A
+    re-run reuses the branch and the pull request. Merge it once the tap's checks pass.
 - **Environments and secrets.** The `mac` job of a tag's run is the only one that reads the signing
   secrets, through the `release` environment. Releasing requires that environment, in the
   repository's settings, to wait for a maintainer's approval and to take only `v*` tags: the
@@ -1801,7 +1814,27 @@ pins first (see "Language servers"), and run a dry run on `main` before tagging.
   always runs removes). Keep them on the environment, never the repository, and give the environment
   its reviewer and its `v*` tag rule before the first tag: GitHub creates a missing environment
   without protection. The `draft` job has `contents: write` and no secret, and runs none of the
-  repository's code. The `npm` environment is the checker's.
+  repository's code. `TAP_TOKEN` is in the `tap` environment, which takes only `v*` tags and needs
+  no approval, since a maintainer has just published the release. It's a fine-grained token whose
+  resource owner is `withlo`, for `withlo/homebrew-tap` alone, with Contents and Pull requests read
+  and write. Only the `cask` job's last step reads it, and that step runs `gh` alone. A tag pushed
+  with an edited workflow could read it, which is why it reaches only the tap, whose pull requests a
+  maintainer merges. The `npm` environment is the checker's.
+- **Homebrew.** The cask is `scripts/release/lo.rb.in`, which
+  `cask.sh <version> <arm64 SHA-256> <x64 SHA-256>` fills in, refusing a version `version.sh`
+  wouldn't take (`semver.sh`, without the v) and any SHA-256 that isn't 64 lowercase hex digits.
+  `cask.test.ts` checks the output against the files in `scripts/release/golden/` (`vitest -u`
+  rewrites them), and the template's app name, bundle ID, minimum macOS and updater folder against
+  `build/electron-builder.yml` and `build/release.yml`. CI's `cask` job renders it with fixed values
+  and runs `brew style` on it when the template, the script or `ci.yml` changes. The cask has no
+  `auto_updates`, so `brew upgrade` updates Lo, and its `livecheck` reads GitHub's latest release.
+  `zap` trashes Lo's cache (`/private/var/folders/*/*/C/Lo`), `~/.config/lo`,
+  `~/Library/Application Support/Lo`, `~/Library/Caches/lo-updater`, and the Preferences and Saved
+  Application State of `com.scornz.lo`; a change to where Lo keeps data changes it too. The tap's
+  own checks, on a macOS runner, run `brew style`, `brew audit --cask --strict --online` for both
+  architectures (with `--new` while `main` has no cask, leaving out `github_repository`, the check
+  of how widely the repository is followed, which only Homebrew's own cask list needs),
+  `brew install --cask` and `brew uninstall --cask --zap` on each pull request.
 - **No cache, nothing floating.** The workflow uses no Actions cache and pins each action by its
   SHA. It installs pnpm with `scripts/install-pnpm.sh`, checked against the SHA-512 the lockfile
   holds, and the dependencies from the lockfile alone, since `pnpm/setup` restores and saves a cache

@@ -88,10 +88,22 @@ builds are published and what they hold.
 ## Install
 
 Lo's releases are published on [GitHub Releases](https://github.com/withlo/lo/releases), and each
-holds Lo for the Mac and for Linux. Download the file that matches your computer; `<version>` is the
-release's, such as `0.1.0`.
+holds Lo for the Mac and for Linux. `<version>` below is the release's, such as `0.1.0`.
 
-**On a Mac** (macOS 13 or later), open the DMG and drag Lo to your Applications folder:
+**On a Mac** (macOS 13 or later), install Lo with [Homebrew](https://brew.sh), from its tap,
+[withlo/homebrew-tap](https://github.com/withlo/homebrew-tap):
+
+```sh
+brew install --cask withlo/tap/lo
+```
+
+Homebrew installs the release's DMG for your Mac, and updates Lo with
+`brew upgrade --cask withlo/tap/lo`, or with everything else on `brew upgrade`. Lo installed this
+way doesn't update itself, so Homebrew always knows which version you have. A release reaches the
+tap through a pull request that the tap's checks audit and install before it's merged, so it can
+arrive there a little after GitHub Releases.
+
+Or download the DMG that matches your Mac, open it and drag Lo to your Applications folder:
 
 - `Lo-<version>-arm64.dmg` for Apple silicon, and `Lo-<version>-x64.dmg` for Intel.
 - The zips of the same names hold the same app. Lo downloads the zip when it updates itself.
@@ -135,9 +147,12 @@ check.
 A newer version shows as a toast, "Lo 0.2.0 is out", above the status bar. It waits until you act on
 it and never takes focus. What it offers depends on how Lo was installed:
 
-- **A Mac, with Lo in Applications** (or `~/Applications`): "Install" downloads the new version,
-  checks it against the checksum in the release, and has macOS install it only if the same team
-  signed it. Lo then offers "Restart now", or installs it when you quit. "What's new" opens the
+- **A Mac, with Lo from Homebrew:** Lo doesn't update itself, since Homebrew keeps a record of the
+  version it installed. The toast gives the command, `brew upgrade --cask withlo/tap/lo`, with
+  "Copy".
+- **A Mac, with Lo in Applications** (or `~/Applications`) from a DMG: "Install" downloads the new
+  version, checks it against the checksum in the release, and has macOS install it only if the same
+  team signed it. Lo then offers "Restart now", or installs it when you quit. "What's new" opens the
   release's page, and "Later" hides the toast until Lo starts again or you check for updates
   yourself.
 - **A Mac, with Lo anywhere else,** such as the disk image or your Downloads folder: "Move to

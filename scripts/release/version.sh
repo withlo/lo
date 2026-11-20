@@ -26,14 +26,12 @@ esac
 tag=${ref#refs/tags/}
 version=${tag#v}
 
-# SemVer 2.0.0's grammar: three numbers without leading zeros, then dot-separated prerelease
-# identifiers, numbers without leading zeros or names of letters, digits and hyphens.
-number='(0|[1-9][0-9]*)'
-identifier="($number|[0-9]*[A-Za-z-][0-9A-Za-z-]*)"
+# shellcheck source=scripts/release/semver.sh
+. "$(dirname -- "$0")/semver.sh"
 case $version in
   *+*) refuse "$tag has build metadata, which a version comparison ignores, so it couldn't tell this release from another." ;;
 esac
-printf '%s\n' "$version" | LC_ALL=C grep -Eqx "$number\\.$number\\.$number(-$identifier(\\.$identifier)*)?" ||
+is_release_version "$version" ||
   refuse "$tag isn't a v and a SemVer version, such as v0.1.0 or v0.1.0-rc.1."
 
 commit=$(git rev-parse --verify --quiet "$ref^{commit}") || refuse "There's no tag $tag here."
