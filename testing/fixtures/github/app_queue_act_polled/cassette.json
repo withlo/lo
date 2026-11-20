@@ -1,0 +1,4 @@
+{
+  "description": "app_queue_act with GitHub's 304 to rozed-dev/e2e#259's overview ref read again with the ETag of its first read: Lo reads the ref on screen again as its window comes to the front, and on a timer, which a test can reach when the recording didn't. It has no overview, so nothing changed.",
+  "derived_from": "app_queue_act"
+}

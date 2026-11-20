@@ -1,9 +1,11 @@
 // Changing a merge queue from its tab: Lo, started on the replay server as rozed-bot, on generation
 // 9 of `testing/fixtures/merge.sh`'s pull requests in rozed-dev/e2e, as recorded from the app with
-// writes while two of them were in `e4/queued`'s queue (`app_queue_act`). `J` on the second moves
-// it to the front and `x` on the first takes it out, each once its confirmation says what it does
-// and `⏎` confirms it; the first, at the front, has nowhere to move. An account below admin isn't
-// offered `J`, which GitHub lets only admins do (`app_queue_act_writer`).
+// writes while two of them were in `e4/queued`'s queue (`app_queue_act`), served with GitHub's
+// answer to the overview ref read again added, as Lo reads it again when its window comes to the
+// front (`app_queue_act_polled`). `J` on the second moves it to the front and `x` on the first
+// takes it out, each once its confirmation says what it does and `⏎` confirms it; the first, at the
+// front, has nowhere to move. An account below admin isn't offered `J`, which GitHub lets only
+// admins do (`app_queue_act_writer`).
 
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -22,7 +24,7 @@ const { pulls } = MERGE_PULLS[9];
  * from generation 9's repository, built on this machine.
  */
 const test = base.extend<{ cassette: string; github: ReplayServer; remote: string }>({
-  cassette: ['app_queue_act', { option: true }],
+  cassette: ['app_queue_act_polled', { option: true }],
   github: async ({ cassette }, use) => {
     const server = await serveReplay(cassette);
     await use(server);

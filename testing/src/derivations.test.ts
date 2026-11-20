@@ -2,6 +2,10 @@ import { expect, test } from 'vitest';
 
 import { cassetteDir, isObject, readCassette, type Interaction, type Json } from './cassette.ts';
 import { at, graphql } from './derive.ts';
+import { Replay } from './replay.ts';
+
+/** An empty body, as a read sends. */
+const none = new Uint8Array();
 
 /** The derived cassette `name`'s requests and answers, in order, as the replayer reads them. */
 function answers(name: string): Interaction[] {
@@ -296,3 +300,28 @@ test('a writer reads every merge queue as one it can’t move a pull request to 
   expect(queuePermissions('app_queue_act')).toEqual(new Set(['ADMIN']));
   expect(queuePermissions('app_queue_act_writer')).toEqual(new Set(['WRITE']));
 });
+
+test.each([
+  ['app_queue_polled', [156, 169, 168]],
+  ['app_queued_polled', [205, 204]],
+  ['app_queued_left_polled', [207]],
+  ['app_queue_act_polled', [259]],
+  ['app_queue_act_writer', [259]],
+])(
+  'in %s, each overview ref read is answered again as unchanged, with the ETag of its first read',
+  (name, numbers) => {
+    const replay = Replay.cassette(name);
+    for (const number of numbers) {
+      const url = `https://api.github.com/repos/rozed-dev/e2e/git/matching-refs/lo/pr/${number}`;
+      const read = (headers: Headers) => replay.answer({ method: 'GET', url, headers, body: none });
+      const once = read(new Headers());
+      expect(once.status, `#${number}'s first read`).toBe(200);
+      const etag = once.headers.get('etag') ?? '';
+      for (const time of [1, 2]) {
+        const again = read(new Headers({ 'if-none-match': etag }));
+        expect(again.status, `#${number}'s read again, ${time}`).toBe(304);
+        expect(again.headers.get('etag')).toBe(etag);
+      }
+    }
+  },
+);
