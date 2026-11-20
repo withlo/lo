@@ -93,6 +93,18 @@ const pinned: Record<string, { cli: string; wasiSdk: Pinned; binaryen: Pinned }>
       sha256: '195ddc94f9bc89f45abdabb0b9eea86023d727ba90eac8b35b80f2544fc30572',
     },
   },
+  // Lo's arm64 Linux packages are built on an arm64 runner.
+  'linux-arm64': {
+    cli: 'fb5737925d182e7e314978cbf166dfea9274de6a465efa751be72f422956e9c5',
+    wasiSdk: {
+      url: 'https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-34/wasi-sdk-34.0-arm64-linux.tar.gz',
+      sha256: 'f7e243dff54d60bcc576e94d6166b69f410f2500ae4a9ceef34315be10e77971',
+    },
+    binaryen: {
+      url: 'https://github.com/WebAssembly/binaryen/releases/download/version_132/binaryen-version_132-aarch64-linux.tar.gz',
+      sha256: 'c58562417836c5d0493d89bdefc434933bdc097db641b483df86bcfa557a107f',
+    },
+  },
 };
 
 const update = process.argv.includes('--update');

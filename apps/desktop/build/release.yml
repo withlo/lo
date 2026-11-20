@@ -112,6 +112,9 @@ deb:
 rpm:
   afterInstall: build/linux/after-install.sh
   afterRemove: build/linux/after-remove.sh
+  # The rpm owns its folders, so removing it leaves none behind, and holds none of rpmbuild's
+  # links in /usr/lib/.build-id, which would clash with another app built on the same Electron.
+  fpm: ['--rpm-auto-add-directories', '--rpm-rpmbuild-define=_build_id_links none']
   depends:
     - gtk3
     - libnotify

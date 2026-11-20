@@ -101,8 +101,9 @@ if [ "${1-}" = --start ]; then
     rm -rf "$work"
   ' EXIT
   mkdir "$work/home"
+  # Xvfb's display, with the cookie xvfb-run made for it.
   run() {
-    env -i HOME="$work/home" PATH=/usr/bin:/bin DISPLAY="$DISPLAY" \
+    env -i HOME="$work/home" PATH=/usr/bin:/bin DISPLAY="$DISPLAY" XAUTHORITY="${XAUTHORITY-}" \
       DBUS_SESSION_BUS_ADDRESS=disabled: "$@"
   }
   limit=120
@@ -352,7 +353,7 @@ if [ "$format" = deb ]; then
   for script in preinst prerm; do
     [ ! -e "$work/control/$script" ] || fail "it has a $script, which Lo's packages don't"
   done
-  owners=$(dpkg-deb -c "$file" | awk '$2 != "root/root"')
+  owners=$(dpkg-deb -c "$file" | awk '$2 != "0/0" && $2 != "root/root"')
   [ -z "$owners" ] || fail "it holds files root doesn't own: $owners"
   dpkg-deb -x "$file" "$contents"
 else
