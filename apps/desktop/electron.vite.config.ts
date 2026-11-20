@@ -10,6 +10,9 @@ import { defineConfig } from 'electron-vite';
 import type { Plugin } from 'vite';
 import { z } from 'zod';
 
+import { buildCommit } from './scripts/commit.ts';
+import { bundledPackages } from './scripts/notices/packages.ts';
+
 /**
  * The overview checker Lo builds in, as `@withlo/overview@<version>`: the skill Lo installs runs the
  * checker by that exact version, and Settings shows the command that installs the same skill from a
@@ -103,9 +106,16 @@ function syntaxFiles(): Plugin {
   };
 }
 
+/** The commit Lo is built from, which the About panel shows. vitest.config.ts defines it as well. */
+const COMMIT = buildCommit(process.env, dirname(fileURLToPath(import.meta.url)));
+
+/** Where each bundle lists its packages, for scripts/notices.ts to make the licenses file from. */
+const BUNDLED = 'bundled.json';
+
 export default defineConfig({
   main: {
-    plugins: [syntaxFiles()],
+    plugins: [syntaxFiles(), bundledPackages(BUNDLED)],
+    define: { LO_COMMIT: JSON.stringify(COMMIT) },
     build: {
       outDir: 'dist/main',
       // Everything main imports is bundled, so the app never loads anything from node_modules.
@@ -113,6 +123,7 @@ export default defineConfig({
     },
   },
   preload: {
+    plugins: [bundledPackages(BUNDLED)],
     build: {
       outDir: 'dist/preload',
       // A sandboxed page's preload is one script with nothing to import, in CommonJS: it can't
@@ -126,7 +137,7 @@ export default defineConfig({
   },
   renderer: {
     root: 'src/window',
-    plugins: [react(), tailwindcss(), fontLicenses()],
+    plugins: [react(), tailwindcss(), fontLicenses(), bundledPackages(BUNDLED)],
     define: { LO_OVERVIEW_CHECKER: JSON.stringify(OVERVIEW_CHECKER) },
     build: {
       outDir: 'dist/window',
