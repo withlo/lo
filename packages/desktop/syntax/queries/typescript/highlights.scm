@@ -1,7 +1,7 @@
 ; From tree-sitter-typescript (https://github.com/zed-industries/tree-sitter-typescript), queries/highlights.scm
 ; at e2c53597d6a5d9cf7bbe8dccde576fe1e46c5899. Copyright (c) 2017 Max Brunsfeld. MIT.
-; The grammar's tree-sitter.json builds on tree-sitter-javascript's queries/highlights.scm,
-; from (https://github.com/tree-sitter/tree-sitter-javascript) at
+; The grammar's tree-sitter.json builds on queries/highlights.scm
+; of tree-sitter-javascript (https://github.com/tree-sitter/tree-sitter-javascript) at
 ; 3a837b6f3658ca3618f2022f8707e29739c91364, its 0.23.1 release. Copyright (c) 2014 Max Brunsfeld. MIT.
 ; Changed for Lo: the JavaScript queries come first and the TypeScript ones after them, so that
 ; where both match a node the TypeScript one wins, as Lo lets the later pattern win.
