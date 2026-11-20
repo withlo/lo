@@ -32,7 +32,7 @@ function nativeMenus(app: ElectronApplication): Promise<string[]> {
   });
 }
 
-test('a right-click lists Back and Forward with their keys in this system’s form, and a screen reader hears an item’s name and key, not its key caps', async ({
+test('a right-click lists Back and Forward with their keys in this system’s form, and on Linux About Lo, which has none, and a screen reader hears an item’s name and key, not its key caps', async ({
   page,
 }) => {
   const middle = middleOf(page);
@@ -43,9 +43,12 @@ test('a right-click lists Back and Forward with their keys in this system’s fo
   await expect(items).toHaveText([
     new RegExp(`^Back${mac ? '⌃o' : 'Ctrl\\+O'}$`),
     new RegExp(`^Forward${mac ? '⌃i' : 'Ctrl\\+I'}$`),
+    // Linux has no app menu to open About from, so its menu lists it, with no key.
+    ...(mac ? [] : [/^About Lo$/]),
   ]);
-  // Both are in the key table's Code group, so no separator sits between them.
-  await expect(menu.getByRole('separator')).toHaveCount(0);
+  // Back and Forward are in the key table's Code group, so no separator sits between them. About
+  // Lo, in another, sits after one.
+  await expect(menu.getByRole('separator')).toHaveCount(mac ? 0 : 1);
   // The menu is a scope of its own, which is how j and k move in it.
   await expect(menu).toHaveAttribute('data-lo-scope', 'menu');
 
