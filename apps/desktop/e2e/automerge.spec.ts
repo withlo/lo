@@ -5,9 +5,10 @@
 // asking nothing (`app_merge_auto_off`). `⌥⏎` merges past the base branch's rules, which its
 // confirmation lists, only once the pull request's number is typed (`app_merge_override`). GitHub's
 // refusals are said in the dialog, from derived answers: a repository that doesn't allow auto-merge
-// (`app_merge_auto_not_allowed`) and a pull request nothing blocks (`app_merge_auto_now`). An
-// account below admin isn't offered `⌥⏎` (`app_merge_override_writer`), and a merge GitHub refuses
-// it for want of permission says so in GitHub's words (`app_merge_write_writer`, on generation 5).
+// (`app_merge_auto_not_allowed`), and a pull request its code owner approved since, which nothing
+// blocks then, whose merge the dialog offers in auto-merge's place (`app_merge_auto_now`). An
+// account below admin isn't offered `⌥⏎` (`app_merge_override_writer`), and a merge GitHub fails
+// for a rule it can't bypass says so in GitHub's words (`app_merge_write_writer`, on generation 5).
 
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -185,7 +186,7 @@ test.describe('past the rules', () => {
 test.describe('where the repository doesn’t allow auto-merge', () => {
   test.use({ cassette: 'app_merge_auto_not_allowed' });
 
-  test('the dialog says so in Lo’s words', async ({ page }) => {
+  test('the dialog says so in Lo’s words, and auto-merge stays off', async ({ page }) => {
     await turnOn(page);
     const alert = dialog(page).getByRole('alert');
     await expect(alert).toContainText(
@@ -194,17 +195,31 @@ test.describe('where the repository doesn’t allow auto-merge', () => {
     await expect(alert).toContainText(
       'This repository doesn’t allow auto-merge. A maintainer turns it on in its settings.',
     );
+    await page.keyboard.press('Escape');
+    await expect(dialog(page)).toBeHidden();
+    await expect(status(page)).toContainText('Can’t merge yet');
+    await expect(status(page)).not.toContainText('Merges when ready');
+    await page.keyboard.press('m');
+    await expect(panel(page).getByRole('switch', { name: 'Merge when ready' })).not.toBeChecked();
   });
 });
 
 test.describe('when GitHub finds nothing blocks it', () => {
   test.use({ cassette: 'app_merge_auto_now' });
 
-  test('Lo reads it again, and says it can merge from the panel', async ({ page }) => {
+  test('Lo reads it again, and offers the merge in its place to confirm', async ({ page }) => {
+    const { number } = pulls.gatedPassing;
     await turnOn(page);
-    await expect(dialog(page).getByRole('alert')).toContainText(
-      `Nothing blocks #${pulls.gatedPassing.number} now, so GitHub didn’t turn on auto-merge.`,
+    // The merge, to confirm as any merge; nothing merged it, so no answer to it was recorded.
+    await expect(dialog(page)).toContainText(`Merge #${number} into e4/gated?`, {
+      timeout: MERGING,
+    });
+    await expect(dialog(page)).toContainText(
+      `Nothing blocks #${number} now, so GitHub didn’t turn on auto-merge. It can merge as it is.`,
     );
+    await expect(dialog(page).getByRole('button', { name: /^Merge\b/ })).toBeVisible();
+    await expect(status(page)).toContainText('Ready to merge');
+    await expect(status(page)).not.toContainText('Merges when ready');
   });
 });
 
@@ -241,6 +256,6 @@ test.describe('as an account GitHub won’t let merge', () => {
     await page.keyboard.press('Enter');
     const alert = dialog(page).getByRole('alert');
     await expect(alert).toContainText(`Couldn’t merge #${number}.`);
-    await expect(alert).toContainText("You're not authorized to push to this branch.");
+    await expect(alert).toContainText('Cannot update this protected ref.');
   });
 });

@@ -1,0 +1,19 @@
+{
+  "request": {
+    "method": "GET",
+    "url": "https://api.github.com/repos/rozed-dev/e2e/activity?ref=refs%2Fheads%2Fmerge%2F5%2Frebase&direction=desc&per_page=100",
+    "if_none_match": "W/\"16534320f2e3786c85f90534f7b97f3f73d3024f2734afcb6d473f4ea55ec1a1\""
+  },
+  "response": {
+    "status": 304,
+    "headers": {
+      "x-github-api-version-selected": "2022-11-28",
+      "x-ratelimit-limit": "5000",
+      "x-ratelimit-remaining": "4584",
+      "x-ratelimit-reset": "1794878407",
+      "x-ratelimit-resource": "core",
+      "x-ratelimit-used": "416",
+      "etag": "W/\"16534320f2e3786c85f90534f7b97f3f73d3024f2734afcb6d473f4ea55ec1a1\""
+    }
+  }
+}

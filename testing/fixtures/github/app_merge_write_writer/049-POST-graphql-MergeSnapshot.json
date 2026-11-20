@@ -16,18 +16,18 @@
     "headers": {
       "content-type": "application/json; charset=utf-8",
       "x-ratelimit-limit": "5000",
-      "x-ratelimit-remaining": "4889",
+      "x-ratelimit-remaining": "4904",
       "x-ratelimit-reset": "1794878408",
       "x-ratelimit-resource": "graphql",
-      "x-ratelimit-used": "111"
+      "x-ratelimit-used": "96"
     },
     "body": {
       "data": {
         "rateLimit": {
           "cost": 1,
           "limit": 5000,
-          "remaining": 4889,
-          "used": 111,
+          "remaining": 4904,
+          "used": 96,
           "resetAt": "2026-11-17T01:20:08Z"
         },
         "repository": {
@@ -41,11 +41,11 @@
           "squashMergeCommitMessage": "COMMIT_MESSAGES",
           "pullRequest": {
             "url": "https://github.com/rozed-dev/e2e/pull/174",
-            "state": "MERGED",
+            "state": "OPEN",
             "isDraft": false,
             "locked": false,
-            "mergeable": "UNKNOWN",
-            "mergeStateStatus": "UNKNOWN",
+            "mergeable": "MERGEABLE",
+            "mergeStateStatus": "CLEAN",
             "reviewDecision": null,
             "headRefOid": "581150f0982c562431a02cc25c505e8a4c95fae1",
             "baseRefName": "merge/5/base",
@@ -60,7 +60,7 @@
             "baseRef": {
               "target": {
                 "__typename": "Commit",
-                "oid": "1b3e2ea0703b41d6f9c320392f13ee4799ed77d2"
+                "oid": "b3fe004d917123bd7ca507eda670138554797f43"
               },
               "refUpdateRule": null,
               "branchProtectionRule": null

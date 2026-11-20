@@ -1,4 +1,4 @@
 {
-  "description": "app_merge_override read as an account with write access, below admin: every read of what decides rozed-dev/e2e#231's merge says WRITE, and that GitHub doesn't let it merge past merge/7/override's rules.",
+  "description": "app_merge_override read as an account with write access, below admin: every read of what decides rozed-dev/e2e#231's merge says WRITE, and that GitHub doesn't let it merge past merge/7/override's rules, and the repository's own read gives it push access without admin's, and no security settings, which GitHub shows only to admins.",
   "derived_from": "app_merge_override"
 }
