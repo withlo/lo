@@ -4,7 +4,12 @@
 // checks only when `LO_UPDATES_FEED` names a feed on this machine, for its tests; a packaged Lo
 // never reads the variable. Nothing here calls Electron, so it runs under unit tests.
 
+import { join } from 'node:path';
+
 type Environment = Readonly<Record<string, string | undefined>>;
+
+/** The file a release build of Lo carries among its resources, naming the feed to check. */
+export const UPDATE_CONFIG = 'app-update.yml';
 
 /**
  * A feed of releases, as electron-updater's GitHub provider takes one: github.com's releases of
@@ -38,17 +43,20 @@ export const UNCHECKED = {
 
 /**
  * The feed Lo checks, or why it checks none. A packaged Lo checks github.com's when it carries
- * `app-update.yml` (`configured`), and ignores `LO_UPDATES_FEED`. A build run from source checks
- * only the feed `LO_UPDATES_FEED` names, which must be `http://127.0.0.1:<port>/`: anything else
- * throws, so a test that mistypes it finds out.
+ * `app-update.yml` in its `resources` folder, as `exists` finds it, and ignores `LO_UPDATES_FEED`.
+ * A build run from source checks only the feed `LO_UPDATES_FEED` names, which must be
+ * `http://127.0.0.1:<port>/`: anything else throws, so a test that mistypes it finds out.
  */
 export function feedFor(options: {
   packaged: boolean;
-  configured: boolean;
+  resources: string;
+  exists(path: string): boolean;
   env: Environment;
 }): { readonly feed: Feed } | { readonly unchecked: string } {
   if (options.packaged) {
-    return options.configured ? { feed: GITHUB_FEED } : { unchecked: UNCHECKED.unreleased };
+    return options.exists(join(options.resources, UPDATE_CONFIG))
+      ? { feed: GITHUB_FEED }
+      : { unchecked: UNCHECKED.unreleased };
   }
   const address = options.env.LO_UPDATES_FEED;
   if (address === undefined || address === '') return { unchecked: UNCHECKED.source };
