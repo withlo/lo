@@ -27,7 +27,7 @@
     "electron": "45.2.3",
     "electron-vite": "6.0.0",
     "mediabunny": "1.66.0",
-    "prettier": "3.9.10",
+    "prettier": "3.10.1",
     "vite": "8.3.8"
   },
   "nx": {
