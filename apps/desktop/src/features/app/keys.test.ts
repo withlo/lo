@@ -3,6 +3,7 @@ import {
   commandsOf,
   declaredBindings,
   eventStroke,
+  keyless,
   match,
   type Focus,
   type KeyEventLike,
@@ -78,5 +79,38 @@ describe('on macOS', () => {
     expect(
       commands.filter((command) => command.bar?.menu === 'View').map((command) => command.id),
     ).toEqual(['app.zoomIn', 'app.zoomOut', 'app.actualSize']);
+  });
+});
+
+/** The command with this id. */
+const find = (id: string) => commands.find((command) => command.id === id);
+
+describe('About and the licenses', () => {
+  it('give no key, since they are done once in a while, and each has a menu to be found in', () => {
+    const about = find('app.about');
+    const licenses = find('app.licenses');
+    expect([about?.keys, licenses?.keys]).toEqual([[], []]);
+    expect([about && keyless(about), licenses && keyless(licenses)]).toEqual([true, true]);
+  });
+
+  it('About Lo is Linux’s, in the right-click menu of the window, where macOS’s app menu has About', () => {
+    expect(find('app.about')?.when).toEqual({ system: 'linux' });
+    expect(find('app.about')?.menu).toMatchObject({ on: 'none' });
+    expect(find('app.about')?.bar).toBeUndefined();
+  });
+
+  it('Show licenses is in the app menu on macOS, ahead of the other commands that sit under About', () => {
+    expect(find('app.licenses')?.bar).toEqual({ menu: 'App', order: 5 });
+    expect(find('app.licenses')?.when).toBeUndefined();
+  });
+
+  it('Show licenses is in the right-click menu of the window, after About Lo, which Linux has there', () => {
+    const about = find('app.about')?.menu;
+    const licenses = find('app.licenses')?.menu;
+    expect(licenses).toMatchObject({ on: 'none' });
+    expect(about).toMatchObject({ on: 'none' });
+    expect(licenses && 'order' in licenses ? licenses.order : 0).toBeGreaterThan(
+      about && 'order' in about ? about.order : Infinity,
+    );
   });
 });

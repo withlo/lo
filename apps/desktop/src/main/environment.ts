@@ -101,9 +101,9 @@ export interface BackgroundSettings {
 }
 
 /**
- * The program that opens the keymap file, and the settings file, in place of the system's text
- * editor, from `LO_KEYMAP_EDITOR`, so a test can see what Lo opens without starting an editor. It
- * gets the file's path as its one argument. A packaged build ignores it.
+ * The program that opens the keymap file, the settings file and the licenses file in place of the
+ * system's text editor, from `LO_KEYMAP_EDITOR`, so a test can see what Lo opens without starting
+ * an editor. It gets the file's path as its one argument. A packaged build ignores it.
  */
 export function keymapEditor(options: { packaged: boolean; env: Environment }): string | undefined {
   const program = options.env.LO_KEYMAP_EDITOR;

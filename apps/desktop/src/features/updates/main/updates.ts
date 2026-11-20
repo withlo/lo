@@ -1,9 +1,11 @@
 // Where updates stand, and what each request does to it. A check asks the feed for its newest
-// release and offers it only when it's newer than this Lo. A download starts only when the window
-// asks to install, and only where Lo installs updates itself; once it's done, the update waits to
-// install as Lo quits. Lo restarts into it only when the window asks: it quits as on any quit,
-// stopping every feature, and only once that stop has finished does it hand over to the installer.
-// Nothing here calls Electron, so it runs under unit tests.
+// release and offers it only when this Lo takes it: newer, and a prerelease only to a prerelease.
+// Lo gives up on a check the feed doesn't answer in time, and nothing that check finds afterwards
+// counts. A download starts only when the window asks to install, and only where Lo installs
+// updates itself; once it's done, the update waits to install as Lo quits. Lo restarts into it only
+// when the window asks: it quits as on any quit, stopping every feature, and only once that stop has
+// finished does it hand over to the installer. Nothing here calls Electron, so it runs under unit
+// tests.
 
 import { IpcError } from '../../../ipc/contract.ts';
 import {
@@ -15,10 +17,19 @@ import {
 } from '../contract.ts';
 import { reasonOf } from './log.ts';
 import { firstLine } from './notes.ts';
-import { isNewer } from './versions.ts';
+import { takes } from './versions.ts';
 
 /** How long Lo waits for the installer to quit it before it quits by itself, in ms. */
 export const INSTALL_LIMIT = 15_000;
+
+/** How long Lo waits for the feed to answer a check before it gives up on it, in ms. */
+export const CHECK_LIMIT = 60_000;
+
+/** Why a check Lo gave up on failed, in words for the reader. */
+export const UNANSWERED = `GitHub didn’t answer within ${CHECK_LIMIT / 1000} s. Check your connection, then try again.`;
+
+/** Why a check failed as Lo quit. */
+const QUITTING = 'Lo is quitting.';
 
 /** The newest release a feed offers, as electron-updater read it. */
 export interface Release {
@@ -29,8 +40,11 @@ export interface Release {
 
 /** What Lo needs of electron-updater, so everything else here runs without it. */
 export interface Updater {
-  /** Asks the feed for its newest release. */
-  check(): Promise<Release>;
+  /**
+   * Asks the feed for its newest release, until `signal` aborts: then the check is dropped, so it
+   * fails, and the next one asks the feed again.
+   */
+  check(signal: AbortSignal): Promise<Release>;
   /**
    * Downloads the release the last check found, checks it, and readies it to install as Lo quits,
    * calling `progress` as bytes come. Resolves once it's ready.
@@ -54,7 +68,11 @@ export interface QuitEvent {
 export interface UpdatesOptions {
   /** This Lo's version. */
   readonly current: string;
-  readonly how: How;
+  /**
+   * How this copy of Lo takes a newer version now. It's asked for each offer, and again before Lo
+   * moves itself or downloads one, since the reader may move Lo while it runs.
+   */
+  how(): How;
   /** electron-updater, when this copy of Lo checks; or why it doesn't. */
   readonly updater: Updater | { readonly unchecked: string };
   publish(state: UpdateState): void;
@@ -75,6 +93,8 @@ export class Updates {
   #hidden: string | undefined;
   /** The check going now, which every check asked for meanwhile shares. */
   #checking: Promise<Release> | undefined;
+  /** What gives up on the check going now. */
+  #giveUp: AbortController | undefined;
   /** Lo is quitting to restart into the update that's ready. */
   #restarting = false;
   #stopped = false;
@@ -99,33 +119,76 @@ export class Updates {
     if (before.status === 'downloading' || before.status === 'ready') return before;
     let release: Release;
     try {
-      this.#checking ??= updater.check().finally(() => (this.#checking = undefined));
+      this.#checking ??= this.#ask(updater);
       release = await this.#checking;
     } catch (error) {
-      const reason = reasonOf(error, 'check');
+      if (this.#stopped) return { status: 'failed', reason: QUITTING };
+      const reason = error instanceof Unanswered ? UNANSWERED : reasonOf(error, 'check');
       this.#options.log(`couldn't check for updates: ${reason}`);
       return { status: 'failed', reason };
     }
     const now = this.#state;
     if (now.status === 'downloading' || now.status === 'ready') return now;
-    if (this.#stopped) return { status: 'failed', reason: 'Lo is quitting.' };
-    // Never an older version, nor one Lo isn't released as, whatever electron-updater decided.
-    if (!isNewer(release.version, current)) {
+    if (this.#stopped) return { status: 'failed', reason: QUITTING };
+    // Never an older version, one Lo isn't released as, nor a prerelease to a release, whatever
+    // electron-updater decided. What it decided is what it would download, so an offer of
+    // something else is taken back.
+    if (!takes(current, release.version)) {
       if (now.status === 'available') this.#publish({ status: 'idle' });
       return { status: 'newest', version: current };
     }
     if (asked) this.#hidden = undefined;
     if (release.version === this.#hidden) return { status: 'newest', version: current };
-    if (now.status === 'available' && now.version === release.version) return now;
+    const how = this.#options.how();
+    if (now.status === 'available' && now.version === release.version) {
+      if (now.how === how) return now;
+      const moved = { ...now, how };
+      this.#publish(moved);
+      return moved;
+    }
     const offer: UpdateState = {
       status: 'available',
       version: release.version,
       line: firstLine(release.notes),
-      how: this.#options.how,
+      how,
       page: releasePage(release.version),
     };
     this.#publish(offer);
     return offer;
+  }
+
+  /**
+   * Asks the feed, giving up once it hasn't answered within {@link CHECK_LIMIT}: the check then
+   * fails as {@link Unanswered}, the updater drops it, and what it answers afterwards counts for
+   * nothing, so the next check asks again.
+   */
+  #ask(updater: Updater): Promise<Release> {
+    const giveUp = new AbortController();
+    this.#giveUp = giveUp;
+    const limit = setTimeout(() => giveUp.abort(new Unanswered()), CHECK_LIMIT);
+    const checking = new Promise<Release>((resolve, reject) => {
+      giveUp.signal.addEventListener('abort', () => reject(abortedBy(giveUp.signal)), {
+        once: true,
+      });
+      updater.check(giveUp.signal).then(resolve, reject);
+    }).finally(() => {
+      clearTimeout(limit);
+      if (this.#giveUp === giveUp) this.#giveUp = undefined;
+      // A check given up on settles after the next has started: it leaves that one be.
+      if (this.#checking === checking) this.#checking = undefined;
+    });
+    return checking;
+  }
+
+  /**
+   * Decides again how this copy of Lo takes a newer version, and, when that changed, says so with
+   * the offer.
+   */
+  #decide(): How {
+    const how = this.#options.how();
+    const state = this.#state;
+    if (state.status === 'available' && state.how !== how) this.#publish({ ...state, how });
+    return how;
   }
 
   /**
@@ -134,6 +197,8 @@ export class Updates {
    */
   install(): void {
     const { updater } = this.#options;
+    // Lo may have been moved since the offer was made.
+    if (this.#state.status === 'available') this.#decide();
     const offer = this.#state;
     if (offer.status !== 'available' || offer.how !== 'install' || !('download' in updater)) {
       throw new IpcError('unavailable', this.#whyNotInstall());
@@ -226,9 +291,12 @@ export class Updates {
     this.#publish({ status: 'idle' });
   }
 
-  /** Moves Lo to Applications, where it updates itself, when that's how this copy takes one. */
+  /**
+   * Moves Lo to Applications, where it updates itself, when that's how this copy takes one, as Lo
+   * decides again now.
+   */
   move(): void {
-    const { how } = this.#options;
+    const how = this.#decide();
     if (how !== 'move') {
       throw new IpcError(
         'unavailable',
@@ -244,9 +312,13 @@ export class Updates {
     }
   }
 
-  /** Stops for good, as Lo quits: a download going is dropped, and nothing more is published. */
+  /**
+   * Stops for good, as Lo quits: a check or a download going is dropped, and nothing more is
+   * published.
+   */
   stop(): void {
     this.#stopped = true;
+    this.#giveUp?.abort(new Error(QUITTING));
     if (this.#state.status === 'downloading' && 'cancel' in this.#options.updater) {
       this.#options.updater.cancel();
     }
@@ -257,4 +329,18 @@ export class Updates {
     this.#state = state;
     this.#options.publish(state);
   }
+}
+
+/** A check Lo gave up on: the feed didn't answer within {@link CHECK_LIMIT}. */
+class Unanswered extends Error {
+  constructor() {
+    super(UNANSWERED);
+    this.name = 'Unanswered';
+  }
+}
+
+/** Why `signal` aborted, as an error. */
+export function abortedBy(signal: AbortSignal): Error {
+  const reason: unknown = signal.reason;
+  return reason instanceof Error ? reason : new Error('Lo gave up on the check.');
 }

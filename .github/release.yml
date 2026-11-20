@@ -1,0 +1,10 @@
+# What GitHub's generated release notes leave out: the release workflow's draft job asks for them,
+# listing the pull requests merged since the last release. Dependency bumps, which Dependabot
+# labels `dependencies`, and bots' pull requests say nothing about Lo itself.
+changelog:
+  exclude:
+    labels:
+      - dependencies
+    authors:
+      - dependabot[bot]
+      - github-actions[bot]

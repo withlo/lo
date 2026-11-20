@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { bundleOf, howItUpdates, type Place } from './how.ts';
+import { bundleOf, howItUpdates, howItUpdatesNow, type Place } from './how.ts';
 
 const HOME = '/Users/sam';
 
@@ -14,7 +14,7 @@ function mac(
     packaged: true,
     executable: `${app}/Contents/MacOS/Lo`,
     home: HOME,
-    exists: (path) => (options.existing ?? []).includes(path),
+    exists: (path) => path === app || (options.existing ?? []).includes(path),
     writable: (path) => !(options.readOnly ?? []).includes(path),
   };
 }
@@ -71,6 +71,12 @@ describe('on a Mac', () => {
     expect(howItUpdates(fromSource)).toBe('page');
   });
 
+  it('neither installs nor moves itself once moved, or deleted, since it started', () => {
+    for (const app of ['/Applications/Lo.app', '/Volumes/Lo 0.1.0-arm64/Lo.app']) {
+      expect(howItUpdates({ ...mac(app), exists: () => false })).toBe('page');
+    }
+  });
+
   it('sends the reader to the page when it can’t tell which app it runs from', () => {
     expect(howItUpdates({ ...mac('/Applications/Lo.app'), executable: '/usr/local/bin/lo' })).toBe(
       'page',
@@ -90,4 +96,24 @@ it('finds the app a program runs from', () => {
   expect(bundleOf('/Applications/Lo.app/Contents/MacOS/../MacOS/Lo')).toBe('/Applications/Lo.app');
   expect(bundleOf('/Applications/Lo.app/Contents/Frameworks/Lo Helper')).toBeUndefined();
   expect(bundleOf('Lo.app/Contents/MacOS/Lo')).toBeUndefined();
+});
+
+describe('decided again', () => {
+  it('follows what changed since Lo started', () => {
+    const place = mac('/Applications/Lo.app');
+    expect(howItUpdatesNow(place, 'install')).toBe('install');
+    expect(howItUpdatesNow({ ...place, writable: () => false }, 'install')).toBe('page');
+    expect(howItUpdatesNow({ ...place, exists: () => true }, 'install')).toBe('brew');
+    expect(howItUpdatesNow({ ...place, exists: () => false }, 'install')).toBe('page');
+    expect(howItUpdatesNow({ ...mac('/Volumes/Lo/Lo.app'), exists: () => false }, 'move')).toBe(
+      'page',
+    );
+  });
+
+  it('never installs where Lo started without the updater that can', () => {
+    const place = mac('/Applications/Lo.app');
+    for (const started of ['page', 'brew', 'move'] as const) {
+      expect(howItUpdatesNow(place, started)).toBe('page');
+    }
+  });
 });
