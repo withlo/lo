@@ -221,9 +221,12 @@ pnpm nx run desktop:release  # build it, then make a release's DMGs and zips (ne
     (`build/linux/after-pack.ts` sets the mode, the rpm says so with `%attr`, and the install script
     sets it again), as Chrome's packages hold it. A packaged Lo refuses `--no-sandbox`, so it must
     start with Chromium's sandbox: in user namespaces where they can be made, and through the helper
-    where they can't. Where AppArmor restricts user namespaces, as on Ubuntu 24.04 and later,
-    `build/linux/after-install.sh` also installs and loads electron-builder's profile for
-    `/opt/Lo/lo`, which lets Lo and what it starts create them, and nothing else.
+    where they can't. Wherever AppArmor runs and takes the profile's ABI (4.0),
+    `build/linux/after-install.sh` also installs electron-builder's profile for `/opt/Lo/lo` as
+    `/etc/apparmor.d/lo` and loads it (in a chroot, the next boot does). It's `flags=(unconfined)`
+    with `userns,` alone: it restricts nothing and only adds user namespaces, which Ubuntu 24.04 and
+    later stop for a program with no profile. What Lo starts keeps it unless another profile
+    attaches.
   - The install script makes `/usr/bin/lo` only where it's Lo's to make, through
     `update-alternatives` where there is one: a `lo` of anyone else's stays as it is. The removal
     script (`after-remove.sh`) takes away only Lo's, and does nothing on an upgrade, since an rpm's
@@ -1141,11 +1144,12 @@ its own app, installs it when the reader says so.
 - **State** is one topic, `state`: `idle`, `available` (the version, the first line of the notes as
   plain text cut to 140 characters, `how`, and the release's page), `downloading` and `ready`. The
   page is built from the version, which must be SemVer, never taken from the feed. The requests are
-  `read`, `how`, `check`, `install`, `restart`, `later` (hides that version until Lo starts again)
-  and `move`. `install` downloads, and a download that fails goes back to `available` with why. A
-  finished download installs as Lo quits, and Lo restarts into it only on `restart`: it quits
-  through its own `will-quit` stop, so every feature stops, and only then calls `quitAndInstall()`.
-  If the installer can't, or takes over 15 s, Lo quits anyway and the update installs then.
+  `read`, `how`, `check`, `install`, `restart`, `later` (hides that version until Lo starts again,
+  or a check the reader asked for) and `move`. `install` downloads, and a download that fails goes
+  back to `available` with why. A finished download installs as Lo quits, and Lo restarts into it
+  only on `restart`: it quits through its own `will-quit` stop, so every feature stops, and only
+  then calls `quitAndInstall()`. If the installer can't, or takes over 15 s, Lo quits anyway and the
+  update installs then.
 - **The window.** The toast is in the `tab.toasts` slot, below a note that passes, and it waits
   until it's acted on. It never takes focus, no button installs or restarts but by its own press,
   and a press in the half second after a toast comes or changes does nothing. Every button is a
@@ -1784,15 +1788,16 @@ pins first (see "Language servers"), and run a dry run on `main` before tagging.
     `gh release create v<version> --draft --verify-tag --generate-notes`, with `--prerelease` for a
     prerelease. A re-run replaces a draft's files, and refuses a tag that has a published release.
 - **Environments and secrets.** The `mac` job of a tag's run is the only one that reads the signing
-  secrets, through the `release` environment, which waits for a maintainer's approval and takes only
-  `v*` tags. They are `MACOS_CERT_P12` and `MACOS_CERT_PASSWORD`, the Developer ID certificate
-  (`CSC_LINK` and `CSC_KEY_PASSWORD`), and `NOTARY_KEY_ID`, `NOTARY_ISSUER_ID` and `NOTARY_KEY_P8`,
-  the App Store Connect key (`APPLE_API_KEY_ID`, `APPLE_API_ISSUER`, and a file only its user can
-  read, which `APPLE_API_KEY` names and a step that always runs removes). Keep them on the
-  environment, never the repository, and give the environment its reviewer and its `v*` tag rule
-  before the first tag: GitHub creates a missing environment without protection. The `draft` job has
-  `contents: write` and no secret, and runs none of the repository's code. The `npm` environment is
-  the checker's.
+  secrets, through the `release` environment. Releasing requires that environment, in the
+  repository's settings, to wait for a maintainer's approval and to take only `v*` tags: the
+  workflow enforces neither. The secrets are `MACOS_CERT_P12` and `MACOS_CERT_PASSWORD`, the
+  Developer ID certificate (`CSC_LINK` and `CSC_KEY_PASSWORD`), and `NOTARY_KEY_ID`,
+  `NOTARY_ISSUER_ID` and `NOTARY_KEY_P8`, the App Store Connect key (`APPLE_API_KEY_ID`,
+  `APPLE_API_ISSUER`, and a file only its user can read, which `APPLE_API_KEY` names and a step that
+  always runs removes). Keep them on the environment, never the repository, and give the environment
+  its reviewer and its `v*` tag rule before the first tag: GitHub creates a missing environment
+  without protection. The `draft` job has `contents: write` and no secret, and runs none of the
+  repository's code. The `npm` environment is the checker's.
 - **No cache, nothing floating.** The workflow uses no Actions cache and pins each action by its
   SHA. It installs pnpm with `scripts/install-pnpm.sh`, checked against the SHA-512 the lockfile
   holds, and the dependencies from the lockfile alone, since `pnpm/setup` restores and saves a cache
@@ -1852,7 +1857,7 @@ pins first (see "Language servers"), and run a dry run on `main` before tagging.
   sandbox helper is setuid root in the package and nothing else is setuid or setgid, that it holds
   only Lo, its desktop file and its icons, and that the desktop file opens `/opt/Lo/lo %U` for
   `lo://` alone. It checks that `app-update.yml` names GitHub Releases of `withlo/lo` alone, that
-  the AppArmor profile allows user namespaces and nothing else, the fuses, and the asar's contents
+  the AppArmor profile is the one that only adds user namespaces, the fuses, and the asar's contents
   and `desktopName`. It then installs the package and checks `lo`'s link, the helper's mode, the
   libraries, Lo's profile where AppArmor runs and, for an rpm, that `rpm -V` finds nothing changed.
   Started under Xvfb by someone other than root, Lo must refuse switches (`--no-sandbox` and

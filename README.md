@@ -8,7 +8,7 @@
 </p>
 
 <p align="center">
-  <b>Before 1.0 · releases on GitHub · Mac first, with a Linux preview</b>
+  <b>Early development · not released yet · Mac first, with a Linux preview</b>
 </p>
 
 <p align="center">
@@ -78,24 +78,26 @@ Lo keeps to these rules. [`docs/design.md`](docs/design.md) has the detail.
 
 ## Status
 
-Lo is before 1.0: expect missing pieces and things that change. Its releases are on
-[GitHub Releases](https://github.com/withlo/lo/releases), and [Install](#install) says how to use
-one. It's made for the Mac first, and its Linux packages are a preview. You can also
-[build it from source](#build-from-source).
+Lo is in early development and isn't released yet. To try it,
+[build it from source](#build-from-source), and expect missing pieces and things that change. It's
+made for the Mac first, and Linux builds will come as a preview. [Install](#install) says where its
+builds are published and what they hold.
 
 [`docs/design.md`](docs/design.md) describes everything Lo is meant to do, and how it's built.
 
 ## Install
 
-Each release on [GitHub Releases](https://github.com/withlo/lo/releases) has Lo for the Mac and for
-Linux. Download the file that matches your computer; `<version>` is the release's, such as `0.1.0`.
+Lo's releases are published on [GitHub Releases](https://github.com/withlo/lo/releases), and each
+holds Lo for the Mac and for Linux. Download the file that matches your computer; `<version>` is the
+release's, such as `0.1.0`.
 
 **On a Mac** (macOS 13 or later), open the DMG and drag Lo to your Applications folder:
 
 - `Lo-<version>-arm64.dmg` for Apple silicon, and `Lo-<version>-x64.dmg` for Intel.
 - The zips of the same names hold the same app. Lo downloads the zip when it updates itself.
 
-The DMGs and zips are signed with a Developer ID and notarized by Apple, so Gatekeeper accepts them.
+The app in each DMG and zip is signed with a Developer ID, notarized by Apple and stapled, and the
+DMGs are signed and notarized too, so Gatekeeper accepts them.
 
 **On Linux,** install the package for your distribution and architecture with its package manager:
 
@@ -115,7 +117,7 @@ checked before the release is drafted, and they differ from the Mac's in three w
 - They aren't signed.
 - Lo can't install its own updates on Linux. It tells you a newer one is out, and you install the
   new package.
-- Electron checks no hash of Lo's code on Linux, as it does on the Mac.
+- On the Mac, Electron checks Lo's code against a hash as it loads it. On Linux it doesn't.
 
 Each release also has `SHA256SUMS`, the SHA-256 of each of its files. Compare a download's with
 `shasum -a 256 <file>` on a Mac or `sha256sum <file>` on Linux. [`SECURITY.md`](SECURITY.md) says
@@ -136,7 +138,8 @@ it and never takes focus. What it offers depends on how Lo was installed:
 - **A Mac, with Lo in Applications** (or `~/Applications`): "Install" downloads the new version,
   checks it against the checksum in the release, and has macOS install it only if the same team
   signed it. Lo then offers "Restart now", or installs it when you quit. "What's new" opens the
-  release's page, and "Later" hides the toast until Lo starts again.
+  release's page, and "Later" hides the toast until Lo starts again or you check for updates
+  yourself.
 - **A Mac, with Lo anywhere else,** such as the disk image or your Downloads folder: "Move to
   Applications" moves Lo there, asking before it replaces a Lo that's already there. It updates
   itself from there.

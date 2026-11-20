@@ -44,10 +44,11 @@ talks to GitHub directly and has no backend of its own.
 
 ### Platforms and license
 
-v1 ships for the Mac as a signed, notarized DMG and zip, each for Apple silicon (`arm64`) and for
-Intel (`x64`), and for Linux as a preview in deb and rpm packages, each for `x64` and `arm64`. The
-Linux packages are unsigned and Lo doesn't install its own updates there. The Mac build skips the
-Mac App Store, whose rules forbid downloading and running code, which language servers need.
+v1 ships for the Mac as a signed, notarized download, a DMG and a zip each for Apple silicon
+(`arm64`) and for Intel (`x64`), and a Homebrew cask, with Linux builds published as a preview in
+deb and rpm packages, each for `x64` and `arm64`. The Linux packages are unsigned and Lo doesn't
+install its own updates there. It skips the Mac App Store, whose rules forbid downloading and
+running code, which language servers need.
 
 The app is open source under GPL-3.0. The overview skill and the artifact format are MIT, so teams
 can copy them into their repos and other tools can read artifacts. Lo shows its license where
@@ -180,6 +181,10 @@ it runs, as it starts and again for each offer:
   to Squirrel.Mac, which installs it only if it's signed by the running Lo's team and bundle ID. It
   installs when Lo quits, or when you press "Restart now", which quits Lo as any quit does, so each
   feature stops first.
+- **Homebrew updates it,** where Lo is in an Applications folder and Homebrew keeps a `lo` cask
+  (`/opt/homebrew/Caskroom/lo` or `/usr/local/Caskroom/lo` exists). Lo never replaces such a copy,
+  which would leave Homebrew's record of it wrong. The toast gives
+  `brew upgrade --cask withlo/tap/lo`, with a "Copy" button, and "What's new" and "Later".
 - **Lo moves first,** on a Mac, from the disk image, a translocated download or any folder but an
   Applications one. "Move to Applications" moves it there and starts it from there, asking before it
   replaces a Lo that's already there.
@@ -1154,4 +1159,4 @@ a server stops once its PR hasn't been on screen for 10 minutes.
 | Comments collect into a pending review                                           | Posting each one right away                                        | Agents act on each comment as it lands                                                                                                                                        | One extra key to post a single comment                                             |
 | Read-only: no "Update branch," applying suggestions, PR edits or branch deletion | Matching GitHub's web UI                                           | Lo changes nothing but reviews, comments and merges                                                                                                                           | Those actions stay on GitHub                                                       |
 | Several accounts in v1                                                           | One account                                                        | You work across several GitHub accounts                                                                                                                                       | Choosing an account for each owner, plus account names shown everywhere            |
-| Signed download                                                                  | Mac App Store                                                      | App Store rules forbid downloading and running code                                                                                                                           | No App Store discovery or updates                                                  |
+| Signed download and Homebrew                                                     | Mac App Store                                                      | App Store rules forbid downloading and running code                                                                                                                           | No App Store discovery or updates                                                  |

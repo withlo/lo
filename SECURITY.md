@@ -54,10 +54,11 @@ drafts a release, and a maintainer reads the draft and publishes it. "Releasing"
 [`AGENTS.md`](AGENTS.md#releasing) describes the workflow.
 
 - **On the Mac,** the `mac` job is the only one that reads the signing secrets. It runs in the
-  `release` environment, which waits for a maintainer's approval and takes only version tags. Lo and
-  its helpers are signed with a Developer ID, with the hardened runtime and a secure timestamp, and
-  notarized by Apple, and the app has its ticket stapled. The DMGs are signed and notarized but not
-  stapled, so Gatekeeper finds their ticket online.
+  `release` environment, which releasing requires to be set, in the repository's settings, to wait
+  for a maintainer's approval and to take only `v*` tags. Lo and its helpers are signed with a
+  Developer ID, with the hardened runtime and a secure timestamp, and notarized by Apple, and the
+  app has its ticket stapled. The DMGs are signed and notarized but not stapled, so Gatekeeper finds
+  their ticket online.
 - **Every file is checked before a release is drafted.** `scripts/check-package.sh` checks each of
   the four Mac files: the Developer ID and its team, Gatekeeper's verdict, the stapled ticket, the
   entitlements, the fuses that turn off the debugger, `NODE_OPTIONS` and `ELECTRON_RUN_AS_NODE`, and
@@ -83,14 +84,15 @@ drafts a release, and a maintainer reads the draft and publishes it. "Releasing"
 - **Language servers aren't sandboxed.** They run with your rights, in an environment Lo builds, and
   read what you can read, inside the repository and out. Lo starts them only on repositories you
   trust.
-- **The Linux packages aren't signed.** Only `SHA256SUMS`, published beside them, vouches for them.
+- **The Linux packages aren't signed.** Nothing but the GitHub release itself vouches for them.
 - **The Linux packages have no asar integrity check.** On the Mac, Electron checks the hash of Lo's
   code, its asar, as it loads. It doesn't on Linux, so a change to `/opt/Lo/resources/app.asar`,
   which only root can write, isn't noticed.
 - **The Linux packages install an AppArmor profile.** Where AppArmor runs and takes it, as on Ubuntu
   24.04 and later, `/etc/apparmor.d/lo` lets `/opt/Lo/lo` create user namespaces, which those
-  releases withhold from programs without a profile. It confines nothing else, and it applies to
-  what Lo starts too, so git and language servers can create them as well.
+  releases withhold from programs without a profile. It restricts nothing and only adds that. What
+  Lo starts keeps it unless another profile attaches, so git and language servers can create user
+  namespaces as well.
 - **The Linux packages hold a setuid helper.** `/opt/Lo/chrome-sandbox` is Chromium's sandbox
   helper, setuid root as in Chrome's own packages, so that Lo's pages stay sandboxed where
   unprivileged user namespaces are off.
