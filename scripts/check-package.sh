@@ -294,17 +294,22 @@ for scheme in lo http https; do
   [ -n "$found" ] || fail "Info.plist doesn't register $scheme with the Viewer role"
 done
 
-# The rest start Lo, which an Intel build does only through Rosetta.
-if [ "$machine" = x86_64 ] && ! arch -x86_64 /usr/bin/true 2> /dev/null; then
-  fail "starting an Intel build needs Rosetta, which isn't installed: softwareupdate --install-rosetta"
-  exit 1
+# The rest start Lo, which an Intel build does only through Rosetta, and far more slowly: on a CI
+# runner, a copy's first start has taken over two minutes, as Rosetta translates it, and each later
+# one over ten seconds. $limit is how long a start may take.
+if [ "$machine" = x86_64 ]; then
+  if ! arch -x86_64 /usr/bin/true 2> /dev/null; then
+    fail "starting an Intel build needs Rosetta, which isn't installed: softwareupdate --install-rosetta"
+    exit 1
+  fi
+  limit=300
+else
+  limit=30
 fi
 
 # Runs "$@", Lo as some launch would start it, and succeeds when Lo ends with status 1, saying $1,
 # within $limit seconds. One that kept it running would have opened a port, a window or a
-# connection. A copy's first start may take far longer than the rest, as Rosetta translates an
-# Intel build then.
-limit=180
+# connection.
 ends_saying() {
   said=$1
   shift
@@ -322,7 +327,6 @@ ends_saying() {
   code=0
   wait "$pid" || code=$?
   { kill "$watchdog" && wait "$watchdog"; } 2> /dev/null || true
-  limit=10
   [ "$code" -eq 1 ] && grep -q "$said" "$log"
 }
 
@@ -350,8 +354,8 @@ done
 
 # Nor does it read a manifest of test servers, or ask an update feed other than GitHub's.
 # LO_TEST_SERVERS names a pipe, which a writer waits to open until something opens it to read, and
-# LO_UPDATES_FEED a feed on a port of 127.0.0.1 where a listener notes every connection. Lo,
-# running long enough to have opened its database and started its features, does neither.
+# LO_UPDATES_FEED a feed on a port of 127.0.0.1 where a listener notes every connection. Lo, run
+# until it has opened its database and started its features, and 10 seconds more, does neither.
 node=$(pnpm --silent --filter @lo/desktop exec node -p process.execPath)
 "$node" -e "
 const { appendFileSync, writeFileSync } = require('node:fs');
@@ -377,7 +381,13 @@ env LO_TEST_SERVERS="$manifest" LO_UPDATES_FEED="http://127.0.0.1:$port/" \
 lo=$!
 (printf '{ "servers": [] }\n' > "$manifest" && touch "$work/servers.read") &
 writer=$!
-sleep 10
+database="$work/home/Library/Application Support/Lo/lo.db"
+waited=0
+while [ ! -e "$database" ] && [ "$waited" -lt "$limit" ] && kill -0 "$lo" 2> /dev/null; do
+  sleep 1
+  waited=$((waited + 1))
+done
+[ ! -e "$database" ] || sleep 10
 if kill -0 "$lo" 2> /dev/null; then
   kill "$lo" && wait "$lo" || true
 else
@@ -386,8 +396,8 @@ fi
 { kill "$writer" && wait "$writer"; } 2> /dev/null || true
 { kill "$listener" && wait "$listener"; } 2> /dev/null || true
 listener=
-[ -e "$work/home/Library/Application Support/Lo/lo.db" ] ||
-  fail "started with LO_TEST_SERVERS and LO_UPDATES_FEED, Lo hadn't opened its database in 10 seconds"
+[ -e "$database" ] ||
+  fail "started with LO_TEST_SERVERS and LO_UPDATES_FEED, Lo hadn't opened its database in $limit seconds"
 [ ! -e "$work/servers.read" ] || fail "started with LO_TEST_SERVERS, Lo read the manifest it names"
 [ ! -s "$work/feed.connections" ] || fail "started with LO_UPDATES_FEED, Lo asked the feed it names"
 
