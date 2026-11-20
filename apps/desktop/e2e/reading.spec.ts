@@ -958,10 +958,13 @@ test('says when the overview couldn’t be fetched, and reads it again on Retry 
       newer.getByRole('heading', { name: 'This overview needs a newer Lo' }),
     ).toBeVisible();
     await expect(newer).toContainText('format 2');
-    // ⏎ presses the button that has focus, with no overview drawn for it to follow.
+    // ⏎ presses the button that has focus, with no overview drawn for it to follow. It checks for a
+    // newer Lo, and this one, built from source with no feed, says it doesn't check.
     await newer.getByRole('button', { name: 'Get a newer Lo' }).focus();
     await page.keyboard.press('Enter');
-    await expect.poll(browsed).toEqual(['https://github.com/withlo/lo/releases']);
+    const checked = page.getByRole('status').filter({ hasText: 'Lo couldn’t check for updates' });
+    await expect(checked).toContainText('built from source, so it doesn’t check for updates');
+    expect(browsed()).toEqual([]);
   });
 
   await test.step('opens a link to a web page in the browser, on a click or ⏎', async () => {
@@ -980,10 +983,7 @@ test('says when the overview couldn’t be fetched, and reads it again on Retry 
       .click({ timeout: 20_000 });
     const link = overview(page, 'shown').getByRole('link', { name: 'design notes' });
     await link.click();
-    // The page the first step's button opened is the first.
-    await expect
-      .poll(browsed)
-      .toEqual(['https://github.com/withlo/lo/releases', 'https://example.com/design']);
+    await expect.poll(browsed).toEqual(['https://example.com/design']);
     // The overview stays on screen.
     await expect(overview(page, 'shown')).toBeVisible();
 
@@ -995,11 +995,7 @@ test('says when the overview couldn’t be fetched, and reads it again on Retry 
     await page.keyboard.press('Enter');
     await expect
       .poll(browsed)
-      .toEqual([
-        'https://github.com/withlo/lo/releases',
-        'https://example.com/design',
-        'https://example.com/design',
-      ]);
+      .toEqual(['https://example.com/design', 'https://example.com/design']);
   });
 });
 

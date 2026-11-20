@@ -22,6 +22,7 @@ import type { OverviewCommit, OverviewState, SkillState } from '../contract.ts';
 import keys from '../keys.ts';
 import { checkOverview, parseOverview } from '../background/index.ts';
 import settingsKeys from '../../settings/keys.ts';
+import updatesKeys from '../../updates/keys.ts';
 import { Checking } from './checking.ts';
 import { OverviewMark } from './Mark.tsx';
 import { openings } from './opening.ts';
@@ -130,15 +131,29 @@ const bridge = installBridge({
   'overview.retry': () => undefined,
 });
 
+/** Runs of "Check for updates", whose feature is stood in for. */
+const checkUpdates = vi.hoisted(() => vi.fn<() => void>());
+
 beforeAll(() => {
   Reflect.set(globalThis, 'IS_REACT_ACT_ENVIRONMENT', true);
-  createRegistry([...commandsOf(tabKeys), ...commandsOf(keys), ...commandsOf(settingsKeys)], 'mac');
+  createRegistry(
+    [
+      ...commandsOf(tabKeys),
+      ...commandsOf(keys),
+      ...commandsOf(settingsKeys),
+      ...commandsOf(updatesKeys).map((command) =>
+        command.id === 'updates.check' ? { ...command, handler: { run: checkUpdates } } : command,
+      ),
+    ],
+    'mac',
+  );
 });
 
 afterEach(() => {
   vi.useRealTimers();
   settings.open = 'overview';
   showDiff.mockClear();
+  checkUpdates.mockClear();
 });
 
 /**
@@ -486,6 +501,32 @@ describe('an overview that can’t be shown', () => {
     expect(view.querySelector('h2')?.textContent).toBe('This overview needs a newer Lo');
     expect(view.textContent).toContain("It's written in format 3, and this Lo reads format 1.");
     expect(view.textContent).toContain('Get a newer Lo');
+  });
+
+  it('runs a check for updates from "Get a newer Lo", and opens no page itself', () => {
+    const tab = tabOf();
+    const commit = commitOf();
+    act(() => {
+      states.set(tab.id, stateOf(tab, { overview: commit }));
+      checked.set(tab.id, {
+        kind: 'checked',
+        key: 'k',
+        commit,
+        parsed: undefined,
+        checked: { outcome: { kind: 'newer', format: 3 }, findings: [] },
+        figures: new Map(),
+        coming: [],
+        code: { kind: 'none' },
+      });
+    });
+    const view = render(tab);
+    const get = [...view.querySelectorAll('button')].find(
+      (each) => each.textContent === 'Get a newer Lo',
+    );
+    expect(checkUpdates).not.toHaveBeenCalled();
+    act(() => get?.click());
+    expect(checkUpdates).toHaveBeenCalledTimes(1);
+    expect(bridge.calls.filter(([channel]) => channel === 'tab.openExternal')).toEqual([]);
   });
 
   it('says when it couldn’t be read and when Lo tries again, with Retry now', async () => {

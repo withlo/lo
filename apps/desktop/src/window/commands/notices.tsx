@@ -4,7 +4,7 @@
 // such as a GitHub stack made, says so here too.
 
 import { Toast, ToastRegion } from '@lo/ui';
-import { useSyncExternalStore } from 'react';
+import { useSyncExternalStore, type ReactNode } from 'react';
 
 /** How long a note stays, in ms. */
 export const NOTICE_TIME = 4000;
@@ -99,12 +99,12 @@ function lines(body: string) {
 
 /**
  * The window's notes, as toasts: an info icon, what was asked for and why it didn't happen; or a
- * tick, and what's done.
+ * tick, and what's done. `waiting` holds the toasts that stay until they're acted on, below a note.
  */
-export function Notices() {
+export function Notices({ waiting }: { waiting?: ReactNode }) {
   const note = useSyncExternalStore(subscribe, notice);
   return (
-    <ToastRegion>
+    <ToastRegion waiting={waiting}>
       {note !== undefined && (
         <Toast
           tone={note.done ? 'success' : 'info'}

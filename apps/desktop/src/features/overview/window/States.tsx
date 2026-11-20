@@ -3,14 +3,16 @@
 // one that couldn't be read, saying when Lo tries again.
 
 import { Button, Key, SetupItem, SetupList, Spinner } from '@lo/ui';
+import { NO_TARGET } from '@lo/ui/commands';
 import { useEffect, useState, type ReactNode } from 'react';
 import { useStore } from 'zustand';
 
-import { useKeys } from '../../../window/commands/registry.ts';
+import { registry, useKeys } from '../../../window/commands/registry.ts';
 import { showDiff } from '../../diff/window/shared.ts';
 import { client } from '../../../window/ipc.ts';
 import { contract as tabContract } from '../../tab/contract.ts';
 import { useTabState, withoutBidi, type PullTab } from '../../tab/window/shared.ts';
+import updates from '../../updates/keys.ts';
 import type { Problem, SkillAgent, SkillState } from '../contract.ts';
 import type { Standing } from './facts.ts';
 import { copyPrompt, promptFor } from './copy.ts';
@@ -31,8 +33,8 @@ import { checkSkill, installSkill, skillStore } from './skill.ts';
 import { refusalWords } from './words.ts';
 import { checkAgain, states } from './store.ts';
 
-/** Where a newer Lo comes from, until Lo updates itself. */
-export const RELEASES = 'https://github.com/withlo/lo/releases';
+/** The command that asks GitHub for a newer Lo now, and says what it found. */
+const CHECK = `${updates.feature}.${'check' satisfies keyof typeof updates.commands}`;
 
 type Tone = 'danger' | 'warn' | 'info' | 'quiet';
 
@@ -422,14 +424,7 @@ export function CantShow({
           title="This overview needs a newer Lo"
           actions={
             <>
-              <Button
-                variant="primary"
-                onClick={() => {
-                  client(tabContract)
-                    .openExternal({ url: RELEASES })
-                    .catch((error: unknown) => console.error("Lo couldn't open the page:", error));
-                }}
-              >
+              <Button variant="primary" onClick={() => registry().run(CHECK, NO_TARGET)}>
                 Get a newer Lo
               </Button>
               <ToDiff tab={tab} primary={false} />
