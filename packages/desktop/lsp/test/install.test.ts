@@ -29,8 +29,8 @@ import {
   REDIRECTS,
 } from '../src/index.ts';
 import type { StallLimits } from '../src/download.ts';
-import { fingerprint } from '../src/install.ts';
-import { UNPACK_RULES } from '../src/unpack.ts';
+import { fingerprint, limitsFor } from '../src/install.ts';
+import { UNPACK_LIMITS, UNPACK_RULES } from '../src/unpack.ts';
 import { pinned, serve, type Routes, sha256, tarGz } from './downloads.ts';
 import { tempFolder } from './support.ts';
 
@@ -438,6 +438,31 @@ test('pruning removes other versions and half-done downloads, but not one in use
   expect(existsSync(installed.entry)).toBe(true);
 });
 
+test('a platform pinned at a version of its own installs and keeps that version', async () => {
+  const { installer, folder } = await setUp({ [URL]: { body: ARCHIVE } }, undefined, {
+    platform: 'darwin-x64',
+  });
+  const download = {
+    kind: 'tar.gz' as const,
+    url: URL,
+    size: ARCHIVE.length,
+    sha256: sha256(ARCHIVE),
+    entry: 'server/bin/server',
+  };
+  // The vendor has 1.1.0 out for Linux only, so this Mac stays on 1.0.0.
+  const behind: Pinned = {
+    version: '1.1.0',
+    hosts: PINNED.hosts,
+    platforms: { 'darwin-x64': { ...download, version: '1.0.0' }, 'linux-x64': download },
+  };
+  const installed = await installer.install('jdk', behind);
+  expect(installed.folder).toBe(join(folder, 'jdk', '1.0.0', 'files'));
+  expect(await installer.installed('jdk', behind)).toEqual(installed);
+  mkdirSync(join(folder, 'jdk', '1.1.0'));
+  await installer.prune({ jdk: behind });
+  expect(readdirSync(join(folder, 'jdk'))).toEqual(['1.0.0']);
+});
+
 /** A layer of rust-installer's, its component's files in `<package>/<component>/`. */
 function layer(component: string, path: string, data: string): Buffer {
   return tarGz([
@@ -518,6 +543,45 @@ describe('a toolchain', () => {
     const error = await failure(installer.install('rust', rust(layers, unpacked)));
     expect(error.message).toMatch(message);
     expect(left()).toEqual([]);
+  });
+
+  test('Swift’s, past the 2 GB others share, is held to what it was measured to unpack to', async () => {
+    const name = 'swift-6.4.2-RELEASE-ubuntu26.04';
+    const archive = tarGz([
+      { path: `${name}/usr/bin/sourcekit-lsp`, data: 'sourcekit-lsp', mode: 0o755 },
+      { path: `${name}/usr/lib/libsourcekitdInProc.so`, data: 'sourcekitd' },
+    ]);
+    const url = `${base}swift.tar.gz`;
+    const swift = (unpacked: number): Pinned => ({
+      version: '6.4.2',
+      hosts: ['static.rust-lang.test'],
+      platforms: {
+        any: {
+          kind: 'tar.gz',
+          url,
+          size: archive.length,
+          sha256: sha256(archive),
+          entry: `${name}/usr/bin/sourcekit-lsp`,
+          unpacked,
+        },
+      },
+    });
+    const holds = Buffer.byteLength('sourcekit-lspsourcekitd');
+    // Its own cap, even where it's far past the shared one.
+    const measured = swift(3_759_368_642).platforms.any;
+    if (measured === undefined) throw new Error('no download');
+    expect(limitsFor(measured)).toEqual({
+      entries: UNPACK_LIMITS.entries,
+      bytes: Math.ceil(3_759_368_642 * 1.05),
+    });
+    const refused = await setUp({ [url]: { body: archive } });
+    // Its files hold 23 bytes, more than 18 and 5% more.
+    const error = await failure(refused.installer.install('swift-ubuntu2604', swift(18)));
+    expect(error.message).toMatch(/unpacks to more than Lo allows/);
+    expect(refused.left()).toEqual([]);
+    const { installer } = await setUp({ [url]: { body: archive } });
+    const installed = await installer.install('swift-ubuntu2604', swift(holds));
+    expect(readFileSync(installed.entry, 'utf8')).toBe('sourcekit-lsp');
   });
 
   test('is refused before it downloads when the disk hasn’t room for it unpacked too', async () => {

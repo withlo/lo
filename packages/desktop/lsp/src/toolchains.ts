@@ -1,7 +1,8 @@
 /**
- * The toolchains language servers use: Go, Rust, a Temurin JDK and the .NET SDK. Lo downloads its
- * own copy of each, pinned in `toolchains.json` and installed as servers are, and a server uses
- * only Lo's copy, never one installed on the machine, nor a version a checkout asks for.
+ * The toolchains language servers use: Go, Rust, a Temurin JDK, the .NET SDK and, on Linux, Swift.
+ * Lo downloads its own copy of each, pinned in `toolchains.json` and installed as servers are, and
+ * a server uses only Lo's copy, never one installed on the machine, nor a version a checkout asks
+ * for.
  *
  * What a server gets of one ({@link toolchainUse}) is the folder of its programs, first on its
  * `PATH`, and the variables that hold the toolchain to Lo's copy:
@@ -24,6 +25,8 @@
  *   and `DOTNET_HOST_PATH`), programs held to the runtime they were built for and its patches
  *   (`DOTNET_ROLL_FORWARD=LatestPatch`), its telemetry and first-run messages off, and on Linux
  *   invariant globalization, since the system may have no ICU.
+ * - Swift, on Linux (`swift.ts`): nothing but its folder of programs. SourceKit-LSP, the server in
+ *   it, takes the rest of the toolchain from the folder it's in.
  *
  * Each keeps its caches and settings in the server's own `HOME` (`CARGO_HOME`, `DOTNET_CLI_HOME`
  * and `NUGET_PACKAGES` all default to folders there), which no one else uses, and writes nothing in
@@ -76,6 +79,7 @@ import { parse as parseToml } from 'smol-toml';
 
 import { isInside } from './environment.ts';
 import type { Installed } from './install.ts';
+import { SWIFT_DISTROS, swiftDistroOf, swiftToolchainId } from './swift.ts';
 
 /** What Lo calls a toolchain: in a row of Settings, and in a sentence about it. */
 export interface ToolchainName {
@@ -85,12 +89,15 @@ export interface ToolchainName {
   readonly phrase: string;
 }
 
-/** The toolchains Lo knows, by their IDs in `toolchains.json`. */
+/** The toolchains Lo knows, by their IDs in `toolchains.json`: Swift's under one for each Linux. */
 export const TOOLCHAIN_NAMES: Readonly<Record<string, ToolchainName>> = {
   go: { name: 'Go', phrase: 'Go' },
   rust: { name: 'Rust', phrase: 'Rust' },
   temurin: { name: 'Temurin JDK', phrase: 'the Temurin JDK' },
   dotnet: { name: '.NET SDK', phrase: 'the .NET SDK' },
+  ...Object.fromEntries(
+    SWIFT_DISTROS.map((distro) => [swiftToolchainId(distro), { name: 'Swift', phrase: 'Swift' }]),
+  ),
 };
 
 /** What a server gets of a toolchain, to add to its own: its `PATH` and its variables. */
@@ -123,6 +130,8 @@ export function toolchainUse(
   // but .NET's, which is at its root.
   const bin = dirname(installed.entry);
   const root = dirname(bin);
+  // SourceKit-LSP, its entry point, finds the rest of the toolchain beside it.
+  if (swiftDistroOf(id) !== undefined) return { path: [bin], variables: {}, allowed: [] };
   switch (id) {
     case 'go':
       return {

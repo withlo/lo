@@ -205,17 +205,171 @@
       }
     }
   },
+  "swift-debian12": {
+    "version": "6.4.2",
+    "hosts": ["download.swift.org"],
+    "platforms": {
+      "linux-x64": {
+        "url": "https://download.swift.org/swift-6.4.2-release/debian12/swift-6.4.2-RELEASE/swift-6.4.2-RELEASE-debian12.tar.gz",
+        "size": 1124199480,
+        "sha256": "25fb98a4a9c91cf88c81e35098cca1f165ae3ca295d9b776eea9aaa31bed7ed9",
+        "kind": "tar.gz",
+        "entry": "swift-6.4.2-RELEASE-debian12/usr/bin/sourcekit-lsp",
+        "unpacked": 3701967632
+      },
+      "linux-arm64": {
+        "url": "https://download.swift.org/swift-6.4.2-release/debian12-aarch64/swift-6.4.2-RELEASE/swift-6.4.2-RELEASE-debian12-aarch64.tar.gz",
+        "size": 1109014681,
+        "sha256": "a3398796390db7e0ec2e06029c302d3b6702c0c1ce0a36c9099912db6711844b",
+        "kind": "tar.gz",
+        "entry": "swift-6.4.2-RELEASE-debian12-aarch64/usr/bin/sourcekit-lsp",
+        "unpacked": 3662999620
+      }
+    }
+  },
+  "swift-debian13": {
+    "version": "6.4.2",
+    "hosts": ["download.swift.org"],
+    "platforms": {
+      "linux-x64": {
+        "url": "https://download.swift.org/swift-6.4.2-release/debian13/swift-6.4.2-RELEASE/swift-6.4.2-RELEASE-debian13.tar.gz",
+        "size": 1122816308,
+        "sha256": "8b6fde775b7cfc7a3758739d8abb09bb6fba519c6532d6b1a47faff791646c64",
+        "kind": "tar.gz",
+        "entry": "swift-6.4.2-RELEASE-debian13/usr/bin/sourcekit-lsp",
+        "unpacked": 3761397618
+      },
+      "linux-arm64": {
+        "url": "https://download.swift.org/swift-6.4.2-release/debian13-aarch64/swift-6.4.2-RELEASE/swift-6.4.2-RELEASE-debian13-aarch64.tar.gz",
+        "size": 1102615101,
+        "sha256": "bcbdd71d21421b9d18fc80f668b2b8dafefc84fa4ceba85edb0657c0c94bf36a",
+        "kind": "tar.gz",
+        "entry": "swift-6.4.2-RELEASE-debian13-aarch64/usr/bin/sourcekit-lsp",
+        "unpacked": 3732540132
+      }
+    }
+  },
+  "swift-fedora41": {
+    "version": "6.4.2",
+    "hosts": ["download.swift.org"],
+    "platforms": {
+      "linux-x64": {
+        "url": "https://download.swift.org/swift-6.4.2-release/fedora41/swift-6.4.2-RELEASE/swift-6.4.2-RELEASE-fedora41.tar.gz",
+        "size": 1119044404,
+        "sha256": "48168cdae669b62a9f6d9a8569e152edb51ceecb58b7bf50012e8c8beb056621",
+        "kind": "tar.gz",
+        "entry": "swift-6.4.2-RELEASE-fedora41/usr/bin/sourcekit-lsp",
+        "unpacked": 3747142720
+      },
+      "linux-arm64": {
+        "url": "https://download.swift.org/swift-6.4.2-release/fedora41-aarch64/swift-6.4.2-RELEASE/swift-6.4.2-RELEASE-fedora41-aarch64.tar.gz",
+        "size": 1100511665,
+        "sha256": "7bd70958b48e615550043051d6e6b119aad6ac255b795878d2c32a87dd3cac0c",
+        "kind": "tar.gz",
+        "entry": "swift-6.4.2-RELEASE-fedora41-aarch64/usr/bin/sourcekit-lsp",
+        "unpacked": 3724198208
+      }
+    }
+  },
+  "swift-ubi9": {
+    "version": "6.4.2",
+    "hosts": ["download.swift.org"],
+    "platforms": {
+      "linux-x64": {
+        "kind": "tar.gz",
+        "url": "https://download.swift.org/swift-6.4.2-release/ubi9/swift-6.4.2-RELEASE/swift-6.4.2-RELEASE-ubi9.tar.gz",
+        "size": 1124603294,
+        "sha256": "eddef6430467da665abc4d91f947e0bf5fe00fb2fafe465910a8879be81613be",
+        "entry": "swift-6.4.2-RELEASE-ubi9/usr/bin/sourcekit-lsp",
+        "unpacked": 3698685485
+      },
+      "linux-arm64": {
+        "kind": "tar.gz",
+        "url": "https://download.swift.org/swift-6.4.2-release/ubi9-aarch64/swift-6.4.2-RELEASE/swift-6.4.2-RELEASE-ubi9-aarch64.tar.gz",
+        "size": 1111841550,
+        "sha256": "d5a20569173239b501dade2f353ec7625d58fb97f2ed4e32a4579cf429571ef9",
+        "entry": "swift-6.4.2-RELEASE-ubi9-aarch64/usr/bin/sourcekit-lsp",
+        "unpacked": 3664990073
+      }
+    }
+  },
+  "swift-ubuntu2204": {
+    "version": "6.4.2",
+    "hosts": ["download.swift.org"],
+    "platforms": {
+      "linux-x64": {
+        "url": "https://download.swift.org/swift-6.4.2-release/ubuntu2204/swift-6.4.2-RELEASE/swift-6.4.2-RELEASE-ubuntu22.04.tar.gz",
+        "size": 1123491416,
+        "sha256": "c3081b1817117c66e4764d2a148357d997200048922c778b0f08c795833ae06d",
+        "kind": "tar.gz",
+        "entry": "swift-6.4.2-RELEASE-ubuntu22.04/usr/bin/sourcekit-lsp",
+        "unpacked": 3700642701
+      },
+      "linux-arm64": {
+        "url": "https://download.swift.org/swift-6.4.2-release/ubuntu2204-aarch64/swift-6.4.2-RELEASE/swift-6.4.2-RELEASE-ubuntu22.04-aarch64.tar.gz",
+        "size": 1108600193,
+        "sha256": "2f56ac2f5aa647beb85b27b637f0ba9653413ee26894570ca33434ec041d92cc",
+        "kind": "tar.gz",
+        "entry": "swift-6.4.2-RELEASE-ubuntu22.04-aarch64/usr/bin/sourcekit-lsp",
+        "unpacked": 3661152185
+      }
+    }
+  },
+  "swift-ubuntu2404": {
+    "version": "6.4.2",
+    "hosts": ["download.swift.org"],
+    "platforms": {
+      "linux-x64": {
+        "url": "https://download.swift.org/swift-6.4.2-release/ubuntu2404/swift-6.4.2-RELEASE/swift-6.4.2-RELEASE-ubuntu24.04.tar.gz",
+        "size": 1124819616,
+        "sha256": "2e9ebec040ad459dd89a6d093a02d8314939135104850fae4d5c0f174fb3ba8c",
+        "kind": "tar.gz",
+        "entry": "swift-6.4.2-RELEASE-ubuntu24.04/usr/bin/sourcekit-lsp",
+        "unpacked": 3704816920
+      },
+      "linux-arm64": {
+        "url": "https://download.swift.org/swift-6.4.2-release/ubuntu2404-aarch64/swift-6.4.2-RELEASE/swift-6.4.2-RELEASE-ubuntu24.04-aarch64.tar.gz",
+        "size": 1109582328,
+        "sha256": "307772afcc0b9501faa4797eb4197076facf5768593a0d8d2b83615c95b0040e",
+        "kind": "tar.gz",
+        "entry": "swift-6.4.2-RELEASE-ubuntu24.04-aarch64/usr/bin/sourcekit-lsp",
+        "unpacked": 3666070062
+      }
+    }
+  },
+  "swift-ubuntu2604": {
+    "version": "6.4.2",
+    "hosts": ["download.swift.org"],
+    "platforms": {
+      "linux-x64": {
+        "url": "https://download.swift.org/swift-6.4.2-release/ubuntu2604/swift-6.4.2-RELEASE/swift-6.4.2-RELEASE-ubuntu26.04.tar.gz",
+        "size": 1121753798,
+        "sha256": "ff69258a20ad7a70e31ec6bd983b4bcb241481001ebdbf5245150f7125f11e27",
+        "kind": "tar.gz",
+        "entry": "swift-6.4.2-RELEASE-ubuntu26.04/usr/bin/sourcekit-lsp",
+        "unpacked": 3759368642
+      },
+      "linux-arm64": {
+        "url": "https://download.swift.org/swift-6.4.2-release/ubuntu2604-aarch64/swift-6.4.2-RELEASE/swift-6.4.2-RELEASE-ubuntu26.04-aarch64.tar.gz",
+        "size": 1102122483,
+        "sha256": "54b2f791c815f4b8fe9371e85969a14269efe0dddb30a350773781fa8ebb220c",
+        "kind": "tar.gz",
+        "entry": "swift-6.4.2-RELEASE-ubuntu26.04-aarch64/usr/bin/sourcekit-lsp",
+        "unpacked": 3733029154
+      }
+    }
+  },
   "temurin": {
-    "version": "25.0.5+8",
+    "version": "25.0.5.1+2",
     "hosts": ["github.com", "release-assets.githubusercontent.com"],
     "platforms": {
       "darwin-arm64": {
-        "url": "https://github.com/adoptium/temurin25-binaries/releases/download/jdk-25.0.5%2B8/OpenJDK25U-jdk_aarch64_mac_hotspot_25.0.5_8.tar.gz",
-        "size": 136446056,
-        "sha256": "36dc14d797aaff6d89aab302cd053fdba6207dfdcf772052fa7b023a94b0e857",
+        "url": "https://github.com/adoptium/temurin25-binaries/releases/download/jdk-25.0.5.1%2B2/OpenJDK25U-jdk_aarch64_mac_hotspot_25.0.5.1_2.tar.gz",
+        "size": 136452381,
+        "sha256": "248353ea41be39d5d2c1c67c7ce0ae4d1668966aacd0c5308464bc1be42f677b",
         "kind": "tar.gz",
-        "entry": "jdk-25.0.5+8/Contents/Home/bin/java",
-        "unpacked": 307799523
+        "entry": "jdk-25.0.5.1+2/Contents/Home/bin/java",
+        "unpacked": 307813618
       },
       "darwin-x64": {
         "url": "https://github.com/adoptium/temurin25-binaries/releases/download/jdk-25.0.5%2B8/OpenJDK25U-jdk_x64_mac_hotspot_25.0.5_8.tar.gz",
@@ -223,15 +377,16 @@
         "sha256": "32cd4d2151c91aa00d0fc911edfd05245ed40fa6b1aa894d5f35c928cd67a59d",
         "kind": "tar.gz",
         "entry": "jdk-25.0.5+8/Contents/Home/bin/java",
-        "unpacked": 245688617
+        "unpacked": 245688617,
+        "version": "25.0.5+8"
       },
       "linux-x64": {
-        "url": "https://github.com/adoptium/temurin25-binaries/releases/download/jdk-25.0.5%2B8/OpenJDK25U-jdk_x64_linux_hotspot_25.0.5_8.tar.gz",
-        "size": 141341188,
-        "sha256": "68982529869257d0ee6b824ec5aa270ff8b118bb438670da0b97ebdab178d7fb",
+        "url": "https://github.com/adoptium/temurin25-binaries/releases/download/jdk-25.0.5.1%2B2/OpenJDK25U-jdk_x64_linux_hotspot_25.0.5.1_2.tar.gz",
+        "size": 141362230,
+        "sha256": "760f91b22c3efc9bd1b64ff950598231be82928cc807e30691a0e7a2995a62c0",
         "kind": "tar.gz",
-        "entry": "jdk-25.0.5+8/bin/java",
-        "unpacked": 316636509
+        "entry": "jdk-25.0.5.1+2/bin/java",
+        "unpacked": 316675383
       },
       "linux-arm64": {
         "url": "https://github.com/adoptium/temurin25-binaries/releases/download/jdk-25.0.5%2B8/OpenJDK25U-jdk_aarch64_linux_hotspot_25.0.5_8.tar.gz",
@@ -239,7 +394,8 @@
         "sha256": "bb5b2ded252f21c6090cf780b0a408ad0d83bbb557e702955643557f13231880",
         "kind": "tar.gz",
         "entry": "jdk-25.0.5+8/bin/java",
-        "unpacked": 316783668
+        "unpacked": 316783668,
+        "version": "25.0.5+8"
       }
     }
   }

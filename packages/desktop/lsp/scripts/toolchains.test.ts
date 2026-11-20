@@ -6,10 +6,10 @@ import { createHash } from 'node:crypto';
 import * as openpgp from 'openpgp';
 import { describe, expect, test } from 'vitest';
 
-import { PLATFORMS } from '../src/index.ts';
+import { PLATFORMS, SWIFT_DISTROS } from '../src/index.ts';
 import { type Routes, serve, sha256, tarGz } from '../test/downloads.ts';
 import { tempFolder } from '../test/support.ts';
-import { dotnet, go, parseChannel, rust, temurin } from './toolchains.ts';
+import { dotnet, go, parseChannel, rust, swift, temurin } from './toolchains.ts';
 
 /** A key that signs as a publisher would, armored or not, and its armored public key. */
 async function publisher() {
@@ -255,23 +255,41 @@ describe('Go', () => {
 });
 
 /** Temurin's names for the platforms. */
-const TEMURIN_ARCH = ['aarch64_mac', 'x64_mac', 'x64_linux', 'aarch64_linux'] as const;
+const TEMURIN_ARCH = {
+  'darwin-arm64': 'aarch64_mac',
+  'darwin-x64': 'x64_mac',
+  'linux-x64': 'x64_linux',
+  'linux-arm64': 'aarch64_linux',
+} as const;
 
 /**
- * The Temurin JDK 25.0.1+8, served as GitHub would, each archive with its binary signature, or a
- * signature of another file when `signs` says.
+ * Temurin JDK `version`, served as GitHub would, each archive with its binary signature, or a
+ * signature of another file when `signs` says, and the release's files as its API lists them:
+ * for every platform but those `missing` names.
  */
-async function temurinRelease(options: { signs?: Buffer } = {}) {
+async function temurinRelease(
+  options: { version?: string; signs?: Buffer; missing?: readonly string[] } = {},
+) {
+  const { version = '25.0.1+8', missing = [] } = options;
   const signer = await publisher();
   const routes: Routes = {};
-  const base = 'https://github.com/adoptium/temurin25-binaries/releases/download/jdk-25.0.1%2B8/';
-  for (const arch of TEMURIN_ARCH) {
-    const name = `OpenJDK25U-jdk_${arch}_hotspot_25.0.1_8.tar.gz`;
-    const home = arch.endsWith('_mac') ? 'jdk-25.0.1+8/Contents/Home' : 'jdk-25.0.1+8';
+  const tag = encodeURIComponent(`jdk-${version}`);
+  const base = `https://github.com/adoptium/temurin25-binaries/releases/download/${tag}/`;
+  const assets = [];
+  for (const [platform, arch] of Object.entries(TEMURIN_ARCH)) {
+    if (missing.includes(platform)) continue;
+    const name = `OpenJDK25U-jdk_${arch}_hotspot_${version.replace('+', '_')}.tar.gz`;
+    const home = arch.endsWith('_mac') ? `jdk-${version}/Contents/Home` : `jdk-${version}`;
     const archive = tarGz([{ path: `${home}/bin/java`, data: `java for ${arch}`, mode: 0o755 }]);
     routes[`${base}${name}`] = { body: archive };
     routes[`${base}${name}.sig`] = { body: await signer.signDetached(options.signs ?? archive) };
+    for (const each of [name, `${name}.sig`]) {
+      assets.push({ name: each, browser_download_url: `${base}${each}`, digest: null });
+    }
   }
+  routes[`https://api.github.com/repos/adoptium/temurin25-binaries/releases/tags/${tag}`] = {
+    body: Buffer.from(JSON.stringify({ assets })),
+  };
   return { signer, ...(await tools(routes)) };
 }
 
@@ -285,6 +303,72 @@ describe('Temurin', () => {
       entry: 'jdk-25.0.1+8/Contents/Home/bin/java',
     });
     expect(pinned.platforms['linux-x64']).toMatchObject({ entry: 'jdk-25.0.1+8/bin/java' });
+    expect(pinned.platforms['linux-x64']).not.toHaveProperty('version');
+  });
+
+  test('takes an update out of the usual cycle, with a fourth part to its version', async () => {
+    const { signer, tools: given } = await temurinRelease({ version: '25.0.1.1+2' });
+    const pinned = await temurin([signer.publicKey])('25.0.1.1+2', given);
+    expect(pinned.version).toBe('25.0.1.1+2');
+    expect(pinned.platforms['linux-arm64']).toMatchObject({
+      url: 'https://github.com/adoptium/temurin25-binaries/releases/download/jdk-25.0.1.1%2B2/OpenJDK25U-jdk_aarch64_linux_hotspot_25.0.1.1_2.tar.gz',
+      entry: 'jdk-25.0.1.1+2/bin/java',
+    });
+    await expect(temurin([signer.publicKey])('25.0.1.1.1+2', given)).rejects.toThrow(
+      /isn’t a Temurin version/,
+    );
+  });
+
+  test('keeps what’s pinned for a platform the release has no archive for yet, saying so', async () => {
+    const before = await temurinRelease();
+    const old = await temurin([before.signer.publicKey])('25.0.1+8', before.tools);
+    const missing = ['darwin-x64', 'linux-arm64'];
+    const after = await temurinRelease({ version: '25.0.1.1+2', missing });
+    const given = { ...after.tools, pinned: old };
+    const pinned = await temurin([after.signer.publicKey])('25.0.1.1+2', given);
+    expect(pinned.version).toBe('25.0.1.1+2');
+    expect(pinned.platforms['darwin-x64']).toEqual({
+      ...old.platforms['darwin-x64'],
+      version: '25.0.1+8',
+    });
+    expect(pinned.platforms['linux-arm64']).toEqual({
+      ...old.platforms['linux-arm64'],
+      version: '25.0.1+8',
+    });
+    expect(pinned.platforms['linux-x64']).toMatchObject({ entry: 'jdk-25.0.1.1+2/bin/java' });
+    expect(pinned.platforms['linux-x64']).not.toHaveProperty('version');
+    expect(after.lines).toContain(
+      "Adoptium's jdk-25.0.1.1+2 has no OpenJDK25U-jdk_x64_mac_hotspot_25.0.1.1_2.tar.gz yet, so darwin-x64 stays on 25.0.1+8, as pinned. Pin temurin 25.0.1.1+2 again once it has.",
+    );
+    // Pinned again once the archives are out, every platform moves.
+    const later = await temurinRelease({ version: '25.0.1.1+2' });
+    const moved = await temurin([later.signer.publicKey])('25.0.1.1+2', {
+      ...later.tools,
+      pinned,
+    });
+    expect(moved.platforms['darwin-x64']).toMatchObject({
+      entry: 'jdk-25.0.1.1+2/Contents/Home/bin/java',
+    });
+    expect(moved.platforms['darwin-x64']).not.toHaveProperty('version');
+    // And run again while they're still missing, they stay on what they had.
+    const again = await temurin([after.signer.publicKey])('25.0.1.1+2', { ...after.tools, pinned });
+    expect(again.platforms['linux-arm64']).toEqual(pinned.platforms['linux-arm64']);
+  });
+
+  test('refuses a release missing a platform with nothing pinned to keep, or missing all', async () => {
+    const some = await temurinRelease({ missing: ['linux-arm64'] });
+    await expect(temurin([some.signer.publicKey])('25.0.1+8', some.tools)).rejects.toThrow(
+      /has no OpenJDK25U-jdk_aarch64_linux_hotspot_25\.0\.1_8\.tar\.gz, and nothing is pinned for linux-arm64/,
+    );
+    const before = await temurinRelease();
+    const old = await temurin([before.signer.publicKey])('25.0.1+8', before.tools);
+    const none = await temurinRelease({
+      version: '25.0.1.1+2',
+      missing: Object.keys(TEMURIN_ARCH),
+    });
+    await expect(
+      temurin([none.signer.publicKey])('25.0.1.1+2', { ...none.tools, pinned: old }),
+    ).rejects.toThrow(/has no archive for any platform Lo pins/);
   });
 
   test('refuses an archive signed by another key, or whose signature is of another file', async () => {
@@ -352,5 +436,77 @@ describe('.NET', () => {
   ])('refuses an archive when %s', async (_, change, message) => {
     const { tools: given } = await lists(change);
     await expect(dotnet()('10.0.100', given)).rejects.toThrow(message);
+  });
+});
+
+/** Ubuntu 26.04, as swift.org builds Swift for it. */
+const UBUNTU = SWIFT_DISTROS.find((distro) => distro.id === 'ubuntu2604');
+
+/**
+ * Swift 6.0.1 for Ubuntu 26.04, served as download.swift.org would, each archive with its armored
+ * signature, or a signature of another file when `signs` says.
+ */
+async function swiftRelease(options: { signs?: Buffer } = {}) {
+  const signer = await publisher();
+  const routes: Routes = {};
+  const base = 'https://download.swift.org/swift-6.0.1-release/';
+  for (const arch of ['', '-aarch64']) {
+    const name = `swift-6.0.1-RELEASE-ubuntu26.04${arch}`;
+    const archive = tarGz([
+      { path: `${name}/usr/bin/sourcekit-lsp`, data: `sourcekit-lsp${arch}`, mode: 0o755 },
+      { path: `${name}/usr/bin/swift-frontend`, data: 'swift-frontend', mode: 0o755 },
+      { path: `${name}/usr/bin/swiftc`, type: 'SymbolicLink', linkpath: 'swift-frontend' },
+    ]);
+    const url = `${base}ubuntu2604${arch}/swift-6.0.1-RELEASE/${name}.tar.gz`;
+    routes[url] = { body: archive };
+    routes[`${url}.sig`] = { body: await signer.signDetached(options.signs ?? archive, true) };
+  }
+  return { signer, ...(await tools(routes)) };
+}
+
+describe('Swift', () => {
+  if (UBUNTU === undefined) throw new Error('swift.org builds for Ubuntu 26.04');
+
+  test('records each archive swift.org’s key signed, for Linux alone, as SourceKit-LSP', async () => {
+    const { signer, tools: given } = await swiftRelease();
+    const pinned = await swift(UBUNTU, [signer.publicKey])('6.0.1', given);
+    expect(pinned.hosts).toEqual(['download.swift.org']);
+    expect(Object.keys(pinned.platforms)).toEqual(['linux-x64', 'linux-arm64']);
+    expect(pinned.platforms['linux-arm64']).toMatchObject({
+      kind: 'tar.gz',
+      url: 'https://download.swift.org/swift-6.0.1-release/ubuntu2604-aarch64/swift-6.0.1-RELEASE/swift-6.0.1-RELEASE-ubuntu26.04-aarch64.tar.gz',
+      entry: 'swift-6.0.1-RELEASE-ubuntu26.04-aarch64/usr/bin/sourcekit-lsp',
+      unpacked: Buffer.byteLength('sourcekit-lsp-aarch64swift-frontend'),
+    });
+    expect(pinned.platforms['linux-x64']).toMatchObject({
+      entry: 'swift-6.0.1-RELEASE-ubuntu26.04/usr/bin/sourcekit-lsp',
+    });
+  });
+
+  test('refuses an archive signed by another key, or whose signature is of another file', async () => {
+    const other = await publisher();
+    const unsigned = await swiftRelease();
+    await expect(swift(UBUNTU, [other.publicKey])('6.0.1', unsigned.tools)).rejects.toThrow(
+      /isn't signed with one of the keys/,
+    );
+    const elsewhere = await swiftRelease({ signs: Buffer.from('another file') });
+    await expect(
+      swift(UBUNTU, [elsewhere.signer.publicKey])('6.0.1', elsewhere.tools),
+    ).rejects.toThrow(/isn't signed with one of the keys/);
+  });
+
+  test('refuses an archive past what it may unpack to as it’s measured', async () => {
+    const { signer, tools: given } = await swiftRelease();
+    const limits = { entries: 100, bytes: Buffer.byteLength('sourcekit-lsp') };
+    await expect(swift(UBUNTU, [signer.publicKey], limits)('6.0.1', given)).rejects.toThrow(
+      /unpacks to more than Lo allows/,
+    );
+  });
+
+  test('refuses a version swift.org wouldn’t name a release', async () => {
+    const { signer, tools: given } = await swiftRelease();
+    await expect(swift(UBUNTU, [signer.publicKey])('6.0.1-RELEASE', given)).rejects.toThrow(
+      'isn’t a Swift version',
+    );
   });
 });

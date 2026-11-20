@@ -54,18 +54,26 @@ function textOf(html: string): string {
 
 /**
  * What Lo takes out of the line, before it makes each run of spaces one: what a reader can't see,
- * with no width, but that changes what they read. That's the characters that turn the direction of
- * the text after them around until they're closed (embeddings, overrides and isolates); the marks
- * that set the direction of what's around them (left-to-right, right-to-left and Arabic letter
- * marks); characters that join or split nothing a reader sees (the zero-width space and
- * non-joiner, the word joiner and the invisible operators, the Mongolian vowel separator, and the
- * byte order mark, which would otherwise count as a space); and tag characters, which can spell
- * out hidden text. A flag of a country's part, which tags make, shows as the black flag it's drawn
- * on. The zero-width joiner, which emoji are made of, and the variation selectors that choose how
- * an emoji is drawn, stay.
+ * but that changes what they read. That's every character Unicode says to draw as nothing when a
+ * font has nothing to draw for it (default ignorable), and every format character. Among them are
+ * the characters that turn the direction of the text after them around until they're closed
+ * (embeddings, overrides and isolates); the marks that set the direction of what's around them;
+ * characters that join or split nothing a reader sees (the zero-width space and non-joiner, the
+ * word joiner, the soft hyphen, the combining grapheme joiner, and the byte order mark, which would
+ * otherwise count as a space); the Hangul fillers, which show as blank space; the marks that set
+ * off an annotation; and tag characters, which can spell out hidden text. A flag of a country's
+ * part, which tags make, shows as the black flag it's drawn on. A few format characters are signs
+ * that Arabic and some other scripts write over a number, which the line does without. The
+ * zero-width joiner, which emoji are made of, and the variation selectors, which choose how an
+ * emoji is drawn, stay.
  */
-const UNSEEN =
-  /[\u061C\u180E\u200B\u200C\u200E\u200F\u202A-\u202E\u2060-\u2064\u2066-\u2069\uFEFF\u{E0000}-\u{E007F}]/gu;
+const UNSEEN = /[[\p{Default_Ignorable_Code_Point}\p{Cf}]--[\u200D\p{Variation_Selector}]]/gv;
+
+/**
+ * What spaces words, which Lo makes a space: spaces of every width, tabs, and the characters that
+ * end a line or a paragraph other than a line feed or a carriage return, which end none here.
+ */
+const SPACES = /\p{White_Space}+/gu;
 
 /** Controls, which Lo takes out once the ones that space words, such as tabs, are spaces. */
 const CONTROLS = /\p{Cc}/gu;
@@ -102,7 +110,7 @@ export function firstLine(notes: unknown): string {
   for (const raw of text.split(/\r\n|\r|\n/)) {
     const line = raw
       .replace(UNSEEN, '')
-      .replace(/\s+/g, ' ')
+      .replace(SPACES, ' ')
       .replace(CONTROLS, '')
       .trim()
       .replace(/^(?:#{1,6}|[-*+>])\s+/, '');

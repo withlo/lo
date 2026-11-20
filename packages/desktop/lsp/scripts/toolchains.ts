@@ -7,13 +7,19 @@
 //   key, which lists each component's SHA-256. rustc, cargo, the standard library and its sources
 //   are layers of one sysroot.
 // - The Temurin JDK, from Adoptium's releases on GitHub: each archive's detached `.sig`, made with
-//   Adoptium's key.
+//   Adoptium's key. Adoptium publishes a release's archives a platform at a time, so a platform
+//   whose archive isn't out yet keeps the build pinned for it before, under its own version, and
+//   the next run moves it.
 // - The .NET SDK, from builds.dotnet.microsoft.com, which publishes no signature: each archive's
 //   SHA-512 must be the one both Microsoft's download site and the dotnet/core repository list in
 //   their `releases.json`.
+// - Swift, for Linux alone, from download.swift.org: an entry for each distribution swift.org
+//   builds for (`swift-<distribution>`, `src/swift.ts`), each archive with its detached `.sig`,
+//   made with swift.org's key for the release's major version. Each entry is pinned on its own,
+//   all to one version.
 //
-// Each records, for every platform, what its download unpacks to, which caps its install. Each
-// platform's files are removed once it's recorded, since a toolchain's run to gigabytes.
+// Each records, for every platform it has, what its download unpacks to, which caps its install.
+// Each platform's files are removed once it's recorded, since a toolchain's run to gigabytes.
 
 import { createHash } from 'node:crypto';
 import { mkdir, mkdtemp, readFile, rm } from 'node:fs/promises';
@@ -27,12 +33,17 @@ import {
   PLATFORMS,
   type Pinned,
   type Platform,
+  SWIFT_PLATFORMS,
+  SWIFT_UNPACK_LIMITS,
+  type SwiftDistro,
+  type UnpackLimits,
   unpackMeasured,
 } from '../src/index.ts';
 import {
   fetchBytes,
   fetchJson,
   fetchPart,
+  GITHUB_RELEASE,
   type Source,
   type Tools,
   verifySigned,
@@ -49,17 +60,18 @@ async function inFolder<T>(tools: Tools, work: (tools: Tools) => Promise<T>): Pr
 }
 
 /**
- * `download` with what its `files` unpack to recorded, once they've unpacked as Lo would, with
- * its entry point inside.
+ * `download` with what its `files` unpack to recorded, once they've unpacked as Lo would, within
+ * `limits`, with its entry point inside.
  */
 async function measured<T extends Download>(
   download: T,
   files: readonly string[],
   tools: Tools,
+  limits?: UnpackLimits,
 ): Promise<T> {
   const into = join(await mkdtemp(join(tools.folder, 'unpacked-')), 'files');
   await mkdir(into);
-  const { bytes } = await unpackMeasured(download, files, into);
+  const { bytes } = await unpackMeasured(download, files, into, { limits });
   tools.log(`It unpacks as Lo would, to ${bytes} bytes, with ${download.entry} inside.`);
   return { ...download, unpacked: bytes };
 }
@@ -73,18 +85,22 @@ async function verifyDetached(data: Buffer, signature: Buffer, keys: readonly st
   await verifySigned(data, binary, keys);
 }
 
-/** Records `version` of a toolchain with a download for each platform that `each` makes. */
+/**
+ * Records `version` of a toolchain with a download that `each` makes for each of `platforms`, every
+ * one Lo downloads for unless it says.
+ */
 async function everyPlatform(
   version: string,
   hosts: readonly string[],
   tools: Tools,
   each: (platform: Platform, tools: Tools) => Promise<Download>,
+  platforms: readonly Platform[] = PLATFORMS,
 ): Promise<Pinned> {
-  const platforms: Partial<Record<Platform, Download>> = {};
-  for (const platform of PLATFORMS) {
-    platforms[platform] = await inFolder(tools, (inside) => each(platform, inside));
+  const downloads: Partial<Record<Platform, Download>> = {};
+  for (const platform of platforms) {
+    downloads[platform] = await inFolder(tools, (inside) => each(platform, inside));
   }
-  return { version, hosts: [...hosts], platforms };
+  return { version, hosts: [...hosts], platforms: downloads };
 }
 
 /** go.dev's list of Go's releases, as `?mode=json&include=all` gives it. */
@@ -326,20 +342,47 @@ const TEMURIN_PLATFORMS: Record<Platform, string> = {
 };
 
 /**
- * The Temurin JDK, from Adoptium's releases on GitHub, `<feature>.<interim>.<update>+<build>`: each
- * archive signed with `keys`, Adoptium's.
+ * The Temurin JDK, from Adoptium's releases on GitHub, `<feature>.<interim>.<update>+<build>`, or
+ * with a fourth part for an update out of the usual cycle (`25.0.5.1+2`): each archive signed with
+ * `keys`, Adoptium's. A platform the release has no archive and signature for yet, as the GitHub
+ * API lists its files, keeps what the manifest pins for it now, which was checked when it was
+ * pinned, naming that build's version as its own; with nothing pinned for it, or no platform
+ * the release has, it throws.
  */
 export function temurin(keys: readonly string[]): Source {
   return async (version, tools) => {
-    const parts = /^(\d+)\.\d+\.\d+\+(\d+)$/.exec(version);
+    const parts = /^(\d+)\.\d+\.\d+(?:\.\d+)?\+(\d+)$/.exec(version);
     const feature = parts?.[1];
     if (feature === undefined) throw new Error(`${version} isn’t a Temurin version`);
     // GitHub sends each download on to its host for release files.
     const hosts = ['github.com', 'release-assets.githubusercontent.com'];
+    const repo = `adoptium/temurin${feature}-binaries`;
     const tag = encodeURIComponent(`jdk-${version}`);
-    const base = `https://github.com/adoptium/temurin${feature}-binaries/releases/download/${tag}/`;
-    return everyPlatform(version, hosts, tools, async (platform, inside) => {
+    const base = `https://github.com/${repo}/releases/download/${tag}/`;
+    const release = await fetchJson(
+      `https://api.github.com/repos/${repo}/releases/tags/${tag}`,
+      GITHUB_RELEASE,
+      ['api.github.com'],
+      tools,
+    );
+    const listed = new Set(release.assets.map((asset) => asset.name));
+    const behind: string[] = [];
+    const pinned = await everyPlatform(version, hosts, tools, async (platform, inside) => {
       const name = `OpenJDK${feature}U-jdk_${TEMURIN_PLATFORMS[platform]}_hotspot_${version.replace('+', '_')}.tar.gz`;
+      if (!listed.has(name) || !listed.has(`${name}.sig`)) {
+        const kept = tools.pinned?.platforms[platform];
+        if (kept?.kind !== 'tar.gz') {
+          throw new Error(
+            `Adoptium's jdk-${version} has no ${name}, and nothing is pinned for ${platform} to keep`,
+          );
+        }
+        const was = kept.version ?? tools.pinned?.version ?? '';
+        behind.push(platform);
+        inside.log(
+          `Adoptium's jdk-${version} has no ${name} yet, so ${platform} stays on ${was}, as pinned. Pin temurin ${version} again once it has.`,
+        );
+        return was === version ? kept : { ...kept, version: was };
+      }
       const signature = await fetchBytes(`${base}${name}.sig`, hosts, inside);
       const { part, file } = await fetchPart(`${base}${name}`, hosts, inside);
       await verifyDetached(await readFile(file), signature, keys);
@@ -349,6 +392,10 @@ export function temurin(keys: readonly string[]): Source {
         : `jdk-${version}`;
       return measured({ kind: 'tar.gz', ...part, entry: `${home}/bin/java` }, [file], inside);
     });
+    if (behind.length === PLATFORMS.length) {
+      throw new Error(`Adoptium's jdk-${version} has no archive for any platform Lo pins`);
+    }
+    return pinned;
   };
 }
 
@@ -437,5 +484,54 @@ export function dotnet(): Source {
       inside.log(`${name} has the SHA-512 both releases.json files list.`);
       return measured({ kind: 'tar.gz', ...part, entry: 'dotnet' }, [file], inside);
     });
+  };
+}
+
+/** How swift.org's builds' addresses and names spell each processor: x86-64 by nothing. */
+const SWIFT_ARCHES: Record<(typeof SWIFT_PLATFORMS)[number], string> = {
+  'linux-x64': '',
+  'linux-arm64': '-aarch64',
+};
+
+/**
+ * Swift for the Linux distribution `distro`, from download.swift.org, `<major>.<minor>` or
+ * `<major>.<minor>.<patch>` as swift.org names its releases: the archive for each processor, signed
+ * with one of `keys`, swift.org's, its entry point SourceKit-LSP. It unpacks to more than the
+ * other downloads, so it's measured within `limits`, its own.
+ */
+export function swift(
+  distro: SwiftDistro,
+  keys: readonly string[],
+  limits: UnpackLimits = SWIFT_UNPACK_LIMITS,
+): Source {
+  return async (version, tools) => {
+    if (!/^\d+\.\d+(?:\.\d+)?$/.test(version)) {
+      throw new Error(`${version} isn’t a Swift version`);
+    }
+    const hosts = ['download.swift.org'];
+    const release = `swift-${version}-RELEASE`;
+    const each = async (platform: (typeof SWIFT_PLATFORMS)[number], inside: Tools) => {
+      const arch = SWIFT_ARCHES[platform];
+      const name = `${release}-${distro.file}${arch}`;
+      const url = `https://download.swift.org/swift-${version}-release/${distro.id}${arch}/${release}/${name}.tar.gz`;
+      const signature = await fetchBytes(`${url}.sig`, hosts, inside);
+      const { part, file } = await fetchPart(url, hosts, inside);
+      await verifyDetached(await readFile(file), signature, keys);
+      inside.log(`${name}.tar.gz is signed with swift.org's key.`);
+      const download = { kind: 'tar.gz', ...part, entry: `${name}/usr/bin/sourcekit-lsp` } as const;
+      return measured(download, [file], inside, limits);
+    };
+    return everyPlatform(
+      version,
+      hosts,
+      tools,
+      (platform, inside) => {
+        if (platform !== 'linux-x64' && platform !== 'linux-arm64') {
+          throw new Error(`swift.org builds no Swift for ${platform}`);
+        }
+        return each(platform, inside);
+      },
+      SWIFT_PLATFORMS,
+    );
   };
 }

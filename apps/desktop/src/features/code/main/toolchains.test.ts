@@ -109,6 +109,24 @@ it('lists each toolchain pinned for this system, downloaded or not, and what use
   });
 });
 
+it('lists the version this system installs, where its build lags the toolchain’s', async () => {
+  const temurin = TOOLCHAINS.temurin;
+  const download = temurin?.platforms['darwin-x64'];
+  if (temurin === undefined || download?.kind !== 'tar.gz') throw new Error('no Temurin');
+  const behind = {
+    ...temurin,
+    version: '99.0.0+1',
+    platforms: { ...temurin.platforms, 'darwin-x64': { ...download, version: '98.0.0+1' } },
+  };
+  const { given } = host();
+  const versions = async (platform: 'darwin-x64' | 'darwin-arm64') =>
+    downloads(await listToolchains({ ...given, manifest: { temurin: behind }, platform })).map(
+      (each) => each.version,
+    );
+  expect(await versions('darwin-x64')).toEqual(['98.0.0+1']);
+  expect(await versions('darwin-arm64')).toEqual(['99.0.0+1']);
+});
+
 it('lists nothing downloaded while the cache isn’t open, and nothing for a system Lo has none for', async () => {
   const { given } = host();
   expect(

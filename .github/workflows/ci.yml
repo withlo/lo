@@ -291,6 +291,82 @@ jobs:
         if: steps.affected.outputs.run == 'true'
         run: pnpm --filter @lo/git test
 
+  # Swift on Linux, for real, on Ubuntu 24.04: Lo's own code downloads the Swift toolchain
+  # toolchains.json pins for it, checks it as Lo does, and starts the SourceKit-LSP in it as Lo
+  # does, on the code fixture's Swift project, which must answer a hover, and write nothing in the
+  # runner's home (packages/desktop/lsp/scripts/sourcekit.ts). It downloads over a gigabyte, so it
+  # runs only when Swift's pins change, or the code that installs it or starts its server. Nothing
+  # comes from or goes to a cache: pnpm/setup restores and saves one of its own, whatever it's
+  # told, so pnpm comes from scripts/install-pnpm.sh, as in package.yml.
+  swift:
+    name: swift
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      # The whole history, to compare against the base.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      # Swift's entries in toolchains.json, and what installs and starts it: the toolchains' code,
+      # the installer, Swift's adapter, the check and the project it asks about.
+      - name: Decide whether the check runs
+        id: changed
+        run: |
+          set -o pipefail
+          base=$(git merge-base "$BASE_SHA" "$HEAD_SHA")
+          if ! git diff --quiet "$base" "$HEAD_SHA" -- .github/workflows/ci.yml \
+            scripts/install-pnpm.sh testing/fixtures/code/swift testing/fixtures/code/cases.json \
+            packages/desktop/lsp/scripts/sourcekit.ts packages/desktop/lsp/src/swift.ts \
+            packages/desktop/lsp/src/toolchains.ts packages/desktop/lsp/src/install.ts \
+            packages/desktop/lsp/src/unpack.ts packages/desktop/lsp/src/download.ts \
+            packages/desktop/lsp/src/adapters/sourcekit.ts; then
+            echo "Swift's code changed, so the check runs."
+            echo run=true >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          pins() {
+            git show "$1:packages/desktop/lsp/toolchains.json" |
+              jq -S 'with_entries(select(.key | startswith("swift-")))'
+          }
+          if before=$(pins "$base") && after=$(pins "$HEAD_SHA") && [ "$before" = "$after" ]; then
+            echo "Neither Swift's pins nor its code changed, so the check doesn't run."
+            echo run=false >> "$GITHUB_OUTPUT"
+          else
+            echo "Swift's pins changed, or can't be compared, so the check runs."
+            echo run=true >> "$GITHUB_OUTPUT"
+          fi
+
+      # pnpm, as package.json pins it, checked against the SHA-512 pnpm-lock.yaml holds for it,
+      # then the dependencies from the lockfile alone, with the Node package.json pins.
+      - name: Install pnpm and the dependencies
+        if: steps.changed.outputs.run == 'true'
+        run: |
+          sh scripts/install-pnpm.sh "$RUNNER_TEMP/pnpm"
+          echo "$RUNNER_TEMP/pnpm" >> "$GITHUB_PATH"
+          "$RUNNER_TEMP/pnpm/pnpm" install --frozen-lockfile
+
+      # Lo installs nothing on the system: it names the packages swift.org lists that are missing,
+      # as the check does, and fails while any is.
+      - name: Install the packages Swift needs
+        if: steps.changed.outputs.run == 'true'
+        run: |
+          missing=$(pnpm --silent --filter @lo/lsp run sourcekit packages)
+          if [ -z "$missing" ]; then
+            echo "None is missing."
+            exit 0
+          fi
+          echo "Missing: $(echo "$missing" | tr '\n' ' ')"
+          sudo apt-get update
+          echo "$missing" | xargs sudo apt-get install -y --no-install-recommends
+
+      - name: Download Swift, start SourceKit-LSP and ask it for a hover
+        if: steps.changed.outputs.run == 'true'
+        run: pnpm --filter @lo/lsp run sourcekit
+
   # Fails when the overview checker's package, as this commit packs it, differs from npm's copy of
   # the same version, so a change to it comes with a new version, which merging publishes. Lo's
   # skill runs the checker by that version. It passes while npm hasn't got the version, so it only
@@ -329,7 +405,8 @@ jobs:
   ci-ok:
     name: ci-ok
     if: always()
-    needs: [changes, commitlint, symlinks, shellcheck, format, check, app, oldest-git, overview]
+    needs:
+      [changes, commitlint, symlinks, shellcheck, format, check, app, oldest-git, swift, overview]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

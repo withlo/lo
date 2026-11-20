@@ -112,6 +112,7 @@ function standIns(
         toolchain: () => Promise.reject(new Error('no downloads in tests')),
         findCopy: () => Promise.resolve(undefined),
         developerFolder: () => Promise.resolve(undefined),
+        missingPackages: () => Promise.resolve([]),
         signal,
       }),
     start(spec) {
@@ -212,6 +213,7 @@ describe('which servers run', () => {
           toolchain: () => Promise.reject(new Error('no downloads in tests')),
           findCopy: () => Promise.resolve(undefined),
           developerFolder: () => Promise.resolve(undefined),
+          missingPackages: () => Promise.resolve([]),
           signal,
         });
       },
@@ -691,6 +693,7 @@ describe('Lo’s own servers', () => {
           toolchain: listedToolchain(each, () => Promise.reject(new Error('no toolchain here'))),
           findCopy: () => Promise.resolve(undefined),
           developerFolder: () => Promise.resolve(undefined),
+          missingPackages: () => Promise.resolve([]),
           signal,
         }),
       start(spec) {
@@ -748,6 +751,7 @@ describe('Lo’s own servers', () => {
           ),
           findCopy: () => Promise.resolve(undefined),
           developerFolder: () => Promise.resolve(undefined),
+          missingPackages: () => Promise.resolve([]),
           signal,
         }),
       start(spec) {
@@ -770,6 +774,9 @@ describe('Lo’s own servers', () => {
     expect(serverEnvironment({ ...spec, roots: [spec.root] })).toEqual({
       ...toolchainUse('dotnet', '10.0.404', DOTNET, 'darwin').variables,
       DOTNET_GCHeapHardLimit: DOTNET_HEAP,
+      // No project data borrowed from a repository above its project; and, with no
+      // `COPILOT_TELEMETRY_LEVEL`, no telemetry.
+      DOTNET_PROJECTDATA_DONOR_ENABLED: '0',
       GIT_CONFIG_COUNT: '0',
       HOME: '/home/lo',
       TMPDIR: '/home/lo/tmp',
@@ -929,6 +936,7 @@ describe('checkouts a server won’t run on', () => {
           toolchain: () => Promise.reject(new Error('no downloads in tests')),
           findCopy: () => Promise.resolve(undefined),
           developerFolder: () => Promise.resolve(undefined),
+          missingPackages: () => Promise.resolve([]),
           signal,
         }),
       checkout: checkoutRefusal,
