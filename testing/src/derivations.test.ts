@@ -135,9 +135,18 @@ test('auto-merge refused as nothing blocks it: every read after says what GitHub
       at(first(at(pull, 'latestOpinionatedReviews', 'nodes')), 'author', 'login'),
     ]),
   ).toEqual(after.map(() => ['CLEAN', 'rozed-bot']));
+  // Lo's poll counts that approval among the reviews submitted.
+  const polls = readsOf(interactions, 'PullRequestCheck', 221).map(({ index, pull }) => ({
+    later: index > place,
+    read: [at(pull, 'mergeStateStatus'), at(pull, 'submittedReviews', 'totalCount')],
+  }));
+  expect(polls.findLast(({ later }) => !later)?.read).toEqual(['BLOCKED', 0]);
+  const later = polls.filter((poll) => poll.later).map(({ read }) => read);
+  expect(later.length).toBeGreaterThan(0);
+  expect(later).toEqual(later.map(() => ['CLEAN', 1]));
 });
 
-test("a writer's merge fails for the rule its reads list, and nothing reads it merged after", () => {
+test("GitHub blocks a writer's merge for the rule its reads list, fails one sent, and nothing reads it merged after", () => {
   const interactions = answers('app_merge_write_writer');
   const rules = interactions.find(
     ({ request, response }) =>

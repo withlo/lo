@@ -709,7 +709,7 @@ export const DERIVATIONS: readonly Derivation[] = [
   {
     name: 'app_merge_auto_now',
     from: 'app_merge_auto',
-    description: `app_merge_auto as if ${SOMEONE_ELSE} had opened rozed-dev/e2e#${GATED_PULL}: every read names ${SOMEONE_ELSE} as its author, and its merge facts ask rozed-bot, which owns everything on e4/gated, for a code owner's review, until rozed-bot approved it on GitHub after Lo read it. So GitHub refused to turn on auto-merge for it as it refuses it for a pull request nothing blocks, "Pull request Pull request is in clean status", and every read of what decides #${GATED_PULL}'s merge after says so: approved by rozed-bot, no review asked for, clean, and auto-merge off, which no account can turn on while nothing blocks the merge. Its timeline grew by that approval, as it grew by an event when the recording turned auto-merge on. Lo, reading it again, offers the merge in auto-merge's place; nothing merged #${GATED_PULL}, so no answer to that merge was recorded.`,
+    description: `app_merge_auto as if ${SOMEONE_ELSE} had opened rozed-dev/e2e#${GATED_PULL}: every read names ${SOMEONE_ELSE} as its author, and its merge facts ask rozed-bot, which owns everything on e4/gated, for a code owner's review, until rozed-bot approved it on GitHub after Lo read it. So GitHub refused to turn on auto-merge for it as it refuses it for a pull request nothing blocks, "Pull request Pull request is in clean status", and every read of what decides #${GATED_PULL}'s merge after says so: approved by rozed-bot, no review asked for, clean, and auto-merge off, which no account can turn on while nothing blocks the merge. Its timeline grew by that approval, as it grew by an event when the recording turned auto-merge on, and so did the count of its submitted reviews. Lo, reading it again, offers the merge in auto-merge's place; nothing merged #${GATED_PULL}, so no answer to that merge was recorded.`,
     derive(recorded) {
       const owner = readAs(recorded);
       const opened = recorded.map((each) =>
@@ -735,6 +735,10 @@ export const DERIVATIONS: readonly Derivation[] = [
         refused(opened[place]!, 'Pull request Pull request is in clean status'),
       );
       const off = autoMergeStaysOff(opened, place, GATED_PULL);
+      const reviews = at(lastPoll(opened, place, GATED_PULL), 'submittedReviews', 'totalCount');
+      if (typeof reviews !== 'number') {
+        throw new Error(`the recording counts no reviews of #${GATED_PULL}`);
+      }
       return readsAfter(opened, place, GATED_PULL, {
         graphql: {
           MergeSnapshot: (pull) => ({
@@ -760,6 +764,7 @@ export const DERIVATIONS: readonly Derivation[] = [
             ...pull,
             mergeStateStatus: 'CLEAN',
             reviewDecision: 'APPROVED',
+            submittedReviews: { totalCount: reviews + 1 },
           }),
         },
         // A list of pull requests says nothing of whether each can merge.
