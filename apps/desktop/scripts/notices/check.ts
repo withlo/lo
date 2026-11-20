@@ -137,7 +137,9 @@ export function licenseProblems(
       ];
     }
     if (text === undefined || text === '') {
-      return [`${id} has no license file, so Lo has no notice of it to ship.`];
+      return [
+        `${id} has no license file, so Lo has no notice of it to ship. If the package's repository has none either, UNLICENSED in scripts/notices/inlined.ts can write one from what the package says of its author.`,
+      ];
     }
     return [];
   });

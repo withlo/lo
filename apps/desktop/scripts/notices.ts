@@ -15,7 +15,13 @@ import { z } from 'zod';
 
 import { COPYRIGHT, FREE_SOFTWARE } from '../src/features/app/main/about.ts';
 import { licenseProblems } from './notices/check.ts';
-import { inlinedCode } from './notices/inlined.ts';
+import {
+  INLINED,
+  UNLICENSED,
+  inlinedCode,
+  type Inlined,
+  type Unlicensed,
+} from './notices/inlined.ts';
 import { keptNotices } from './notices/kept.ts';
 import { merged, type Bundled } from './notices/packages.ts';
 import { renderNotices } from './notices/render.ts';
@@ -45,11 +51,20 @@ function readList(path: string): Bundled[] {
 /**
  * Writes `licenses.txt` in `dist` from the lists the bundles left there, with the licenses of the
  * repository at `root`, then removes the lists. Returns what's wrong with the bundled packages'
- * licenses, and what a person has to look at in their files, written nothing if there is any.
+ * licenses, and what a person has to look at in their files, written nothing if there is any. The
+ * code of other projects that the entries in `lists` say the packages hold is {@link INLINED} and
+ * {@link UNLICENSED}, unless it's given.
  */
-export function writeNotices(root: string, dist: string): string[] {
+export function writeNotices(
+  root: string,
+  dist: string,
+  lists: { entries: readonly Inlined[]; unlicensed: readonly Unlicensed[] } = {
+    entries: INLINED,
+    unlicensed: UNLICENSED,
+  },
+): string[] {
   const listed = merged(LISTS.flatMap((list) => readList(join(dist, list))));
-  const found = inlinedCode(listed);
+  const found = inlinedCode(listed, lists.entries, lists.unlicensed);
   const packages = merged(found.packages);
   const problems = [...licenseProblems(packages), ...found.problems];
   if (problems.length > 0) return problems;

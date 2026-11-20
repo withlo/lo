@@ -1,12 +1,21 @@
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { LISTS, writeNotices } from './notices.ts';
-import type { Bundled } from './notices/packages.ts';
+import { INLINED, UNLICENSED } from './notices/inlined.ts';
+import { merged, packageReader, type Bundled } from './notices/packages.ts';
 
 const root = join(import.meta.dirname, '..', '..', '..');
 let dist: string;
@@ -28,6 +37,8 @@ const pack = (fields: Pick<Bundled, 'name' | 'version'> & Partial<Bundled>): Bun
   nested: [],
   ...fields,
 });
+/** The lists of what packages hold of others, with none, as the fixture packages are not real. */
+const none = { entries: [], unlicensed: [] };
 const alpha = pack({ name: 'alpha', version: '1.0.0', license: 'MIT', text });
 const beta = pack({ name: 'beta', version: '2.0.0', license: 'MIT', text });
 
@@ -42,7 +53,7 @@ function lists(main: Bundled[], preload: Bundled[], window: Bundled[]): void {
 describe('writeNotices', () => {
   it("writes licenses.txt from every bundle's packages, once each, with Lo's license first and the kept list after, then removes the lists", () => {
     lists([alpha, { ...beta, text: 'REACT' }], [], [beta, { ...alpha }]);
-    expect(writeNotices(root, dist)).toEqual([]);
+    expect(writeNotices(root, dist, none)).toEqual([]);
     const licenses = readFileSync(join(dist, 'licenses.txt'), 'utf8');
     expect(
       licenses.startsWith('Lo\n==\n\nCopyright © 2026 Mike Scornavacca\n\nLo is free software'),
@@ -69,7 +80,7 @@ describe('writeNotices', () => {
       [],
       [pack({ name: 'bare', version: '2.0.0', text })],
     );
-    const problems = writeNotices(root, dist);
+    const problems = writeNotices(root, dist, none);
     expect(problems).toEqual([
       expect.stringMatching(/^bad@1\.0\.0 is under GPL-2\.0-only/),
       expect.stringMatching(/^bare@2\.0\.0 declares no license/),
@@ -80,9 +91,30 @@ describe('writeNotices', () => {
   it('fails when a bundle left no list', () => {
     lists([alpha], [], [beta]);
     rmSync(join(dist, LISTS[1]));
-    expect(() => writeNotices(root, dist)).toThrow(/ENOENT/);
+    expect(() => writeNotices(root, dist, none)).toThrow(/ENOENT/);
   });
 });
+
+/**
+ * The packages INLINED and UNLICENSED are of, as installed here, each with the files its entries
+ * pin: a bundle that the lists the command reads from the build find nothing wrong with.
+ */
+function listedPackages(): Bundled[] {
+  const store = join(root, 'node_modules', '.pnpm');
+  const read = packageReader();
+  const found = [...INLINED, ...UNLICENSED].flatMap((entry) => {
+    const at = entry.in.lastIndexOf('@');
+    const name = entry.in.slice(0, at);
+    const folder = readdirSync(store).find((each) =>
+      each.startsWith(`${name.replace('/', '+')}@${entry.in.slice(at + 1)}`),
+    );
+    const installed = read(join(store, folder ?? '', 'node_modules', name, 'package.json'));
+    return installed === undefined
+      ? []
+      : [{ ...installed, files: 'files' in entry ? Object.keys(entry.files) : [], nested: [] }];
+  });
+  return merged(found);
+}
 
 /** Runs `node scripts/notices.ts` on the folder `dist` names, as the build does on its own. */
 function run(folder: string) {
@@ -92,7 +124,7 @@ function run(folder: string) {
 
 describe('the command', () => {
   it('exits 0 and writes licenses.txt when every bundled package has a license Lo carries', () => {
-    lists([alpha], [], [beta]);
+    lists([alpha, ...listedPackages()], [], [beta]);
     const { status, stderr } = run(dist);
     expect(stderr).toBe('');
     expect(status).toBe(0);

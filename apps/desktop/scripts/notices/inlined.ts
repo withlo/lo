@@ -214,9 +214,60 @@ export const INLINED: readonly Inlined[] = [
   {
     in: 'zod@4.6.7',
     files: {
+      'v4/core/schemas.js': '0ee56e8afbae28eeb1060a162ad7e56f0675ee6fb83f0ae56bea2e088f6cdbc0',
+    },
+    carries: {
+      repo: 'fabian-hiller/valibot',
+      provides: "the Luhn checksum in zod's v4/core/schemas.js, adapted from it",
+      license: MIT,
+      copyright: ['Copyright (c) Fabian Hiller'],
+    },
+  },
+  {
+    in: 'zod@4.6.7',
+    files: {
       'v4/core/regexes.js': '24fc98f6fc9175e50ff29d28b040e3b4ac5650de19914d45ee27b853d367ecc6',
     },
-    why: 'one regular expression, adapted from a Stack Overflow answer, which is too short to hold a copyright',
+    why: 'a few short regular expressions (an email, emoji, base64, hostname, phone number and date) from Stack Overflow answers and blog posts, each too short to hold a copyright',
+  },
+  {
+    in: '@base-ui/react@1.9.0',
+    files: {
+      'floating-ui-react/utils/markOthers.mjs':
+        'f2ec53bb31e105a8f3d43669aa6ec440be34fc55ea9bbc01b7387b0182d411f8',
+    },
+    carries: {
+      repo: 'theKashey/aria-hidden',
+      at: '9220c8f4a4fd35f63bee5510a9f41a37264382d4',
+      provides:
+        "the hiding of everything but a popup in Base UI's floating-ui-react/utils/markOthers.mjs, modified from it",
+      license: MIT,
+      copyright: ['Copyright (c) 2017 Anton Korzunov'],
+    },
+  },
+  {
+    in: '@base-ui/utils@0.5.0',
+    files: {
+      'platform/engine.mjs': '44d516640670a6b2f77074781d80d88403d3c8f413a3a3bb45b0e74d4b39f58d',
+    },
+    why: "a comment that Blink forked from WebKit, which is about browsers, not about this file's code",
+  },
+  {
+    in: 'lodash.escaperegexp@4.1.2',
+    files: { 'index.js': '584de6ec78e35344eaef8291338a671f223ec225c4df4220b6f91d8f0c004d8d' },
+    why: "Underscore.js's code, whose license and holder, Jeremy Ashkenas, the package's license file has",
+  },
+  {
+    in: 'lodash.isequal@4.5.0',
+    files: { 'index.js': 'e552928a511748303101cfd03826a777cfa359eade6a4a60f92c923edbf9184c' },
+    why: "Underscore.js's code, whose license and holder, Jeremy Ashkenas, the package's license file has",
+  },
+  {
+    in: 'undici@8.12.4',
+    files: {
+      'lib/core/util.js': 'f66443ee69b3ae34ea7ebfab4df71a0b87ac990769aaf76b278739dee8aedb7c',
+    },
+    why: "one regular expression for a header's characters, lifted from Node.js, which is too short to hold a copyright",
   },
 ];
 
@@ -266,16 +317,66 @@ function isComment(line: string): boolean {
   return /^\s*(?:\/\*|\/\/|\*|#)/.test(line);
 }
 
-/** What a comment says when the code beside it is another project's, which a person has to read. */
+/** What a comment says when it says code is taken from another project, and changed, or not. */
+const TAKEN = 'adapted|ported|forked|copied|taken|borrowed|modified|lifted';
+
+/**
+ * What a comment says when the code beside it is another project's, which a person has to read:
+ * that it's adapted, ported, forked, copied, taken, borrowed, modified or lifted `from` something,
+ * with a link or without, or a fork of it; that its license is at a link; or a banner that names
+ * the project and its license, as `/*! name. MIT License.` does. Some of what it finds is a
+ * comment on the code itself, which a person reads into the list as nothing to carry.
+ */
 const ATTRIBUTION = new RegExp(
   [
-    String.raw`\b(?:adapted|ported|derived|forked|copied|taken|borrowed)\s+from\s+(?:https?://|github\.com)`,
+    String.raw`\b(?:${TAKEN})\s+(?:from|off)\b`,
     String.raw`\bfork of\b`,
     String.raw`\blicen[sc]e:\s*https?://`,
     String.raw`^\s*/\*!\s*[\w.-]+\.\s+(?:MIT|BSD|ISC|Apache)\b`,
   ].join('|'),
   'i',
 );
+
+/**
+ * What "based on" and "derived from" say: they're so often about the code itself ("based on the
+ * level") that they find another project's only when the line also has a link, names a license or
+ * says what it is, a library, package, module or project (but a package manager), or names it with a capital, `.js` or a
+ * repository's `owner/name`.
+ */
+const DERIVED = /\b(?:based|derived)\s+(?:on|from|upon)\b/i;
+const CLUE =
+  /https?:\/\/|\bgithub\.com\/|\b(?:MIT|BSD|ISC|Apache|MPL|GPL|LGPL|CC0|Unlicense)\b|\blicen[sc]es?\b|\b(?:library|module|project|polyfill|implementation|repository)\b|\bpackage\b(?!\s+manager)/i;
+const NAMED =
+  /\b(?:[Bb]ased|[Dd]erived)\s+(?:on|from|upon)\s+(?:the\s+)?(?:[A-Z][\w.-]*|[\w-]+\.js\b|[\w@-]+\/[\w.-]+)/;
+
+/**
+ * A comment that begins by saying code is taken from elsewhere, such as "Modified to add support:",
+ * and then, on the next line, gives a link to where.
+ */
+const BEGINS = new RegExp(
+  String.raw`^\s*(?:/\*+!?|//|\*)\s*(?:this\s+(?:is|was)\s+)?(?:${TAKEN}|based|derived)\b`,
+  'i',
+);
+
+/** A link, to a site or to a repository on GitHub. */
+const LINK = /https?:\/\/|\bgithub\.com\//i;
+
+/** The lines of `lines`, as `[index, line]`, that say the code beside them is of another project. */
+function attributions(lines: readonly string[]): [number, string][] {
+  const found: [number, string][] = [];
+  for (const [at, line] of lines.entries()) {
+    if (!isComment(line)) continue;
+    const next = lines[at + 1];
+    if (
+      ATTRIBUTION.test(line) ||
+      (DERIVED.test(line) && (CLUE.test(line) || NAMED.test(line))) ||
+      (BEGINS.test(line) && next !== undefined && isComment(next) && LINK.test(next))
+    ) {
+      found.push([at, line]);
+    }
+  }
+  return found;
+}
 
 /** A comment's copyright line, with who holds it after the year. */
 const COPYRIGHT = /^\s*(?:\/\*+!?|\/\/|\*|#)\s*(?:@copyright\s+)?((?:copyright\b|\(c\)|©).*)$/i;
@@ -328,6 +429,33 @@ function mapOf(file: string, text: string): string | undefined {
   }
 }
 
+/**
+ * What's wrong with the entries of a package that's no longer bundled, or is at another version:
+ * each is of a version of a package, as it was read, so one that isn't bundled is for a person to
+ * remove, or to read again at the version that is.
+ */
+function staleEntries(
+  packages: readonly Bundled[],
+  entries: readonly Inlined[],
+  unlicensed: readonly Unlicensed[],
+): string[] {
+  const bundled = new Set(packages.map((pack) => `${pack.name}@${pack.version}`));
+  const listed = new Set([...entries, ...unlicensed].map((entry) => entry.in));
+  return [...listed]
+    .filter((id) => !bundled.has(id))
+    .toSorted()
+    .map((id) => {
+      const name = nameOf(id);
+      const now = [...bundled].filter((each) => nameOf(each) === name);
+      const lacking = now.filter((each) => !listed.has(each));
+      const how =
+        lacking.length === 0
+          ? 'remove it.'
+          : `${name} is bundled at ${lacking.map((each) => each.slice(name.length + 1)).join(' and ')} now: read it again there and update the entry, or remove the entry if the package needs none.`;
+      return `scripts/notices/inlined.ts has an entry for ${id}, which isn't bundled any more: ${how}`;
+    });
+}
+
 /** What reading the bundled packages' files for code of other projects found. */
 export interface Found {
   /** The packages, with those inlined in them, and what their files say that their license doesn't. */
@@ -348,6 +476,7 @@ export function inlinedCode(
   unlicensed: readonly Unlicensed[] = UNLICENSED,
 ): Found {
   const problems: string[] = [];
+  problems.push(...staleEntries(packages, entries, unlicensed));
   const kept = new Set<Kept>();
   const readPackage = packageReader();
   const bundled = new Map(packages.map((pack) => [`${pack.name}@${pack.version}`, pack]));
@@ -368,24 +497,18 @@ export function inlinedCode(
       }
     });
 
-    // The entries for this package are of the version it's at, and of its files as they were read.
-    for (const stale of new Set(
-      entries
-        .filter((entry) => nameOf(entry.in) === pack.name && !bundled.has(entry.in))
-        .map((entry) => entry.in),
-    )) {
-      problems.push(
-        `${id} is bundled, and scripts/notices/inlined.ts has what ${stale} holds of other projects: read ${pack.name} at ${pack.version} again and update it.`,
-      );
-    }
+    // The entries for this package are of its files as they were read.
     const current = entries.filter((entry) => {
       if (entry.in !== id) return false;
-      const changed = Object.entries(entry.files).filter(
-        ([file, hash]) => hashOf(join(pack.dir, file)) !== hash,
-      );
-      for (const [file] of changed) {
+      const changed = Object.entries(entry.files).flatMap(([file, hash]) => {
+        const now = hashOf(join(pack.dir, file));
+        return now === hash ? [] : [{ file, now }];
+      });
+      for (const { file, now } of changed) {
         problems.push(
-          `${id}'s ${file} isn't the file scripts/notices/inlined.ts was written from: read it again for code of other projects and update the entry.`,
+          now === undefined
+            ? `${id} has no ${file}, which scripts/notices/inlined.ts was written from: read ${pack.name} again for code of other projects and update the entry.`
+            : `${id}'s ${file} isn't the file scripts/notices/inlined.ts was written from: read it again for code of other projects and, if it holds nothing more, set the entry's hash to ${now}.`,
         );
       }
       return changed.length === 0;
@@ -416,13 +539,15 @@ export function inlinedCode(
       }
 
       const lines = text.split('\n');
-      for (const [at, line] of lines.entries()) {
-        if (!isComment(line)) continue;
-        if (!covered.has(file) && ATTRIBUTION.test(line)) {
+      if (!covered.has(file)) {
+        for (const [at, line] of attributions(lines)) {
           problems.push(
             `${id}'s ${file}, line ${at + 1}, says "${line.trim().slice(0, 120)}", which may be code of another project, with a notice Lo is missing: read it, and add what it says to scripts/notices/inlined.ts.`,
           );
         }
+      }
+      for (const line of lines) {
+        if (!isComment(line)) continue;
         const holder = COPYRIGHT.exec(line)?.[1];
         if (holder !== undefined && !covered.has(file) && !holds(license, holder)) {
           says.add(holder.replace(/\s*\*\/\s*$/, '').trim());

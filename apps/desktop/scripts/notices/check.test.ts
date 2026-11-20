@@ -95,5 +95,9 @@ describe('licenseProblems', () => {
       expect.stringMatching(/^d@4\.0\.0 has no license file/),
       expect.stringMatching(/^e@5\.0\.0 has no license file/),
     ]);
+    // A package with none may be one UNLICENSED can write a notice for.
+    expect(licenseProblems([{ name: 'd', version: '4.0.0', license: 'MIT' }])[0]).toContain(
+      'UNLICENSED in scripts/notices/inlined.ts',
+    );
   });
 });

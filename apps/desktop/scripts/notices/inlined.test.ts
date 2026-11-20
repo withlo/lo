@@ -65,6 +65,15 @@ function bundle(dir: string, files: string[]): Bundled {
   return { ...found, files, nested: [] };
 }
 
+/** What reading `packages` finds, by the entries given, and by none unless they are. */
+function code(
+  packages: readonly Bundled[],
+  entries: readonly Inlined[] = [],
+  unlicensed: readonly Unlicensed[] = [],
+) {
+  return inlinedCode(packages, entries, unlicensed);
+}
+
 const kept: Kept = {
   repo: 'o/copied',
   provides: 'a function',
@@ -88,20 +97,20 @@ function outerWith(sources: string[], inline = false): { dir: string; pack: Bund
 /** The problems of a package whose file `a.js` is `text`. */
 function problemsOf(text: string, entries: readonly Inlined[] = []): string[] {
   const dir = install('pkg', '1.0.0', { 'a.js': text });
-  return inlinedCode([bundle(dir, ['a.js'])], entries).problems;
+  return code([bundle(dir, ['a.js'])], entries).problems;
 }
 
 /** What reading `pkg` finds, at the version and with the file it's given. */
 function foundIn(version: string, file: string, entries: readonly Inlined[]) {
   const dir = install('pkg', version, { 'a.js': file });
-  return inlinedCode([bundle(dir, ['a.js'])], entries);
+  return code([bundle(dir, ['a.js'])], entries);
 }
 
 /** What `a.js`, with `comment` in it, adds of its package under the license `license`. */
 function saysOf(comment: string, entries: readonly Inlined[] = []): readonly string[] | undefined {
   const dir = install('pkg', '1.0.0', { 'a.js': `${comment}\nvar x;\n` });
   writeFileSync(join(dir, 'LICENSE'), 'MIT License\n\nCopyright (c) 2020 Alice Example\n');
-  return inlinedCode([bundle(dir, ['a.js'])], entries).packages[0]?.says;
+  return code([bundle(dir, ['a.js'])], entries).packages[0]?.says;
 }
 
 /** The folder of `name@version` in the workspace's node_modules, installed as pnpm lays them out. */
@@ -128,7 +137,7 @@ describe('inlinedCode', () => {
       ]);
       beside(dir, 'inner', '2.1.0');
       beside(dir, '@scope/scoped', '3.0.0');
-      const found = inlinedCode([pack]);
+      const found = code([pack]);
       expect(found.problems).toEqual([]);
       expect(
         found.packages.map(({ name, version, in: into, license }) => [
@@ -148,18 +157,18 @@ describe('inlinedCode', () => {
     it('reads a map that is inline', () => {
       const { dir, pack } = outerWith(['../../node_modules/inner/src/a.ts'], true);
       beside(dir, 'inner', '2.1.0');
-      expect(inlinedCode([pack]).packages.map((each) => each.name)).toEqual(['outer', 'inner']);
+      expect(code([pack]).packages.map((each) => each.name)).toEqual(['outer', 'inner']);
     });
 
     it('lists none that is a package of its own in the bundle, however it is built into another', () => {
       const { dir, pack } = outerWith(['../../node_modules/inner/src/a.ts']);
       const inner = beside(dir, 'inner', '2.1.0');
-      const found = inlinedCode([pack, bundle(inner, ['index.js'])]);
+      const found = code([pack, bundle(inner, ['index.js'])]);
       expect(found.packages.map((each) => each.in)).toEqual([undefined, undefined]);
     });
 
     it('is a problem when what it has built into it is not installed beside it, since its license is not found', () => {
-      const found = inlinedCode([outerWith(['../../node_modules/missing/src/a.ts']).pack]);
+      const found = code([outerWith(['../../node_modules/missing/src/a.ts']).pack]);
       expect(found.problems).toEqual([
         expect.stringMatching(/^outer@1\.0\.0's dist\/index\.min\.js has missing built into it/),
       ]);
@@ -171,7 +180,7 @@ describe('inlinedCode', () => {
         'a.js': 'x\n',
         'b.js': 'x\n//# sourceMappingURL=b.js.map\n',
       });
-      expect(inlinedCode([bundle(dir, ['a.js', 'b.js'])])).toMatchObject({ problems: [] });
+      expect(code([bundle(dir, ['a.js', 'b.js'])])).toMatchObject({ problems: [] });
     });
   });
 
@@ -184,6 +193,21 @@ describe('inlinedCode', () => {
       '// License: https://github.com/adobe/react-spectrum/blob/main/LICENSE',
       '// Distributed under an MIT license: https://codemirror.net/5/LICENSE',
       '/*! formdata-polyfill. MIT License. Jimmy Wärting <https://jimmy.warting.se/opensource> */',
+      // With no link, for the name of what it's from.
+      '/** Luhn checksum on a digit-only string. Adapted from valibot (MIT). */',
+      '// Modified from qux',
+      '// headerCharRegex have been lifted from',
+      '// Taken from the foo module',
+      '// Copied from foo',
+      // "Based on" and "derived from" with a license, a link, what it is or a name.
+      '// Based on the qux library (BSD)',
+      '// Derived from Foo, which is under the ISC license',
+      '// This is based on the qux package',
+      ' * Based on Underscore.js 1.8.3 <http://underscorejs.org/LICENSE>',
+      '// based on https://example.com/some/thing',
+      '// Based on Foo',
+      // What isn't another project's code, but reads like it, is read into the list.
+      '// Blink forked from WebKit in 2013',
     ])('fails the build until it is looked at: %s', (comment) => {
       expect(problemsOf(`const a = 1;\n${comment}\nconst b = 2;\n`)).toEqual([
         expect.stringMatching(
@@ -193,13 +217,41 @@ describe('inlinedCode', () => {
     });
 
     it.each([
-      '// Blink forked from WebKit in 2013',
+      [
+        '// Modified to add conditional `aria-hidden` support:',
+        '// https://github.com/someone/thing/blob/9220c8/src/index.ts',
+      ],
+      [' * Adapted', ' * https://example.com/thing'],
+      ['// This was derived', '// github.com/someone/thing'],
+    ])('fails the build, when a link is on the next line: %s', (first, link) => {
+      expect(problemsOf(`const a = 1;\n${first}\n${link}\nconst b = 2;\n`)).toEqual([
+        expect.stringMatching(/^pkg@1\.0\.0's a\.js, line 2, says "/),
+      ]);
+    });
+
+    it.each([
       '// derived from `syncedValues` so it cannot be forgotten',
-      '// copied from the body',
+      '// Based on the level, and call through to compute the spans for',
+      '// Derived from nb-char - \t - #x85 - #xA0',
+      '// This schema is based on standard YAML’s Core schema',
+      ' * Detects the package manager to use based on the available commands.',
+      ' *    may be used to endorse or promote products derived from this software without',
+      ' * You may obtain a copy of the License at',
+      '// a copy of this software and associated documentation files',
+      '// because it is modified by the read(2) system call',
+      '// See https://github.com/someone/thing/issues/12 for why',
       "const s = 'Adapted from https://github.com/a/b';",
       '/*! markdown-it 15.0.3 https://github.com/markdown-it/markdown-it @license MIT */',
     ])('is not one that only reads like it: %s', (line) => {
       expect(problemsOf(`${line}\n`)).toEqual([]);
+    });
+
+    it('is not one a link on the next line is about, when it is not about taking code', () => {
+      expect(
+        problemsOf(
+          '// Not modified, re-use the cached value\n// https://github.com/a/b/issues/1\n',
+        ),
+      ).toEqual([]);
     });
 
     it('is looked at once an entry for the package, at its version, has the file, as the hash of what was read', () => {
@@ -212,7 +264,7 @@ describe('inlinedCode', () => {
       const text = '// Adapted from https://github.com/someone/thing\n';
       const entry: Inlined = { in: 'pkg@1.0.0', files: { 'b.js': sha('') }, carries: kept };
       expect(problemsOf(text, [entry])).toEqual([
-        expect.stringMatching(/pkg@1\.0\.0's b\.js isn't the file/),
+        expect.stringMatching(/pkg@1\.0\.0 has no b\.js/),
         expect.stringMatching(/pkg@1\.0\.0's a\.js, line 1, says/),
       ]);
     });
@@ -233,27 +285,25 @@ describe('inlinedCode', () => {
       expect(foundIn('1.0.0', text, [none])).toMatchObject({ problems: [], kept: [] });
     });
 
-    it("fails when a file isn't the one it was read from, though its package's version is", () => {
-      const result = foundIn('1.0.0', `${text}more\n`, [entry]);
+    it("fails when a file isn't the one it was read from, though its package's version is, and prints the hash it has now", () => {
+      const changed = `${text}more\n`;
+      const result = foundIn('1.0.0', changed, [entry]);
       expect(result.problems).toEqual([
         expect.stringMatching(/^pkg@1\.0\.0's a\.js isn't the file .*inlined\.ts was written from/),
       ]);
+      expect(result.problems[0]).toContain(`set the entry's hash to ${sha(changed)}.`);
       expect(result.kept).toEqual([]);
     });
 
     it('fails when a file it pins is not in the package', () => {
       const result = foundIn('1.0.0', text, [{ ...entry, files: { 'gone.js': sha(text) } }]);
-      expect(result.problems).toEqual([
-        expect.stringMatching(/^pkg@1\.0\.0's gone\.js isn't the file/),
-      ]);
+      expect(result.problems).toEqual([expect.stringMatching(/^pkg@1\.0\.0 has no gone\.js/)]);
     });
 
-    it('fails, though the file is the same, when the package is at another version', () => {
+    it('fails, though the file is the same, when the package is at another version, and says to update the entry', () => {
       const result = foundIn('1.1.0', text, [entry]);
       expect(result.problems).toEqual([
-        expect.stringMatching(
-          /^pkg@1\.1\.0 is bundled, and .*has what pkg@1\.0\.0 holds.*read pkg at 1\.1\.0 again/,
-        ),
+        "scripts/notices/inlined.ts has an entry for pkg@1.0.0, which isn't bundled any more: pkg is bundled at 1.1.0 now: read it again there and update the entry, or remove the entry if the package needs none.",
       ]);
       expect(result.kept).toEqual([]);
     });
@@ -261,7 +311,7 @@ describe('inlinedCode', () => {
     it('has an entry for each version of a package that is in the bundle twice, and fails neither for the other', () => {
       const one = install('pkg', '1.0.0', { 'a.js': text });
       const two = install('pkg', '2.0.0', { 'a.js': text });
-      const result = inlinedCode(
+      const result = code(
         [bundle(one, ['a.js']), bundle(two, ['a.js'])],
         [entry, { ...entry, in: 'pkg@2.0.0' }],
       );
@@ -270,9 +320,19 @@ describe('inlinedCode', () => {
       expect(result.kept).toEqual([kept]);
     });
 
-    it('says nothing of a package that is not bundled', () => {
+    it('fails an entry for a version that left the bundle while another is in it, and says to remove it', () => {
+      const two = install('pkg', '2.0.0', { 'a.js': text });
+      const result = code([bundle(two, ['a.js'])], [entry, { ...entry, in: 'pkg@2.0.0' }]);
+      expect(result.problems).toEqual([
+        "scripts/notices/inlined.ts has an entry for pkg@1.0.0, which isn't bundled any more: remove it.",
+      ]);
+    });
+
+    it('fails an entry for a package that left the bundle, and says to remove it', () => {
       const dir = install('other', '1.0.0');
-      expect(inlinedCode([bundle(dir, [])], [entry])).toMatchObject({ problems: [], kept: [] });
+      expect(code([bundle(dir, [])], [entry]).problems).toEqual([
+        "scripts/notices/inlined.ts has an entry for pkg@1.0.0, which isn't bundled any more: remove it.",
+      ]);
     });
   });
 
@@ -306,7 +366,7 @@ describe('inlinedCode', () => {
         'b.js': '/* Copyright (c) Bob Other */\n',
         'c.js': '// Copyright (c) Carol Another\n',
       });
-      expect(inlinedCode([bundle(dir, ['a.js', 'b.js', 'c.js'])]).packages[0]?.says).toEqual([
+      expect(code([bundle(dir, ['a.js', 'b.js', 'c.js'])]).packages[0]?.says).toEqual([
         'Copyright (c) Bob Other',
         'Copyright (c) Carol Another',
       ]);
@@ -314,7 +374,7 @@ describe('inlinedCode', () => {
 
     it('is not looked for in a file that is not JavaScript', () => {
       const dir = install('pkg', '1.0.0', { 'a.css': '/* Copyright (c) Bob Other */\n' });
-      expect(inlinedCode([bundle(dir, ['a.css'])]).packages[0]?.says).toBeUndefined();
+      expect(code([bundle(dir, ['a.css'])]).packages[0]?.says).toBeUndefined();
     });
   });
 });
@@ -338,7 +398,7 @@ describe('a package with no license file', () => {
   };
 
   it('has the MIT License written out with the copyright line its entry gives', () => {
-    const [pack] = inlinedCode([bareUnder('MIT')], [], [entry]).packages;
+    const [pack] = code([bareUnder('MIT')], [], [entry]).packages;
     expect(pack?.text).toMatch(
       /^MIT License\n\nCopyright \(c\) Someone\n\nPermission is hereby granted/,
     );
@@ -346,13 +406,21 @@ describe('a package with no license file', () => {
   });
 
   it('has none when the license it says is not the one its entry writes, or it has no entry, so the check fails it', () => {
-    expect(inlinedCode([bareUnder('ISC')], [], [entry]).packages[0]?.text).toBeUndefined();
-    expect(inlinedCode([bareUnder('MIT')], [], []).packages[0]?.text).toBeUndefined();
+    expect(code([bareUnder('ISC')], [], [entry]).packages[0]?.text).toBeUndefined();
+    expect(code([bareUnder('MIT')], [], []).packages[0]?.text).toBeUndefined();
+  });
+
+  it('has an entry that fails the build, naming the package and saying to update it, when the package is at another version', () => {
+    const result = code([bareUnder('MIT')], [], [{ ...entry, in: 'bare@0.9.0' }]);
+    expect(result.problems).toEqual([
+      "scripts/notices/inlined.ts has an entry for bare@0.9.0, which isn't bundled any more: bare is bundled at 1.0.0 now: read it again there and update the entry, or remove the entry if the package needs none.",
+    ]);
+    expect(result.packages[0]?.text).toBeUndefined();
   });
 
   it('keeps the license file it has, when it has one', () => {
     const dir = install('bare', '1.0.0');
-    expect(inlinedCode([bundle(dir, [])], [], [entry]).packages[0]?.text).toBe(
+    expect(code([bundle(dir, [])], [], [entry]).packages[0]?.text).toBe(
       'bare license, Copyright (c) bare authors',
     );
   });
@@ -396,7 +464,7 @@ describe('INLINED', () => {
       return dir === undefined ? [] : [bundle(dir, Object.keys(entry.files))];
     });
     expect(packages.length).toBeGreaterThan(5);
-    const found = inlinedCode(packages);
+    const found = code(packages, INLINED, []);
     expect(found.problems).toEqual([]);
     const carried = new Set(
       INLINED.flatMap((entry) => (entry.carries ? [entry.carries.repo] : [])),
