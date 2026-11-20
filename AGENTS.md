@@ -173,6 +173,7 @@ pnpm nx run desktop:dev      # run it with hot reloading
 pnpm nx run desktop:start    # build it, then run the build
 pnpm nx run desktop:e2e      # build it, then run its smoke test
 pnpm nx run desktop:package  # build it, then make the Mac zip in apps/desktop/release/
+pnpm nx run desktop:release  # build it, then make a release's DMGs and zips (needs a Developer ID)
 ```
 
 - The `electron` package downloads Electron's binary the first time it's needed.
@@ -188,9 +189,26 @@ pnpm nx run desktop:package  # build it, then make the Mac zip in apps/desktop/r
   flag and opens as it is. The `package` workflow, which only a person starts, builds the same zip
   on a Mac runner and uploads it as an artifact. `scripts/check-package.sh` checks a zip: the
   signature and its flags, the entitlements, every fuse, the asar's contents and hash, the
-  registered links, and that the app quits when given switches or the variables below. electron-vite
+  registered links, that it holds no `app-update.yml`, so it never looks for updates, that its
+  window draws, and that the app quits when given switches or the variables below. electron-vite
   bundles everything the app imports, so the package holds only `dist/` and `package.json`, and no
   `node_modules`.
+- `desktop:release` makes a release from `build/release.yml`, which extends the package's config
+  with what a release needs: a DMG and a zip each for arm64 and x64, `Lo-<version>-<arch>.<ext>`,
+  with `latest-mac.yml` and blockmaps beside them. The app and its helpers are signed with the
+  Developer ID certificate in `CSC_LINK`, with only `allow-jit`
+  (`build/entitlements.release.plist`), then notarized and stapled, and the DMGs signed. The app
+  holds an `app-update.yml` naming GitHub Releases of `withlo/lo`, and the build never publishes
+  (`--publish never`). The `release` workflow runs it when a tag `v<version>` is pushed: `version`
+  checks the tag (`scripts/release/version.sh`: SemVer without build metadata, on a commit main
+  holds) and gives the version, which electron-builder writes into the app (`package.json` stays
+  `0.0.0`); `mac` builds in the `release` environment, the only place the signing secrets are read,
+  which takes `v*` tags only and waits for a maintainer's approval, notarizes the DMGs, unstapled,
+  and checks all four files with `check-package.sh --release`; `draft` makes a draft release with
+  `SHA256SUMS` and generated notes (`.github/release.yml` leaves out dependency bumps), which a
+  maintainer publishes. Started by hand, or by a pull request that changes the packaging files, the
+  workflow is a dry run: the same build, signed ad hoc with the ad hoc entitlements, checked with
+  `check-package.sh --release --ad-hoc`, with no environment, no secret and no release.
 - A packaged Lo takes no command-line switches: first of all in main, before `ready`, it quits with
   status 1 on any argument that isn't a `lo://`, `https://` or `http://` link from its first
   character (`src/main/arguments.ts`). Chromium's switches can send main's requests, with their

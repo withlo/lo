@@ -3,7 +3,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { IpcError } from '../../../ipc/contract.ts';
 import type { How, UpdateState } from '../contract.ts';
 import {
+  CHECK_LIMIT,
   INSTALL_LIMIT,
+  UNANSWERED,
   Updates,
   type QuitEvent,
   type Release,
@@ -57,15 +59,15 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-/** Updates, for this Lo at 0.1.0, which takes an update `how` says. */
+/** Updates, for this Lo at 0.1.0, which takes an update as `how` says, each time it's asked. */
 function start(
   updater: UpdatesOptions['updater'],
-  how: How = 'install',
+  how: How | (() => How) = 'install',
   current = '0.1.0',
 ): Updates {
   return new Updates({
     current,
-    how,
+    how: typeof how === 'function' ? how : () => how,
     updater,
     publish: (state) => published.push(state),
     log: (line) => logged.push(line),
@@ -116,7 +118,7 @@ describe('a check', () => {
       version: '0.3.0-rc.1',
       notes: '<p><a href="https://example.com/lo.zip">Get it here</a></p>',
     });
-    const answer = await start(updater).check(true);
+    const answer = await start(updater, 'install', '0.2.0-rc.1').check(true);
     expect(answer).toMatchObject({
       version: '0.3.0-rc.1',
       line: 'Get it here',
@@ -145,6 +147,43 @@ describe('a check', () => {
       });
     }
     expect(published).toEqual([]);
+  });
+
+  it('never offers a prerelease to a release, whatever GitHub calls its latest', async () => {
+    for (const version of ['0.2.0-rc.1', '1.0.0-rc.1']) {
+      const { updater } = fakeUpdater({ version });
+      const updates = start(updater);
+      await expect(updates.check(true)).resolves.toEqual({ status: 'newest', version: '0.1.0' });
+      expect(updates.state).toEqual({ status: 'idle' });
+    }
+    expect(published).toEqual([]);
+  });
+
+  it('offers a prerelease the release of its version, a later one, and later prereleases', async () => {
+    for (const version of ['0.1.0', '0.2.0', '0.1.0-rc.2', '0.2.0-rc.1']) {
+      const { updater } = fakeUpdater({ version });
+      await expect(start(updater, 'install', '0.1.0-rc.1').check(true)).resolves.toMatchObject({
+        status: 'available',
+        version,
+      });
+    }
+    for (const version of ['0.1.0-rc.1', '0.1.0-beta.2', '0.0.9']) {
+      const { updater } = fakeUpdater({ version });
+      await expect(start(updater, 'install', '0.1.0-rc.1').check(true)).resolves.toEqual({
+        status: 'newest',
+        version: '0.1.0-rc.1',
+      });
+    }
+  });
+
+  it('takes back an offer when the feed’s newest is a prerelease this Lo won’t take', async () => {
+    const { updater } = fakeUpdater();
+    const updates = start(updater);
+    await updates.check(false);
+    // electron-updater would now download the prerelease, so the offer can't stand.
+    updater.check.mockResolvedValue({ version: '0.3.0-rc.1', notes: null });
+    await updates.check(false);
+    expect(published).toEqual([OFFER, { status: 'idle' }]);
   });
 
   it('takes back an offer the feed no longer makes', async () => {
@@ -179,12 +218,110 @@ describe('a check', () => {
     expect(second).toEqual(OFFER);
   });
 
+  it('decides again how this copy of Lo takes the update, for each offer', async () => {
+    const { updater } = fakeUpdater();
+    let how: How = 'move';
+    const updates = start(updater, () => how);
+    await updates.check(true);
+    how = 'page';
+    await expect(updates.check(true)).resolves.toEqual({ ...OFFER, how: 'page' });
+    expect(published).toEqual([
+      { ...OFFER, how: 'move' },
+      { ...OFFER, how: 'page' },
+    ]);
+  });
+
   it('says why this copy of Lo doesn’t check', async () => {
     const updates = start({ unchecked: 'This copy of Lo isn’t a release.' });
     await expect(updates.check(true)).resolves.toEqual({
       status: 'failed',
       reason: 'This copy of Lo isn’t a release.',
     });
+  });
+});
+
+/** An updater whose first check the feed never answers, until the test says, and others do. */
+function unanswered() {
+  const { updater } = fakeUpdater();
+  const signals: AbortSignal[] = [];
+  let answer: ((release: Release) => void) | undefined;
+  let fail: ((error: Error) => void) | undefined;
+  updater.check.mockImplementationOnce((signal) => {
+    signals.push(signal);
+    return new Promise<Release>((resolve, reject) => {
+      answer = resolve;
+      fail = reject;
+    });
+  });
+  return {
+    updater,
+    signals,
+    answer: (release: Release) => answer?.(release),
+    fail: (error: Error) => fail?.(error),
+  };
+}
+
+describe('a check the feed doesn’t answer', () => {
+  it('is given up on after a while, and the next check asks the feed again', async () => {
+    const { updater, signals } = unanswered();
+    const updates = start(updater);
+    // A check Lo makes by itself, then one the reader asks for meanwhile, which shares it.
+    const timed = updates.check(false);
+    const asked = updates.check(true);
+    await vi.advanceTimersByTimeAsync(CHECK_LIMIT - 1);
+    expect(signals[0]?.aborted).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    const failed = { status: 'failed', reason: UNANSWERED };
+    await expect(timed).resolves.toEqual(failed);
+    await expect(asked).resolves.toEqual(failed);
+    // The updater is told to drop it.
+    expect(signals[0]?.aborted).toBe(true);
+    expect(logged).toContain(`couldn't check for updates: ${UNANSWERED}`);
+    // A day later, as at any time after, a check asks the feed again, and gets its answer.
+    await vi.advanceTimersByTimeAsync(24 * 60 * 60 * 1000);
+    await expect(updates.check(true)).resolves.toEqual(OFFER);
+    expect(updater.check).toHaveBeenCalledTimes(2);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('changes nothing when its answer comes after all', async () => {
+    const late = unanswered();
+    const updates = start(late.updater);
+    const given = updates.check(true);
+    await vi.advanceTimersByTimeAsync(CHECK_LIMIT);
+    await given;
+    await updates.check(true);
+    late.answer({ version: '0.3.0', notes: '<p>Too late.</p>' });
+    await vi.runAllTimersAsync();
+    expect(updates.state).toEqual(OFFER);
+    expect(published).toEqual([OFFER]);
+
+    // Nor when it fails after all, while the next check goes: that one is still shared.
+    const failing = unanswered();
+    const other = start(failing.updater);
+    const abandoned = other.check(true);
+    await vi.advanceTimersByTimeAsync(CHECK_LIMIT);
+    await abandoned;
+    const answering = Promise.withResolvers<Release>();
+    failing.updater.check.mockImplementationOnce(() => answering.promise);
+    const next = other.check(true);
+    failing.fail(new Error('net::ERR_CONNECTION_RESET'));
+    await vi.advanceTimersByTimeAsync(0);
+    const shared = other.check(false);
+    answering.resolve({ version: '0.2.0', notes: '<h2>Faster diffs</h2>' });
+    await expect(next).resolves.toEqual(OFFER);
+    await expect(shared).resolves.toEqual(OFFER);
+    expect(failing.updater.check).toHaveBeenCalledTimes(2);
+  });
+
+  it('is dropped as Lo stops', async () => {
+    const { updater, signals } = unanswered();
+    const updates = start(updater);
+    const checking = updates.check(true);
+    updates.stop();
+    await expect(checking).resolves.toEqual({ status: 'failed', reason: 'Lo is quitting.' });
+    expect(signals[0]?.aborted).toBe(true);
+    expect(vi.getTimerCount()).toBe(0);
   });
 });
 
@@ -214,6 +351,24 @@ describe('installing', () => {
     const { updater } = fakeUpdater();
     expect(() => start(updater).install()).toThrow('There’s no update to install.');
     expect(updater.download).not.toHaveBeenCalled();
+  });
+
+  it('decides again how this copy of Lo takes the update, as Lo may have been moved', async () => {
+    const { updater } = fakeUpdater();
+    let how: How = 'install';
+    const updates = start(updater, () => how);
+    await updates.check(true);
+    how = 'page';
+    expect(() => updates.install()).toThrow(
+      'Lo can’t install updates here. Download it from its release page.',
+    );
+    expect(updater.download).not.toHaveBeenCalled();
+    expect(updates.state).toEqual({ ...OFFER, how: 'page' });
+    expect(published).toEqual([OFFER, { ...OFFER, how: 'page' }]);
+    // And the other way.
+    how = 'install';
+    updates.install();
+    expect(updater.download).toHaveBeenCalledTimes(1);
   });
 
   it('says how the download goes, then that it’s ready, and never restarts by itself', async () => {
@@ -393,6 +548,23 @@ describe('moving to Applications', () => {
     for (const how of ['install', 'brew', 'page'] as const) {
       expect(() => start(updater, how).move()).toThrow(IpcError);
     }
+    expect(move).toHaveBeenCalledTimes(1);
+  });
+
+  it('decides again whether it can, as Lo may have been moved', async () => {
+    const { updater } = fakeUpdater();
+    let how: How = 'move';
+    const updates = start(updater, () => how);
+    await updates.check(true);
+    how = 'page';
+    expect(() => updates.move()).toThrow('Lo can’t move itself from here.');
+    expect(move).not.toHaveBeenCalled();
+    expect(updates.state).toEqual({ ...OFFER, how: 'page' });
+    how = 'install';
+    expect(() => updates.move()).toThrow('Lo is in Applications already.');
+    expect(updates.state).toEqual(OFFER);
+    how = 'move';
+    updates.move();
     expect(move).toHaveBeenCalledTimes(1);
   });
 
