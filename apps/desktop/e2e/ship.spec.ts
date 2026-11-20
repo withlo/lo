@@ -16,7 +16,7 @@ import { join } from 'node:path';
 
 import { MERGE_PULLS, writeMergeRemote } from '@lo/testing/git';
 import { serveReplay, type ReplayServer } from '@lo/testing/server';
-import type { ElectronApplication, Page } from '@playwright/test';
+import type { Page } from '@playwright/test';
 
 import { appFolder, expect, KEYCHAIN, test as base } from './app.ts';
 import { type Asked, Staged } from './staged.ts';
@@ -71,50 +71,10 @@ const test = base.extend<{
         LO_GITHUB: new URL(github.urls.api).origin,
         LO_TEST_TOKEN_FILE: tokenFile,
         LO_GIT_REMOTE: remote,
-        LO_PROBE: '1',
       },
     });
   },
 });
-
-/** What the probe heard, for the test that listens. */
-let heard: string[] = [];
-let probed: ElectronApplication | undefined;
-
-/** Listens to Lo's main, its window and the replay server, a line each, stamped. */
-function listen(app: ElectronApplication, page: Page, github: ReplayServer): void {
-  heard = [];
-  probed = app;
-  let rest = '';
-  app.process().stderr?.on('data', (chunk: Buffer) => {
-    const lines = (rest + chunk.toString()).split('\n');
-    rest = lines.pop() ?? '';
-    for (const line of lines) if (line.startsWith('probe ')) heard.push(line);
-  });
-  page.on('console', (message) => {
-    const text = message.text();
-    if (text.startsWith('probe ')) heard.push(text);
-  });
-  const { replay } = github;
-  const answer = replay.answer.bind(replay);
-  replay.answer = (request) => {
-    const body = new TextDecoder().decode(request.body);
-    const operation = /"operationName":"(\w+)"/.exec(body)?.[1] ?? '';
-    heard.push(`probe ${Date.now()} gh ${request.method} ${request.url} ${operation}`);
-    return answer(request);
-  };
-}
-
-/** What was heard from `from` on, in order. */
-function heardSince(from: number): string {
-  return heard
-    .map((line) => ({ line, at: Number(line.split(' ')[1]) }))
-    .filter(({ at }) => at >= from)
-    .sort((a, b) => a.at - b.at)
-    .map(({ line, at }) => `${at - from} ${line.split(' ').slice(2).join(' ')}`)
-    .filter((line) => !/ main tick$/.test(line) || true)
-    .join('\n');
-}
 
 /** The header's merge status. */
 const status = (page: Page) =>
@@ -159,47 +119,23 @@ async function ship(page: Page, number: number): Promise<void> {
   const refused = said(page, 'looked up yet');
   const deadline = Date.now() + LOOKUPS;
   for (;;) {
-    const pressed = Date.now();
-    heard.push(`probe ${pressed} test press`);
     await page.keyboard.press(SHIP);
     await expect
       .poll(async () => (await dialog(page).isVisible()) || (await refused.isVisible()))
       .toBe(true);
     if (await dialog(page).isVisible()) {
       // Planned, or refused, which closes the dialog and says why.
-      try {
-        await expect
-          .poll(
-            async () =>
-              (await dialog(page).isVisible())
-                ? ((await dialog(page).textContent()) ?? '')
-                : 'closed',
-            { timeout: 30_000 },
-          )
-          .toMatch(new RegExp(`${planned.replace('?', '\\?')}|^closed$`));
-      } catch (error) {
-        const alive = probed
-          ? await Promise.race([
-              probed.evaluate(() => Date.now()).then((at) => `main answered at ${at}`),
-              new Promise<string>((resolve) => setTimeout(() => resolve('main silent 5 s'), 5000)),
-            ])
-          : 'no app';
-        const told = `${alive} at ${Date.now()}\n${heardSince(pressed - 15_000)}`;
-        console.log(`PROBE STALL\n${told}`);
-        throw new Error(
-          `${error instanceof Error ? error.message : String(error)}\nPROBE\n${told}`,
-        );
-      }
+      await expect
+        .poll(
+          async () =>
+            (await dialog(page).isVisible())
+              ? ((await dialog(page).textContent()) ?? '')
+              : 'closed',
+          { timeout: 30_000 },
+        )
+        .toMatch(new RegExp(`${planned.replace('?', '\\?')}|^closed$`));
       if (await dialog(page).isVisible()) break;
     }
-    if (heard.length > 0)
-      console.log(
-        `PROBE PRESS\n${heardSince(pressed - 2000)
-          .split('\n')
-          .filter((line) => !line.includes(' gh ') && !line.endsWith('main tick'))
-          .slice(0, 40)
-          .join('\n')}`,
-      );
     await expect(refused).toBeVisible();
     if (Date.now() > deadline) break;
     await expect(refused).toBeHidden({ timeout: 10_000 });
@@ -224,34 +160,27 @@ function merges(github: ReplayServer, number: number): number {
 test.describe('on your own pull request', () => {
   test.use({ staged: true });
 
-  for (const round of [1, 2, 3, 4])
-    test(`\`⌘⇧⏎\` approves nothing and merges it, from one confirmation (${round})`, async ({
-      app,
-      page,
-      github,
-    }) => {
-      test.setTimeout(LOOKUPS + 60_000);
-      listen(app, page, github);
-      heard.push(`probe ${Date.now()} test start`);
-      const { number } = pulls.squash;
-      await open(page, number, 'Ready to merge');
-      await ship(page, number);
-      await expect(steps(page).nth(0)).toContainText('Check that r1 is still the newest push');
-      await expect(steps(page).nth(1)).toContainText(
-        'It’s your pull request, so GitHub takes no approval from you.',
-      );
-      await expect(steps(page).nth(2)).toContainText('into merge/10/base');
-      await expect(dialog(page).getByRole('button', { name: /^Ship/ })).toBeVisible();
-      expect(merges(github, number)).toBe(0);
+  test('`⌘⇧⏎` approves nothing and merges it, from one confirmation', async ({ page, github }) => {
+    test.setTimeout(LOOKUPS + 60_000);
+    const { number } = pulls.squash;
+    await open(page, number, 'Ready to merge');
+    await ship(page, number);
+    await expect(steps(page).nth(0)).toContainText('Check that r1 is still the newest push');
+    await expect(steps(page).nth(1)).toContainText(
+      'It’s your pull request, so GitHub takes no approval from you.',
+    );
+    await expect(steps(page).nth(2)).toContainText('into merge/10/base');
+    await expect(dialog(page).getByRole('button', { name: /^Ship/ })).toBeVisible();
+    expect(merges(github, number)).toBe(0);
 
-      await page.keyboard.press('Enter');
-      await expect(said(page, `Merged #${number} into merge/10/base`)).toBeVisible({
-        timeout: MERGING,
-      });
-      await expect(dialog(page)).toBeHidden();
-      expect(merges(github, number)).toBe(1);
-      expect(writes(github, 'AddPullRequestReview')).toBe(0);
+    await page.keyboard.press('Enter');
+    await expect(said(page, `Merged #${number} into merge/10/base`)).toBeVisible({
+      timeout: MERGING,
     });
+    await expect(dialog(page)).toBeHidden();
+    expect(merges(github, number)).toBe(1);
+    expect(writes(github, 'AddPullRequestReview')).toBe(0);
+  });
 });
 
 test.describe('into a branch with a merge queue, while its checks run', () => {

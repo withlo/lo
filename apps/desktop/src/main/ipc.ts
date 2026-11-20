@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain } from 'electron';
+import { BrowserWindow, ipcMain } from 'electron';
 
 import type { Database } from './database.ts';
 import { createRouter, type Feature } from './features.ts';
@@ -29,33 +29,12 @@ export function serveFeatures(
     },
     log: (message, ...error) => console.error(message, ...error),
   });
-  const probing = Boolean(process.env.LO_PROBE);
-  const probe = (line: string) => {
-    if (probing) process.stderr.write(`probe ${Date.now()} main ${line}\n`);
-  };
-  if (probing) {
-    let last = Date.now();
-    setInterval(() => {
-      const now = Date.now();
-      if (now - last > 400) probe(`lag ${now - last}ms`);
-      last = now;
-    }, 200);
-    setInterval(() => probe('tick'), 1000);
-    app.on('browser-window-focus', () => probe('focus'));
-    app.on('browser-window-blur', () => probe('blur'));
-  }
   for (const channel of router.channels) {
-    ipcMain.handle(channel, async (event, input: unknown) => {
-      const from = Date.now();
-      const noted = channel.startsWith('merge.');
-      if (noted) probe(`recv ${channel}`);
-      const reply = await router.answer(channel, event.senderFrame?.url, input, {
+    ipcMain.handle(channel, (event, input: unknown) =>
+      router.answer(channel, event.senderFrame?.url, input, {
         windowId: BrowserWindow.fromWebContents(event.sender)?.id,
-      });
-      if (noted)
-        probe(`reply ${channel} ${Date.now() - from}ms ${JSON.stringify(reply).slice(0, 160)}`);
-      return reply;
-    });
+      }),
+    );
   }
   router.start();
   return () => router.stop();
