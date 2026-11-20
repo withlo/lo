@@ -1,0 +1,34 @@
+{
+  "request": {
+    "method": "GET",
+    "url": "https://api.github.com/repos/rozed-dev/e2e/pulls/235/files?per_page=100"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "etag": "W/\"45069f1a15f71e5fe6b4e857e05830756763e84d3c5a4969968e0dab6bcd5b1d\"",
+      "last-modified": "Tue, 17 Nov 2026 03:59:18 GMT",
+      "x-github-api-version-selected": "2022-11-28",
+      "x-ratelimit-limit": "5000",
+      "x-ratelimit-remaining": "4712",
+      "x-ratelimit-reset": "1794889860",
+      "x-ratelimit-resource": "core",
+      "x-ratelimit-used": "288"
+    },
+    "body": [
+      {
+        "sha": "fb7884f36c3e4a35d3bde1f470e4f5e60552372f",
+        "filename": "merge/8/chain-1/notes.md",
+        "status": "added",
+        "additions": 3,
+        "deletions": 0,
+        "changes": 3,
+        "blob_url": "https://github.com/rozed-dev/e2e/blob/2b43b64f1e5aa796d5b6cc86e40d7fb3c693165a/merge%2F8%2Fchain-1%2Fnotes.md",
+        "raw_url": "https://github.com/rozed-dev/e2e/raw/2b43b64f1e5aa796d5b6cc86e40d7fb3c693165a/merge%2F8%2Fchain-1%2Fnotes.md",
+        "contents_url": "https://api.github.com/repos/rozed-dev/e2e/contents/merge%2F8%2Fchain-1%2Fnotes.md?ref=2b43b64f1e5aa796d5b6cc86e40d7fb3c693165a",
+        "patch": "@@ -0,0 +1,3 @@\n+# Fixture M8: chain-1\n+\n+The bottom layer of a chain of two, which no GitHub stack holds."
+      }
+    ]
+  }
+}

@@ -1,0 +1,467 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "https://api.github.com/graphql",
+    "operation": "MergedPullRequests",
+    "variables": {
+      "owner": "rozed-dev",
+      "name": "e2e",
+      "b0": "merge/8/chain-1",
+      "b1": "merge/8/chain-1",
+      "b2": "merge/8/chain-1",
+      "b3": "merge/8/chain-1",
+      "b4": "merge/8/chain-1",
+      "b5": "merge/8/chain-1",
+      "b6": "merge/8/chain-1",
+      "b7": "merge/8/chain-1",
+      "b8": "merge/8/chain-1",
+      "b9": "merge/8/chain-1",
+      "first": 5
+    },
+    "query_sha256": "8b17e59a6697df65d96fef132e12626f70283bebeb7f4aaec98a3c753c4a8794"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "x-ratelimit-limit": "5000",
+      "x-ratelimit-remaining": "4931",
+      "x-ratelimit-reset": "1794889861",
+      "x-ratelimit-resource": "graphql",
+      "x-ratelimit-used": "69"
+    },
+    "body": {
+      "data": {
+        "rateLimit": {
+          "cost": 1,
+          "limit": 5000,
+          "remaining": 4931,
+          "used": 69,
+          "resetAt": "2026-11-17T04:31:01Z"
+        },
+        "repository": {
+          "b0": {
+            "nodes": [
+              {
+                "number": 235,
+                "createdAt": "2026-11-17T03:59:15Z",
+                "baseRefName": "merge/8/base",
+                "baseRef": {
+                  "target": {
+                    "__typename": "Commit",
+                    "oid": "306c7e374e3b807814a6d88ff2c313a1ad6fcf7f"
+                  },
+                  "refUpdateRule": null
+                },
+                "headRefName": "merge/8/chain-1",
+                "headRefOid": "2b43b64f1e5aa796d5b6cc86e40d7fb3c693165a",
+                "isCrossRepository": false,
+                "commits": {
+                  "nodes": [
+                    {
+                      "commit": {
+                        "oid": "2b43b64f1e5aa796d5b6cc86e40d7fb3c693165a"
+                      }
+                    }
+                  ]
+                },
+                "mergeCommit": {
+                  "oid": "306c7e374e3b807814a6d88ff2c313a1ad6fcf7f",
+                  "parents": {
+                    "nodes": [
+                      {
+                        "oid": "bd1c925e59906ea79ecb0c1f8c2d75185c892262"
+                      },
+                      {
+                        "oid": "2b43b64f1e5aa796d5b6cc86e40d7fb3c693165a"
+                      }
+                    ]
+                  }
+                },
+                "stackEntry": null
+              }
+            ]
+          },
+          "b1": {
+            "nodes": [
+              {
+                "number": 235,
+                "createdAt": "2026-11-17T03:59:15Z",
+                "baseRefName": "merge/8/base",
+                "baseRef": {
+                  "target": {
+                    "__typename": "Commit",
+                    "oid": "306c7e374e3b807814a6d88ff2c313a1ad6fcf7f"
+                  },
+                  "refUpdateRule": null
+                },
+                "headRefName": "merge/8/chain-1",
+                "headRefOid": "2b43b64f1e5aa796d5b6cc86e40d7fb3c693165a",
+                "isCrossRepository": false,
+                "commits": {
+                  "nodes": [
+                    {
+                      "commit": {
+                        "oid": "2b43b64f1e5aa796d5b6cc86e40d7fb3c693165a"
+                      }
+                    }
+                  ]
+                },
+                "mergeCommit": {
+                  "oid": "306c7e374e3b807814a6d88ff2c313a1ad6fcf7f",
+                  "parents": {
+                    "nodes": [
+                      {
+                        "oid": "bd1c925e59906ea79ecb0c1f8c2d75185c892262"
+                      },
+                      {
+                        "oid": "2b43b64f1e5aa796d5b6cc86e40d7fb3c693165a"
+                      }
+                    ]
+                  }
+                },
+                "stackEntry": null
+              }
+            ]
+          },
+          "b2": {
+            "nodes": [
+              {
+                "number": 235,
+                "createdAt": "2026-11-17T03:59:15Z",
+                "baseRefName": "merge/8/base",
+                "baseRef": {
+                  "target": {
+                    "__typename": "Commit",
+                    "oid": "306c7e374e3b807814a6d88ff2c313a1ad6fcf7f"
+                  },
+                  "refUpdateRule": null
+                },
+                "headRefName": "merge/8/chain-1",
+                "headRefOid": "2b43b64f1e5aa796d5b6cc86e40d7fb3c693165a",
+                "isCrossRepository": false,
+                "commits": {
+                  "nodes": [
+                    {
+                      "commit": {
+                        "oid": "2b43b64f1e5aa796d5b6cc86e40d7fb3c693165a"
+                      }
+                    }
+                  ]
+                },
+                "mergeCommit": {
+                  "oid": "306c7e374e3b807814a6d88ff2c313a1ad6fcf7f",
+                  "parents": {
+                    "nodes": [
+                      {
+                        "oid": "bd1c925e59906ea79ecb0c1f8c2d75185c892262"
+                      },
+                      {
+                        "oid": "2b43b64f1e5aa796d5b6cc86e40d7fb3c693165a"
+                      }
+                    ]
+                  }
+                },
+                "stackEntry": null
+              }
+            ]
+          },
+          "b3": {
+            "nodes": [
+              {
+                "number": 235,
+                "createdAt": "2026-11-17T03:59:15Z",
+                "baseRefName": "merge/8/base",
+                "baseRef": {
+                  "target": {
+                    "__typename": "Commit",
+                    "oid": "306c7e374e3b807814a6d88ff2c313a1ad6fcf7f"
+                  },
+                  "refUpdateRule": null
+                },
+                "headRefName": "merge/8/chain-1",
+                "headRefOid": "2b43b64f1e5aa796d5b6cc86e40d7fb3c693165a",
+                "isCrossRepository": false,
+                "commits": {
+                  "nodes": [
+                    {
+                      "commit": {
+                        "oid": "2b43b64f1e5aa796d5b6cc86e40d7fb3c693165a"
+                      }
+                    }
+                  ]
+                },
+                "mergeCommit": {
+                  "oid": "306c7e374e3b807814a6d88ff2c313a1ad6fcf7f",
+                  "parents": {
+                    "nodes": [
+                      {
+                        "oid": "bd1c925e59906ea79ecb0c1f8c2d75185c892262"
+                      },
+                      {
+                        "oid": "2b43b64f1e5aa796d5b6cc86e40d7fb3c693165a"
+                      }
+                    ]
+                  }
+                },
+                "stackEntry": null
+              }
+            ]
+          },
+          "b4": {
+            "nodes": [
+              {
+                "number": 235,
+                "createdAt": "2026-11-17T03:59:15Z",
+                "baseRefName": "merge/8/base",
+                "baseRef": {
+                  "target": {
+                    "__typename": "Commit",
+                    "oid": "306c7e374e3b807814a6d88ff2c313a1ad6fcf7f"
+                  },
+                  "refUpdateRule": null
+                },
+                "headRefName": "merge/8/chain-1",
+                "headRefOid": "2b43b64f1e5aa796d5b6cc86e40d7fb3c693165a",
+                "isCrossRepository": false,
+                "commits": {
+                  "nodes": [
+                    {
+                      "commit": {
+                        "oid": "2b43b64f1e5aa796d5b6cc86e40d7fb3c693165a"
+                      }
+                    }
+                  ]
+                },
+                "mergeCommit": {
+                  "oid": "306c7e374e3b807814a6d88ff2c313a1ad6fcf7f",
+                  "parents": {
+                    "nodes": [
+                      {
+                        "oid": "bd1c925e59906ea79ecb0c1f8c2d75185c892262"
+                      },
+                      {
+                        "oid": "2b43b64f1e5aa796d5b6cc86e40d7fb3c693165a"
+                      }
+                    ]
+                  }
+                },
+                "stackEntry": null
+              }
+            ]
+          },
+          "b5": {
+            "nodes": [
+              {
+                "number": 235,
+                "createdAt": "2026-11-17T03:59:15Z",
+                "baseRefName": "merge/8/base",
+                "baseRef": {
+                  "target": {
+                    "__typename": "Commit",
+                    "oid": "306c7e374e3b807814a6d88ff2c313a1ad6fcf7f"
+                  },
+                  "refUpdateRule": null
+                },
+                "headRefName": "merge/8/chain-1",
+                "headRefOid": "2b43b64f1e5aa796d5b6cc86e40d7fb3c693165a",
+                "isCrossRepository": false,
+                "commits": {
+                  "nodes": [
+                    {
+                      "commit": {
+                        "oid": "2b43b64f1e5aa796d5b6cc86e40d7fb3c693165a"
+                      }
+                    }
+                  ]
+                },
+                "mergeCommit": {
+                  "oid": "306c7e374e3b807814a6d88ff2c313a1ad6fcf7f",
+                  "parents": {
+                    "nodes": [
+                      {
+                        "oid": "bd1c925e59906ea79ecb0c1f8c2d75185c892262"
+                      },
+                      {
+                        "oid": "2b43b64f1e5aa796d5b6cc86e40d7fb3c693165a"
+                      }
+                    ]
+                  }
+                },
+                "stackEntry": null
+              }
+            ]
+          },
+          "b6": {
+            "nodes": [
+              {
+                "number": 235,
+                "createdAt": "2026-11-17T03:59:15Z",
+                "baseRefName": "merge/8/base",
+                "baseRef": {
+                  "target": {
+                    "__typename": "Commit",
+                    "oid": "306c7e374e3b807814a6d88ff2c313a1ad6fcf7f"
+                  },
+                  "refUpdateRule": null
+                },
+                "headRefName": "merge/8/chain-1",
+                "headRefOid": "2b43b64f1e5aa796d5b6cc86e40d7fb3c693165a",
+                "isCrossRepository": false,
+                "commits": {
+                  "nodes": [
+                    {
+                      "commit": {
+                        "oid": "2b43b64f1e5aa796d5b6cc86e40d7fb3c693165a"
+                      }
+                    }
+                  ]
+                },
+                "mergeCommit": {
+                  "oid": "306c7e374e3b807814a6d88ff2c313a1ad6fcf7f",
+                  "parents": {
+                    "nodes": [
+                      {
+                        "oid": "bd1c925e59906ea79ecb0c1f8c2d75185c892262"
+                      },
+                      {
+                        "oid": "2b43b64f1e5aa796d5b6cc86e40d7fb3c693165a"
+                      }
+                    ]
+                  }
+                },
+                "stackEntry": null
+              }
+            ]
+          },
+          "b7": {
+            "nodes": [
+              {
+                "number": 235,
+                "createdAt": "2026-11-17T03:59:15Z",
+                "baseRefName": "merge/8/base",
+                "baseRef": {
+                  "target": {
+                    "__typename": "Commit",
+                    "oid": "306c7e374e3b807814a6d88ff2c313a1ad6fcf7f"
+                  },
+                  "refUpdateRule": null
+                },
+                "headRefName": "merge/8/chain-1",
+                "headRefOid": "2b43b64f1e5aa796d5b6cc86e40d7fb3c693165a",
+                "isCrossRepository": false,
+                "commits": {
+                  "nodes": [
+                    {
+                      "commit": {
+                        "oid": "2b43b64f1e5aa796d5b6cc86e40d7fb3c693165a"
+                      }
+                    }
+                  ]
+                },
+                "mergeCommit": {
+                  "oid": "306c7e374e3b807814a6d88ff2c313a1ad6fcf7f",
+                  "parents": {
+                    "nodes": [
+                      {
+                        "oid": "bd1c925e59906ea79ecb0c1f8c2d75185c892262"
+                      },
+                      {
+                        "oid": "2b43b64f1e5aa796d5b6cc86e40d7fb3c693165a"
+                      }
+                    ]
+                  }
+                },
+                "stackEntry": null
+              }
+            ]
+          },
+          "b8": {
+            "nodes": [
+              {
+                "number": 235,
+                "createdAt": "2026-11-17T03:59:15Z",
+                "baseRefName": "merge/8/base",
+                "baseRef": {
+                  "target": {
+                    "__typename": "Commit",
+                    "oid": "306c7e374e3b807814a6d88ff2c313a1ad6fcf7f"
+                  },
+                  "refUpdateRule": null
+                },
+                "headRefName": "merge/8/chain-1",
+                "headRefOid": "2b43b64f1e5aa796d5b6cc86e40d7fb3c693165a",
+                "isCrossRepository": false,
+                "commits": {
+                  "nodes": [
+                    {
+                      "commit": {
+                        "oid": "2b43b64f1e5aa796d5b6cc86e40d7fb3c693165a"
+                      }
+                    }
+                  ]
+                },
+                "mergeCommit": {
+                  "oid": "306c7e374e3b807814a6d88ff2c313a1ad6fcf7f",
+                  "parents": {
+                    "nodes": [
+                      {
+                        "oid": "bd1c925e59906ea79ecb0c1f8c2d75185c892262"
+                      },
+                      {
+                        "oid": "2b43b64f1e5aa796d5b6cc86e40d7fb3c693165a"
+                      }
+                    ]
+                  }
+                },
+                "stackEntry": null
+              }
+            ]
+          },
+          "b9": {
+            "nodes": [
+              {
+                "number": 235,
+                "createdAt": "2026-11-17T03:59:15Z",
+                "baseRefName": "merge/8/base",
+                "baseRef": {
+                  "target": {
+                    "__typename": "Commit",
+                    "oid": "306c7e374e3b807814a6d88ff2c313a1ad6fcf7f"
+                  },
+                  "refUpdateRule": null
+                },
+                "headRefName": "merge/8/chain-1",
+                "headRefOid": "2b43b64f1e5aa796d5b6cc86e40d7fb3c693165a",
+                "isCrossRepository": false,
+                "commits": {
+                  "nodes": [
+                    {
+                      "commit": {
+                        "oid": "2b43b64f1e5aa796d5b6cc86e40d7fb3c693165a"
+                      }
+                    }
+                  ]
+                },
+                "mergeCommit": {
+                  "oid": "306c7e374e3b807814a6d88ff2c313a1ad6fcf7f",
+                  "parents": {
+                    "nodes": [
+                      {
+                        "oid": "bd1c925e59906ea79ecb0c1f8c2d75185c892262"
+                      },
+                      {
+                        "oid": "2b43b64f1e5aa796d5b6cc86e40d7fb3c693165a"
+                      }
+                    ]
+                  }
+                },
+                "stackEntry": null
+              }
+            ]
+          }
+        }
+      }
+    }
+  }
+}

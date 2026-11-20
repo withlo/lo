@@ -1,0 +1,5 @@
+{
+  "description": "What the app’s tests of a GitHub stack’s merge send and read, recorded from the app with writes on generation 8 of fixtures/merge.sh’s pull requests, rozed-dev/e2e#222 to #244, with GitHub stack #245, with the tab open long enough for its polls to repeat before and after: Lo merged #233, the stack’s top layer, with #232 below it, as one, with a merge commit, into merge/8/base.",
+  "recorded_at": "2026-11-17T04:18:24Z",
+  "repo": "rozed-dev/e2e"
+}
