@@ -314,9 +314,9 @@ test.each([
     for (const number of numbers) {
       const url = `https://api.github.com/repos/rozed-dev/e2e/git/matching-refs/lo/pr/${number}`;
       const read = (headers: Headers) => replay.answer({ method: 'GET', url, headers, body: none });
-      const first = read(new Headers());
-      expect(first.status, `#${number}'s first read`).toBe(200);
-      const etag = first.headers.get('etag') ?? '';
+      const once = read(new Headers());
+      expect(once.status, `#${number}'s first read`).toBe(200);
+      const etag = once.headers.get('etag') ?? '';
       for (const time of [1, 2]) {
         const again = read(new Headers({ 'if-none-match': etag }));
         expect(again.status, `#${number}'s read again, ${time}`).toBe(304);
