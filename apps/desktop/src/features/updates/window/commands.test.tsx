@@ -17,6 +17,7 @@ import { showState, updatesStore } from './store.ts';
 
 const defaults: Record<string, (input: unknown) => unknown> = {
   'updates.read': () => ({ status: 'idle' }),
+  'updates.how': () => 'page',
   'updates.check': () => ({ status: 'newest', version: '0.1.0' }),
   'updates.install': () => undefined,
   'updates.restart': () => undefined,
@@ -61,6 +62,9 @@ async function run(id: string): Promise<void> {
 
 const noop = (_answer: CheckAnswer): void => {};
 
+/** What was asked of main to do something, not the reads that follow a check. */
+const requests = () => bridge.calls.filter(([channel]) => channel !== 'updates.how');
+
 const OFFER: UpdateState = {
   status: 'available',
   version: '0.2.0',
@@ -72,7 +76,7 @@ const OFFER: UpdateState = {
 describe('Check for updates', () => {
   it('asks main to check, and says so in a note when nothing newer is out', async () => {
     await run('updates.check');
-    expect(bridge.calls).toEqual([['updates.check', undefined]]);
+    expect(requests()).toEqual([['updates.check', undefined]]);
     expect(notice()).toEqual({ title: 'Lo 0.1.0 is the newest version.', body: '', done: true });
   });
 
@@ -127,7 +131,7 @@ describe('Check for updates', () => {
     await run('updates.check');
     expect(updatesStore.getState().checking).toBe(true);
     await run('updates.check');
-    expect(bridge.calls).toEqual([['updates.check', undefined]]);
+    expect(requests()).toEqual([['updates.check', undefined]]);
     await act(async () => {
       finish({ status: 'newest', version: '0.1.0' });
       await Promise.resolve();
@@ -137,7 +141,7 @@ describe('Check for updates', () => {
     // Once it's over, the next is asked for as usual.
     answers['updates.check'] = defaults['updates.check'] ?? (() => undefined);
     await run('updates.check');
-    expect(bridge.calls).toHaveLength(2);
+    expect(requests()).toHaveLength(2);
   });
 });
 
@@ -158,7 +162,7 @@ describe('the other commands', () => {
   ])('%s asks main for it alone, and says why when main refuses', async (id, title) => {
     act(() => showState(WHEN[id] ?? OFFER));
     await run(id);
-    expect(bridge.calls).toEqual([[id, undefined]]);
+    expect(requests()).toEqual([[id, undefined]]);
     expect(notice()).toBeUndefined();
     answers[id] = () => {
       throw new IpcError('unavailable', 'There’s no update to install.');
@@ -172,7 +176,7 @@ describe('the other commands', () => {
     await run('updates.check');
     // Hiding applies to an offer, not to an update that's ready: it's refused before main hears.
     await run('updates.later');
-    expect(bridge.calls.map(([channel]) => channel)).toEqual(['updates.check']);
+    expect(requests().map(([channel]) => channel)).toEqual(['updates.check']);
     expect(notice()).toEqual({
       title: 'Hide the update until Lo restarts',
       body: 'Lo 0.2.0 is ready. It installs when you quit, or now.',

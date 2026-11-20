@@ -1,14 +1,24 @@
 // The toasts that say a newer Lo is out, downloading or ready, in the window's toast region, below
 // a note that passes. A toast waits until it's acted on and never takes focus by itself, wherever
 // it is when it comes. Its buttons are reached with the keyboard from "Go to the update", which
-// focuses the first, and `Tab` and `⇧Tab` move between them from there; and each button is also a
-// command in the palette. No button installs or restarts but by its own press, and a press in the
-// moment after a toast comes or changes is ignored, since the reader's click may have been meant
-// for what was there before. When a toast goes while one of its buttons has focus, as it does on
-// pressing Install or Later, focus goes back to the middle of the window, rather than to nowhere.
+// focuses the first, and `Tab` and `⇧Tab` move between them from there, round from the last to the
+// first and back, as in a toolbar, and `Esc` goes back to the middle of the window; each button is
+// also a command in the palette. No button installs or restarts but by its own press. A press in
+// the moment after a toast comes or changes is ignored, since the reader's click may have been meant
+// for what was there before, and so is a key press in the moment after focus comes into the toast,
+// since the key that took it there may still be down: a key held down repeats, and a repeat never
+// presses a button. When a toast goes while one of its buttons has focus, as it does on pressing
+// Install or Later, focus goes back to the middle of the window, rather than to nowhere.
 
 import { Button, Meter, Spinner, Toast } from '@lo/ui';
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type KeyboardEvent as KeyEvent,
+  type ReactNode,
+} from 'react';
 import { useStore } from 'zustand';
 
 import { focusMiddle } from '../../../window/commands/registry.ts';
@@ -44,16 +54,24 @@ const WAITING = (
 /** How long a toast's buttons ignore a press after it comes or changes, in ms. */
 export const GUARD_TIME = 500;
 
+/** What a toast's `Tab` moves between: its buttons. */
+const REACHED = 'button:not(:disabled), a[href]';
+
 /**
- * Holds one toast, which is its own scope of keys where `Tab` moves between its buttons. A press
- * on a button in the first {@link GUARD_TIME} ms after the toast comes is ignored, pointer or key:
- * each state draws in the same place, so a click meant for the one before lands on the next.
- * Takes focus back to the middle of the window when the toast goes while something in it has
- * focus. Each state of the offer is its own toast, so its buttons go with it.
+ * Holds one toast, which is its own scope of keys where `Tab` moves between its buttons, and wraps
+ * from the last to the first and back. A press on a button is ignored for {@link GUARD_TIME} ms:
+ * - after the toast comes, whether by pointer or key: each state draws in the same place, so a
+ *   click meant for the one before lands on the next;
+ * - after focus comes into the toast, when it's a key that presses: the key that took focus there,
+ *   by "Go to the update" or a `Tab`, may still be down.
+ * A key held down repeats, and a repeat of `⏎` or `␣` on a button never presses it. Takes focus
+ * back to the middle of the window when the toast goes while something in it has focus. Each state
+ * of the offer is its own toast, so its buttons go with it.
  */
 function Held({ children }: { children: ReactNode }) {
   const box = useRef<HTMLDivElement>(null);
   const came = useRef(0);
+  const entered = useRef(0);
   useLayoutEffect(() => {
     came.current = Date.now();
     // A layout effect, whose cleanup runs before the toast leaves the page, with focus still in it.
@@ -66,8 +84,27 @@ function Held({ children }: { children: ReactNode }) {
       ref={box}
       data-lo-scope="toasts"
       data-lo-tab="browser"
+      onFocusCapture={(event) => {
+        const from = event.relatedTarget;
+        if (!(from instanceof Node) || !box.current?.contains(from)) entered.current = Date.now();
+      }}
+      onKeyDownCapture={(event) => {
+        if (event.key === 'Tab') {
+          wrap(event, box.current);
+        } else if (event.repeat && (event.key === 'Enter' || event.key === ' ')) {
+          if (event.target instanceof Element && event.target.closest('button')) {
+            event.preventDefault();
+            event.stopPropagation();
+          }
+        }
+      }}
       onClickCapture={(event) => {
-        if (Date.now() - came.current >= GUARD_TIME) return;
+        const now = Date.now();
+        // A click a key made has no click count, as one from a pointer has.
+        const keyed = event.detail === 0;
+        if (now - came.current >= GUARD_TIME && !(keyed && now - entered.current < GUARD_TIME)) {
+          return;
+        }
         event.preventDefault();
         event.stopPropagation();
       }}
@@ -75,6 +112,23 @@ function Held({ children }: { children: ReactNode }) {
       {children}
     </div>
   );
+}
+
+/**
+ * Keeps `Tab` in the toast: from its last button it goes to the first, and `⇧Tab` from the first
+ * goes to the last, as in a toolbar, rather than out to the tab strip. `Esc` leaves.
+ */
+function wrap(event: KeyEvent, box: HTMLElement | null): void {
+  if (!box || event.altKey || event.ctrlKey || event.metaKey) return;
+  const buttons = [...box.querySelectorAll<HTMLElement>(REACHED)];
+  const [first] = buttons;
+  const last = buttons.at(-1);
+  const at = event.target;
+  if (first === undefined || last === undefined || !(at instanceof HTMLElement)) return;
+  const edge = event.shiftKey ? first : last;
+  if (!edge.contains(at)) return;
+  event.preventDefault();
+  (event.shiftKey ? last : first).focus();
 }
 
 /** How long "Copied" stays on the button, in ms. */

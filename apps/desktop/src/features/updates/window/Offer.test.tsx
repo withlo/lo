@@ -21,11 +21,12 @@ import { BREW_UPGRADE, releasePage, type UpdateState } from '../contract.ts';
 import feature from './index.ts';
 import { hear } from './actions.ts';
 import { COPIED_TIME, GUARD_TIME, Offer, UpdateToast } from './Offer.tsx';
-import { showState, updatesStore } from './store.ts';
+import { showHow, showState, updatesStore } from './store.ts';
 
 /** What main answers on each channel, as `main` has it: a test changes what a channel says. */
 const defaults: Record<string, (input: unknown) => unknown> = {
   'updates.read': () => ({ status: 'idle' }),
+  'updates.how': () => 'page',
   'updates.check': () => ({ status: 'newest', version: '0.1.0' }),
   'updates.install': () => undefined,
   'updates.restart': () => undefined,
@@ -55,7 +56,10 @@ beforeEach(() => {
   vi.useFakeTimers();
   answers = { ...defaults };
   bridge.calls.length = 0;
-  act(() => showState({ status: 'idle' }));
+  act(() => {
+    showState({ status: 'idle' });
+    updatesStore.setState({ how: undefined });
+  });
 });
 
 afterEach(() => {
@@ -133,6 +137,13 @@ const asked = () => bridge.calls.slice();
 
 const button = (page: HTMLElement, name: string) =>
   [...page.querySelectorAll('button')].find((each) => each.textContent === name);
+
+/** The button a toast has by `name`, which the test fails without. */
+function pressable(page: HTMLElement, name: string): HTMLButtonElement {
+  const found = button(page, name);
+  if (!found) throw new Error(`The toast has no “${name}” button.`);
+  return found;
+}
 
 /** Each state of the design: what the toast says, and what its buttons are. */
 const STATES: readonly {
@@ -390,6 +401,8 @@ describe('focus', () => {
   it('keeps focus on a button that stays, as Copy does', async () => {
     const page = draw(<UpdateToast state={offer('brew')} />);
     button(page, 'Copy')?.focus();
+    // Pressed with the key, once the moment after focus came has passed.
+    settle();
     await act(async () => button(page, 'Copy')?.click());
     expect(document.activeElement?.textContent).toBe('Copied');
   });
@@ -534,6 +547,127 @@ describe('a press in the moment after a toast comes or changes', () => {
   });
 });
 
+/**
+ * A key pressed with `target` in focus, as the browser takes it: the event goes through the page,
+ * and unless something stopped its default, `⏎` on a button clicks it, with no click count, at each
+ * repeat as at the first press.
+ */
+function press(target: HTMLElement, init: { key: string; repeat?: boolean; shiftKey?: boolean }) {
+  const event = new KeyboardEvent('keydown', { bubbles: true, cancelable: true, ...init });
+  act(() => {
+    target.dispatchEvent(event);
+  });
+  if (!event.defaultPrevented && init.key === 'Enter' && target instanceof HTMLButtonElement) {
+    act(() => target.click());
+  }
+  return event;
+}
+
+/** A click from a pointer, which has come down on the button first and so has focused it. */
+function pointed(target: HTMLElement): void {
+  act(() => {
+    target.focus();
+    target.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, detail: 1 }));
+  });
+}
+
+/** The toast for `state`, as the window draws it, up and past its first moment. */
+function withToast(state: UpdateState): HTMLElement {
+  const page = draw(<Offer />);
+  act(() => showState(state));
+  settle();
+  return page;
+}
+
+/** Whether Move to Applications applies, as the app menu and the palette ask. */
+const moves = () => registry().enabled('updates.move', NO_TARGET);
+
+describe('a key held down as focus comes to the toast', () => {
+  it('presses nothing by repeating: ⏎ held through "Go to the update" sends no restart', () => {
+    const page = withToast(ready);
+    const restartNow = pressable(page, 'Restart now');
+    // The first ⏎ chose the command in the palette, which put focus here; the rest are its repeats.
+    act(() => {
+      registry().run('updates.focus', NO_TARGET);
+    });
+    expect(document.activeElement).toBe(restartNow);
+    for (let repeat = 0; repeat < 5; repeat++) {
+      act(() => {
+        vi.advanceTimersByTime(GUARD_TIME);
+      });
+      const event = press(restartNow, { key: 'Enter', repeat: true });
+      expect(event.defaultPrevented).toBe(true);
+    }
+    expect(asked()).toEqual([]);
+    // Let go, and press again: that is a press.
+    press(restartNow, { key: 'Enter' });
+    expect(asked()).toEqual([['updates.restart', undefined]]);
+  });
+
+  it('does not start a download by repeating either', () => {
+    const page = withToast(offer('install'));
+    act(() => {
+      registry().run('updates.focus', NO_TARGET);
+    });
+    for (let repeat = 0; repeat < 3; repeat++) {
+      act(() => {
+        vi.advanceTimersByTime(GUARD_TIME);
+      });
+      press(pressable(page, 'Install'), { key: 'Enter', repeat: true });
+    }
+    expect(asked()).toEqual([]);
+  });
+
+  it('ignores a press for a moment after focus comes in, as Go to the update, Tab or a command does', () => {
+    const page = withToast(ready);
+    const restartNow = pressable(page, 'Restart now');
+    act(() => {
+      registry().run('updates.focus', NO_TARGET);
+    });
+    // The key that chose the command, let go and pressed again at once, isn't meant for the button.
+    press(restartNow, { key: 'Enter' });
+    expect(asked()).toEqual([]);
+    act(() => {
+      vi.advanceTimersByTime(GUARD_TIME);
+    });
+    press(restartNow, { key: 'Enter' });
+    expect(asked()).toEqual([['updates.restart', undefined]]);
+  });
+
+  it('starts that moment again when focus comes into the toast again', () => {
+    const page = withToast(ready);
+    const restartNow = pressable(page, 'Restart now');
+    const elsewhere = document.createElement('button');
+    document.body.append(elsewhere);
+    act(() => restartNow.focus());
+    act(() => {
+      vi.advanceTimersByTime(GUARD_TIME);
+    });
+    act(() => elsewhere.focus());
+    act(() => restartNow.focus());
+    press(restartNow, { key: 'Enter' });
+    expect(asked()).toEqual([]);
+  });
+
+  it('does not hold a click from a pointer, which focuses a button as it comes down on it', () => {
+    const page = withToast(ready);
+    pointed(pressable(page, 'Restart now'));
+    expect(asked()).toEqual([['updates.restart', undefined]]);
+  });
+
+  it('does not hold a key as focus moves from one button of the toast to another', () => {
+    const page = withToast(offer('install'));
+    act(() => button(page, 'Install')?.focus());
+    act(() => {
+      vi.advanceTimersByTime(GUARD_TIME);
+    });
+    const hide = pressable(page, 'Later');
+    act(() => hide.focus());
+    press(hide, { key: 'Enter' });
+    expect(asked()).toEqual([['updates.later', undefined]]);
+  });
+});
+
 describe('the keyboard', () => {
   it('moves between a toast’s buttons with Tab, which no other part of the window lets it do', () => {
     const page = draw(<UpdateToast state={offer('install')} />);
@@ -544,6 +678,34 @@ describe('the keyboard', () => {
     // Where it isn't in a scope of its own, Lo's `Tab` stops at a button.
     const outside = document.createElement('button');
     expect(endsTab(findScope(outside), outside)).toBe(true);
+  });
+
+  it('wraps Tab round the toast’s buttons, from the last to the first and back', () => {
+    const page = draw(<UpdateToast state={offer('install')} />);
+    const install = pressable(page, 'Install');
+    const notes = pressable(page, 'What’s new');
+    const later = pressable(page, 'Later');
+    act(() => later.focus());
+    // ⇥ on the last goes to the first, rather than out of the toast to the tab strip.
+    expect(press(later, { key: 'Tab' }).defaultPrevented).toBe(true);
+    expect(document.activeElement).toBe(install);
+    // ⇧⇥ on the first goes to the last.
+    expect(press(install, { key: 'Tab', shiftKey: true }).defaultPrevented).toBe(true);
+    expect(document.activeElement).toBe(later);
+    // Between them the browser moves focus, as it does.
+    act(() => notes.focus());
+    expect(press(notes, { key: 'Tab' }).defaultPrevented).toBe(false);
+    expect(press(notes, { key: 'Tab', shiftKey: true }).defaultPrevented).toBe(false);
+    expect(press(later, { key: 'Tab', shiftKey: true }).defaultPrevented).toBe(false);
+    expect(press(install, { key: 'Tab' }).defaultPrevented).toBe(false);
+  });
+
+  it('wraps a toast with one button on that button', () => {
+    const page = draw(<UpdateToast state={ready} />);
+    const restartNow = pressable(page, 'Restart now');
+    act(() => restartNow.focus());
+    expect(press(restartNow, { key: 'Tab' }).defaultPrevented).toBe(true);
+    expect(document.activeElement).toBe(restartNow);
   });
 
   it('goes to the toast on "Go to the update", which puts focus on its first button and no more', () => {
@@ -628,7 +790,7 @@ describe('which commands apply', () => {
   ] as const;
   /** The commands that apply to each state, the others being greyed in the app menu. */
   const APPLY: readonly [string, UpdateState, readonly (typeof ids)[number][]][] = [
-    ['nothing on offer', { status: 'idle' }, ['check', 'move']],
+    ['nothing on offer', { status: 'idle' }, ['check']],
     [
       'an offer Lo installs itself',
       offer('install'),
@@ -649,6 +811,52 @@ describe('which commands apply', () => {
     act(() => showState(state));
     const enabled = ids.filter((id) => registry().enabled(`updates.${id}`, NO_TARGET) === true);
     expect(enabled).toEqual(ids.filter((id) => applying.includes(id)));
+  });
+
+  it('has Move to Applications for nothing on offer only where Lo can’t update where it is', () => {
+    act(() => showState({ status: 'idle' }));
+    // Until main has said, Lo can't tell.
+    expect(moves()).toBe('Lo can’t tell yet whether it needs to move.');
+    act(() => showHow('move'));
+    expect(moves()).toBe(true);
+    // Lo in Applications, however it's updated, and Lo that can't be moved, have nothing to move.
+    for (const how of ['install', 'brew'] as const) {
+      act(() => showHow(how));
+      expect(moves()).toBe('Lo is in Applications already.');
+    }
+    act(() => showHow('page'));
+    expect(moves()).toBe('Lo can’t move itself from here.');
+    // An offer says it itself, whatever main said before it came.
+    act(() => showHow('move'));
+    act(() => showState(offer('brew')));
+    expect(moves()).toBe('Lo is in Applications already.');
+    act(() => showState(downloading));
+    expect(moves()).toBe('Lo is in Applications already.');
+  });
+
+  it('asks main how Lo takes an update as it starts, and again as an offer goes or a check ends', async () => {
+    answers['updates.how'] = () => 'move';
+    feature.start?.();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(updatesStore.getState().how).toBe('move');
+    expect(registry().enabled('updates.move', NO_TARGET)).toBe(true);
+    // Moved in Finder while Lo ran, and the offer was hidden: it's asked again.
+    answers['updates.how'] = () => 'install';
+    act(() => showState(offer('move')));
+    await act(async () => {
+      hear({ status: 'idle' });
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(updatesStore.getState().how).toBe('install');
+    expect(registry().enabled('updates.move', NO_TARGET)).toBe('Lo is in Applications already.');
+    answers['updates.how'] = () => 'page';
+    await act(async () => {
+      registry().run('updates.check', NO_TARGET);
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(updatesStore.getState().how).toBe('page');
   });
 
   it('say why one doesn’t, in words that name the update', () => {

@@ -36,6 +36,13 @@ function menu(label: string, submenu: MenuItemConstructorOptions[]): MenuItemCon
   return submenu.length > 0 ? [{ label, submenu }] : [];
 }
 
+/** A submenu of the menu it's in, or none when it has no items. It's greyed when none can run. */
+function nested(label: string, items: MenuItemConstructorOptions[]): MenuItemConstructorOptions[] {
+  return items.length > 0
+    ? [{ label, enabled: items.some((item) => item.enabled !== false), submenu: items }]
+    : [];
+}
+
 /** The groups, separated, leaving out the empty ones. */
 function grouped(...groups: MenuItemConstructorOptions[][]): MenuItemConstructorOptions[] {
   return groups
@@ -45,7 +52,8 @@ function grouped(...groups: MenuItemConstructorOptions[][]): MenuItemConstructor
 
 /**
  * The macOS app menu: the app's menu, File, Edit, View, Go, Review and Window, with Lo's commands
- * in the menus they declare, in their order: `App` is the app's own. Nothing reloads the page or closes the window by
+ * in the menus they declare, in their order: `App` is the app's own, and `Update` a submenu of it,
+ * after the others. Nothing reloads the page or closes the window by
  * key, and the developer tools appear only when `devTools` says.
  */
 export function macMenu(
@@ -62,7 +70,7 @@ export function macMenu(
       label: options.name,
       submenu: grouped(
         [{ role: 'about' }],
-        lo('App'),
+        [...lo('App'), ...nested('Update', lo('Update'))],
         [{ role: 'services' }],
         [{ role: 'hide' }, { role: 'hideOthers' }, { role: 'unhide' }],
         [{ role: 'quit' }],

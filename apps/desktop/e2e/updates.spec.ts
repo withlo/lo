@@ -108,6 +108,27 @@ function file(): unknown {
   }
 }
 
+/**
+ * Runs a command from the command palette with ⏎ held down for `held` ms after the command has run,
+ * so the key repeats as it does under a finger, and then let go of.
+ */
+async function askHolding(page: Page, command: string, held: number): Promise<void> {
+  await page.locator('main[data-lo-middle]').focus();
+  await page.keyboard.press(`${cmd}+Shift+KeyP`);
+  const palette = page.getByRole('dialog', { name: 'Command palette' });
+  await expect(palette).toBeVisible();
+  await page.keyboard.type(command);
+  // Playwright marks a key pressed again while it's down as a repeat.
+  await page.keyboard.down('Enter');
+  await expect(palette).toBeHidden();
+  const end = Date.now() + held;
+  while (Date.now() < end) {
+    await page.keyboard.down('Enter');
+    await page.waitForTimeout(50);
+  }
+  await page.keyboard.up('Enter');
+}
+
 /** Runs a command from the command palette, by its name. */
 async function ask(page: Page, command: string): Promise<void> {
   await page.locator('main[data-lo-middle]').focus();
@@ -119,7 +140,7 @@ async function ask(page: Page, command: string): Promise<void> {
   await expect(palette).toBeHidden();
 }
 
-test('offers a newer Lo in a toast that waits and never takes focus, over nothing; the keyboard reaches its buttons; Later hides it until a check asked for brings it back', async ({
+test('offers a newer Lo in a toast that floats and waits and never takes focus; the keyboard reaches its buttons; Later hides it until a check asked for brings it back', async ({
   app,
   page,
   feed,
@@ -137,20 +158,31 @@ test('offers a newer Lo in a toast that waits and never takes focus, over nothin
     await expect(toast.locator(':focus')).toHaveCount(0);
   });
 
-  await test.step('the middle of the window ends above it, so it sits over nothing', async () => {
-    await expect
-      .poll(async () => {
-        const card = await toast.locator('.toast').boundingBox();
-        const above = await middle.boundingBox();
-        return card !== null && above !== null && above.y + above.height <= card.y;
-      })
-      .toBe(true);
+  await test.step('it floats above the status bar, and the middle of the window keeps its whole height', async () => {
+    // As a note does, where the page doesn't shift for it: the middle goes to the foot of the window.
+    const height = await page.evaluate(() => window.innerHeight);
+    const room = await page.evaluate(
+      () =>
+        Number.parseFloat(
+          getComputedStyle(document.documentElement).getPropertyValue('--lo-statusbar-h'),
+        ) || 0,
+    );
+    const card = await toast.locator('.toast').boundingBox();
+    const whole = await middle.boundingBox();
+    if (!card || !whole) throw new Error('The toast or the middle has no box.');
+    expect(whole.y + whole.height).toBeGreaterThanOrEqual(height - 1);
+    expect(height - (card.y + card.height)).toBeGreaterThanOrEqual(room + 12 - 1);
   });
 
   await test.step('“Go to the update” focuses its first button, Tab and ⇧Tab move between them, and Esc leaves', async () => {
     await ask(page, 'Go to the update');
     await expect(download).toBeFocused();
     await page.keyboard.press('Tab');
+    await expect(later).toBeFocused();
+    // From the last button it goes round to the first, and back, as in a toolbar, and stays in.
+    await page.keyboard.press('Tab');
+    await expect(download).toBeFocused();
+    await page.keyboard.press('Shift+Tab');
     await expect(later).toBeFocused();
     await page.keyboard.press('Shift+Tab');
     await expect(download).toBeFocused();
@@ -160,9 +192,13 @@ test('offers a newer Lo in a toast that waits and never takes focus, over nothin
     await expect(middle.locator(':focus')).toHaveCount(1);
   });
 
-  await test.step('⏎ on Download opens the release’s page, and the toast stays until Later', async () => {
-    await ask(page, 'Go to the update');
+  await test.step('⏎ held through “Go to the update” presses nothing, and a press of its own on Download opens the release’s page', async () => {
+    // The first ⏎ chooses the command, which puts focus on Download, and the rest of it repeats for
+    // longer than the moment after focus comes, in which a press is ignored anyway.
+    await askHolding(page, 'Go to the update', 1_500);
     await expect(download).toBeFocused();
+    expect(browsed()).toEqual([]);
+    await expect(toast).toBeVisible();
     await page.keyboard.press('Enter');
     await expect.poll(browsed).toEqual(['https://github.com/withlo/lo/releases/tag/v0.9.0']);
     await expect(toast).toBeVisible();
@@ -198,12 +234,25 @@ test('offers a newer Lo in a toast that waits and never takes focus, over nothin
   });
 });
 
-/** The enabled items of the menu named after Lo, by label. */
-const enabled = (app: ElectronApplication) =>
+/**
+ * The enabled items of the menu named after Lo, by label, with those of its submenus: `top` names
+ * the items of the menu itself, and the rest are `[label, enabled]` wherever they are.
+ */
+const menuOfLo = (app: ElectronApplication) =>
   app.evaluate(({ Menu }) => {
-    const menu = Menu.getApplicationMenu()?.items[0]?.submenu;
-    return Object.fromEntries((menu?.items ?? []).map((item) => [item.label, item.enabled]));
+    const labels: Record<string, boolean> = {};
+    const walk = (items: Electron.MenuItem[]): void => {
+      for (const item of items) {
+        if (item.label !== '') labels[item.label] = item.enabled;
+        if (item.submenu) walk(item.submenu.items);
+      }
+    };
+    const top = Menu.getApplicationMenu()?.items[0]?.submenu?.items ?? [];
+    walk(top);
+    return { top: top.map((item) => item.label).filter(Boolean), labels };
   });
+
+const enabled = async (app: ElectronApplication) => (await menuOfLo(app)).labels;
 
 test.describe('the app menu', () => {
   test.skip(!mac, 'Linux has no app menu.');
@@ -218,14 +267,34 @@ test.describe('the app menu', () => {
       .poll(async () => (await enabled(app))['Check for updates'], { timeout: 20_000 })
       .toBe(true);
     const idle = await enabled(app);
+    // Of the update commands the menu lists three, and the others are in its Update submenu.
+    const { top } = await menuOfLo(app);
+    expect(top).toEqual(
+      expect.arrayContaining(['Check for updates', 'Install the update', 'Restart to update']),
+    );
+    expect(top).toContain('Update');
     for (const label of [
-      'Install the update',
-      'Restart to update',
+      'Move Lo to Applications',
       'Hide the update until Lo restarts',
       'Open what’s new in the update',
       'Download the update from its page',
       'Copy the Homebrew update command',
       'Go to the update',
+    ]) {
+      expect(top, label).not.toContain(label);
+    }
+    for (const label of [
+      'Install the update',
+      'Restart to update',
+      // A source build can't be moved, which Lo can tell with nothing on offer.
+      'Move Lo to Applications',
+      'Hide the update until Lo restarts',
+      'Open what’s new in the update',
+      'Download the update from its page',
+      'Copy the Homebrew update command',
+      'Go to the update',
+      // So nothing in the submenu applies, and it's greyed.
+      'Update',
     ]) {
       expect(idle[label], label).toBe(false);
     }
@@ -240,6 +309,8 @@ test.describe('the app menu', () => {
       'Check for updates': true,
       'Install the update': false,
       'Restart to update': false,
+      'Move Lo to Applications': false,
+      Update: true,
       'Hide the update until Lo restarts': true,
       'Open what’s new in the update': true,
       'Copy the Homebrew update command': false,
@@ -257,6 +328,7 @@ test.describe('the app menu', () => {
       .poll(async () => (await enabled(app))['Hide the update until Lo restarts'])
       .toBe(false);
     expect((await enabled(app))['Download the update from its page']).toBe(false);
+    expect((await enabled(app)).Update).toBe(false);
     void feed;
   });
 });

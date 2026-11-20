@@ -15,8 +15,11 @@ import { showState, updatesStore } from './store.ts';
 import { menuKey } from './applies.ts';
 
 let finish: (answer: unknown) => void = () => {};
+/** What main says of how Lo takes an update, with none on offer. */
+let idleHow = 'page';
 const bridge = installBridge({
   'updates.read': () => ({ status: 'idle' }),
+  'updates.how': () => idleHow,
   'updates.check': () =>
     new Promise((resolve) => {
       finish = resolve;
@@ -37,7 +40,10 @@ beforeAll(() => {
 });
 
 beforeEach(() => {
-  act(() => showState({ status: 'idle' }));
+  act(() => {
+    showState({ status: 'idle' });
+    updatesStore.setState({ how: 'page' });
+  });
   told = 0;
 });
 
@@ -62,10 +68,23 @@ const offer = (how: 'install' | 'page', version = '0.2.0'): UpdateState => ({
 
 describe('what the menu depends on', () => {
   it('is the status, how an offer is taken and whether a check is going, and nothing of progress', () => {
-    expect(menuKey(down(1), false)).toBe(menuKey(down(99), false));
-    expect(menuKey(offer('install'), false)).not.toBe(menuKey(offer('page'), false));
-    expect(menuKey(offer('install'), false)).toBe(menuKey(offer('install', '0.3.0'), false));
-    expect(menuKey({ status: 'idle' }, true)).not.toBe(menuKey({ status: 'idle' }, false));
+    expect(menuKey(down(1), false, undefined)).toBe(menuKey(down(99), false, undefined));
+    expect(menuKey(offer('install'), false, undefined)).not.toBe(
+      menuKey(offer('page'), false, undefined),
+    );
+    expect(menuKey(offer('install'), false, undefined)).toBe(
+      menuKey(offer('install', '0.3.0'), false, undefined),
+    );
+    expect(menuKey({ status: 'idle' }, true, 'page')).not.toBe(
+      menuKey({ status: 'idle' }, false, 'page'),
+    );
+    // With nothing on offer it's how main says Lo takes one, which a move to Applications needs.
+    expect(menuKey({ status: 'idle' }, false, 'move')).not.toBe(
+      menuKey({ status: 'idle' }, false, 'page'),
+    );
+    // And what main said before an offer, or while one downloads, counts for nothing.
+    expect(menuKey(offer('page'), false, 'move')).toBe(menuKey(offer('page'), false, 'brew'));
+    expect(menuKey(down(1), false, 'move')).toBe(menuKey(down(1), false, 'brew'));
   });
 });
 
@@ -95,6 +114,22 @@ describe('the app menu', () => {
     expect(told).toBe(1);
     act(() => bridge.push('updates.state', offer('install', '0.3.0')));
     expect(told).toBe(2);
+  });
+
+  it('is told when how Lo takes an update changes with nothing on offer, as Move to Applications needs', () => {
+    act(() => updatesStore.setState({ how: 'page' }));
+    told = 0;
+    act(() => updatesStore.setState({ how: 'move' }));
+    expect(told).toBe(1);
+    act(() => updatesStore.setState({ how: 'move' }));
+    expect(told).toBe(1);
+    act(() => updatesStore.setState({ how: 'install' }));
+    expect(told).toBe(2);
+    // With an offer on screen it's the offer's say, so what main said before is no news.
+    act(() => bridge.push('updates.state', offer('page')));
+    told = 0;
+    act(() => updatesStore.setState({ how: 'brew' }));
+    expect(told).toBe(0);
   });
 
   it('is not told as a download’s bytes come', () => {

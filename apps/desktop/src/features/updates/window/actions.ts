@@ -14,7 +14,7 @@ import {
   type CheckAnswer,
   type UpdateState,
 } from '../contract.ts';
-import { setChecking, showState, updatesStore } from './store.ts';
+import { setChecking, showHow, showState, updatesStore } from './store.ts';
 
 let connected: Client<typeof contract> | undefined;
 
@@ -62,6 +62,17 @@ function tell(answer: CheckAnswer): void {
 }
 
 /**
+ * Asks main how this copy of Lo takes a newer version, which it decides again each time. With
+ * nothing on offer that's what says whether Lo can be moved to Applications.
+ */
+export function readHow(): Promise<void> {
+  return main()
+    .how()
+    .then(showHow)
+    .catch((error: unknown) => console.error("Lo couldn't read how it updates:", error));
+}
+
+/**
  * Checks GitHub Releases now, whether or not Lo checks by itself, and says what it found. A check
  * already going is the one that answers: asking again meanwhile does nothing more.
  */
@@ -74,6 +85,8 @@ export async function check(): Promise<void> {
     notify('Lo couldn’t check for updates', whyNot(error));
   } finally {
     setChecking(false);
+    // Lo may have been moved since it last said, and the answer may have taken an offer back.
+    void readHow();
   }
 }
 
@@ -84,6 +97,8 @@ export async function check(): Promise<void> {
 export function hear(state: UpdateState): void {
   const before = updatesStore.getState().state;
   showState(state);
+  // With nothing on offer, how Lo takes an update isn't in the state.
+  if (state.status === 'idle' && before.status !== 'idle') void readHow();
   if (before.status === 'downloading' && state.status === 'available' && state.failed) {
     notify(`Lo ${state.version} didn’t download`, state.failed);
   }

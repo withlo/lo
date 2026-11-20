@@ -33,6 +33,7 @@ let finish: (answer: unknown) => void = () => {};
 let info: Record<string, unknown> = {};
 const bridge = installBridge({
   'app.info': () => info,
+  'updates.how': () => 'page',
   'updates.read': () => ({ status: 'idle' }),
   'updates.check': () =>
     new Promise((resolve) => {

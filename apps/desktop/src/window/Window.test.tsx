@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-// Lo's window with a toast that waits: the middle ends above it, so it sits over nothing, and the
-// middle has its whole height again once the toast goes.
+// Lo's window with a toast that waits: the toast floats above the status bar as a note does, and
+// the middle keeps its whole height, so the page doesn't shift as a toast comes, changes or goes.
 
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
@@ -16,7 +16,7 @@ beforeAll(() => {
   createRegistry([], 'mac');
 });
 
-/** What a toast that waits measures, for the region that measures it. */
+/** What a toast that waits would measure, for anything in the window that measured it. */
 let measured = 0;
 const observers = new Set<() => void>();
 
@@ -74,26 +74,30 @@ function draw(hold: boolean): { middle: HTMLElement; region: HTMLElement; change
 }
 
 describe('the window', () => {
-  it('leaves the middle all its height while no toast waits', () => {
-    const { middle, region } = draw(false);
-    expect(middle.style.marginBottom).toBe('');
-    expect(region.style.bottom).toBe('');
-  });
-
-  it('ends the middle above a toast that waits, with a gap, and puts the toast at the foot', () => {
+  it('floats a toast that waits above the status bar, and gives the middle its whole height', () => {
     measured = 96;
     const { middle, region, change } = draw(true);
     change();
-    expect(middle.style.marginBottom).toBe('calc(96px + var(--lo-sp-24))');
-    expect(region.style.bottom).toBe('var(--lo-sp-12)');
-    // A taller toast, as the offer's becomes Homebrew's command: the room follows.
+    // Nothing is set inline: the middle has no margin to make room, and the region sits where a
+    // note does, by the stylesheet, above the status bar the middle's tab may have in it.
+    expect(middle.getAttribute('style')).toBeNull();
+    expect(region.getAttribute('style')).toBeNull();
+    expect(region.textContent).toContain('Waiting');
+    // A taller toast, as the offer's becomes Homebrew's command, moves nothing.
     measured = 150;
     change();
-    expect(middle.style.marginBottom).toBe('calc(150px + var(--lo-sp-24))');
-    // Gone: the middle has its height again, and a note floats above the status bar as before.
+    expect(middle.getAttribute('style')).toBeNull();
+    expect(region.getAttribute('style')).toBeNull();
+    // Gone, and the page hasn't moved then either.
     measured = 0;
     change();
-    expect(middle.style.marginBottom).toBe('');
-    expect(region.style.bottom).toBe('');
+    expect(middle.getAttribute('style')).toBeNull();
+    expect(region.getAttribute('style')).toBeNull();
+  });
+
+  it('is the same with no toast waiting', () => {
+    const { middle, region } = draw(false);
+    expect(middle.getAttribute('style')).toBeNull();
+    expect(region.getAttribute('style')).toBeNull();
   });
 });

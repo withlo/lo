@@ -2,8 +2,10 @@
 // moving Lo to Applications so it can update itself, and hiding an update until Lo starts again;
 // and what the other buttons of the toast that offers it do: open the release's page, copy the
 // Homebrew command, and go to the toast. Each is done once in a while, so none has a key: the app
-// menu and the command palette reach them, each only while it applies. The first five ask main,
-// which refuses one that doesn't apply now and says why.
+// menu and the command palette reach them, each only while it applies. The app menu lists what's
+// asked of an update most, to check for one, install it and restart into it, and the rest are in
+// its Update submenu. The first five ask main, which refuses one that doesn't apply now and says
+// why.
 
 import { defineCommands } from '@lo/ui/commands';
 
@@ -37,35 +39,35 @@ export default defineCommands(
       group: 'Tabs and window',
       keys: [],
       when: { system: 'mac' },
-      bar: { menu: 'App', order: 4 },
+      bar: { menu: 'Update', order: 1 },
     },
     /** Hides the update on offer until Lo starts again. */
     later: {
       label: 'Hide the update until Lo restarts',
       group: 'Tabs and window',
       keys: [],
-      bar: { menu: 'App', order: 5 },
+      bar: { menu: 'Update', order: 2 },
     },
     /** Opens the page of the release on offer, where its notes are. */
     whatsNew: {
       label: 'Open what’s new in the update',
       group: 'Tabs and window',
       keys: [],
-      bar: { menu: 'App', order: 6 },
+      bar: { menu: 'Update', order: 3 },
     },
     /** Opens the page of the release on offer, to download it from, where Lo can't install it. */
     download: {
       label: 'Download the update from its page',
       group: 'Tabs and window',
       keys: [],
-      bar: { menu: 'App', order: 7 },
+      bar: { menu: 'Update', order: 4 },
     },
     /** Copies the command that updates Lo through Homebrew. */
     copy: {
       label: 'Copy the Homebrew update command',
       group: 'Tabs and window',
       keys: [],
-      bar: { menu: 'App', order: 8 },
+      bar: { menu: 'Update', order: 5 },
     },
     /**
      * Puts focus on the toast that offers the update, whose buttons `Tab` then moves between, and
@@ -75,7 +77,7 @@ export default defineCommands(
       label: 'Go to the update',
       group: 'Tabs and window',
       keys: [],
-      bar: { menu: 'App', order: 9 },
+      bar: { menu: 'Update', order: 6 },
     },
   },
   { scopes: ['toasts'] },

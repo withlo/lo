@@ -3,7 +3,7 @@
 // refuses a command that doesn't apply as well, with these words or nearly: this is what the window
 // can tell without asking.
 
-import { BREW_UPGRADE, type UpdateState } from '../contract.ts';
+import { BREW_UPGRADE, type How, type UpdateState } from '../contract.ts';
 
 /** `true`, or why not. */
 export type Applies = true | string;
@@ -77,19 +77,26 @@ export function canRestart(state: UpdateState): Applies {
   }
 }
 
+/** Why Lo can't be moved to Applications, when how it takes an update isn't to be moved. */
+function stays(how: How): string {
+  return how === 'page' ? 'Lo can’t move itself from here.' : 'Lo is in Applications already.';
+}
+
 /**
- * Move Lo to Applications: an offer that says Lo must be moved first. With no offer, `how` isn't
- * known, so main says; with a download going or ready, Lo is in Applications already.
+ * Move Lo to Applications: where Lo must be moved to update itself, which an offer says, and main
+ * says with none on offer, as `how`, until when it can't be told. With a download going or ready,
+ * Lo is in Applications already.
  */
-export function canMove(state: UpdateState): Applies {
+export function canMove(state: UpdateState, how: How | undefined): Applies {
   switch (state.status) {
     case 'idle':
-      return true;
+      if (how === undefined) return 'Lo can’t tell yet whether it needs to move.';
+      return how === 'move' ? true : stays(how);
     case 'available':
-      return state.how === 'move' ? true : 'Lo doesn’t need to move to update.';
+      return state.how === 'move' ? true : stays(state.how);
     case 'downloading':
     case 'ready':
-      return 'Lo doesn’t need to move to update.';
+      return stays('install');
     default:
       throw new Error(`An update state Lo doesn't know: ${JSON.stringify(state satisfies never)}`);
   }
@@ -126,8 +133,10 @@ export function canGoTo(state: UpdateState): Applies {
 
 /**
  * What the app menu depends on: the state's status and how it's taken, which change the answers
- * above, but not a download's progress, which would send the menu again at every step.
+ * above, but not a download's progress, which would send the menu again at every step. With
+ * nothing on offer, how Lo takes an update is `how`, as main last said.
  */
-export function menuKey(state: UpdateState, checking: boolean): string {
-  return `${state.status}${state.status === 'available' ? `-${state.how}` : ''}${checking ? '-checking' : ''}`;
+export function menuKey(state: UpdateState, checking: boolean, how: How | undefined): string {
+  const way = state.status === 'available' ? state.how : state.status === 'idle' ? how : undefined;
+  return `${state.status}${way === undefined ? '' : `-${way}`}${checking ? '-checking' : ''}`;
 }

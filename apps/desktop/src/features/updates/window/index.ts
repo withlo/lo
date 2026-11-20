@@ -25,6 +25,7 @@ import {
   main,
   move,
   openUpdatePage,
+  readHow,
   restart,
 } from './actions.ts';
 import {
@@ -52,7 +53,7 @@ export default {
     check: { run: check, enabled: () => canCheck(now().checking) },
     install: { run: install, enabled: () => canInstall(now().state) },
     restart: { run: restart, enabled: () => canRestart(now().state) },
-    move: { run: move, enabled: () => canMove(now().state) },
+    move: { run: move, enabled: () => canMove(now().state, now().how) },
     later: { run: later, enabled: () => canHide(now().state) },
     whatsNew: { run: openUpdatePage, enabled: () => canOpenNotes(now().state) },
     download: { run: openUpdatePage, enabled: () => canDownload(now().state) },
@@ -83,6 +84,7 @@ export default {
         if (!pushed) hear(state);
       })
       .catch((error: unknown) => console.error("Lo couldn't read where updates stand:", error));
+    void readHow();
     client(app)
       .info()
       .then(({ version, packaged, commit }) =>
@@ -91,7 +93,10 @@ export default {
       .catch((error: unknown) => console.error("Lo couldn't read its version:", error));
     // The app menu greys what doesn't apply, so it's made again when what applies changes.
     updatesStore.subscribe((next, before) => {
-      if (menuKey(next.state, next.checking) !== menuKey(before.state, before.checking)) {
+      if (
+        menuKey(next.state, next.checking, next.how) !==
+        menuKey(before.state, before.checking, before.how)
+      ) {
         menuStale();
       }
     });
