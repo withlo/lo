@@ -38,9 +38,9 @@ export interface Submissions {
    * summary kept for the submit dialog. It goes in its turn among the writes to the pull request,
    * and only while `head` is both the revision on screen and GitHub's head. Resolves once Lo knows
    * how it went: when GitHub's answer is lost, once a read of your reviews says, or that Lo can't
-   * tell.
+   * tell. `lost`, if given, hears at once when it's lost, before that read.
    */
-  approve(id: string, head: string): Promise<Approved>;
+  approve(id: string, head: string, lost?: () => void): Promise<Approved>;
 }
 
 export const submissions = defineService<Submissions>('review.submissions');

@@ -2,9 +2,9 @@
 // onto the root first when it isn't there, then merges, through the app's jobs; once GitHub says it
 // merged, each layer on it moves onto the root, in order. After a queue entry Lo reads the pull
 // request until it merges, for 6 hours at most, or leaves the queue; after a lost answer, for 15
-// minutes. Each move reads the base branch first and refuses one someone else moved since, and the
-// first that doesn't go stops the rest: nothing is put back, and a merge isn't undone. A run lasts
-// only while Lo is open. Nothing here calls Electron or GitHub.
+// minutes from the last one. Each move reads the base branch first and refuses one someone else
+// moved since, and the first that doesn't go stops the rest: nothing is put back, and a merge isn't
+// undone. A run lasts only while Lo is open. Nothing here calls Electron or GitHub.
 
 import {
   describeMergeRefusal,
@@ -79,7 +79,8 @@ export class ChainRun {
    */
   #moving = false;
   /** While a wait reads the pull request, what it waits for, and how to make it wait for more. */
-  #waiting: { readonly why: 'queue' | 'lost'; readonly to: (why: 'queue') => void } | undefined;
+  #waiting:
+    { readonly why: 'queue' | 'lost'; readonly to: (why: 'queue' | 'lost') => void } | undefined;
 
   constructor(options: ChainOptions) {
     this.#options = options;
@@ -184,12 +185,15 @@ export class ChainRun {
 
   /**
    * Reads the pull request every so often until it merges: while it's in the merge queue, for 6
-   * hours at most, and after a lost answer, for 15 minutes, or 6 hours once it shows in the queue.
+   * hours at most, and after a lost answer, for 15 minutes from the last one, or 6 hours once it
+   * shows in the queue.
    */
   #waitFor(first: 'queue' | 'lost'): void {
-    // One wait at a time: one already reading waits for the queue from now, when it's asked to.
+    // One wait at a time. One already reading after a lost answer waits from now: for the queue,
+    // when it's asked to, and for 15 minutes again after another lost answer, as GitHub, asked
+    // again, may still be merging it.
     if (this.#waiting) {
-      if (first === 'queue' && this.#waiting.why === 'lost') this.#waiting.to('queue');
+      if (this.#waiting.why === 'lost') this.#waiting.to(first);
       return;
     }
     const { number } = this.#options;

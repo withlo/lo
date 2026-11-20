@@ -1460,6 +1460,19 @@ describe('a stack’s merge', () => {
     expect(run.sent).toEqual([]);
   });
 
+  it('names the merge write under way on a layer it names, ahead of a conversion on it', async () => {
+    const run = stacked();
+    const plan = planOf(await run.merging.plan(ID, SQUASH));
+    const other = run.turns.take(PULL.repo, [137]);
+    run.set.converting([137]);
+    expect(await run.merging.confirm(plan.key)).toEqual({
+      kind: 'refused',
+      refusal: expect.objectContaining({ kind: 'busy', text: 'Lo is already merging #137.' }),
+    });
+    if ('give' in other) other.give();
+    expect(run.sent).toEqual([]);
+  });
+
   it('refuses while a conversion to a GitHub stack runs on a layer it names', async () => {
     const run = stacked();
     const plan = planOf(await run.merging.plan(ID, SQUASH));
@@ -1496,6 +1509,25 @@ describe('a stack’s merge', () => {
     await vi.waitFor(() => expect(run.turns.busy(PULL.repo, [137, 138])).toEqual([]));
     run.merging.askAgain(plan.key);
     expect(run.turns.busy(PULL.repo, [137, 138])).toEqual([137, 138]);
+  });
+
+  it('asked again while another write holds a layer, holds its own turn, and the layer’s once it’s free', async () => {
+    // GitHub answers with a status Lo doesn't know, then, asked again, that it's still merging.
+    const run = stacked({
+      results: [answer({ unknown: 'held' }, { uuid: UUID }), answer('pending', { uuid: UUID })],
+    });
+    const plan = planOf(await run.merging.plan(ID, SQUASH));
+    await run.merging.confirm(plan.key);
+    await run.ended('unknown');
+    await vi.waitFor(() => expect(run.turns.busy(PULL.repo, [137, 138])).toEqual([]));
+    const other = run.turns.take(PULL.repo, [137]);
+    if ('busy' in other) throw new Error('taken');
+    run.merging.askAgain(plan.key);
+    // Auto-merge, a merge of #138 alone and a conversion on its path wait for it.
+    expect(run.turns.busy(PULL.repo, [138])).toEqual([138]);
+    other.give();
+    await vi.waitFor(() => expect(run.turns.busy(PULL.repo, [137, 138])).toEqual([137, 138]));
+    expect(run.sent).toHaveLength(1);
   });
 
   it('sends no typed squash text: each layer keeps its own commit’s words', async () => {

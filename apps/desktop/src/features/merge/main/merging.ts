@@ -19,7 +19,8 @@
 // holding their turns meanwhile.
 // The method is remembered for the repository once GitHub takes a merge with it. A merge whose end
 // Lo can't tell is settled by reading the pull request, never by sending it again, and holds the
-// pull request's turn until a read made after it ended does. Nothing here calls Electron.
+// pull request's turn until a read made after it ended does. Asked again how it went, it holds the
+// turns it held again, each as soon as no other write holds it. Nothing here calls Electron.
 //
 // `a` plans auto-merge, and `⌥⏎` a merge past the base branch's rules, the same way, and each is
 // checked the same way as it's confirmed, a merge past the rules only with the pull request's number
@@ -225,6 +226,11 @@ interface Sent {
   readonly pull: PullRef;
   readonly poller: MergingPoller;
   turn: MergeTurn | undefined;
+  /**
+   * While GitHub is asked again how a merge went, the pull requests it names whose turns another
+   * write held then: each is taken once it's given back, as the merge changes.
+   */
+  lacking: readonly number[];
   /** Whether the method was remembered for the repository. */
   remembered: boolean;
   /**
@@ -595,6 +601,24 @@ function changed(was: MergePlan, now: MergePlan): string | undefined {
   return togetherChanged(was.together, now.together);
 }
 
+/**
+ * Whether a read that landed while a press planned `planned` from `facts`, `latest`, calls for
+ * another round: it's at another head than `head`, or plans what `same` doesn't take for the same
+ * as the confirmation names it, or nothing. One that changes none of that, or none since, doesn't.
+ */
+export function anotherRound<P>(
+  planned: Pick<PressPlan<P>, 'plan' | 'again'>,
+  facts: MergeFacts,
+  latest: MergeFacts,
+  head: string,
+  same: (was: P, now: P) => boolean,
+): boolean {
+  if (latest === facts) return false;
+  if (latest.pullRequest.head !== head) return true;
+  const newest = planned.again(latest);
+  return newest === undefined || !same(planned.plan, newest);
+}
+
 export class Merging {
   readonly #options: MergingOptions;
   readonly #now: () => number;
@@ -913,16 +937,37 @@ export class Merging {
     }
     const job = this.#options.jobs.job(sent.pull);
     if (!job || endedWith(job)?.kind !== 'unknown') return;
+    // Following it again holds the turns it held as it was sent, as the merge may still be running:
+    // a stack's merge holds every layer's.
+    if (!sent.turn) sent.lacking = sentNames(sent.plan);
     if (this.#options.jobs.followAgain(sent.pull)) {
-      // Following it again holds the turns it held as it was sent, as the merge may still be
-      // running: a stack's merge holds every layer's.
-      if (!sent.turn) {
-        const turn = this.#options.turns.take(sent.pull.repo, sentNames(sent.plan));
-        if (!('busy' in turn)) sent.turn = turn;
-      }
+      this.#holdLacking(sent);
       return;
     }
     this.#settle(sent);
+  }
+
+  /**
+   * Takes the turn of each pull request `sent` lacks one of, each on its own: one another write
+   * holds keeps none of the others from it, nor the pull request's own, and stays lacking.
+   */
+  #holdLacking(sent: Sent): void {
+    const held: MergeTurn[] = sent.turn ? [sent.turn] : [];
+    const lacking: number[] = [];
+    for (const pr of sent.lacking) {
+      const turn = this.#options.turns.take(sent.pull.repo, [pr]);
+      if ('busy' in turn) lacking.push(pr);
+      else held.push(turn);
+    }
+    sent.lacking = lacking;
+    sent.turn =
+      held.length === 0
+        ? undefined
+        : {
+            give: () => {
+              for (const turn of held) turn.give();
+            },
+          };
   }
 
   /**
@@ -1213,14 +1258,7 @@ export class Merging {
       if (planned.kind === 'refused') return planned;
       // What a read that landed meanwhile plans: the same, or another round on it.
       const latest = poller.cachedRead(pull, MERGE_FACTS);
-      const newest =
-        latest === undefined || latest.value === facts ? planned.plan : planned.again(latest.value);
-      if (
-        latest === undefined ||
-        (latest.value.pullRequest.head === head &&
-          newest !== undefined &&
-          press.same(planned.plan, newest))
-      ) {
+      if (!latest || !anotherRound(planned, facts, latest.value, head, press.same)) {
         return { kind: 'plan', plan: planned.plan, facts };
       }
       if (round === LOOKS) return { kind: 'changing' };
@@ -1528,6 +1566,7 @@ export class Merging {
       pull,
       poller,
       turn,
+      lacking: [],
       remembered: false,
       own: undefined,
       shows: undefined,
@@ -1622,6 +1661,7 @@ export class Merging {
       pull,
       poller,
       turn,
+      lacking: [],
       remembered: false,
       own: { kind: 'sending' },
       shows: undefined,
@@ -1855,6 +1895,8 @@ export class Merging {
           run.failed();
       }
     }
+    // Asked again while another write held a pull request it names: taken once that's given back.
+    if (!done && sent.lacking.length > 0) this.#holdLacking(sent);
     if (done) {
       sent.endedAt = this.#now();
       sent.shows = undefined;

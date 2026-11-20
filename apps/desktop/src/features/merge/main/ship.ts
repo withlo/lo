@@ -10,17 +10,20 @@
 //
 // It approves through the review feature, in its turn among the writes to the pull request,
 // comments included. An answer that's lost is settled by reading your reviews, and nothing more is
-// sent until it is. Then it reads GitHub again until that shows your approval, and calls
-// `afterApproving`, planning again from a read that lands while it asks where the pull request sits,
-// as the press does. It goes on only when that's what the confirmation asked (`asAsked`), and only
-// for a pull request alone or a GitHub stack's bottom layer: you approve only what's on screen, so
-// it merges nothing with it. Anywhere else, and wherever the merge panel wouldn't merge from, the
-// plan is to stop after approving, saying why, and leave the merge to the panel. An approval Lo
-// can't tell GitHub took is settled by reading the pull request, and said so until it is. The merge,
-// queue entry or auto-merge goes through the merge jobs, as the panel's does
-// (`Merging.sendShipped`). Auto-merge it turns on after your approval is kept for the
-// watch (`./watch.ts`), so a push before it merges doesn't merge with your approval. Nothing here
-// calls Electron.
+// sent until it is: Lo waits for that a minute at most, while the tab is open, and then stops,
+// saying it can't tell whether GitHub took the approval, and gives back the pull request's turn,
+// while the review feature goes on settling it. Then it reads GitHub again until that shows your
+// approval, and calls `afterApproving`; a read that lands while it asks where the pull request
+// sits, and changes anything the confirmation named, the base among it, is another round, as at the
+// press. It goes on only when that's what the confirmation asked (`asAsked`), into the branch it
+// named, and only for a pull request alone or a GitHub stack's bottom layer: you approve only
+// what's on screen, so it merges nothing with it. Anywhere else, and wherever the merge panel
+// wouldn't merge from, the plan is to stop after approving, saying why, and leave the merge to the
+// panel. An approval Lo can't tell GitHub took is settled by reading the pull request, and said so
+// until it is. The merge, queue entry or auto-merge goes through the merge jobs, as the panel's
+// does (`Merging.sendShipped`). Auto-merge it turns on after your approval is kept for the watch
+// (`./watch.ts`), so a push before it merges doesn't merge with your approval. Nothing here calls
+// Electron.
 
 import {
   isFullSha,
@@ -68,6 +71,7 @@ import type {
 import type { MergeTurn, MergeWrites } from '../service.ts';
 import { afterPushOf } from './auto.ts';
 import {
+  anotherRound,
   LOOKS,
   offOf,
   offText,
@@ -118,8 +122,11 @@ export interface ShippingOptions {
   readonly merging: Pick<Merging, 'weigh' | 'goesAs' | 'sendShipped'>;
   /** What would go with an approval from view `id` as its summary. */
   readonly summary: (id: string) => SummaryKept;
-  /** Approves `head` in view `id`, through the review feature. */
-  readonly approve: (id: string, head: string) => Promise<Approved>;
+  /**
+   * Approves `head` in view `id`, through the review feature; `lost` hears at once when GitHub's
+   * answer is lost, before a read of your reviews settles it.
+   */
+  readonly approve: (id: string, head: string, lost: () => void) => Promise<Approved>;
   /**
    * Keeps auto-merge about to be turned on after your approval for the watch, and returns what
    * hears GitHub's answer to turning it on.
@@ -138,7 +145,25 @@ export interface ShippingOptions {
   readonly showWait?: number;
   /** How long between those reads, in milliseconds: 2 s. */
   readonly showEvery?: number;
+  /**
+   * How long Lo waits, once GitHub's answer to the approval is lost, for a read of your reviews to
+   * settle it, in milliseconds: a minute.
+   */
+  readonly settleWait?: number;
 }
+
+/**
+ * How long Lo waits, once GitHub's answer to an approval is lost, for a read of your reviews to
+ * settle it before it stops: a minute, which a read made 10 s after the approval and another tried
+ * again 30 s on fit in.
+ */
+export const SETTLE_WAIT = 60_000;
+
+/**
+ * Why Lo stopped waiting to hear whether GitHub took an approval whose answer was lost: it waited
+ * {@link ShippingOptions.settleWait}, or its tab closed.
+ */
+type Unsettled = { readonly kind: 'unsettled'; readonly why: 'late' | 'closed' };
 
 /** A plan kept for the reader to confirm. */
 interface Kept {
@@ -413,6 +438,14 @@ function shape(step: ShipStep): string {
   return `stop ${stop.kind} ${stop.kind === 'where' ? stop.text : ''}`;
 }
 
+/**
+ * Whether two plans of the step after the approval are the same as the confirmation names it: into
+ * the same branch, and the same step.
+ */
+function sameAfter(was: After, now: After): boolean {
+  return rulesBase(was.facts) === rulesBase(now.facts) && shape(was.step) === shape(now.step);
+}
+
 /** What an approval is, to tell whether the confirmation would say another. */
 function approvalShape(approval: ShipApproval): string {
   return approval.kind === 'submitPending'
@@ -485,6 +518,8 @@ export class Shipping {
   readonly #checking = new Map<string, AbortController>();
   /** What runs now, holding its pull request's turn until it hands it on or stops. */
   readonly #runs = new Set<Run>();
+  /** The runs whose approval's answer was lost, each with what stops waiting for it to settle. */
+  readonly #settling = new Map<Run, (why: Unsettled['why']) => void>();
   #stopped = false;
 
   constructor(options: ShippingOptions) {
@@ -586,11 +621,21 @@ export class Shipping {
     this.#checking.get(key)?.abort();
   }
 
+  /**
+   * View `id` changed, or closed: approve and ship from it that waits to hear whether GitHub took
+   * an approval whose answer was lost stops once its tab is closed, merging nothing.
+   */
+  viewChanged(id: string): void {
+    if (this.#options.view(id)) return;
+    for (const [run, stop] of this.#settling) if (run.plan.id === id) stop('closed');
+  }
+
   /** Plans no more, and sends nothing more. */
   stop(): void {
     this.#stopped = true;
     this.#kept.clear();
     for (const checking of this.#checking.values()) checking.abort();
+    for (const stop of this.#settling.values()) stop('late');
     for (const run of this.#runs) {
       run.turn?.give();
       run.turn = undefined;
@@ -875,15 +920,30 @@ export class Shipping {
 
   /**
    * Approves, unless the plan skips it, waiting as long as the approval waits its turn and, when
-   * its answer is lost, for a read of your reviews to settle it: whether to go on, or that Lo
-   * can't tell yet whether GitHub took it, which a read of the pull request may settle.
+   * its answer is lost, for a read of your reviews to settle it, for
+   * {@link ShippingOptions.settleWait} while its tab is open: whether to go on, or that Lo can't
+   * tell yet whether GitHub took it, which a read of the pull request may settle. Once Lo stops
+   * waiting, it stops there, and the review feature goes on settling the approval alone.
    */
   async #approving(run: Run): Promise<'go' | 'stopped'> {
     if (!approves(run.core.approval)) return 'go';
     this.#phase(run, { kind: 'approving' });
-    const answer = await this.#options.approve(run.plan.id, run.plan.head);
+    const answer = await this.#approval(run);
     const { number } = run.plan;
+    if (this.#stopped) return 'stopped';
     switch (answer.kind) {
+      case 'unsettled':
+        run.unsure = 'GitHub’s answer was lost.';
+        this.#stopAt(
+          run,
+          own(
+            'unknown',
+            answer.why === 'closed'
+              ? `GitHub’s answer to your approval of #${number} was lost, and its tab closed before Lo could tell whether GitHub took it, so Lo merged nothing. Look at its reviews before you approve it again.`
+              : `GitHub’s answer to your approval of #${number} was lost, and Lo couldn’t tell within a minute whether GitHub took it, so Lo merged nothing. Look at its reviews before you approve it again.`,
+          ),
+        );
+        return 'stopped';
       case 'approved':
         run.approved = true;
         this.#publish(run);
@@ -910,6 +970,42 @@ export class Shipping {
         answer satisfies never;
         return 'stopped';
     }
+  }
+
+  /**
+   * How `run`'s approval went, once the review feature says; or, once its answer was lost, why Lo
+   * stopped waiting first for a read of your reviews to settle it.
+   */
+  #approval(run: Run): Promise<Approved | Unsettled> {
+    const { id, head } = run.plan;
+    return new Promise((resolve, reject) => {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const done = () => {
+        clearTimeout(timer);
+        this.#settling.delete(run);
+      };
+      const unsettled = (why: Unsettled['why']) => {
+        done();
+        resolve({ kind: 'unsettled', why });
+      };
+      const lost = () => {
+        if (this.#settling.has(run)) return;
+        this.#settling.set(run, unsettled);
+        timer = setTimeout(() => unsettled('late'), this.#options.settleWait ?? SETTLE_WAIT);
+        if (this.#stopped) unsettled('late');
+        else if (!this.#options.view(id)) unsettled('closed');
+      };
+      this.#options.approve(id, head, lost).then(
+        (answer) => {
+          done();
+          resolve(answer);
+        },
+        (error: unknown) => {
+          done();
+          reject(error instanceof Error ? error : new Error(String(error)));
+        },
+      );
+    });
   }
 
   /**
@@ -994,19 +1090,22 @@ export class Shipping {
 
   /**
    * The step after the approval, from what GitHub says now, as a merge's press weighs it: a read
-   * that lands while Lo asks where the pull request sits is planned from too, and when it gives
-   * another step, or another head, that's another round on it. Nothing once it stopped.
+   * that lands while Lo asks where the pull request sits is planned from too, and when it changes
+   * what the confirmation named, the branch it merges into or the step, or the head, that's another
+   * round on it. Nothing once it stopped.
    */
   async #weighAfter(run: Run): Promise<After | undefined> {
     for (let round = 1; ; round++) {
       const after = await this.#afterOf(run, run.facts);
       if (this.#stopped) return undefined;
       const latest = run.poller.cachedRead(run.pull, MERGE_FACTS)?.value;
-      if (latest === undefined || latest === after.facts) return after;
-      const newest = this.#afterWith(run, latest, after.goes);
+      const planned = {
+        plan: after,
+        again: (read: MergeFacts) => this.#afterWith(run, read, after.goes),
+      };
       if (
-        latest.pullRequest.head === after.facts.pullRequest.head &&
-        shape(newest.step) === shape(after.step)
+        latest === undefined ||
+        !anotherRound(planned, after.facts, latest, after.facts.pullRequest.head, sameAfter)
       ) {
         return after;
       }
@@ -1035,6 +1134,18 @@ export class Shipping {
     // from stops after approving.
     if (plan.likely.kind === 'stop' && plan.likely.stop.kind === 'where' && kindOf(now)) {
       this.#stopAt(run, own('where', plan.likely.stop.text), plan.likely.stop);
+      return;
+    }
+    // GitHub merges into the base it has when the merge goes, which has to be the one confirmed.
+    const base = rulesBase(after.facts);
+    if (kindOf(now) && base !== plan.base) {
+      this.#stopAt(
+        run,
+        own(
+          'base',
+          `#${plan.number} merges into ${base} now, not ${plan.base}, so Lo merged nothing. Merge it from the panel.`,
+        ),
+      );
       return;
     }
     if (!asAsked(core, now)) {
