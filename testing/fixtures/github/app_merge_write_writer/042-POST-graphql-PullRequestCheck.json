@@ -38,7 +38,7 @@
             "baseRefOid": "b3fe004d917123bd7ca507eda670138554797f43",
             "headRefOid": "581150f0982c562431a02cc25c505e8a4c95fae1",
             "reviewDecision": null,
-            "mergeStateStatus": "CLEAN",
+            "mergeStateStatus": "BLOCKED",
             "statusCheckRollup": null,
             "checkCounts": null,
             "mergeQueueEntry": null,

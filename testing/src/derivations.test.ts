@@ -166,8 +166,38 @@ test("GitHub blocks a writer's merge for the rule its reads list, fails one sent
   const states = said(after, ['state', 'merged']);
   expect(states.length).toBeGreaterThan(0);
   expect(states.filter((state) => state === 'MERGED' || state === true)).toEqual([]);
-  const permissions = interactions
-    .filter(graphql('MergeSnapshot'))
-    .map((each) => at(each.response.body, 'data', 'repository', 'viewerPermission'));
-  expect(new Set(permissions)).toEqual(new Set(['WRITE']));
+  // GitHub blocks every pull request into the branch for the account, as it says on GitHub.
+  const verdicts = interactions
+    .filter((each) => graphql('MergeSnapshot')(each) || graphql('PullRequestCheck')(each))
+    .map((each) => at(each.response.body, 'data', 'repository', 'pullRequest', 'mergeStateStatus'));
+  expect(verdicts.length).toBeGreaterThan(0);
+  expect(new Set(verdicts)).toEqual(new Set(['BLOCKED']));
 });
+
+test.each(['app_merge_override_writer', 'app_merge_write_writer'])(
+  '%s reads as an account with write access, below admin',
+  (name) => {
+    const interactions = answers(name);
+    const permissions = interactions
+      .filter(graphql('MergeSnapshot'))
+      .map((each) => at(each.response.body, 'data', 'repository', 'viewerPermission'));
+    expect(new Set(permissions)).toEqual(new Set(['WRITE']));
+    const repository = interactions
+      .filter(
+        ({ request, response }) =>
+          request.method === 'GET' &&
+          new URL(request.url).pathname === '/repos/rozed-dev/e2e' &&
+          response.status === 200,
+      )
+      .map(({ response }) => response.body);
+    expect(repository.length).toBeGreaterThan(0);
+    expect(
+      repository.map((body) => [at(body, 'permissions'), at(body, 'security_and_analysis')]),
+    ).toEqual(
+      repository.map(() => [
+        { admin: false, maintain: false, push: true, triage: true, pull: true },
+        undefined,
+      ]),
+    );
+  },
+);

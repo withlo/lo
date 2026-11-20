@@ -7,8 +7,8 @@
 // refusals are said in the dialog, from derived answers: a repository that doesn't allow auto-merge
 // (`app_merge_auto_not_allowed`), and a pull request its code owner approved since, which nothing
 // blocks then, whose merge the dialog offers in auto-merge's place (`app_merge_auto_now`). An
-// account below admin isn't offered `⌥⏎` (`app_merge_override_writer`), and a merge GitHub fails
-// for a rule it can't bypass says so in GitHub's words (`app_merge_write_writer`, on generation 5).
+// account below admin isn't offered `⌥⏎` (`app_merge_override_writer`), nor a merge GitHub blocks
+// for a rule it can't bypass, which the panel names (`app_merge_write_writer`, on generation 5).
 
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -239,23 +239,16 @@ test.describe('as an account below admin', () => {
 test.describe('as an account GitHub won’t let merge', () => {
   test.use({ cassette: 'app_merge_write_writer', generation: 5 });
 
-  test('the merge is refused in GitHub’s words', async ({ page }) => {
+  test('no merge is offered, and the panel says why', async ({ page, github }) => {
     const { number } = MERGE_PULLS[5].pulls.squash;
-    await panelOf(page, number, 'Ready to merge');
-    // As the recording merged it: a squash, with the title typed.
-    const chosen = panel(page).locator('[role="radio"][aria-checked="true"]');
-    for (let step = 0; step < 3 && (await chosen.textContent()) !== 'Squash'; step++) {
-      await page.keyboard.press('Tab');
-    }
-    await expect(chosen).toHaveText('Squash');
-    await page.keyboard.press('e');
-    await page.keyboard.type('Squash two commits, from Lo');
-    await page.keyboard.press('Escape');
+    await panelOf(page, number, 'Can’t merge');
+    await expect(status(page)).toContainText('GitHub says no');
+    // GitHub doesn't say why; Lo names the rule on the branch it doesn't check.
+    await expect(panel(page)).toContainText('GitHub says no, and not why');
+    await expect(panel(page)).toContainText('The branch is locked');
+    await expect(panel(page).getByRole('button', { name: 'Merge', exact: true })).toBeDisabled();
     await page.keyboard.press('Enter');
-    await expect(dialog(page)).toContainText(`Merge #${number} into merge/5/base?`);
-    await page.keyboard.press('Enter');
-    const alert = dialog(page).getByRole('alert');
-    await expect(alert).toContainText(`Couldn’t merge #${number}.`);
-    await expect(alert).toContainText('Cannot update this protected ref.');
+    await expect(dialog(page)).toBeHidden();
+    expect(github.replay.seen.filter(({ method }) => method === 'PUT')).toEqual([]);
   });
 });

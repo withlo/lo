@@ -413,10 +413,11 @@ function lookupsOf(run: readonly Interaction[], branches: Map<string, Json>): In
 /**
  * `recorded` with a ruleset on `branch` whose one rule, "Restrict updates", lets only those who may
  * bypass it update the branch: every read of the repository's rulesets, and of `branch`'s rules,
- * holds it. Nothing names the ruleset's id, so it has a stand-in. A ruleset that restricts updates
- * makes its branch a trunk, so finding stacks no longer looks up which pull requests from `branch`
- * merged: each run of lookups that did is added after the recording without it, answered as the
- * run answered for the other branches.
+ * holds it. Nothing names the ruleset's id, so it has a stand-in. The account `recorded` reads as
+ * can't bypass it, so GitHub blocks every pull request into `branch`, and each read of what decides
+ * one's merge says so. A ruleset that restricts updates makes its branch a trunk, so finding stacks
+ * no longer looks up which pull requests from `branch` merged: each run of lookups that did is added
+ * after the recording without it, answered as the run answered for the other branches.
  */
 function restricted(recorded: Interaction[], branch: string): Interaction[] {
   const rule: Json = {
@@ -463,7 +464,32 @@ function restricted(recorded: Interaction[], branch: string): Interaction[] {
     }
     return each;
   });
-  return [...changed, ...lookups];
+  let blocked = changed;
+  for (const number of intoBranch(recorded, branch)) {
+    blocked = readsAfter(blocked, -1, number, {
+      graphql: {
+        MergeSnapshot: (pull) => ({ ...pull, mergeStateStatus: 'BLOCKED' }),
+        PullRequestCheck: (pull) => ({ ...pull, mergeStateStatus: 'BLOCKED' }),
+      },
+      // A list of pull requests says nothing of whether each can merge.
+      rest: (pull) => ({
+        ...pull,
+        ...('mergeable_state' in pull && { mergeable_state: 'blocked' }),
+      }),
+    });
+  }
+  return [...blocked, ...lookups];
+}
+
+/** The pull requests into `branch` whose merge facts `recorded` read. */
+function intoBranch(recorded: readonly Interaction[], branch: string): Set<number> {
+  const numbers = new Set<number>();
+  for (const each of recorded.filter(graphql('MergeSnapshot'))) {
+    const number = at(each.request.variables, 'number');
+    const base = at(each.response.body, 'data', 'repository', 'pullRequest', 'baseRefName');
+    if (typeof number === 'number' && base === branch) numbers.add(number);
+  }
+  return numbers;
 }
 
 /** Whether `interaction` starts a copy of Lo in a recording: it asks who it's signed in as first. */
@@ -785,7 +811,7 @@ export const DERIVATIONS: readonly Derivation[] = [
   {
     name: 'app_merge_write_writer',
     from: 'app_merge_write',
-    description: `app_merge_write read as an account with write access, below admin, as app_merge_override_writer is, on a ${WRITE_BASE} that a ruleset's "Restrict updates" rule covers, which the account can't bypass: every read of the repository's rulesets and of ${WRITE_BASE}'s rules holds it, and Lo, which takes a branch such a rule covers as a trunk, looks up which pull requests merged from the other branches only, as recorded for them. GitHub fails each merge Lo sent into ${WRITE_BASE}, of rozed-dev/e2e#174, #175 and #176, for that rule, where it said it merged, as it fails an async merge for a ruleset's rules: "Repository rule violations found", then "Cannot update this protected ref.". The reads each copy of Lo made after answer as before it sent the merge, since nothing merged. The copies after the first, which no derived test opens, read ${WRITE_BASE}'s commits as recorded, moved by the merges before them. These answers are derived: the recorders accept only rozed-bot's token, an admin's, and no account below admin merged anything.`,
+    description: `app_merge_write read as an account with write access, below admin, as app_merge_override_writer is, on a ${WRITE_BASE} that a ruleset's "Restrict updates" rule covers, which the account can't bypass: every read of the repository's rulesets and of ${WRITE_BASE}'s rules holds it, every read of what decides the merge of a pull request into ${WRITE_BASE} says GitHub blocks it, and Lo, which takes a branch such a rule covers as a trunk, looks up which pull requests merged from the other branches only, as recorded for them. GitHub fails each merge Lo sent into ${WRITE_BASE}, of rozed-dev/e2e#174, #175 and #176, for that rule, where it said it merged, as it fails an async merge for a ruleset's rules: "Repository rule violations found", then "Cannot update this protected ref.". The reads each copy of Lo made after answer as before it sent the merge, since nothing merged. The copies after the first, which no derived test opens, read ${WRITE_BASE}'s commits as recorded, moved by the merges before them. These answers are derived: the recorders accept only rozed-bot's token, an admin's, and no account below admin merged anything.`,
     derive(recorded) {
       let writer = asWriter(recorded);
       for (const number of WRITE_MERGED) writer = mergeFailed(writer, number, UPDATE_RESTRICTED);

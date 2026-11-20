@@ -45,7 +45,7 @@
             "isDraft": false,
             "locked": false,
             "mergeable": "MERGEABLE",
-            "mergeStateStatus": "CLEAN",
+            "mergeStateStatus": "BLOCKED",
             "reviewDecision": null,
             "headRefOid": "34b784de62545d0ed01cac362adcb0e9cdd82af8",
             "baseRefName": "merge/5/base",
