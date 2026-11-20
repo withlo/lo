@@ -8,7 +8,9 @@
 // And merging: `⏎` in the panel asks main for a plan from what GitHub said last, which main keeps
 // under a key for the reader to confirm; the window confirms the key and never sends the merge
 // itself. Main checks the plan again as it's confirmed, sends it once, and says how each merge goes
-// on `jobs`.
+// on `jobs`. A GitHub stack's layer merges with the open layers below it, which its plan names; a
+// chain that isn't one merges from its bottom layer alone, and main then moves the layers on it, as
+// the plan's moves say. `place` says which, for the panel.
 
 import { z } from 'zod';
 
@@ -298,6 +300,77 @@ export const planKind = z.enum(['merge', 'enqueue']);
 export type PlanKind = z.output<typeof planKind>;
 
 /**
+ * A layer of a GitHub stack that merges with the pull request: its title as GitHub has it, and its
+ * head as GitHub's Stacks API gave it as the confirmation opened, which GitHub merges only while
+ * it's still the layer's head. `review` and `checks` are its review decision and how its checks
+ * stand together, as the stack's layers were last read: `null` before they were, or when it has
+ * none.
+ */
+export const stackLayer = z.strictObject({
+  number,
+  title: text,
+  head: oid,
+  review: z.enum(['approved', 'changesRequested', 'reviewRequired']).nullable(),
+  checks: z.enum(['passing', 'running', 'failing']).nullable(),
+});
+export type StackLayer = z.output<typeof stackLayer>;
+
+/** A change to pull request `pr`'s base branch, from `from` to `to`. */
+export const baseMove = z.strictObject({ pr: number, from: text, to: text });
+export type BaseMove = z.output<typeof baseMove>;
+
+/**
+ * What a merge takes with it, beyond its pull request:
+ *
+ * - `stack`: the open layers of GitHub stack `stack` below it, bottom first, which merge with it;
+ *   `above` are its open layers above, which stay open and move onto the base;
+ * - `chain`: a chain that can't be a GitHub stack, merged a layer at a time from its bottom one:
+ *   `before` moves that onto the root first, when it isn't there; once it has merged, `after` move
+ *   the layers on it onto the root, and those layers, `needsRebase`, then need a rebase.
+ */
+export const together = z.discriminatedUnion('kind', [
+  z.strictObject({
+    kind: z.literal('stack'),
+    stack: number,
+    below: z.array(stackLayer).min(1),
+    above: z.array(number),
+  }),
+  z.strictObject({
+    kind: z.literal('chain'),
+    before: baseMove.nullable(),
+    after: z.array(baseMove),
+    needsRebase: z.array(number),
+  }),
+]);
+export type Together = z.output<typeof together>;
+
+/**
+ * Where a pull request sits, as the merge panel says it before anything is planned:
+ *
+ * - `alone`: it merges by itself, alone or as a GitHub stack's bottom layer;
+ * - `stack`: a layer of GitHub stack `stack`, which merges with its open layers `below` it;
+ * - `convert`: in a chain that isn't a GitHub stack and could be one, as `offer` says, which Lo
+ *   makes before it merges any of it;
+ * - `chain`: the bottom layer of a chain that can't be a GitHub stack, for `reasons`: it merges
+ *   into `into` alone, and then Lo moves the `above` layers on it onto `into`;
+ * - `refused`: Lo doesn't merge it from here, for `why`; `again` when Lo is listing the open pull
+ *   requests again, which may settle it, so asking again soon may say otherwise.
+ */
+export const placement = z.discriminatedUnion('kind', [
+  z.strictObject({ kind: z.literal('alone') }),
+  z.strictObject({ kind: z.literal('stack'), stack: number, below: z.array(number).min(1) }),
+  z.strictObject({ kind: z.literal('convert'), offer: words }),
+  z.strictObject({
+    kind: z.literal('chain'),
+    into: text,
+    above: z.array(number),
+    reasons: z.array(words),
+  }),
+  z.strictObject({ kind: z.literal('refused'), why: words, again: z.boolean() }),
+]);
+export type Placement = z.output<typeof placement>;
+
+/**
  * What a merge will do, for the reader to confirm before anything is sent:
  *
  * - `key`: what names it, which the window confirms; `id`: the view it was asked for from;
@@ -306,7 +379,8 @@ export type PlanKind = z.output<typeof planKind>;
  *   method: `method` when the account may read them, else `null`;
  * - `head`: the head on screen, which GitHub merges only while it's the pull request's head;
  * - `title`, `message`: a squash commit's title and message as the reader typed them, empty for
- *   GitHub's own, which `squashTitle` is, when Lo read it.
+ *   GitHub's own, which `squashTitle` is, when Lo read it;
+ * - `together`: the layers of a GitHub stack it merges with, or a chain's base branches it moves.
  */
 export const plan = z.strictObject({
   key: planKey,
@@ -321,6 +395,7 @@ export const plan = z.strictObject({
   head: oid,
   title: z.string().max(1024),
   message: z.string().max(65_536),
+  together: together.nullable(),
 });
 export type MergePlan = z.output<typeof plan>;
 
@@ -400,10 +475,68 @@ export const jobState = z.discriminatedUnion('kind', [
 ]);
 export type JobState = z.output<typeof jobState>;
 
+/** How a layer of a GitHub stack's merge stands, as GitHub's Stacks API last said. */
+export const layerState = z.enum(['open', 'merged', 'closed']);
+export type LayerState = z.output<typeof layerState>;
+
+/**
+ * How a base branch change of a chain's merge stands: not sent yet, being sent, made, already so,
+ * refused or failed, sent with its answer lost, or never sent since what came before it stopped.
+ */
+export const moveStatus = z.enum([
+  'todo',
+  'now',
+  'done',
+  'unchanged',
+  'failed',
+  'unknown',
+  'skipped',
+]);
+export type MoveStatus = z.output<typeof moveStatus>;
+
+/**
+ * How what a merge takes with it goes:
+ *
+ * - `stack`: each layer that merges, bottom first and the pull request last, as GitHub's Stacks API
+ *   said at the merge's last change, `null` until it's read; `above`, the open layers above;
+ *   `takenAt`, when GitHub took the merge; and `landed`, for one that failed, the layers below that
+ *   merged all the same, bottom first, or `null` when Lo couldn't read them;
+ * - `chain`: `phase`, moving its bottom layer onto the root, merging it, waiting for GitHub to say
+ *   it merged, as after a queue entry or a lost answer, moving the layers on it, or over, done or
+ *   stopped; each base branch change, `before` the merge or after it, with what GitHub said of one
+ *   that didn't go; the layers that then need a rebase; and `text`, what it waits for or why it
+ *   stopped.
+ */
+export const progress = z.discriminatedUnion('kind', [
+  z.strictObject({
+    kind: z.literal('stack'),
+    layers: z.array(z.strictObject({ number, title: text, state: layerState.nullable() })),
+    above: z.array(number),
+    takenAt: time.nullable(),
+    landed: z.array(number).nullable(),
+  }),
+  z.strictObject({
+    kind: z.literal('chain'),
+    phase: z.enum(['before', 'merging', 'waiting', 'moving', 'done', 'stopped']),
+    moves: z.array(
+      z.strictObject({
+        move: baseMove,
+        before: z.boolean(),
+        status: moveStatus,
+        detail: words.nullable(),
+      }),
+    ),
+    needsRebase: z.array(number),
+    text: words.nullable(),
+  }),
+]);
+export type Progress = z.output<typeof progress>;
+
 /**
  * A merge Lo sent, from the plan named `key`, as it goes. `already`: GitHub was already merging
  * the pull request when Lo asked, from Lo or from elsewhere, so Lo followed that merge, which may
- * be of another head or method, rather than starting one.
+ * be of another head or method, rather than starting one. `together`: how what it takes with it
+ * goes, for a stack's merge or a chain's.
  */
 export const job = z.strictObject({
   key: planKey,
@@ -417,6 +550,7 @@ export const job = z.strictObject({
   head: oid,
   already: z.boolean(),
   state: jobState,
+  together: progress.nullable(),
 });
 export type JobView = z.output<typeof job>;
 
@@ -478,6 +612,12 @@ export const contract = defineContract('merge', {
     askAgain: { input: byKey, reply: reply<void>() },
     /** Forgets the merge from the plan named `key` once it has ended, as when the reader has seen how. */
     dismiss: { input: byKey, reply: reply<void>() },
+    /**
+     * Where view `id`'s pull request sits, as the merge panel says it as it opens: what merges with
+     * it, or why Lo doesn't merge it from there. Read afresh from GitHub's Stacks API and the open
+     * pull requests from the branches it merges into.
+     */
+    place: { input: z.strictObject({ id: tabId }), reply: reply<Placement>() },
   },
   topics: {
     status,

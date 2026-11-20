@@ -1,0 +1,4 @@
+{
+  "description": "app_merge with GitHub's answer to which open pull requests come from merge/6/base: none, as none ever have. The merge panel asks it as it opens, to say where a pull request on that branch sits, which it didn't when app_merge was recorded.",
+  "derived_from": "app_merge"
+}

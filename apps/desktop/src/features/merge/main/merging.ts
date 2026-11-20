@@ -12,6 +12,11 @@
 //
 // The merge goes through the app's one `MergeJobs`, in the pull request's turn among merge writes,
 // with the head on screen as its `sha`, so GitHub merges only that head. A job outlives its view.
+// A GitHub stack's layer merges with the open layers below it, each named with its head as GitHub's
+// Stacks API gave it, and the merge holds the turn of every layer it names; Lo reads the stack at
+// each change of the merge, to say how far it got. A chain that can't be a GitHub stack merges from
+// its bottom layer, and Lo moves the layers on it onto the root once that merged (`./chains.ts`),
+// holding their turns meanwhile.
 // The method is remembered for the repository once GitHub takes a merge with it. A merge whose end
 // Lo can't tell is settled by reading the pull request, never by sending it again, and holds the
 // pull request's turn until a read made after it ended does. Nothing here calls Electron.
@@ -19,14 +24,22 @@
 import {
   describeMergeRefusal,
   directMerge,
+  factsOnto,
   GithubError,
   isRefusal,
   MERGE_FACTS,
+  openPullRequest,
   openPullsFromHead,
+  pullRequestCheck,
   PullRef,
   queueMerge,
   rulesBase,
+  rulesOnto,
+  STACK_LAYERS,
+  stackHolding,
+  stacksHolding,
   withCommit,
+  withLayersBelow,
   type Cached,
   type GithubClient,
   type GithubErrorDetail,
@@ -57,15 +70,32 @@ import type {
   Confirmed,
   JobState,
   JobView,
+  LayerState,
   MergePlan,
   Method,
   Off,
+  Placement,
   PlanKind,
   Planned,
+  Progress,
   Refusal,
+  Together,
 } from '../contract.ts';
 import type { MergeTurn, MergeWrites } from '../service.ts';
-import { placedBy, where, type OpenFromHead, type Where } from './where.ts';
+import { ChainRun, type Looked } from './chains.ts';
+import {
+  convertFirst,
+  layerState,
+  namesOf,
+  needsStacks,
+  numbers,
+  placementOf,
+  takingOf,
+  togetherChanged,
+  togetherOf,
+  type Taking,
+} from './together.ts';
+import { placedBy, unmergedIn, where, type OpenFromHead, type Where } from './where.ts';
 
 /** How long what GitHub said of a merge is taken as current at the press: 7 minutes. */
 export const FRESH_FOR = 7 * 60_000;
@@ -84,6 +114,8 @@ export interface MergingPoller
       | 'status'
       | 'writesHeldUntil'
       | 'listAgain'
+      | 'openPullRequests'
+      | 'runConversionStep'
     > {
   cachedRead<T>(pull: PullRef, kind: ReadKind<T>): Cached<T> | undefined;
   readOnce<T>(
@@ -131,6 +163,8 @@ export interface MergingOptions {
   readonly readWait?: number;
   /** How long Lo waits for the open pull requests to be listed again, in milliseconds: 15 s. */
   readonly listWait?: number;
+  /** How often a chain's merge reads its bottom layer while it waits for it to merge: a minute. */
+  readonly chainEvery?: number;
 }
 
 /** What the reader chose in the panel: the method, and a squash's title and message as typed. */
@@ -162,6 +196,21 @@ interface Sent {
   endedAt: number | undefined;
   /** The reader dismissed it while Lo couldn't tell yet: forgotten once a read settles it. */
   dismissed: boolean;
+  /** For a GitHub stack's merge, its layers as the Stacks API said at its last read. */
+  stack: StackRead | undefined;
+  /** For a chain's, its run, and the turns of the layers it moves. */
+  chain: { readonly run: ChainRun; turn: MergeTurn | undefined } | undefined;
+}
+
+/** A GitHub stack's layers, read as its merge goes. */
+interface StackRead {
+  /** Each layer's state, by its number, as the Stacks API last said. */
+  readonly states: Map<number, LayerState>;
+  /** When GitHub took the merge. */
+  takenAt: number | undefined;
+  /** Whether a read is under way, and whether another is due once it's done. */
+  reading: boolean;
+  again: boolean;
 }
 
 /** Whether two logins name one account: GitHub's ignore case. */
@@ -171,13 +220,6 @@ function sameLogin(a: string, b: string): boolean {
 
 function describe(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
-}
-
-/** Pull requests' numbers as a sentence names them: "#45", "#45 and #46", "#45, #46 and #47". */
-function numbers(prs: readonly number[]): string {
-  const named = prs.map((pr) => `#${pr}`);
-  const last = named.pop() ?? '';
-  return named.length === 0 ? last : `${named.join(', ')} and ${last}`;
 }
 
 /** A number of minutes or hours, as a clock writes it: "05". */
@@ -327,6 +369,11 @@ function stateOf(job: Job): JobState {
   }
 }
 
+/** Where Lo doesn't merge a pull request from, for `why`, as the merge panel says it. */
+function notPlaced(why: string): Placement {
+  return { kind: 'refused', why, again: false };
+}
+
 /** The outcome a job ended with, as the merge GitHub was already running when it answered `409`. */
 function endedWith(job: Job): Outcome | undefined {
   if (job.state.kind !== 'done') return undefined;
@@ -344,7 +391,7 @@ function changed(was: MergePlan, now: MergePlan): string | undefined {
   if (was.base !== now.base) return `#${now.number} merges into ${now.base} now.`;
   if (was.method !== now.method) return 'The method it merges with changed.';
   if (was.head !== now.head) return 'The revision on screen changed.';
-  return undefined;
+  return togetherChanged(was.together, now.together);
 }
 
 export class Merging {
@@ -395,13 +442,41 @@ export class Merging {
     if (!cached) {
       return { kind: 'refused', why: `Lo hasn’t read whether #${view.number} can merge yet.` };
     }
-    const planned = this.#planOf(id, view, login, cached.value, choice);
-    if (typeof planned === 'string') return { kind: 'refused', why: planned };
-    const placed = await this.#whereNow(poller, login, pull, cached.value);
-    const why = whereText(placed, view.number);
+    const first = this.#planOf(id, view, login, cached.value, choice);
+    if (typeof first === 'string') return { kind: 'refused', why: first };
+    const taking = await this.#takingNow(poller, login, pull, cached.value);
+    const why = takingText(taking);
     if (why !== undefined) return { kind: 'refused', why };
+    // A chain's bottom layer that moves onto the root first merges under the root's rules.
+    const facts = await this.#factsFor(poller, pull, cached.value, taking);
+    if (typeof facts === 'string') return { kind: 'refused', why: facts };
+    const planned = this.#planOf(id, view, login, facts, choice, togetherOf(taking));
+    if (typeof planned === 'string') return { kind: 'refused', why: planned };
     this.#keep(planned, pull);
     return { kind: 'plan', plan: planned };
+  }
+
+  /**
+   * Where view `id`'s pull request sits, as the merge panel says it as it opens: what its merge
+   * takes with it, from GitHub's Stacks API and the open pull requests from the branches it merges
+   * into, read afresh; or why Lo doesn't merge it from there.
+   */
+  async place(id: string): Promise<Placement> {
+    if (this.#stopped) return notPlaced('Lo is quitting.');
+    const view = this.#options.view(id);
+    const acting = actingOf(view);
+    if (typeof acting === 'string') return notPlaced(acting);
+    if (!view) return notPlaced('There’s no pull request in that tab.');
+    let poller: MergingPoller;
+    try {
+      poller = await this.#options.poller(acting.login);
+    } catch (error) {
+      return notPlaced(describe(error));
+    }
+    const pull = new PullRef(view.repository.owner, view.repository.name, view.number);
+    const cached = poller.cachedRead(pull, MERGE_FACTS) ?? (await poller.mergeFacts(pull));
+    if (!cached) return notPlaced(`Lo hasn’t read whether #${view.number} can merge yet.`);
+    return placementOf(await this.#takingNow(poller, acting.login, pull, cached.value));
   }
 
   /**
@@ -480,9 +555,10 @@ export class Merging {
     const job = this.#options.jobs.job(sent.pull);
     if (!job || endedWith(job)?.kind !== 'unknown') return;
     if (this.#options.jobs.followAgain(sent.pull)) {
-      // Following it again holds the pull request's turn, as the merge may still be running.
+      // Following it again holds the turns it held as it was sent, as the merge may still be
+      // running: a stack's merge holds every layer's.
       if (!sent.turn) {
-        const turn = this.#options.turns.take(sent.pull.repo, [sent.pull.number]);
+        const turn = this.#options.turns.take(sent.pull.repo, sentNames(sent.plan));
         if (!('busy' in turn)) sent.turn = turn;
       }
       return;
@@ -499,6 +575,8 @@ export class Merging {
     if (!sent) return;
     const job = this.#options.jobs.job(sent.pull);
     if (job && job.state.kind !== 'done') return;
+    // A chain's run goes on after its merge, until it has moved the layers on it.
+    if (sent.chain && !sent.chain.run.over) return;
     if (sent.turn) {
       sent.dismissed = true;
       return;
@@ -520,6 +598,7 @@ export class Merging {
     for (const checking of this.#checking.values()) checking.abort();
     for (const sent of this.#sent.values()) {
       sent.unwatch?.();
+      sent.chain?.run.stop();
       sent.turn?.give();
     }
   }
@@ -531,6 +610,7 @@ export class Merging {
     login: string,
     facts: MergeFacts,
     choice: Choice,
+    together: Together | null = null,
   ): MergePlan | string {
     const { number } = view;
     const head = this.#options.headOnScreen(id) ?? '';
@@ -580,6 +660,7 @@ export class Merging {
       head,
       title: squash ? choice.title.trim() : '',
       message: squash ? choice.message.trim() : '',
+      together,
     };
   }
 
@@ -652,22 +733,28 @@ export class Merging {
     if (facts.pullRequest.head !== head) {
       return refused(newerPush(plan.number, head, facts.pullRequest.head));
     }
-    const now = this.#planOf(plan.id, view, plan.login, facts, plan);
+    const first = this.#planOf(plan.id, view, plan.login, facts, plan);
+    if (typeof first === 'string') return refused(own('notPossible', first));
+    // Where it sits, and what goes with it, read afresh: GitHub's stack holds what merges with it.
+    const taking = await this.#takingNow(poller, plan.login, pull, facts, signal);
+    signal.throwIfAborted();
+    const unplaced = takingText(taking);
+    if (unplaced !== undefined) return refused(own('where', unplaced));
+    const onto = await this.#factsFor(poller, pull, facts, taking, signal);
+    signal.throwIfAborted();
+    if (typeof onto === 'string') return refused(own('unread', onto));
+    const now = this.#planOf(plan.id, view, plan.login, onto, plan, togetherOf(taking));
     if (typeof now === 'string') return refused(own('notPossible', now));
     const why = changed(plan, now);
     if (why !== undefined) {
       this.#keep(now, pull);
       return { kind: 'again', plan: now, why: `${why} Check what it does now, then confirm.` };
     }
-    const placed = await this.#whereNow(poller, plan.login, pull, facts, signal);
-    signal.throwIfAborted();
-    const unplaced = whereText(placed, plan.number);
-    if (unplaced !== undefined) return refused(own('where', unplaced));
-    if (this.#options.turns.busy(pull.repo, [pull.number]).length > 0) {
-      return refused(own('busy', `Lo is already merging #${plan.number}.`));
-    }
+    const named = namesOf(plan.number, plan.together);
+    const [busy] = this.#options.turns.busy(pull.repo, named);
+    if (busy !== undefined) return refused(own('busy', `Lo is already merging #${busy}.`));
     const converting = this.#options.converting(pull.repo);
-    if (converting?.prs.includes(pull.number)) {
+    if (converting?.prs.some((pr) => named.includes(pr))) {
       return refused(
         own(
           'converting',
@@ -781,6 +868,7 @@ export class Merging {
         facts: placed,
         forest,
         openFrom,
+        unmerged: unmergedIn(poller.openPullRequests(pull.repo)?.value.lookups ?? []),
         now: this.#now(),
       });
       if (found.kind !== 'unknown') return found;
@@ -813,6 +901,77 @@ export class Merging {
   }
 
   /**
+   * What `pull`'s merge takes with it, where it sits as {@link Merging.#whereNow} says, with
+   * GitHub's stacks holding it read afresh where they decide that; or why Lo doesn't merge it here.
+   */
+  async #takingNow(
+    poller: MergingPoller,
+    login: string,
+    pull: PullRef,
+    facts: MergeFacts,
+    signal?: AbortSignal,
+  ): Promise<Taking> {
+    const placed = await this.#whereNow(poller, login, pull, facts, signal);
+    let github: Awaited<ReturnType<typeof stacksHolding>> | 'unread' = 'unread';
+    if (needsStacks(placed)) {
+      try {
+        github = await poller.readOnce(
+          (client) => stacksHolding(client, pull.repo, pull.number),
+          signal,
+          'foreground',
+        );
+      } catch (error) {
+        signal?.throwIfAborted();
+        return {
+          kind: 'refused',
+          why: `Lo couldn’t ask GitHub which stack #${pull.number} is in: ${describe(error)}`,
+        };
+      }
+    }
+    const list = poller.openPullRequests(pull.repo)?.value;
+    const layers = poller.cachedRead(pull, STACK_LAYERS)?.value.layers ?? [];
+    const taking = takingOf({
+      number: pull.number,
+      base: rulesBase(facts),
+      where: placed,
+      forest: this.#options.forest(pull.repo, login),
+      github,
+      title: (number) => (list && openPullRequest(list, number)?.title) ?? '',
+      state: (number) => layerState(layers.find((layer) => layer.number === number)),
+      queued: layers.flatMap((layer) => (layer.isInMergeQueue ? [layer.number] : [])),
+    });
+    if (taking.kind === 'refused' && taking.readAgain === true) poller.readMergeFactsAgain(pull);
+    return taking;
+  }
+
+  /**
+   * What decides `pull`'s merge once it goes as `taking` says: `facts` as they are, or, for a
+   * chain's bottom layer that moves onto the root first, under the root's rules, read afresh. Why
+   * not, when they can't be read.
+   */
+  async #factsFor(
+    poller: MergingPoller,
+    pull: PullRef,
+    facts: MergeFacts,
+    taking: Taking,
+    signal?: AbortSignal,
+  ): Promise<MergeFacts | string> {
+    const before = taking.kind === 'chain' ? taking.plan.retargetBefore : undefined;
+    if (before === undefined) return facts;
+    try {
+      const onto = await poller.readOnce(
+        (client) => rulesOnto(client, pull.repo, before.to),
+        signal,
+        'foreground',
+      );
+      return factsOnto(facts, onto);
+    } catch (error) {
+      signal?.throwIfAborted();
+      return `Lo couldn’t read ${before.to}’s rules, which #${pull.number} merges under once it’s moved there: ${describe(error)}`;
+    }
+  }
+
+  /**
    * Waits for `login`'s list of `repo`'s open pull requests to be confirmed after `since`, looking
    * every quarter second, for {@link MergingOptions.listWait} at most.
    */
@@ -839,8 +998,21 @@ export class Merging {
     const busy = own('busy', `Lo is already merging #${plan.number}.`);
     const running = this.#options.jobs.job(pull);
     if (running && running.state.kind !== 'done') return refused(busy);
-    const turn = this.#options.turns.take(pull.repo, [pull.number]);
+    const { together } = plan;
+    // A stack's layers take their turns with it. The layers on a chain's bottom one take theirs
+    // apart, which the chain's run holds until it has moved them.
+    const turn = this.#options.turns.take(pull.repo, sentNames(plan));
     if ('busy' in turn) return refused(own('busy', `Lo is already merging #${turn.busy}.`));
+    let layersTurn: MergeTurn | undefined;
+    if (together?.kind === 'chain') {
+      const rest = namesOf(plan.number, together).slice(1);
+      const taken = rest.length === 0 ? undefined : this.#options.turns.take(pull.repo, rest);
+      if (taken && 'busy' in taken) {
+        turn.give();
+        return refused(own('busy', `Lo is already merging #${taken.busy}.`));
+      }
+      layersTurn = taken;
+    }
     // The last merge of it ended: what the window has of it goes with this one.
     const previous = this.#sent.get(pull.key);
     if (previous) {
@@ -857,15 +1029,72 @@ export class Merging {
       unwatch: undefined,
       endedAt: undefined,
       dismissed: false,
+      stack:
+        together?.kind === 'stack'
+          ? { states: new Map(), takenAt: undefined, reading: false, again: false }
+          : undefined,
+      chain: undefined,
     };
+    if (together?.kind === 'chain') {
+      sent.chain = { run: this.#chainRun(sent, together), turn: layersTurn };
+    }
     this.#sent.set(pull.key, sent);
+    const run = sent.chain?.run;
+    if (run && together?.kind === 'chain' && together.before !== null) {
+      // The bottom layer moves onto the root first, and merges once it's there.
+      this.#publish(sent);
+      void run.moveFirst().then((go) => {
+        if (!go || this.#sent.get(pull.key) !== sent) return;
+        if (!this.#stopped && !this.#options.jobs.merge(poller, pull, request)) return;
+        // The jobs stopped, as Lo quits: the merge never went.
+        sent.turn?.give();
+        sent.turn = undefined;
+        run.failed();
+      });
+      return { kind: 'sent' };
+    }
     const refusal = this.#options.jobs.merge(poller, pull, request);
     if (refusal) {
       turn.give();
+      sent.chain?.run.stop();
       this.#sent.delete(pull.key);
       return refused(refusal.refusal === 'stopped' ? own('stopped', 'Lo is quitting.') : busy);
     }
     return { kind: 'sent' };
+  }
+
+  /** The run of a chain's merge from its bottom layer, `sent`, as the plan's `together` says. */
+  #chainRun(sent: Sent, together: Extract<Together, { kind: 'chain' }>): ChainRun {
+    const { poller, pull } = sent;
+    return new ChainRun({
+      repo: pull.repo,
+      number: pull.number,
+      together,
+      retarget: (repo, step, signal) => poller.runConversionStep(repo, step, signal),
+      look: async (signal): Promise<Looked> => {
+        const check = await poller.readOnce(
+          (client) => pullRequestCheck(client, pull.repo.owner, pull.repo.name, pull.number),
+          signal,
+        );
+        if (check.state === 'MERGED') return 'merged';
+        if (check.state === 'CLOSED') return 'closed';
+        return check.mergeQueueEntry ? 'queued' : 'open';
+      },
+      changed: () => {
+        if (this.#sent.get(pull.key) === sent) this.#publish(sent);
+      },
+      ended: () => {
+        sent.chain?.turn?.give();
+        if (sent.chain) sent.chain.turn = undefined;
+        // One that stopped before its merge went has no job to give the pull request's turn back.
+        if (!this.#options.jobs.job(pull)) {
+          sent.turn?.give();
+          sent.turn = undefined;
+        }
+      },
+      log: this.#options.log,
+      every: this.#options.chainEvery,
+    });
   }
 
   /** A job changed: says so to the window, remembers the method once GitHub took it, and ends it. */
@@ -875,6 +1104,36 @@ export class Merging {
     const job = this.#options.jobs.job(pull);
     if (!job) return;
     this.#rememberIfTaken(sent, job);
+    if (sent.stack) {
+      if (sent.stack.takenAt === undefined && job.uuid !== undefined) {
+        sent.stack.takenAt = this.#now();
+      }
+      this.#readStack(sent);
+    }
+    if (done && sent.chain) {
+      const { run } = sent.chain;
+      const ended = endedWith(job);
+      switch (ended?.kind) {
+        case 'merged':
+          run.merged();
+          break;
+        case 'enqueued':
+          run.enqueued();
+          break;
+        case 'unknown':
+          run.unsure();
+          break;
+        case 'refused':
+        case 'failed':
+        case 'alreadyRunning':
+        case undefined:
+          run.failed();
+          break;
+        default:
+          ended satisfies never;
+          run.failed();
+      }
+    }
     if (done) {
       sent.endedAt = this.#now();
       sent.shows = undefined;
@@ -960,8 +1219,20 @@ export class Merging {
 
   #viewOf(sent: Sent): JobView | undefined {
     const job = this.#options.jobs.job(sent.pull);
-    if (!job) return undefined;
     const { plan } = sent;
+    if (!job) {
+      // A chain's bottom layer moving onto the root, before its merge is sent.
+      const progress = sent.chain?.run.view();
+      if (progress?.kind !== 'chain') return undefined;
+      const stopped = progress.phase === 'stopped';
+      return {
+        ...jobOf(plan, false),
+        state: stopped
+          ? { kind: 'refused', refusal: own('notMoved', progress.text ?? 'Lo didn’t merge it.') }
+          : { kind: 'sending' },
+        together: progress,
+      };
+    }
     let state = stateOf(job);
     if (state.kind === 'unknown' && sent.shows !== undefined) {
       state =
@@ -972,18 +1243,65 @@ export class Merging {
             : { ...state, shows: 'open' };
     }
     return {
-      key: plan.key,
-      owner: plan.owner,
-      repo: plan.repo,
-      number: plan.number,
-      login: plan.login,
-      kind: plan.kind,
-      method: plan.method,
-      base: plan.base,
-      head: plan.head,
-      already: job.running !== undefined,
+      ...jobOf(plan, job.running !== undefined),
       state,
+      together: this.#progressOf(sent, job),
     };
+  }
+
+  /** How what `sent`'s merge takes with it goes: its stack's layers, or its chain's moves. */
+  #progressOf(sent: Sent, job: Job): Progress | null {
+    if (sent.chain) return sent.chain.run.view();
+    const { together } = sent.plan;
+    if (!sent.stack || together?.kind !== 'stack') return null;
+    const ended = endedWith(job);
+    const { states } = sent.stack;
+    return {
+      kind: 'stack',
+      layers: [
+        ...together.below.map((layer) => ({
+          number: layer.number,
+          title: layer.title,
+          state: states.get(layer.number) ?? null,
+        })),
+        { number: sent.plan.number, title: '', state: states.get(sent.plan.number) ?? null },
+      ],
+      above: [...together.above],
+      takenAt: sent.stack.takenAt ?? null,
+      landed: ended?.kind === 'failed' ? (ended.landed ?? null) : [],
+    };
+  }
+
+  /**
+   * Reads GitHub's stack holding `sent`'s pull request, for how far its merge got, and says so:
+   * once at a time, and once more after, when the merge changed meanwhile.
+   */
+  #readStack(sent: Sent): void {
+    const read = sent.stack;
+    if (!read) return;
+    if (read.reading) {
+      read.again = true;
+      return;
+    }
+    read.reading = true;
+    read.again = false;
+    const { poller, pull } = sent;
+    poller
+      .readOnce((client) => stackHolding(client, pull.repo, pull.number))
+      .then((stack) => {
+        for (const layer of stack?.pull_requests ?? []) {
+          const state: LayerState =
+            layer.merged_at !== undefined ? 'merged' : layer.state === 'open' ? 'open' : 'closed';
+          read.states.set(layer.number, state);
+        }
+      })
+      .catch((error: unknown) => this.#options.log(`${pull.toString()}: ${describe(error)}`))
+      .finally(() => {
+        read.reading = false;
+        if (this.#sent.get(pull.key) !== sent) return;
+        this.#publish(sent);
+        if (read.again && !this.#stopped) this.#readStack(sent);
+      });
   }
 
   #publish(sent: Sent): void {
@@ -1028,13 +1346,53 @@ function newerPush(number: number, from: string, to: string): Refusal {
   );
 }
 
-/** What the merge GitHub is asked for: straight in with the method, or into the merge queue. */
+/** What a job's view says of the merge `plan` asked for, whatever its state. */
+function jobOf(plan: MergePlan, already: boolean): Omit<JobView, 'state' | 'together'> {
+  return {
+    key: plan.key,
+    owner: plan.owner,
+    repo: plan.repo,
+    number: plan.number,
+    login: plan.login,
+    kind: plan.kind,
+    method: plan.method,
+    base: plan.base,
+    head: plan.head,
+    already,
+  };
+}
+
+/**
+ * What the merge GitHub is asked for: straight in with the method, or into the merge queue; for a
+ * GitHub stack's layer, with the layers below, at the heads the confirmation named.
+ */
 function requestOf(plan: MergePlan): MergeRequest | MergeRefusal {
+  const request = mergeOf(plan);
+  const { together } = plan;
+  if (isRefusal(request) || together?.kind !== 'stack') return request;
+  const layered = withLayersBelow(
+    request,
+    together.below.map((layer) => ({ pr: layer.number, head: layer.head })),
+  );
+  // An override can't have layers below, and Lo plans none with them.
+  if (isRefusal(layered) && layered.refusal === 'adminOverrideLayers') {
+    return {
+      refusal: 'other',
+      message: 'GitHub merges past the rules only a stack’s bottom layer',
+    };
+  }
+  return layered;
+}
+
+/** The merge of `plan`'s pull request alone. */
+function mergeOf(plan: MergePlan): MergeRequest | MergeRefusal {
   if (plan.kind === 'enqueue') return queueMerge(plan.head);
   const request = directMerge(plan.head, plan.method ?? 'MERGE');
   if (isRefusal(request)) return request;
   // Only what the reader typed: an empty field leaves GitHub's own.
-  if (plan.method === 'SQUASH' && (plan.title !== '' || plan.message !== '')) {
+  // A stack's layers keep their own commits' words.
+  const stack = plan.together?.kind === 'stack';
+  if (plan.method === 'SQUASH' && !stack && (plan.title !== '' || plan.message !== '')) {
     return withCommit(
       request,
       plan.title === '' ? undefined : plan.title,
@@ -1071,26 +1429,28 @@ function notPossibleText(
 }
 
 /**
- * Why Lo doesn't merge where `placed` says the pull request sits: anywhere but alone or a GitHub
- * stack's bottom layer. Nothing where it does.
+ * The pull requests whose turns a merge from `plan` holds while GitHub runs it: a stack's layers
+ * with it. The layers on a chain's bottom one take theirs apart, which its run holds until it has
+ * moved them.
  */
-function whereText(placed: Where, number: number): string | undefined {
-  switch (placed.kind) {
+function sentNames(plan: MergePlan): number[] {
+  return plan.together?.kind === 'stack' ? namesOf(plan.number, plan.together) : [plan.number];
+}
+
+/** Why Lo doesn't merge as `taking` says: nothing when it goes. */
+function takingText(taking: Taking): string | undefined {
+  switch (taking.kind) {
     case 'alone':
+    case 'stack':
+    case 'chain':
       return undefined;
-    case 'githubStack':
-      return placed.below.length === 0
-        ? undefined
-        : `${numbers(placed.below)}, below #${number} in GitHub stack #${placed.stack}, would merge with it. Merge it on GitHub.`;
-    case 'chainBottom':
-      return `#${number} is the bottom layer of a chain that isn’t a GitHub stack. Merge it on GitHub.`;
-    case 'chainAbove':
-      return `Merge #${placed.bottom} first: it’s this chain’s bottom layer.`;
-    case 'unknown':
-      return placed.text;
+    case 'convert':
+      return convertFirst(taking.offer);
+    case 'refused':
+      return taking.why;
     default:
-      placed satisfies never;
-      throw new Error(`a place Lo doesn't know: ${JSON.stringify(placed)}`);
+      taking satisfies never;
+      throw new Error(`a merge Lo doesn't know: ${JSON.stringify(taking)}`);
   }
 }
 

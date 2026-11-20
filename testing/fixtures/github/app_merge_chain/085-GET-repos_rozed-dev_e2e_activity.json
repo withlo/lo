@@ -1,0 +1,19 @@
+{
+  "request": {
+    "method": "GET",
+    "url": "https://api.github.com/repos/rozed-dev/e2e/activity?ref=refs%2Fheads%2Fmerge%2F8%2Fchain-1&direction=desc&per_page=100",
+    "if_none_match": "W/\"ac8ab94307cb5b774e3049b0c633b06df4838f5d03dca074f6da02091c0a0881\""
+  },
+  "response": {
+    "status": 304,
+    "headers": {
+      "etag": "\"ac8ab94307cb5b774e3049b0c633b06df4838f5d03dca074f6da02091c0a0881\"",
+      "x-github-api-version-selected": "2022-11-28",
+      "x-ratelimit-limit": "5000",
+      "x-ratelimit-remaining": "4699",
+      "x-ratelimit-reset": "1794889860",
+      "x-ratelimit-resource": "core",
+      "x-ratelimit-used": "301"
+    }
+  }
+}

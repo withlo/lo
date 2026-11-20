@@ -1,7 +1,8 @@
 // How the window words a pull request's merge status: the header's one line, and the merge panel's
-// head, reasons and foot, from what main decided. Text from GitHub, such as logins, branches and
-// check names, is drawn as text without the characters that turn text around, which the components
-// take out, or `MergeHeader` where it draws the text itself. Nothing here draws.
+// head, reasons and foot, from what main decided; and a merge's confirmation and how it goes, a
+// GitHub stack's layers and a chain's base branch moves among it. Text from GitHub, such as logins,
+// branches and check names, is drawn as text without the characters that turn text around, which
+// the components take out, or `MergeHeader` where it draws the text itself. Nothing here draws.
 
 import type { MergeKind } from '@lo/ui';
 
@@ -16,7 +17,11 @@ import type {
   MergeView,
   Method,
   Off,
+  Placement,
+  Progress,
   Reviewer,
+  StackLayer,
+  Together,
   Unchecked,
 } from '../contract.ts';
 
@@ -98,6 +103,16 @@ export function capitalized(text: string): string {
 export function listed(names: readonly string[]): string {
   if (names.length <= 1) return names.join('');
   return `${names.slice(0, -1).join(', ')} and ${names.at(-1) ?? ''}`;
+}
+
+/** Pull requests' numbers as a sentence names them: "#45", "#45 and #46", "#45, #46 and #47". */
+export function numbers(prs: readonly number[]): string {
+  return listed(prs.map((pr) => `#${pr}`));
+}
+
+/** How many layers a merge with `together` merges, its pull request among them: 1 for one alone. */
+export function layersOf(together: Together | null): number {
+  return together?.kind === 'stack' ? together.below.length + 1 : 1;
 }
 
 /** A place in a queue: "1st", "2nd", "3rd", "11th". */
@@ -957,16 +972,139 @@ export function cantMerge(state: MergeState, number: number): string | undefined
   return state.off === null ? undefined : offWords(state.off);
 }
 
-/** The confirmation's title: "Merge #4821 into main?", "Add #4821 to the merge queue for main?" */
-export function confirmTitle(plan: Pick<MergePlan, 'kind' | 'number' | 'base'>): string {
+/**
+ * The confirmation's title: "Merge #4821 into main?", "Add #4821 to the merge queue for main?",
+ * and for a stack's layer, "Merge 3 layers into main?"
+ */
+export function confirmTitle(
+  plan: Pick<MergePlan, 'kind' | 'number' | 'base'> & { readonly together?: Together | null },
+): string {
+  const layers = layersOf(plan.together ?? null);
+  const what = layers > 1 ? `${layers} layers` : `#${plan.number}`;
   return plan.kind === 'enqueue'
-    ? `Add #${plan.number} to the merge queue for ${plan.base}?`
-    : `Merge #${plan.number} into ${plan.base}?`;
+    ? `Add ${what} to the merge queue for ${plan.base}?`
+    : `Merge ${what} into ${plan.base}?`;
 }
 
-/** What the confirmation's main button says. */
-export function confirmLabel(plan: Pick<MergePlan, 'kind' | 'method'>): string {
-  return plan.kind === 'enqueue' ? 'Add to merge queue' : mergeLabel(plan.method ?? 'MERGE');
+/** What the confirmation's main button says: "Squash and merge", or "Merge 3 layers" for a stack. */
+export function confirmLabel(
+  plan: Pick<MergePlan, 'kind' | 'method'> & { readonly together?: Together | null },
+): string {
+  const layers = layersOf(plan.together ?? null);
+  if (plan.kind === 'enqueue') {
+    return layers > 1 ? `Add ${layers} layers to the merge queue` : 'Add to merge queue';
+  }
+  return layers > 1 ? `Merge ${layers} layers` : mergeLabel(plan.method ?? 'MERGE');
+}
+
+/**
+ * The merge panel's main button for a pull request that sits as `placement` says: "Merge 3 layers"
+ * for a stack's layer, else what merging alone would say, `alone`.
+ */
+export function placedLabel(placement: Placement | undefined, queued: boolean, alone: string) {
+  if (placement?.kind !== 'stack') return alone;
+  const layers = placement.below.length + 1;
+  return queued ? `Add ${layers} layers to the merge queue` : `Merge ${layers} layers`;
+}
+
+/** Why `⏎` in the merge panel doesn't merge where the pull request sits, if it doesn't. */
+export function placedWhy(placement: Placement | undefined): string | undefined {
+  switch (placement?.kind) {
+    case 'convert':
+      return `${placement.offer} Make this a GitHub stack, then merge it.`;
+    case 'refused':
+      return placement.why;
+    case undefined:
+    case 'alone':
+    case 'stack':
+    case 'chain':
+      return undefined;
+    default:
+      placement satisfies never;
+      return undefined;
+  }
+}
+
+/**
+ * What a chain's confirmation says of its base branch moves, each on its own line: "Move #4818
+ * onto main", then the merge, then "Move #4819 onto main".
+ */
+export function chainSteps(
+  plan: Pick<MergePlan, 'number' | 'base'>,
+  together: Extract<Together, { kind: 'chain' }>,
+): { readonly key: string; readonly title: string; readonly detail: string }[] {
+  const steps = [];
+  if (together.before) {
+    steps.push({
+      key: 'before',
+      title: `Move #${together.before.pr} onto ${together.before.to}`,
+      detail: `From ${together.before.from}, so it merges under ${together.before.to}’s rules`,
+    });
+  }
+  steps.push({ key: 'merge', title: `Merge #${plan.number} into ${plan.base}`, detail: 'Alone' });
+  for (const move of together.after) {
+    steps.push({
+      key: `after-${move.pr}`,
+      title: `Move #${move.pr} onto ${move.to}`,
+      detail: `From ${move.from} · needs rebase`,
+    });
+  }
+  for (const pr of together.needsRebase) {
+    if (together.after.some((move) => move.pr === pr)) continue;
+    steps.push({
+      key: `rebase-${pr}`,
+      title: `#${pr} stays on ${plan.base}`,
+      detail: 'Needs rebase',
+    });
+  }
+  return steps;
+}
+
+/**
+ * Where a GitHub stack's layer stands, in its confirmation: "Approved · checks passed". Nothing
+ * before the stack's layers were read.
+ */
+export function layerLine(layer: Pick<StackLayer, 'review' | 'checks'>): string | undefined {
+  const said: string[] = [];
+  switch (layer.review) {
+    case 'approved':
+      said.push('Approved');
+      break;
+    case 'changesRequested':
+      said.push('Changes requested');
+      break;
+    case 'reviewRequired':
+      said.push('Review required');
+      break;
+    case null:
+      break;
+    default:
+      layer.review satisfies never;
+  }
+  switch (layer.checks) {
+    case 'passing':
+      said.push('checks passed');
+      break;
+    case 'running':
+      said.push('checks running');
+      break;
+    case 'failing':
+      said.push('checks failed');
+      break;
+    case null:
+      break;
+    default:
+      layer.checks satisfies never;
+  }
+  const [first, ...rest] = said;
+  if (first === undefined) return undefined;
+  return [first.charAt(0).toUpperCase() + first.slice(1), ...rest].join(' · ');
+}
+
+/** How long ago `at` was, for a merge in progress: "40 s ago", or as {@link ago} says it. */
+export function secondsAgo(at: number, now: number): string {
+  const seconds = Math.floor(Math.max(0, now - at) / 1000);
+  return seconds < 60 ? `${seconds} s ago` : ago(at, now);
 }
 
 /** What a queue entry's confirmation says of the method: the queue's settings choose it. */
@@ -982,13 +1120,22 @@ export function pendingLine(job: Pick<JobView, 'kind'>): string {
   return `${doing} You can close this; the tab shows how it ends.`;
 }
 
-/** What the toast says once a merge is done: "Merged #4821 into main". Nothing before then. */
+/**
+ * What the toast says once a merge is done: "Merged #4821 into main", "Merged 3 layers into main",
+ * or, for a chain once it has moved the layers on it, "Merged #2260, one layer at a time". Nothing
+ * before then.
+ */
 export function doneLine(job: JobView): string | undefined {
+  const { together } = job;
+  if (together?.kind === 'chain') {
+    return together.phase === 'done' ? `Merged #${job.number}, one layer at a time` : undefined;
+  }
+  const what = together?.kind === 'stack' ? `${together.layers.length} layers` : `#${job.number}`;
   switch (job.state.kind) {
     case 'merged':
-      return `Merged #${job.number} into ${job.base}`;
+      return `Merged ${what} into ${job.base}`;
     case 'enqueued':
-      return `Added #${job.number} to the merge queue for ${job.base}`;
+      return `Added ${what} to the merge queue for ${job.base}`;
     case 'sending':
     case 'pending':
     case 'refused':
@@ -1001,10 +1148,29 @@ export function doneLine(job: JobView): string | undefined {
 }
 
 /**
+ * What follows {@link doneLine} in its toast: for a chain, where the layers on it went, "#2266 now
+ * points at main and needs a rebase."
+ */
+export function doneDetail(job: JobView): string {
+  return job.together?.kind === 'chain' ? (job.together.text ?? '') : '';
+}
+
+/**
  * What a merge that needs the reader says, first: it was refused, or Lo can't tell how it ended.
  * Nothing for one that doesn't.
  */
 export function outcomeTitle(job: JobView): string | undefined {
+  const { together } = job;
+  if (together?.kind === 'chain' && together.phase === 'stopped') {
+    if (job.state.kind === 'merged' || job.state.kind === 'enqueued') {
+      return `Lo stopped moving the layers on #${job.number}.`;
+    }
+  }
+  if (together?.kind === 'stack' && job.state.kind === 'refused' && job.kind === 'merge') {
+    const { landed } = together;
+    if (landed === null) return 'Lo can’t tell which layers merged.';
+    return landed.length > 0 ? `Merged ${numbers(landed)} only.` : 'Nothing merged.';
+  }
   switch (job.state.kind) {
     case 'refused':
       return job.kind === 'enqueue'
@@ -1034,7 +1200,29 @@ export function outcomeDetail(job: JobView): string {
     said.push(job.state.text);
     if (job.state.shows === 'open') said.push('GitHub shows it open.');
   }
+  const { together } = job;
+  if (together?.kind === 'stack' && job.state.kind === 'refused' && job.kind === 'merge') {
+    const { landed } = together;
+    said.push(
+      landed === null
+        ? 'Lo couldn’t read which layers went in.'
+        : landed.length === 0
+          ? 'No layer went in.'
+          : `${numbers(landed)} went in all the same, and the layers above ${landed.length === 1 ? 'it' : 'them'} didn’t.`,
+    );
+  }
+  if (together?.kind === 'chain' && together.text !== null && together.phase === 'stopped') {
+    if (!said.includes(together.text)) said.push(together.text);
+  }
   return said.join(' ');
+}
+
+/** How a stack's merge goes, as its dialog says it: "Merging 3 layers into main". */
+export function stackLine(job: JobView, progress: Extract<Progress, { kind: 'stack' }>): string {
+  const layers = `${progress.layers.length} layers`;
+  return job.kind === 'enqueue'
+    ? `Adding ${layers} to the merge queue for ${job.base}`
+    : `Merging ${layers} into ${job.base}`;
 }
 
 /** What a pending merge's trouble says: why Lo's last question got no answer. */
