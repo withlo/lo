@@ -1,5 +1,6 @@
 import { join } from 'node:path';
 
+import { buildCommit } from '../scripts/commit.ts';
 import { appFolder, expect, HELD_LONG, test } from './app.ts';
 
 test('the page gets invoke and subscribe, and nothing else, and a malformed request, or a name that is no feature’s, reaches nothing', async ({
@@ -57,6 +58,9 @@ test('the page gets invoke and subscribe, and nothing else, and a malformed requ
 });
 
 test('app.info answers', async ({ page }) => {
+  // The first digits of a commit when the build could find one, as in a checkout. Which commit it
+  // names is the build's, so a build made before the last commit names an earlier one.
+  const found = buildCommit(process.env, import.meta.dirname) !== '';
   const reply = await page.evaluate(() => window.lo.invoke('app.info'));
   expect(reply).toEqual({
     ok: true,
@@ -68,6 +72,7 @@ test('app.info answers', async ({ page }) => {
         status: expect.stringMatching(/^(checking|found|missing|tooOld)$/),
       }),
       packaged: false,
+      ...(found ? { commit: expect.stringMatching(/^[0-9a-f]{7}$/) } : {}),
       // What the suite asks for, so its tests aren't racing the bound on what a tab holds back.
       holdLimit: HELD_LONG,
       nonce: expect.stringMatching(/^[A-Za-z0-9+/]{24}$/),
