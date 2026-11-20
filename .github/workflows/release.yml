@@ -397,14 +397,15 @@ jobs:
           esac
 
   # Proposes a published release's Homebrew cask to withlo/homebrew-tap. It runs when a maintainer
-  # publishes a release that isn't a prerelease, by the release's flag and by its tag, and only for
-  # GitHub's latest release. It downloads the two DMGs from the addresses the cask names, checks
-  # each against the release's SHA256SUMS, renders Casks/lo.rb with scripts/release/cask.sh, and
-  # opens a pull request on the tap from the branch lo-<version>. The tap's checks audit and install
-  # the cask there, and a maintainer merges it. The version, and so the branch and every file name,
-  # comes from the release's tag alone, through version.sh: never from the release's name or notes.
-  # TAP_TOKEN, a token that can write only to the tap, comes from the `tap` environment, and only the
-  # step that opens the pull request reads it, running gh alone.
+  # publishes a release that isn't a prerelease, by the release's flag and by its tag, and fails for
+  # one that isn't GitHub's latest, whose cask would take Homebrew's back. It downloads the two DMGs
+  # from the addresses the cask names, checks each against the release's SHA256SUMS, renders
+  # Casks/lo.rb with scripts/release/cask.sh, and opens a pull request on the tap from the branch
+  # lo-<version>. The tap's checks audit and install the cask there, and a maintainer merges it. The
+  # version, and so the branch and every file name, comes from the release's tag alone, through
+  # version.sh: never from the release's name or notes. TAP_TOKEN, a token that can write only to
+  # the tap, comes from the `tap` environment, and only the step that opens the pull request reads
+  # it, running gh alone.
   cask:
     name: cask
     needs: version
@@ -431,7 +432,7 @@ jobs:
         run: |
           latest=$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name)
           if [ "$latest" != "v$VERSION" ]; then
-            echo "::error::v$VERSION isn't GitHub's latest release ($latest is), so its cask isn't proposed."
+            echo "::error::v$VERSION isn't GitHub's latest release, $latest is."
             exit 1
           fi
 
@@ -466,8 +467,8 @@ jobs:
           sh scripts/release/cask.sh "$VERSION" "$ARM64" "$X64" > "$RUNNER_TEMP/lo.rb"
           cat "$RUNNER_TEMP/lo.rb"
 
-      # Through GitHub's API, so the token never goes into git's config: the branch lo-<version> from
-      # the tap's main, a commit on it that writes Casks/lo.rb, and a pull request, titled as
+      # Through GitHub's API, so the token never goes into git's config: the branch lo-<version>
+      # from the tap's main, a commit on it that writes Casks/lo.rb, and a pull request, titled as
       # Homebrew titles a cask's update. A re-run reuses the branch and its pull request, and does
       # nothing once main has this cask. A file's blob SHA is git's hash of its contents, so
       # comparing them compares the casks.
@@ -505,7 +506,8 @@ jobs:
           [ -n "$on_main" ] || title="$title (new cask)"
 
           if ! gh api "repos/$TAP/git/ref/heads/$branch" > /dev/null 2>&1; then
-            gh api -X POST "repos/$TAP/git/refs" -f "ref=refs/heads/$branch" -f "sha=$main" > /dev/null
+            gh api -X POST "repos/$TAP/git/refs" -f "ref=refs/heads/$branch" -f "sha=$main" \
+              > /dev/null
           fi
           on_branch=$(blob "$branch")
           if [ "$on_branch" != "$want" ]; then
@@ -514,7 +516,8 @@ jobs:
             gh api -X PUT "repos/$TAP/contents/$file" "$@" > /dev/null
           fi
 
-          open=$(gh pr list --repo "$TAP" --head "$branch" --state open --json url --jq '.[0].url // empty')
+          open=$(gh pr list --repo "$TAP" --head "$branch" --state open --json url \
+            --jq '.[0].url // empty')
           if [ -n "$open" ]; then
             echo "::notice::$open has this cask."
             exit 0
@@ -523,5 +526,6 @@ jobs:
           run="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
           body=$(printf '%s\n\n%s\n' "The cask for Lo $VERSION: $release" \
             "Each DMG's SHA-256 is the one the release's SHA256SUMS lists. Opened by $run.")
-          url=$(gh pr create --repo "$TAP" --base main --head "$branch" --title "$title" --body "$body")
+          url=$(gh pr create --repo "$TAP" --base main --head "$branch" --title "$title" \
+            --body "$body")
           echo "::notice::Opened $url. Merge it once its checks pass."

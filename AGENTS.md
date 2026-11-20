@@ -1797,13 +1797,14 @@ the pins first (see "Language servers"), and run a dry run on `main` before tagg
     `gh release create v<version> --draft --verify-tag --generate-notes`, with `--prerelease` for a
     prerelease. A re-run replaces a draft's files, and refuses a tag that has a published release.
   - `cask` runs alone when a release is published (`release: published`), and only for one that
-    isn't a prerelease, by the release's flag and by its tag, and is GitHub's latest. `version`
-    checks the release's tag as it checks a pushed one, and the version, the branch and every file
-    name come from that tag alone. The job downloads the two DMGs from the addresses the cask names,
-    checks each against the release's `SHA256SUMS`, renders `Casks/lo.rb` with
-    `scripts/release/cask.sh`, and opens a pull request on `withlo/homebrew-tap` from
-    `lo-<version>`, titled `lo <version>` (`(new cask)` the first time), through GitHub's API. A
-    re-run reuses the branch and the pull request. Merge it once the tap's checks pass.
+    isn't a prerelease, by the release's flag and by its tag. It fails for one that isn't GitHub's
+    latest, whose cask would take Homebrew's back. `version` checks the release's tag as it checks a
+    pushed one, and the version, the branch and every file name come from that tag alone. The job
+    downloads the two DMGs from the addresses the cask names, checks each against the release's
+    `SHA256SUMS`, renders `Casks/lo.rb` with `scripts/release/cask.sh`, and opens a pull request on
+    `withlo/homebrew-tap` from `lo-<version>`, titled `lo <version>` (`(new cask)` the first time),
+    through GitHub's API. A re-run reuses the branch and the pull request. Merge it once the tap's
+    checks pass.
 - **Environments and secrets.** The `mac` job of a tag's run is the only one that reads the signing
   secrets, through the `release` environment. Releasing requires that environment, in the
   repository's settings, to wait for a maintainer's approval and to take only `v*` tags: the
