@@ -1,7 +1,8 @@
 // The adapters Lo ships: which files each reads, and what it downloads before it starts: Node for
 // the servers that run on it, Go for gopls, which Lo builds with it, Lo's Rust for rust-analyzer,
-// which runs on it, the JDK Java's runs on, and the .NET SDK Roslyn runs on; and, on macOS, the
-// SourceKit-LSP it finds in Xcode or Apple's Command Line Tools. What each server runs as, and is
+// which runs on it, the JDK Java's runs on, and the .NET SDK Roslyn runs on; on macOS, the
+// SourceKit-LSP it finds in Xcode or Apple's Command Line Tools; and on Linux, Swift's toolchain
+// for the distribution, unless packages it needs are missing. What each server runs as, and is
 // told, is `@lo/lsp`'s, and tested there.
 
 import { mkdirSync, mkdtempSync, realpathSync, rmSync } from 'node:fs';
@@ -17,12 +18,15 @@ import {
   launchOnNode,
   launchRoslyn,
   launchRustAnalyzer,
+  launchSourceKitOnLinux,
   PHP_LSP,
   PYRIGHT,
   ROSLYN,
   RUST_ANALYZER,
   sourceKitCandidates,
   sourceKitCheckoutProblem,
+  SWIFT_DISTROS,
+  type SwiftDistro,
   TERRAFORM_LS,
   toolchainUse,
   VTSLS,
@@ -85,6 +89,7 @@ async function prepared(adapter: Adapter, given: Readonly<Record<string, Toolcha
     },
     findCopy: () => Promise.reject(new Error('no copy is looked for')),
     developerFolder: () => Promise.reject(new Error('no developer folder is looked for')),
+    missingPackages: () => Promise.resolve([]),
     signal: new AbortController().signal,
   });
   return { installs, toolchains, ready };
@@ -160,6 +165,7 @@ describe('Lo’s adapters', () => {
       },
       findCopy: () => Promise.reject(new Error('no copy is looked for')),
       developerFolder: () => Promise.reject(new Error('no developer folder is looked for')),
+      missingPackages: () => Promise.resolve([]),
       signal: new AbortController().signal,
     });
     expect(installs).toEqual([RUST_ANALYZER.id]);
@@ -202,6 +208,7 @@ describe('Lo’s adapters', () => {
       },
       findCopy: () => Promise.reject(new Error('no copy is looked for')),
       developerFolder: () => Promise.reject(new Error('no developer folder is looked for')),
+      missingPackages: () => Promise.resolve([]),
       signal: new AbortController().signal,
     };
     const adapter = shipped('go');
@@ -274,6 +281,7 @@ describe('Lo’s adapters', () => {
       },
       findCopy: () => Promise.reject(new Error('no copy is looked for')),
       developerFolder: () => Promise.reject(new Error('no developer folder is looked for')),
+      missingPackages: () => Promise.resolve([]),
       signal: new AbortController().signal,
     });
     expect(toolchains).toEqual(['dotnet']);
@@ -333,6 +341,7 @@ describe('Lo’s adapters', () => {
         return Promise.resolve(candidates.find((candidate) => candidate === found));
       },
       developerFolder: () => Promise.resolve(folder),
+      missingPackages: () => Promise.resolve([]),
       signal: new AbortController().signal,
     });
     const adapter = shipped('swift');
@@ -369,6 +378,72 @@ describe('Lo’s adapters', () => {
     expect(await adapter.system?.from(context(tools?.program))).toBeUndefined();
   });
 
+  it('on Linux, download Swift for the distribution, or say which of its packages it needs', async () => {
+    const fedora = SWIFT_DISTROS.find((distro) => distro.id === 'fedora41');
+    if (!fedora) throw new Error('swift.org builds for Fedora 41');
+    // Only on a Linux that takes one of swift.org's builds.
+    expect(shippedAdapters('linux').map((each) => each.id)).not.toContain('swift');
+    const adapter = shippedAdapters('linux', fedora).find((each) => each.id === 'swift');
+    if (!adapter) throw new Error('no Swift on Fedora');
+    expect(adapter.downloads).toEqual({ servers: [], toolchains: ['swift-fedora41'] });
+    expect(adapter.checkout).toBe(sourceKitCheckoutProblem);
+    expect(adapter.system).toBeUndefined();
+    expect(adapter.noReferences).toBe(
+      'SourceKit-LSP finds references only from a build, which Lo never runs.',
+    );
+
+    const files = '/lo/cache/toolchains/swift-fedora41/6.4.2/files';
+    const installed: Installed = {
+      folder: files,
+      entry: `${files}/swift-6.4.2-RELEASE-fedora41/usr/bin/sourcekit-lsp`,
+    };
+    const swift: Toolchain = {
+      version: '6.4.2',
+      installed,
+      ...toolchainUse('swift-fedora41', '6.4.2', installed),
+    };
+    const asked: string[] = [];
+    const context = (missing: readonly string[]) => ({
+      install: () => Promise.reject(new Error('no server downloads')),
+      toolchain: (id: string) => {
+        asked.push(id);
+        return Promise.resolve(swift);
+      },
+      findCopy: () => Promise.reject(new Error('no copy is looked for')),
+      developerFolder: () => Promise.reject(new Error('no developer folder is looked for')),
+      missingPackages: (distro: SwiftDistro) =>
+        Promise.resolve(distro === fedora ? missing : ['not this distribution']),
+      signal: new AbortController().signal,
+    });
+
+    // With packages missing, it downloads nothing, and says which and how to install them.
+    expect(await adapter.prepare(context(['libxml2-devel', 'python3-devel']))).toEqual({
+      kind: 'missing',
+      needs: 'the packages libxml2-devel and python3-devel',
+      install: 'sudo dnf install libxml2-devel python3-devel',
+      plural: true,
+    });
+    expect(asked).toEqual([]);
+
+    // With them all, it starts the SourceKit-LSP in the toolchain, told of no workspace, as
+    // `@lo/lsp` starts it.
+    const ready = await adapter.prepare(context([]));
+    expect(asked).toEqual(['swift-fedora41']);
+    if (ready.kind !== 'ready') throw new Error('not ready');
+    const { place, ...launch } = ready.launch;
+    const { place: lsp, ...expected } = launchSourceKitOnLinux(swift, '6.4.2');
+    expect(launch).toEqual(expected);
+    expect(launch).toMatchObject({
+      program: installed.entry,
+      path: [`${files}/swift-6.4.2-RELEASE-fedora41/usr/bin`],
+      rootless: true,
+      version: 'SourceKit-LSP from Swift 6.4.2 · Apache-2.0',
+    });
+    expect(launch.services).toBeUndefined();
+    const where = { root: '/checkout', home: '/home' };
+    expect(await place?.(where)).toEqual(await lsp?.(where));
+  });
+
   it('start nothing when a download fails', async () => {
     const failed = new Error('npm’s registry answered 503');
     await expect(
@@ -378,6 +453,7 @@ describe('Lo’s adapters', () => {
         toolchain: () => Promise.reject(new Error('no toolchain is asked for')),
         findCopy: () => Promise.resolve(undefined),
         developerFolder: () => Promise.resolve(undefined),
+        missingPackages: () => Promise.resolve([]),
         signal: new AbortController().signal,
       }),
     ).rejects.toBe(failed);
@@ -388,6 +464,7 @@ describe('Lo’s adapters', () => {
         toolchain: () => Promise.reject(new Error('no toolchain is asked for')),
         findCopy: () => Promise.resolve(undefined),
         developerFolder: () => Promise.resolve(undefined),
+        missingPackages: () => Promise.resolve([]),
         signal: new AbortController().signal,
       }),
     ).rejects.toBe(missing);
@@ -403,6 +480,7 @@ describe('Lo’s adapters', () => {
         toolchain: () => Promise.reject(unavailable),
         findCopy: () => Promise.resolve(undefined),
         developerFolder: () => Promise.resolve(undefined),
+        missingPackages: () => Promise.resolve([]),
         signal: new AbortController().signal,
       }),
     ).rejects.toBe(unavailable);
@@ -417,6 +495,7 @@ describe('Lo’s adapters', () => {
         toolchain: () => Promise.reject(sdk),
         findCopy: () => Promise.resolve(undefined),
         developerFolder: () => Promise.reject(new Error('no developer folder is looked for')),
+        missingPackages: () => Promise.resolve([]),
         signal: new AbortController().signal,
       }),
     ).rejects.toBe(sdk);

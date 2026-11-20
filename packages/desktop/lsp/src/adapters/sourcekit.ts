@@ -10,6 +10,10 @@
  * held to the rules of `copies.ts`, and is Apple's, updated with Xcode or the tools, so Lo pins no
  * version of it.
  *
+ * On Linux, SourceKit-LSP comes in Swift's toolchain, which Lo downloads there from swift.org
+ * (`swift.ts`), and it's started as it is on macOS, told of no workspace, for the same reasons.
+ * {@link launchSourceKitOnLinux}, below, says where it differs; the rest of this is macOS's.
+ *
  * SourceKit-LSP takes the rest of its toolchain (the Swift compiler and `sourcekitd`) from the
  * folder it's installed in, and Lo gives it no `SOURCEKIT_TOOLCHAIN_PATH` to say otherwise.
  *
@@ -72,7 +76,13 @@ import { promisify } from 'node:util';
 
 import type { Launch } from './node.ts';
 import type { Placed, Where } from '../place.ts';
-import { entriesOf, foldName, tooManyEntries, WALK_LIMIT } from '../toolchains.ts';
+import {
+  entriesOf,
+  foldName,
+  type InstalledToolchain,
+  tooManyEntries,
+  WALK_LIMIT,
+} from '../toolchains.ts';
 
 /** SourceKit-LSP: what it's called, and its license. */
 export const SOURCEKIT_LSP = { name: 'SourceKit-LSP', license: 'Apache-2.0' } as const;
@@ -182,19 +192,20 @@ const generatedFiles = (home: string) => join(home, 'generated');
 const moduleCache = (home: string) => join(home, 'cache', 'modules');
 
 /**
- * What SourceKit-LSP is told, as its `initializationOptions`, with `home` its home and `sdk` the
- * macOS SDK: no background indexing, which would build the package; its generated files, and its
- * compiler's module cache, in its home; a file's fallback build settings with Lo's flags and the
- * SDK, so it never asks `xcrun` for one; nothing more for clangd; and `sourcekitd`'s requests held
- * to Lo's longest wait, about 10 s, not 2 minutes, and `sourcekitd` restarted once one hangs for
- * about 30 s, not 5 minutes, since Lo has given up on any request by then.
+ * What SourceKit-LSP is told, as its `initializationOptions`, with `home` its home and, on macOS,
+ * `sdk` the macOS SDK: no background indexing, which would build the package; its generated files,
+ * and its compiler's module cache, in its home; a file's fallback build settings with Lo's flags
+ * and the SDK, so it never asks `xcrun` for one (Linux has no SDK, and it asks nothing there);
+ * nothing more for clangd; and `sourcekitd`'s requests held to Lo's longest wait, about 10 s, not
+ * 2 minutes, and `sourcekitd` restarted once one hangs for about 30 s, not 5 minutes, since Lo has
+ * given up on any request by then.
  */
-export function sourceKitOptions(home: string, sdk: string): Record<string, unknown> {
+export function sourceKitOptions(home: string, sdk?: string): Record<string, unknown> {
   return {
     backgroundIndexing: false,
     generatedFilesPath: generatedFiles(home),
     fallbackBuildSystem: {
-      sdk,
+      ...(sdk === undefined ? {} : { sdk }),
       swiftCompilerFlags: ['-module-cache-path', moduleCache(home)],
       cCompilerFlags: [],
       cxxCompilerFlags: [],
@@ -250,6 +261,38 @@ export function launchSourceKit(found: SourceKit): Launch {
     services: ['SourceKitService'],
     place: (where) => placeSourceKit(where, found.sdk),
     version: `${SOURCEKIT_LSP.name} from ${found.from} · ${SOURCEKIT_LSP.license}`,
+  };
+}
+
+/**
+ * How SourceKit-LSP starts on Linux, from `swift`, the toolchain of `version` Lo downloaded for the
+ * system's distribution (`swift.ts`), whose entry point it is: told of no workspace, as on macOS,
+ * for the same reasons, with its arguments and options worked out once its home is made. There it
+ * differs from macOS in that:
+ *
+ * - it runs `sourcekitd` in its own process, from the toolchain's `libsourcekitdInProc.so`, so
+ *   there's no service outside its family, and what that runs, such as `swift-plugin-server` for a
+ *   macro from the toolchain, is in its family too;
+ * - there's no SDK: the compiler reads the system's headers, from the distribution's packages,
+ *   which `missingPackages` checks are installed, and the toolchain's own modules;
+ * - Foundation's home folder is `HOME`, the server's home, where it reads its settings
+ *   (`.sourcekit-lsp/config.json`, of which there's none) and writes its logs
+ *   (`.sourcekit-lsp/logs`). It reads `$XDG_CONFIG_HOME/sourcekit-lsp/config.json` too, but only
+ *   when that's set, which it isn't, and nothing of the machine's;
+ * - its folder of programs is first on its `PATH`, as each toolchain's is.
+ */
+export function launchSourceKitOnLinux(swift: InstalledToolchain, version: string): Launch {
+  return {
+    program: swift.installed.entry,
+    args: [],
+    path: [...swift.path],
+    rootless: true,
+    place: ({ home }) =>
+      Promise.resolve({
+        args: sourceKitArguments(home),
+        initializationOptions: sourceKitOptions(home),
+      }),
+    version: `${SOURCEKIT_LSP.name} from Swift ${version} · ${SOURCEKIT_LSP.license}`,
   };
 }
 

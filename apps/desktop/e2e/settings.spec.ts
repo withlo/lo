@@ -1,7 +1,15 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
-import { currentPlatform, downloadFor, fingerprint, TOOLCHAINS } from '@lo/lsp';
+import {
+  currentPlatform,
+  downloadFor,
+  fingerprint,
+  readOsRelease,
+  swiftDistroFor,
+  swiftToolchainId,
+  TOOLCHAINS,
+} from '@lo/lsp';
 import { gitProgram } from '@lo/testing/git';
 import { _electron as electron, type ElectronApplication, type Page } from '@playwright/test';
 
@@ -342,17 +350,27 @@ test('Settings lists the toolchains, and removes one that’s downloaded', async
     const section = page.locator('section[data-settings-section="code.toolchains"]');
     const rows = section.getByRole('listitem');
     // On macOS, Swift's too: the system's, from Xcode or Apple's Command Line Tools, with nothing to
-    // remove.
+    // remove. On a Linux that takes one of swift.org's builds, Lo's download of that.
     const swift =
       process.platform === 'darwin'
         ? [/^Swift(From Xcode|From Apple’s Command Line Tools|Needs .+) · For Swift$/]
         : [];
+    const distro = process.platform === 'linux' ? swiftDistroFor(readOsRelease()) : undefined;
+    const version = distro && TOOLCHAINS[swiftToolchainId(distro)]?.version;
+    const downloaded = version
+      ? [
+          new RegExp(
+            `^Swift ${version.replaceAll('.', '\\.')}Not downloaded · [\\d.]+ GB · For Swift$`,
+          ),
+        ]
+      : [];
     await expect(rows).toHaveText(
       [
         // C#'s server runs on the .NET SDK, Go's on Go, Rust's on Rust and Java's on the JDK.
         /^\.NET SDK 10\.0\.404Not downloaded · [\d.]+ MB · For C#$/,
         'Go 1.27.42 KB · For GoRemove',
         /^Rust 1\.100\.0Not downloaded · [\d.]+ MB/,
+        ...downloaded,
         /^Temurin JDK 25\.0\.5\+8Not downloaded · [\d.]+ MB/,
         ...swift,
       ],
