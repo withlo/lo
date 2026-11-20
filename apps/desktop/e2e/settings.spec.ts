@@ -253,11 +253,17 @@ test.describe('with a hand-edited bad value', () => {
 test.describe('with app.gpu off', () => {
   test.use({ settings: '{ "app.gpu": false }\n' });
 
-  test('Lo starts and draws without hardware acceleration, and Settings reports a value it can’t use', async ({
+  test('Lo starts and draws without hardware acceleration, the window can’t change it, and Settings reports a value it can’t use', async ({
     app,
     page,
   }) => {
     expect(await app.evaluate(({ app: lo }) => lo.isHardwareAccelerationEnabled())).toBe(false);
+    // As the page itself could: only the person editing the file changes it.
+    const reply = await page.evaluate(() =>
+      window.lo.invoke('settings.set', { key: 'app.gpu', value: true }),
+    );
+    expect(reply.ok ? '' : reply.error.code).toBe('unwritable');
+    expect(file()).toBe('{ "app.gpu": false }\n');
     edit('{ "app.gpu": "off" }\n');
     await openSettings(page);
     await expect(problems(page)).toContainText(

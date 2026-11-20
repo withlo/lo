@@ -87,8 +87,12 @@ linux:
   maintainer: Mike Scornavacca <52425912+scornz@users.noreply.github.com>
   vendor: Mike Scornavacca
 
+# Both hold Chromium's sandbox helper, /opt/Lo/chrome-sandbox, setuid root: this hook makes it so
+# in the folder they're made from, and the rpm also says so of the file.
+afterPack: ./build/linux/after-pack.ts
+
 # Each package's scripts (build/linux/) make what the package can't hold: the lo command's link,
-# Chromium's sandbox helper setuid root, and on Ubuntu, AppArmor's profile for Lo. The dependencies
+# and on Ubuntu, AppArmor's profile for Lo; they set the sandbox helper again too. The dependencies
 # are electron-builder's, and what Electron's program loads that they don't bring: libsecret, for
 # the Secret Service Lo keeps its tokens with, ALSA and GBM. Lo has no tray icon, so it doesn't
 # recommend the app indicator's library.
@@ -112,9 +116,13 @@ deb:
 rpm:
   afterInstall: build/linux/after-install.sh
   afterRemove: build/linux/after-remove.sh
-  # The rpm owns its folders, so removing it leaves none behind, and holds none of rpmbuild's
-  # links in /usr/lib/.build-id, which would clash with another app built on the same Electron.
-  fpm: ['--rpm-auto-add-directories', '--rpm-rpmbuild-define=_build_id_links none']
+  # The rpm owns its folders, so removing it leaves none behind, holds none of rpmbuild's links in
+  # /usr/lib/.build-id, which would clash with another app built on the same Electron, and says the
+  # sandbox helper is setuid root, so `rpm -V` finds it so and `rpm --setperms` keeps it so.
+  fpm:
+    - --rpm-auto-add-directories
+    - --rpm-rpmbuild-define=_build_id_links none
+    - --rpm-attr=4755,root,root:/opt/Lo/chrome-sandbox
   depends:
     - gtk3
     - libnotify

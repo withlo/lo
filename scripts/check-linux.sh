@@ -8,7 +8,9 @@
 # The package must be:
 # - named lo, at the file's version and architecture, under GPL-3.0-only, with the maintainer,
 #   homepage and libsecret among its dependencies, and build/linux/'s scripts as its own;
-# - holding only Lo in /opt/Lo, its desktop file and its icons, with the program at /opt/Lo/lo;
+# - holding only Lo in /opt/Lo, its desktop file and its icons, with the program at /opt/Lo/lo,
+#   and Chromium's sandbox helper setuid root in the package itself, and nothing else setuid or
+#   setgid;
 # - registering Lo, in its desktop file, for lo:// links and nothing else, opening it as
 #   `/opt/Lo/lo %U`;
 # - holding an app-update.yml that names GitHub Releases of withlo/lo, and electron-builder's
@@ -18,7 +20,8 @@
 #   checks no asar hash on Linux, so there's none to check.
 # Installed, it must have:
 # - /usr/bin/lo leading to /opt/Lo/lo, Chromium's sandbox helper setuid root, every library the
-#   program needs, and where AppArmor runs, Lo's profile loaded;
+#   program needs, where AppArmor runs, Lo's profile loaded, and for an rpm, nothing `rpm -V` finds
+#   changed;
 # then, started by someone other than root, under Xvfb:
 # - quit at once, saying why, when started with anything but a link (--no-sandbox and
 #   --disable-gpu among them, and a switch after whitespace), or with a variable set that would
@@ -28,7 +31,8 @@
 #   for anything;
 # - take a link from the lo command, handed over by a second copy that then quits, and leave
 #   lo.desktop the handler of lo:// links and not of web links;
-# and installed again, keep all that, and removed, leave nothing behind.
+# and installed again, keep all that, and removed, leave nothing behind; and where /usr/bin/lo is
+# someone else's, leave it as it is, installed and removed.
 #
 # Usage: sh scripts/check-linux.sh <deb or rpm>
 # It runs itself with --install where the package installs, and that with --start under Xvfb.
@@ -95,6 +99,27 @@ installed() {
   fi
   missing=$(ldd "$PROGRAM" | grep 'not found' || true)
   [ -z "$missing" ] || fail "$PROGRAM needs libraries the package's dependencies didn't bring: $missing"
+  if [ "$format" = rpm ]; then
+    changed=$(rpm -V lo 2>&1) || fail "rpm -V finds Lo's files changed since they were installed: $changed"
+  fi
+}
+
+# Installs the package (with --reinstall, installs it again), and removes it.
+put() {
+  if [ "$format" = deb ]; then
+    as_root apt-get install -y -q "$@" "$file"
+  elif [ "${1-}" = --reinstall ]; then
+    dnf reinstall -y -q "$file"
+  else
+    dnf install -y -q "$file"
+  fi
+}
+drop() {
+  if [ "$format" = deb ]; then
+    as_root apt-get remove -y -q lo
+  else
+    dnf remove -y -q lo
+  fi
 }
 
 if [ "${1-}" = --start ]; then
@@ -289,19 +314,11 @@ if [ "${1-}" = --install ]; then
   # Installed again, as an upgrade installs it, the old package's removal script leaves alone
   # what the new one's install script made.
   said="$(basename -- "$file") installed again"
-  if [ "$format" = deb ]; then
-    as_root apt-get install -y -q --reinstall "$file"
-  else
-    dnf reinstall -y -q "$file"
-  fi
+  put --reinstall
   installed
 
   said="$(basename -- "$file") removed"
-  if [ "$format" = deb ]; then
-    as_root apt-get remove -y -q lo
-  else
-    dnf remove -y -q lo
-  fi
+  drop
   [ ! -e "$COMMAND" ] && [ ! -L "$COMMAND" ] || fail "$COMMAND is still there"
   [ ! -e /opt/Lo ] || fail "/opt/Lo is still there: $(ls -A /opt/Lo)"
   [ ! -e "$PROFILE" ] || fail "$PROFILE is still there"
@@ -309,6 +326,16 @@ if [ "${1-}" = --install ]; then
     ! as_root cat /sys/kernel/security/apparmor/profiles | grep -qxF 'lo (unconfined)' ||
       fail "Lo's AppArmor profile is still loaded"
   fi
+
+  # Someone else's lo, there before Lo, which Lo's install leaves as it is, and so does its removal.
+  said="$(basename -- "$file") installed where $COMMAND is someone else's"
+  as_root ln -s /usr/bin/env "$COMMAND"
+  put
+  [ "$(readlink "$COMMAND")" = /usr/bin/env ] || fail "it replaced $COMMAND: $(ls -l "$COMMAND" 2>&1)"
+  said="$(basename -- "$file") removed where $COMMAND is someone else's"
+  drop
+  [ "$(readlink "$COMMAND")" = /usr/bin/env ] || fail "it removed $COMMAND: $(ls -l "$COMMAND" 2>&1)"
+  as_root rm -f "$COMMAND"
   exit "$status"
 fi
 
@@ -364,6 +391,7 @@ if [ "$format" = deb ]; then
   done
   owners=$(dpkg-deb -c "$file" | awk '$2 != "0/0" && $2 != "root/root"')
   [ -z "$owners" ] || fail "it holds files root doesn't own: $owners"
+  modes=$(dpkg-deb -c "$file" | awk '{ sub(/^\./, "", $6); print $1, $6 }')
   dpkg-deb -x "$file" "$contents"
 else
   fields=$(rpm -qp --qf '%{NAME}\n%{VERSION}\n%{ARCH}\n%{LICENSE}\n%{PACKAGER}\n%{URL}\n' "$file")
@@ -380,8 +408,16 @@ else
   done
   owners=$(rpm -qp --qf '[%{FILEUSERNAME}:%{FILEGROUPNAME} %{FILENAMES}\n]' "$file" | grep -v '^root:root ' || true)
   [ -z "$owners" ] || fail "it holds files root doesn't own: $owners"
+  modes=$(rpm -qp --qf '[%{FILEMODES:perms} %{FILENAMES}\n]' "$file")
   rpm2cpio "$file" | (cd "$contents" && cpio -idm --quiet)
 fi
+# The sandbox helper is setuid root in the package itself, so `rpm -V` finds it as it should be, and
+# nothing that sets files back to the package's modes, such as `rpm --setperms`, takes the bit
+# away. Nothing else is setuid or setgid.
+mode=$(printf '%s\n' "$modes" | awk -v path="$SANDBOX" '$2 == path { print $1 }')
+[ "$mode" = -rwsr-xr-x ] || fail "its $SANDBOX is \"$mode\", not setuid -rwsr-xr-x"
+setuid=$(printf '%s\n' "$modes" | awk -v path="$SANDBOX" '$2 != path && $1 ~ /[sS]/')
+[ -z "$setuid" ] || fail "it holds setuid or setgid files besides $SANDBOX: $setuid"
 case $depends in
   *libsecret*) ;;
   *) fail "it doesn't depend on libsecret, which Lo keeps its tokens through: $depends" ;;
@@ -470,6 +506,6 @@ else
 fi
 
 if [ "$status" -eq 0 ]; then
-  echo "$file passed: lo $packaged for $arch, its fields, scripts, files and desktop file, GitHub's update feed, AppArmor's profile, fuses and asar; installed, its command, setuid sandbox helper and libraries; started, it refuses switches, files and variables, draws its window with its pages sandboxed, reads no test servers or other feed, takes a link from the lo command and opens lo:// links; installed again and removed, it leaves nothing behind."
+  echo "$file passed: lo $packaged for $arch, its fields, scripts, files and desktop file, GitHub's update feed, AppArmor's profile, fuses and asar; installed, its command, setuid sandbox helper and libraries; started, it refuses switches, files and variables, draws its window with its pages sandboxed, reads no test servers or other feed, takes a link from the lo command and opens lo:// links; installed again and removed, it leaves nothing behind, and it leaves someone else's lo command as it is."
 fi
 exit "$status"

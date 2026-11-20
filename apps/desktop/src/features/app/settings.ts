@@ -9,6 +9,7 @@ import { defineSetting } from '../settings/contract.ts';
 /**
  * Whether Lo uses hardware acceleration. Off, it draws with the processor alone, which is the
  * way out when a graphics driver leaves the window blank or flickering: what `--disable-gpu` does,
- * which a packaged Lo refuses with every other switch. Main reads it before `ready`.
+ * which a packaged Lo refuses with every other switch. Main reads it before `ready`. Only the
+ * person editing the file changes it: the window, which has no control for it, can't.
  */
-export const gpu = defineSetting('app.gpu', z.boolean(), true, 'true or false');
+export const gpu = defineSetting('app.gpu', z.boolean(), true, 'true or false', { window: 'read' });

@@ -9,10 +9,25 @@
 set -e
 
 # The lo command: /usr/bin/lo, a link to Lo's program, through update-alternatives where the
-# system has it, as Debian, Ubuntu and Fedora do. A link an older install made itself, not through
-# update-alternatives, gives way to one that is.
-if command -v update-alternatives > /dev/null 2>&1; then
-  if [ -L /usr/bin/lo ] && [ -e /usr/bin/lo ] && [ "$(readlink /usr/bin/lo)" != /etc/alternatives/lo ]; then
+# system has it, as Debian, Ubuntu and Fedora do. It's made only where it's Lo's to make: where
+# there's none, or a link that leads nowhere, into /opt/Lo, or to the lo alternative. A lo of
+# anyone else's stays as it is, and Lo's Settings show Lo's own lo command as not installed.
+ours=
+if [ ! -L /usr/bin/lo ]; then
+  [ -e /usr/bin/lo ] || ours=true
+elif [ ! -e /usr/bin/lo ]; then
+  ours=true
+else
+  case $(readlink /usr/bin/lo) in
+    /opt/Lo/* | /etc/alternatives/lo) ours=true ;;
+    *) ;;
+  esac
+fi
+if [ -z "$ours" ]; then
+  echo "/usr/bin/lo isn't Lo's, so Lo left it as it is." >&2
+elif command -v update-alternatives > /dev/null 2>&1; then
+  # A link Lo made itself, not through update-alternatives, or one that leads nowhere, gives way.
+  if [ -L /usr/bin/lo ] && [ "$(readlink /usr/bin/lo)" != /etc/alternatives/lo ]; then
     rm -f /usr/bin/lo
   fi
   update-alternatives --install /usr/bin/lo lo /opt/Lo/lo 100 || ln -sf /opt/Lo/lo /usr/bin/lo
@@ -24,7 +39,8 @@ fi
 # window in user namespaces where it can make them, and through this helper where it can't: where
 # they're turned off, or where AppArmor stops them. A packaged Lo refuses --no-sandbox, so with
 # neither it wouldn't start at all. Checked as root, as electron-builder's own script checks, user
-# namespaces always seem to work, so this doesn't depend on them.
+# namespaces always seem to work, so this doesn't depend on them. The package itself holds it so;
+# this sets it again in case something on the way didn't keep the bit.
 chown root:root /opt/Lo/chrome-sandbox
 chmod 4755 /opt/Lo/chrome-sandbox
 
