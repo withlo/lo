@@ -14,7 +14,7 @@ import { dirname, join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { INLINED, inlinedCode, type Inlined } from './inlined.ts';
+import { INLINED, UNLICENSED, inlinedCode, type Inlined, type Unlicensed } from './inlined.ts';
 import type { Kept } from './kept.ts';
 import { packageReader, type Bundled } from './packages.ts';
 
@@ -316,6 +316,65 @@ describe('inlinedCode', () => {
       const dir = install('pkg', '1.0.0', { 'a.css': '/* Copyright (c) Bob Other */\n' });
       expect(inlinedCode([bundle(dir, ['a.css'])]).packages[0]?.says).toBeUndefined();
     });
+  });
+});
+
+/** A package at `dir` that says it's under `license`, with no license file. */
+function bareUnder(license: string): Bundled {
+  const dir = install('bare', '1.0.0');
+  rmSync(join(dir, 'LICENSE'));
+  writeFileSync(
+    join(dir, 'package.json'),
+    JSON.stringify({ name: 'bare', version: '1.0.0', license }),
+  );
+  return bundle(dir, []);
+}
+
+describe('a package with no license file', () => {
+  const entry: Unlicensed = {
+    in: 'bare@1.0.0',
+    license: 'MIT',
+    copyright: ['Copyright (c) Someone'],
+  };
+
+  it('has the MIT License written out with the copyright line its entry gives', () => {
+    const [pack] = inlinedCode([bareUnder('MIT')], [], [entry]).packages;
+    expect(pack?.text).toMatch(
+      /^MIT License\n\nCopyright \(c\) Someone\n\nPermission is hereby granted/,
+    );
+    expect(pack?.text).toContain('THE SOFTWARE IS PROVIDED "AS IS"');
+  });
+
+  it('has none when the license it says is not the one its entry writes, or it has no entry, so the check fails it', () => {
+    expect(inlinedCode([bareUnder('ISC')], [], [entry]).packages[0]?.text).toBeUndefined();
+    expect(inlinedCode([bareUnder('MIT')], [], []).packages[0]?.text).toBeUndefined();
+  });
+
+  it('keeps the license file it has, when it has one', () => {
+    const dir = install('bare', '1.0.0');
+    expect(inlinedCode([bundle(dir, [])], [], [entry]).packages[0]?.text).toBe(
+      'bare license, Copyright (c) bare authors',
+    );
+  });
+});
+
+describe('UNLICENSED', () => {
+  it('is of packages installed at those versions that say the license it writes, and have no license file, so it is not kept after they have one', () => {
+    const problems = UNLICENSED.flatMap((entry) => {
+      const dir = installedAt(entry.in);
+      if (dir === undefined) return [`${entry.in} isn't installed at that version.`];
+      const files = readdirSync(dir).filter((name) => /^(?:licen[cs]e|copying)/i.test(name));
+      const manifest: unknown = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8'));
+      const license =
+        typeof manifest === 'object' && manifest !== null && 'license' in manifest
+          ? manifest.license
+          : undefined;
+      return [
+        ...(files.length > 0 ? [`${entry.in} has ${files.join(', ')} now.`] : []),
+        ...(license === entry.license ? [] : [`${entry.in} says it's under ${String(license)}.`]),
+      ];
+    });
+    expect(problems).toEqual([]);
   });
 });
 

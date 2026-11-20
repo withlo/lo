@@ -21,7 +21,7 @@ import { dirname, join } from 'node:path';
 
 import { z } from 'zod';
 
-import type { Kept } from './kept.ts';
+import { MIT_TERMS, type Kept } from './kept.ts';
 import { packageReader, type Bundled } from './packages.ts';
 
 /** What the notices need of what a package's files hold of another project's. */
@@ -174,6 +174,32 @@ export const INLINED: readonly Inlined[] = [
     why: "CodeMirror 5's vim mode, whose MIT license and holder, Marijn Haverbeke, the package's license file has",
   },
   {
+    in: 'fs-extra@10.1.0',
+    files: {
+      'lib/fs/index.js': '620b6e703880fd6718c354c5359a5c37a2379054c037269dbcf7afd2503e4a6f',
+    },
+    carries: {
+      repo: 'normalize/mz',
+      provides: "fs-extra's lib/fs/index.js, adapted from it",
+      license: MIT,
+      copyright: ['Copyright (c) 2014-2016 Jonathan Ong me@jongleberry.com and Contributors'],
+    },
+  },
+  {
+    in: 'fs-extra@10.1.0',
+    files: {
+      'lib/mkdirs/utils.js': '5372a36f4b2c5023788c23dbc6639155cb016a1b111e8fc1d6bf97cbaf11b1f8',
+    },
+    carries: {
+      repo: 'sindresorhus/make-dir',
+      provides: "fs-extra's lib/mkdirs/utils.js, adapted from it",
+      license: MIT,
+      copyright: [
+        'Copyright (c) Sindre Sorhus <sindresorhus@gmail.com> (https://sindresorhus.com)',
+      ],
+    },
+  },
+  {
     in: 'web-tree-sitter@0.27.2',
     files: {
       'web-tree-sitter.js': '44626cc32a7b6878a10be084b58b471d9c47c1e2082cd5a5e34c8a41431f0c2d',
@@ -193,6 +219,28 @@ export const INLINED: readonly Inlined[] = [
     why: 'one regular expression, adapted from a Stack Overflow answer, which is too short to hold a copyright',
   },
 ];
+
+/** A package that ships no license file, with the license it says it is under written out for it. */
+export interface Unlicensed {
+  /** The package, as `name@version`. */
+  readonly in: string;
+  readonly license: 'MIT';
+  /** Its copyright line, from what the package says of its author. */
+  readonly copyright: readonly string[];
+}
+
+/**
+ * The packages whose tarballs, and whose repositories too, have no license file. Each says it is
+ * under the MIT License, and names its author, which is all the notice there is to ship.
+ */
+export const UNLICENSED: readonly Unlicensed[] = [
+  { in: 'lazy-val@1.0.5', license: 'MIT', copyright: ['Copyright (c) Vladimir Krivosheev'] },
+];
+
+/** The text of `entry`'s license, written out, as its package would carry it. */
+function textOfUnlicensed(entry: Unlicensed): string {
+  return [`${entry.license} License`, '', ...entry.copyright, '', MIT_TERMS].join('\n');
+}
 
 /** The name of a `name@version` id, which may begin with the `@` of a scope. */
 function nameOf(id: string): string {
@@ -297,14 +345,21 @@ export interface Found {
 export function inlinedCode(
   packages: readonly Bundled[],
   entries: readonly Inlined[] = INLINED,
+  unlicensed: readonly Unlicensed[] = UNLICENSED,
 ): Found {
   const problems: string[] = [];
   const kept = new Set<Kept>();
   const readPackage = packageReader();
   const bundled = new Map(packages.map((pack) => [`${pack.name}@${pack.version}`, pack]));
   const extra = new Map<string, Bundled>();
-  const all = packages.map((pack) => {
-    const id = `${pack.name}@${pack.version}`;
+  const all = packages.map((first) => {
+    const id = `${first.name}@${first.version}`;
+    // A package with no license file has the text its entry writes, if its license is the entry's.
+    const written = unlicensed.find((each) => each.in === id);
+    const pack: Bundled =
+      first.text === undefined && written !== undefined && first.license === written.license
+        ? { ...first, text: textOfUnlicensed(written) }
+        : first;
     const scripts = pack.files.filter(isScript).flatMap((file) => {
       try {
         return [{ file, text: readFileSync(join(pack.dir, file), 'utf8') }];
