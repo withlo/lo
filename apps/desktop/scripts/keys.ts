@@ -107,12 +107,19 @@ function commandsIn(features: readonly Declarations[]): Command[] {
   return features.flatMap(commandsOf);
 }
 
-/** What a command with no key says in place of one: where it's found instead. */
+/**
+ * What a command with no key says in place of one: where it's found instead. Only macOS has an app
+ * menu, so a command in one says so, and a command in a right-click menu is in `its menu`, which
+ * both systems have.
+ */
 function noKey(command: Command): string {
   if (!keyless(command)) return 'None';
-  return command.bar
-    ? 'None: in the app menu and the palette'
-    : 'None: in its menu and the palette';
+  const places = [
+    ...(command.bar ? ['the app menu on macOS'] : []),
+    ...(command.menu ? ['its menu'] : []),
+    'the palette',
+  ];
+  return `None: in ${listed(places)}`;
 }
 
 /**
@@ -172,7 +179,7 @@ function scopeSection(features: readonly Declarations[]): string[] {
     '',
     "In a code view, keys follow Vim's mode. In insert mode, and while Vim waits for the rest of a command (after a count or an operator), only chords are Lo's, and other keys go to Vim, but for the keys of Lo's commands that take a count, after a count alone in normal mode (see [Counts](#counts)). In a text field, typing and moving through the text are the field's.",
     '',
-    `A key that starts one of Lo's sequences waits for the rest. In a code view it waits however long it takes, as Vim's own \`y\` and \`g\` do, and a key that doesn't go on with it goes to Vim after it, so \`y w\` still yanks a word. Anywhere else it waits up to ${seconds} s, and if the rest doesn't come it's dropped, and the next key counts on its own. A chord Lo runs drops the waiting key, as do \`Esc\`, focus leaving, a click and a tab switch. The status bar shows the keys waiting, after any count, as Vim shows a command it's waiting on the rest of.`,
+    `A key that starts one of Lo's sequences waits for the rest. In a code view it waits however long it takes, as Vim's own \`y\` and \`g\` do, and a key that doesn't go on with it goes to Vim after it, so \`y w\` still yanks a word. Anywhere else it waits up to ${seconds} s, and if the rest doesn't come it's dropped, and the next key counts on its own. A chord Lo runs drops the waiting key, as do \`Esc\`, focus leaving, a click and a tab switch. A key typed with focus nowhere in particular, as while a pull request's tab is still loading, isn't dropped when Lo gives a view focus: it goes on there, if one of the view's sequences starts with it, still for up to ${seconds} s. The status bar shows the keys waiting, after any count, as Vim shows a command it's waiting on the rest of.`,
     '',
     "`Tab` doesn't move focus out of a scope; only dialogs and forms keep the browser's `Tab`.",
     '',
@@ -216,6 +223,10 @@ function systemSection(commands: readonly Command[]): string[] {
   const rows = commands.flatMap((command) => {
     const on = systemsOf(command);
     const only = on.length === 1 ? on[0] : undefined;
+    // A command with no key on purpose, on one system, is listed with where it's found instead.
+    if (only !== undefined && keyless(command)) {
+      return [[command.label, noKey(command), systemNames[only], where(command), code(command.id)]];
+    }
     const specs = command.keys.map(specOf);
     return systems.flatMap((system) => {
       // A command on one system has all its keys there; one on both, those written for one.
