@@ -1,0 +1,5 @@
+{
+  "description": "What the app's tests of changing a merge queue read from GitHub and wrote to it, recorded from the app with writes on generation 9 of fixtures/merge.sh's pull requests, rozed-dev/e2e#246 to #262, while #259 and #260, which rozed-bot added to e4/queued's merge queue in that order, waited for its checks: #259's tab, once it had read its revisions and drawn its diff, and `gq`, which showed the queue; `j` to #260 and `J`, confirmed with Enter, which took #260 out and added it again at the front, so GitHub tested both again; once the queue listed #260 first, `x` on #259, confirmed with Enter, which took #259 out. The queue stayed on screen long enough for its polls to repeat. rozed-bot then took #260 out of the queue, so neither merged.",
+  "recorded_at": "2026-11-20T04:30:21Z",
+  "repo": "rozed-dev/e2e"
+}

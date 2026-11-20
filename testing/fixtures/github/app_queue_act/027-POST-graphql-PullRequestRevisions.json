@@ -1,0 +1,100 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "https://api.github.com/graphql",
+    "operation": "PullRequestRevisions",
+    "variables": {
+      "owner": "rozed-dev",
+      "name": "e2e",
+      "number": 259,
+      "login": "rozed-bot",
+      "first": 100,
+      "timelineAfter": null,
+      "reviewsAfter": null
+    },
+    "query_sha256": "065c99fee8328c49a803d6cddb6df548ac41ab8bf293abd452d6644e04e9e1da"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "x-ratelimit-limit": "5000",
+      "x-ratelimit-remaining": "4958",
+      "x-ratelimit-reset": "1795151607",
+      "x-ratelimit-resource": "graphql",
+      "x-ratelimit-used": "42"
+    },
+    "body": {
+      "data": {
+        "rateLimit": {
+          "cost": 1,
+          "limit": 5000,
+          "remaining": 4958,
+          "used": 42,
+          "resetAt": "2026-11-20T05:13:27Z"
+        },
+        "repository": {
+          "pullRequest": {
+            "createdAt": "2026-11-20T03:54:48Z",
+            "closed": false,
+            "closedAt": null,
+            "merged": false,
+            "headRefName": "merge/9/queued-slow-1",
+            "headRefOid": "cda396db7ad832b765586860420eba530ab99b9e",
+            "baseRefName": "e4/queued",
+            "headRepository": {
+              "name": "e2e",
+              "owner": {
+                "__typename": "Organization",
+                "login": "rozed-dev"
+              }
+            },
+            "mergeCommit": null,
+            "timelineItems": {
+              "filteredCount": 0,
+              "pageInfo": {
+                "hasNextPage": false,
+                "endCursor": null
+              },
+              "nodes": []
+            },
+            "reviews": {
+              "totalCount": 0,
+              "pageInfo": {
+                "hasNextPage": false,
+                "endCursor": null
+              },
+              "nodes": []
+            },
+            "viewerLastReview": {
+              "nodes": []
+            },
+            "commits": {
+              "nodes": [
+                {
+                  "commit": {
+                    "oid": "cda396db7ad832b765586860420eba530ab99b9e",
+                    "checkSuites": {
+                      "nodes": [
+                        {
+                          "createdAt": "2026-11-20T03:54:51Z",
+                          "branch": {
+                            "name": "merge/9/queued-slow-1"
+                          },
+                          "push": {
+                            "previousSha": "0000000000000000000000000000000000000000",
+                            "nextSha": "cda396db7ad832b765586860420eba530ab99b9e"
+                          }
+                        }
+                      ]
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      }
+    }
+  }
+}

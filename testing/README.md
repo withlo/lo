@@ -361,7 +361,10 @@ layer, with #232 below it, as one, into `merge/8/base`; `app_merge_stack_polled`
 may ask for that the recording didn't. `app_merge_chain` used it too: #230, the draft, was moved
 onto `merge/8/chain-1` first, so #235, the chain's bottom layer, had two layers on it, #236 and
 #230, and couldn't be made a GitHub stack. It was recorded with writes as Lo merged #235 alone and
-then moved #230 and #236 onto `merge/8/base`.
+then moved #230 and #236 onto `merge/8/base`. Generation 9 is #246 to #262, with GitHub stack #263.
+`app_queue_act` used it, recorded with writes while #259 and #260 were in `e4/queued`'s queue, in
+that order, as Lo moved #260 to the front and then took #259 out. rozed-bot took #260 out after, so
+neither merged.
 
 ## The fake language server
 

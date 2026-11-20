@@ -1,0 +1,142 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "https://api.github.com/graphql",
+    "operation": "QueueView",
+    "variables": {
+      "owner": "rozed-dev",
+      "name": "e2e",
+      "branch": "e4/queued"
+    },
+    "query_sha256": "055c07cbcdfa1961e4e446cecb0d98cd42f0ee615abb90f2745506e147173d8b"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "x-ratelimit-limit": "5000",
+      "x-ratelimit-remaining": "4986",
+      "x-ratelimit-reset": "1795152004",
+      "x-ratelimit-resource": "graphql",
+      "x-ratelimit-used": "14"
+    },
+    "body": {
+      "data": {
+        "rateLimit": {
+          "cost": 1,
+          "limit": 5000,
+          "remaining": 4986,
+          "used": 14,
+          "resetAt": "2026-11-20T05:20:04Z"
+        },
+        "repository": {
+          "viewerPermission": "ADMIN",
+          "mergeQueue": {
+            "url": "https://github.com/rozed-dev/e2e/queue/e4/queued",
+            "nextEntryEstimatedTimeToMerge": 652,
+            "configuration": {
+              "mergeMethod": "SQUASH",
+              "mergingStrategy": "ALLGREEN",
+              "maximumEntriesToBuild": 5
+            },
+            "entries": {
+              "totalCount": 2,
+              "nodes": [
+                {
+                  "id": "MQE_lQDOVleUfc8AAAABQk7Q-s4ABU_AzgQqGIs",
+                  "position": 1,
+                  "state": "AWAITING_CHECKS",
+                  "enqueuedAt": "2026-11-20T04:28:55Z",
+                  "estimatedTimeToMerge": 654,
+                  "jump": false,
+                  "solo": false,
+                  "enqueuer": {
+                    "__typename": "User",
+                    "login": "rozed-bot"
+                  },
+                  "baseCommit": {
+                    "oid": "be76197734f8ee252a269294e7be44c1c5fb8295"
+                  },
+                  "headCommit": {
+                    "oid": "27b032ab2307ac3fcbac4f0b1dae2f16e188ee13",
+                    "statusCheckRollup": {
+                      "contexts": {
+                        "nodes": [
+                          {
+                            "__typename": "CheckRun",
+                            "name": "ci",
+                            "status": "IN_PROGRESS",
+                            "conclusion": null,
+                            "detailsUrl": "https://github.com/rozed-dev/e2e/actions/runs/44674716452/job/136083704420",
+                            "url": "https://github.com/rozed-dev/e2e/runs/136083704420"
+                          }
+                        ]
+                      }
+                    }
+                  },
+                  "pullRequest": {
+                    "id": "PR_kwDOVleUfc8AAAABQk7Q-g",
+                    "number": 259,
+                    "title": "Fixture M9: queued, slow (1)",
+                    "url": "https://github.com/rozed-dev/e2e/pull/259",
+                    "headRefOid": "cda396db7ad832b765586860420eba530ab99b9e",
+                    "viewerDidAuthor": true,
+                    "author": {
+                      "__typename": "User",
+                      "login": "rozed-bot"
+                    }
+                  }
+                },
+                {
+                  "id": "MQE_lQDOVleUfc8AAAABQk7Tys4ABU_AzgQqGJM",
+                  "position": 2,
+                  "state": "AWAITING_CHECKS",
+                  "enqueuedAt": "2026-11-20T04:28:57Z",
+                  "estimatedTimeToMerge": 652,
+                  "jump": false,
+                  "solo": false,
+                  "enqueuer": {
+                    "__typename": "User",
+                    "login": "rozed-bot"
+                  },
+                  "baseCommit": {
+                    "oid": "27b032ab2307ac3fcbac4f0b1dae2f16e188ee13"
+                  },
+                  "headCommit": {
+                    "oid": "a9d3a47dd5d9128ffe163b0830eec68f63cf5022",
+                    "statusCheckRollup": {
+                      "contexts": {
+                        "nodes": [
+                          {
+                            "__typename": "CheckRun",
+                            "name": "ci",
+                            "status": "IN_PROGRESS",
+                            "conclusion": null,
+                            "detailsUrl": "https://github.com/rozed-dev/e2e/actions/runs/44674718631/job/136083711788",
+                            "url": "https://github.com/rozed-dev/e2e/runs/136083711788"
+                          }
+                        ]
+                      }
+                    }
+                  },
+                  "pullRequest": {
+                    "id": "PR_kwDOVleUfc8AAAABQk7Tyg",
+                    "number": 260,
+                    "title": "Fixture M9: queued, slow (2)",
+                    "url": "https://github.com/rozed-dev/e2e/pull/260",
+                    "headRefOid": "7bdb9efeaeeb9020f2c6af20331de55f27787c73",
+                    "viewerDidAuthor": true,
+                    "author": {
+                      "__typename": "User",
+                      "login": "rozed-bot"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      }
+    }
+  }
+}

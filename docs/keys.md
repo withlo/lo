@@ -267,6 +267,9 @@ in normal mode, `Esc` closes the box and keeps the draft. In the box's preview, 
 | Next pull request in the queue     | `j`, `↓` | In `queue` | `queue.down`           |
 | Previous pull request in the queue | `k`, `↑` | In `queue` | `queue.up`             |
 | Open the pull request              | `⏎`      | In `queue` | `queue.open`           |
+| Remove from the queue              | `x`      | In `queue` | `queue.remove`         |
+| Move to the front of the queue     | `J`      | In `queue` | `queue.jump`           |
+| Turn auto-merge on or off          | `a`      | In `queue` | `queue.autoMerge`      |
 | Next branch’s queue                | `Tab`    | In `queue` | `queue.nextBranch`     |
 | Previous branch’s queue            | `⇧Tab`   | In `queue` | `queue.previousBranch` |
 

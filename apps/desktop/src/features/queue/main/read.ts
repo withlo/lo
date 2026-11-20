@@ -99,6 +99,7 @@ function entryOf(row: QueueRow, stackOf: StackOf): Entry {
     timeToMerge: row.timeToMerge ?? null,
     yours: row.yours,
     queuedByYou: row.queuedByYou,
+    head: row.head.slice(0, 64),
     testedTogether: row.testedTogether,
     stack: stackOf(row.number),
   };
@@ -126,6 +127,7 @@ function waitingOf(row: WaitingRow): WaitingEntry {
     url: row.url,
     author: row.author ?? null,
     yours: row.yours,
+    head: row.head.slice(0, 64),
     review: reviewOf(row.reviewDecision),
     checks: row.checks ?? null,
   };
@@ -234,6 +236,7 @@ export function readOf(
     method: methodOf(queue?.settings?.method),
     groups: queue?.settings?.building ?? null,
     nextMerge: queue?.nextEstimate ?? null,
+    admin: view.viewerPermission === 'ADMIN',
     entries: rows.entries.map((row) => entryOf(row, stackOf)),
     more: rows.more,
     leftOut: rows.leftOut,

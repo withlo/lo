@@ -20,10 +20,14 @@ import type {
   WaitingEntry,
 } from '../contract.ts';
 
-/** A row the keyboard can be on: a pull request in the queue, or one waiting to join it. */
+/**
+ * A row the keyboard can be on: a pull request in the queue (`entry`), one waiting to join it
+ * (`waiting`), or one Lo saw leave it (`left`).
+ */
 export interface Row {
   /** What tells it from the others, as the table keys it. */
   readonly key: string;
+  readonly kind: 'entry' | 'waiting' | 'left';
   readonly number: number;
   /** Its page on GitHub. */
   readonly url: string;
@@ -51,9 +55,24 @@ export function leftKey(number: number): string {
 export function rowsOf(read: QueueRead | undefined): Row[] {
   if (read?.kind !== 'queue') return [];
   return [
-    ...read.entries.map(({ number, url }) => ({ key: entryKey(number), number, url })),
-    ...read.waiting.map(({ number, url }) => ({ key: waitingKey(number), number, url })),
-    ...read.left.map(({ number, url }) => ({ key: leftKey(number), number, url })),
+    ...read.entries.map(({ number, url }) => ({
+      key: entryKey(number),
+      kind: 'entry' as const,
+      number,
+      url,
+    })),
+    ...read.waiting.map(({ number, url }) => ({
+      key: waitingKey(number),
+      kind: 'waiting' as const,
+      number,
+      url,
+    })),
+    ...read.left.map(({ number, url }) => ({
+      key: leftKey(number),
+      kind: 'left' as const,
+      number,
+      url,
+    })),
   ];
 }
 
