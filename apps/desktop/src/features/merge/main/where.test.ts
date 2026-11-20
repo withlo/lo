@@ -479,11 +479,18 @@ describe('where a pull request sits is unknown', () => {
     expect(where(view(71, { unmerged }, native('m29')))).toEqual(stack97);
     expect(unsure(where(view(71, { unmerged }, native('m30')))).why).toEqual({ kind: 'lookups' });
     expect(unsure(where(view(71, { unmerged }, native('m28')))).why).toEqual({ kind: 'lookups' });
+    // So is a pull request alone, which merges alone.
+    const lone = (base: string) =>
+      repository([pull(74, base, 'g74')], [{ kind: 'mergedPullRequests' }]);
+    expect(where(view(74, { unmerged }, lone('m29')))).toEqual({ kind: 'alone' });
+    expect(unsure(where(view(74, { unmerged }, lone('m30')))).why).toEqual({ kind: 'lookups' });
+    expect(unsure(where(view(74, { unmerged }, lone('m28')))).why).toEqual({ kind: 'lookups' });
     // A chain waits for every lookup, wherever it sits.
     const chain = repository(
       [pull(72, 'm29', 'g72'), pull(73, 'g72', 'g73')],
       [{ kind: 'mergedPullRequests' }],
     );
+    expect(unsure(where(view(72, { unmerged }, chain))).why).toEqual({ kind: 'lookups' });
     expect(unsure(where(view(73, { unmerged }, chain))).why).toEqual({ kind: 'lookups' });
     // Rulesets that weren't read only add links, which never makes a layer look alone.
     const unruled = repository(pulls, [{ kind: 'rulesets', why: 'Forbidden' }]);

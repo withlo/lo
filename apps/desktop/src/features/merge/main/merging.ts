@@ -120,7 +120,6 @@ import {
   takingOf,
   togetherChanged,
   togetherOf,
-  withMethod,
   type Taking,
 } from './together.ts';
 import type { MergeTurns } from './turns.ts';
@@ -1109,7 +1108,7 @@ export class Merging {
             number,
           })
         : null,
-      together: withMethod(together, method),
+      together,
     };
   }
 

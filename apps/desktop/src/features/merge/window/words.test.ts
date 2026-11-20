@@ -566,10 +566,8 @@ test('a chain’s merge a layer at a time lists each move, and says how its run 
     { key: 'after-139', title: 'Move #139 onto main', detail: 'From chain-1 · needs rebase' },
     { key: 'rebase-140', title: '#140 stays on main', detail: 'Needs rebase' },
   ]);
-  // A merge commit lands #138's commits as they are: main plans no rebase after one.
-  expect(
-    chainSteps({ number: 138, base: 'main', method: 'MERGE' }, { ...chain, needsRebase: [] }),
-  ).toEqual([
+  // A merge commit lands #138's commits as they are: no rebase after one, and #140 isn't moved.
+  expect(chainSteps({ number: 138, base: 'main', method: 'MERGE' }, chain)).toEqual([
     {
       key: 'before',
       title: 'Move #138 onto main',
@@ -640,19 +638,20 @@ test('a merge past the rules skips each reason, and the merge queue it merges st
     '1 more approval',
     '1 required check still running: ci',
   ]);
-  // The rules want a code owner's approval GitHub asked nobody for.
+  // The rules want a code owner's approval GitHub asks nobody for, which may be given already.
   expect(
     skipsOf({
       ...said,
       blockers: [{ kind: 'approvals', more: 1, codeOwners: [], codeOwnerRule: true }],
       queue: { required: false, method: null },
     }),
-  ).toEqual(['1 more approval, and a code owner’s for changed files that have an owner']);
+  ).toEqual(['1 more approval, maybe a code owner’s']);
 });
 
 /**
  * What the panel says of the review blocked `e4/gated`'s pull request needs, with `more` approvals
- * to come and no code owner asked: the only one is its author, so GitHub requests nobody.
+ * to come and no code owner asked: the only one is its author, or one approved already, and GitHub
+ * requests nobody.
  */
 function gated(more: number, codeOwnerRule: boolean): string | undefined {
   return rowsOf(
@@ -665,9 +664,9 @@ function gated(more: number, codeOwnerRule: boolean): string | undefined {
   ).find((row) => row.key === 'approvals')?.detail;
 }
 
-test('a code owner’s approval the rules require is named, though GitHub asked no one for it', () => {
+test('a code owner’s approval the rules require is named, hedged, though GitHub asked no one for it', () => {
   expect(gated(1, true)).toBe(
-    '1 more approval. e4/gated also requires a code owner’s approval for changed files that have an owner.',
+    '1 more approval. e4/gated also requires a code owner’s approval for changed files that have an owner, which may be one of them or given already.',
   );
   expect(gated(1, false)).toBe('1 more approval.');
   expect(gated(0, true)).toBe(

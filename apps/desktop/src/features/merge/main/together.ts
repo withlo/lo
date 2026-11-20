@@ -9,7 +9,7 @@ import { openLayers, type GithubStack, type StackLayer as LayerRead } from '@lo/
 import { layerOf, mergeOneLayerAtATime, type MergeBottom } from '@lo/stacks';
 
 import type { Forest } from '../../stacks/service.ts';
-import type { Method, Placement, StackLayer, Together } from '../contract.ts';
+import type { Placement, StackLayer, Together } from '../contract.ts';
 import type { Where } from './where.ts';
 
 /** What a merge takes with it, or why Lo doesn't merge it from here. */
@@ -266,17 +266,6 @@ export function togetherOf(taking: Taking): Together | null {
       taking satisfies never;
       throw new Error(`a merge Lo doesn't know: ${JSON.stringify(taking)}`);
   }
-}
-
-/**
- * `together` for a merge with `method`: the layers on a chain's bottom one carry its commits, which
- * a squash or a rebase leaves out of the root, so after one they need a rebase. A merge commit
- * lands them as they are, so they need none. Into a merge queue whose method the account may not
- * read (`null`), they may.
- */
-export function withMethod(together: Together | null, method: Method | null): Together | null {
-  if (together?.kind !== 'chain' || method !== 'MERGE') return together;
-  return { ...together, needsRebase: [] };
 }
 
 /** Where the pull request sits, as the merge panel says it. */

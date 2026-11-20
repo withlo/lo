@@ -574,8 +574,8 @@ function subOf(check: Check, index: number, failed: boolean): RowSub {
 
 /**
  * What the review a pull request still needs says: "1 more approval, and one from a code owner: @a."
- * A code owner GitHub asked nobody for, as when the only one is the pull request's author, is named
- * by `base`'s rule.
+ * With no code owner asked, `base`'s rule is named, hedged: GitHub asks nobody when the only code
+ * owner is the pull request's author, and drops its request once a code owner approved.
  */
 function approvalsDetail(
   { more, codeOwners, codeOwnerRule }: Extract<Blocker, { kind: 'approvals' }>,
@@ -589,7 +589,7 @@ function approvalsDetail(
   const rule = `${base} also requires a code owner’s approval for changed files that have an owner`;
   if (more > 0) {
     return codeOwnerRule
-      ? `${counted(more, 'more approval')}. ${rule}.`
+      ? `${counted(more, 'more approval')}. ${rule}, which may be one of them or given already.`
       : `${counted(more, 'more approval')}.`;
   }
   return codeOwnerRule
@@ -1161,7 +1161,7 @@ export function skipsOf(state: Said): string[] {
         } else if (blocker.more > 0) {
           lines.push(
             rule
-              ? `${counted(blocker.more, 'more approval')}, and a code owner’s for changed files that have an owner`
+              ? `${counted(blocker.more, 'more approval')}, maybe a code owner’s`
               : counted(blocker.more, 'more approval'),
           );
         } else if (blocker.codeOwners.length > 0) {
@@ -1306,7 +1306,8 @@ export function placedWhy(placement: Placement | undefined): string | undefined 
  * What a chain's confirmation says of its base branch moves, each on its own line: "Move #4818
  * onto main", then the merge, then "Move #4819 onto main", each layer on it marked "needs rebase"
  * when the merge leaves its commits out of the base, as a squash or a rebase does, or "may need a
- * rebase" into a merge queue whose method Lo can't read.
+ * rebase" into a merge queue whose method Lo can't read. After a merge commit, which lands them,
+ * the layers on it it doesn't move aren't listed.
  */
 export function chainSteps(
   plan: Pick<MergePlan, 'number' | 'base' | 'method'>,
@@ -1314,6 +1315,7 @@ export function chainSteps(
 ): { readonly key: string; readonly title: string; readonly detail: string }[] {
   const steps = [];
   const rebase = plan.method === null ? 'may need a rebase' : 'needs rebase';
+  const needsRebase = plan.method === 'MERGE' ? [] : together.needsRebase;
   if (together.before) {
     steps.push({
       key: 'before',
@@ -1323,14 +1325,14 @@ export function chainSteps(
   }
   steps.push({ key: 'merge', title: `Merge #${plan.number} into ${plan.base}`, detail: 'Alone' });
   for (const move of together.after) {
-    const rebased = together.needsRebase.includes(move.pr);
+    const rebased = needsRebase.includes(move.pr);
     steps.push({
       key: `after-${move.pr}`,
       title: `Move #${move.pr} onto ${move.to}`,
       detail: rebased ? `From ${move.from} · ${rebase}` : `From ${move.from}`,
     });
   }
-  for (const pr of together.needsRebase) {
+  for (const pr of needsRebase) {
     if (together.after.some((move) => move.pr === pr)) continue;
     steps.push({
       key: `rebase-${pr}`,

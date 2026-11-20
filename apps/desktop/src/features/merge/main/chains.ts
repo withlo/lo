@@ -308,17 +308,20 @@ export class ChainRun {
 
   /**
    * Where the layers on it went, once they have: "#2266 now points at main and needs a rebase.",
-   * which only a squash or a rebase calls for. Nothing when none moved or needs one.
+   * which only a squash or a rebase calls for; after a merge commit, only the layers it moved.
+   * Nothing when none moved or needs a rebase.
    */
   #doneText(): string | null {
     const { together, method } = this.#options;
     const into = this.#moves.at(-1)?.move.to ?? together.before?.to;
-    const moved = this.#moves.flatMap((move) => (move.before ? [] : [move.move.pr]));
-    const named = together.needsRebase.length > 0 ? together.needsRebase : moved;
+    const rebase = method !== 'MERGE' && together.needsRebase.length > 0;
+    const named = rebase
+      ? together.needsRebase
+      : this.#moves.flatMap((move) => (move.before ? [] : [move.move.pr]));
     if (named.length === 0 || into === undefined) return null;
     const one = named.length === 1;
     const points = `${numbers(named)} now ${one ? 'points' : 'point'} at ${into}`;
-    if (together.needsRebase.length === 0) return `${points}.`;
+    if (!rebase) return `${points}.`;
     if (method === null) return `${points} and may need a rebase.`;
     return `${points} and ${one ? 'needs' : 'need'} a rebase.`;
   }

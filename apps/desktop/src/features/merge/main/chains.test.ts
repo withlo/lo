@@ -126,8 +126,8 @@ describe('a chain’s merge a layer at a time', () => {
   });
 
   it('says the layers it moved need a rebase only when the method leaves their commits out', async () => {
-    // A merge commit lands #5's commits as they are, so it plans no rebase.
-    const merged = run({ ...CHAIN, needsRebase: [] }, { method: 'MERGE' });
+    // A merge commit lands #5's commits as they are, so they need no rebase.
+    const merged = run(CHAIN, { method: 'MERGE' });
     merged.chain.merged();
     expect((await merged.over()).text).toBe('#6 and #7 now point at main.');
     // A queue whose method the account can't read may squash.
