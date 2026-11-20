@@ -111,14 +111,12 @@ async function open(page: Page, number: number, shown: string): Promise<void> {
  * has looked up every merged pull request its stacks may link through, and rozed-dev/e2e has more
  * branches than one listing looks up: the rest are looked up a while later, as recorded. Until
  * then each press is refused, saying so, which can close the dialog before it's seen, and it
- * presses again once that note goes, so the next note is the next press's own. So does a press
- * whose checks GitHub took too long to answer, as Lo says to. Anything else fails.
+ * presses again once that note goes, so the next note is the next press's own. Anything else
+ * fails.
  */
 async function ship(page: Page, number: number): Promise<void> {
   const planned = `Approve and ship #${number}?`;
-  const refused = page
-    .getByRole('status')
-    .filter({ hasText: /looked up yet|took too long to answer/ });
+  const refused = said(page, 'looked up yet');
   const deadline = Date.now() + LOOKUPS;
   for (;;) {
     await page.keyboard.press(SHIP);
