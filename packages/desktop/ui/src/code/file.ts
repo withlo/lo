@@ -72,9 +72,10 @@ export function createFileView(parent: HTMLElement, init: FileInit, on: FileEven
 const markedLine = Decoration.line({ class: 'lo-line-marked' });
 
 /**
- * Shows a peek under a document line, or with `null` none. Not `undefined`: an effect whose value
- * is undefined is dropped as the editor's extensions extend the transaction, so a peek that
- * closed would leave its block drawn, an empty band under the line.
+ * Shows a peek under a document line, or with `null` none. Not `undefined`: the editor's change
+ * filter (`readOnly`) rejects every transaction the view didn't mark, which CodeMirror rebuilds
+ * with the effects mapped, and mapping drops an effect whose value is undefined. A peek that closed
+ * would then leave its block drawn, an empty band under the line.
  */
 const setPeek = StateEffect.define<{ line: number; block: PeekBlock } | null>();
 
