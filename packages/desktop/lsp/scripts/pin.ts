@@ -5,7 +5,9 @@
 //
 // It downloads the version for every platform, checks each file against its publisher's
 // signature (see sources.ts and toolchains.ts), checks that it unpacks as Lo would, and writes
-// each file's address, size and SHA-256, and for a toolchain what it unpacks to. Run it by hand
+// each file's address, size and SHA-256, and for a toolchain what it unpacks to. A toolchain whose
+// vendor hasn't published the version for some platform yet, as happens with Temurin's, keeps
+// what's pinned for that platform, and it says so: pin it again once that's out. Run it by hand
 // when a version changes, and commit the manifest with the change that needs it. CI never runs it,
 // and Lo trusts only the hashes it wrote. The toolchains are pinned again before each release.
 
@@ -16,9 +18,17 @@ import { join } from 'node:path';
 
 import { format, resolveConfig } from 'prettier';
 
-import { parseManifest, parseToolchains, SWIFT_DISTROS, swiftToolchainId } from '../src/index.ts';
+import {
+  parseManifest,
+  parseToolchains,
+  PLATFORMS,
+  SWIFT_DISTROS,
+  swiftToolchainId,
+  versionFor,
+} from '../src/index.ts';
+import { csharpExtension } from './csharp.ts';
 import { goProgram } from './go.ts';
-import { DIGICERT_G4, nuget } from './nuget.ts';
+import { DIGICERT_G4 } from './nuget.ts';
 import {
   githubRelease,
   hashicorp,
@@ -71,9 +81,11 @@ const SOURCES: Record<string, Source> = {
   // Built from its modules with Lo's Go, which toolchains.json pins: pin it again when Go is.
   gopls: goProgram('golang.org/x/tools/gopls', 'gopls'),
   'terraform-ls': hashicorp('terraform-ls', keys('hashicorp')),
-  // Roslyn's server, a package for each platform, signed by Microsoft. It starts from its own
-  // program's assembly, under `dotnet exec`, never the launcher the package's tool runs.
-  roslyn: nuget(
+  // Roslyn's server, a package for each platform, signed by Microsoft, at the build the C#
+  // extension for VS Code's newest stable release ships, from the feed it gets it from. It starts
+  // from its own program's assembly, under `dotnet exec`, never the launcher the package's tool
+  // runs.
+  roslyn: csharpExtension(
     {
       'darwin-arm64': `roslyn-language-server.${RIDS['darwin-arm64']}`,
       'darwin-x64': `roslyn-language-server.${RIDS['darwin-x64']}`,
@@ -113,12 +125,13 @@ const parse = toolchain ? parseToolchains : parseManifest;
 
 const folder = await mkdtemp(join(tmpdir(), 'lo-pin-'));
 try {
+  const manifest = parse(JSON.parse(readFileSync(MANIFEST, 'utf8')));
   const pinned = await source(version, {
     fetch: globalThis.fetch,
     folder,
     log: (line) => console.log(line),
+    pinned: manifest[id],
   });
-  const manifest = parse(JSON.parse(readFileSync(MANIFEST, 'utf8')));
   manifest[id] = pinned;
   const sorted = Object.fromEntries(
     Object.entries(manifest).toSorted(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)),
@@ -130,6 +143,15 @@ try {
     await format(JSON.stringify(sorted, null, 2), { ...options, filepath: MANIFEST }),
   );
   console.log(`Recorded ${id} ${version} in ${toolchain ? 'toolchains.json' : 'servers.json'}.`);
+  // A platform its vendor hasn't published this version for yet stays on the one before.
+  for (const platform of PLATFORMS) {
+    const kept = versionFor(pinned, platform);
+    if (pinned.platforms[platform] !== undefined && kept !== version) {
+      console.log(
+        `${platform} stays on ${id} ${kept}, until ${version} is published for it: pin it again then.`,
+      );
+    }
+  }
 } finally {
   await rm(folder, { recursive: true, force: true });
 }

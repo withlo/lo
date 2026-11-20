@@ -12,6 +12,7 @@ import {
   partsOf,
   type Platform,
   TOOLCHAIN_NAMES,
+  versionFor,
 } from '@lo/lsp';
 
 import type { Toolchain as Listed } from '../contract.ts';
@@ -110,7 +111,7 @@ export async function listToolchains(host: ToolchainHost): Promise<Listed[]> {
     listed.push({
       id,
       name: named(id).name,
-      version: pinned.version,
+      version: versionFor(pinned, platform),
       installed,
       download: partsOf(download).reduce((sum, part) => sum + part.size, 0),
       uses: adapters.filter((adapter) => usesToolchain(adapter, id)).map((adapter) => adapter.name),

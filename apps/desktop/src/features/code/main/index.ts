@@ -35,6 +35,7 @@ import {
   TOOLCHAINS,
   toolchainsFor,
   toolchainUse,
+  versionFor,
 } from '@lo/lsp';
 import { app, BrowserWindow, dialog, MessageChannelMain, net } from 'electron';
 
@@ -514,7 +515,10 @@ async function installToolchain(
         progress(done, total, stage);
       },
     });
-    return { version: pinned.version, installed, ...toolchainUse(id, pinned.version, installed) };
+    // A platform its vendor hasn't published the newest for yet installs an older version.
+    const platform = currentPlatform();
+    const version = platform === undefined ? pinned.version : versionFor(pinned, platform);
+    return { version, installed, ...toolchainUse(id, version, installed) };
   } catch (error) {
     throw signal.aborted ? error : toolchainFailure(id, error);
   } finally {

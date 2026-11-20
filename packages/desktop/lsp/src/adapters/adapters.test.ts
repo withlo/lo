@@ -16,7 +16,7 @@ import {
 import { basename, dirname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-import { describe, expect, test } from 'vitest';
+import { describe, expect, test, vi } from 'vitest';
 
 import { GIT, tempFolder } from '../../test/support.ts';
 import { serverEnvironment } from '../environment.ts';
@@ -460,7 +460,11 @@ describe('Roslyn', () => {
 
   test('starts as `dotnet exec` on its own program, from its package for each platform', () => {
     const pinnedRoslyn = MANIFEST.roslyn;
-    expect(pinnedRoslyn?.hosts).toEqual(['api.nuget.org']);
+    // The feed the C# extension for VS Code gets it from, and the stores that sends each on to.
+    const [feed, ...stores] = pinnedRoslyn?.hosts ?? [];
+    expect(feed).toBe('pkgs.dev.azure.com');
+    expect(stores).toHaveLength(4);
+    for (const store of stores) expect(store).toMatch(/^[a-z0-9]+\.vsblob\.vsassets\.io$/);
     expect(Object.keys(pinnedRoslyn?.platforms ?? {}).toSorted()).toEqual(
       [...PLATFORMS].toSorted(),
     );
@@ -469,7 +473,7 @@ describe('Roslyn', () => {
       const id = `roslyn-language-server.${rid}`;
       expect(pinnedRoslyn?.platforms[platform]).toMatchObject({
         kind: 'zip',
-        url: `https://api.nuget.org/v3-flatcontainer/${id}/${ROSLYN_VERSION}/${id}.${ROSLYN_VERSION}.nupkg`,
+        url: `https://pkgs.dev.azure.com/azure-public/3ccf6661-f8ce-4e8a-bb2e-eff943ddd3c7/_packaging/36a629e1-6c5b-4bcd-aa2e-6018802d6b99/nuget/v3/flat2/${id}/${ROSLYN_VERSION}/${id}.${ROSLYN_VERSION}.nupkg`,
         entry: `tools/net10.0/${rid}/Microsoft.CodeAnalysis.LanguageServer.dll`,
       });
     }
@@ -504,11 +508,41 @@ describe('Roslyn', () => {
   test('gets .NET’s folder and variables, and a cap on each heap under Lo’s on its group', () => {
     const launch = launchRoslyn(ROSLYN_INSTALLED, DOTNET);
     expect(launch.path).toEqual([DOTNET_INSTALLED.folder]);
-    expect(launch.variables).toEqual({ ...DOTNET.variables, DOTNET_GCHeapHardLimit: 'c0000000' });
+    expect(launch.variables).toEqual({
+      ...DOTNET.variables,
+      DOTNET_GCHeapHardLimit: 'c0000000',
+      DOTNET_PROJECTDATA_DONOR_ENABLED: '0',
+    });
     expect(launch.allowed).toEqual([]);
     // 3 GB, in hex as .NET reads it.
     expect(Number.parseInt(DOTNET_HEAP, 16)).toBe(3 * 1024 ** 3);
     expect(Number.parseInt(DOTNET_HEAP, 16)).toBeLessThan(LIMITS.memoryCap);
+  });
+
+  test('runs with no project data borrowed from a repository above it, and no telemetry on', () => {
+    // Lo's own environment asking for telemetry doesn't reach the server's.
+    vi.stubEnv('COPILOT_TELEMETRY_LEVEL', 'all');
+    try {
+      const launch = launchRoslyn(ROSLYN_INSTALLED, DOTNET);
+      const env = serverEnvironment({
+        home: tempFolder(),
+        roots: ['/lo/cache/checkouts/github.com/a/b/pull-1/abc'],
+        path: launch.path ?? [],
+        variables: launch.variables,
+        allowed: launch.allowed,
+        git: GIT,
+      });
+      // Roslyn reads `0` or `false` as off, and anything else, or nothing, as on.
+      expect(env.DOTNET_PROJECTDATA_DONOR_ENABLED).toBe('0');
+      // Outside the C# Dev Kit, Roslyn takes its telemetry level only from this, and reports
+      // nothing without it. The only switch it has of telemetry's is .NET's CLI's, opted out.
+      expect(env).not.toHaveProperty('COPILOT_TELEMETRY_LEVEL');
+      const switches = Object.keys(env).filter((name) => /TELEMETRY|TRACK/i.test(name));
+      expect(switches).toEqual(['DOTNET_CLI_TELEMETRY_OPTOUT']);
+      expect(env.DOTNET_CLI_TELEMETRY_OPTOUT).toBe('1');
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 
   test('restores nothing, builds no file as a program, and fetches no sources', () => {
