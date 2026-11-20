@@ -432,6 +432,30 @@ describe('changing a setting', () => {
     expect((await settings.state()).values).toEqual({ theme: 'dark', 'cache.cap': 20 });
   });
 
+  it('takes out the header an older Lo wrote when it changes a setting, and not before', async () => {
+    const header = `// Lo's settings. Lo applies only these from this file and ignores the rest: "theme",
+// "ui_font_family", "ui_font_size", "buffer_font_family" and "buffer_font_size".
+// A theme's file goes in ~/.config/lo/themes, and "theme" names it. Lo's README says more.
+`;
+    const body = '{\n  "theme": "dark"\n}\n';
+    write(`${header}${body}`);
+    const { settings } = open();
+    settings.declare(theme);
+    settings.declare(cap);
+    // Reading the file leaves it as it is.
+    expect((await settings.state()).values).toEqual({ theme: 'dark', 'cache.cap': 10 });
+    expect(contents()).toBe(`${header}${body}`);
+    await settings.set('cache.cap', 20);
+    expect(contents()).toBe('{\n  "theme": "dark",\n  "cache.cap": 20\n}\n');
+    expect((await settings.state()).values).toEqual({ theme: 'dark', 'cache.cap': 20 });
+    // A header the person wrote stays.
+    write(`// My settings.\n${body}`);
+    await settings.check();
+    await settings.check();
+    await settings.set('cache.cap', 30);
+    expect(contents()).toBe('// My settings.\n{\n  "theme": "dark",\n  "cache.cap": 30\n}\n');
+  });
+
   it('keeps a byte order mark through a change', async () => {
     write('\uFEFF{\n  "theme": "dark"\n}\n');
     const { settings } = open();

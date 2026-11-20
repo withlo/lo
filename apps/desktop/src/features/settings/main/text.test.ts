@@ -48,6 +48,28 @@ const COMMENTED = `// Lo's settings.
 }
 `;
 
+/** The header older versions of Lo wrote at the top of a settings file they made. */
+const OLD_HEADER = `// Lo's settings. Lo applies only these from this file and ignores the rest: "theme",
+// "ui_font_family", "ui_font_size", "buffer_font_family" and "buffer_font_size".
+// A theme's file goes in ~/.config/lo/themes, and "theme" names it. Lo's README says more.
+`;
+
+/** What such a file holds after its header. */
+const OLD_BODY = `{
+  "theme": {
+    "mode": "system",
+    "light": "Lo Glow Light",
+    "dark": "Lo Glow Dark"
+  }
+}
+`;
+
+/** That file with `cache.cap` added after its last setting. */
+const OLD_CAPPED = OLD_BODY.replace('  }\n}', '  },\n  "cache.cap": 20\n}');
+
+/** `text` with Windows line breaks. */
+const crlf = (text: string) => text.replaceAll('\n', '\r\n');
+
 describe('parseSettings', () => {
   it('reads one JSON object, keeping every key in it, known or not', () => {
     const text = '{ "theme": "dark", "diff.layout": "inline", "later": [1, { "a": null }] }';
@@ -238,6 +260,51 @@ describe('editSettings', () => {
   it('keeps a byte order mark', () => {
     expect(editSettings('\uFEFF{\n  "theme": "dark"\n}\n', 'theme', 'light')).toBe(
       '\uFEFF{\n  "theme": "light"\n}\n',
+    );
+  });
+
+  it('takes out the header an older Lo wrote as it adds or changes a setting, and keeps all else', () => {
+    const trusted = [{ repo: 'withlo/lo', id: 'R_1' }];
+    expect(editSettings(`${OLD_HEADER}${OLD_BODY}`, 'code.trusted', trusted)).toBe(
+      editSettings(OLD_BODY, 'code.trusted', trusted),
+    );
+    expect(editSettings(`${OLD_HEADER}${OLD_BODY}`, 'cache.cap', 20)).toBe(OLD_CAPPED);
+    expect(editSettings(`${OLD_HEADER}${OLD_BODY}`, 'theme', 'dark')).toBe(
+      '{\n  "theme": "dark"\n}\n',
+    );
+    // With nothing under it yet, as with a file of only the header.
+    expect(editSettings(OLD_HEADER, 'theme', 'dark')).toBe('{\n  "theme": "dark"\n}\n');
+  });
+
+  it('takes it out of a file with Windows line breaks or a byte order mark', () => {
+    expect(editSettings(crlf(`${OLD_HEADER}${OLD_BODY}`), 'cache.cap', 20)).toBe(crlf(OLD_CAPPED));
+    expect(editSettings(`\uFEFF${OLD_HEADER}${OLD_BODY}`, 'cache.cap', 20)).toBe(
+      `\uFEFF${OLD_CAPPED}`,
+    );
+  });
+
+  it('leaves a header it didn’t write, a changed one among them, and what a person wrote after it', () => {
+    const body = '{\n  "theme": "dark"\n}\n';
+    const [first, second] = OLD_HEADER.split('\n');
+    const kept = [
+      '// My settings.\n',
+      // Changed by a word, or by an addition, or cut short.
+      OLD_HEADER.replace('only these', 'these'),
+      OLD_HEADER.replace(/\n$/, ' Mine.\n'),
+      `${first}\n${second}\n`,
+      // Lo's lines, but after a person's, or after white space: not at the file's start.
+      `// Mine.\n${OLD_HEADER}`,
+      ` ${OLD_HEADER}`,
+      `\n${OLD_HEADER}`,
+    ];
+    for (const header of kept) {
+      expect(editSettings(`${header}${body}`, 'cache.cap', 20)).toBe(
+        `${header}{\n  "theme": "dark",\n  "cache.cap": 20\n}\n`,
+      );
+    }
+    // What they wrote under the header stays, and goes to the top.
+    expect(editSettings(`${OLD_HEADER}// Mine.\n${body}`, 'cache.cap', 20)).toBe(
+      '// Mine.\n{\n  "theme": "dark",\n  "cache.cap": 20\n}\n',
     );
   });
 
