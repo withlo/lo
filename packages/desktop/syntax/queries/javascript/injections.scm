@@ -1,181 +1,35 @@
-; From Zed (https://github.com/zed-industries/zed), crates/grammars/src/javascript/injections.scm
-; at c84af5b99cbc366d675064e52b23664a015b6e35. Copyright Zed Industries, Inc. GPL-3.0-or-later.
-; Changed for Lo: the JSDoc pattern's `(?s)` flag, which JavaScript's RegExp lacks, is
-; written as `[\s\S]`, which matches any character.
+; From tree-sitter-javascript (https://github.com/tree-sitter/tree-sitter-javascript), queries/injections.scm
+; at 3a837b6f3658ca3618f2022f8707e29739c91364, its 0.23.1 release, which the TypeScript grammars'
+; tree-sitter.json takes for their injections. Copyright (c) 2014 Max Brunsfeld. MIT.
+
+; Parse the contents of tagged template literals using
+; a language inferred from the tag.
+
+(call_expression
+  function: [
+    (identifier) @injection.language
+    (member_expression
+      property: (property_identifier) @injection.language)
+  ]
+  arguments: (template_string (string_fragment) @injection.content)
+  (#set! injection.combined)
+  (#set! injection.include-children))
+
+
+; Parse regex syntax within regex literals
+
+((regex_pattern) @injection.content
+ (#set! injection.language "regex"))
+
+ ; Parse JSDoc annotations in comments
 
 ((comment) @injection.content
-  (#set! injection.language "comment"))
+ (#set! injection.language "jsdoc"))
 
-(((comment) @_jsdoc_comment
-  (#match? @_jsdoc_comment "^/[*][*][^*][\\s\\S]*[*]/$")) @injection.content
-  (#set! injection.language "jsdoc"))
-
-((regex) @injection.content
-  (#set! injection.language "regex"))
-
+; Parse Ember/Glimmer/Handlebars/HTMLBars/etc. template literals
+; e.g.: await render(hbs`<SomeComponent />`)
 (call_expression
-  function: (identifier) @_name
-  (#eq? @_name "css")
-  arguments: (template_string
-    (string_fragment) @injection.content
-    (#set! injection.language "css")))
-
-(call_expression
-  function: (identifier) @_name
-  (#eq? @_name "css")
-  arguments: (arguments
-    (object
-      (pair
-        value: (template_string
-          (string_fragment) @injection.content
-          (#set! injection.language "css"))))))
-
-(call_expression
-  function: (member_expression
-    object: (identifier) @_obj
-    (#eq? @_obj "styled")
-    property: (property_identifier))
-  arguments: (template_string
-    (string_fragment) @injection.content
-    (#set! injection.language "css")))
-
-(call_expression
-  function: (call_expression
-    function: (identifier) @_name
-    (#eq? @_name "styled"))
-  arguments: (template_string
-    (string_fragment) @injection.content
-    (#set! injection.language "css")))
-
-(call_expression
-  function: (identifier) @_name
-  (#match? @_name "^(html|svg|mathml|raw)$")
-  arguments: (template_string) @injection.content
-  (#set! injection.language "html"))
-
-(call_expression
-  function: (identifier) @_name
-  (#eq? @_name "js")
-  arguments: (template_string
-    (string_fragment) @injection.content
-    (#set! injection.language "javascript")))
-
-(call_expression
-  function: (identifier) @_name
-  (#eq? @_name "json")
-  arguments: (template_string
-    (string_fragment) @injection.content
-    (#set! injection.language "json")))
-
-(call_expression
-  function: (identifier) @_name
-  (#eq? @_name "sql")
-  arguments: (template_string
-    (string_fragment) @injection.content
-    (#set! injection.language "sql")))
-
-(call_expression
-  function: (identifier) @_name
-  (#eq? @_name "ts")
-  arguments: (template_string
-    (string_fragment) @injection.content
-    (#set! injection.language "typescript")))
-
-(call_expression
-  function: (identifier) @_name
-  (#match? @_name "^ya?ml$")
-  arguments: (template_string
-    (string_fragment) @injection.content
-    (#set! injection.language "yaml")))
-
-(call_expression
-  function: (identifier) @_name
-  (#match? @_name "^g(raph)?ql$")
-  arguments: (template_string
-    (string_fragment) @injection.content
-    (#set! injection.language "graphql")))
-
-(call_expression
-  function: (identifier) @_name
-  (#match? @_name "^g(raph)?ql$")
-  arguments: (arguments
-    (template_string
-      (string_fragment) @injection.content
-      (#set! injection.language "graphql"))))
-
-(call_expression
-  function: (identifier) @_name
-  (#match? @_name "^iso$")
-  arguments: (arguments
-    (template_string
-      (string_fragment) @injection.content
-      (#set! injection.language "isograph"))))
-
-; Parse the contents of strings and tagged template
-; literals with leading ECMAScript comments:
-; '/* html */' or '/*html*/'
-(((comment) @_ecma_comment
-  [
-    (string
-      (string_fragment) @injection.content)
-    (template_string
-      (string_fragment) @injection.content)
-  ])
-  (#match? @_ecma_comment "^\\/\\*\\s*html\\s*\\*\\/")
-  (#set! injection.language "html"))
-
-; '/* sql */' or '/*sql*/'
-(((comment) @_ecma_comment
-  [
-    (string
-      (string_fragment) @injection.content)
-    (template_string
-      (string_fragment) @injection.content)
-  ])
-  (#match? @_ecma_comment "^\\/\\*\\s*sql\\s*\\*\\/")
-  (#set! injection.language "sql"))
-
-; '/* gql */' or '/*gql*/'
-; '/* graphql */' or '/*graphql*/'
-(((comment) @_ecma_comment
-  [
-    (string
-      (string_fragment) @injection.content)
-    (template_string
-      (string_fragment) @injection.content)
-  ])
-  (#match? @_ecma_comment "^\\/\\*\\s*(gql|graphql)\\s*\\*\\/")
-  (#set! injection.language "graphql"))
-
-; '/* css */' or '/*css*/'
-(((comment) @_ecma_comment
-  [
-    (string
-      (string_fragment) @injection.content)
-    (template_string
-      (string_fragment) @injection.content)
-  ])
-  (#match? @_ecma_comment "^\\/\\*\\s*(css)\\s*\\*\\/")
-  (#set! injection.language "css"))
-
-; '/* glsl */' or '/*glsl*/'
-(((comment) @_ecma_comment
-  [
-    (string
-      (string_fragment) @injection.content)
-    (template_string
-      (string_fragment) @injection.content)
-  ])
-  (#match? @_ecma_comment "^\\/\\*\\s*glsl\\s*\\*\\/")
-  (#set! injection.language "glsl"))
-
-; '/* wgsl */' or '/*wgsl*/'
-(((comment) @_ecma_comment
-  [
-    (string
-      (string_fragment) @injection.content)
-    (template_string
-      (string_fragment) @injection.content)
-  ])
-  (#match? @_ecma_comment "^\\/\\*\\s*wgsl\\s*\\*\\/")
-  (#set! injection.language "WGSL/WESL"))
+  function: ((identifier) @_name
+             (#eq? @_name "hbs"))
+  arguments: ((template_string) @glimmer
+              (#offset! @glimmer 0 1 0 -1)))

@@ -1,5 +1,5 @@
-; From Zed (https://github.com/zed-industries/zed), crates/grammars/src/yaml/highlights.scm
-; at c84af5b99cbc366d675064e52b23664a015b6e35. Copyright Zed Industries, Inc. GPL-3.0-or-later.
+; From tree-sitter-yaml (https://github.com/zed-industries/tree-sitter-yaml), queries/highlights.scm
+; at baff0b51c64ef6a1fb1f8390f3ad6015b83ec13a. Copyright (c) 2024 tree-sitter-grammars contributors, (c) 2019-2021 Ika. MIT.
 
 (boolean_scalar) @boolean
 
@@ -12,8 +12,6 @@
   (string_scalar)
 ] @string
 
-(escape_sequence) @string.escape
-
 [
   (integer_scalar)
   (float_scalar)
@@ -24,16 +22,41 @@
 [
   (anchor_name)
   (alias_name)
-  (tag)
-] @type
+] @label
 
-key: (flow_node
-  [
+(tag) @type
+
+[
+  (yaml_directive)
+  (tag_directive)
+  (reserved_directive)
+] @attribute
+
+(block_mapping_pair
+  key: (flow_node
+    [
+      (double_quote_scalar)
+      (single_quote_scalar)
+    ] @property))
+
+(block_mapping_pair
+  key: (flow_node
     (plain_scalar
-      (string_scalar))
-    (double_quote_scalar)
-    (single_quote_scalar)
-  ] @property)
+      (string_scalar) @property)))
+
+(flow_mapping
+  (_
+    key: (flow_node
+      [
+        (double_quote_scalar)
+        (single_quote_scalar)
+      ] @property)))
+
+(flow_mapping
+  (_
+    key: (flow_node
+      (plain_scalar
+        (string_scalar) @property))))
 
 [
   ","

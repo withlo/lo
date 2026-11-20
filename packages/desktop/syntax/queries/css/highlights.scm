@@ -1,122 +1,69 @@
-; From Zed (https://github.com/zed-industries/zed), crates/grammars/src/css/highlights.scm
-; at c84af5b99cbc366d675064e52b23664a015b6e35. Copyright Zed Industries, Inc. GPL-3.0-or-later.
+; From tree-sitter-css (https://github.com/tree-sitter/tree-sitter-css), queries/highlights.scm
+; at c0d581e32d183a536731ed6c3a72758b27e20411. Copyright (c) 2018 Max Brunsfeld. MIT.
+; Changed for Lo: the pseudo-class and pseudo-element patterns come after the patterns for
+; names, so that they win, as Lo lets the later pattern win.
 
 (comment) @comment
 
-[
-  (tag_name)
-  (nesting_selector)
-  (universal_selector)
-] @tag
+(tag_name) @tag
+(nesting_selector) @tag
+(universal_selector) @tag
 
-[
-  "~"
-  ">"
-  "+"
-  "-"
-  "|"
-  "*"
-  "/"
-  "="
-  "^="
-  "|="
-  "~="
-  "$="
-  "*="
-] @operator
+"~" @operator
+">" @operator
+"+" @operator
+"-" @operator
+"*" @operator
+"/" @operator
+"=" @operator
+"^=" @operator
+"|=" @operator
+"~=" @operator
+"$=" @operator
+"*=" @operator
 
-[
-  "and"
-  "or"
-  "not"
-  "only"
-] @keyword.operator
+"and" @operator
+"or" @operator
+"not" @operator
+"only" @operator
 
-(id_name) @selector.id
+(attribute_selector (plain_value) @string)
+(class_name) @property
+(id_name) @property
+(namespace_name) @property
+(property_name) @property
+(feature_name) @property
 
-(class_name) @selector.class
-
-(namespace_name) @namespace
-
-(namespace_selector
-  (tag_name) @namespace
-  "|")
+(pseudo_element_selector (tag_name) @attribute)
+(pseudo_class_selector (class_name) @attribute)
 
 (attribute_name) @attribute
 
-(pseudo_element_selector
-  "::"
-  (tag_name) @selector.pseudo)
-
-(pseudo_class_selector
-  ":"
-  (class_name) @selector.pseudo)
-
-[
-  (feature_name)
-  (property_name)
-] @property
-
 (function_name) @function
 
-[
-  (plain_value)
-  (keyframes_name)
-  (keyword_query)
-] @constant.builtin
+((property_name) @variable
+ (#match? @variable "^--"))
+((plain_value) @variable
+ (#match? @variable "^--"))
 
-(attribute_selector
-  (plain_value) @string)
-
-(parenthesized_query
-  (keyword_query) @property)
-
-([
-  (property_name)
-  (plain_value)
-] @variable
-  (#match? @variable "^--"))
-
-[
-  "@media"
-  "@import"
-  "@charset"
-  "@namespace"
-  "@supports"
-  "@keyframes"
-  (at_keyword)
-  (to)
-  (from)
-  (important)
-] @keyword
+"@media" @keyword
+"@import" @keyword
+"@charset" @keyword
+"@namespace" @keyword
+"@supports" @keyword
+"@keyframes" @keyword
+(at_keyword) @keyword
+(to) @keyword
+(from) @keyword
+(important) @keyword
 
 (string_value) @string
-
 (color_value) @string.special
 
-[
-  (integer_value)
-  (float_value)
-] @number
+(integer_value) @number
+(float_value) @number
+(unit) @type
 
-(unit) @type.unit
-
-[
-  ","
-  ":"
-  "."
-  "::"
-  ";"
-] @punctuation.delimiter
-
-(id_selector
-  "#" @punctuation.delimiter)
-
-[
-  "{"
-  ")"
-  "("
-  "}"
-  "["
-  "]"
-] @punctuation.bracket
+"#" @punctuation.delimiter
+"," @punctuation.delimiter
+":" @punctuation.delimiter

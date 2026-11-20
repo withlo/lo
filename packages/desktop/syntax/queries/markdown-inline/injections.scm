@@ -1,9 +1,5 @@
-; From Zed (https://github.com/zed-industries/zed), crates/grammars/src/markdown-inline/injections.scm
-; at c84af5b99cbc366d675064e52b23664a015b6e35. Copyright Zed Industries, Inc. GPL-3.0-or-later.
+; From tree-sitter-markdown (https://github.com/zed-industries/tree-sitter-markdown), tree-sitter-markdown-inline/queries/injections.scm
+; at b596e737286780d7bfa9fcddceaeeb754574b352. Copyright (c) 2021 Matthias Deiml. MIT.
 
-((html_tag) @injection.content
-  (#set! injection.language "html")
-  (#set! injection.combined))
-
-((latex_block) @injection.content
-  (#set! injection.language "latex"))
+((html_tag) @injection.content (#set! injection.language "html"))
+((latex_block) @injection.content (#set! injection.language "latex"))

@@ -76,9 +76,9 @@ took 2.7 GB to compile Swift's lexer and kept it.
 
 ## Queries
 
-The highlight queries in `queries/` come from Zed and the extensions it installs, under the
-GPL-3.0-or-later, the Apache License 2.0 and the MIT License, and the tag queries from the grammars'
-own repositories, under the MIT License and the Apache License 2.0; `queries/README.md` says from
+The highlight and injection queries in `queries/` come from the grammars' own repositories, or for
+some languages from the extensions Zed installs, and the tag queries from the grammars' own
+repositories. All are under the MIT License or the Apache License 2.0; `queries/README.md` says from
 where, and under which.
 
 ## Tags

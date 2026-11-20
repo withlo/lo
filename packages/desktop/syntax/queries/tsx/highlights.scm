@@ -1,223 +1,111 @@
-; From Zed (https://github.com/zed-industries/zed), crates/grammars/src/tsx/highlights.scm
-; at c84af5b99cbc366d675064e52b23664a015b6e35. Copyright Zed Industries, Inc. GPL-3.0-or-later.
+; From tree-sitter-typescript (https://github.com/zed-industries/tree-sitter-typescript), queries/highlights.scm
+; at e2c53597d6a5d9cf7bbe8dccde576fe1e46c5899. Copyright (c) 2017 Max Brunsfeld. MIT.
+; The grammar's tree-sitter.json builds on queries/highlights.scm and queries/highlights-jsx.scm
+; of tree-sitter-javascript (https://github.com/tree-sitter/tree-sitter-javascript) at
+; 3a837b6f3658ca3618f2022f8707e29739c91364, its 0.23.1 release. Copyright (c) 2014 Max Brunsfeld. MIT.
+; Changed for Lo: the JavaScript queries come first and the TypeScript ones after them, so that
+; where both match a node the TypeScript one wins, as Lo lets the later pattern win.
 
+; ---- tree-sitter-javascript, queries/highlights.scm ----
 ; Variables
+;----------
+
 (identifier) @variable
 
-(call_expression
-  function: (member_expression
-    object: (identifier) @type
-    (#any-of? @type
-      "Promise" "Array" "Object" "Map" "Set" "WeakMap" "WeakSet" "Date" "Error" "TypeError"
-      "RangeError" "SyntaxError" "ReferenceError" "EvalError" "URIError" "RegExp" "Function"
-      "Number" "String" "Boolean" "Symbol" "BigInt" "Proxy" "ArrayBuffer" "DataView")))
-
 ; Properties
+;-----------
+
 (property_identifier) @property
 
-(shorthand_property_identifier) @property
+; Function and method definitions
+;--------------------------------
 
-(shorthand_property_identifier_pattern) @property
+(function_expression
+  name: (identifier) @function)
+(function_declaration
+  name: (identifier) @function)
+(method_definition
+  name: (property_identifier) @function.method)
 
-(private_property_identifier) @property
+(pair
+  key: (property_identifier) @function.method
+  value: [(function_expression) (arrow_function)])
+
+(assignment_expression
+  left: (member_expression
+    property: (property_identifier) @function.method)
+  right: [(function_expression) (arrow_function)])
+
+(variable_declarator
+  name: (identifier) @function
+  value: [(function_expression) (arrow_function)])
+
+(assignment_expression
+  left: (identifier) @function
+  right: [(function_expression) (arrow_function)])
 
 ; Function and method calls
+;--------------------------
+
 (call_expression
   function: (identifier) @function)
 
 (call_expression
   function: (member_expression
-    property: [
-      (property_identifier)
-      (private_property_identifier)
-    ] @function.method))
-
-(new_expression
-  constructor: (identifier) @type.class)
-
-(nested_type_identifier
-  module: (identifier) @type)
-
-; Function and method definitions
-(function_expression
-  name: (identifier) @function)
-
-(function_declaration
-  name: (identifier) @function)
-
-(method_definition
-  name: [
-    (property_identifier)
-    (private_property_identifier)
-  ] @function.method)
-
-(method_definition
-  name: (property_identifier) @constructor
-  (#eq? @constructor "constructor"))
-
-(pair
-  key: [
-    (property_identifier)
-    (private_property_identifier)
-  ] @function.method
-  value: [
-    (function_expression)
-    (arrow_function)
-  ])
-
-(assignment_expression
-  left: (member_expression
-    property: [
-      (property_identifier)
-      (private_property_identifier)
-    ] @function.method)
-  right: [
-    (function_expression)
-    (arrow_function)
-  ])
-
-(variable_declarator
-  name: (identifier) @function
-  value: [
-    (function_expression)
-    (arrow_function)
-  ])
-
-(assignment_expression
-  left: (identifier) @function
-  right: [
-    (function_expression)
-    (arrow_function)
-  ])
-
-; Parameters
-(required_parameter
-  (identifier) @variable.parameter)
-
-(required_parameter
-  (_
-    ([
-      (identifier)
-      (shorthand_property_identifier_pattern)
-    ]) @variable.parameter))
-
-(required_parameter
-  (_
-    (object_assignment_pattern
-      left: (shorthand_property_identifier_pattern) @variable.parameter)))
-
-(required_parameter
-  (_
-    (assignment_pattern
-      left: (identifier) @variable.parameter)))
-
-(optional_parameter
-  (_
-    (object_assignment_pattern
-      left: (shorthand_property_identifier_pattern) @variable.parameter)))
-
-(optional_parameter
-  (_
-    (assignment_pattern
-      left: (identifier) @variable.parameter)))
-
-(optional_parameter
-  (identifier) @variable.parameter)
-
-(optional_parameter
-  (_
-    ([
-      (identifier)
-      (shorthand_property_identifier_pattern)
-    ]) @variable.parameter))
-
-(catch_clause
-  parameter: (identifier) @variable.parameter)
-
-(index_signature
-  name: (identifier) @variable.parameter)
-
-(arrow_function
-  parameter: (identifier) @variable.parameter)
-
-(type_predicate
-  name: (identifier) @variable.parameter)
+    property: (property_identifier) @function.method))
 
 ; Special identifiers
-(type_annotation) @type
+;--------------------
 
-(type_identifier) @type
-
-(predefined_type) @type.builtin
-
-(type_alias_declaration
-  (type_identifier) @type)
-
-(type_alias_declaration
-  value: (_
-    (type_identifier) @type))
-
-(interface_declaration
-  (type_identifier) @type)
-
-(class_declaration
-  (type_identifier) @type.class)
-
-(extends_clause
-  value: (identifier) @type.class)
-
-(extends_type_clause
-  type: (type_identifier) @type)
-
-(implements_clause
-  (type_identifier) @type)
+((identifier) @constructor
+ (#match? @constructor "^[A-Z]"))
 
 ([
-  (identifier)
-  (shorthand_property_identifier)
-  (shorthand_property_identifier_pattern)
-] @constant
-  (#match? @constant "^_*[A-Z_][A-Z\\d_]*$"))
+    (identifier)
+    (shorthand_property_identifier)
+    (shorthand_property_identifier_pattern)
+ ] @constant
+ (#match? @constant "^[A-Z_][A-Z\\d_]+$"))
+
+((identifier) @variable.builtin
+ (#match? @variable.builtin "^(arguments|module|console|window|document)$")
+ (#is-not? local))
+
+((identifier) @function.builtin
+ (#eq? @function.builtin "require")
+ (#is-not? local))
 
 ; Literals
-(this) @variable.special
+;---------
 
-(super) @variable.special
-
-[
-  (null)
-  (undefined)
-] @constant.builtin
+(this) @variable.builtin
+(super) @variable.builtin
 
 [
   (true)
   (false)
-] @boolean
+  (null)
+  (undefined)
+] @constant.builtin
 
 (comment) @comment
 
 [
   (string)
   (template_string)
-  (template_literal_type)
 ] @string
 
-(escape_sequence) @string.escape
-
-(regex) @string.regex
-
-(regex_flags) @keyword.operator.regex
-
+(regex) @string.special
 (number) @number
 
 ; Tokens
+;-------
+
 [
   ";"
-  "?."
+  (optional_chain)
   "."
   ","
-  ":"
-  "?"
 ] @punctuation.delimiter
 
 [
@@ -265,11 +153,7 @@
   "&&="
   "||="
   "??="
-  "..."
 ] @operator
-
-(regex
-  "/" @string.regex)
 
 [
   "("
@@ -278,234 +162,99 @@
   "]"
   "{"
   "}"
-] @punctuation.bracket
-
-(ternary_expression
-  [
-    "?"
-    ":"
-  ] @operator)
-
-; Keywords
-[
-  "abstract"
-  "as"
-  "async"
-  "debugger"
-  "declare"
-  "default"
-  "delete"
-  "extends"
-  "get"
-  "implements"
-  "in"
-  "infer"
-  "instanceof"
-  "is"
-  "keyof"
-  "module"
-  "namespace"
-  "new"
-  "of"
-  "override"
-  "private"
-  "protected"
-  "public"
-  "readonly"
-  "satisfies"
-  "set"
-  "static"
-  "target"
-  "typeof"
-  "using"
-  "void"
-  "with"
-] @keyword
-
-[
-  "const"
-  "let"
-  "var"
-  "function"
-  "class"
-  "enum"
-  "interface"
-  "type"
-] @keyword.declaration
-
-[
-  "export"
-  "from"
-  "import"
-] @keyword.import
-
-[
-  "await"
-  "break"
-  "case"
-  "catch"
-  "continue"
-  "do"
-  "else"
-  "finally"
-  "for"
-  "if"
-  "return"
-  "switch"
-  "throw"
-  "try"
-  "while"
-  "yield"
-] @keyword.control
-
-(switch_default
-  "default" @keyword.control)
+]  @punctuation.bracket
 
 (template_substitution
   "${" @punctuation.special
   "}" @punctuation.special) @embedded
 
-(template_type
-  "${" @punctuation.special
-  "}" @punctuation.special) @embedded
+[
+  "as"
+  "async"
+  "await"
+  "break"
+  "case"
+  "catch"
+  "class"
+  "const"
+  "continue"
+  "debugger"
+  "default"
+  "delete"
+  "do"
+  "else"
+  "export"
+  "extends"
+  "finally"
+  "for"
+  "from"
+  "function"
+  "get"
+  "if"
+  "import"
+  "in"
+  "instanceof"
+  "let"
+  "new"
+  "of"
+  "return"
+  "set"
+  "static"
+  "switch"
+  "target"
+  "throw"
+  "try"
+  "typeof"
+  "var"
+  "void"
+  "while"
+  "with"
+  "yield"
+] @keyword
+
+; ---- tree-sitter-javascript, queries/highlights-jsx.scm ----
+(jsx_opening_element (identifier) @tag (#match? @tag "^[a-z][^.]*$"))
+(jsx_closing_element (identifier) @tag (#match? @tag "^[a-z][^.]*$"))
+(jsx_self_closing_element (identifier) @tag (#match? @tag "^[a-z][^.]*$"))
+
+(jsx_attribute (property_identifier) @attribute)
+(jsx_opening_element (["<" ">"]) @punctuation.bracket)
+(jsx_closing_element (["</" ">"]) @punctuation.bracket)
+(jsx_self_closing_element (["<" "/>"]) @punctuation.bracket)
+
+; ---- tree-sitter-typescript, queries/highlights.scm ----
+; Types
+
+(type_identifier) @type
+(predefined_type) @type.builtin
+
+((identifier) @type
+ (#match? @type "^[A-Z]"))
 
 (type_arguments
   "<" @punctuation.bracket
   ">" @punctuation.bracket)
 
-(type_parameters
-  "<" @punctuation.bracket
-  ">" @punctuation.bracket)
+; Variables
 
-(decorator
-  "@" @punctuation.special)
+(required_parameter (identifier) @variable.parameter)
+(optional_parameter (identifier) @variable.parameter)
 
-(union_type
-  "|" @punctuation.special)
+; Keywords
 
-(intersection_type
-  "&" @punctuation.special)
-
-(type_annotation
-  ":" @punctuation.special)
-
-(index_signature
-  ":" @punctuation.special)
-
-(type_predicate_annotation
-  ":" @punctuation.special)
-
-(public_field_definition
-  "?" @punctuation.special)
-
-(property_signature
-  "?" @punctuation.special)
-
-(method_signature
-  "?" @punctuation.special)
-
-(optional_parameter
-  ([
-    "?"
-    ":"
-  ]) @punctuation.special)
-
-(jsx_opening_element
-  [
-    (identifier) @type @tag.component.jsx
-    (member_expression
-      object: (identifier) @type @tag.component.jsx
-      property: (property_identifier) @type @tag.component.jsx)
-    (member_expression
-      object: (member_expression
-        object: (identifier) @type @tag.component.jsx
-        property: (property_identifier) @type @tag.component.jsx)
-      property: (property_identifier) @type @tag.component.jsx)
-    (member_expression
-      object: (member_expression
-        object: (member_expression
-          object: (identifier) @type @tag.component.jsx
-          property: (property_identifier) @type @tag.component.jsx)
-        property: (property_identifier) @type @tag.component.jsx)
-      property: (property_identifier) @type @tag.component.jsx)
-  ])
-
-(jsx_closing_element
-  [
-    (identifier) @type @tag.component.jsx
-    (member_expression
-      object: (identifier) @type @tag.component.jsx
-      property: (property_identifier) @type @tag.component.jsx)
-    (member_expression
-      object: (member_expression
-        object: (identifier) @type @tag.component.jsx
-        property: (property_identifier) @type @tag.component.jsx)
-      property: (property_identifier) @type @tag.component.jsx)
-    (member_expression
-      object: (member_expression
-        object: (member_expression
-          object: (identifier) @type @tag.component.jsx
-          property: (property_identifier) @type @tag.component.jsx)
-        property: (property_identifier) @type @tag.component.jsx)
-      property: (property_identifier) @type @tag.component.jsx)
-  ])
-
-(jsx_self_closing_element
-  [
-    (identifier) @type @tag.component.jsx
-    (member_expression
-      object: (identifier) @type @tag.component.jsx
-      property: (property_identifier) @type @tag.component.jsx)
-    (member_expression
-      object: (member_expression
-        object: (identifier) @type @tag.component.jsx
-        property: (property_identifier) @type @tag.component.jsx)
-      property: (property_identifier) @type @tag.component.jsx)
-    (member_expression
-      object: (member_expression
-        object: (member_expression
-          object: (identifier) @type @tag.component.jsx
-          property: (property_identifier) @type @tag.component.jsx)
-        property: (property_identifier) @type @tag.component.jsx)
-      property: (property_identifier) @type @tag.component.jsx)
-  ])
-
-(jsx_opening_element
-  (identifier) @tag.jsx
-  (#match? @tag.jsx "^[a-z][^.]*$"))
-
-(jsx_closing_element
-  (identifier) @tag.jsx
-  (#match? @tag.jsx "^[a-z][^.]*$"))
-
-(jsx_self_closing_element
-  (identifier) @tag.jsx
-  (#match? @tag.jsx "^[a-z][^.]*$"))
-
-(jsx_attribute
-  (property_identifier) @attribute.jsx)
-
-(jsx_opening_element
-  ([
-    "<"
-    ">"
-  ]) @punctuation.bracket.jsx)
-
-(jsx_closing_element
-  ([
-    "</"
-    ">"
-  ]) @punctuation.bracket.jsx)
-
-(jsx_self_closing_element
-  ([
-    "<"
-    "/>"
-  ]) @punctuation.bracket.jsx)
-
-(jsx_attribute
-  "=" @punctuation.delimiter.jsx)
-
-(jsx_text) @text.jsx
-
-(html_character_reference) @string.special
+[ "abstract"
+  "declare"
+  "enum"
+  "export"
+  "implements"
+  "interface"
+  "keyof"
+  "namespace"
+  "private"
+  "protected"
+  "public"
+  "type"
+  "readonly"
+  "override"
+  "satisfies"
+] @keyword

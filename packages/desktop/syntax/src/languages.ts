@@ -1,5 +1,5 @@
-// The languages Lo highlights: which grammar parses each and which queries highlight it, as Zed
-// pairs them, and which files and code-block names choose it.
+// The languages Lo highlights: which grammar parses each, and which files and code-block names
+// choose it. A language's queries are in `queries/<language>/`.
 
 export interface Language {
   /** The grammar's name in `grammars.json`. */
@@ -22,7 +22,7 @@ export const languages = {
   hcl: { grammar: 'hcl', extensions: ['hcl'], aliases: [] },
   html: { grammar: 'html', extensions: ['html', 'htm'], aliases: ['htm'] },
   java: { grammar: 'java', extensions: ['java'], aliases: [] },
-  // Zed's JavaScript queries are written for the TSX grammar, which parses JSX too.
+  // JavaScript is parsed with the TSX grammar, which parses JSX too, and takes its queries.
   javascript: {
     grammar: 'tsx',
     extensions: ['js', 'jsx', 'mjs', 'cjs'],
@@ -32,7 +32,8 @@ export const languages = {
   jsonc: { grammar: 'json', extensions: ['jsonc'], aliases: [] },
   kotlin: { grammar: 'kotlin', extensions: ['kt', 'kts'], aliases: ['kt'] },
   markdown: { grammar: 'markdown', extensions: ['md', 'markdown'], aliases: ['md'] },
-  'markdown-inline': { grammar: 'markdown_inline', extensions: [], aliases: [] },
+  // Markdown's injections name it by its grammar's name.
+  'markdown-inline': { grammar: 'markdown_inline', extensions: [], aliases: ['markdown_inline'] },
   php: { grammar: 'php', extensions: ['php', 'phtml'], aliases: [] },
   python: { grammar: 'python', extensions: ['py', 'pyi'], aliases: ['py', 'python3'] },
   ruby: {

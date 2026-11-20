@@ -28,7 +28,7 @@ function queryFiles(folder: string): string[] {
 }
 
 /** The licenses a file header can name. */
-const LICENSES: readonly KeptLicense[] = ['MIT', 'Apache-2.0', 'GPL-3.0-or-later'];
+const LICENSES: readonly KeptLicense[] = ['MIT', 'Apache-2.0'];
 
 /** What `grammars.json` holds of each grammar that the notices need. */
 const pins = z.object({ grammars: z.array(z.object({ repo: z.string(), commit: z.string() })) });
