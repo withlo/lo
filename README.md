@@ -64,8 +64,8 @@ Lo keeps to these rules. [`docs/design.md`](docs/design.md) has the detail.
 - **The whole repo.** The file tree shows changed files among their unchanged neighbors, or in
   review order, with each source file followed by its tests. `⌘P` finds any file.
 - **Stacks.** Native GitHub stacks, chains of base branches, and pull requests that contain
-  another's commits show as a tree. You review them layer by layer, and they merge as one unit
-  wherever GitHub allows.
+  another's commits show as a tree. You review them layer by layer, and a GitHub stack merges in one
+  request, where other chains merge a layer at a time.
 - **Diffs.** Side by side by default, with moved-code detection.
 - **Revisions.** Compare any two pushes, and see what changed since your last review or since you
   marked a file viewed, even across a rebase.
