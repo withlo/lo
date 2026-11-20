@@ -346,13 +346,22 @@ second, and `app_queued_left` as the queue failed #207, whose `ci` fails there, 
 out once rozed-bot had taken #205 out. `app_merge` used it too, recorded while #206 was first in the
 queue and #203 waited for an approval with auto-merge on; `app_merge_placed` adds the read of which
 open pull requests come from `merge/6/base` that the merge panel makes as it opens. Each was taken
-out of the queue, or its auto-merge turned off, after, so none merged. Generation 8 is #222 to #244,
-with GitHub stack #245. `app_merge_stack` used it, recorded with writes as Lo merged #233, the
-stack's top layer, with #232 below it, as one, into `merge/8/base`; `app_merge_stack_polled` adds
-the answers Lo may ask for that the recording didn't. `app_merge_chain` used it too: #230, the
-draft, was moved onto `merge/8/chain-1` first, so #235, the chain's bottom layer, had two layers on
-it, #236 and #230, and couldn't be made a GitHub stack. It was recorded with writes as Lo merged
-#235 alone and then moved #230 and #236 onto `merge/8/base`.
+out of the queue, or its auto-merge turned off, after, so none merged. Generation 7 is #210 to #221
+and the odd numbers from #223 to #231, with GitHub stack #234. `app_merge_auto` used it, recorded
+with writes as Lo turned on auto-merge for #221 and "Merge when ready" for #225 while its `ci` ran
+again, and `app_merge_auto_off` as Lo turned both off before that `ci` passed, so neither merged nor
+joined the queue, and `e4/queued` is still at `MERGE_E4.queued`. `app_merge_override` is Lo merging
+#231 past its base's rule. #210, #212 and #219 were merged into `merge/7/base` through the API, to
+move that base while #211's tab was open: GitHub refuses auto-merge for a pull request nothing
+blocks, which Lo asks for only while it reads GitHub as still checking whether it merges cleanly,
+and GitHub had checked each time before Lo read it. So `app_merge_auto_now`, that refusal, is
+derived. Generation 8 is the even numbers from #222 to #232, #233 and #235 to #244, with GitHub
+stack #245. `app_merge_stack` used it, recorded with writes as Lo merged #233, the stack's top
+layer, with #232 below it, as one, into `merge/8/base`; `app_merge_stack_polled` adds the answers Lo
+may ask for that the recording didn't. `app_merge_chain` used it too: #230, the draft, was moved
+onto `merge/8/chain-1` first, so #235, the chain's bottom layer, had two layers on it, #236 and
+#230, and couldn't be made a GitHub stack. It was recorded with writes as Lo merged #235 alone and
+then moved #230 and #236 onto `merge/8/base`.
 
 ## The fake language server
 

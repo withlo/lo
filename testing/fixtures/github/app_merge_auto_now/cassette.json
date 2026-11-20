@@ -1,0 +1,4 @@
+{
+  "description": "app_merge_auto as if ghost had opened rozed-dev/e2e#221: every read names ghost as its author, and its merge facts ask rozed-bot, which owns everything on e4/gated, for a code owner's review, until rozed-bot approved it on GitHub after Lo read it. So GitHub refused to turn on auto-merge for it as it refuses it for a pull request nothing blocks, \"Pull request Pull request is in clean status\", and every read of what decides #221's merge after says so: approved by rozed-bot, no review asked for, clean, and auto-merge off, which no account can turn on while nothing blocks the merge. Its timeline grew by that approval, as it grew by an event when the recording turned auto-merge on, and so did the count of its submitted reviews. Lo, reading it again, offers the merge in auto-merge's place; nothing merged #221, so no answer to that merge was recorded.",
+  "derived_from": "app_merge_auto"
+}

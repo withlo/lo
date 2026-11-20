@@ -127,6 +127,8 @@ Each command's id is what [the keymap file](#the-keymap-file) binds keys to.
 | Edit the commit’s title and message | `e`                               | In `merge`                                                                                                | `merge.edit`           |
 | Next unresolved conversation        | `] t`                             | In `merge`                                                                                                | `merge.nextThread`     |
 | Merge or add to the merge queue     | `⏎`                               | In `merge`                                                                                                | `merge.merge`          |
+| Turn auto-merge on or off           | `a`                               | In `merge`                                                                                                | `merge.autoMerge`      |
+| Merge without the rules             | `⌥⏎`                              | In `merge`                                                                                                | `merge.override`       |
 | Ask GitHub whether it merged        | None: in its menu and the palette | Anywhere but `menu`, `dialog`, `palette` and `box`                                                        | `merge.askAgain`       |
 | Close the merge panel               | `Esc`                             | In `merge`                                                                                                | `merge.close`          |
 | Back to the merge panel             | `Esc`                             | In `commit`                                                                                               | `merge.leaveCommit`    |
@@ -371,8 +373,10 @@ A key that starts one of Lo's sequences waits for the rest. In a code view it wa
 takes, as Vim's own `y` and `g` do, and a key that doesn't go on with it goes to Vim after it, so
 `y w` still yanks a word. Anywhere else it waits up to 1 s, and if the rest doesn't come it's
 dropped, and the next key counts on its own. A chord Lo runs drops the waiting key, as do `Esc`,
-focus leaving, a click and a tab switch. The status bar shows the keys waiting, after any count, as
-Vim shows a command it's waiting on the rest of.
+focus leaving, a click and a tab switch. A key typed with focus nowhere in particular, as while a
+pull request's tab is still loading, isn't dropped when Lo gives a view focus: it goes on there, if
+one of the view's sequences starts with it, still for up to 1 s. The status bar shows the keys
+waiting, after any count, as Vim shows a command it's waiting on the rest of.
 
 `Tab` doesn't move focus out of a scope; only dialogs and forms keep the browser's `Tab`.
 

@@ -32,6 +32,7 @@ export {
   developerFolder,
   findSourceKit,
   launchSourceKit,
+  launchSourceKitOnLinux,
   NO_SOURCEKIT,
   placeSourceKit,
   SOURCEKIT_LSP,
@@ -113,4 +114,24 @@ export {
   type ToolchainName,
   type ToolchainUse,
 } from './toolchains.ts';
+export {
+  installedDebs,
+  missingPackages,
+  OS_RELEASE,
+  packagesFor,
+  packagesNeeded,
+  parseOsRelease,
+  readOsRelease,
+  SWIFT_DISTROS,
+  SWIFT_PLATFORMS,
+  SWIFT_UNPACK_LIMITS,
+  swiftDistroFor,
+  swiftDistroOf,
+  swiftToolchainId,
+  toolchainsFor,
+  type OsRelease,
+  type PackageQuery,
+  type SwiftDistro,
+  type SwiftRelease,
+} from './swift.ts';
 export { type Placing, Unpacker, UNPACK_LIMITS, type UnpackLimits } from './unpack.ts';

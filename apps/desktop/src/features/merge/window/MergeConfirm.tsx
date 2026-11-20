@@ -4,6 +4,9 @@
 // merges, with where each stands, and then how far GitHub got with each; a chain's, each base
 // branch Lo moves, in order. `⏎` confirms and `Esc` goes back to the panel. A held key confirms
 // nothing, and nor does the press that opened it: only a fresh press of `⏎` once the plan shows.
+// Auto-merge's says what GitHub waits for before it merges; a merge past the rules lists what it
+// skips, and goes only with the pull request's number typed, in a field that empties each time Lo
+// asks again.
 
 import {
   Branch,
@@ -17,6 +20,7 @@ import {
   LayerList,
   Spinner,
   Steps,
+  TypeToConfirm,
   type FactItem,
   type LayerRow,
   type StepItem,
@@ -47,6 +51,7 @@ import {
   openPull,
   seeNewer,
   staysShown,
+  typeNumber,
 } from './merging.ts';
 import { merging, panels, statuses, type MergeDialog } from './store.ts';
 import {
@@ -57,11 +62,15 @@ import {
   layerLine,
   methodLabel,
   numbers,
+  onceLine,
   outcomeDetail,
   outcomeTitle,
   pendingLine,
+  pushWarning,
   queueLine,
+  saidOf,
   secondsAgo,
+  skipsOf,
   stackLine,
   troubleLine,
 } from './words.ts';
@@ -75,10 +84,24 @@ function labels(keys: string): string[] {
 /** What the dialog shows now. */
 interface Shown {
   readonly title: string;
+  /** A line under the title. */
+  readonly description?: string;
   readonly body: ReactNode;
-  /** Its main button, `⏎`, if it has one now. */
+  /**
+   * Its main button, `⏎`, if it has one now: `danger` for one that skips rules, `off` until what
+   * it asks for is typed.
+   */
   readonly primary:
-    { readonly label: string; readonly run: () => void; readonly busy?: boolean } | undefined;
+    | {
+        readonly label: string;
+        readonly run: () => void;
+        readonly busy?: boolean;
+        readonly danger?: boolean;
+        readonly off?: boolean;
+      }
+    | undefined;
+  /** Whether focus goes to the field to type in, not the main button. */
+  readonly typing?: boolean;
   /** What `Esc` says it does. */
   readonly close: string;
   /** What focus follows: its main button moves to it when this changes. */
@@ -98,11 +121,17 @@ function commitTitle(plan: MergePlan): string | undefined {
   return squash.kind === 'read' ? squash.title : undefined;
 }
 
+/** Whether `plan` sends the squash commit's title and message typed: a merge's write does. */
+function sendsText(plan: MergePlan): boolean {
+  return (plan.kind === 'merge' || plan.kind === 'override') && plan.method === 'SQUASH';
+}
+
 /** What the plan will do, as facts: who, how, into what, and which revision. */
 function factsOf(plan: MergePlan): FactItem[] {
   const items: FactItem[] = [{ label: 'As', value: <FactPerson login={plan.login} /> }];
   const stack = plan.together?.kind === 'stack';
-  if (plan.kind === 'merge' && plan.method !== null) {
+  // A queue's settings choose its method.
+  if (plan.kind !== 'enqueue' && plan.kind !== 'whenReady' && plan.method !== null) {
     const method = methodLabel(plan.method);
     items.push({
       label: 'Method',
@@ -114,8 +143,7 @@ function factsOf(plan: MergePlan): FactItem[] {
     { label: 'Revision', value: revisionOf(plan) },
   );
   // A stack's layers keep their own commits' words.
-  const title =
-    plan.kind === 'merge' && plan.method === 'SQUASH' && !stack ? commitTitle(plan) : undefined;
+  const title = sendsText(plan) && !stack ? commitTitle(plan) : undefined;
   if (title !== undefined) {
     items.push({
       label: 'Commit',
@@ -303,6 +331,10 @@ function mergeStep(
       return progress.phase === 'waiting'
         ? { state: 'now', detail: 'Lo is reading whether it merged' }
         : { state: 'stopped', detail: 'Lo can’t tell whether it merged' };
+    // Auto-merge's writes: a chain's merge is never one.
+    case 'autoMergeOn':
+    case 'autoMergeOff':
+      return { state: 'todo' };
     default:
       job.state satisfies never;
       return { state: 'todo' };
@@ -350,15 +382,81 @@ function useSeconds(ticking: boolean): number {
   return now;
 }
 
-function confirmShown(dialog: Extract<MergeDialog, { kind: 'confirm' }>): Shown {
+/**
+ * What turning auto-merge on waits for, and what a push before then would do, as main planned it:
+ * what the press checks again.
+ */
+function AutoLines({ plan }: { plan: MergePlan }) {
+  const said = saidOf(plan);
+  const warning = said && pushWarning(said);
+  return (
+    <>
+      <p className="m-0 text-fg text-small">{withoutBidi(onceLine(plan))}</p>
+      {plan.kind === 'whenReady' && (
+        <p className="m-0 text-fg-muted text-small">{queueLine(plan.method)}</p>
+      )}
+      {plan.kind === 'autoMerge' && (plan.title !== '' || plan.message !== '') && (
+        <p className="m-0 text-fg-muted text-small">
+          Auto-merge uses GitHub’s own commit message, not the one typed.
+        </p>
+      )}
+      {warning !== undefined && (
+        <Callout tone="warning" role="status">
+          {withoutBidi(warning)}
+        </Callout>
+      )}
+    </>
+  );
+}
+
+/** What a merge past the rules skips, a line each, as main planned it: what the press checks again. */
+function Skips({ plan }: { plan: MergePlan }) {
+  const said = saidOf(plan);
+  const skips = said ? skipsOf(said) : [];
+  return (
+    <Callout tone="danger">
+      <strong className="block font-semibold">This skips:</strong>
+      {skips.length > 0 ? (
+        <ul className="m-0 mt-6 ps-16">
+          {skips.map((skip) => (
+            <li key={skip}>{withoutBidi(skip)}</li>
+          ))}
+        </ul>
+      ) : (
+        <span>{withoutBidi(`What ${plan.base}’s rules block it for.`)}</span>
+      )}
+    </Callout>
+  );
+}
+
+function confirmShown(
+  dialog: Extract<MergeDialog, { kind: 'confirm' }>,
+  field: RefObject<HTMLInputElement | null>,
+): Shown {
   const { plan } = dialog;
+  const override = plan.kind === 'override';
+  const auto = plan.kind === 'autoMerge' || plan.kind === 'whenReady';
+  const typed = dialog.typed ?? '';
+  const number = String(plan.number);
   return {
     title: confirmTitle(plan),
+    ...(override && {
+      description: withoutBidi(
+        `You can bypass ${plan.base}’s rules in ${plan.owner}/${plan.repo}.`,
+      ),
+    }),
     step: `confirm ${plan.key}`,
     close: 'Cancel',
-    primary: { label: confirmLabel(plan), run: confirmMerge, busy: dialog.sending },
+    primary: {
+      label: confirmLabel(plan),
+      run: confirmMerge,
+      busy: dialog.sending,
+      ...(override && { danger: true, off: typed !== number }),
+    },
+    typing: override,
     body: (
       <>
+        {override && <Skips plan={plan} />}
         {plan.together?.kind === 'stack' && (
           <p className="m-0 text-fg-muted text-small">A GitHub stack merges as one.</p>
         )}
@@ -367,6 +465,16 @@ function confirmShown(dialog: Extract<MergeDialog, { kind: 'confirm' }>): Shown 
           <p className="m-0 text-fg-muted text-small">{queueLine(plan.method)}</p>
         )}
         {togetherShown(plan)}
+        {auto && <AutoLines plan={plan} />}
+        {override && (
+          <TypeToConfirm
+            word={number}
+            value={typed}
+            onChange={typeNumber}
+            onConfirm={confirmMerge}
+            inputRef={field}
+          />
+        )}
         {dialog.note !== undefined && (
           <Callout tone="warning" role="status">
             {withoutBidi(dialog.note)}
@@ -574,6 +682,8 @@ function sentShown(plan: MergePlan, job: JobView | undefined, now: number): Show
       };
     case 'merged':
     case 'enqueued':
+    case 'autoMergeOn':
+    case 'autoMergeOff':
       return { title, step: 'done', close: 'Close', primary: undefined, body: undefined };
     default:
       state satisfies never;
@@ -584,12 +694,13 @@ function sentShown(plan: MergePlan, job: JobView | undefined, now: number): Show
 function shownOf(
   dialog: MergeDialog,
   jobs: (key: string) => JobView | undefined,
+  field: RefObject<HTMLInputElement | null>,
   now: number,
 ): Shown {
   switch (dialog.kind) {
     case 'planning':
       return {
-        title: `Merge #${dialog.number}`,
+        title: dialog.title ?? `Merge #${dialog.number}`,
         step: 'planning',
         close: 'Cancel',
         // There from the start, so focus is on it, not on Cancel, when the plan comes.
@@ -602,7 +713,7 @@ function shownOf(
         ),
       };
     case 'confirm':
-      return confirmShown(dialog);
+      return confirmShown(dialog, field);
     case 'sent':
       return sentShown(dialog.plan, jobs(dialog.plan.key), now);
     case 'refused':
@@ -633,15 +744,19 @@ function PrimaryButton({
   return (
     <Button
       ref={button}
-      variant="primary"
-      aria-disabled={primary.busy || undefined}
+      variant={primary.danger ? 'danger' : 'primary'}
+      aria-disabled={primary.busy || primary.off || undefined}
       onClick={(event) => {
         // Not a double click's second, which would press what came up in its place unseen.
-        if (event.detail <= 1 && !primary.busy) primary.run();
+        if (event.detail <= 1 && !primary.busy && !primary.off) primary.run();
       }}
     >
       {primary.label}
-      <Key keys={labels('enter')} decorative className="text-on-accent" />
+      <Key
+        keys={labels('enter')}
+        decorative
+        className={primary.danger ? undefined : 'text-on-accent'}
+      />
     </Button>
   );
 }
@@ -662,6 +777,8 @@ export function MergeConfirm() {
   useStore(statuses);
   usePull(dialog && dialog.kind !== 'planning' ? dialog.plan.id : '');
   const button = useRef<HTMLButtonElement>(null);
+  // Where a merge past the rules asks for its number.
+  const field = useRef<HTMLInputElement>(null);
   /** When what the dialog shows now came up: a press before then isn't one for it. */
   const shownAt = useRef(Number.POSITIVE_INFINITY);
   const sentJob = dialog?.kind === 'sent' ? jobsByKey(dialog.plan.key) : undefined;
@@ -669,8 +786,9 @@ export function MergeConfirm() {
     sentJob?.together?.kind === 'stack' &&
       (sentJob.state.kind === 'sending' || sentJob.state.kind === 'pending'),
   );
-  const shown = dialog && shownOf(dialog, jobsByKey, now);
+  const shown = dialog && shownOf(dialog, jobsByKey, field, now);
   const step = shown?.step;
+  const typing = shown?.typing === true;
   const open = dialog !== undefined;
   // A held key repeats, and focus follows each main button as it comes up, so a held `⏎` would
   // press the next one too. While the dialog is open, only a key's first press acts.
@@ -689,10 +807,10 @@ export function MergeConfirm() {
   useEffect(() => {
     shownAt.current = stampNow();
     let frame = requestAnimationFrame(() => {
-      frame = requestAnimationFrame(() => button.current?.focus());
+      frame = requestAnimationFrame(() => (typing ? field.current : button.current)?.focus());
     });
     return () => cancelAnimationFrame(frame);
-  }, [step]);
+  }, [step, typing]);
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     // A field inside it, such as a number to type, may have handled the press already.
     if (event.key !== 'Enter' || event.defaultPrevented) return;
@@ -703,7 +821,7 @@ export function MergeConfirm() {
     event.preventDefault();
     // Only a fresh press, once what it would press is on screen.
     if (event.repeat || event.timeStamp < shownAt.current) return;
-    if (shown?.primary && !shown.primary.busy) shown.primary.run();
+    if (shown?.primary && !shown.primary.busy && !shown.primary.off) shown.primary.run();
   };
   return (
     <Dialog
@@ -712,6 +830,7 @@ export function MergeConfirm() {
         if (!next) leaveDialog();
       }}
       title={withoutBidi(shown?.title ?? 'Merge')}
+      description={shown?.description}
       foot={
         shown && (
           <>
@@ -724,7 +843,7 @@ export function MergeConfirm() {
           </>
         )
       }
-      initialFocus={button}
+      initialFocus={typing ? field : button}
       onKeyDown={onKeyDown}
       container={document.getElementById('root')}
       testId="merge-confirm"

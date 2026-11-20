@@ -15,12 +15,14 @@ import {
   pickedMethod,
   type Blocker as ReviewBlocker,
   type Local,
+  type MergeSnapshot,
   type RequiredCheck,
   type Reviewer as ReviewReviewer,
   type UncheckedRule,
 } from '@lo/review';
 
-import type { Blocker, Check, MergeState, Off, Reviewer, Unchecked } from '../contract.ts';
+import type { Blocker, Check, MergeState, Named, Off, Reviewer, Unchecked } from '../contract.ts';
+import { aboveStackBottom, afterPushOf, autoActionOf, overrideActionOf } from './auto.ts';
 
 /** The longest text the contract takes from GitHub. */
 const TEXT_LIMIT = 1024;
@@ -101,6 +103,26 @@ function pullPage(facts: MergeFacts, owner: string, repo: string, number: number
   );
 }
 
+/**
+ * What a confirmation of auto-merge or of a merge past the rules names, from `snapshot` of `pull`,
+ * which `facts` made: as a view's status says it.
+ */
+export function namedOf(
+  snapshot: MergeSnapshot,
+  facts: MergeFacts,
+  pull: StatusInput['pull'],
+): Named {
+  const url = pullPage(facts, pull.owner, pull.repo, pull.number);
+  const { queue } = snapshot;
+  return {
+    blockers: blockers(snapshot).map((each) => blockerOf(each, snapshot.threadsCutShort, url)),
+    unchecked: snapshot.uncheckedRules.map(uncheckedOf),
+    partial: mayNotSeeEveryRule(snapshot),
+    afterPush: afterPushOf(snapshot),
+    queue: { required: queue.required, method: queue.method ?? null },
+  };
+}
+
 /** What a view's status is made from. */
 export interface StatusInput {
   /** What GitHub said, as the account's poller read it. */
@@ -147,6 +169,9 @@ export function stateOf({ facts, local, readAt, stale, off, pull }: StatusInput)
         : action.kind === 'enqueue'
           ? { kind: 'enqueue', method: action.method ?? null }
           : { kind: 'notPossible', reason: action.reason.kind },
+    auto: autoActionOf(snapshot),
+    override: overrideActionOf(snapshot, aboveStackBottom(facts)),
+    afterPush: afterPushOf(snapshot),
     picked: pickedMethod(snapshot) ?? null,
     methods: { ...snapshot.methods },
     signedCommits: snapshot.signedCommits,

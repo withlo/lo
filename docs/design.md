@@ -611,20 +611,30 @@ repo. The right side of a diff navigates the new commit, and the left side the o
   markup formats.
 - **Language servers** come from a fixed list built into Lo, one per language: TypeScript and
   JavaScript (vtsls), Python (Pyright), PHP (php-lsp), Go (gopls), Terraform (terraform-ls), Rust
-  (rust-analyzer), Java (Eclipse JDT LS), C# (Roslyn's server) and, on macOS, Swift (SourceKit-LSP).
-  Each but Swift's is downloaded on first use, only for trusted repos, from its project's own
+  (rust-analyzer), Java (Eclipse JDT LS), C# (Roslyn's server) and Swift (SourceKit-LSP). Each but
+  Swift's on macOS is downloaded on first use, only for trusted repos, from its project's own
   release: npm, NuGet, GitHub releases, releases.hashicorp.com and download.eclipse.org. The Go team
   publishes no gopls binary, so Lo fetches its source from the Go module proxy and builds it,
   offline. Every file is pinned by its hash. vtsls and Pyright run on a Node that Lo downloads for
-  them from nodejs.org. Swift's server is Apple's: Lo downloads none, and runs the copy in the
-  developer folder that `xcode-select -p` names, which comes with the Command Line Tools or Xcode.
-  Without either, Swift's status item says to install the Command Line Tools.
-- **Toolchains.** The toolchains servers need are Lo's own too: Go, Rust, a Temurin JDK and the .NET
-  SDK, one version each, pinned and downloaded like the servers on first use of their language, from
-  each project's own site: dl.google.com, static.rust-lang.org, Adoptium's releases on GitHub and
-  builds.dotnet.microsoft.com. Apart from SourceKit-LSP, which comes with Apple's tools, servers
-  never use the machine's, nor a version a repo asks for. Settings lists them with their sizes, and
-  removes them; on macOS it lists Apple's Swift too, with nothing to remove.
+  them from nodejs.org. On macOS, Swift's server is Apple's: Lo downloads none, and runs the copy in
+  the developer folder that `xcode-select -p` names, which comes with the Command Line Tools or
+  Xcode. Without either, Swift's status item says to install the Command Line Tools. On Linux,
+  Swift's server comes in the Swift toolchain Lo downloads.
+- **Toolchains.** The toolchains servers need are Lo's own too: Go, Rust, a Temurin JDK, the .NET
+  SDK and, on Linux, Swift, one version each, pinned and downloaded like the servers on first use of
+  their language, from each project's own site: dl.google.com, static.rust-lang.org, Adoptium's
+  releases on GitHub, builds.dotnet.microsoft.com and download.swift.org. Apart from SourceKit-LSP
+  on macOS, which comes with Apple's tools, servers never use the machine's, nor a version a repo
+  asks for. Settings lists them with their sizes, and removes them; on macOS it lists Apple's Swift
+  too, with nothing to remove.
+- **Swift on Linux.** swift.org builds Swift for each Linux distribution, against its libraries, so
+  Lo pins one for each it gives install instructions for: Ubuntu 22.04, 24.04 and 26.04, Debian 12
+  and 13, Fedora 41, whose build later Fedoras take too, with libxml2's older library from Fedora
+  45, and Red Hat Enterprise Linux 9, for x64 and arm64. `/etc/os-release` says which a system
+  takes, and distributions built on those, such as Linux Mint or Rocky Linux, take the one they
+  name. Each needs the distribution's packages that swift.org lists; with any missing, Swift's
+  status item says which, and the command that installs them, and Lo downloads nothing until they're
+  there. Lo installs nothing on the system itself. A Linux none of them fits has no Swift server.
 - **Hardening.** Lo picks each server's program, its arguments and its environment, and nothing in a
   checkout supplies a program: a server starts as its own program, never through a shell. Its
   environment is built from nothing, so none of Lo's secrets or your settings reach it, and its home
@@ -656,10 +666,12 @@ repo. The right side of a diff navigates the new commit, and the left side the o
   own packages, and Roslyn gets a project of Lo's own that lists the checkout's `.cs` files. So a
   type from a dependency has no definition.
 - **Swift.** SourceKit-LSP is told of no workspace, so it reads no build or settings of the repo:
-  each file is read alone, with the macOS SDK. A use of what another file declares isn't resolved,
-  and it can't find references, so `gr` answers from the syntax index.
+  each file is read alone, with the macOS SDK, or on Linux, the system's headers. A use of what
+  another file declares isn't resolved, and it can't find references, so `gr` answers from the
+  syntax index.
 - **Without a server.** Kotlin and Ruby have none and answer from the syntax index, as does any
-  other language that has a grammar but no server, Swift on Linux among them.
+  other language that has a grammar but no server, and Swift on a Linux none of swift.org's builds
+  fits.
 
 ### Trust
 

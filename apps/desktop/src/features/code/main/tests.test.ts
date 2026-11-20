@@ -61,6 +61,7 @@ describe('test servers', () => {
         toolchain: refuse,
         findCopy: refuse,
         developerFolder: refuse,
+        missingPackages: refuse,
         signal,
       }),
     ).toEqual({
@@ -92,7 +93,7 @@ describe('test servers', () => {
       ],
     });
     const env = { LO_TEST_SERVERS: file };
-    // Swift's only on macOS, which is where SourceKit-LSP comes with Xcode.
+    // Swift's on macOS, and on a Linux that takes one of swift.org's builds.
     expect(ids(shippedAdapters('linux'))).not.toContain('swift');
     const shipped = shippedAdapters('darwin');
     expect(ids(adaptersFor({ packaged: true, env, testRun: false, shipped }))).toEqual([

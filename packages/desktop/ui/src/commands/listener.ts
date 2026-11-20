@@ -1,7 +1,8 @@
 // The key path's DOM side: one keydown listener in the capture phase on `window`, which sees every
 // key before widgets and CodeMirror and hands it to the registry, telling the element it's for once
-// it's the reader's input, and the `Tab` backstop. A focus change and the window's blur drop the
-// pending sequence and clear the code view focus left; a pointer down drops the pending sequence.
+// it's the reader's input, and the `Tab` backstop. A focus change and the window's blur clear the
+// code view focus left and drop the pending sequence, but for one typed with focus nowhere in
+// particular that goes on where Lo moved focus; a pointer down drops the pending sequence.
 
 import { contradicts, eventStrokes, type KeyEventLike, type Layout } from './notation.ts';
 import type { Registry } from './registry.ts';
@@ -125,7 +126,8 @@ export function listen(win: Win, registry: Registry): () => void {
   };
 
   const onFocusIn = (event: FocusEvent) => {
-    registry.drop();
+    const into = event.target instanceof win.Element ? event.target : null;
+    registry.focusMoved({ scope: findScope(into), text: textKind(into) }, undefined);
     const noted = tab;
     if (!noted || !(event.target instanceof win.Node)) return;
     if (noted.scope.contains(event.target) || !noted.from.isConnected) return;
@@ -141,11 +143,11 @@ export function listen(win: Win, registry: Registry): () => void {
   const onFocusOut = (event: FocusEvent) => {
     const from = event.target instanceof win.Element ? findScope(event.target) : undefined;
     const to = event.relatedTarget instanceof win.Element ? event.relatedTarget : null;
+    const scope = findScope(to);
     // Focus moving within one scope, to Vim's prompt say, leaves its Vim as it is. A box nested
     // in the diff is a scope of its own: focus moving there leaves the diff.
-    const leaving =
-      from?.element && findScope(to).element !== from.element ? from.source : undefined;
-    registry.leave(leaving);
+    const leaving = from?.element && scope.element !== from.element ? from.source : undefined;
+    registry.focusMoved({ scope, text: textKind(to) }, leaving);
   };
 
   const onBlur = (event: FocusEvent) => {

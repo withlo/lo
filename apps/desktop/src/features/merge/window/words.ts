@@ -16,6 +16,7 @@ import type {
   MergeState,
   MergeView,
   Method,
+  Named,
   Off,
   Placement,
   Progress,
@@ -974,16 +975,28 @@ export function cantMerge(state: MergeState, number: number): string | undefined
 
 /**
  * The confirmation's title: "Merge #4821 into main?", "Add #4821 to the merge queue for main?",
- * and for a stack's layer, "Merge 3 layers into main?"
+ * "Merge #4821 when it’s ready?", "Merge #4821 without the rules?", and for a stack's layer, "Merge
+ * 3 layers into main?"
  */
 export function confirmTitle(
   plan: Pick<MergePlan, 'kind' | 'number' | 'base'> & { readonly together?: Together | null },
 ): string {
   const layers = layersOf(plan.together ?? null);
   const what = layers > 1 ? `${layers} layers` : `#${plan.number}`;
-  return plan.kind === 'enqueue'
-    ? `Add ${what} to the merge queue for ${plan.base}?`
-    : `Merge ${what} into ${plan.base}?`;
+  switch (plan.kind) {
+    case 'merge':
+      return `Merge ${what} into ${plan.base}?`;
+    case 'enqueue':
+      return `Add ${what} to the merge queue for ${plan.base}?`;
+    case 'autoMerge':
+    case 'whenReady':
+      return `Merge #${plan.number} when it’s ready?`;
+    case 'override':
+      return `Merge #${plan.number} without the rules?`;
+    default:
+      plan.kind satisfies never;
+      return `Merge #${plan.number} into ${plan.base}?`;
+  }
 }
 
 /** What the confirmation's main button says: "Squash and merge", or "Merge 3 layers" for a stack. */
@@ -991,10 +1004,247 @@ export function confirmLabel(
   plan: Pick<MergePlan, 'kind' | 'method'> & { readonly together?: Together | null },
 ): string {
   const layers = layersOf(plan.together ?? null);
-  if (plan.kind === 'enqueue') {
-    return layers > 1 ? `Add ${layers} layers to the merge queue` : 'Add to merge queue';
+  switch (plan.kind) {
+    case 'merge':
+      return layers > 1 ? `Merge ${layers} layers` : mergeLabel(plan.method ?? 'MERGE');
+    case 'enqueue':
+      return layers > 1 ? `Add ${layers} layers to the merge queue` : 'Add to merge queue';
+    case 'autoMerge':
+    case 'whenReady':
+      return 'Merge when ready';
+    case 'override':
+      return 'Merge anyway';
+    default:
+      plan.kind satisfies never;
+      return 'Merge';
   }
-  return layers > 1 ? `Merge ${layers} layers` : mergeLabel(plan.method ?? 'MERGE');
+}
+
+/** A method as GitHub doing it: "squashes". */
+function merges(method: Method | null): string {
+  switch (method) {
+    case 'SQUASH':
+      return 'squashes';
+    case 'REBASE':
+      return 'rebases';
+    case 'MERGE':
+    case null:
+      return 'merges';
+    default:
+      method satisfies never;
+      return 'merges';
+  }
+}
+
+/**
+ * What a confirmation of auto-merge or of a merge past the rules names, and the branch it merges
+ * into: as the plan carries it, or a view's status says it.
+ */
+export type Said = Named & { readonly base: string };
+
+/** What the confirmation of `plan` names, as main planned it. */
+export function saidOf(plan: MergePlan): Said | undefined {
+  return plan.named === null ? undefined : { ...plan.named, base: plan.base };
+}
+
+/**
+ * What auto-merge waits on, from `state`'s reasons: "it’s approved and e2e (chromium) and
+ * typecheck pass". A block Lo can't see all of waits on the base branch's rules.
+ */
+export function waitsFor(state: Said): string {
+  const parts: string[] = [];
+  if (state.blockers.some((blocker) => blocker.kind === 'approvals')) parts.push('it’s approved');
+  const checks = [
+    ...new Set(
+      state.blockers.flatMap((blocker) =>
+        (blocker.kind === 'check' || blocker.kind === 'notReported') &&
+        blocker.check.state !== 'failed'
+          ? [blocker.check.name]
+          : [],
+      ),
+    ),
+  ];
+  if (checks.length > 0) parts.push(`${listed(checks)} ${checks.length === 1 ? 'passes' : 'pass'}`);
+  if (state.blockers.some((blocker) => blocker.kind === 'checkingMergeability')) {
+    parts.push('GitHub finds it merges cleanly');
+  }
+  if (
+    state.partial ||
+    state.blockers.some((blocker) => blocker.kind === 'rule' || blocker.kind === 'unexplained')
+  ) {
+    parts.push(`${state.base}’s other rules are met`);
+  }
+  return parts.length > 0 ? listed(parts) : 'nothing blocks it';
+}
+
+/**
+ * What turning auto-merge on does, as its confirmation says: "GitHub squashes #4821 into main once
+ * e2e (chromium) and typecheck pass.", or on a branch with a merge queue, "GitHub adds #4821 to the
+ * merge queue for main once ci passes."
+ */
+export function onceLine(plan: MergePlan): string {
+  const said = saidOf(plan);
+  const once = said === undefined ? 'it’s ready' : waitsFor(said);
+  return plan.kind === 'whenReady'
+    ? `GitHub adds #${plan.number} to the merge queue for ${plan.base} once ${once}.`
+    : `GitHub ${merges(plan.method)} #${plan.number} into ${plan.base} once ${once}.`;
+}
+
+/** What turning auto-merge on warns of a push before it merges, if anything. */
+export function pushWarning(state: Pick<Said, 'afterPush' | 'base'>): string | undefined {
+  switch (state.afterPush) {
+    case 'keepsApprovals':
+      return 'A push before it merges would merge with the approvals already given.';
+    case 'noReview':
+      return `${state.base} requires no review, so a push before it merges would merge too.`;
+    case 'newApproval':
+      return undefined;
+    default:
+      state.afterPush satisfies never;
+      return undefined;
+  }
+}
+
+/**
+ * What a merge past the rules skips, a line each: "1 required check that failed: test (node 20)".
+ * It merges straight in, so past a merge queue too.
+ */
+export function skipsOf(state: Said): string[] {
+  const lines: string[] = [];
+  if (state.queue.required) lines.push(`The merge queue for ${state.base}`);
+  const checks = checksOf(state.blockers);
+  for (const blocker of reasons(state.blockers)) {
+    switch (blocker.kind) {
+      case 'check':
+      case 'notReported': {
+        const group = groupOf(blocker);
+        const names = (checks.get(group) ?? []).map((check) => check.name);
+        const count = names.length;
+        const which = count === 1 ? 'check' : 'checks';
+        const that = {
+          failed: 'that failed',
+          notReported: count === 1 ? 'that hasn’t reported' : 'that haven’t reported',
+          awaiting: 'waiting for a deployment’s approval',
+          running: 'still running',
+          yet: 'yet to report',
+        }[group];
+        lines.push(`${count} required ${which} ${that}: ${listed(names)}`);
+        break;
+      }
+      case 'approvals': {
+        const owners = listed(blocker.codeOwners.map(reviewerName));
+        if (blocker.more > 0 && blocker.codeOwners.length > 0) {
+          lines.push(
+            `${counted(blocker.more, 'more approval')}, and a code owner review from ${owners}`,
+          );
+        } else if (blocker.more > 0) {
+          lines.push(counted(blocker.more, 'more approval'));
+        } else if (blocker.codeOwners.length > 0) {
+          lines.push(`A code owner review from ${owners}`);
+        } else {
+          lines.push('A review GitHub requires');
+        }
+        break;
+      }
+      case 'changesRequested':
+        lines.push(
+          blocker.by.length > 0
+            ? `Changes requested by ${listed(blocker.by)}`
+            : 'Changes requested',
+        );
+        break;
+      case 'conversations':
+        lines.push(
+          `${blocker.cutShort ? 'At least ' : ''}${counted(blocker.unresolved, 'unresolved conversation')}`,
+        );
+        break;
+      case 'outOfDate':
+        lines.push(`Being up to date with ${state.base}`);
+        break;
+      case 'rule':
+        lines.push(blocker.description);
+        break;
+      case 'unexplained':
+        lines.push(`What GitHub blocks it for, which Lo can’t see`);
+        break;
+      // Not rules: GitHub still checks these, and merges past no rule for them.
+      case 'merged':
+      case 'closed':
+      case 'draft':
+      case 'conflicts':
+      case 'checkingMergeability':
+        break;
+      default:
+        blocker satisfies never;
+    }
+  }
+  for (const rule of state.unchecked) lines.push(uncheckedTitle(rule));
+  if (state.partial) lines.push(`Any rule on ${state.base} Lo doesn’t see`);
+  return lines;
+}
+
+/** Why `a` in the panel can't turn auto-merge on or off now, or nothing when it can. */
+export function cantAutoMerge(state: MergeState, number: number): string | undefined {
+  const { auto } = state;
+  if (auto.kind === 'notPossible') {
+    switch (auto.reason) {
+      case 'merged':
+        return `#${number} is merged.`;
+      case 'closed':
+        return `#${number} is closed.`;
+      case 'queued':
+        return `#${number} is in the merge queue already.`;
+      case 'ready':
+        return `Nothing blocks #${number} now, so it can merge as it is.`;
+      case 'blocked': {
+        const why = inTheWay(state.blockers);
+        return `Something waiting won’t fix is in #${number}’s way: ${why.charAt(0).toLowerCase()}${why.slice(1)}.`;
+      }
+      case 'noPermission':
+        return `GitHub doesn’t let this account add to the merge queue for ${state.base}.`;
+      case 'notAllowed':
+        return `GitHub doesn’t let this account turn on auto-merge for #${number}. The repository may not allow it: a maintainer turns it on in its settings.`;
+      case 'cantTurnOff':
+        return `GitHub doesn’t let this account turn off auto-merge for #${number}.`;
+      case 'noMethod':
+        return 'The repository allows no merge method.';
+      default:
+        auto.reason satisfies never;
+        return 'Lo can’t turn on auto-merge now.';
+    }
+  }
+  return state.off === null ? undefined : offWords(state.off);
+}
+
+/** Why `⌥⏎` in the panel can't merge past the rules now, or nothing when it can. */
+export function cantOverride(state: MergeState, number: number): string | undefined {
+  const { override } = state;
+  if (override.kind === 'notPossible') {
+    switch (override.reason) {
+      case 'merged':
+        return `#${number} is merged.`;
+      case 'closed':
+        return `#${number} is closed.`;
+      case 'queued':
+        return `#${number} is in the merge queue already.`;
+      case 'nothingToSkip':
+        return `Nothing blocks #${number}, so there’s no rule to skip.`;
+      case 'noPermission':
+        return `GitHub doesn’t let this account merge past ${state.base}’s rules.`;
+      case 'draft':
+        return `#${number} is a draft, which GitHub doesn’t merge, past the rules or not.`;
+      case 'conflicts':
+        return `#${number} conflicts with ${state.base}, which no rule skips.`;
+      case 'stackLayer':
+        return `#${number} sits on another layer of its GitHub stack, and GitHub merges past the rules only a stack’s bottom layer.`;
+      case 'noMethod':
+        return 'The repository allows no merge method.';
+      default:
+        override.reason satisfies never;
+        return 'Lo can’t merge it past the rules now.';
+    }
+  }
+  return state.off === null ? undefined : offWords(state.off);
 }
 
 /**
@@ -1136,6 +1386,12 @@ export function doneLine(job: JobView): string | undefined {
       return `Merged ${what} into ${job.base}`;
     case 'enqueued':
       return `Added ${what} to the merge queue for ${job.base}`;
+    case 'autoMergeOn':
+      return job.kind === 'whenReady'
+        ? `#${job.number} joins the merge queue for ${job.base} once it’s ready`
+        : `Turned on auto-merge for #${job.number}`;
+    case 'autoMergeOff':
+      return `Turned off auto-merge for #${job.number}`;
     case 'sending':
     case 'pending':
     case 'refused':
@@ -1171,17 +1427,26 @@ export function outcomeTitle(job: JobView): string | undefined {
     if (landed === null) return 'Lo can’t tell which layers merged.';
     return landed.length > 0 ? `Merged ${numbers(landed)} only.` : 'Nothing merged.';
   }
+  const auto = job.kind === 'autoMerge' || job.kind === 'whenReady';
   switch (job.state.kind) {
     case 'refused':
+      if (auto) return `Couldn’t turn on auto-merge for #${job.number}.`;
+      if (job.kind === 'autoMergeOff') return `Couldn’t turn off auto-merge for #${job.number}.`;
       return job.kind === 'enqueue'
         ? `Couldn’t add #${job.number} to the merge queue.`
         : `Couldn’t merge #${job.number}.`;
     case 'unknown':
+      if (auto) return `Lo can’t tell whether auto-merge is on for #${job.number}.`;
+      if (job.kind === 'autoMergeOff') {
+        return `Lo can’t tell whether auto-merge is off for #${job.number}.`;
+      }
       return `Lo can’t tell whether #${job.number} merged.`;
     case 'sending':
     case 'pending':
     case 'merged':
     case 'enqueued':
+    case 'autoMergeOn':
+    case 'autoMergeOff':
       return undefined;
     default:
       job.state satisfies never;

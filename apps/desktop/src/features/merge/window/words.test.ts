@@ -33,8 +33,10 @@ import {
   rowsOf,
   secondsAgo,
   shownMethod,
+  skipsOf,
   stackLine,
   steppedMethod,
+  type Said,
 } from './words.ts';
 
 /** When the tests' statuses were read: now, so none is out of date unless a test says. */
@@ -53,6 +55,9 @@ function state(change: Partial<MergeState> = {}): MergeState {
     partial: false,
     incomplete: null,
     action: { kind: 'merge', methods: ['MERGE', 'SQUASH', 'REBASE'], method: 'SQUASH' },
+    auto: { kind: 'notPossible', reason: 'ready' },
+    override: { kind: 'notPossible', reason: 'nothingToSkip' },
+    afterPush: 'noReview',
     picked: 'SQUASH',
     methods: { merge: true, squash: true, rebase: true },
     signedCommits: false,
@@ -568,4 +573,26 @@ test('a GitHub stack’s layer says where it stands in its confirmation, once it
   expect(layerLine({ review: null, checks: 'running' })).toBe('Checks running');
   expect(layerLine({ review: 'reviewRequired', checks: null })).toBe('Review required');
   expect(layerLine({ review: null, checks: null })).toBeUndefined();
+});
+
+test('a merge past the rules skips each reason, and the merge queue it merges straight past', () => {
+  const said: Omit<Said, 'queue'> = {
+    blockers: [
+      { kind: 'approvals', more: 1, codeOwners: [] },
+      { kind: 'check', check: { name: 'ci', state: 'running', url: null } },
+    ],
+    unchecked: [],
+    partial: false,
+    afterPush: 'keepsApprovals',
+    base: 'e4/queued',
+  };
+  expect(skipsOf({ ...said, queue: { required: false, method: null } })).toEqual([
+    '1 more approval',
+    '1 required check still running: ci',
+  ]);
+  expect(skipsOf({ ...said, queue: { required: true, method: 'SQUASH' } })).toEqual([
+    'The merge queue for e4/queued',
+    '1 more approval',
+    '1 required check still running: ci',
+  ]);
 });

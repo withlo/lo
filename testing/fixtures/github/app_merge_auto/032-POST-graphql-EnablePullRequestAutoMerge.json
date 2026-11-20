@@ -1,0 +1,46 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "https://api.github.com/graphql",
+    "operation": "EnablePullRequestAutoMerge",
+    "variables": {
+      "pullRequestId": "PR_kwDOVleUfc8AAAABPueUmA",
+      "mergeMethod": "MERGE",
+      "expectedHeadOid": "f61986d3615a8509a6ed1e4e1492cd5c9af81390"
+    },
+    "query_sha256": "b446a8a215866f99da0f814d24c1ab46fe21f9af68ce691482e9a905e5ed85a9"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "x-ratelimit-limit": "5000",
+      "x-ratelimit-remaining": "4904",
+      "x-ratelimit-reset": "1794889860",
+      "x-ratelimit-resource": "graphql",
+      "x-ratelimit-used": "96"
+    },
+    "body": {
+      "data": {
+        "enablePullRequestAutoMerge": {
+          "pullRequest": {
+            "number": 221,
+            "headRefOid": "f61986d3615a8509a6ed1e4e1492cd5c9af81390",
+            "state": "OPEN",
+            "isInMergeQueue": false,
+            "autoMergeRequest": {
+              "mergeMethod": "MERGE",
+              "enabledAt": "2026-11-17T04:07:34Z",
+              "enabledBy": {
+                "__typename": "User",
+                "login": "rozed-bot"
+              },
+              "commitHeadline": null,
+              "commitBody": null
+            }
+          }
+        }
+      }
+    }
+  }
+}

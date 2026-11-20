@@ -528,16 +528,19 @@ toolchain and git's variables each server needs.
   refused, and so is a Go other than the version gopls was pinned with, so gopls is pinned again
   whenever Go is.
 - The toolchains language servers use are pinned the same way, in `toolchains.json`: Go, Rust
-  (rustc, cargo, the standard library and its sources, as layers of one sysroot), a Temurin JDK and
-  the .NET SDK, each with what it unpacks to per platform. `lsp:pin` checks Go against Google's
-  signature and go.dev's list, Rust against its signed channel file, the JDK against Adoptium's
-  signature, and .NET, which publishes none, against the SHA-512 that both Microsoft's download site
-  and the dotnet/core repository list. Pins are renewed before each release. A server uses only Lo's
-  copy, never the machine's, nor a version its checkout asks for: `toolchainUse` gives it the folder
-  of programs for its `PATH` and the variables that hold the toolchain to Lo's copy
-  (`GOTOOLCHAIN=local`, `GOPROXY=off`, an empty `GOFLAGS`, `GOPACKAGESDRIVER=off`, an empty
-  `RUSTC_WRAPPER`, `JAVA_HOME`, `DOTNET_ROOT`, MSBuild's `DOTNET_MSBUILD_SDK_RESOLVER_*`, and the
-  rest), and the caches it keeps in the server's home.
+  (rustc, cargo, the standard library and its sources, as layers of one sysroot), a Temurin JDK, the
+  .NET SDK and, for Linux, Swift, each with what it unpacks to per platform. `lsp:pin` checks Go
+  against Google's signature and go.dev's list, Rust against its signed channel file, the JDK
+  against Adoptium's signature, Swift against swift.org's, and .NET, which publishes none, against
+  the SHA-512 that both Microsoft's download site and the dotnet/core repository list. Swift has an
+  entry for each Linux distribution swift.org builds it for and lists packages for
+  (`swift-<distribution>`, `src/swift.ts`), x64 and arm64, each pinned on its own, all to one
+  version, and measured within a limit of its own, since it unpacks to about 3.5 GB. Pins are
+  renewed before each release. A server uses only Lo's copy, never the machine's, nor a version its
+  checkout asks for: `toolchainUse` gives it the folder of programs for its `PATH` and the variables
+  that hold the toolchain to Lo's copy (`GOTOOLCHAIN=local`, `GOPROXY=off`, an empty `GOFLAGS`,
+  `GOPACKAGESDRIVER=off`, an empty `RUSTC_WRAPPER`, `JAVA_HOME`, `DOTNET_ROOT`, MSBuild's
+  `DOTNET_MSBUILD_SDK_RESOLVER_*`, and the rest), and the caches it keeps in the server's home.
 - A `global.json` can steer `dotnet` past those variables: since .NET 10 its `sdk.paths` names
   folders to find an SDK in, the checkout's own among them, and the SDK's commands and MSBuild read
   the one nearest where they run. So `dotnet` starts a server only as `dotnet exec`, which reads
@@ -679,6 +682,18 @@ toolchain and git's variables each server needs.
   and is stopped with the server. It also reads the machine's
   `/Library/Application Support/org.swift.sourcekit-lsp/config.json`, which no option turns off;
   Lo's options win over it key by key.
+- Swift's server on Linux is the SourceKit-LSP in the Swift toolchain Lo downloads for the
+  distribution, which `/etc/os-release` names (`swiftDistroFor`): its own release, the one a
+  distribution built on Ubuntu, Debian or Red Hat Enterprise Linux names, or for Fedora, the newest
+  swift.org builds for, Fedora 41, with `libxml2_2.13` besides from Fedora 45, which moved libxml2
+  past the library the build links. It's started and told as on macOS, rootless and refusing the
+  same checkouts, with no SDK and no service: `sourcekitd` runs in its process. `CFFIXED_USER_HOME`
+  matters more there: Foundation on Linux takes its home folder from that, then from the user's
+  entry in the system's list of users, and from `HOME` only without one, and SourceKit-LSP writes
+  its logs in `.sourcekit-lsp/logs` there. The toolchain needs some of the distribution's packages,
+  those swift.org's install instructions list, so before anything downloads Lo looks for them in
+  dpkg's list or asks rpm (`missingPackages`), and with any missing, Swift's item says which and the
+  command that installs them. A Linux none of swift.org's builds fits has no Swift server.
 - Tests start only the fake server, `testing/lsp/fake-server.ts`, at most two at once in a test
   file, each killed with its group when the test ends. No test starts a real server or downloads
   one: download tests serve archives they build from a server on this machine. The live check,
@@ -686,7 +701,13 @@ toolchain and git's variables each server needs.
   `~/.cache/lo-live/`, or the folder `LO_LIVE_CACHE` names, starts each server as its adapter does
   on the checkouts the code fixtures build with `--local`, asks what `gd`, `gr`, `K`, `gh` and `gO`
   ask at the places `testing/fixtures/code/cases.json` names, and fails if anything ran what the
-  hostile fixture plants, wrote in a checkout or held an internet socket.
+  hostile fixture plants, wrote in a checkout or held an internet socket. One real server runs in
+  CI: the `swift` job, on Ubuntu 24.04, runs `pnpm nx run lsp:sourcekit` (`scripts/sourcekit.ts`)
+  when Swift's pins change, or the code that installs it or starts its server. It installs the
+  distribution's Swift with Lo's installer and the packages swift.org lists with `apt-get`, starts
+  SourceKit-LSP as Lo does on the code fixture's checkout, and fails unless it answers a hover on
+  `countWords` with its signature, keeps its logs in its own home and writes nothing in the
+  runner's.
 
 ### Accounts
 
@@ -1484,10 +1505,11 @@ its languages: Lo ships those for TypeScript and JavaScript, and Python, each do
 Node it runs on; Rust, rust-analyzer, which runs on Lo's Rust toolchain; PHP, whose server is a
 program of its own; Go, gopls, which Lo builds with the Go it then runs with; Terraform,
 terraform-ls, which reads a `.tfvars` file as Terraform's variables; Java, JDT LS, which runs on
-Lo's Temurin JDK; C#, Roslyn, which runs on Lo's .NET SDK; and, on macOS, Swift, the SourceKit-LSP
-that comes with Xcode or Apple's Command Line Tools, which Lo doesn't download. Without either,
-Swift's item says it needs Apple's Command Line Tools, and to install them with
-`xcode-select --install`.
+Lo's Temurin JDK; C#, Roslyn, which runs on Lo's .NET SDK; and Swift: on macOS, the SourceKit-LSP
+that comes with Xcode or Apple's Command Line Tools, which Lo doesn't download, and on Linux, the
+one in the Swift toolchain Lo downloads for the distribution. Without Xcode or the tools, Swift's
+item says it needs Apple's Command Line Tools, and to install them with `xcode-select --install`; on
+Linux, without the packages its toolchain needs, it says which, and the command that installs them.
 
 - Nothing starts for a view nothing trusts: no download, no checkout, no server. Once a trusted view
   is on screen and a file its pull request adds or changes on the new side, or one asked about, is
@@ -1528,7 +1550,8 @@ Swift's item says it needs Apple's Command Line Tools, and to install them with
   it. Its button waits while it runs, and a notice says why one wasn't removed
   (`main/toolchains.ts`). On macOS it lists Swift too, the system's (`system` on its adapter), with
   where the SourceKit-LSP Lo would run is from ("From Xcode") or what it needs, and nothing to
-  remove.
+  remove. On Linux it lists the Swift toolchain for the system's distribution alone, and as Lo
+  starts, one for another distribution is removed, as after an upgrade.
 - It stops 10 minutes after the pull request whose checkout it runs on was last on screen, once no
   tab of its repository is open, once its repository or pull request isn't trusted, and as Lo quits,
   each within 5 s; Lo's quitting waits for each one stopping. After a crash it starts again by
