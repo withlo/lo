@@ -1,32 +1,22 @@
-; From Zed (https://github.com/zed-industries/zed), crates/grammars/src/jsonc/highlights.scm
-; at c84af5b99cbc366d675064e52b23664a015b6e35. Copyright Zed Industries, Inc. GPL-3.0-or-later.
-
-(comment) @comment
+; From tree-sitter-json (https://github.com/tree-sitter/tree-sitter-json), queries/highlights.scm
+; at ee35a6ebefcef0c5c416c0d1ccec7370cfca5a24. Copyright (c) 2014 Max Brunsfeld. MIT.
+; JSONC is parsed with the JSON grammar, so it takes JSON's queries.
+; Changed for Lo: the string pattern comes before the key pattern, so that the key wins, as Lo
+; lets the later pattern win.
 
 (string) @string
 
-(escape_sequence) @string.escape
-
 (pair
-  key: (string) @property.json_key)
+  key: (_) @string.special.key)
 
 (number) @number
 
 [
+  (null)
   (true)
   (false)
-] @boolean
+] @constant.builtin
 
-(null) @constant.builtin
+(escape_sequence) @escape
 
-[
-  ","
-  ":"
-] @punctuation.delimiter
-
-[
-  "{"
-  "}"
-  "["
-  "]"
-] @punctuation.bracket
+(comment) @comment

@@ -44,12 +44,6 @@ function keptSection(entry: KeptNotice): string {
         'Licensed under the Apache License, Version 2.0, whose text is at the end of this file.',
       );
       break;
-    case 'GPL-3.0-or-later':
-      lines.push(
-        'Licensed under the GNU General Public License, version 3 or later. Lo uses it under',
-        'version 3, whose text is at the start of this file.',
-      );
-      break;
     default:
       entry.license satisfies never;
       throw new Error(`There's no text for the license ${String(entry.license)}.`);

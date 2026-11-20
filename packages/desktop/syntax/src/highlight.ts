@@ -371,7 +371,7 @@ function injectionsOf(
 
 /**
  * The captures as triples that never overlap. Where captures nest, the innermost wins; between
- * equal ranges, the higher priority, which is the later pattern in a query, as Zed's queries are
+ * equal ranges, the higher priority, which is the later pattern in a query, as Lo's queries are
  * written. Neighbors with the same token are joined.
  */
 export function resolve(captures: Capture[]): Uint32Array {
