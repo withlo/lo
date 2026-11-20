@@ -176,8 +176,8 @@ export type Unsure =
   /**
    * Some merged pull requests weren't looked up, and its stack sits on a branch that isn't a
    * trunk, which may be a merged pull request's: a layer it sits on or under may be missing. A
-   * GitHub stack, or a pull request alone in its stack, on a branch the lookups found no merged
-   * pull request from ({@link WhereView.unmerged}) is sure of its place.
+   * GitHub stack on a branch the lookups found no merged pull request from
+   * ({@link WhereView.unmerged}) is sure of its place.
    */
   | { readonly kind: 'lookups' }
   /**
@@ -215,14 +215,13 @@ export function where(view: WhereView): Where {
   if (!samePlace(listed, facts)) return unknown({ kind: 'moved', listed }, view);
   const cycle = stacks.cycles.find((each) => each.prs.some((pr) => stack.layers.includes(pr)));
   if (cycle) return unknown({ kind: 'cycle', prs: cycle.prs }, view);
-  // A branch that isn't a trunk may be a merged pull request's, which a GitHub stack or a pull
-  // request alone sits on as well as a chain does: merged into, it would take the merge in that
-  // pull request's place. One on a branch the lookups found no merged pull request from sits there:
-  // a GitHub stack, since what merges with it is GitHub's to say, and a pull request alone, which
-  // merges alone. A chain's merge a layer at a time waits for every lookup anyway.
+  // A branch that isn't a trunk may be a merged pull request's, which a GitHub stack sits on as
+  // well as a chain does: merged into, it would take the merge in that pull request's place. A
+  // GitHub stack on one the lookups found no merged pull request from sits there, since what merges
+  // with it is GitHub's to say; a chain's merge a layer at a time waits for every lookup anyway.
   const unlooked = stacks.gaps.some((gap) => gap.kind === 'mergedPullRequests');
-  const ownRoot = entry !== undefined || stack.layers.length === 1;
-  const root = trunks.includes(stack.root) || (ownRoot && view.unmerged?.has(stack.root) === true);
+  const root =
+    trunks.includes(stack.root) || (entry !== undefined && view.unmerged?.has(stack.root) === true);
   if (unlooked && !root) return unknown({ kind: 'lookups' }, view);
   return readAfresh(view, stacks, trunks, layer) ?? placed(stacks, layer);
 }
