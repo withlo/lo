@@ -353,10 +353,64 @@ const WRITE_MERGED = [174, 175, 176];
 const UPDATE_RESTRICTED =
   'Repository rule violations found\n\nCannot update this protected ref.\n\n';
 
+/** The aliases of a `MergedPullRequests` request, one a branch: ten, as Lo asks. */
+const LOOKUP_ALIASES = Array.from({ length: 10 }, (_, index) => `b${index}`);
+
+/**
+ * The branches a run of `MergedPullRequests` requests looks up, in order, each once, with what
+ * GitHub answered for each.
+ */
+function lookedUp(run: readonly Interaction[]): Map<string, Json> {
+  const found = new Map<string, Json>();
+  for (const { request, response } of run) {
+    for (const alias of LOOKUP_ALIASES) {
+      const branch = at(request.variables, alias);
+      const answer = at(response.body, 'data', 'repository', alias);
+      if (typeof branch === 'string' && !found.has(branch)) found.set(branch, answer ?? null);
+    }
+  }
+  return found;
+}
+
+/**
+ * The `MergedPullRequests` requests that look up `branches` as Lo asks them, ten a request, a
+ * request of fewer asking about its first again, each answered with what `run`, which looked them
+ * up with others, found for it.
+ */
+function lookupsOf(run: readonly Interaction[], branches: Map<string, Json>): Interaction[] {
+  const [{ request, response }] = run as [Interaction, ...Interaction[]];
+  const names = [...branches.keys()];
+  const requests: Interaction[] = [];
+  for (let start = 0; start < names.length; start += LOOKUP_ALIASES.length) {
+    const batch = names.slice(start, start + LOOKUP_ALIASES.length);
+    const variables: JsonObject = isObject(request.variables) ? { ...request.variables } : {};
+    const repository: JsonObject = {};
+    for (const [index, alias] of LOOKUP_ALIASES.entries()) {
+      const branch = batch[index] ?? batch[0]!;
+      variables[alias] = branch;
+      repository[alias] = branches.get(branch) ?? null;
+    }
+    requests.push({
+      request: { ...request, variables },
+      response: {
+        ...response,
+        body: reshaped(response.body, (body) => ({
+          ...body,
+          data: reshaped(body['data'], (data) => ({ ...data, repository })),
+        })),
+      },
+    });
+  }
+  return requests;
+}
+
 /**
  * `recorded` with a ruleset on `branch` whose one rule, "Restrict updates", lets only those who may
  * bypass it update the branch: every read of the repository's rulesets, and of `branch`'s rules,
- * holds it. Nothing names the ruleset's id, so it has a stand-in.
+ * holds it. Nothing names the ruleset's id, so it has a stand-in. A ruleset that restricts updates
+ * makes its branch a trunk, so finding stacks no longer looks up which pull requests from `branch`
+ * merged: each run of lookups that did is added after the recording without it, answered as the
+ * run answered for the other branches.
  */
 function restricted(recorded: Interaction[], branch: string): Interaction[] {
   const rule: Json = {
@@ -371,7 +425,17 @@ function restricted(recorded: Interaction[], branch: string): Interaction[] {
     conditions: { refName: { include: [`refs/heads/${branch}`], exclude: [] } },
     rules: { nodes: [{ type: 'UPDATE' }] },
   };
-  return recorded.map((each) => {
+  const lookups: Interaction[] = [];
+  const lookup = graphql('MergedPullRequests');
+  recorded.forEach((each, index) => {
+    if (!lookup(each) || (index > 0 && lookup(recorded[index - 1]!))) return;
+    const after = recorded.slice(index).findIndex((later) => !lookup(later));
+    const run = recorded.slice(index, after === -1 ? recorded.length : index + after);
+    const branches = lookedUp(run);
+    if (!branches.delete(branch) || branches.size === 0) return;
+    lookups.push(...lookupsOf(run, branches));
+  });
+  const changed = recorded.map((each) => {
     const { request, response } = each;
     if (graphql('TrunkRules')(each)) {
       return withBody(each, (body) =>
@@ -393,6 +457,7 @@ function restricted(recorded: Interaction[], branch: string): Interaction[] {
     }
     return each;
   });
+  return [...changed, ...lookups];
 }
 
 /** Whether `interaction` starts a copy of Lo in a recording: it asks who it's signed in as first. */
@@ -709,11 +774,11 @@ export const DERIVATIONS: readonly Derivation[] = [
   {
     name: 'app_merge_write_writer',
     from: 'app_merge_write',
-    description: `app_merge_write read as an account with write access, below admin, as app_merge_override_writer is, on a ${WRITE_BASE} that a ruleset's "Restrict updates" rule covers, which the account can't bypass: every read of the repository's rulesets and of ${WRITE_BASE}'s rules holds it. GitHub fails each merge Lo sent into ${WRITE_BASE}, of rozed-dev/e2e#174, #175 and #176, for that rule, where it said it merged, as it fails an async merge for a ruleset's rules: "Repository rule violations found", then "Cannot update this protected ref.". The reads each copy of Lo made after answer as before it sent the merge, since nothing merged. The copies after the first, which no derived test opens, read ${WRITE_BASE}'s commits as recorded, moved by the merges before them. These answers are derived: the recorders accept only rozed-bot's token, an admin's, and no account below admin merged anything.`,
+    description: `app_merge_write read as an account with write access, below admin, as app_merge_override_writer is, on a ${WRITE_BASE} that a ruleset's "Restrict updates" rule covers, which the account can't bypass: every read of the repository's rulesets and of ${WRITE_BASE}'s rules holds it, and Lo, which takes a branch such a rule covers as a trunk, looks up which pull requests merged from the other branches only, as recorded for them. GitHub fails each merge Lo sent into ${WRITE_BASE}, of rozed-dev/e2e#174, #175 and #176, for that rule, where it said it merged, as it fails an async merge for a ruleset's rules: "Repository rule violations found", then "Cannot update this protected ref.". The reads each copy of Lo made after answer as before it sent the merge, since nothing merged. The copies after the first, which no derived test opens, read ${WRITE_BASE}'s commits as recorded, moved by the merges before them. These answers are derived: the recorders accept only rozed-bot's token, an admin's, and no account below admin merged anything.`,
     derive(recorded) {
-      let writer = restricted(asWriter(recorded), WRITE_BASE);
+      let writer = asWriter(recorded);
       for (const number of WRITE_MERGED) writer = mergeFailed(writer, number, UPDATE_RESTRICTED);
-      return writer;
+      return restricted(writer, WRITE_BASE);
     },
   },
 ];
