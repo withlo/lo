@@ -25,7 +25,9 @@ cask "lo" do
     "/private/var/folders/*/*/C/Lo",
     "~/.config/lo",
     "~/Library/Application Support/Lo",
+    "~/Library/Caches/com.scornz.lo.ShipIt",
     "~/Library/Caches/lo-updater",
+    "~/Library/Preferences/ByHost/com.scornz.lo.ShipIt.*.plist",
     "~/Library/Preferences/com.scornz.lo.plist",
     "~/Library/Saved Application State/com.scornz.lo.savedState",
   ]

@@ -78,6 +78,8 @@ describe('lo.rb.in', () => {
     expect(template).toContain(`  uninstall quit: "${base.appId}"\n`);
     expect(template).toContain(`"~/Library/Preferences/${base.appId}.plist"`);
     expect(template).toContain(`"~/Library/Saved Application State/${base.appId}.savedState"`);
+    expect(template).toContain(`"~/Library/Caches/${base.appId}.ShipIt"`);
+    expect(template).toContain(`"~/Library/Preferences/ByHost/${base.appId}.ShipIt.*.plist"`);
     expect(template).toContain(`"~/Library/Application Support/${base.productName}"`);
     expect(template).toContain(`"/private/var/folders/*/*/C/${base.productName}"`);
   });
@@ -100,7 +102,7 @@ describe('lo.rb.in', () => {
     expect(template).toContain(`  depends_on macos: :${name}\n`);
   });
 
-  test("doesn't say Lo updates itself, so `brew upgrade` updates it", () => {
+  test('has no `auto_updates`, since a Lo that Homebrew installed never downloads its own', () => {
     expect(template).not.toContain('auto_updates');
   });
 });

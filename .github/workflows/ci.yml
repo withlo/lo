@@ -412,8 +412,8 @@ jobs:
   # release's, and checks it against Homebrew's rules with `brew style`, so a template Homebrew
   # would refuse fails here rather than in the tap's checks after a release. It runs when the
   # template, the script that renders it or this workflow changes.
-  cask:
-    name: cask
+  cask-style:
+    name: cask-style
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -467,7 +467,7 @@ jobs:
         oldest-git,
         swift,
         overview,
-        cask,
+        cask-style,
       ]
     runs-on: ubuntu-latest
     timeout-minutes: 5

@@ -14,9 +14,12 @@
 # - ~/.config/lo: the keymap, settings.json and themes;
 # - ~/Library/Application Support/Lo: Electron's userData, with Lo's database;
 # - ~/Library/Caches/lo-updater: where electron-updater downloads to (release.yml names it);
+# - ~/Library/Caches/<bundle ID>.ShipIt and ~/Library/Preferences/ByHost/<bundle ID>.ShipIt.*.plist:
+#   what Squirrel.Mac, which installs the updates of a Lo installed from a DMG, keeps for ShipIt,
+#   its installer, under the label `<bundle ID>.ShipIt`;
 # - the Preferences and Saved Application State macOS keeps by the bundle ID.
-# Lo updates through Homebrew when Homebrew installed it, so the cask has no `auto_updates`, which
-# would make `brew upgrade` skip it.
+# A Lo that Homebrew installed never downloads its own updates: it gives the brew command instead.
+# So by the Cask Cookbook it doesn't update itself, and the cask has no `auto_updates`.
 # Usage: sh scripts/release/cask.sh <version> <arm64 DMG's SHA-256> <x64 DMG's SHA-256>
 set -euf
 if [ $# -ne 3 ]; then

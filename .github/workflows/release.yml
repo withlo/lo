@@ -16,16 +16,19 @@
 # no secret and drafting nothing. Its files are the run's `mac`, `linux-x64` and `linux-arm64`
 # artifacts for 14 days. The Linux packages are never signed, so they're built the same either way.
 #
-# Publishing a release that isn't a prerelease starts it again, for the cask job alone: it proposes
-# the release's Homebrew cask, Casks/lo.rb, to withlo/homebrew-tap in a pull request, which the
-# tap's own checks audit and install before a maintainer merges it.
+# Publishing a release that isn't a prerelease, or making a prerelease a release, starts it again,
+# for the cask job alone: it proposes the release's Homebrew cask, Casks/lo.rb, to
+# withlo/homebrew-tap in a pull request, which the tap's own checks audit and install before a
+# maintainer merges it.
 name: release
 
 on:
   push:
     tags: ['v*']
+  # A draft published as a release, or a prerelease made a release; `published` would miss the
+  # second, and fire for prereleases too.
   release:
-    types: [published]
+    types: [released]
   workflow_dispatch:
   pull_request:
     paths:
@@ -397,21 +400,21 @@ jobs:
           esac
 
   # Proposes a published release's Homebrew cask to withlo/homebrew-tap. It runs when a maintainer
-  # publishes a release that isn't a prerelease, by the release's flag and by its tag, and fails for
-  # one that isn't GitHub's latest, whose cask would take Homebrew's back. It downloads the two DMGs
-  # from the addresses the cask names, checks each against the release's SHA256SUMS, renders
-  # Casks/lo.rb with scripts/release/cask.sh, and opens a pull request on the tap from the branch
-  # lo-<version>. The tap's checks audit and install the cask there, and a maintainer merges it. The
-  # version, and so the branch and every file name, comes from the release's tag alone, through
-  # version.sh: never from the release's name or notes. TAP_TOKEN, a token that can write only to
-  # the tap, comes from the `tap` environment, and only the step that opens the pull request reads
-  # it, running gh alone.
+  # publishes a release, or makes a prerelease one, and only for a release that is neither a draft
+  # nor a prerelease, by the release's flags and by its tag. A version no newer than the cask on the
+  # tap's main is left out, with a notice. Otherwise it downloads the two DMGs from the addresses
+  # the cask names, checks each against the release's SHA256SUMS, renders Casks/lo.rb with
+  # scripts/release/cask.sh, and opens a pull request on the tap from the branch lo-<version>. The
+  # tap's checks audit and install the cask there, and a maintainer merges it. The version, and so
+  # the branch and every file name, comes from the release's tag alone, through version.sh: never
+  # from the release's name or notes. TAP_TOKEN, a token that can write only to the tap, comes from
+  # the `tap` environment, and only the step that opens the pull request reads it, running gh alone.
   cask:
     name: cask
     needs: version
     if: >-
-      github.event_name == 'release' && !github.event.release.prerelease &&
-      needs.version.outputs.prerelease == 'false'
+      github.event_name == 'release' && !github.event.release.draft &&
+      !github.event.release.prerelease && needs.version.outputs.prerelease == 'false'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     environment: tap
@@ -425,21 +428,46 @@ jobs:
         with:
           persist-credentials: false
 
-      # An older line's release would take the cask back, and the cask's livecheck reads the latest.
-      - name: Check that it's the latest release
+      # `brew upgrade` takes any version other than the one installed as an update, so a release no
+      # newer than the cask on the tap's main would take Homebrew's Lo back, or change nothing. The
+      # cask's version is read as text, and must be a release's, as this job writes it. The tap is
+      # public, so this reads it without TAP_TOKEN.
+      - name: Compare with the tap's cask
+        id: tap
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          latest=$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name)
-          if [ "$latest" != "v$VERSION" ]; then
-            echo "::error::v$VERSION isn't GitHub's latest release, $latest is."
+          if ! cask=$(gh api -H 'Accept: application/vnd.github.raw+json' \
+            "repos/$TAP/contents/Casks/lo.rb?ref=main" 2> /dev/null); then
+            if printf '%s' "$cask" | jq -e '.status == "404"' > /dev/null 2>&1; then
+              echo "$TAP's main has no cask yet, so $VERSION's is proposed."
+              echo newer=true >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            echo "::error::Can't read $TAP's cask: $cask"
             exit 1
+          fi
+          current=$(printf '%s\n' "$cask" | sed -n 's/^  version "\(.*\)"$/\1/p')
+          if [ "$(printf '%s\n' "$current" | wc -l)" -ne 1 ] ||
+            ! printf '%s\n' "$current" | grep -Eqx '[0-9]+\.[0-9]+\.[0-9]+'; then
+            echo "::error::$TAP's cask has no single version of a release: $current"
+            exit 1
+          fi
+          newest=$(printf '%s\n' "$current" "$VERSION" | sort -t . -k 1,1n -k 2,2n -k 3,3n |
+            tail -n 1)
+          if [ "$current" = "$VERSION" ] || [ "$newest" != "$VERSION" ]; then
+            echo "::notice::$TAP's cask is at $current, so $VERSION's isn't proposed."
+            echo newer=false >> "$GITHUB_OUTPUT"
+          else
+            echo "$TAP's cask is at $current, so $VERSION's is proposed."
+            echo newer=true >> "$GITHUB_OUTPUT"
           fi
 
       # As anyone downloads them, from the addresses the cask names. Each must be listed in
       # SHA256SUMS with the SHA-256 it has, which is what the cask then holds.
       - name: Download the DMGs and check them against SHA256SUMS
         id: sums
+        if: steps.tap.outputs.newer == 'true'
         working-directory: ${{ runner.temp }}
         run: |
           mkdir dmgs
@@ -460,6 +488,7 @@ jobs:
           done
 
       - name: Render the cask
+        if: steps.tap.outputs.newer == 'true'
         env:
           ARM64: ${{ steps.sums.outputs.arm64 }}
           X64: ${{ steps.sums.outputs.x64 }}
@@ -469,10 +498,10 @@ jobs:
 
       # Through GitHub's API, so the token never goes into git's config: the branch lo-<version>
       # from the tap's main, a commit on it that writes Casks/lo.rb, and a pull request, titled as
-      # Homebrew titles a cask's update. A re-run reuses the branch and its pull request, and does
-      # nothing once main has this cask. A file's blob SHA is git's hash of its contents, so
-      # comparing them compares the casks.
+      # Homebrew titles a cask's update. A re-run reuses the branch and its pull request. A file's
+      # blob SHA is git's hash of its contents, so comparing them compares the casks.
       - name: Open the pull request on the tap
+        if: steps.tap.outputs.newer == 'true'
         env:
           GH_TOKEN: ${{ secrets.TAP_TOKEN }}
         run: |
@@ -498,18 +527,17 @@ jobs:
           main=$(gh api "repos/$TAP/git/ref/heads/main" --jq .object.sha) ||
             { echo "::error::$TAP has no main branch to propose the cask to."; exit 1; }
           on_main=$(blob main)
-          if [ "$on_main" = "$want" ]; then
-            echo "::notice::$TAP's main already has this cask."
-            exit 0
-          fi
           title="lo $VERSION"
           [ -n "$on_main" ] || title="$title (new cask)"
 
-          if ! gh api "repos/$TAP/git/ref/heads/$branch" > /dev/null 2>&1; then
+          # A branch made here holds main's cask, which GitHub may not serve from it at once.
+          if gh api "repos/$TAP/git/ref/heads/$branch" > /dev/null 2>&1; then
+            on_branch=$(blob "$branch")
+          else
             gh api -X POST "repos/$TAP/git/refs" -f "ref=refs/heads/$branch" -f "sha=$main" \
               > /dev/null
+            on_branch=$on_main
           fi
-          on_branch=$(blob "$branch")
           if [ "$on_branch" != "$want" ]; then
             set -- -f "message=$title" -f "content=$(base64 -w 0 < "$cask")" -f "branch=$branch"
             [ -z "$on_branch" ] || set -- "$@" -f "sha=$on_branch"
