@@ -530,6 +530,25 @@ describe('peeks', () => {
     expect(parent!.querySelector('.lo-diffpeek')).toBeNull();
   });
 
+  test('closing a peek takes the block it was drawn in, leaving no empty band under its line', () => {
+    const shown = open();
+    shown.peek(at(3), definition());
+    expect(parent!.querySelectorAll('.lo-filepeek')).toHaveLength(1);
+    shown.peek(at(3), undefined);
+    expect(parent!.querySelector('.lo-filepeek')).toBeNull();
+    // Line 4 is right under line 3, with no empty block between them.
+    const third = [...parent!.querySelectorAll('.cm-line')].find(
+      (each) => each.textContent === 'line 3',
+    );
+    expect(third?.nextElementSibling?.textContent).toBe('line 4');
+    // One taken by another peek, and that closed in turn, leaves nothing behind either.
+    shown.peek(at(3), definition());
+    shown.peek(at(7), definition());
+    expect(parent!.querySelectorAll('.lo-filepeek')).toHaveLength(1);
+    shown.peek(at(7), undefined);
+    expect(parent!.querySelector('.lo-filepeek')).toBeNull();
+  });
+
   test('there’s none under a line of another file or side, or past its end', () => {
     const shown = open();
     expect(shown.peek(at(3, 'old'), definition())).toBe(false);

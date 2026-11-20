@@ -71,8 +71,13 @@ export function createFileView(parent: HTMLElement, init: FileInit, on: FileEven
 /** A line a mark picks out. */
 const markedLine = Decoration.line({ class: 'lo-line-marked' });
 
-/** Shows a peek under a document line, or none. */
-const setPeek = StateEffect.define<{ line: number; block: PeekBlock } | undefined>();
+/**
+ * Shows a peek under a document line, or with `null` none. Not `undefined`: the editor's change
+ * filter (`readOnly`) rejects every transaction the view didn't mark, which CodeMirror rebuilds
+ * with the effects mapped, and mapping drops an effect whose value is undefined. A peek that closed
+ * would then leave its block drawn, an empty band under the line.
+ */
+const setPeek = StateEffect.define<{ line: number; block: PeekBlock } | null>();
 
 /** The peek open, as a block under its line. */
 const peekField = StateField.define<DecorationSet>({
@@ -81,7 +86,7 @@ const peekField = StateField.define<DecorationSet>({
     for (const effect of transaction.effects) {
       if (!effect.is(setPeek)) continue;
       const open = effect.value;
-      if (!open) return Decoration.none;
+      if (open === null) return Decoration.none;
       const widget = new PeekWidget(open.block);
       const at = transaction.state.doc.line(open.line).to;
       return Decoration.set(Decoration.widget({ widget, block: true, side: 1 }).range(at));
@@ -346,7 +351,7 @@ class WholeFile implements FileView {
       this.#keepPeek(at.line, () => {
         this.#peek = undefined;
         block.destroy();
-        view.dispatch({ effects: setPeek.of(undefined) });
+        view.dispatch({ effects: setPeek.of(null) });
       });
       if (focused) {
         // The cursor where it was as the peek opened.

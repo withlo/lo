@@ -36,6 +36,10 @@ list.
   its own, indented as the others are (two spaces in a new file), or on the same line in an object
   written on one, with a comma after it if the last one has one. Lo writes the new value whole, so a
   comment inside the old one, as in `code.trusted`'s list, goes with it.
+- **A header an older Lo wrote goes.** Older versions of Lo began a file they made with a comment
+  about which settings they applied, which no longer holds. When Lo changes a setting in a file that
+  begins with that comment exactly as they wrote it, it takes the comment out. A comment you wrote,
+  or changed even by a word, stays, and a file Lo makes has none.
 - **A setting given more than once** is read as the last one says, as JavaScript and VS Code read
   JSON, and Settings reports it. Lo won't change that setting until the file has it once, since with
   two the file says one thing where you might read another. It changes the others as usual.
