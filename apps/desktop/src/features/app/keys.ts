@@ -1,6 +1,6 @@
-// The window's own commands. Linux has no app menu to quit or go full screen from, so those two
-// are Lo's there; on macOS the app menu's roles do them. Zooming is Lo's on both, in the View menu
-// on macOS.
+// The window's own commands. Linux has no app menu to quit, go full screen or open About from, so
+// those three are Lo's there; on macOS the app menu's roles do them. Zooming is Lo's on both, in
+// the View menu on macOS. Showing the licenses is Lo's on both, in the app menu on macOS.
 
 import { defineCommands } from '@lo/ui/commands';
 
@@ -37,5 +37,26 @@ export default defineCommands('app', {
     group: 'Tabs and window',
     keys: ['f11'],
     when: { system: 'linux' },
+  },
+  /**
+   * Shows the system's About panel. Done once in a while, so it has no key: Linux's right-click
+   * menu and the palette reach it. On macOS, the app menu's About does it.
+   */
+  about: {
+    label: 'About Lo',
+    group: 'Tabs and window',
+    keys: [],
+    when: { system: 'linux' },
+    menu: { on: 'none', order: 30 },
+  },
+  /**
+   * Opens the file of licenses: Lo's, and those of the packages and files it ships. It has no key,
+   * and sits under About in the app menu on macOS.
+   */
+  licenses: {
+    label: 'Show licenses',
+    group: 'Tabs and window',
+    keys: [],
+    bar: { menu: 'App', order: 5 },
   },
 });

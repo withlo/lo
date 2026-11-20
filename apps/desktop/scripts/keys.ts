@@ -216,6 +216,10 @@ function systemSection(commands: readonly Command[]): string[] {
   const rows = commands.flatMap((command) => {
     const on = systemsOf(command);
     const only = on.length === 1 ? on[0] : undefined;
+    // A command with no key on purpose, on one system, is listed with where it's found instead.
+    if (only !== undefined && keyless(command)) {
+      return [[command.label, noKey(command), systemNames[only], where(command), code(command.id)]];
+    }
     const specs = command.keys.map(specOf);
     return systems.flatMap((system) => {
       // A command on one system has all its keys there; one on both, those written for one.

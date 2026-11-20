@@ -298,6 +298,7 @@ in normal mode, `Esc` closes the box and keeps the draft. In the box's preview, 
 | Zoom in                   | `⌘=`, `⌘⇧=`                           | Anywhere                                                                               | `app.zoomIn`            |
 | Zoom out                  | `⌘-`                                  | Anywhere                                                                               | `app.zoomOut`           |
 | Actual size               | `⌘0`                                  | Anywhere                                                                               | `app.actualSize`        |
+| Show licenses             | None: in the app menu and the palette | Anywhere                                                                               | `app.licenses`          |
 | Every key                 | `?`                                   | Anywhere                                                                               | `keys.help`             |
 | Show the right-click menu | `Menu`, `⇧F10`                        | Anywhere but `menu`, `dialog` and `palette`                                            | `keys.menu`             |
 | Back to the middle view   | `Esc`                                 | Anywhere but `menu`, `dialog`, `palette` and `box`; in code views, only in normal mode | `keys.escape`           |
@@ -393,11 +394,12 @@ form: `⌘⇧P` is `Ctrl+Shift+P` on Linux. `⌃` is Ctrl on both, so Vim's `⌃
 
 These keys are on one system only:
 
-| Action                | Keys     | On    | Where                               | Command          |
-| --------------------- | -------- | ----- | ----------------------------------- | ---------------- |
-| Quit Lo               | `Ctrl+Q` | Linux | Anywhere                            | `app.quit`       |
-| Full screen           | `F11`    | Linux | Anywhere                            | `app.fullScreen` |
-| Review a pull request | `⌘O`     | macOS | Anywhere but `dialog` and `palette` | `open.box`       |
+| Action                | Keys                              | On    | Where                               | Command          |
+| --------------------- | --------------------------------- | ----- | ----------------------------------- | ---------------- |
+| Quit Lo               | `Ctrl+Q`                          | Linux | Anywhere                            | `app.quit`       |
+| Full screen           | `F11`                             | Linux | Anywhere                            | `app.fullScreen` |
+| About Lo              | None: in its menu and the palette | Linux | Anywhere                            | `app.about`      |
+| Review a pull request | `⌘O`                              | macOS | Anywhere but `dialog` and `palette` | `open.box`       |
 
 On Linux, in a comment box in insert mode, and in a field inside a code view such as Vim's search,
 Lo never takes `Ctrl+C`, `Ctrl+X`, `Ctrl+V`, `Ctrl+A`, `Ctrl+Z` or `Ctrl+W`: they keep their editing

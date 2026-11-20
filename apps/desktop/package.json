@@ -2,11 +2,12 @@
   "name": "@lo/desktop",
   "productName": "Lo",
   "version": "0.0.0",
+  "license": "GPL-3.0-only",
   "private": true,
   "type": "module",
   "main": "dist/main/index.js",
   "scripts": {
-    "build": "electron-vite build",
+    "build": "electron-vite build && node scripts/notices.ts",
     "codegen": "node scripts/keys.ts && prettier --write ../../docs/keys.md",
     "dev": "electron-vite dev",
     "e2e": "playwright test --config e2e/playwright.config.ts",
@@ -101,6 +102,13 @@
           {
             "dependentTasksOutputFiles": "**/*.{wasm,scm}",
             "transitive": true
+          },
+          "{workspaceRoot}/LICENSE",
+          {
+            "env": "GITHUB_SHA"
+          },
+          {
+            "runtime": "git rev-parse HEAD 2>/dev/null || true"
           }
         ]
       }

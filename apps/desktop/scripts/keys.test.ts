@@ -19,6 +19,13 @@ const diff = defineCommands('diff', {
   files: { label: 'Files', group: 'Find', keys: ['cmd+p'], overVim: true },
   quit: { label: 'Quit', group: 'Tabs and window', keys: ['cmd+q'], when: { system: 'linux' } },
   install: { label: 'Install', group: 'Tabs and window', keys: [], bar: { menu: 'App', order: 1 } },
+  about: {
+    label: 'About',
+    group: 'Tabs and window',
+    keys: [],
+    when: { system: 'linux' },
+    menu: { on: 'none', order: 1 },
+  },
 });
 const tree = defineCommands(
   'tree',
@@ -150,6 +157,11 @@ describe('docs/keys.md', () => {
     const lines = section('## Keys for one system');
     expect(lines).toContain('| Open a PR | `⌘O` | macOS | Anywhere | `diff.open` |');
     expect(lines).toContain('| Quit | `Ctrl+Q` | Linux | Anywhere | `diff.quit` |');
+    // One with no key on purpose says where it's found instead, and is no more on macOS's list.
+    expect(lines).toContain(
+      '| About | None: in its menu and the palette | Linux | Anywhere | `diff.about` |',
+    );
+    expect(section('## Tabs and window').join('\n')).not.toContain('diff.about');
     expect(lines.join('\n')).toContain(
       'Lo never takes `Ctrl+C`, `Ctrl+X`, `Ctrl+V`, `Ctrl+A`, `Ctrl+Z` or `Ctrl+W`',
     );
