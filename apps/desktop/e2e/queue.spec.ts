@@ -4,7 +4,8 @@
 // waited to join it with auto-merge on. `gq` in a pull request's tab opens the queue of the branch
 // it goes into, in one tab for the repository and account; `j` and `k` move, `⏎` opens the pull
 // request the keyboard is on, `Tab` shows the next branch's queue, and the tab comes back after Lo
-// restarts.
+// restarts. It's served as `app_queue_polled`, which adds GitHub's answer to each overview ref read
+// again, as Lo does when its window comes to the front.
 
 import { _electron as electron, type ElectronApplication, type Page } from '@playwright/test';
 

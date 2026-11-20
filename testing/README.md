@@ -335,32 +335,35 @@ GitHub stack #118. Its repository didn't allow auto-merge when it was made. Gene
 with GitHub stack #155. Generation 4 is #156 to #172, with GitHub stack #173; `app_queue` used it,
 recorded while #169 and #168 were tested together in `e4/queued`'s queue and #170, its `ci` run
 again, waited to join it with auto-merge on. Each was taken out of the queue, or its auto-merge
-turned off, after, so none merged and `e4/queued` is still at `MERGE_E4.queued`. Generation 5 is
-#174 to #190, with GitHub stack #191; `app_merge_write` used it, recorded with writes as Lo merged
-#174, #175 and #176, one way each, and confirmed #183's merge just after `merge.sh 5 --push`, which
-GitHub then failed. `app_merge_write_lost` is the same with that merge's answer lost.
-`app_merge_write_moved` is the same with that pull request's polls before the merge answered as the
-first after it, which saw the push, and `app_merge_write_polled` adds GitHub's answer to a poll of
-each merged pull request after the recording's last. `app_merge_enqueue` used it too, recorded with
-writes as Lo added #187 to `e4/queued`'s queue, which was taken out of it after, so it didn't merge.
-Its queue was read only after that; `app_merge_enqueue_listed` is the same with the queue listing
-#187 once Lo added it, as the merge status then said, and #187's polls before Lo added it answered
-as the first after, as `app_merge_write_moved`'s are. Generation 6 is #192 to #208, with GitHub
-stack #209. `app_queued` used it, recorded while #205 was first in `e4/queued`'s queue and #207
-second, and `app_queued_left` as the queue failed #207, whose `ci` fails there, and GitHub took it
-out once rozed-bot had taken #205 out. `app_merge` used it too, recorded while #206 was first in the
-queue and #203 waited for an approval with auto-merge on; `app_merge_placed` adds the read of which
-open pull requests come from `merge/6/base` that the merge panel makes as it opens. Each was taken
-out of the queue, or its auto-merge turned off, after, so none merged. Generation 7 is #210 to #221
-and the odd numbers from #223 to #231, with GitHub stack #234. `app_merge_auto` used it, recorded
-with writes as Lo turned on auto-merge for #221 and "Merge when ready" for #225 while its `ci` ran
-again, and `app_merge_auto_off` as Lo turned both off before that `ci` passed, so neither merged nor
-joined the queue, and `e4/queued` is still at `MERGE_E4.queued`. `app_merge_override` is Lo merging
-#231 past its base's rule. #210, #212 and #219 were merged into `merge/7/base` through the API, to
-move that base while #211's tab was open: GitHub refuses auto-merge for a pull request nothing
-blocks, which Lo asks for only while it reads GitHub as still checking whether it merges cleanly,
-and GitHub had checked each time before Lo read it. So `app_merge_auto_now`, that refusal, is
-derived. Generation 8 is the even numbers from #222 to #232, #233 and #235 to #244, with GitHub
+turned off, after, so none merged and `e4/queued` is still at `MERGE_E4.queued`. `app_queue_polled`
+adds GitHub's answer to each overview ref read again, which Lo does as its window comes to the front
+and the recording did for #168 alone. Generation 5 is #174 to #190, with GitHub stack #191;
+`app_merge_write` used it, recorded with writes as Lo merged #174, #175 and #176, one way each, and
+confirmed #183's merge just after `merge.sh 5 --push`, which GitHub then failed.
+`app_merge_write_lost` is the same with that merge's answer lost. `app_merge_write_moved` is the
+same with that pull request's polls before the merge answered as the first after it, which saw the
+push, and `app_merge_write_polled` adds GitHub's answer to a poll of each merged pull request after
+the recording's last. `app_merge_enqueue` used it too, recorded with writes as Lo added #187 to
+`e4/queued`'s queue, which was taken out of it after, so it didn't merge. Its queue was read only
+after that; `app_merge_enqueue_listed` is the same with the queue listing #187 once Lo added it, as
+the merge status then said, and #187's polls before Lo added it answered as the first after, as
+`app_merge_write_moved`'s are. Generation 6 is #192 to #208, with GitHub stack #209. `app_queued`
+used it, recorded while #205 was first in `e4/queued`'s queue and #207 second, and `app_queued_left`
+as the queue failed #207, whose `ci` fails there, and GitHub took it out once rozed-bot had taken
+#205 out; `app_queued_polled` and `app_queued_left_polled` add GitHub's answer to each overview ref
+read again, as `app_queue_polled` does. `app_merge` used it too, recorded while #206 was first in
+the queue and #203 waited for an approval with auto-merge on; `app_merge_placed` adds the read of
+which open pull requests come from `merge/6/base` that the merge panel makes as it opens. Each was
+taken out of the queue, or its auto-merge turned off, after, so none merged. Generation 7 is #210 to
+#221 and the odd numbers from #223 to #231, with GitHub stack #234. `app_merge_auto` used it,
+recorded with writes as Lo turned on auto-merge for #221 and "Merge when ready" for #225 while its
+`ci` ran again, and `app_merge_auto_off` as Lo turned both off before that `ci` passed, so neither
+merged nor joined the queue, and `e4/queued` is still at `MERGE_E4.queued`. `app_merge_override` is
+Lo merging #231 past its base's rule. #210, #212 and #219 were merged into `merge/7/base` through
+the API, to move that base while #211's tab was open: GitHub refuses auto-merge for a pull request
+nothing blocks, which Lo asks for only while it reads GitHub as still checking whether it merges
+cleanly, and GitHub had checked each time before Lo read it. So `app_merge_auto_now`, that refusal,
+is derived. Generation 8 is the even numbers from #222 to #232, #233 and #235 to #244, with GitHub
 stack #245. `app_merge_stack` used it, recorded with writes as Lo merged #233, the stack's top
 layer, with #232 below it, as one, into `merge/8/base`; `app_merge_stack_polled` adds the answers Lo
 may ask for that the recording didn't. `app_merge_chain` used it too: #230, the draft, was moved

@@ -704,6 +704,38 @@ function autoMergeOffAnswer(
   };
 }
 
+/** The path of a pull request's overview ref, `refs/lo/pr/<n>`, as Lo reads it. */
+const OVERVIEW_REF = /^\/repos\/[^/]+\/[^/]+\/git\/matching-refs\/lo\/pr\/\d+$/;
+
+/**
+ * `recorded` with GitHub's 304 to each overview ref it read, sent again with the ETag of that read,
+ * where it has none: the ref unchanged.
+ */
+function refsReadAgain(recorded: readonly Interaction[]): Interaction[] {
+  const keys = new Set(recorded.map(({ request }) => recordedKey(request)));
+  const again: Interaction[] = [];
+  for (const { request, response } of recorded) {
+    const etag = response.headers['etag'];
+    if (
+      request.method !== 'GET' ||
+      request.if_none_match !== undefined ||
+      response.status !== 200 ||
+      etag === undefined ||
+      !OVERVIEW_REF.test(new URL(request.url).pathname)
+    ) {
+      continue;
+    }
+    const read = { method: 'GET', url: request.url, if_none_match: etag };
+    if (keys.has(recordedKey(read))) continue;
+    keys.add(recordedKey(read));
+    // As GitHub answers a read that finds nothing changed: no body, and no poll interval.
+    const { 'content-type': _type, 'x-poll-interval': _poll, ...headers } = response.headers;
+    again.push({ request: read, response: { status: 304, headers } });
+  }
+  if (again.length === 0) throw new Error('the recording reads every overview ref again already');
+  return [...recorded, ...again];
+}
+
 export const DERIVATIONS: readonly Derivation[] = [
   {
     name: 'app_comments_write_others',
@@ -1094,5 +1126,26 @@ export const DERIVATIONS: readonly Derivation[] = [
     from: 'app_queue_act',
     description: `app_queue_act read as an account with write access, below admin, as app_merge_override_writer is: every read of e4/queued's merge queue says WRITE, and GitHub lets only admins move a pull request to the front, so Lo offers no J. Only the reads before J was pressed are meant for such an account: the rest are as recorded, the move included. These answers are derived: the recorders accept only rozed-bot's token, an admin's.`,
     derive: asWriter,
+  },
+  {
+    name: 'app_queue_polled',
+    from: 'app_queue',
+    description:
+      "app_queue with GitHub's 304 to rozed-dev/e2e#156's and #169's overview refs read again with the ETag of their first read, as the recording read #168's: Lo reads the ref on screen again as its window comes to the front, and on a timer, which a test can reach when the recording didn't. Neither has an overview, so nothing changed.",
+    derive: refsReadAgain,
+  },
+  {
+    name: 'app_queued_polled',
+    from: 'app_queued',
+    description:
+      "app_queued with GitHub's 304 to rozed-dev/e2e#205's and #204's overview refs read again with the ETag of their first read: Lo reads the ref on screen again as its window comes to the front, and on a timer, which a test can reach when the recording didn't. Neither has an overview, so nothing changed.",
+    derive: refsReadAgain,
+  },
+  {
+    name: 'app_queued_left_polled',
+    from: 'app_queued_left',
+    description:
+      "app_queued_left with GitHub's 304 to rozed-dev/e2e#207's overview ref read again with the ETag of its first read: Lo reads the ref on screen again as its window comes to the front, and on a timer, which a test can reach when the recording didn't. It has no overview, so nothing changed.",
+    derive: refsReadAgain,
   },
 ];

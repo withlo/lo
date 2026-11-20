@@ -4,7 +4,9 @@
 // place, the merge panel says it again with the queue a key away, and the panel of one ready for
 // the queue says what's ahead of it. `app_queued_left` was recorded as the queue failed the one
 // behind and GitHub took it out: the header says it will be removed, then a banner says it left and
-// why, and opens the panel, whose first row says it again.
+// why, and opens the panel, whose first row says it again. Each is served with GitHub's answer to
+// each overview ref read again added (`app_queued_polled`, `app_queued_left_polled`), as Lo reads
+// one again when its window comes to the front.
 
 import type { Page } from '@playwright/test';
 
@@ -68,7 +70,7 @@ test('the panel of one ready for the queue says what’s ahead of it', async ({ 
 });
 
 test.describe('once the queue fails one', () => {
-  test.use({ cassette: 'app_queued_left' });
+  test.use({ cassette: 'app_queued_left_polled' });
 
   test('it will be removed, then a banner says it left and why, and opens the panel', async ({
     page,
