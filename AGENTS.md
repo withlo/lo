@@ -709,7 +709,7 @@ toolchain and git's variables each server needs.
   starts SourceKit-LSP as Lo does on the code fixture's checkout, and fails unless it answers a
   hover on `countWords` with its signature, keeps its logs in its own home and writes nothing, at
   any depth, in the runner's: it lists the home before and after, and names what was added, changed
-  or removed, but in the runner's work folder.
+  or removed, but in the runner's own folders (its work folder and its logs).
 
 ### Accounts
 
