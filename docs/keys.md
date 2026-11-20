@@ -130,6 +130,7 @@ Each command's id is what [the keymap file](#the-keymap-file) binds keys to.
 | Turn auto-merge on or off           | `a`                               | In `merge`                                                                                                | `merge.autoMerge`      |
 | Merge without the rules             | `⌥⏎`                              | In `merge`                                                                                                | `merge.override`       |
 | Ask GitHub whether it merged        | None: in its menu and the palette | Anywhere but `menu`, `dialog`, `palette` and `box`                                                        | `merge.askAgain`       |
+| Approve and ship                    | `⌘⇧⏎`                             | Anywhere but `box`, `dialog`, `palette` and `menu`                                                        | `merge.ship`           |
 | Close the merge panel               | `Esc`                             | In `merge`                                                                                                | `merge.close`          |
 | Back to the merge panel             | `Esc`                             | In `commit`                                                                                               | `merge.leaveCommit`    |
 | Merge queue                         | `g q`                             | Anywhere but `menu`, `dialog`, `palette` and `box`; in code views, only in normal mode                    | `queue.show`           |

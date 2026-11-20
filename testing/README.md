@@ -361,7 +361,16 @@ layer, with #232 below it, as one, into `merge/8/base`; `app_merge_stack_polled`
 may ask for that the recording didn't. `app_merge_chain` used it too: #230, the draft, was moved
 onto `merge/8/chain-1` first, so #235, the chain's bottom layer, had two layers on it, #236 and
 #230, and couldn't be made a GitHub stack. It was recorded with writes as Lo merged #235 alone and
-then moved #230 and #236 onto `merge/8/base`.
+then moved #230 and #236 onto `merge/8/base`. Generation 10 is #264 to #280, with GitHub stack #281.
+`app_merge_ship` used it, recorded with writes as Lo approved nothing and merged #264, its own, from
+approve and ship's one confirmation, once it had looked up the merged pull requests one listing of
+the repository leaves out. `app_merge_ship_queued` is Lo turning on "Merge when ready" for #277 the
+same way while its `ci` ran again; rozed-bot turned it off on GitHub after, before `ci` passed, so
+#277 never joined the queue and `e4/queued` is still at `MERGE_E4.queued`. As GitHub takes no
+approval from a pull request's author, `app_merge_ship_queued_others`, with someone else as #277's
+author and approve and ship approving it first, is derived, and so are
+`app_merge_ship_queued_conflict`, where it then reads as conflicting, and
+`app_merge_ship_queued_moved`, where a push came after the plan.
 
 ## The fake language server
 

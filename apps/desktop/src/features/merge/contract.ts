@@ -14,6 +14,13 @@
 // `⌥⏎` a merge past the base branch's rules, which the reader confirms with the pull request's
 // number typed; either goes only alone or from a GitHub stack's bottom layer. `a` with auto-merge
 // on turns it off at once (`autoMergeOff`), asking nothing, since that merges nothing.
+//
+// And approve and ship: `⌘⇧⏎` asks main for a plan (`ship`), what it approves and what it expects
+// to follow, kept under a key for the reader to confirm (`shipConfirm`) in one confirmation. Main
+// reads GitHub again as it's confirmed, approves, then merges, adds to the queue or turns on
+// auto-merge through the same jobs as the panel, and says how it goes on `ships`. Auto-merge it
+// turned on after your approval is watched, and what Lo does about a push after that approval is
+// said on `watched`.
 
 import { z } from 'zod';
 
@@ -659,8 +666,185 @@ export const job = z.strictObject({
   already: z.boolean(),
   state: jobState,
   together: progress.nullable(),
+  /**
+   * Lo turned auto-merge off by itself, after a push that followed your approval: `watched` says
+   * so, rather than a toast.
+   */
+  watch: z.literal(true).optional(),
 });
 export type JobView = z.output<typeof job>;
+
+/** What approve and ship approves first, as `@lo/review`'s `Approval` says. */
+export const shipApproval = z.discriminatedUnion('kind', [
+  /** Approve the revision on screen. */
+  z.strictObject({ kind: z.literal('approve') }),
+  /** Approve it again: your approval of it was dismissed. */
+  z.strictObject({ kind: z.literal('reapproveDismissed') }),
+  /** Submit your pending review, recorded on it, as the approval, with its comments. */
+  z.strictObject({ kind: z.literal('submitPending'), comments: count }),
+  /** Nothing: it's your pull request, which GitHub doesn't let you approve. */
+  z.strictObject({ kind: z.literal('ownPullRequest') }),
+  /** Nothing: your latest review approves it already. */
+  z.strictObject({ kind: z.literal('alreadyApproved') }),
+]);
+export type ShipApproval = z.output<typeof shipApproval>;
+
+/**
+ * Why approve and ship stops after approving, as `@lo/review`'s `Stop` says: or that it sits
+ * where approve and ship doesn't merge from, a stack's layer above its bottom one, say, which
+ * `text` says as the merge panel does.
+ */
+export const shipStop = z.discriminatedUnion('kind', [
+  z.strictObject({ kind: z.literal('headMoved'), head: oid }),
+  z.strictObject({ kind: z.literal('headUnknown') }),
+  z.strictObject({
+    kind: z.literal('blocked'),
+    blockers: z.array(blocker),
+    autoMerge: z.boolean(),
+  }),
+  z.strictObject({ kind: z.literal('noAutoMerge'), blockers: z.array(blocker) }),
+  z.strictObject({ kind: z.literal('noPermission') }),
+  z.strictObject({ kind: z.literal('noMethod') }),
+  z.strictObject({
+    kind: z.literal('incomplete'),
+    incomplete: z.enum(['readAgain', 'checksCutShort']),
+  }),
+  z.strictObject({ kind: z.literal('where'), text: words }),
+]);
+export type ShipStop = z.output<typeof shipStop>;
+
+/**
+ * What approve and ship does after approving, as `@lo/review`'s `Ship` says: merge with `method`;
+ * join the merge queue, whose settings choose the method (`method` when the account may read
+ * them); turn on auto-merge, or on a branch with a merge queue merge when ready, while `waitingOn`
+ * clears; nothing more, as auto-merge is on or it's queued already; or stop.
+ */
+export const shipStep = z.discriminatedUnion('kind', [
+  z.strictObject({ kind: z.literal('merge'), method }),
+  z.strictObject({ kind: z.literal('enqueue'), method: method.nullable() }),
+  z.strictObject({ kind: z.literal('autoMerge'), method, waitingOn: z.array(blocker) }),
+  z.strictObject({
+    kind: z.literal('enqueueWhenReady'),
+    method: method.nullable(),
+    waitingOn: z.array(blocker),
+  }),
+  z.strictObject({ kind: z.literal('autoMergeAlreadyOn'), waitingOn: z.array(blocker) }),
+  z.strictObject({ kind: z.literal('alreadyQueued') }),
+  z.strictObject({ kind: z.literal('stop'), stop: shipStop }),
+]);
+export type ShipStep = z.output<typeof shipStep>;
+
+/**
+ * What approve and ship will do, for the reader to confirm before anything is sent:
+ *
+ * - `key`: what names it, which the window confirms; `id`: the view it was asked from;
+ * - `owner`, `repo`, `number`: the pull request; `login`: the account it approves and merges as;
+ *   `base`: the branch it merges into;
+ * - `head`: the revision on screen, which is GitHub's head too: what it approves, and what the
+ *   merge expects;
+ * - `approval`: what it approves first; `summary`: whether the summary kept for the submit dialog
+ *   goes with the approval;
+ * - `likely`: what Lo expects to follow, which GitHub's answer after the approval decides;
+ *   `together`: what its merge takes with it, as the merge panel's would: the layers of a GitHub
+ *   stack below it, or a chain's base branches it moves once it has merged;
+ * - `warning`: whether a push before it merges could merge with your approval, as auto-merge may
+ *   follow and the base branch's rules keep approvals, or require no review (`afterPush`).
+ */
+export const shipPlan = z.strictObject({
+  key: planKey,
+  id: tabId,
+  owner: text,
+  repo: text,
+  number,
+  login: text,
+  base: text,
+  head: oid,
+  approval: shipApproval,
+  summary: z.boolean(),
+  likely: shipStep,
+  together: together.nullable(),
+  warning: z.boolean(),
+  afterPush,
+});
+export type ShipPlan = z.output<typeof shipPlan>;
+
+/** Approve and ship's plan to confirm, or why there's none. */
+export const shipPlanned = z.discriminatedUnion('kind', [
+  z.strictObject({ kind: z.literal('plan'), plan: shipPlan }),
+  z.strictObject({ kind: z.literal('refused'), refusal }),
+]);
+export type ShipPlanned = z.output<typeof shipPlanned>;
+
+/** What the reader's confirmation of approve and ship came to. */
+export const shipConfirmed = z.discriminatedUnion('kind', [
+  /** It passed the checks at the press and runs, as `ships` says. */
+  z.strictObject({ kind: z.literal('started') }),
+  /** Something the confirmation named changed, as `why` says: the new plan is to confirm. */
+  z.strictObject({ kind: z.literal('again'), plan: shipPlan, why: words }),
+  /** Nothing was sent, for `refusal`. */
+  z.strictObject({ kind: z.literal('refused'), refusal }),
+]);
+export type ShipConfirmed = z.output<typeof shipConfirmed>;
+
+/**
+ * Where approve and ship stands, once confirmed:
+ *
+ * - `approving`: the approval is sent, or waits its turn, or its answer was lost and Lo reads your
+ *   reviews to tell whether GitHub took it;
+ * - `reading`: approved, or approving skipped, Lo reads GitHub again, until it shows the approval;
+ * - `sending`: `step` went through the merge jobs, as the merge from the plan named `job`, which
+ *   `jobs` follows;
+ * - `done`: nothing more to send, as `step` says;
+ * - `stopped`: it stopped `at` approving, so nothing was approved, or after approving, at the
+ *   `ship` step, for `refusal`, or `stop`, `@lo/review`'s reason.
+ */
+export const shipPhase = z.discriminatedUnion('kind', [
+  z.strictObject({ kind: z.literal('approving') }),
+  z.strictObject({ kind: z.literal('reading') }),
+  z.strictObject({ kind: z.literal('sending'), step: shipStep, job: planKey }),
+  z.strictObject({ kind: z.literal('done'), step: shipStep }),
+  z.strictObject({
+    kind: z.literal('stopped'),
+    at: z.enum(['approve', 'ship']),
+    refusal,
+    stop: shipStop.nullable(),
+  }),
+]);
+export type ShipPhase = z.output<typeof shipPhase>;
+
+/** Approve and ship from the plan named `key`, as it goes; `approved`, once the approval went. */
+export const ship = z.strictObject({
+  key: planKey,
+  owner: text,
+  repo: text,
+  number,
+  login: text,
+  base: text,
+  head: oid,
+  approval: shipApproval,
+  approved: z.boolean(),
+  phase: shipPhase,
+});
+export type ShipView = z.output<typeof ship>;
+
+/**
+ * What the auto-merge watch did about a push, `head`, after you approved `approved`, on a pull
+ * request whose auto-merge approve and ship turned on: turned auto-merge off; couldn't
+ * (`notTurnedOff`, for `why`); or couldn't tell whether the push would merge with your approval
+ * (`cantTell`), so it reads again.
+ */
+export const watched = z.strictObject({
+  key: planKey,
+  owner: text,
+  repo: text,
+  number,
+  login: text,
+  kind: z.enum(['turnedOff', 'notTurnedOff', 'cantTell']),
+  approved: oid,
+  head: oid,
+  why: words.nullable(),
+});
+export type Watched = z.output<typeof watched>;
 
 const byKey = z.strictObject({ key: planKey });
 
@@ -740,6 +924,18 @@ export const contract = defineContract('merge', {
      * pull requests from the branches it merges into.
      */
     place: { input: z.strictObject({ id: tabId }), reply: reply<Placement>() },
+    /**
+     * Plans approve and ship for view `id`, from what GitHub said last: what it approves and what
+     * Lo expects to follow. Keeps it for the reader to confirm, in place of the view's last one, or
+     * says why there's none, before anything is sent.
+     */
+    ship: { input: z.strictObject({ id: tabId }), reply: reply<ShipPlanned>() },
+    /**
+     * Runs approve and ship from the plan named `key`, once, if it still holds as GitHub says now,
+     * read again: else asks again with a new plan, when something it named changed, or refuses.
+     * `ships` then says how it goes. `cancel` forgets the plan, as a merge's.
+     */
+    shipConfirm: { input: byKey, reply: reply<ShipConfirmed>() },
   },
   topics: {
     status,
@@ -747,5 +943,9 @@ export const contract = defineContract('merge', {
     queued,
     /** A merge Lo sent, each time it changes. */
     jobs: job,
+    /** Approve and ship, each time it moves on. */
+    ships: ship,
+    /** What the auto-merge watch did about a push after your approval. */
+    watched,
   },
 });

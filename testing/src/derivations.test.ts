@@ -201,3 +201,62 @@ test.each(['app_merge_override_writer', 'app_merge_write_writer'])(
     );
   },
 );
+
+/** What each read of what decides #277's merge says of `fields`, in the order the replayer serves them. */
+function shipReads(name: string, fields: readonly string[]): Json[][] {
+  return answers(name)
+    .filter((each) => about(each, 'MergeSnapshot', 277))
+    .map((each) => {
+      const pull = at(each.response.body, 'data', 'repository', 'pullRequest');
+      return fields.map((field) => {
+        if (field === 'approvedBy') {
+          return (
+            at(first(at(pull, 'latestOpinionatedReviews', 'nodes')), 'author', 'login') ?? null
+          );
+        }
+        if (field === 'autoMerge') return at(pull, 'autoMergeRequest') === null ? 'off' : 'on';
+        return at(pull, field) ?? null;
+      });
+    });
+}
+
+test('approve and ship on a pull request someone else opened: its approval, then the reads one later, each with it', () => {
+  const interactions = answers('app_merge_ship_queued_others');
+  const approval = interactions.filter(graphql('AddPullRequestReview'));
+  expect(approval.map(({ request }) => request.variables)).toEqual([
+    {
+      pullRequestId: nodeId(interactions, 277),
+      commitOID: '7243013b61d35e4c1b8b69b4f1868fbfdd33a0cc',
+      event: 'APPROVE',
+    },
+  ]);
+  expect(
+    at(approval[0]!.response.body, 'data', 'addPullRequestReview', 'pullRequestReview', 'state'),
+  ).toBe('APPROVED');
+  // The tab's read and the press's, then the one once approved, before "Merge when ready" went on.
+  expect(
+    shipReads('app_merge_ship_queued_others', ['viewerDidAuthor', 'approvedBy', 'autoMerge']),
+  ).toEqual([
+    [false, null, 'off'],
+    [false, null, 'off'],
+    [false, 'rozed-bot', 'off'],
+    [false, 'rozed-bot', 'on'],
+  ]);
+});
+
+test('approve and ship reading a conflict once approved, or a push after the plan', () => {
+  expect(
+    shipReads('app_merge_ship_queued_conflict', ['mergeable', 'approvedBy', 'autoMerge']).slice(2),
+  ).toEqual([
+    ['CONFLICTING', 'rozed-bot', 'off'],
+    ['CONFLICTING', 'rozed-bot', 'off'],
+  ]);
+  const heads = shipReads('app_merge_ship_queued_moved', ['headRefOid', 'viewerDidAuthor']);
+  expect(heads[0]).toEqual(['7243013b61d35e4c1b8b69b4f1868fbfdd33a0cc', false]);
+  expect(new Set(heads.slice(1).map(([head]) => head))).toEqual(
+    new Set(['f81c007f901ca6da725764f0306c50585f89799b']),
+  );
+  expect(answers('app_merge_ship_queued_moved').filter(graphql('AddPullRequestReview'))).toEqual(
+    [],
+  );
+});

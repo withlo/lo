@@ -1,0 +1,19 @@
+{
+  "request": {
+    "method": "GET",
+    "url": "https://api.github.com/repos/rozed-dev/e2e/activity?ref=refs%2Fheads%2Fmerge%2F10%2Fsquash&direction=desc&per_page=100",
+    "if_none_match": "W/\"7377330bc2253aa4f75a69658c6d8046013785f651cf094bb9e6eda7ba0da39c\""
+  },
+  "response": {
+    "status": 304,
+    "headers": {
+      "etag": "\"7377330bc2253aa4f75a69658c6d8046013785f651cf094bb9e6eda7ba0da39c\"",
+      "x-github-api-version-selected": "2022-11-28",
+      "x-ratelimit-limit": "5000",
+      "x-ratelimit-remaining": "4830",
+      "x-ratelimit-reset": "1795151603",
+      "x-ratelimit-resource": "core",
+      "x-ratelimit-used": "170"
+    }
+  }
+}

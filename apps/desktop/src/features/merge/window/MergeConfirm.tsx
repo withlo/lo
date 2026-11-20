@@ -192,13 +192,19 @@ function askAgainBack(plan: MergePlan): void {
   leaveDialog();
 }
 
+/** What a confirmation that names what a merge takes with it says of its pull request. */
+type TogetherPlan = Pick<MergePlan, 'id' | 'number' | 'base' | 'together'>;
+
 /** The pull request's own title, as its tab has it: empty before it's read. */
-function titleOf(plan: MergePlan): string {
+function titleOf(plan: Pick<MergePlan, 'id'>): string {
   return pullOf(plan.id)?.header?.title ?? '';
 }
 
 /** A stack's layers that merge, as its confirmation lists them: those below, then this one. */
-function stackLayers(plan: MergePlan, together: Extract<Together, { kind: 'stack' }>): LayerRow[] {
+function stackLayers(
+  plan: TogetherPlan,
+  together: Extract<Together, { kind: 'stack' }>,
+): LayerRow[] {
   return [
     ...together.below.map((layer) => ({
       number: layer.number,
@@ -218,8 +224,11 @@ function aboveLine(above: readonly number[], base: string): string | undefined {
     : `${numbers(above)}, above it, stay open and move onto ${base}.`;
 }
 
-/** What it takes with it, in the confirmation: a stack's layers, or a chain's moves, in order. */
-function togetherShown(plan: MergePlan): ReactNode {
+/**
+ * What it takes with it, in the confirmation, approve and ship's too: a stack's layers, or a
+ * chain's moves, in order.
+ */
+export function togetherShown(plan: TogetherPlan): ReactNode {
   const { together } = plan;
   switch (together?.kind) {
     case undefined:
