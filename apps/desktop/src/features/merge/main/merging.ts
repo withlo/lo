@@ -6,9 +6,9 @@
 // sits is known, from the stacks' list and the open pull requests read afresh from each branch the
 // merge goes into, and it's alone or a GitHub stack's bottom layer; nothing else merges it; no
 // conversion to a GitHub stack runs on its path; and GitHub can be reached and isn't holding writes.
-// When something the confirmation named changed, it asks again with a new plan. Cancelled while it
-// checks, it stops, its reads given up, and sends nothing; right before it sends, the tab, the
-// account and the connection are checked once more.
+// When something the confirmation named changed, by then or in a read that lands while it checks,
+// it asks again with a new plan. Cancelled while it checks, it stops, its reads given up, and sends
+// nothing; right before it sends, the tab, the account and the connection are checked once more.
 //
 // The merge goes through the app's one `MergeJobs`, in the pull request's turn among merge writes,
 // with the head on screen as its `sha`, so GitHub merges only that head. A job outlives its view.
@@ -46,7 +46,6 @@ import {
   queueMerge,
   rulesBase,
   rulesOnto,
-  sameJson,
   STACK_LAYERS,
   stackHolding,
   stacksHolding,
@@ -944,8 +943,8 @@ export class Merging {
     if (before?.turn && this.#ended(before)) return refused(own('unsettled', unsure(before.plan)));
     let cached = poller.cachedRead(pull, MERGE_FACTS);
     // What the press is weighed against is what Lo last read: a read that lands while Lo asks
-    // GitHub where the pull request sits, and what goes with it, is weighed too, before anything
-    // goes.
+    // GitHub where the pull request sits, and what goes with it, is weighed too, when it changes
+    // what the confirmation named.
     let now: MergePlan | undefined;
     for (let round = 1; now === undefined; round++) {
       const view = this.#options.view(plan.id);
@@ -1006,14 +1005,24 @@ export class Merging {
       }
       const planned = this.#planOf(plan.id, view, plan.login, onto(facts), choice, together);
       if (typeof planned === 'string') return refused(own('notPossible', planned));
+      // What a read that landed meanwhile plans: the same, or another round on it.
       const latest = poller.cachedRead(pull, MERGE_FACTS);
-      if (latest === undefined || sameJson(latest.value, facts)) {
+      const newest =
+        latest === undefined || latest.value === facts
+          ? planned
+          : this.#planOf(plan.id, view, plan.login, onto(latest.value), choice, together);
+      if (
+        latest === undefined ||
+        (latest.value.pullRequest.head === head &&
+          typeof newest !== 'string' &&
+          changed(planned, newest) === undefined)
+      ) {
         now = planned;
       } else if (round === LOOKS) {
         return refused(
           own(
             'changing',
-            `What GitHub says of #${plan.number} kept changing while Lo checked it, so it didn’t merge. Confirm again.`,
+            `What GitHub says of #${plan.number} kept changing while Lo checked it, so Lo sent nothing. Start again from the merge panel.`,
           ),
         );
       } else {

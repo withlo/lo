@@ -374,6 +374,10 @@ function setup(options: Setup = {}) {
         gates.fromHead = true;
       },
     },
+    /** Lets the held read of the open pull requests from a branch go, holding the next. */
+    step() {
+      fromHeadGiven?.();
+    },
     /** Lets every held wait go on. */
     release() {
       gates.poller = false;
@@ -1255,6 +1259,49 @@ describe('auto-merge and a merge past the rules', () => {
         sent: [...run.sent, ...run.auto],
       }).toEqual({ asked, kind: 'again', blockers: ['approvals', 'check'], sent: [] });
     }
+  });
+
+  it('weigh a read that lands while Lo asks where it sits only for what they name', async () => {
+    const base = { ...WAITING, base: 'merge/5/base' };
+    const run = setup({ facts: factsOf(base) });
+    const plan = planOf(await run.merging.plan(ID, { ...SQUASH, asked: 'autoMerge' }));
+    run.hold.fromHead();
+    const confirming = run.merging.confirm(plan.key);
+    await moment();
+    // A poll lands meanwhile: a check auto-merge doesn't wait for passed.
+    const lint = {
+      ...WAITING.checks![0]!,
+      name: 'lint',
+      status: 'COMPLETED',
+      conclusion: 'SUCCESS',
+    };
+    run.set.facts(factsOf({ ...base, checks: [...(WAITING.checks ?? []), lint] }));
+    run.release();
+    expect(await confirming).toEqual({ kind: 'sent' });
+    // Lo asked where it sits at the plan and once at the press: the read cost no round.
+    expect(run.reads).toHaveLength(2);
+  });
+
+  it('refuse, sending nothing, when what they name keeps changing while Lo asks where it sits', async () => {
+    const base = { ...WAITING, base: 'merge/5/base' };
+    const run = setup({ facts: factsOf(base) });
+    const plan = planOf(await run.merging.plan(ID, { ...SQUASH, asked: 'autoMerge' }));
+    run.hold.fromHead();
+    const confirming = run.merging.confirm(plan.key);
+    // A review is asked for, given, then asked for again, each while Lo asks where it sits.
+    for (const reviewDecision of ['REVIEW_REQUIRED', 'APPROVED', 'REVIEW_REQUIRED'] as const) {
+      await moment();
+      run.set.facts(factsOf({ ...base, reviewDecision }));
+      run.step();
+    }
+    expect(await confirming).toMatchObject({
+      kind: 'refused',
+      refusal: {
+        kind: 'changing',
+        text: 'What GitHub says of #138 kept changing while Lo checked it, so Lo sent nothing. Start again from the merge panel.',
+      },
+    });
+    expect(run.auto).toEqual([]);
   });
 });
 
