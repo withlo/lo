@@ -15,14 +15,17 @@
 // `testing/fixtures/code/cases.json` says, and fails unless the hover gives its signature, which
 // SourceKit-LSP reads from the toolchain's standard library and the system's headers. Then it fails
 // if the home of the user it runs as, by `HOME` or by the system's list of users, holds a
-// `.sourcekit-lsp`, or anything it didn't before, or if SourceKit-LSP's logs aren't in the server's
-// own home: Foundation, on Linux, takes its home folder from the system's list of users before
-// `HOME`, unless `CFFIXED_USER_HOME` names one.
+// `.sourcekit-lsp`, or anything it didn't before, however deep: it lists every folder in the home
+// before it starts and after it stops (`home.ts`), and names the paths added, changed or removed,
+// other than in the runner's own folders: its work folder, where the job's checkout is, and the
+// one its logs are in. It fails too if SourceKit-LSP's logs aren't in the server's own home:
+// Foundation, on Linux, takes its home folder from the system's list of users before `HOME`,
+// unless `CFFIXED_USER_HOME` names one.
 
 import { execFile } from 'node:child_process';
-import { lstat, mkdtemp, readdir, readFile, realpath, rm } from 'node:fs/promises';
+import { lstat, mkdtemp, readFile, realpath, rm } from 'node:fs/promises';
 import { homedir, tmpdir, userInfo } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { promisify } from 'node:util';
 
 import { serverGitEnvironment } from '@lo/git';
@@ -43,6 +46,7 @@ import {
   TOOLCHAINS,
   toolchainUse,
 } from '../src/index.ts';
+import { compare, describe, listFolder, type Listing } from './home.ts';
 
 const FIXTURES = join(import.meta.dirname, '..', '..', '..', '..', 'testing', 'fixtures');
 
@@ -63,6 +67,9 @@ const SIGNATURE = 'func countWords(_ text: String) -> Int';
 const DEADLINE = 120_000;
 const TRIES = 6;
 
+/** How many paths of each kind a failure names, before it says how many more there are. */
+const SHOWN = 40;
+
 if (process.platform !== 'linux') throw new Error('This checks SourceKit-LSP on Linux only.');
 const release = readOsRelease();
 const named = release.get('PRETTY_NAME') ?? 'This Linux';
@@ -82,18 +89,20 @@ async function check(taken: SwiftDistro): Promise<void> {
     const needed = packagesNeeded(taken, missing);
     throw new Error(`Swift needs ${needed.needs}, which \`${needed.install}\` installs.`);
   }
-  // The user's home, as `HOME` names it and as the system's list of users does.
-  const homes = [...new Set([homedir(), userInfo().homedir])];
-  const before = new Map<string, Set<string>>();
-  for (const home of homes) {
-    if (await exists(join(home, '.sourcekit-lsp'))) {
-      throw new Error(`${home} holds a .sourcekit-lsp already, so the check can't tell.`);
-    }
-    before.set(home, new Set(await readdir(home)));
-  }
   const folder = await realpath(await mkdtemp(join(tmpdir(), 'lo-sourcekit-')));
   let server: Server | undefined;
   try {
+    // The user's home, as `HOME` names it and as the system's list of users does, listed before
+    // anything is installed or started.
+    const homes = [...new Set([homedir(), userInfo().homedir])];
+    const ignored = [folder, ...runnerFolders(homes)];
+    const before = new Map<string, Listing>();
+    for (const home of homes) {
+      if (await exists(join(home, '.sourcekit-lsp'))) {
+        throw new Error(`${home} holds a .sourcekit-lsp already, so the check can't tell.`);
+      }
+      before.set(home, await listFolder(home, ignored));
+    }
     const id = swiftToolchainId(taken);
     const pinned = TOOLCHAINS[id];
     if (pinned === undefined) throw new Error(`toolchains.json has no ${id}.`);
@@ -155,10 +164,10 @@ async function check(taken: SwiftDistro): Promise<void> {
       if (await exists(join(each, '.sourcekit-lsp'))) {
         throw new Error(`It wrote ${join(each, '.sourcekit-lsp')}, in the user's home.`);
       }
-      const known = before.get(each) ?? new Set();
-      const added = (await readdir(each)).filter((name) => !known.has(name));
-      if (added.length > 0) {
-        throw new Error(`The user's home, ${each}, holds what it didn't: ${added.join(', ')}.`);
+      const changes = compare(before.get(each) ?? new Map(), await listFolder(each, ignored));
+      const differs = describe(changes, SHOWN);
+      if (differs !== undefined) {
+        throw new Error(`The user's home, ${each}, holds what it didn't: ${differs}.`);
       }
     }
     console.log(`Nothing appeared in ${homes.join(' or ')}, and none holds a .sourcekit-lsp.`);
@@ -170,6 +179,23 @@ async function check(taken: SwiftDistro): Promise<void> {
     await server?.stop();
     await rm(folder, { recursive: true, force: true });
   }
+}
+
+/**
+ * The folders of the user's `homes` that the runner this runs on keeps changing, which none of
+ * what's checked has a hand in: its work folder, which holds the job's checkout, its temporary
+ * folder and the actions it downloaded, and the one GitHub's images install the runner in, whose
+ * logs it writes as the job runs. GitHub names the first through two variables; anywhere that's
+ * not a runner, there are none.
+ */
+function runnerFolders(homes: readonly string[]): string[] {
+  const { RUNNER_TEMP: temp, GITHUB_WORKSPACE: checkout } = process.env;
+  const folders: string[] = [];
+  if (temp !== undefined && temp !== '') {
+    folders.push(dirname(temp), ...homes.map((home) => join(home, 'actions-runner')));
+  }
+  if (checkout !== undefined && checkout !== '') folders.push(checkout);
+  return folders;
 }
 
 /** Where `cases.json` says `countWords` is defined in the Swift project, as the protocol puts it. */

@@ -153,9 +153,9 @@ distribution, which Lo checks before it downloads anything, by dpkg's list or by
 that installs them. Lo installs nothing on the system. `pnpm nx run lsp:sourcekit`
 (`scripts/sourcekit.ts`) tries it for real on a Linux a build fits: it installs that build as Lo
 does, starts SourceKit-LSP on the code fixture's checkout, and fails unless a hover on `countWords`
-gives its signature, its logs are in its own home and nothing appeared in the user's. CI's `swift`
-job runs it on Ubuntu 24.04 when Swift's pins change, or the code that installs it or starts its
-server.
+gives its signature, its logs are in its own home and nothing appeared in the user's, in any folder
+of it (`scripts/home.ts` lists the home before and after). CI's `swift` job runs it on Ubuntu 24.04
+when Swift's pins change, or anything it runs does: the workflow lists them.
 
 vtsls and Pyright each start as Node, by its absolute path, with a cap on its heap, then the
 server's own entry point inside its install, never the launcher npm would link. rust-analyzer,
