@@ -107,12 +107,19 @@ function commandsIn(features: readonly Declarations[]): Command[] {
   return features.flatMap(commandsOf);
 }
 
-/** What a command with no key says in place of one: where it's found instead. */
+/**
+ * What a command with no key says in place of one: where it's found instead. Only macOS has an app
+ * menu, so a command in one says so, and a command in a right-click menu is in `its menu`, which
+ * both systems have.
+ */
 function noKey(command: Command): string {
   if (!keyless(command)) return 'None';
-  return command.bar
-    ? 'None: in the app menu and the palette'
-    : 'None: in its menu and the palette';
+  const places = [
+    ...(command.bar ? ['the app menu on macOS'] : []),
+    ...(command.menu ? ['its menu'] : []),
+    'the palette',
+  ];
+  return `None: in ${listed(places)}`;
 }
 
 /**
@@ -216,6 +223,10 @@ function systemSection(commands: readonly Command[]): string[] {
   const rows = commands.flatMap((command) => {
     const on = systemsOf(command);
     const only = on.length === 1 ? on[0] : undefined;
+    // A command with no key on purpose, on one system, is listed with where it's found instead.
+    if (only !== undefined && keyless(command)) {
+      return [[command.label, noKey(command), systemNames[only], where(command), code(command.id)]];
+    }
     const specs = command.keys.map(specOf);
     return systems.flatMap((system) => {
       // A command on one system has all its keys there; one on both, those written for one.

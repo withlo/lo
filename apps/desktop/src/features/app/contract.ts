@@ -60,12 +60,20 @@ export const contract = defineContract('app', {
   requests: {
     info: { input: z.undefined(), reply: reply<AppInfo>() },
     // What the app menu's roles do on macOS, for Linux, which has no app menu.
+    /** Shows the system's About panel. */
+    about: { input: z.undefined(), reply: reply<void>() },
     /** Quits Lo. */
     quit: { input: z.undefined(), reply: reply<void>() },
     /** Zooms the window's page a step in or out, or back to its actual size. */
     zoom: { input: z.strictObject({ step: zoomStep }), reply: reply<void>() },
     /** Takes the window into full screen, or out of it. */
     fullScreen: { input: z.undefined(), reply: reply<void>() },
+    /**
+     * Opens the file of licenses, Lo's own and those of everything it ships, in the system's app
+     * for text. It fails with `unopened` and the reason when the file isn't there or can't be
+     * opened.
+     */
+    licenses: { input: z.undefined(), reply: reply<void>() },
   },
   topics: {
     /** The system's appearance, each time it changes. */
