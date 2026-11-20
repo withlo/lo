@@ -13,6 +13,7 @@
     "lint": "oxlint && lo-check-classes src",
     "live": "playwright test --config e2e/live.config.ts",
     "package": "electron-builder --config build/electron-builder.yml --mac",
+    "release": "electron-builder --config build/release.yml --mac --publish never",
     "start": "electron .",
     "test": "vitest run --root ../.. --project @lo/desktop"
   },
@@ -89,6 +90,12 @@
         "cache": false
       },
       "package": {
+        "dependsOn": [
+          "build"
+        ],
+        "cache": false
+      },
+      "release": {
         "dependsOn": [
           "build"
         ],

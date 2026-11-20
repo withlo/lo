@@ -91,7 +91,7 @@ jobs:
       - name: Check the repo's shell scripts
         run: |
           shellcheck --version
-          shellcheck scripts/*.sh scripts/hooks/*.sh brand/icon/build.sh testing/fixtures/*.sh
+          shellcheck scripts/*.sh scripts/hooks/*.sh scripts/release/*.sh brand/icon/build.sh testing/fixtures/*.sh
 
   format:
     name: format
