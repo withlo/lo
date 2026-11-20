@@ -46,11 +46,12 @@ import {
   togglePanel,
 } from './actions.ts';
 import { main } from './main.ts';
-import { mergeFromPanel } from './merging.ts';
+import { autoMergeFromPanel, mergeFromPanel, overrideFromPanel } from './merging.ts';
 import { panelRows, queueHead } from './places.ts';
 import { aheads, catchUpQueue, forgetAhead, queues, readAhead } from './queued.ts';
 import { panels, placementOf, statuses, takeStatus, type Panel } from './store.ts';
 import {
+  cantAutoMerge,
   headerLine,
   mergeLabel,
   methodLabel,
@@ -275,6 +276,20 @@ function NextThread() {
 const ENTER = ['⏎'];
 const AUTO = ['a'];
 
+/** The panel's button that merges past the rules, as `⌥⏎` does, for an account that may. */
+function Override() {
+  return (
+    <button
+      type="button"
+      className="inline-flex h-control-h-sm items-center gap-6 rounded-sm px-6 text-fg text-small hover:bg-hover"
+      onClick={overrideFromPanel}
+    >
+      Merge without the rules
+      <span className="text-fg-muted code-small">{(keyOf('merge.override') ?? []).join(' ')}</span>
+    </button>
+  );
+}
+
 /** The panel's body: its reasons, or the method and the squash commit's text; nothing for neither. */
 function bodyOf(
   tab: PullTab,
@@ -357,6 +372,13 @@ function bodyOf(
       </p>,
     );
   }
+  if (state.override.kind === 'override') {
+    parts.push(
+      <div key="override" className="flex justify-end pb-8">
+        <Override />
+      </div>,
+    );
+  }
   // Why merging is off now, whatever GitHub says.
   if (state.off !== null && (action.kind === 'merge' || action.kind === 'enqueue')) {
     parts.push(
@@ -380,8 +402,8 @@ function SeeQueue({ id }: { id: string }) {
 }
 
 /**
- * The panel's foot: what merging would do, named for it, with the queue it would join; while it's
- * queued, only the queue.
+ * The panel's foot: what merging would do, named for it, with the queue it would join, and
+ * auto-merge's switch, which `a` turns; while it's queued, only the queue.
  */
 function footOf(
   tab: PullTab,
@@ -393,14 +415,19 @@ function footOf(
   if (state.verdict === 'queued') return <SeeQueue id={tab.id} />;
   const method = shownMethod(state, panel.method);
   const enter = ENTER;
+  const turn = {
+    onChange: autoMergeFromPanel,
+    keys: AUTO,
+    disabled: cantAutoMerge(state, tab.number) !== undefined,
+  };
   // Where it sits keeps it from merging from here: a chain that becomes a GitHub stack first.
   const placed = placement?.kind === 'convert' || placement?.kind === 'refused';
   const auto =
     state.autoMerge !== null
-      ? { on: true, onChange: () => undefined, keys: AUTO }
+      ? { on: true, ...turn }
       : action.kind === 'enqueue'
         ? undefined
-        : { on: false, onChange: () => undefined, keys: AUTO };
+        : { on: false, ...turn };
   // Off, with why, while GitHub can't be reached or asked Lo to hold off writing.
   const off = state.off !== null;
   if (action.kind === 'enqueue') {

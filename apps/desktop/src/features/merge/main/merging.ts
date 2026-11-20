@@ -6,9 +6,9 @@
 // sits is known, from the stacks' list and the open pull requests read afresh from each branch the
 // merge goes into, and it's alone or a GitHub stack's bottom layer; nothing else merges it; no
 // conversion to a GitHub stack runs on its path; and GitHub can be reached and isn't holding writes.
-// When something the confirmation named changed, it asks again with a new plan. Cancelled while it
-// checks, it stops, its reads given up, and sends nothing; right before it sends, the tab, the
-// account and the connection are checked once more.
+// When something the confirmation named changed, by then or in a read that lands while it checks,
+// it asks again with a new plan. Cancelled while it checks, it stops, its reads given up, and sends
+// nothing; right before it sends, the tab, the account and the connection are checked once more.
 //
 // The merge goes through the app's one `MergeJobs`, in the pull request's turn among merge writes,
 // with the head on screen as its `sha`, so GitHub merges only that head. A job outlives its view.
@@ -20,12 +20,23 @@
 // The method is remembered for the repository once GitHub takes a merge with it. A merge whose end
 // Lo can't tell is settled by reading the pull request, never by sending it again, and holds the
 // pull request's turn until a read made after it ended does. Nothing here calls Electron.
+//
+// `a` plans auto-merge, and `⌥⏎` a merge past the base branch's rules, the same way, and each is
+// checked the same way as it's confirmed, a merge past the rules only with the pull request's number
+// typed. That merge goes through the jobs as any merge does; auto-merge is one request, sent in the
+// pull request's turn with the head on screen, which GitHub turns on only while it's the head. When
+// GitHub won't turn it on because nothing blocks the merge now, Lo reads the pull request again and
+// offers the merge in its place, for the reader to confirm. With auto-merge on, `a` turns it off at
+// once, in the turn too. An answer to either that Lo can't read is settled by reading the pull
+// request, as a merge's is.
 
 import {
+  adminOverride,
   describeMergeRefusal,
   directMerge,
   factsOnto,
   GithubError,
+  isFullSha,
   isRefusal,
   MERGE_FACTS,
   openPullRequest,
@@ -43,6 +54,7 @@ import {
   type Cached,
   type GithubClient,
   type GithubErrorDetail,
+  type AutoMergeState,
   type Job,
   type MergeFacts,
   type MergeJobs,
@@ -57,16 +69,21 @@ import {
   type RepoRef,
 } from '@lo/github';
 import {
+  allowedMethods,
   checksCutShort,
   incomplete,
   mergeAction,
   mergeSnapshot,
+  methodList,
+  pickedMethod,
   type MergeSnapshot,
 } from '@lo/review';
 
 import type { Converting, Forest } from '../../stacks/service.ts';
 import type { PullTabInfo } from '../../tab/service.ts';
 import type {
+  Asked,
+  AutoAction,
   Confirmed,
   JobState,
   JobView,
@@ -74,15 +91,19 @@ import type {
   MergePlan,
   Method,
   Off,
+  OverrideAction,
   Placement,
   PlanKind,
   Planned,
   Progress,
   Refusal,
   Together,
+  WriteKind,
 } from '../contract.ts';
 import type { MergeTurn, MergeWrites } from '../service.ts';
+import { aboveStackBottom, aloneOrBottom, autoActionOf, overrideActionOf } from './auto.ts';
 import { ChainRun, type Looked } from './chains.ts';
+import { namedOf } from './status.ts';
 import {
   convertFirst,
   layerState,
@@ -100,6 +121,9 @@ import { placedBy, unmergedIn, where, type OpenFromHead, type Where } from './wh
 /** How long what GitHub said of a merge is taken as current at the press: 7 minutes. */
 export const FRESH_FOR = 7 * 60_000;
 
+/** How many times the checks at a press weigh it, when reads land while they wait: 3. */
+const LOOKS = 3;
+
 /** What merging uses of an account's poller. */
 export interface MergingPoller
   extends
@@ -114,6 +138,9 @@ export interface MergingPoller
       | 'status'
       | 'writesHeldUntil'
       | 'listAgain'
+      | 'pullRequest'
+      | 'enableAutoMerge'
+      | 'disableAutoMerge'
       | 'openPullRequests'
       | 'runConversionStep'
     > {
@@ -167,11 +194,15 @@ export interface MergingOptions {
   readonly chainEvery?: number;
 }
 
-/** What the reader chose in the panel: the method, and a squash's title and message as typed. */
+/**
+ * What the reader chose in the panel: the method, and a squash's title and message as typed; and
+ * what they asked for, a merge unless it says.
+ */
 export interface Choice {
   readonly method: Method | null;
   readonly title: string;
   readonly message: string;
+  readonly asked?: Asked | undefined;
 }
 
 /** A plan kept for the reader to confirm. */
@@ -180,16 +211,27 @@ interface Kept {
   readonly pull: PullRef;
 }
 
+/** A merge write's plan: as confirmed, or one made for auto-merge turned off, which has none. */
+type SentPlan = Omit<MergePlan, 'kind'> & { readonly kind: WriteKind };
+
 /** A merge Lo sent, as it follows it. */
 interface Sent {
-  readonly plan: MergePlan;
+  readonly plan: SentPlan;
   readonly pull: PullRef;
   readonly poller: MergingPoller;
   turn: MergeTurn | undefined;
   /** Whether the method was remembered for the repository. */
   remembered: boolean;
-  /** For a merge Lo can't tell the end of: what GitHub has shown of the pull request since. */
-  shows: 'merged' | 'enqueued' | 'open' | undefined;
+  /**
+   * Where a write the jobs don't follow stands, as auto-merge turned on or off, which Lo follows
+   * itself; nothing for a merge.
+   */
+  own: JobState | undefined;
+  /**
+   * For a merge Lo can't tell the end of: what GitHub has shown of the pull request since; for
+   * auto-merge, whether it's on.
+   */
+  shows: 'merged' | 'enqueued' | 'open' | 'autoMergeOn' | 'autoMergeOff' | undefined;
   /** Stops listening for the reads that settle it. */
   unwatch: (() => void) | undefined;
   /** When it ended, by {@link MergingOptions.now}: what Lo acts on next is read after then. */
@@ -275,6 +317,57 @@ export function refusalOf(refusal: MergeRefusal, head: string): Refusal {
     return own('headMoved', text, { newer: { from: head, to: null } });
   }
   return own(refusal.refusal, text);
+}
+
+/**
+ * How a write to auto-merge whose answer Lo couldn't read ended, as a read since `shows`: as asked,
+ * or, where GitHub shows otherwise, refused, for the reader to see what GitHub has.
+ */
+function settledOwn(
+  plan: SentPlan,
+  shows: 'merged' | 'enqueued' | 'autoMergeOn' | 'autoMergeOff',
+): JobState {
+  const on = plan.kind !== 'autoMergeOff';
+  if (shows === 'merged') return { kind: 'merged' };
+  if (on) {
+    if (shows === 'autoMergeOff') {
+      return {
+        kind: 'refused',
+        refusal: own('off', `GitHub shows auto-merge off for #${plan.number}.`),
+      };
+    }
+    return { kind: shows };
+  }
+  if (shows === 'enqueued') {
+    return {
+      kind: 'refused',
+      refusal: own(
+        'queued',
+        `#${plan.number} is in the merge queue for ${plan.base}, so it merges once the queue’s checks pass. Take it out of the queue on GitHub to stop it.`,
+      ),
+    };
+  }
+  if (shows === 'autoMergeOn') {
+    return {
+      kind: 'refused',
+      refusal: own(
+        'on',
+        `GitHub still shows auto-merge on for #${plan.number}, so it merges once it’s ready.`,
+      ),
+    };
+  }
+  return { kind: 'autoMergeOff' };
+}
+
+/** GitHub's refusal to turn auto-merge on or off, or Lo's before asking it, in the core's sentences. */
+function autoRefusalOf(refusal: MergeRefusal, head: string): Refusal {
+  if (refusal.refusal === 'autoMergeNotAllowed') {
+    return own(
+      refusal.refusal,
+      'This repository doesn’t allow auto-merge. A maintainer turns it on in its settings.',
+    );
+  }
+  return refusalOf(refusal, head);
 }
 
 /**
@@ -381,16 +474,50 @@ function endedWith(job: Job): Outcome | undefined {
   return outcome.kind === 'alreadyRunning' ? outcome.ended : outcome;
 }
 
+/** What decides a merge, as it stands: for a merge that moves onto no other branch first. */
+function asTheyAre(facts: MergeFacts): MergeFacts {
+  return facts;
+}
+
+/** Whether `kind` turns auto-merge on, straight in or into the queue once ready. */
+function isAuto(kind: WriteKind): kind is 'autoMerge' | 'whenReady' {
+  return kind === 'autoMerge' || kind === 'whenReady';
+}
+
+/**
+ * Whether a plan of `kind` goes only alone or from a GitHub stack's bottom layer, taking nothing
+ * with it: auto-merge and a merge past the rules, whose writes can't name a stack's layers below.
+ */
+function goesAlone(kind: PlanKind): boolean {
+  return isAuto(kind) || kind === 'override';
+}
+
+/** What the reader asked of the panel for a plan of `kind`. */
+function askedOf(kind: PlanKind): Asked {
+  if (isAuto(kind)) return 'autoMerge';
+  return kind === 'override' ? 'override' : 'merge';
+}
+
 /** What a plan names that the reader confirmed: what changed, in words, or nothing. */
 function changed(was: MergePlan, now: MergePlan): string | undefined {
   if (was.kind !== now.kind) {
-    return now.kind === 'enqueue'
+    // Asked to wait, and nothing is in the way now: the merge itself is planned in its place.
+    if (isAuto(was.kind) && !isAuto(now.kind)) {
+      return `Nothing blocks #${now.number} now, so it can merge as it is.`;
+    }
+    return now.kind === 'enqueue' || now.kind === 'whenReady'
       ? `${now.base} merges through a merge queue now.`
       : `${now.base} no longer merges through a merge queue.`;
   }
   if (was.base !== now.base) return `#${now.number} merges into ${now.base} now.`;
   if (was.method !== now.method) return 'The method it merges with changed.';
   if (was.head !== now.head) return 'The revision on screen changed.';
+  // What the confirmation listed, as Lo read it then: anything new or gone asks again.
+  if (JSON.stringify(was.named) !== JSON.stringify(now.named)) {
+    return now.kind === 'override'
+      ? `What merging #${now.number} past the rules skips changed.`
+      : `What auto-merge waits for on #${now.number} changed.`;
+  }
   return togetherChanged(was.together, now.together);
 }
 
@@ -444,13 +571,28 @@ export class Merging {
     }
     const first = this.#planOf(id, view, login, cached.value, choice);
     if (typeof first === 'string') return { kind: 'refused', why: first };
+    // The panel's own `⏎` merges it, as it says.
+    if (choice.asked === 'autoMerge' && !isAuto(first.kind)) {
+      return {
+        kind: 'refused',
+        why: `Nothing blocks #${view.number} now, so it can merge as it is.`,
+      };
+    }
+    // Auto-merge and a merge past the rules take nothing with them.
+    if (goesAlone(first.kind)) {
+      const placed = await this.#whereNow(poller, login, pull, cached.value);
+      const why = aloneOrBottom(placed, view.number, first.kind === 'override');
+      if (why !== undefined) return { kind: 'refused', why };
+      this.#keep(first, pull);
+      return { kind: 'plan', plan: first };
+    }
     const taking = await this.#takingNow(poller, login, pull, cached.value);
     const why = takingText(taking);
     if (why !== undefined) return { kind: 'refused', why };
     // A chain's bottom layer that moves onto the root first merges under the root's rules.
-    const facts = await this.#factsFor(poller, pull, cached.value, taking);
-    if (typeof facts === 'string') return { kind: 'refused', why: facts };
-    const planned = this.#planOf(id, view, login, facts, choice, togetherOf(taking));
+    const onto = await this.#rulesFor(poller, pull, taking);
+    if (typeof onto === 'string') return { kind: 'refused', why: onto };
+    const planned = this.#planOf(id, view, login, onto(cached.value), choice, togetherOf(taking));
     if (typeof planned === 'string') return { kind: 'refused', why: planned };
     this.#keep(planned, pull);
     return { kind: 'plan', plan: planned };
@@ -481,9 +623,11 @@ export class Merging {
 
   /**
    * Sends the merge the plan named `key` holds, once, if it can still go as the plan says; else
-   * asks again with a new plan, when something it named changed, or refuses.
+   * asks again with a new plan, when something it named changed, or refuses. A merge past the rules
+   * goes only with `typed`, the pull request's number as the reader typed it; without, the plan
+   * stays to confirm.
    */
-  async confirm(key: string): Promise<Confirmed> {
+  async confirm(key: string, typed?: string): Promise<Confirmed> {
     const kept = this.#kept.get(key);
     if (!kept) {
       return refused(
@@ -491,6 +635,9 @@ export class Merging {
           ? own('used', 'That merge was confirmed already.')
           : own('gone', 'Lo no longer has that plan. Merge from the panel again.'),
       );
+    }
+    if (kept.plan.kind === 'override' && typed !== String(kept.plan.number)) {
+      return refused(own('typed', `Type ${kept.plan.number} to merge it past the rules.`));
     }
     // A plan runs once, whatever comes of it.
     this.#kept.delete(key);
@@ -519,7 +666,9 @@ export class Merging {
       // What the checks found at their start, once more, right before it goes.
       const still = this.#holds(kept, checked.poller);
       if (still) return refused(still);
-      return this.#send(kept, checked.poller);
+      return isAuto(kept.plan.kind)
+        ? this.#sendAuto(kept, checked.poller)
+        : this.#send(kept, checked.poller);
     } finally {
       this.#checking.delete(key);
     }
@@ -532,6 +681,71 @@ export class Merging {
   cancel(key: string): void {
     this.#kept.delete(key);
     this.#checking.get(key)?.abort();
+  }
+
+  /**
+   * Turns off auto-merge for view `id`'s pull request at once, in its turn among merge writes:
+   * nothing merges, so the reader isn't asked first. It goes once the view acts as an account that's
+   * signed in, GitHub can be reached and isn't holding writes, and no other merge write to the pull
+   * request is under way; `jobs` then says how it went.
+   */
+  async autoMergeOff(id: string): Promise<Exclude<Confirmed, { kind: 'again' }>> {
+    if (this.#stopped) return refused(own('stopped', 'Lo is quitting.'));
+    const view = this.#options.view(id);
+    if (!view) return refused(own('closed', 'There’s no pull request in that tab.'));
+    const acting = actingOf(view);
+    if (typeof acting === 'string') return refused(own('account', acting));
+    const pull = new PullRef(view.repository.owner, view.repository.name, view.number);
+    let poller: MergingPoller;
+    try {
+      poller = await this.#options.poller(acting.login);
+    } catch (error) {
+      return refused(own('account', describe(error)));
+    }
+    // From here to the send nothing waits, so nothing checked can change before it goes.
+    if (this.#stopped) return refused(own('stopped', 'Lo is quitting.'));
+    const now = this.#options.view(id);
+    const still = actingOf(now);
+    if (
+      !now ||
+      typeof still === 'string' ||
+      !sameLogin(still.login, acting.login) ||
+      !new PullRef(now.repository.owner, now.repository.name, now.number).equals(pull)
+    ) {
+      return refused(own('account', 'The tab changed. Turn off auto-merge from its panel again.'));
+    }
+    const off = offOf(poller);
+    if (off) {
+      return refused(
+        own(off.kind, offText(off), { until: off.kind === 'paused' ? off.until : null }),
+      );
+    }
+    const facts = poller.cachedRead(pull, MERGE_FACTS)?.value;
+    if (!facts || !isFullSha(facts.pullRequest.head)) {
+      return refused(own('unread', `Lo hasn’t read #${view.number} from GitHub yet.`));
+    }
+    const before = this.#sent.get(pull.key);
+    if (before?.turn && this.#ended(before)) return refused(own('unsettled', unsure(before.plan)));
+    const plan: SentPlan = {
+      key: this.#newKey(),
+      id,
+      owner: view.repository.owner,
+      repo: view.repository.name,
+      number: view.number,
+      login: acting.login,
+      kind: 'autoMergeOff',
+      method: null,
+      base: rulesBase(facts),
+      // GitHub's: turning it off takes no head.
+      head: facts.pullRequest.head,
+      title: '',
+      message: '',
+      named: null,
+      together: null,
+    };
+    return this.#sendOwn(plan, pull, poller, (pullRequestId) =>
+      poller.disableAutoMerge(pull, pullRequestId),
+    );
   }
 
   /** Every merge Lo sent that it still has, as the window shows them. */
@@ -552,6 +766,11 @@ export class Merging {
     // Or a plan refused while Lo couldn't tell how the last merge of its pull request ended.
     const sent = this.#byKey(key) ?? this.#sent.get(this.#planned.get(key)?.key ?? '');
     if (!sent) return;
+    // Auto-merge's write is one request, which GitHub can't be asked about: the read settles it.
+    if (sent.own) {
+      if (sent.own.kind === 'unknown') this.#settle(sent);
+      return;
+    }
     const job = this.#options.jobs.job(sent.pull);
     if (!job || endedWith(job)?.kind !== 'unknown') return;
     if (this.#options.jobs.followAgain(sent.pull)) {
@@ -573,7 +792,8 @@ export class Merging {
   dismiss(key: string): void {
     const sent = this.#byKey(key);
     if (!sent) return;
-    const job = this.#options.jobs.job(sent.pull);
+    if (sent.own?.kind === 'sending') return;
+    const job = sent.own ? undefined : this.#options.jobs.job(sent.pull);
     if (job && job.state.kind !== 'done') return;
     // A chain's run goes on after its merge, until it has moved the layers on it.
     if (sent.chain && !sent.chain.run.over) return;
@@ -603,7 +823,10 @@ export class Merging {
     }
   }
 
-  /** The plan `facts` give for view `id`, as `login`, with the reader's `choice`, or why there's none. */
+  /**
+   * The plan `facts` give for view `id`, as `login`, with the reader's `choice`, or why there's
+   * none. Auto-merge asked for when nothing blocks the merge is the merge itself.
+   */
   #planOf(
     id: string,
     view: PullTabInfo,
@@ -625,28 +848,42 @@ export class Merging {
     });
     const action = mergeAction(snapshot);
     const base = rulesBase(facts);
+    const way = otherWay(snapshot, choice, {
+      number,
+      login,
+      base,
+      aboveBottom: aboveStackBottom(facts),
+    });
+    if (typeof way === 'string') return way;
     let kind: PlanKind;
     let method: Method | null;
-    switch (action.kind) {
-      case 'merge':
-        kind = 'merge';
-        method =
-          choice.method !== null && action.methods.includes(choice.method)
-            ? choice.method
-            : action.method;
-        break;
-      case 'enqueue':
-        kind = 'enqueue';
-        method = action.method ?? null;
-        break;
-      case 'notPossible':
-        return notPossibleText(action.reason.kind, number, login, base);
-      default:
-        action satisfies never;
-        throw new Error(`an action Lo doesn't know: ${JSON.stringify(action)}`);
+    if (way !== undefined) {
+      ({ kind, method } = way);
+    } else {
+      switch (action.kind) {
+        case 'merge':
+          kind = 'merge';
+          method =
+            choice.method !== null && action.methods.includes(choice.method)
+              ? choice.method
+              : action.method;
+          break;
+        case 'enqueue':
+          kind = 'enqueue';
+          method = action.method ?? null;
+          break;
+        case 'notPossible':
+          return notPossibleText(action.reason.kind, number, login, base);
+        default:
+          action satisfies never;
+          throw new Error(`an action Lo doesn't know: ${JSON.stringify(action)}`);
+      }
     }
-    // Only what the reader typed goes, and only for a squash: an empty field leaves GitHub's own.
-    const squash = kind === 'merge' && method === 'SQUASH';
+    // Only what the reader typed goes, and only for a squash straight in: an empty field leaves
+    // GitHub's own. Auto-merge keeps it for the merge Lo may offer in its place.
+    const squash =
+      (kind === 'merge' || kind === 'override' || kind === 'autoMerge') && method === 'SQUASH';
+    const names = kind === 'autoMerge' || kind === 'whenReady' || kind === 'override';
     return {
       key: this.#newKey(),
       id,
@@ -660,6 +897,13 @@ export class Merging {
       head,
       title: squash ? choice.title.trim() : '',
       message: squash ? choice.message.trim() : '',
+      named: names
+        ? namedOf(snapshot, facts, {
+            owner: view.repository.owner,
+            repo: view.repository.name,
+            number,
+          })
+        : null,
       together,
     };
   }
@@ -693,58 +937,98 @@ export class Merging {
     }
     const held = this.#holds(kept, poller);
     if (held) return refused(held);
-    const view = this.#options.view(plan.id);
-    if (!view) return refused(closed(plan));
-    const head = this.#options.headOnScreen(plan.id) ?? '';
     // A merge of it that ended before: what Lo acts on now is read after that, and one Lo can't
     // tell the end of yet holds the pull request until a read settles it.
     const before = this.#sent.get(pull.key);
-    if (before?.turn && this.#options.jobs.job(pull)?.state.kind === 'done') {
-      return refused(own('unsettled', `Lo can’t tell whether #${plan.number} merged.`));
-    }
+    if (before?.turn && this.#ended(before)) return refused(own('unsettled', unsure(before.plan)));
     let cached = poller.cachedRead(pull, MERGE_FACTS);
-    if (!this.#current(cached, head, before?.endedAt)) {
-      const read = await this.#readAgain(poller, pull, signal);
-      if (typeof read === 'string') {
+    // What the press is weighed against is what Lo last read: a read that lands while Lo asks
+    // GitHub where the pull request sits, and what goes with it, is weighed too, when it changes
+    // what the confirmation named.
+    let now: MergePlan | undefined;
+    for (let round = 1; now === undefined; round++) {
+      const view = this.#options.view(plan.id);
+      if (!view) return refused(closed(plan));
+      const head = this.#options.headOnScreen(plan.id) ?? '';
+      if (!this.#current(cached, head, before?.endedAt)) {
+        const read = await this.#readAgain(poller, pull, signal);
+        if (typeof read === 'string') {
+          return refused(
+            own('unread', `Lo couldn’t read #${plan.number} again, so it didn’t merge: ${read}`),
+          );
+        }
+        cached = read;
+      }
+      const facts = cached.value;
+      if (checksCutShort(facts)) {
+        return refused(own('checks', 'GitHub has over 1,000 checks here. Merge it on GitHub.'));
+      }
+      const snapshot: MergeSnapshot = mergeSnapshot(facts, {
+        headOnScreen: head,
+        preferredMethod: this.#options.method(pull.repo),
+        headContainsBase: this.#options.headContainsBase(plan.id),
+      });
+      if (incomplete(snapshot) !== undefined) {
+        poller.readMergeFactsAgain(pull);
         return refused(
-          own('unread', `Lo couldn’t read #${plan.number} again, so it didn’t merge: ${read}`),
+          own(
+            'incomplete',
+            `GitHub left part of what decides #${plan.number}’s merge out of its answer, so Lo didn’t merge. Lo reads it again; merge once it has.`,
+          ),
         );
       }
-      cached = read;
+      if (facts.pullRequest.head !== head) {
+        return refused(newerPush(plan.number, head, facts.pullRequest.head));
+      }
+      const choice = { ...plan, asked: askedOf(plan.kind) };
+      const first = this.#planOf(plan.id, view, plan.login, facts, choice);
+      if (typeof first === 'string') return refused(own('notPossible', first));
+      let onto = asTheyAre;
+      let together: Together | null = null;
+      if (goesAlone(plan.kind)) {
+        const placed = await this.#whereNow(poller, plan.login, pull, facts, signal);
+        signal.throwIfAborted();
+        const unplaced = aloneOrBottom(placed, plan.number, plan.kind === 'override');
+        if (unplaced !== undefined) return refused(own('where', unplaced));
+      } else {
+        // Where it sits, and what goes with it, read afresh: GitHub's stack holds what merges
+        // with it.
+        const taking = await this.#takingNow(poller, plan.login, pull, facts, signal);
+        signal.throwIfAborted();
+        const unplaced = takingText(taking);
+        if (unplaced !== undefined) return refused(own('where', unplaced));
+        const rules = await this.#rulesFor(poller, pull, taking, signal);
+        signal.throwIfAborted();
+        if (typeof rules === 'string') return refused(own('unread', rules));
+        onto = rules;
+        together = togetherOf(taking);
+      }
+      const planned = this.#planOf(plan.id, view, plan.login, onto(facts), choice, together);
+      if (typeof planned === 'string') return refused(own('notPossible', planned));
+      // What a read that landed meanwhile plans: the same, or another round on it.
+      const latest = poller.cachedRead(pull, MERGE_FACTS);
+      const newest =
+        latest === undefined || latest.value === facts
+          ? planned
+          : this.#planOf(plan.id, view, plan.login, onto(latest.value), choice, together);
+      if (
+        latest === undefined ||
+        (latest.value.pullRequest.head === head &&
+          typeof newest !== 'string' &&
+          changed(planned, newest) === undefined)
+      ) {
+        now = planned;
+      } else if (round === LOOKS) {
+        return refused(
+          own(
+            'changing',
+            `What GitHub says of #${plan.number} kept changing while Lo checked it, so Lo sent nothing. Start again from the merge panel.`,
+          ),
+        );
+      } else {
+        cached = latest;
+      }
     }
-    const facts = cached.value;
-    if (checksCutShort(facts)) {
-      return refused(own('checks', 'GitHub has over 1,000 checks here. Merge it on GitHub.'));
-    }
-    const snapshot: MergeSnapshot = mergeSnapshot(facts, {
-      headOnScreen: head,
-      preferredMethod: this.#options.method(pull.repo),
-      headContainsBase: this.#options.headContainsBase(plan.id),
-    });
-    if (incomplete(snapshot) !== undefined) {
-      poller.readMergeFactsAgain(pull);
-      return refused(
-        own(
-          'incomplete',
-          `GitHub left part of what decides #${plan.number}’s merge out of its answer, so Lo didn’t merge. Lo reads it again; merge once it has.`,
-        ),
-      );
-    }
-    if (facts.pullRequest.head !== head) {
-      return refused(newerPush(plan.number, head, facts.pullRequest.head));
-    }
-    const first = this.#planOf(plan.id, view, plan.login, facts, plan);
-    if (typeof first === 'string') return refused(own('notPossible', first));
-    // Where it sits, and what goes with it, read afresh: GitHub's stack holds what merges with it.
-    const taking = await this.#takingNow(poller, plan.login, pull, facts, signal);
-    signal.throwIfAborted();
-    const unplaced = takingText(taking);
-    if (unplaced !== undefined) return refused(own('where', unplaced));
-    const onto = await this.#factsFor(poller, pull, facts, taking, signal);
-    signal.throwIfAborted();
-    if (typeof onto === 'string') return refused(own('unread', onto));
-    const now = this.#planOf(plan.id, view, plan.login, onto, plan, togetherOf(taking));
-    if (typeof now === 'string') return refused(own('notPossible', now));
     const why = changed(plan, now);
     if (why !== undefined) {
       this.#keep(now, pull);
@@ -945,26 +1229,25 @@ export class Merging {
   }
 
   /**
-   * What decides `pull`'s merge once it goes as `taking` says: `facts` as they are, or, for a
-   * chain's bottom layer that moves onto the root first, under the root's rules, read afresh. Why
-   * not, when they can't be read.
+   * What decides `pull`'s merge once it goes as `taking` says, from what decides it as it stands:
+   * that as it is, or, for a chain's bottom layer that moves onto the root first, under the root's
+   * rules, read afresh. Why not, when they can't be read.
    */
-  async #factsFor(
+  async #rulesFor(
     poller: MergingPoller,
     pull: PullRef,
-    facts: MergeFacts,
     taking: Taking,
     signal?: AbortSignal,
-  ): Promise<MergeFacts | string> {
+  ): Promise<((facts: MergeFacts) => MergeFacts) | string> {
     const before = taking.kind === 'chain' ? taking.plan.retargetBefore : undefined;
-    if (before === undefined) return facts;
+    if (before === undefined) return asTheyAre;
     try {
       const onto = await poller.readOnce(
         (client) => rulesOnto(client, pull.repo, before.to),
         signal,
         'foreground',
       );
-      return factsOnto(facts, onto);
+      return (facts) => factsOnto(facts, onto);
     } catch (error) {
       signal?.throwIfAborted();
       return `Lo couldn’t read ${before.to}’s rules, which #${pull.number} merges under once it’s moved there: ${describe(error)}`;
@@ -1025,6 +1308,7 @@ export class Merging {
       poller,
       turn,
       remembered: false,
+      own: undefined,
       shows: undefined,
       unwatch: undefined,
       endedAt: undefined,
@@ -1061,6 +1345,196 @@ export class Merging {
       return refused(refusal.refusal === 'stopped' ? own('stopped', 'Lo is quitting.') : busy);
     }
     return { kind: 'sent' };
+  }
+
+  /**
+   * Turns on auto-merge as `kept` says, in its pull request's turn, with the head on screen, which
+   * GitHub turns it on for only while it's the head. Sent at once: nothing waits before it goes.
+   */
+  #sendAuto(kept: Kept, poller: MergingPoller): Confirmed {
+    const { plan, pull } = kept;
+    // A queue's settings choose its method, whatever is asked.
+    const method = plan.method ?? 'MERGE';
+    return this.#sendOwn(plan, pull, poller, (pullRequestId) =>
+      poller.enableAutoMerge(pull, pullRequestId, { expectedHead: plan.head, method }),
+    );
+  }
+
+  /**
+   * Sends `write`, a merge write the jobs don't follow, for `plan`, in its pull request's turn, and
+   * follows its answer itself: on, off, refused, or, when the answer may be lost, unknown until a
+   * read settles it. Refused, as the turn's taken, nothing is sent.
+   */
+  #sendOwn(
+    plan: SentPlan,
+    pull: PullRef,
+    poller: MergingPoller,
+    write: (pullRequestId: string) => Promise<AutoMergeState | MergeRefusal>,
+  ): Exclude<Confirmed, { kind: 'again' }> {
+    const pullRequestId = poller.pullRequest(pull)?.details.id;
+    if (pullRequestId === undefined) {
+      return refused(own('unread', `Lo hasn’t read #${plan.number} from GitHub yet.`));
+    }
+    const running = this.#options.jobs.job(pull);
+    if (running && running.state.kind !== 'done') {
+      return refused(own('busy', `Lo is already merging #${plan.number}.`));
+    }
+    const turn = this.#options.turns.take(pull.repo, [pull.number]);
+    if ('busy' in turn) return refused(own('busy', `Lo is already merging #${turn.busy}.`));
+    const previous = this.#sent.get(pull.key);
+    if (previous) {
+      previous.unwatch?.();
+      this.#options.jobs.forget(pull);
+    }
+    const sent: Sent = {
+      plan,
+      pull,
+      poller,
+      turn,
+      remembered: false,
+      own: { kind: 'sending' },
+      shows: undefined,
+      unwatch: undefined,
+      endedAt: undefined,
+      dismissed: false,
+      stack: undefined,
+      chain: undefined,
+    };
+    this.#sent.set(pull.key, sent);
+    this.#publish(sent);
+    write(pullRequestId).then(
+      (answer) => this.#answered(sent, answer),
+      (error: unknown) => this.#unanswered(sent, error),
+    );
+    return { kind: 'sent' };
+  }
+
+  /** GitHub answered `sent`'s write: it ends as GitHub says, and its turn is given back. */
+  #answered(sent: Sent, answer: AutoMergeState | MergeRefusal): void {
+    if (this.#sent.get(sent.pull.key) !== sent) return;
+    sent.endedAt = this.#now();
+    const on = sent.plan.kind !== 'autoMergeOff';
+    if (isRefusal(answer)) {
+      sent.turn?.give();
+      sent.turn = undefined;
+      if (answer.refusal === 'canMergeNow' && on) {
+        void this.#offerMerge(sent);
+        return;
+      }
+      sent.own = { kind: 'refused', refusal: autoRefusalOf(answer, sent.plan.head) };
+      this.#publish(sent);
+      return;
+    }
+    // What GitHub says it now has; where that isn't what was asked, a read settles it.
+    let ended: JobState | undefined;
+    if (on) {
+      if (answer.inQueue) ended = { kind: 'enqueued' };
+      else if (answer.autoMerge !== undefined) ended = { kind: 'autoMergeOn' };
+    } else if (answer.inQueue) {
+      // Auto-merge had added it to the queue already, which merges it once its checks pass.
+      ended = {
+        kind: 'refused',
+        refusal: own(
+          'queued',
+          `#${sent.plan.number} joined the merge queue for ${sent.plan.base} before auto-merge went off, so it merges once the queue’s checks pass. Take it out of the queue on GitHub to stop it.`,
+        ),
+      };
+    } else if (answer.autoMerge === undefined) {
+      ended = { kind: 'autoMergeOff' };
+    }
+    if (ended === undefined) {
+      sent.own = {
+        kind: 'unknown',
+        why: 'status',
+        text: `GitHub answered, but not with auto-merge ${on ? 'on' : 'off'}. Lo reads the pull request again, which shows whether it is.`,
+        askAgain: false,
+        shows: null,
+      };
+      this.#publish(sent);
+      this.#settle(sent);
+      return;
+    }
+    sent.turn?.give();
+    sent.turn = undefined;
+    sent.own = ended;
+    this.#publish(sent);
+  }
+
+  /**
+   * `sent`'s write failed: unsent, as for a signed-out account, it's refused; else its answer may
+   * be lost, and the pull request's turn stays taken until a read made since settles it.
+   */
+  #unanswered(sent: Sent, error: unknown): void {
+    if (this.#sent.get(sent.pull.key) !== sent) return;
+    sent.endedAt = this.#now();
+    if (error instanceof GithubError && !error.mayHavePosted()) {
+      sent.turn?.give();
+      sent.turn = undefined;
+      sent.own = { kind: 'refused', refusal: unsentOf(error.detail) };
+      this.#publish(sent);
+      return;
+    }
+    const why =
+      error instanceof GithubError
+        ? `GitHub’s answer didn’t reach Lo: ${error.message}`
+        : `Lo couldn’t read GitHub’s answer: ${describe(error)}`;
+    sent.own = {
+      kind: 'unknown',
+      why: 'noAnswer',
+      text: `${why} Lo reads the pull request again, which shows whether it is, and sends nothing again.`,
+      askAgain: false,
+      shows: null,
+    };
+    this.#publish(sent);
+    this.#settle(sent);
+  }
+
+  /**
+   * GitHub won't turn on auto-merge for `sent` because nothing blocks the merge now: Lo reads the
+   * pull request again, and offers the merge in its place, with the squash text typed, kept for the
+   * reader to confirm, when the read agrees and the reader hasn't planned anything else for the view
+   * since. The refusal says so either way.
+   */
+  async #offerMerge(sent: Sent): Promise<void> {
+    const { plan, pull, poller } = sent;
+    const text = `Nothing blocks #${plan.number} now, so GitHub didn’t turn on auto-merge.`;
+    let offer: MergePlan | undefined;
+    try {
+      const read = await this.#readAgain(poller, pull, new AbortController().signal);
+      const view = this.#options.view(plan.id);
+      if (typeof read !== 'string' && view && !this.#stopped) {
+        const planned = this.#planOf(plan.id, view, plan.login, read.value, {
+          method: plan.method,
+          title: plan.title,
+          message: plan.message,
+          asked: 'merge',
+        });
+        if (typeof planned !== 'string' && planned.head === plan.head) offer = planned;
+      }
+    } catch (error) {
+      this.#options.log(`${pull.toString()}: ${describe(error)}`);
+    }
+    if (this.#sent.get(pull.key) !== sent) return;
+    // A plan the reader made since stays: it isn't replaced unseen.
+    if ([...this.#kept.values()].some((kept) => kept.plan.id === plan.id)) offer = undefined;
+    if (offer) this.#keep(offer, pull);
+    sent.own = {
+      kind: 'refused',
+      refusal: own(
+        'canMergeNow',
+        offer ? `${text} It can merge as it is.` : `${text} Merge it from the panel.`,
+        {
+          ...(offer && { offer }),
+        },
+      ),
+    };
+    this.#publish(sent);
+  }
+
+  /** Whether `sent`'s write has ended, as far as Lo knows. */
+  #ended(sent: Sent): boolean {
+    if (sent.own) return sent.own.kind !== 'sending';
+    return this.#options.jobs.job(sent.pull)?.state.kind === 'done';
   }
 
   /** The run of a chain's merge from its bottom layer, `sent`, as the plan's `together` says. */
@@ -1100,7 +1574,8 @@ export class Merging {
   /** A job changed: says so to the window, remembers the method once GitHub took it, and ends it. */
   #heard(pull: PullRef, done: boolean): void {
     const sent = this.#sent.get(pull.key);
-    if (!sent) return;
+    // A write Lo follows itself isn't the jobs'.
+    if (!sent || sent.own) return;
     const job = this.#options.jobs.job(pull);
     if (!job) return;
     this.#rememberIfTaken(sent, job);
@@ -1151,7 +1626,8 @@ export class Merging {
   /** Remembers the plan's method for the repository once GitHub took the merge with it. */
   #rememberIfTaken(sent: Sent, job: Job): void {
     const { plan } = sent;
-    if (sent.remembered || plan.kind !== 'merge' || plan.method === null) return;
+    if (sent.remembered || plan.method === null) return;
+    if (plan.kind !== 'merge' && plan.kind !== 'override') return;
     // Another merge GitHub was already running took its own method, not this one.
     if (job.running !== undefined) return;
     const taken =
@@ -1184,7 +1660,9 @@ export class Merging {
       sent.turn?.give();
       sent.turn = undefined;
       const shown = since.read.value.pullRequest;
-      const shows = shown.state === 'MERGED' ? 'merged' : shown.inQueue ? 'enqueued' : 'open';
+      // What GitHub has of auto-merge settles a write to it, whichever way it went.
+      const still = sent.own ? (shown.autoMerge ? 'autoMergeOn' : 'autoMergeOff') : 'open';
+      const shows = shown.state === 'MERGED' ? 'merged' : shown.inQueue ? 'enqueued' : still;
       if (sent.dismissed) {
         this.#forget(sent);
         return;
@@ -1218,9 +1696,9 @@ export class Merging {
   }
 
   #viewOf(sent: Sent): JobView | undefined {
-    const job = this.#options.jobs.job(sent.pull);
+    const job = sent.own ? undefined : this.#options.jobs.job(sent.pull);
     const { plan } = sent;
-    if (!job) {
+    if (!sent.own && !job) {
       // A chain's bottom layer moving onto the root, before its merge is sent.
       const progress = sent.chain?.run.view();
       if (progress?.kind !== 'chain') return undefined;
@@ -1233,19 +1711,30 @@ export class Merging {
         together: progress,
       };
     }
-    let state = stateOf(job);
-    if (state.kind === 'unknown' && sent.shows !== undefined) {
-      state =
-        sent.shows === 'merged'
-          ? { kind: 'merged' }
-          : sent.shows === 'enqueued'
-            ? { kind: 'enqueued' }
-            : { ...state, shows: 'open' };
+    const was = sent.own ?? (job && stateOf(job));
+    if (!was) return undefined;
+    let state: JobState = was;
+    if (state.kind === 'unknown' && sent.own && sent.shows !== undefined && sent.shows !== 'open') {
+      state = settledOwn(plan, sent.shows);
+    } else if (state.kind === 'unknown' && sent.shows !== undefined) {
+      switch (sent.shows) {
+        case 'merged':
+        case 'enqueued':
+        case 'autoMergeOn':
+        case 'autoMergeOff':
+          state = { kind: sent.shows };
+          break;
+        case 'open':
+          state = { ...state, shows: 'open' };
+          break;
+        default:
+          sent.shows satisfies never;
+      }
     }
     return {
-      ...jobOf(plan, job.running !== undefined),
+      ...jobOf(plan, job?.running !== undefined),
       state,
-      together: this.#progressOf(sent, job),
+      together: job ? this.#progressOf(sent, job) : null,
     };
   }
 
@@ -1324,7 +1813,7 @@ function actingOf(view: PullTabInfo | undefined): { login: string } | string {
   return { login: view.acting.login };
 }
 
-function refused(refusal: Refusal): Confirmed {
+function refused(refusal: Refusal): Extract<Confirmed, { kind: 'refused' }> {
   return { kind: 'refused', refusal };
 }
 
@@ -1347,7 +1836,7 @@ function newerPush(number: number, from: string, to: string): Refusal {
 }
 
 /** What a job's view says of the merge `plan` asked for, whatever its state. */
-function jobOf(plan: MergePlan, already: boolean): Omit<JobView, 'state' | 'together'> {
+function jobOf(plan: SentPlan, already: boolean): Omit<JobView, 'state' | 'together'> {
   return {
     key: plan.key,
     owner: plan.owner,
@@ -1363,8 +1852,9 @@ function jobOf(plan: MergePlan, already: boolean): Omit<JobView, 'state' | 'toge
 }
 
 /**
- * What the merge GitHub is asked for: straight in with the method, or into the merge queue; for a
- * GitHub stack's layer, with the layers below, at the heads the confirmation named.
+ * What the merge GitHub is asked for: straight in with the method, or past the rules, or into the
+ * merge queue; for a GitHub stack's layer, with the layers below, at the heads the confirmation
+ * named.
  */
 function requestOf(plan: MergePlan): MergeRequest | MergeRefusal {
   const request = mergeOf(plan);
@@ -1387,7 +1877,10 @@ function requestOf(plan: MergePlan): MergeRequest | MergeRefusal {
 /** The merge of `plan`'s pull request alone. */
 function mergeOf(plan: MergePlan): MergeRequest | MergeRefusal {
   if (plan.kind === 'enqueue') return queueMerge(plan.head);
-  const request = directMerge(plan.head, plan.method ?? 'MERGE');
+  const request =
+    plan.kind === 'override'
+      ? adminOverride(plan.head, plan.method ?? 'MERGE')
+      : directMerge(plan.head, plan.method ?? 'MERGE');
   if (isRefusal(request)) return request;
   // Only what the reader typed: an empty field leaves GitHub's own.
   // A stack's layers keep their own commits' words.
@@ -1433,7 +1926,7 @@ function notPossibleText(
  * with it. The layers on a chain's bottom one take theirs apart, which its run holds until it has
  * moved them.
  */
-function sentNames(plan: MergePlan): number[] {
+function sentNames(plan: Pick<SentPlan, 'number' | 'together'>): number[] {
   return plan.together?.kind === 'stack' ? namesOf(plan.number, plan.together) : [plan.number];
 }
 
@@ -1451,6 +1944,122 @@ function takingText(taking: Taking): string | undefined {
     default:
       taking satisfies never;
       throw new Error(`a merge Lo doesn't know: ${JSON.stringify(taking)}`);
+  }
+}
+
+/** What Lo says when it can't tell how its last write of `plan`'s kind to the pull request ended. */
+function unsure(plan: Pick<SentPlan, 'kind' | 'number'>): string {
+  if (isAuto(plan.kind)) return `Lo can’t tell whether auto-merge is on for #${plan.number}.`;
+  if (plan.kind === 'autoMergeOff') {
+    return `Lo can’t tell whether auto-merge is off for #${plan.number}.`;
+  }
+  return `Lo can’t tell whether #${plan.number} merged.`;
+}
+
+/** Why `a` can't turn auto-merge on, as {@link autoActionOf} says. */
+function autoText(
+  action: Exclude<AutoAction, { kind: 'on' }>,
+  number: number,
+  login: string,
+  base: string,
+): string {
+  if (action.kind === 'off') return `Auto-merge is on for #${number} already.`;
+  switch (action.reason) {
+    case 'merged':
+    case 'closed':
+    case 'queued':
+    case 'noMethod':
+      return notPossibleText(action.reason, number, login, base);
+    case 'ready':
+      return `Nothing blocks #${number} now, so it can merge as it is.`;
+    case 'blocked':
+      return `Something waiting won’t fix is in #${number}’s way, so auto-merge would wait for good. The merge panel says what.`;
+    case 'noPermission':
+      return `GitHub doesn’t let ${login} add to the merge queue for ${base}.`;
+    case 'notAllowed':
+      return `GitHub doesn’t let ${login} turn on auto-merge for #${number}. The repository may not allow it: a maintainer turns it on in its settings.`;
+    case 'cantTurnOff':
+      return `GitHub doesn’t let ${login} turn off auto-merge for #${number}.`;
+    default:
+      action.reason satisfies never;
+      throw new Error(`a reason Lo doesn't know: ${String(action.reason)}`);
+  }
+}
+
+/** Why `⌥⏎` can't merge past the rules, as {@link overrideActionOf} says. */
+function overrideText(
+  action: Extract<OverrideAction, { kind: 'notPossible' }>,
+  number: number,
+  login: string,
+  base: string,
+): string {
+  switch (action.reason) {
+    case 'merged':
+    case 'closed':
+    case 'queued':
+    case 'noMethod':
+      return notPossibleText(action.reason, number, login, base);
+    case 'nothingToSkip':
+      return `Nothing blocks #${number}, so there’s no rule to skip: it can merge as it is.`;
+    case 'noPermission':
+      return `GitHub doesn’t let ${login} merge past ${base}’s rules.`;
+    case 'draft':
+      return `#${number} is a draft, which GitHub doesn’t merge, past the rules or not.`;
+    case 'conflicts':
+      return `#${number} conflicts with ${base}, which no rule skips.`;
+    case 'stackLayer':
+      return `#${number} sits on another layer of its GitHub stack, and GitHub merges past the rules only a stack’s bottom layer.`;
+    default:
+      action.reason satisfies never;
+      throw new Error(`a reason Lo doesn't know: ${String(action.reason)}`);
+  }
+}
+
+/** The method chosen in the panel, if the repository allows it, else the one Lo picks. */
+function chosenMethod(snapshot: MergeSnapshot, choice: Choice): Method | null {
+  const methods = methodList(allowedMethods(snapshot));
+  return choice.method !== null && methods.includes(choice.method)
+    ? choice.method
+    : (pickedMethod(snapshot) ?? null);
+}
+
+/**
+ * What `a` or `⌥⏎` plans from `snapshot`, as `choice` asked: auto-merge on, straight in or into
+ * the queue once ready, or a merge past the rules; or why neither; or nothing, to plan the merge
+ * itself, for `⏎`, or for auto-merge asked when nothing blocks the merge.
+ */
+function otherWay(
+  snapshot: MergeSnapshot,
+  choice: Choice,
+  {
+    number,
+    login,
+    base,
+    aboveBottom,
+  }: { number: number; login: string; base: string; aboveBottom: boolean },
+): { kind: PlanKind; method: Method | null } | string | undefined {
+  const asked = choice.asked ?? 'merge';
+  switch (asked) {
+    case 'merge':
+      return undefined;
+    case 'autoMerge': {
+      const auto = autoActionOf(snapshot);
+      if (auto.kind === 'notPossible' && auto.reason === 'ready') return undefined;
+      if (auto.kind !== 'on') return autoText(auto, number, login, base);
+      // A queue's settings choose its method, which GitHub reports as a merge commit whatever was
+      // asked.
+      if (snapshot.queue.required)
+        return { kind: 'whenReady', method: snapshot.queue.method ?? null };
+      return { kind: 'autoMerge', method: chosenMethod(snapshot, choice) };
+    }
+    case 'override': {
+      const override = overrideActionOf(snapshot, aboveBottom);
+      if (override.kind === 'notPossible') return overrideText(override, number, login, base);
+      return { kind: 'override', method: chosenMethod(snapshot, choice) };
+    }
+    default:
+      asked satisfies never;
+      throw new Error(`a way to merge Lo doesn't know: ${String(asked)}`);
   }
 }
 

@@ -98,9 +98,9 @@ export function placementOf(id: string): Placement | undefined {
  * The merge's dialog, in the panel's place:
  *
  * - `planning`: main is planning the merge view `id` offers, for pull request `number`, which the
- *   panel's main button named `label`;
+ *   panel's main button named `label`, or what `a` or `⌥⏎` asked for, which `title` says;
  * - `confirm`: the plan, for the reader to confirm, with `note`, what changed since one before it,
- *   while `sending` the confirmation to main;
+ *   while `sending` the confirmation to main; for a merge past the rules, with the number `typed`;
  * - `sent`: the plan went, and the merge from it goes as `jobs` says;
  * - `refused`: main refused the plan as it was confirmed, for `refusal`.
  */
@@ -110,12 +110,14 @@ export type MergeDialog =
       readonly id: string;
       readonly number: number;
       readonly label: string;
+      readonly title?: string | undefined;
     }
   | {
       readonly kind: 'confirm';
       readonly plan: MergePlan;
       readonly note: string | undefined;
       readonly sending: boolean;
+      readonly typed?: string | undefined;
     }
   | { readonly kind: 'sent'; readonly plan: MergePlan }
   | { readonly kind: 'refused'; readonly plan: MergePlan; readonly refusal: Refusal };

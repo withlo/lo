@@ -7,8 +7,10 @@
 // menu that opens the panel, and each reason one that opens its page: both are rows to the menus,
 // which only the merge feature's commands are listed for. `⏎` in the panel merges, or adds the pull
 // request to the merge queue, once the dialog it opens is confirmed; that dialog takes its own
-// `⏎` and `Esc`. When Lo can't tell whether a merge it sent went, the status's menu asks GitHub
-// again, as the banner that says so does.
+// `⏎` and `Esc`. `a` turns auto-merge on the same way, through the dialog, or with it on turns it
+// off at once, and `⌥⏎` merges past the base branch's rules, which its dialog confirms only with the
+// pull request's number typed. When Lo can't tell whether a merge it sent went, the status's menu
+// asks GitHub again, as the banner that says so does.
 
 import { defineCommands, type When } from '@lo/ui/commands';
 
@@ -83,6 +85,26 @@ export default defineCommands(
       label: 'Merge or add to the merge queue',
       group: 'Review',
       keys: ['enter'],
+      when: panel,
+    },
+    /**
+     * Plans auto-merge, for the dialog to confirm, when only waits block the merge: GitHub merges
+     * it, or adds it to the merge queue, once they clear. With auto-merge on, turns it off at once.
+     */
+    autoMerge: {
+      label: 'Turn auto-merge on or off',
+      group: 'Review',
+      keys: ['a'],
+      when: panel,
+    },
+    /**
+     * Plans a merge past the base branch's rules, for an account GitHub lets bypass them, and opens
+     * the dialog that confirms it with the pull request's number typed.
+     */
+    override: {
+      label: 'Merge without the rules',
+      group: 'Review',
+      keys: ['alt+enter'],
       when: panel,
     },
     /**

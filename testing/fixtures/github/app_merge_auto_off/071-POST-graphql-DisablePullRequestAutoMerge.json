@@ -1,0 +1,35 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "https://api.github.com/graphql",
+    "operation": "DisablePullRequestAutoMerge",
+    "variables": {
+      "pullRequestId": "PR_kwDOVleUfc8AAAABPueUmA"
+    },
+    "query_sha256": "d5e82c3e83125c073ae96c44021bea0fb593dec762013724ffad306ec3e1adcf"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "x-ratelimit-limit": "5000",
+      "x-ratelimit-remaining": "4811",
+      "x-ratelimit-reset": "1794889860",
+      "x-ratelimit-resource": "graphql",
+      "x-ratelimit-used": "189"
+    },
+    "body": {
+      "data": {
+        "disablePullRequestAutoMerge": {
+          "pullRequest": {
+            "number": 221,
+            "headRefOid": "f61986d3615a8509a6ed1e4e1492cd5c9af81390",
+            "state": "OPEN",
+            "isInMergeQueue": false,
+            "autoMergeRequest": null
+          }
+        }
+      }
+    }
+  }
+}

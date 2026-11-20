@@ -1,0 +1,19 @@
+{
+  "request": {
+    "method": "GET",
+    "url": "https://api.github.com/repos/rozed-dev/e2e/activity?ref=refs%2Fheads%2Fmerge%2F7%2Foverridden&direction=desc&per_page=100",
+    "if_none_match": "W/\"4f2126d1845b5f5924a1433cfcaebe6e124077355542442e733b738b14ea5d2a\""
+  },
+  "response": {
+    "status": 304,
+    "headers": {
+      "etag": "\"4f2126d1845b5f5924a1433cfcaebe6e124077355542442e733b738b14ea5d2a\"",
+      "x-github-api-version-selected": "2022-11-28",
+      "x-ratelimit-limit": "5000",
+      "x-ratelimit-remaining": "4839",
+      "x-ratelimit-reset": "1794889860",
+      "x-ratelimit-resource": "core",
+      "x-ratelimit-used": "161"
+    }
+  }
+}
