@@ -537,6 +537,7 @@ export class Shipping {
    * takes {@link ShippingOptions.planWait} at most, as a read does: then Lo says it couldn't check.
    */
   async plan(id: string): Promise<ShipPlanned> {
+    probe(`plan ${id} start`);
     if (this.#stopped) return refused(own('stopped', 'Lo is quitting.'));
     const view = this.#options.view(id);
     const acting = actingOf(view);
@@ -581,16 +582,21 @@ export class Shipping {
     } catch (error) {
       return refused(own('account', describe(error)));
     }
+    probe(`plan ${id} poller`);
     const off = offOf(poller);
     if (off) return refused(own(off.kind, offText(off)));
     const head = this.#options.headOnScreen(id) ?? '';
     if (!FULL.test(head))
       return refused(own('unread', `Lo hasn’t shown #${pull.number}’s head yet.`));
-    const cached = poller.cachedRead(pull, MERGE_FACTS) ?? (await poller.mergeFacts(pull));
+    const had = poller.cachedRead(pull, MERGE_FACTS);
+    const cached = had ?? (await poller.mergeFacts(pull));
+    probe(`plan ${id} facts ${had ? 'cached' : 'read'}`);
     if (!cached) {
       return refused(own('unread', `Lo hasn’t read whether #${pull.number} can merge yet.`));
     }
-    return this.#planOf(id, login, pull, poller, cached.value, signal);
+    const planned = await this.#planOf(id, login, pull, poller, cached.value, signal);
+    probe(`plan ${id} planned ${planned.kind}`);
+    return planned;
   }
 
   /**
@@ -1440,6 +1446,10 @@ function approvalOf(approval: Plan['approval']): ShipApproval {
 /** Whether two full commit SHAs name the same commit. */
 function sameCommit(a: string, b: string): boolean {
   return isFullSha(a) && a.toLowerCase() === b.toLowerCase();
+}
+
+function probe(line: string): void {
+  if (process.env.LO_PROBE) process.stderr.write(`probe ${Date.now()} main ${line}\n`);
 }
 
 /** What `promise` gives, unless `signal` gives up first: then its reason, at once. */

@@ -50,23 +50,33 @@ export function canShip(): true | string {
  */
 export function shipFromTab(): void {
   const tab = activeTab();
+  probe(`press tab=${tab?.kind}`);
   if (tab?.kind !== 'pull') return;
   const why = canShip();
   if (why !== true) {
+    probe(`refused here: ${why}`);
     notify('Approve and ship', withoutBidi(why));
     return;
   }
   const planning: ShipDialog = { kind: 'planning', id: tab.id, number: tab.number };
   closePanel(tab.id);
-  setDialog(planning);
+  try {
+    setDialog(planning);
+  } catch (error) {
+    probe(`setDialog threw ${String(error)}`);
+    throw error;
+  }
   const back = (said: string) => {
+    probe(`back ${said} same=${shipping.getState().dialog === planning}`);
     if (shipping.getState().dialog !== planning) return;
     setDialog(undefined);
     notify('Approve and ship', withoutBidi(said));
   };
+  probe(`send ${tab.id}`);
   main()
     .ship({ id: tab.id })
     .then((planned) => {
+      probe(`reply ${planned.kind} same=${shipping.getState().dialog === planning}`);
       if (planned.kind === 'refused') {
         // A newer push since the revision on screen shows as the dialog's stop, to see it.
         if (planned.refusal.newer !== null && shipping.getState().dialog === planning) {
@@ -89,7 +99,23 @@ export function shipFromTab(): void {
       }
       setDialog({ kind: 'confirm', plan: planned.plan, note: undefined, sending: false });
     })
-    .catch((error: unknown) => back(messageOf(error)));
+    .catch((error: unknown) => {
+      probe(`failed ${messageOf(error)}`);
+      back(messageOf(error));
+    });
+  probe('sent');
+}
+
+function probe(line: string): void {
+  console.log(`probe ${Date.now()} win ${line}`);
+}
+
+try {
+  new PerformanceObserver((list) => {
+    for (const entry of list.getEntries()) probe(`longtask ${Math.round(entry.duration)}ms`);
+  }).observe({ type: 'longtask', buffered: false });
+} catch {
+  // No long tasks to observe.
 }
 
 /**

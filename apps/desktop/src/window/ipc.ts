@@ -42,7 +42,10 @@ export function client<C extends Contract>(contract: C, bridge: Bridge = window.
   const calls = Object.keys(contract.requests).map((name) => [
     name,
     async (input?: unknown) => {
+      const noted = contract.feature === 'merge';
+      if (noted) console.log(`probe ${Date.now()} win invoke ${contract.feature}.${name}`);
       const result = await bridge.invoke(channel(contract.feature, name), input);
+      if (noted) console.log(`probe ${Date.now()} win invoked ${contract.feature}.${name}`);
       if (!result.ok) throw new IpcError(result.error.code, result.error.message);
       return result.value;
     },
