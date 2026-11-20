@@ -3,13 +3,13 @@
 // `net`, which is out of reach under Node, and so is Electron's own updater, which
 // electron-updater's updater for a Mac is made with.
 
+import { createHash } from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import { chmodSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import {
   createServer,
   request,
   type IncomingHttpHeaders,
-  type IncomingMessage,
   type RequestOptions,
   type Server,
   type ServerResponse,
@@ -40,6 +40,8 @@ let asked: { path: string; headers: IncomingHttpHeaders }[];
 let releases: string[];
 /** The release GitHub calls the latest, which is never a prerelease: none before the first. */
 let latestRelease: string | undefined;
+/** The Macs each release has a zip for, by architecture. */
+let zips: string[];
 /** A request the feed holds, which the test answers when it says. */
 interface Holding {
   arrived(): void;
@@ -69,16 +71,24 @@ ${entries.join('\n')}
 </feed>`;
 }
 
+/** What each release's zip should hold, as its `latest-*.yml` says by size and SHA-512. */
+const ZIP = 'hello';
+/** What the feed serves as each release's zip: as long as {@link ZIP}, but not it. */
+const SERVED_ZIP = 'hullo';
+
 /** The `latest-*.yml` of the release of `version`, as electron-builder writes it. */
 function latest(version: string): string {
+  const sha512 = createHash('sha512').update(ZIP).digest('base64');
   return [
     `version: ${version}`,
     'files:',
-    `  - url: Lo-${version}-arm64-mac.zip`,
-    '    sha512: aGVsbG8=',
-    '    size: 5',
-    `path: Lo-${version}-arm64-mac.zip`,
-    'sha512: aGVsbG8=',
+    ...zips.flatMap((arch) => [
+      `  - url: Lo-${version}-${arch}-mac.zip`,
+      `    sha512: ${sha512}`,
+      `    size: ${ZIP.length}`,
+    ]),
+    `path: Lo-${version}-${zips[0] ?? 'arm64'}-mac.zip`,
+    `sha512: ${sha512}`,
     "releaseDate: '2026-11-19T00:00:00.000Z'",
     '',
   ].join('\n');
@@ -110,6 +120,7 @@ function answer(path: string, response: ServerResponse): void {
   const address = server.address();
   const port = typeof address === 'object' && address !== null ? address.port : 0;
   const yml = /^\/withlo\/lo\/releases\/download\/v([^/]+)\/latest[^/]*\.yml$/.exec(path);
+  const zip = /^\/withlo\/lo\/releases\/download\/v([^/]+)\/Lo-\1-([a-z0-9]+)-mac\.zip$/.exec(path);
   if (path === FEED) {
     response.end(atom(port));
   } else if (path === LATEST && latestRelease) {
@@ -117,6 +128,8 @@ function answer(path: string, response: ServerResponse): void {
     response.end(JSON.stringify({ tag_name: `v${latestRelease}` }));
   } else if (yml?.[1] !== undefined && releases.includes(yml[1])) {
     response.end(latest(yml[1]));
+  } else if (zip?.[1] !== undefined && releases.includes(zip[1]) && zips.includes(zip[2] ?? '')) {
+    response.end(SERVED_ZIP);
   } else {
     response.statusCode = 404;
     response.end();
@@ -124,8 +137,9 @@ function answer(path: string, response: ServerResponse): void {
 }
 
 /**
- * Where electron-updater's updater for a Mac finds Electron, which it requires as it's made, for
- * Squirrel.Mac's updater: here, a stand-in, put in Node's module cache where it looks.
+ * Where electron-updater finds Electron, which its updater for a Mac requires as it's made, for
+ * Squirrel.Mac's updater, and its requests require as they're sent, for Electron's `net`: here, a
+ * stand-in, put in Node's module cache where it looks, which sends each request over Node's HTTP.
  */
 const fromUpdater = createRequire(createRequire(import.meta.url).resolve('electron-updater'));
 const electron = fromUpdater.resolve('electron');
@@ -134,7 +148,11 @@ beforeAll(() => {
   const standIn = new Module(electron);
   standIn.filename = electron;
   standIn.loaded = true;
-  standIn.exports = { autoUpdater: new EventEmitter() };
+  standIn.exports = {
+    autoUpdater: new EventEmitter(),
+    net: { request: (options: RequestOptions) => request(options) },
+    session: { fromPartition: () => ({}) },
+  };
   fromUpdater.cache[electron] = standIn;
 });
 
@@ -146,6 +164,7 @@ beforeEach(async () => {
   asked = [];
   releases = ['0.2.0'];
   latestRelease = '0.2.0';
+  zips = ['arm64'];
   held = new Map();
   folder = mkdtempSync(join(tmpdir(), 'lo-updater-'));
   server = createServer((incoming, response) => {
@@ -215,38 +234,23 @@ function appAt(version: string) {
   };
 }
 
-/** `updater`, sending its requests over Node's HTTP. */
-function overNode<U extends LoUpdater>(updater: U): U {
-  // What sends its requests, which electron-updater's types leave out: Lo's, made for Electron.
-  const executor: unknown = Reflect.get(updater, 'httpExecutor');
-  if (!(executor instanceof ElectronHttpExecutor)) {
-    throw new Error('electron-updater sends its requests some other way.');
-  }
-  const send = executor.request.bind(executor);
-  Object.assign(executor, {
-    // Over Node's HTTP, in place of Electron's `net`.
-    createRequest: (options: RequestOptions, answered: (response: IncomingMessage) => void) =>
-      request(options, answered),
-    // As Lo sends them, followed until they settle.
-    request(...sent: Parameters<typeof send>): Promise<string | null> {
-      const sending = send(...sent);
-      pending.add(sending);
-      const done = () => pending.delete(sending);
-      sending.then(done, done);
-      return sending;
-    },
-  });
+/**
+ * `updater`, with what electron-updater makes to send its requests under Electron, which its types
+ * leave out: given an app of its own, as here, electron-updater makes none.
+ */
+function asUnderElectron<U extends LoUpdater>(updater: U): U {
+  Object.assign(updater, { httpExecutor: new ElectronHttpExecutor() });
   return updater;
 }
 
 /** The updater a copy of Lo that doesn't install updates itself uses, at `version`. */
 function checkingUpdater(version = '0.1.0'): CheckingUpdater {
-  return overNode(new CheckingUpdater(appAt(version)));
+  return asUnderElectron(new CheckingUpdater(appAt(version)));
 }
 
 /** The updater a copy of Lo that installs updates itself uses, at `version`. */
 function installingUpdater(version = '0.1.0'): InstallingUpdater {
-  return overNode(new InstallingUpdater(appAt(version)));
+  return asUnderElectron(new InstallingUpdater(appAt(version)));
 }
 
 /** Each of Lo's updaters, by name, at `version`. */
@@ -262,6 +266,20 @@ function configured<U extends LoUpdater>(
   log: (line: string) => void = () => {},
 ): U {
   configure(updater, { feed, installs, log });
+  // Each request it sends, as the provider sends it, followed until it settles.
+  const executor: unknown = Reflect.get(updater, 'httpExecutor');
+  if (!(executor instanceof ElectronHttpExecutor))
+    throw new Error('electron-updater sends nothing.');
+  const send = executor.request.bind(executor);
+  Object.assign(executor, {
+    request(...sent: Parameters<typeof send>): Promise<string | null> {
+      const sending = send(...sent);
+      pending.add(sending);
+      const done = () => pending.delete(sending);
+      sending.then(done, done);
+      return sending;
+    },
+  });
   return updater;
 }
 
@@ -424,6 +442,28 @@ describe('a check Lo gives up on', () => {
     }
   });
 
+  it('fails at once all the same where Lo leaves electron-updater’s requests be', async () => {
+    // What a later electron-updater might send its requests with: not the executor Lo knows.
+    const theirs = new (class extends ElectronHttpExecutor {})();
+    const lines: string[] = [];
+    const updater = configured(
+      Object.assign(checkingUpdater(), { httpExecutor: theirs }),
+      false,
+      (line) => lines.push(line),
+    );
+    expect(Reflect.get(updater, 'httpExecutor')).toBe(theirs);
+    expect(lines).toContainEqual(expect.stringContaining('so Lo leaves them be'));
+    const feedHeld = hold(FEED);
+    const giveUp = new AbortController();
+    const first = updater.checkUntil(giveUp.signal);
+    await feedHeld.arrived;
+    giveUp.abort(new Error('Lo gave up.'));
+    await expect(first).rejects.toThrow('Lo gave up.');
+    // Its request isn't cancelled, so the feed's answer ends it.
+    feedHeld.answer();
+    await quiet();
+  });
+
   it('asks the feed nothing once given up on, though electron-updater goes on to read it', async () => {
     const giveUp = new AbortController();
     giveUp.abort(new Error('Lo gave up.'));
@@ -484,6 +524,21 @@ describe('a check Lo gives up on', () => {
 });
 
 describe('downloading where Lo installs updates itself', () => {
+  it('refuses a zip whose SHA-512 isn’t the one its release gives', async () => {
+    // A zip for each Mac, so this one finds its own.
+    zips = ['arm64', 'x64'];
+    // As a release of Lo carries it, naming the folder its downloads go in.
+    writeFileSync(join(folder, 'app-update.yml'), 'updaterCacheDirName: lo-updater\n');
+    const updater = configured(installingUpdater(), true);
+    await updater.checkUntil(never);
+    await expect(updater.downloadUpdate()).rejects.toMatchObject({
+      code: 'ERR_CHECKSUM_MISMATCH',
+    });
+    expect(asked.map(({ path }) => path)).toContainEqual(
+      expect.stringMatching(/\/download\/v0\.2\.0\/Lo-0\.2\.0-(?:arm64|x64)-mac\.zip$/),
+    );
+  });
+
   it('runs the system’s own sysctl and uname to choose the zip, whatever PATH holds', async () => {
     // A `sysctl` and an `uname` that say "ARM", as ones planted to pick the other zip would.
     const planted = mkdtempSync(join(tmpdir(), 'lo-path-'));

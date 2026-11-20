@@ -197,12 +197,25 @@ class Requests extends ElectronHttpExecutor {
 
 /**
  * Has `updater` send its requests through {@link Requests}, for `checks`, in place of the ones
- * electron-updater made for it. Like those, they pass a proxy's request for credentials on as the
- * updater's `login` event. They're its `httpExecutor`, which electron-updater's types leave out,
- * and which it hands the provider that reads the feed when Lo sets the feed, as {@link configure}
- * does after this.
+ * electron-updater made for it, Electron's own. Like those, they pass a proxy's request for
+ * credentials on as the updater's `login` event. They're its `httpExecutor`, which
+ * electron-updater's types leave out, and which it hands the provider that reads the feed when Lo
+ * sets the feed. When it holds anything but electron-updater's executor for Electron itself, as a
+ * later electron-updater might, Lo leaves it be and says so in `log`: a check Lo gives up on then
+ * still fails at once, but its request may stay open.
  */
-function sendThrough(updater: AppUpdater, checks: Checks): void {
+function sendThrough(updater: AppUpdater, checks: Checks, log: (line: string) => void): void {
+  const made: unknown = Reflect.get(updater, 'httpExecutor');
+  if (
+    typeof made !== 'object' ||
+    made === null ||
+    Object.getPrototypeOf(made) !== ElectronHttpExecutor.prototype
+  ) {
+    log(
+      "electron-updater doesn't send its requests as Lo knows it to, so Lo leaves them be: a check Lo gives up on may leave its request open",
+    );
+    return;
+  }
   const requests = new Requests(checks, (info, callback) => updater.emit('login', info, callback));
   Object.assign(updater, { httpExecutor: requests });
 }
@@ -214,7 +227,11 @@ export class CheckingUpdater extends AppUpdater {
   constructor(app?: AppAdapter) {
     super(null, app);
     this.stagingUserIdPromise.value = Promise.resolve(NO_ID);
-    sendThrough(this, this.#checks);
+  }
+
+  /** Sends electron-updater's requests through this updater's checks, as {@link sendThrough} says. */
+  takeRequests(log: (line: string) => void): void {
+    sendThrough(this, this.#checks, log);
   }
 
   /** electron-updater's check, until `signal` gives up on it. */
@@ -242,7 +259,11 @@ export class InstallingUpdater extends MacUpdater {
   constructor(app?: AppAdapter) {
     super(undefined, app);
     this.stagingUserIdPromise.value = Promise.resolve(NO_ID);
-    sendThrough(this, this.#checks);
+  }
+
+  /** Sends electron-updater's requests through this updater's checks, as {@link sendThrough} says. */
+  takeRequests(log: (line: string) => void): void {
+    sendThrough(this, this.#checks, log);
   }
 
   /** electron-updater's check, until `signal` gives up on it. */
@@ -284,12 +305,13 @@ export type LoUpdater = CheckingUpdater | InstallingUpdater;
 
 /**
  * Sets `updater` up as Lo uses it, to check `feed`: it downloads only when asked to, never offers
- * an older version, reads only the newest release's notes, logs to `log`, and, where Lo installs
- * updates itself (`installs`), installs a downloaded update as Lo quits. A feed on this machine is
- * checked from a build run from source, which electron-updater otherwise leaves alone.
+ * an older version, reads only the newest release's notes, logs to `log`, cancels the requests of a
+ * check Lo gives up on, and, where Lo installs updates itself (`installs`), installs a downloaded
+ * update as Lo quits. A feed on this machine is checked from a build run from source, which
+ * electron-updater otherwise leaves alone.
  */
 export function configure(
-  updater: AppUpdater,
+  updater: LoUpdater,
   options: { feed: Feed; installs: boolean; log: (line: string) => void },
 ): void {
   updater.logger = updaterLogger(options.log);
@@ -298,6 +320,8 @@ export function configure(
   updater.allowDowngrade = false;
   updater.fullChangelog = false;
   updater.forceDevUpdateConfig = options.feed.host !== undefined;
+  // Before the feed is set, which hands what sends the requests to the provider that reads it.
+  updater.takeRequests(options.log);
   updater.setFeedURL({ ...options.feed });
 }
 
