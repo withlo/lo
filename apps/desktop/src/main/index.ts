@@ -8,7 +8,7 @@ import { app, type BrowserWindow, dialog, session, type Session } from 'electron
 import { refusedArguments, refusedEnvironment } from './arguments.ts';
 import { startBackground, type Background } from './background.ts';
 import { openDatabase, type Database } from './database.ts';
-import { appName, backgroundSettings, dataFolder, devServer } from './environment.ts';
+import { appName, backgroundSettings, dataFolder, devServer, settingsFile } from './environment.ts';
 import { loadFeatures, type Feature } from './features.ts';
 import {
   cacheFolder,
@@ -20,6 +20,7 @@ import {
   oldDataCache,
   onceUp,
 } from './git.ts';
+import { hardwareAcceleration, settingsText } from './gpu.ts';
 import { serveFeatures } from './ipc.ts';
 import { incomingLinks, linksIn } from './links.ts';
 import { migrate } from './migrations.ts';
@@ -67,6 +68,7 @@ if (refusedVariables.length > 0) {
   );
   app.exit(1);
 }
+const refusing = refused.length > 0 || refusedVariables.length > 0;
 
 // Everything up to the lock runs before `ready`, as Electron requires.
 app.enableSandbox();
@@ -92,9 +94,16 @@ const placing = {
   env,
 };
 
+// With `app.gpu` off in the settings file, Lo draws without hardware acceleration: what
+// `--disable-gpu` does, which a packaged Lo refuses. Electron takes it only before `ready`, so main
+// reads that one setting itself, and a change applies at the next start.
+if (!refusing) {
+  const settings = settingsFile({ ...placing, appData: app.getPath('appData') });
+  if (!hardwareAcceleration(settingsText(settings))) app.disableHardwareAcceleration();
+}
+
 // One Lo per data folder. A second launch hands its command line over to the first and quits; one
 // that refused its command line, and is quitting, hands over nothing.
-const refusing = refused.length > 0 || refusedVariables.length > 0;
 if (!refusing) {
   if (app.requestSingleInstanceLock()) {
     // Links it was started with, as the `lo` command starts it, open once the features are up.

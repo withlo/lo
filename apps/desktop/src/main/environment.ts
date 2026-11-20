@@ -66,6 +66,14 @@ export function configFolder(options: {
 }
 
 /**
+ * The settings file: `settings.json` in the folder {@link configFolder} names. Main reads one
+ * setting from it before `ready` (`main/gpu.ts`), and the settings feature the rest.
+ */
+export function settingsFile(options: Parameters<typeof configFolder>[0]): string {
+  return join(configFolder(options), 'settings.json');
+}
+
+/**
  * The address of Vite's dev server, which `electron-vite dev` passes in `ELECTRON_RENDERER_URL`.
  * Only an unpackaged build reads it, and only a server on this machine counts, so a packaged Lo
  * always loads its own files.

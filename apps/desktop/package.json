@@ -15,6 +15,7 @@
     "live": "playwright test --config e2e/live.config.ts",
     "package": "electron-builder --config build/electron-builder.yml --mac",
     "release": "electron-builder --config build/release.yml --mac --publish never",
+    "release:linux": "electron-builder --config build/release.yml --linux --publish never",
     "start": "electron .",
     "test": "vitest run --root ../.. --project @lo/desktop"
   },
@@ -98,6 +99,12 @@
         "cache": false
       },
       "release": {
+        "dependsOn": [
+          "build"
+        ],
+        "cache": false
+      },
+      "release:linux": {
         "dependsOn": [
           "build"
         ],

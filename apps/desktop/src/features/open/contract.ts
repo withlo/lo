@@ -115,7 +115,8 @@ export type RecentPull = z.output<typeof recentPull>;
 
 /**
  * Where the `lo` command is: each copy Lo wrote that's on this computer, and whether it's this
- * Lo's, which a newer or moved Lo writes again.
+ * Lo's, which a newer or moved Lo writes again; and first, on Linux, the one Lo's package installed,
+ * while it leads to this Lo.
  */
 export const commandState = z.strictObject({
   installed: z.array(z.strictObject({ path: z.string(), current: z.boolean() })),
@@ -156,7 +157,8 @@ export const contract = defineContract('open', {
     command: { input: z.undefined(), reply: reply<CommandState>() },
     /**
      * Installs the `lo` command: on macOS in `/usr/local/bin` once the system's prompt for an
-     * administrator allows it, or in `~/.local/bin` when it doesn't; on Linux in `~/.local/bin`.
+     * administrator allows it, or in `~/.local/bin` when it doesn't; on Linux in `~/.local/bin`,
+     * unless Lo's package installed `/usr/bin/lo` and it leads to Lo, which is the command then.
      */
     installCommand: { input: z.undefined(), reply: reply<Installed>() },
   },

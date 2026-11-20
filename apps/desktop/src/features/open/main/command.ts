@@ -3,14 +3,25 @@
 // takes it from the new one, which quits. Elsewhere it runs Lo's program with the link. Either way
 // the link is passed as one argument and nothing else, and an argument that isn't a `lo://`,
 // `https://` or `http://` link, which Lo would refuse or read as a switch, is refused before
-// anything runs. Nothing here calls Electron.
+// anything runs. Lo's Linux packages install a `lo` of their own, a link to Lo's program, which
+// counts as the command installed while it leads there. Nothing here calls Electron.
 
 import { execFile } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { constants } from 'node:fs';
-import { access, chmod, mkdir, mkdtemp, readFile, rename, rm, writeFile } from 'node:fs/promises';
+import {
+  access,
+  chmod,
+  mkdir,
+  mkdtemp,
+  readFile,
+  realpath,
+  rename,
+  rm,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { delimiter, join } from 'node:path';
+import { delimiter, dirname, join } from 'node:path';
 
 import type { CommandState, Installed } from '../contract.ts';
 
@@ -19,6 +30,12 @@ export const BUNDLE_ID = 'com.scornz.lo';
 
 /** The command's name. */
 export const COMMAND = 'lo';
+
+/**
+ * The `lo` Lo's deb and rpm install: a link, made as they install, to Lo's program in
+ * `/opt/Lo/lo`.
+ */
+export const PACKAGE_COMMAND = '/usr/bin/lo';
 
 /** The line every `lo` Lo writes starts with, after the shebang, so Lo knows its own. */
 export const MARK =
@@ -113,11 +130,36 @@ export interface Folders {
   readonly system?: string | undefined;
   /** `~/.local/bin`. */
   readonly user: string;
+  /**
+   * A packaged Lo on Linux: the `lo` its package installed ({@link PACKAGE_COMMAND}), and Lo's own
+   * program, which the link counts as the command for while it leads there.
+   */
+  readonly packaged?: { readonly link: string; readonly program: string } | undefined;
 }
 
-/** Each `lo` Lo wrote in `folders`, and whether it's `script`. */
+/**
+ * The `lo` a Linux package installed, when it leads to Lo's own program, through however many
+ * links (`update-alternatives` makes two): nothing when it's missing, or leads anywhere else.
+ */
+async function packageCommand(folders: Folders): Promise<string | undefined> {
+  if (folders.packaged === undefined) return undefined;
+  const { link, program } = folders.packaged;
+  try {
+    const [found, own] = await Promise.all([realpath(link), realpath(program)]);
+    return found === own ? link : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Each `lo` Lo wrote in `folders`, and whether it's `script`; and first, the `lo` a Linux package
+ * installed, while it leads to Lo, which always counts as current.
+ */
 export async function findCommand(folders: Folders, script: string): Promise<CommandState> {
   const installed: CommandState['installed'] = [];
+  const packaged = await packageCommand(folders);
+  if (packaged !== undefined) installed.push({ path: packaged, current: true });
   for (const folder of [folders.system, folders.user]) {
     if (folder === undefined) continue;
     const path = join(folder, COMMAND);
@@ -149,10 +191,15 @@ export interface InstallOptions {
 /**
  * Installs `lo`: in the system's folder, writing it there if Lo may and asking for an administrator
  * if not, and in the person's own folder when that isn't allowed or there's no system's folder. A
- * `lo` that Lo didn't write is never replaced.
+ * `lo` that Lo didn't write is never replaced. Where Lo's Linux package installed a `lo` that leads
+ * to it, that's the command, and nothing is written.
  */
 export async function installCommand(options: InstallOptions): Promise<Installed> {
   const { folders, script, elevate, log = () => undefined } = options;
+  const packaged = await packageCommand(folders);
+  if (packaged !== undefined) {
+    return { kind: 'installed', path: packaged, onPath: onPath(dirname(packaged), options.path) };
+  }
   for (const folder of [folders.system, folders.user]) {
     if (folder === undefined) continue;
     const path = join(folder, COMMAND);
@@ -189,8 +236,12 @@ export async function installCommand(options: InstallOptions): Promise<Installed
   } catch (error) {
     return { kind: 'failed', message: `Lo couldn't write ${path}: ${describe(error)}` };
   }
-  const onPath = options.path?.split(delimiter).includes(user) ?? false;
-  return { kind: 'installed', path, onPath };
+  return { kind: 'installed', path, onPath: onPath(user, options.path) };
+}
+
+/** Whether the shell searches `folder` for commands, as `path`, the `PATH`, says, if Lo knows it. */
+function onPath(folder: string, path: string | undefined): boolean {
+  return path?.split(delimiter).includes(folder) ?? false;
 }
 
 /** Whether this user may write in `folder`, which exists. */

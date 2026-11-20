@@ -61,6 +61,11 @@ list.
 | `code.trusted`    | a list of trusted repos and PRs        | `[]`         | The repos, and pull requests from forks, that language servers may run on, as below.                                                             |
 | `overview.open`   | overview or diff                       | `"overview"` | What a pull request opens on when it has an overview Lo can show: the overview, or the diff. Without one, it always opens on the diff.           |
 | `updates.check`   | true or false                          | `true`       | Whether Lo checks GitHub Releases for a newer version by itself: 30 s after it starts, then every 6 hours. Off, it checks only when you ask.     |
+| `app.gpu`         | true or false                          | `true`       | Whether Lo draws with the graphics card. Off, it draws with the processor alone, for a window that stays blank. It applies at the next start.    |
+
+`app.gpu` is only in the file, since a window that draws nothing couldn't reach it in Settings. Lo
+reads it as it starts, before it draws anything, so a change applies the next time Lo starts. It
+does what Chromium's `--disable-gpu` does, since an installed Lo takes no command-line switches.
 
 ## Trusted repos and pull requests
 

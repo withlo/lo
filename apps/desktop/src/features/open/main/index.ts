@@ -27,6 +27,7 @@ import {
   elevateOnMac,
   findCommand,
   installCommand,
+  PACKAGE_COMMAND,
   type Folders,
   type Launch,
 } from './command.ts';
@@ -59,13 +60,16 @@ function linkOptions(context: FeatureContext<typeof contract>, fromOutside: bool
 
 /**
  * Where `lo` goes: `LO_COMMAND_FOLDER` in a build run from source when it's set; otherwise
- * `/usr/local/bin` on macOS, or `~/.local/bin` when that can't be, and `~/.local/bin` on Linux.
+ * `/usr/local/bin` on macOS, or `~/.local/bin` when that can't be, and `~/.local/bin` on Linux,
+ * where a packaged Lo's own package installed `/usr/bin/lo`, which counts while it leads to Lo.
  */
 function folders(): Folders {
   const chosen = commandFolder({ packaged: app.isPackaged, env: process.env });
   if (chosen !== undefined) return { user: chosen };
   const user = join(app.getPath('home'), '.local', 'bin');
-  return process.platform === 'darwin' ? { system: '/usr/local/bin', user } : { user };
+  if (process.platform === 'darwin') return { system: '/usr/local/bin', user };
+  if (!app.isPackaged) return { user };
+  return { user, packaged: { link: PACKAGE_COMMAND, program: process.execPath } };
 }
 
 /**

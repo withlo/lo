@@ -8,6 +8,7 @@ import {
   realpathSync,
   rmSync,
   statSync,
+  symlinkSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -22,6 +23,7 @@ import {
   installCommand,
   isOurs,
   MARK,
+  PACKAGE_COMMAND,
   shellQuote,
   type Elevated,
 } from './command.ts';
@@ -325,5 +327,76 @@ describe('installing the lo command', () => {
     expect(await findCommand(folders, script)).toEqual({
       installed: [{ path: join(folders.user, 'lo'), current: false }],
     });
+  });
+});
+
+/**
+ * Lo's program as a Linux package installs it in `at`, and a link to it through another, as
+ * `update-alternatives` makes `/usr/bin/lo`.
+ */
+function packaged(at: string): { link: string; program: string } {
+  const program = join(at, 'opt', 'Lo', 'lo');
+  mkdirSync(join(at, 'opt', 'Lo'), { recursive: true });
+  writeFileSync(program, '#!/bin/sh\n');
+  chmodSync(program, 0o755);
+  mkdirSync(join(at, 'alternatives'));
+  symlinkSync(program, join(at, 'alternatives', 'lo'));
+  mkdirSync(join(at, 'bin'));
+  const link = join(at, 'bin', 'lo');
+  symlinkSync(join(at, 'alternatives', 'lo'), link);
+  return { link, program };
+}
+
+describe('the lo a Linux package installed', () => {
+  const script = commandScript({ kind: 'program', program: '/opt/Lo/lo', args: [] });
+
+  it('is /usr/bin/lo', () => {
+    expect(PACKAGE_COMMAND).toBe('/usr/bin/lo');
+  });
+
+  it('counts as the command, first and current, while it leads to Lo’s program', async () => {
+    const at = folder();
+    const folders = { user: join(at, 'home', '.local', 'bin'), packaged: packaged(at) };
+    expect(await findCommand(folders, script)).toEqual({
+      installed: [{ path: folders.packaged.link, current: true }],
+    });
+    // One Lo wrote too is listed after it.
+    await installCommand({ folders: { user: folders.user }, script });
+    expect(await findCommand(folders, script)).toEqual({
+      installed: [
+        { path: folders.packaged.link, current: true },
+        { path: join(folders.user, 'lo'), current: true },
+      ],
+    });
+  });
+
+  it('makes installing write nothing, and say where the command is', async () => {
+    const at = folder();
+    const folders = { user: join(at, 'home', '.local', 'bin'), packaged: packaged(at) };
+    const bin = join(at, 'bin');
+    expect(await installCommand({ folders, script, path: `${bin}:/usr/bin` })).toEqual({
+      kind: 'installed',
+      path: folders.packaged.link,
+      onPath: true,
+    });
+    expect(existsSync(folders.user)).toBe(false);
+  });
+
+  it('doesn’t count when it leads elsewhere, or nowhere', async () => {
+    const at = folder();
+    const folders = { user: join(at, 'home', '.local', 'bin'), packaged: packaged(at) };
+    const other = join(at, 'other');
+    writeFileSync(other, '#!/bin/sh\n');
+    const elsewhere = { ...folders, packaged: { ...folders.packaged, program: other } };
+    expect(await findCommand(elsewhere, script)).toEqual({ installed: [] });
+    rmSync(folders.packaged.program);
+    expect(await findCommand(folders, script)).toEqual({ installed: [] });
+    // Then installing writes Lo's own, as anywhere else.
+    expect(await installCommand({ folders, script })).toEqual({
+      kind: 'installed',
+      path: join(folders.user, 'lo'),
+      onPath: false,
+    });
+    expect(readFileSync(join(folders.user, 'lo'), 'utf8')).toBe(script);
   });
 });

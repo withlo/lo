@@ -2,12 +2,10 @@
 // two settings this feature applies itself: the theme, and how much room the local copies may
 // take.
 
-import { join } from 'node:path';
-
 import { app, nativeTheme } from 'electron';
 
 import { launch, query } from '../../../main/editor.ts';
-import { configFolder, keymapEditor } from '../../../main/environment.ts';
+import { keymapEditor, settingsFile } from '../../../main/environment.ts';
 import { defineFeature } from '../../../main/features.ts';
 import { provides } from '../../../main/services.ts';
 import { IpcError } from '../../../ipc/contract.ts';
@@ -22,16 +20,13 @@ import { createSettings, type Settings } from './store.ts';
 
 /** The settings file's path, in the folder Lo keeps the files people edit in. */
 function settingsPath(): string {
-  return join(
-    configFolder({
-      packaged: app.isPackaged,
-      platform: process.platform,
-      home: app.getPath('home'),
-      appData: app.getPath('appData'),
-      env: process.env,
-    }),
-    'settings.json',
-  );
+  return settingsFile({
+    packaged: app.isPackaged,
+    platform: process.platform,
+    home: app.getPath('home'),
+    appData: app.getPath('appData'),
+    env: process.env,
+  });
 }
 
 let kept: Settings | undefined;
