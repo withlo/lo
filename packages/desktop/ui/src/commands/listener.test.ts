@@ -58,6 +58,7 @@ beforeEach(() => {
     <div data-lo-scope="palette"><input id="query"></div>
     <div data-lo-scope="overview"><div id="block" tabindex="0"></div></div>
     <input id="loose"><button id="plain">Plain</button>
+    <main id="middle" data-lo-middle tabindex="-1"></main>
   `;
   ran = [];
   log = [];
@@ -426,6 +427,72 @@ describe('a sequence started with focus nowhere in particular', () => {
     }
     press('editor', 'q');
     expect(ids()).toEqual([]);
+  });
+
+  test('is dropped by a click with no pointer press, as VoiceOver and Voice Control send', () => {
+    widget('editor');
+    // A button that shows the diff, as a file in the tree does.
+    element('plain').addEventListener('click', () => element('editor').focus());
+    pressNowhere('g');
+    element('plain').click();
+    expect(document.activeElement).toBe(element('editor'));
+    expect(registry.isPending()).toBe(false);
+    press('editor', 'q');
+    expect(ids()).toEqual([]);
+    expect(log).toEqual(['editor q']);
+    // The press alone, and a right-click menu asked for without the pointer.
+    for (const type of ['mousedown', 'contextmenu']) {
+      pressNowhere('g');
+      element('plain').dispatchEvent(new MouseEvent(type, { bubbles: true }));
+      expect(registry.isPending()).toBe(false);
+    }
+  });
+
+  test('counts a key typed on the middle of the window, which a view that draws takes focus from', () => {
+    press('middle', 'g');
+    element('editor').focus();
+    press('editor', 'q');
+    expect(ids()).toEqual(['queue.show']);
+  });
+
+  test('doesn’t count a key typed on a control: it was typed there, and focus leaving drops it', () => {
+    widget('editor');
+    expect(press('plain', 'g').defaultPrevented).toBe(true);
+    element('editor').focus();
+    expect(registry.isPending()).toBe(false);
+    expect(press('editor', 'q').defaultPrevented).toBe(false);
+    expect(ids()).toEqual([]);
+    expect(log).toEqual(['editor q']);
+  });
+
+  test('goes to Vim before the next key when that key doesn’t go on with it, as `g g` does', () => {
+    widget('editor');
+    pressNowhere('g');
+    element('editor').focus();
+    expect(press('editor', 'g').defaultPrevented).toBe(false);
+    expect(registry.isPending()).toBe(false);
+    // Vim gets `g`, then `g`, as if both were typed there: it goes to the top.
+    expect(log).toEqual(['passKeys g', 'editor g']);
+    expect(ids()).toEqual([]);
+  });
+
+  test('isn’t handed to Vim once its wait has run out', () => {
+    let time = 0;
+    stop();
+    registry = new Registry({
+      system: 'mac',
+      commands: testCommands(ran, [queue]),
+      now: () => time,
+    });
+    stop = listen(window, registry);
+    widget('editor');
+    pressNowhere('g');
+    element('editor').focus();
+    // The next key comes a second later, before the wait's timer has gone off.
+    time += 1000;
+    expect(press('editor', 'g').defaultPrevented).toBe(true);
+    expect(log).toEqual([]);
+    expect(registry.heldKeys()).toBe('g');
   });
 });
 

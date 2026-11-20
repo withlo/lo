@@ -2,11 +2,12 @@
 // key before widgets and CodeMirror and hands it to the registry, telling the element it's for once
 // it's the reader's input, and the `Tab` backstop. A focus change and the window's blur clear the
 // code view focus left and drop the pending sequence, but for one typed with focus nowhere in
-// particular that goes on where Lo moved focus; a pointer down drops the pending sequence.
+// particular that goes on where Lo moved focus; a press or a click, with the pointer or without,
+// drops the pending sequence.
 
 import { contradicts, eventStrokes, type KeyEventLike, type Layout } from './notation.ts';
 import type { Registry } from './registry.ts';
-import { endsTab, findScope, textKind } from './scopes.ts';
+import { endsTab, findScope, isNowhere, textKind } from './scopes.ts';
 
 type Win = Window & typeof globalThis;
 
@@ -17,7 +18,7 @@ type Win = Window & typeof globalThis;
  * and that starts none, sends it at once, before the command it runs. While one is pending, no key
  * does, whether it goes on with the sequence, repeats as it's held, is a modifier alone or is
  * composed by the system's input method, until the sequence ends: run, broken by another key, or
- * dropped, as by a pointer down, a focus change, a command from the app menu or the wait running
+ * dropped, as by a press or a click, a focus change, a command from the app menu or the wait running
  * out. Then it's sent once, before the command the sequence completes runs. So nothing that waits
  * for the reader's next input comes between the keys of a sequence, for its command to act on. A
  * command chosen in the app menu, which makes no event in the page either, is sent the same way.
@@ -95,7 +96,7 @@ export function listen(win: Win, registry: Registry): () => void {
     const reading = { system: registry.system, layout };
     const handled = registry.handle(
       { strokes: eventStrokes(event, reading), repeat: event.repeat, composing: composing(event) },
-      { scope, text: textKind(element) },
+      { scope, text: textKind(element), nowhere: isNowhere(element) },
       () =>
         (element ?? win.document.body).dispatchEvent(new win.Event(KEY_EVENT, { bubbles: true })),
     );
@@ -156,17 +157,23 @@ export function listen(win: Win, registry: Registry): () => void {
     registry.leave(findScope(win.document.activeElement).source);
   };
 
-  const onPointer = () => {
+  // The reader pressing, clicking or asking for a right-click menu, with the pointer or without:
+  // VoiceOver's and Voice Control's presses make a mouse down and a click but no pointer down, and
+  // VoiceOver's menu key makes a right-click menu alone. Wherever the press moves focus, the held
+  // keys are gone before the next key. Focus VoiceOver moves by itself reaches the page as a move
+  // like Lo's own, so it can't be told apart.
+  const onPress = () => {
     tab = undefined;
     registry.drop();
   };
+  const presses = ['pointerdown', 'mousedown', 'click', 'contextmenu'] as const;
 
   const capture = { capture: true } as const;
   win.addEventListener('keydown', onKey, capture);
   win.addEventListener('keydown', backstop);
   win.addEventListener('focusin', onFocusIn, capture);
   win.addEventListener('focusout', onFocusOut, capture);
-  win.addEventListener('pointerdown', onPointer, capture);
+  for (const type of presses) win.addEventListener(type, onPress, capture);
   win.addEventListener('blur', onBlur, capture);
   // The keyboard's layout, read again whenever the window comes back, in case it changed.
   win.addEventListener('focus', readLayout);
@@ -177,7 +184,7 @@ export function listen(win: Win, registry: Registry): () => void {
     win.removeEventListener('keydown', backstop);
     win.removeEventListener('focusin', onFocusIn, capture);
     win.removeEventListener('focusout', onFocusOut, capture);
-    win.removeEventListener('pointerdown', onPointer, capture);
+    for (const type of presses) win.removeEventListener(type, onPress, capture);
     win.removeEventListener('blur', onBlur, capture);
     win.removeEventListener('focus', readLayout);
   };

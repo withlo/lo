@@ -135,6 +135,18 @@ export function textKind(element: Element | null | undefined): TextKind | undefi
     : undefined;
 }
 
+/**
+ * Whether focus on `element` is nowhere in particular: on nothing, on the page itself, or on the
+ * middle of the window (`data-lo-middle`) while it waits for a view. A view that draws takes focus
+ * from there by itself, so keys typed there go on in it. Focus on a control, a button say, is
+ * somewhere: a key typed there was typed there.
+ */
+export function isNowhere(element: Element | null | undefined): boolean {
+  if (!element) return true;
+  const { body, documentElement } = element.ownerDocument;
+  return element === body || element === documentElement || element.hasAttribute('data-lo-middle');
+}
+
 /** Whether `element` takes typed text: an input, a text area or editable content. */
 export function isTextField(element: Element | null | undefined): boolean {
   return textKind(element) !== undefined;
