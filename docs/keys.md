@@ -328,6 +328,10 @@ in normal mode, `Esc` closes the box and keeps the draft. In the box's preview, 
 | Restart to update                 | None: in the app menu on macOS and the palette           | Anywhere                                                                               | `updates.restart`       |
 | Move Lo to Applications           | None: in the app menu on macOS and the palette           | Anywhere                                                                               | `updates.move`          |
 | Hide the update until Lo restarts | None: in the app menu on macOS and the palette           | Anywhere                                                                               | `updates.later`         |
+| Open what’s new in the update     | None: in the app menu on macOS and the palette           | Anywhere                                                                               | `updates.whatsNew`      |
+| Download the update from its page | None: in the app menu on macOS and the palette           | Anywhere                                                                               | `updates.download`      |
+| Copy the Homebrew update command  | None: in the app menu on macOS and the palette           | Anywhere                                                                               | `updates.copy`          |
+| Go to the update                  | None: in the app menu on macOS and the palette           | Anywhere                                                                               | `updates.focus`         |
 
 ## Where keys apply
 
@@ -357,6 +361,7 @@ comment box and another elsewhere.
 | `stack`      | Named by `stacks`.                                                                    |
 | `timeline`   | Named by `timeline`.                                                                  |
 | `tree`       | Named by `tree`.                                                                      |
+| `toasts`     | Named by `updates`.                                                                   |
 | `welcome`    | Named by `welcome`.                                                                   |
 
 In a code view, keys follow Vim's mode. In insert mode, and while Vim waits for the rest of a

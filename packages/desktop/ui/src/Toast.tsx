@@ -44,12 +44,23 @@ export function Toast({ tone, icon: mark, title, body, actions }: ToastProps) {
 
 /**
  * Where a toast floats, at the bottom right of the window above its status bar. The region is
- * always there and says each toast as it comes, so a screen reader hears it.
+ * always there and says each toast as it comes, so a screen reader hears it. `waiting` is for
+ * toasts that stay until the reader acts on them: they sit below what the region says, in a live
+ * region of their own that isn't atomic, so a screen reader hears each toast as it comes and the
+ * part of it that changes, such as "Copy" turning to "Copied", and not all of it again each time,
+ * nor again each time the note above comes. A `status` region is atomic unless it says it isn't.
  */
-export function ToastRegion({ children }: { children?: ReactNode }) {
+export function ToastRegion({ children, waiting }: { children?: ReactNode; waiting?: ReactNode }) {
   return (
-    <div role="status" aria-atomic="true" className="toast-floating">
-      {children}
+    <div className="toast-floating">
+      <div role="status" aria-atomic="true">
+        {children}
+      </div>
+      {waiting !== undefined && (
+        <div role="status" aria-atomic="false" className="mt-8 flex flex-col gap-8 empty:mt-0">
+          {waiting}
+        </div>
+      )}
     </div>
   );
 }

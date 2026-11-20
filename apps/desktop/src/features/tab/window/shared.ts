@@ -316,6 +316,14 @@ export function runViewOf(id: string, layers: readonly number[]): string | undef
 export const dialogs = defineSlot('tab.dialogs');
 
 /**
+ * Toasts that wait for the reader, in the window's toast region below a note that passes: an update
+ * on offer, say. A view here draws its toast while it has something to say and nothing otherwise.
+ * It never takes focus and stays until it's acted on, so a toast that the reader may leave must say
+ * so itself, with a button for it.
+ */
+export const toasts = defineSlot('tab.toasts');
+
+/**
  * The tabs in the strip and the one on screen, as main sent them, re-rendering when they change: a
  * pull request's tab by its own id, with the layers it has views of.
  */

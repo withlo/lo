@@ -5,9 +5,24 @@ import { commandsOf } from '@lo/ui/commands';
 import { describe, expect, it } from 'vitest';
 
 import keys from '../keys.ts';
-import { aboutOptions, buildOf, COPYRIGHT, FREE_SOFTWARE, howToRead, notice } from './about.ts';
+import {
+  aboutOptions,
+  buildOf,
+  COPYRIGHT,
+  FREE_SOFTWARE,
+  howToRead,
+  notice,
+  shortHash,
+} from './about.ts';
 
 const COMMIT = '0123456789abcdef0123456789abcdef01234567';
+
+describe('shortHash', () => {
+  it('is the first seven digits of a commit, and nothing for none', () => {
+    expect(shortHash(COMMIT)).toBe('0123456');
+    expect(shortHash('')).toBeUndefined();
+  });
+});
 
 describe('buildOf', () => {
   it('is the first seven digits of the commit a packaged Lo was built from', () => {
