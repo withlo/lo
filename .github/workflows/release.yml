@@ -178,10 +178,10 @@ jobs:
         if: always()
         run: rm -f "$RUNNER_TEMP/notary.p8"
 
-      # A dry run's build: no certificate and no notary key, so the release config is signed ad hoc
-      # with the ad hoc entitlements, notarized and signs nothing else. electron-builder signs
-      # nothing in a pull request's run unless CSC_FOR_PULL_REQUEST is set; an ad hoc signature uses
-      # no secret.
+      # A dry run's build: with no certificate or notary key, the app is signed ad hoc with the ad
+      # hoc entitlements, nothing is notarized, and the DMGs are left unsigned. electron-builder
+      # signs nothing in a pull request's run unless CSC_FOR_PULL_REQUEST is set; an ad hoc
+      # signature needs no secret.
       - name: Package ad hoc
         if: github.event_name != 'push'
         working-directory: apps/desktop
