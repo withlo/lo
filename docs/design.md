@@ -44,12 +44,19 @@ talks to GitHub directly and has no backend of its own.
 
 ### Platforms and license
 
-v1 ships for the Mac as a signed, notarized download and a Homebrew cask, with Linux builds
-published as a preview in deb and rpm packages. It skips the Mac App Store, whose rules forbid
-downloading and running code, which language servers need.
+v1 ships for the Mac as a signed, notarized download, a DMG and a zip each for Apple silicon
+(`arm64`) and for Intel (`x64`), and a Homebrew cask, with Linux builds published as a preview in
+deb and rpm packages, each for `x64` and `arm64`. The Linux packages are unsigned and Lo doesn't
+install its own updates there. It skips the Mac App Store, whose rules forbid downloading and
+running code, which language servers need.
 
 The app is open source under GPL-3.0. The overview skill and the artifact format are MIT, so teams
-can copy them into their repos and other tools can read artifacts.
+can copy them into their repos and other tools can read artifacts. Lo shows its license where
+GPL-3.0 asks an interface to: the system's About panel names its copyright, says it has no warranty
+and may be redistributed under the license, and says where the source is. "Show licenses" opens
+`licenses.txt`, which holds Lo's own license and the license of every package and file Lo bundles,
+and says where Electron's and Chromium's are, installed beside it. The build fails on a bundled
+package with no license, or one GPL-3.0 can't carry.
 
 ## 2. Architecture
 
@@ -157,8 +164,33 @@ Linux implementation of each.
 
 ### Updates
 
-Lo checks GitHub Releases and offers to install a newer version. Homebrew installs update through
-Homebrew.
+Lo checks the releases of `withlo/lo` on GitHub, and nothing else: 30 s after its window is up,
+every 6 hours, and whenever it's asked, from Settings, the command palette, the app menu or the
+overview's "Get a newer Lo". The `updates.check` setting turns off the timed checks only. Only a
+packaged Lo that carries an `app-update.yml`, which only a release build writes, checks, so a build
+run from source and a zip made from a branch never do, and no id of the copy goes with a check. Lo
+offers a version only if it's newer than itself, and a release is never offered a prerelease.
+
+The offer is a toast that waits until it's acted on and never takes focus. It shows the first line
+of the release's notes as plain text, and "What's new" opens the release's page, whose address Lo
+builds from the version, never from the feed. How a copy takes a newer version is decided from where
+it runs, as it starts and again for each offer:
+
+- **Lo installs it,** on a Mac, from an Applications folder it can write. Nothing downloads until
+  you press "Install". The release's zip has its SHA-512 checked against `latest-mac.yml`, then goes
+  to Squirrel.Mac, which installs it only if it's signed by the running Lo's team and bundle ID. It
+  installs when Lo quits, or when you press "Restart now", which quits Lo as any quit does, so each
+  feature stops first.
+- **Homebrew updates it,** where Lo is in an Applications folder and Homebrew keeps a `lo` cask
+  (`/opt/homebrew/Caskroom/lo` or `/usr/local/Caskroom/lo` exists). Lo never replaces such a copy,
+  which would leave Homebrew's record of it wrong. The toast gives
+  `brew upgrade --cask withlo/tap/lo`, with a "Copy" button, and "What's new" and "Later".
+- **Lo moves first,** on a Mac, from the disk image, a translocated download or any folder but an
+  Applications one. "Move to Applications" moves it there and starts it from there, asking before it
+  replaces a Lo that's already there.
+- **Lo tells you and links the release page,** on Linux, and on a Mac where Lo can't write its own
+  folder. "Download" opens the page, and you install the new package or app yourself: Lo never runs
+  a package manager.
 
 ### Build order
 

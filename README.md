@@ -22,6 +22,7 @@
   <a href="#principles">Principles</a> ·
   <a href="#features">Features</a> ·
   <a href="#status">Status</a> ·
+  <a href="#install">Install</a> ·
   <a href="#build-from-source">Build</a> ·
   <a href="#usage">Usage</a> ·
   <a href="#contributing">Contributing</a> ·
@@ -79,9 +80,71 @@ Lo keeps to these rules. [`docs/design.md`](docs/design.md) has the detail.
 
 Lo is in early development and isn't released yet. To try it,
 [build it from source](#build-from-source), and expect missing pieces and things that change. It's
-made for the Mac first, and Linux builds will come as a preview.
+made for the Mac first, and Linux builds will come as a preview. [Install](#install) says where its
+builds are published and what they hold.
 
 [`docs/design.md`](docs/design.md) describes everything Lo is meant to do, and how it's built.
+
+## Install
+
+Lo's releases are published on [GitHub Releases](https://github.com/withlo/lo/releases), and each
+holds Lo for the Mac and for Linux. Download the file that matches your computer; `<version>` is the
+release's, such as `0.1.0`.
+
+**On a Mac** (macOS 13 or later), open the DMG and drag Lo to your Applications folder:
+
+- `Lo-<version>-arm64.dmg` for Apple silicon, and `Lo-<version>-x64.dmg` for Intel.
+- The zips of the same names hold the same app. Lo downloads the zip when it updates itself.
+
+The app in each DMG and zip is signed with a Developer ID, notarized by Apple and stapled, and the
+DMGs are signed and notarized too, so Gatekeeper accepts them.
+
+**On Linux,** install the package for your distribution and architecture with its package manager:
+
+- `Lo-<version>-amd64.deb` or `Lo-<version>-arm64.deb`: `sudo apt install ./Lo-<version>-amd64.deb`,
+  on Debian and Ubuntu.
+- `Lo-<version>-x86_64.rpm` or `Lo-<version>-aarch64.rpm`:
+  `sudo dnf install ./Lo-<version>-x86_64.rpm`, on Fedora and Red Hat.
+
+Lo goes in `/opt/Lo`, and `lo` becomes a command that opens it. Lo keeps your tokens in the system's
+keyring, such as GNOME Keyring or KWallet, through libsecret, which the packages depend on. It
+registers for `lo://` links only, so web links stay with your browser.
+
+The Linux packages are a preview: the Linux build is newer and less polished than the Mac's. Each
+release's packages are installed and started on Ubuntu 24.04 (the debs) and Fedora (the rpms) and
+checked before the release is drafted, and they differ from the Mac's in three ways:
+
+- They aren't signed.
+- Lo can't install its own updates on Linux. It tells you a newer one is out, and you install the
+  new package.
+- On the Mac, Electron checks Lo's code against a hash as it loads it. On Linux it doesn't.
+
+Each release also has `SHA256SUMS`, the SHA-256 of each of its files. Compare a download's with
+`shasum -a 256 <file>` on a Mac or `sha256sum <file>` on Linux. [`SECURITY.md`](SECURITY.md) says
+what that shows.
+
+## Updates
+
+Lo checks GitHub Releases for a newer version 30 seconds after it starts, then every 6 hours, and
+whenever you ask: "Check for updates" in the command palette (and, on a Mac, the app menu), "Check
+now" in Settings, or "Get a newer Lo" on the overview. It asks GitHub alone, and no id of your copy
+goes with the request. To stop the checks Lo makes by itself, turn off "Check for updates by itself"
+in Settings, or `updates.check` in [`settings.json`](docs/settings.md). A build from source doesn't
+check.
+
+A newer version shows as a toast, "Lo 0.2.0 is out", above the status bar. It waits until you act on
+it and never takes focus. What it offers depends on how Lo was installed:
+
+- **A Mac, with Lo in Applications** (or `~/Applications`): "Install" downloads the new version,
+  checks it against the checksum in the release, and has macOS install it only if the same team
+  signed it. Lo then offers "Restart now", or installs it when you quit. "What's new" opens the
+  release's page, and "Later" hides the toast until Lo starts again or you check for updates
+  yourself.
+- **A Mac, with Lo anywhere else,** such as the disk image or your Downloads folder: "Move to
+  Applications" moves Lo there, asking before it replaces a Lo that's already there. It updates
+  itself from there.
+- **Linux,** and a Mac where Lo can't write its own folder: "Download" opens the release's page, and
+  you install the new package as you did the old one.
 
 ## Build from source
 
@@ -110,7 +173,7 @@ Keys are written as macOS shows them. On Linux, Ctrl takes the place of `⌘`.
   on the clipboard.
 - **From a terminal:** install the `lo` command from the welcome screen, or with "Install
   command-line tool" in the command palette (on macOS, the app menu has it too). Then run
-  `lo <link>`.
+  `lo <link>`. The Linux packages install the command already.
 - **From a link:** Lo opens `lo://` links, such as `lo://github.com/owner/repo/pull/123`. To have
   pull request links you click in other apps open in Lo while your browser stays the default, use a
   link router: [`docs/link-routers.md`](docs/link-routers.md) has rules for Finicky, Velja and
@@ -128,6 +191,10 @@ welcome screen, through GitHub's device flow or by importing your accounts from 
   describes it.
 - **Settings** (`⌘,`) edits `settings.json`, a file beside the keymap file that you can also edit by
   hand. [`docs/settings.md`](docs/settings.md) lists the settings.
+- **`app.gpu`** turns off drawing with the graphics card, for a window that stays blank: set
+  `"app.gpu": false` in `settings.json` and start Lo again. It's in the file only, since a window
+  that draws nothing couldn't reach it in Settings. An installed Lo takes no command-line switches,
+  so it refuses `--disable-gpu`.
 
 ## Contributing
 
@@ -143,7 +210,8 @@ The docs:
 - [`CONTRIBUTING.md`](CONTRIBUTING.md): setting up, the checks, and how changes land.
 - [`design/README.md`](design/README.md): the design system's rules.
 - [`brand/README.md`](brand/README.md): the mark, colors, type and motion.
-- [`SECURITY.md`](SECURITY.md): reporting a security problem.
+- [`SECURITY.md`](SECURITY.md): reporting a security problem, and how releases are signed and
+  checked.
 
 ## Security
 
@@ -152,7 +220,8 @@ public issue.
 
 ## License
 
-Lo is free software under the [GNU General Public License v3.0](LICENSE).
+Lo is free software under the [GNU General Public License v3.0](LICENSE). Its About panel says so,
+and "Show licenses", in the command palette, opens the licenses of everything Lo ships.
 
 The overview skill (`skill/`) and the artifact format with the Markdown parser it builds on
 (`packages/core/artifact` and `packages/core/markdown`) are under the MIT license, so teams can copy

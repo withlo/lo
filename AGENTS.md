@@ -194,22 +194,46 @@ pnpm nx run desktop:release  # build it, then make a release's DMGs and zips (ne
   holds no `app-update.yml`, so it never looks for updates, that its window draws, and that the app
   quits when given switches or the variables below. electron-vite bundles everything the app
   imports, so the package holds only `dist/` and `package.json`, and no `node_modules`.
-- `desktop:release` makes a release from `build/release.yml`, which extends the package's config
-  with what a release needs: a DMG and a zip each for arm64 and x64, `Lo-<version>-<arch>.<ext>`,
-  with `latest-mac.yml` and blockmaps beside them. The app and its helpers are signed with the
-  Developer ID certificate in `CSC_LINK`, with only `allow-jit`
-  (`build/entitlements.release.plist`), then notarized and stapled, and the DMGs signed. The app
-  holds an `app-update.yml` naming GitHub Releases of `withlo/lo`, and the build never publishes
-  (`--publish never`). The `release` workflow runs it when a tag `v<version>` is pushed: `version`
-  checks the tag (`scripts/release/version.sh`: SemVer without build metadata, on a commit main
-  holds) and gives the version, which electron-builder writes into the app (`package.json` stays
-  `0.0.0`); `mac` builds in the `release` environment, the only place the signing secrets are read,
-  which takes `v*` tags only and waits for a maintainer's approval, notarizes the DMGs, unstapled,
-  and checks all four files with `check-package.sh --release`; `draft` makes a draft release with
-  `SHA256SUMS` and generated notes (`.github/release.yml` leaves out dependency bumps), which a
-  maintainer publishes. Started by hand, or by a pull request that changes the packaging files, the
-  workflow is a dry run: the same build, signed ad hoc with the ad hoc entitlements, checked with
-  `check-package.sh --release --ad-hoc`, with no environment, no secret and no release.
+- `desktop:release` makes the Mac's release from `build/release.yml`, which extends the package's
+  config with what a release needs: a DMG and a zip each for arm64 and x64,
+  `Lo-<version>-<arch>.<ext>`, with `latest-mac.yml` and blockmaps beside them. The app and its
+  helpers are signed with the Developer ID certificate in `CSC_LINK`, with only `allow-jit`
+  (`build/entitlements.release.plist`), then notarized and stapled, and the DMGs signed. With no
+  certificate the build fails, since a release is never unsigned, and the minimum macOS is
+  Electron's own. The app holds an `app-update.yml` naming GitHub Releases of `withlo/lo`, and the
+  build never publishes (`--publish never`). The version comes from the tag, passed as
+  `-c.extraMetadata.version`, so `package.json` stays `0.0.0`; the config also names the package
+  `lo`, which names the folder electron-updater downloads to, `lo-updater`. "Releasing" says how the
+  `release` workflow runs it, and what checks the files.
+- `pnpm run release:linux`, in `apps/desktop` after a build, makes a release's Linux packages from
+  the same config, for the architecture it runs on or `--x64` or `--arm64`:
+  `Lo-<version>-<amd64|arm64>.deb` and `Lo-<version>-<x86_64|aarch64>.rpm`, and a run writes
+  `latest-linux.yml` (x64) or `latest-linux-arm64.yml` beside them. Linux is a preview, so they're
+  unsigned and Lo doesn't install its own updates from them: it says when a newer release is out,
+  and links its page. Both put Lo in `/opt/Lo` with its program at `/opt/Lo/lo` and the `lo` command
+  at `/usr/bin/lo`, depend on libsecret, which Lo keeps its tokens through, and hold only Lo, its
+  desktop file and its icons.
+  - The desktop file opens `/opt/Lo/lo %U` and registers `lo://` alone. The web links the Mac
+    registers (`mac.protocols`) would, on a desktop with no default browser set, let Lo take every
+    web link. `desktopName` is `lo.desktop`, so that when Lo makes itself the handler of `lo://`
+    links, Electron names the file the package installs.
+  - Chromium's sandbox helper, `/opt/Lo/chrome-sandbox`, is setuid root in the package itself
+    (`build/linux/after-pack.ts` sets the mode, the rpm says so with `%attr`, and the install script
+    sets it again), as Chrome's packages hold it. A packaged Lo refuses `--no-sandbox`, so it must
+    start with Chromium's sandbox: in user namespaces where they can be made, and through the helper
+    where they can't. Wherever AppArmor runs and takes the profile's ABI (4.0),
+    `build/linux/after-install.sh` also installs electron-builder's profile for `/opt/Lo/lo` as
+    `/etc/apparmor.d/lo` and loads it (in a chroot, the next boot does). It's `flags=(unconfined)`
+    with `userns,` alone: it restricts nothing and only adds user namespaces, which Ubuntu 24.04 and
+    later stop for a program with no profile. What Lo starts keeps it unless another profile
+    attaches.
+  - The install script makes `/usr/bin/lo` only where it's Lo's to make, through
+    `update-alternatives` where there is one: a `lo` of anyone else's stays as it is. The removal
+    script (`after-remove.sh`) takes away only Lo's, and does nothing on an upgrade, since an rpm's
+    new install script runs before the old one's removal. On a packaged Linux Lo, `/usr/bin/lo`
+    leading to Lo's own program counts as the installed `lo` command.
+  - Electron checks no asar hash on Linux, so the packages have none, and the fuse that asks for one
+    does nothing there. `SECURITY.md` says so.
 - A packaged Lo takes no command-line switches: first of all in main, before `ready`, it quits with
   status 1 on any argument that isn't a `lo://`, `https://` or `http://` link from its first
   character (`src/main/arguments.ts`). Chromium's switches can send main's requests, with their
@@ -222,7 +246,14 @@ pnpm nx run desktop:release  # build it, then make a release's DMGs and zips (ne
   `ELECTRON_ENABLE_LOGGING` and `ELECTRON_LOG_FILE` (Chromium's own logs), and
   `NODE_TLS_REJECT_UNAUTHORIZED=0`. The certificate authorities' variables, which networks that
   inspect TLS need, and proxies are left alone. A build run from source takes every switch and
-  variable, as `electron-vite dev` and the tests pass some.
+  variable, as `electron-vite dev` and the tests pass some. The switches people reach for on Linux
+  are refused too, `--no-sandbox` and `--disable-gpu` among them. `--disable-gpu` is what people
+  reach for when a window stays blank, so `app.gpu`, which is on unless the settings file says
+  `false`, stands in for it. Electron takes `app.disableHardwareAcceleration()` only before `ready`,
+  so main reads that one key from the file itself as it starts (`src/main/gpu.ts`, reading the file
+  as the settings feature does), and a change applies at the next start. It's in the file and
+  `docs/settings.md`, not in Settings, which a window that draws nothing couldn't reach, and the
+  window can't change it.
 - A build run from source goes by `Lo Dev`, so it never touches an installed Lo's data or its key in
   the system's keychain: it keeps its data in its own folder (`Lo Dev`), or in `LO_USER_DATA_DIR`
   when that's set, and its key under "Lo Dev Safe Storage". A packaged build is `Lo`, and ignores
@@ -230,6 +261,8 @@ pnpm nx run desktop:release  # build it, then make a release's DMGs and zips (ne
   than from `~/.config/lo`, and the settings file from `config/settings.json` the same way, and
   opens the keymap and settings files with the program `LO_KEYMAP_EDITOR` names (an absolute path),
   if set, in place of the system's text editor (`src/main/editor.ts`), so a test starts no editor.
+  It checks for updates only when `LO_UPDATES_FEED` names a feed at `http://127.0.0.1:<port>/`, for
+  its tests; a packaged build ignores it (see "Updates").
 - Code that doesn't call Electron goes in its own module, with unit tests beside it. The smoke test
   in `e2e/` drives the built app with Playwright, each test on an empty data folder, and covers what
   needs Electron. On Linux it needs a display: CI runs it under `xvfb-run`, in four shards, one job
@@ -1077,6 +1110,54 @@ Recent pull requests, and links from other apps. Each is untrusted text, read th
   can't read. A build run from source writes it in `LO_COMMAND_FOLDER` when that's set, without
   asking, and a packaged build ignores it.
 
+### Updates
+
+The `updates` feature checks GitHub Releases for a newer Lo, offers it, and, where Lo can replace
+its own app, installs it when the reader says so.
+
+- **Who checks.** Only a packaged Lo that has `app-update.yml` among its resources, which only a
+  release build writes (`build/release.yml`), so the zips `desktop:package` makes and a build run
+  from source never check. It then checks the releases of `withlo/lo` on github.com whatever the
+  file says: the feed's options are Lo's own constant, never private and never with a token, so
+  nothing from `GH_TOKEN` or `GITHUB_TOKEN` reaches GitHub. A build run from source checks only a
+  feed `LO_UPDATES_FEED` names at `http://127.0.0.1:<port>/`; a packaged build never reads it, and
+  `check-package.sh` and `check-linux.sh` prove it never asks that feed.
+- **The library.** electron-updater's GitHub provider, in the version electron-builder pairs it
+  with, wrapped in `main/updater.ts`: nothing downloads until asked, none is offered an older
+  version, and no id of the copy goes with a request (electron-updater's per-copy staging id is one
+  constant). Under Electron, electron-updater's own time limit never fires, so Lo gives up on a
+  check GitHub hasn't answered in 60 s, cancels its requests, and the next check asks again. A
+  prerelease of Lo reads the feed twice, so it's offered the newest release as well as its channel's
+  prerelease, and a release is never offered a prerelease.
+- **How a copy takes an update** is decided as Lo starts, and again for each offer and before Lo
+  moves or downloads (`main/how.ts`): `install` on a packaged Mac in an Applications folder it can
+  write (`/Applications` or `~/Applications`), where electron-updater downloads the zip, checks its
+  SHA-512 and hands it to Squirrel.Mac, which installs it only if its signature is the running Lo's;
+  `move` on a Mac anywhere else, such as the disk image or a translocated download, where "Move to
+  Applications" asks before it replaces a Lo already there; `page` on Linux, from source, or where
+  Lo can't write its own folder, where "Download" opens the release's page. Only `install` builds
+  electron-updater's Mac updater: the rest get one that can check and has no way to download.
+- **When.** 30 s after the window is up, then every 6 hours, and on `updates.check`, the command,
+  the overview's "Get a newer Lo" and Settings' "Check now". The `updates.check` setting (on) turns
+  off only the timed checks. A timed check that fails is logged and tried at the next, and one the
+  reader asked for says why it failed.
+- **State** is one topic, `state`: `idle`, `available` (the version, the first line of the notes as
+  plain text cut to 140 characters, `how`, and the release's page), `downloading` and `ready`. The
+  page is built from the version, which must be SemVer, never taken from the feed. The requests are
+  `read`, `how`, `check`, `install`, `restart`, `later` (hides that version until Lo starts again,
+  or a check the reader asked for) and `move`. `install` downloads, and a download that fails goes
+  back to `available` with why. A finished download installs as Lo quits, and Lo restarts into it
+  only on `restart`: it quits through its own `will-quit` stop, so every feature stops, and only
+  then calls `quitAndInstall()`. If the installer can't, or takes over 15 s, Lo quits anyway and the
+  update installs then.
+- **The window.** The toast is in the `tab.toasts` slot, below a note that passes, and it waits
+  until it's acted on. It never takes focus, no button installs or restarts but by its own press,
+  and a press in the half second after a toast comes or changes does nothing. Every button is a
+  keyless command too: the app menu holds "Check for updates", "Install the update" and "Restart to
+  update", and an "Update" submenu the rest, each greyed unless it applies. Settings' Updates
+  section shows the version and commit, "Check now" and the switch for `updates.check`. The overview
+  runs "Check for updates" through the command registry, importing `updates/keys.ts`.
+
 ### The welcome screen
 
 The `welcome` feature draws over the Recent tab, through the tab feature's `tab.cover` slot, while
@@ -1677,6 +1758,114 @@ Then add the trusted publisher in the package's settings on npmjs.com, under Tru
 GitHub Actions, `withlo`, `lo`, `publish.yml`, environment `npm`, allowing `npm publish`. A trusted
 publisher expires unless it publishes within two days of being added, and an expired one can't be
 used or edited, only deleted and added again. So add it just before the next version merges.
+
+## Releasing
+
+The `release` workflow (`.github/workflows/release.yml`) builds Lo from a version tag and drafts the
+release on GitHub. It publishes nothing: a maintainer reads the draft and publishes it. Renew the
+pins first (see "Language servers"), and run a dry run on `main` before tagging.
+
+- **The tag is the version.** Push `v<version>`: a `v` and SemVer 2.0.0 with no build metadata, such
+  as `v0.1.0` or `v0.1.0-rc.1`, on a commit `main` holds. `scripts/release/version.sh` checks it,
+  and `version.test.ts` tests the script. A tag that fails stops the run before anything builds. A
+  version with a prerelease part makes a GitHub prerelease, which only a prerelease of Lo is
+  offered. `package.json` stays `0.0.0`: the tag's version is built in. There's no changelog file:
+  the notes are the ones GitHub generates from the merged pull requests, which the maintainer edits
+  in the draft (`.github/release.yml` leaves out dependency bumps and bots).
+- **The jobs.**
+  - `version` checks the tag, and gives the version and whether it's a prerelease.
+  - `mac` (`macos-26`, 90 minutes) builds Lo before any secret is in reach, then fails if one is
+    missing, since electron-builder only warns when the notary key's variables are.
+    `pnpm run release` signs and notarizes the app, staples it, and makes the zips and DMGs. The job
+    then notarizes each DMG with `notarytool` and leaves it unstapled, since stapling would change a
+    file `latest-mac.yml` has hashed. It checks all four files with `check-package.sh --release`,
+    and `latest-mac.yml` against each file's SHA-512 and blockmap.
+  - `linux (x64)` and `linux (arm64)` run on a runner of each architecture (`ubuntu-24.04` and
+    `ubuntu-24.04-arm`): they build the deb and the rpm with `pnpm run release:linux`, check both
+    with `check-linux.sh`, and check `latest-linux.yml` or `latest-linux-arm64.yml` the same way.
+  - Each build job uploads its files as an artifact. `draft` runs only for a tag, once every one of
+    them has passed: it downloads the artifacts, writes `SHA256SUMS` over every file, and runs
+    `gh release create v<version> --draft --verify-tag --generate-notes`, with `--prerelease` for a
+    prerelease. A re-run replaces a draft's files, and refuses a tag that has a published release.
+- **Environments and secrets.** The `mac` job of a tag's run is the only one that reads the signing
+  secrets, through the `release` environment. Releasing requires that environment, in the
+  repository's settings, to wait for a maintainer's approval and to take only `v*` tags: the
+  workflow enforces neither. The secrets are `MACOS_CERT_P12` and `MACOS_CERT_PASSWORD`, the
+  Developer ID certificate (`CSC_LINK` and `CSC_KEY_PASSWORD`), and `NOTARY_KEY_ID`,
+  `NOTARY_ISSUER_ID` and `NOTARY_KEY_P8`, the App Store Connect key (`APPLE_API_KEY_ID`,
+  `APPLE_API_ISSUER`, and a file only its user can read, which `APPLE_API_KEY` names and a step that
+  always runs removes). Keep them on the environment, never the repository, and give the environment
+  its reviewer and its `v*` tag rule before the first tag: GitHub creates a missing environment
+  without protection. The `draft` job has `contents: write` and no secret, and runs none of the
+  repository's code. The `npm` environment is the checker's.
+- **No cache, nothing floating.** The workflow uses no Actions cache and pins each action by its
+  SHA. It installs pnpm with `scripts/install-pnpm.sh`, checked against the SHA-512 the lockfile
+  holds, and the dependencies from the lockfile alone, since `pnpm/setup` restores and saves a cache
+  of its own whatever it's told, and nothing released should come from one. Every job but `draft`
+  can only read the repository, and no checkout keeps its token. A ref has one run at a time, and a
+  tag's is never cancelled.
+- **A dry run** is the same build as `0.0.0-dry.<run number>`, signed ad hoc with
+  `build/entitlements.plist`, in no environment, with no secret, and it drafts nothing. It runs for
+  a pull request that changes how Lo is packaged (the workflow, `apps/desktop/build/`,
+  `apps/desktop/package.json`, `scripts/release/`, `check-package.sh` or `check-linux.sh`), and by
+  hand once the workflow is on `main`:
+
+  ```sh
+  gh workflow run release.yml --repo withlo/lo --ref <branch or tag>
+  gh run download <run id> --repo withlo/lo -D <folder>  # the mac, linux-x64 and linux-arm64 files
+  ```
+
+  The files are kept 14 days. A dry run's `mac` job doesn't notarize or sign the DMGs, and checks
+  with `check-package.sh --release --ad-hoc`; the Linux jobs are a tag's, since the packages are
+  never signed. To make one by hand on a Mac (Rosetta checks the Intel files):
+
+  ```sh
+  pnpm nx run desktop:build
+  (cd apps/desktop && pnpm run release -c.extraMetadata.version=0.0.0-dry.1 -c.mac.identity=- \
+    -c.mac.notarize=false -c.mac.entitlements=build/entitlements.plist \
+    -c.mac.entitlementsInherit=build/entitlements.plist -c.dmg.sign=false)
+  sh scripts/check-package.sh --release --ad-hoc apps/desktop/release/Lo-0.0.0-dry.1-arm64.dmg
+  ```
+
+  and on Linux, for the architecture it runs on:
+
+  ```sh
+  pnpm nx run desktop:build
+  (cd apps/desktop && pnpm run release:linux -c.extraMetadata.version=0.0.0-dry.1)
+  sh scripts/check-linux.sh apps/desktop/release/Lo-0.0.0-dry.1-amd64.deb  # and the rpm
+  ```
+
+- **`check-package.sh --release [--ad-hoc] <file>`** takes `Lo-<version>-<arm64|x64>.<dmg|zip>`. It
+  checks that the app is built for that architecture, with that version in Info.plist and a minimum
+  macOS no older than its Electron's; that `app-update.yml` names GitHub Releases of `withlo/lo` and
+  nothing else; that the app and each helper is signed with a Developer ID of one team, chained to
+  Apple's root, with a secure timestamp, the hardened runtime and exactly
+  `build/entitlements.release.plist`; and that Gatekeeper says `Notarized Developer ID` and the
+  app's ticket is stapled. A DMG must hold only the app and a link to `/Applications`, be signed by
+  the same team and be notarized, as Gatekeeper says for a disk image. `--ad-hoc` checks a dry run's
+  build: all of it but the Developer ID and notarization, with an ad hoc signature and
+  `build/entitlements.plist`. Either way the app must have every fuse set, an asar of `dist/` and
+  `package.json` alone whose hash is Info.plist's, the registered links, the copyright and
+  `licenses.txt`; quit when started with a switch, a file or a refused variable; and draw its window
+  without reading `LO_TEST_SERVERS` or asking the feed `LO_UPDATES_FEED` names. An Intel build
+  starts only through Rosetta, so the workflow installs it, and each start gets more time.
+- **`check-linux.sh <deb|rpm>`** takes `Lo-<version>-<amd64|arm64>.deb` or
+  `Lo-<version>-<x86_64|aarch64>.rpm`, on a machine of that architecture: a deb needs `sudo`,
+  `dpkg-deb`, Xvfb and `xwininfo`, and an rpm `rpm`, `rpm2cpio`, `cpio` and Docker, which installs
+  it in a Fedora container. It checks the package's fields (name, version, GPL-3.0-only, maintainer,
+  homepage, libsecret), that its scripts are `build/linux/`'s, that root owns every file, that the
+  sandbox helper is setuid root in the package and nothing else is setuid or setgid, that it holds
+  only Lo, its desktop file and its icons, and that the desktop file opens `/opt/Lo/lo %U` for
+  `lo://` alone. It checks that `app-update.yml` names GitHub Releases of `withlo/lo` alone, that
+  the AppArmor profile is the one that only adds user namespaces, the fuses, and the asar's contents
+  and `desktopName`. It then installs the package and checks `lo`'s link, the helper's mode, the
+  libraries, Lo's profile where AppArmor runs and, for an rpm, that `rpm -V` finds nothing changed.
+  Started under Xvfb by someone other than root, Lo must refuse switches (`--no-sandbox` and
+  `--disable-gpu` among them) and the refused variables, draw its window with every page under
+  Chromium's sandbox, open its database, never read `LO_TEST_SERVERS` or ask `LO_UPDATES_FEED`'s
+  feed, take a link from the `lo` command, and leave `lo.desktop` the handler of `lo://` links and
+  not of web links. Installed again it must keep all that, and removed it must leave nothing behind.
+  Where `/usr/bin/lo` is someone else's, installing and removing must leave it as it is.
 
 ## Design
 
