@@ -11,6 +11,7 @@ import { describe, expect, it } from 'vitest';
 import type { Forest } from '../../stacks/service.ts';
 import type { Together } from '../contract.ts';
 import {
+  layerState,
   namesOf,
   placementOf,
   takingOf,
@@ -99,6 +100,8 @@ function view(number: number, where: Where, more: Partial<TakingView> = {}): Tak
     forest: FOREST,
     github: [],
     title: (pr) => `Layer ${pr}`,
+    state: (pr) =>
+      pr === 10 ? { review: 'approved', checks: 'passing' } : { review: null, checks: null },
     queued: [],
     ...more,
   };
@@ -114,8 +117,14 @@ describe('a GitHub stack’s layer', () => {
       kind: 'stack',
       stack: 90,
       below: [
-        { number: 10, title: 'Layer 10', head: '10'.padStart(40, 'f') },
-        { number: 11, title: 'Layer 11', head: '11'.padStart(40, 'f') },
+        {
+          number: 10,
+          title: 'Layer 10',
+          head: '10'.padStart(40, 'f'),
+          review: 'approved',
+          checks: 'passing',
+        },
+        { number: 11, title: 'Layer 11', head: '11'.padStart(40, 'f'), review: null, checks: null },
       ],
       above: [],
     });
@@ -229,13 +238,30 @@ describe('a chain that isn’t a GitHub stack', () => {
   });
 });
 
+describe('a layer’s state, as the stack’s layers were read', () => {
+  it('is its review decision and how its checks stand together', () => {
+    expect(
+      layerState({ reviewDecision: 'CHANGES_REQUESTED', statusCheckRollup: { state: 'ERROR' } }),
+    ).toEqual({ review: 'changesRequested', checks: 'failing' });
+    expect(
+      layerState({ reviewDecision: 'REVIEW_REQUIRED', statusCheckRollup: { state: 'EXPECTED' } }),
+    ).toEqual({ review: 'reviewRequired', checks: 'running' });
+    // Not read yet, or without checks.
+    expect(layerState(undefined)).toEqual({ review: null, checks: null });
+    expect(layerState({ reviewDecision: null, statusCheckRollup: null })).toEqual({
+      review: null,
+      checks: null,
+    });
+  });
+});
+
 describe('what a merge names', () => {
   const stack: Together = {
     kind: 'stack',
     stack: 90,
     below: [
-      { number: 10, title: '', head: 'a'.repeat(40) },
-      { number: 11, title: '', head: 'b'.repeat(40) },
+      { number: 10, title: '', head: 'a'.repeat(40), review: null, checks: null },
+      { number: 11, title: '', head: 'b'.repeat(40), review: null, checks: null },
     ],
     above: [13],
   };
@@ -257,7 +283,10 @@ describe('what a merge names', () => {
     expect(
       togetherChanged(stack, {
         ...stack,
-        below: [stack.below[0]!, { number: 11, title: '', head: 'c'.repeat(40) }],
+        below: [
+          stack.below[0]!,
+          { number: 11, title: '', head: 'c'.repeat(40), review: null, checks: null },
+        ],
       }),
     ).toBe('The layers that merge with it changed.');
     expect(togetherChanged(stack, { ...stack, above: [] })).toBe('The layers above it changed.');

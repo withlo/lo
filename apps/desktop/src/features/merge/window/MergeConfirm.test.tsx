@@ -363,8 +363,20 @@ const STACK: Extract<Together, { kind: 'stack' }> = {
   kind: 'stack',
   stack: 90,
   below: [
-    { number: 136, title: 'Move the token bucket', head: 'c'.repeat(40) },
-    { number: 137, title: 'Load per-plan limits', head: 'd'.repeat(40) },
+    {
+      number: 136,
+      title: 'Move the token bucket',
+      head: 'c'.repeat(40),
+      review: 'approved',
+      checks: 'passing',
+    },
+    {
+      number: 137,
+      title: 'Load per-plan limits',
+      head: 'd'.repeat(40),
+      review: null,
+      checks: null,
+    },
   ],
   above: [139],
 };
@@ -414,7 +426,7 @@ it('lists a GitHub stack’s layers that merge as one, and the one above that st
   expect([...box.querySelectorAll('dt')].map((each) => each.textContent)).not.toContain('Commit');
   expect(box.textContent).toContain('Squash, one commit per layer');
   expect(rows()).toEqual([
-    expect.stringContaining('#136 Move the token bucket'),
+    expect.stringMatching(/#136 Move the token bucket.*Approved · checks passed/),
     expect.stringContaining('#137 Load per-plan limits'),
     expect.stringContaining('The one on screen'),
   ]);

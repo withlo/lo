@@ -21,6 +21,7 @@ import {
   doneLine,
   duration,
   headerLine,
+  layerLine,
   methodNote,
   ordinal,
   outcomeDetail,
@@ -456,8 +457,8 @@ const STACK: Together = {
   kind: 'stack',
   stack: 90,
   below: [
-    { number: 136, title: '', head: 'c'.repeat(40) },
-    { number: 137, title: '', head: 'd'.repeat(40) },
+    { number: 136, title: '', head: 'c'.repeat(40), review: null, checks: null },
+    { number: 137, title: '', head: 'd'.repeat(40), review: null, checks: null },
   ],
   above: [139],
 };
@@ -556,4 +557,14 @@ test('the merge panel’s `⏎` doesn’t merge a chain stacks could make a GitH
     'Merge #137 first.',
   );
   expect(placedWhy({ kind: 'chain', into: 'main', above: [139], reasons: [] })).toBeUndefined();
+});
+
+test('a GitHub stack’s layer says where it stands in its confirmation, once its state was read', () => {
+  expect(layerLine({ review: 'approved', checks: 'passing' })).toBe('Approved · checks passed');
+  expect(layerLine({ review: 'changesRequested', checks: 'failing' })).toBe(
+    'Changes requested · checks failed',
+  );
+  expect(layerLine({ review: null, checks: 'running' })).toBe('Checks running');
+  expect(layerLine({ review: 'reviewRequired', checks: null })).toBe('Review required');
+  expect(layerLine({ review: null, checks: null })).toBeUndefined();
 });

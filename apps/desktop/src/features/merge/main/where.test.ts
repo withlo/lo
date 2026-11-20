@@ -24,6 +24,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   LIST_SLACK,
+  unmergedIn,
   where,
   type OpenFromHead,
   type Placed,
@@ -426,19 +427,37 @@ describe('where a pull request sits is unknown', () => {
     });
     // A stack on a trunk sits on no merged pull request's branch.
     expect(where(view(29, {}, unlooked))).toEqual({ kind: 'alone' });
-    // A GitHub stack's layers are GitHub's to say, wherever its stack sits.
-    const native = repository(
-      [
-        pull(70, 'm30', 'g70', { nativeStack: { stack: 97, position: 1 } }),
-        pull(71, 'g70', 'g71', { nativeStack: { stack: 97, position: 2 } }),
-      ],
+    // A GitHub stack on m30, #30's branch, would merge into it: GitHub's stack doesn't say.
+    const native = (base: string) =>
+      repository(
+        [
+          pull(70, base, 'g70', { nativeStack: { stack: 97, position: 1 } }),
+          pull(71, 'g70', 'g71', { nativeStack: { stack: 97, position: 2 } }),
+        ],
+        [{ kind: 'mergedPullRequests' }],
+      );
+    expect(unsure(where(view(71, {}, native('m30')))).why).toEqual({ kind: 'lookups' });
+    expect(unsure(where(view(70, {}, native('m30')))).why).toEqual({ kind: 'lookups' });
+    // On a trunk, it's GitHub's stack.
+    const stack97 = { kind: 'githubStack', stack: 97, below: [70] };
+    expect(where(view(71, {}, native('main')))).toEqual(stack97);
+    // So it is on a branch the lookups found no merged pull request from. Another branch looked
+    // up says nothing of its own, and one a merged pull request was found from is no root.
+    const lookups = [
+      { branch: 'm29', tip: undefined, found: [], at: NOW },
+      { branch: 'b29', tip: undefined, found: [], at: NOW },
+      { branch: 'm30', tip: undefined, found: [30], at: NOW },
+    ];
+    const unmerged = unmergedIn(lookups);
+    expect(where(view(71, { unmerged }, native('m29')))).toEqual(stack97);
+    expect(unsure(where(view(71, { unmerged }, native('m30')))).why).toEqual({ kind: 'lookups' });
+    expect(unsure(where(view(71, { unmerged }, native('m28')))).why).toEqual({ kind: 'lookups' });
+    // A chain waits for every lookup, wherever it sits.
+    const chain = repository(
+      [pull(72, 'm29', 'g72'), pull(73, 'g72', 'g73')],
       [{ kind: 'mergedPullRequests' }],
     );
-    expect(where(view(71, {}, native))).toEqual({
-      kind: 'githubStack',
-      stack: 97,
-      below: [70],
-    });
+    expect(unsure(where(view(73, { unmerged }, chain))).why).toEqual({ kind: 'lookups' });
     // Rulesets that weren't read only add links, which never makes a layer look alone.
     const unruled = repository(pulls, [{ kind: 'rulesets', why: 'Forbidden' }]);
     expect(where(view(31, {}, unruled))).toEqual({ kind: 'alone' });

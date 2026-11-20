@@ -1295,11 +1295,12 @@ dialog that opens in the panel's place (`tab.dialogs`) is confirmed.
 - As it's confirmed, main checks again: the view still acts as its account, signed in; GitHub can be
   reached and isn't holding writes; the head on screen is the newest push the tab knows of and
   GitHub's head, with the merge facts whole and confirmed in the last 7 minutes, else read again;
-  the pull request is alone or a GitHub stack's bottom layer (`main/where.ts`, with the open pull
-  requests from each branch it merges into read afresh); nothing else merges it; and no conversion
-  runs on its path. When something the confirmation named changed, main asks again with a new plan;
-  otherwise it says why it didn't send. `Esc` while it checks cancels it: its reads are given up and
-  nothing is sent. Right before it sends, the tab, the account and the connection are checked again.
+  where the pull request sits is known (`main/where.ts`, with the open pull requests from each
+  branch it merges into read afresh), and what goes with it is read again (`main/together.ts`);
+  nothing else merges it or the pull requests it names; and no conversion runs on their path. When
+  something the confirmation named changed, main asks again with a new plan; otherwise it says why
+  it didn't send. `Esc` while it checks cancels it: its reads are given up and nothing is sent.
+  Right before it sends, the tab, the account and the connection are checked again.
 - Merges go through one `MergeJobs` for the app, with the head on screen as the `sha`, and the
   squash commit's text only as the reader typed it. One merge write to a pull request at a time,
   app-wide and whatever the account: `merge.writes` hands out the turns (`main/turns.ts`), and
@@ -1312,6 +1313,20 @@ dialog that opens in the panel's place (`tab.dialogs`) is confirmed.
 - Done, a toast says so. Refused, or ended without Lo knowing how, the dialog says so while it's
   open, else a banner on the pull request's tab does. The panel's main button is off, with why,
   while GitHub can't be reached, asks Lo to hold off writing, or the account is signed out.
+- As the panel opens, main says where the pull request sits (`merge.place`), and the main button
+  says what it merges. A GitHub stack's layer merges with the open layers below it, as GitHub's
+  Stacks API names them, at the heads it gave as the confirmation opened, read again at the press;
+  the merge holds the turn of every layer, those above included, and the dialog shows each layer as
+  the Stacks API says at each change of the merge, and which went in when GitHub stops partway. A
+  chain that stacks could make a GitHub stack is made one first (`gS`, offered in the panel). One
+  that can't merges from its bottom layer alone (`@lo/stacks`' `mergeOneLayerAtATime`): its base
+  moves onto the root first when it isn't there, and the merge is planned under the root's rules;
+  once GitHub says it merged, a run in main (`main/chains.ts`), while Lo is open, moves each layer
+  on it onto the root, in order, holding their turns until then. After a queue entry it reads the
+  pull request until it merges, for 6 hours at most, or leaves the queue; after a lost answer, for
+  15 minutes. Each move reads the base first and leaves one someone else moved; the first move that
+  doesn't go stops the run, and nothing is put back. Above a chain's bottom layer, and on a bottom
+  layer that needs a rebase, `⏎` is refused.
 
 ### Images from GitHub
 

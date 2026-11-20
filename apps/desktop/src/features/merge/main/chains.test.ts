@@ -39,12 +39,15 @@ function run(
   options: {
     answer?: (pr: number) => Promise<StepDone | MergeRefusal>;
     looks?: Looked[];
+    /** How long each read takes, in milliseconds: a minute. */
+    lookTakes?: number;
   } = {},
 ) {
   const sent: number[] = [];
   const looks = [...(options.looks ?? [])];
   let clock = 0;
   let ended = 0;
+  let read = 0;
   const views: Progress[] = [];
   const config: ChainOptions = {
     repo: REPO,
@@ -56,8 +59,9 @@ function run(
       return options.answer?.(step.retarget.pr) ?? moved();
     },
     look: () => {
-      // Each read takes a minute.
-      clock += 60_000;
+      // Each read takes a minute, unless the test says.
+      clock += options.lookTakes ?? 60_000;
+      read += 1;
       return Promise.resolve(looks.length > 1 ? looks.shift()! : (looks[0] ?? 'open'));
     },
     changed: () => views.push(chain.view()),
@@ -74,6 +78,8 @@ function run(
     sent,
     views,
     ended: () => ended,
+    /** How many times it read the pull request. */
+    reads: () => read,
     async over(): Promise<Extract<Progress, { kind: 'chain' }>> {
       await vi.waitFor(() => expect(chain.over).toBe(true));
       const view = chain.view();
@@ -114,6 +120,26 @@ describe('a chain’s merge a layer at a time', () => {
       text: '#5 left the merge queue without merging, so Lo moved nothing.',
     });
     expect(leaves.sent).toEqual([]);
+  });
+
+  it('waits 6 hours at most for a queue entry to merge, and moves nothing once it’s closed', async () => {
+    // Each read takes 20 minutes here: 15 minutes, as after a lost answer, isn't the limit.
+    const waits = run(CHAIN, { looks: ['queued'], lookTakes: 20 * 60_000 });
+    waits.chain.enqueued();
+    expect(await waits.over()).toMatchObject({
+      phase: 'stopped',
+      text: '#5 didn’t merge within 6 hours of joining the merge queue, so Lo moved nothing.',
+    });
+    expect(waits.reads()).toBe(18);
+    expect(waits.sent).toEqual([]);
+
+    const closes = run(CHAIN, { looks: ['queued', 'closed'] });
+    closes.chain.enqueued();
+    expect(await closes.over()).toMatchObject({
+      phase: 'stopped',
+      text: '#5 was closed without merging, so Lo moved nothing.',
+    });
+    expect(closes.sent).toEqual([]);
   });
 
   it('after a lost answer, reads for 15 minutes at most, then moves nothing', async () => {

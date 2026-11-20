@@ -1,9 +1,9 @@
 // The merge's dialog, in the tab feature's `tab.dialogs` slot, in the merge panel's place: the plan
 // to confirm, with the account, the method, the branch and the revision it merges, then the merge
 // as it goes, and why it didn't, when it didn't. A GitHub stack's merge lists every layer that
-// merges, and then how far GitHub got with each; a chain's, each base branch Lo moves, in order. `⏎` confirms and `Esc` goes back to the panel. A
-// held key confirms nothing, and nor does the press that opened it: only a fresh press of `⏎` once
-// the plan shows.
+// merges, with where each stands, and then how far GitHub got with each; a chain's, each base
+// branch Lo moves, in order. `⏎` confirms and `Esc` goes back to the panel. A held key confirms
+// nothing, and nor does the press that opened it: only a fresh press of `⏎` once the plan shows.
 
 import {
   Branch,
@@ -54,6 +54,7 @@ import {
   confirmLabel,
   confirmTitle,
   doneLine,
+  layerLine,
   methodLabel,
   numbers,
   outcomeDetail,
@@ -175,6 +176,7 @@ function stackLayers(plan: MergePlan, together: Extract<Together, { kind: 'stack
       number: layer.number,
       title: layer.title,
       state: 'todo' as const,
+      detail: layerLine(layer),
     })),
     { number: plan.number, title: titleOf(plan), state: 'now', detail: 'The one on screen' },
   ];

@@ -85,15 +85,17 @@ import type { MergeTurn, MergeWrites } from '../service.ts';
 import { ChainRun, type Looked } from './chains.ts';
 import {
   convertFirst,
+  layerState,
   namesOf,
   needsStacks,
+  numbers,
   placementOf,
   takingOf,
   togetherChanged,
   togetherOf,
   type Taking,
 } from './together.ts';
-import { placedBy, where, type OpenFromHead, type Where } from './where.ts';
+import { placedBy, unmergedIn, where, type OpenFromHead, type Where } from './where.ts';
 
 /** How long what GitHub said of a merge is taken as current at the press: 7 minutes. */
 export const FRESH_FOR = 7 * 60_000;
@@ -218,13 +220,6 @@ function sameLogin(a: string, b: string): boolean {
 
 function describe(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
-}
-
-/** Pull requests' numbers as a sentence names them: "#45", "#45 and #46", "#45, #46 and #47". */
-function numbers(prs: readonly number[]): string {
-  const named = prs.map((pr) => `#${pr}`);
-  const last = named.pop() ?? '';
-  return named.length === 0 ? last : `${named.join(', ')} and ${last}`;
 }
 
 /** A number of minutes or hours, as a clock writes it: "05". */
@@ -374,12 +369,12 @@ function stateOf(job: Job): JobState {
   }
 }
 
-/** The outcome a job ended with, as the merge GitHub was already running when it answered `409`. */
 /** Where Lo doesn't merge a pull request from, for `why`, as the merge panel says it. */
 function notPlaced(why: string): Placement {
   return { kind: 'refused', why, again: false };
 }
 
+/** The outcome a job ended with, as the merge GitHub was already running when it answered `409`. */
 function endedWith(job: Job): Outcome | undefined {
   if (job.state.kind !== 'done') return undefined;
   const { outcome } = job.state;
@@ -872,6 +867,7 @@ export class Merging {
         facts: placed,
         forest,
         openFrom,
+        unmerged: unmergedIn(poller.openPullRequests(pull.repo)?.value.lookups ?? []),
         now: this.#now(),
       });
       if (found.kind !== 'unknown') return found;
@@ -939,6 +935,7 @@ export class Merging {
       forest: this.#options.forest(pull.repo, login),
       github,
       title: (number) => (list && openPullRequest(list, number)?.title) ?? '',
+      state: (number) => layerState(layers.find((layer) => layer.number === number)),
       queued: layers.flatMap((layer) => (layer.isInMergeQueue ? [layer.number] : [])),
     });
   }

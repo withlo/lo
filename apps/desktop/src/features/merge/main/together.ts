@@ -5,7 +5,7 @@
 // otherwise its bottom layer alone, with the layers on it moved onto the root once it has merged.
 // Nothing here calls Electron or GitHub.
 
-import { openLayers, type GithubStack } from '@lo/github';
+import { openLayers, type GithubStack, type StackLayer as LayerRead } from '@lo/github';
 import { layerOf, mergeOneLayerAtATime, type MergeBottom } from '@lo/stacks';
 
 import type { Forest } from '../../stacks/service.ts';
@@ -55,6 +55,8 @@ export interface TakingView {
   readonly github: readonly GithubStack[] | undefined | 'unread';
   /** A pull request's title, as the open pull requests' list has it: empty when it isn't there. */
   readonly title: (number: number) => string;
+  /** A layer's review and checks, as the stack's layers were last read: none before they were. */
+  readonly state: (number: number) => Pick<StackLayer, 'review' | 'checks'>;
   /** The pull requests in a merge queue, as the stack's layers were last read. */
   readonly queued: readonly number[];
 }
@@ -64,6 +66,52 @@ export function numbers(prs: readonly number[]): string {
   const named = prs.map((pr) => `#${pr}`);
   const last = named.pop() ?? '';
   return named.length === 0 ? last : `${named.join(', ')} and ${last}`;
+}
+
+/**
+ * A layer's review decision and how its checks stand together, from the stack's layers as read:
+ * none for one not read, or for a decision or state GitHub may add that Lo doesn't know.
+ */
+export function layerState(
+  layer: Pick<LayerRead, 'reviewDecision' | 'statusCheckRollup'> | undefined,
+): Pick<StackLayer, 'review' | 'checks'> {
+  return { review: reviewOf(layer?.reviewDecision), checks: checksOf(layer?.statusCheckRollup) };
+}
+
+function reviewOf(decision: LayerRead['reviewDecision'] | undefined): StackLayer['review'] {
+  switch (decision) {
+    case 'APPROVED':
+      return 'approved';
+    case 'CHANGES_REQUESTED':
+      return 'changesRequested';
+    case 'REVIEW_REQUIRED':
+      return 'reviewRequired';
+    case null:
+    case undefined:
+      return null;
+    default:
+      decision satisfies never;
+      return null;
+  }
+}
+
+function checksOf(rollup: LayerRead['statusCheckRollup'] | undefined): StackLayer['checks'] {
+  const state = rollup?.state;
+  switch (state) {
+    case 'SUCCESS':
+      return 'passing';
+    case 'PENDING':
+    case 'EXPECTED':
+      return 'running';
+    case 'FAILURE':
+    case 'ERROR':
+      return 'failing';
+    case undefined:
+      return null;
+    default:
+      state satisfies never;
+      return null;
+  }
 }
 
 /** Whether `taking` needs GitHub's Stacks API read to be worked out, for {@link TakingView.github}. */
@@ -125,6 +173,7 @@ function stackTaking(view: TakingView, stack: number): Taking {
     number: layer.number,
     title: view.title(layer.number),
     head: layer.head.sha.toLowerCase(),
+    ...view.state(layer.number),
   }));
   const above = open.slice(at + 1).map((layer) => layer.number);
   if (below.length === 0) return { kind: 'alone' };

@@ -302,9 +302,17 @@ export type PlanKind = z.output<typeof planKind>;
 /**
  * A layer of a GitHub stack that merges with the pull request: its title as GitHub has it, and its
  * head as GitHub's Stacks API gave it as the confirmation opened, which GitHub merges only while
- * it's still the layer's head.
+ * it's still the layer's head. `review` and `checks` are its review decision and how its checks
+ * stand together, as the stack's layers were last read: `null` before they were, or when it has
+ * none.
  */
-export const stackLayer = z.strictObject({ number, title: text, head: oid });
+export const stackLayer = z.strictObject({
+  number,
+  title: text,
+  head: oid,
+  review: z.enum(['approved', 'changesRequested', 'reviewRequired']).nullable(),
+  checks: z.enum(['passing', 'running', 'failing']).nullable(),
+});
 export type StackLayer = z.output<typeof stackLayer>;
 
 /** A change to pull request `pr`'s base branch, from `from` to `to`. */

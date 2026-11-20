@@ -117,7 +117,12 @@ export class ChainRun {
     if (this.#over) return false;
     if (!went) {
       this.#skipRest();
-      this.#stop(`Lo didn’t merge #${this.#options.number}, since its base branch didn’t move.`);
+      const { number } = this.#options;
+      this.#stop(
+        first.status === 'unknown'
+          ? `Lo didn’t merge #${number}, since it can’t tell whether its base branch moved.`
+          : `Lo didn’t merge #${number}, since its base branch didn’t move.`,
+      );
       return false;
     }
     this.#phase = 'merging';

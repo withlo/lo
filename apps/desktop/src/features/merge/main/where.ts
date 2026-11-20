@@ -6,7 +6,7 @@
 // pull request opened since the list, from a branch its merge would go into, would sit below it, so
 // those branches are asked about afresh. Nothing here calls Electron or GitHub.
 
-import { MAX_OPEN_PULL_REQUESTS, type MergeFacts } from '@lo/github';
+import { MAX_OPEN_PULL_REQUESTS, type BranchLookup, type MergeFacts } from '@lo/github';
 import { layerOf, stackOf, type Layer, type NativeStackEntry, type Stacks } from '@lo/stacks';
 
 import type { Forest } from '../../stacks/service.ts';
@@ -25,6 +25,16 @@ export interface Placed {
    */
   readonly stack:
     { readonly number: number; readonly position: number; readonly base: string } | undefined;
+}
+
+/**
+ * The branches `lookups`, a list's lookups of merged pull requests, found none from: for
+ * {@link WhereView.unmerged}.
+ */
+export function unmergedIn(
+  lookups: readonly Pick<BranchLookup, 'branch' | 'found'>[],
+): ReadonlySet<string> {
+  return new Set(lookups.flatMap((lookup) => (lookup.found.length === 0 ? [lookup.branch] : [])));
 }
 
 /** Where `facts` put their pull request. */
@@ -69,6 +79,12 @@ export interface WhereView {
    * sits on a layer below one.
    */
   readonly openFrom: ReadonlyMap<string, OpenFromHead>;
+  /**
+   * The branches whose merged pull requests the account's list of open pull requests looked up and
+   * found none of: a stack whose root is one sits on no merged pull request's branch, whatever the
+   * lookups left out elsewhere. None by default.
+   */
+  readonly unmerged?: ReadonlySet<string>;
   /** The time, in milliseconds since the Unix epoch. */
   readonly now: number;
 }
@@ -130,7 +146,9 @@ export type Unsure =
   | { readonly kind: 'cycle'; readonly prs: readonly number[] }
   /**
    * Some merged pull requests weren't looked up, and its stack sits on a branch that isn't a
-   * trunk, which may be a merged pull request's: a layer it sits on or under may be missing.
+   * trunk, which may be a merged pull request's: a layer it sits on or under may be missing. A
+   * GitHub stack on a branch the lookups found no merged pull request from
+   * ({@link WhereView.unmerged}) is sure of its place.
    */
   | { readonly kind: 'lookups' }
   /**
@@ -168,12 +186,14 @@ export function where(view: WhereView): Where {
   if (!samePlace(listed, facts)) return unknown({ kind: 'moved', listed }, view);
   const cycle = stacks.cycles.find((each) => each.prs.some((pr) => stack.layers.includes(pr)));
   if (cycle) return unknown({ kind: 'cycle', prs: cycle.prs }, view);
-  // What merges with a GitHub stack's layer is GitHub's to say, and its Stacks API is read again
-  // before the merge: a merged pull request its stack sits on changes none of it.
+  // A branch that isn't a trunk may be a merged pull request's, which a GitHub stack sits on as
+  // well as a chain does: merged into, it would take the merge in that pull request's place. A
+  // GitHub stack on one the lookups found no merged pull request from sits there, since what merges
+  // with it is GitHub's to say; a chain's merge a layer at a time waits for every lookup anyway.
   const unlooked = stacks.gaps.some((gap) => gap.kind === 'mergedPullRequests');
-  if (unlooked && !entry && !trunks.includes(stack.root)) {
-    return unknown({ kind: 'lookups' }, view);
-  }
+  const root =
+    trunks.includes(stack.root) || (entry !== undefined && view.unmerged?.has(stack.root) === true);
+  if (unlooked && !root) return unknown({ kind: 'lookups' }, view);
   return readAfresh(view, stacks, trunks, layer) ?? placed(stacks, layer);
 }
 

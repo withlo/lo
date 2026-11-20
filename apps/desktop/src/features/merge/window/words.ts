@@ -1,8 +1,8 @@
 // How the window words a pull request's merge status: the header's one line, and the merge panel's
 // head, reasons and foot, from what main decided; and a merge's confirmation and how it goes, a
-// GitHub stack's layers and a chain's base branch moves among it. Text from GitHub, such as logins, branches and
-// check names, is drawn as text without the characters that turn text around, which the components
-// take out, or `MergeHeader` where it draws the text itself. Nothing here draws.
+// GitHub stack's layers and a chain's base branch moves among it. Text from GitHub, such as logins,
+// branches and check names, is drawn as text without the characters that turn text around, which
+// the components take out, or `MergeHeader` where it draws the text itself. Nothing here draws.
 
 import type { MergeKind } from '@lo/ui';
 
@@ -20,6 +20,7 @@ import type {
   Placement,
   Progress,
   Reviewer,
+  StackLayer,
   Together,
   Unchecked,
 } from '../contract.ts';
@@ -1057,6 +1058,47 @@ export function chainSteps(
     });
   }
   return steps;
+}
+
+/**
+ * Where a GitHub stack's layer stands, in its confirmation: "Approved · checks passed". Nothing
+ * before the stack's layers were read.
+ */
+export function layerLine(layer: Pick<StackLayer, 'review' | 'checks'>): string | undefined {
+  const said: string[] = [];
+  switch (layer.review) {
+    case 'approved':
+      said.push('Approved');
+      break;
+    case 'changesRequested':
+      said.push('Changes requested');
+      break;
+    case 'reviewRequired':
+      said.push('Review required');
+      break;
+    case null:
+      break;
+    default:
+      layer.review satisfies never;
+  }
+  switch (layer.checks) {
+    case 'passing':
+      said.push('checks passed');
+      break;
+    case 'running':
+      said.push('checks running');
+      break;
+    case 'failing':
+      said.push('checks failed');
+      break;
+    case null:
+      break;
+    default:
+      layer.checks satisfies never;
+  }
+  const [first, ...rest] = said;
+  if (first === undefined) return undefined;
+  return [first.charAt(0).toUpperCase() + first.slice(1), ...rest].join(' · ');
 }
 
 /** How long ago `at` was, for a merge in progress: "40 s ago", or as {@link ago} says it. */

@@ -8,6 +8,7 @@ import {
   GithubError,
   MERGE_FACTS,
   MergeJobs,
+  noBranchRules,
   PullRef,
   type AsyncMerge,
   type Cached,
@@ -111,6 +112,8 @@ interface Setup {
   moved?: (move: Retarget) => Promise<StepDone | MergeRefusal>;
   /** What a read of #138's state says, as a chain's merge waits for it. */
   looked?: () => Promise<{ state: string; mergeQueueEntry: unknown }>;
+  /** The merge queue of the branch a chain's bottom layer moves onto first: none by default. */
+  ontoQueue?: { configuration: { mergeMethod: string } | null } | null;
 }
 
 const merges: Merging[] = [];
@@ -148,6 +151,8 @@ function setup(options: Setup = {}) {
   let closed = false;
   const results = options.results ?? [answer('merged', { sha: 'd'.repeat(40) })];
   const moves: Retarget[] = [];
+  /** The branches whose rules were read, for a chain's bottom layer that moves onto one first. */
+  const onto: string[] = [];
   const stand = {
     send: async (_method: string, path: string) => {
       reads.push(path);
@@ -165,15 +170,23 @@ function setup(options: Setup = {}) {
       }
       return Promise.resolve(parse(options.stacks));
     },
-    // A read of #138's state, as a chain's merge waits for it.
-    graphqlWithErrors: async () => ({
-      data: {
-        repository: {
-          pullRequest: (await options.looked?.()) ?? { state: 'OPEN', mergeQueueEntry: null },
+    // The rules of the branch a chain's bottom layer moves onto first, unprotected; or a read of
+    // #138's state, as a chain's merge waits for it.
+    graphqlWithErrors: async (_document: unknown, variables: Record<string, unknown>) => {
+      if (typeof variables['branch'] === 'string') {
+        onto.push(variables['branch']);
+        const ref = { name: variables['branch'], refUpdateRule: null, branchProtectionRule: null };
+        return { data: { repository: { ref, mergeQueue: options.ontoQueue ?? null } }, errors: [] };
+      }
+      return {
+        data: {
+          repository: {
+            pullRequest: (await options.looked?.()) ?? { state: 'OPEN', mergeQueueEntry: null },
+          },
         },
-      },
-      errors: [],
-    }),
+        errors: [],
+      };
+    },
   };
   // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- what `openPullsFromHead` uses.
   const client = stand as unknown as GithubClient;
@@ -260,7 +273,7 @@ function setup(options: Setup = {}) {
   const turns = new MergeTurns();
   const jobs = new MergeJobs({ firstWait: 1, maxWait: 1, now: () => NOW });
   jobsMade.push(jobs);
-  let converting: string[] = [];
+  let converting: number[] = [];
   let forestNow: Forest | undefined | 'default' = 'forest' in options ? options.forest : 'default';
   const merging = new Merging({
     poller: async () => {
@@ -278,7 +291,7 @@ function setup(options: Setup = {}) {
         : forestNow === 'default'
           ? forestOf(cached.value.pullRequest.base)
           : forestNow,
-    converting: () => (converting.length > 0 ? { kind: 'running', prs: [138] } : undefined),
+    converting: () => (converting.length > 0 ? { kind: 'running', prs: converting } : undefined),
     turns,
     jobs,
     publish: (job) => published.push(job),
@@ -294,6 +307,7 @@ function setup(options: Setup = {}) {
     turns,
     sent,
     moves,
+    onto,
     reads,
     published,
     remembered,
@@ -349,8 +363,9 @@ function setup(options: Setup = {}) {
       paused: (until: number) => {
         held = until;
       },
-      converting: () => {
-        converting = ['running'];
+      /** A conversion to a GitHub stack runs on `prs`' path: #138's by default. */
+      converting: (prs: number[] = [138]) => {
+        converting = prs;
       },
       forest: (forest: Forest) => {
         forestNow = forest;
@@ -983,6 +998,49 @@ describe('a stack’s merge', () => {
       plan: { together: { above: [139] } },
     });
     expect(run.sent).toEqual([]);
+
+    // A layer below pushed to since, as the Stacks API now gives its head.
+    const pushed = stacked();
+    const before = planOf(await pushed.merging.plan(ID, SQUASH));
+    pushed.api.stack.pull_requests[0] = pushed.api.layer(137, 'f'.repeat(40));
+    expect(await pushed.merging.confirm(before.key)).toMatchObject({
+      kind: 'again',
+      why: 'The layers that merge with it changed. Check what it does now, then confirm.',
+      plan: { together: { below: [{ number: 137, head: 'f'.repeat(40) }] } },
+    });
+    expect(pushed.sent).toEqual([]);
+  });
+
+  it('refuses while Lo writes to a layer it names, sending nothing', async () => {
+    const run = stacked();
+    const plan = planOf(await run.merging.plan(ID, SQUASH));
+    const other = run.turns.take(PULL.repo, [137]);
+    expect(await run.merging.confirm(plan.key)).toEqual({
+      kind: 'refused',
+      refusal: expect.objectContaining({ kind: 'busy', text: 'Lo is already merging #137.' }),
+    });
+    if ('give' in other) other.give();
+    expect(run.sent).toEqual([]);
+  });
+
+  it('refuses while a conversion to a GitHub stack runs on a layer it names', async () => {
+    const run = stacked();
+    const plan = planOf(await run.merging.plan(ID, SQUASH));
+    run.set.converting([137]);
+    expect(await run.merging.confirm(plan.key)).toMatchObject({
+      kind: 'refused',
+      refusal: { kind: 'converting' },
+    });
+    expect(run.sent).toEqual([]);
+  });
+
+  it('sends no typed squash text: each layer keeps its own commit’s words', async () => {
+    const run = stacked({ submitted: () => new Promise(() => undefined) });
+    const plan = planOf(
+      await run.merging.plan(ID, { method: 'SQUASH', title: 'Mine', message: 'All of it' }),
+    );
+    expect(await run.merging.confirm(plan.key)).toEqual({ kind: 'sent' });
+    expect(run.sent[0]).toMatchObject({ commitTitle: undefined, commitMessage: undefined });
   });
 });
 
@@ -1078,5 +1136,130 @@ describe('a chain’s merge a layer at a time', () => {
       kind: 'refused',
       why: `${offer} Make this a GitHub stack, then merge it.`,
     });
+  });
+
+  it('refuses while Lo writes to a layer it moves, or a conversion runs on one, sending nothing', async () => {
+    const run = chained();
+    const plan = planOf(await run.merging.plan(ID, SQUASH));
+    const other = run.turns.take(PULL.repo, [139]);
+    expect(await run.merging.confirm(plan.key)).toEqual({
+      kind: 'refused',
+      refusal: expect.objectContaining({ kind: 'busy', text: 'Lo is already merging #139.' }),
+    });
+    if ('give' in other) other.give();
+
+    const converting = chained();
+    const again = planOf(await converting.merging.plan(ID, SQUASH));
+    converting.set.converting([139]);
+    expect(await converting.merging.confirm(again.key)).toMatchObject({
+      kind: 'refused',
+      refusal: { kind: 'converting' },
+    });
+    expect([...run.sent, ...converting.sent, ...run.moves, ...converting.moves]).toEqual([]);
+  });
+});
+
+/**
+ * #138 on m137, the branch of #137, which merged into main with a merge commit, and #139 on #138:
+ * a chain whose bottom layer moves onto main before it merges, in a repository without the Stacks
+ * API.
+ */
+function onMerged(more: Setup = {}) {
+  const merged: PullRequest = {
+    number: 137,
+    state: { kind: 'merged', headInBase: true },
+    baseRef: 'main',
+    baseTip: undefined,
+    headRef: 'm137',
+    headInBaseRepo: true,
+    headOid: 'd'.repeat(40),
+    commits: [],
+    createdAt: 0,
+    nativeStack: undefined,
+  };
+  const pulls: PullRequest[] = [
+    merged,
+    {
+      number: 138,
+      state: { kind: 'open' },
+      baseRef: 'm137',
+      baseTip: merged.headOid,
+      headRef: 'merge/5/squash',
+      headInBaseRepo: true,
+      headOid: HEAD,
+      commits: [merged.headOid],
+      createdAt: 1,
+      nativeStack: undefined,
+    },
+    {
+      number: 139,
+      state: { kind: 'open' },
+      baseRef: 'merge/5/squash',
+      baseTip: undefined,
+      headRef: 'merge/5/chain-2',
+      headInBaseRepo: true,
+      headOid: 'e'.repeat(40),
+      commits: [],
+      createdAt: 2,
+      nativeStack: undefined,
+    },
+  ];
+  const forest = forestOf('m137');
+  return setup({
+    facts: factsOf({ base: 'm137' }, { rules: noBranchRules('m137') }),
+    forest: { ...forest, stacks: { ...findStacks(pulls, forest.trunks), gaps: [] } },
+    stacks: undefined,
+    ...more,
+  });
+}
+
+describe('a chain’s bottom layer on a merged pull request’s branch', () => {
+  it('moves onto the root first, merges under the root’s rules once it’s there, then moves the layer on it', async () => {
+    const run = onMerged();
+    const plan = planOf(await run.merging.plan(ID, SQUASH));
+    expect(plan).toMatchObject({
+      base: 'main',
+      together: {
+        kind: 'chain',
+        before: { pr: 138, from: 'm137', to: 'main' },
+        after: [{ pr: 139, from: 'merge/5/squash', to: 'main' }],
+      },
+    });
+    expect(run.onto).toEqual(['main']);
+    expect(await run.merging.confirm(plan.key)).toEqual({ kind: 'sent' });
+    // The root's rules are read again at the press.
+    expect(run.onto).toEqual(['main', 'main']);
+    await vi.waitFor(() =>
+      expect(run.published.at(-1)?.together).toMatchObject({ kind: 'chain', phase: 'done' }),
+    );
+    expect(run.moves.map((move) => move.pr)).toEqual([138, 139]);
+    expect(run.sent).toHaveLength(1);
+    expect(run.turns.busy(PULL.repo, [138, 139])).toEqual([]);
+  });
+
+  it('plans the merge as the root’s rules say: into its merge queue, when it has one', async () => {
+    const run = onMerged({ ontoQueue: { configuration: { mergeMethod: 'SQUASH' } } });
+    expect(planOf(await run.merging.plan(ID, SQUASH))).toMatchObject({
+      kind: 'enqueue',
+      base: 'main',
+    });
+  });
+
+  it('merges nothing when its base branch didn’t move', async () => {
+    const run = onMerged({
+      moved: (move) =>
+        move.pr === 138
+          ? Promise.resolve({ refusal: 'baseChanged', now: 'elsewhere' })
+          : Promise.reject(new Error('only #138 moves')),
+    });
+    const plan = planOf(await run.merging.plan(ID, SQUASH));
+    expect(await run.merging.confirm(plan.key)).toEqual({ kind: 'sent' });
+    await vi.waitFor(() =>
+      expect(run.published.at(-1)?.together).toMatchObject({ kind: 'chain', phase: 'stopped' }),
+    );
+    expect(run.sent).toEqual([]);
+    expect(run.moves.map((move) => move.pr)).toEqual([138]);
+    expect(run.published.at(-1)?.state).toMatchObject({ kind: 'refused' });
+    expect(run.turns.busy(PULL.repo, [138, 139])).toEqual([]);
   });
 });
