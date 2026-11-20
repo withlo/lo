@@ -31,7 +31,6 @@ import { MergeTurns } from './turns.ts';
 const NOW = 1_800_000_000_000;
 const NEWER = 'c'.repeat(40);
 const ID = 'tab-1';
-const REPO = new PullRef('rozed-dev', 'e2e', 138).repo;
 
 /** #138 goes alone. */
 const ALONE: Goes = { kind: 'goes', onto: (facts) => facts, together: null };
@@ -72,8 +71,8 @@ interface Setup {
   summary?: SummaryKept;
   /** Where #138 sits, and what its merge takes with it, at each ask: the first, the press's, … */
   goes?: Goes | ((asked: number) => Goes);
-  /** What GitHub says in a read that lands while the press asks where #138 sits. */
-  landing?: MergeFacts;
+  /** What GitHub says in a read that lands while Lo asks where #138 sits, the `at`th time. */
+  landing?: { facts: MergeFacts; at: number };
   /** What sending the step after the approval comes to. */
   send?: (plan: MergePlan, heard: ((answer: AutoAnswer) => void) | undefined) => void;
 }
@@ -93,6 +92,11 @@ const CHAIN_ABOVE: Goes = {
   why: 'Merge #137 first: it’s this chain’s bottom layer.',
   unknown: false,
 };
+
+/** GitHub's answer to the approval is lost, and a read of your reviews couldn't settle it. */
+function lost(): Promise<Approved> {
+  return Promise.resolve({ kind: 'unknown', why: 'Lost.' });
+}
 
 /** GitHub's answer to turning auto-merge on is lost. */
 function lostAnswer(_plan: MergePlan, heard: ((answer: AutoAnswer) => void) | undefined): void {
@@ -199,8 +203,10 @@ function setup(options: Setup = {}) {
       weigh: merging.weigh.bind(merging),
       goesAs() {
         asked += 1;
-        // The press asks second.
-        if (asked === 2 && options.landing) cached = { value: options.landing, fetchedAt: NOW };
+        // The plan asks first, the press second, and once approved, third.
+        if (asked === options.landing?.at) {
+          cached = { value: options.landing.facts, fetchedAt: NOW };
+        }
         const goes = options.goes ?? ALONE;
         return Promise.resolve(typeof goes === 'function' ? goes(asked) : goes);
       },
@@ -328,32 +334,35 @@ describe('the plan', () => {
     const { plan } = setup({ goes: CHAIN_ABOVE });
     await expect(plan()).resolves.toMatchObject({
       likely: { kind: 'stop', stop: { kind: 'where', text: expect.stringContaining('#137') } },
-      together: null,
       warning: false,
     });
   });
 
-  it('names what its merge takes with it: a GitHub stack’s layers below', async () => {
-    const { plan } = setup({ goes: { ...ALONE, together: STACK } });
-    await expect(plan()).resolves.toMatchObject({ likely: { kind: 'merge' }, together: STACK });
-  });
-
-  it('leaves a chain’s bottom layer that moves onto the root before it merges to the panel', async () => {
-    const { plan } = setup({
-      goes: {
-        ...ALONE,
-        together: {
-          kind: 'chain',
-          before: { pr: 138, from: 'e1/base', to: 'main' },
-          after: [],
-          needsRebase: [],
+  it('stops after approving wherever its merge would take anything with it, in the panel’s words', async () => {
+    await expect(setup({ goes: { ...ALONE, together: STACK } }).plan()).resolves.toMatchObject({
+      likely: {
+        kind: 'stop',
+        stop: {
+          kind: 'where',
+          text: '#137, below #138 in GitHub stack #7, would merge with it. Merge the 2 layers from the merge panel.',
         },
       },
+      warning: false,
     });
-    await expect(plan()).resolves.toMatchObject({
-      likely: { kind: 'stop', stop: { kind: 'where', text: expect.stringContaining('onto main') } },
-      together: null,
-    });
+    for (const before of [null, { pr: 138, from: 'e1/base', to: 'main' }]) {
+      const chain: Together = {
+        kind: 'chain',
+        before,
+        after: [{ pr: 139, from: 'e1/138', to: 'main' }],
+        needsRebase: [139],
+      };
+      await expect(setup({ goes: { ...ALONE, together: chain } }).plan()).resolves.toMatchObject({
+        likely: {
+          kind: 'stop',
+          stop: { kind: 'where', text: expect.stringContaining('layers above it onto main') },
+        },
+      });
+    }
   });
 });
 
@@ -387,7 +396,7 @@ describe('the press', () => {
   });
 
   it('plans from a read that lands while it asks where the pull request sits', async () => {
-    const { shipping, plan, approvals } = setup({ landing: approved() });
+    const { shipping, plan, approvals } = setup({ landing: { facts: approved(), at: 2 } });
     const first = await plan();
     await expect(shipping.confirm(first.key)).resolves.toMatchObject({
       kind: 'again',
@@ -396,43 +405,16 @@ describe('the press', () => {
     expect(approvals).toEqual([]);
   });
 
-  it('asks again when what its merge takes with it changed', async () => {
+  it('asks again when where its merge goes changed', async () => {
     const { shipping, plan, approvals } = setup({
       goes: (asked) => (asked === 1 ? ALONE : { ...ALONE, together: STACK }),
     });
     await expect(shipping.confirm((await plan()).key)).resolves.toMatchObject({
       kind: 'again',
-      plan: { together: STACK },
-      why: expect.stringContaining('The layers that merge with it changed.'),
+      plan: { likely: { kind: 'stop', stop: { kind: 'where' } } },
+      why: expect.stringContaining('What follows the approval changed.'),
     });
     expect(approvals).toEqual([]);
-  });
-
-  it('holds the turns of a stack’s layers that merge with it, and refuses while one is busy or converting', async () => {
-    const busy = setup({ goes: { ...ALONE, together: STACK } });
-    const held = busy.turns.take(REPO, [137]);
-    await expect(busy.shipping.confirm((await busy.plan()).key)).resolves.toMatchObject({
-      refusal: { kind: 'busy', text: 'Lo is already merging #137.' },
-    });
-    if (!('busy' in held)) held.give();
-    const converting = setup({ goes: { ...ALONE, together: STACK } });
-    converting.set.converting([137]);
-    await expect(converting.shipping.confirm((await converting.plan()).key)).resolves.toMatchObject(
-      { refusal: { kind: 'converting' } },
-    );
-    let answer: ((approved: Approved) => void) | undefined;
-    const running = setup({
-      goes: { ...ALONE, together: STACK },
-      approve: () => new Promise((resolve) => (answer = resolve)),
-    });
-    await expect(running.shipping.confirm((await running.plan()).key)).resolves.toEqual({
-      kind: 'started',
-    });
-    expect(running.turns.busy(REPO, [137, 138])).toEqual([137, 138]);
-    answer?.({ kind: 'refused', why: 'No.' });
-    await running.settled();
-    expect(running.turns.busy(REPO, [137, 138])).toEqual([]);
-    for (const each of [busy, converting]) expect(each.approvals).toEqual([]);
   });
 
   it('runs a plan once', async () => {
@@ -508,19 +490,47 @@ describe('running', () => {
     expect(sent).toEqual([]);
   });
 
-  it('stops before approving when the approval is refused, or Lo can’t tell whether it went', async () => {
-    for (const answer of [
-      { kind: 'refused', why: 'No.' },
-      { kind: 'unknown', why: 'Lost.' },
-    ] as const) {
-      const { shipping, plan, settled, sent } = setup({ approve: () => Promise.resolve(answer) });
-      await shipping.confirm((await plan()).key);
-      await expect(settled()).resolves.toMatchObject({
-        approved: false,
-        phase: { kind: 'stopped', at: 'approve' },
-      });
-      expect(sent).toEqual([]);
-    }
+  it('stops before approving when the approval is refused', async () => {
+    const { shipping, plan, settled, sent } = setup({
+      approve: () => Promise.resolve({ kind: 'refused', why: 'No.' }),
+    });
+    await shipping.confirm((await plan()).key);
+    await expect(settled()).resolves.toMatchObject({
+      approved: false,
+      phase: { kind: 'stopped', at: 'approve' },
+    });
+    expect(sent).toEqual([]);
+  });
+
+  it('when Lo can’t tell whether GitHub took the approval, reads the pull request to settle it', async () => {
+    const shown = setup({ approve: lost, reads: [waiting(), approved()] });
+    await shown.shipping.confirm((await shown.plan()).key);
+    await expect(shown.settled()).resolves.toMatchObject({
+      approved: true,
+      phase: { kind: 'sending', step: { kind: 'merge' } },
+    });
+    const unseen = setup({ approve: lost, reads: [waiting()] });
+    await unseen.shipping.confirm((await unseen.plan()).key);
+    await expect(unseen.settled()).resolves.toMatchObject({
+      approved: false,
+      phase: { kind: 'stopped', at: 'unsure', refusal: { kind: 'unknown' } },
+    });
+    expect(unseen.sent).toEqual([]);
+  });
+
+  it('waits for the approval however long it waits its turn, and stops at nothing meanwhile', async () => {
+    let answer: ((approved: Approved) => void) | undefined;
+    const { shipping, plan, published, settled } = setup({
+      approve: () => new Promise((resolve) => (answer = resolve)),
+    });
+    const { key } = await plan();
+    await expect(shipping.confirm(key)).resolves.toEqual({ kind: 'started' });
+    vi.useFakeTimers();
+    await vi.advanceTimersByTimeAsync(10 * 60_000);
+    expect(published.map((each) => each.phase.kind)).toEqual(['approving']);
+    vi.useRealTimers();
+    answer?.({ kind: 'refused', why: 'No.' });
+    await expect(settled()).resolves.toMatchObject({ phase: { kind: 'stopped', at: 'approve' } });
   });
 
   it('stops after approving, saying so, when GitHub then allows other than what was confirmed', async () => {
@@ -549,17 +559,7 @@ describe('running', () => {
     expect(sent).toEqual([]);
   });
 
-  it('merges a stack’s layers below with it, as confirmed', async () => {
-    const { shipping, plan, settled, sent } = setup({
-      reads: [waiting(), approved()],
-      goes: { ...ALONE, together: STACK },
-    });
-    await shipping.confirm((await plan()).key);
-    await expect(settled()).resolves.toMatchObject({ phase: { kind: 'sending' } });
-    expect(sent).toEqual([expect.objectContaining({ kind: 'merge', together: STACK })]);
-  });
-
-  it('stops after approving when what its merge takes with it changed since', async () => {
+  it('stops after approving when its merge would take anything with it by then', async () => {
     const { shipping, plan, settled, sent } = setup({
       reads: [waiting(), approved()],
       goes: (asked) => (asked <= 2 ? ALONE : { ...ALONE, together: STACK }),
@@ -567,9 +567,48 @@ describe('running', () => {
     await shipping.confirm((await plan()).key);
     await expect(settled()).resolves.toMatchObject({
       approved: true,
-      phase: { kind: 'stopped', at: 'ship', refusal: { kind: 'together' } },
+      phase: { kind: 'stopped', at: 'ship', stop: { kind: 'where' } },
     });
     expect(sent).toEqual([]);
+  });
+
+  it('after approving, plans from a read that lands while it asks where the pull request sits', async () => {
+    const { shipping, plan, settled, sent } = setup({
+      reads: [waiting(), approved()],
+      landing: { facts: approved({ head: NEWER }), at: 3 },
+    });
+    await shipping.confirm((await plan()).key);
+    await expect(settled()).resolves.toMatchObject({
+      approved: true,
+      phase: { kind: 'stopped', at: 'ship', stop: { kind: 'headMoved' } },
+    });
+    expect(sent).toEqual([]);
+  });
+
+  it('after approving, stops while offline or holding writes, or while a conversion runs on it', async () => {
+    const offline = setup({
+      reads: [waiting(), approved()],
+      approve: () => {
+        offline.set.offline();
+        return Promise.resolve({ kind: 'approved' });
+      },
+    });
+    await offline.shipping.confirm((await offline.plan()).key);
+    await expect(offline.settled()).resolves.toMatchObject({
+      phase: { kind: 'stopped', at: 'ship', refusal: { kind: 'offline' } },
+    });
+    const converting = setup({
+      reads: [waiting(), approved()],
+      approve: () => {
+        converting.set.converting([138]);
+        return Promise.resolve({ kind: 'approved' });
+      },
+    });
+    await converting.shipping.confirm((await converting.plan()).key);
+    await expect(converting.settled()).resolves.toMatchObject({
+      phase: { kind: 'stopped', at: 'ship', refusal: { kind: 'converting' } },
+    });
+    for (const each of [offline, converting]) expect(each.sent).toEqual([]);
   });
 
   it('stops after approving when GitHub doesn’t show the approval in time', async () => {
@@ -622,12 +661,15 @@ describe('auto-merge', () => {
       send(_plan, heard) {
         if (!first) return;
         first = false;
+        // Heard twice: it merges in its place once.
+        heard?.({ refused: { refusal: 'canMergeNow' } });
         heard?.({ refused: { refusal: 'canMergeNow' } });
       },
     });
     await shipping.confirm((await plan()).key);
     await vi.waitFor(() => expect(sent).toHaveLength(2));
     expect(sent.map((each) => each.kind)).toEqual(['autoMerge', 'merge']);
+    expect(published.some((each) => each.phase.kind === 'stopped')).toBe(false);
     await vi.waitFor(() =>
       expect(published.at(-1)?.phase).toMatchObject({ kind: 'sending', step: { kind: 'merge' } }),
     );

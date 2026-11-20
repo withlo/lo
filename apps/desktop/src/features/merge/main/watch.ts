@@ -191,8 +191,9 @@ export class ShipWatch {
 
   /**
    * Keeps `shipped`, auto-merge approve and ship is about to turn on after your approval, and
-   * returns what hears GitHub's answer: on, and the watch starts, with the method GitHub reports;
-   * refused, and the row goes; lost, and the watch starts, for its reads to settle it.
+   * returns what hears GitHub's answer: on, and the watch starts, with the method GitHub reports,
+   * unless another account turned it on, and the row goes; refused, and the row goes; lost, and
+   * the watch starts, for its reads to settle it.
    */
   keep(shipped: Shipped): (answer: AutoAnswer) => void {
     const row: ShippedRow = { ...shipped, enabledBy: shipped.login, at: this.#now() };
@@ -210,6 +211,14 @@ export class ShipWatch {
       }
       const on = answer.autoMerge;
       if (on) {
+        // Another account's auto-merge isn't the one approve and ship turned on.
+        if (
+          on.enabledBy !== undefined &&
+          on.enabledBy.toLowerCase() !== watching.row.login.toLowerCase()
+        ) {
+          this.#end(watching);
+          return;
+        }
         // As GitHub reports it, but on a branch with a merge queue, where it reports a merge
         // commit whatever was asked.
         watching.row = {

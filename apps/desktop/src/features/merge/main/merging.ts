@@ -127,7 +127,7 @@ import { placedBy, unmergedIn, where, type OpenFromHead, type Where } from './wh
 export const FRESH_FOR = 7 * 60_000;
 
 /** How many times the checks at a press weigh it, when reads land while they wait: 3. */
-const LOOKS = 3;
+export const LOOKS = 3;
 
 /** What merging uses of an account's poller. */
 export interface MergingPoller

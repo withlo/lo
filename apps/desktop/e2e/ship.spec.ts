@@ -6,7 +6,8 @@
 // request's author: on one someone else opened it approves the revision on screen, then turns on
 // "Merge when ready" (`app_merge_ship_queued_others`), or stops after approving, saying so, when
 // GitHub then reads it as conflicting (`app_merge_ship_queued_conflict`); a push after the plan
-// stops it before approving (`app_merge_ship_queued_moved`).
+// stops it before approving (`app_merge_ship_queued_moved`); and a push once "Merge when ready" is
+// on has the watch turn auto-merge off (`app_merge_ship_watched`).
 
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -201,6 +202,24 @@ test.describe('on a pull request someone else opened', () => {
     expect(writes(github, 'AddPullRequestReview')).toBe(1);
     expect(writes(github, 'EnablePullRequestAutoMerge')).toBe(1);
     await expect(status(page)).toContainText('Merges when ready');
+  });
+});
+
+test.describe('when someone pushes once “Merge when ready” is on', () => {
+  test.use({ cassette: 'app_merge_ship_watched' });
+
+  test('Lo turns auto-merge off, so the push doesn’t merge with your approval', async ({
+    page,
+    github,
+  }) => {
+    const { number } = pulls.queuedSlow1;
+    await open(page, number, 'Can’t merge yet');
+    await ship(page, number);
+    await page.keyboard.press('Enter');
+    await expect(page.getByText(/^Lo turned off auto-merge: /)).toBeVisible({ timeout: MERGING });
+    expect(writes(github, 'AddPullRequestReview')).toBe(1);
+    expect(writes(github, 'EnablePullRequestAutoMerge')).toBe(1);
+    expect(writes(github, 'DisablePullRequestAutoMerge')).toBe(1);
   });
 });
 

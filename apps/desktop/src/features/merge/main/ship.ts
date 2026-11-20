@@ -1,22 +1,24 @@
 // Approve and ship, in main: `⌘⇧⏎` reads what decides the merge, and `@lo/review`'s
 // `approveAndShip` plans it: whether to approve the revision on screen, and what Lo expects to
-// follow, with what its merge takes with it, from where the pull request sits, as the merge panel
-// asks it (`Merging.goesAs`). The plan is kept under a key for the reader to confirm in one
+// follow, from where the pull request sits, as the merge panel asks it (`Merging.goesAs`). The plan is kept under a key for the reader to confirm in one
 // confirmation; the window confirms the key and never sends anything itself. A plan runs once. As
 // it's confirmed, main weighs it as a merge's press is weighed (`Merging.weigh`), reading GitHub
 // again whatever it read before, and planning again from a read that lands meanwhile: someone
 // pushed since the revision on screen, and it stops before approving; anything else the
 // confirmation named changed, and it asks again with a new plan. From the press on it holds the
-// turns among merge writes of the pull request and of what its merge takes with it.
+// pull request's turn among merge writes.
 //
 // It approves through the review feature, in its turn among the writes to the pull request,
 // comments included. An answer that's lost is settled by reading your reviews, and nothing more is
 // sent until it is. Then it reads GitHub again until that shows your approval, and calls
-// `afterApproving`. It goes on only when that's what the confirmation asked (`asAsked`), from where
-// the merge panel would merge, taking with it what the confirmation named; otherwise it stops,
-// saying what it approved. A chain's bottom layer that moves onto the root before it merges it
-// leaves to the panel. The merge, queue entry or auto-merge goes through the merge jobs, as the
-// panel's does (`Merging.sendShipped`). Auto-merge it turns on after your approval is kept for the
+// `afterApproving`, planning again from a read that lands while it asks where the pull request sits,
+// as the press does. It goes on only when that's what the confirmation asked (`asAsked`), and only
+// for a pull request alone or a GitHub stack's bottom layer: you approve only what's on screen, so
+// it merges nothing with it. Anywhere else, and wherever the merge panel wouldn't merge from, the
+// plan is to stop after approving, saying why, and leave the merge to the panel. An approval Lo
+// can't tell GitHub took is settled by reading the pull request, and said so until it is. The merge,
+// queue entry or auto-merge goes through the merge jobs, as the panel's does
+// (`Merging.sendShipped`). Auto-merge it turns on after your approval is kept for the
 // watch (`./watch.ts`), so a push before it merges doesn't merge with your approval. Nothing here
 // calls Electron.
 
@@ -66,6 +68,7 @@ import type {
 import type { MergeTurn, MergeWrites } from '../service.ts';
 import { afterPushOf } from './auto.ts';
 import {
+  LOOKS,
   offOf,
   offText,
   type AutoAnswer,
@@ -76,7 +79,7 @@ import {
   type Weighed,
 } from './merging.ts';
 import { blockersOf } from './status.ts';
-import { namesOf, numbers, togetherChanged } from './together.ts';
+import { numbers } from './together.ts';
 
 /** What approve and ship keeps for the auto-merge it turns on: as `ShipWatch.keep` takes it. */
 export interface Shipped {
@@ -131,11 +134,6 @@ export interface ShippingOptions {
   readonly newKey?: () => string;
   /** How long a read of GitHub may take before Lo gives up on it, in milliseconds: 20 s. */
   readonly readWait?: number;
-  /**
-   * How long Lo waits to know whether GitHub took the approval, when its answer was lost, in
-   * milliseconds: 2 minutes.
-   */
-  readonly approvalWait?: number;
   /** How long Lo reads GitHub again for it to show your approval, in milliseconds: 30 s. */
   readonly showWait?: number;
   /** How long between those reads, in milliseconds: 2 s. */
@@ -157,6 +155,17 @@ interface Core {
   readonly summary: SummaryKept;
 }
 
+/** The step after the approval, as a read of what decides the merge plans it. */
+interface After {
+  readonly facts: MergeFacts;
+  readonly snapshot: MergeSnapshot;
+  /** What `afterApproving` says follows. */
+  readonly now: Ship;
+  readonly step: ShipStep;
+  /** Where its merge goes, as Lo asked when it sends one. */
+  readonly goes: Goes | undefined;
+}
+
 /** Approve and ship, as it runs. */
 interface Run {
   readonly plan: ShipPlan;
@@ -168,6 +177,8 @@ interface Run {
   /** The pull request's turn among merge writes, from the press until it's handed on or given. */
   turn: MergeTurn | undefined;
   approved: boolean;
+  /** Why Lo can't tell yet whether GitHub took the approval, until a read shows it. */
+  unsure: string | undefined;
   phase: ShipPhase | undefined;
   /** Whether GitHub refused auto-merge since the pull request can merge as it is, once. */
   again: boolean;
@@ -410,12 +421,30 @@ function approvalShape(approval: ShipApproval): string {
 }
 
 /**
- * Why approve and ship leaves the merge to the panel when it takes `together` with it: a chain's
- * bottom layer, pull request `number`, moves onto the root before it merges. Nothing otherwise.
+ * Why approve and ship stops after approving pull request `number`, whose merge takes `together`
+ * with it, and leaves the merge to the panel: you approve only what's on screen, so it merges a
+ * pull request alone or a GitHub stack's bottom layer, and nothing with it. Nothing for one alone.
  */
-function movesFirst(together: Together | null, number: number): string | undefined {
-  if (together?.kind !== 'chain' || together.before === null) return undefined;
-  return `Lo moves #${number} onto ${together.before.to} before it merges. Merge it from the merge panel.`;
+function notAlone(together: Together | null, number: number): string | undefined {
+  switch (together?.kind) {
+    case undefined:
+      return undefined;
+    case 'stack': {
+      const { below } = together;
+      return `${numbers(below.map((layer) => layer.number))}, below #${number} in GitHub stack #${together.stack}, would merge with it. Merge the ${below.length + 1} layers from the merge panel.`;
+    }
+    case 'chain': {
+      const root = together.before?.to ?? together.after[0]?.to;
+      const moves =
+        root === undefined
+          ? 'Lo moves the layers above it once it has merged'
+          : `Lo moves the layers above it onto ${root} once it has merged`;
+      return `#${number} is the bottom layer of a chain that isn’t a GitHub stack, and ${moves}. Merge it from the merge panel.`;
+    }
+    default:
+      together satisfies never;
+      return 'Merge it from the merge panel.';
+  }
 }
 
 /** What changed between two plans the confirmation would name, in words, or nothing. */
@@ -440,8 +469,6 @@ function changed(was: ShipPlan, now: ShipPlan): string | undefined {
   if (was.summary !== now.summary) return 'Your summary changed.';
   if (was.base !== now.base) return `#${now.number} merges into ${now.base} now.`;
   if (shape(was.likely) !== shape(now.likely)) return 'What follows the approval changed.';
-  const together = togetherChanged(was.together, now.together);
-  if (together !== undefined) return together;
   if (was.warning !== now.warning) return 'What a push before it merges would do changed.';
   return undefined;
 }
@@ -645,18 +672,14 @@ export class Shipping {
   ): Kept {
     const { core, snapshot, summary } = made;
     let likely = stepOf(core.likely, snapshot, facts, pull);
-    let together: Together | null = null;
+    // Approved, and then left to the merge panel.
     const where =
       goes?.kind === 'where'
         ? goes.why
         : goes?.kind === 'goes'
-          ? movesFirst(goes.together, pull.number)
+          ? notAlone(goes.together, pull.number)
           : undefined;
-    if (where !== undefined) {
-      likely = { kind: 'stop', stop: { kind: 'where', text: where } };
-    } else if (goes?.kind === 'goes') {
-      ({ together } = goes);
-    }
+    if (where !== undefined) likely = { kind: 'stop', stop: { kind: 'where', text: where } };
     const plan: ShipPlan = {
       key: this.#newKey(),
       id,
@@ -669,7 +692,6 @@ export class Shipping {
       approval: approvalOf(core.approval),
       summary: approves(core.approval) && summary === 'text',
       likely,
-      together,
       warning: likely.kind !== 'stop' && core.staleApprovalWarning,
       afterPush: afterPushOf(snapshot),
     };
@@ -740,13 +762,12 @@ export class Shipping {
         why: `${why} Check what it does now, then confirm.`,
       };
     }
-    // What its merge takes with it holds its turns too, as a merge from the panel does.
-    const named = namesOf(plan.number, plan.together);
-    const [busy] = this.#options.turns.busy(pull.repo, named);
-    if (busy !== undefined) return refused(own('busy', `Lo is already merging #${busy}.`));
-    const converting = this.#converting(pull, named);
+    if (this.#options.turns.busy(pull.repo, [pull.number]).length > 0) {
+      return refused(own('busy', `Lo is already merging #${plan.number}.`));
+    }
+    const converting = this.#converting(pull);
     if (converting) return refused(converting);
-    const turn = this.#options.turns.take(pull.repo, named);
+    const turn = this.#options.turns.take(pull.repo, [pull.number]);
     if ('busy' in turn) return refused(own('busy', `Lo is already merging #${turn.busy}.`));
     // What the checks found at their start, once more, right before it runs.
     const still = this.#holds(plan, pull, poller);
@@ -765,6 +786,7 @@ export class Shipping {
         facts: weighed.facts,
         turn,
         approved: false,
+        unsure: undefined,
         phase: undefined,
         again: false,
       },
@@ -821,10 +843,10 @@ export class Shipping {
     return undefined;
   }
 
-  /** Why nothing merges `named` in `pull`'s repository while a conversion to a GitHub stack runs. */
-  #converting(pull: PullRef, named: readonly number[]): Refusal | undefined {
+  /** Why nothing merges `pull` while a conversion to a GitHub stack runs on it. */
+  #converting(pull: PullRef): Refusal | undefined {
     const converting = this.#options.converting(pull.repo);
-    if (!converting?.prs.some((pr) => named.includes(pr))) return undefined;
+    if (!converting?.prs.includes(pull.number)) return undefined;
     return own(
       'converting',
       `Lo is making ${numbers(converting.prs)} a GitHub stack. Approve and ship once that’s done.`,
@@ -834,10 +856,10 @@ export class Shipping {
   /** Runs `run` from its approval on, then gives back its turn, unless it handed it on. */
   async #run(run: Run): Promise<void> {
     try {
-      if (!(await this.#approving(run))) return;
-      const snapshot = await this.#approvalShown(run);
-      if (!snapshot) return;
-      await this.#ship(run, snapshot);
+      const approval = await this.#approving(run);
+      if (approval === 'stopped') return;
+      if (!(await this.#approvalShown(run))) return;
+      await this.#ship(run);
     } catch (error) {
       this.#options.log(`${run.pull.toString()}: ${describe(error)}`);
       this.#stopAt(
@@ -851,34 +873,21 @@ export class Shipping {
     }
   }
 
-  /** Approves, unless the plan skips it: whether to go on. */
-  async #approving(run: Run): Promise<boolean> {
-    if (!approves(run.core.approval)) return true;
+  /**
+   * Approves, unless the plan skips it, waiting as long as the approval waits its turn and, when
+   * its answer is lost, for a read of your reviews to settle it: whether to go on, or that Lo
+   * can't tell yet whether GitHub took it, which a read of the pull request may settle.
+   */
+  async #approving(run: Run): Promise<'go' | 'stopped'> {
+    if (!approves(run.core.approval)) return 'go';
     this.#phase(run, { kind: 'approving' });
-    const wait = this.#options.approvalWait ?? 120_000;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const late = new Promise<Approved>((resolve) => {
-      timer = setTimeout(
-        () =>
-          resolve({
-            kind: 'unknown',
-            why: 'GitHub’s answer was lost, and Lo couldn’t tell in time whether it took the approval.',
-          }),
-        wait,
-      );
-    });
-    let answer: Approved;
-    try {
-      answer = await Promise.race([this.#options.approve(run.plan.id, run.plan.head), late]);
-    } finally {
-      clearTimeout(timer);
-    }
+    const answer = await this.#options.approve(run.plan.id, run.plan.head);
     const { number } = run.plan;
     switch (answer.kind) {
       case 'approved':
         run.approved = true;
         this.#publish(run);
-        return true;
+        return 'go';
       case 'moved':
         this.#stopAt(
           run,
@@ -889,32 +898,28 @@ export class Shipping {
             `Someone pushed to #${number} since the revision on screen, so Lo approved nothing. See what changed first.`,
           ),
         );
-        return false;
+        return 'stopped';
       case 'refused':
         this.#stopAt(run, own('notApproved', `${answer.why} Nothing was approved or merged.`));
-        return false;
+        return 'stopped';
       case 'unknown':
-        this.#stopAt(
-          run,
-          own(
-            'unknown',
-            `Lo can’t tell whether GitHub took your approval: ${answer.why} Nothing more was sent.`,
-          ),
-        );
-        return false;
+        // It may be on GitHub: what the pull request shows settles it.
+        run.unsure = answer.why;
+        return 'go';
       default:
         answer satisfies never;
-        return false;
+        return 'stopped';
     }
   }
 
   /**
-   * What GitHub says once it shows the approval Lo sent, read again until it does, or what it said
-   * at the press when nothing was approved; or nothing, once it stopped.
+   * Whether to go on: once GitHub shows the approval Lo sent, or one Lo can't tell it took, read
+   * again until it does, or a push since; at once when nothing was approved. `run.facts` holds what
+   * it read.
    */
-  async #approvalShown(run: Run): Promise<MergeSnapshot | undefined> {
+  async #approvalShown(run: Run): Promise<boolean> {
     const { plan, pull, poller } = run;
-    if (!run.approved) return this.#snapshotOf(plan.id, pull, run.facts, plan.head);
+    if (!run.approved && run.unsure === undefined) return true;
     this.#phase(run, { kind: 'reading' });
     const until = this.#now() + (this.#options.showWait ?? 30_000);
     for (;;) {
@@ -925,7 +930,7 @@ export class Shipping {
         new AbortController().signal,
         () => this.#now(),
       );
-      if (this.#stopped) return undefined;
+      if (this.#stopped) return false;
       if (typeof read === 'string') {
         this.#stopAt(
           run,
@@ -934,34 +939,98 @@ export class Shipping {
             `Lo couldn’t read #${plan.number} again after approving, so it merged nothing: ${read}`,
           ),
         );
-        return undefined;
+        return false;
       }
       const snapshot = this.#snapshotOf(plan.id, pull, read.value, plan.head);
-      // A push since stops it, as `afterApproving` says.
-      if (showsYourApproval(snapshot, plan.head) || !sameCommit(snapshot.head, plan.head)) {
+      if (showsYourApproval(snapshot, plan.head)) {
         run.facts = read.value;
-        return snapshot;
+        if (run.unsure !== undefined) {
+          run.unsure = undefined;
+          run.approved = true;
+          this.#publish(run);
+        }
+        return true;
+      }
+      // A push since stops it, as `afterApproving` says.
+      if (!sameCommit(snapshot.head, plan.head)) {
+        run.facts = read.value;
+        return true;
       }
       if (this.#now() >= until) {
         this.#stopAt(
           run,
-          own(
-            'notShown',
-            `GitHub doesn’t show your approval of #${plan.number} yet, so Lo merged nothing. Merge it from the panel once it does.`,
-          ),
+          run.unsure === undefined
+            ? own(
+                'notShown',
+                `GitHub doesn’t show your approval of #${plan.number} yet, so Lo merged nothing. Merge it from the panel once it does.`,
+              )
+            : own(
+                'unknown',
+                `Lo can’t tell whether GitHub took your approval: ${run.unsure} #${plan.number} doesn’t show it yet, so Lo merged nothing. Look at its reviews before you approve it again.`,
+              ),
         );
-        return undefined;
+        return false;
       }
       await new Promise((resolve) => setTimeout(resolve, this.#options.showEvery ?? 2_000));
     }
   }
 
+  /** The step after the approval that `facts` give, with where its merge goes asked afresh. */
+  async #afterOf(run: Run, facts: MergeFacts): Promise<After> {
+    const after = this.#afterWith(run, facts, undefined);
+    const kind = kindOf(after.now);
+    if (kind === undefined) return after;
+    const { poller, plan, pull } = run;
+    const goes = await this.#options.merging.goesAs(kind, poller, plan.login, pull, facts);
+    return { ...after, goes };
+  }
+
+  /** The step after the approval that `facts` give, its merge going as `goes` says. */
+  #afterWith(run: Run, facts: MergeFacts, goes: Goes | undefined): After {
+    const snapshot = this.#snapshotOf(run.plan.id, run.pull, facts, run.plan.head);
+    const now = afterApproving(snapshot, run.core);
+    return { facts, snapshot, now, step: stepOf(now, snapshot, facts, run.pull), goes };
+  }
+
+  /**
+   * The step after the approval, from what GitHub says now, as a merge's press weighs it: a read
+   * that lands while Lo asks where the pull request sits is planned from too, and when it gives
+   * another step, or another head, that's another round on it. Nothing once it stopped.
+   */
+  async #weighAfter(run: Run): Promise<After | undefined> {
+    for (let round = 1; ; round++) {
+      const after = await this.#afterOf(run, run.facts);
+      if (this.#stopped) return undefined;
+      const latest = run.poller.cachedRead(run.pull, MERGE_FACTS)?.value;
+      if (latest === undefined || latest === after.facts) return after;
+      const newest = this.#afterWith(run, latest, after.goes);
+      if (
+        latest.pullRequest.head === after.facts.pullRequest.head &&
+        shape(newest.step) === shape(after.step)
+      ) {
+        return after;
+      }
+      if (round === LOOKS) {
+        this.#stopAt(
+          run,
+          own(
+            'changing',
+            `What GitHub says of #${run.plan.number} kept changing while Lo checked it, so Lo merged nothing. Merge it from the panel.`,
+          ),
+        );
+        return undefined;
+      }
+      run.facts = latest;
+    }
+  }
+
   /** The step after the approval, as GitHub now allows it, if it's what was confirmed. */
-  async #ship(run: Run, snapshot: MergeSnapshot): Promise<void> {
+  async #ship(run: Run): Promise<void> {
+    const after = await this.#weighAfter(run);
+    if (!after) return;
+    run.facts = after.facts;
     const { plan, core } = run;
-    const now = afterApproving(snapshot, core);
-    const { facts } = run;
-    const step = stepOf(now, snapshot, facts, run.pull);
+    const { now, step } = after;
     // What the confirmation said follows: a pull request where approve and ship doesn't merge
     // from stops after approving.
     if (plan.likely.kind === 'stop' && plan.likely.stop.kind === 'where' && kindOf(now)) {
@@ -991,7 +1060,7 @@ export class Shipping {
       case 'enqueue':
       case 'autoMerge':
       case 'enqueueWhenReady':
-        await this.#send(run, step, snapshot);
+        this.#send(run, step, after);
         return;
       default:
         step satisfies never;
@@ -999,35 +1068,26 @@ export class Shipping {
   }
 
   /**
-   * Sends `step` through the merge jobs, in the turns the run holds, once its merge goes from where
-   * the pull request sits, taking with it what the confirmation named, and nothing keeps a merge
-   * from going now.
+   * Sends `step` through the merge jobs, in the turn the run holds, once its merge goes from where
+   * the pull request sits, alone or as a GitHub stack's bottom layer, as `after` asked, and nothing
+   * keeps a merge from going now.
    */
-  async #send(
+  #send(
     run: Run,
     step: Extract<ShipStep, { kind: 'merge' | 'enqueue' | 'autoMerge' | 'enqueueWhenReady' }>,
-    snapshot: MergeSnapshot,
-  ): Promise<void> {
+    after: After,
+  ): void {
     const { plan, pull, poller, facts } = run;
     const kind = kindOf(step);
-    if (kind === undefined) return;
-    const goes = await this.#options.merging.goesAs(kind, poller, plan.login, pull, facts);
+    const { goes, snapshot } = after;
+    if (kind === undefined || goes === undefined) return;
     if (goes.kind === 'unread') {
       this.#stopAt(run, own('unread', goes.why));
       return;
     }
-    if (goes.kind === 'where') {
-      this.#stopAt(run, own('where', goes.why), { kind: 'where', text: goes.why });
-      return;
-    }
-    const first = movesFirst(goes.together, plan.number);
-    if (first !== undefined) {
-      this.#stopAt(run, own('where', first), { kind: 'where', text: first });
-      return;
-    }
-    const other = togetherChanged(plan.together, goes.together);
-    if (other !== undefined) {
-      this.#stopAt(run, own('together', `${other} Merge it from the merge panel.`));
+    const where = goes.kind === 'where' ? goes.why : notAlone(goes.together, plan.number);
+    if (where !== undefined) {
+      this.#stopAt(run, own('where', where), { kind: 'where', text: where });
       return;
     }
     const off = offOf(poller);
@@ -1038,7 +1098,7 @@ export class Shipping {
       );
       return;
     }
-    const converting = this.#converting(pull, namesOf(plan.number, goes.together));
+    const converting = this.#converting(pull);
     if (converting) {
       this.#stopAt(run, converting);
       return;
@@ -1062,7 +1122,7 @@ export class Shipping {
       title: '',
       message: '',
       named: null,
-      together: goes.together,
+      together: null,
     };
     let heard: ((answer: AutoAnswer) => void) | undefined;
     if (kind === 'autoMerge' || kind === 'whenReady') {
@@ -1136,17 +1196,16 @@ export class Shipping {
         return;
       }
       next.facts = read.value;
-      const snapshot = this.#snapshotOf(next.plan.id, next.pull, read.value, next.plan.head);
-      const now = afterApproving(snapshot, next.core);
+      const after = await this.#weighAfter(next);
+      if (!after) return;
+      next.facts = after.facts;
       // Only the merge itself, as it was confirmed.
-      const step = asAsked(next.core, now)
-        ? stepOf(now, snapshot, read.value, next.pull)
-        : undefined;
-      if (step?.kind !== 'merge' && step?.kind !== 'enqueue') {
+      const { step } = after;
+      if (!asAsked(next.core, after.now) || (step.kind !== 'merge' && step.kind !== 'enqueue')) {
         instead(next, 'It changed since, so Lo merged nothing. Merge it from the panel.');
         return;
       }
-      await this.#send(next, step, snapshot);
+      this.#send(next, step, after);
     } catch (error) {
       this.#options.log(`${next.pull.toString()}: ${describe(error)}`);
       instead(next, `Lo couldn’t go on: ${describe(error)} Merge it from the panel.`);
@@ -1157,11 +1216,17 @@ export class Shipping {
     }
   }
 
-  /** Stops `run` where it is, saying why: after approving once it has, else before. */
+  /**
+   * Stops `run` where it is, saying why: after approving once it has, before when it hasn't, or
+   * where Lo can't tell yet whether GitHub took the approval.
+   */
   #stopAt(run: Run, refusal: Refusal, stop: ShipStop | null = null): void {
+    let at: 'approve' | 'unsure' | 'ship' = 'approve';
+    if (run.approved || !approves(run.core.approval)) at = 'ship';
+    else if (run.unsure !== undefined) at = 'unsure';
     this.#phase(run, {
       kind: 'stopped',
-      at: run.approved || !approves(run.core.approval) ? 'ship' : 'approve',
+      at,
       refusal,
       stop,
     });

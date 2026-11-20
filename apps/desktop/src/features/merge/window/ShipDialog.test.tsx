@@ -62,7 +62,6 @@ function planOf(change: Partial<ShipPlan> = {}): ShipPlan {
     approval: { kind: 'approve' },
     summary: true,
     likely: { kind: 'merge', method: 'SQUASH' },
-    together: null,
     warning: false,
     afterPush: 'keepsApprovals',
     ...change,
@@ -225,6 +224,32 @@ it('a stop after approving says the approval stays, why, and offers the merge pa
   expect(steps()[2]).toContain('Can’t merge');
   expect(dialog()?.textContent).toContain('Merge panel');
   expect(dialog()?.textContent).toContain('Done');
+});
+
+it('a stop where Lo can’t tell whether GitHub took the approval says so, not that it didn’t', async () => {
+  const plan = planOf();
+  draw(<ShipDialog />);
+  act(() => shipping.setState({ dialog: { kind: 'running', plan } }));
+  act(() =>
+    heardShip(
+      viewOf(
+        plan,
+        {
+          kind: 'stopped',
+          at: 'unsure',
+          refusal: { kind: 'unknown', text: 'Lost.', rules: [], until: null, newer: null },
+          stop: null,
+        },
+        false,
+      ),
+    ),
+  );
+  await until(() => dialog() !== null);
+  expect(dialog()?.textContent).toContain('Can’t tell whether it approved');
+  expect(dialog()?.textContent).toContain('e2e #138 · nothing was merged');
+  expect(dialog()?.textContent).not.toContain('Not approved');
+  expect(steps()[1]).toContain('Lost.');
+  expect(dialog()?.textContent).toContain('Merge panel');
 });
 
 it('a newer push before approving says nothing was approved, who pushed, and offers it', async () => {

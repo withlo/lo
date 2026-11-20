@@ -13,7 +13,6 @@ import { registry } from '../../../window/commands/registry.ts';
 import { useRevisions } from '../../revisions/window/shared.ts';
 import { usePull, withoutBidi } from '../../tab/window/shared.ts';
 import type { Refusal } from '../contract.ts';
-import { togetherShown } from './MergeConfirm.tsx';
 import { askAgain, jobsByKey, newerLabel, newerOf } from './merging.ts';
 import { confirmShip, labelsOf, leaveShip, panelFromShip, seeShipNewer } from './shipping.ts';
 import {
@@ -163,7 +162,6 @@ function showingOf(dialog: Shown, pushes: (id: string) => Pushes, title: string)
         body: (
           <>
             <StepList steps={plannedSteps(plan, pushes(plan.id).label)} />
-            {togetherShown(plan)}
             {warning !== undefined && (
               <Callout tone="warning" role="status">
                 {withoutBidi(warning)}

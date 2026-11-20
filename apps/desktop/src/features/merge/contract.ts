@@ -744,9 +744,8 @@ export type ShipStep = z.output<typeof shipStep>;
  *   merge expects;
  * - `approval`: what it approves first; `summary`: whether the summary kept for the submit dialog
  *   goes with the approval;
- * - `likely`: what Lo expects to follow, which GitHub's answer after the approval decides;
- *   `together`: what its merge takes with it, as the merge panel's would: the layers of a GitHub
- *   stack below it, or a chain's base branches it moves once it has merged;
+ * - `likely`: what Lo expects to follow, which GitHub's answer after the approval decides: to stop
+ *   after approving wherever its merge would take anything with it;
  * - `warning`: whether a push before it merges could merge with your approval, as auto-merge may
  *   follow and the base branch's rules keep approvals, or require no review (`afterPush`).
  */
@@ -762,7 +761,6 @@ export const shipPlan = z.strictObject({
   approval: shipApproval,
   summary: z.boolean(),
   likely: shipStep,
-  together: together.nullable(),
   warning: z.boolean(),
   afterPush,
 });
@@ -795,8 +793,9 @@ export type ShipConfirmed = z.output<typeof shipConfirmed>;
  * - `sending`: `step` went through the merge jobs, as the merge from the plan named `job`, which
  *   `jobs` follows;
  * - `done`: nothing more to send, as `step` says;
- * - `stopped`: it stopped `at` approving, so nothing was approved, or after approving, at the
- *   `ship` step, for `refusal`, or `stop`, `@lo/review`'s reason.
+ * - `stopped`: it stopped `at` approving, so nothing was approved; `unsure`, where Lo can't tell
+ *   whether GitHub took the approval, as its answer was lost and no read shows it; or after
+ *   approving, at the `ship` step; for `refusal`, or `stop`, `@lo/review`'s reason.
  */
 export const shipPhase = z.discriminatedUnion('kind', [
   z.strictObject({ kind: z.literal('approving') }),
@@ -805,7 +804,7 @@ export const shipPhase = z.discriminatedUnion('kind', [
   z.strictObject({ kind: z.literal('done'), step: shipStep }),
   z.strictObject({
     kind: z.literal('stopped'),
-    at: z.enum(['approve', 'ship']),
+    at: z.enum(['approve', 'unsure', 'ship']),
     refusal,
     stop: shipStop.nullable(),
   }),

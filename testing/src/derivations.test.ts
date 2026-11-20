@@ -261,6 +261,28 @@ test('approve and ship reading a conflict once approved, or a push after the pla
   );
 });
 
+test('a push once approve and ship turned on “Merge when ready”, which the watch turns auto-merge off for', () => {
+  // The tab's read and the press's, the one once approved, then each once it went on, pushed to.
+  expect(
+    shipReads('app_merge_ship_watched', ['headRefOid', 'approvedBy', 'autoMerge']).slice(2),
+  ).toEqual([
+    ['7243013b61d35e4c1b8b69b4f1868fbfdd33a0cc', 'rozed-bot', 'off'],
+    ['f81c007f901ca6da725764f0306c50585f89799b', 'rozed-bot', 'on'],
+  ]);
+  const interactions = answers('app_merge_ship_watched');
+  const off = interactions.filter(graphql('DisablePullRequestAutoMerge'));
+  expect(off.map(({ request }) => request.variables)).toEqual([
+    { pullRequestId: nodeId(interactions, 277) },
+  ]);
+  expect(at(off[0]!.response.body, 'data', 'disablePullRequestAutoMerge', 'pullRequest')).toEqual({
+    number: 277,
+    headRefOid: 'f81c007f901ca6da725764f0306c50585f89799b',
+    state: 'OPEN',
+    isInMergeQueue: false,
+    autoMergeRequest: null,
+  });
+});
+
 /** What the cassette `name`'s reads of a merge queue say the account may do in its repository. */
 function queuePermissions(name: string): Set<Json | undefined> {
   return new Set(

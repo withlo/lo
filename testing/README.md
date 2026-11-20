@@ -372,7 +372,9 @@ out. `app_merge_ship_queued` is Lo turning on "Merge when ready" for #277 the sa
 the queue and `e4/queued` is still at `MERGE_E4.queued`. As GitHub takes no approval from a pull
 request's author, `app_merge_ship_queued_others`, with someone else as #277's author and approve and
 ship approving it first, is derived, and so are `app_merge_ship_queued_conflict`, where it then
-reads as conflicting, and `app_merge_ship_queued_moved`, where a push came after the plan.
+reads as conflicting, `app_merge_ship_queued_moved`, where a push came after the plan, and
+`app_merge_ship_watched`, where someone pushed once "Merge when ready" was on and the watch turned
+it off.
 
 ## The fake language server
 

@@ -223,6 +223,15 @@ describe('the watch', () => {
     expect(method.store.list()).toEqual([]);
   });
 
+  it('keeps the method GitHub reports turning it on, and only when this account turned it on', () => {
+    const method = setup();
+    keep(method.watch)(onAnswer('MERGE'));
+    expect(method.store.list()).toMatchObject([{ method: 'MERGE', enabledBy: 'Rozed-Bot' }]);
+    const other = setup();
+    keep(other.watch)(onAnswer('SQUASH', 'mira-chen'));
+    expect(other.store.list()).toEqual([]);
+  });
+
   it('on a branch with a merge queue, GitHub’s method isn’t compared: it reports a merge commit', async () => {
     const { watch, turnedOff, store, github } = setup();
     keep(watch, null)(onAnswer('MERGE'));

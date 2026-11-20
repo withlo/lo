@@ -21,7 +21,6 @@ import {
   counted,
   doneLine,
   inTheWayOf,
-  layersOf,
   mergeLabel,
   methodLabel,
   outcomeDetail,
@@ -179,32 +178,20 @@ function merges(method: Method | null): string {
 
 /** The step after the approval, as the confirmation lists it. */
 function shipStep(
-  plan: Pick<ShipPlan, 'base' | 'afterPush' | 'approval' | 'together'>,
+  plan: Pick<ShipPlan, 'base' | 'afterPush' | 'approval'>,
   step: ShipStep,
   state: StepState,
 ): StepWords {
   const key = 'ship';
   const { base } = plan;
-  // A GitHub stack's layers below merge with it.
-  const layers = layersOf(plan.together);
   switch (step.kind) {
     case 'merge':
-      return {
-        key,
-        state,
-        title:
-          layers > 1
-            ? `Merge ${layers} layers into ${base}`
-            : `${mergeLabel(step.method)} into ${base}`,
-      };
+      return { key, state, title: `${mergeLabel(step.method)} into ${base}` };
     case 'enqueue':
       return {
         key,
         state,
-        title:
-          layers > 1
-            ? `Add ${layers} layers to the merge queue for ${base}`
-            : `Add to the merge queue for ${base}`,
+        title: `Add to the merge queue for ${base}`,
         detail: queueLine(step.method),
       };
     case 'autoMerge':
@@ -464,6 +451,18 @@ export function runningOf(
             { ...shipStep(plan, plan.likely, 'todo'), state: 'skipped', detail: undefined },
           ],
           end: { kind: 'stopped', panel: false },
+        };
+      }
+      if (phase.at === 'unsure') {
+        return {
+          title: 'Can’t tell whether it approved',
+          description: repoLine(plan, 'nothing was merged'),
+          steps: [
+            check,
+            { ...approval('stopped'), state: 'stopped', detail: refusal.text },
+            { ...shipStep(plan, plan.likely, 'todo'), state: 'skipped', detail: undefined },
+          ],
+          end: { kind: 'stopped', panel: true },
         };
       }
       const planned = shipStep(plan, plan.likely, 'stopped');

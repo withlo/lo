@@ -667,6 +667,43 @@ function approvedShip(
   return [...opened, approvalAnswer(recorded, SHIPPED_PULL), again];
 }
 
+/**
+ * GitHub's answer to turning auto-merge off for pull request `number`, at `head`: as
+ * `app_merge_auto_off` recorded it for another pull request, auto-merge off.
+ */
+function autoMergeOffAnswer(
+  recorded: readonly Interaction[],
+  number: number,
+  head: string,
+): Interaction {
+  const read = recorded.find((each) => about(each, 'PullRequest', number));
+  const id = at(read?.response.body, 'data', 'repository', 'pullRequest', 'id');
+  if (typeof id !== 'string') throw new Error(`the recording never read #${number}`);
+  const off = cassette('app_merge_auto_off').interactions.find(({ interaction }) =>
+    graphql('DisablePullRequestAutoMerge')(interaction),
+  )?.interaction;
+  if (!off) throw new Error('app_merge_auto_off turned no auto-merge off');
+  return {
+    request: { ...off.request, variables: { pullRequestId: id } },
+    response: {
+      ...off.response,
+      body: {
+        data: {
+          disablePullRequestAutoMerge: {
+            pullRequest: {
+              number,
+              headRefOid: head,
+              state: 'OPEN',
+              isInMergeQueue: false,
+              autoMergeRequest: null,
+            },
+          },
+        },
+      },
+    },
+  };
+}
+
 export const DERIVATIONS: readonly Derivation[] = [
   {
     name: 'app_comments_write_others',
@@ -1037,6 +1074,19 @@ export const DERIVATIONS: readonly Derivation[] = [
             )
           : each,
       );
+    },
+  },
+  {
+    name: 'app_merge_ship_watched',
+    from: 'app_merge_ship_queued',
+    description: `app_merge_ship_queued_others with ${SOMEONE_ELSE} pushing ${SHIPPED_NEWER} to rozed-dev/e2e#${SHIPPED_PULL} once "Merge when ready" went on: the reads of what decides its merge from then on have that head, with auto-merge still on as rozed-bot turned it on and rozed-bot's approval of the revision before. e4/queued's rules want no new approval after a push, so the push would merge with it, and the watch turns auto-merge off: GitHub answers as it answered app_merge_auto_off's, for #${SHIPPED_PULL} at that head. GitHub can't be made to push as someone else, nor take rozed-bot's approval of its own pull request.`,
+    derive(recorded) {
+      const shipped = approvedShip(recorded);
+      const last = shipped.length - 1;
+      shipped[last] = withBody(shipped[last]!, (body) =>
+        inPull(body, (pull) => ({ ...pull, headRefOid: SHIPPED_NEWER })),
+      );
+      return [...shipped, autoMergeOffAnswer(recorded, SHIPPED_PULL, SHIPPED_NEWER)];
     },
   },
   {

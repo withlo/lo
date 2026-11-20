@@ -4,7 +4,7 @@
 import { expect, it } from 'vitest';
 
 import type { RevisionRow } from '../../revisions/contract.ts';
-import type { ShipPlan, ShipView, Together, Watched } from '../contract.ts';
+import type { ShipPlan, ShipView, Watched } from '../contract.ts';
 import {
   plannedSteps,
   shipDoneLine,
@@ -34,7 +34,6 @@ function planOf(change: Partial<ShipPlan> = {}): ShipPlan {
     approval: { kind: 'approve' },
     summary: false,
     likely: { kind: 'merge', method: 'SQUASH' },
-    together: null,
     warning: false,
     afterPush: 'keepsApprovals',
     ...change,
@@ -71,16 +70,6 @@ it('names the revision it approves first, then the approval, then what follows',
     ],
   ]);
   expect(steps.every((step) => step.state === 'todo')).toBe(true);
-});
-
-it('counts a GitHub stack’s layers below in the merge that follows', () => {
-  const below = { number: 137, title: 'Below', head: NEWER, review: null, checks: null };
-  const together: Together = { kind: 'stack', stack: 7, below: [below], above: [] };
-  expect(plannedSteps(planOf({ together }), label).at(-1)?.title).toBe('Merge 2 layers into main');
-  expect(
-    plannedSteps(planOf({ together, likely: { kind: 'enqueue', method: null } }), label).at(-1)
-      ?.title,
-  ).toBe('Add 2 layers to the merge queue for main');
 });
 
 it('skips the approval on your own pull request, and says again after a dismissal', () => {

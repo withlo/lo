@@ -239,9 +239,11 @@ function settle(view: ShipView | undefined): void {
         notify(
           phase.at === 'approve'
             ? `Lo didn’t approve #${view.number}`
-            : view.approved
-              ? `Approved #${view.number}, but didn’t merge it`
-              : `Lo didn’t merge #${view.number}`,
+            : phase.at === 'unsure'
+              ? `Lo can’t tell yet whether it approved #${view.number}`
+              : view.approved
+                ? `Approved #${view.number}, but didn’t merge it`
+                : `Lo didn’t merge #${view.number}`,
           withoutBidi(phase.refusal.text),
         );
       }
