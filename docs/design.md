@@ -870,50 +870,156 @@ changes shows as it comes.
 
 ### Merge status
 
-Every PR tab shows a one-line merge status in its header, and `m` opens the merge panel. When a PR
-can't merge, the panel lists why: missing approvals (including which code owners), required checks
-that failed, are running or haven't reported (each linked to its run), unresolved conversations,
-conflicts, an out-of-date branch, draft status, and other rules on the branch. Lo pieces this
-together from several API calls. If GitHub reports a block Lo can't explain, it says so and links to
-the PR on GitHub.
+Every PR tab shows a one-line merge status in its header, such as "Ready to merge · Squash into
+main", "Can’t merge yet · Review required · 1 check running" or "Queued, 3rd · about 12 min". A
+click on it, or `m`, opens the merge panel under it. When a PR can't merge, the panel lists why, a
+row for each reason, starting with what waiting won't fix: missing approvals (including which code
+owners), changes requested, required checks that failed, are running or haven't reported (each
+linked to its run), unresolved conversations, conflicts, an out-of-date branch, draft status, and
+other rules on the branch. `j` and `k` move between the rows, `o` opens the page of the one you're
+on, and `]t` goes to the next unresolved conversation.
+
+Lo pieces this together from several API calls, for the view on screen only: a tab that isn't shown
+reads nothing, and a tab acting as nobody, or showing a run of layers, has no status. If GitHub
+reports a block Lo can't explain, the panel says "GitHub says no, and not why" and links to the PR
+on GitHub. Lo doesn't check every rule on the base branch, signed commits among them. When GitHub
+blocks a PR, the panel names the ones it sees, such as "Commits must be signed", as rules Lo doesn't
+check, since one may be the reason. A read that may be missing something, or that failed, says so
+and how old it is, and a PR that looks ready reads "Lo may not see everything" beside it.
 
 ### Merging
 
-- **Method.** Only the methods the repo allows are offered. Lo remembers the last one you used in
-  each repo. A squash commit's title and message start from the repo's setting and can be edited.
+- **Method.** Only the methods the repo allows are offered, and `Tab` and `⇧Tab` step through them.
+  Lo remembers the last one GitHub took in each repo. A squash commit's title and message start from
+  what GitHub would write, and `e` edits them. Lo sends only text you typed, so an empty field
+  leaves GitHub's own.
 - **Queue.** If the base branch requires a merge queue, the button becomes "Add to merge queue," and
-  the queue's own settings decide the method and message.
-- **Confirmation.** Every merge asks first. The confirmation names the account, the method, the
-  target branch and, for a stack, every layer that will merge.
+  the queue's own settings decide the method and message. The panel reads the queue as it opens ("4
+  ahead, about 18 min"). Once the PR is in it, the status and the panel give its place, and the
+  panel's "See the queue" does what `gq` does. When a PR leaves the queue without merging, a banner
+  says why ("#4821 left the merge queue: test (node 20) failed with its group."), and the panel
+  links the failed checks. Where Lo can't tell why, it says so.
+- **Auto-merge.** `a` in the panel turns it on when only waits stand in the way (checks running, an
+  approval to come, GitHub still checking) or a block Lo may not see all of. GitHub then merges the
+  PR, or adds it to the queue, once they clear. The confirmation says what GitHub waits for, and
+  warns when a push before then would merge too, as when the base branch keeps approvals through a
+  push. With auto-merge on, `a` turns it off at once without asking, since that merges nothing. If
+  nothing blocks the merge now, GitHub refuses auto-merge, and Lo offers the merge itself in its
+  place.
+- **Admin override.** `⌥⏎` merges past the base branch's rules. It's offered only to an account
+  GitHub lets bypass them, for a PR that rules block rather than a draft or conflicts, that isn't
+  queued, and that isn't a layer above the bottom of a GitHub stack. Its confirmation lists what it
+  skips, and goes only once you type the PR's number. The field empties each time Lo asks again.
+- **Confirmation.** Every merge, queue entry, auto-merge turned on and override asks first. The
+  confirmation names the account, the method, the target branch, the revision ("r5 of #4821, the one
+  on screen") and, for a stack, every layer that will merge. `⏎` confirms it and `Esc` goes back to
+  the panel. The press that opened it can't confirm it, and a held key never does.
+- **Before it's sent.** Lo checks again as you confirm. It sends only if you're still signed in as
+  the account, what it read of the PR is whole, at the head on screen and no more than 7 minutes
+  old, that head is GitHub's, it knows where the PR sits, nothing else is merging it, and it's
+  online and not asked to hold off. Otherwise it reads again where a read can help. If anything the
+  confirmation named has changed, it asks again with the new facts, and if not, it sends nothing and
+  says why. `Esc` while it checks sends nothing. The merge carries the head on screen, so GitHub
+  merges only that head.
+- **Sending.** One merge write goes to a PR at a time, across tabs and accounts: a merge, a queue
+  entry, auto-merge, a removal from the queue and approve and ship take turns. A merge goes on if
+  you close its dialog or tab, and a toast says when it's done ("Merged #4821 into main"). A refusal
+  shows in the dialog while it's open, and otherwise in a banner on the tab with "Merge panel" `m`.
 - **Branches.** Lo never deletes branches. The repo's own auto-delete setting applies.
 - **Out-of-date branches.** Lo shows that a branch is out of date but doesn't offer GitHub's "Update
   branch," because that adds a commit to the PR. The author or agent updates it.
 
 ### Approve and ship
 
-`⌘⇧⏎` approves (skipped on your own PRs), then merges or joins the queue if nothing blocks it. If
-it's only waiting on checks or other approvals, Lo turns on auto-merge so the PR goes in once ready.
-If something waiting won't fix blocks it (conflicts, failed checks, changes requested), it stops
-after approving and shows why. One confirmation lists exactly what will happen.
+`⌘⇧⏎` opens one confirmation that lists each step: check that the revision on screen is still the
+newest push, approve (with your summary and pending comments, and skipped on your own PRs), then
+what Lo expects to follow: merge, join the queue, or turn on auto-merge. If it's only waiting on
+checks or other approvals, that is auto-merge, so the PR goes in once ready. If something waiting
+won't fix blocks it (conflicts, failed checks, changes requested), Lo stops after approving and
+shows why. Your approval stays.
+
+- **What it approves.** Only the revision on screen, so it merges only a PR alone or the bottom
+  layer of a GitHub stack, and nothing with it. Where a merge would take others along, as for a
+  GitHub stack's layer above the bottom, or a chain's layers, or where the merge panel wouldn't
+  merge from, Lo approves and stops, says why, and leaves the merge to the merge panel (`m`).
+- **Running it.** Lo reads GitHub again as you confirm. If anyone pushed since the revision you saw,
+  it stops before approving and offers "See r2 → r3". Otherwise it approves, waits until GitHub
+  shows the approval, and goes on only if GitHub then allows what you confirmed. The merge, queue
+  entry or auto-merge goes through the same checks as the merge panel's. An approval whose answer is
+  lost is settled by reading your reviews, and nothing more is sent until it is.
+- **The watch.** GitHub keeps auto-merge on after a push, and unless the base branch wants a new
+  approval, the push merges with your approval. So Lo watches the auto-merge it turned on after
+  approving someone else's PR. The watch survives a restart, and reads the PR every 2 minutes, or 5
+  while Lo isn't in front, whether or not a tab shows it. On a push that would merge with your
+  approval, Lo turns auto-merge off and says so in a banner on the PR's tab, or in a toast while
+  another tab is on screen: "Lo turned off auto-merge: mira-chen pushed r4 after you approved r3."
+  The banner offers the merge panel. The watch ends when the PR merges, when auto-merge stops being
+  the one Lo turned on, and when GitHub refused to turn it on.
 
 ### Stacks
 
-Merging a layer of a GitHub stack merges every layer below it, as one unit: they merge, join the
-queue or don't merge at all. Lo submits it through the async merge API and shows progress until it's
-done. Other chains are offered "Make this a GitHub stack" first (section 4). When that isn't
-possible, Lo merges one layer at a time: it merges the bottom PR, points the next one at the root
-branch and marks it "needs rebase."
+Merging a layer of a GitHub stack merges the open layers below it with it. The panel's button says
+"Merge 3 layers", or adds them to the queue. The confirmation lists every layer with its review and
+checks, names each at the head GitHub's Stacks API gave as it opened, and says the layers above stay
+open and move onto the base branch. Lo submits it through the async merge API and shows each layer's
+state, and how long ago GitHub took the merge, until it's done. GitHub checks the branch's rules as
+the merge runs, and its docs disagree on whether a stack merge is all or nothing, so Lo promises
+neither. If GitHub stops partway, Lo says which layers landed ("Merged #232 only."), that none did
+("Nothing merged."), or that it can't tell.
+
+Other chains are offered "Make this a GitHub stack" first (section 4), and nothing merges until it
+is one. When that isn't possible, the panel lists why, and Lo merges one layer at a time, from the
+bottom PR's own tab. It moves the bottom PR's base to the root branch if it isn't there, merges it,
+then points each layer on it at the root branch and marks it "needs rebase." The confirmation lists
+every move. Lo makes the moves only while it's open, once GitHub says the PR merged. After a queue
+entry it reads the PR until it merges, for up to 6 hours, or until it leaves the queue, and after a
+lost answer for up to 15 minutes. Each move reads the base branch first, and doesn't move one
+someone else moved. The first move that fails stops the rest and says what moved, and Lo puts
+nothing back. A layer above the bottom is refused, naming the layer to merge first, and so is a
+bottom layer that needs a rebase.
+
+Lo merges a PR only once it knows where it sits, from the stack list (section 4) and, for a GitHub
+stack, GitHub's own answer. Until then the panel says why and asks again by itself.
 
 ### The merge queue
 
-- **Queue view.** For each base branch: every entry with its position, state, time in the queue and
-  estimated time to merge, which entries are being tested together, and your PRs highlighted.
-- **Removals.** When a PR leaves the queue, Lo says why (failed checks, a conflict, a timeout or
-  someone removed it) and links to the failing check.
-- **Controls.** Remove a PR from the queue, jump it to the front if you're allowed, and turn
-  auto-merge on or off.
-- **Admin override.** Offered only to people allowed to bypass the rules. To confirm, you type the
-  PR's number.
+- **Opening it.** `gq` opens the merge queue for the base branch of the PR on screen, in a tab of
+  its own, read as the account that PR's tab acts as. There's one per repo and account: `gq` from a
+  PR into another branch moves it there, and it comes back after a restart.
+- **What it shows.** The header names the repo and branch, the queue's settings when your account
+  can read them ("squash, groups of up to 5 · next merges in about 6 min"), and a switch between the
+  repo's branches that have a queue, with how many entries each holds. `Tab` and `⇧Tab` switch
+  branches. Below it, every entry with its position, title, author, state ("Checks running",
+  "Waiting", "Will be removed"), time in the queue and estimated time to merge. The entries GitHub
+  is testing together at the front are boxed as one group, "Testing together · 3 PRs", your PRs are
+  marked, and a stack's layers are named. Past 100 entries, a note links to the rest on GitHub. A
+  branch with no queue says its PRs merge on their own.
+- **Waiting to join.** The open PRs into the branch with auto-merge on that aren't in the queue yet,
+  from the 100 most recently updated, each with what it waits for ("when approved").
+- **Removals.** "Left the queue" lists up to 20 PRs per branch that Lo saw leave while it was
+  running, latest first, each with why (merged, failed checks, a conflict, a timeout, or someone
+  removed it) and a link to the failing check. Where GitHub leaves part of why out, the row says so.
+- **Reading.** Lo reads the queue every 20 seconds while its tab is on screen, those waiting to join
+  every 2 minutes, and nothing while it isn't, and the status bar says how long ago. When GitHub
+  leaves part of the queue out, the tab says Lo may not see every entry rather than call the queue
+  empty.
+- **Remove.** `x` takes the entry out. Its confirmation names the account, the branch, the PR and
+  its place, and the layers above it in its GitHub stack that leave with it. For a layer above the
+  bottom, Lo asks you to take out the bottom layer instead, since GitHub takes a stack out from
+  there.
+- **To the front.** `J` is for the repo's admins only, since GitHub allows no one else. The entry
+  leaves the queue and joins again at the front, so GitHub tests it, and the entries tested with it,
+  again from the start. It isn't offered for the entry already at the front, or for a layer of a
+  GitHub stack with other open layers. If GitHub takes the entry out and won't add it back, Lo says
+  it's out.
+- **Auto-merge.** `a` turns it off at once for a PR waiting to join, without asking. For one that
+  left the queue and is still open, it opens the PR's tab and asks to turn auto-merge on there,
+  through the merge panel's confirmation. For an entry already queued, it says so.
+- **Checked as you confirm.** `x` and `J` ask from a read of the queue no older than 40 seconds, and
+  read it again as you confirm. Lo drops the question if the entry left, got a newer push or the tab
+  changed branch, asks again if the layers that leave with it changed, and refuses `J` once the
+  account is no longer an admin. A change takes its PR's turn among merge writes, so it never races
+  a merge.
 
 ## 12. Keyboard, windows and opening links
 
@@ -933,7 +1039,7 @@ the keymap file, `~/.config/lo/keymap`. `?` shows every key.
 | Peek            | `j`/`k` pick an answer, `⏎` go to it, `gr` the references of the same name, `Esc` close it                                                                                                                                                                                                                                             |
 | References      | In the references panel, which `gr` opens: `j`/`k` move, `⏎` go there, `Esc` back to the threads, or close the panel                                                                                                                                                                                                                   |
 | Copy and open   | `yy` the line, `yl` a link to it, `yp` the file's path, `gf` the whole file, `gx` on GitHub                                                                                                                                                                                                                                            |
-| Review          | `m` merge panel, `a` merge when ready (in the merge panel), `⌘⏎` submit review, `⌘⇧⏎` approve and ship, `gq` the merge queue, `gS` make this a GitHub stack                                                                                                                                                                            |
+| Review          | `m` merge panel, `⌘⏎` submit review, `⌘⇧⏎` approve and ship, `gq` the merge queue, `gS` make this a GitHub stack                                                                                                                                                                                                                       |
 | Find            | `⌘L` open PR (`⌘O` too on macOS), `⌘P` files, `⌘⇧P` command palette, `/` search, `n`/`N` next and previous match                                                                                                                                                                                                                       |
 | View            | `` ` `` next middle view (overview, diff, timeline), `~` previous, `gv` compare revisions                                                                                                                                                                                                                                              |
 | Files           | `-` go to the file tree at the file on screen, and `-` again up to the stack tree. In the tree: `t` tree or review order, `f` changed files only, `l`/`h` (or `→`/`←`) open and close a folder, `zR`/`zM` open and close all, `⏎` show the file, `e` mark viewed, `Esc` back                                                           |
@@ -942,10 +1048,16 @@ the keymap file, `~/.config/lo/keymap`. `?` shows every key.
 | Panels          | `⌘\` left panel, `⌘⇧\` threads panel. In the threads panel: `j`/`k` move, `⏎` show the thread in the diff, `x` resolve or unresolve, `f` unresolved, all or yours. In the stack tree: `j`/`k` move, `⏎` show the layer, `gx` open it on GitHub, `Esc` back, `v` choose a run of layers, `j`/`k` to grow it, `⏎` to view it as one diff |
 | Diff view       | `gi` inline or side by side, `gw` hide or show whitespace, `zo`/`zc` expand and collapse unchanged code, `zR` the whole file, `za` open or close a collapsed file or the thread at the cursor                                                                                                                                          |
 | Comment box     | `⌘⏎` add to review (in the timeline's box, comment), `⌥⏎` comment now, `⌘⇧V` write or preview, `⌘⇧A` attach files, `Esc` leave insert mode, `Esc Esc` close and keep the draft                                                                                                                                                         |
-| Merge queue     | `x` remove, `J` jump to the front, `a` auto-merge, `⏎` open the PR                                                                                                                                                                                                                                                                     |
+| Merge panel     | `⏎` merge or add to the merge queue, `a` turn auto-merge on or off, `⌥⏎` merge without the rules, `Tab`/`⇧Tab` next and previous method, `e` edit the commit's title and message, `j`/`k` move between reasons, `o` open the reason's page, `]t` next unresolved conversation, `Esc` close                                             |
+| Merge queue     | `j`/`k` move, `⏎` open the PR, `x` remove, `J` to the front (admins), `a` turn auto-merge off, or on for a PR that left the queue, `Tab`/`⇧Tab` next and previous branch, `gx` open on GitHub                                                                                                                                          |
 | Revision picker | `j`/`k` move, `Space` set an end, `⏎` compare                                                                                                                                                                                                                                                                                          |
 | Palettes        | `⏎` open, `⌘⏎` the other way (a new window, the whole file), `Tab` changed files only in the file finder, `⌥⏎` show an action's key                                                                                                                                                                                                    |
 | Tabs and window | `⌘1`–`⌘9` a tab, `⌘⇧]`/`⌘⇧[` or `⌃⇥`/`⌃⇧⇥` next and previous tab, `⌘W` close the tab, `⌘,` settings, `?` every key, `Menu` or `⇧F10` the right-click menu of what has focus, `g ,` open the keymap file                                                                                                                                |
+
+In code views, `m` and `gq` take the place of Vim's own keys in normal mode: Lo's code is read-only,
+so marks and formatting have no use there. The merge panel and the merge queue aren't code views, so
+`e`, `Tab`, `x` and the rest mean what their rows say. In the dialogs they open, `⏎` confirms and
+`Esc` cancels, and the press that opened a dialog never confirms it.
 
 Copying is always `y` plus a letter; there's no single-key `y`. `⌃o` returns from anywhere a key
 took you: from the code back to the overview block, from a definition or the other end of moved code
@@ -1027,7 +1139,7 @@ its overview or its diff.
 - **Reviews** are recorded against the commit you were looking at, so GitHub shows exactly what you
   approved.
 - **Merges** also carry the commit you were looking at. If someone pushed after it, GitHub refuses
-  the merge, and Lo shows the new revision with the changes since the one you saw.
+  the merge, and Lo shows the new revision with the changes since the one you saw ("See r5 → r6").
 - **Approve and ship** checks for a newer push before it does anything, and if there is one it stops
   before approving.
 
@@ -1071,7 +1183,24 @@ its overview or its diff.
   compared with its base branch, and its stack says why.
 - **Conversion fails partway.** Lo lists what it changed and offers to put the base branches back.
 - **Async merge fails.** Branch rules are checked when the merge runs, so a failure can arrive late.
-  Lo shows GitHub's reason.
+  Lo shows GitHub's reason, and which layers went in, if any did, since GitHub's docs disagree on
+  whether a stack merge is all or nothing.
+
+### Merging
+
+- **A lost answer.** When Lo can't tell whether a merge, queue entry, auto-merge change or removal
+  went, it says so ("Lo can’t tell whether #4821 merged."), and reads the PR or the queue again to
+  find out. No other merge write goes to that PR until a read made since shows how it ended. "Ask
+  GitHub again" is that read, and Lo never sends the write again by itself. A merge GitHub took ends
+  whether or not Lo is open, and after a restart the PR's own read shows how.
+- **Too much to read.** With over 1,000 checks on a head, or over 1,000 open PRs in the repo, Lo
+  can't tell what it needs to merge safely. It says so and sends you to GitHub.
+- **A push after approval.** When Lo can't turn auto-merge off after one, its banner says so and
+  that the push would merge with your approval. When it can't tell whether the push would, it says
+  that and reads again.
+- **What Lo doesn't show.** It doesn't name the files a conflict is in, and for auto-merge it says
+  who turned it on and with which method, but not when. It names the rules it doesn't check without
+  checking them.
 
 ### Overviews
 
