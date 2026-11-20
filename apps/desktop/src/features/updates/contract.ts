@@ -4,10 +4,11 @@
 // sends where things stand on `state`. Nothing downloads until the window asks to `install`, and
 // Lo restarts only when it asks to `restart`: a downloaded update otherwise installs as Lo quits.
 //
-// How this copy of Lo takes a newer version is decided once, as Lo starts, and sent with the offer
-// (`how`): it installs it itself, it must first be moved to Applications, Homebrew updates it, or
-// the reader downloads it from the release's page. Lo never shows the release notes, only their
-// first line, as plain text; the release's page is built by Lo from its version.
+// How this copy of Lo takes a newer version is decided as Lo starts, and again for each offer and
+// before Lo moves itself or downloads one, since the reader may move Lo while it runs. It's sent
+// with the offer (`how`): Lo installs it itself, it must first be moved to Applications, Homebrew
+// updates it, or the reader downloads it from the release's page. Lo never shows the release notes,
+// only their first line, as plain text; the release's page is built by Lo from its version.
 
 import { z } from 'zod';
 
@@ -49,7 +50,7 @@ export function releasePage(release: string): string {
 export const BREW_UPGRADE = 'brew upgrade --cask withlo/tap/lo';
 
 /**
- * How this copy of Lo takes a newer version, decided as Lo starts:
+ * How this copy of Lo takes a newer version, from where it runs:
  * - `install`: Lo downloads and installs it, on a Mac, from an Applications folder it can write;
  * - `move`: on a Mac, Lo can't replace itself where it is, as on the disk image, until it's moved
  *   to Applications (`move`);
@@ -140,8 +141,8 @@ export const contract = defineContract('updates', {
     read: { input: z.undefined(), reply: reply<UpdateState>() },
     /**
      * Checks GitHub Releases for a newer Lo now, whether or not `updates.check` is on, and answers
-     * what it found. A check already going is shared, and none is made while an update downloads
-     * or waits to install.
+     * what it found. A check already going is shared, one GitHub doesn't answer within a minute
+     * fails, and none is made while an update downloads or waits to install.
      */
     check: { input: z.undefined(), reply: reply<CheckAnswer>() },
     /**

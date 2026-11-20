@@ -8,6 +8,7 @@
 
 appId: com.scornz.lo
 productName: Lo
+copyright: Copyright © 2026 Mike Scornavacca
 artifactName: ${productName}-${version}-${arch}.${ext}
 
 directories:
@@ -19,6 +20,17 @@ files:
   - dist/**
   - package.json
   - '!**/node_modules/**'
+  # The licenses file goes outside the asar, below.
+  - '!dist/licenses.txt'
+
+# Beside the asar, in the app's resources, where the system can open them: the licenses of what Lo
+# ships (scripts/notices.ts writes the file, and "Show licenses" opens it), and the icon that
+# Linux's About panel shows. electron-builder adds Electron's license and Chromium's there itself.
+extraResources:
+  - from: dist/licenses.txt
+    to: licenses.txt
+  - from: ../../brand/Lo.iconset/icon_512x512.png
+    to: icon.png
 
 # Nothing here compiles native code.
 npmRebuild: false

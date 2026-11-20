@@ -1,0 +1,290 @@
+# Builds Lo for the Mac from a version tag: a DMG and a zip for Apple silicon and for Intel, signed
+# with the Developer ID, notarized and checked. Then it drafts the GitHub release that holds them,
+# with their checksums and notes GitHub writes from the merged pull requests. A maintainer reads
+# the draft and publishes it; nothing here publishes a release.
+#
+# Pushing a tag v<version>, such as v0.1.0 or v0.1.0-rc.1, on a commit main holds, starts it.
+# package.json's version stays 0.0.0, and the tag's is the one built in. The mac job is the only one
+# that reads the signing secrets, and only in a tag's run, through the `release` environment, which
+# waits for a maintainer's approval and takes only v* tags. The draft job, which can write the
+# release, holds no signing secret and runs none of the repository's code.
+#
+# Started by hand (`gh workflow run release.yml --ref <branch or tag>`), or by a pull request that
+# changes how Lo is packaged, it's a dry run: the same build as 0.0.0-dry.<run>, signed ad hoc with
+# the ad hoc entitlements and checked as far as an ad hoc build can be, in no environment, reading
+# no secret and drafting nothing. Its files are the run's `mac` artifact for 14 days.
+name: release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - .github/workflows/release.yml
+      - apps/desktop/build/**
+      - apps/desktop/package.json
+      - scripts/check-package.sh
+      - scripts/release/**
+
+permissions:
+  contents: read
+
+# One run per ref at a time. A tag's run is never cancelled, so nothing it signed or notarized is
+# left unchecked; a pull request's newer push cancels its older dry run.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  # nx.json turns both off too.
+  NX_DAEMON: 'false'
+  NX_NO_CLOUD: 'true'
+
+jobs:
+  # The version to build. A tag's run takes it from the tag, after scripts/release/version.sh checks
+  # the tag and that main holds its commit; a dry run makes up its own.
+  version:
+    name: version
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      prerelease: ${{ steps.version.outputs.prerelease }}
+    steps:
+      # The whole history and every branch, so the script can tell whether main holds the tag.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Check the tag and find the version
+        id: version
+        env:
+          EVENT: ${{ github.event_name }}
+        run: |
+          if [ "$EVENT" = push ]; then
+            found=$(sh scripts/release/version.sh "$GITHUB_REF" origin/main)
+          else
+            found=$(printf '%s\n' "version=0.0.0-dry.$GITHUB_RUN_NUMBER" prerelease=true)
+          fi
+          echo "$found"
+          echo "$found" >> "$GITHUB_OUTPUT"
+
+  # Builds both architectures in one run on Apple silicon, so one latest-mac.yml lists both, and
+  # checks the Intel build under Rosetta.
+  mac:
+    name: mac
+    needs: version
+    runs-on: macos-26
+    timeout-minutes: 90
+    environment: ${{ github.event_name == 'push' && 'release' || '' }}
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # pnpm, as package.json pins it, checked against the SHA-512 pnpm-lock.yaml holds for it,
+      # then the dependencies from the lockfile alone, with the Node package.json pins. Nothing
+      # comes from a cache: pnpm/setup restores and saves one of its own, whatever it's told.
+      - name: Install pnpm and the dependencies
+        run: |
+          sh scripts/install-pnpm.sh "$RUNNER_TEMP/pnpm"
+          echo "$RUNNER_TEMP/pnpm" >> "$GITHUB_PATH"
+          "$RUNNER_TEMP/pnpm/pnpm" install --frozen-lockfile
+
+      - name: Install Rosetta
+        run: |
+          if arch -x86_64 /usr/bin/true 2> /dev/null; then
+            echo "Rosetta is installed."
+          else
+            sudo softwareupdate --install-rosetta --agree-to-license
+          fi
+
+      # Built before any secret is in reach, so only electron-builder runs with them.
+      - name: Build the app
+        run: pnpm nx run desktop:build --output-style=static
+
+      # electron-builder signs nothing without a certificate (the release config fails then), and
+      # only warns when the notary key is missing, so a tag's run stops here if any secret is.
+      - name: Check the signing secrets
+        if: github.event_name == 'push'
+        env:
+          MACOS_CERT_P12: ${{ secrets.MACOS_CERT_P12 }}
+          MACOS_CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
+          NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
+          NOTARY_ISSUER_ID: ${{ secrets.NOTARY_ISSUER_ID }}
+          NOTARY_KEY_P8: ${{ secrets.NOTARY_KEY_P8 }}
+        run: |
+          missing=
+          for name in MACOS_CERT_P12 MACOS_CERT_PASSWORD NOTARY_KEY_ID NOTARY_ISSUER_ID NOTARY_KEY_P8; do
+            [ -n "$(printenv "$name")" ] || missing="$missing $name"
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::The release environment has no$missing."
+            exit 1
+          fi
+
+      # notarytool reads the App Store Connect key from a file, readable by this user alone.
+      - name: Write the notary key
+        if: github.event_name == 'push'
+        env:
+          NOTARY_KEY: ${{ runner.temp }}/notary.p8
+          NOTARY_KEY_P8: ${{ secrets.NOTARY_KEY_P8 }}
+        run: |
+          umask 077
+          printf '%s\n' "$NOTARY_KEY_P8" > "$NOTARY_KEY"
+
+      # Signs the app and its helpers with the Developer ID, notarizes the app and staples it, then
+      # makes the zips and the DMGs and signs the DMGs. CSC_LINK is the certificate, base64.
+      - name: Package, sign and notarize
+        if: github.event_name == 'push'
+        working-directory: apps/desktop
+        env:
+          CSC_LINK: ${{ secrets.MACOS_CERT_P12 }}
+          CSC_KEY_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
+          APPLE_API_KEY: ${{ runner.temp }}/notary.p8
+          APPLE_API_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.NOTARY_ISSUER_ID }}
+        run: pnpm run release "-c.extraMetadata.version=$VERSION"
+
+      # electron-builder notarizes the app, not the DMGs. Each DMG is notarized as it is and not
+      # stapled, since stapling would change a file latest-mac.yml already hashed; Gatekeeper finds
+      # its ticket online. notarytool's answer says Invalid without failing, so it's read.
+      - name: Notarize the DMGs
+        if: github.event_name == 'push'
+        env:
+          NOTARY_KEY: ${{ runner.temp }}/notary.p8
+          NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
+          NOTARY_ISSUER_ID: ${{ secrets.NOTARY_ISSUER_ID }}
+        run: |
+          for arch in arm64 x64; do
+            dmg="apps/desktop/release/Lo-$VERSION-$arch.dmg"
+            answer=$(xcrun notarytool submit "$dmg" --key "$NOTARY_KEY" --key-id "$NOTARY_KEY_ID" \
+              --issuer "$NOTARY_ISSUER_ID" --wait --timeout 30m --output-format json) || true
+            echo "$answer"
+            id=$(printf '%s' "$answer" | jq -r '.id // empty' 2> /dev/null) || id=
+            notarized=$(printf '%s' "$answer" | jq -r '.status // empty' 2> /dev/null) || notarized=
+            if [ "$notarized" != Accepted ]; then
+              if [ -n "$id" ]; then
+                xcrun notarytool log "$id" --key "$NOTARY_KEY" --key-id "$NOTARY_KEY_ID" \
+                  --issuer "$NOTARY_ISSUER_ID" || true
+              fi
+              echo "::error::Apple didn't notarize $dmg: ${notarized:-no answer}."
+              exit 1
+            fi
+          done
+
+      - name: Remove the notary key
+        if: always()
+        run: rm -f "$RUNNER_TEMP/notary.p8"
+
+      # A dry run's build: with no certificate or notary key, the app is signed ad hoc with the ad
+      # hoc entitlements, nothing is notarized, and the DMGs are left unsigned. electron-builder
+      # signs nothing in a pull request's run unless CSC_FOR_PULL_REQUEST is set; an ad hoc
+      # signature needs no secret.
+      - name: Package ad hoc
+        if: github.event_name != 'push'
+        working-directory: apps/desktop
+        env:
+          CSC_FOR_PULL_REQUEST: 'true'
+        run: >-
+          pnpm run release "-c.extraMetadata.version=$VERSION" -c.mac.identity=-
+          -c.mac.notarize=false -c.mac.entitlements=build/entitlements.plist
+          -c.mac.entitlementsInherit=build/entitlements.plist -c.dmg.sign=false
+
+      # Every file, so one run shows each failure. A dry run's are checked as an ad hoc build.
+      - name: Check the DMGs and zips
+        env:
+          EVENT: ${{ github.event_name }}
+        run: |
+          failed=0
+          for file in arm64.dmg arm64.zip x64.dmg x64.zip; do
+            path="apps/desktop/release/Lo-$VERSION-$file"
+            if [ "$EVENT" = push ]; then
+              sh scripts/check-package.sh --release "$path" || failed=1
+            else
+              sh scripts/check-package.sh --release --ad-hoc "$path" || failed=1
+            fi
+          done
+          exit "$failed"
+
+      # latest-mac.yml tells electron-updater which file to download and the SHA-512 to check it
+      # against, so it must be this version's and match every file as it's uploaded.
+      - name: Check latest-mac.yml
+        working-directory: apps/desktop/release
+        run: |
+          grep -qx "version: $VERSION" latest-mac.yml ||
+            { echo "::error::latest-mac.yml isn't for $VERSION."; exit 1; }
+          for file in arm64.dmg arm64.zip x64.dmg x64.zip; do
+            name="Lo-$VERSION-$file"
+            hash=$(openssl dgst -sha512 -binary "$name" | base64)
+            grep -A 1 -x "  - url: $name" latest-mac.yml | grep -qxF "    sha512: $hash" ||
+              { echo "::error::latest-mac.yml doesn't list $name with its SHA-512."; exit 1; }
+            [ -s "$name.blockmap" ] || { echo "::error::There's no $name.blockmap."; exit 1; }
+          done
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: mac
+          path: |
+            apps/desktop/release/Lo-${{ env.VERSION }}-*.dmg
+            apps/desktop/release/Lo-${{ env.VERSION }}-*.zip
+            apps/desktop/release/Lo-${{ env.VERSION }}-*.blockmap
+            apps/desktop/release/latest-mac.yml
+          if-no-files-found: error
+          retention-days: 14
+
+  # Drafts the release from the files the build jobs checked, with their SHA-256 checksums and
+  # notes GitHub writes (.github/release.yml says what they leave out). A re-run replaces a draft's
+  # files, and never touches a published release.
+  draft:
+    name: draft
+    needs: [version, mac]
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+      PRERELEASE: ${{ needs.version.outputs.prerelease }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: mac
+          path: ${{ runner.temp }}/release
+
+      - name: Write SHA256SUMS
+        working-directory: ${{ runner.temp }}/release
+        run: |
+          sha256sum -- * > "$RUNNER_TEMP/SHA256SUMS"
+          mv "$RUNNER_TEMP/SHA256SUMS" SHA256SUMS
+          cat SHA256SUMS
+
+      # Drafts are listed only to a token that can write, and gh finds one by its tag.
+      - name: Draft the release
+        working-directory: ${{ runner.temp }}/release
+        run: |
+          tag="v$VERSION"
+          drafts=$(gh api --paginate "repos/$GITHUB_REPOSITORY/releases" \
+            --jq ".[] | select(.tag_name == \"$tag\") | .draft")
+          case $drafts in
+            '')
+              set -- --draft --verify-tag --generate-notes --title "Lo $VERSION"
+              [ "$PRERELEASE" = false ] || set -- "$@" --prerelease
+              gh release create "$tag" --repo "$GITHUB_REPOSITORY" "$@" -- ./*
+              echo "::notice::Drafted $tag. Read it, then publish it."
+              ;;
+            true)
+              gh release upload "$tag" --repo "$GITHUB_REPOSITORY" --clobber -- ./*
+              echo "::notice::Replaced the files of $tag's draft."
+              ;;
+            *)
+              echo "::error::$tag has a published release, or more than one, which a run never changes."
+              exit 1
+              ;;
+          esac

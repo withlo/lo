@@ -74,8 +74,8 @@ jobs:
           PACKAGE: ${{ steps.npm.outputs.name }}@${{ steps.npm.outputs.version }}
         run: echo "::notice::npm has $PACKAGE already, so there's nothing to publish."
 
-  # Lints, type checks, tests and builds the checker as CI does, then packs it. It installs without
-  # the store cache, so what's published comes from the lockfile alone, and it holds no token.
+  # Lints, type checks, tests and builds the checker as CI does, then packs it. It restores no
+  # cache, so what's published comes from the lockfile alone, and it holds no token.
   build:
     name: build
     needs: version
@@ -87,10 +87,14 @@ jobs:
         with:
           persist-credentials: false
 
-      # Installs the Node and pnpm that package.json's devEngines pins, then the dependencies.
-      - uses: pnpm/setup@731dfb6463bbd11c11fd0ee11fe00ed0e36d48a1 # v3.2.0
-        with:
-          require-lockfile: true
+      # pnpm, as package.json pins it, checked against the SHA-512 pnpm-lock.yaml holds for it,
+      # then the dependencies from the lockfile alone, with the Node package.json pins. Nothing
+      # comes from a cache: pnpm/setup restores and saves one of its own, whatever it's told.
+      - name: Install pnpm and the dependencies
+        run: |
+          sh scripts/install-pnpm.sh "$RUNNER_TEMP/pnpm"
+          echo "$RUNNER_TEMP/pnpm" >> "$GITHUB_PATH"
+          "$RUNNER_TEMP/pnpm/pnpm" install --frozen-lockfile
 
       - name: Lint, type check, test and build the checker
         run: pnpm nx run-many -t lint typecheck test build --projects=checker --output-style=static

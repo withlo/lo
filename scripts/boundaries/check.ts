@@ -158,6 +158,8 @@ const loaderFiles = new Set([
   'apps/desktop/electron.vite.config.ts',
   // Loads node:sqlite, which an older Node doesn't have.
   'apps/desktop/src/main/database.ts',
+  // Puts a stand-in for Electron where electron-updater's updater for a Mac requires it.
+  'apps/desktop/src/features/updates/main/updater.test.ts',
   // Finds the syntax package's folder, for its built grammars.
   'apps/perf/src/main/index.ts',
   // Find the design tokens, and the stylesheets the window's stylesheet imports.

@@ -1,10 +1,12 @@
-// How this copy of Lo takes a newer version, decided once as Lo starts from where it runs. Only a
-// packaged Lo on a Mac installs one itself, and only from an Applications folder it can write:
-// Squirrel.Mac, which electron-updater hands the download to, replaces the app where it is. Run
-// from the disk image, from where macOS translocated a download, or from any other folder, Lo
-// must be moved to Applications first. Homebrew's installs update through Homebrew, since Lo
-// replacing one would leave Homebrew's record of it wrong. Everywhere else, the reader downloads it
-// from the release's page. Nothing here calls Electron, so it runs under unit tests.
+// How this copy of Lo takes a newer version, from where it runs. Only a packaged Lo on a Mac installs
+// one itself, and only from an Applications folder it can write: Squirrel.Mac, which
+// electron-updater hands the download to, replaces the app where it is. Run from the disk image,
+// from where macOS translocated a download, or from any other folder, Lo must be moved to
+// Applications first. Homebrew's installs update through Homebrew, since Lo replacing one would
+// leave Homebrew's record of it wrong. Everywhere else, the reader downloads it from the release's
+// page. It's decided as Lo starts, and again before Lo moves itself or downloads an update, since
+// the reader may move Lo, or change what it may write, while it runs. Nothing here calls Electron,
+// so it runs under unit tests.
 
 import { dirname, join, posix } from 'node:path';
 
@@ -17,7 +19,10 @@ export const CASKROOMS = ['/opt/homebrew/Caskroom/lo', '/usr/local/Caskroom/lo']
 export interface Place {
   readonly platform: NodeJS.Platform;
   readonly packaged: boolean;
-  /** The program running: `<app>/Contents/MacOS/<name>` in a packaged Lo on a Mac. */
+  /**
+   * The program running: `<app>/Contents/MacOS/<name>` in a packaged Lo on a Mac. It's where the
+   * program was as it started, which a move while it runs doesn't change.
+   */
   readonly executable: string;
   readonly home: string;
   exists(path: string): boolean;
@@ -43,10 +48,23 @@ export function howItUpdates(place: Place): How {
   if (place.platform !== 'darwin' || !place.packaged) return 'page';
   const bundle = bundleOf(place.executable);
   if (bundle === undefined) return 'page';
+  // Moved, or deleted, since it started: Lo can't tell where it is now, so it neither replaces nor
+  // moves what's no longer there.
+  if (!place.exists(bundle)) return 'page';
   const applications = inApplications(bundle, place.home);
   // Checked first: Homebrew puts the app in an Applications folder Lo can write.
   if (applications && CASKROOMS.some((caskroom) => place.exists(caskroom))) return 'brew';
   // The disk image, a translocated download and any other folder.
   if (!applications) return 'move';
   return place.writable(bundle) && place.writable(dirname(bundle)) ? 'install' : 'page';
+}
+
+/**
+ * How this copy of Lo takes a newer version now, decided again, when it took one as `started` as it
+ * started. Only a copy that started installing updates itself has the updater that can, so a copy
+ * that didn't never comes to: it sends the reader to the release's page instead.
+ */
+export function howItUpdatesNow(place: Place, started: How): How {
+  const now = howItUpdates(place);
+  return now === 'install' && started !== 'install' ? 'page' : now;
 }

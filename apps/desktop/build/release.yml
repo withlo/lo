@@ -1,0 +1,61 @@
+# electron-builder's settings for a release of Lo, run from apps/desktop by the release workflow
+# (`pnpm run release`, after `nx run desktop:build`). It extends electron-builder.yml and changes
+# only what a release needs: a DMG and a zip for Apple silicon and for Intel, signed with a
+# Developer ID and notarized, which say where their updates come from. The workflow passes the
+# version, from the tag, as `-c.extraMetadata.version=<version>`; package.json's stays 0.0.0.
+#
+# The Developer ID certificate comes from CSC_LINK and CSC_KEY_PASSWORD, and the App Store Connect
+# key that notarizes from APPLE_API_KEY (the key file's path), APPLE_API_KEY_ID and
+# APPLE_API_ISSUER. electron-builder notarizes the app and staples its ticket to it before it makes
+# the zip and the DMG, so both hold a stapled app. It doesn't notarize the DMGs: the workflow does,
+# and leaves them unstapled, since stapling would change a file latest-mac.yml already hashed.
+#
+# A dry run builds this ad hoc, with no certificate or key: see the release workflow.
+
+extends: build/electron-builder.yml
+
+# A release is never unsigned: with no Developer ID certificate to sign with, the build fails.
+forceCodeSigning: true
+
+# The name in the app's package.json, which names the folder electron-updater downloads updates to
+# (lo-updater, in ~/Library/Caches); the workspace's name, @lo/desktop, would make it
+# @lodesktop-updater. The app still goes by its productName, Lo.
+extraMetadata:
+  name: lo
+
+# Writes app-update.yml into the app and latest-mac.yml beside the files, which name GitHub
+# Releases of withlo/lo as where updates come from. Nothing is uploaded from this build: the
+# `release` script passes `--publish never`, and the workflow's draft job, which holds no signing
+# key, makes the release.
+publish:
+  provider: github
+  owner: withlo
+  repo: lo
+
+mac:
+  # Both architectures in one run, so one latest-mac.yml lists both zips. electron-builder adds a
+  # list to the one it extends, without repeating a target, so with electron-builder.yml's arm64
+  # zip these four are the whole list.
+  target:
+    - target: dmg
+      arch: [arm64, x64]
+    - target: zip
+      arch: [arm64, x64]
+  # Empty, so electron-builder signs with the Developer ID Application certificate in the keychain
+  # it makes from CSC_LINK. electron-builder.yml's '-' would sign ad hoc.
+  identity: ''
+  # A Developer ID signature has a team, and library validation accepts Electron's framework as
+  # the app's own, so the app and its helpers need only allow-jit (see electron-builder.yml).
+  entitlements: build/entitlements.release.plist
+  entitlementsInherit: build/entitlements.release.plist
+  # Electron 45's own minimum, which its framework is built for. The cask's `depends_on macos:`
+  # follows it, and check-package.sh fails a build whose Electron needs a newer macOS than this.
+  minimumSystemVersion: '13.0'
+  # electron-builder skips notarizing, with only a warning, when the key's variables are missing,
+  # so the workflow checks them before it builds, and check-package.sh refuses an app that isn't
+  # notarized.
+  notarize: true
+
+dmg:
+  # Signed with the same certificate, so the workflow can notarize it.
+  sign: true

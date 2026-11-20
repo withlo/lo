@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
 
-import { compareVersions, isNewer } from './versions.ts';
+import { compareVersions, isNewer, takes } from './versions.ts';
 
 it('orders versions as SemVer does', () => {
   // SemVer's own example, oldest first.
@@ -42,4 +42,17 @@ it('takes a newer version only, and only one Lo is released as', () => {
   expect(isNewer('0.1.0-rc.2', '0.1.0')).toBe(false);
   expect(isNewer('v0.2.0', '0.1.0')).toBe(false);
   expect(isNewer('0.2.0+build', '0.1.0')).toBe(false);
+});
+
+it('offers a release only releases, and a prerelease the release of its version too', () => {
+  expect(takes('0.1.0', '0.2.0')).toBe(true);
+  for (const offered of ['0.2.0-rc.1', '1.0.0-rc.1']) {
+    expect(takes('0.1.0', offered)).toBe(false);
+  }
+  for (const offered of ['0.1.0', '0.2.0', '0.1.0-rc.2', '0.2.0-rc.1']) {
+    expect(takes('0.1.0-rc.1', offered)).toBe(true);
+  }
+  for (const offered of ['0.1.0-rc.1', '0.1.0-beta.2', '0.0.9']) {
+    expect(takes('0.1.0-rc.1', offered)).toBe(false);
+  }
 });
