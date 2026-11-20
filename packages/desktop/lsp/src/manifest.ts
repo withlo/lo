@@ -19,8 +19,8 @@
  * - where it's recorded, what it `unpacked` to, in bytes, which caps its install at that and 5%
  *   more, in place of the limit every download shares.
  *
- * `toolchains.json` pins the toolchains language servers use, Go, Rust, a JDK and the .NET SDK,
- * the same way, each with what it unpacks to ({@link TOOLCHAINS}).
+ * `toolchains.json` pins the toolchains language servers use, Go, Rust, a JDK, the .NET SDK and,
+ * for Linux, Swift (`swift.ts`), the same way, each with what it unpacks to ({@link TOOLCHAINS}).
  */
 
 import { z } from 'zod';

@@ -141,6 +141,7 @@ function onPool(shown: ReadonlyMap<string, ServingInput>, screen: () => string =
         toolchain: () => Promise.reject(new Error('no downloads in tests')),
         findCopy: () => Promise.resolve(undefined),
         developerFolder: () => Promise.resolve(undefined),
+        missingPackages: () => Promise.resolve([]),
         signal,
       }),
     start(spec) {

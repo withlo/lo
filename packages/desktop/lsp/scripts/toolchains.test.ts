@@ -6,10 +6,10 @@ import { createHash } from 'node:crypto';
 import * as openpgp from 'openpgp';
 import { describe, expect, test } from 'vitest';
 
-import { PLATFORMS } from '../src/index.ts';
+import { PLATFORMS, SWIFT_DISTROS } from '../src/index.ts';
 import { type Routes, serve, sha256, tarGz } from '../test/downloads.ts';
 import { tempFolder } from '../test/support.ts';
-import { dotnet, go, parseChannel, rust, temurin } from './toolchains.ts';
+import { dotnet, go, parseChannel, rust, swift, temurin } from './toolchains.ts';
 
 /** A key that signs as a publisher would, armored or not, and its armored public key. */
 async function publisher() {
@@ -352,5 +352,77 @@ describe('.NET', () => {
   ])('refuses an archive when %s', async (_, change, message) => {
     const { tools: given } = await lists(change);
     await expect(dotnet()('10.0.100', given)).rejects.toThrow(message);
+  });
+});
+
+/** Ubuntu 26.04, as swift.org builds Swift for it. */
+const UBUNTU = SWIFT_DISTROS.find((distro) => distro.id === 'ubuntu2604');
+
+/**
+ * Swift 6.0.1 for Ubuntu 26.04, served as download.swift.org would, each archive with its armored
+ * signature, or a signature of another file when `signs` says.
+ */
+async function swiftRelease(options: { signs?: Buffer } = {}) {
+  const signer = await publisher();
+  const routes: Routes = {};
+  const base = 'https://download.swift.org/swift-6.0.1-release/';
+  for (const arch of ['', '-aarch64']) {
+    const name = `swift-6.0.1-RELEASE-ubuntu26.04${arch}`;
+    const archive = tarGz([
+      { path: `${name}/usr/bin/sourcekit-lsp`, data: `sourcekit-lsp${arch}`, mode: 0o755 },
+      { path: `${name}/usr/bin/swift-frontend`, data: 'swift-frontend', mode: 0o755 },
+      { path: `${name}/usr/bin/swiftc`, type: 'SymbolicLink', linkpath: 'swift-frontend' },
+    ]);
+    const url = `${base}ubuntu2604${arch}/swift-6.0.1-RELEASE/${name}.tar.gz`;
+    routes[url] = { body: archive };
+    routes[`${url}.sig`] = { body: await signer.signDetached(options.signs ?? archive, true) };
+  }
+  return { signer, ...(await tools(routes)) };
+}
+
+describe('Swift', () => {
+  if (UBUNTU === undefined) throw new Error('swift.org builds for Ubuntu 26.04');
+
+  test('records each archive swift.org’s key signed, for Linux alone, as SourceKit-LSP', async () => {
+    const { signer, tools: given } = await swiftRelease();
+    const pinned = await swift(UBUNTU, [signer.publicKey])('6.0.1', given);
+    expect(pinned.hosts).toEqual(['download.swift.org']);
+    expect(Object.keys(pinned.platforms)).toEqual(['linux-x64', 'linux-arm64']);
+    expect(pinned.platforms['linux-arm64']).toMatchObject({
+      kind: 'tar.gz',
+      url: 'https://download.swift.org/swift-6.0.1-release/ubuntu2604-aarch64/swift-6.0.1-RELEASE/swift-6.0.1-RELEASE-ubuntu26.04-aarch64.tar.gz',
+      entry: 'swift-6.0.1-RELEASE-ubuntu26.04-aarch64/usr/bin/sourcekit-lsp',
+      unpacked: Buffer.byteLength('sourcekit-lsp-aarch64swift-frontend'),
+    });
+    expect(pinned.platforms['linux-x64']).toMatchObject({
+      entry: 'swift-6.0.1-RELEASE-ubuntu26.04/usr/bin/sourcekit-lsp',
+    });
+  });
+
+  test('refuses an archive signed by another key, or whose signature is of another file', async () => {
+    const other = await publisher();
+    const unsigned = await swiftRelease();
+    await expect(swift(UBUNTU, [other.publicKey])('6.0.1', unsigned.tools)).rejects.toThrow(
+      /isn't signed with one of the keys/,
+    );
+    const elsewhere = await swiftRelease({ signs: Buffer.from('another file') });
+    await expect(
+      swift(UBUNTU, [elsewhere.signer.publicKey])('6.0.1', elsewhere.tools),
+    ).rejects.toThrow(/isn't signed with one of the keys/);
+  });
+
+  test('refuses an archive past what it may unpack to as it’s measured', async () => {
+    const { signer, tools: given } = await swiftRelease();
+    const limits = { entries: 100, bytes: Buffer.byteLength('sourcekit-lsp') };
+    await expect(swift(UBUNTU, [signer.publicKey], limits)('6.0.1', given)).rejects.toThrow(
+      /unpacks to more than Lo allows/,
+    );
+  });
+
+  test('refuses a version swift.org wouldn’t name a release', async () => {
+    const { signer, tools: given } = await swiftRelease();
+    await expect(swift(UBUNTU, [signer.publicKey])('6.0.1-RELEASE', given)).rejects.toThrow(
+      'isn’t a Swift version',
+    );
   });
 });

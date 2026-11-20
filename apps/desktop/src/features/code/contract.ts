@@ -134,7 +134,8 @@ const serverId = z.string().regex(/^[a-z][a-z0-9-]{0,39}$/);
  * - `ready`, or `notAnswering` once it has missed several deadlines in a short while;
  * - `failed`: out of memory at `cap` bytes, a download that failed, or anything else, in a
  *   sentence; it waits for "Restart";
- * - `missing`: the toolchain it needs isn't installed; `plural` when `needs` names them, not it;
+ * - `missing`: the toolchain it needs isn't installed, or for Swift on Linux, the packages the
+ *   toolchain needs; `plural` when `needs` names them, not it;
  * - `refused`: Lo won't run it on this checkout, as `why` says, in a sentence or two; it's looked
  *   at again once another head is on screen.
  */
@@ -168,8 +169,10 @@ export const serverState = z.discriminatedUnion('kind', [
   }),
   z.strictObject({
     kind: z.literal('missing'),
-    needs: z.string().max(200),
-    install: z.string().max(200).optional(),
+    // Swift on Linux names each of its distribution's packages that's missing, and the command
+    // that installs them.
+    needs: z.string().max(400),
+    install: z.string().max(400).optional(),
     plural: z.boolean().optional(),
   }),
   z.strictObject({ kind: z.literal('refused'), why: z.string().max(400) }),

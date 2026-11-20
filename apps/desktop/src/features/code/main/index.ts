@@ -33,6 +33,7 @@ import {
   partsOf,
   startServer,
   TOOLCHAINS,
+  toolchainsFor,
   toolchainUse,
 } from '@lo/lsp';
 import { app, BrowserWindow, dialog, MessageChannelMain, net } from 'electron';
@@ -50,7 +51,13 @@ import { tabs } from '../../tab/service.ts';
 import { contract } from '../contract.ts';
 import { contract as codeJobs } from '../jobs.ts';
 import { readTrusted, trusted, type TrustEntry } from '../settings.ts';
-import { ADAPTERS, type Adapter, type Toolchain } from './adapters.ts';
+import {
+  ADAPTERS,
+  type Adapter,
+  prepareContext,
+  SWIFT_DISTRO,
+  type Toolchain,
+} from './adapters.ts';
 import { letGo, letGoUntrusted } from './checkouts.ts';
 import { TrustAsker, type AskWindow } from './confirm.ts';
 import { readRepositories, type RepositoryReading } from './repositories.ts';
@@ -109,6 +116,13 @@ const JOB_WAIT = 10 * 60_000;
 const RENDER_WAIT = 5_000;
 
 const log = (line: string) => console.error(`code: ${line}`);
+
+/**
+ * The toolchains this system may install, which Settings lists and removes, and which Lo removes
+ * the rest of as it starts: those `toolchains.json` pins, Swift's only for the Linux distribution
+ * the system takes, so another's goes once the system is upgraded past it.
+ */
+const SYSTEM_TOOLCHAINS: Manifest = toolchainsFor(TOOLCHAINS, SWIFT_DISTRO);
 
 let views: TrustViews | undefined;
 let asker: TrustAsker<BrowserAsk> | undefined;
@@ -489,7 +503,7 @@ async function installToolchain(
 ): Promise<Toolchain> {
   const installing = toolchainsInstaller(context);
   if (!installing) throw new Error('Lo has no cache to download toolchains into.');
-  const pinned = pinnedIn(TOOLCHAINS, id);
+  const pinned = pinnedIn(SYSTEM_TOOLCHAINS, id);
   if (!pinned) throw new Error(`Lo's list of toolchains has no ${id}.`);
   let downloaded = false;
   try {
@@ -550,7 +564,7 @@ async function prepareServer(
   await expect(
     'toolchain',
     adapter.downloads?.toolchains,
-    TOOLCHAINS,
+    SYSTEM_TOOLCHAINS,
     toolchainsInstaller(context),
   );
   const counted = async <T>(key: string, start: (heard: typeof progress) => Promise<T>) => {
@@ -559,16 +573,17 @@ async function prepareServer(
     part.done();
     return done;
   };
-  return adapter.prepare({
-    install: (id, options) =>
-      counted(`server:${id}`, (heard) => install(context, id, heard, signal, options?.go)),
-    toolchain: listedToolchain(adapter, (id) =>
-      counted(`toolchain:${id}`, (heard) => installToolchain(context, id, heard, signal)),
-    ),
-    findCopy: (candidates) => installedCopy(context, candidates),
-    developerFolder,
-    signal,
-  });
+  return adapter.prepare(
+    prepareContext({
+      install: (id, options) =>
+        counted(`server:${id}`, (heard) => install(context, id, heard, signal, options?.go)),
+      toolchain: listedToolchain(adapter, (id) =>
+        counted(`toolchain:${id}`, (heard) => installToolchain(context, id, heard, signal)),
+      ),
+      findCopy: (candidates) => installedCopy(context, candidates),
+      signal,
+    }),
+  );
 }
 
 /** The first of `candidates` that may run as a server: a copy the user installed. */
@@ -618,19 +633,19 @@ function startServers(context: Context): void {
   });
   pool = servers;
   toolchainHost = {
-    manifest: TOOLCHAINS,
+    manifest: SYSTEM_TOOLCHAINS,
     platform: currentPlatform(),
     installer: () => toolchainsInstaller(context),
     adapters: () => adapters,
     halt: (uses, message) => servers.halt(uses, message),
     find: { findCopy: (candidates) => installedCopy(context, candidates), developerFolder },
   };
-  // As Lo starts, before any server can use one, what toolchains.json no longer pins goes, as do
-  // downloads a Lo that stopped halfway left.
+  // As Lo starts, before any server can use one, what toolchains.json no longer pins for this
+  // system goes, as do downloads a Lo that stopped halfway left.
   stops.push(
     context.git.onCache(() => {
       toolchainsInstaller(context)
-        ?.prune(TOOLCHAINS)
+        ?.prune(SYSTEM_TOOLCHAINS)
         .catch((error: unknown) => log(`couldn't remove old toolchains: ${String(error)}`))
         .finally(() => publishToolchains(context));
     }),
@@ -720,7 +735,7 @@ export default defineFeature(contract, {
     toolchains: () => (toolchainHost ? listToolchains(toolchainHost) : []),
     async removeToolchain({ id }, context) {
       if (!toolchainHost) throw new IpcError('unavailable', 'Lo is starting, or quitting.');
-      if (!Object.hasOwn(TOOLCHAINS, id)) {
+      if (!Object.hasOwn(SYSTEM_TOOLCHAINS, id)) {
         throw new IpcError('missing', 'Lo has no toolchain with that id.');
       }
       try {
