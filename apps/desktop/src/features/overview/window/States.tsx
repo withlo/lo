@@ -3,7 +3,17 @@
 // be shown, couldn't be checked or couldn't be fetched is a problem in the view's place: what
 // failed, why, the one thing to do, and what was found behind Details.
 
-import { Countdown, EmptyState, Problem, type EmptyAction, type ProblemAction } from '@lo/ui';
+import {
+  CopyFaces,
+  CopyStatus,
+  Countdown,
+  EmptyState,
+  Problem,
+  useCopySaid,
+  type CopySaid,
+  type EmptyAction,
+  type ProblemAction,
+} from '@lo/ui';
 import { NO_TARGET } from '@lo/ui/commands';
 import { useEffect, useState } from 'react';
 import { useStore } from 'zustand';
@@ -15,7 +25,7 @@ import { contract as tabContract } from '../../tab/contract.ts';
 import { useRunLayers, useTabState, withoutBidi, type PullTab } from '../../tab/window/shared.ts';
 import updates from '../../updates/keys.ts';
 import type { Problem as ReadProblem, SkillState } from '../contract.ts';
-import { copyPrompt, promptFor } from './copy.ts';
+import { answerCopies, copyPrompt, promptFor } from './copy.ts';
 import type { Standing } from './facts.ts';
 import { loadNewer } from './follow.ts';
 import { useNow } from './hooks.ts';
@@ -32,7 +42,7 @@ import {
   writtenText,
 } from './says.ts';
 import { checkSkill, skillStore } from './skill.ts';
-import { checkAgain, states } from './store.ts';
+import { checkAgain, rereading, states } from './store.ts';
 
 /** The command that asks GitHub for a newer Lo now, and says what it found. */
 const CHECK = `${updates.feature}.${'check' satisfies keyof typeof updates.commands}`;
@@ -48,6 +58,16 @@ function skillMissing(state: SkillState | undefined): boolean {
   if (state === undefined) return false;
   const setUp = state.agents.filter((agent) => agent.setUp);
   return setUp.length > 0 && setUp.every((agent) => !agent.installed && agent.blocked === null);
+}
+
+/**
+ * What tab `id`'s Copy prompt button says of the last copy of its prompt, by the button or by `ya`,
+ * while it's `drawn`: a copy made with none drawn says so in a toast.
+ */
+function usePromptCopied(id: string, drawn: boolean): CopySaid | undefined {
+  const [said, say] = useCopySaid();
+  useEffect(() => (drawn ? answerCopies(id, say) : undefined), [drawn, id, say]);
+  return said;
 }
 
 /** A prompt to copy into a coding agent, as code the reader can select. */
@@ -67,14 +87,17 @@ function PromptText({ prompt }: { prompt: string }) {
 export function NoOverview({ tab, standing }: { tab: PullTab; standing: Standing }) {
   useKeys();
   const state = useTabState(states, tab.id);
+  const looking = useTabState(rereading, tab.id);
   const skill = useStore(skillStore, (store) => store.state);
+  const copied = usePromptCopied(tab.id, true);
   useEffect(() => {
     void checkSkill();
   }, []);
   const prompt = promptFor(tab, standing);
+  const copy: EmptyAction = { command: COPY_PROMPT, copied: copied ?? null };
   const second: EmptyAction | undefined =
     state?.watching === false
-      ? { command: RETRY, label: 'Check again' }
+      ? { command: RETRY, label: 'Check again', busy: looking, working: 'Checking…' }
       : skillMissing(skill)
         ? INSTALL_SKILL
         : undefined;
@@ -82,7 +105,7 @@ export function NoOverview({ tab, standing }: { tab: PullTab; standing: Standing
     <EmptyState
       title="No overview yet"
       line="A coding agent writes one from this prompt."
-      actions={second === undefined ? [COPY_PROMPT] : [COPY_PROMPT, second]}
+      actions={second === undefined ? [copy] : [copy, second]}
     >
       {prompt !== undefined && <PromptText prompt={prompt} />}
     </EmptyState>
@@ -178,13 +201,20 @@ export function NoneInRun({ tab }: { tab: PullTab }) {
   );
 }
 
-/** Copies the prompt that fixes or shrinks an overview, as `ya` does. */
-function copyAction(prompt: string | undefined): ProblemAction | undefined {
+/**
+ * Copies the prompt that fixes or shrinks tab `id`'s overview, as `ya` does, and reads "Copied" or
+ * "Couldn’t copy" as the last copy came to, as every Copy button does.
+ */
+function copyAction(
+  id: string,
+  prompt: string | undefined,
+  copied: CopySaid | undefined,
+): ProblemAction | undefined {
   if (prompt === undefined) return undefined;
   return {
-    label: 'Copy prompt',
+    label: <CopyFaces said={copied}>Copy prompt</CopyFaces>,
     keys: keyOf(COPY_PROMPT),
-    onClick: () => void copyPrompt(prompt),
+    onClick: () => void copyPrompt(id, prompt),
   };
 }
 
@@ -204,38 +234,51 @@ export function CantShow({
   useKeys();
   const now = useNow(true, 60_000);
   const state = useTabState(states, tab.id);
+  const [checking, setChecking] = useState(false);
   const prompt = promptFor(tab, standing);
   const written = writtenText(standing.commit, now);
   // A later overview is the way on from any of these.
   const latest = state?.newer ? latestAction(tab) : undefined;
+  // Copy prompt is the way on from an overview that's wrong or too large.
+  const copies =
+    latest === undefined &&
+    prompt !== undefined &&
+    (standing.kind === 'invalid' || standing.kind === 'tooLarge');
+  const copied = usePromptCopied(tab.id, copies);
   switch (standing.kind) {
     case 'invalid':
       return (
-        <Problem
-          layout="view"
-          title="Can’t show this overview"
-          reason={invalidSummary(standing.findings)}
-          action={latest ?? copyAction(prompt)}
-          details={[
-            written,
-            ...standing.findings.map(
-              (finding) => `${findingPlace(finding)} · ${withoutBidi(finding.message)}`,
-            ),
-          ].join('\n')}
-        />
+        <>
+          <Problem
+            layout="view"
+            title="Can’t show this overview"
+            reason={invalidSummary(standing.findings)}
+            action={latest ?? copyAction(tab.id, prompt, copied)}
+            details={[
+              written,
+              ...standing.findings.map(
+                (finding) => `${findingPlace(finding)} · ${withoutBidi(finding.message)}`,
+              ),
+            ].join('\n')}
+          />
+          {copies && <CopyStatus said={copied} />}
+        </>
       );
     case 'tooLarge':
       return (
-        <Problem
-          layout="view"
-          title="Can’t show this overview"
-          reason={tooLargeWords(standing.what, standing.sizes)}
-          action={latest ?? copyAction(prompt)}
-          details={[
-            written,
-            ...sizeRows(standing.sizes).map((row) => `${row.kind} · ${row.size}`),
-          ].join('\n')}
-        />
+        <>
+          <Problem
+            layout="view"
+            title="Can’t show this overview"
+            reason={tooLargeWords(standing.what, standing.sizes)}
+            action={latest ?? copyAction(tab.id, prompt, copied)}
+            details={[
+              written,
+              ...sizeRows(standing.sizes).map((row) => `${row.kind} · ${row.size}`),
+            ].join('\n')}
+          />
+          {copies && <CopyStatus said={copied} />}
+        </>
       );
     case 'newer':
       return (
@@ -260,7 +303,17 @@ export function CantShow({
           layout="view"
           title="Can’t check the overview"
           reason={standing.why === '' ? undefined : standing.why}
-          action={latest ?? { label: 'Check again', onClick: () => checkAgain(tab.id) }}
+          action={
+            latest ?? {
+              label: 'Check again',
+              busy: checking,
+              working: 'Checking…',
+              onClick: () => {
+                setChecking(true);
+                void checkAgain(tab.id).finally(() => setChecking(false));
+              },
+            }
+          }
           details={
             standing.details === undefined
               ? written

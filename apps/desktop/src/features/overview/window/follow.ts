@@ -221,8 +221,11 @@ export function focusBlock(overview: DrawnOverview, block: HTMLElement): void {
   if (scroller) bringOnScreen(scroller, block);
 }
 
-/** Why the block keys can't move while the overview's first blocks draw, unseen. */
-const NOT_DRAWN = 'The overview isn’t drawn yet';
+/**
+ * Why the block keys can't move while the overview's first blocks draw, unseen: nothing, so a key
+ * pressed meanwhile does nothing and says nothing. The placeholder over it says the wait.
+ */
+const NOT_DRAWN = '';
 
 /**
  * The block `]b` (`1`) or `[b` (`-1`) goes to: the next or previous one the block keys stop at,

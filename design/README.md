@@ -335,6 +335,10 @@ one: never a lone line of muted text, a paragraph, or an icon over one.
   it's dimmed with the reason as its tooltip. An action is the id alone, or
   `{ command, target, label }`: `target` is what the command runs on, as a key pressed there would,
   and `label` is other words where the command's label isn't what the view says.
+- An action whose command starts work the view waits on is `busy` until it's done, with `working`
+  its verb: "Check again" reads "Checking…" at the same width. One that copies takes `copied`, what
+  its last copy came to from `useCopySaid` (`null` at rest), and reads "Copied" or "Couldn’t copy"
+  for two seconds with `CopyButton`'s own faces, whether its press or its key copied.
 - `children` is what the state holds for its actions to act on, between the line and the buttons:
   the prompt that Copy prompt copies, as code. Never more words.
 - It fills the box it's in and centres itself, so give that box the view's height. In a narrow panel
@@ -413,9 +417,11 @@ that floats.
   seconds each, paused under the pointer or focus. A toast is one line, clamped to three, and one
   action at most. One that waits for the reader may add a `body`: plain words wrap, anywhere a long
   path needs to, and clamp to three lines; a body of its own markup, such as a command to copy,
-  shows whole. A toast never reports a failure: that's a `Problem` where it happened. Keep each
-  toast the same object while it shows. To show one again, as a second "Copied path", put a new
-  object with the same `id` in `toasts`: it stays in its place and its four seconds start over.
+  shows whole. A toast never reports a failure: that's a `Problem` where it happened, or the control
+  that was pressed. Only something asked for by a key with no control for it in view, such as `ya`
+  where no Copy prompt button is drawn, fails in a toast: its line at danger tone. Keep each toast
+  the same object while it shows. To show one again, as a second "Copied path", put a new object
+  with the same `id` in `toasts`: it stays in its place and its four seconds start over.
 - **`Problem`** is something that went wrong, in one shape: what failed, why, the one thing to do,
   and the raw text behind Details with Copy. The action's label starts with a verb, and is a node,
   so a name that's code stays code in it: "Open `settings.json`". `layout="view"` takes a failed
@@ -430,7 +436,10 @@ that floats.
   the alert is read once, not every second. A new retry time is a new count.
 - **`CopyButton`** copies and says so itself: it reads "Copied" for two seconds, and no toast says
   it again. When copying throws or rejects, it reads "Couldn’t copy" instead. A live region beside
-  it says the same to a screen reader.
+  it says the same to a screen reader. Any other control that copies says it the same way:
+  `useCopySaid()` gives what to say and `say`, `<CopyFaces said={said}>` draws the three faces in
+  the button at the widest one's width, and `<CopyStatus said={said} />` is the live region beside
+  it.
 - **`CopyRoute`** gives everything inside it the window's way to copy. The window is refused every
   permission, so it can't use the browser's clipboard: it copies through main's `tab.copy`, and one
   `CopyRoute` around the window (`Window.tsx`) says so. `Problem`'s Copy goes through it, and a

@@ -1,7 +1,9 @@
 // Copying the prompt a tab's overview offers, with `ya` or Copy prompt: built from what the window
 // knows of the tab, and put on the clipboard by main.
 
-import { announce, refuse } from '../../../window/commands/notices.tsx';
+import type { CopySaid } from '@lo/ui';
+
+import { announce, fail } from '../../../window/commands/notices.tsx';
 import { client } from '../../../window/ipc.ts';
 import { contract as tabContract } from '../../tab/contract.ts';
 import { pullOf, type PullTab } from '../../tab/window/shared.ts';
@@ -31,17 +33,42 @@ export function promptNow(tab: PullTab): string | undefined {
   return promptFor(tab, standingOf(states.get(tab.id), checked.get(tab.id)));
 }
 
+/** The Copy prompt buttons drawn, by tab, each told how a copy of its tab's prompt went. */
+const answering = new Map<string, Set<(said: CopySaid) => void>>();
+
 /**
- * Puts `prompt` on the clipboard, and says it's there, or that it couldn't be: the buttons that
- * copy it are commands', which have no "Copied" of their own to read.
+ * Has `say` hear how each copy of tab `id`'s prompt goes, by its button or its key, while the Copy
+ * prompt button that calls it is drawn: it says so on the button. Returns a function that stops.
  */
-export async function copyPrompt(prompt: string): Promise<void> {
+export function answerCopies(id: string, say: (said: CopySaid) => void): () => void {
+  const buttons = answering.get(id) ?? new Set();
+  answering.set(id, buttons);
+  buttons.add(say);
+  return () => {
+    buttons.delete(say);
+    if (buttons.size === 0 && answering.get(id) === buttons) answering.delete(id);
+  };
+}
+
+/**
+ * Puts tab `id`'s `prompt` on the clipboard, and says how that went: on the tab's Copy prompt
+ * button where one is drawn, which reads "Copied" or "Couldn’t copy", else in a toast, as for `ya`
+ * pressed where no button copies it.
+ */
+export async function copyPrompt(id: string, prompt: string): Promise<void> {
+  let said: CopySaid = 'copied';
   try {
     await client(tabContract).copy({ text: prompt });
   } catch (error) {
     console.error("Lo couldn't copy the prompt:", error);
-    refuse('Couldn’t copy the prompt');
-    return;
+    said = 'failed';
   }
-  announce('Copied prompt');
+  const buttons = answering.get(id);
+  if (buttons) {
+    for (const say of buttons) say(said);
+  } else if (said === 'copied') {
+    announce('Copied prompt');
+  } else {
+    fail('Couldn’t copy the prompt');
+  }
 }

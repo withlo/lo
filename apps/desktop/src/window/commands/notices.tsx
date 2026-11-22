@@ -22,6 +22,8 @@ export interface Note {
   readonly title: string;
   readonly body: string;
   readonly done?: boolean | undefined;
+  /** `failed` for something asked for that went wrong, with no control in view to say so. */
+  readonly failed?: boolean | undefined;
   /** Its one button, as "Back" on a note that something moved. */
   readonly action?: ToastAction | undefined;
 }
@@ -85,6 +87,7 @@ const same = (one: Note, other: Note) =>
   one.title === other.title &&
   one.body === other.body &&
   (one.done ?? false) === (other.done ?? false) &&
+  (one.failed ?? false) === (other.failed ?? false) &&
   one.action?.label === other.action?.label;
 
 /**
@@ -130,6 +133,15 @@ export function announce(title: string, body = '', action?: ToastAction): void {
 }
 
 /**
+ * Says that something asked for went wrong, in a line at danger tone, where no control in view can
+ * say it: "Couldn’t copy the prompt" for `ya` pressed with no Copy prompt button drawn. A control
+ * that's in view says it itself, and a failure that has a view says it there, as a `Problem`.
+ */
+export function fail(line: string): void {
+  show({ title: line, body: '', failed: true });
+}
+
+/**
  * Says `title` with `body` under it, a line a reason: the older shape of a note that says why
  * something didn't happen. A command that can't run uses {@link refuse}; something that failed
  * says so where it was asked for, not here.
@@ -166,9 +178,10 @@ function lineOf(note: Note): ReactNode {
   );
 }
 
-/** A note's toast: an info icon and the reason, or a tick and what's done. */
+/** A note's toast: an info icon and the reason, a tick and what's done, or what went wrong. */
 function toastOf(id: string, note: Note): StackedToast {
-  return { id, tone: note.done ? 'success' : 'info', title: lineOf(note), action: note.action };
+  const tone = note.failed ? 'danger' : note.done ? 'success' : 'info';
+  return { id, tone, title: lineOf(note), action: note.action };
 }
 
 /**

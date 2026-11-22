@@ -690,8 +690,10 @@ describe('failing', () => {
     tab.update(info(), true, true);
     await settle();
     expect(github.asked.length).toBe(10);
-    tab.retry();
+    const retried = tab.retry();
     await settle();
+    // What asked for it hears once the read is done.
+    await retried;
     expect(github.asked.length).toBe(11);
     expect(last()?.problem?.retryAt).toBe(Date.now() + 5_000);
 

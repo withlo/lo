@@ -428,7 +428,10 @@ export const contract = defineContract('overview', {
       }),
       reply: reply<FileSinceText>(),
     },
-    /** Reads the overview again now, after a failure. */
+    /**
+     * Reads the overview again now, after a failure or where it's read once: answered once that
+     * read is done, however it went.
+     */
     retry: { input: byId, reply: reply<void>() },
     /** Puts the newer overview on screen. */
     load: { input: byId, reply: reply<void>() },

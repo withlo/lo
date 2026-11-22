@@ -57,7 +57,7 @@ import {
 import { copyInstallCommand, followSkill, installSkill } from './skill.ts';
 import { keepSinceOnly } from './since.ts';
 import { OverviewStatus } from './Status.tsx';
-import { catchUp, keepOnly, states, takeRevisions, takeState } from './store.ts';
+import { catchUp, keepOnly, readAgain, states, takeRevisions, takeState } from './store.ts';
 
 /** The prompt the overview of the pull request on screen offers, or why there's none. */
 function promptOnScreen(): string | { why: string } {
@@ -279,10 +279,7 @@ export default {
     retry: {
       run: () => {
         const tab = activeTab();
-        if (tab?.kind !== 'pull') return;
-        main()
-          .retry({ id: tab.id })
-          .catch((error: unknown) => console.error("Lo couldn't read the overview again:", error));
+        if (tab?.kind === 'pull') readAgain(tab.id);
       },
       // After a failed read, or where main reads the ref once and doesn't watch it: a look again.
       enabled: () => (lookAgain(stateNow()) ? true : 'Nothing to try again'),
@@ -290,8 +287,9 @@ export default {
     },
     copyPrompt: {
       run: async () => {
+        const tab = activeTab();
         const prompt = promptOnScreen();
-        if (typeof prompt === 'string') await copyPrompt(prompt);
+        if (tab?.kind === 'pull' && typeof prompt === 'string') await copyPrompt(tab.id, prompt);
       },
       enabled: () => {
         const prompt = promptOnScreen();

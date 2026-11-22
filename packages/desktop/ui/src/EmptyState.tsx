@@ -2,6 +2,7 @@ import { useId, type ReactNode } from 'react';
 
 import { Button } from './Button.tsx';
 import { runControl } from './commands/control.ts';
+import { CopyFaces, CopyStatus, type CopySaid } from './CopyButton.tsx';
 import type { Target } from './commands/targets.ts';
 import { Key, keyAria } from './Key.tsx';
 import { useControl } from './useControl.ts';
@@ -16,6 +17,20 @@ export type EmptyAction =
       readonly target?: Target | undefined;
       /** Its words, where the command's label isn't what the view says. */
       readonly label?: ReactNode;
+      /**
+       * Whether what it started is still under way, as the view knows: it then says `working` at
+       * the width it had, and pressing it does nothing until it's done, as a busy `Button` does.
+       * Pass `false` while it rests, not nothing, so it holds room for both.
+       */
+      readonly busy?: boolean | undefined;
+      /** What it says while busy, the verb of its label: "Checking…" for "Check again". */
+      readonly working?: ReactNode;
+      /**
+       * For one that copies: what its last copy came to, from `useCopySaid`, or `null` while it
+       * rests. It reads "Copied" or "Couldn’t copy" for two seconds, as wide as its label
+       * throughout, as every Copy button does. The view says so, since its key copies too.
+       */
+      readonly copied?: CopySaid | null | undefined;
     };
 
 export interface EmptyStateProps {
@@ -41,12 +56,13 @@ export interface EmptyStateProps {
 }
 
 function EmptyButton({ action, primary }: { action: EmptyAction; primary: boolean }) {
-  const { command, target, label } =
-    typeof action === 'string' ? { command: action, target: undefined, label: undefined } : action;
+  const { command, target, label, busy, working, copied } =
+    typeof action === 'string' ? { command: action } : action;
   const why = useId();
   const control = useControl(command, target);
   if (!control) return null;
   const off = control.off !== undefined;
+  const words = label ?? control.label;
   return (
     <>
       <Button
@@ -54,12 +70,14 @@ function EmptyButton({ action, primary }: { action: EmptyAction; primary: boolea
         aria-disabled={off || undefined}
         aria-describedby={off ? why : undefined}
         hint={control.off ?? null}
+        busy={busy}
+        working={working}
         {...keyAria(control.keys, control.shortcut)}
         onClick={() => {
           if (!off) runControl(command, target);
         }}
       >
-        {label ?? control.label}
+        {copied === undefined ? words : <CopyFaces said={copied ?? undefined}>{words}</CopyFaces>}
         {control.keys && (
           <Key
             keys={control.keys}
@@ -73,6 +91,7 @@ function EmptyButton({ action, primary }: { action: EmptyAction; primary: boolea
           {control.off}
         </span>
       )}
+      {copied !== undefined && <CopyStatus said={copied ?? undefined} />}
     </>
   );
 }

@@ -120,12 +120,12 @@ describe('a stack’s tab on screen', () => {
   });
 });
 
-describe('a run of a stack’s layers on screen as one diff', () => {
-  /** The layers the run view `id` spans, as the empty states of other views name them. */
-  function Layers({ id }: { id: string }) {
-    return useRunLayers(id);
-  }
+/** The layers the run view `id` spans, as the empty states of other views name them. */
+function Layers({ id }: { id: string }) {
+  return useRunLayers(id);
+}
 
+describe('a run of a stack’s layers on screen as one diff', () => {
   it('names its layers by their places in its tab’s stack, once the stack holds them', () => {
     const run = { layers: [2213, 2214], start: 'a'.repeat(40), from: 2213 };
     showTabs({ tabs: [{ ...fd, run }, bat], active: 'fd' });

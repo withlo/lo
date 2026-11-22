@@ -194,6 +194,8 @@ export class Checking {
   /** Whether the last check failed, so the next word from main tries again. */
   #failed = false;
   #running: AbortController | undefined;
+  /** The check under way, which settles however it goes. */
+  #checking: Promise<void> | undefined;
   #stopped = false;
 
   constructor(id: string, parts: CheckingParts) {
@@ -267,7 +269,7 @@ export class Checking {
     const running = new AbortController();
     this.#running = running;
     this.#failed = false;
-    this.#check(commit, running.signal)
+    const checking = this.#check(commit, running.signal)
       .catch((error: unknown) => {
         if (running.signal.aborted) return;
         this.#failed = true;
@@ -284,7 +286,14 @@ export class Checking {
       })
       .finally(() => {
         if (this.#running === running) this.#running = undefined;
+        if (this.#checking === checking) this.#checking = undefined;
       });
+    this.#checking = checking;
+  }
+
+  /** Settles once no check is under way: at once where none is, else once the last one is done. */
+  async done(): Promise<void> {
+    while (this.#checking) await this.#checking;
   }
 
   async #check(commit: OverviewCommit, signal: AbortSignal): Promise<void> {

@@ -113,6 +113,12 @@ describe('the block keys', () => {
     expect(kindOf(tree, nextBlock(overview, -1))).toBe('details');
   });
 
+  it('do nothing and say nothing while the overview draws unseen, under its placeholder', () => {
+    const { overview } = drawn();
+    overview.root.querySelector<HTMLElement>('.lo-ov__article')!.style.visibility = 'hidden';
+    expect(nextBlock(overview, 1)).toBe('');
+  });
+
   it('name a block by the tree it’s in, so one from another tree finds none', () => {
     const { overview, stops } = drawn();
     const target = targetOf(overview, stops[2]!);

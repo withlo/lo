@@ -89,3 +89,50 @@ test('what its actions act on sits between its line and its buttons', () => {
   const order = [...host.querySelectorAll('p, pre, button')].map((element) => element.localName);
   expect(order).toEqual(['p', 'pre', 'button']);
 });
+
+test('a button busy with what it started says what it’s doing, and runs nothing more', () => {
+  const ran = held();
+  const action = { command: 'diff.comment', target: LINE, label: 'Check again' } as const;
+  const resting = draw(
+    <EmptyState
+      title="No overview yet"
+      actions={[{ ...action, busy: false, working: 'Checking…' }]}
+    />,
+  ).querySelector('button')!;
+  expect(resting.getAttribute('aria-busy')).toBeNull();
+  // Both faces are drawn, one hidden, so it's as wide busy as at rest.
+  expect(resting.textContent).toBe('Check againcChecking…');
+  const busy = draw(
+    <EmptyState
+      title="No overview yet"
+      actions={[{ ...action, busy: true, working: 'Checking…' }]}
+    />,
+  ).querySelector('button')!;
+  expect(busy.getAttribute('aria-busy')).toBe('true');
+  act(() => busy.click());
+  expect(ran).toEqual([]);
+});
+
+/** The face `host`'s button shows, and what its live region says. */
+function said(host: HTMLElement) {
+  return {
+    shown: [...host.querySelectorAll('button .inline-grid > span')]
+      .filter((face) => !face.classList.contains('invisible'))
+      .map((face) => face.textContent),
+    heard: host.querySelector('[role="status"]')?.textContent,
+  };
+}
+
+test('a button that copies reads what its last copy came to, as wide as its label', () => {
+  held();
+  const action = { command: 'diff.comment', target: LINE, label: 'Copy prompt' } as const;
+  expect(
+    said(draw(<EmptyState title="No overview yet" actions={[{ ...action, copied: null }]} />)),
+  ).toEqual({ shown: ['Copy prompt'], heard: '' });
+  expect(
+    said(draw(<EmptyState title="No overview yet" actions={[{ ...action, copied: 'copied' }]} />)),
+  ).toEqual({ shown: ['Copied'], heard: 'Copied' });
+  expect(
+    said(draw(<EmptyState title="No overview yet" actions={[{ ...action, copied: 'failed' }]} />)),
+  ).toEqual({ shown: ['Couldn’t copy'], heard: 'Couldn’t copy' });
+});

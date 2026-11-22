@@ -11,6 +11,7 @@ import { createRoot } from 'react-dom/client';
 import { afterEach, beforeAll, describe, expect, it, onTestFinished, vi } from 'vitest';
 
 import { IpcError } from '../../../ipc/contract.ts';
+import { notice, notices, withdraw } from '../../../window/commands/notices.tsx';
 import { createRegistry } from '../../../window/commands/registry.ts';
 import { Slots } from '../../../window/slots.tsx';
 import { installBridge } from '../../../window/test/bridge.ts';
@@ -24,12 +25,13 @@ import { checkOverview, parseOverview } from '../background/index.ts';
 import settingsKeys from '../../settings/keys.ts';
 import updatesKeys from '../../updates/keys.ts';
 import { Checking } from './checking.ts';
+import { copyPrompt as copyPromptOf } from './copy.ts';
 import { OverviewMark } from './Mark.tsx';
 import { openings } from './opening.ts';
 import { OverviewView } from './Overview.tsx';
 import { blockInOverview, blockKey } from './shared.ts';
 import { OverviewStatus } from './Status.tsx';
-import { checked, publish, states } from './store.ts';
+import { checked, publish, readAgain, states } from './store.ts';
 
 /** What Settings says a pull request opens on: unknown until main has said. */
 const settings = vi.hoisted(() => ({ open: 'overview' as 'overview' | 'diff' | undefined }));
@@ -125,11 +127,20 @@ const SKILL: SkillState = {
   ],
 };
 
+/** Whether main's clipboard refuses what it's given, and how main answers a read again. */
+const answers = vi.hoisted(() => ({ copyFails: false, retried: (): void => undefined }));
+
 const bridge = installBridge({
-  'tab.copy': () => undefined,
+  'tab.copy': () => {
+    if (answers.copyFails) throw new IpcError('failed', 'The clipboard is busy.');
+  },
   'tab.openExternal': () => undefined,
   'overview.currentSkill': () => SKILL,
-  'overview.retry': () => undefined,
+  // Answered once the test says main's read is done.
+  'overview.retry': () =>
+    new Promise<void>((resolve) => {
+      answers.retried = resolve;
+    }),
 });
 
 /** Runs of "Check for updates" and Copy prompt, whose handlers are stood in for. */
@@ -177,6 +188,21 @@ function problemTitle(view: HTMLElement, kind: string): string | undefined {
 /** The button on `view` whose words start with `label`. */
 function buttonOf(view: HTMLElement, label: string): HTMLButtonElement | undefined {
   return [...view.querySelectorAll('button')].find((each) => each.textContent?.startsWith(label));
+}
+
+/** The toasts showing, by their lines, oldest first. */
+function toasts(): string[] {
+  return notices().map((note) => note.title);
+}
+
+/** What `button` reads now: its face in view, of those it holds room for, without its key. */
+function faceOf(button: HTMLButtonElement | undefined): string | undefined {
+  const faces = button?.querySelectorAll('.inline-grid > span');
+  if (!faces || faces.length === 0) return button?.textContent ?? undefined;
+  const shown = [...faces].find(
+    (face) => !face.classList.contains('invisible') && face.getAttribute('aria-hidden') !== 'true',
+  );
+  return shown?.textContent ?? undefined;
 }
 
 /**
@@ -237,11 +263,17 @@ function render(tab: PullTab) {
       ),
     );
   draw(true);
-  onTestFinished(() => {
+  let mounted = true;
+  const unmount = () => {
+    if (!mounted) return;
+    mounted = false;
     act(() => root.unmount());
+  };
+  onTestFinished(() => {
+    unmount();
     container.remove();
   });
-  return Object.assign(container, { shown: draw });
+  return Object.assign(container, { shown: draw, unmount });
 }
 
 /**
@@ -462,20 +494,62 @@ describe('with no overview', () => {
     expect(view.querySelector('pre')?.textContent).toContain(
       'https://github.com/rozed-dev/e2e/pull/7',
     );
-    expect([...view.querySelectorAll('button')].map((each) => each.textContent)).toEqual([
-      'Copy promptya',
+    expect([...view.querySelectorAll('button')].map(faceOf)).toEqual([
+      'Copy prompt',
       'Install overview skill',
     ]);
     act(() => buttonOf(view, 'Copy prompt')?.click());
     expect(copyPrompt).toHaveBeenCalledOnce();
   });
 
-  it('offers to look again where main reads the ref once', async () => {
+  it('says how a copy of its prompt went on Copy prompt, by its press or `ya`, and else in a toast', async () => {
+    const tab = tabOf();
+    act(() => states.set(tab.id, stateOf(tab, { found: 'none', overview: null })));
+    const view = render(tab);
+    const copy = () => buttonOf(view, 'Copy prompt');
+    onTestFinished(() => {
+      withdraw('Copied prompt', '');
+      withdraw('Couldn’t copy the prompt', '');
+    });
+    const before = toasts().length;
+    await act(() => copyPromptOf(tab.id, 'The prompt'));
+    expect(faceOf(copy())).toBe('Copied');
+    expect(view.querySelector('[role="status"]')?.textContent).toBe('Copied');
+    answers.copyFails = true;
+    onTestFinished(() => {
+      answers.copyFails = false;
+    });
+    await act(() => copyPromptOf(tab.id, 'The prompt'));
+    expect(faceOf(copy())).toBe('Couldn’t copy');
+    expect(toasts().length).toBe(before);
+    // With no Copy prompt button drawn, as from another state, a toast says it.
+    view.unmount();
+    await act(() => copyPromptOf(tab.id, 'The prompt'));
+    expect(toasts().at(-1)).toBe('Couldn’t copy the prompt');
+    expect(notice()?.failed).toBe(true);
+    answers.copyFails = false;
+    await act(() => copyPromptOf(tab.id, 'The prompt'));
+    expect(toasts().at(-1)).toBe('Copied prompt');
+  });
+
+  it('offers to look again where main reads the ref once, checking until main has', async () => {
     const tab = tabOf();
     act(() => states.set(tab.id, stateOf(tab, { found: 'none', overview: null, watching: false })));
     const view = render(tab);
     await until(() => buttonOf(view, 'Check again') !== undefined);
     expect(buttonOf(view, 'Install overview skill')).toBeUndefined();
+    const again = buttonOf(view, 'Check again');
+    expect(faceOf(again)).toBe('Check again');
+    act(() => readAgain(tab.id));
+    expect(again?.getAttribute('aria-busy')).toBe('true');
+    expect(faceOf(again)).toBe('Checking…');
+    await until(() => bridge.calls.some(([channel]) => channel === 'overview.retry'));
+    await act(async () => {
+      answers.retried();
+      await Promise.resolve();
+    });
+    await until(() => again?.getAttribute('aria-busy') === null);
+    expect(faceOf(again)).toBe('Check again');
   });
 });
 
@@ -508,6 +582,9 @@ describe('an overview that can’t be shown', () => {
     const copied = bridge.calls.slice(before).find(([channel]) => channel === 'tab.copy')?.[1];
     expect(JSON.stringify(copied)).toContain('Fix the Lo overview for this pull request:');
     expect(JSON.stringify(copied)).not.toContain('chart');
+    // It says so itself, at its own width, and no toast says it again.
+    await until(() => faceOf(copy) === 'Copied');
+    expect(notices().map((note) => note.title)).not.toContain('Copied prompt');
     expect(openings.get(tab.id)).toMatchObject({ on: 'diff' });
   });
 
@@ -576,9 +653,10 @@ describe('an overview that can’t be shown', () => {
     expect(view.querySelector('[role="alert"] > p:first-child')?.textContent).toBe(
       'Can’t fetch the overview',
     );
-    // The count is for the eye: a screen reader hears "soon", so the alert isn't read each second.
+    // The count is for the eye: a screen reader hears the wait as first drawn, spelled out, so the
+    // alert isn't read each second.
     expect(view.querySelector('[role="alert"]')?.textContent).toMatch(
-      /^Can’t fetch the overviewOffline\. Retrying in [78] ssoon\.$/,
+      /^Can’t fetch the overviewOffline\. Retrying in ([78]) sin \1 seconds\.$/,
     );
     const retry = buttonOf(view, 'Try now');
     expect(retry?.getAttribute('aria-busy')).toBeNull();
