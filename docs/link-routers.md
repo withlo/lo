@@ -6,8 +6,8 @@ itself as an app that can open web links, without becoming your default browser,
 offer it. [Finicky](https://github.com/johnste/finicky), [Velja](https://sindresorhus.com/velja) and
 [Choosy](https://choosy.app) are the ones Lo has rules for.
 
-"Send PR links to Lo" on the welcome screen opens a dialog with the rules below, each with a Copy
-button.
+"Show rules", beside "Send pull request links to Lo" in the welcome, opens a dialog with the rules
+below, each with a Copy button.
 
 ## What a rule matches
 
@@ -79,6 +79,6 @@ In Choosy's settings, open Rules and add a rule that opens in Lo when all of the
 
 ## From a terminal
 
-`lo <link>` opens a pull request from a terminal. Install it from the welcome screen, from Settings
-or from Lo's menu ("Install command-line tool"). `lo://github.com/<owner>/<repo>/pull/<number>`
-links open a pull request too.
+`lo <link>` opens a pull request from a terminal. Install it from the welcome, from Settings or from
+Lo's menu ("Install command-line tool"). `lo://github.com/<owner>/<repo>/pull/<number>` links open a
+pull request too.

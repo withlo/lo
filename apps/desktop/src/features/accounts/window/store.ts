@@ -51,15 +51,23 @@ export type OpenDialog =
 export interface AccountsState {
   /** Every account, oldest first: undefined only until main first says. */
   readonly accounts: readonly AccountSummary[] | undefined;
+  /** Whether main couldn't be asked for them, so they're not known until it next says. */
+  readonly unlisted: boolean;
   readonly dialog: OpenDialog | undefined;
 }
 
 export const accountsStore = createStore<AccountsState>()(() => ({
   accounts: undefined,
+  unlisted: false,
   dialog: undefined,
 }));
 
 /** Shows the accounts main sent. */
 export function showAccounts(accounts: readonly AccountSummary[]): void {
-  accountsStore.setState({ accounts });
+  accountsStore.setState({ accounts, unlisted: false });
+}
+
+/** Main couldn't be asked for the accounts. */
+export function unlistedAccounts(): void {
+  accountsStore.setState({ unlisted: true });
 }
