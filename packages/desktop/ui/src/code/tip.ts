@@ -18,7 +18,17 @@ const GAP = 6;
 const EDGE = 8;
 
 /** What marks an element as a control with a tip: the command it runs, or a tip of its own. */
-export const TIPPED = '[data-command]';
+export const TIPPED = '[data-command], [data-tip]';
+
+/**
+ * Whether `element`'s text is cut short where it's drawn, in it or in a part of it, as a path
+ * whose folder ellipsizes: a name drawn whole needs no tip to say it again.
+ */
+export function cutShort(element: HTMLElement): boolean {
+  return [element, ...element.querySelectorAll<HTMLElement>('*')].some(
+    (each) => each.clientWidth > 0 && each.scrollWidth > each.clientWidth,
+  );
+}
 
 /**
  * Shows a tip under each control in `root` the pointer rests on, as `tipOf` says it, and takes it

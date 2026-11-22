@@ -59,8 +59,31 @@ export interface FileHeader {
    * their number, which stands out while any is unresolved.
    */
   threads?: { readonly total: number; readonly unresolved: number };
-  /** Short labels after its counts, such as "generated". */
+  /** Short labels at the header's end, such as "generated", joined by ` · `. */
   tags?: readonly string[];
+  /**
+   * How the pull request changes the file, drawn as the file tree draws it: its letter, A, D, M, R
+   * or T. A deleted file's name is struck through. None draws no letter.
+   */
+  change?: 'added' | 'deleted' | 'modified' | 'renamed' | 'typeChanged';
+  /**
+   * Whether it has text changes to count. `false`, as for a binary file or a rename alone, draws no
+   * `+N −N`.
+   */
+  counted?: boolean;
+  /**
+   * Something done to the file that failed, such as marking it viewed: drawn under the header in
+   * `Problem`'s inline shape, with "Try again", which runs its command on the file.
+   */
+  problem?: FileProblem;
+}
+
+/** A failure that belongs to a file, not a line: what failed, why, and the command to try again. */
+export interface FileProblem {
+  readonly title: string;
+  readonly reason?: string | undefined;
+  /** The command "Try again" runs on the file, as its key would. */
+  readonly command: string;
 }
 
 /** A changed file, as a diff view is given it. */
@@ -347,6 +370,11 @@ export interface ComposeOptions {
    * line not drawn.
    */
   kept?: KeptBox;
+  /**
+   * The comment of the thread it's written in that it edits, by its id: it opens in the comment's
+   * place in the thread's card, which leaves the comment out while it's edited.
+   */
+  edits?: string;
 }
 
 /** A comment box outside a code view, as the timeline's and a review's summary are. */
@@ -1007,8 +1035,8 @@ export const plainKeys = {
  */
 /**
  * The commands a diff view's own controls run, by id, on what they're drawn at: the viewed ball in
- * a file's header, the `+` that follows the pointer down the gutter, and the button under the
- * header of a file that's closed, or too large to draw unasked. They run through the
+ * a file's header, the `+` that follows the pointer down the gutter, the button under the header
+ * of a file that's closed, or too large to draw unasked, and collapsed lines. They run through the
  * registry the window's keys go through (`runControl` in `@lo/ui/commands`), so a control does
  * what its key does and says what its command says.
  */
@@ -1016,6 +1044,7 @@ export const viewControls = {
   viewed: 'diff.markViewed',
   comment: 'comments.comment',
   toggle: 'diff.toggleFile',
+  open: 'diff.openRun',
 } as const;
 
 export const diffMotions: Readonly<Record<string, { to: JumpTo; forward: boolean }>> = {

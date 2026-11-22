@@ -24,6 +24,7 @@ export type {
   FileEvents,
   FileHeader,
   FileInit,
+  FileProblem,
   FileView,
   Fold,
   HeaderTarget,

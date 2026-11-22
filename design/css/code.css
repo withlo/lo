@@ -175,31 +175,45 @@
 .lo-sign--add::before { content: "+"; color: var(--lo-diff-add-fg); }
 .lo-sign--move::before { content: "\21C4"; color: var(--lo-diff-moved-fg); }
 
-/* The other side of a thread, a widget or an added run: aligned empty space */
+/*
+ * Filler: everything in a diff that isn't code (aligned empty space, folds, the row under a
+ * file's header) sits on one flat ground, quieter than code and under the header's step.
+ */
+
+/* The other side of a thread, a widget or an added run: aligned empty space. A short gap, three
+   lines or less, is hatched, so it reads as a gap and not as a fold. */
 .lo-app .cm-mergeSpacer,
-.lo-spacer {
-  background-color: var(--lo-diff-filler);
+.lo-spacer { background-color: var(--lo-diff-filler); }
+.lo-spacer.is-hatched {
   background-image: repeating-linear-gradient(135deg, transparent 0 6px, var(--lo-diff-filler-stripe) 6px 7px);
 }
 
-/* Unchanged code, collapsed; expands in place */
+/* Unchanged code, collapsed; expands in place. Its words start on the code's edge, in the left
+   column only: the right column draws the ground. Both halves take the hover, as one target. */
 .lo-app .cm-collapsedLines,
 .lo-collapsed {
-  display: flex; align-items: center; gap: 10px;
-  min-height: 28px; padding: 0 12px;
-  background: var(--lo-diff-collapsed-bg);
-  color: var(--lo-fg-muted);
-  font: var(--lo-text-small);
-  box-shadow: inset 0 1px 0 var(--lo-border-subtle), inset 0 -1px 0 var(--lo-border-subtle);
+  display: flex; align-items: center; gap: 8px;
+  height: var(--lo-code-line); padding: 0 16px 0 8px;
+  background: var(--lo-diff-filler);
+  color: var(--lo-fg-subtle);
+  font: var(--lo-text-micro);
+  white-space: nowrap;
   cursor: default;
   user-select: none;
 }
 .lo-app .cm-collapsedLines::before,
 .lo-app .cm-collapsedLines::after { content: none; }
 .lo-app .cm-collapsedLines:hover,
-.lo-collapsed:hover { background: var(--lo-bg-element); color: var(--lo-fg); }
-.lo-collapsed .lo-collapsed__range { font: 400 11px/1 var(--lo-font-mono); font-variant-ligatures: none; color: var(--lo-diff-hunk-fg); }
-.lo-collapsed .lo-collapsed__action { margin-left: auto; display: flex; gap: 6px; align-items: center; }
+.lo-collapsed:not(.is-missing):is(:hover, .is-hover) {
+  background: linear-gradient(var(--lo-hover), var(--lo-hover)), var(--lo-diff-filler);
+  color: var(--lo-fg);
+}
+.lo-app .cm-editor.cm-focused .lo-collapsed.is-cursor {
+  background: linear-gradient(var(--lo-code-active-line), var(--lo-code-active-line)), var(--lo-diff-filler);
+  color: var(--lo-fg);
+}
+/* Lines GitHub's diff left out: nothing can show them until the whole file comes. */
+.lo-collapsed.is-missing { color: var(--lo-fg-disabled); }
 
 /* GitHub's hunk header, shown before the local copy is ready */
 .lo-hunk {
@@ -220,13 +234,14 @@
 .lo-gutter-moved { background-color: var(--lo-diff-moved-bg); color: var(--lo-diff-moved-fg) !important; }
 .lo-movedlabel {
   display: flex; align-items: center; gap: 8px;
-  min-height: 26px; padding: 0 12px;
+  min-height: var(--lo-code-line); padding: 0 16px 0 8px;
   background: var(--lo-diff-moved-bg);
   box-shadow: inset 0 1px 0 var(--lo-diff-moved-border);
   color: var(--lo-diff-moved-fg);
-  font: 500 12px/16px var(--lo-font-ui);
+  font: var(--lo-text-micro);
 }
-.lo-movedlabel a { font: 400 11.5px/16px var(--lo-font-mono); font-variant-ligatures: none; color: var(--lo-fg); text-decoration: underline; text-decoration-color: var(--lo-diff-moved-border); text-underline-offset: 3px; }
+.lo-movedlabel a { font: 400 11px/14px var(--lo-font-mono); font-variant-ligatures: none; color: var(--lo-fg-muted); text-decoration: underline; text-decoration-color: var(--lo-diff-moved-border); text-underline-offset: 3px; }
+.lo-movedlabel a:hover { color: var(--lo-fg); text-decoration-color: currentColor; }
 .lo-movedlabel .lo-muted { font-weight: 400; }
 
 /* Overview markers: a ball on the first line the overview explains, a rail
@@ -323,6 +338,149 @@
 .lo-stat .add { color: var(--lo-diff-add-fg); }
 .lo-stat .del { color: var(--lo-diff-del-fg); }
 .lo-filehead__end { margin-left: auto; display: flex; align-items: center; gap: 4px; flex: none; }
+
+/*
+ * A diff's file header: one band per file across the whole sheet, through both columns' gutters
+ * with no seam inside it. The left column draws its start (the path, where it was, the counts),
+ * starting on the code's edge; the right column draws its end (tags, threads, letter, ball, ⋯).
+ * One column draws both. Its ground is drawn under it from the sheet's edge, past the gutters,
+ * which it sits over.
+ */
+.lo-diffhead {
+  position: relative; top: auto; z-index: 201;
+  padding: 0 8px;
+  background: none;
+  box-shadow: none;
+}
+.lo-diffhead::before {
+  content: ""; position: absolute; z-index: -1;
+  top: 0; bottom: 0; right: 0; left: calc(var(--lo-gutters, 0px) * -1);
+  background: var(--lo-diff-file-header-bg);
+  box-shadow: inset 0 -1px 0 var(--lo-border-subtle);
+}
+.lo-diffhead__start { display: flex; align-items: center; gap: 8px; min-width: 0; flex: 0 1 auto; }
+.lo-diffhead .lo-path { display: flex; flex: 0 1 auto; }
+.lo-diffhead .lo-path b { flex: none; }
+.lo-diffhead .lo-path__dir { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+/* A rename's old path gives way before the folder does. */
+.lo-path__was {
+  flex: 0 1000 auto; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis;
+  font: 400 12px/1 var(--lo-font-mono); font-variant-ligatures: none;
+  color: var(--lo-fg-subtle);
+}
+.lo-diffhead.is-deleted .lo-path b {
+  color: var(--lo-fg-muted);
+  text-decoration: line-through; text-decoration-color: var(--lo-fg-subtle);
+}
+/* Narrow, the end group never wraps: its tags give way first. */
+.lo-diffhead .lo-filehead__end { gap: 8px; flex: 0 1 auto; min-width: 0; }
+.lo-diffhead .lo-filehead__end > * { flex: none; }
+.lo-diffhead .lo-filehead__end > .lo-diffhead__tags {
+  flex: 0 1 auto; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis;
+  font: var(--lo-text-micro); color: var(--lo-fg-muted);
+}
+/* The tree's own letter for the change. */
+.lo-diffhead__letter {
+  width: var(--lo-sp-12); text-align: center;
+  font: var(--lo-code-key); font-weight: 600; font-variant-ligatures: none;
+}
+.lo-diffhead__letter[data-change="added"] { color: var(--lo-change-added); }
+.lo-diffhead__letter[data-change="deleted"] { color: var(--lo-change-deleted); }
+.lo-diffhead__letter[data-change="modified"],
+.lo-diffhead__letter[data-change="typeChanged"] { color: var(--lo-change-modified); }
+.lo-diffhead__letter[data-change="renamed"] { color: var(--lo-change-renamed); }
+/* The ⋯ last: the header's menu, under it. */
+.lo-diffhead__more {
+  display: grid; place-items: center;
+  width: 20px; height: 20px; padding: 0; border: 0;
+  border-radius: var(--lo-r-xs);
+  background: none; color: var(--lo-fg-subtle);
+  cursor: default;
+}
+.lo-diffhead__more:hover { background: var(--lo-hover); color: var(--lo-fg); }
+/* The keyboard on a header: one ring around the whole band, its sides only at the band's ends. */
+.lo-diffhead.is-keyed::after {
+  content: ""; position: absolute; pointer-events: none;
+  top: 0; bottom: 0; right: 0; left: calc(var(--lo-gutters, 0px) * -1);
+  box-shadow: var(--lo-ring-inset);
+}
+.lo-diffhead--start.is-keyed::after {
+  box-shadow: inset 0 1.5px 0 var(--lo-focus), inset 0 -1.5px 0 var(--lo-focus), inset 1.5px 0 0 var(--lo-focus);
+}
+.lo-diffhead--end.is-keyed::after {
+  box-shadow: inset 0 1.5px 0 var(--lo-focus), inset 0 -1.5px 0 var(--lo-focus), inset -1.5px 0 0 var(--lo-focus);
+}
+
+/*
+ * The row under a file's header, once across both sides: a button that shows the file's lines, a
+ * wait, or a Problem. Its words start on the code's edge in the left column; the right column
+ * draws its ground, through the gutters as the header's band does.
+ */
+.lo-filerow {
+  position: relative; z-index: 201;
+  display: flex; align-items: center; gap: 8px;
+  height: var(--lo-row-h); padding: 0 16px 0 8px;
+  background: var(--lo-diff-filler);
+  color: var(--lo-fg-muted);
+  font: var(--lo-text-small);
+  white-space: nowrap;
+  cursor: default;
+  user-select: none;
+}
+.lo-filerow::before,
+.lo-spacer.is-under::before {
+  content: ""; position: absolute;
+  top: 0; bottom: 0; right: 100%; width: var(--lo-gutters, 0px);
+  background: inherit;
+}
+.lo-spacer.is-under { position: relative; z-index: 201; }
+.lo-filerow.is-act:is(:hover, .is-hover) {
+  background: linear-gradient(var(--lo-hover), var(--lo-hover)), var(--lo-diff-filler);
+  color: var(--lo-fg);
+}
+.lo-filerow__words { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+/* A Problem with the file, in Problem's inline shape, on the same ground. */
+.lo-filerow.lo-fileproblem { height: auto; padding: 8px 16px 8px 8px; white-space: normal; }
+.lo-fileproblem__box {
+  display: flex; align-items: flex-start; gap: 8px;
+  flex: 1; min-width: 0; max-width: 760px;
+  padding: 12px;
+  border-radius: var(--lo-r-md);
+  box-shadow: inset 0 0 0 1px var(--lo-danger-border);
+  background: var(--lo-danger-bg);
+  color: var(--lo-fg-muted);
+  user-select: text;
+}
+.lo-fileproblem__icon { margin-top: 2px; flex: none; color: var(--lo-danger); }
+.lo-fileproblem__said { display: flex; flex: 1; min-width: 0; flex-direction: column; }
+.lo-fileproblem__said p { margin: 0; }
+.lo-fileproblem__title { font-weight: 600; color: var(--lo-fg); }
+.lo-fileproblem__again {
+  display: inline-flex; align-items: center; flex: none;
+  height: var(--lo-control-h-sm); padding: 0 8px;
+  border: 1px solid var(--lo-border-strong); border-radius: var(--lo-r-sm);
+  background: var(--lo-bg-element);
+  color: var(--lo-fg);
+  font: var(--lo-text-small); font-weight: 500;
+  cursor: default;
+}
+.lo-fileproblem__again:hover { background: var(--lo-bg-element-hover); }
+
+/*
+ * The header of the file at the top of a diff's scroll, pinned under the diff bar while that
+ * file's own header is above the top edge. It takes no room: the code scrolls under it.
+ */
+.lo-diffpin {
+  position: sticky; top: 0; z-index: var(--lo-z-sticky);
+  flex: 1 0 100%;
+  height: var(--lo-file-header-h);
+  margin-bottom: calc(var(--lo-file-header-h) * -1);
+  box-shadow: var(--lo-shadow-sticky);
+}
+.lo-diffpin[hidden] { display: none; }
+.lo-diffpin > .lo-diffhead { padding-left: calc(var(--lo-pin-start, 0px) + 8px); }
 
 /* The viewed toggle in a file header */
 .lo-viewed {

@@ -86,6 +86,8 @@ export interface BoxOptions {
   target: Target;
   /** The thread it's written in, as a reply's box is, which it's drawn right after. */
   thread?: string | undefined;
+  /** The comment of that thread it edits, in whose place it's drawn. */
+  edits?: string | undefined;
   draft: string;
   on: ComposerEvents;
   frame: BoxFrame | undefined;
@@ -122,6 +124,8 @@ export class CommentBox implements BoxHost, KeySource {
   readonly target: Target;
   /** The thread it's written in, if it's written in one. */
   readonly thread: string | undefined;
+  /** The comment of that thread it edits, if it edits one. */
+  readonly edits: string | undefined;
   /** The caller's handle on the box. */
   readonly composer: Composer;
   readonly #parts: BoxParts;
@@ -158,6 +162,7 @@ export class CommentBox implements BoxHost, KeySource {
     const { on } = options;
     this.target = options.target;
     this.thread = options.thread;
+    this.edits = options.edits;
     this.#on = on;
     this.#escape = options.escape;
     this.#leave = options.leave;
