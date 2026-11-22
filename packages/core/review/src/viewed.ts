@@ -219,7 +219,9 @@ export function writeFailed(toggle: ViewedToggle, login: string, error: GithubEr
       return 'GitHub returned an error.';
     }
     case 'api':
-      return detail.status === 403 ? `${login} doesn’t have permission.` : error.message;
+      return detail.status === 403
+        ? `${login} doesn’t have permission.`
+        : 'GitHub returned an error.';
     case 'ssoRequired':
     case 'oauthAppRestricted':
     case 'inconsistent':

@@ -182,6 +182,8 @@ test('`r` replies, `i` edits the reply, `dd` deletes it, and `x` unresolves and 
     await page.keyboard.press('i');
     await expect(box).toHaveCount(1);
     await expect(box.locator('.lo-diffcomposer__head')).toContainText('Edit');
+    // In the comment's place in its card, so its text shows once.
+    await expect(thread.locator('[data-edit-slot] .lo-diffcomposer')).toHaveCount(1);
     await expect(box.locator('.cm-content')).toHaveText('Three tries at most.');
     await expect(box.getByRole('button', { name: /^Save/ })).toBeVisible();
     await page.keyboard.type(' Then it gives up.');

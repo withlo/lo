@@ -87,7 +87,7 @@ describe('Peek', () => {
     const dialog = host.querySelector('[role="dialog"]');
     expect(dialog?.getAttribute('aria-label')).toBe('Definitions of estimateCost');
     expect(dialog?.textContent).toContain('estimateCost · 3 definitions');
-    expect(dialog?.textContent).toContain('at r5');
+    expect(dialog?.textContent).toContain('· r5');
     // The code is the child's, in its own place between the list and the foot.
     expect(host.querySelector('pre')?.textContent).toBe('code');
   });
@@ -112,7 +112,7 @@ describe('Peek', () => {
       'false',
     ]);
     const list = host.querySelector('[role="listbox"]');
-    expect(list?.getAttribute('aria-label')).toBe('Candidates');
+    expect(list?.getAttribute('aria-label')).toBe('Definitions');
     expect(list?.getAttribute('aria-activedescendant')).toBe(rows[1]?.id);
     expect(rows[1]?.className).toContain('bg-current-strong');
     expect(rows[0]?.className).not.toContain('bg-current-strong');
@@ -244,7 +244,7 @@ describe('Peek', () => {
     expect(outside.getAttribute('aria-selected')).toBe('true');
     expect(outside.querySelector('.font-semibold')).toBeNull();
     // Lo reads nothing there, so the peek says so where the code would be.
-    expect(host.textContent).toContain("Lo doesn't read files outside this repository.");
+    expect(host.textContent).toContain('Files outside this repo can’t be shown.');
     const go = [...host.querySelectorAll('button')].find((button) =>
       button.textContent?.startsWith('Open whole file'),
     )!;
@@ -286,7 +286,7 @@ describe('Peek', () => {
     expect(text).toContain('evilU+202Elive');
     expect(text).toContain('src/evilU+202Egnp.ts1');
     expect(text).toContain('TypeU+200BScript · oU+2066verload');
-    expect(text).toContain('at rU+202E5');
+    expect(text).toContain('· rU+202E5');
     const titles = [...host.querySelectorAll('[title^="U+"]')].map((mark) =>
       mark.getAttribute('title'),
     );
@@ -386,7 +386,7 @@ describe('PeekHead', () => {
       </div>,
     );
     expect(host.textContent).toContain(
-      'Line · 1 definitionat r2·Syntax index · TypeScript is starting.',
+      'Line · 1 definition· r2·Syntax index · TypeScript is starting.',
     );
     const server = render(
       <div>

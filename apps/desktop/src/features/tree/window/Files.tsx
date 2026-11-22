@@ -192,6 +192,7 @@ export function Files({
       changedOnly={chosen.changedOnly}
       onChangedOnly={(changedOnly) => choices.update(tab.id, (now) => ({ ...now, changedOnly }))}
       changedOnlyKeys={keyOf('tree.changedOnly')}
+      waiting={loading}
       note={noteOf(state, model?.omitted ?? 0)}
     >
       {loading ? (

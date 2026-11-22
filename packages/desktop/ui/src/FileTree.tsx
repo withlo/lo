@@ -458,6 +458,8 @@ export interface FileTreePanelProps {
   changedOnly: boolean;
   onChangedOnly?: ((changedOnly: boolean) => void) | undefined;
   changedOnlyKeys?: readonly string[] | undefined;
+  /** The files aren't read yet: the toolbar's controls are dimmed until they are. */
+  waiting?: boolean | undefined;
   /** A note over the files, such as why only the changed files show. */
   note?: ReactNode;
   /** The tree. */
@@ -470,7 +472,8 @@ const segment = cva(
     variants: {
       pressed: {
         true: 'bg-bg-element text-fg ring-1 ring-border-strong',
-        false: 'text-fg-muted hover:text-fg',
+        false:
+          'text-fg-muted hover:text-fg disabled:text-fg-disabled disabled:hover:text-fg-disabled',
       },
     },
   },
@@ -492,6 +495,7 @@ export function FileTreePanel({
   changedOnly,
   onChangedOnly,
   changedOnlyKeys,
+  waiting = false,
   note,
   children,
 }: FileTreePanelProps) {
@@ -521,6 +525,7 @@ export function FileTreePanel({
               <button
                 type="button"
                 aria-pressed={mode === 'tree'}
+                disabled={waiting}
                 className={segment({ pressed: mode === 'tree' })}
                 onClick={() => onMode?.('tree')}
               >
@@ -531,6 +536,7 @@ export function FileTreePanel({
               <button
                 type="button"
                 aria-pressed={mode === 'review'}
+                disabled={waiting}
                 className={segment({ pressed: mode === 'review' })}
                 onClick={() => onMode?.('review')}
               >
@@ -544,7 +550,8 @@ export function FileTreePanel({
               type="button"
               aria-pressed={changedOnly}
               aria-label={CHANGED_ONLY}
-              className={`inline-flex h-control-h-sm flex-none items-center gap-4 rounded-pill px-8 text-small-medium whitespace-nowrap focus-visible:shadow-ring ${changedOnly ? 'bg-accent-soft text-fg-accent inset-ring inset-ring-accent-line' : 'text-fg-muted inset-ring inset-ring-border hover:bg-hover hover:text-fg'}`}
+              disabled={waiting}
+              className={`inline-flex h-control-h-sm flex-none items-center gap-4 rounded-pill px-8 text-small-medium whitespace-nowrap focus-visible:shadow-ring ${changedOnly ? 'bg-accent-soft text-fg-accent inset-ring inset-ring-accent-line' : 'text-fg-muted inset-ring inset-ring-border hover:bg-hover hover:text-fg'} disabled:bg-transparent disabled:text-fg-disabled`}
               onClick={() => onChangedOnly?.(!changedOnly)}
             >
               <svg className="lo-i lo-i--xs" viewBox="0 0 16 16" aria-hidden="true">

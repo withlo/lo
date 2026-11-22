@@ -161,7 +161,7 @@ export function PeekHead({
       </span>
       {at !== undefined && (
         <span className="flex-none">
-          at <ShownText text={at} />
+          · <ShownText text={at} />
         </span>
       )}
       {source !== undefined && (
@@ -219,7 +219,7 @@ export function PeekList({ candidates, selected, onPick, listRef, className = ''
     <div
       ref={listRef}
       role="listbox"
-      aria-label="Candidates"
+      aria-label="Definitions"
       tabIndex={0}
       aria-activedescendant={index === -1 ? undefined : `${prefix}-${index}`}
       className={`group/list flex flex-col gap-2 p-6 ${className}`}
@@ -349,7 +349,7 @@ export function Peek({
           {children ??
             (shown?.outside === true && (
               <p className="m-0 px-12 py-8 text-fg-muted text-small">
-                Lo doesn&apos;t read files outside this repository.
+                Files outside this repo can’t be shown.
               </p>
             ))}
         </div>

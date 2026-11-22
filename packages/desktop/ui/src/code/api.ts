@@ -692,7 +692,7 @@ export interface DiffEvents {
   /** A right-click: the registry's menu for what was clicked. */
   menu(target: Target, x: number, y: number): void;
   /**
-   * "Read it in the overview" in an overview marker's note: show the overview at the block that
+   * "Show in overview" in an overview marker's note: show the overview at the block that
    * explains the lines. `at` is the line the note is under, where the reader was. Without it, notes
    * have no such link.
    */

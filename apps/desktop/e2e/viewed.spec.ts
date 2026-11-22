@@ -303,14 +303,21 @@ function closed(page: Page, path: string): Promise<boolean> {
     const header = [...(before?.querySelectorAll('.lo-diffhead') ?? [])].find(
       (each) => each instanceof HTMLElement && each.dataset.path === file,
     );
-    let next = header?.nextElementSibling;
-    // Past the spacers that keep the sides level.
+    // Past a Problem drawn with the header, and the spacers that keep the sides level.
+    let next = header?.closest('.cm-content > *')?.nextElementSibling;
     while (next?.classList.contains('lo-spacer')) next = next.nextElementSibling;
     return Boolean(
       next?.classList.contains('lo-filerow') && next.textContent?.includes('Expand file'),
     );
   }, path);
 }
+
+/** The `Problem` under a file's header that says why its viewed mark didn't take, by its name. */
+const refusal = (page: Page, name: string) =>
+  page
+    .locator('.lo-diffview .lo-fileproblem')
+    .filter({ hasText: `Couldn’t mark ${name} viewed` })
+    .first();
 
 /** A file's viewed ball in its header. */
 const headerBall = (page: Page, path: string) =>
@@ -397,7 +404,11 @@ test('`e` marks the file viewed and closes it, and the next file’s header stay
       .toEqual(['MarkFileAsViewed src/text/wrap.ts', 'MarkFileAsViewed src/format.ts']);
     await expect(ball(page, 'src/format.ts')).toHaveAttribute('title', 'Not viewed');
     await expect(headerBall(page, 'src/format.ts')).not.toHaveClass(/is-viewed/);
-    await expect(page.getByText(/GitHub doesn't list src\/format.ts/).first()).toBeVisible();
+    // Why shows under the file's header, with a way to try again, and no toast says it.
+    const problem = refusal(page, 'format.ts');
+    await expect(problem).toContainText('GitHub doesn’t list this file in this pull request.');
+    await expect(problem.getByRole('button', { name: 'Try again' })).toBeVisible();
+    await expect(page.getByRole('status').filter({ hasText: 'format.ts' })).toHaveCount(0);
 
     // The file stays closed, and the cursor and what's at the top of the screen stay put.
     await expect.poll(() => closed(page, 'src/format.ts')).toBe(true);
@@ -420,14 +431,14 @@ test('`e` marks the file viewed and closes it, and the next file’s header stay
 
     await page.keyboard.press('e');
     await expect.poll(() => fake.writes).toEqual(WRITES);
-    // GitHub turned it away: the mark goes back, and Lo says why.
+    // GitHub turned it away: the mark goes back, and the file's header says why.
     await expect(ball(page, 'src/format.ts')).toHaveAttribute('title', 'Not viewed');
-    await expect(page.getByText('GitHub asked Lo to slow down').first()).toBeVisible();
+    await expect(refusal(page, 'format.ts')).toContainText('GitHub’s rate limit was reached.');
 
-    // Now nothing is sent until the pause ends, marking or clearing.
+    // Now nothing is sent until the pause ends, marking or clearing: `e` says why it can't.
     await cursorTo(page, 'src/format.ts');
     await page.keyboard.press('e');
-    await expect(page.getByText(/GitHub asked Lo to hold off until/).first()).toBeVisible();
+    await expect(page.getByText(/GitHub’s rate limit resets at/).first()).toBeVisible();
     await expect(ball(page, 'src/format.ts')).toHaveAttribute('title', 'Not viewed');
     await page.waitForTimeout(1000);
     expect(fake.writes).toEqual(WRITES);

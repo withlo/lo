@@ -2067,7 +2067,7 @@ class View implements DiffView {
   };
 
   /**
-   * "Read it in the overview", in a note: the caller shows the overview at the block. A note held
+   * "Show in overview", in a note: the caller shows the overview at the block. A note held
    * as it was on screen, its mark changed since, takes the change first, as input lets it: one whose
    * mark went closes, and shows nothing, since the overview no longer says it.
    */
