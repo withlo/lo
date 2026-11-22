@@ -15,7 +15,6 @@ export const WITHOUT_ROUTE: readonly string[] = [
   'code.previousReference',
   'code.goReference',
   'code.closeReferences',
-  'comments.onFileInstead',
   'diff.nextChange',
   'diff.previousChange',
   'diff.nextFile',

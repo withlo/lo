@@ -8,7 +8,7 @@
 // line are the two to use. A title with a body under it is the older shape, still drawn for the
 // callers that have it.
 
-import { TOAST_MAX, TOAST_MS, ToastStack, type StackedToast } from '@lo/ui';
+import { TOAST_MAX, TOAST_MS, ToastStack, type StackedToast, type ToastAction } from '@lo/ui';
 import { useEffect, useMemo, useSyncExternalStore, type ReactNode } from 'react';
 
 /** How long a note stays, in ms, while the pointer and focus are off it. */
@@ -22,6 +22,8 @@ export interface Note {
   readonly title: string;
   readonly body: string;
   readonly done?: boolean | undefined;
+  /** Its one button, as "Back" on a note that something moved. */
+  readonly action?: ToastAction | undefined;
 }
 
 /**
@@ -82,7 +84,8 @@ function dismiss(id: string): void {
 const same = (one: Note, other: Note) =>
   one.title === other.title &&
   one.body === other.body &&
-  (one.done ?? false) === (other.done ?? false);
+  (one.done ?? false) === (other.done ?? false) &&
+  one.action?.label === other.action?.label;
 
 /**
  * Shows `note` under the others. One already showing that says the same isn't said twice: it's the
@@ -110,18 +113,20 @@ export function notices(): readonly Note[] {
 /**
  * Says why a command asked for by its key can't run now, with no control in view to say it: the
  * reason alone, in a line with no full stop, such as "Sign in to comment". Never the command's
- * name. Several reasons are a line each.
+ * name. Several reasons are a line each. `action` is its one button, where the next step is one:
+ * "Comment on file" for lines that take no comment.
  */
-export function refuse(reason: string): void {
-  show({ title: reason, body: '' });
+export function refuse(reason: string, action?: ToastAction): void {
+  show({ title: reason, body: '', action });
 }
 
 /**
  * Says that something asked for is done, in a line: the verb in the past, then what it acted on,
- * such as "Merged #264". Nothing for what already shows where the reader is looking.
+ * such as "Merged #264". Nothing for what already shows where the reader is looking. `action` is
+ * its one button, where there's a way back from it: "Back".
  */
-export function announce(title: string, body = ''): void {
-  show({ title, body, done: true });
+export function announce(title: string, body = '', action?: ToastAction): void {
+  show({ title, body, done: true, action });
 }
 
 /**
@@ -163,7 +168,7 @@ function lineOf(note: Note): ReactNode {
 
 /** A note's toast: an info icon and the reason, or a tick and what's done. */
 function toastOf(id: string, note: Note): StackedToast {
-  return { id, tone: note.done ? 'success' : 'info', title: lineOf(note) };
+  return { id, tone: note.done ? 'success' : 'info', title: lineOf(note), action: note.action };
 }
 
 /**

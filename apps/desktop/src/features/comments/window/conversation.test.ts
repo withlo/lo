@@ -210,13 +210,13 @@ describe('changing your comment on the pull request', () => {
   test('Lo refuses someone else’s comment, and one GitHub doesn’t let you change, in its words', () => {
     expect(pullChangeRefusal(comment(), 'Rozed-Bot', 'edit')).toBeUndefined();
     expect(pullChangeRefusal(comment({ author: 'ravi-k' }), 'rozed-bot', 'delete')).toBe(
-      'It’s ravi-k’s comment. You can edit and delete only your own.',
+      'This comment isn’t yours',
     );
     expect(pullChangeRefusal(comment({ author: undefined }), 'rozed-bot', 'edit')).toBe(
-      'It’s a deleted account’s comment. You can edit and delete only your own.',
+      'This comment isn’t yours',
     );
     expect(pullChangeRefusal(comment({ viewerCanUpdate: false }), 'rozed-bot', 'edit')).toBe(
-      'GitHub doesn’t let you edit it now.',
+      'rozed-bot can’t edit this comment',
     );
   });
 
@@ -235,13 +235,13 @@ describe('changing your comment on the pull request', () => {
   test('a delete asks first, and nothing is asked offline or of someone else’s comment', () => {
     removeOnPull(tab(), comment({ author: 'ravi-k' }));
     expect(deleteAsking()).toBeUndefined();
-    expect(notice()?.body).toBe('It’s ravi-k’s comment. You can edit and delete only your own.');
+    expect(notice()?.title).toBe('This comment isn’t yours');
     said.pull = pull({
       connection: { kind: 'offline', savedAt: null, retryAt: null, error: 'reset' },
     });
     removeOnPull(tab(), comment());
     expect(deleteAsking()).toBeUndefined();
-    expect(notice()?.body).toBe('Offline. Try again once GitHub can be reached.');
+    expect(notice()?.title).toBe('Offline');
     said.pull = pull();
     removeOnPull(tab(), comment());
     expect(deleteAsking()).toMatchObject({ thread: null, comment: 'IC_1', body: 'Looks right.' });

@@ -197,7 +197,7 @@ test('`r` replies, `i` edits the reply, `dd` deletes it, and `x` unresolves and 
     await page.keyboard.press('d');
     await page.keyboard.press('d');
     const dialog = page.getByTestId('delete-comment');
-    await expect(dialog).toContainText('Delete your comment?');
+    await expect(dialog).toContainText('Delete comment?');
     await expect(dialog).toContainText('Three tries at most. Then it gives up.');
     await expect(dialog.getByRole('button', { name: /Cancel/ })).toBeVisible();
     await page.keyboard.press('Enter');
@@ -215,7 +215,7 @@ test('`r` replies, `i` edits the reply, `dd` deletes it, and `x` unresolves and 
     // The card shows what was asked at once, and opens, its button at rest, once GitHub answers:
     // `x` again is for after that.
     const working = fifth.locator('button[aria-busy="true"]');
-    await expect(fifth.getByRole('button', { name: 'Collapse the thread' })).toBeVisible({
+    await expect(fifth.getByRole('button', { name: 'Collapse thread' })).toBeVisible({
       timeout: 20_000,
     });
     await expect(working).toHaveCount(0, { timeout: 20_000 });
@@ -298,7 +298,7 @@ test.describe('in the timeline', () => {
       await page.keyboard.press('d');
       await page.keyboard.press('d');
       const dialog = page.getByTestId('delete-comment');
-      await expect(dialog).toContainText('Delete your comment?');
+      await expect(dialog).toContainText('Delete comment?');
       await expect(dialog).toContainText('Posted from the timeline’s box. Then edited.');
       await page.keyboard.press('Enter');
       await expect(dialog).toHaveCount(0);

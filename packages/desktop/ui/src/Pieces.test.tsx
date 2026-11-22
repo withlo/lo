@@ -17,6 +17,7 @@ import { LogoMotion } from './LogoMotion.tsx';
 import { setMotion } from './motion.ts';
 import { Popover } from './Popover.tsx';
 import { Problem } from './Problem.tsx';
+import { StatusItem } from './StatusBar.tsx';
 import { Switch } from './Switch.tsx';
 import { TOAST_MAX, TOAST_MS, ToastStack, type StackedToast } from './Toast.tsx';
 import { TOOLTIP_DELAY, TooltipGroup } from './Tooltip.tsx';
@@ -83,6 +84,21 @@ const stage = (busy: boolean, working: string) => (
     Trust repo…
   </Button>
 );
+
+/** A popover opened from a status bar item, as the kept drafts' is. */
+function Kept() {
+  const [open, setOpen] = useState(false);
+  return (
+    <Popover
+      open={open}
+      onOpenChange={setOpen}
+      label="Kept drafts"
+      trigger={<StatusItem title="Show kept drafts">2 kept drafts</StatusItem>}
+    >
+      <p>retry.ts · line 41 · r2</p>
+    </Popover>
+  );
+}
 
 describe('a button at work', () => {
   it('says what it’s doing in the room it kept, keeps focus, and does nothing when pressed', () => {
@@ -555,6 +571,21 @@ describe('Popover', () => {
     expect(closed).toHaveBeenCalledTimes(1);
     expect(document.activeElement).toBe(trigger);
     expect(await missingRules(document.body)).toEqual([]);
+  });
+
+  it('opens from a status bar item as its trigger', async () => {
+    const host = render(<Kept />);
+    const item = host.querySelector('button')!;
+    expect(item.textContent).toBe('2 kept drafts');
+    click(item);
+    await settle();
+    expect(item.getAttribute('aria-expanded')).toBe('true');
+    expect(document.body.querySelector('[role="dialog"]')?.textContent).toBe(
+      'retry.ts · line 41 · r2',
+    );
+    click(item);
+    await settle();
+    expect(item.getAttribute('aria-expanded')).toBe('false');
   });
 });
 

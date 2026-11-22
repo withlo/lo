@@ -915,3 +915,51 @@ test('a comment box that grows as lines are typed in it keeps its foot 8 px clea
   });
   expect(Math.abs(under - 8)).toBeLessThan(1);
 });
+
+/** Each box on `page`: its width, and whether what's drawn at either end of its middle is the box. */
+function boxesOn(page: Page) {
+  return page.evaluate(() =>
+    [...document.querySelectorAll('.lo-diffcomposer')].map((box) => {
+      const rect = box.getBoundingClientRect();
+      const middle = rect.top + Math.min(rect.height / 2, 40);
+      // Clear of the pane's scrollbar, which takes the pointer over what's under it.
+      const ends = [rect.left + 4, rect.right - 24].map((x) =>
+        box.contains(document.elementFromPoint(x, middle)),
+      );
+      return { width: Math.round(rect.width), whole: ends.every(Boolean) };
+    }),
+  );
+}
+
+test('side by side and narrow, a box on the new side alone reaches over the old side', async () => {
+  const page = await open('split');
+  await page.evaluate(() => {
+    window.harness.narrow(560);
+    window.harness.compose(24);
+  });
+  await frames(page);
+  const [alone] = await boxesOn(page);
+  expect(alone!.width).toBeGreaterThan(400);
+  expect(alone!.whole).toBe(true);
+});
+
+test('side by side and narrow, a box takes both sides, and two boxes, one on each side, cover nothing of each other', async () => {
+  const page = await open('split');
+  const boxes = () => boxesOn(page);
+  await page.evaluate(() => {
+    window.harness.narrow(560);
+    window.harness.compose(22, '', 'old');
+  });
+  await frames(page);
+  // Alone, the old side's box reaches over the new side, over everything there.
+  const [alone] = await boxes();
+  expect(alone!.width).toBeGreaterThan(400);
+  expect(alone!.whole).toBe(true);
+  await page.evaluate(() => window.harness.compose(24));
+  await frames(page);
+  // With one on each side, each keeps its own, and both are whole.
+  const both = await boxes();
+  expect(both).toHaveLength(2);
+  for (const each of both) expect(each).toMatchObject({ whole: true });
+  expect(Math.max(...both.map((each) => each.width))).toBeLessThan(280);
+});

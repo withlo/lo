@@ -99,6 +99,9 @@ export default defineFeature(contract, {
       ...(reads?.current(id) ?? { threads: undefined, review: undefined }),
       drafts: writer?.draftsOf(id),
     }),
+    reread({ id }) {
+      reads?.reread(id);
+    },
     draft({ id, place, text, home }) {
       started(writer).save(id, place, text, home);
     },

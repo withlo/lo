@@ -62,10 +62,8 @@ const problem = cva('min-w-0 text-ui', {
  * buttons. Nothing in it changes on a timer except through `Countdown`, so the alert is read once.
  */
 export function Problem({ title, reason, action, details, layout = 'inline' }: ProblemProps) {
-  const copy = useCopy();
-  const [detailed, setDetailed] = useState(false);
-  const detailsId = useId();
   const view = layout === 'view';
+  const { more, shown } = useDetails(details, view ? undefined : 'pt-8');
   const act = action && (
     <Button
       variant={view ? 'primary' : 'secondary'}
@@ -76,17 +74,6 @@ export function Problem({ title, reason, action, details, layout = 'inline' }: P
     >
       {action.label}
       {action.keys && <Key keys={action.keys} decorative />}
-    </Button>
-  );
-  const more = details !== undefined && (
-    <Button
-      variant="ghost"
-      size="sm"
-      aria-expanded={detailed}
-      aria-controls={detailsId}
-      onClick={() => setDetailed((was) => !was)}
-    >
-      Details
     </Button>
   );
   return (
@@ -132,20 +119,49 @@ export function Problem({ title, reason, action, details, layout = 'inline' }: P
         </div>
       )}
       {details !== undefined && (
-        <div id={detailsId} className={view ? 'w-full max-w-read-measure' : undefined}>
-          <Collapse open={detailed}>
-            {/* Its gap is inside what opens, so a closed one takes no room. */}
-            <div className={view ? undefined : 'pt-8'}>
-              <div className="flex items-start gap-8 rounded-sm bg-bg-well p-8 text-start">
-                <pre className="m-0 problem-details min-w-0 flex-1 overflow-auto wrap-anywhere whitespace-pre-wrap text-fg-muted code-small">
-                  {details}
-                </pre>
-                <CopyButton size="sm" onCopy={() => copy(details)} />
-              </div>
-            </div>
-          </Collapse>
-        </div>
+        <div className={view ? 'w-full max-w-read-measure' : undefined}>{shown}</div>
       )}
     </div>
   );
+}
+
+/**
+ * The raw text behind Details, wherever something that failed shows it: `more`, the Details button
+ * that opens it, and `shown`, what opens, the text with Copy, under a gap of `gap` inside what opens,
+ * so a closed one takes no room. Nothing for no `details`.
+ */
+export function useDetails(
+  details: string | undefined,
+  gap?: string,
+): { more: ReactNode; shown: ReactNode } {
+  const copy = useCopy();
+  const [detailed, setDetailed] = useState(false);
+  const id = useId();
+  if (details === undefined) return { more: null, shown: null };
+  const more = (
+    <Button
+      variant="ghost"
+      size="sm"
+      aria-expanded={detailed}
+      aria-controls={id}
+      onClick={() => setDetailed((was) => !was)}
+    >
+      Details
+    </Button>
+  );
+  const shown = (
+    <div id={id}>
+      <Collapse open={detailed}>
+        <div className={gap}>
+          <div className="flex items-start gap-8 rounded-sm bg-bg-well p-8 text-start">
+            <pre className="m-0 problem-details min-w-0 flex-1 overflow-auto wrap-anywhere whitespace-pre-wrap text-fg-muted code-small">
+              {details}
+            </pre>
+            <CopyButton size="sm" onCopy={() => copy(details)} />
+          </div>
+        </div>
+      </Collapse>
+    </div>
+  );
+  return { more, shown };
 }

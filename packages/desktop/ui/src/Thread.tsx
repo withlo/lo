@@ -1,13 +1,15 @@
 import { cva } from 'class-variance-authority';
-import type { ReactNode } from 'react';
+import { useRef, type ReactNode } from 'react';
 
 import { Avatar } from './Avatar.tsx';
 import { Button } from './Button.tsx';
+import { useGiveUp } from './giveUp.ts';
 import { Key, keyAria } from './Key.tsx';
 import { MoreButton } from './MoreButton.tsx';
 import { Spinner } from './Spinner.tsx';
 import { Tag, type TagTone } from './Tag.tsx';
 import { CommentIcon } from './ThreadCount.tsx';
+import { Tooltip } from './Tooltip.tsx';
 
 /** One comment of a thread, as its card shows it. */
 export interface ThreadComment {
@@ -29,7 +31,7 @@ export interface ThreadComment {
   body: ReactNode;
 }
 
-/** A short label beside a thread's state, such as "On a newer push". */
+/** A short label beside a thread's state, such as "On r5". */
 export interface ThreadTag {
   label: string;
   tone?: TagTone | undefined;
@@ -63,7 +65,7 @@ export interface ThreadProps {
   open: boolean;
   /** Its line has changed since it was written. */
   outdated?: boolean | undefined;
-  /** Others beside its state: "On a newer push". */
+  /** Others beside its state: "On r5". */
   tags?: readonly ThreadTag[] | undefined;
   /** The first comment's opening, as plain text, for the collapsed line. */
   excerpt?: string | undefined;
@@ -123,10 +125,10 @@ const card = cva('max-w-read-measure overflow-hidden rounded-md text-fg', {
 });
 
 /** How many comments, and how many of them wait in your review. */
-function counted(comments: readonly ThreadComment[]): string {
+function counted(comments: readonly ThreadComment[], pendingAll: boolean): string {
   const pending = comments.filter((each) => each.pending).length;
   const all = `${comments.length} ${comments.length === 1 ? 'comment' : 'comments'}`;
-  return pending > 0 && pending < comments.length ? `${all}, ${pending} pending` : all;
+  return pending > 0 && !pendingAll ? `${all}, ${pending} pending` : all;
 }
 
 function replies(comments: readonly ThreadComment[]): string | undefined {
@@ -143,7 +145,24 @@ function Chevron({ up }: { up: boolean }) {
   );
 }
 
+/**
+ * An open card's head row: its state, its count and its controls. A sent comment's card draws the
+ * same row as the thread it starts will have (`SentPost`'s `state`), so its text stays where it is
+ * as the thread takes its place.
+ */
+const HEAD_ROW =
+  'flex min-h-32 items-center gap-8 border-b border-border-subtle py-4 ps-12 pe-6 text-fg-muted text-small';
+
+/** Where an open card's head row holds its tags and its count: they wrap in the room left them. */
+const HEAD_WORDS = 'flex min-w-0 flex-1 flex-wrap items-center gap-x-8 gap-y-4';
+
 export interface SentPostProps {
+  /**
+   * The state of the thread it starts, for a new thread's comment: "Unresolved", or "Pending" for
+   * one added to a review. Its card then has the head row that thread's will, so nothing moves as
+   * the thread takes the card's place. A reply's or an edit's has none.
+   */
+  state?: 'Unresolved' | 'Pending' | undefined;
   /** Who it's from: the account that wrote it, where that's known. */
   author?: string | undefined;
   image?: string | undefined;
@@ -155,11 +174,12 @@ export interface SentPostProps {
 
 /**
  * A comment the reader has sent that GitHub hasn't answered for yet, drawn as it will be on its
- * card, with "Sending…" where its time will be. The comment box draws it in its own place from the
+ * card, with "Sending…" where its time will be, under the head row of the thread it starts, if it
+ * starts one. The comment box draws it in its own place from the
  * moment it's sent, so the text never leaves the screen; the card takes its place when it arrives.
  */
-export function SentPost({ author, image, label = 'Sending…', body }: SentPostProps) {
-  return (
+export function SentPost({ state, author, image, label = 'Sending…', body }: SentPostProps) {
+  const post = (
     // Whoever sends it says so to a screen reader: drawn with its words, this would say nothing.
     <div data-sent="" className="flex gap-8 px-12 py-8">
       {author !== undefined && <Avatar login={author} image={image} size="sm" />}
@@ -180,14 +200,70 @@ export function SentPost({ author, image, label = 'Sending…', body }: SentPost
       </div>
     </div>
   );
+  if (state === undefined) return post;
+  return (
+    <>
+      <div className={HEAD_ROW}>
+        <span className={HEAD_WORDS}>
+          <Tag tone="warning">{state}</Tag>
+          <span className="whitespace-nowrap">1 comment</span>
+        </span>
+      </div>
+      {post}
+    </>
+  );
 }
 
-/** What a button's keys say to a screen reader, and what they add to its tooltip. */
-function withKeys(label: string, keys: readonly string[] | undefined) {
-  return {
-    title: keys === undefined ? label : `${label} (${keys.join(' ')})`,
-    ...keyAria(keys, undefined),
-  };
+function EditIcon() {
+  return (
+    <svg className="lo-i lo-i--sm" viewBox="0 0 16 16" aria-hidden="true">
+      <path d="M10.25 3.25 12.75 5.75M3 13l.6-2.9 7.15-7.15a1.06 1.06 0 0 1 1.5 0l1 1a1.06 1.06 0 0 1 0 1.5L6.1 12.4 3 13Z" />
+    </svg>
+  );
+}
+
+function DeleteIcon() {
+  return (
+    <svg className="lo-i lo-i--sm" viewBox="0 0 16 16" aria-hidden="true">
+      <path d="M3 4.5h10M6.5 4.5V3.25a.75.75 0 0 1 .75-.75h1.5a.75.75 0 0 1 .75.75V4.5M4.5 4.5l.5 8a1 1 0 0 0 1 .95h4a1 1 0 0 0 1-.95l.5-8" />
+    </svg>
+  );
+}
+
+/**
+ * A comment's own control, Edit or Delete…: its label, or, where its head has given up labels
+ * (`give-up`), its icon alone, with the label as its tooltip.
+ */
+function Face({ icon, children }: { icon: ReactNode; children: string }) {
+  return (
+    <>
+      <span data-takes="labels" className="inline-flex">
+        {icon}
+      </span>
+      <span data-gives="labels">{children}</span>
+    </>
+  );
+}
+
+/**
+ * What a comment's head gives up, in order, as its card narrows, so it stays one line with its
+ * name whole for as long as it can: the key chips, the "Author" tag, Edit's and Delete…'s words
+ * for their icons, and the time. Only then is the name cut short.
+ */
+const HEAD_STEPS = ['keys', 'tag', 'labels', 'time'];
+
+/** A comment's head: who wrote it and when, and the controls you have on your own. */
+function Head({ children }: { children: ReactNode }) {
+  const head = useRef<HTMLDivElement | null>(null);
+  useGiveUp(head, HEAD_STEPS);
+  return (
+    <div
+      ref={head}
+      className="give-up flex min-h-24 items-center gap-8 whitespace-nowrap text-fg-muted text-small"
+    >
+      {children}
+    </div>
+  );
 }
 
 /**
@@ -247,41 +323,43 @@ export function Thread({
       >
         {/* The line opens the thread wherever it's clicked; `⋯` alone is a control of its own. */}
         <div className="flex h-32 items-center gap-2 pe-6 text-fg-muted text-small hover:bg-hover">
-          <button
-            type="button"
-            aria-expanded={false}
-            {...withKeys('Open the thread', keys.toggle)}
-            className="flex h-full min-w-0 flex-1 items-center gap-8 ps-12 pe-6 text-start focus-visible:shadow-ring-inset"
-            onClick={onToggle}
-          >
-            {state === 'resolved' ? (
-              <svg
-                className="lo-i lo-i--sm flex-none text-success"
-                viewBox="0 0 16 16"
-                aria-hidden="true"
-              >
-                <circle cx="8" cy="8" r="6.25" />
-                <path d="M5.5 8.25 7.25 10l3.25-3.75" />
-              </svg>
-            ) : (
-              <CommentIcon />
-            )}
-            <span className="flex-none">{word}</span>
-            <Avatar login={first.author} image={first.image} size="sm" />
-            <span className="min-w-0 flex-1 truncate">
-              <span className="font-semibold text-fg">{first.author}</span>
-              {excerpt !== undefined && ` ${excerpt}`}
-            </span>
-            {working !== undefined ? (
-              // A change asked from its menu or by its key is at work, as its open card's control says.
-              <span className="inline-flex flex-none items-center gap-6">
-                <Spinner />
-                {working}
+          <Tooltip label="Expand thread" keys={keys.toggle}>
+            <button
+              type="button"
+              aria-expanded={false}
+              {...keyAria(keys.toggle, undefined)}
+              className="flex h-full min-w-0 flex-1 items-center gap-8 ps-12 pe-6 text-start focus-visible:shadow-ring-inset"
+              onClick={onToggle}
+            >
+              {state === 'resolved' ? (
+                <svg
+                  className="lo-i lo-i--sm flex-none text-success"
+                  viewBox="0 0 16 16"
+                  aria-hidden="true"
+                >
+                  <circle cx="8" cy="8" r="6.25" />
+                  <path d="M5.5 8.25 7.25 10l3.25-3.75" />
+                </svg>
+              ) : (
+                <CommentIcon />
+              )}
+              <span className="flex-none">{word}</span>
+              <Avatar login={first.author} image={first.image} size="sm" />
+              <span className="min-w-0 flex-1 truncate">
+                <span className="font-semibold text-fg">{first.author}</span>
+                {excerpt !== undefined && ` ${excerpt}`}
               </span>
-            ) : (
-              said !== undefined && <span className="lo-num flex-none">{said}</span>
-            )}
-          </button>
+              {working !== undefined ? (
+                // A change asked from its menu or by its key is at work, as its open card's control says.
+                <span className="inline-flex flex-none items-center gap-6">
+                  <Spinner />
+                  {working}
+                </span>
+              ) : (
+                said !== undefined && <span className="lo-num flex-none">{said}</span>
+              )}
+            </button>
+          </Tooltip>
           {menu && <MoreButton />}
           <Button
             variant="ghost"
@@ -311,19 +389,18 @@ export function Thread({
       data-key-scope=""
       className={`${card({ view: 'open', ground })} ${className}`}
     >
-      <div className="flex min-h-32 items-center gap-8 border-b border-border-subtle py-4 ps-12 pe-6 text-fg-muted text-small">
+      <div className={HEAD_ROW}>
         {/* The tags and the count wrap in the room the buttons leave, which they never give up. */}
-        <span className="flex min-w-0 flex-1 flex-wrap items-center gap-x-8 gap-y-4">
+        <span className={HEAD_WORDS}>
           <Tag tone={tone}>{word}</Tag>
-          {outdated && <Tag>Outdated</Tag>}
+          {outdated && <Tag>Out of date</Tag>}
           {tags.map((tag) => (
             <Tag key={tag.label} tone={tag.tone}>
               {tag.label}
             </Tag>
           ))}
-          <span className="whitespace-nowrap">
-            {pendingAll ? 'Your review, not sent' : counted(comments)}
-          </span>
+          {/* A thread only in your review says so once, in its tag: here it's counted as any is. */}
+          <span className="whitespace-nowrap">{counted(comments, pendingAll)}</span>
         </span>
         <span className="flex flex-none items-center gap-2">
           {canResolve && !pendingAll && (
@@ -334,7 +411,9 @@ export function Thread({
               busy={resolving}
               working={resolved ? 'Resolving…' : 'Unresolving…'}
               align="end"
-              hint={resolved ? 'Unresolve' : 'Resolve'}
+              // One change to a thread at a time: while a delete is at work, it says so.
+              disabled={deleting !== undefined}
+              hint={deleting !== undefined ? 'Deleting…' : resolved ? 'Unresolve' : 'Resolve'}
               hintKeys={keys.resolve}
               onClick={onResolve}
             >
@@ -347,9 +426,10 @@ export function Thread({
             variant="ghost"
             size="sm"
             icon
-            aria-label="Collapse the thread"
+            aria-label="Collapse thread"
             aria-expanded
-            {...withKeys('Collapse the thread', keys.toggle)}
+            hint="Collapse thread"
+            hintKeys={keys.toggle}
             onClick={onToggle}
           >
             <Chevron up />
@@ -364,25 +444,35 @@ export function Thread({
         >
           <Avatar login={comment.author} image={comment.image} size="sm" />
           <div className="min-w-0 flex-1">
-            <div className="flex min-h-24 flex-wrap items-center gap-x-8 gap-y-2 text-fg-muted text-small">
-              <span className="font-semibold whitespace-nowrap text-fg">
-                {comment.author}
-                {comment.mine && <span className="font-normal text-fg-muted"> (you)</span>}
+            <Head>
+              <span className="flex min-w-0 flex-1 items-center gap-8">
+                <span data-fit className="min-w-0 truncate font-semibold text-fg">
+                  {comment.author}
+                  {comment.mine && <span className="font-normal text-fg-muted"> (you)</span>}
+                </span>
+                <span data-gives="time" className="lo-num flex-none">
+                  {comment.when}
+                </span>
+                {comment.byAuthor && (
+                  <span data-gives="tag" className="inline-flex flex-none">
+                    <Tag>Author</Tag>
+                  </span>
+                )}
+                {comment.pending && !pendingAll && <Tag tone="warning">Pending</Tag>}
               </span>
-              <span className="lo-num whitespace-nowrap">{comment.when}</span>
-              {comment.byAuthor && <Tag>Author</Tag>}
-              {comment.pending && !pendingAll && <Tag tone="warning">Pending</Tag>}
               {comment.mine && (
-                <span className="ms-auto flex flex-none items-center gap-2">
+                <span className="flex flex-none items-center gap-4">
                   <Button
                     variant="ghost"
                     size="sm"
-                    aria-label={`Edit your comment from ${comment.when}`}
+                    data-squares="labels"
+                    // Named for its comment, as every comment's is the same button.
+                    aria-label={`Edit comment from ${comment.when}`}
                     hint="Edit"
                     hintKeys={comment.id === newestMine ? keys.edit : undefined}
                     onClick={() => onEdit?.(comment.id)}
                   >
-                    Edit
+                    <Face icon={<EditIcon />}>Edit</Face>
                     {comment.id === newestMine && keys.edit && (
                       <Key keys={keys.edit} when="focus" decorative />
                     )}
@@ -390,41 +480,46 @@ export function Thread({
                   <Button
                     variant="ghost"
                     size="sm"
-                    aria-label={`Delete your comment from ${comment.when}`}
+                    data-squares="labels"
+                    aria-label={`Delete comment from ${comment.when}…`}
                     busy={comment.id === deleting}
-                    working="Deleting…"
+                    working={<span data-gives="labels">Deleting…</span>}
                     align="end"
-                    hint="Delete…"
+                    // One change to a thread at a time: while a resolve is at work, it says so.
+                    disabled={resolving}
+                    hint={resolving ? (resolved ? 'Resolving…' : 'Unresolving…') : 'Delete…'}
                     hintKeys={comment.id === newestMine ? keys.delete : undefined}
                     onClick={() => onDelete?.(comment.id)}
                   >
-                    Delete…
+                    <Face icon={<DeleteIcon />}>Delete…</Face>
                     {comment.id === newestMine && keys.delete && (
                       <Key keys={keys.delete} when="focus" decorative />
                     )}
                   </Button>
                 </span>
               )}
-            </div>
+            </Head>
             <div className="lo-selectable mt-2 text-fg read-comment">{comment.body}</div>
           </div>
         </div>
       ))}
       {showReply && (
         <div className="border-t border-border-subtle py-8 ps-40 pe-12">
-          <button
-            type="button"
-            {...withKeys('Reply', keys.reply)}
-            className="flex h-control-h w-full items-center gap-8 rounded-sm border border-border bg-bg-well px-8 text-start text-fg-subtle text-ui hover:border-border-strong focus-visible:shadow-ring"
-            onClick={onReply}
-          >
-            Reply…
-            {keys.reply && (
-              <span className="ms-auto">
-                <Key keys={keys.reply} when="focus" quiet decorative />
-              </span>
-            )}
-          </button>
+          <Tooltip label="Reply" keys={keys.reply}>
+            <button
+              type="button"
+              {...keyAria(keys.reply, undefined)}
+              className="flex h-control-h w-full items-center gap-8 rounded-sm border border-border bg-bg-well px-8 text-start text-fg-subtle text-ui hover:border-border-strong focus-visible:shadow-ring"
+              onClick={onReply}
+            >
+              Reply
+              {keys.reply && (
+                <span className="ms-auto">
+                  <Key keys={keys.reply} when="focus" quiet decorative />
+                </span>
+              )}
+            </button>
+          </Tooltip>
         </div>
       )}
       {reply !== undefined && (

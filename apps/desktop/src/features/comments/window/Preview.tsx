@@ -20,6 +20,8 @@ export interface PreviewProps {
   readonly pull: PostPull;
   /** With no padding of its own, as inside a card. */
   readonly flush?: boolean | undefined;
+  /** The lines a suggested change in it replaces, as the diff shows them, where known. */
+  readonly replaced?: string | undefined;
 }
 
 /** Opens a link followed in the preview: an `https` page, through main. */
@@ -29,7 +31,7 @@ function follow(target: Followed): void {
   if (url !== undefined) void followLink(url);
 }
 
-export function Preview({ view, text, pull, flush = false }: PreviewProps): ReactNode {
+export function Preview({ view, text, pull, flush = false, replaced }: PreviewProps): ReactNode {
   const [rendered, setRendered] = useState<{ text: string; rendered: Rendered }>();
   const { owner, repo, number } = pull;
   useEffect(() => {
@@ -56,6 +58,7 @@ export function Preview({ view, text, pull, flush = false }: PreviewProps): Reac
           tree={rendered.rendered.tree}
           onFollow={follow}
           images={(url) => postImage(view, url)}
+          replaced={replaced}
           className="lo-prose read-comment"
         />
       ) : (
