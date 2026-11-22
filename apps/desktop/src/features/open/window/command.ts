@@ -15,8 +15,8 @@ export interface CommandStore {
   /** What the last install said. */
   readonly said: string | undefined;
   /**
-   * What the last install a row asked for did, which that row shows: `undefined` when main couldn't
-   * be asked, and `null` when there's nothing to show, as after an install a command asked for.
+   * What the last install a row asked for did, which the row shows; `undefined` when main couldn't
+   * be asked, and `null` for nothing to show.
    */
   readonly done: Installed | null | undefined;
 }
@@ -55,8 +55,8 @@ export function installedWords(done: Installed): string {
 }
 
 /**
- * Installs `lo`, asking for an administrator on macOS, and says how it went once: in a notice when
- * a command asked (`command`), or on the row that asked (`row`), which shows what's in `done`.
+ * Installs `lo`, asking for an administrator on macOS, and says how it went once: on the row that
+ * asked (`row`), which keeps what it did for the row to show, or in a notice when a command did.
  * Resolves with what main did, or nothing when it couldn't be asked.
  */
 export async function installCommand(
