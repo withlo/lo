@@ -159,8 +159,11 @@ test('a thread GitHub put on a newer push says so', () => {
   expect(drawn(row(), true).textContent).not.toContain('On a newer push');
 });
 
-/** A resolved-or-not thread's card while a resolve asked of it stands as `stands`. */
-function resolving(stands: 'sending' | 'notDone'): HTMLElement {
+/**
+ * A resolved-or-not thread's card while a resolve asked of it stands as `stands`, its control at
+ * work unless `atWork` says not.
+ */
+function resolving(stands: 'sending' | 'notDone', atWork = true): HTMLElement {
   const element = document.createElement('div');
   document.body.append(element);
   const root = createRoot(element);
@@ -169,6 +172,7 @@ function resolving(stands: 'sending' | 'notDone'): HTMLElement {
       <ThreadCard
         row={row()}
         asked={{ thread: 'T1', comment: null, change: 'resolve', stands }}
+        atWork={atWork}
         open
         onToggle={() => undefined}
         author="rozed-bot"
@@ -204,6 +208,12 @@ test('a resolve asked for shows at once, with the control at work, and goes back
     'Unresolved thread by rozed-bot',
   );
   expect(back.querySelector('button[aria-busy="true"]')).toBeNull();
+  // GitHub took it, and the threads don't show it yet: still resolved, its control its own again.
+  const taken = resolving('sending', false);
+  expect(taken.querySelector('[role="group"]')?.getAttribute('aria-label')).toBe(
+    'Resolved thread by rozed-bot',
+  );
+  expect(taken.querySelector('button[aria-busy="true"]')).toBeNull();
 });
 
 test('when a comment was written, in words', () => {

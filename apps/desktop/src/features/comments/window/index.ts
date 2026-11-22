@@ -37,10 +37,13 @@ import { fileCountsChanged, setFileCounts } from '../../tree/window/shared.ts';
 import keys from '../keys.ts';
 import { DiscardedToast } from './Discarded.tsx';
 import {
+  atWork,
   edit,
+  keepActsOf,
   remove,
   reply,
   resolve,
+  resolvedNow,
   settleActs,
   takeActs,
   threadFor,
@@ -115,6 +118,18 @@ function enabled(check: () => PullTab | string) {
     const tab = check();
     return typeof tab === 'string' ? tab : true;
   };
+}
+
+/**
+ * Whether a thread can be resolved, or a comment of it deleted, on `target`: a comment can be
+ * written, and no change to the thread is at work, which is one at a time. Otherwise why not, as
+ * the thread's control says it: "Resolving…".
+ */
+function free(target: ThreadKeyTarget): true | string {
+  const tab = writable();
+  if (typeof tab === 'string') return tab;
+  const row = threadFor(tab.id, target);
+  return typeof row === 'string' ? true : (atWork(tab.id, row.id) ?? true);
 }
 
 /** The pull request's tab on screen, where a comment can be written on `target`, a code block's. */
@@ -194,17 +209,17 @@ export default {
     reply: { run: actOn(reply), enabled: enabled(writable) },
     resolve: {
       run: actOn(resolve),
-      enabled: enabled(writable),
-      // A menu names it by what it would do to the thread it's on.
+      enabled: free,
+      // A menu names it by what it would do to the thread it's on, as its card shows it.
       named: (target) => {
         const tab = activeTab();
         if (tab?.kind !== 'pull' || target.kind !== 'thread') return undefined;
         const row = threadFor(tab.id, target);
-        return typeof row !== 'string' && row.resolved ? 'Unresolve' : undefined;
+        return typeof row !== 'string' && resolvedNow(tab.id, row) ? 'Unresolve' : undefined;
       },
     },
     edit: { run: actOn(edit), enabled: enabled(writable) },
-    remove: { run: actOn(remove), enabled: enabled(writable) },
+    remove: { run: actOn(remove), enabled: free },
     discard: discarding,
     undiscard: undiscarding,
     sendAnyway: offering('sendAgain'),
@@ -230,7 +245,7 @@ export default {
       run: actOn(resolve),
       enabled: (target) => {
         const on = onThread(target);
-        return on === true ? enabled(writable)() : on;
+        return on === true && target.kind === 'thread' ? free(target) : on;
       },
     },
   }),
@@ -248,17 +263,18 @@ export default {
       order: 40,
       render: () => createElement(DeleteDialog),
     }),
+    // Nothing to see: what the comments say to a screen reader as it happens. Beside the dialogs,
+    // outside the toasts' own region: a region inside another is read by one of them at most.
+    defineView(dialogs, {
+      id: 'comments.said',
+      order: 41,
+      render: () => createElement(Said),
+    }),
     // Under the updates' offer.
     defineView(toasts, {
       id: 'comments.discarded',
       order: 10,
       render: () => createElement(DiscardedToast),
-    }),
-    // Nothing to see: what the comments say to a screen reader as it happens.
-    defineView(toasts, {
-      id: 'comments.said',
-      order: 11,
-      render: () => createElement(Said),
     }),
     // After the diff's.
     defineView(status, {
@@ -273,6 +289,7 @@ export default {
       const kept = new Set(viewIds(open));
       keepOnly(kept);
       keepBoxesOf(kept);
+      keepActsOf(kept);
       keepUploadsOf(kept);
     });
     main().subscribe('drafts', takeDrafts);

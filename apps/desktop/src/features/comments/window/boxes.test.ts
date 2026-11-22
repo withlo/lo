@@ -1460,6 +1460,95 @@ describe('sending', () => {
     expect(drawn[0]!.composer.closed).toBe('close');
   });
 
+  test('drafts that say a comment was taken before its answer comes close its box once, said once', async () => {
+    const { drawn, box } = await opened();
+    let answer!: (outcome: SendOutcome) => void;
+    answers['comments.send'] = () =>
+      new Promise<SendOutcome>((resolve) => {
+        answer = resolve;
+      });
+    heard.length = 0;
+    vi.useFakeTimers();
+    try {
+      const sending = send(box, 'review');
+      // Main marks the draft sent, then takes it, before it answers.
+      takeDrafts({
+        id: VIEW,
+        drafts: [row(onLines(null, 5), 'Ship it?', { sending: 'sending', sent: 'Ship it?' })],
+      });
+      takeDrafts({ id: VIEW, drafts: [] });
+      expect(heard).toEqual(['Sending…']);
+      answer({ kind: 'sent', pending: true, joined: false, thread: 'T_1', landedOn: null });
+      await sending;
+      expect(heard).toEqual(['Sending…', 'Added comment to review']);
+      // It waits for the thread the answer named, and for one wait.
+      threadsCome(
+        threadRow('T_other', 5, { comments: [threadComment('C', 'rozed-bot', 'Ship it?')] }),
+      );
+      expect(drawn[0]!.composer.closed).toBeUndefined();
+      await vi.advanceTimersByTimeAsync(LAND_WAIT);
+      expect(drawn[0]!.composer.closed).toBe('close');
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test('a box still held closes as the threads draw its comment, before its answer', async () => {
+    const { drawn, box } = await opened();
+    let answer!: (outcome: SendOutcome) => void;
+    answers['comments.send'] = () =>
+      new Promise<SendOutcome>((resolve) => {
+        answer = resolve;
+      });
+    heard.length = 0;
+    const sending = send(box, 'now');
+    // Somebody else's comment on the line, or yours with other words, isn't it.
+    threadsCome(
+      threadRow('T_theirs', 5, { comments: [threadComment('C1', 'octocat', 'Ship it?')] }),
+      threadRow('T_other', 5, { comments: [threadComment('C2', 'rozed-bot', 'Not yet.')] }),
+    );
+    expect(drawn[0]!.composer.closed).toBeUndefined();
+    threadsCome(
+      threadRow('T_new', 5, { comments: [threadComment('C3', 'rozed-bot', 'Ship it?')] }),
+    );
+    expect(drawn[0]!.composer.closed).toBe('close');
+    // Main's draft of it brings no box back, and its answer says it went, once.
+    takeDrafts({
+      id: VIEW,
+      drafts: [row(onLines(null, 5), 'Ship it?', { sending: 'sending', sent: 'Ship it?' })],
+    });
+    expect(drawn).toHaveLength(1);
+    answer({ kind: 'sent', pending: false, joined: false, thread: 'T_new', landedOn: null });
+    await sending;
+    expect(heard).toEqual(['Sending…', 'Sent comment']);
+  });
+
+  test('a note, or a look for a comment, takes focus only from a reader still in the box', async () => {
+    const { drawn, box } = await opened();
+    const lost = row(onLines(null, 5), 'Ship it?', { sending: 'unknown', sent: 'Ship it?' });
+    const looking = { ...lost, sending: 'checking' } as const;
+    const focused = (): number => drawn[0]!.composer.focused;
+    const before = focused();
+    // Focus nowhere: the box takes it, for its note and for the look.
+    takeDrafts({ id: VIEW, drafts: [lost] });
+    expect(focused()).toBe(before + 1);
+    takeDrafts({ id: VIEW, drafts: [looking] });
+    expect(focused()).toBe(before + 2);
+    // The reader has gone on to the code: neither takes them back.
+    const code = document.createElement('button');
+    document.body.append(code);
+    code.focus();
+    try {
+      takeDrafts({ id: VIEW, drafts: [lost] });
+      takeDrafts({ id: VIEW, drafts: [looking] });
+      expect(focused()).toBe(before + 2);
+      expect(box.state.sending).toBe('checking');
+    } finally {
+      code.remove();
+    }
+  });
+
   test('⌥⏎ into your pending review says so, once the box has closed', async () => {
     const { drawn, box } = await opened();
     answers['comments.send'] = (): SendOutcome => ({
@@ -1813,14 +1902,25 @@ describe('acting on a thread', () => {
       acts.settleActs(VIEW);
       expect(acts.acting.get(VIEW).size).toBe(0);
       expect(heard).toEqual(['Resolving…', 'Resolved thread']);
-      // One the threads never show goes back once the wait ends.
+      // One the threads don't show in time: its control is its own again as the wait ends, and
+      // its card still shows what was asked, never what the threads said before.
       const back = { ...going, change: 'unresolve' } as const;
+      const resolved = threadRow('T2', 2, { resolved: true });
       acts.takeActs({ id: VIEW, acts: [back] });
       acts.takeActs({ id: VIEW, acts: [] });
       acts.settleActs(VIEW);
       expect(acts.acting.get(VIEW).get('T2')).toEqual(back);
+      expect(acts.atWork(VIEW, 'T2')).toBe('Unresolving…');
       vi.advanceTimersByTime(acts.SETTLE_WAIT);
+      expect(acts.acting.get(VIEW).get('T2')).toEqual(back);
+      expect(acts.atWork(VIEW, 'T2')).toBeUndefined();
+      expect(acts.resolvedNow(VIEW, resolved)).toBe(false);
+      expect(heard.at(-1)).toBe('Unresolved thread');
+      // The threads read again are what it is, whatever they say.
+      acts.settleActs(VIEW);
       expect(acts.acting.get(VIEW).size).toBe(0);
+      expect(acts.unshown.get(VIEW).size).toBe(0);
+      expect(acts.resolvedNow(VIEW, resolved)).toBe(true);
     } finally {
       vi.useRealTimers();
     }
@@ -1869,6 +1969,22 @@ describe('acting on a thread', () => {
     acts.resolve(tab(), ON_TWO);
     await vi.waitFor(() => expect(released).toEqual(['T2']));
     expect(notice()?.body).toMatch(/^GitHub asked Lo to hold off until .+\. Resolve it then\.$/);
+  });
+
+  test('while a change to a thread is at work, nothing else is asked of it', async () => {
+    const thread = threadRow('T2', 2);
+    withThreads(thread);
+    acts.takeActs({
+      id: VIEW,
+      acts: [{ thread: 'T2', comment: null, change: 'resolve', stands: 'sending' }],
+    });
+    // Its card shows it resolved, and its commands say what's at work.
+    expect(acts.atWork(VIEW, 'T2')).toBe('Resolving…');
+    expect(acts.resolvedNow(VIEW, thread)).toBe(true);
+    await acts.resolveThread(tab(), thread);
+    acts.remove(tab(), ON_TWO);
+    expect(asked('comments.resolve')).toEqual([]);
+    expect(acts.deleteAsking()).toBeUndefined();
   });
 
   test('`x` where GitHub doesn’t let you, or offline, sends nothing', () => {

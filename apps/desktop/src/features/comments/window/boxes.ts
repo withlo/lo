@@ -255,19 +255,20 @@ export function sendingNow(state: BoxState): boolean {
   );
 }
 
-/** Whether focus is somewhere a box mustn't take it from: a dialog, a menu, or other writing. */
-function focusElsewhere(): boolean {
-  const taken = document.activeElement?.closest(
-    '[role="dialog"], [role="menu"], input, textarea, .lo-diffcomposer',
-  );
-  return taken !== null && taken !== undefined;
+/**
+ * Whether `box` may take focus for what it says: focus is in it already, or nowhere. A reader who
+ * left it for the code, or for anything else, keeps their place there, and what they see.
+ */
+function mayFocus(box: Box): boolean {
+  const active = document.activeElement;
+  return box.state.focused || active === null || active === document.body;
 }
 
 /**
  * Says what changed in how a box's comment stands, to a screen reader, and shows it: that it's on
- * its way, or being looked for, which brings its card on screen where a look was asked for; and,
- * once the box is written in again with a note on it, the note, with focus back in the box, where
- * what the note offers is one key away.
+ * its way, or being looked for, which brings its card on screen whole; and, once the box is written
+ * in again with a note on it, the note, with focus back in the box, where what the note offers is
+ * one key away. Neither takes focus, or the screen, from a reader who has left the box.
  */
 function told(box: Box, was: BoxState): void {
   const now = box.state;
@@ -279,8 +280,11 @@ function told(box: Box, was: BoxState): void {
     const label = sentLabel(now.sending, edit);
     if (heldBefore && !was.landing && label === sentLabel(was.sending, edit)) return;
     tell(label);
-    // A look asked for from the box's note: the card that says so comes on screen whole.
-    if (now.sending === 'checking' && was.sending === 'unknown') box.composer?.focus();
+    // Looked for, as its note asked or as its answer was lost: the card that says so comes on
+    // screen whole.
+    if (now.sending === 'checking' && was.sending !== 'checking' && mayFocus(box)) {
+      box.composer?.focus();
+    }
     return;
   }
   const notes = notesOf(now);
@@ -289,7 +293,7 @@ function told(box: Box, was: BoxState): void {
   const before = notesOf(was)[0];
   if (!heldBefore && before?.title === first.title && before?.text === first.text) return;
   tell([first.title, first.text].filter((each) => each !== undefined && each !== '').join('. '));
-  if (box.composer && !focusElsewhere()) box.composer.focus();
+  if (box.composer && mayFocus(box)) box.composer.focus();
 }
 
 /** What's said to a screen reader once GitHub took a box's comment: its card shows the rest. */
@@ -1034,10 +1038,11 @@ export function takeDrafts(given: DraftsView): void {
     if (rows.has(key)) continue;
     if (box.sentMark) {
       // What GitHub's lost answer was to posted, or what was sent and posted before its answer
-      // came here: it's done, and its box goes as its card comes.
-      if (!landings.has(box)) {
+      // came here: it's done, and its box goes as its card comes. The answer still to come says
+      // so itself, with where the comment went.
+      if (!sentBoxes.has(box) && !landings.has(box)) {
         closeOnceLanded(box, null);
-        tell(sentWords(box.state.place, box.lastHow));
+        if (!box.state.busy) tell(sentWords(box.state.place, box.lastHow));
       }
       continue;
     }
@@ -1389,9 +1394,12 @@ function takeAway(box: Box, how: 'close' | 'landed' | 'dismiss'): void {
 /**
  * Closes the box of a comment or an edit GitHub took: `drawn`, its card is drawn already. One
  * closed before its card came stays drawn as it is where the view keeps it (`Composer.close`),
- * which its state says for as long: it's still `landing`.
+ * which its state says for as long: it's still `landing`. A box closes once: main says a comment
+ * was taken twice, in its drafts and in its answer.
  */
 function closeSent(box: Box, drawn = false): void {
+  if (sentBoxes.has(box)) return;
+  sentBoxes.add(box);
   const { view } = box;
   const waiting = landings.get(box);
   if (waiting) clearTimeout(waiting.timer);
@@ -1505,13 +1513,19 @@ const landings = new Map<
   { shows: (rows: readonly ThreadRow[]) => boolean; timer: ReturnType<typeof setTimeout> }
 >();
 
+/** The boxes closed as their comments were taken. */
+const sentBoxes = new WeakSet<Box>();
+
 /**
  * GitHub took what `box` sent, making thread `thread` if it said so: the box closes as its
  * comment's card is drawn, and shows the comment until then, so its text is on screen in every
  * frame from the send to the card. A comment no thread draws, or a box that isn't drawn, closes
- * now, and so does one whose card hasn't come in `LAND_WAIT`.
+ * now, and so does one whose card hasn't come in `LAND_WAIT`. Told again of a box that waits, as
+ * when main's answer names the thread after its drafts said the comment was taken, it waits on,
+ * no longer, for what it's now known to be.
  */
 function closeOnceLanded(box: Box, thread: string | null): void {
+  if (sentBoxes.has(box)) return;
   const shows = box.composer && box.drawnIn !== 'timeline' ? landedIn(box, thread) : undefined;
   if (!shows) {
     closeSent(box);
@@ -1521,6 +1535,11 @@ function closeOnceLanded(box: Box, thread: string | null): void {
     closeSent(box, true);
     return;
   }
+  const waiting = landings.get(box);
+  if (waiting) {
+    waiting.shows = shows;
+    return;
+  }
   box.set({ landing: true });
   const timer = setTimeout(() => closeSent(box), LAND_WAIT);
   landings.set(box, { shows, timer });
@@ -1528,13 +1547,70 @@ function closeOnceLanded(box: Box, thread: string | null): void {
 
 /**
  * View `view`'s threads came, and are drawn: the boxes that waited for their comments' cards close,
- * each staying drawn until the view has measured its card (`Composer.close`).
+ * each staying drawn until the view has measured its card (`Composer.close`). So does a box still
+ * held, its answer not here yet or lost, whose comment the threads now draw: the card takes its
+ * place, and never shows under it.
  */
 export function landBoxes(view: string): void {
   const rows = rowsOf(view);
   // Closing one takes it out of the map this goes through, which a `Map` allows.
   for (const [box, { shows }] of landings) {
     if (box.view === view && shows(rows)) closeSent(box);
+  }
+  for (const box of views.get(view)?.values() ?? []) {
+    const { state } = box;
+    if (!box.composer || box.drawnIn === 'timeline') continue;
+    if (!sendingNow(state) || state.landing || !drawnAs(box, rows)) continue;
+    closeSent(box);
+    // Main's draft of it, until main says it's gone, brings no box back.
+    holdDropped(box);
+    // The answer still to come says so itself.
+    if (!state.busy) tell(sentWords(state.place, box.lastHow));
+  }
+}
+
+/**
+ * Whether `rows` draw the comment `box` holds while it's sent or looked for, by more than
+ * {@link landedIn} goes by once GitHub said it took it: a comment with the box's text, yours,
+ * that wasn't there as it was sent.
+ */
+function drawnAs(box: Box, rows: readonly ThreadRow[]): boolean {
+  const { place, text } = box.state;
+  const { before } = box;
+  if (!before) return false;
+  const me = loginOf(box.view);
+  const mine = (each: ThreadRow['comments'][number]): boolean =>
+    asKept(each.body) === asKept(text) && (me === undefined || each.author === me);
+  switch (place.kind) {
+    case 'reply': {
+      const row = rows.find((each) => each.id === place.thread);
+      return (
+        row !== undefined &&
+        before.count !== undefined &&
+        row.comments.slice(before.count).some(mine)
+      );
+    }
+    case 'edit': {
+      const row = rows.find((each) => each.id === place.thread);
+      const edited = row?.comments.find((each) => each.id === place.comment);
+      // An edit that changes nothing shows nothing new: its answer says how it went.
+      return (
+        edited !== undefined &&
+        before.body !== undefined &&
+        asKept(before.body) !== asKept(text) &&
+        mine(edited)
+      );
+    }
+    case 'thread':
+      return rows.some((row) => {
+        const first = row.comments[0];
+        return !before.threads?.has(row.id) && first !== undefined && mine(first);
+      });
+    case 'conversation':
+      return false;
+    default:
+      place satisfies never;
+      return false;
   }
 }
 
@@ -1736,6 +1812,11 @@ export function keepBoxesOf(kept: ReadonlySet<string>): void {
     if (kept.has(view)) continue;
     for (const box of own.values()) box.saveNow();
     views.delete(view);
+    for (const [box, { timer }] of landings) {
+      if (box.view !== view) continue;
+      clearTimeout(timer);
+      landings.delete(box);
+    }
     pulls.delete(view);
     dropped.delete(view);
     if (discarded?.view === view) setDiscarded(undefined);

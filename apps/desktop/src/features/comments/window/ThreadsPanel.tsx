@@ -14,6 +14,7 @@ import { catchUpRevisions, useRevisions } from '../../revisions/window/shared.ts
 import { usePull, useTabState, type PullTab } from '../../tab/window/shared.ts';
 import { useFileOrder } from '../../tree/window/shared.ts';
 import type { ThreadsView } from '../contract.ts';
+import { acting as asked, resolvedNow, unshown } from './acts.ts';
 import { useExcerpts } from './excerpts.ts';
 import { filterCounts, focusedIn, rowKeys } from './list.ts';
 import {
@@ -121,10 +122,13 @@ export function ThreadsPanel({ tab }: { tab: PullTab }): ReactNode {
   const filters = keysOf('comments.filterThreads');
   // What the foot's hints act on: the thread the keyboard is on, as their keys do.
   const target = panelTarget(view);
-  // Named by what it would do to that thread.
+  // Named by what it would do to that thread, as its card shows it: drawn again as a change asked
+  // of a thread starts or ends.
+  useTabState(asked, view);
+  useTabState(unshown, view);
   const onResolved =
     target.kind === 'thread' &&
-    listable(threads).some((row) => row.id === target.thread && row.resolved);
+    listable(threads).some((row) => row.id === target.thread && resolvedNow(view, row));
   const panelKey = keysOf('tab.rightPanel');
   return (
     <div className="flex min-h-0 flex-1 flex-col" data-lo-threads={view}>

@@ -49,10 +49,18 @@ export function noteKey(row: ActRow): string {
 }
 
 /**
- * How long a change GitHub took shows as asked while the view's threads don't show it, before the
- * card goes back to what they say.
+ * How long the control of a change GitHub took stays at work while the view's threads don't show
+ * the change. The card shows what was asked for longer: until the threads are read again.
  */
 export const SETTLE_WAIT = 10_000;
+
+/**
+ * The changes GitHub took that their view's threads didn't show within the wait, by
+ * {@link actKey}: each card still shows what was asked, its control its own again, until the
+ * threads are read again. Going back to what the threads said before would show what GitHub no
+ * longer holds.
+ */
+export const unshown = tabState<ReadonlySet<string>>(() => new Set());
 
 /**
  * The changes main is done with that their view's threads don't show yet, by view and by
@@ -89,14 +97,29 @@ const DID: Readonly<Record<ActRow['change'], string>> = {
   delete: 'Deleted comment',
 };
 
-/** Ends the wait for view `view`'s change `key` to show: its card is what its threads say. */
-function settled(view: string, key: string, did: boolean): void {
+/** Stops the wait for view `view`'s change `key` to show, and says whether there was one. */
+function endWait(view: string, key: string): boolean {
   const waits = settling.get(view);
   const timer = waits?.get(key);
-  if (!waits || timer === undefined) return;
+  if (!waits || timer === undefined) return false;
   clearTimeout(timer);
   waits.delete(key);
   if (waits.size === 0) settling.delete(view);
+  return true;
+}
+
+/** View `view`'s change `key` is no longer one the threads didn't show in time. */
+function forget(view: string, key: string): void {
+  if (!unshown.get(view).has(key)) return;
+  unshown.update(view, (was) => new Set([...was].filter((each) => each !== key)));
+}
+
+/** View `view`'s change `key` is done with: its card is what its threads say. */
+function settled(view: string, key: string, did: boolean): void {
+  const waiting = endWait(view, key);
+  const kept = unshown.get(view).has(key);
+  if (!waiting && !kept) return;
+  forget(view, key);
   const row = acting.get(view).get(key);
   if (!row) return;
   const diff = writingDiff(view);
@@ -106,14 +129,40 @@ function settled(view: string, key: string, did: boolean): void {
 }
 
 /**
- * View `view`'s threads changed: a change GitHub took that they now show is done with, and its
- * card's control is its own again.
+ * The wait for view `view`'s change `key` to show ended: its control is its own again, and its
+ * card shows what was asked until the threads are read again.
+ */
+function waited(view: string, key: string): void {
+  if (!endWait(view, key)) return;
+  const row = acting.get(view).get(key);
+  if (!row) return;
+  const diff = writingDiff(view);
+  if (diff && row.thread !== null) claimBriefly(diff, row.thread);
+  unshown.update(view, (was) => new Set([...was, key]));
+  tell(DID[row.change]);
+}
+
+/**
+ * View `view`'s threads were read again: a change GitHub took that they now show is done with, and
+ * its card's control is its own again. One they didn't show in time is done with whatever they
+ * say now.
  */
 export function settleActs(view: string): void {
-  // Settling one takes it out of the map this goes through, which a `Map` allows.
+  // Settling one takes it out of what this goes through, which a `Map` allows.
   for (const key of settling.get(view)?.keys() ?? []) {
     const row = acting.get(view).get(key);
     if (!row || shows(view, row)) settled(view, key, true);
+  }
+  // Said already, as its wait ended.
+  for (const key of unshown.get(view)) settled(view, key, false);
+}
+
+/** Forgets the changes of every view but those in `kept`, as their tabs close. */
+export function keepActsOf(kept: ReadonlySet<string>): void {
+  for (const [view, waits] of settling) {
+    if (kept.has(view)) continue;
+    for (const timer of waits.values()) clearTimeout(timer);
+    settling.delete(view);
   }
 }
 
@@ -139,13 +188,11 @@ export function takeActs(view: ActsView): void {
     const timer = waits?.get(key);
     if (now.has(key)) {
       // Asked again: it's main's to say how it stands.
-      if (timer !== undefined) {
-        clearTimeout(timer);
-        waits?.delete(key);
-      }
+      endWait(view.id, key);
+      forget(view.id, key);
       continue;
     }
-    if (timer !== undefined) {
+    if (timer !== undefined || unshown.get(view.id).has(key)) {
       now.set(key, before);
       continue;
     }
@@ -159,7 +206,7 @@ export function takeActs(view: ActsView): void {
     settling.set(view.id, own);
     own.set(
       key,
-      setTimeout(() => settled(view.id, key, false), SETTLE_WAIT),
+      setTimeout(() => waited(view.id, key), SETTLE_WAIT),
     );
   }
   const diff = writingDiff(view.id);
@@ -219,6 +266,31 @@ export function actNote(
 /** Whether a change asked for is still on its way, or Lo is looking whether it went. */
 export function underWay(row: ActRow | undefined): row is ActRow {
   return row !== undefined && UNDER_WAY.has(row.stands);
+}
+
+/**
+ * The change last asked of view `view`'s thread or comment `key`, while its card shows what that
+ * asked and not what the threads say: `atWork` until GitHub took it and the threads showed it, or
+ * the wait for them ended.
+ */
+export function askedOf(
+  view: string,
+  key: string,
+): { readonly row: ActRow; readonly atWork: boolean } | undefined {
+  const row = acting.get(view).get(key);
+  return underWay(row) ? { row, atWork: !unshown.get(view).has(key) } : undefined;
+}
+
+/** What's at work on view `view`'s thread or comment `key`, as its control says it, if anything. */
+export function atWork(view: string, key: string): string | undefined {
+  const asked = askedOf(view, key);
+  return asked?.atWork ? AT_WORK[asked.row.change] : undefined;
+}
+
+/** Whether thread `row` of view `view` shows as resolved: as last asked, while its card shows that. */
+export function resolvedNow(view: string, row: ThreadRow): boolean {
+  const asked = askedOf(view, row.id)?.row;
+  return asked && asked.change !== 'delete' ? asked.change === 'resolve' : row.resolved;
 }
 
 const UNDER_WAY: ReadonlySet<ActRow['stands']> = new Set(['waiting', 'sending', 'checking']);
@@ -344,7 +416,11 @@ export function resolve(tab: PullTab, target: ThreadKeyTarget): void {
 /** Resolves thread `row` of tab `tab`, or unresolves it once it's resolved: `x` on it anywhere. */
 export async function resolveThread(tab: PullTab, row: ThreadRow): Promise<void> {
   const view = tab.id;
-  const resolved = !row.resolved;
+  // One at a time: while a change to it is at work, its control says so, and takes nothing.
+  if (atWork(view, row.id) !== undefined) return;
+  // From what its card shows: what was last asked, where the threads don't show that yet.
+  const asked = askedOf(view, row.id)?.row;
+  const resolved = !resolvedNow(view, row);
   const doing = resolved ? 'resolve' : 'unresolve';
   const title = resolved ? 'Resolve' : 'Unresolve';
   if (pendingOnly(row)) {
@@ -354,7 +430,9 @@ export async function resolveThread(tab: PullTab, row: ThreadRow): Promise<void>
     );
     return;
   }
-  if (!(resolved ? row.viewerCanResolve : row.viewerCanUnresolve)) {
+  // What the threads say you can do is of the thread as it was before a change they don't show.
+  const stale = asked !== undefined && asked.change !== 'delete';
+  if (!stale && !(resolved ? row.viewerCanResolve : row.viewerCanUnresolve)) {
     refused(title, { kind: 'cantResolve', resolved }, doing);
     return;
   }
@@ -362,8 +440,6 @@ export async function resolveThread(tab: PullTab, row: ThreadRow): Promise<void>
     notify(title, OFFLINE_ACT);
     return;
   }
-  // One at a time: while a change to it is at work, the card shows what that asked, not `row`.
-  if (underWay(acting.get(view).get(row.id))) return;
   const release = writingDiff(view)?.claimThread(row.id) ?? (() => {});
   try {
     const outcome = await main().resolve({ id: view, thread: row.id, resolved });
@@ -498,7 +574,8 @@ export function subscribeAsking(listener: () => void): () => void {
 export function remove(tab: PullTab, target: ThreadKeyTarget, comment?: string): void {
   const title = 'Delete your comment';
   const row = found(tab, target, title);
-  if (!row) return;
+  // One at a time: while a change to the thread is at work, its control says so.
+  if (!row || atWork(tab.id, row.id) !== undefined) return;
   const chosen = yours(tab.id, row, 'delete', title, comment);
   if (!chosen) return;
   // Nothing would go: it's refused now, not after the question.
@@ -533,6 +610,12 @@ export async function confirmDelete(): Promise<void> {
   setAsking(undefined);
   const { tab, thread, comment, body, pending, onlyComment } = asked;
   const title = 'Delete your comment';
+  // One at a time: a change asked of it since the question opened is still at work.
+  const busy = atWork(tab.id, thread ?? comment);
+  if (busy !== undefined) {
+    notify(title, busy);
+    return;
+  }
   if (offline(tab.id)) {
     notify(title, OFFLINE_ACT);
     return;

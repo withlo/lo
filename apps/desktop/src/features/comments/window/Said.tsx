@@ -11,6 +11,7 @@ export const SAID_FOR = 4000;
 
 let said = '';
 let clearing: ReturnType<typeof setTimeout> | undefined;
+let again = 0;
 const listeners = new Set<() => void>();
 
 function put(text: string): void {
@@ -22,10 +23,16 @@ function put(text: string): void {
 /** Says `text` to a screen reader, once. */
 export function tell(text: string): void {
   clearTimeout(clearing);
-  // The same words twice running are a change only by way of nothing.
-  if (text === said) put('');
-  put(text);
+  cancelAnimationFrame(again);
   clearing = setTimeout(() => put(''), SAID_FOR);
+  if (text !== said) {
+    put(text);
+    return;
+  }
+  // The same words twice running are a change only by way of nothing, drawn for a frame: both
+  // set at once would leave the region as it was, and nothing would be read.
+  put('');
+  again = requestAnimationFrame(() => put(text));
 }
 
 function subscribe(listener: () => void): () => void {

@@ -26,6 +26,7 @@ import {
   resolveThread,
   tryAgain,
   underWay,
+  unshown,
 } from './acts.ts';
 import { editing, replying } from './boxes.ts';
 import { useExcerpt } from './excerpts.ts';
@@ -84,6 +85,7 @@ export function Card({ tab, id, open, focused = false, onToggle }: CardProps): R
   const replied = useTabState(replying, view, (ids) => ids.has(id));
   const edited = useTabState(editing, view);
   const asked = useTabState(acting, view, (acts) => acts.get(id));
+  const kept = useTabState(unshown, view, (keys) => keys.has(id));
   const isClosed = useTabState(
     closedActs,
     view,
@@ -103,6 +105,7 @@ export function Card({ tab, id, open, focused = false, onToggle }: CardProps): R
       <ThreadCard
         row={row}
         asked={asked}
+        atWork={!kept}
         open={open}
         focused={focused}
         onToggle={onToggle}
@@ -200,6 +203,7 @@ export interface CardActions {
 export function ThreadCard({
   row,
   asked,
+  atWork = true,
   open,
   focused = false,
   onToggle,
@@ -219,6 +223,11 @@ export function ThreadCard({
    * its control at work, and goes back to what `row` says if it doesn't go.
    */
   asked?: ActRow | undefined;
+  /**
+   * Whether that change's control is still at work. It isn't once GitHub took the change and the
+   * threads didn't show it in time: the card still shows it done, until they're read again.
+   */
+  atWork?: boolean;
   open: boolean;
   /** The keyboard is on it: the code cursor is on its line, and its keys act on it. */
   focused?: boolean;
@@ -248,7 +257,13 @@ export function ThreadCard({
   now?: number;
 }): ReactNode {
   const inBox = edited !== undefined && row.comments.some((comment) => edited.has(comment.id));
-  const comments = row.comments.map((comment): ThreadComment => ({
+  // What was asked, while the card shows it done.
+  const done = underWay(asked) ? asked : undefined;
+  const toggled = done !== undefined && done.change !== 'delete';
+  // A comment GitHub deleted that the threads still hold isn't drawn.
+  const gone = done?.change === 'delete' && !atWork ? done.comment : null;
+  const kept = row.comments.filter((comment) => comment.id !== gone);
+  const comments = kept.map((comment): ThreadComment => ({
     id: comment.id,
     // GitHub shows a deleted account as "ghost".
     author: comment.author ?? 'ghost',
@@ -262,9 +277,9 @@ export function ThreadCard({
     mine: actions !== undefined && login !== undefined && same(comment.author, login),
     body: body(comment),
   }));
-  const resolving = underWay(asked) && asked.change !== 'delete';
-  const resolved = resolving ? asked.change === 'resolve' : row.resolved;
-  const deleting = underWay(asked) && asked.change === 'delete' ? asked.comment : null;
+  const resolving = toggled && atWork;
+  const resolved = toggled ? done.change === 'resolve' : row.resolved;
+  const deleting = done?.change === 'delete' && atWork ? done.comment : null;
   return (
     <Thread
       comments={comments}
@@ -280,8 +295,8 @@ export function ThreadCard({
       canResolve={
         actions !== undefined &&
         login !== undefined &&
-        // At work, it's the control that was pressed, whatever the thread takes next.
-        (resolving || (row.resolved ? row.viewerCanUnresolve : row.viewerCanResolve))
+        // It's the control that was pressed, whatever the thread takes next.
+        (toggled || (row.resolved ? row.viewerCanUnresolve : row.viewerCanResolve))
       }
       canReply={
         actions !== undefined && login !== undefined && row.viewerCanReply && !replied && !inBox
