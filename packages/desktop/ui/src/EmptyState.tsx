@@ -29,6 +29,11 @@ export interface EmptyStateProps {
    */
   actions?: readonly [] | readonly [EmptyAction] | readonly [EmptyAction, EmptyAction] | undefined;
   /**
+   * The level of its heading: 2 for a view, 3 for a list under a heading of level 2, as one in a
+   * group of Settings is.
+   */
+  level?: 2 | 3 | undefined;
+  /**
    * What its actions act on, between the line and the buttons: the prompt Copy prompt copies, as
    * code. Never more words.
    */
@@ -79,12 +84,13 @@ function EmptyButton({ action, primary }: { action: EmptyAction; primary: boolea
  * each shows its key and follows the keymap file; a state never says where else an action lives.
  * It fills the view it's in.
  */
-export function EmptyState({ title, line, actions, children }: EmptyStateProps) {
+export function EmptyState({ title, line, actions, level = 2, children }: EmptyStateProps) {
   const shown: readonly EmptyAction[] = actions ?? [];
+  const Heading = level === 3 ? 'h3' : 'h2';
   return (
     <div className="flex h-full min-w-0 flex-col items-center justify-center gap-16 p-32 text-center">
       <div className="flex max-w-read-measure flex-col gap-6">
-        <h2 className="m-0 text-balance text-heading">{title}</h2>
+        <Heading className="m-0 text-balance text-heading">{title}</Heading>
         {line !== undefined && <p className="m-0 text-fg-muted text-ui">{line}</p>}
       </div>
       {children}

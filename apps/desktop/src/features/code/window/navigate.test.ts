@@ -18,6 +18,7 @@ import {
   closePeek,
   closeReferences,
   definition,
+  followHints,
   goToAnswer,
   hints,
   hovers,
@@ -62,6 +63,8 @@ const seen = vi.hoisted(() => ({
   hints: [] as { tab: string; view: string; hints: unknown }[],
   /** The view on screen: a pull request's tab, or one of its layers. */
   active: 't1',
+  /** What `code.hints` was saved as, in order. */
+  saved: [] as unknown[],
 }));
 
 /** The code port's `job`: noted as asked, and answered as the test says, or never. */
@@ -118,6 +121,13 @@ vi.mock('../../diff/window/shared.ts', () => ({
   highlightText: () => Promise.resolve(undefined),
   showPlace: (...args: unknown[]) => {
     seen.places.push(args);
+  },
+}));
+
+vi.mock('../../settings/window/shared.ts', () => ({
+  changeSetting: (_setting: unknown, value: unknown) => {
+    seen.saved.push(value);
+    return Promise.resolve(true);
   },
 }));
 
@@ -189,6 +199,7 @@ beforeEach(() => {
   seen.middle = 0;
   seen.hints.length = 0;
   seen.active = 't1';
+  seen.saved.length = 0;
   closePeek(peekIn('t1') ?? '');
   said.set('t1', undefined);
   hints.setState({ on: false, pressed: undefined }, true);
@@ -494,6 +505,22 @@ describe('gh', () => {
     await toggleHints();
     expect(drawnIn('t1')).toEqual([]);
     expect(hints.getState().on).toBe(false);
+    // Saved as they came on and as they went off, so the next start has them as they were left.
+    expect(seen.saved).toEqual([true, false]);
+  });
+
+  it('follows the setting: on, the code on screen asks quietly; off, they go', async () => {
+    seen.answers.set('hints', (): Hints => ({ hints: [HINT], label: 'TypeScript' }));
+    followHints(true);
+    await settle();
+    expect(hints.getState().on).toBe(true);
+    expect(viewsAsked()).toEqual(['t1']);
+    expect(drawnIn('t1')).toEqual([MARK]);
+    followHints(false);
+    expect(drawnIn('t1')).toEqual([]);
+    expect(hints.getState().on).toBe(false);
+    // The setting is only followed, never saved back.
+    expect(seen.saved).toEqual([]);
   });
 
   it('once on, has each view drawn ask for its own, quietly, and goes off everywhere', async () => {

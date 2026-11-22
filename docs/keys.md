@@ -12,25 +12,25 @@ Each command's id is what [the keymap file](#the-keymap-file) binds keys to.
 
 ## Move
 
-| Action                       | Keys          | Where                        | Command                    |
-| ---------------------------- | ------------- | ---------------------------- | -------------------------- |
-| Line down                    | `j`           | Vim's own key, in code views | `diff.down`                |
-| Line up                      | `k`           | Vim's own key, in code views | `diff.up`                  |
-| Select lines                 | `v`           | Vim's own key, in code views | `diff.select`              |
-| Next pull request            | `j`, `↓`      | In `recent`                  | `open.nextRecent`          |
-| Previous pull request        | `k`, `↑`      | In `recent`                  | `open.previousRecent`      |
-| Scroll down                  | `j`, `↓`      | In `overview`                | `overview.scrollDown`      |
-| Scroll up                    | `k`, `↑`      | In `overview`                | `overview.scrollUp`        |
-| Go to top                    | `g g`, `Home` | In `overview`                | `overview.top`             |
-| Go to bottom                 | `G`, `End`    | In `overview`                | `overview.bottom`          |
-| Page down                    | `PgDn`        | In `overview`                | `overview.pageDown`        |
-| Page up                      | `PgUp`        | In `overview`                | `overview.pageUp`          |
-| Next section of Settings     | `j`           | In `settings`                | `settings.nextSection`     |
-| Previous section of Settings | `k`           | In `settings`                | `settings.previousSection` |
-| Next event                   | `j`, `↓`      | In `timeline`                | `timeline.down`            |
-| Previous event               | `k`, `↑`      | In `timeline`                | `timeline.up`              |
-| Next link                    | `Tab`         | In `timeline`                | `timeline.nextLink`        |
-| Previous link                | `⇧Tab`        | In `timeline`                | `timeline.previousLink`    |
+| Action                | Keys          | Where                        | Command                    |
+| --------------------- | ------------- | ---------------------------- | -------------------------- |
+| Line down             | `j`           | Vim's own key, in code views | `diff.down`                |
+| Line up               | `k`           | Vim's own key, in code views | `diff.up`                  |
+| Select lines          | `v`           | Vim's own key, in code views | `diff.select`              |
+| Next pull request     | `j`, `↓`      | In `recent`                  | `open.nextRecent`          |
+| Previous pull request | `k`, `↑`      | In `recent`                  | `open.previousRecent`      |
+| Scroll down           | `j`, `↓`      | In `overview`                | `overview.scrollDown`      |
+| Scroll up             | `k`, `↑`      | In `overview`                | `overview.scrollUp`        |
+| Go to top             | `g g`, `Home` | In `overview`                | `overview.top`             |
+| Go to bottom          | `G`, `End`    | In `overview`                | `overview.bottom`          |
+| Page down             | `PgDn`        | In `overview`                | `overview.pageDown`        |
+| Page up               | `PgUp`        | In `overview`                | `overview.pageUp`          |
+| Next group            | `j`           | In `settings`                | `settings.nextSection`     |
+| Previous group        | `k`           | In `settings`                | `settings.previousSection` |
+| Next event            | `j`, `↓`      | In `timeline`                | `timeline.down`            |
+| Previous event        | `k`, `↑`      | In `timeline`                | `timeline.up`              |
+| Next link             | `Tab`         | In `timeline`                | `timeline.nextLink`        |
+| Previous link         | `⇧Tab`        | In `timeline`                | `timeline.previousLink`    |
 
 ## Jump
 
@@ -140,18 +140,20 @@ Each command's id is what [the keymap file](#the-keymap-file) binds keys to.
 
 ## Find
 
-| Action                         | Keys                    | Where                               | Command              |
-| ------------------------------ | ----------------------- | ----------------------------------- | -------------------- |
-| Search                         | `/`                     | Vim's own key, in code views        | `diff.search`        |
-| Next match                     | `n`                     | Vim's own key, in code views        | `diff.nextMatch`     |
-| Previous match                 | `N`                     | Vim's own key, in code views        | `diff.previousMatch` |
-| Command palette                | `⌘⇧P`                   | Anywhere                            | `keys.palette`       |
-| Review a pull request          | `⌘L`, `⌘O` (macOS only) | Anywhere but `dialog` and `palette` | `open.box`           |
-| Open the link on the clipboard | `⌘V`                    | In `recent`                         | `open.paste`         |
-| Filter recent pull requests    | `/`                     | In `recent`                         | `open.filter`        |
-| Clear filter                   | `⌘⌫`                    | In `recent`                         | `open.clearFilter`   |
-| Open the pull request          | `⏎`                     | In `recent`                         | `open.openRecent`    |
-| Go to a file                   | `⌘P`                    | Anywhere but `dialog` and `palette` | `tree.find`          |
+| Action                         | Keys                    | Where                               | Command                |
+| ------------------------------ | ----------------------- | ----------------------------------- | ---------------------- |
+| Search                         | `/`                     | Vim's own key, in code views        | `diff.search`          |
+| Next match                     | `n`                     | Vim's own key, in code views        | `diff.nextMatch`       |
+| Previous match                 | `N`                     | Vim's own key, in code views        | `diff.previousMatch`   |
+| Command palette                | `⌘⇧P`                   | Anywhere                            | `keys.palette`         |
+| Review a pull request          | `⌘L`, `⌘O` (macOS only) | Anywhere but `dialog` and `palette` | `open.box`             |
+| Open the link on the clipboard | `⌘V`                    | In `recent`                         | `open.paste`           |
+| Filter recent pull requests    | `/`                     | In `recent`                         | `open.filter`          |
+| Clear filter                   | `⌘⌫`                    | In `recent`                         | `open.clearFilter`     |
+| Open the pull request          | `⏎`                     | In `recent`                         | `open.openRecent`      |
+| Search settings                | `/`, `⌘F`               | In `settings` and `noMatch`         | `settings.search`      |
+| Clear search                   | `⌘⌫`                    | In `noMatch`                        | `settings.clearSearch` |
+| Go to a file                   | `⌘P`                    | Anywhere but `dialog` and `palette` | `tree.find`            |
 
 ## View
 
@@ -301,11 +303,11 @@ mode. In the box's preview, or on its frame, `Esc` closes it at once, from any m
 
 | Action                            | Keys                                                     | Where                                                                                  | Command                 |
 | --------------------------------- | -------------------------------------------------------- | -------------------------------------------------------------------------------------- | ----------------------- |
-| Add an account                    | None: in the app menu on macOS and the palette           | Anywhere                                                                               | `accounts.addAccount`   |
+| Sign in with GitHub…              | None: in the app menu on macOS and the palette           | Anywhere                                                                               | `accounts.addAccount`   |
 | Sign out…                         | None: in the app menu on macOS and the palette           | Anywhere                                                                               | `accounts.signOut`      |
 | Zoom in                           | `⌘=`, `⌘⇧=`                                              | Anywhere                                                                               | `app.zoomIn`            |
 | Zoom out                          | `⌘-`                                                     | Anywhere                                                                               | `app.zoomOut`           |
-| Actual size                       | `⌘0`                                                     | Anywhere                                                                               | `app.actualSize`        |
+| Reset zoom                        | `⌘0`                                                     | Anywhere                                                                               | `app.actualSize`        |
 | Show licenses                     | None: in the app menu on macOS, its menu and the palette | Anywhere                                                                               | `app.licenses`          |
 | Every key                         | `?`                                                      | Anywhere                                                                               | `keys.help`             |
 | Show the right-click menu         | `Menu`, `⇧F10`                                           | Anywhere but `menu`, `dialog` and `palette`                                            | `keys.menu`             |
@@ -313,7 +315,9 @@ mode. In the box's preview, or on its frame, `Esc` closes it at once, from any m
 | Open the keymap file              | `g ,`                                                    | Anywhere but `menu`, `dialog`, `palette` and `box`; in code views, only in normal mode | `keys.openKeymap`       |
 | Install command-line tool         | None: in the app menu on macOS and the palette           | Anywhere                                                                               | `open.installCommand`   |
 | Install overview skill            | None: in the app menu on macOS and the palette           | Anywhere                                                                               | `overview.installSkill` |
-| Open Settings                     | `⌘,`                                                     | Anywhere but `dialog` and `palette`                                                    | `settings.open`         |
+| Settings                          | `⌘,`                                                     | Anywhere but `dialog` and `palette`                                                    | `settings.open`         |
+| Open settings.json                | `g .`                                                    | Anywhere but `menu`, `dialog`, `palette` and `box`; in code views, only in normal mode | `settings.openFile`     |
+| Show cache folder                 | `g c`                                                    | In `settings`                                                                          | `settings.showCache`    |
 | Tab 1                             | `⌘1`                                                     | Anywhere but `dialog` and `palette`                                                    | `tab.show1`             |
 | Tab 2                             | `⌘2`                                                     | Anywhere but `dialog` and `palette`                                                    | `tab.show2`             |
 | Tab 3                             | `⌘3`                                                     | Anywhere but `dialog` and `palette`                                                    | `tab.show3`             |
@@ -365,6 +369,7 @@ comment box and another elsewhere.
 | `queue`      | Named by `queue`.                                                                     |
 | `revisions`  | Named by `revisions`.                                                                 |
 | `settings`   | Named by `settings`.                                                                  |
+| `noMatch`    | Named by `settings`.                                                                  |
 | `stack`      | Named by `stacks`.                                                                    |
 | `timeline`   | Named by `timeline`.                                                                  |
 | `tree`       | Named by `tree`.                                                                      |
@@ -518,7 +523,7 @@ key help says why, and has no button. The editor is the app for text whatever th
 contents, even through a link to a file named like a launcher or a web page: on Linux, the app
 `xdg-mime query default text/plain` names, started with `gio launch`. Without one of those, Lo says
 so and opens nothing. A link to a file in a dotfiles folder is followed. Lo reads a file of up to 1
-MiB and lines of up to 1,000 characters; a longer line is reported and skipped, and a longer file
+MB and lines of up to 1,000 characters; a longer line is reported and skipped, and a longer file
 isn't read. Nothing in the file is ever run.
 
 ### Writing keys

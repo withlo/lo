@@ -94,16 +94,35 @@ export interface Settings extends SettingsStore {
   stop(): Promise<void>;
 }
 
-/** What the person is told of a setting the file has more than once. */
-function twice(key: string): string {
-  return `${key} is in the settings file more than once. Lo uses the last, and won't change it until the file has one.`;
+/**
+ * What the window hears of a change {@link Settings.set} refused: an {@link Unwritten} as what kept
+ * it from being written, `settingsFile` for what the file holds, which editing it fixes, and
+ * `unsaved` for anything else. The message's first line is the reason, if main has one, and the
+ * rest its details. Any other error is as it was.
+ */
+export function forWindow(error: unknown): unknown {
+  if (!(error instanceof Unwritten)) return error;
+  const { reason = '', details } = error.said;
+  // A refusal with neither has main's words for it as its details.
+  const told = details ?? (reason === '' ? error.why : undefined);
+  return new IpcError(
+    error.inFile ? 'settingsFile' : 'unsaved',
+    told === undefined ? reason : `${reason}\n${told}`,
+  );
 }
 
-/** What the person is told of a value the schema refuses. */
+/**
+ * What the person is told of a setting the file has more than once. What's between backticks is
+ * code, which Settings sets as code.
+ */
+function twice(key: string): string {
+  return `\`${key}\` is in \`settings.json\` more than once.`;
+}
+
+/** What the person is told of a value the schema refuses. The row shows the default it has. */
 function wrong(entry: Entry, found: unknown): string {
-  const text = shorten(JSON.stringify(found) ?? String(found), 40);
-  const fallback = shorten(JSON.stringify(entry.fallback), 40);
-  return `${entry.key} is ${text}, but it must be ${entry.accepts}. Lo uses ${fallback}.`;
+  const text = shorten(JSON.stringify(found) ?? String(found), 40).replaceAll('`', "'");
+  return `\`${entry.key}\` is \`${text}\`. It must be ${entry.accepts}.`;
 }
 
 /**
@@ -302,9 +321,13 @@ export function createSettings(options: SettingsOptions): Settings {
         update();
         if (fresh.kind === 'problem') {
           throw new Unwritten(
-            `Lo didn't change ${key}, since the settings file has a problem. ${fresh.problem}`,
+            `Lo didn't change ${key}, since the settings file has a problem. ${fresh.cause}`,
             fresh.cause,
             true,
+            {
+              reason: fresh.reason,
+              ...(fresh.details === undefined ? {} : { details: fresh.details }),
+            },
           );
         }
         if (fresh.kind === 'ok' && fresh.repeated.includes(key)) {
@@ -312,6 +335,7 @@ export function createSettings(options: SettingsOptions): Settings {
             `Lo didn't change ${key}, since the settings file has it more than once. Take out all but one, and Lo can change it.`,
             `The settings file has ${key} more than once, and Lo changes it only once it has one.`,
             true,
+            { reason: twice(key) },
           );
         }
         const values = fresh.kind === 'ok' ? fresh.values : {};
@@ -321,6 +345,7 @@ export function createSettings(options: SettingsOptions): Settings {
             `Lo didn't change ${key}: the settings file holds one that isn't ${entry.accepts}, which Lo won't replace. Fix it there, or take it out.`,
             `The settings file's ${key} isn't ${entry.accepts}, and Lo won't replace it.`,
             true,
+            { reason: wrong(entry, values[key]) },
           );
         }
         const checked = entry.check(next(current?.ok ? current.value : entry.fallback));
@@ -337,6 +362,7 @@ export function createSettings(options: SettingsOptions): Settings {
               `Lo didn't change ${key}: ${error.message}.`,
               `Lo couldn't change ${key} in the settings file: ${error.message}.`,
               true,
+              { details: error.message },
             );
           }
           log("Lo couldn't change the settings file's text:", error);
@@ -349,8 +375,9 @@ export function createSettings(options: SettingsOptions): Settings {
         if (Buffer.byteLength(text) > SETTINGS_SIZE_LIMIT) {
           throw new Unwritten(
             `Lo didn't change ${key}: the settings file would be too big.`,
-            `The settings file would be over ${SETTINGS_SIZE_LIMIT / 1024 ** 2} MiB.`,
+            `The settings file would be over ${SETTINGS_SIZE_LIMIT / 1024 ** 2} MB.`,
             true,
+            { reason: `\`settings.json\` would be over ${SETTINGS_SIZE_LIMIT / 1024 ** 2} MB.` },
           );
         }
         try {
@@ -364,6 +391,7 @@ export function createSettings(options: SettingsOptions): Settings {
               `Lo didn't change ${key}: the settings file kept changing while Lo saved it.`,
               'The settings file kept changing while Lo saved it.',
               false,
+              { reason: '`settings.json` kept changing while it was saved.' },
             );
           }
           log("Lo couldn't write the settings file:", error);
@@ -373,6 +401,7 @@ export function createSettings(options: SettingsOptions): Settings {
             `Lo couldn't save ${key} to the settings file${failed}.`,
             `Lo couldn't write the settings file${failed}.`,
             false,
+            code === undefined ? {} : { details: code },
           );
         }
         raw = written;

@@ -15,7 +15,8 @@ export default defineCommands('accounts', {
   },
   /** Starts signing in with GitHub, with an account to add to those Lo has. */
   addAccount: {
-    label: 'Add an account',
+    label: 'Sign in with GitHub…',
+    control: 'Sign in with GitHub… on the GitHub row of Settings › Accounts',
     group: 'Tabs and window',
     keys: [],
     bar: { menu: 'App', order: 30 },

@@ -3,6 +3,7 @@
 // and the log only ask main.
 
 import type { ServerState as ItemState } from '@lo/ui';
+import type { NoTarget, TabTarget } from '@lo/ui/commands';
 import { createStore } from 'zustand/vanilla';
 
 import { IpcError } from '../../../ipc/contract.ts';
@@ -132,6 +133,17 @@ export async function copyLog(lines: readonly string[]): Promise<boolean> {
     console.error("Lo couldn't copy the log:", error);
     return false;
   }
+}
+
+/**
+ * The servers of the view `target` names, as a row of Settings' list of them does, or else of the
+ * view on screen, or why there are none to act on.
+ */
+export function serversFor(target: NoTarget | TabTarget): Servers | string {
+  if (target.kind === 'none') return serversOnScreen();
+  const shown = servers.get(target.tab);
+  if (!shown || shown.servers.length === 0) return 'No language server runs on this PR.';
+  return shown;
 }
 
 /** The view on screen's servers, or why there are none to act on. */

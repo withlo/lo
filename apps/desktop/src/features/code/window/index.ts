@@ -1,9 +1,9 @@
 // The code feature in the window: trust, the syntax index, language servers and code features.
-// The banner on a view nothing trusts, Settings' Trust section, and the palette's trust commands,
+// The banner on a view nothing trusts, Settings' Trusted row, and the palette's trust commands,
 // each of which only asks main; the index's item in the status bar, and each language server's,
-// with its log; Settings' Toolchains section; and `gd`, `gr`, `K`, `gh` and `gO`, with the peek's
-// and the references panel's keys, which ask main over the code port and show what it answers in
-// the diff's code views, the right panel and over the window.
+// with its log; Settings' Type hints and Toolchains rows; and `gd`, `gr`, `K`, `gh` and `gO`, with
+// the peek's and the references panel's keys, which ask main over the code port and show what it
+// answers in the diff's code views, the right panel and over the window.
 
 import { handlers } from '@lo/ui/commands';
 import { createElement } from 'react';
@@ -11,21 +11,24 @@ import { createElement } from 'react';
 import type { WindowFeature } from '../../../window/features.ts';
 import { defineView } from '../../../window/slots.tsx';
 import { onCodeRest, onDiffDrawn } from '../../diff/window/shared.ts';
-import { onSettingsChange } from '../../settings/window/shared.ts';
+import { onSettingsChange, settingRow, watchSetting } from '../../settings/window/shared.ts';
 import { banners, dialogs, onClosed, right, status as statusBar } from '../../tab/window/shared.ts';
 import keys from '../keys.ts';
+import { hints } from '../settings.ts';
 import { CodeOverlays, ReferencesPanel, SaidStatus } from './Code.tsx';
 import { takeIndex } from './indexes.ts';
 import { IndexStatus } from './IndexStatus.tsx';
 import { main } from './main.ts';
 import { ServerItems } from './ServerItems.tsx';
 import { ServerLog } from './ServerLog.tsx';
-import { restartServer, serversOnScreen, showLog, takeServers } from './servers.ts';
+import { restartServer, serversFor, showLog, takeServers } from './servers.ts';
+import Running from './Running.tsx';
 import {
   closePeek,
   closeReferences,
   codeNow,
   definition,
+  followHints,
   goToAnswer,
   goToFocused,
   listedNow,
@@ -102,28 +105,28 @@ export default {
       },
     },
     restart: {
-      async run() {
-        const shown = serversOnScreen();
+      async run(target) {
+        const shown = serversFor(target);
         if (typeof shown === 'string') return;
         await Promise.all(
           shown.servers.map((server) => restartServer(shown.view, server.id, server.name)),
         );
       },
-      enabled: () => {
-        const shown = serversOnScreen();
+      enabled: (target) => {
+        const shown = serversFor(target);
         return typeof shown === 'string' ? shown : true;
       },
     },
     log: {
-      run() {
-        const shown = serversOnScreen();
+      run(target) {
+        const shown = serversFor(target);
         const [first] = typeof shown === 'string' ? [] : shown.servers;
         if (typeof shown !== 'string' && first) {
           showLog({ view: shown.view, server: first.id, name: first.name });
         }
       },
-      enabled: () => {
-        const shown = serversOnScreen();
+      enabled: (target) => {
+        const shown = serversFor(target);
         return typeof shown === 'string' ? shown : true;
       },
     },
@@ -136,7 +139,9 @@ export default {
       render: ({ tab }) => createElement(TrustBanner, { tab }),
       ...trustSwitch,
     }),
+    settingRow(hints, { order: 10, command: 'code.hints' }),
     Trusted,
+    Running,
     Toolchains,
     // After the diff's (20) and the overview's (30).
     defineView(statusBar, {
@@ -178,5 +183,6 @@ export default {
     onCodeRest(rested);
     onDiffDrawn(redrawn);
     onClosed(viewClosed);
+    watchSetting(hints, followHints);
   },
 } satisfies WindowFeature;

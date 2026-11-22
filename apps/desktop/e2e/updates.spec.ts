@@ -1,8 +1,8 @@
 // Updates in the app, from source, against a feed of releases on this machine: a newer Lo is
 // offered in a toast that waits and never takes focus, whose Download opens the release's page and
 // whose Later hides it until a check asked for brings it back; a check asked for with nothing newer
-// says so; with `updates.check` off, Lo makes no check by itself; and Settings checks on "Check
-// now" and turns checking by itself off and on.
+// says so; with `updates.check` off, Lo makes no check by itself; and Settings › About checks on
+// "Check now" and turns checking by itself off and on.
 
 import { readFileSync } from 'node:fs';
 import { createServer, type Server } from 'node:http';
@@ -353,19 +353,20 @@ test('Settings checks on "Check now", and turns checking by itself off and on', 
 }) => {
   // Settings, opened through main as other tests open it.
   await page.evaluate(() => window.lo.invoke('tab.open', { kind: 'settings' }));
-  const updates = page.getByRole('region', { name: 'Updates' });
+  const updates = page.getByRole('region', { name: 'About' });
   await expect(updates).toContainText('Lo 0.0.0');
   // The e2e build is run from source, so it has no commit to show.
-  await expect(updates).toContainText('Run from source');
+  await expect(updates).toContainText('Built from source');
   // Lo's own first check has come and gone by the time the toast shows; ask again from Settings.
   await expect(said(page, 'Lo 0.9.0 is out')).toBeVisible({ timeout: 20_000 });
   const before = feed.asked.length;
   feed.offer('0.0.0');
   await updates.getByRole('button', { name: 'Check now' }).click();
-  await expect(said(page, 'is the newest version')).toHaveText('Lo 0.0.0 is the newest version.');
+  // Said on the row, not in a note.
+  await expect(updates).toContainText('Checked just now');
   expect(feed.asked.length).toBeGreaterThan(before);
 
-  const timed = updates.getByRole('switch', { name: 'Check for updates by itself' });
+  const timed = updates.getByRole('switch', { name: 'Check for updates automatically' });
   await expect(timed).toHaveAttribute('aria-checked', 'true');
   await timed.click();
   await expect.poll(file).toEqual({ 'updates.check': false });

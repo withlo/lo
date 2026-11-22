@@ -1,4 +1,4 @@
-// What Settings' Toolchains section shows of what main lists, and says when one isn't removed.
+// What Settings' Toolchains row shows of what main lists, and why one wasn't deleted.
 
 import { formatBytes, type ToolchainEntry } from '@lo/ui';
 
@@ -35,8 +35,10 @@ export function rowsOf(
   );
 }
 
-/** What the notice says once `name` wasn't removed, from `error`, which main's answer gave. */
-export function notRemoved(name: string, error: unknown): string {
-  const why = error instanceof IpcError ? error.message : 'Lo couldn’t ask for it.';
-  return `${name} wasn’t removed. ${why}`;
+/**
+ * Why a toolchain wasn't deleted, from `error`, which main's answer gave: what main said, or nothing
+ * when it's not known.
+ */
+export function notRemoved(error: unknown): string {
+  return error instanceof IpcError ? error.message : '';
 }

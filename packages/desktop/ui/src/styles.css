@@ -521,6 +521,13 @@
   }
 }
 
+/* Room kept for a scrollbar whether one shows or not, so what's beside or under it doesn't move as
+   one comes and goes. On an element that doesn't scroll, it lines that element up with one that
+   does. */
+@utility gutter-stable {
+  scrollbar-gutter: stable;
+}
+
 /* Settings: the list of sections beside the sections. */
 @utility settings-page {
   display: grid;

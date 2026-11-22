@@ -67,6 +67,9 @@ export const kinds = defineSlot<{ tab: Tab }>('tab.kinds');
  */
 export const cover = defineSlot<{ tab: Tab }>('tab.cover');
 
+/** What sits at the end of the strip of tabs, after the room the tabs take: the gear for Settings. */
+export const stripEnd = defineSlot('tab.stripEnd');
+
 /** What goes on a pull request's header's second row, after its branches: the revision picker. */
 export const header = defineSlot<{ tab: PullTab }>('tab.header');
 

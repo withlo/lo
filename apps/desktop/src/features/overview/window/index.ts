@@ -14,20 +14,19 @@ import type { WindowFeature } from '../../../window/features.ts';
 import { client } from '../../../window/ipc.ts';
 import { defineView } from '../../../window/slots.tsx';
 import { setCodeElsewhere } from '../../diff/window/shared.ts';
-import { commandLine } from '../../open/window/shared.ts';
 import { contract as revisionsContract } from '../../revisions/contract.ts';
-import { opening } from '../../settings/window/shared.ts';
+import { settingRow } from '../../settings/window/shared.ts';
 import { viewIds } from '../../tab/contract.ts';
 import { activeTab, middle, status } from '../../tab/window/shared.ts';
 import { setup } from '../../welcome/window/shared.ts';
 import keys from '../keys.ts';
+import { open as openOn } from '../settings.ts';
 import { copyPrompt, promptNow } from './copy.ts';
 import { blockCode } from './copying.ts';
 import { OVERVIEW_VIEW } from './labels.ts';
 import { main, tabs } from './main.ts';
 import { followMarkers, keepMarkersOnly } from './markers.ts';
 import { OverviewMark } from './Mark.tsx';
-import { OpenRow } from './OpenRow.tsx';
 import { OverviewView } from './Overview.tsx';
 import { InstallCommandRow, SkillRow, SkillStep } from './Rows.tsx';
 import {
@@ -304,28 +303,17 @@ export default {
       order: 30,
       render: ({ tab }) => createElement(OverviewStatus, { tab }),
     }),
-    // Before the diff's layout (20), in Settings' Pull requests.
-    defineView(opening, {
-      id: 'overview.open',
-      order: 10,
-      render: () => createElement(OpenRow),
-    }),
+    // Settings › Pull requests, first.
+    settingRow(openOn, { order: 10 }),
     // After the welcome screen's `lo` command (10) and its PR links (20).
     defineView(setup, {
       id: 'overview.skillStep',
       order: 30,
       render: () => createElement(SkillStep),
     }),
-    defineView(commandLine, {
-      id: 'overview.skillRow',
-      order: 10,
-      render: () => createElement(SkillRow),
-    }),
-    defineView(commandLine, {
-      id: 'overview.installCommand',
-      order: 20,
-      render: () => createElement(InstallCommandRow),
-    }),
+    // Settings › Integrations, after the `lo` command (10).
+    SkillRow,
+    InstallCommandRow,
   ],
   start() {
     followSkill();

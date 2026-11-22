@@ -42,14 +42,9 @@ it('says where one of the system’s is from, or what it needs while there’s n
   ]);
 });
 
-it('says what wasn’t removed, and why, as main said it', () => {
-  expect(
-    notRemoved('Go', new IpcError('failed', 'Lo isn’t allowed to delete /lo/toolchains/go.')),
-  ).toBe('Go wasn’t removed. Lo isn’t allowed to delete /lo/toolchains/go.');
-  expect(notRemoved('Go', new IpcError('unavailable', 'Lo is starting, or quitting.'))).toBe(
-    'Go wasn’t removed. Lo is starting, or quitting.',
+it('says why one wasn’t deleted as main said it, and nothing when that isn’t known', () => {
+  expect(notRemoved(new IpcError('failed', 'Lo isn’t allowed to delete /lo/toolchains/go.'))).toBe(
+    'Lo isn’t allowed to delete /lo/toolchains/go.',
   );
-  expect(notRemoved('Go', new Error('the port closed'))).toBe(
-    'Go wasn’t removed. Lo couldn’t ask for it.',
-  );
+  expect(notRemoved(new Error('the port closed'))).toBe('');
 });

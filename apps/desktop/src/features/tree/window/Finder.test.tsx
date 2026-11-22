@@ -129,7 +129,7 @@ afterEach(async () => {
   document.body.replaceChildren();
   states.set(TAB.id, undefined);
   focus.set(TAB.id, undefined);
-  choices.set(TAB.id, { mode: 'tree', changedOnly: false, opened: new Set(), closed: new Set() });
+  choices.set(TAB.id, { changedOnly: false, opened: new Set(), closed: new Set() });
   screen.tab = undefined;
 });
 

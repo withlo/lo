@@ -43,27 +43,31 @@ export function installLabel(state: SkillState | undefined): string {
 /** What the skill is for, before Lo has found where it stands. */
 export const ABOUT = 'Teaches Claude Code and Codex to write overviews that Lo shows.';
 
-/**
- * Where the skill stands for each agent, naming the folder Lo looked in, since a Lo opened from the
- * Dock doesn't see a shell's `CLAUDE_CONFIG_DIR`, and what would stop an install, when something
- * would: "Installed for Claude Code in ~/.claude/skills. Not installed for Codex, which reads
- * ~/.agents/skills."
- */
-export function standing(state: SkillState | undefined): string {
-  if (state === undefined) return ABOUT;
-  return state.agents.map((each) => standingOf(each, state)).join(' ');
+/** Where the skill stands for one agent, as a line of its row: "Codex · not installed". */
+export interface Standing {
+  /** Which agent, and whether the skill is installed for it. */
+  readonly line: string;
+  /**
+   * The folder it's installed in, said after the line, since a Lo opened from the Dock doesn't see
+   * a shell's `CLAUDE_CONFIG_DIR`.
+   */
+  readonly folder?: string;
+  /** What would stop an install for it, when something would. */
+  readonly why?: string;
 }
 
-/** Where the skill stands for one agent. */
-function standingOf(each: SkillAgent, state: SkillState): string {
-  const why = each.blocked === null ? '' : ` ${refusalWords(each.blocked, state)}`;
-  if (each.installed) {
-    return each.blocked === null
-      ? `Installed for ${each.name} in ${each.skills}.`
-      : `Installed for ${each.name} in ${each.skills}, but Lo can't update it.${why}`;
-  }
-  if (each.setUp) return `Not installed for ${each.name}, which reads ${each.skills}.${why}`;
-  return `${each.name} isn't set up here: Lo found no ${each.config}.`;
+/** Where the skill stands for each agent, a line each. */
+export function standing(state: SkillState): Standing[] {
+  return state.agents.map((each) => {
+    const why = each.blocked === null ? {} : { why: refusalWords(each.blocked, state) };
+    if (each.installed) {
+      return each.blocked === null
+        ? { line: `${each.name} · installed in`, folder: each.skills }
+        : { line: `${each.name} · installed, can’t update`, ...why };
+    }
+    if (each.setUp) return { line: `${each.name} · not installed`, ...why };
+    return { line: `${each.name} · not set up` };
+  });
 }
 
 /** Why the skill wasn't installed, and what to do about it. */

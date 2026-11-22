@@ -51,7 +51,7 @@ import { clearing, settings } from '../../settings/service.ts';
 import { tabs } from '../../tab/service.ts';
 import { contract } from '../contract.ts';
 import { contract as codeJobs } from '../jobs.ts';
-import { readTrusted, trusted, type TrustEntry } from '../settings.ts';
+import { hints, readTrusted, trusted, type TrustEntry } from '../settings.ts';
 import {
   ADAPTERS,
   type Adapter,
@@ -753,6 +753,8 @@ export default defineFeature(contract, {
     },
   },
   start(context) {
+    // The window asks for type hints itself, so main only declares the switch, for it to change.
+    context.use(settings).declare(hints);
     const service = context.use(tabs);
     const kept = new Dismissed(context.database);
     dismissed = kept;

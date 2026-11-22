@@ -48,7 +48,8 @@ export async function openSettingsFile(
   if (info.size > SETTINGS_SIZE_LIMIT) {
     return {
       ok: false,
-      reason: `The settings file is over ${SETTINGS_SIZE_LIMIT / 1024 ** 2} MiB, so Lo didn't open it.`,
+      // A toast's line: the reason alone.
+      reason: `settings.json is over ${SETTINGS_SIZE_LIMIT / 1024 ** 2} MB`,
     };
   }
   const opener = await textEditorCommand(options.platform, resolved, options);
