@@ -49,9 +49,9 @@ const bare = (link: string) => link.replace(/^https:\/\//, '');
 
 describe('the routers', () => {
   it('are Finicky, Velja and Choosy, each with steps and a rule', () => {
-    expect(routers.map((router) => router.name)).toEqual(['Finicky', 'Velja', 'Choosy']);
+    expect(routers.map((router) => router.name)).toEqual(['Finicky 4', 'Velja', 'Choosy']);
     for (const router of routers) {
-      expect(router.steps).not.toBe('');
+      expect(router.steps.length).toBeGreaterThan(0);
       expect(router.rule).not.toBe('');
     }
   });
@@ -66,13 +66,11 @@ describe('the routers', () => {
   });
 
   it('say how each skips the links Lo opened', () => {
-    expect(ruleOf('Finicky')).toContain(`opener?.bundleId !== "${BUNDLE_ID}"`);
+    expect(ruleOf('Finicky 4')).toContain(`opener?.bundleId !== "${BUNDLE_ID}"`);
     const [, velja, choosy] = routers;
-    expect(velja?.steps).toMatch(/Source Apps matcher set to Lo that opens in your browser/);
-    expect(velja?.steps).toMatch(/hasn’t been tried in Velja/);
-    expect(velja?.steps).toMatch(/must sit above the Lo rule/);
-    expect(choosy?.steps).toMatch(/the Source application is not Lo/);
-    expect(choosy?.steps).toMatch(/all of these hold/);
+    expect(velja?.steps[1]).toBe('Add a rule that opens your browser, with Source Apps set to Lo.');
+    expect(velja?.steps[2]).toMatch(/^Below it, /);
+    expect(choosy?.steps).toContain('Add the condition Source application is not Lo.');
   });
 });
 
@@ -82,7 +80,7 @@ describe('Finicky’s rule', () => {
     browser: string;
   }
   // The rule is the handler's text, which Finicky runs as JavaScript: so does this.
-  const handler: Handler = runInNewContext(`(${ruleOf('Finicky').replace(/,\s*$/, '')})`);
+  const handler: Handler = runInNewContext(`(${ruleOf('Finicky 4').replace(/,\s*$/, '')})`);
 
   it('sends pull requests to Lo by its bundle ID, and nothing else', () => {
     expect(handler.browser).toBe(BUNDLE_ID);

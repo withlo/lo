@@ -1,7 +1,7 @@
 // The open box (`⌘L`): a link to a pull request, filled in from the clipboard when it holds one,
 // with what it opens and as whom, or why it can't, and what `⏎` does about it.
 
-import { Button, Palette, PaletteHint, Spinner, Tag } from '@lo/ui';
+import { Button, Palette, PaletteHint, Spinner, Tag, Ticks } from '@lo/ui';
 import { keyLabels, parseKeys, systemStrokes } from '@lo/ui/commands';
 import type { ReactNode } from 'react';
 import { useStore } from 'zustand';
@@ -104,7 +104,9 @@ function messageFor(preview: Preview | undefined, text: string, opening: boolean
     case 'invalid':
       return (
         <Message icon={WARN_ICON} title="That isn’t a link Lo opens">
-          <span className="text-fg-muted text-small">{preview.message}</span>
+          <span className="text-fg-muted text-small">
+            <Ticks text={preview.message} />
+          </span>
         </Message>
       );
     case 'web':

@@ -35,7 +35,6 @@ export const WITHOUT_ROUTE: readonly string[] = [
   'keys.escape',
   'keys.openKeymap',
   'merge.leaveCommit',
-  'open.paste',
   'open.filter',
   'open.openRecent',
   'open.nextRecent',
@@ -100,5 +99,4 @@ export const WITHOUT_ROUTE: readonly string[] = [
   'tree.openAll',
   'tree.closeAll',
   'tree.show',
-  'welcome.signIn',
 ];

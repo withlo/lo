@@ -1166,22 +1166,50 @@ its own app, installs it when the reader says so.
   section shows the version and commit, "Check now" and the switch for `updates.check`. The overview
   runs "Check for updates" through the command registry, importing `updates/keys.ts`.
 
-### The welcome screen
+### The welcome flow
 
-The `welcome` feature draws over the Recent tab, through the tab feature's `tab.cover` slot, while
-no account is signed in: none is, or GitHub refused every one. Other tabs, a pull request opened
-without signing in and Settings among them, are drawn as they are.
+The `welcome` feature draws over a tab through the tab feature's `tab.cover` slot. It's four steps,
+one job each, walked with "Continue", "Back" and "Skip": an account, the keys, set-up, and opening a
+pull request.
 
-- It offers signing in (`⏎`, through the accounts feature's dialog), importing from `gh` when Lo
-  finds one, a box that opens a public pull request through the open feature, the optional steps in
-  its `welcome.setup` slot (installing the `lo` command, which the open feature does, and sending
-  pull request links to Lo, with the rules for Finicky, Velja and Choosy in `docs/link-routers.md`),
-  and a notice with "Check again" when Lo can't find a git it can run. `welcome.checkGit` asks main
-  to look for git again (`git.check()`); what Lo finds reaches the window on `app.git`.
-- Under the screen the Recent list is `inert`, so no key or reader reaches it. The screen is a form
-  like Settings: its scope has `data-lo-tab="browser"`, so `Tab` walks its controls. `⏎` presses the
-  control with focus, opens the link in the box, and signs in anywhere else on the screen.
-- Another feature's step goes in the slot as a `SetupItem` from `@lo/ui`, in `order`.
+- **When it opens.** By itself over the Recent tab, for a reader who hasn't finished it and has no
+  account signed in: none is, or GitHub refused every one. "Skip", "Done" and a pull request opened
+  from it finish it, which main keeps (`welcome.finish`, read back with `welcome.state`), so it
+  never opens by itself again. `welcome.show` ("Welcome to Lo", in Help, the palette and Settings ›
+  About) opens it again over the tab on screen. Until Lo knows the accounts and whether it was
+  finished, the Recent tab is covered by plain ground, so its list never shows under a welcome
+  that's about to open. Signing in from it doesn't close it: the first step says who signed in. An
+  account that signs in before the reader has touched the welcome, as one added from another window,
+  does.
+- **The steps.**
+  1. The mark, which plays Unmeld once, what Lo is for, and an account: signing in (through the
+     accounts feature's dialog) or importing from GitHub CLI when Lo finds one. A notice with "Check
+     again" is here when Lo can't find a Git it can run: `welcome.checkGit` asks main to look again
+     (`git.check()`), and what Lo finds reaches the window on `app.git`.
+  2. Standard keys or Vim keys, which is the `editor.vim` setting, written with the comments
+     feature's `chooseVimKeys`, so the last card pressed is the one that stays. A diff drawn for the
+     step is where `j`, `k` and `c` work. `c` opens the comment box every comment is written in
+     (`createComposer`), with the keys chosen. Nothing typed there is sent.
+  3. The rows in its `welcome.setup` slot: installing the `lo` command, which the open feature does,
+     and sending pull request links to Lo, with the rules for Finicky, Velja and Choosy in
+     `docs/link-routers.md`. Another feature's row goes in the slot as a `SetupItem` from `@lo/ui`,
+     in `order`, and the same thing has a row in Settings. A row says how its button's press went on
+     itself (`below`), never in a toast: the `lo` command's row installs with
+     `installCommand('row')`, which leaves the result for the row.
+  4. A field that opens a pull request's link through the open feature, and a sample pull request.
+     The mark plays Kiss as the step first appears.
+- **Moving between steps.** Each step is drawn afresh as it shows, in a `Swap`. The mark's moves
+  play once each time the welcome opens: a step the reader comes back to draws the mark at rest.
+- **Keys.** Under the welcome the tab's view is `inert`, so no key or reader reaches it. The welcome
+  is a form like Settings: its scope has `data-lo-tab="browser"`, so `Tab` walks its controls. `⏎`
+  is `welcome.continue`: it presses the button with focus, opens the link in the field once it holds
+  one, and anywhere else presses the step's main button, which is "Sign in with GitHub…" on the
+  first step until an account is signed in, "Open" on the last while the field holds a link, and
+  "Continue" or "Done" otherwise. The main button carries the `⏎` chip. Every step is in the tree
+  from the start, in one grid cell, so the foot's buttons never move; the steps off screen are
+  `inert`. "Continue" holds the room of its label with its key in every state.
+- **A feature that needs set-up** adds a row to the third step and a row in Settings. It doesn't put
+  up a banner or a dialog of its own.
 
 ### The timeline
 

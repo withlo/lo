@@ -179,11 +179,10 @@ export function SignInView({
     else if (step.state !== 'working' && step.action.disabled === undefined) step.action.onRun();
   };
   const page = dialog?.code?.page;
-  // Where to type the code, while there's one to type. Its line stays, empty, at the other steps,
-  // so nothing moves, and goes with the code's box when the sign-in ended before a code came.
-  let where: string | undefined = '\u00a0';
-  if (dialog?.state?.kind === 'waiting') where = `Enter this code at ${page ?? 'GitHub'}`;
-  else if (dialog !== undefined && endedOf(dialog) && dialog.code === undefined) where = undefined;
+  // Where to type the code, while there's one to type. Its line stays, empty, at every other
+  // step, so nothing moves: the code's box closes by itself when the sign-in ends before a code.
+  const where =
+    dialog?.state?.kind === 'waiting' ? `Enter this code at ${page ?? 'GitHub'}` : '\u00a0';
   return (
     <Dialog
       open={dialog !== undefined}

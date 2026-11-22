@@ -33,7 +33,16 @@ export function followVim(): void {
 
 /** Turns Vim keys on, or off, and saves it. */
 export async function switchVim(): Promise<void> {
-  await changeSetting(vim, !vimOn());
+  await chooseVimKeys(!vimOn());
+}
+
+/**
+ * Turns Vim keys on or off, as `on` says, and saves it. Main writes settings in the order asked,
+ * so the last of several choices made in a row is the one that stays. Resolves `false` when it
+ * couldn't, which it has said.
+ */
+export function chooseVimKeys(on: boolean): Promise<boolean> {
+  return changeSetting(vim, on);
 }
 
 /** What the palette says after "Vim keys": whether they're on. */

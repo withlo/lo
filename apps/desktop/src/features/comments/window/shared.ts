@@ -3,7 +3,7 @@
 // preview and attached files, for a box outside the diff, such as the submit dialog's summary; and
 // writing on a pull request itself, for its timeline: the box at the timeline's end, editing and
 // deleting your comments there, and what your own writes there changed, which the timeline shows
-// at once.
+// at once; and choosing Vim keys, for the welcome.
 
 import { createElement, type ReactNode } from 'react';
 
@@ -43,6 +43,7 @@ import {
   type Attachable,
   type UploadsHold,
 } from './uploads.ts';
+import { chooseVimKeys as chooseVim } from './vim.ts';
 import { onPullWrite, type PullWrite } from './written.ts';
 
 export type { PostRef } from './bodies.ts';
@@ -198,4 +199,13 @@ export function focusCommentBox(tab: PullTab): void {
  */
 export function onCommentWritten(listener: (view: string, write: PullWrite) => void): () => void {
   return onPullWrite(listener);
+}
+
+/**
+ * Turns Vim keys on or off, as `on` says, as "Vim keys" in the command palette switches them. The
+ * last of several choices made in a row is the one that stays. Resolves `false` when it couldn't,
+ * which it has said.
+ */
+export function chooseVimKeys(on: boolean): Promise<boolean> {
+  return chooseVim(on);
 }

@@ -312,7 +312,8 @@ never answered, the button is “Check again”, which only looks.
 
 ### Empty state
 
-A view or a list with nothing in it.
+A view or a list with nothing in it. `EmptyState` draws it, from the heading, the line and the
+commands ([README](README.md#empty-states)).
 
 | Part    | Limit                                                                           | Example                                 |
 | ------- | ------------------------------------------------------------------------------- | --------------------------------------- |
@@ -509,7 +510,7 @@ One screen of the welcome, with one job: sign in, choose keys, set up, open a pu
 - **Never:** “Welcome!”, “Let’s get started”, “You’re all set”, “Next”, “Not now”, “Later”,
   “optional”, “if you like”, a list of features, what Lo will do later.
 
-`welcome/window/Cover.tsx` and `welcome/window/Steps.tsx`:
+`welcome/window/Account.tsx` and `welcome/window/Setup.tsx`:
 
 |         | Before                                                                                                                        | After                                                                                             |
 | ------- | ----------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
