@@ -1,7 +1,7 @@
 import { join } from 'node:path';
 
 import { formatVersion, type GitStatus } from '@lo/git';
-import { app, BrowserWindow, nativeTheme } from 'electron';
+import { app, BrowserWindow, nativeTheme, type WebContents } from 'electron';
 
 import { launch, query } from '../../../main/editor.ts';
 import { holdLimit, keymapEditor } from '../../../main/environment.ts';
@@ -10,7 +10,7 @@ import { pageNonce } from '../../../main/security.ts';
 import { IpcError } from '../../../ipc/contract.ts';
 import { settings } from '../../settings/service.ts';
 import { appInfo, contract, type GitInfo, type Theme } from '../contract.ts';
-import { gpu } from '../settings.ts';
+import { gpu, zoom } from '../settings.ts';
 import { aboutOptions, buildOf, shortHash } from './about.ts';
 import { licensesPath, openLicenses } from './licenses.ts';
 import { zoomed } from './zoom.ts';
@@ -21,6 +21,26 @@ declare const LO_COMMIT: string;
 /** Lo's window: the one a key was just pressed in, or else its only one. */
 function loWindow(): BrowserWindow | undefined {
   return BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
+}
+
+/** The zoom the window draws at, from `window.zoom`, once main has read it. */
+let drawnAt = 100;
+
+/**
+ * How many zoom steps are being written. The window is drawn at each step before it's written, so
+ * the file catching up meanwhile, a step behind, isn't drawn: fast presses would flash back.
+ */
+let zoomWrites = 0;
+
+/** Draws `contents` at the zoom set, as it is now. */
+function applyZoom(contents: WebContents): void {
+  contents.setZoomFactor(drawnAt / 100);
+}
+
+/** Draws every window at `percent`. */
+function drawAt(percent: number): void {
+  drawnAt = percent;
+  for (const window of BrowserWindow.getAllWindows()) applyZoom(window.webContents);
 }
 
 // Lo follows the system's appearance.
@@ -60,9 +80,21 @@ export default defineFeature(contract, {
     quit() {
       app.quit();
     },
-    zoom({ step }) {
-      const contents = loWindow()?.webContents;
-      if (contents) contents.zoomLevel = zoomed(contents.zoomLevel, step);
+    // The setting is the zoom, so a step is written there to last. The window zooms at once all
+    // the same, from where it's drawn, as it always has: a settings file Lo can't write keeps the
+    // step from lasting, not from happening.
+    async zoom({ step }, { use }) {
+      const next = zoomed(drawnAt, step);
+      drawAt(next);
+      zoomWrites += 1;
+      try {
+        await use(settings).update(zoom, () => next);
+      } catch (error) {
+        if (!(error instanceof IpcError)) throw error;
+        console.error(`Lo couldn't save the zoom: ${error.message}`);
+      } finally {
+        zoomWrites -= 1;
+      }
     },
     fullScreen() {
       const window = loWindow();
@@ -90,6 +122,14 @@ export default defineFeature(contract, {
     // Main read `app.gpu` before `ready`. Declared, a value it took as on because it wasn't true
     // or false is reported in Settings.
     use(settings).declare(gpu);
+    // Chromium keeps a page's zoom by its origin, and starts a page it loads at its own, so each
+    // page the window loads is drawn at the setting's again.
+    app.on('browser-window-created', (_event, window) => {
+      window.webContents.on('did-navigate', () => applyZoom(window.webContents));
+    });
+    use(settings).watch(zoom, (percent) => {
+      if (zoomWrites === 0) drawAt(percent);
+    });
     app.setAboutPanelOptions(
       aboutOptions({
         platform: process.platform,

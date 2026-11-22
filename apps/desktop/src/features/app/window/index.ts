@@ -7,6 +7,7 @@ import { client, type Client } from '../../../window/ipc.ts';
 import { contract, type Theme } from '../contract.ts';
 import keys from '../keys.ts';
 import { offerCodeViews } from './codeviews.ts';
+import Rows from './Rows.tsx';
 
 /** The design system themes everything under `<html>` from its `data-theme`. */
 function showTheme(theme: Theme): void {
@@ -46,6 +47,7 @@ export default {
     actualSize: { run: () => main().zoom({ step: 'reset' }) },
     fullScreen: { run: () => main().fullScreen() },
   }),
+  views: Rows,
   start() {
     const app = main();
     // Subscribed first, so no change between the two is missed.

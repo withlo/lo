@@ -202,7 +202,7 @@ describe('docs/keys.md', () => {
     expect(doc).toContain(
       "Opening never runs anything, so Lo doesn't open a file that is executable",
     );
-    expect(doc).toContain('a file of up to 1 MiB and lines of up to 1,000 characters');
+    expect(doc).toContain('a file of up to 1 MB and lines of up to 1,000 characters');
     expect(() => keysDoc([diff, tree])).toThrow(
       "The example keymap no longer applies: line 2: There's no command called keys.palette.",
     );

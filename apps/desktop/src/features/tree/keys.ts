@@ -57,7 +57,7 @@ export default defineCommands(
       overVim: true,
       when: { except: ['menu', 'dialog', 'palette', 'box', 'tree', 'stack'], mode: 'normal' },
     },
-    /** Switches between the tree and the changed files in review order. */
+    /** Switches between the tree and the changed files in review order, for every pull request. */
     mode: {
       label: 'Tree or review order',
       control: 'Tree and Review order in the Files toolbar',

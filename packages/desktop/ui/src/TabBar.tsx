@@ -8,6 +8,7 @@ import {
   type CSSProperties,
   type HTMLAttributes,
   type KeyboardEvent,
+  type ReactNode,
   type RefObject,
 } from 'react';
 
@@ -84,6 +85,8 @@ export interface TabBarProps {
   onMoreOpenChange?: ((open: boolean) => void) | undefined;
   /** Hears which tabs don't fit, by id, each time that changes. */
   onFold?: ((folded: readonly string[]) => void) | undefined;
+  /** What sits at the strip's end, after the tabs' room: a button that isn't about a tab. */
+  end?: ReactNode;
 }
 
 const tab = cva(
@@ -139,6 +142,7 @@ export function TabBar({
   moreOpen,
   onMoreOpenChange,
   onFold,
+  end,
 }: TabBarProps) {
   const list = useRef<HTMLDivElement>(null);
   const plus = useRef<HTMLButtonElement>(null);
@@ -176,12 +180,12 @@ export function TabBar({
     onFold?.(foldedIds === '' ? [] : foldedIds.split('\n'));
   }, [foldedIds, onFold]);
   return (
-    <div className="h-tabbar-h shrink-0 bg-bg ps-window-inset-start pe-window-inset-end drag">
+    <div className="flex h-tabbar-h shrink-0 bg-bg ps-window-inset-start pe-window-inset-end drag">
       <div
         ref={list}
         role="tablist"
         aria-label="Pull requests"
-        className="relative flex h-full min-w-0 gap-2 px-8"
+        className="relative flex h-full min-w-0 flex-1 gap-2 px-8"
       >
         {shown.map((item, index) => (
           <TabItem
@@ -219,6 +223,7 @@ export function TabBar({
         </button>
         <div className="flex-1 self-stretch" />
       </div>
+      {end !== undefined && <div className="flex flex-none items-center pe-8 no-drag">{end}</div>}
     </div>
   );
 }

@@ -275,7 +275,7 @@ describe('review order', () => {
         changed('README.md', 'modified'),
       ],
     );
-    const shown = model(state, new Map(), none, { ...NO_CHOICES, mode: 'review' });
+    const shown = model(state, new Map(), none, NO_CHOICES, 'review');
     expect(lines(shown.rows)).toEqual([
       '# Source and tests',
       'README.md [M]',
@@ -377,7 +377,7 @@ describe('paths too long to key a map by', () => {
     };
     const start = performance.now();
     const tree = model(state, new Map(), none, NO_CHOICES);
-    const review = model(state, new Map(), none, { ...NO_CHOICES, mode: 'review' });
+    const review = model(state, new Map(), none, NO_CHOICES, 'review');
     const order = panelOrder(changes, 'tree');
     expect(performance.now() - start).toBeLessThan(2_000);
     const keys = paths.map((path) => `\u0000#${path.digest}`);
@@ -443,7 +443,7 @@ describe('names with bidirectional controls', () => {
     expect(lines(rows)).toEqual(['v ab', '  invoicetxt.exe [R, ← oldname.ts]']);
     // The key, which names the file, stays the path as it is.
     expect(rows[1]?.key).toBe(`a\u2067b/${name}`);
-    const review = model(state, new Map(), none, { ...NO_CHOICES, mode: 'review' }).rows;
+    const review = model(state, new Map(), none, NO_CHOICES, 'review').rows;
     expect(lines(review)).toContain('invoicetxt.exe [R, ← oldname.ts, in ab]');
   });
 });

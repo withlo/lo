@@ -140,6 +140,7 @@ export default defineCommands(
      */
     installSkill: {
       label: 'Install overview skill',
+      control: 'Install on the Overview skill row of Settings',
       group: 'Tabs and window',
       keys: [],
       bar: { menu: 'App', order: 20 },
@@ -150,6 +151,7 @@ export default defineCommands(
      */
     copyInstallCommand: {
       label: 'Copy the overview skill’s install command',
+      control: 'Copy on the On another computer row of Settings',
       group: 'Copy and open',
       keys: ['y c'],
       when: { scope: 'settings' },

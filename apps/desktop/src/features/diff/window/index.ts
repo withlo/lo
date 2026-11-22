@@ -11,7 +11,7 @@ import { createElement } from 'react';
 import type { WindowFeature } from '../../../window/features.ts';
 import { client } from '../../../window/ipc.ts';
 import { defineView } from '../../../window/slots.tsx';
-import { changeSetting, opening } from '../../settings/window/shared.ts';
+import { changeSetting, settingRow } from '../../settings/window/shared.ts';
 import { contract as tabContract, viewIds } from '../../tab/contract.ts';
 import { activeTab, middle, status, type PullTab } from '../../tab/window/shared.ts';
 import type { TreePath } from '../../tree/contract.ts';
@@ -24,7 +24,6 @@ import { changesLink, fileLink } from './links.ts';
 import { main } from './main.ts';
 import { fromMoved, movedNow } from './moved.ts';
 import { keepPlaces, openWhole, showTreeFiles } from './places.ts';
-import { LayoutRow } from './LayoutRow.tsx';
 import { DiffStatus } from './Status.tsx';
 import { keepOnly, keysDiff, loaderOf, takeState, type Drawn } from './tabs.ts';
 import { markViewed, viewedAt, viewedEnabled } from './viewed.ts';
@@ -392,12 +391,9 @@ export default {
       order: 20,
       render: ({ tab }) => createElement(DiffStatus, { tab }),
     }),
-    // After how a pull request opens, in Settings' Pull requests.
-    defineView(opening, {
-      id: 'diff.layout',
-      order: 20,
-      render: () => createElement(LayoutRow),
-    }),
+    // Settings › Pull requests, after how a pull request opens.
+    settingRow(layout, { order: 20, command: 'diff.inline' }),
+    settingRow(whitespace, { order: 30, command: 'diff.whitespace' }),
   ],
   start() {
     main().subscribe('state', takeState);

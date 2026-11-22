@@ -23,9 +23,9 @@ list.
 ```
 
 - **Lo applies a change as soon as you save the file,** whether you edited it or Settings did.
-- **A value Lo can't use is reported and ignored.** Settings says which setting, what it takes and
-  what Lo uses instead, and the rest of the file applies as it is. The value stays in the file for
-  you to fix.
+- **A value Lo can't use is reported and ignored.** Settings says which setting and what it takes,
+  its row shows the default Lo uses instead, and the rest of the file applies as it is. The value
+  stays in the file for you to fix.
 - **A file Lo can't read as JSON** (a missing comma, say, or a comment that isn't closed) is
   reported, with the line and column where Lo found the problem, and Lo goes on with the settings it
   had. It changes nothing in the file until it's fixed, so Settings never writes over what you
@@ -48,7 +48,7 @@ list.
   change on top of your save.
 - **A link to a file is followed.** A settings file kept with other dotfiles stays a link, and the
   file it leads to is the one Lo reads, watches and replaces.
-- The file is read up to 1 MiB, with objects and lists nested up to 100 levels deep.
+- The file is read up to 1 MB, with objects and lists nested up to 100 levels deep.
 - **Which repos you trust changes only through Lo's own dialog.** Lo adds one to `code.trusted` once
   you say "Trust" there, and takes one out once you remove it in Settings. You can still edit the
   file. If the file has a problem when you say "Trust", Lo says so where you asked, and offers to
@@ -56,17 +56,26 @@ list.
 
 ## The settings
 
-| Setting           | Takes                                  | Default      | What it does                                                                                                                                                 |
-| ----------------- | -------------------------------------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `theme`           | dark, light or system                  | `"system"`   | The theme: Lo Glow in dark or light, or whichever the system is in.                                                                                          |
-| `cache.cap`       | a whole number of GB, from 1 to 10,000 | `10`         | The size Lo keeps its local copies of repos under. Past it, the least recently used go.                                                                      |
-| `diff.layout`     | split or inline                        | `"split"`    | The diff's layout: the two sides next to each other, or one column of both. `gi` switches it.                                                                |
-| `diff.whitespace` | show or hide                           | `"show"`     | Whether the diff shows changes to whitespace alone. `gw` switches it. GitHub's diff, shown until the local copy is ready, shows them either way.             |
-| `code.trusted`    | a list of trusted repos and PRs        | `[]`         | The repos, and pull requests from forks, that language servers may run on, as below.                                                                         |
-| `overview.open`   | overview or diff                       | `"overview"` | What a pull request opens on when it has an overview Lo can show: the overview, or the diff. Without one, it always opens on the diff.                       |
-| `editor.vim`      | true or false                          | `false`      | Whether code and comment boxes take Vim's keys. Off, they have a plain caret, and a box takes typing as soon as it has focus. Lo's own keys work either way. |
-| `updates.check`   | true or false                          | `true`       | Whether Lo checks GitHub Releases for a newer version by itself: 30 s after it starts, then every 6 hours. Off, it checks only when you ask.                 |
-| `app.gpu`         | true or false                          | `true`       | Whether Lo draws with the graphics card. Off, it draws with the processor alone, for a window that stays blank. It applies at the next start.                |
+Settings shows each setting but `app.gpu` as a row in one of its groups, with a line on what it does
+and, under the pointer or focus, its key. Its search (`/` or `⌘F`) finds a row by any of those. A
+setting a key also changes, such as `diff.layout`, shows the change in Settings and keeps it across
+a restart.
+
+| Setting           | Takes                                     | Default      | What it does                                                                                                                                                 |
+| ----------------- | ----------------------------------------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `theme`           | dark, light or system                     | `"system"`   | The theme: Lo Glow in dark or light, or whichever the system is in.                                                                                          |
+| `window.zoom`     | a whole percent, from 50 to 200           | `100`        | How large the window draws everything. `⌘+`, `⌘-` and `⌘0` change it, a step at a time.                                                                      |
+| `motion.reduce`   | system, on or off                         | `"system"`   | Whether the window keeps still: as the system says, always, or never. Tests start Lo with every move off, whatever it says.                                  |
+| `cache.cap`       | a whole number of GB, from 1 to 10,000    | `10`         | The size Lo keeps its local copies of repos under. Past it, the least recently used go.                                                                      |
+| `overview.open`   | overview or diff                          | `"overview"` | What a pull request opens on when it has an overview Lo can show: the overview, or the diff. Without one, it always opens on the diff.                       |
+| `diff.layout`     | split or inline                           | `"split"`    | The diff's layout: the two sides next to each other, or one column of both. `gi` switches it.                                                                |
+| `diff.whitespace` | show or hide                              | `"show"`     | Whether the diff shows changes to whitespace alone. `gw` switches it. GitHub's diff, shown until the local copy is ready, shows them either way.             |
+| `tree.mode`       | tree or review                            | `"tree"`     | How the left panel lists a pull request's files: as a tree, or the changed files in review order. `t` switches it, for every pull request.                   |
+| `code.hints`      | true or false                             | `false`      | Whether code views show inline type hints where a language server gives them. `gh` switches it.                                                              |
+| `code.trusted`    | a list of trusted repos and pull requests | `[]`         | The repos, and pull requests from forks, that language servers may run on, as below.                                                                         |
+| `editor.vim`      | true or false                             | `false`      | Whether code and comment boxes take Vim's keys. Off, they have a plain caret, and a box takes typing as soon as it has focus. Lo's own keys work either way. |
+| `updates.check`   | true or false                             | `true`       | Whether Lo checks GitHub Releases for a newer version by itself: 30 s after it starts, then every 6 hours. Off, it checks only when you ask.                 |
+| `app.gpu`         | true or false                             | `true`       | Whether Lo draws with the graphics card. Off, it draws with the processor alone, for a window that stays blank. It applies at the next start.                |
 
 `app.gpu` is only in the file, since a window that draws nothing couldn't reach it in Settings. Lo
 reads it as it starts, before it draws anything, so a change applies the next time Lo starts. It

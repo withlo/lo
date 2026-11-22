@@ -23,6 +23,7 @@ import {
   onOverviewChanged,
   setBlockThreads,
 } from '../../overview/window/shared.ts';
+import { settingRow } from '../../settings/window/shared.ts';
 import { setLayerCounts } from '../../stacks/window/shared.ts';
 import { viewIds } from '../../tab/contract.ts';
 import {
@@ -35,7 +36,9 @@ import {
 } from '../../tab/window/shared.ts';
 import { fileCountsChanged, setFileCounts } from '../../tree/window/shared.ts';
 import keys from '../keys.ts';
+import { vim } from '../settings.ts';
 import { DiscardedToast } from './Discarded.tsx';
+import KeptRow from './KeptRow.tsx';
 import {
   atWork,
   edit,
@@ -228,13 +231,13 @@ export default {
     showLatest: offering('showLatest', 'loadNewer'),
     vim: { run: switchVim, detail: vimDetail },
     keptDrafts: {
-      run: () => {
-        const tab = activeTab();
-        if (tab) showKeptDrafts(tab.id);
+      run: (target) => {
+        const view = target.kind === 'tab' ? target.tab : activeTab()?.id;
+        if (view !== undefined) showKeptDrafts(view);
       },
-      enabled: () => {
-        const tab = activeTab();
-        return tab && keptAway.get(tab.id).length > 0 ? true : 'No draft is kept.';
+      enabled: (target) => {
+        const view = target.kind === 'tab' ? target.tab : activeTab()?.id;
+        return view !== undefined && keptAway.get(view).length > 0 ? true : 'No draft is kept.';
       },
     },
     nextThread: { run: () => moveRow(1), enabled: inPanel },
@@ -250,6 +253,9 @@ export default {
     },
   }),
   views: [
+    // Settings › Keyboard, first.
+    settingRow(vim, { order: 10, id: 'comments.vim' }),
+    KeptRow,
     defineView(right, {
       id: 'comments.panel',
       order: 10,

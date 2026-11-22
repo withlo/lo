@@ -24,7 +24,10 @@ function close(): void {
   welcomeStore.setState({ rules: false });
 }
 
-/** The dialog, open while "Show rules" on the welcome's set-up step is. */
+/**
+ * The dialog, open once "Show rules" on the welcome's set-up step, or on Settings' Link routers
+ * row, is pressed.
+ */
 export function Rules() {
   const open = useStore(welcomeStore, (state) => state.rules);
   const done = useRef<HTMLButtonElement>(null);

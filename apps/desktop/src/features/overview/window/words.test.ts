@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 
 import type { SkillAgent, SkillRefusal, SkillResult, SkillState } from '../contract.ts';
 import {
-  ABOUT,
   agentsToInstall,
   installedEverywhere,
   installLabel,
@@ -54,26 +53,22 @@ function failed(changes: Partial<Extract<SkillRefusal, { kind: 'failed' }>>): Sk
 }
 
 describe('standing', () => {
-  it('says what the skill is for until Lo has looked', () => {
-    expect(standing(undefined)).toBe(ABOUT);
+  it('says where it is installed, a line for each agent', () => {
+    expect(standing(state({ installed: true }))).toEqual([
+      { line: 'Claude Code · installed in', folder: '~/.claude/skills' },
+      { line: 'Codex · not installed' },
+    ]);
+    expect(standing(state({ installed: true }, { installed: true }))).toEqual([
+      { line: 'Claude Code · installed in', folder: '~/.claude/skills' },
+      { line: 'Codex · installed in', folder: '~/.agents/skills' },
+    ]);
   });
 
-  it('says where it is installed, and where each agent reads', () => {
-    expect(standing(state({ installed: true }))).toBe(
-      'Installed for Claude Code in ~/.claude/skills. Not installed for Codex, which reads ~/.agents/skills.',
-    );
-    expect(standing(state({ installed: true }, { installed: true }))).toBe(
-      'Installed for Claude Code in ~/.claude/skills. Installed for Codex in ~/.agents/skills.',
-    );
-  });
-
-  it('names the folder it found nothing in for an agent that is not set up', () => {
-    expect(standing(state({ installed: true }, { setUp: false }))).toBe(
-      "Installed for Claude Code in ~/.claude/skills. Codex isn't set up here: Lo found no ~/.codex.",
-    );
-    expect(standing(nothing)).toBe(
-      "Claude Code isn't set up here: Lo found no ~/.claude. Codex isn't set up here: Lo found no ~/.codex.",
-    );
+  it('says an agent is not set up', () => {
+    expect(standing(nothing)).toEqual([
+      { line: 'Claude Code · not set up' },
+      { line: 'Codex · not set up' },
+    ]);
   });
 });
 
@@ -83,25 +78,28 @@ describe('standing, with what stops an install', () => {
     "~/.claude/skills/lo-overview is a link, and Lo doesn't install the skill through links. Remove it, then install again.";
 
   it('says a skill reached through a link is installed, and that Lo can’t update it', () => {
-    expect(standing(state({ installed: true, blocked: link }))).toBe(
-      `Installed for Claude Code in ~/.claude/skills, but Lo can't update it. ${LINK} Not installed for Codex, which reads ~/.agents/skills.`,
-    );
+    expect(standing(state({ installed: true, blocked: link }))[0]).toEqual({
+      line: 'Claude Code · installed, can’t update',
+      why: LINK,
+    });
   });
 
-  it('says what stops an install where the skill is not installed, and keeps to the truth', () => {
-    const text = standing(
-      state({ blocked: link }, { blocked: { kind: 'notFolder', path: '~/.agents' } }),
-    );
-    expect(text).toBe(
-      `Not installed for Claude Code, which reads ~/.claude/skills. ${LINK} Not installed for Codex, which reads ~/.agents/skills. ~/.agents isn't a folder, so the skill can't go there. Remove it, then install again.`,
-    );
-    expect(text).not.toContain('Installed for');
+  it('says what stops an install where the skill is not installed', () => {
+    expect(
+      standing(state({ blocked: link }, { blocked: { kind: 'notFolder', path: '~/.agents' } })),
+    ).toEqual([
+      { line: 'Claude Code · not installed', why: LINK },
+      {
+        line: 'Codex · not installed',
+        why: "~/.agents isn't a folder, so the skill can't go there. Remove it, then install again.",
+      },
+    ]);
   });
 
   it('says nothing of what stops an install for an agent that is not set up', () => {
-    expect(standing(state({ installed: true }, { setUp: false, blocked: link }))).toBe(
-      "Installed for Claude Code in ~/.claude/skills. Codex isn't set up here: Lo found no ~/.codex.",
-    );
+    expect(standing(state({ installed: true }, { setUp: false, blocked: link }))[1]).toEqual({
+      line: 'Codex · not set up',
+    });
   });
 });
 

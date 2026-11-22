@@ -184,11 +184,12 @@ test('Tab moves focus only through commands, and forms that ask keep the browser
   await expect(open).toBeFocused();
 });
 
-/** The window's zoom level, as Chromium has it. */
+/** The window's zoom, as a fraction of its actual size, to the hundredth. */
 function zoom(app: ElectronApplication): Promise<number | undefined> {
-  return app.evaluate(({ BrowserWindow }) =>
-    BrowserWindow.getAllWindows()[0]?.webContents.getZoomLevel(),
-  );
+  return app.evaluate(({ BrowserWindow }) => {
+    const factor = BrowserWindow.getAllWindows()[0]?.webContents.getZoomFactor();
+    return factor === undefined ? undefined : Math.round(factor * 100) / 100;
+  });
 }
 
 test('⌘ or Ctrl with =, - and 0 zooms the window, and macOS’s View menu lists zooming, with its keys', async ({
@@ -199,14 +200,15 @@ test('⌘ or Ctrl with =, - and 0 zooms the window, and macOS’s View menu list
 
   await test.step('⌘ or Ctrl with =, - and 0 zooms the window', async () => {
     const held = mac ? 'Meta' : 'Control';
-    expect(await zoom(app)).toBe(0);
+    // A step at a time through `window.zoom`'s levels, as browsers step: 100%, 110%, then 90%.
+    expect(await zoom(app)).toBe(1);
     await page.keyboard.press(`${held}+Equal`);
-    await expect.poll(() => zoom(app)).toBe(0.5);
+    await expect.poll(() => zoom(app)).toBe(1.1);
     await page.keyboard.press(`${held}+Minus`);
     await page.keyboard.press(`${held}+Minus`);
-    await expect.poll(() => zoom(app)).toBe(-0.5);
+    await expect.poll(() => zoom(app)).toBe(0.9);
     await page.keyboard.press(`${held}+Digit0`);
-    await expect.poll(() => zoom(app)).toBe(0);
+    await expect.poll(() => zoom(app)).toBe(1);
   });
 
   // Linux has no app menu.

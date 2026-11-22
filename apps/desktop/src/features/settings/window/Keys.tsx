@@ -1,51 +1,74 @@
-import { Button, Key, Setting } from '@lo/ui';
-import { keyLabels, NO_TARGET } from '@lo/ui/commands';
-import { useSyncExternalStore } from 'react';
+// Settings' Keyboard rows that are this feature's: the keymap file, where it is and what's wrong
+// with it, and the list of every key. Vim keys' row is the comments feature's.
+
+import { Setting, SettingsCommand } from '@lo/ui';
+import { Fragment, useSyncExternalStore } from 'react';
 
 import { keymapState, subscribeKeymap } from '../../../window/commands/keymap.ts';
-import { registry, useKeys } from '../../../window/commands/registry.ts';
-import { defineSection, useSettingsFile } from './shared.ts';
+import { useKeys } from '../../../window/commands/registry.ts';
+import { defineRow, useSettingsFile } from './shared.ts';
 
-/** The first key `id` has now, as this system shows it, if it has one. */
-function keyOf(id: string): string[] | undefined {
-  const [first] = registry().keysOf(id);
-  return first && keyLabels(first, registry().system);
-}
-
-function Keys() {
+/** The keymap file's row: what it holds, where it is, beside the settings file, and what's wrong. */
+function KeymapFile({ label, description }: { label: string; description: string }) {
   // The keys follow the keymap file, and so does what's wrong with it.
   useKeys();
   const keymap = useSyncExternalStore(subscribeKeymap, keymapState);
   const file = useSettingsFile();
-  // The keymap file sits beside the settings file.
   const path = file === undefined ? undefined : `${file.slice(0, file.lastIndexOf('/') + 1)}keymap`;
-  const help = keyOf('keys.help');
   return (
     <Setting
-      label="Keymap file"
-      description={
-        <>
-          {path !== undefined && <span className="break-all code-small">{path}</span>}
-          {keymap.problem !== undefined && (
-            <span className="block text-danger">{keymap.problem}</span>
-          )}
-        </>
+      label={label}
+      description={description}
+      note={keymap.problem}
+      below={
+        path === undefined ? undefined : (
+          // It wraps after a slash, and mid-name only where a name is longer than the line.
+          <span className="break-words text-fg-muted code-small">
+            {path.split('/').map((part, index) => (
+              <Fragment key={index}>
+                {index > 0 && (
+                  <>
+                    /<wbr />
+                  </>
+                )}
+                {part}
+              </Fragment>
+            ))}
+          </span>
+        )
       }
     >
-      {keymap.canOpen && (
-        <Button onClick={() => registry().run('keys.openKeymap', NO_TARGET)}>Open</Button>
-      )}
-      <Button variant="ghost" onClick={() => registry().run('keys.help', NO_TARGET)}>
-        Every key
-        {help !== undefined && <Key keys={help} quiet decorative />}
-      </Button>
+      <SettingsCommand command="keys.openKeymap">Open</SettingsCommand>
     </Setting>
   );
 }
 
-export default defineSection({
-  id: 'settings.keys',
-  title: 'Keys',
-  order: 60,
-  render: Keys,
-});
+/** The row that shows every key, by area. */
+function Shortcuts({ label, description }: { label: string; description: string }) {
+  return (
+    <Setting label={label} description={description}>
+      <SettingsCommand command="keys.help">Show</SettingsCommand>
+    </Setting>
+  );
+}
+
+export default [
+  defineRow({
+    id: 'settings.keymap',
+    group: 'keyboard',
+    order: 20,
+    label: 'Keymap file',
+    description: 'Holds changed keys.',
+    words: () => ['keymap', 'remap', 'keys'],
+    render: KeymapFile,
+  }),
+  defineRow({
+    id: 'settings.shortcuts',
+    group: 'keyboard',
+    order: 30,
+    label: 'Keyboard shortcuts',
+    description: 'Every key, by the area it works in.',
+    words: () => ['keys', 'help'],
+    render: Shortcuts,
+  }),
+];

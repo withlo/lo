@@ -2,7 +2,7 @@
 // Trust in the window, with main answered by a stand-in bridge: the banner says what main decided
 // and only asks main, its button says how far main has got and waits meanwhile, and once trusting
 // failed it says why, offering to open the settings file and to try again; the palette's commands
-// act only where they can, and Settings lists what's trusted, from the file, with "Remove".
+// act only where they can, and Settings lists what's trusted, from the file, with "Stop trusting".
 
 import { act, type ReactNode } from 'react';
 import { createRoot } from 'react-dom/client';
@@ -14,7 +14,7 @@ import type { PullTab } from '../../tab/window/shared.ts';
 import type { Status } from '../contract.ts';
 import feature from './index.ts';
 import { askable, bannerOf, drawn, trustable, trustSwitch, untrustable } from './status.ts';
-import { daysAgo, rowsOf } from './Trusted.tsx';
+import { rowsOf } from './Trusted.tsx';
 import { TrustBanner } from './TrustBanner.tsx';
 
 /** What main says of each view, by its id. */
@@ -389,10 +389,11 @@ describe('Settings’ trust rows', () => {
         now,
       ),
     ).toEqual([
-      { key: 'R_e2e', name: 'rozed-dev/e2e', kind: 'repo', trusted: '12 days ago' },
-      { key: 'R_e2e#97', name: 'rozed-bot/e2e#97', kind: 'fork', trusted: 'today' },
+      { key: 'R_e2e', name: 'rozed-dev/e2e', kind: 'repo', trusted: 'trusted 12 d ago' },
+      { key: 'R_e2e#97', name: 'rozed-bot/e2e#97', kind: 'fork', trusted: 'trusted just now' },
     ]);
-    expect(daysAgo('2026-11-14T12:00:00.000Z', now)).toBe('yesterday');
-    expect(daysAgo(undefined, now)).toBe('in the settings file');
+    // One added in the file by hand has no time, and says so.
+    const [byHand] = rowsOf([{ kind: 'repo', repo: 'rozed-dev/e2e', id: 'R_e2e' }], now);
+    expect(typeof byHand?.trusted).toBe('object');
   });
 });

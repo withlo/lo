@@ -15,6 +15,7 @@ export default defineCommands(
     /** Checks GitHub Releases for a newer Lo now, and says what it found. */
     check: {
       label: 'Check for updates',
+      control: 'Check now on the Lo row of Settings › About',
       group: 'Tabs and window',
       keys: [],
       bar: { menu: 'App', order: 1 },
@@ -22,6 +23,7 @@ export default defineCommands(
     /** Downloads the newer Lo on offer, to install as Lo quits. */
     install: {
       label: 'Install the update',
+      control: "Update on the update's toast, and in Settings › About",
       group: 'Tabs and window',
       keys: [],
       bar: { menu: 'App', order: 2 },
@@ -29,6 +31,7 @@ export default defineCommands(
     /** Quits, installs the downloaded update and starts Lo again. */
     restart: {
       label: 'Restart to update',
+      control: "Restart to update on the update's toast, and in Settings › About",
       group: 'Tabs and window',
       keys: [],
       bar: { menu: 'App', order: 3 },
@@ -36,6 +39,7 @@ export default defineCommands(
     /** Moves Lo to Applications, where it can update itself, and starts it again from there. */
     move: {
       label: 'Move Lo to Applications',
+      control: "Move Lo to Applications on the update's toast, and in Settings › About",
       group: 'Tabs and window',
       keys: [],
       when: { system: 'mac' },
@@ -51,6 +55,7 @@ export default defineCommands(
     /** Opens the page of the release on offer, where its notes are. */
     whatsNew: {
       label: 'Open what’s new in the update',
+      control: "What’s new on the update's toast, and in Settings › About",
       group: 'Tabs and window',
       keys: [],
       bar: { menu: 'Update', order: 3 },
@@ -58,6 +63,7 @@ export default defineCommands(
     /** Opens the page of the release on offer, to download it from, where Lo can't install it. */
     download: {
       label: 'Download the update from its page',
+      control: "Download on the update's toast, and in Settings › About",
       group: 'Tabs and window',
       keys: [],
       bar: { menu: 'Update', order: 4 },
@@ -65,6 +71,7 @@ export default defineCommands(
     /** Copies the command that updates Lo through Homebrew. */
     copy: {
       label: 'Copy the Homebrew update command',
+      control: "Copy on the update's toast, and in Settings › About",
       group: 'Tabs and window',
       keys: [],
       bar: { menu: 'Update', order: 5 },

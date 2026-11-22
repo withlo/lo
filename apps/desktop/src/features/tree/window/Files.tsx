@@ -9,8 +9,10 @@ import { useCallback, useEffect, useMemo, useRef, type ReactNode } from 'react';
 import { currentMenu, openMenu } from '../../../window/commands/menus.tsx';
 import { registry, useKeys } from '../../../window/commands/registry.ts';
 import { useViewedMarks } from '../../revisions/window/shared.ts';
+import { changeSetting, useSetting } from '../../settings/window/shared.ts';
 import { useTabState, type PullTab } from '../../tab/window/shared.ts';
 import { fileKey, PATH_LIMIT, type TreeState } from '../contract.ts';
+import { mode as modeSetting } from '../settings.ts';
 import { type FileThreads, useCounts } from './counts.ts';
 import { model as modelOf, type Row } from './model.ts';
 import { useViewedCount } from './shared.ts';
@@ -133,6 +135,7 @@ export function Files({
   const state = useTabState(states, tab.id);
   const sent = useTabState(folders, tab.id);
   const chosen = useTabState(choices, tab.id);
+  const mode = useSetting(modeSetting);
   const focused = useTabState(focus, tab.id);
   const current = useTabState(onScreen, tab.id);
   const revealed = useTabState(reveal, tab.id);
@@ -146,8 +149,8 @@ export function Files({
   const marks = useViewedMarks(tab.id);
   const viewed = marks.byPath;
   const model = useMemo(
-    () => (state ? modelOf(state, sent.entries, viewed, chosen) : undefined),
-    [state, sent, viewed, chosen],
+    () => (state ? modelOf(state, sent.entries, viewed, chosen, mode) : undefined),
+    [state, sent, viewed, chosen, mode],
   );
   if (model) shown.set(tab.id, model);
   else shown.delete(tab.id);
@@ -186,8 +189,8 @@ export function Files({
   return (
     <FileTreePanel
       viewed={viewedCount || undefined}
-      mode={chosen.mode}
-      onMode={(mode) => choices.update(tab.id, (now) => ({ ...now, mode }))}
+      mode={mode}
+      onMode={(next) => void changeSetting(modeSetting, next)}
       modeKeys={keyOf('tree.mode')}
       changedOnly={chosen.changedOnly}
       onChangedOnly={(changedOnly) => choices.update(tab.id, (now) => ({ ...now, changedOnly }))}
@@ -201,7 +204,7 @@ export function Files({
         <FileTree
           treeRef={treeRef}
           data-lo-scope="tree"
-          aria-label={chosen.mode === 'review' ? 'Changed files in review order' : 'Files'}
+          aria-label={mode === 'review' ? 'Changed files in review order' : 'Files'}
           rows={rows}
           comparing={hits !== undefined}
           focused={focused}
