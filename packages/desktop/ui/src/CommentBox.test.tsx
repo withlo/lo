@@ -144,14 +144,21 @@ describe('CommentBox', () => {
     expect(onClose).toHaveBeenCalledOnce();
     click(labelled(host, 'Discard draft')!);
     expect(onDiscard).toHaveBeenCalledOnce();
-    // With nothing to discard it's dimmed, and does nothing.
+    // With nothing to discard it's dimmed, says why, and does nothing.
     const off = render(
       <CommentBox
         {...WRITING}
-        foot={{ ...WRITING.foot, discard: { disabled: true, onClick: onDiscard } }}
+        foot={{
+          ...WRITING.foot,
+          discard: { disabled: true, why: 'Nothing to discard', onClick: onDiscard },
+        }}
       />,
     );
-    expect(labelled(off, 'Discard draft')?.getAttribute('aria-disabled')).toBe('true');
+    const dimmed = labelled(off, 'Discard draft');
+    expect(dimmed?.getAttribute('aria-disabled')).toBe('true');
+    expect(
+      off.ownerDocument.getElementById(dimmed?.getAttribute('aria-describedby') ?? '')?.textContent,
+    ).toBe('Nothing to discard');
     click(labelled(off, 'Discard draft')!);
     expect(onDiscard).toHaveBeenCalledOnce();
   });

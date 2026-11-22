@@ -88,6 +88,8 @@ import {
   sentFromBlock,
   SIGN_IN,
   whyOf,
+  NOTHING_TO_DISCARD,
+  NOTHING_TO_UNDO,
 } from './writing.ts';
 
 /** How long after the last key a box's text is saved, in milliseconds. */
@@ -1355,6 +1357,11 @@ export function act(box: Box, offer: Offer): void {
  */
 function drop(box: Box): void {
   const { view, key } = box;
+  const text = box.composer?.text ?? box.state.text;
+  if (text.trim() !== '') {
+    const { place, primary, where } = box.state;
+    remember({ view, place, home: box.home, primary, text, where });
+  }
   endUploads(box);
   boxesOf(view).delete(key);
   box.dropSave();
@@ -1365,6 +1372,91 @@ function drop(box: Box): void {
   discard(box);
   replyingChanged(view);
 }
+
+/** A draft "Discard draft" took, with what brings its box back as it was. */
+export interface Discarded {
+  readonly view: string;
+  readonly place: DraftPlaceRow;
+  readonly home: Home;
+  readonly primary: Send;
+  readonly text: string;
+  readonly where: BoxWhere | undefined;
+}
+
+/** How long "Undo" is offered for a draft discarded, in ms. */
+export const UNDO_TIME = 8000;
+
+/** The last draft discarded, while "Undo" brings it back. */
+let discarded: Discarded | undefined;
+let forgetting: ReturnType<typeof setTimeout> | undefined;
+const discardedListeners = new Set<() => void>();
+
+function setDiscarded(next: Discarded | undefined): void {
+  clearTimeout(forgetting);
+  forgetting = undefined;
+  discarded = next;
+  for (const listener of discardedListeners) listener();
+}
+
+/** Holds `draft` as the one "Undo" brings back, for {@link UNDO_TIME}. */
+function remember(draft: Discarded): void {
+  setDiscarded(draft);
+  forgetting = setTimeout(() => setDiscarded(undefined), UNDO_TIME);
+}
+
+/** The draft "Undo" would bring back now. */
+export function lastDiscarded(): Discarded | undefined {
+  return discarded;
+}
+
+/** Calls `listener` as a draft is discarded, comes back, or its "Undo" runs out. */
+export function onDiscarded(listener: () => void): () => void {
+  discardedListeners.add(listener);
+  return () => {
+    discardedListeners.delete(listener);
+  };
+}
+
+/**
+ * Brings back the draft "Discard draft" last took, as "Undo" does: its box opens where it was, with
+ * its text, focused, and the draft is saved again. A box opened at its place since keeps what was
+ * typed in it, with the draft's text after.
+ */
+export function undiscard(): void {
+  const last = discarded;
+  if (!last) return;
+  setDiscarded(undefined);
+  const { view, place, home, primary, text, where } = last;
+  const own = boxesOf(view);
+  const key = placeKey(place);
+  dropped.get(view)?.delete(key);
+  let box = own.get(key);
+  if (!box) {
+    box = new Box(view, place, primary, text);
+    box.home = home;
+    box.set({ where });
+    own.set(key, box);
+  } else {
+    const typed = (box.composer?.text ?? box.state.text).replace(/\s+$/, '');
+    const whole = typed === '' ? text : `${typed}\n\n${text}`;
+    if (box.composer) box.composer.replace(0, box.composer.text.length, whole);
+    else box.set({ text: whole, restored: undefined });
+  }
+  box.open = true;
+  box.focusOnOpen = true;
+  // Saved in a moment, as typing is: main's drafts from before it hears leave the box be meanwhile.
+  box.saveSoon();
+  box.composer?.focus();
+  reopen(view);
+  replyingChanged(view);
+}
+
+/** "Undo", for the draft last discarded: in the palette while there's one to bring back. */
+export const undiscarding: Handler = {
+  run: undiscard,
+  enabled: () => discarded !== undefined || NOTHING_TO_UNDO,
+  listed: () => discarded !== undefined,
+};
 
 /** Has main discard `box`'s draft. */
 function discard(box: Box): void {
@@ -1417,6 +1509,7 @@ export function keepBoxesOf(kept: ReadonlySet<string>): void {
     views.delete(view);
     pulls.delete(view);
     dropped.delete(view);
+    if (discarded?.view === view) setDiscarded(undefined);
     caught.delete(view);
     clearTimeout(retrying.get(view));
     retrying.delete(view);
@@ -1676,18 +1769,27 @@ export function takenDown(box: Box, composer: Composer): void {
 }
 
 /**
+ * Whether a box in `state` has a draft "Discard draft" can take, or why not: one with no text has
+ * nothing to discard, and one whose comment is on its way is held.
+ */
+export function discardable(state: BoxState): true | string {
+  if (sendingNow(state)) return 'Sending…';
+  return state.text.trim() !== '' || NOTHING_TO_DISCARD;
+}
+
+/**
  * "Discard draft", as the control in a box's foot and as a command on the box: there for any box
- * but one whose comment is on its way.
+ * with text but one whose comment is on its way. "Undo" brings the draft back for a few seconds.
  */
 export const discarding: Handler<BoxTarget> = {
   run(target) {
     const box = boxNamed(target.box);
-    if (box && !sendingNow(box.state)) act(box, 'discard');
+    if (box && discardable(box.state) === true) act(box, 'discard');
   },
   enabled: (target) => {
     const box = boxNamed(target.box);
     if (box === undefined) return 'The comment box has closed.';
-    return !sendingNow(box.state) || 'Sending…';
+    return discardable(box.state);
   },
   listed: (target) => boxNamed(target.box) !== undefined,
 };

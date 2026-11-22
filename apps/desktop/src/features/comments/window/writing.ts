@@ -429,6 +429,16 @@ export const IN_A_LAYER = 'Show a single layer to comment';
 /** Why a box with no text can't send. */
 export const BLANK = 'Write a comment first';
 
+/** Why a box with no text has no draft to discard. */
+export const NOTHING_TO_DISCARD = 'Nothing to discard';
+
+/** Why "Undo discard" does nothing once the draft discarded is back, or its time is up. */
+export const NOTHING_TO_UNDO = 'Nothing to undo';
+
+/** What the toast says of a draft just discarded, and what its button brings it back with. */
+export const DISCARDED = 'Discarded draft';
+export const UNDO = 'Undo';
+
 /** Why a suggestion can't go on the older side. */
 export const NEW_SIDE_ONLY =
   'Suggestions work on the new side only, since GitHub applies them there';

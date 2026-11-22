@@ -49,28 +49,29 @@ Each command's id is what [the keymap file](#the-keymap-file) binds keys to.
 
 ## Act
 
-| Action                          | Keys                              | Where                                                                   | Command                   |
-| ------------------------------- | --------------------------------- | ----------------------------------------------------------------------- | ------------------------- |
-| Comment                         | `c`                               | In `diff`; in code views, only in normal and visual mode                | `comments.comment`        |
-| Comment right away              | `C`                               | In `diff`; in code views, only in normal and visual mode                | `comments.commentNow`     |
-| Suggest a change                | `s`                               | In `diff`; in code views, only in normal and visual mode                | `comments.suggest`        |
-| Comment on the file             | `c`                               | In `tree`                                                               | `comments.commentOnFile`  |
-| Comment on these lines          | `c`                               | In `overview` and `file`; in code views, only in normal and visual mode | `comments.commentOnBlock` |
-| Comment on the file instead     | `⏎`                               | In `diff`; in code views, only in normal mode                           | `comments.onFileInstead`  |
-| Reply to the thread             | `r`                               | In `diff`; in code views, only in normal mode                           | `comments.reply`          |
-| Resolve or unresolve the thread | `x`                               | In `diff`; in code views, only in normal mode                           | `comments.resolve`        |
-| Edit your comment               | `i`                               | In `diff`; in code views, only in normal mode                           | `comments.edit`           |
-| Delete your comment…            | `d d`                             | In `diff`; in code views, only in normal mode                           | `comments.remove`         |
-| Discard draft                   | None: in its menu and the palette | In `box`                                                                | `comments.discard`        |
-| Send it anyway                  | None: in its menu and the palette | In `box`                                                                | `comments.sendAnyway`     |
-| Move comment to file            | None: in its menu and the palette | In `box`                                                                | `comments.moveToFile`     |
-| Mark viewed                     | `e`                               | In `diff`; in code views, only in normal mode                           | `diff.markViewed`         |
-| Comment on the pull request     | `c`                               | In `timeline`                                                           | `timeline.comment`        |
-| Edit your comment               | `i`                               | In `timeline`                                                           | `timeline.editComment`    |
-| Delete your comment…            | `d d`                             | In `timeline`                                                           | `timeline.deleteComment`  |
-| Show the hidden comment         | None: in its menu and the palette | In `timeline`                                                           | `timeline.showComment`    |
-| Mark viewed                     | `e`                               | In `tree`                                                               | `tree.markViewed`         |
-| Sign in with GitHub             | `⏎`                               | In `welcome`                                                            | `welcome.signIn`          |
+| Action                          | Keys                                           | Where                                                                   | Command                   |
+| ------------------------------- | ---------------------------------------------- | ----------------------------------------------------------------------- | ------------------------- |
+| Comment                         | `c`                                            | In `diff`; in code views, only in normal and visual mode                | `comments.comment`        |
+| Comment right away              | `C`                                            | In `diff`; in code views, only in normal and visual mode                | `comments.commentNow`     |
+| Suggest a change                | `s`                                            | In `diff`; in code views, only in normal and visual mode                | `comments.suggest`        |
+| Comment on the file             | `c`                                            | In `tree`                                                               | `comments.commentOnFile`  |
+| Comment on these lines          | `c`                                            | In `overview` and `file`; in code views, only in normal and visual mode | `comments.commentOnBlock` |
+| Comment on the file instead     | `⏎`                                            | In `diff`; in code views, only in normal mode                           | `comments.onFileInstead`  |
+| Reply to the thread             | `r`                                            | In `diff`; in code views, only in normal mode                           | `comments.reply`          |
+| Resolve or unresolve the thread | `x`                                            | In `diff`; in code views, only in normal mode                           | `comments.resolve`        |
+| Edit your comment               | `i`                                            | In `diff`; in code views, only in normal mode                           | `comments.edit`           |
+| Delete your comment…            | `d d`                                          | In `diff`; in code views, only in normal mode                           | `comments.remove`         |
+| Discard draft                   | None: in its menu and the palette              | In `box`                                                                | `comments.discard`        |
+| Undo discard                    | None: in the app menu on macOS and the palette | Anywhere                                                                | `comments.undiscard`      |
+| Send it anyway                  | None: in its menu and the palette              | In `box`                                                                | `comments.sendAnyway`     |
+| Move comment to file            | None: in its menu and the palette              | In `box`                                                                | `comments.moveToFile`     |
+| Mark viewed                     | `e`                                            | In `diff`; in code views, only in normal mode                           | `diff.markViewed`         |
+| Comment on the pull request     | `c`                                            | In `timeline`                                                           | `timeline.comment`        |
+| Edit your comment               | `i`                                            | In `timeline`                                                           | `timeline.editComment`    |
+| Delete your comment…            | `d d`                                          | In `timeline`                                                           | `timeline.deleteComment`  |
+| Show the hidden comment         | None: in its menu and the palette              | In `timeline`                                                           | `timeline.showComment`    |
+| Mark viewed                     | `e`                                            | In `tree`                                                               | `tree.markViewed`         |
+| Sign in with GitHub             | `⏎`                                            | In `welcome`                                                            | `welcome.signIn`          |
 
 ## Code
 

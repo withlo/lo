@@ -342,8 +342,18 @@ function Attach({ attach }: { attach: CommentBoxAttach }) {
   );
 }
 
-/** "Discard draft": its label beside its icon, and the icon alone, with a tooltip, in a narrow foot. */
-function Discard({ discard }: { discard: CommentBoxDiscard }) {
+/**
+ * "Discard draft": its label beside its icon, and the icon alone, with a tooltip, in a narrow foot.
+ * Off, as in a box with no text, its tooltip says why, and that text describes it.
+ */
+function Discard({
+  discard,
+  reason,
+}: {
+  discard: CommentBoxDiscard;
+  /** The id of the text that says why it's off. */
+  reason?: string | undefined;
+}) {
   const off = discard.disabled === true;
   return (
     <Button
@@ -351,6 +361,7 @@ function Discard({ discard }: { discard: CommentBoxDiscard }) {
       size="sm"
       aria-label="Discard draft"
       aria-disabled={off || undefined}
+      aria-describedby={off ? reason : undefined}
       hint={off && discard.why !== undefined ? discard.why : 'Discard draft'}
       onClick={() => {
         if (!off) discard.onClick?.();
@@ -409,12 +420,12 @@ function firstEditable(within: HTMLElement | null): HTMLElement | undefined {
   );
 }
 
-/** Why each of a foot's buttons that's off is off, once for each reason, in order. */
+/** Why each of a foot's controls that's off is off, once for each reason, in order. */
 function reasonsOf(foot: CommentBoxFoot | undefined): string[] {
   return [
     ...new Set(
-      (foot?.actions ?? []).flatMap((each) =>
-        each.disabled === true && each.why !== undefined ? [each.why] : [],
+      [foot?.discard, ...(foot?.actions ?? [])].flatMap((each) =>
+        each?.disabled === true && each.why !== undefined ? [each.why] : [],
       ),
     ),
   ];
@@ -567,7 +578,9 @@ export function CommentBoxFootBar({
       ))}
       <div className="flex flex-wrap items-center gap-4 p-6 text-fg-muted text-small">
         {foot.attach !== undefined && <Attach attach={foot.attach} />}
-        {foot.discard !== undefined && <Discard discard={foot.discard} />}
+        {foot.discard !== undefined && (
+          <Discard discard={foot.discard} reason={reasonId(id, reasons, foot.discard.why)} />
+        )}
         {vim && focused && foot.mode !== undefined && (
           <span className={`ms-4 ${mode({ kind: foot.mode.kind })}`}>{foot.mode.name}</span>
         )}

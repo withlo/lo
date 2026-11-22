@@ -170,6 +170,13 @@ export default defineCommands(
       when: box,
       menu: { on: 'box', order: 0 },
     },
+    /** Brings back the draft "Discard draft" last took, as the "Undo" on its toast does. */
+    undiscard: {
+      label: 'Undo discard',
+      group: 'Act',
+      keys: [],
+      bar: { menu: 'Review', order: 30 },
+    },
     /** After Lo couldn't tell whether a comment posted: sends it again, as "Send it anyway" does. */
     sendAnyway: {
       label: 'Send it anyway',
