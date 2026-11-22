@@ -275,6 +275,8 @@ Lo waits in three ways. Use the first that fits, and never two for one wait.
   "Checking…", not "Checking what merges with it". Where the words change as the work goes on, as
   trusting a repo's do ("Checking…", "Waiting…", "Trusting…"), keep each within the label's width,
   and give the first at rest.
+- What a button says sits in the middle of the room it holds. One at the end of a row takes
+  `align="end"`, so its label ends where the row does whichever it says.
 - What takes a button's props does the same: a `Banner`'s and a `Problem`'s action and the merge
   panel's main button (`MergeFoot`'s `primary`) each take `busy` and `working` as `Button` does.
 - `Spinner` (the `spinner` utility) alone is for a wait inside a line, such as a status bar item.
@@ -309,7 +311,9 @@ that floats.
 - **`Popover`** is a small panel beside what it's about: a status item's details, a picker. Give it
   its `trigger`, or an `anchor` when a key opens it.
 - **`ContextMenu`** is the menu at a point: what can be done to what was right-clicked, each with
-  its key.
+  its key. A command that does one of two things is named by which it would do there, from its
+  handler's `named`: "Unresolve" on a resolved thread, "Expand" on one drawn collapsed (a
+  `ThreadTarget`'s `collapsed`).
 - **`Palette`** is the box that finds things by typing, from the top of the window.
 - **`Tooltip`** names a control and its key: see [Controls](#controls).
 - **`ToastStack`** shows results at the bottom right, above the status bar: three at most, four
@@ -404,6 +408,9 @@ tokens. Their code is the source for how each one looks.
 Build new screens from these. If something new is needed, make it from the same tokens and keep it
 to one job.
 
+An `Avatar` whose picture the window already holds shows it from the first frame, with no initials
+first, so a card drawn again doesn't flash them.
+
 ## Code and diffs
 
 - Every code view is CodeMirror 6, themed by `css/code.css`. Lo's own decorations use `.lo-*`
@@ -436,6 +443,10 @@ to one job.
   whenever it takes focus (`Composer.focus()`), and keeps itself in view as it's laid out, until the
   reader's next key, press or scroll. It keeps `lo-sp-8` under it (its `scroll-margin-bottom`, which
   `reveal` honours), so its ring shows whole above the pane's foot.
+- **A box that grows keeps its foot in view**, as an editor keeps its caret. With focus in it, a box
+  that grows as a line is typed, its preview is drawn or its text wraps in less width scrolls its
+  pane the least that keeps `lo-sp-8` under it. One that shrinks moves nothing, and one whose foot
+  the reader scrolled off screen stays where they left it.
 
 ## Comments
 
@@ -476,21 +487,29 @@ copy its foot.
   once. A send that fails turns back into the open box with the text as it was, under a note that
   says what wasn't sent and why, in the danger tone. The box's own action sends it again: a note
   never offers a second button for what a button under it does. A screen reader hears each step from
-  the comments' one live region (`tell`): that it's sending, that it was sent, or the note.
+  the comments' one live region (`tell`): that it's sending, that it was sent, or the note. A note
+  takes focus back into its box only from a reader still there, or with focus nowhere: one who left
+  for the code keeps their place.
 - **An edit's box is the comment.** From an edit opening to its card showing what was saved, the
   comment's text shows once, in the box: the thread's card draws without that comment and offers no
   reply meanwhile.
 - **Never a blind resend.** When GitHub's answer never came, nobody knows whether the comment
   posted, and sending it again could post it twice. The box then says "Comment not confirmed" and
   offers "Check again", which only looks. Its buttons are dimmed with "Check again first" until Lo
-  knows: found, the card takes the box's place; not found, the box's action sends it again. An edit
-  and a resolve follow the same rule: a card's "Resolve not confirmed" offers "Check again", and
-  "Try again" only once Lo knows it didn't go. A resolve, an unresolve or a delete shows as asked,
-  its control at work, until the thread itself shows it, so a card never flips back between GitHub's
-  answer and the next read of its threads.
+  knows: found, the card takes the box's place; not found, the box's action sends it again. The card
+  that says "Checking…" comes on screen whole as Lo starts to look, unless the reader has left the
+  box. An edit and a resolve follow the same rule: a card's "Resolve not confirmed" offers "Check
+  again", and "Try again" only once Lo knows it didn't go. A resolve, an unresolve or a delete shows
+  as asked, its control at work, until the thread itself shows it, so a card never flips back
+  between GitHub's answer and the next read of its threads. If they don't show it in ten seconds the
+  control is its own again, and the card still shows what was asked until they're read again. One
+  change to a thread at a time: while one is at work, resolving it or deleting from it is dimmed,
+  with what's at work as the reason ("Resolving…").
 - **Attached files.** A file goes in at the cursor as a placeholder while it uploads. If the upload
   fails or is refused, Lo takes the placeholder out itself and the file's row says what happened. A
-  comment isn't sent while a placeholder is in its text.
+  comment isn't sent while a placeholder is in its text. What Lo changes in the text itself, as a
+  link taking its placeholder's place, is no step of the box's undo (`Composer.replace` with
+  `record` false): undo goes on past it to what the reader typed.
 - **A line reference is data.** What a comment is on is held as its side, lines and revision
   (`LineRef`) and worded in one place (`lineRefText`): "Line 3", "Lines 39–41", "Line 3, removed",
   with "· r2" where the revision isn't the one on screen. Never build the words by hand.
