@@ -157,14 +157,20 @@ describe('e on a file', () => {
 
   it('a failed write shows GitHub’s mark again, and keeps why on the file, not in a toast', async () => {
     const failure = () => viewedFailureOf(viewedMarksOf(TAB), { text: 'src/a.ts' });
-    answers['revisions.markViewed'] = () => {
-      throw new IpcError('failed', 'Offline.');
-    };
+    answers['revisions.markViewed'] = () => ({
+      kind: 'failed',
+      reason: 'Offline.',
+      details: 'getaddrinfo ENOTFOUND api.github.com',
+    });
     toggleViewed(TAB, file('src/a.ts'));
     expect(mark('src/a.ts')).toBe('viewed');
     await answered();
     expect(mark('src/a.ts')).toBe('unviewed');
-    expect(failure()).toEqual({ title: 'Couldn’t mark a.ts viewed', reason: 'Offline.' });
+    expect(failure()).toEqual({
+      title: 'Couldn’t mark a.ts viewed',
+      reason: 'Offline.',
+      details: 'getaddrinfo ENOTFOUND api.github.com',
+    });
     expect(notice()).toBeUndefined();
     // The next mark takes its place.
     answers['revisions.markViewed'] = () => ({ kind: 'done' });
@@ -187,6 +193,21 @@ describe('e on a file', () => {
     await answered();
     expect(mark('src/a.ts')).toBe('unviewed');
     expect(failure()?.reason).toBe('This revision is out of date.');
+  });
+
+  it('main failing to answer gives no reason line, and its words only behind Details', async () => {
+    const failure = () => viewedFailureOf(viewedMarksOf(TAB), { text: 'src/a.ts' });
+    answers['revisions.markViewed'] = () => {
+      throw new IpcError('missing', 'The pull request’s tab closed.');
+    };
+    toggleViewed(TAB, file('src/a.ts'));
+    await answered();
+    expect(mark('src/a.ts')).toBe('unviewed');
+    expect(failure()).toEqual({
+      title: 'Couldn’t mark a.ts viewed',
+      reason: undefined,
+      details: 'The pull request’s tab closed.',
+    });
   });
 });
 

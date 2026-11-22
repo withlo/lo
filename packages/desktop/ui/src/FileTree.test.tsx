@@ -123,6 +123,22 @@ describe('FileTree', () => {
     expect(c).not.toContain('role="img"');
   });
 
+  it('dims the toolbar while the files are read, saying why, and keeps it reachable', () => {
+    const html = renderToStaticMarkup(
+      <FileTreePanel mode="tree" changedOnly={false} waiting>
+        {null}
+      </FileTreePanel>,
+    );
+    const buttons = html.split('<button').slice(1);
+    expect(buttons).toHaveLength(3);
+    for (const button of buttons) {
+      expect(button).toContain('aria-disabled="true"');
+      expect(button).toContain('aria-description="Reading files…"');
+      expect(button).not.toMatch(/\sdisabled=""/);
+      expect(button).not.toContain('tabindex="-1"');
+    }
+  });
+
   it("only uses utilities that Lo's stylesheet has, so no spacing is silently dropped", async () => {
     const classes = [
       ...new Set(

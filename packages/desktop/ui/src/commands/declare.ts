@@ -61,6 +61,13 @@ export interface When {
   readonly mode?: Mode | readonly Mode[];
   /** The command exists on this system only. */
   readonly system?: System;
+  /**
+   * Its keys are its only while what they act on is one of these, or a line that gives one: a
+   * thread under the cursor's line. There it beats a command on the same keys for the scope, so one
+   * key does the same to different things, each named for what it does: `z a` collapses a thread
+   * on one, and the file elsewhere.
+   */
+  readonly on?: TargetKind;
 }
 
 /** Where a command is in right-click menus: the kind of target's menu, and its place there. */

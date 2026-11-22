@@ -21,6 +21,7 @@ import type {
   PeekFrame,
   PeekView,
   Place,
+  RenderProblem,
   RenderThread,
   Spot,
   ThreadView,
@@ -152,7 +153,7 @@ function open(on: DiffEvents = events(), init: Partial<DiffInit> = {}): DiffView
   document.body.append(parent);
   view = createDiffView(
     parent,
-    { files, layout: 'split', vimKeys: motions, nonce: 'n', ...init },
+    { files, layout: 'split', vimKeys: motions, nonce: 'n', renderProblem: problemTitle, ...init },
     on,
   );
   for (const file of init.files ?? files) {
@@ -273,13 +274,22 @@ function collapsed(): number {
   return parent!.querySelectorAll('.cm-content[aria-label="After"] [data-row^="c:0:"]').length;
 }
 
+/** A file's `Problem` as the app draws it, here only its title. */
+const problemTitle: RenderProblem = (host, problem) => {
+  host.textContent = problem.title;
+  return {
+    update: (now) => void (host.textContent = now.title),
+    destroy() {},
+  };
+};
+
 /**
  * What the row under each file's header says, in the left column, which draws its words: its
  * words, or its Problem's title.
  */
 function notes(): string[] {
   return [...parent!.querySelectorAll('.cm-content[aria-label="Before"] .lo-filerow')].map(
-    (row) => row.querySelector('.lo-fileproblem__title')?.textContent ?? row.textContent ?? '',
+    (row) => row.textContent ?? '',
   );
 }
 

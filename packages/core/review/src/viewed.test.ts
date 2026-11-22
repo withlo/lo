@@ -219,6 +219,9 @@ test('githubs list holds at its own head', () => {
   expect(viewed.lists('b', 'h2')).toBe(false);
 });
 
+/** rozed-bot, writing to a rozed-dev repo, on a Mac. */
+const WHO = { login: 'rozed-bot', owner: 'rozed-dev', keychain: 'the Keychain' };
+
 function toggled(path: string, mark: boolean): ViewedToggle {
   return { path, mark, id: 1 };
 }
@@ -262,12 +265,37 @@ test('a failed write says why, as the reason under its title', () => {
     ],
   ];
   for (const [failed, error, expected] of cases) {
-    expect(writeFailed(failed, 'rozed-bot', error)).toBe(expected);
+    expect(writeFailed(failed, WHO, error)).toBe(expected);
   }
   // The primary limit says when it resets, where GitHub said.
-  expect(writeFailed(marking, 'rozed-bot', rateLimited(false))).toMatch(
+  expect(writeFailed(marking, WHO, rateLimited(false))).toMatch(
     /^GitHub’s rate limit (resets at .+|was reached)\.$/,
   );
+});
+
+test('a failed write names the cause in plain words, never in GitHub’s or the system’s', () => {
+  const marking = toggled('src/main.rs', true);
+  const cases: [GithubError, string | undefined][] = [
+    [
+      new GithubError({ kind: 'tokenUnavailable', message: 'The keychain is locked' }),
+      'rozed-bot’s sign-in can’t be read from the Keychain.',
+    ],
+    [
+      new GithubError({ kind: 'ssoRequired', message: 'Resource protected by SAML enforcement' }),
+      'rozed-dev requires single sign-on.',
+    ],
+    [
+      new GithubError({ kind: 'oauthAppRestricted', message: 'restricted' }),
+      'rozed-dev hasn’t approved Lo.',
+    ],
+    [
+      new GithubError({ kind: 'network', failure: 'lost', message: 'timed out' }),
+      'GitHub didn’t respond.',
+    ],
+    [new GithubError({ kind: 'decode', message: 'Unexpected token' }), undefined],
+    [new GithubError({ kind: 'refusedUrl', host: 'example.com' }), undefined],
+  ];
+  for (const [error, expected] of cases) expect(writeFailed(marking, WHO, error)).toBe(expected);
 });
 
 /** A normal push from `before` to `after` at `minute`. */

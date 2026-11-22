@@ -42,7 +42,7 @@ import {
 } from '@codemirror/view';
 
 import { KEY_EVENT } from '../commands/index.ts';
-import { alignRows, type RowHeights, type SideHeights } from './align.ts';
+import { alignRows, hatchedSpots, type RowHeights, type SideHeights } from './align.ts';
 import type { PassStats } from './api.ts';
 import { HEADER_HEIGHT } from './heads.ts';
 import type { Layout, Side } from './layout.ts';
@@ -1171,7 +1171,7 @@ export class Aligner {
       const view = this.#views[side];
       const doc = view.state.doc;
       const { viewport } = view;
-      const placed = spacers
+      const spots = spacers
         // The end row's spacer goes only where this side draws it.
         .filter(
           (spacer) =>
@@ -1180,14 +1180,21 @@ export class Aligner {
               refs[spacer.row] !== end ||
               doc.line(lines(end, side).first).from <= viewport.to),
         )
-        .map(({ row, place, height }): Placed => {
+        .map(({ row, place, height }) => {
           const ref = refs[row]!;
           const { first, last } = lines(ref, side);
-          const look = spacerLook(this.#rows(ref.file), ref.row, place, height);
-          return place === 'above'
-            ? { pos: doc.line(first).from, side: -1, height: round(height), look }
-            : { pos: doc.line(last).to, side: 2, height: round(height), look };
+          const under = ref.row === 0 && place === 'below';
+          const flat = under || this.#rows(ref.file).collapsed[ref.row] !== 0;
+          return { line: place === 'above' ? first : last, place, height, flat, under };
         });
+      // Short gaps keep their hatch by the run they're in, not one by one.
+      const hatched = hatchedSpots(spots, HATCHED);
+      const placed = spots.map(({ line, place, height, under }, at): Placed => {
+        const look: SpacerLook = under ? 'under' : hatched[at] ? 'hatched' : 'flat';
+        return place === 'above'
+          ? { pos: doc.line(line).from, side: -1, height: round(height), look }
+          : { pos: doc.line(line).to, side: 2, height: round(height), look };
+      });
       const range = ranges[side];
       if (!range) continue;
       const { from, to } = range;
@@ -1583,22 +1590,6 @@ function within(first: number, last: number, range: { first: number; last: numbe
 /** Heights to a hundredth of a pixel, past which they're noise. */
 function round(height: number): number {
   return Math.round(height * 100) / 100;
-}
-
-/**
- * How a spacer at `place` of a file's row `row` is drawn. Below the header's row it's the right
- * column's half of what's under the header on the other side, and takes its ground. Elsewhere it's
- * flat, but for a short gap between lines, three lines or less with no collapsed lines beside it,
- * which keeps its hatch, so a line missing on one side still reads as missing.
- */
-function spacerLook(
-  rows: FileRows,
-  row: number,
-  place: 'above' | 'below',
-  height: number,
-): SpacerLook {
-  if (row === 0 && place === 'below') return 'under';
-  return height <= HATCHED && rows.collapsed[row] === 0 ? 'hatched' : 'flat';
 }
 
 /** Whether the spacers between `from` and `to` already are `placed`. */

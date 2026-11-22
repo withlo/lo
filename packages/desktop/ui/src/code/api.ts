@@ -72,19 +72,46 @@ export interface FileHeader {
    */
   counted?: boolean;
   /**
-   * Something done to the file that failed, such as marking it viewed: drawn under the header in
-   * `Problem`'s inline shape, with "Try again", which runs its command on the file.
+   * Something done to the file that failed, such as marking it viewed: drawn under the header by
+   * the caller, in the element the view makes for it (`RenderProblem`).
    */
   problem?: FileProblem;
 }
 
-/** A failure that belongs to a file, not a line: what failed, why, and the command to try again. */
+/**
+ * A failure that belongs to a file, not a line: what failed, why, what GitHub or the system said,
+ * and the command to try again.
+ */
 export interface FileProblem {
   readonly title: string;
   readonly reason?: string | undefined;
+  /** The raw text behind Details, as it was said. */
+  readonly details?: string | undefined;
   /** The command "Try again" runs on the file, as its key would. */
   readonly command: string;
 }
+
+/** What the caller drew for a file's `Problem`, which the view keeps up to date and takes down. */
+export interface ProblemContent {
+  /** The problem changed: draw it again. */
+  update(problem: FileProblem): void;
+  /** The file has no problem anymore: take down what was drawn. */
+  destroy(): void;
+}
+
+/**
+ * Draws file `file`'s problem in `host`, an element the view made for it, which it keeps under the
+ * file's header, as the shared `Problem`, its "Try again" running `problem.command` on the file.
+ * What's in `host` is the caller's. Draw it at once: the view lays the header out as it's drawn.
+ */
+/** What `za` does to a file now (`DiffView.foldOf`). */
+export type FileFold = 'collapse' | 'expand' | 'show';
+
+export type RenderProblem = (
+  host: HTMLElement,
+  problem: FileProblem,
+  file: string,
+) => ProblemContent;
 
 /** A changed file, as a diff view is given it. */
 export interface DiffFile {
@@ -150,6 +177,8 @@ export interface DiffInit {
    * first frame after `seen`. Otherwise, from its first frame.
    */
   hidden?: boolean | undefined;
+  /** What draws a file's `problem` under its header. Without it, none is drawn. */
+  renderProblem?: RenderProblem | undefined;
 }
 
 /**
@@ -606,6 +635,12 @@ export interface DiffView extends KeySource {
   otherSide(): void;
   /** `open` and `close` act on a line; `file` and `toggle` on a line's file, a header's or a file. */
   fold(at: Target, how: Fold): void;
+  /**
+   * What `toggle` does to file `id` now: `collapse` a file drawn, `expand` one closed, `show` one
+   * too large to draw unasked, whose lines aren't read or couldn't be, or nothing, as to a binary
+   * file or one waited on.
+   */
+  foldOf(id: string): FileFold | undefined;
   /** The text of a span's lines, as `yy` copies them. */
   lines(span: Span): readonly string[];
   /**

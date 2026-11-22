@@ -9,7 +9,7 @@ import { WidgetType } from '@codemirror/view';
 
 import { COMMENT_PATH, threadWords } from '../counts.ts';
 import { EDIT_SLOT } from '../edits.ts';
-import { type DrawNote, type FileHeader, type FileProblem, viewControls } from './api.ts';
+import { type DrawNote, type FileHeader, viewControls } from './api.ts';
 import type { ThreadHost } from './threads.ts';
 
 /** How each viewed mark is drawn: a ring, a filled ball, or an amber ring with a dot. */
@@ -208,8 +208,9 @@ function moreIcon(): SVGElement {
 
 /**
  * The row under a file's header, for what belongs to the file and not to a line: a button that
- * shows its lines, a wait, a label, or a `Problem`. It's one row across both sides: the left
- * column draws its words, and the right column its ground alone (`quiet`).
+ * shows its lines, a wait, or a label. It's one row across both sides: the left column draws its
+ * words, and the right column its ground alone (`quiet`). A `Problem` with the file is the
+ * caller's, drawn above it (`HeaderProblem`).
  */
 export interface FileRow {
   /** What it says. */
@@ -220,42 +221,24 @@ export interface FileRow {
   readonly busy?: boolean | undefined;
   /** Its tooltip, where it says more than its words. */
   readonly tip?: string | undefined;
-  /** Something failed: drawn in `Problem`'s inline shape, `text` its title. */
-  readonly problem?: FileProblem | undefined;
 }
 
 /** Whether two rows draw the same. */
 function sameRow(a: FileRow | undefined, b: FileRow | undefined): boolean {
   if (!a || !b) return a === b;
-  return (
-    a.text === b.text &&
-    a.act === b.act &&
-    a.busy === b.busy &&
-    a.tip === b.tip &&
-    a.problem?.title === b.problem?.title &&
-    a.problem?.reason === b.problem?.reason &&
-    a.problem?.command === b.problem?.command
-  );
+  return a.text === b.text && a.act === b.act && a.busy === b.busy && a.tip === b.tip;
 }
 
-/** The row's heights, as the design has them: a button, a wait or a label. */
+/** The row's height, as the design has it: a button, a wait or a label. */
 const ROW_HEIGHT = 24;
-/** About how tall a `Problem` row is, with a reason and without. */
-const PROBLEM_HEIGHT = { reason: 70, alone: 52 };
-
-/** How tall `row` is about to be drawn: the right column's half of a `Problem` isn't drawn. */
-function rowHeight(row: FileRow, quiet: boolean): number {
-  if (!row.problem) return ROW_HEIGHT;
-  if (quiet) return 0;
-  return row.problem.reason === undefined ? PROBLEM_HEIGHT.alone : PROBLEM_HEIGHT.reason;
-}
+/** About how tall a `Problem` is with a reason, until it's drawn. */
+const PROBLEM_HEIGHT = 70;
 
 /**
  * The row under file `file`'s header. `quiet` draws its ground alone, the right column's half of
- * it, which a click acts on as the left's does; a `Problem`'s half is the space the view lines up.
+ * it, which a click acts on as the left's does.
  */
-function drawRow(file: number, row: FileRow, quiet: boolean): HTMLElement | undefined {
-  if (row.problem) return quiet ? undefined : drawProblem(row.problem);
+function drawRow(file: number, row: FileRow, quiet: boolean): HTMLElement {
   const drawn = element('div', `lo-filerow${quiet ? ' is-quiet' : ''}`);
   drawn.dataset.row = `n:${file}`;
   if (row.busy) {
@@ -276,41 +259,6 @@ function drawRow(file: number, row: FileRow, quiet: boolean): HTMLElement | unde
   return drawn;
 }
 
-/**
- * Something done to a file that failed, in `Problem`'s inline shape: what failed and why, said to
- * a screen reader as an alert, and "Try again", which runs its command on the file.
- */
-function drawProblem(problem: FileProblem): HTMLElement {
-  const row = element('div', 'lo-filerow lo-fileproblem');
-  const box = element('div', 'lo-fileproblem__box');
-  const icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-  icon.setAttribute('class', 'lo-i lo-i--sm lo-fileproblem__icon');
-  icon.setAttribute('viewBox', '0 0 16 16');
-  icon.setAttribute('aria-hidden', 'true');
-  for (const d of [
-    'M7.13 2.5a1 1 0 0 1 1.74 0l5.2 9.5a1 1 0 0 1-.87 1.5H2.8a1 1 0 0 1-.87-1.5Z',
-    'M8 6.25v3M8 11.25v.01',
-  ]) {
-    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-    path.setAttribute('d', d);
-    icon.append(path);
-  }
-  const said = element('div', 'lo-fileproblem__said');
-  said.setAttribute('role', 'alert');
-  said.append(element('p', 'lo-fileproblem__title', problem.title));
-  if (problem.reason !== undefined) {
-    said.append(' ', element('p', 'lo-fileproblem__reason', problem.reason));
-  }
-  const again = element('button', 'lo-fileproblem__again', 'Try again');
-  again.type = 'button';
-  again.tabIndex = -1;
-  again.dataset.command = problem.command;
-  again.dataset.tip = 'Try again';
-  box.append(icon, said, again);
-  row.append(box);
-  return row;
-}
-
 /** The threads and comment boxes on a file, drawn under its header on the side they're on. */
 export interface UnderHeader {
   readonly threads: readonly ThreadHost[];
@@ -322,12 +270,23 @@ export interface UnderHeader {
 }
 
 /**
+ * A file's `Problem` as its header draws it: the element the caller drew it in, which outlives the
+ * block, and `drawing`, which changes when it must be drawn again, to move it into the editor
+ * showing.
+ */
+export interface HeaderProblem {
+  readonly dom: HTMLElement;
+  readonly drawing: number;
+}
+
+/**
  * A file's header, or the part of it its column draws, with the row under it where the file has
  * no lines on this side to put it in place of, and under that the threads and comment boxes on the
- * file, on the side they're on. A `Problem` with the file comes first under the header. Each is
- * part of the header's block, not a block after it: CodeMirror's decoration cursor can lose a
- * block that sits after another at the same place when a chunk of decorations ends between them,
- * and then draws it where it shouldn't, above the lines it draws.
+ * file, on the side they're on. A `Problem` with the file comes first under the header, in the
+ * element the caller drew it in, which moves into whichever block draws it last. Each is part of
+ * the header's block, not a block after it: CodeMirror's decoration cursor can lose a block that
+ * sits after another at the same place when a chunk of decorations ends between them, and then
+ * draws it where it shouldn't, above the lines it draws.
  */
 export class HeaderWidget extends WidgetType {
   readonly file: number;
@@ -336,6 +295,7 @@ export class HeaderWidget extends WidgetType {
   readonly row: FileRow | undefined;
   readonly under: UnderHeader | undefined;
   readonly ring: HeaderRing;
+  readonly problem: HeaderProblem | undefined;
 
   constructor(
     file: number,
@@ -344,6 +304,7 @@ export class HeaderWidget extends WidgetType {
     ring: HeaderRing,
     row?: FileRow,
     under?: UnderHeader,
+    problem?: HeaderProblem,
   ) {
     super();
     this.file = file;
@@ -352,6 +313,7 @@ export class HeaderWidget extends WidgetType {
     this.ring = ring;
     this.row = row;
     this.under = under;
+    this.problem = problem;
   }
 
   override eq(other: HeaderWidget): boolean {
@@ -360,24 +322,22 @@ export class HeaderWidget extends WidgetType {
       other.part === this.part &&
       other.info === this.info &&
       other.ring === this.ring &&
+      other.problem?.dom === this.problem?.dom &&
+      other.problem?.drawing === this.problem?.drawing &&
       sameRow(other.row, this.row) &&
       sameUnder(other.under, this.under)
     );
   }
 
-  get #problem(): FileProblem | undefined {
-    return this.part === 'end' ? undefined : this.info.header.problem;
-  }
-
   toDOM(): HTMLElement {
     const head = drawHeader(this.file, this.info, this.part);
     if (this.ring.file === this.file) head.classList.add(RING_CLASS);
-    const problem = this.#problem;
+    const { problem } = this;
     const row = this.row && drawRow(this.file, this.row, this.part === 'end');
     if (!problem && !row && !this.under) return head;
     const block = element('div', 'lo-fileblock');
     block.append(head);
-    if (problem) block.append(drawProblem(problem));
+    if (problem) block.append(problem.dom);
     if (row) block.append(row);
     if (this.under) {
       // As under a line: the space around the cards is padding, which the editor measures.
@@ -390,11 +350,10 @@ export class HeaderWidget extends WidgetType {
 
   override get estimatedHeight(): number {
     let height = 38;
-    const problem = this.#problem;
-    if (problem) {
-      height += problem.reason === undefined ? PROBLEM_HEIGHT.alone : PROBLEM_HEIGHT.reason;
-    }
-    if (this.row) height += rowHeight(this.row, this.part === 'end');
+    const { problem } = this;
+    // As tall as it was last drawn, or about as tall as one with a reason.
+    if (problem) height += problem.dom.offsetHeight || PROBLEM_HEIGHT;
+    if (this.row) height += ROW_HEIGHT;
     const { under } = this;
     if (under) {
       const parts = under.threads.length + under.boxes.length;
@@ -405,10 +364,13 @@ export class HeaderWidget extends WidgetType {
     return height;
   }
 
-  /** The header's own events are the editor's; the threads and the boxes under it handle theirs. */
+  /**
+   * The header's own events are the editor's; the `Problem`, the threads and the boxes under it
+   * handle theirs.
+   */
   override ignoreEvent(event: Event): boolean {
     const { target } = event;
-    return target instanceof Element && target.closest('.lo-diffthread') !== null;
+    return target instanceof Element && target.closest('.lo-diffthread, .lo-fileproblem') !== null;
   }
 }
 
@@ -893,14 +855,13 @@ export class FileNoteWidget extends WidgetType {
   }
 
   toDOM(): HTMLElement {
-    // The right column's half of a `Problem` is the space the view lines up: nothing of its own.
-    const drawn = drawRow(this.file, this.row, this.quiet) ?? element('div', 'lo-filerow is-quiet');
+    const drawn = drawRow(this.file, this.row, this.quiet);
     if (!this.paired) delete drawn.dataset.row;
     return drawn;
   }
 
   override get estimatedHeight(): number {
-    return rowHeight(this.row, this.quiet);
+    return ROW_HEIGHT;
   }
 }
 

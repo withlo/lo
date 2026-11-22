@@ -71,6 +71,9 @@ export class Pin {
     this.dom = document.createElement('div');
     this.dom.className = 'lo-diffpin';
     this.dom.hidden = true;
+    // A copy of a header the document has, for the eye and the pointer: a screen reader reads the
+    // file's own header, once.
+    this.dom.setAttribute('aria-hidden', 'true');
   }
 
   /** The file it shows, if it shows one. */

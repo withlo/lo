@@ -38,6 +38,9 @@
   --lo-z-popover: 200;
   --lo-z-toast: 300;
   --lo-z-tooltip: 400;
+  /* Inside a code editor, not between the layers above: over CodeMirror's gutters (200), for a
+     band whose ground reaches through them, as a file's header and the row under it do. */
+  --lo-z-gutter-band: 201;
 }
 
 /* Platforms. Set data-lo-platform="linux" on <html> on Linux, and

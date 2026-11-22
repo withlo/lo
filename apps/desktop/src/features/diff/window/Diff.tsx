@@ -8,6 +8,7 @@
 // What arrives after it's drawn goes into the view in place (`drawing.ts`). The tree follows the
 // file on screen, and asks the diff to show the files it picks.
 
+import { HintButton } from '@lo/ui';
 import { useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 
 import { Slot } from '../../../window/slots.tsx';
@@ -206,7 +207,7 @@ export function Diff({ tab, shown }: { tab: PullTab; shown: boolean }) {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <Slot slot={notes} props={{ tab }} />
+      <Slot slot={notes} props={{ tab, end: changeJumps }} />
       {!ready || nonceValue === undefined || !settled ? (
         <Waiting tab={tab} snapshot={snapshot} threads={saysWaiting} />
       ) : (
@@ -215,6 +216,14 @@ export function Diff({ tab, shown }: { tab: PullTab; shown: boolean }) {
     </div>
   );
 }
+
+/** The diff bar's buttons for the change jumps, which say why they're dimmed until it's drawn. */
+const changeJumps = (
+  <span className="flex flex-none items-center gap-2">
+    <HintButton command="diff.previousChange" />
+    <HintButton command="diff.nextChange" />
+  </span>
+);
 
 /**
  * What the middle shows until the diff is drawn. While the tab opens and its files are read, it's

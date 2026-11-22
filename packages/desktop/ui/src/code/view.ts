@@ -59,7 +59,9 @@ import type {
   DiffLayout,
   DiffView,
   DrawNote,
+  FileFold,
   FileHeader,
+  FileProblem,
   Fold,
   JumpTo,
   Mark,
@@ -73,6 +75,8 @@ import type {
   PeekView,
   Place,
   Probe,
+  ProblemContent,
+  RenderProblem,
   RenderThread,
   Side,
   Span,
@@ -152,6 +156,7 @@ import {
   type BoxHost,
   CollapsedWidget,
   editSlot,
+  type HeaderProblem,
   type HeaderRing,
   headerRow,
   MOVED_ATTRIBUTE,
@@ -169,6 +174,23 @@ export function createDiffView(parent: HTMLElement, init: DiffInit, on: DiffEven
 }
 
 type Pane = Side | 'inline';
+
+/** A file's `Problem`: the element the caller draws it in, and what it drew. */
+interface ProblemHost {
+  readonly dom: HTMLElement;
+  readonly content: ProblemContent;
+  problem: FileProblem;
+}
+
+/** Whether two problems draw the same. */
+function sameProblem(a: FileProblem, b: FileProblem): boolean {
+  return (
+    a.title === b.title &&
+    a.reason === b.reason &&
+    a.details === b.details &&
+    a.command === b.command
+  );
+}
 
 /**
  * The runs of lines `diff` collapses around `keep`, by their first old line, which `zR` opens:
@@ -382,6 +404,9 @@ class View implements DiffView {
   #wanted: FileThreads[];
   /** Each thread's element, and what the caller drew in it. */
   readonly #hosts: Threads;
+  /** Each file's `Problem`, in the element the caller draws it in, while its header has one. */
+  readonly #problems = new Map<number, ProblemHost>();
+  readonly #renderProblem: RenderProblem | undefined;
   /**
    * Threads held at the height they were drawn at while they're on screen, until the reader's next
    * input.
@@ -483,6 +508,8 @@ class View implements DiffView {
     this.#index = new Map(this.#ids.map((id, index) => [id, index]));
     if (this.#index.size !== this.#ids.length) throw new Error('Two files have the same id.');
     this.#files = init.files.map(viewFile);
+    this.#renderProblem = init.renderProblem;
+    this.#files.forEach((_, file) => this.#takeProblem(file));
     this.#lines = init.files.map((file, index) => {
       if (keptOut(file) || !file.lines) return { old: [], new: [] };
       this.#loaded.add(index);
@@ -946,12 +973,35 @@ class View implements DiffView {
     if (!this.#loading.delete(file)) return;
     this.#rereading.delete(file);
     this.#failed.add(file);
+    this.#takeProblem(file);
     this.#refresh(file);
+  }
+
+  foldOf(id: string): FileFold | undefined {
+    const file = this.#fileOf(id);
+    switch (this.#noteOf(file)) {
+      case undefined:
+        return 'collapse';
+      case 'closed':
+        return 'expand';
+      case 'too-large':
+      case 'failed':
+        return 'show';
+      case 'binary':
+      case 'empty':
+      case 'pending':
+      case 'loading':
+      case 'showing':
+        return undefined;
+      default:
+        throw new Error('A note Lo doesn’t know.');
+    }
   }
 
   setHeader(id: string, header: FileHeader): void {
     const file = this.#fileOf(id);
     this.#files[file] = { ...this.#files[file]!, header };
+    this.#takeProblem(file);
     this.#refresh(file);
     this.#watchFile();
   }
@@ -2495,6 +2545,8 @@ class View implements DiffView {
     cancelAnimationFrame(this.#takeFrame);
     cancelAnimationFrame(this.#addFrame);
     this.#hosts.destroy();
+    for (const problem of this.#problems.values()) problem.content.destroy();
+    this.#problems.clear();
     for (const sizes of [this.#sizes.old, this.#sizes.new, this.#inline?.sizes]) sizes?.destroy();
     for (const view of this.#editors()) view.destroy();
     this.dom.remove();
@@ -3871,7 +3923,55 @@ class View implements DiffView {
       note: this.#noteOf(file),
       draw: this.#draw,
       ring: this.#ring,
+      problem: this.#problemOf(file),
     };
+  }
+
+  /**
+   * File `file`'s `Problem` as its header draws it: the element the caller drew it in, and when it
+   * must be drawn again, to move it into the editor showing.
+   */
+  #problemOf(file: number): HeaderProblem | undefined {
+    const held = this.#problems.get(file);
+    return held && { dom: held.dom, drawing: this.#drawing };
+  }
+
+  /**
+   * File `file`'s `Problem`: its lines that couldn't be read, or else what its header has, such as
+   * a refused "Mark viewed".
+   */
+  #problemFor(file: number): FileProblem | undefined {
+    const { path, header } = this.#files[file]!;
+    if (!this.#failed.has(file)) return header.problem;
+    const name = path.slice(path.lastIndexOf('/') + 1);
+    return { title: `Couldn’t read ${name}`, command: viewControls.toggle };
+  }
+
+  /**
+   * Has the caller draw file `file`'s `Problem` as it now is, in an element made the first time
+   * and kept until the file has none, or takes it down then.
+   */
+  #takeProblem(file: number): void {
+    const problem = this.#problemFor(file);
+    const held = this.#problems.get(file);
+    const render = this.#renderProblem;
+    if (!problem || !render) {
+      if (!held) return;
+      this.#problems.delete(file);
+      held.dom.remove();
+      held.content.destroy();
+      return;
+    }
+    if (held) {
+      if (sameProblem(held.problem, problem)) return;
+      held.problem = problem;
+      held.content.update(problem);
+      return;
+    }
+    const dom = document.createElement('div');
+    dom.className = 'lo-filerow lo-fileproblem';
+    const content = render(dom, problem, this.#ids[file]!);
+    this.#problems.set(file, { dom, content, problem });
   }
 
   /** Has the caller draw a thread, the first time it's drawn. */
@@ -4046,7 +4146,8 @@ class View implements DiffView {
   }
 
   /**
-   * Draws the files with threads, comment boxes or a peek again, so the editors showing take them.
+   * Draws the files with threads, comment boxes, a peek or a `Problem` again, so the editors
+   * showing take them.
    */
   #moveBoxes(): void {
     this.#drawing++;
@@ -4058,6 +4159,7 @@ class View implements DiffView {
     this.#threads.forEach((byPlace, file) => {
       if (byPlace.size > 0) files.add(file);
     });
+    for (const file of this.#problems.keys()) files.add(file);
     for (const file of files) this.#refresh(file);
   }
 
@@ -4086,6 +4188,7 @@ class View implements DiffView {
     this.#loading.delete(file);
     this.#rereading.delete(file);
     this.#failed.delete(file);
+    this.#takeProblem(file);
     this.#gaps[file] = [];
     this.#lines[file] = { old: given.old, new: given.new };
     if (diff) this.#diffs[file] = diff;
@@ -4499,6 +4602,7 @@ class View implements DiffView {
       this.#failed.delete(file);
       if (note === 'failed') this.#rereading.add(file);
       this.#loading.add(file);
+      this.#takeProblem(file);
       this.#refresh(file);
       this.#on.load(this.#ids[file]!);
       return;

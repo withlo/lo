@@ -22,10 +22,14 @@ import { views } from './store.ts';
 /** A changed file's viewed mark: viewed, not yet, or changed since it was viewed. */
 export type Mark = 'viewed' | 'unviewed' | 'dismissed';
 
-/** A mark GitHub didn't take: what failed, and why, which the file's header shows. */
+/**
+ * A mark GitHub didn't take, which the file's header shows: what failed, why, and what GitHub or
+ * the system said, as it said it, for Details.
+ */
 export interface MarkFailure {
   readonly title: string;
   readonly reason: string | undefined;
+  readonly details?: string | undefined;
 }
 
 /** A tab's viewed marks, as they show. */
@@ -271,7 +275,8 @@ function writable(
 
 /**
  * Sends a toggle to main, and takes its answer: if GitHub didn't take it, GitHub's mark again, and
- * the failure, `title` and why, kept on the file for its header to show until the next toggle.
+ * the failure, `title`, why and what was said, kept on the file for its header to show until the
+ * next toggle.
  */
 async function write(
   tab: string,
@@ -280,7 +285,7 @@ async function write(
   at: string,
   title: string,
 ): Promise<void> {
-  let why: string | undefined;
+  let failure: MarkFailure | undefined;
   try {
     const marked: Marked = await main().markViewed({
       id: tab,
@@ -292,21 +297,29 @@ async function write(
       case 'done':
         break;
       case 'paused':
-        why = `GitHub’s rate limit resets at ${timeOf(marked.until)}.`;
+        failure = { title, reason: `GitHub’s rate limit resets at ${timeOf(marked.until)}.` };
         break;
       case 'moved':
-        why = 'This revision is out of date.';
+        failure = { title, reason: 'This revision is out of date.' };
+        break;
+      case 'failed':
+        failure = { title, reason: marked.reason ?? undefined, details: marked.details };
         break;
       default:
         marked satisfies never;
-        why = '';
+        failure = { title, reason: undefined };
     }
   } catch (error) {
-    why = error instanceof Error ? error.message : String(error);
+    // Main's own refusal, or no answer: no reason line, and its words behind Details.
+    failure = {
+      title,
+      reason: undefined,
+      details: error instanceof Error ? error.message : String(error),
+    };
   }
-  model.marks.finish(made, why === undefined, Date.now());
-  if (why === undefined) model.failed.delete(made.path);
-  else model.failed.set(made.path, { title, reason: why === '' ? undefined : why });
+  model.marks.finish(made, failure === undefined, Date.now());
+  if (failure === undefined) model.failed.delete(made.path);
+  else model.failed.set(made.path, failure);
   // Unless the tab closed meanwhile.
   if (models.get(tab) === model) show(tab, model);
 }

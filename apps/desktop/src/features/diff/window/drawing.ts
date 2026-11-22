@@ -39,6 +39,7 @@ import { diffFileOf, headerOf, startWith } from './files.ts';
 import type { Entry, Loader, Moved, Shown } from './loader.ts';
 import { main } from './main.ts';
 import { followLabel } from './moved.ts';
+import { renderProblem } from './problems.tsx';
 import { setDrawn, takeReveal } from './tabs.ts';
 import { drawnName, shown as shownWanted, wantedIn } from './wanted.ts';
 import {
@@ -479,6 +480,7 @@ export function draw(options: DrawOptions): Drawing {
       nonce: options.nonce,
       // Drawn behind another middle view, its place is held once it's first shown.
       hidden: !options.shown,
+      renderProblem,
     },
     {
       cursor: settle,

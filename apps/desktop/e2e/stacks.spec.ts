@@ -352,9 +352,7 @@ test.describe('a run of layers', () => {
       await expect(page.locator('button[title="Compare revisions"]')).toHaveCount(0);
       await inDiff(page);
       await type(page, 'e');
-      await expect(
-        said(page, 'A run of layers has no viewed marks. Mark files viewed in a layer.'),
-      ).toHaveCount(1);
+      await expect(said(page, 'Show a single layer first')).toHaveCount(1);
 
       await type(page, 'Escape');
       await expect(bar(page)).toHaveCount(0, { timeout: 20_000 });

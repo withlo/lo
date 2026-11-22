@@ -57,6 +57,7 @@ export function whereText(command: Command): string | undefined {
     parts.push(`${parts.length > 0 ? 'not' : 'Not'} in ${listed(named(except), 'or')}`);
   const modes = listOf(when?.mode);
   if (modes.length > 0) parts.push(`in Vim's ${listed(modes, 'or')} mode`);
+  if (when?.on !== undefined) parts.push(`${parts.length > 0 ? 'on' : 'On'} a ${when.on}`);
   if (parts.length === 0) return undefined;
   return parts.join(', ');
 }

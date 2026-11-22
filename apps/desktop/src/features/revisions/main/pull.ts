@@ -54,6 +54,9 @@ import {
 import type { Comparing, OnScreen, Side, Since, SinceGroup } from '../service.ts';
 import type { Marks, ViewedRecord } from './marks.ts';
 
+/** What the note over the diff says while the revisions can't be read. */
+const READ_FAILED = 'Can’t read the revisions';
+
 /**
  * What the revisions use of an account's poller: the push history it keeps, and its events; the
  * pull request's details, with GitHub's viewed marks; and its writes, which mark files viewed.
@@ -341,7 +344,7 @@ export class RevisionsTab {
    * its poller: `at` is the head of what the diff shows. GitHub marks a file as of its newest head
    * (`markFileAsViewed` takes no commit), so marking refuses as `moved` unless that's `at`, as GitHub
    * has said since Lo started rather than from what Lo saved; clearing goes whatever the head. Both refuse as `paused` while GitHub has asked Lo to hold off, rather
-   * than land minutes after the key. A file marked is noted at `at`, and its note forgotten once its
+   * than land minutes after the key, and say why as `failed` when GitHub doesn't take them. A file marked is noted at `at`, and its note forgotten once its
    * mark is cleared, even if the tab has moved on by then: the mark is the pull request's.
    */
   async markViewed(path: string, viewed: boolean, at: string): Promise<Marked> {
@@ -385,15 +388,22 @@ export class RevisionsTab {
         },
       );
     } catch (error) {
-      // Why, as the reason under the window's title for the failure.
-      const message =
+      // Why, in the words the window shows under its title for the failure, with what GitHub or
+      // the system said behind Details.
+      const said = error instanceof GithubError ? error.message : describe(error);
+      const who = {
+        login,
+        owner: pull.repo.owner,
+        keychain: process.platform === 'darwin' ? 'the Keychain' : 'the keyring',
+      };
+      const reason =
         error instanceof GithubError
-          ? writeFailed({ path, mark: viewed, id: 0 }, login, error)
-          : `${describe(error)}.`;
+          ? writeFailed({ path, mark: viewed, id: 0 }, who, error)
+          : undefined;
       this.#options.log(
-        `Couldn’t ${viewed ? `mark ${path} viewed` : `clear the viewed mark on ${path}`}: ${message}`,
+        `Couldn’t ${viewed ? `mark ${path} viewed` : `clear the viewed mark on ${path}`}: ${said}`,
       );
-      throw new IpcError('failed', message);
+      return { kind: 'failed', reason: reason ?? null, details: said };
     }
     if (marked.kind !== 'done') return marked;
     try {
@@ -522,7 +532,7 @@ export class RevisionsTab {
       poller = await this.#options.github.poller(login);
     } catch (error) {
       if (this.#login !== login || this.#closed) return;
-      this.#fail(`Lo can’t read the revisions as ${login}: ${describe(error)}`);
+      this.#fail(`as ${login}: ${describe(error)}`);
       return;
     }
     if (this.#login !== login || this.#pull?.key !== pull.key || this.#closed) return;
@@ -535,7 +545,7 @@ export class RevisionsTab {
       if (cached) this.#takeHistory(cached.value);
     } catch (error) {
       if (this.#poller !== poller || this.#closed) return;
-      this.#fail(`Lo couldn’t read the revisions: ${describe(error)}`);
+      this.#fail(describe(error));
     }
   }
 
@@ -551,8 +561,7 @@ export class RevisionsTab {
       }
       case 'readFailed':
         if (event.name !== PUSH_HISTORY.name || !event.pull.equals(pull)) return;
-        if (!this.#history)
-          this.#fail(`Lo couldn’t read the revisions: ${new GithubError(event.error).message}`);
+        if (!this.#history) this.#fail(new GithubError(event.error).message);
         return;
       case 'details':
         if (!event.pull.equals(pull)) return;
@@ -571,10 +580,11 @@ export class RevisionsTab {
   }
 
   /** Reading the revisions failed, with nothing read before: the whole pull request shows. */
-  #fail(problem: string): void {
+  #fail(details: string): void {
     this.#status = 'failed';
-    this.#problem = problem;
-    this.#options.log(problem);
+    // What the note over the diff says; what GitHub or the system said goes to the log alone.
+    this.#problem = READ_FAILED;
+    this.#options.log(`${READ_FAILED}: ${details}`);
     this.#release();
     this.#publish();
   }
@@ -814,7 +824,7 @@ export class RevisionsTab {
     this.#revisions = revisions;
     this.#withCommits = withCommits;
     this.#status = 'ready';
-    if (this.#problem?.startsWith('Lo couldn’t read the revisions')) this.#problem = undefined;
+    if (this.#problem === READ_FAILED) this.#problem = undefined;
     // What was fetched was for other revisions.
     if (this.#fetched !== this.#headsKey(revisions)) this.#fetched = undefined;
     if (!this.#defaulted) this.#decideDefault(revisions, history);

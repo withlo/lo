@@ -189,15 +189,44 @@ function samePaths(
   return a.size === b.size && [...a].every((path) => b.has(path));
 }
 
+/** Who a toggle's write was sent as, and where, for the reason a failure gives. */
+export interface WriteWho {
+  /** The account it was sent as. */
+  readonly login: string;
+  /** The repo's owner: an organization can require single sign-on, or not approve Lo. */
+  readonly owner: string;
+  /** Where this computer keeps sign-ins, as a sentence names it: "the Keychain", "the keyring". */
+  readonly keychain: string;
+}
+
 /**
- * Why a toggle's write failed, as `login`: the reason under the title the window gives it, such as
- * "Couldn’t mark wrap.ts viewed". The window shows GitHub's mark again.
+ * Why a toggle's write failed, sent as `who`: the reason under the title the window gives it, such
+ * as "Couldn’t mark wrap.ts viewed", in the words each cause has. Nothing for a cause with no
+ * reason line. GitHub's own words aren't part of it: they go behind Details.
  */
-export function writeFailed(toggle: ViewedToggle, login: string, error: GithubError): string {
+export function writeFailed(
+  toggle: ViewedToggle,
+  who: WriteWho,
+  error: GithubError,
+): string | undefined {
   const { detail } = error;
+  const { login } = who;
   switch (detail.kind) {
     case 'network':
-      return 'Offline.';
+      switch (detail.failure) {
+        case 'offline':
+          return 'Offline.';
+        case 'lost':
+          return 'GitHub didn’t respond.';
+        case 'tunnel':
+          return 'The proxy couldn’t connect to GitHub.';
+        case 'refused':
+        case 'unknown':
+          return undefined;
+        default:
+          detail.failure satisfies never;
+          return undefined;
+      }
     case 'rateLimited': {
       const reset = detail.secondary ? undefined : detail.reset;
       return reset === undefined
@@ -207,7 +236,7 @@ export function writeFailed(toggle: ViewedToggle, login: string, error: GithubEr
     case 'unauthorized':
       return `${login} is signed out.`;
     case 'tokenUnavailable':
-      return `${login}’s token couldn’t be read.`;
+      return `${login}’s sign-in can’t be read from ${who.keychain}.`;
     case 'notFound':
       return `${login} can’t see this pull request.`;
     case 'graphql': {
@@ -223,11 +252,14 @@ export function writeFailed(toggle: ViewedToggle, login: string, error: GithubEr
         ? `${login} doesn’t have permission.`
         : 'GitHub returned an error.';
     case 'ssoRequired':
+      return `${who.owner} requires single sign-on.`;
     case 'oauthAppRestricted':
+      return `${detail.org ?? who.owner} hasn’t approved Lo.`;
     case 'inconsistent':
+      return 'GitHub returned an error.';
     case 'refusedUrl':
     case 'decode':
-      return error.message;
+      return undefined;
     default:
       throw new Error(
         `a GitHub error Lo doesn't know: ${JSON.stringify(detail satisfies never)} (${toggle.path})`,

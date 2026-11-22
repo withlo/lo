@@ -302,7 +302,7 @@ export function ThreadCard({
         actions !== undefined && login !== undefined && row.viewerCanReply && !replied && !inBox
       }
       keys={{
-        toggle: keysOf('diff.toggleFile'),
+        toggle: keysOf('diff.toggleThread'),
         reply: keysOf('comments.reply'),
         resolve: keysOf('comments.resolve'),
         edit: keysOf('comments.edit'),

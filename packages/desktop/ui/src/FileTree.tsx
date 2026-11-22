@@ -458,7 +458,10 @@ export interface FileTreePanelProps {
   changedOnly: boolean;
   onChangedOnly?: ((changedOnly: boolean) => void) | undefined;
   changedOnlyKeys?: readonly string[] | undefined;
-  /** The files aren't read yet: the toolbar's controls are dimmed until they are. */
+  /**
+   * The files aren't read yet: the toolbar's controls are dimmed until they are, and say so. They
+   * stay in the tab order, as a toolbar's dimmed controls do, so the reason can be reached.
+   */
   waiting?: boolean | undefined;
   /** A note over the files, such as why only the changed files show. */
   note?: ReactNode;
@@ -473,7 +476,7 @@ const segment = cva(
       pressed: {
         true: 'bg-bg-element text-fg ring-1 ring-border-strong',
         false:
-          'text-fg-muted hover:text-fg disabled:text-fg-disabled disabled:hover:text-fg-disabled',
+          'text-fg-muted hover:text-fg aria-disabled:text-fg-disabled aria-disabled:hover:text-fg-disabled',
       },
     },
   },
@@ -481,6 +484,9 @@ const segment = cva(
 
 /** What the switch that shows only the changed files is named. */
 const CHANGED_ONLY = 'Changed files only';
+
+/** Why the toolbar's controls are dimmed while the files are read. */
+const WAITING = 'Reading files…';
 
 /**
  * The left panel's files: its head with the viewed count, the switch between the tree and review
@@ -499,6 +505,8 @@ export function FileTreePanel({
   note,
   children,
 }: FileTreePanelProps) {
+  // Dimmed, with why: said to be disabled, not made so, so focus and the tooltip still reach it.
+  const dimmed = waiting ? { 'aria-disabled': true, 'aria-description': WAITING } : {};
   return (
     <section aria-label="Files" className="flex min-h-0 flex-1 flex-col bg-bg-chrome">
       <div className="flex flex-none items-center gap-6 ps-16 pe-8 pt-12 pb-8">
@@ -521,38 +529,44 @@ export function FileTreePanel({
             aria-label="File list"
             className="inline-flex flex-none items-center gap-2 rounded-pill bg-bg-well p-2 inset-ring inset-ring-border"
           >
-            <Tooltip label="Tree" keys={modeKeys}>
+            <Tooltip label={waiting ? WAITING : 'Tree'} keys={waiting ? undefined : modeKeys}>
               <button
                 type="button"
                 aria-pressed={mode === 'tree'}
-                disabled={waiting}
+                {...dimmed}
                 className={segment({ pressed: mode === 'tree' })}
-                onClick={() => onMode?.('tree')}
+                onClick={() => !waiting && onMode?.('tree')}
               >
                 Tree
               </button>
             </Tooltip>
-            <Tooltip label="Review order" keys={modeKeys}>
+            <Tooltip
+              label={waiting ? WAITING : 'Review order'}
+              keys={waiting ? undefined : modeKeys}
+            >
               <button
                 type="button"
                 aria-pressed={mode === 'review'}
-                disabled={waiting}
+                {...dimmed}
                 className={segment({ pressed: mode === 'review' })}
-                onClick={() => onMode?.('review')}
+                onClick={() => !waiting && onMode?.('review')}
               >
                 Review order
               </button>
             </Tooltip>
           </div>
           <span className="flex-1" />
-          <Tooltip label={CHANGED_ONLY} keys={changedOnlyKeys}>
+          <Tooltip
+            label={waiting ? WAITING : CHANGED_ONLY}
+            keys={waiting ? undefined : changedOnlyKeys}
+          >
             <button
               type="button"
               aria-pressed={changedOnly}
               aria-label={CHANGED_ONLY}
-              disabled={waiting}
-              className={`inline-flex h-control-h-sm flex-none items-center gap-4 rounded-pill px-8 text-small-medium whitespace-nowrap focus-visible:shadow-ring ${changedOnly ? 'bg-accent-soft text-fg-accent inset-ring inset-ring-accent-line' : 'text-fg-muted inset-ring inset-ring-border hover:bg-hover hover:text-fg'} disabled:bg-transparent disabled:text-fg-disabled`}
-              onClick={() => onChangedOnly?.(!changedOnly)}
+              {...dimmed}
+              className={`inline-flex h-control-h-sm flex-none items-center gap-4 rounded-pill px-8 text-small-medium whitespace-nowrap focus-visible:shadow-ring ${changedOnly ? 'bg-accent-soft text-fg-accent inset-ring inset-ring-accent-line' : 'text-fg-muted inset-ring inset-ring-border hover:bg-hover hover:text-fg'} aria-disabled:bg-transparent aria-disabled:text-fg-disabled aria-disabled:hover:bg-transparent aria-disabled:hover:text-fg-disabled`}
+              onClick={() => !waiting && onChangedOnly?.(!changedOnly)}
             >
               <svg className="lo-i lo-i--xs" viewBox="0 0 16 16" aria-hidden="true">
                 <path d="M2.5 3.5h11l-4.25 5v3.75L6.75 13.5V8.5Z" />

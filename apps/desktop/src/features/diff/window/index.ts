@@ -3,7 +3,8 @@
 // as main says what changed, and is drawn while it's on screen; a file opens whole from the diff,
 // the tree and the file finder.
 
-import type { HeaderTarget, LineTarget, Place, Span, Target, ThreadTarget } from '@lo/ui/commands';
+import type { FileFold } from '@lo/ui/code';
+import type { HeaderTarget, LineTarget, Place, Span, Target } from '@lo/ui/commands';
 import { handlers } from '@lo/ui/commands';
 import { createElement } from 'react';
 
@@ -189,19 +190,24 @@ function fold(how: 'open' | 'close' | 'file' | 'toggle') {
   };
 }
 
-/**
- * `za`: opens or collapses the review thread a target names, the one `]t` landed on or the only
- * one on the cursor's line; on anything else, loads, closes or opens the file.
- */
-function toggle(drawn: Drawn, target: LineTarget | HeaderTarget | ThreadTarget): void {
-  if (target.kind === 'thread') {
-    drawn.view.openThread(target.thread, 'toggle');
-    return;
-  }
-  if (target.kind === 'line' && target.thread !== undefined) {
-    if (drawn.view.openThread(target.thread, 'toggle')) return;
-  }
-  fold('toggle')(drawn, target);
+/** What the header's menu calls `za` on a file, by what it would do there: "Collapse" by default. */
+const foldNames: Record<FileFold, string | undefined> = {
+  collapse: undefined,
+  expand: 'Expand',
+  show: 'Show large file',
+};
+
+/** The diff's layout, at once in the view on screen, then for every tab, as the setting. */
+async function setLayout({ view }: Drawn, next: 'split' | 'inline'): Promise<void> {
+  view.setLayout(next);
+  await changeSetting(layout, next);
+}
+
+/** Whether the diff on screen can change its layout: code beside another view can't. */
+function layoutNow(): true | string {
+  const drawn = onScreen();
+  if (typeof drawn === 'string') return drawn;
+  return !drawn.beside || 'Code beside is always inline';
 }
 
 async function copy(text: string): Promise<void> {
@@ -252,18 +258,12 @@ export default {
       },
     },
     otherSide: { run: withDiff(({ view }) => view.otherSide()), enabled: drawnNow },
+    sideBySide: { run: withDiff((drawn) => setLayout(drawn, 'split')), enabled: layoutNow },
     inline: {
-      run: withDiff(async ({ view }) => {
-        const next = view.probe.layout === 'split' ? 'inline' : 'split';
-        // At once, then for every tab, as the setting.
-        view.setLayout(next);
-        await changeSetting(layout, next);
-      }),
-      enabled: () => {
-        const drawn = onScreen();
-        if (typeof drawn === 'string') return drawn;
-        return !drawn.beside || 'Code beside is always inline';
-      },
+      run: withDiff((drawn) =>
+        setLayout(drawn, drawn.view.probe.layout === 'split' ? 'inline' : 'split'),
+      ),
+      enabled: layoutNow,
     },
     whitespace: {
       run: withDiff(async ({ loader }) => {
@@ -275,9 +275,19 @@ export default {
     closeRun: { run: withDiff(fold('close')), enabled: drawnNow },
     openFile: { run: withDiff(fold('file')), enabled: drawnNow },
     toggleFile: {
-      run: withDiff(toggle),
+      run: withDiff(fold('toggle')),
       enabled: drawnNow,
-      named: (target) => (target.kind === 'thread' && target.collapsed ? 'Expand' : undefined),
+      named: (target) => {
+        const drawn = onScreen();
+        if (typeof drawn === 'string') return undefined;
+        const now = drawn.view.foldOf(target.kind === 'header' ? target.file : target.at.file);
+        return now === undefined ? undefined : foldNames[now];
+      },
+    },
+    toggleThread: {
+      run: withDiff(({ view }, target) => void view.openThread(target.thread, 'toggle')),
+      enabled: drawnNow,
+      named: (target) => (target.collapsed ? 'Expand' : undefined),
     },
     wholeFile: {
       run: withDiff((drawn, target) => {

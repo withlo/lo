@@ -15,7 +15,6 @@ import type { FileDiff, MovedBlock } from '@lo/diff';
 import type { InlineLines } from './inline.ts';
 import type { Side } from './layout.ts';
 import { type FileLines, type Gap, inGap, type Keep, type Open, shownRuns } from './rows.ts';
-import { viewControls } from './api.ts';
 import {
   type BoxHost,
   CollapsedWidget,
@@ -23,6 +22,7 @@ import {
   FileNoteWidget,
   type HeaderInfo,
   type HeaderPart,
+  type HeaderProblem,
   type HeaderRing,
   HeaderWidget,
   MovedLabelWidget,
@@ -89,14 +89,16 @@ export interface Common {
   note?: FileNote | undefined;
   /** The file whose header the keyboard is on, which every header reads. */
   ring: HeaderRing;
+  /** The file's `Problem`, as the caller drew it, first under its header. */
+  problem?: HeaderProblem | undefined;
 }
 
 /**
- * The row under a file's header in place of its lines: a button that shows them, a wait, or a
- * `Problem`. A binary file, or one with no text changes, has none: its header's tag says so.
+ * The row under a file's header in place of its lines: a button that shows them, or a wait. A
+ * binary file, or one with no text changes, has none: its header's tag says so. Nor has a file
+ * whose lines couldn't be read: its `Problem` is drawn with its header.
  */
 export function fileRow(file: ViewFile, note: FileNote): FileRow | undefined {
-  const name = file.path.slice(file.path.lastIndexOf('/') + 1);
   switch (note) {
     case 'too-large': {
       const { additions, deletions } = file.header;
@@ -110,10 +112,7 @@ export function fileRow(file: ViewFile, note: FileNote): FileRow | undefined {
       return { text: 'Reading file…', busy: true };
     case 'pending':
       return { text: 'Comparing…', busy: true };
-    case 'failed': {
-      const title = `Couldn’t read ${name}`;
-      return { text: title, problem: { title, command: viewControls.toggle } };
-    }
+    case 'failed':
     case 'binary':
     case 'empty':
       return undefined;
@@ -235,7 +234,9 @@ function header(
     drawing: onFile.drawing ?? 0,
     draw: input.draw,
   };
-  const widget = new HeaderWidget(input.index, input.file, part, input.ring, row, under);
+  // The left column draws the problem with the path; the right lines up beside it.
+  const problem = part === 'end' ? undefined : input.problem;
+  const widget = new HeaderWidget(input.index, input.file, part, input.ring, row, under, problem);
   return Decoration.replace({ widget, block: true, file: input.index }).range(line.from, line.to);
 }
 

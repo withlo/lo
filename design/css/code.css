@@ -353,7 +353,7 @@
  * which it sits over.
  */
 .lo-diffhead {
-  position: relative; top: auto; z-index: 201;
+  position: relative; top: auto; z-index: var(--lo-z-gutter-band);
   padding: 0 8px;
   background: none;
   box-shadow: none;
@@ -425,7 +425,7 @@
  * draws its ground, through the gutters as the header's band does.
  */
 .lo-filerow {
-  position: relative; z-index: 201;
+  position: relative; z-index: var(--lo-z-gutter-band);
   display: flex; align-items: center; gap: 8px;
   height: var(--lo-row-h); padding: 0 16px 0 8px;
   background: var(--lo-diff-filler);
@@ -441,38 +441,19 @@
   top: 0; bottom: 0; right: 100%; width: var(--lo-gutters, 0px);
   background: inherit;
 }
-.lo-spacer.is-under { position: relative; z-index: 201; }
+.lo-spacer.is-under { position: relative; z-index: var(--lo-z-gutter-band); }
 .lo-filerow.is-act:is(:hover, .is-hover) {
   background: linear-gradient(var(--lo-hover), var(--lo-hover)), var(--lo-diff-filler);
   color: var(--lo-fg);
 }
 .lo-filerow__words { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-/* A Problem with the file, in Problem's inline shape, on the same ground. */
-.lo-filerow.lo-fileproblem { height: auto; padding: 8px 16px 8px 8px; white-space: normal; }
-.lo-fileproblem__box {
-  display: flex; align-items: flex-start; gap: 8px;
-  flex: 1; min-width: 0; max-width: 760px;
-  padding: 12px;
-  border-radius: var(--lo-r-md);
-  box-shadow: inset 0 0 0 1px var(--lo-danger-border);
-  background: var(--lo-danger-bg);
-  color: var(--lo-fg-muted);
+/* A Problem with the file, the app's own in its inline shape, on the same ground. */
+.lo-filerow.lo-fileproblem {
+  height: auto; padding: 8px 16px 8px 8px;
+  white-space: normal;
   user-select: text;
 }
-.lo-fileproblem__icon { margin-top: 2px; flex: none; color: var(--lo-danger); }
-.lo-fileproblem__said { display: flex; flex: 1; min-width: 0; flex-direction: column; }
-.lo-fileproblem__said p { margin: 0; }
-.lo-fileproblem__title { font-weight: 600; color: var(--lo-fg); }
-.lo-fileproblem__again {
-  display: inline-flex; align-items: center; flex: none;
-  height: var(--lo-control-h-sm); padding: 0 8px;
-  border: 1px solid var(--lo-border-strong); border-radius: var(--lo-r-sm);
-  background: var(--lo-bg-element);
-  color: var(--lo-fg);
-  font: var(--lo-text-small); font-weight: 500;
-  cursor: default;
-}
-.lo-fileproblem__again:hover { background: var(--lo-bg-element-hover); }
+.lo-fileproblem > * { flex: 1; min-width: 0; max-width: 760px; }
 
 /*
  * The header of the file at the top of a diff's scroll, pinned under the diff bar while that
