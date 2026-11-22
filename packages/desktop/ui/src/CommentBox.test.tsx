@@ -90,11 +90,10 @@ describe('CommentBox', () => {
     // a picture), and Write and Preview with the key.
     const head = box?.firstElementChild;
     expect(head?.textContent).toBe('Lines 39–41TOas tess-okaforWritePreview⌘⇧V');
-    // The foot, on one line: the icon that attaches, "Discard draft", then the buttons with their
-    // keys. No mode with Vim keys off, and no line of keys.
+    // The foot: the icon that attaches, "Discard draft", then the buttons with their keys. No mode
+    // with Vim keys off, and no line of keys.
     const foot = box?.lastElementChild;
     expect(foot?.textContent).toBe('Discard draftSend now⌥⏎Add to review⌘⏎');
-    expect(foot?.querySelector('.flex-wrap')).toBeNull();
     const buttons = [...(foot?.querySelectorAll('button') ?? [])];
     expect(buttons.map((each) => each.getAttribute('aria-label') ?? each.textContent)).toEqual([
       'Attach files…',
@@ -157,7 +156,7 @@ describe('CommentBox', () => {
     expect(onDiscard).toHaveBeenCalledOnce();
   });
 
-  it('gives up its key chips, then its hint, then its labels as it narrows, and never wraps', () => {
+  it('gives up its key chips, then its labels, then its hint as it narrows', () => {
     const host = render(
       <CommentBox {...WRITING} foot={{ ...WRITING.foot, text: 'Summary · Markdown' }} />,
     );

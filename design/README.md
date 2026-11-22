@@ -396,12 +396,13 @@ never draws its own.
 - **Body.** The editor, or its preview. The box has one ring, which is its focus; nothing inside it
   has another. An empty box says what it's for in a quiet hint (`hint`): "Reply", "Comment on #264".
 - **Foot.** "Attach files…" as an icon button at the left, then "Discard draft"; the actions at the
-  right, the main one last, each with its key. The foot is one line and never runs past the box: as
-  the box narrows it gives up its key chips, then its hint, then the labels of the controls that
-  keep an icon, and the actions keep their words (`box-chip`, `box-hint`, `box-label` in
-  `styles.css`, on the foot's own `@container`). A box too narrow for those words, as one beside the
-  code is in the smallest window, wraps its head and its foot (`box-row`): it's the one place a foot
-  wraps. In a box taller than its pane, the foot stays at the pane's foot.
+  right, the main one last, each with its key. The foot never runs past the box: as the box narrows
+  it gives up its key chips (under 480px), then the labels of the controls that keep an icon (under
+  410px, the width a foot with every control and Vim's mode needs), then its hint, and the actions
+  keep their words (`box-chip`, `box-label`, `box-hint` in `styles.css`, on the foot's own
+  `@container`). Whatever still doesn't fit wraps: the actions go to a row of their own, at its end,
+  as in a box beside the code in a small window. It's the one place a foot wraps. The head wraps
+  under 320px (`box-row`). In a box taller than its pane, the foot stays at the pane's foot.
 - **Actions.** "Add to review" and "Send now" under a line or a thread, "Send" under the pull
   request, "Save" in an edit. While a review is pending GitHub adds every comment to it, so the box
   has "Add to review" alone. A dimmed action says why in its tooltip, and the one pressed is `busy`
