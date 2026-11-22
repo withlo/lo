@@ -95,7 +95,7 @@ const KINDS: Record<Shape, ReadonlyMap<string, Record<string, Field>>> = {
       },
       rule: {},
       details: { open: boolean, summary: inlines, children: blocks },
-      suggestion: { text: string },
+      suggestion: { text: string, removed: { ...string, optional: true } },
       footnotes: { items: { check: isList, holds: 'footnotes' } },
     }),
   ),

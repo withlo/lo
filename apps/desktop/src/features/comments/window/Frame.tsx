@@ -32,6 +32,7 @@ import {
   type BoxState,
   discardable,
   pullIn,
+  replacedOf,
   send,
   sendingNow,
   takenDown,
@@ -84,7 +85,8 @@ function usePending(view: string): boolean {
 }
 
 /**
- * The foot's buttons: the main one, as `c` or `C` opened the box, last. While a pending review
+ * The foot's buttons, always in one order, "Send now" then "Add to review": only the fill moves, to
+ * the main one, as `c` or `C` opened the box. While a pending review
  * exists GitHub adds every comment to it, so the box has "Add to review" alone. An edit's has one,
  * which saves it. A comment on the pull request itself joins no review, so its one button sends it,
  * with `⌘⏎` as `⌥⏎` does. A button that can't be pressed says why in its tooltip, and the one
@@ -104,8 +106,14 @@ function footOf(
   const disabled = reason !== undefined || waiting;
   const { kind } = state.place;
   const canDiscard = discardable(state);
-  const alone = (label: string, how: 'review' | 'now', working: string): CommentBoxAction => ({
+  const alone = (
+    label: string,
+    how: 'review' | 'now',
+    working: string,
+    icon: CommentBoxAction['icon'],
+  ): CommentBoxAction => ({
     label,
+    icon,
     keys: boxKeys('addToReview'),
     primary: true,
     disabled,
@@ -116,6 +124,7 @@ function footOf(
   });
   const button = (how: 'review' | 'now'): CommentBoxAction => ({
     label: how === 'review' ? 'Add to review' : 'Send now',
+    icon: how === 'review' ? 'review' : 'send',
     keys: boxKeys(how === 'review' ? 'addToReview' : 'postNow'),
     primary: state.primary === how,
     disabled,
@@ -126,14 +135,12 @@ function footOf(
   });
   const actions =
     kind === 'conversation'
-      ? [alone('Send', 'now', 'Sending…')]
+      ? [alone('Send', 'now', 'Sending…', 'send')]
       : kind === 'edit'
-        ? [alone('Save', 'review', 'Saving…')]
+        ? [alone('Save', 'review', 'Saving…', 'save')]
         : pending
-          ? [alone('Add to review', 'review', 'Sending…')]
-          : state.primary === 'review'
-            ? [button('now'), button('review')]
-            : [button('review'), button('now')];
+          ? [alone('Add to review', 'review', 'Sending…', 'review')]
+          : [button('now'), button('review')];
   return {
     mode: modes[state.mode],
     // With no text there's nothing to discard: the head's control closes the box.
@@ -216,7 +223,7 @@ function Preview({ box }: { box: Box }): ReactNode {
   const { previewing, text } = useBox(box);
   const pull = pullIn(box.view);
   if (!previewing || !pull) return null;
-  return <Rendering view={box.view} text={text} pull={pull} />;
+  return <Rendering view={box.view} text={text} pull={pull} replaced={replacedOf(box)} />;
 }
 
 /**
@@ -232,12 +239,27 @@ function Sent({ box }: { box: Box }): ReactNode {
   const login = acting?.kind === 'account' ? acting.login : undefined;
   return (
     <SentPost
+      // A new thread's comment draws under the head row its thread will have: nothing moves as the
+      // thread takes the card's place.
+      state={
+        state.place.kind === 'thread'
+          ? box.lastHow === 'review'
+            ? 'Pending'
+            : 'Unresolved'
+          : undefined
+      }
       author={login}
       image={login === undefined ? undefined : avatarImage({ login, type: 'User' }, AVATAR)}
       label={sentLabel(state.sending, state.place.kind === 'edit')}
       body={
         pull ? (
-          <Rendering view={box.view} text={state.text} pull={pull} flush />
+          <Rendering
+            view={box.view}
+            text={state.text}
+            pull={pull}
+            replaced={replacedOf(box)}
+            flush
+          />
         ) : (
           <p className="whitespace-pre-wrap">{state.text}</p>
         )

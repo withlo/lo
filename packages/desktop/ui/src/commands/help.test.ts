@@ -201,6 +201,23 @@ describe('the palette', () => {
     expect(filterPalette(items, 'queued').map(({ item }) => item.id)).toEqual(['diff.merge']);
   });
 
+  it('names a command by what it would do now, where its handler says', () => {
+    const named = new Registry({
+      system: 'mac',
+      commands: handlers(declared, {
+        markViewed: run,
+        nextFile: run,
+        palette: run,
+        open: run,
+        quit: run,
+        escape: run,
+        merge: { run() {}, labelled: () => 'Merge again', detail: () => '3 queued' },
+      }),
+    });
+    const item = paletteItems(named, 'window', NO_TARGET).find(({ id }) => id === 'diff.merge');
+    expect(item?.label).toBe('Merge again · 3 queued');
+  });
+
   it('gives each command’s key as aria-keyshortcuts too, for one key or a chord only', () => {
     expect(shortcutOf('mac', 'diff.palette')).toBe('Meta+Shift+P');
     expect(shortcutOf('mac', 'diff.escape')).toBe('Escape');

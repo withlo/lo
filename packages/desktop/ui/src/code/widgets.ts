@@ -934,6 +934,31 @@ export class HintWidget extends WidgetType {
   }
 }
 
+/** What the marker says on a line where someone else's new thread waits. */
+export const NEW_THREAD = 'New thread';
+/** What a click on the marker does, as its name and its tooltip. */
+export const SHOW_NEW_THREAD = 'Show new thread';
+
+/**
+ * Someone else's new thread on a line on screen, which waits there so nothing moves under the
+ * reader: the line says so at its end, over the code, taking no room. It's a button, named for
+ * what pressing it does: a click or a key, as any input of the reader's, lets what waits in, and
+ * the view puts the cursor on its line as it goes.
+ */
+export class ArrivedWidget extends WidgetType {
+  override eq(): boolean {
+    return true;
+  }
+
+  toDOM(): HTMLElement {
+    const marker = element('button', 'lo-arrived', NEW_THREAD);
+    marker.type = 'button';
+    marker.setAttribute('aria-label', SHOW_NEW_THREAD);
+    marker.dataset.tip = SHOW_NEW_THREAD;
+    return marker;
+  }
+}
+
 /** A file's threads as the file tree counts them: a comment mark and their number. */
 function threadCount(total: number, unresolved: number): HTMLElement {
   const said = threadWords(total, unresolved);

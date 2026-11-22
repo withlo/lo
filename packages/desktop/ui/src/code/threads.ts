@@ -286,8 +286,8 @@ export class Threads {
    * had until it's let go. A thread's content that's
    * just been drawn, after its line was off screen or in the other layout, isn't a change: its
    * editor measures it as it draws it, and from then on it's kept at that height, unless it
-   * `lands`: then it's among those changed, taking no room yet. One held stays as it is, and takes
-   * its content's height when it's let go.
+   * `lands`: then it's among those changed, taking no room yet, or, with nothing in it yet, takes
+   * none until there is. One held stays as it is, and takes its content's height when it's let go.
    */
   resized(entries: readonly ResizeObserverEntry[]): Resized[] {
     const threads: Resized[] = [];
@@ -309,9 +309,12 @@ export class Threads {
       host.measured(height, width);
       if (!host.drawn || pinned === undefined) {
         host.drawn = true;
-        if (height > 0 && this.lands?.(host)) {
+        if (this.lands?.(host) === true) {
+          // It takes no room, nor any space around it, from its first frame: one drawn before its
+          // caller has drawn anything in it waits so for what the caller draws, which comes as a
+          // change of size, and takes the box's place then.
           host.land();
-          threads.push({ host, fresh: true, reflowed: false });
+          if (height > 0) threads.push({ host, fresh: true, reflowed: false });
         } else host.pin(height);
         continue;
       }

@@ -16,6 +16,7 @@ import type { InlineLines } from './inline.ts';
 import type { Side } from './layout.ts';
 import { type FileLines, type Gap, inGap, type Keep, type Open, shownRuns } from './rows.ts';
 import {
+  ArrivedWidget,
   type BoxHost,
   CollapsedWidget,
   type FileRow,
@@ -81,6 +82,11 @@ export interface Common {
   /** The moves with an end in this file. */
   moves: readonly MovedBlock[];
   threads: readonly ViewThread[];
+  /**
+   * The lines, by `side:line`, where someone else's new comment waits until the reader's next
+   * input, as it came while they were on screen.
+   */
+  arrived: ReadonlySet<string>;
   keep: Keep;
   open: Open;
   /** Lines the file holds only as placeholders, until the whole file comes. */
@@ -167,7 +173,16 @@ export function fileBlocks(
     if (thread.side !== side || thread.line === 0) continue;
     out.push(threadAt(thread, input, tag, line(thread.line).to));
   }
+  for (const key of input.arrived) {
+    const [where, number] = key.split(':');
+    if (where === side && Number(number) > 0) out.push(arrivedAt(line(Number(number)).to, tag));
+  }
   return out;
+}
+
+/** The marker of someone else's new comment waiting on a line, at the line's end. */
+function arrivedAt(to: number, tag: { file: number }): Range<Decoration> {
+  return Decoration.widget({ widget: new ArrivedWidget(), side: 1, ...tag }).range(to);
 }
 
 /** The file's blocks in the inline document, in no particular order. */
@@ -212,6 +227,12 @@ export function inlineBlocks(
   }
   for (const thread of threads) {
     if (thread.line > 0) out.push(threadAt(thread, input, tag, at(thread.side, thread.line).to));
+  }
+  for (const key of input.arrived) {
+    const [where, number] = key.split(':');
+    if ((where === 'old' || where === 'new') && Number(number) > 0) {
+      out.push(arrivedAt(at(where, Number(number)).to, tag));
+    }
   }
   return out;
 }

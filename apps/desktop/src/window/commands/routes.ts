@@ -7,7 +7,6 @@ export const WITHOUT_ROUTE: readonly string[] = [
   'accounts.copyCode',
   'app.quit',
   'app.fullScreen',
-  'comments.onFileInstead',
   'diff.closeRun',
   'keys.palette',
   'keys.showKey',

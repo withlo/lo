@@ -143,7 +143,13 @@ export interface Details<X extends Extension = Plain> {
 /** A review comment's suggested change: the lines it suggests. */
 export interface Suggestion {
   kind: 'suggestion';
+  /** The lines it suggests. */
   text: string;
+  /**
+   * The lines it replaces, where the source says: GitHub's drawing of it does, Markdown alone
+   * doesn't.
+   */
+  removed?: string;
 }
 
 /** The footnotes, at the end of the document, in the order they're first referenced. */

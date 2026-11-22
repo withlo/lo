@@ -1223,21 +1223,62 @@ describe('threads', () => {
   });
 
   test('a line on screen waits for threads that come or go there until it’s off screen', () => {
-    const shown = open();
+    let told = 0;
+    const shown = open({
+      ...events(),
+      arrived: () => {
+        told += 1;
+      },
+    });
     const screen = onScreen(['line 4']);
     const { render, asked } = plain();
     const below = thread('below', at('a', 'new', 22));
     shown.setThreads([thread('here', at('a', 'new', 4)), below], render);
     expect(drawnThreads()).toEqual(['below']);
+    // Its line says a new thread has come, until it does.
+    const marked = () =>
+      [...scroller().querySelectorAll('.lo-arrived')].map(
+        (each) => each.closest('.cm-line')?.textContent?.replace('New thread', '') ?? '',
+      );
+    expect(marked()).toEqual(['line 4']);
+    // A button, named for what pressing it does: it lets the thread in.
+    const marker = scroller().querySelector<HTMLElement>('.lo-arrived');
+    expect(marker?.tagName).toBe('BUTTON');
+    expect(marker?.getAttribute('type')).toBe('button');
+    expect(marker?.getAttribute('aria-label')).toBe('Show new thread');
+    expect(marker?.dataset['tip']).toBe('Show new thread');
+    expect(marker?.dataset['command']).toBeUndefined();
+    vi.useFakeTimers();
+    try {
+      marker!.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+      vi.advanceTimersByTime(TIP_DELAY);
+      expect(document.querySelector('.lo-tip')?.textContent).toBe('Show new thread');
+      marker!.dispatchEvent(new MouseEvent('mouseout', { bubbles: true }));
+    } finally {
+      vi.useRealTimers();
+    }
+    // And the caller is told, for a screen reader, which isn't reading where the mark is.
+    expect(told).toBe(1);
+    // With focus on it as it goes, focus goes to its line, not to the page.
+    marker!.focus();
+    expect(document.activeElement).toBe(marker);
     screen.lines.clear();
     scroller().dispatchEvent(new Event('scroll'));
     expect(drawnThreads()).toEqual(['here', 'below']);
+    expect(marked()).toEqual([]);
+    const editor = parent!.querySelector<HTMLElement>('.cm-editor[data-side="new"]')!;
+    expect(editor.contains(document.activeElement)).toBe(true);
+    const { state } = EditorView.findFromDOM(editor)!;
+    expect(state.doc.lineAt(state.selection.main.head).text).toBe('line 4');
     // What a thread there says changes at once.
     screen.lines.add('line 4');
     shown.setThreads([thread('here', at('a', 'new', 4), true, 2), below], render);
     expect(asked.at(-1)).toBe('update here');
     shown.setThreads([below], render);
     expect(drawnThreads()).toEqual(['here', 'below']);
+    // A thread going is no new thread.
+    expect(marked()).toEqual([]);
+    expect(told).toBe(1);
     screen.lines.clear();
     scroller().dispatchEvent(new Event('scroll'));
     expect(drawnThreads()).toEqual(['below']);

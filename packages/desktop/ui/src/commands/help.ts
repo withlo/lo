@@ -164,7 +164,10 @@ export function paletteItems(registry: Registry, scope: string, target: Target):
       .filter((command) => command.group === group)
       .map((command) => ({
         id: command.id,
-        label: withDetail(command.label, registry.detail(command.id, target)),
+        label: withDetail(
+          registry.labelled(command.id, target) ?? command.label,
+          registry.detail(command.id, target),
+        ),
         group,
         keys: liveKeys(registry, command)[0],
         shortcut: liveShortcut(registry, command),

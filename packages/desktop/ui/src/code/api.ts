@@ -738,6 +738,12 @@ export interface DiffEvents {
   /** A right-click: the registry's menu for what was clicked. */
   menu(target: Target, x: number, y: number): void;
   /**
+   * Someone else's new thread came to a line on screen, where it waits for the reader's next
+   * input with its line marked "New thread": for the host to tell a screen reader, which isn't
+   * reading where the mark is.
+   */
+  arrived?(): void;
+  /**
    * "Show in overview" in an overview marker's note: show the overview at the block that
    * explains the lines. `at` is the line the note is under, where the reader was. Without it, notes
    * have no such link.

@@ -391,7 +391,12 @@ onStacks(
       .toEqual(['src/plans.ts']);
     // #A, the layer below, has none of its own, and #B's row, off screen now, still counts its one,
     // as read with the layers.
-    await expect(panel(page)).toContainText('No unresolved threads.');
+    await expect(panel(page)).toContainText('No threads yet');
+    // With nothing listed, there's nothing for Next and Previous to go to.
+    const foot = page.locator('[data-lo-threads-foot]');
+    for (const name of ['Next', 'Previous']) {
+      await expect(foot.getByRole('button', { name })).toHaveAttribute('aria-disabled', 'true');
+    }
     await expect(stack.locator('[aria-current="true"]')).toHaveAttribute(
       'data-key',
       String(STACK.a),
@@ -493,9 +498,9 @@ test('the threads panel lists the threads and shows one in the diff', async ({ p
     await expect.poll(() => cursor(page), { timeout: 20_000 }).toBe('src/backoff.ts new 9');
     expect(await placed(page)).toContain('src/backoff.ts new 9');
     await expect(card(page, 'This grows without bound')).toBeVisible();
-    // It says what it compared, and how to go back.
-    const note = page.getByRole('status').filter({ hasText: 'Comparing base → r1' });
-    await expect(note).toContainText(/This thread is on r1\. \S+ goes back\./);
+    // It says what it shows, with the way back.
+    const note = page.getByRole('status').filter({ hasText: 'Showing r1 for this thread' });
+    await expect(note.getByRole('button', { name: /^Back/ })).toBeVisible();
   });
 
   await test.step('goes back to the comparison and the place it left with ⌃o, and on with ⌃i', async () => {
@@ -513,6 +518,36 @@ test('the threads panel lists the threads and shows one in the diff', async ({ p
     await page.keyboard.press('f');
     await expect(filter(page, 'All 11')).toHaveAttribute('aria-selected', 'true');
     await expect.poll(async () => (await rows(page)).length).toBe(11);
+    // On the resolved thread, the foot offers to unresolve it, on one line that nothing runs past:
+    // each hint with its key where they all fit, as on macOS, and without where they don't, as on
+    // Linux, whose "Enter" is wider than "⏎".
+    const foot = panel(page).locator('[data-lo-threads-foot]');
+    // Up the list to the resolved one, on line 5.
+    for (let row = 0; row < 11; row += 1) {
+      if ((await focusedRow(page).getByText('Resolved', { exact: true }).count()) > 0) break;
+      await page.keyboard.press('k');
+    }
+    await expect(focusedRow(page).getByText('Resolved', { exact: true })).toBeVisible();
+    await expect(foot.getByRole('button', { name: /^Unresolve/ })).toBeVisible();
+    await expect(foot.getByRole('button', { name: /^Show/ })).toBeVisible();
+    await expect(foot.locator('kbd')).toHaveCount(4);
+    const chips = await foot
+      .locator('kbd')
+      .evaluateAll((each) => each.filter((chip) => chip.checkVisibility()).length);
+    expect([0, 4]).toContain(chips);
+    expect(
+      await foot.evaluate((element) => {
+        const buttons = [...element.querySelectorAll('button')].map((each) =>
+          each.getBoundingClientRect(),
+        );
+        const box = element.getBoundingClientRect();
+        return {
+          fits: element.scrollWidth <= element.clientWidth,
+          lines: new Set(buttons.map((each) => Math.round(each.top))).size,
+          inside: buttons.every((each) => each.right <= box.right),
+        };
+      }),
+    ).toEqual({ fits: true, lines: 1, inside: true });
     await page.keyboard.press(PANEL);
     await expect(panel(page)).toHaveCount(0);
     await settled(page);
@@ -644,7 +679,7 @@ test.describe('while the local copy is still coming', () => {
     await expect(focusedRow(page)).toContainText('Line 9 · r1');
     await page.keyboard.press('Enter');
     await expect.poll(() => compared(page, id)).toBe('coming');
-    const note = page.getByRole('status').filter({ hasText: 'Comparing base → r1' });
+    const note = page.getByRole('status').filter({ hasText: 'Showing r1 for this thread' });
     await expect(note).toBeVisible();
     // Going back is the last move: r1 is called off, and so is what was said of it.
     await page.keyboard.press('Control+o');

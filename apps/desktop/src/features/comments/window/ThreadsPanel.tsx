@@ -4,23 +4,33 @@
 // as the panel opens. And the count the header's toggle shows: the unresolved threads, yours not
 // yet sent among them.
 
-import { HintButton, Key, ThreadFilter, ThreadList } from '@lo/ui';
+import {
+  EmptyState,
+  HintButton,
+  HintRow,
+  Loading,
+  Problem,
+  reveal,
+  ThreadFilter,
+  ThreadList,
+} from '@lo/ui';
 import { keyLabels, setScopeSource } from '@lo/ui/commands';
-import { useCallback, useEffect, useMemo, useRef, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 
 import { registry, useKeys } from '../../../window/commands/registry.ts';
 import { threadsChanged } from '../../diff/window/shared.ts';
 import { catchUpRevisions, useRevisions } from '../../revisions/window/shared.ts';
-import { usePull, useTabState, type PullTab } from '../../tab/window/shared.ts';
+import { usePull, useRun, useTabState, type PullTab } from '../../tab/window/shared.ts';
 import { useFileOrder } from '../../tree/window/shared.ts';
 import type { ThreadsView } from '../contract.ts';
 import { acting as asked, resolvedNow, unshown } from './acts.ts';
 import { useExcerpts } from './excerpts.ts';
 import { filterCounts, focusedIn, rowKeys } from './list.ts';
 import {
-  emptyText,
+  emptyOf,
   focusedRows,
   groupsIn,
+  holdFocusInList,
   listable,
   moves,
   panelTarget,
@@ -28,7 +38,9 @@ import {
   showThread,
   shownRows,
   useFilter,
+  type PanelEmpty,
 } from './panel.ts';
+import { main } from './main.ts';
 import { catchUp, held, listed } from './threads.ts';
 
 /** The first keys `id` has now, as this system shows them, if it has any. */
@@ -56,6 +68,78 @@ export function UnresolvedCount({ tab }: { tab: PullTab }): ReactNode {
   );
 }
 
+/**
+ * Why view `view`'s threads couldn't be read, with a way to read them again. Asked, it waits with
+ * `Loading` until main says the new read is on, which draws the panel anew; a read again that
+ * couldn't be asked for says so here again, with why behind Details.
+ */
+export function Failed({ view, reason }: { view: string; reason: string | undefined }): ReactNode {
+  const [again, setAgain] = useState<'asking' | { details: string } | undefined>(undefined);
+  if (again === 'asking') {
+    return (
+      <div className="py-24">
+        <Loading status="Reading threads…" />
+      </div>
+    );
+  }
+  return (
+    <div className="px-6 py-8">
+      <Problem
+        title="Can’t show the threads"
+        reason={reason}
+        details={again?.details}
+        action={{
+          label: 'Try again',
+          onClick: () => {
+            // The button goes as the read is asked for: focus stays in the list.
+            holdFocusInList();
+            setAgain('asking');
+            // Asked, main says the read is on again, which draws the panel anew.
+            main()
+              .reread({ id: view })
+              .catch((error: unknown) =>
+                setAgain({ details: error instanceof Error ? error.message : String(error) }),
+              );
+          },
+        }}
+      />
+    </div>
+  );
+}
+
+/**
+ * What view `view`'s panel shows when it lists nothing: the wait for the first read, an empty
+ * state's heading with its line and button, or why the read failed, with a way to read again.
+ */
+function Empty({ view, empty }: { view: string; empty: PanelEmpty }): ReactNode {
+  switch (empty.kind) {
+    case 'reading':
+      return (
+        <div className="py-24">
+          <Loading status="Reading threads…" />
+        </div>
+      );
+    case 'failed':
+      return <Failed view={view} reason={empty.reason} />;
+    case 'none':
+      // In the middle of the panel's body, under its heading, in the text's own colour: the list
+      // around it draws its words muted.
+      return (
+        <div className="flex flex-1 flex-col justify-center text-fg">
+          <EmptyState
+            level={3}
+            title={empty.heading}
+            line={empty.line}
+            actions={empty.action === undefined ? [] : [empty.action]}
+          />
+        </div>
+      );
+    default:
+      empty satisfies never;
+      return null;
+  }
+}
+
 /** The threads panel of view `tab`, the view on screen. */
 export function ThreadsPanel({ tab }: { tab: PullTab }): ReactNode {
   useKeys();
@@ -63,6 +147,7 @@ export function ThreadsPanel({ tab }: { tab: PullTab }): ReactNode {
   // What it lists is main's threads once their openings are read, so no row draws without one.
   const threads = useTabState(listed, view);
   const filter = useFilter();
+  const run = useRun(view);
   // What the list reads, so it's drawn again when any of them changes.
   useFileOrder(view);
   useRevisions(view);
@@ -85,6 +170,7 @@ export function ThreadsPanel({ tab }: { tab: PullTab }): ReactNode {
   );
   useExcerpts(openings);
   const groups = groupsIn(view, filter);
+  const empty = emptyOf(threads, filter, run?.layers);
   const keys = rowKeys(groups);
   const on = focusedIn(keys, focused);
   const counts = filterCounts(
@@ -115,8 +201,8 @@ export function ThreadsPanel({ tab }: { tab: PullTab }): ReactNode {
     if (last.view !== view || last.moved === moved) return;
     const rows = list.current?.querySelectorAll<HTMLElement>('[role="option"]') ?? [];
     const row = [...rows].find((each) => each.dataset['key'] === on);
-    // Not in jsdom, which lays nothing out.
-    if (typeof row?.scrollIntoView === 'function') row.scrollIntoView({ block: 'nearest' });
+    // Its own pane scrolls, and nothing else.
+    if (row) reveal(row);
   }, [view, moved, on]);
 
   const filters = keysOf('comments.filterThreads');
@@ -129,42 +215,49 @@ export function ThreadsPanel({ tab }: { tab: PullTab }): ReactNode {
   const onResolved =
     target.kind === 'thread' &&
     listable(threads).some((row) => row.id === target.thread && resolvedNow(view, row));
-  const panelKey = keysOf('tab.rightPanel');
   return (
     <div className="flex min-h-0 flex-1 flex-col" data-lo-threads={view}>
+      {/* The key that opens the panel is on its toggle, not here: it's open already. */}
       <div className="flex flex-none items-center gap-6 ps-16 pe-8 pt-12 pb-8">
         <h2 className="label-caps text-fg-muted text-label">Threads</h2>
-        {panelKey && (
-          <span className="ms-auto">
-            <Key keys={panelKey} quiet decorative />
-          </span>
-        )}
       </div>
       <div className="flex flex-none items-center gap-6 ps-12 pe-8 pb-8">
         <ThreadFilter value={filter} counts={counts} onChange={setFilter} keys={filters} />
       </div>
-      <div className="min-h-0 flex-1 overflow-auto">
+      {/* Busy while it waits on the first read, so a screen reader waits for the list. */}
+      <div
+        className="min-h-0 flex-1 overflow-auto"
+        aria-busy={empty.kind === 'reading' || undefined}
+      >
         <ThreadList
           groups={groups}
           current={current}
           focused={on}
           onShow={(key) => showThread(tab, key)}
-          empty={emptyText(threads, filter)}
+          empty={<Empty view={view} empty={empty} />}
           listRef={listRef}
           className="outline-none"
           data-lo-scope="threads"
         />
       </div>
-      {/* One line always: the filter's key is on the filter itself. */}
-      <div className="flex min-w-0 flex-none items-center gap-2 overflow-hidden border-t border-border-subtle px-8 py-4 whitespace-nowrap text-fg-muted text-small">
-        <HintButton command="comments.nextThread">Next</HintButton>
-        <HintButton command="comments.previousThread">Previous</HintButton>
-        <HintButton command="comments.showThread" target={target}>
-          Show
-        </HintButton>
-        <HintButton command="comments.resolveInPanel" target={target}>
-          {onResolved ? 'Unresolve' : 'Resolve'}
-        </HintButton>
+      {/* One line always: the filter's key is on the filter itself, and a foot too narrow for
+          its key chips gives them up, each hint giving its key in its tooltip. */}
+      <div className="flex-none border-t border-border-subtle">
+        <HintRow
+          data-lo-threads-foot
+          className="min-w-0 items-center gap-2 px-8 py-4 text-fg-muted text-small"
+        >
+          <HintButton command="comments.nextThread">Next</HintButton>
+          <HintButton command="comments.previousThread">Previous</HintButton>
+          {/* "Show in diff" with its key is 31 px wider than the panel's 340: on the panel, "in
+              diff" goes, as "thread" does from Next and Previous. */}
+          <HintButton command="comments.showThread" target={target}>
+            Show
+          </HintButton>
+          <HintButton command="comments.resolveInPanel" target={target}>
+            {onResolved ? 'Unresolve' : 'Resolve'}
+          </HintButton>
+        </HintRow>
       </div>
     </div>
   );

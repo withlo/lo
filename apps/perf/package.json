@@ -9,7 +9,7 @@
     "build": "electron-vite build",
     "e2e": "playwright test --config e2e/playwright.config.ts",
     "fetch": "node scripts/fetch.ts",
-    "lint": "oxlint",
+    "lint": "oxlint && stylelint --config ../../design/stylelint.config.mjs 'src/**/*.css'",
     "open": "electron .",
     "record": "node scripts/record.ts",
     "test": "vitest run --root ../.. --project @lo/perf"

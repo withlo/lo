@@ -11,7 +11,7 @@
     "codegen": "node scripts/keys.ts && prettier --write ../../docs/keys.md",
     "dev": "electron-vite dev",
     "e2e": "playwright test --config e2e/playwright.config.ts",
-    "lint": "oxlint && lo-check-classes src",
+    "lint": "oxlint && lo-check-classes src && stylelint --config ../../design/stylelint.config.mjs 'src/**/*.css'",
     "live": "playwright test --config e2e/live.config.ts",
     "package": "electron-builder --config build/electron-builder.yml --mac",
     "release": "electron-builder --config build/release.yml --mac --publish never",
