@@ -150,10 +150,21 @@ test('a first launch shows the welcome over Recent, and its four steps are walke
     await expect(chosen(page)).not.toHaveText(first ?? '');
     await page.keyboard.press('k');
     await expect(chosen(page)).toHaveText(first ?? '');
+    // Each of the practice's keys is a button too, which the mouse presses.
+    const hint = (name: string) => step(page).getByRole('button', { name, exact: true });
+    await hint('Next line').click();
+    await expect(chosen(page)).not.toHaveText(first ?? '');
+    await hint('Previous line').click();
+    await expect(chosen(page)).toHaveText(first ?? '');
+    await hint('Comment').click();
+    const box = step(page).getByRole('textbox', { name: 'Comment' });
+    await expect(box).toBeFocused();
+    await page.keyboard.press('Escape');
+    await expect(box).toBeHidden();
+    await expect(practice(page)).toBeFocused();
     // `c` opens the comment box every comment is written in, which sends nothing; ⏎ in it isn't
     // Continue, and Esc closes it.
     await page.keyboard.press('c');
-    const box = step(page).getByRole('textbox', { name: 'Comment' });
     await expect(box).toBeFocused();
     await page.keyboard.type('Looks right');
     await page.keyboard.press('Enter');

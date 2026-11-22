@@ -349,7 +349,8 @@ function Practice() {
           <HintButton command="keys.help" />
           <HintButton command="keys.palette" />
         </div>
-        <div className="col-start-1 row-start-1">
+        {/* Out of the pointer's way while the box is put away, so the buttons under it press. */}
+        <div className={`col-start-1 row-start-1 ${writing ? '' : 'pointer-events-none'}`}>
           <PracticeBox open={writing} line={here?.number ?? 0} onClose={close} />
         </div>
       </div>
