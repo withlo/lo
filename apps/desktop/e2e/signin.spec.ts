@@ -139,7 +139,8 @@ test('signs in with GitHub: the code, GitHub’s page, and the account, never it
   await expect(listed).toHaveCount(1);
   await expect(listed).toContainText('rozed-bot');
   await expect(listed).toContainText('Signed in');
-  await expect(listed).toContainText('signed in with GitHub');
+  // Signed in the usual way, it says nothing of how.
+  await expect(listed).not.toContainText('GitHub CLI');
 
   // The window has its summary, and nothing of its tokens.
   const reply = await page.evaluate(() => window.lo.invoke('accounts.list'));
@@ -329,7 +330,7 @@ test.describe('importing from gh', () => {
 
     const listed = page.getByRole('list', { name: 'Accounts' }).getByRole('listitem');
     await expect(listed).toHaveCount(1);
-    await expect(listed).toContainText('imported from gh');
+    await expect(listed).toContainText('from GitHub CLI');
     // Each token went to GitHub's API only.
     expect(github.replay.seen.map(({ url }) => new URL(url).pathname)).toEqual(['/user', '/user']);
     expect(await page.content()).not.toContain(FROM_GH);

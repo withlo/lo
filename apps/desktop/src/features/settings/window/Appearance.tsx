@@ -24,5 +24,5 @@ export function followMotion(): () => void {
 
 export default [
   settingRow(theme, { order: 10, id: 'settings.theme' }),
-  settingRow(motion, { order: 30 }),
+  settingRow(motion, { order: 30, id: 'settings.motion' }),
 ];

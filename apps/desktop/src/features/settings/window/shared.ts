@@ -42,7 +42,7 @@ export const rows = defineSlot<object, RowAbout>('settings.rows');
  * A setting that's a list, as the trusted repos are, sets `list`, and its control is drawn as the
  * list under the row's words. A setting a command changes from a view, as `gi` does the diff's
  * layout, names it in `command`, and the row shows its key. The view's `id` is the setting's key
- * unless given.
+ * unless given, and like any view's it's named for the feature: `settings.theme` for `theme`.
  */
 export function settingRow<T>(
   setting: Setting<T>,

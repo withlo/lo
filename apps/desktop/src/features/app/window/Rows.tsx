@@ -33,7 +33,7 @@ function Licenses({ label, description }: { label: string; description: string }
 
 export default [
   // After the theme (10).
-  settingRow(zoom, { order: 20, control: Zoom }),
+  settingRow(zoom, { order: 20, id: 'app.zoom', control: Zoom }),
   defineRow({
     id: 'app.licenses',
     group: 'about',

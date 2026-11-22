@@ -170,5 +170,5 @@ export default [
     words: () => ['clear', 'local copies', 'git'],
     render: Cache,
   }),
-  settingRow(cacheCap, { order: 20, control: SizeLimit }),
+  settingRow(cacheCap, { order: 20, id: 'settings.cacheCap', control: SizeLimit }),
 ];

@@ -253,7 +253,7 @@ export default {
   }),
   views: [
     // Settings › Keyboard, first.
-    settingRow(vim, { order: 10 }),
+    settingRow(vim, { order: 10, id: 'comments.vim' }),
     defineView(right, {
       id: 'comments.panel',
       order: 10,
