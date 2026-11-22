@@ -259,8 +259,8 @@ test.describe('when GitHub reads it as conflicting once approved', () => {
     const alert = dialog(page).getByRole('alert');
     await expect(alert).toContainText(`Couldn’t merge #${number}`, { timeout: MERGING });
     await expect(alert).toContainText('Can’t merge');
-    // The approval step says it approved.
-    await expect(steps(page).nth(0)).toContainText('Approved as rozed-bot.');
+    // The approval step keeps the words it was asked with, marked done.
+    await expect(steps(page).nth(0)).toContainText(`Approve #${number} as rozed-bot.`);
     // The title stays, and so does each step as it was asked.
     await expect(dialog(page)).toContainText(`Approve and ship #${number}?`);
     await expect(dialog(page).getByRole('button', { name: /^Merge panel/ })).toBeVisible();

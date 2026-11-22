@@ -200,6 +200,7 @@ time.
 | Slide | Something that stays on screen goes from one place to another: a thumb.                            | 160 ms               | `move-slide`. `SegmentedControl` and `Switch` have it.          |
 | Swap  | What replaces something in the same box fades in over it: a skeleton's content, Overview to Diff.  | 90 ms                | `Swap`.                                                         |
 | Land  | Where a jump ended. The scroll is instant, and the target takes a tint that fades.                 | 260 ms               | `reveal()`, or `land()` for a target already in view.           |
+| Fill  | A merge lands with no dialog to say so: the header's merge dot fills from a ring of its color.     | 260 ms               | `move-fill`. `MergeStatus` has it, with `landed`.               |
 
 - Three durations: `--lo-dur-fast` (90 ms), `--lo-dur` (160 ms), `--lo-dur-slow` (260 ms). Nothing
   in the interface runs longer.
@@ -305,9 +306,16 @@ that floats.
   names, as it mounts, without scrolling its body. With an `action` it draws its own foot and takes
   a `state`: `ask`, `working`, `done` or `failed`. The body stays put through all four. The button
   that leaves reads "Cancel" until something is sent, "Close" after a failure and "Done" once it has
-  worked; the main button reads its `label`, then `working`, then "Try again". What went wrong goes
-  in `problem`, above the foot. While it's `working`, nothing leaves it: Cancel, `Esc` and a click
-  outside all refuse.
+  worked; the main button reads its `label`, then `working`, then "Try again", or the action's
+  `again` ("Check again" for a result that isn't known), and isn't there at all for `again: null`,
+  where there's nothing to do but close. Its fill is its `tone` only while it can be pressed for its
+  action or does it: "Try again" and "Done" are always the standard primary. What went wrong goes in
+  `problem`, above the foot. From the moment something is sent until GitHub answers, it's `working`,
+  and nothing leaves it: Cancel is dimmed, with `stays` as its tooltip, and `Esc` and a click
+  outside refuse. An action's `busy` is at work while it can still be left, as while it's checked
+  before it's sent, or while "Check again" looks. `widest` holds the room of its widest label from
+  the first draw; `other` is a button before the one that leaves ("Open #265"); and `mainRef`
+  follows the main button.
 - **`Popover`** is a small panel beside what it's about: a status item's details, a picker. Give it
   its `trigger`, or an `anchor` when a key opens it.
 - **`ContextMenu`** is the menu at a point: what can be done to what was right-clicked, each with
@@ -455,11 +463,11 @@ a reply and an edit are all `CommentBox` (`packages/desktop/ui`), around the one
 view makes (`compose` on a code view, or `createComposer` outside one). A feature never draws its
 own.
 
-The review's summary, in the submit dialog, is the same editor in the same frame, with the same
-notes, upload rows and foot bar (`CommentBoxFootBar`), but it isn't the whole box yet: it has no
-head, so "Summary" and Preview are in its foot, as a hint and a button, and it has no "Discard
-draft". Bring it onto the head (`CommentBoxHeadBar`) when the submit dialog is next changed; don't
-copy its foot.
+The review's summary, in the submit dialog, is the same editor in the same frame, with the same head
+(`CommentBoxHeadBar`), notes, upload rows and foot bar (`CommentBoxFootBar`); it has no "Discard
+draft". While its review is sent, and until Lo knows how that went, it's held as text, not as a card
+(`hold(true, { empty: 'No summary' })`): it keeps its height, head and foot, its text is read-only
+in `lo-fg-muted`, and Write | Preview and "Attach files…" dim.
 
 - **Head.** What the comment is on, at the left, in the words a line is named everywhere: "Line 3",
   "Lines 39–41", "Line 3, removed", "File", "Pull request", "Reply", "Edit", "Summary". Why it's on

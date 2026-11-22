@@ -181,7 +181,7 @@ test.describe('past the rules', () => {
     ).toBeVisible();
     await page.keyboard.press('Alt+Enter');
     await asks(page, 'Bypass rules and merge');
-    await expect(dialog(page)).toContainText('Bypassed rules');
+    await expect(dialog(page)).toContainText('Rules to bypass');
     await expect(dialog(page)).toContainText(`Type ${number} to confirm`);
     const button = dialog(page).getByRole('button', { name: /^Bypass rules and merge/ });
     await expect(button).toHaveAttribute('aria-disabled', 'true');

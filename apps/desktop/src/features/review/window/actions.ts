@@ -392,6 +392,7 @@ export function heard(submission: Submission): void {
  * until it's shown, and says so if it can't be.
  */
 export function showRevision(view: string, head: string): void {
+  changeDialog(view, { unshown: undefined });
   const pull = pullOf(view);
   const asked =
     pull?.newer?.toLowerCase() === head.toLowerCase()

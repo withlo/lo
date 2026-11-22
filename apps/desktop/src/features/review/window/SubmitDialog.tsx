@@ -8,7 +8,7 @@
 // `⌘⏎` presses the main button from anywhere in it, the summary included, and a held key presses
 // nothing more.
 
-import { Button, Choices, Dialog, LogoMotion, Spinner } from '@lo/ui';
+import { Button, Choices, Dialog, LogoMotion, Problem, Spinner } from '@lo/ui';
 import { keyLabels, parseKeys, systemStrokes } from '@lo/ui/commands';
 import { useEffect, useRef, useState } from 'react';
 import { useStore } from 'zustand';
@@ -203,6 +203,13 @@ export function SubmitDialog() {
                   Show {label(show)}
                 </Button>
               </div>
+            )}
+            {open.unshown !== undefined && (
+              <Problem
+                layout="inline"
+                title={`Couldn’t show ${label(open.unshown.head)}`}
+                details={open.unshown.details}
+              />
             )}
           </div>
           <Pending read={read} />
