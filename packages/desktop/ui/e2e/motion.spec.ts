@@ -64,6 +64,7 @@ test('a dialog gives focus back as it’s asked to close, keeps its top edge bet
   // Still drawn, fading, and focus is already back where it was.
   expect(await closed(page)).toEqual([{ what: 'dialog', there: true, focus: 'open-dialog' }]);
   await expect(dialog).toHaveCount(0);
+  // Its caller tried to focus a button in it as it left, which it refused, so focus stayed back.
   expect(await focused(page)).toBe('open-dialog');
 });
 

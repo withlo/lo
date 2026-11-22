@@ -94,6 +94,9 @@ export function Palette<T>(props: PaletteProps<T>) {
             ref={takeFocus}
             initialFocus={input}
             finalFocus={false}
+            // Leaving, it takes no focus: a caller that focuses something in it as it closes, a
+            // frame or two on, would leave focus on nothing once it's gone.
+            inert={!open}
             aria-label={label}
             data-lo-scope="palette"
             className="move-pop flex max-h-full w-palette-w max-w-full flex-col overflow-hidden rounded-lg bg-bg-overlay text-fg shadow-dialog move-pop-down"

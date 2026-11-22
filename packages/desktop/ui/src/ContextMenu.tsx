@@ -131,6 +131,9 @@ export function ContextMenu({
           <Menu.Popup
             ref={mounted}
             finalFocus={() => !finalFocus?.isConnected}
+            // Leaving, it takes no focus: a caller that focuses something in it as it closes, a
+            // frame or two on, would leave focus on nothing once it's gone.
+            inert={!shown}
             aria-label={held.label}
             data-lo-scope="menu"
             className="move-pop min-w-menu-w rounded-md bg-bg-overlay p-4 text-fg shadow-pop outline-none text-ui"

@@ -227,7 +227,14 @@ function Scene() {
       <Dialog
         open={dialog}
         onOpenChange={setDialog}
-        onClosed={() => note('dialog', '[role="dialog"]')}
+        onClosed={() => {
+          note('dialog', '[role="dialog"]');
+          // As a caller that focuses its main button each time its step changes, a frame or two
+          // on, does: the dialog is still leaving then, and takes no focus.
+          requestAnimationFrame(() =>
+            requestAnimationFrame(() => document.getElementById('copy-code')?.focus()),
+          );
+        }}
         title="Sign in to GitHub"
         size="sm"
         state={step}

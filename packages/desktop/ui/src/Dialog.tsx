@@ -147,6 +147,9 @@ export function Dialog(props: DialogProps) {
             ref={mounted}
             initialFocus={focus}
             finalFocus={false}
+            // Leaving, it takes no focus: a caller that focuses something in it as it closes, a
+            // frame or two on, would leave focus on nothing once it's gone.
+            inert={!open}
             data-lo-scope="dialog"
             data-testid={testId}
             onKeyDown={onKeyDown}

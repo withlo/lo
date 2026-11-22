@@ -124,6 +124,9 @@ export function Popover({
             ref={mounted}
             initialFocus={false}
             finalFocus={false}
+            // Leaving, it takes no focus: a caller that focuses something in it as it closes, a
+            // frame or two on, would leave focus on nothing once it's gone.
+            inert={!open}
             aria-label={held.label}
             data-lo-scope={scope}
             className={`move-pop rounded-md bg-bg-overlay text-fg shadow-pop outline-none text-ui ${className ?? ''}`}
