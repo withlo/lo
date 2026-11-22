@@ -1,10 +1,17 @@
-// The submit dialog's summary: a comment box outside any code view (`createComposer`), with Vim's
-// keys, Markdown and a preview, drawn in the frame the box makes: a note when it was kept from
-// before Lo started, the preview, the files attached to it, as to any comment box, and a foot with
-// Vim's mode, "Attach" and the preview's switch. The dialog takes `⌘⏎` before the box hears it, and
-// `Esc Esc` in the box closes the dialog, keeping the summary.
+// The submit dialog's summary: a comment box outside any code view (`createComposer`), drawn in the
+// parts the box makes with the comment box's own anatomy. The head says what it is, "Summary", who
+// it's from where that could be someone else, and Write | Preview; the notes say what to know about
+// the files attached to it, as to any comment box; the foot has "Attach files…" at its start, Vim's
+// mode with Vim keys on, and a summary kept from before as its line. While it's sent, the box shows
+// the summary as it will read, and nothing typed then is lost. The dialog takes `⌘⏎` before the box
+// hears it, and `Esc Esc` in the box closes the dialog, keeping the summary.
 
-import { CommentBoxFootBar, CommentBoxNotes, type CommentBoxNote } from '@lo/ui';
+import {
+  CommentBoxFootBar,
+  CommentBoxHeadBar,
+  CommentBoxNotes,
+  type CommentBoxAccount,
+} from '@lo/ui';
 import { createComposer, type BoxParts, type Composer, type Mode } from '@lo/ui/code';
 import { useEffect, useId, useLayoutEffect, useRef, useState, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
@@ -34,15 +41,17 @@ export interface SummaryProps {
   readonly pull: { readonly owner: string; readonly repo: string; readonly number: number };
   /** The text it starts with: the summary kept from before. */
   readonly initial: string;
-  /** What the note says of a summary kept from before Lo started, if it was. */
-  readonly restored: string | undefined;
+  /** The line over the foot for a summary kept from before Lo started: "Draft from 12 min ago". */
+  readonly line: string | undefined;
+  /** Who it's from, given only where it could be someone else. */
+  readonly account: CommentBoxAccount | undefined;
   /** The text is held as it is, as while it's sent. */
   readonly held: boolean;
   /** Where the dialog puts focus as it opens: the editor, once it's made. */
   readonly editor: RefObject<HTMLElement | null>;
 }
 
-export function Summary({ view, pull, initial, restored, held, editor }: SummaryProps) {
+export function Summary({ view, pull, initial, line, account, held, editor }: SummaryProps) {
   const host = useRef<HTMLDivElement>(null);
   const nonce = useNonce();
   const id = useId();
@@ -131,23 +140,35 @@ export function Summary({ view, pull, initial, restored, held, editor }: Summary
     };
   }, [parts, attached]);
 
-  const notes: CommentBoxNote[] = [
-    ...(restored !== undefined && !edited
-      ? [{ key: 'restored', tone: 'info' as const, icon: 'clock' as const, text: restored }]
-      : []),
-    ...uploads.notes,
-  ];
-  const toggle = () => {
-    const now = !previewing;
-    box.current?.preview(now);
-    setPreviewing(now);
+  const show = (on: boolean) => {
+    box.current?.preview(on);
+    setPreviewing(on);
   };
   return (
     <div ref={host} className="flex flex-col">
-      {parts && createPortal(<CommentBoxNotes id={id} notes={notes} />, parts.note, 'note')}
+      {parts &&
+        createPortal(
+          <CommentBoxHeadBar
+            previewing={previewing}
+            head={{
+              where: 'Summary',
+              onPreviewing: show,
+              previewKeys: boxKeys('preview'),
+              account,
+            }}
+          />,
+          parts.head,
+          'head',
+        )}
+      {parts && createPortal(<CommentBoxNotes id={id} notes={uploads.notes} />, parts.note, 'note')}
       {parts &&
         previewing &&
         createPortal(<Preview view={view} text={text} pull={pull} />, parts.preview, 'preview')}
+      {/* Held, as while it's sent, the box is the summary as it will read. */}
+      {parts &&
+        held &&
+        text.trim() !== '' &&
+        createPortal(<Preview view={view} text={text} pull={pull} />, parts.sent, 'sent')}
       {parts && createPortal(<Dropzone box={attached} />, parts.dropzone, 'dropzone')}
       {parts && createPortal(<UploadRows box={attached} />, parts.uploads, 'uploads')}
       {parts &&
@@ -157,15 +178,8 @@ export function Summary({ view, pull, initial, restored, held, editor }: Summary
             focused={focused}
             foot={{
               mode: MODES[mode],
-              text: 'Summary · Markdown',
               attach: uploads.attach,
-              actions: [
-                {
-                  label: previewing ? 'Write' : 'Preview',
-                  keys: boxKeys('preview'),
-                  onClick: toggle,
-                },
-              ],
+              lines: line === undefined || edited ? undefined : [{ key: 'restored', text: line }],
             }}
           />,
           parts.foot,

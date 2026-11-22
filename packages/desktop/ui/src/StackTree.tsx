@@ -86,8 +86,10 @@ export interface StackTreeLayer {
 /** A note under the rows: what Lo looked at, and why the tree may be missing layers. */
 export interface StackTreeNote {
   key: string;
-  /** Plain text and `<strong>`, as React draws them. */
+  /** Plain text and `<strong>`, as React draws them, or a piece with a frame of its own. */
   text: ReactNode;
+  /** It has a frame of its own, such as a `Problem`'s, so the note draws none around it. */
+  bare?: boolean | undefined;
 }
 
 export interface StackTreeProps extends Omit<HTMLAttributes<HTMLDivElement>, 'children'> {
@@ -101,10 +103,12 @@ export interface StackTreeProps extends Omit<HTMLAttributes<HTMLDivElement>, 'ch
    */
   githubStack?: boolean | undefined;
   /**
-   * How Lo found the layers to sit on each other, each kind of link once. Nothing for a layer alone,
-   * which none sits on.
+   * How Lo found the layers to sit on each other, each kind of link once, which the head's tooltip
+   * says. Nothing for a layer alone, which none sits on.
    */
   found?: readonly StackTreeLink[] | undefined;
+  /** Controls at the end of the head, such as the arrows that step through the layers. */
+  actions?: ReactNode;
   /** The layer the keyboard is on, by key. */
   focused?: string | undefined;
   /** The layer on screen, by key. */
@@ -118,7 +122,7 @@ export interface StackTreeProps extends Omit<HTMLAttributes<HTMLDivElement>, 'ch
   onShow?: ((key: string) => void) | undefined;
   /** A right-click on a layer. */
   onMenu?: ((key: string, event: MouseEvent<HTMLElement>) => void) | undefined;
-  /** What goes between the head and the rows, such as the offer to make the chain a GitHub stack. */
+  /** What goes between the head and the rows, such as the offer to convert to a GitHub stack. */
   callout?: ReactNode;
   /** Under the rows. */
   notes?: readonly StackTreeNote[] | undefined;
@@ -168,21 +172,25 @@ const LINK_WORDS: Readonly<Record<StackTreeLink, string>> = {
 /** The kinds of link, in the order the head names them. */
 const LINK_ORDER: readonly StackTreeLink[] = ['github', 'base', 'commits'];
 
+/** "GitHub stack · 4 layers" when every layer is in one GitHub stack, else "Branch stack · 4 layers". */
+function headText(count: number, githubStack: boolean): string {
+  const layers = `${count} ${count === 1 ? 'layer' : 'layers'}`;
+  return `${githubStack ? 'GitHub stack' : 'Branch stack'} · ${layers}`;
+}
+
 /**
- * "GitHub stack · 4 layers" when every layer is in one GitHub stack, else each kind of link, in
- * order: "4 layers · by GitHub stack and base branch".
+ * How the layers were found to sit on each other, for the head's tooltip, each kind of link in
+ * order: "By GitHub stack and base branch". Nothing for one GitHub stack, which the head says.
  */
-function headText(
-  count: number,
+function foundText(
   githubStack: boolean,
   found: readonly StackTreeLink[] | undefined,
-): string {
-  const layers = `${count} ${count === 1 ? 'layer' : 'layers'}`;
-  if (githubStack) return `GitHub stack · ${layers}`;
+): string | undefined {
+  if (githubStack) return undefined;
   const words = LINK_ORDER.filter((link) => found?.includes(link)).map((link) => LINK_WORDS[link]);
   const last = words.pop();
-  if (last === undefined) return layers;
-  return `${layers} · by ${words.length === 0 ? last : `${words.join(', ')} and ${last}`}`;
+  if (last === undefined) return undefined;
+  return `By ${words.length === 0 ? last : `${words.join(', ')} and ${last}`}`;
 }
 
 /** Whether a layer is on a branch's own rail: one that starts a branch, or sits above one. */
@@ -241,7 +249,7 @@ const REVIEWS: Record<StackReview, { word: string; tone: string }> = {
 
 const CHECKS: Record<StackChecks, { words: string; tone: string; icon: ReactNode }> = {
   passing: {
-    words: 'Checks passing',
+    words: 'Checks passed',
     tone: 'text-check-pass',
     icon: (
       <>
@@ -261,7 +269,7 @@ const CHECKS: Record<StackChecks, { words: string; tone: string; icon: ReactNode
     ),
   },
   failing: {
-    words: 'Checks failing',
+    words: 'Checks failed',
     tone: 'text-check-fail',
     icon: (
       <>
@@ -274,8 +282,8 @@ const CHECKS: Record<StackChecks, { words: string; tone: string; icon: ReactNode
 
 const OVERVIEWS: Record<StackOverview, { words: string; className: string }> = {
   current: { words: 'Overview', className: 'lo-ovmark' },
-  stale: { words: 'Overview, out of date', className: 'lo-ovmark lo-ovmark--stale' },
-  error: { words: "Overview, can't be shown", className: 'lo-ovmark lo-ovmark--error' },
+  stale: { words: 'Overview · out of date', className: 'lo-ovmark lo-ovmark--stale' },
+  error: { words: 'Overview · can’t show', className: 'lo-ovmark lo-ovmark--error' },
   none: { words: 'No overview yet', className: 'lo-ovmark lo-ovmark--none' },
 };
 
@@ -322,7 +330,7 @@ const FINISHED: Partial<Record<PullRequestState, { word: string; tone: string }>
 function Unresolved({ threads }: { threads: StackTreeLayer['threads'] }) {
   if (threads === undefined || threads.unresolved <= 0) return null;
   const more = threads.partial === true;
-  const said = `${more ? 'At least ' : ''}${threads.unresolved} unresolved ${threads.unresolved === 1 && !more ? 'thread' : 'threads'}`;
+  const said = `${threads.unresolved}${more ? '+' : ''} unresolved ${threads.unresolved === 1 && !more ? 'thread' : 'threads'}`;
   return (
     <span
       role="img"
@@ -334,6 +342,26 @@ function Unresolved({ threads }: { threads: StackTreeLayer['threads'] }) {
       <CommentIcon />
       {threads.unresolved}
       {more ? '+' : ''}
+    </span>
+  );
+}
+
+/** How many of a layer's files are viewed, of how many: "12 / 40", named "12 / 40 files viewed". */
+function Viewed({ viewed }: { viewed: NonNullable<StackTreeLayer['viewed']> }) {
+  const count = `${viewed.viewed}${viewed.partial === true ? '+' : ''} / ${viewed.total}`;
+  const said = `${count} files viewed`;
+  return (
+    <span
+      role="img"
+      aria-label={said}
+      title={said}
+      className="inline-flex max-w-full min-w-0 items-center gap-4 whitespace-nowrap text-fg-muted"
+    >
+      <Icon>
+        <circle cx="8" cy="8" r="5.75" />
+        <circle cx="8" cy="8" r="2.5" fill="currentColor" stroke="none" />
+      </Icon>
+      <span className="lo-num">{count}</span>
     </span>
   );
 }
@@ -389,24 +417,10 @@ function Meta({ layer }: { layer: StackTreeLayer }) {
           data-overview={overview}
         />
       )}
-      {viewed !== undefined && (
-        <Item
-          title={`${viewed.partial === true ? 'At least ' : ''}${viewed.viewed} of ${viewed.total} files viewed`}
-        >
-          <Icon>
-            <circle cx="8" cy="8" r="5.75" />
-            <circle cx="8" cy="8" r="2.5" fill="currentColor" stroke="none" />
-          </Icon>
-          <span className="sr-only">Viewed </span>
-          <span className="lo-num">
-            {viewed.viewed}
-            {viewed.partial === true ? '+' : ''}/{viewed.total}
-          </span>
-        </Item>
-      )}
+      {viewed !== undefined && <Viewed viewed={viewed} />}
       <Unresolved threads={layer.threads} />
-      {layer.needsRebase === true && <Tag tone="warning">Needs rebase</Tag>}
-      {layer.sitsOn !== undefined && <span className="lo-num">on #{layer.sitsOn}</span>}
+      {layer.needsRebase === true && <Tag tone="warning">Needs a rebase</Tag>}
+      {layer.sitsOn !== undefined && <span className="lo-num">Based on #{layer.sitsOn}</span>}
     </div>
   );
 }
@@ -493,11 +507,11 @@ function useKeptInView(
 }
 
 /**
- * The stack, top of the left panel: a head that says how many layers and how Lo found them, any
- * offer under it, then a tree with the base branch as its root and a rail with a ball for each
- * layer. It's one focusable element with `role="tree"`: the layer the keyboard is on is its active
- * descendant, and the layer on screen is marked `aria-current` and a Powder ball, which is not the
- * same thing. A run of layers chosen to view as one diff, or on screen as one, shares a band, and
+ * The stack, top of the left panel: a head that says what kind of stack and how many layers, with
+ * how Lo found them in its tooltip, any offer under it, then a tree with the base branch as its
+ * root and a rail with a ball for each layer. The head is one line, and never wraps. The tree is
+ * one focusable element with `role="tree"`: the layer the keyboard is on is its active descendant,
+ * and the layer on screen is marked `aria-current` and a Powder ball, which is not the same thing. A run of layers chosen to view as one diff, or on screen as one, shares a band, and
  * the rest step back; while it's being chosen, the head says `V-LINE`.
  *
  * It draws what it's given, as text, and asks for nothing: a click shows a layer, and a right-click
@@ -508,6 +522,7 @@ export function StackTree({
   root,
   githubStack = false,
   found,
+  actions,
   focused,
   current,
   choosing = false,
@@ -544,18 +559,24 @@ export function StackTree({
       <span id={`${prefix}-root`} className="sr-only">
         Base branch {root}
       </span>
-      <div className="flex flex-none items-center gap-6 ps-16 pe-8 pt-12 pb-8">
-        <h2 className="label-caps text-fg-muted text-label">Stack</h2>
-        <span className="ms-auto text-end text-fg-muted text-small">
+      <div className="flex flex-none items-center gap-6 ps-16 pe-8 pt-12 pb-8 whitespace-nowrap">
+        <h2 className="flex-none label-caps text-fg-muted text-label">Stack</h2>
+        <span
+          className="ms-auto min-w-0 truncate text-end text-fg-muted text-small"
+          title={choosing ? undefined : foundText(githubStack, found)}
+        >
           {choosing ? (
             <span className="mode-chip">V-LINE</span>
           ) : (
-            <span className="lo-num">{headText(layers.length, githubStack, found)}</span>
+            <span className="lo-num">{headText(layers.length, githubStack)}</span>
           )}
         </span>
+        {actions !== undefined && actions !== null && (
+          <span className="flex flex-none items-center">{actions}</span>
+        )}
       </div>
       {callout !== undefined && callout !== null && (
-        <div className="mx-8 mb-8 flex-none">{callout}</div>
+        <div className="flex-none ps-16 pe-8 pb-8">{callout}</div>
       )}
       <div
         ref={setRefs}
@@ -657,7 +678,11 @@ export function StackTree({
         <div
           key={note.key}
           role="note"
-          className="mx-8 mb-8 flex-none rounded-sm bg-hover px-8 py-8 stack-note text-fg-muted text-small"
+          className={
+            note.bare === true
+              ? 'mx-8 mb-8 flex-none'
+              : 'mx-8 mb-8 flex-none rounded-sm bg-hover px-8 py-8 stack-note text-fg-muted text-small'
+          }
         >
           {note.text}
         </div>

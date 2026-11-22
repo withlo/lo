@@ -1,14 +1,16 @@
 // The stack, at the top of a pull request's tab's left panel, above the files: its tree, a row a
 // layer, with each layer's review, checks, place in the merge queue, overview, viewed count and
-// unresolved threads, the offer to make the chain a GitHub stack while Lo could, and what Lo
-// couldn't read. A run of layers being chosen, or on screen as one diff, shares a band, and while
-// it's chosen the tree says which layers and what the keys do. Nothing shows while there's no
-// stack, and nothing holds its place while Lo looks for one.
+// unresolved threads, the arrows that step through the layers, the offer to convert the chain to a
+// GitHub stack while Lo could, and what Lo couldn't read. Layers being selected, or on screen as
+// one diff, share a band, and while they're selected the tree says which layers, with a hint row
+// of their keys. Nothing shows while there's no stack, and nothing holds its place while Lo looks
+// for one.
 
 import {
   Button,
-  Callout,
+  HintButton,
   Key,
+  Problem,
   StackTree,
   type StackChecks,
   type StackOverview,
@@ -16,20 +18,21 @@ import {
   type StackRun,
   type StackTreeLayer,
   type StackTreeLink,
+  type StackTreeNote,
 } from '@lo/ui';
-import { keyLabels, setScopeSource } from '@lo/ui/commands';
-import { useCallback, useEffect, useRef, type MouseEvent } from 'react';
+import { controlOf, runControl, setScopeSource, type Target } from '@lo/ui/commands';
+import { useCallback, useEffect, useRef, type MouseEvent, type ReactNode } from 'react';
 
 import { currentMenu, openMenu } from '../../../window/commands/menus.tsx';
-import { registry, useKeys } from '../../../window/commands/registry.ts';
+import { useKeys } from '../../../window/commands/registry.ts';
 import { useOverviewMark, type OverviewMark } from '../../overview/window/shared.ts';
 import { useTabState, withoutBidi, type PullTab } from '../../tab/window/shared.ts';
 import { useViewedCount } from '../../tree/window/shared.ts';
-import type { Checks, Link, Review, Row } from '../contract.ts';
+import type { Checks, Link, Note, Review, Row } from '../contract.ts';
 import { makeStack } from './actions.ts';
 import { useLayerCount } from './counts.ts';
 import { catchUp, choosing, focused, keyboardLayer, stacks } from './layers.ts';
-import { chainIn, choiceNote, type NoteKeys } from './runs.ts';
+import { chainIn, choiceLine, type Choice } from './runs.ts';
 import { showTarget, stackTarget, stopChoosing, takeRefocus } from './walk.ts';
 
 const REVIEWS: Readonly<Record<Review, StackReview>> = {
@@ -50,12 +53,6 @@ const LINKS: Readonly<Record<Link, StackTreeLink>> = {
   sharedCommits: 'commits',
 };
 
-/** The first key `id` has now, as this system shows it, if it has one. */
-function keyOf(id: string): string[] | undefined {
-  const [first] = registry().keysOf(id);
-  return first && keyLabels(first, registry().system);
-}
-
 /** Where each layer of `band`, bottom first, sits in it, for its row: its ends, or between. */
 export function bandOf(band: readonly number[]): ReadonlyMap<number, StackRun> {
   if (band.length === 1) return new Map(band.map((number) => [number, 'only']));
@@ -67,19 +64,115 @@ export function bandOf(band: readonly number[]): ReadonlyMap<number, StackRun> {
   );
 }
 
-/** The first key of command `id`, as one string, or `fallback` while it has none. */
-function firstKey(id: string, fallback: string): string {
-  return keyOf(id)?.join(' ') ?? fallback;
+/**
+ * A button in the stack's head that steps through its layers as `]s` (`down`) or `[s` does: its
+ * command's label and key in its tooltip, dimmed with why while it can't.
+ */
+function StepButton({ id, down }: { id: string; down: boolean }) {
+  const control = controlOf(id);
+  if (!control) return null;
+  const off = control.off !== undefined;
+  return (
+    <Button
+      variant="ghost"
+      size="sm"
+      icon
+      aria-label={control.label}
+      disabled={off}
+      hint={control.off ?? control.label}
+      hintKeys={off ? undefined : control.keys}
+      hintShortcut={off ? undefined : control.shortcut}
+      // A click leaves focus where it was, so the keys there go on working.
+      onMouseDown={(event: MouseEvent) => event.preventDefault()}
+      onClick={() => {
+        if (!off) runControl(id);
+      }}
+    >
+      <svg className="lo-i lo-i--sm" viewBox="0 0 16 16" aria-hidden="true">
+        <path d={down ? 'M4.5 6.25 8 9.75l3.5-3.5' : 'M4.5 9.75 8 6.25l3.5 3.5'} />
+      </svg>
+    </Button>
+  );
 }
 
-/** The keys the note while choosing names, as they are now. */
-function noteKeys(): NoteKeys {
-  return {
-    show: firstKey('stacks.show', '⏎'),
-    cancel: firstKey('stacks.cancel', 'Esc'),
-    down: firstKey('stacks.down', 'j'),
-    up: firstKey('stacks.up', 'k'),
-  };
+/**
+ * The offer to convert the chain through the layer on screen to a GitHub stack: one line, and the
+ * command's button.
+ */
+function Offer({ line, tab }: { line: string; tab: PullTab }) {
+  const control = controlOf('stacks.convert');
+  const off = control?.off;
+  return (
+    <div className="flex flex-col items-start gap-6">
+      <p className="m-0 text-fg-muted text-small">{withoutBidi(line)}</p>
+      <Button
+        size="sm"
+        disabled={off !== undefined}
+        hint={off ?? null}
+        onClick={() => {
+          if (control) runControl('stacks.convert');
+          else makeStack(tab.id, tab.number);
+        }}
+      >
+        {control?.label ?? 'Convert to GitHub stack…'}
+        {control?.keys && <Key keys={control.keys} decorative />}
+      </Button>
+    </div>
+  );
+}
+
+/**
+ * What the tree says while layers are selected: the layer it started from, or which layers and
+ * what they're compared with, and a hint row of the keys that grow, show and stop the selection.
+ */
+function Selecting({
+  rows,
+  root,
+  choice,
+  target,
+}: {
+  rows: readonly Row[];
+  root: string;
+  choice: Choice;
+  target: Target;
+}) {
+  const line = choiceLine(rows, root, choice);
+  const from = line.code ? <span className="code-small">{line.from}</span> : line.from;
+  return (
+    <div className="flex flex-col gap-6">
+      <p className="m-0">
+        {line.name === undefined ? (
+          <>Selecting layers from {from}</>
+        ) : (
+          <>
+            {line.name}, compared with {from}
+          </>
+        )}
+      </p>
+      <div className="-ms-8 flex flex-nowrap items-center gap-4 overflow-hidden">
+        {line.name === undefined ? (
+          <>
+            <HintButton command="stacks.down">Next</HintButton>
+            <HintButton command="stacks.up">Previous</HintButton>
+          </>
+        ) : (
+          <HintButton command="stacks.show" target={target}>
+            Show {line.name.toLowerCase()}
+          </HintButton>
+        )}
+        <HintButton command="stacks.cancel">Stop</HintButton>
+      </div>
+    </div>
+  );
+}
+
+/** A note main sent, as the tree draws it: one that says what failed is a problem. */
+function noteOf(note: Note, index: number): StackTreeNote {
+  const key = `${note.kind}-${index}`;
+  if (note.kind === 'mergedFailed') {
+    return { key, bare: true, text: <Problem layout="inline" title={withoutBidi(note.text)} /> };
+  }
+  return { key, text: withoutBidi(note.text) };
 }
 
 /**
@@ -191,16 +284,17 @@ export function Stack({ tab }: { tab: PullTab }) {
   const runs = bandOf(band);
   const current = tab.run ? undefined : view.rows.find((row) => row.current);
   const on = keyboardLayer(view, keyboard, tab.number);
-  const convert = keyOf('stacks.convert');
-  const notes = view.notes.map((note, index) => ({
-    key: `${note.kind}-${index}`,
-    text: withoutBidi(note.text),
-  }));
+  const notes = view.notes.map(noteOf);
   if (choice) {
-    notes.unshift({
-      key: 'choosing',
-      text: choiceNote(view.rows, withoutBidi(view.root), choice, noteKeys()),
-    });
+    const text: ReactNode = (
+      <Selecting
+        rows={view.rows}
+        root={withoutBidi(view.root)}
+        choice={choice}
+        target={on === undefined ? { kind: 'none' } : { kind: 'layer', layer: on }}
+      />
+    );
+    notes.unshift({ key: 'choosing', text });
   }
   return (
     <div className="flex max-h-1/2 min-h-0 flex-none flex-col" data-lo-stack={tab.id}>
@@ -213,6 +307,12 @@ export function Stack({ tab }: { tab: PullTab }) {
         root={withoutBidi(view.root)}
         githubStack={view.githubStack}
         found={view.found?.map((link) => LINKS[link])}
+        actions={
+          <>
+            <StepButton id="stacks.previousLayer" down={false} />
+            <StepButton id="stacks.nextLayer" down />
+          </>
+        }
         focused={on === undefined ? undefined : String(on)}
         current={current === undefined ? undefined : String(current.number)}
         choosing={choice !== undefined}
@@ -234,19 +334,7 @@ export function Stack({ tab }: { tab: PullTab }) {
             event.preventDefault();
           }
         }}
-        callout={
-          view.callout === null ? undefined : (
-            <Callout tone="info">
-              <p>{view.callout}</p>
-              <div className="mt-8">
-                <Button size="sm" onClick={() => makeStack(tab.id, tab.number)}>
-                  Make this a GitHub stack…
-                  {convert && <Key keys={convert} decorative />}
-                </Button>
-              </div>
-            </Callout>
-          )
-        }
+        callout={view.callout === null ? undefined : <Offer line={view.callout} tab={tab} />}
         notes={notes}
         treeRef={treeRef}
         onBlur={() => {

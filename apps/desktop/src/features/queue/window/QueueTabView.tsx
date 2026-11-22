@@ -1,26 +1,31 @@
 // A merge queue's tab: the repository, the branch and the queue's settings, with a switch of the
 // branches it can show; the queue's entries in order, those tested together in a group, then those
 // waiting to join, then those Lo saw leave and why; and a status bar of its own, with when the
-// queue was last read. The row the keyboard is on carries what can be done to it, each with its
-// key: an entry's removal and, for the repository's admins, its move to the front; the auto-merge
-// of one waiting to join.
+// queue was last checked and a hint for each of the queue's keys, which runs it when clicked. A
+// row's actions show on the row the keyboard is on, and on one under the pointer: an entry's
+// removal and its move to the front, the auto-merge of one waiting to join, and a `⋯` that opens
+// the row's menu. A double click opens a row's pull request. What was asked of a row that didn't
+// go shows under it, with what can be done about it.
 
 import {
   Branch,
   Button,
-  Callout,
+  HintButton,
   Key,
+  keyAria,
+  Loading,
+  MoreButton,
+  Problem,
   QueueTable,
   SegmentedControl,
-  Spinner,
   StatusBar,
   StatusItem,
   StatusKeys,
-  Switch,
   type QueueItem,
+  type LeftEntry as TableLeft,
   type WaitingEntry as TableWaiting,
 } from '@lo/ui';
-import { keyLabels, setScopeSource } from '@lo/ui/commands';
+import { controlOf, keyLabels, runControl, setScopeSource, type Target } from '@lo/ui/commands';
 import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { useStore } from 'zustand';
 
@@ -28,8 +33,16 @@ import { useMenuTarget } from '../../../window/commands/menus.tsx';
 import { registry, setMiddle, useKeys } from '../../../window/commands/registry.ts';
 import type { QueueTab } from '../../tab/contract.ts';
 import { useTabState, withoutBidi } from '../../tab/window/shared.ts';
-import type { QueueRead, QueueState } from '../contract.ts';
-import { act, autoMerge } from './acting.ts';
+import { QUEUE_EVERY, type QueueRead, type QueueState } from '../contract.ts';
+import {
+  acting,
+  nextLabel,
+  problemAction,
+  problemKey,
+  workingWord,
+  type RowProblem,
+  type Working,
+} from './acting.ts';
 import { focusRow, openOnGithub, openPage, rowTarget, setTable, showBranch } from './actions.ts';
 import { main } from './main.ts';
 import {
@@ -69,98 +82,176 @@ function HeldKeys() {
   return held === '' ? null : <StatusKeys keys={held} />;
 }
 
-/** A key hint in the status bar: its key, then what it does. */
-function Hint({ id, children }: { id: string; children: ReactNode }) {
-  const keys = keyOf(id);
-  if (keys === undefined) return null;
-  return (
-    <StatusItem>
-      <Key keys={keys} decorative />
-      {children}
-    </StatusItem>
-  );
-}
-
-/** A row's button for command `id`, with its key, as the row the keyboard is on shows it. */
-function RowButton({ id, run, children }: { id: string; run: () => void; children: ReactNode }) {
-  const keys = keyOf(id);
-  return (
-    <Button
-      variant="ghost"
-      size="sm"
-      tabIndex={-1}
-      onClick={(event) => {
-        event.stopPropagation();
-        run();
-      }}
-    >
-      {children}
-      {keys !== undefined && <Key keys={keys} decorative />}
-    </Button>
-  );
-}
-
 /** A row as a command's target. */
 function target(key: string): { kind: 'row'; row: string } {
   return { kind: 'row', row: key };
 }
 
 /**
- * The queue's entries, with what can be done to the one the keyboard is on, `focused`: its move to
- * the front, for an `admin`, unless it's there already, and its removal.
+ * A row's button for command `id` on the row `row`: its words, and its key on the row the keyboard
+ * is on alone, else in its tooltip; dimmed with why while it can't run, and busy, saying
+ * `working`, while what it started is at work.
  */
-function withEntryActions(
-  items: readonly QueueItem[],
-  focused: string | undefined,
-  admin: boolean,
-): QueueItem[] {
-  const actions = ({ key, position }: { key: string; position: number }): ReactNode =>
-    key !== focused ? undefined : (
-      <>
-        {admin && position > 1 && (
-          <RowButton id="queue.jump" run={() => act('jump', target(key))}>
-            To the front
-          </RowButton>
-        )}
-        <RowButton id="queue.remove" run={() => act('remove', target(key))}>
-          Remove
-        </RowButton>
-      </>
-    );
-  return items.map((item) =>
-    item.kind === 'entry'
-      ? { kind: 'entry', entry: { ...item.entry, actions: actions(item.entry) } }
-      : {
-          kind: 'group',
-          group: {
-            ...item.group,
-            entries: item.group.entries.map((entry) => ({
-              ...entry,
-              actions: actions(entry),
-            })),
-          },
-        },
+function RowButton({
+  id,
+  row,
+  busy,
+  working,
+  children,
+}: {
+  id: string;
+  row: string;
+  busy: boolean;
+  working: string;
+  children: string;
+}) {
+  const control = controlOf(id, target(row));
+  if (!control) return null;
+  // At work, it's busy, not dimmed with what's at work.
+  const off = busy ? undefined : control.off;
+  return (
+    <Button
+      variant="ghost"
+      size="sm"
+      // The table has the keyboard: its rows' buttons are for the pointer.
+      tabIndex={-1}
+      busy={busy}
+      working={working}
+      align="end"
+      disabled={off !== undefined}
+      hint={off ?? children}
+      hintKeys={control.keys}
+      {...keyAria(control.keys, control.shortcut)}
+      onClick={(event) => {
+        // The row's own click would move the keyboard to it under the dialog this opens.
+        event.stopPropagation();
+        if (off === undefined && !busy) runControl(id, target(row));
+      }}
+    >
+      {children}
+      {control.keys && (
+        // Narrow, the key goes first, so the row's words still fit.
+        <span className="contents queue-chip">
+          <Key keys={control.keys} when="focus" decorative />
+        </span>
+      )}
+    </Button>
   );
 }
 
-/** Those waiting to join, with the auto-merge switch of the one the keyboard is on, `focused`. */
+/** The `⋯` at a row's end, which opens the row's menu, as a right-click on it does. */
+function More({ number }: { number: number }) {
+  return <MoreButton label={`More actions for #${number}`} />;
+}
+
+/**
+ * The queue's entries, with what can be done to each: its move to the front, for an `admin`,
+ * unless it's there already, and its removal, each busy while it's at work; and what went wrong
+ * with what was asked of it, under it.
+ */
+function withEntryActions(
+  items: readonly QueueItem[],
+  admin: boolean,
+  working: ReadonlyMap<number, Working>,
+  noteOf: (number: number) => ReactNode,
+): QueueItem[] {
+  const withActions = <E extends { key: string; position: number; number: number }>(entry: E) => {
+    const at = working.get(entry.number);
+    return {
+      ...entry,
+      actions: (
+        <>
+          <span className="flex queue-label items-center gap-4">
+            {admin && (entry.position > 1 || at === 'jump') && (
+              <RowButton
+                id="queue.jump"
+                row={entry.key}
+                busy={at === 'jump'}
+                working={workingWord('jump')}
+              >
+                Move to front…
+              </RowButton>
+            )}
+            <RowButton
+              id="queue.remove"
+              row={entry.key}
+              busy={at === 'remove'}
+              working={workingWord('remove')}
+            >
+              Remove…
+            </RowButton>
+          </span>
+          <More number={entry.number} />
+        </>
+      ),
+      note: noteOf(entry.number),
+    };
+  };
+  return items.map((item) =>
+    item.kind === 'entry'
+      ? { kind: 'entry', entry: withActions(item.entry) }
+      : { kind: 'group', group: { ...item.group, entries: item.group.entries.map(withActions) } },
+  );
+}
+
+/** Those waiting to join, with the button that turns auto-merge off, busy while it's at work. */
 function withWaitingActions(
   waiting: readonly TableWaiting[],
-  focused: string | undefined,
+  working: ReadonlyMap<number, Working>,
+  noteOf: (number: number) => ReactNode,
 ): TableWaiting[] {
-  return waiting.map((entry) =>
-    entry.key !== focused
-      ? entry
-      : {
-          ...entry,
-          actions: (
-            <Switch
-              checked
-              aria-label="Auto-merge"
-              onCheckedChange={() => autoMerge(target(entry.key))}
-            />
-          ),
-        },
+  return waiting.map((entry) => ({
+    ...entry,
+    actions: (
+      <>
+        <span className="flex queue-label items-center">
+          <RowButton
+            id="queue.autoMerge"
+            row={entry.key}
+            busy={working.get(entry.number) === 'autoMergeOff'}
+            working={workingWord('autoMergeOff')}
+          >
+            Turn off auto-merge
+          </RowButton>
+        </span>
+        <More number={entry.number} />
+      </>
+    ),
+    note: noteOf(entry.number),
+  }));
+}
+
+/** Those that left, with the `⋯` that opens their menu. */
+function withLeftActions(
+  left: readonly TableLeft[],
+  noteOf: (number: number) => ReactNode,
+): TableLeft[] {
+  return left.map((entry) => ({
+    ...entry,
+    actions: <More number={entry.number} />,
+    note: noteOf(entry.number),
+  }));
+}
+
+/** What went wrong with what was asked of a row, under it, with what can be done about it. */
+function RowNote({ problem }: { problem: RowProblem }) {
+  const label = problem.unknown ? 'Check again' : nextLabel(problem.next);
+  return (
+    <Problem
+      title={withoutBidi(problem.title)}
+      reason={problem.why === '' ? undefined : withoutBidi(problem.why)}
+      details={problem.details}
+      action={
+        label === undefined
+          ? undefined
+          : {
+              label,
+              onClick: () => problemAction(problem.id, problem.number),
+              busy: problem.busy === true,
+              working: 'Checking…',
+            }
+      }
+    />
   );
 }
 
@@ -177,62 +268,95 @@ function useCatchUp(id: string): void {
   }, [id]);
 }
 
-/** `text` as a sentence, ending with a full stop if it ends without one. */
-function sentence(text: string): string {
-  return /[.!?…]$/.test(text.trim()) ? text.trim() : `${text.trim()}.`;
+/** "Try now": reads the queue and those waiting to join again, its button busy meanwhile. */
+function useTryNow(id: string): { busy: boolean; run: () => void } {
+  const [busy, setBusy] = useState(false);
+  return {
+    busy,
+    run: () => {
+      if (busy) return;
+      setBusy(true);
+      main()
+        .look({ id })
+        .catch((error: unknown) => console.error("Lo couldn't read a merge queue:", error))
+        .finally(() => setBusy(false));
+    },
+  };
 }
 
-/** What the page says above the table: why the last read failed, and what Lo may not see. */
-function Notes({ state, now }: { state: QueueState; now: number }) {
-  const { failure, read } = state;
-  const again = failure && retryIn(failure.retryAt, now);
+/** Signs in to the queue's account again. */
+function signIn(): void {
+  registry().run('accounts.addAccount', { kind: 'none' });
+}
+
+/**
+ * Why the queue can't be checked now, as the error's shape says it: its cause, and when it's read
+ * again, with GitHub's own words behind Details; `view` when there's no queue drawn behind it.
+ */
+function Failed({ state, now, view }: { state: QueueState; now: number; view: boolean }) {
+  const tryNow = useTryNow(state.id);
+  const { failure } = state;
+  if (!failure) return null;
+  const layout = view ? 'view' : 'inline';
+  if (state.away) {
+    return (
+      <Problem
+        layout={layout}
+        title="Can’t check the merge queue"
+        reason={withoutBidi(failure.message)}
+        action={{ label: 'Sign in again', onClick: signIn }}
+      />
+    );
+  }
+  const reason = [failure.reason, retryIn(failure.retryAt, now)]
+    .filter((part) => part !== undefined)
+    .join(' ');
   return (
-    <>
-      {failure && (
-        <Callout tone="warning" role="status">
-          Lo couldn’t read the merge queue for {withoutBidi(state.branch)}.{' '}
-          {sentence(withoutBidi(failure.message))}
-          {again === undefined ? '' : ` Lo reads it again ${again}.`}
-        </Callout>
-      )}
-      {read.kind === 'queue' && read.leftOut && (
-        <Callout tone="warning">
-          Lo may not see every entry: GitHub left part of the queue out. Lo reads it again in 20 s.
-        </Callout>
-      )}
-    </>
+    <Problem
+      layout={layout}
+      title="Can’t check the merge queue"
+      reason={reason === '' ? undefined : withoutBidi(reason)}
+      details={failure.message}
+      action={{ label: 'Try now', onClick: tryNow.run, busy: tryNow.busy, working: 'Checking…' }}
+    />
   );
 }
 
-/** The queue, or what stands in for it: that it's being read, or that the branch has none. */
-function Body({
-  tab,
-  read,
-  failed,
-  now,
-}: {
-  tab: QueueTab;
-  read: QueueRead;
-  failed: boolean;
-  now: number;
-}) {
+/** That GitHub left part of the queue out, and when it's read again. */
+function LeftOut({ state, now }: { state: QueueState; now: number }) {
+  const tryNow = useTryNow(state.id);
+  const again = state.readAt === null ? undefined : retryIn(state.readAt + QUEUE_EVERY, now);
+  return (
+    <Problem
+      title="Can’t show the whole queue"
+      reason={['GitHub left part of it out.', again].filter((part) => part !== undefined).join(' ')}
+      action={{ label: 'Try now', onClick: tryNow.run, busy: tryNow.busy, working: 'Checking…' }}
+    />
+  );
+}
+
+/** The queue, or what stands in for it: that the branch has none. */
+function Body({ tab, state, now }: { tab: QueueTab; state: QueueState; now: number }) {
   const focused = useTabState(focusedRows, tab.id);
+  const working = useStore(acting, (value) => value.working);
+  const problems = useStore(acting, (value) => value.problems);
   const table = useRef<HTMLDivElement>(null);
   useEffect(() => setTable(tab.id, () => table.current), [tab.id]);
-  const branch = withoutBidi(tab.branch);
+  const read: QueueRead = state.read;
+  const noteOf = (number: number): ReactNode => {
+    const problem = problems.get(problemKey(tab.id, number));
+    return problem && <RowNote problem={problem} />;
+  };
   switch (read.kind) {
     case 'reading':
-      return failed ? null : (
-        <p className="m-0 flex items-center gap-8 px-12 py-16 text-fg-muted text-ui">
-          <Spinner size="xs" />
-          Reading the merge queue for {branch}
-        </p>
-      );
+      return null;
     case 'none':
       return (
-        <p className="m-0 px-12 py-16 text-fg-muted text-ui">
-          {branch} has no merge queue: its pull requests merge on their own.
-        </p>
+        <div className="grid flex-1 place-items-center p-32 text-center">
+          <h2 className="m-0 text-heading">
+            <code className="font-code">{withoutBidi(tab.branch)}</code> has no merge queue
+          </h2>
+        </div>
       );
     case 'queue': {
       const { url } = read;
@@ -240,28 +364,29 @@ function Body({
       return (
         <>
           <QueueTable
-            label={`Merge queue for ${branch}`}
-            items={withEntryActions(itemsOf(read.entries, now), on, read.admin)}
-            waiting={withWaitingActions(waitingOf(read.waiting), on)}
-            left={leftOf(read.left, now, openPage)}
+            label={`Merge queue for ${withoutBidi(tab.branch)}`}
+            items={withEntryActions(itemsOf(read.entries, now), read.admin, working, noteOf)}
+            waiting={withWaitingActions(waitingOf(read.waiting), working, noteOf)}
+            left={withLeftActions(leftOf(read.left, now, openPage), noteOf)}
             more={
               read.more > 0 && url !== null
                 ? { count: read.more, onOpen: () => void openOnGithub({ kind: 'none' }) }
                 : undefined
             }
-            empty={
-              read.leftOut
-                ? 'Lo couldn’t read the queue’s entries.'
-                : 'Nothing is in the merge queue.'
-            }
+            // What's above the table says the entries may not all be there.
+            empty={read.leftOut ? null : undefined}
             focused={on}
             onRowClick={(key) => focusRow(tab.id, key)}
+            onRowOpen={(key) => {
+              focusRow(tab.id, key);
+              runControl('queue.open', target(key));
+            }}
             tableRef={table}
             className="focus-visible:shadow-none"
           />
           {read.waitingCutShort && (
             <p className="m-0 px-12 text-fg-muted text-small">
-              Lo may not see every pull request waiting to join.
+              More pull requests are waiting to join.
             </p>
           )}
         </>
@@ -307,15 +432,45 @@ function Header({ tab, state }: { tab: QueueTab; state: QueueState | undefined }
           keys={keyOf('queue.nextBranch')}
         />
       )}
-      <span
-        className="inline-flex h-control-h flex-none items-center gap-6 px-6 whitespace-nowrap text-fg text-small"
-        title={`Reading as ${tab.login}`}
-      >
+      <span className="inline-flex h-control-h flex-none items-center gap-6 px-6 whitespace-nowrap text-fg text-small">
         <span>
           <span className="text-fg-muted">as</span> {tab.login}
         </span>
       </span>
     </header>
+  );
+}
+
+/**
+ * The status bar's hints: a button for each of the queue's keys, named as the row the keyboard is
+ * on has it, each dimmed with why it can't run on it.
+ */
+function Hints({ tab, read }: { tab: QueueTab; read: QueueRead | undefined }) {
+  // Drawn again as what's at work, and the row the keyboard is on, change what each can do.
+  useStore(acting, (value) => value.working);
+  useTabState(focusedRows, tab.id);
+  const on: Target = rowTarget(tab.id);
+  const row = on.kind === 'row' ? rowsOf(read).find((each) => each.key === on.row) : undefined;
+  return (
+    <>
+      <HintButton command="queue.down">Next</HintButton>
+      <HintButton command="queue.up">Previous</HintButton>
+      <HintButton command="queue.open" target={on}>
+        Open
+      </HintButton>
+      <HintButton command="queue.remove" target={on}>
+        Remove…
+      </HintButton>
+      <HintButton command="queue.jump" target={on}>
+        Move to front…
+      </HintButton>
+      <HintButton command="queue.autoMerge" target={on}>
+        {row?.kind === 'left' ? 'Turn on auto-merge…' : 'Turn off auto-merge'}
+      </HintButton>
+      <HintButton command="queue.openOnGithub" target={on}>
+        Open on GitHub
+      </HintButton>
+    </>
   );
 }
 
@@ -353,7 +508,7 @@ export function QueueTabView({ tab }: { tab: QueueTab }) {
     return own ? setScopeSource(own, { target: () => rowTarget(tab.id) }) : undefined;
   }, [tab.id]);
 
-  // A right-click on a row: the row's menu, the keyboard moving to it.
+  // A right-click on a row, or its `⋯`: the row's menu, the keyboard moving to it.
   const menu = useMenuTarget((event) => {
     const element = event.target instanceof Element ? event.target.closest('[data-key]') : null;
     const key = element instanceof HTMLElement ? element.dataset['key'] : undefined;
@@ -362,6 +517,10 @@ export function QueueTabView({ tab }: { tab: QueueTab }) {
     return { kind: 'row', row: key };
   });
 
+  const read = state?.read;
+  const reading = read === undefined || read.kind === 'reading';
+  // Nothing read yet, and nothing failed: the whole view waits.
+  const waiting = reading && !state?.failure;
   return (
     <div
       ref={root}
@@ -371,16 +530,26 @@ export function QueueTabView({ tab }: { tab: QueueTab }) {
       className="flex h-full min-h-0 flex-col focus-visible:shadow-none"
     >
       <Header tab={tab} state={state} />
-      <main className="relative min-h-0 flex-1 overflow-auto sheet" {...menu}>
-        <div className="flex flex-col gap-12 px-24 pt-16 pb-64">
-          {state && <Notes state={state} now={now} />}
-          <Body
-            tab={tab}
-            read={state?.read ?? { kind: 'reading' }}
-            failed={Boolean(state?.failure)}
-            now={now}
-          />
-        </div>
+      <main
+        className="relative min-h-0 flex-1 overflow-auto sheet"
+        aria-busy={waiting || undefined}
+        {...menu}
+      >
+        {waiting ? (
+          <Loading status="Opening merge queue…" />
+        ) : reading ? (
+          state && <Failed state={state} now={now} view />
+        ) : (
+          state && (
+            <div className="flex min-h-full flex-col gap-12 px-24 pt-16 pb-64">
+              <Failed state={state} now={now} view={false} />
+              {state.read.kind === 'queue' && state.read.leftOut && (
+                <LeftOut state={state} now={now} />
+              )}
+              <Body tab={tab} state={state} now={now} />
+            </div>
+          )
+        )}
       </main>
       <StatusBar
         start={
@@ -393,13 +562,7 @@ export function QueueTabView({ tab }: { tab: QueueTab }) {
         }
         end={
           <>
-            <Hint id="queue.open">Open</Hint>
-            <Hint id="queue.remove">Remove</Hint>
-            {state?.read.kind === 'queue' && state.read.admin && (
-              <Hint id="queue.jump">To the front</Hint>
-            )}
-            <Hint id="queue.autoMerge">Auto-merge</Hint>
-            <Hint id="queue.openOnGithub">On GitHub</Hint>
+            <Hints tab={tab} read={read} />
             <HeldKeys />
           </>
         }

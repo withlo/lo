@@ -1,52 +1,55 @@
 // The banner on a pull request's tab once the auto-merge watch acted on a push after your approval:
 // it turned auto-merge off, couldn't, or can't tell yet whether the push would merge with your
-// approval. It names who pushed which revision, and the one you approved, and offers the merge
-// panel, `m`. Dismissing it forgets what the watch said.
+// approval. One line names who pushed which revision, and its one button acts: "Show r5", the push,
+// once auto-merge is off; else "Turn off auto-merge", busy while it's turned off. Dismissing it
+// forgets what the watch said.
 
-import { Banner } from '@lo/ui';
-import { keyLabels } from '@lo/ui/commands';
+import { Banner, type BannerAction } from '@lo/ui';
 import { useStore } from 'zustand';
 
-import { registry } from '../../../window/commands/registry.ts';
 import { useRevisions } from '../../revisions/window/shared.ts';
 import { withoutBidi, type BannerSwitch, type PullTab } from '../../tab/window/shared.ts';
 import type { Watched } from '../contract.ts';
-import { openPanel } from './actions.ts';
+import { newerLabel, seeNewer, turnOffAutoMerge, turningOff } from './merging.ts';
 import { dismissWatched, labelsOf } from './shipping.ts';
 import { watchedWords } from './shipWords.ts';
-import { pullKey, shipping } from './store.ts';
+import { merging, pullKey, shipping } from './store.ts';
 
 /** What the auto-merge watch last said of `tab`'s pull request, if anything. */
 function watchedOf(tab: PullTab): Watched | undefined {
   return shipping.getState().watched.get(pullKey(tab.owner, tab.repo, tab.number));
 }
 
-/** The first key of command `id`, as this system shows it. */
-function keyOf(id: string): readonly string[] | undefined {
-  const [first] = registry().keysOf(id);
-  return first && keyLabels(first, registry().system);
-}
-
 export function WatchedBanner({ tab }: { tab: PullTab }) {
-  // Read for their changes: what the watch said, and who pushed what.
+  // Read for their changes: what the watch said, who pushed what, and auto-merge being turned off.
   useStore(shipping, (state) => state.watched);
+  useStore(merging);
   const revisions = useRevisions(tab.id);
   const watched = watchedOf(tab);
   if (!watched) return null;
-  const words = watchedWords(watched, revisions?.revisions, labelsOf(tab.id), Date.now());
+  const words = watchedWords(watched, revisions?.revisions, labelsOf(tab.id));
+  const key = pullKey(tab.owner, tab.repo, tab.number);
+  const newer = { from: watched.approved, to: watched.head };
+  const action: BannerAction =
+    words.action === 'show'
+      ? { label: newerLabel(tab.id, newer), onClick: () => seeNewer(tab.id, newer) }
+      : {
+          label: 'Turn off auto-merge',
+          busy: turningOff(tab),
+          working: 'Turning off…',
+          onClick: () => {
+            void turnOffAutoMerge(tab).then((sent) => {
+              if (sent) dismissWatched(key);
+            });
+          },
+        };
   return (
     <Banner
       tone={words.tone}
       title={withoutBidi(words.title)}
-      detail={withoutBidi(words.detail)}
-      actions={[
-        {
-          label: 'Merge panel',
-          keys: keyOf('merge.panel'),
-          onClick: () => openPanel(tab.id, tab.number),
-        },
-      ]}
-      onDismiss={() => dismissWatched(pullKey(tab.owner, tab.repo, tab.number))}
+      detail={words.detail === undefined ? undefined : withoutBidi(words.detail)}
+      actions={[action]}
+      onDismiss={() => dismissWatched(key)}
     />
   );
 }

@@ -12,7 +12,6 @@ import {
   GithubError,
   isRefusal,
   openLayers,
-  openPullRequest,
   stackNumbers,
   stacksHolding,
   type GithubStack,
@@ -32,13 +31,23 @@ import type {
   Change,
   ChangeRow,
   ChangeStatus,
-  ConversionNote,
+  ConversionProblem,
   ConversionView,
   Phase,
   Planned,
-  PlanRow,
 } from '../contract.ts';
-import { errorText, madeText, numbers, OWN, planWords, reasonsText, stackedBy } from './words.ts';
+import {
+  causeOf,
+  errorText,
+  NO_ANSWER,
+  numbers,
+  OWN,
+  planWords,
+  reasonsText,
+  refusalCause,
+  STACK_CHANGED,
+  type Cause,
+} from './words.ts';
 
 /** What a conversion uses of an account's poller. */
 export type ConversionPoller = Pick<
@@ -120,7 +129,8 @@ interface Run extends Kept {
   phase: Phase;
   changes: ChangeRow[];
   putBack: ChangeRow[];
-  notes: ConversionNote[];
+  /** What went wrong, once something did. */
+  problem: ConversionProblem | undefined;
   waitingUntil: number | undefined;
   /** What stops the changes being sent now, while some are. */
   controller: AbortController | undefined;
@@ -185,16 +195,16 @@ export class Conversions {
     try {
       poller = await this.#options.poller(acting.login);
     } catch (error) {
-      return refused([OWN.noPoller(acting.login, error)]);
+      return unchecked(causeOf(error, acting.login));
     }
     // After Lo's own changes here, a plan waits for the pull requests listed since.
     const changedAt = this.#changedAt.get(repo.key);
     if (changedAt !== undefined && !(await this.#listedSince(poller, repo, changedAt))) {
-      return refused([OWN.stale(repository)]);
+      return unchecked({ reason: null, details: null });
     }
     const found = this.#options.found(tab.id);
     if (!found || found.login.toLowerCase() !== poller.login.toLowerCase()) {
-      return refused([OWN.unread(repository)]);
+      return refused([OWN.unread]);
     }
     const { forest, list, layers } = found;
 
@@ -203,7 +213,7 @@ export class Conversions {
     try {
       holding = await poller.readOnce((client) => stacksHolding(client, repo, pull.number));
     } catch (error) {
-      return refused([OWN.stacksUnread(pull.number, error)]);
+      return unchecked(causeOf(error, poller.login));
     }
     const layer = layerOf(forest, pull.number);
     if (holding && layer) {
@@ -214,7 +224,7 @@ export class Conversions {
         void poller.changed(repo).catch((error: unknown) => {
           this.#options.log(`listing ${repo.key} again: ${String(error)}`);
         });
-        return refused([OWN.stacksChanged(repository)]);
+        return unchecked({ reason: STACK_CHANGED, details: null });
       }
     }
 
@@ -240,18 +250,14 @@ export class Conversions {
     for (const [key, kept] of this.#kept) if (kept.tab === tab.id) this.#kept.delete(key);
     const key = this.#newKey();
     this.#kept.set(key, { key, tab: tab.id, poller, repo, repository, plan });
-    const words = planWords(plan, { repository, forest, list });
+    const words = planWords(plan, repository);
     return {
       kind: 'plan',
       key,
-      title: words.title,
       description: words.description,
-      heading: words.heading,
-      rows: planRows(plan, list),
-      stack: words.stack,
+      changes: plan.steps.map(changeOf),
       warning: words.warning ?? null,
       login: poller.login,
-      confirm: words.confirm,
     };
   }
 
@@ -262,9 +268,7 @@ export class Conversions {
   convert(key: string): ConversionView {
     if (this.#stopped) throw new IpcError('stopped', 'Lo is quitting.');
     const kept = this.#kept.get(key);
-    if (!kept) {
-      throw new IpcError('gone', 'This plan is gone. Ask to make the GitHub stack again.');
-    }
+    if (!kept) throw new IpcError('gone', STACK_CHANGED);
     if (this.#busy.has(kept.repo.key)) {
       throw new IpcError('busy', OWN.running(kept.repository));
     }
@@ -282,7 +286,7 @@ export class Conversions {
         detail: null,
       })),
       putBack: [],
-      notes: [],
+      problem: undefined,
       waitingUntil: undefined,
       controller: new AbortController(),
       stopping: false,
@@ -314,7 +318,7 @@ export class Conversions {
   }
 
   /**
-   * Puts back what the conversion named `key` changed, once it failed or stopped: the stack it may
+   * Undoes what the conversion named `key` changed, once it failed or stopped: the stack it may
    * have made, only while it holds exactly the plan's pull requests, then the base branches, last
    * first. Each is read first, and one changed elsewhere since is left.
    */
@@ -325,20 +329,16 @@ export class Conversions {
       run?.phase === 'failed' ||
       run?.phase === 'stopped' ||
       (run?.phase === 'putBack' && run.again);
-    if (!run || !settled || run.controller) {
-      throw new IpcError('gone', "There's nothing to put back.");
-    }
+    if (!run || !settled || run.controller) throw new IpcError('gone', STACK_CHANGED);
     if (this.#busy.has(run.repo.key)) throw new IpcError('busy', OWN.running(run.repository));
     const merging = this.#held(run.repo, run.plan.path);
     if (merging.length > 0) throw new IpcError('busy', OWN.merging(merging));
-    if (!putBackOf(run).some(toDo)) {
-      throw new IpcError('gone', "There's nothing to put back.");
-    }
+    if (!putBackOf(run).some(toDo)) throw new IpcError('gone', STACK_CHANGED);
     run.phase = 'puttingBack';
     run.controller = new AbortController();
     run.stopping = false;
     run.again = false;
-    run.notes = [];
+    run.problem = undefined;
     this.#busy.set(run.repo.key, run);
     this.#publish(run);
     void this.#putBack(run).catch((error: unknown) => this.#crashed(run, error));
@@ -390,18 +390,23 @@ export class Conversions {
       if (sent.kind === 'failed') {
         const status = sent.mayHaveBeenDone ? 'unknown' : 'failed';
         this.#mark(run.changes, index, status, errorText(sent.error));
-        if (status === 'unknown' && step.kind !== 'retarget') {
-          const [bottom = 0] = step.prs;
-          run.notes.push({
-            text: `GitHub may have ${step.kind === 'createStack' ? 'made the stack' : 'added them'} before its answer was lost. Check on GitHub.`,
-            link: pullLink(repo, bottom),
-          });
+        if (status === 'unknown') {
+          const [first = 0] = step.kind === 'retarget' ? [step.retarget.pr] : step.prs;
+          run.problem = {
+            title: 'Conversion not confirmed',
+            reason: NO_ANSWER,
+            details: errorText(sent.error),
+            link: pullLink(repo, first),
+          };
+        } else {
+          run.problem = failure(CONVERT_FAILED, causeOf(sent.error, poller.login));
         }
         run.phase = 'failed';
         break;
       }
       if (isRefusal(sent.value)) {
         this.#mark(run.changes, index, 'failed', `${describeMergeRefusal(sent.value)}.`);
+        run.problem = failure(CONVERT_FAILED, refusalCause(sent.value, poller.login));
         run.phase = 'failed';
         break;
       }
@@ -448,19 +453,17 @@ export class Conversions {
             : await poller.readOnce((client) => stacksHolding(client, repo, first), signal);
       } catch (error) {
         if (signal?.aborted) return this.#putBackOver(run, 'stopped');
-        run.notes.push({
-          text: `Lo couldn't read whether GitHub ${unsure.kind === 'create' ? 'made the stack' : 'added the PRs'}: ${errorText(error)} Nothing was put back.`,
-          link: null,
-        });
+        run.problem = failure(UNDO_FAILED, causeOf(error, poller.login));
         return this.#putBackOver(run, 'again');
       }
       const open = holding?.filter((stack) => stack.open) ?? [];
       if (unsure.kind === 'add') {
         const joined = open.find((stack) => stackNumbers(stack).includes(first ?? 0));
         if (joined) {
-          run.notes.push({
-            text: `${numbers(unsure.prs)} may be in GitHub stack #${joined.number} now, so Lo left ${unsure.prs.length === 1 ? 'it' : 'them'} as ${unsure.prs.length === 1 ? 'it is' : 'they are'}.`,
-            link: pullLink(repo, first ?? 0),
+          const one = unsure.prs.length === 1;
+          run.problem = failure(UNDO_FAILED, {
+            reason: `${numbers(unsure.prs)} ${one ? 'is' : 'are'} already in the GitHub stack.`,
+            details: null,
           });
           return this.#putBackOver(run, 'left');
         }
@@ -474,10 +477,7 @@ export class Conversions {
             detail: null,
           });
         } else if (other) {
-          run.notes.push({
-            text: `GitHub stack #${other.number} holds #${first} with other PRs, so Lo left it, and the base branches as they are.`,
-            link: pullLink(repo, first ?? 0),
-          });
+          run.problem = failure(UNDO_FAILED, { reason: OTHER_LAYERS, details: null });
           return this.#putBackOver(run, 'left');
         }
       }
@@ -495,16 +495,13 @@ export class Conversions {
             : await poller.readOnce((client) => stacksHolding(client, repo, first), signal);
       } catch (error) {
         if (signal?.aborted) return this.#putBackOver(run, 'stopped');
-        run.notes.push({
-          text: `Lo couldn't read whether GitHub unstacked GitHub stack #${change.stack}: ${errorText(error)} Nothing was put back.`,
-          link: null,
-        });
+        run.problem = failure(UNDO_FAILED, causeOf(error, poller.login));
         return this.#putBackOver(run, 'again');
       }
       const still = holding?.find((stack) => stack.number === change.stack && stack.open);
       if (!still) this.#mark(rows, index, 'done', null);
       else if (sameNumbers(stackNumbers(still), change.prs)) this.#mark(rows, index, 'todo', null);
-      else this.#mark(rows, index, 'left', 'It holds other PRs now, so Lo left it.');
+      else this.#mark(rows, index, 'left', OTHER_LAYERS);
       this.#publish(run);
     }
     for (const [index, row] of rows.entries()) {
@@ -526,6 +523,12 @@ export class Conversions {
       }
       if (sent.kind === 'failed') {
         this.#mark(rows, index, sent.mayHaveBeenDone ? 'unknown' : 'failed', errorText(sent.error));
+        run.problem = failure(
+          UNDO_INCOMPLETE,
+          sent.mayHaveBeenDone
+            ? { reason: NO_ANSWER, details: errorText(sent.error) }
+            : causeOf(sent.error, poller.login),
+        );
         return this.#putBackOver(run, 'again');
       }
       const answer = sent.value;
@@ -538,10 +541,18 @@ export class Conversions {
         if (answer.refusal === 'stackChanged') {
           // The stack holds other PRs now, or it's gone: unstacking would take out more than Lo
           // put in, or there's nothing to take out.
-          this.#mark(rows, index, 'left', 'It changed since Lo read it, so Lo left it.');
+          this.#mark(
+            rows,
+            index,
+            'left',
+            change.kind === 'unstack'
+              ? 'The GitHub stack has changed.'
+              : 'Its base branch has changed.',
+          );
           continue;
         }
         this.#mark(rows, index, 'failed', `${describeMergeRefusal(answer)}.`);
+        run.problem = failure(UNDO_INCOMPLETE, refusalCause(answer, poller.login));
         return this.#putBackOver(run, 'again');
       }
       this.#mark(rows, index, 'done', null);
@@ -654,36 +665,53 @@ export class Conversions {
 
   /** What the window shows of `run`. */
   #view(run: Run): ConversionView {
-    const { phase, plan } = run;
+    const { phase } = run;
     const left = putBackOf(run).filter(toDo);
     const canPutBack =
       (phase === 'failed' || phase === 'stopped' || (phase === 'putBack' && run.again)) &&
       left.length > 0;
-    const moves = left.filter((row) => row.change.kind === 'retarget').length;
+    const said = saidOf(run);
     return {
       key: run.key,
       tab: run.tab,
       version: run.version,
       phase,
-      ...titled(run),
       waitingUntil: run.waitingUntil ?? null,
       stopping: run.stopping,
       changes: run.changes,
       putBack: run.putBack,
-      putBackLabel: canPutBack
-        ? moves === 1
-          ? 'Put the base branch back'
-          : 'Put the base branches back'
-        : null,
-      notes: run.notes,
-      made: phase === 'done' ? madeText(plan) : null,
+      line: said.line,
+      problem: said.problem,
+      undo: canPutBack,
     };
   }
 }
 
-/** The answer when making a GitHub stack isn't offered. */
+/** The answer when converting to a GitHub stack isn't offered. */
 function refused(reasons: readonly string[]): Planned {
   return { kind: 'notOffered', reasons: [...reasons] };
+}
+
+/** The answer when the stack couldn't be checked, for `cause`. */
+function unchecked(cause: Cause): Planned {
+  return { kind: 'unchecked', reason: cause.reason, details: cause.details };
+}
+
+/** What a conversion that failed says above its buttons. */
+const CONVERT_FAILED = 'Couldn’t convert to GitHub stack';
+
+/** What undoing a conversion says when it couldn't read what to undo, or left it. */
+const UNDO_FAILED = 'Couldn’t undo the changes';
+
+/** What undoing a conversion says when some of its changes weren't undone. */
+const UNDO_INCOMPLETE = 'Couldn’t undo every change';
+
+/** Why a GitHub stack wasn't unstacked: it holds more than the conversion put in it. */
+const OTHER_LAYERS = 'The GitHub stack now has other layers.';
+
+/** A problem titled `title`, for `cause`. */
+function failure(title: string, cause: Cause): ConversionProblem {
+  return { title, reason: cause.reason, details: cause.details, link: null };
 }
 
 /** A plan's step as the window lists it. */
@@ -736,108 +764,55 @@ function toDo(row: ChangeRow): boolean {
   return row.status === 'todo' || unsureUnstack(row);
 }
 
-/** What a plan shows of each pull request it changes: every one in the path, or those added. */
-function planRows(plan: Plan, list: OpenPullRequestList): PlanRow[] {
-  const moves = new Map(
-    plan.steps.flatMap((step) =>
-      step.kind === 'retarget' ? [[step.retarget.pr, step.retarget]] : [],
-    ),
-  );
-  return stackedBy(plan).map((number) => {
-    const pr = openPullRequest(list, number);
-    const move = moves.get(number);
-    return {
-      number,
-      title: pr?.title ?? '',
-      base: move?.from ?? pr?.baseRefName ?? '',
-      to: move?.to ?? null,
-    };
-  });
-}
-
-/** "One base branch", or "2 base branches", as a sentence starts. */
-function branches(count: number): string {
-  return count === 1 ? 'One base branch' : `${count} base branches`;
-}
-
-/** How many base branches `changes` changed, and how many it may have: GitHub's answer was lost. */
-function changedText(changes: readonly ChangeRow[]): string {
-  const count = (status: ChangeStatus) =>
-    changes.filter((row) => row.change.kind === 'retarget' && row.status === status).length;
-  const done = count('done');
-  const unsure = count('unknown');
-  if (done === 0 && unsure === 0) return 'No base branch had changed.';
-  if (unsure === 0) return `${branches(done)} had already changed.`;
-  if (done === 0) return `${branches(unsure)} may have changed.`;
-  return `${branches(done)} had already changed, and ${unsure === 1 ? 'one more' : `${unsure} more`} may have.`;
-}
-
-/** The title and the line under it, for where `run` is. */
-function titled(run: Run): { title: string; description: string } {
+/** What the dialog says of `run` above its buttons: a line, or what went wrong. */
+function saidOf(run: Run): {
+  line: string | null;
+  problem: ConversionProblem | null;
+} {
   const { plan, phase } = run;
-  const last = plan.steps.at(-1);
-  const adding = last?.kind === 'addToStack';
-  const prs = stackedBy(plan);
-  const changed = run.changes.filter(
-    (row) => row.change.kind === 'retarget' && UNDONE.includes(row.status),
-  ).length;
-  const already = changedText(run.changes);
-  const unsure = run.changes.some(
-    (row) => row.change.kind !== 'retarget' && row.status === 'unknown',
-  );
   switch (phase) {
     case 'running':
-      return {
-        title: adding
-          ? `Adding ${numbers(prs)} to GitHub stack #${last.stack}`
-          : `Making ${numbers(prs)} a GitHub stack`,
-        description: `As ${run.poller.login}. Lo sends each change in order, and stops at the first that fails.`,
-      };
+    case 'puttingBack':
+      return { line: null, problem: null };
     case 'done':
-      return { title: madeText(plan), description: '' };
+      return { line: 'Converted to GitHub stack', problem: null };
     case 'failed':
       return {
-        title: adding ? "The PRs weren't added" : "The stack wasn't created",
-        description: unsure
-          ? `GitHub's answer was lost, so ${adding ? 'they may have been added' : 'it may have been created'}. ${already}`
-          : already,
+        line: null,
+        problem: run.problem ?? failure(CONVERT_FAILED, { reason: null, details: null }),
       };
-    case 'stopped':
+    case 'stopped': {
+      const last = plan.steps.at(-1);
+      if (last?.kind !== 'addToStack') {
+        return { line: 'Stopped before the GitHub stack was created.', problem: null };
+      }
+      const one = last.prs.length === 1;
       return {
-        title: adding
-          ? 'Stopped before the PRs were added'
-          : 'Stopped before the stack was created',
-        description: already,
+        line: `Stopped before ${numbers(last.prs)} ${one ? 'was' : 'were'} added.`,
+        problem: null,
       };
-    case 'puttingBack':
-      return {
-        title: changed === 1 ? 'Putting the base branch back' : 'Putting the base branches back',
-        description: 'Lo puts back the last change first.',
-      };
+    }
     case 'putBack': {
+      if (run.problem) return { line: null, problem: run.problem };
       const rows = run.putBack;
-      const back = rows.length > 0 && rows.every((row) => row.status === 'done');
+      if (rows.length > 0 && rows.every((row) => row.status === 'done')) {
+        return { line: 'Changes undone', problem: null };
+      }
+      const stack = rows.some((row) => row.status === 'left' && row.change.kind === 'unstack');
       const left = rows.filter(
         (row) => row.status === 'left' && row.change.kind === 'retarget',
       ).length;
-      const stack = rows.find((row) => row.status === 'left' && row.change.kind === 'unstack');
+      const reasons = [
+        stack && 'The GitHub stack has changed.',
+        left > 0 &&
+          `${left} ${left === 1 ? 'base branch was' : 'base branches were'} changed elsewhere.`,
+      ].filter((text) => typeof text === 'string');
+      if (reasons.length === 0) {
+        return { line: 'Stopped before every change was undone.', problem: null };
+      }
       return {
-        title: back
-          ? rows.some((row) => row.change.kind === 'unstack')
-            ? 'The stack is gone, and the base branches are back'
-            : changed === 1
-              ? 'The base branch is back'
-              : 'The base branches are back'
-          : 'Not everything was put back',
-        description:
-          [
-            stack?.change.kind === 'unstack' &&
-              `GitHub stack #${stack.change.stack} changed since, so Lo left it.`,
-            left > 0 &&
-              `${left === 1 ? 'One base branch was' : `${left} base branches were`} changed elsewhere since, so Lo left ${left === 1 ? 'it' : 'them'}.`,
-          ]
-            .filter((text) => typeof text === 'string')
-            .join(' ') || (run.again ? 'You can try putting the rest back again.' : ''),
+        line: null,
+        problem: failure(UNDO_INCOMPLETE, { reason: reasons.join(' '), details: null }),
       };
     }
     default:

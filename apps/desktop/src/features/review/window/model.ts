@@ -1,8 +1,10 @@
 // What the submit dialog, the status bar's item and the banner say, worked out from what main sent:
-// the verdicts and their lines, why a review can't go before it's sent, how sending stands, and the
-// toast once it's done. Pure functions, so they're tested without a window.
+// the verdicts and their lines, why a review can't go before it's sent, where the dialog has got to
+// with its main button and what went wrong, and the result once it's done. Pure functions, so
+// they're tested without a window.
 
-import { reviewChoices, YourReview, type ReviewRefusal } from '@lo/review';
+import { REVIEW_EVENTS, YourReview, type ReviewRefusal } from '@lo/review';
+import type { DialogState } from '@lo/ui';
 import type { System } from '@lo/ui/commands';
 
 import { clockOf } from '../../../window/time.ts';
@@ -18,7 +20,19 @@ import {
 } from '../contract.ts';
 
 /** Why submitting is off while GitHub can't be reached. */
-export const OFFLINE = 'Offline. Lo keeps your summary as a draft until you submit it.';
+export const OFFLINE = 'Offline';
+
+/** Why the main button is off while the dialog reads what it shows. */
+export const READING = 'Reading pending review…';
+
+/** What failed, once Lo knows the review didn't go. */
+export const COULDNT = 'Couldn’t submit the review';
+
+/** Why a review isn't confirmed, or didn't go, when GitHub's answer never came. */
+export const NO_ANSWER = 'GitHub didn’t respond.';
+
+/** Why a review GitHub refused didn't go: what GitHub said is behind Details. */
+export const GITHUB_FAILED = 'GitHub returned an error.';
 
 /** A revision's label, `r3`, or its head cut short for a commit that's no revision Lo knows. */
 export function revisionLabel(view: ComparisonView | undefined, head: string): string {
@@ -38,9 +52,27 @@ export function counted(count: number, noun: string): string {
 
 /** The dialog's line under its title: the pull request, and the revision it reviews. */
 export function subtitleOf(view: DialogView, label: (head: string) => string): string {
-  const pull = `${view.repo} #${view.number}`;
-  if (view.own) return `${pull} · your PR, so GitHub takes comments only`;
-  return `${pull} · on ${label(view.on)}, the revision on screen`;
+  return `${view.repo} #${view.number} · ${label(view.on)}`;
+}
+
+/** How long ago `at` was, in its largest whole unit: "just now", "12 min ago", "2 h ago". */
+export function agoOf(at: number, now: number): string {
+  const seconds = Math.max(0, Math.floor((now - at) / 1000));
+  if (seconds < 60) return 'just now';
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes} min ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} h ago`;
+  const days = Math.floor(hours / 24);
+  if (days <= 30) return `${days} d ago`;
+  const when = new Date(at);
+  const year = when.getFullYear() === new Date(now).getFullYear() ? undefined : 'numeric';
+  return when.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year });
+}
+
+/** The line over the summary's foot for a summary kept from before: "Draft from 12 min ago". */
+export function draftLine(savedAt: number, now: number): string {
+  return `Draft from ${agoOf(savedAt, now)}`;
 }
 
 /** The comments your pending review holds, as the dialog counts them. */
@@ -48,52 +80,70 @@ export function pendingCount(pending: PendingReviewRow): number {
   return pending.kind === 'pending' ? pending.comments : 0;
 }
 
-/** What the palette says after "Submit review" of your pending review: "3 pending", or nothing. */
+/** What the palette says after "Submit review…" of your pending review: "3 pending", or nothing. */
 export function pendingDetail(pending: PendingReviewRow | undefined): string | undefined {
   const count = pending ? pendingCount(pending) : 0;
   return count > 0 ? `${count} pending` : undefined;
 }
 
-/** A verdict's name, as its choice and the dialog's main button say it. */
+/** A verdict's name, as its choice says it. */
 export const verdictNames: Readonly<Record<ReviewEventRow, string>> = {
   COMMENT: 'Comment',
   APPROVE: 'Approve',
   REQUEST_CHANGES: 'Request changes',
 };
 
-/** A verdict as a sentence's verb says it: "to approve". */
-const verbs: Readonly<Record<ReviewEventRow, string>> = {
-  COMMENT: 'comment',
-  APPROVE: 'approve',
-  REQUEST_CHANGES: 'request changes',
-};
-
-/** A verdict the dialog offers, with the line that explains it. */
+/**
+ * A verdict the dialog offers, with the line that explains it, or, for one that can't be chosen,
+ * why (`off`), which its line says in its place.
+ */
 export interface Verdict {
   readonly event: ReviewEventRow;
   readonly title: string;
   readonly description: string;
+  readonly off: string | undefined;
 }
 
 /**
- * The verdicts the dialog offers, in `@lo/review`'s order: only Comment on your own pull request,
- * since GitHub takes nothing else from its author.
+ * Why verdict `event` can't be chosen from `view`, whatever the summary says: Approve and Request
+ * changes on your own pull request, which GitHub takes only comments on from its author, or while
+ * your pending review is on another revision than the one on screen.
+ */
+export function verdictRefusal(
+  view: DialogView,
+  event: ReviewEventRow,
+  label: (head: string) => string,
+): string | undefined {
+  // Any summary, so a blank one says nothing here: that's the main button's to say.
+  const refusal = plannedRefusal(view, event, 'summary');
+  if (refusal?.kind !== 'ownPullRequest' && refusal?.kind !== 'otherRevision') return undefined;
+  return reasonOf(refusal, label);
+}
+
+/**
+ * The verdicts the dialog offers, in `@lo/review`'s order, each dimmed with why where it can't be
+ * chosen.
  */
 export function verdictsOf(view: DialogView, label: (head: string) => string): Verdict[] {
-  const count = pendingCount(view.pending);
   const lines: Readonly<Record<ReviewEventRow, string>> = {
-    COMMENT:
-      count > 0
-        ? `Sends your ${counted(count, 'pending comment')} without a verdict.`
-        : 'Sends your summary without a verdict.',
-    APPROVE: `Approves the changes as they are on ${label(view.on)}.`,
-    REQUEST_CHANGES: 'Asks for changes to be made before it merges.',
+    COMMENT: 'Feedback without a verdict.',
+    APPROVE: `Approves the changes at ${label(view.on)}.`,
+    REQUEST_CHANGES: 'Asks for changes before it merges.',
   };
-  return reviewChoices(view.own).map((event) => ({
-    event,
-    title: verdictNames[event],
-    description: lines[event],
-  }));
+  return REVIEW_EVENTS.map((event) => {
+    const off = verdictRefusal(view, event, label);
+    return { event, title: verdictNames[event], description: off ?? lines[event], off };
+  });
+}
+
+/**
+ * The revision your pending review is on, when it's one GitHub still has other than the one on
+ * screen and showing it is what lets Approve and Request changes go: for "Show r3" under them.
+ */
+export function showFor(view: DialogView): string | undefined {
+  const { pending } = view;
+  if (view.own || pending.kind !== 'pending' || pending.commit === null) return undefined;
+  return pending.commit.toLowerCase() === view.on.toLowerCase() ? undefined : pending.commit;
 }
 
 /** Your review as the dialog plans it, from what main read as it opened. */
@@ -142,103 +192,204 @@ function refusalFrom(refusal: ReviewRefusal): SubmitRefusal {
     case 'ownPullRequest':
       return { kind: 'ownPullRequest' };
     case 'blank':
+      return { kind: 'github', message: 'The review is blank.' };
     case 'notLatest':
-      return { kind: 'github', message: 'Lo can’t submit that.' };
+      return { kind: 'github', message: 'The revision isn’t the latest.' };
     default:
       refusal satisfies never;
-      return { kind: 'github', message: 'Lo can’t submit that.' };
+      return { kind: 'github', message: 'The review can’t be planned.' };
   }
-}
-
-/** What a note offers to do: choose Comment, show the pending review's revision, or send anyway. */
-export type Offer = { kind: 'comment' } | { kind: 'show'; head: string } | { kind: 'anyway' };
-
-/** A note in the dialog, before it's drawn. */
-export interface Note {
-  readonly tone: 'info' | 'warning' | 'danger';
-  readonly text: string;
-  readonly offers: readonly Offer[];
 }
 
 /**
- * What the dialog says of why `event` wasn't, or can't be, submitted, and what it offers to do.
- * `label` names a revision by its head.
+ * Why `refusal` keeps the review from going, as the dimmed control it's on says it, in a few words:
+ * nothing for one that's a failure (`problemOf`) or that how submitting stands says already.
  */
-export function refusalNote(
+export function reasonOf(
   refusal: SubmitRefusal,
-  event: ReviewEventRow,
   label: (head: string) => string,
-): Note {
-  const note = (text: string, offers: readonly Offer[] = [], tone: Note['tone'] = 'warning') => ({
-    tone,
-    text,
-    offers,
-  });
+  now = Date.now(),
+): string | undefined {
   switch (refusal.kind) {
-    case 'otherRevision': {
-      const on = refusal.reviewOn;
-      if (on === null) {
-        return note(
-          'Your pending review is on a revision GitHub no longer has, so it can only go as a comment.',
-          [{ kind: 'comment' }],
-        );
-      }
-      const revision = label(on);
-      return note(
-        `Your pending review is on ${revision}. It can only go as a comment from here; show ${revision} to ${verbs[event]}.`,
-        [{ kind: 'comment' }, { kind: 'show', head: on }],
-      );
-    }
+    case 'otherRevision':
+      return refusal.reviewOn === null
+        ? 'Its revision is no longer on GitHub'
+        : `Your pending review is on ${label(refusal.reviewOn)}`;
     case 'nothingToSubmit':
-      return note(
-        `Write a summary to ${verbs[event]}: your review has no pending comments.`,
-        [],
-        'info',
-      );
-    case 'pendingUnknown':
-      return note('Lo couldn’t tell whether you have a pending review. Try again in a moment.');
+      return 'Write a summary or a comment first';
     case 'ownPullRequest':
-      return note('It’s your PR, so GitHub takes comments only.', [{ kind: 'comment' }]);
+      return 'Authors can’t approve their own pull request';
     case 'paused':
-      return note(`GitHub asked Lo to hold off until ${clockOf(refusal.until)}. Submit it then.`);
-    case 'busy':
-      return submittingNote(refusal.why) ?? note('It’s being submitted already.', [], 'info');
+      return refusal.until > now ? pausedReason(refusal.until) : undefined;
     case 'signIn':
-      return note(SIGN_IN);
+      return SIGN_IN;
     case 'run':
-      return note(IN_A_LAYER);
+      return IN_A_LAYER;
+    case 'pendingUnknown':
+    case 'busy':
     case 'github':
-      return note(refusal.message, [], 'danger');
+      return undefined;
     default:
       refusal satisfies never;
-      return note('GitHub didn’t take it.', [], 'danger');
+      return undefined;
   }
 }
 
-/** What the dialog says of how submitting stands, if anything. */
-export function submittingNote(state: Submitting | null): Note | undefined {
-  switch (state) {
-    case null:
-    case 'sending':
-      return undefined;
-    case 'checking':
-      return {
-        tone: 'info',
-        text: 'GitHub’s answer was lost. Lo is checking whether your review was submitted.',
-        offers: [],
-      };
-    case 'notSubmitted':
-      return { tone: 'warning', text: 'It wasn’t submitted. Submit it again.', offers: [] };
-    case 'unknown':
-      return {
-        tone: 'warning',
-        text: 'Lo can’t tell whether your review was submitted. Check on GitHub, or submit it anyway.',
-        offers: [{ kind: 'anyway' }],
-      };
-    default:
-      state satisfies never;
-      return undefined;
+/** Why nothing goes while GitHub asked Lo to hold off writing, until `until`. */
+export function pausedReason(until: number): string {
+  return `GitHub’s rate limit resets at ${clockOf(until)}`;
+}
+
+/** What went wrong, as the line above the dialog's buttons says it. */
+export interface Problem {
+  readonly title: string;
+  readonly reason: string;
+  /** What GitHub, or the error, said, behind Details. */
+  readonly details?: string | undefined;
+}
+
+/** What went wrong when GitHub refused the review, or Lo couldn't plan it, if `refusal` says so. */
+export function problemOf(refusal: SubmitRefusal): Problem | undefined {
+  if (refusal.kind === 'pendingUnknown') return { title: COULDNT, reason: NO_ANSWER };
+  if (refusal.kind === 'github') {
+    return { title: COULDNT, reason: GITHUB_FAILED, details: refusal.message };
   }
+  return undefined;
+}
+
+/** What a review that may be on GitHub is titled, by the verdict it was sent with. */
+export function notConfirmed(event: ReviewEventRow): string {
+  return event === 'APPROVE' ? 'Approval not confirmed' : 'Review not confirmed';
+}
+
+/** What the dialog's main button does: submit, look again for a review sent, or close it. */
+export type Does = 'submit' | 'check' | 'close';
+
+/**
+ * Where the dialog has got to, from the moment it opens until the review is done: its state, its
+ * main button, the button that leaves it, what went wrong, above the buttons, and the result, for
+ * an approval, which the dialog stays open to show.
+ */
+export interface Step {
+  readonly state: DialogState;
+  readonly primary: {
+    readonly label: string;
+    /** What it says while it's at work. */
+    readonly working: string;
+    readonly busy: boolean;
+    readonly does: Does;
+    /** Why it can't be pressed now, which dims it. */
+    readonly off: string | undefined;
+  };
+  /** The button that leaves, if there is one besides the main button: none once it's done. */
+  readonly leave: 'Cancel' | 'Close' | undefined;
+  /** Leaving is refused: the review is being sent. */
+  readonly stays: boolean;
+  readonly problem: Problem | undefined;
+  /** What was done: "Approved #264". */
+  readonly result: string | undefined;
+}
+
+/** What the dialog is worked out from: what it holds, and how submitting stands. */
+export interface StepInput {
+  /** What main read as the dialog opened, once it has. */
+  readonly read: DialogView | undefined;
+  /** The pull request's number. */
+  readonly number: number;
+  /** The verdict chosen. */
+  readonly event: ReviewEventRow;
+  /** The verdict sent last from this dialog, while its result isn't known. */
+  readonly sent: ReviewEventRow | undefined;
+  readonly text: string;
+  /** Main is being asked to submit it. */
+  readonly busy: boolean;
+  /** The reader asked to look again for the review sent. */
+  readonly checking: boolean;
+  /** Why the last submit didn't go. */
+  readonly refusal: SubmitRefusal | undefined;
+  /** The verdict submitted, for a review the dialog stays open to show done. */
+  readonly done: ReviewEventRow | undefined;
+  /** How submitting stands, as main last said. */
+  readonly state: Submitting | null;
+  /** Why nothing can be sent now: offline, signed out, a pause, a file uploading. */
+  readonly blocked: string | undefined;
+}
+
+const SUBMIT = 'Submit review';
+const SUBMITTING = 'Submitting…';
+const CHECK = 'Check again';
+const CHECKING = 'Checking…';
+
+/** Where the dialog has got to, and what it shows for it. `label` names a revision by its head. */
+export function stepOf(input: StepInput, label: (head: string) => string, now = Date.now()): Step {
+  const { read, event, state } = input;
+  const step = (
+    at: DialogState,
+    primary: Partial<Step['primary']> & { label: string; does: Does },
+    rest: Partial<Omit<Step, 'state' | 'primary'>> = {},
+  ): Step => ({
+    state: at,
+    primary: { working: SUBMITTING, busy: false, off: undefined, ...primary },
+    leave: 'Cancel',
+    stays: false,
+    problem: undefined,
+    result: undefined,
+    ...rest,
+  });
+  if (input.done !== undefined) {
+    return step(
+      'done',
+      { label: 'Done', does: 'close' },
+      { leave: undefined, result: toastOf(input.done, input.number) },
+    );
+  }
+  if (input.busy || state === 'sending') {
+    return step('working', { label: SUBMIT, does: 'submit', busy: true }, { stays: true });
+  }
+  const unconfirmed: Problem = { title: notConfirmed(input.sent ?? event), reason: NO_ANSWER };
+  // Looked for as the reader asked: "Not confirmed" stays above the button until the look says.
+  if (input.checking && (state === 'checking' || state === 'unknown')) {
+    return step(
+      'working',
+      { label: CHECK, working: CHECKING, does: 'check', busy: true },
+      { leave: 'Close', problem: unconfirmed },
+    );
+  }
+  // Its answer lost, it's looked for by itself: it's still being submitted, as far as anyone knows.
+  if (state === 'checking') {
+    return step('working', { label: SUBMIT, does: 'submit', busy: true }, { leave: 'Close' });
+  }
+  if (state === 'unknown') {
+    return step(
+      'failed',
+      { label: CHECK, working: CHECKING, does: 'check' },
+      { leave: 'Close', problem: unconfirmed },
+    );
+  }
+  if (state === 'notSubmitted') {
+    return step(
+      'failed',
+      { label: 'Try again', does: 'submit', off: input.blocked },
+      { leave: 'Close', problem: { title: COULDNT, reason: NO_ANSWER } },
+    );
+  }
+  const failed = input.refusal && problemOf(input.refusal);
+  if (failed) {
+    return step(
+      'failed',
+      { label: 'Try again', does: 'submit', off: input.blocked },
+      { leave: 'Close', problem: failed },
+    );
+  }
+  const refused = input.refusal && reasonOf(input.refusal, label, now);
+  // What `@lo/review` plans says why before anything's sent; a pending review that couldn't be read
+  // says nothing here, since main reads it again as it's sent.
+  const planned = read && plannedRefusal(read, event, input.text);
+  const off =
+    read === undefined
+      ? READING
+      : (input.blocked ?? refused ?? (planned && reasonOf(planned, label, now)));
+  return step('ask', { label: SUBMIT, does: 'submit', off });
 }
 
 /** Until when GitHub asked Lo to hold off writing, as the dialog read it, if that's still to come. */
@@ -281,7 +432,7 @@ export function held(state: Submitting | null): boolean {
   return state === 'sending' || state === 'checking' || state === 'unknown';
 }
 
-/** The toast once a review is submitted: "Approved #4821". */
+/** What a review submitted did, as its toast, or an approval's dialog, says it: "Approved #4821". */
 export function toastOf(event: ReviewEventRow | null, number: number): string {
   switch (event) {
     case 'APPROVE':
@@ -291,38 +442,29 @@ export function toastOf(event: ReviewEventRow | null, number: number): string {
     case 'REQUEST_CHANGES':
       return `Requested changes on #${number}`;
     case null:
-      return `Submitted your review of #${number}`;
+      return `Submitted review of #${number}`;
     default:
       event satisfies never;
-      return `Submitted your review of #${number}`;
+      return `Submitted review of #${number}`;
   }
 }
 
 /**
  * The banner's words when your pending review sits on another revision than the one on screen,
- * `on`: none when it doesn't, or when there's no pending review.
+ * `on`, and the revision "Show r3" shows, when GitHub still has it: none when it doesn't, or when
+ * there's no pending review.
  */
 export function otherRevisionOf(
   pending: PendingReviewRow | undefined,
   on: string | undefined,
   label: (head: string) => string,
-): { key: string; title: string; detail: string; show: string | undefined } | undefined {
+): { key: string; title: string; show: string | undefined } | undefined {
   if (pending?.kind !== 'pending' || on === undefined) return undefined;
   const { commit } = pending;
   if (commit !== null && commit.toLowerCase() === on.toLowerCase()) return undefined;
   const key = `${pending.id}|${commit ?? ''}|${on.toLowerCase()}`;
   if (commit === null) {
-    return {
-      key,
-      title: 'Your pending review is on a revision GitHub no longer has.',
-      detail: 'It can only go as a comment.',
-      show: undefined,
-    };
+    return { key, title: 'Your pending review’s revision is no longer on GitHub', show: undefined };
   }
-  return {
-    key,
-    title: `Your pending review is on ${label(commit)}, not ${label(on)}.`,
-    detail: `It can only go as a comment from here; show ${label(commit)} to approve or request changes.`,
-    show: commit,
-  };
+  return { key, title: `Your pending review is on ${label(commit)}`, show: commit };
 }

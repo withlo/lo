@@ -1,12 +1,17 @@
 // The merge's dialog, in the tab feature's `tab.dialogs` slot, in the merge panel's place: the plan
 // to confirm, with the account, the method, the branch and the revision it merges, under one title
-// from the moment it opens, then the merge as it goes, and why it didn't, when it didn't. A GitHub stack's merge lists every layer that
-// merges, with where each stands, and then how far GitHub got with each; a chain's, each base
-// branch Lo moves, in order. `⏎` confirms and `Esc` goes back to the panel. A held key confirms
-// nothing, and nor does the press that opened it: only a fresh press of `⏎` once the plan shows.
-// Auto-merge's says what GitHub waits for before it merges; a merge past the rules lists what it
-// skips, and goes only with the pull request's number typed, in a field that empties each time Lo
-// asks again.
+// and in one body from the moment it opens until it's done. Only the foot and the line above it
+// change: the main button is busy while Lo checks and while the merge runs, "Cancel" turns to
+// "Close" the moment it's sent, a failure is a problem above the foot, with "Try again" or what its
+// reason asks, a merge whose end isn't known offers "Check again", which only looks, and once it's
+// done the line above the foot says so beside the mark's kiss, with "Done" the one button.
+//
+// A GitHub stack's merge lists every layer that merges, with where each stands, then how far GitHub
+// got with each; a chain's, each base branch Lo moves, in order, then how each went. `⏎` confirms
+// and `Esc` goes back to the panel. A held key confirms nothing, and nor does the press that opened
+// it: only a fresh press of `⏎` once the plan shows. Auto-merge's says what GitHub waits for before
+// it merges; a merge past the rules lists what it bypasses, and goes only with the pull request's
+// number typed, in a field that empties each time Lo asks again.
 
 import {
   Branch,
@@ -18,6 +23,8 @@ import {
   Facts,
   Key,
   LayerList,
+  LogoMotion,
+  Problem,
   Steps,
   TypeToConfirm,
   type FactItem,
@@ -26,14 +33,7 @@ import {
   type StepState,
 } from '@lo/ui';
 import { keyLabels, parseKeys, systemStrokes } from '@lo/ui/commands';
-import {
-  useEffect,
-  useRef,
-  useState,
-  type KeyboardEvent,
-  type ReactNode,
-  type RefObject,
-} from 'react';
+import { useEffect, useRef, type KeyboardEvent, type ReactNode, type RefObject } from 'react';
 import { useStore } from 'zustand';
 
 import { registry } from '../../../window/commands/registry.ts';
@@ -42,24 +42,27 @@ import { revisionLabel, revisionsOf } from '../../revisions/window/shared.ts';
 import type { JobView, MergePlan, MoveStatus, Progress, Refusal, Together } from '../contract.ts';
 import {
   askAgain,
+  askAgainBack,
+  checking,
   confirmMerge,
   jobsByKey,
   leaveDialog,
   newerLabel,
   newerOf,
   openPull,
+  planAgain,
   seeNewer,
-  staysShown,
   typeNumber,
 } from './merging.ts';
 import { merging, panels, statuses, type MergeDialog, type Sketch } from './store.ts';
 import {
   chainSteps,
   confirmLabel,
-  confirmWorking,
   confirmTitle,
+  confirmWorking,
   doneLine,
   layerLine,
+  layersOf,
   methodLabel,
   numbers,
   onceLine,
@@ -68,9 +71,7 @@ import {
   pushWarning,
   queueLine,
   saidOf,
-  secondsAgo,
   skipsOf,
-  stackLine,
   troubleLine,
 } from './words.ts';
 
@@ -80,32 +81,43 @@ function labels(keys: string): string[] {
   return keyLabels(systemStrokes(parseKeys(keys), system), system);
 }
 
+/** The dialog's main button, as it is now. */
+interface Primary {
+  readonly label: string;
+  readonly run: () => void;
+  readonly busy: boolean;
+  /** What it says while busy, the verb of its label: "Merging…". */
+  readonly working?: string | undefined;
+  /** Why it can't be pressed yet, as while a merge past the rules waits for its number. */
+  readonly off?: boolean;
+}
+
+/** What went wrong, above the foot. */
+interface Trouble {
+  readonly title: string;
+  readonly reason?: string | undefined;
+  readonly details?: string | undefined;
+}
+
 /** What the dialog shows now. */
 interface Shown {
   readonly title: string;
-  /** A line under the title. */
-  readonly description?: string;
+  /** What the plan will do, the same from the question until it's done. */
   readonly body: ReactNode;
-  /**
-   * Its main button, `⏎`, if it has one now: `danger` for one that skips rules, `off` until what
-   * it asks for is typed. While what it was pressed for runs it's `busy` and says `working`, and
-   * that's all that says so: no line in the body waits beside it.
-   */
-  readonly primary:
-    | {
-        readonly label: string;
-        readonly run: () => void;
-        readonly busy?: boolean;
-        /** What it says while busy, the verb of its label: "Merging…". */
-        readonly working?: string;
-        readonly danger?: boolean;
-        readonly off?: boolean;
-      }
-    | undefined;
+  /** A line under it, above the foot: what changed since the last plan, or why it waits. */
+  readonly line?: ReactNode;
+  /** What went wrong, above the foot. */
+  readonly problem?: Trouble | undefined;
+  /** What it did, once it's done, above the foot. */
+  readonly done?: string | undefined;
+  /** Its main button, `⏎`, always there: busy while it works, "Done" once it has. */
+  readonly primary: Primary;
+  /** Another button, before the main one, for what comes next: "Open #265". */
+  readonly next?: { readonly label: string; readonly run: () => void } | undefined;
+  /** The button that leaves, `Esc`: "Cancel" before anything is sent, then "Close". */
+  readonly close: 'Cancel' | 'Close' | undefined;
   /** Whether focus goes to the field to type in, not the main button. */
   readonly typing?: boolean;
-  /** What `Esc` says it does, on the other button. None once "Done" is all that's left to press. */
-  readonly close: string | undefined;
   /** What focus follows: its main button moves to it when this changes. */
   readonly step: string;
 }
@@ -117,10 +129,10 @@ function sketchOf(plan: MergePlan): Sketch {
   return { id, number, login, kind, method, base, head, title, stack };
 }
 
-/** "r5 of #4821, the one on screen", or the commit's short ID when Lo has no revision for it. */
-function revisionOf(plan: Pick<Sketch, 'id' | 'number' | 'head'>): string {
-  const label = revisionLabel(revisionsOf(plan.id), plan.head) ?? plan.head.slice(0, 7);
-  return `${label} of #${plan.number}, the one on screen`;
+/** "r5", or the commit's short ID, as code, when Lo has no revision for it. */
+function revisionOf(plan: Pick<Sketch, 'id' | 'head'>): ReactNode {
+  const label = revisionLabel(revisionsOf(plan.id), plan.head);
+  return label ?? <code className="code-small">{plan.head.slice(0, 7)}</code>;
 }
 
 /** The squash commit's title: as typed, else GitHub's own, when Lo read it. */
@@ -147,7 +159,7 @@ function factsOf(plan: Sketch): FactItem[] {
     const method = methodLabel(plan.method);
     items.push({
       label: 'Method',
-      value: stack && plan.method === 'SQUASH' ? `${method}, one commit per layer` : method,
+      value: stack && plan.method === 'SQUASH' ? `${method} · 1 commit per layer` : method,
     });
   }
   items.push(
@@ -165,45 +177,6 @@ function factsOf(plan: Sketch): FactItem[] {
   return items;
 }
 
-/** Why it didn't go, in the core's words, each rule GitHub named on a line of its own. */
-function RefusalCallout({
-  refusal,
-  title,
-}: {
-  refusal: Pick<Refusal, 'text' | 'rules'>;
-  title?: string | undefined;
-}) {
-  return (
-    <Callout tone="danger" role="alert">
-      {title !== undefined && <strong className="block font-semibold">{title}</strong>}
-      <span>{withoutBidi(refusal.text)}</span>
-      {refusal.rules.length > 0 && (
-        <ul className="m-0 mt-6 ps-16">
-          {refusal.rules.map((rule) => (
-            <li key={rule}>{withoutBidi(rule)}</li>
-          ))}
-        </ul>
-      )}
-    </Callout>
-  );
-}
-
-/** "See r5 → r6", for a refusal that names a newer push, else nothing. */
-function newerPrimary(plan: MergePlan, refusal: Refusal): Shown['primary'] {
-  const newer = newerOf(plan.id, refusal, plan.head);
-  if (newer === undefined) return undefined;
-  return { label: newerLabel(plan.id, newer), run: () => seeNewer(plan.id, newer) };
-}
-
-/**
- * Asks GitHub again how the last merge of `plan`'s pull request ended, which Lo couldn't tell, and
- * goes back to the panel: once that read is answered, it may merge again.
- */
-function askAgainBack(plan: MergePlan): void {
-  askAgain(plan.key);
-  leaveDialog();
-}
-
 /** The pull request's own title, as its tab has it: empty before it's read. */
 function titleOf(plan: MergePlan): string {
   return pullOf(plan.id)?.header?.title ?? '';
@@ -218,56 +191,20 @@ function stackLayers(plan: MergePlan, together: Extract<Together, { kind: 'stack
       state: 'todo' as const,
       detail: layerLine(layer),
     })),
-    { number: plan.number, title: titleOf(plan), state: 'now', detail: 'The one on screen' },
+    { number: plan.number, title: titleOf(plan), state: 'now' },
   ];
 }
 
-/** What a stack's merge says of the layers above it: "#4824 stays open and moves onto main." */
-function aboveLine(above: readonly number[], base: string): string | undefined {
+/**
+ * What a stack's merge says of the layers above it: "#4824 stays open and moves onto main.", and
+ * once it merged, "#4824 moved onto main."
+ */
+function aboveLine(above: readonly number[], base: string, moved: boolean): string | undefined {
   if (above.length === 0) return undefined;
+  if (moved) return `${numbers(above)} moved onto ${base}.`;
   return above.length === 1
-    ? `${numbers(above)}, above it, stays open and moves onto ${base}.`
-    : `${numbers(above)}, above it, stay open and move onto ${base}.`;
-}
-
-/** What it takes with it, in the confirmation: a stack's layers, or a chain's moves, in order. */
-function togetherShown(plan: MergePlan): ReactNode {
-  const { together } = plan;
-  switch (together?.kind) {
-    case undefined:
-      return undefined;
-    case 'stack': {
-      const above = aboveLine(together.above, plan.base);
-      return (
-        <>
-          <LayerList label="Layers that merge" layers={stackLayers(plan, together)} />
-          {above !== undefined && (
-            <p className="m-0 text-fg-muted text-small">{withoutBidi(above)}</p>
-          )}
-        </>
-      );
-    }
-    case 'chain':
-      return (
-        <>
-          <Steps
-            label="What Lo does"
-            steps={chainSteps(plan, together).map((step) => ({
-              key: step.key,
-              state: 'todo',
-              title: withoutBidi(step.title),
-              detail: withoutBidi(step.detail),
-            }))}
-          />
-          <p className="m-0 text-fg-muted text-small">
-            Lo moves the layers above once it has merged, while Lo is open.
-          </p>
-        </>
-      );
-    default:
-      together satisfies never;
-      return undefined;
-  }
+    ? `${numbers(above)} stays open and moves onto ${base}.`
+    : `${numbers(above)} stay open and move onto ${base}.`;
 }
 
 /** How a move stands, as a step's ball shows it. */
@@ -301,17 +238,19 @@ function chainProgress(
   const detailOf = (key: string) => words.find((step) => step.key === key)?.detail;
   const merge: StepItem = {
     key: 'merge',
-    title: `Merge #${plan.number} into ${withoutBidi(plan.base)}`,
+    title: withoutBidi(`Merge #${plan.number} into ${plan.base}.`),
     ...mergeStep(job, progress),
   };
-  const moves = progress.moves.map((move) => ({
-    key: move.before ? 'before' : `after-${move.move.pr}`,
-    state: stepOf(move.status),
-    title: withoutBidi(`Move #${move.move.pr} onto ${move.move.to}`),
-    detail: withoutBidi(
-      move.detail ?? detailOf(move.before ? 'before' : `after-${move.move.pr}`) ?? '',
-    ),
-  }));
+  const moves = progress.moves.map((move) => {
+    const key = move.before ? 'before' : `after-${move.move.pr}`;
+    const detail = move.detail ?? detailOf(key);
+    return {
+      key,
+      state: stepOf(move.status),
+      title: withoutBidi(`Move #${move.move.pr} onto ${move.move.to}.`),
+      detail: detail === undefined ? undefined : withoutBidi(detail),
+    };
+  });
   return [
     ...moves.filter((move) => move.key === 'before'),
     merge,
@@ -326,23 +265,21 @@ function mergeStep(
 ): Pick<StepItem, 'state' | 'detail'> {
   switch (job.state.kind) {
     case 'sending':
-      return progress.phase === 'before'
-        ? { state: 'todo', detail: 'Once its base branch has moved' }
-        : { state: 'now', detail: 'Sending' };
+      return { state: progress.phase === 'before' ? 'todo' : 'now' };
     case 'pending':
-      return { state: 'now', detail: 'GitHub is merging it' };
+      return { state: 'now', detail: 'Merging…' };
     case 'merged':
       return { state: 'done', detail: 'Merged' };
     case 'enqueued':
       return progress.phase === 'waiting'
         ? { state: 'now', detail: 'In the merge queue' }
-        : { state: 'done', detail: 'Merged from the queue' };
+        : { state: 'done', detail: 'Merged' };
     case 'refused':
-      return { state: 'stopped', detail: 'Didn’t merge' };
+      return { state: 'stopped', detail: 'Not merged' };
     case 'unknown':
       return progress.phase === 'waiting'
-        ? { state: 'now', detail: 'Lo is reading whether it merged' }
-        : { state: 'stopped', detail: 'Lo can’t tell whether it merged' };
+        ? { state: 'now', detail: 'Checking…' }
+        : { state: 'stopped', detail: 'Not confirmed' };
     // Auto-merge's writes: a chain's merge is never one.
     case 'autoMergeOn':
     case 'autoMergeOff':
@@ -368,7 +305,7 @@ function stackProgress(job: JobView, progress: Extract<Progress, { kind: 'stack'
       case null:
         if (going) {
           return layer === first
-            ? { number: layer.number, title, state: 'now', detail: 'Checking rules', working: true }
+            ? { number: layer.number, title, state: 'now', detail: 'Merging…', working: true }
             : { number: layer.number, title, state: 'todo', detail: 'Waiting' };
         }
         if (job.state.kind === 'merged' || job.state.kind === 'enqueued') {
@@ -382,21 +319,58 @@ function stackProgress(job: JobView, progress: Extract<Progress, { kind: 'stack'
   });
 }
 
-/** The time now, again each second while `ticking`, for how long ago GitHub took a merge. */
-function useSeconds(ticking: boolean): number {
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    if (!ticking) return undefined;
-    setNow(Date.now());
-    const timer = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(timer);
-  }, [ticking]);
-  return now;
+/** What a merge takes with it, a stack's layers or a chain's moves, as it stands: the plan's, then the merge's. */
+function togetherShown(plan: MergePlan, job: JobView | undefined): ReactNode {
+  const { together } = plan;
+  const progress = job?.together;
+  switch (together?.kind) {
+    case undefined:
+      return undefined;
+    case 'stack': {
+      const stack = progress?.kind === 'stack' ? progress : undefined;
+      const moved = job?.state.kind === 'merged';
+      const above = aboveLine(stack?.above ?? together.above, plan.base, moved);
+      return (
+        <>
+          <LayerList
+            label="Layers"
+            layers={job && stack ? stackProgress(job, stack) : stackLayers(plan, together)}
+          />
+          {above !== undefined && (
+            <p className="m-0 text-fg-muted text-small">{withoutBidi(above)}</p>
+          )}
+        </>
+      );
+    }
+    case 'chain': {
+      const chain = progress?.kind === 'chain' ? progress : undefined;
+      const steps =
+        job && chain
+          ? chainProgress(plan, job, chain)
+          : chainSteps(plan, together).map((step) => ({
+              key: step.key,
+              state: 'todo' as const,
+              title: withoutBidi(step.title),
+              detail: step.detail === undefined ? undefined : withoutBidi(step.detail),
+            }));
+      return (
+        <>
+          <Steps label="Steps" steps={steps} />
+          <p className="m-0 text-fg-muted text-small">
+            The layers above move once it has merged, while Lo is open.
+          </p>
+        </>
+      );
+    }
+    default:
+      together satisfies never;
+      return undefined;
+  }
 }
 
 /**
- * What turning auto-merge on waits for, and what a push before then would do, as main planned it:
- * what the press checks again.
+ * What turning auto-merge on waits for, and what a commit pushed before then would do, as main
+ * planned it: what the press checks again.
  */
 function AutoLines({ plan }: { plan: MergePlan }) {
   const said = saidOf(plan);
@@ -408,9 +382,7 @@ function AutoLines({ plan }: { plan: MergePlan }) {
         <p className="m-0 text-fg-muted text-small">{queueLine(plan.method)}</p>
       )}
       {plan.kind === 'autoMerge' && (plan.title !== '' || plan.message !== '') && (
-        <p className="m-0 text-fg-muted text-small">
-          Auto-merge uses GitHub’s own commit message, not the one typed.
-        </p>
+        <p className="m-0 text-fg-muted text-small">Auto-merge uses GitHub’s commit message.</p>
       )}
       {warning !== undefined && (
         <Callout tone="warning" role="status">
@@ -421,55 +393,48 @@ function AutoLines({ plan }: { plan: MergePlan }) {
   );
 }
 
-/** What a merge past the rules skips, a line each, as main planned it: what the press checks again. */
+/** What a merge past the rules bypasses, a line each, as main planned it: what the press checks again. */
 function Skips({ plan }: { plan: MergePlan }) {
   const said = saidOf(plan);
-  const skips = said ? skipsOf(said) : [];
+  const skips = said ? skipsOf(said) : [`The rules for ${plan.base}`];
   return (
     <Callout tone="danger">
-      <strong className="block font-semibold">This skips:</strong>
-      {skips.length > 0 ? (
-        <ul className="m-0 mt-6 ps-16">
-          {skips.map((skip) => (
-            <li key={skip}>{withoutBidi(skip)}</li>
-          ))}
-        </ul>
-      ) : (
-        <span>{withoutBidi(`What ${plan.base}’s rules block it for.`)}</span>
-      )}
+      <strong className="block font-semibold">Bypassed rules</strong>
+      <ul className="m-0 mt-6 ps-16">
+        {skips.map((skip) => (
+          <li key={skip}>{withoutBidi(skip)}</li>
+        ))}
+      </ul>
     </Callout>
   );
+}
+
+/** The number a merge past the rules is confirmed with, typed in its field. */
+interface Field {
+  readonly typed: string;
+  readonly onChange: (value: string) => void;
+  readonly onConfirm: () => void;
+  readonly inputRef: RefObject<HTMLInputElement | null>;
 }
 
 /**
  * What the plan will do. It's the dialog's body from the question until the merge is done, so
  * nothing in it moves as its button is pressed, and what was confirmed stays in view while it's
- * done. A merge past the rules has its number typed in `field`; once sent, the field keeps the
- * number, and typing in it changes nothing.
+ * done; a stack's layers and a chain's steps show how they stand as the merge `job` goes. A merge
+ * past the rules has its number typed in `field`; once sent, the field keeps the number, and typing
+ * in it changes nothing.
  */
-function planBody(
-  plan: MergePlan,
-  field?: {
-    readonly typed: string;
-    readonly onChange: (value: string) => void;
-    readonly onConfirm: () => void;
-    readonly inputRef: RefObject<HTMLInputElement | null>;
-    readonly note: string | undefined;
-  },
-): ReactNode {
+function planBody(plan: MergePlan, job: JobView | undefined, field?: Field): ReactNode {
   const override = plan.kind === 'override';
   const auto = plan.kind === 'autoMerge' || plan.kind === 'whenReady';
   return (
     <>
       {override && <Skips plan={plan} />}
-      {plan.together?.kind === 'stack' && (
-        <p className="m-0 text-fg-muted text-small">A GitHub stack merges as one.</p>
-      )}
       <Facts items={factsOf(sketchOf(plan))} />
       {plan.kind === 'enqueue' && (
         <p className="m-0 text-fg-muted text-small">{queueLine(plan.method)}</p>
       )}
-      {togetherShown(plan)}
+      {togetherShown(plan, job)}
       {auto && <AutoLines plan={plan} />}
       {override && (
         <TypeToConfirm
@@ -480,13 +445,67 @@ function planBody(
           inputRef={field?.inputRef}
         />
       )}
-      {field?.note !== undefined && (
-        <Callout tone="warning" role="status">
-          {withoutBidi(field.note)}
-        </Callout>
-      )}
     </>
   );
+}
+
+/** What changed since the plan before this one, as the line above the foot. */
+function noteLine(note: string | undefined): ReactNode {
+  return note === undefined ? undefined : (
+    <p role="status" className="m-0 text-fg text-small">
+      {withoutBidi(note)}
+    </p>
+  );
+}
+
+/** What the main button says while main works out what the merge is, before it can be named. */
+const CHECKING = 'Checking…';
+
+/** The failed title of `plan`'s merge: "Couldn’t merge #264". */
+function failedTitle(plan: MergePlan): string {
+  const layers = layersOf(plan.together);
+  switch (plan.kind) {
+    case 'merge':
+    case 'override':
+      return layers > 1 ? `Couldn’t merge ${layers} layers` : `Couldn’t merge #${plan.number}`;
+    case 'enqueue':
+      return `Couldn’t add #${plan.number} to the merge queue`;
+    case 'autoMerge':
+    case 'whenReady':
+      return 'Couldn’t turn on auto-merge';
+    default:
+      plan.kind satisfies never;
+      return `Couldn’t merge #${plan.number}`;
+  }
+}
+
+/**
+ * The main button after `refusal` of `plan`: "Show r6" for a newer revision, busy until Lo has read
+ * it; else "Try again", which plans the merge afresh.
+ */
+function againAfter(plan: MergePlan, refusal: Refusal): Primary {
+  const newer = newerOf(plan.id, refusal, plan.head);
+  if (newer === undefined) return { label: 'Try again', run: planAgain, busy: false };
+  return {
+    label: newerLabel(plan.id, newer),
+    run: () => seeNewer(plan.id, newer),
+    busy: newer.to === undefined,
+  };
+}
+
+/** "Check again" for the merge named `key`, busy while it looks: it only looks. */
+function checkAgain(key: string, run: () => void): Primary {
+  return { label: 'Check again', run, busy: checking(key), working: CHECKING };
+}
+
+/** The main button while what it sent runs: busy, saying what it's doing. */
+function atWork(plan: MergePlan): Primary {
+  return {
+    label: confirmLabel(plan),
+    run: () => undefined,
+    busy: true,
+    working: confirmWorking(plan),
+  };
 }
 
 function confirmShown(
@@ -496,252 +515,111 @@ function confirmShown(
   const { plan } = dialog;
   const override = plan.kind === 'override';
   const typed = dialog.typed ?? '';
-  const number = String(plan.number);
   return {
     title: confirmTitle(plan),
-    ...(override && {
-      description: withoutBidi(
-        `You can bypass ${plan.base}’s rules in ${plan.owner}/${plan.repo}.`,
-      ),
-    }),
     step: `confirm ${plan.key}`,
     close: 'Cancel',
     primary: {
       label: confirmLabel(plan),
       run: confirmMerge,
+      // Pressed, main checks it again before anything is sent.
       busy: dialog.sending,
-      working: confirmWorking(plan),
-      ...(override && { danger: true, off: typed !== number }),
+      working: CHECKING,
+      off: override && typed !== String(plan.number),
     },
     typing: override,
-    body: planBody(plan, {
+    body: planBody(plan, undefined, {
       typed,
       onChange: typeNumber,
       onConfirm: confirmMerge,
       inputRef: field,
-      note: dialog.note,
     }),
+    line: noteLine(dialog.note),
   };
 }
 
-/** A stack's merge as it goes: its layers, and how long ago GitHub took it. */
-function stackShown(
-  plan: MergePlan,
-  job: JobView,
-  progress: Extract<Progress, { kind: 'stack' }>,
-  now: number,
-): Shown | undefined {
-  const { state } = job;
-  const layers = <LayerList label="Layers merging" layers={stackProgress(job, progress)} />;
-  if (state.kind === 'sending' || state.kind === 'pending') {
-    const taken =
-      progress.takenAt === null
-        ? 'Sending to GitHub’s async merge.'
-        : `Submitted to GitHub’s async merge ${secondsAgo(progress.takenAt, now)}. Branch rules are checked as it runs.`;
-    return {
-      title: stackLine(job, progress),
-      step: state.kind,
-      close: 'Close',
-      primary: undefined,
-      body: (
-        <>
-          <p role="status" className="m-0 text-fg-muted text-small">
-            {taken}
-          </p>
-          {layers}
-          {state.kind === 'pending' && state.trouble !== null && (
-            <p className="m-0 text-fg-muted text-small">
-              {withoutBidi(troubleLine(state.trouble))}
-            </p>
-          )}
-          <p className="m-0 text-fg-muted text-small">
-            You can close this; the tab shows the result.
-          </p>
-        </>
-      ),
-    };
-  }
-  if (staysShown(job)) {
-    const [next] = progress.above;
-    const merged = progress.layers.map((layer) => layer.number);
-    const sits =
-      progress.above.length === 1
-        ? `${numbers(progress.above)} now sits on ${plan.base}.`
-        : `${numbers(progress.above)} now sit on ${plan.base}.`;
-    return {
-      title: doneLine(job) ?? stackLine(job, progress),
-      step: `merged ${plan.key}`,
-      close: 'Close',
-      primary:
-        next === undefined ? undefined : { label: `Open #${next}`, run: () => openPull(job, next) },
-      body: <p className="m-0 text-fg text-ui">{withoutBidi(`${numbers(merged)}. ${sits}`)}</p>,
-    };
-  }
-  if (state.kind === 'refused') {
-    return {
-      title: confirmTitle(plan),
-      step: `refused ${plan.key}`,
-      close: 'Close',
-      primary: newerPrimary(plan, state.refusal),
-      body: (
-        <>
-          <RefusalCallout
-            refusal={{ text: outcomeDetail(job), rules: state.refusal.rules }}
-            title={outcomeTitle(job)}
-          />
-          {layers}
-        </>
-      ),
-    };
-  }
-  return undefined;
-}
-
-/** A chain's merge as it goes, from its bottom layer: each move and the merge, in order. */
-function chainShown(
-  plan: MergePlan,
-  job: JobView,
-  progress: Extract<Progress, { kind: 'chain' }>,
-): Shown | undefined {
-  // Done, the toast says so; Lo can't tell, the dialog asks GitHub again, as for a merge alone.
-  if (progress.phase === 'done') return undefined;
-  if (job.state.kind === 'unknown' && progress.phase === 'stopped') return undefined;
-  const steps = <Steps label="What Lo does" steps={chainProgress(plan, job, progress)} />;
-  const outcome = outcomeTitle(job);
-  if (progress.phase === 'stopped') {
-    const rules = job.state.kind === 'refused' ? job.state.refusal.rules : [];
-    return {
-      title: confirmTitle(plan),
-      step: `stopped ${plan.key}`,
-      close: 'Close',
-      primary: job.state.kind === 'refused' ? newerPrimary(plan, job.state.refusal) : undefined,
-      body: (
-        <>
-          <RefusalCallout refusal={{ text: outcomeDetail(job), rules }} title={outcome} />
-          {steps}
-        </>
-      ),
-    };
-  }
-  return {
-    title: confirmTitle(plan),
-    step: `${progress.phase} ${job.state.kind}`,
-    close: 'Close',
-    primary: undefined,
-    body: (
-      <>
-        {steps}
-        {progress.text !== null && (
-          <p role="status" className="m-0 text-fg-muted text-small">
-            {withoutBidi(progress.text)}
-          </p>
-        )}
-        <p className="m-0 text-fg-muted text-small">
-          You can close this; the tab shows how it ends.
-        </p>
-      </>
-    ),
-  };
-}
-
-/** What the main button says while the merge is worked out, before it can be named. */
-const CHECKING = 'Checking…';
-
-/**
- * The main button while the merge it sent runs: still there, busy, saying what it's doing, with its
- * fill, its width and focus as they were. Nothing else in the dialog says the merge is running.
- */
-function atWork(plan: MergePlan): Shown['primary'] {
-  return {
-    label: confirmLabel(plan),
-    run: () => undefined,
-    busy: true,
-    working: confirmWorking(plan),
-  };
-}
-
-/**
- * The merge is done: what was confirmed stays, and the button that did it is "Done", with focus,
- * so `⏎` closes the dialog.
- */
-function done(plan: MergePlan): Shown {
-  return {
-    title: confirmTitle(plan),
-    step: 'done',
-    close: undefined,
-    primary: { label: 'Done', run: leaveDialog },
-    body: planBody(plan),
-  };
-}
-
-function sentShown(plan: MergePlan, job: JobView | undefined, now: number): Shown {
+/** The merge from `plan`, sent, as `job` says it goes. */
+function sentShown(plan: MergePlan, job: JobView | undefined, note: string | undefined): Shown {
   const title = confirmTitle(plan);
-  const state = job?.state;
-  const together = job?.together;
-  if (job && together?.kind === 'stack') {
-    const shown = stackShown(plan, job, together, now);
-    if (shown) return shown;
+  const body = planBody(plan, job);
+  const line = noteLine(note);
+  const working: Shown = { title, body, line, step: 'sent', close: 'Close', primary: atWork(plan) };
+  if (!job) return working;
+  const done = doneLine(job);
+  if (done !== undefined) {
+    const progress = job.together;
+    const [next] = progress?.kind === 'stack' && job.state.kind === 'merged' ? progress.above : [];
+    return {
+      title,
+      body,
+      line,
+      step: `done ${plan.key}`,
+      close: undefined,
+      done,
+      primary: { label: 'Done', run: leaveDialog, busy: false },
+      next:
+        next === undefined ? undefined : { label: `Open #${next}`, run: () => openPull(job, next) },
+    };
   }
-  if (job && together?.kind === 'chain') {
-    const shown = chainShown(plan, job, together);
-    if (shown) return shown;
+  const { state } = job;
+  const chain = job.together?.kind === 'chain' ? job.together : undefined;
+  const failed = (problem: Trouble, primary: Primary): Shown => ({
+    title,
+    body,
+    step: `failed ${plan.key} ${state.kind} ${chain?.phase ?? ''}`,
+    close: primary.label === 'Close' ? undefined : 'Close',
+    problem,
+    primary,
+  });
+  const reason = outcomeDetail(job) || undefined;
+  // A chain's run that stopped after its merge went: nothing to send again.
+  if (chain?.phase === 'stopped' && (state.kind === 'merged' || state.kind === 'enqueued')) {
+    return failed(
+      { title: outcomeTitle(job) ?? failedTitle(plan), reason },
+      { label: 'Close', run: leaveDialog, busy: false },
+    );
   }
-  switch (state?.kind) {
-    case undefined:
+  switch (state.kind) {
     case 'sending':
-      return {
-        title,
-        step: 'sending',
-        close: 'Close',
-        primary: atWork(plan),
-        body: planBody(plan),
-      };
+    case 'merged':
+    case 'enqueued':
+    case 'autoMergeOn':
+    case 'autoMergeOff':
+      return working;
     case 'pending':
       return {
-        title,
+        ...working,
         step: 'pending',
-        close: 'Close',
-        primary: atWork(plan),
-        body: (
+        line: (
           <>
-            {planBody(plan)}
+            {line}
             {state.trouble !== null && (
               <p role="status" className="m-0 text-fg-muted text-small">
-                {withoutBidi(troubleLine(state.trouble))}
+                {troubleLine()}
               </p>
             )}
           </>
         ),
       };
     case 'refused':
-      return {
-        title,
-        step: `refused ${plan.key}`,
-        close: 'Close',
-        primary: newerPrimary(plan, state.refusal),
-        body: <RefusalCallout refusal={state.refusal} title={job && outcomeTitle(job)} />,
-      };
+      return failed(
+        {
+          title: outcomeTitle(job) ?? failedTitle(plan),
+          reason,
+          details: state.refusal.rules.length > 0 ? state.refusal.rules.join('\n') : undefined,
+        },
+        againAfter(plan, state.refusal),
+      );
     case 'unknown':
-      return {
-        title,
-        step: `unknown ${plan.key} ${state.shows ?? ''}`,
-        close: 'Close',
-        primary: { label: 'Ask GitHub again', run: () => askAgain(plan.key) },
-        body: (
-          <Callout tone="warning" role="alert">
-            <strong className="block font-semibold">{job && outcomeTitle(job)}</strong>
-            <span>{job && withoutBidi(outcomeDetail(job))}</span>
-          </Callout>
-        ),
-      };
-    case 'merged':
-    case 'enqueued':
-    case 'autoMergeOn':
-    case 'autoMergeOff':
-      return done(plan);
+      // A chain waits to hear how its merge went.
+      if (chain?.phase === 'waiting') return working;
+      return failed(
+        { title: outcomeTitle(job) ?? 'Merge not confirmed', reason },
+        checkAgain(job.key, () => void askAgain(job.key)),
+      );
     default:
       state satisfies never;
-      return done(plan);
+      return working;
   }
 }
 
@@ -749,60 +627,108 @@ function shownOf(
   dialog: MergeDialog,
   jobs: (key: string) => JobView | undefined,
   field: RefObject<HTMLInputElement | null>,
-  now: number,
 ): Shown {
   switch (dialog.kind) {
-    case 'planning':
+    case 'planning': {
+      const { failed } = dialog;
+      // Only the button waits on the check: what the merge names is known already, and asked
+      // again, all the plan said.
+      const body = dialog.last
+        ? planBody(dialog.last, undefined)
+        : dialog.sketch && <Facts items={factsOf(dialog.sketch)} />;
+      if (failed !== undefined) {
+        return {
+          title: dialog.title,
+          step: 'unplanned',
+          close: 'Close',
+          primary: { label: 'Try again', run: planAgain, busy: false },
+          problem: {
+            title: `Couldn’t check #${dialog.number}`,
+            reason: failed.why === undefined ? undefined : withoutBidi(failed.why),
+            details: failed.details,
+          },
+          body,
+        };
+      }
       return {
         title: dialog.title,
+        // There from the start, so focus is on it, not on Cancel, when the plan comes.
         step: 'planning',
         close: 'Cancel',
-        // There from the start, so focus is on it, not on Cancel, when the plan comes.
         primary: { label: dialog.label, run: () => undefined, busy: true, working: CHECKING },
-        // Only the button waits on the check: what the merge names is known already.
-        body: dialog.sketch && <Facts items={factsOf(dialog.sketch)} />,
+        body,
       };
+    }
     case 'confirm':
       return confirmShown(dialog, field);
     case 'sent':
-      return sentShown(dialog.plan, jobs(dialog.plan.key), now);
-    case 'refused':
+      return sentShown(dialog.plan, jobs(dialog.plan.key), dialog.note);
+    case 'refused': {
+      const { plan, refusal } = dialog;
+      const unsettled = refusal.kind === 'unsettled';
+      const auto = plan.kind === 'autoMerge' || plan.kind === 'whenReady';
+      const unconfirmed = auto ? 'Auto-merge not confirmed' : 'Merge not confirmed';
+      // Main names the state, which the title says: the reason is what's known of why.
+      const said =
+        refusal.text === '' || refusal.text.endsWith('not confirmed')
+          ? unsettled
+            ? troubleLine()
+            : undefined
+          : withoutBidi(refusal.text);
+      const details =
+        dialog.details ?? (refusal.rules.length > 0 ? refusal.rules.join('\n') : undefined);
       return {
-        title: confirmTitle(dialog.plan),
-        step: `refused ${dialog.plan.key}`,
-        close: 'Back',
-        primary:
-          dialog.refusal.kind === 'unsettled'
-            ? { label: 'Ask GitHub again', run: () => askAgainBack(dialog.plan) }
-            : newerPrimary(dialog.plan, dialog.refusal),
-        body: <RefusalCallout refusal={dialog.refusal} />,
+        title: confirmTitle(plan),
+        step: `refused ${plan.key}`,
+        close: 'Close',
+        primary: unsettled
+          ? checkAgain(plan.key, () => askAgainBack(plan.key))
+          : againAfter(plan, refusal),
+        problem: {
+          title: unsettled ? unconfirmed : failedTitle(plan),
+          reason: said,
+          details,
+        },
+        body: planBody(plan, undefined),
+        line: noteLine(dialog.note),
       };
+    }
     default:
       dialog satisfies never;
       throw new Error(`a dialog Lo doesn't know: ${JSON.stringify(dialog)}`);
   }
 }
 
+/** The longest of `words`, which a button holds the room of from its first draw. */
+function widestOf(words: readonly (string | undefined)[]): string {
+  return words.reduce<string>(
+    (wide, word) => (word && word.length > wide.length ? word : wide),
+    '',
+  );
+}
+
 /**
- * The dialog's main button, with `⏎`. It keeps one width from checking to sent: as wide as its
- * label, what it says at work, or "Checking…", whichever is widest.
+ * The dialog's main button, with `⏎`. It keeps one width and its fill from checking to done: as
+ * wide as the widest of what it may say.
  */
 function PrimaryButton({
   primary,
+  danger,
+  widest,
   button,
 }: {
-  primary: NonNullable<Shown['primary']>;
+  primary: Primary;
+  danger: boolean;
+  widest: string;
   button: RefObject<HTMLButtonElement | null>;
 }) {
   return (
     <Button
       ref={button}
-      variant={primary.danger ? 'danger' : 'primary'}
-      busy={primary.busy === true}
+      variant={danger ? 'danger' : 'primary'}
+      busy={primary.busy}
       working={primary.working}
-      // The room "Checking…" takes with its ring, kept once the plan has come too, so the button is
-      // as wide while it asks as it was while it checked.
-      widest={CHECKING}
+      widest={widest}
       aria-disabled={primary.off || undefined}
       onClick={(event) => {
         // Not a double click's second, which would press what came up in its place unseen.
@@ -810,12 +736,20 @@ function PrimaryButton({
       }}
     >
       {primary.label}
-      <Key
-        keys={labels('enter')}
-        decorative
-        className={primary.danger ? undefined : 'text-on-accent'}
-      />
+      <Key keys={labels('enter')} decorative />
     </Button>
+  );
+}
+
+/** What's done, beside the mark's kiss, which plays once. */
+function DoneRow({ line }: { line: string }) {
+  return (
+    <div className="flex items-center gap-12">
+      <LogoMotion play="kiss" className="size-40" decorative />
+      <p role="status" className="m-0 text-fg text-ui">
+        {withoutBidi(line)}
+      </p>
+    </div>
   );
 }
 
@@ -827,11 +761,18 @@ function stampNow(): number {
   return new Event('lo-now').timeStamp;
 }
 
+/** The plan a dialog is about, once there's one. */
+function planOf(dialog: MergeDialog | undefined): MergePlan | undefined {
+  return dialog && dialog.kind !== 'planning' ? dialog.plan : undefined;
+}
+
 /** The dialog, open while the store says. */
 export function MergeConfirm() {
   const dialog = useStore(merging, (state) => state.dialog);
-  // Read for their changes: the dialog follows the merge it sent, and a newer push read since.
+  // Read for their changes: the dialog follows the merge it sent, what's being checked again, and
+  // a newer push read since.
   useStore(merging, (state) => state.jobs);
+  useStore(merging, (state) => state.checking);
   useStore(statuses);
   usePull(dialog ? (dialog.kind === 'planning' ? dialog.id : dialog.plan.id) : '');
   const button = useRef<HTMLButtonElement>(null);
@@ -839,15 +780,22 @@ export function MergeConfirm() {
   const field = useRef<HTMLInputElement>(null);
   /** When what the dialog shows now came up: a press before then isn't one for it. */
   const shownAt = useRef(Number.POSITIVE_INFINITY);
-  const sentJob = dialog?.kind === 'sent' ? jobsByKey(dialog.plan.key) : undefined;
-  const now = useSeconds(
-    sentJob?.together?.kind === 'stack' &&
-      (sentJob.state.kind === 'sending' || sentJob.state.kind === 'pending'),
-  );
-  const shown = dialog && shownOf(dialog, jobsByKey, field, now);
+  const shown = dialog && shownOf(dialog, jobsByKey, field);
   const step = shown?.step;
   const typing = shown?.typing === true;
   const open = dialog !== undefined;
+  const plan = planOf(dialog);
+  const kind = plan?.kind ?? (dialog?.kind === 'planning' ? dialog.ask.asked : undefined);
+  const danger = kind === 'override';
+  const label = plan ? confirmLabel(plan) : dialog?.kind === 'planning' ? dialog.label : '';
+  const widest = widestOf([
+    label,
+    CHECKING,
+    plan && confirmWorking(plan),
+    'Try again',
+    'Check again',
+    shown?.primary.label,
+  ]);
   // A held key repeats, and focus follows each main button as it comes up, so a held `⏎` would
   // press the next one too. While the dialog is open, only a key's first press acts.
   useEffect(() => {
@@ -879,7 +827,7 @@ export function MergeConfirm() {
     event.preventDefault();
     // Only a fresh press, once what it would press is on screen.
     if (event.repeat || event.timeStamp < shownAt.current) return;
-    if (shown?.primary && !shown.primary.busy && !shown.primary.off) shown.primary.run();
+    if (shown && !shown.primary.busy && !shown.primary.off) shown.primary.run();
   };
   return (
     <Dialog
@@ -888,18 +836,24 @@ export function MergeConfirm() {
         if (!next) leaveDialog();
       }}
       title={withoutBidi(shown?.title ?? 'Merge')}
-      description={shown?.description}
+      size="md"
       foot={
         shown && (
           <>
             <DialogSpacer />
+            {shown.next && <Button onClick={shown.next.run}>{shown.next.label}</Button>}
             {shown.close !== undefined && (
               <Button onClick={leaveDialog}>
                 {shown.close}
                 <Key keys={labels('esc')} decorative />
               </Button>
             )}
-            {shown.primary && <PrimaryButton primary={shown.primary} button={button} />}
+            <PrimaryButton
+              primary={shown.primary}
+              danger={danger}
+              widest={widest}
+              button={button}
+            />
           </>
         )
       }
@@ -909,6 +863,16 @@ export function MergeConfirm() {
       testId="merge-confirm"
     >
       {shown?.body}
+      {shown?.line}
+      {shown?.problem && (
+        <Problem
+          layout="inline"
+          title={withoutBidi(shown.problem.title)}
+          reason={shown.problem.reason}
+          details={shown.problem.details}
+        />
+      )}
+      {shown?.done !== undefined && <DoneRow line={shown.done} />}
     </Dialog>
   );
 }

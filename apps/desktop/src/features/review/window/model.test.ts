@@ -1,17 +1,19 @@
 import { expect, test } from 'vitest';
 
+import { clockOf } from '../../../window/time.ts';
 import type { DialogView } from '../contract.ts';
 import {
+  agoOf,
   dialogKey,
   otherRevisionOf,
   pausedUntil,
   pendingDetail,
-  plannedRefusal,
-  refusalNote,
+  showFor,
+  stepOf,
   subtitleOf,
-  submittingNote,
   toastOf,
   verdictsOf,
+  type StepInput,
 } from './model.ts';
 
 const R2 = '2'.repeat(40);
@@ -38,102 +40,225 @@ function dialog(overrides: Partial<DialogView> = {}): DialogView {
   };
 }
 
-test('every verdict is offered, but only Comment on your own pull request, which the subtitle says', () => {
+/** The dialog as it asks, with a summary typed, unless it says otherwise. */
+function input(overrides: Partial<StepInput> = {}): StepInput {
+  return {
+    read: dialog(),
+    number: 4821,
+    event: 'COMMENT',
+    sent: undefined,
+    text: 'Reads well.',
+    busy: false,
+    checking: false,
+    refusal: undefined,
+    done: undefined,
+    state: null,
+    blocked: undefined,
+    ...overrides,
+  };
+}
+
+test('every verdict is offered, and on your own pull request Approve and Request changes say why they can’t be chosen', () => {
   const theirs = dialog();
-  expect(subtitleOf(theirs, label)).toBe('e2e #4821 · on r3, the revision on screen');
+  expect(subtitleOf(theirs, label)).toBe('e2e #4821 · r3');
   expect(verdictsOf(theirs, label)).toEqual([
     {
       event: 'COMMENT',
       title: 'Comment',
-      description: 'Sends your 3 pending comments without a verdict.',
+      description: 'Feedback without a verdict.',
+      off: undefined,
     },
-    { event: 'APPROVE', title: 'Approve', description: 'Approves the changes as they are on r3.' },
+    {
+      event: 'APPROVE',
+      title: 'Approve',
+      description: 'Approves the changes at r3.',
+      off: undefined,
+    },
     {
       event: 'REQUEST_CHANGES',
       title: 'Request changes',
-      description: 'Asks for changes to be made before it merges.',
+      description: 'Asks for changes before it merges.',
+      off: undefined,
     },
   ]);
   const mine = dialog({ own: true, pending: { kind: 'none' } });
-  expect(subtitleOf(mine, label)).toBe('e2e #4821 · your PR, so GitHub takes comments only');
-  expect(verdictsOf(mine, label)).toEqual([
-    { event: 'COMMENT', title: 'Comment', description: 'Sends your summary without a verdict.' },
+  expect(subtitleOf(mine, label)).toBe('e2e #4821 · r3');
+  const own = 'Authors can’t approve their own pull request';
+  expect(verdictsOf(mine, label).map(({ event, off }) => [event, off])).toEqual([
+    ['COMMENT', undefined],
+    ['APPROVE', own],
+    ['REQUEST_CHANGES', own],
   ]);
+  expect(verdictsOf(mine, label)[1]?.description).toBe(own);
 });
 
-test('a pending review on another revision goes only as a comment, offering Comment and to show it', () => {
+test('a pending review on another revision dims Approve and Request changes, with "Show r2" while GitHub has it', () => {
   const view = dialog({ pending: { kind: 'pending', id: 'PRR_1', commit: R2, comments: 1 } });
-  expect(plannedRefusal(view, 'COMMENT', '')).toBeUndefined();
-  const refusal = plannedRefusal(view, 'APPROVE', 'Looks good');
-  expect(refusal).toEqual({ kind: 'otherRevision', reviewOn: R2 });
-  expect(refusalNote(refusal!, 'APPROVE', label)).toEqual({
-    tone: 'warning',
-    text: 'Your pending review is on r2. It can only go as a comment from here; show r2 to approve.',
-    offers: [{ kind: 'comment' }, { kind: 'show', head: R2 }],
-  });
+  expect(verdictsOf(view, label).map(({ off }) => off)).toEqual([
+    undefined,
+    'Your pending review is on r2',
+    'Your pending review is on r2',
+  ]);
+  expect(showFor(view)).toBe(R2);
   const gone = dialog({ pending: { kind: 'pending', id: 'PRR_1', commit: null, comments: 1 } });
-  expect(
-    refusalNote(plannedRefusal(gone, 'REQUEST_CHANGES', 'No')!, 'REQUEST_CHANGES', label),
-  ).toMatchObject({ offers: [{ kind: 'comment' }] });
+  expect(verdictsOf(gone, label)[1]?.off).toBe('Its revision is no longer on GitHub');
+  expect(showFor(gone)).toBeUndefined();
+  expect(showFor(dialog())).toBeUndefined();
 });
 
-test('what can’t go is worded before it’s sent', () => {
-  const empty = dialog({ pending: { kind: 'none' } });
-  expect(plannedRefusal(empty, 'APPROVE', '')).toBeUndefined();
-  const nothing = plannedRefusal(empty, 'REQUEST_CHANGES', '  ');
-  expect(refusalNote(nothing!, 'REQUEST_CHANGES', label).text).toBe(
-    'Write a summary to request changes: your review has no pending comments.',
-  );
-  const unknown = plannedRefusal(dialog({ pending: { kind: 'unknown' } }), 'COMMENT', 'Hi');
-  expect(refusalNote(unknown!, 'COMMENT', label).text).toBe(
-    'Lo couldn’t tell whether you have a pending review. Try again in a moment.',
-  );
-  const own = plannedRefusal(dialog({ own: true }), 'APPROVE', 'Mine');
-  expect(refusalNote(own!, 'APPROVE', label)).toEqual({
-    tone: 'warning',
-    text: 'It’s your PR, so GitHub takes comments only.',
-    offers: [{ kind: 'comment' }],
+test('the dialog asks with "Submit review", dimmed with why while what can’t go is known', () => {
+  expect(stepOf(input(), label)).toEqual({
+    state: 'ask',
+    primary: {
+      label: 'Submit review',
+      working: 'Submitting…',
+      busy: false,
+      does: 'submit',
+      off: undefined,
+    },
+    leave: 'Cancel',
+    stays: false,
+    problem: undefined,
+    result: undefined,
   });
-  expect(refusalNote({ kind: 'signIn' }, 'COMMENT', label).text).toBe('Sign in to submit a review');
-  expect(refusalNote({ kind: 'run' }, 'COMMENT', label).text).toBe('Submit a review in a layer');
-  expect(
-    refusalNote(
-      { kind: 'github', message: 'It was submitted or deleted elsewhere since Lo last looked.' },
-      'COMMENT',
-      label,
-    ),
-  ).toMatchObject({ tone: 'danger' });
-});
-
-test('a lost answer says Lo is checking, and once it can’t tell, offers to submit anyway', () => {
-  expect(submittingNote('sending')).toBeUndefined();
-  expect(submittingNote('checking')?.text).toBe(
-    'GitHub’s answer was lost. Lo is checking whether your review was submitted.',
+  expect(stepOf(input({ read: undefined }), label).primary.off).toBe('Reading pending review…');
+  const empty = dialog({ pending: { kind: 'none' } });
+  expect(stepOf(input({ read: empty, text: '  ' }), label).primary.off).toBe(
+    'Write a summary or a comment first',
   );
-  expect(submittingNote('notSubmitted')?.text).toBe('It wasn’t submitted. Submit it again.');
-  expect(submittingNote('unknown')?.offers).toEqual([{ kind: 'anyway' }]);
+  // An approval needs no summary.
+  expect(
+    stepOf(input({ read: empty, text: '', event: 'APPROVE' }), label).primary.off,
+  ).toBeUndefined();
+  expect(stepOf(input({ blocked: 'Offline' }), label).primary.off).toBe('Offline');
+  expect(stepOf(input({ refusal: { kind: 'signIn' } }), label).primary.off).toBe(
+    'Sign in to submit a review',
+  );
+  expect(stepOf(input({ refusal: { kind: 'run' } }), label).primary.off).toBe(
+    'Show a single layer to submit a review',
+  );
+  expect(
+    stepOf(input({ refusal: { kind: 'paused', until: 5_000 } }), label, 1_000).primary.off,
+  ).toBe(`GitHub’s rate limit resets at ${clockOf(5_000)}`);
+  expect(
+    stepOf(input({ refusal: { kind: 'paused', until: 5_000 } }), label, 5_000).primary.off,
+  ).toBeUndefined();
+  // Whether there's a pending review is main's to read again as it's sent.
+  expect(
+    stepOf(input({ read: dialog({ pending: { kind: 'unknown' } }) }), label).primary.off,
+  ).toBeUndefined();
 });
 
-test('the toast names the verdict and the pull request', () => {
+test('it says "Submitting…" while it goes, and nothing leaves it until GitHub answers', () => {
+  for (const each of [input({ busy: true }), input({ state: 'sending' })]) {
+    expect(stepOf(each, label)).toMatchObject({
+      state: 'working',
+      primary: { label: 'Submit review', working: 'Submitting…', busy: true },
+      leave: 'Cancel',
+      stays: true,
+      problem: undefined,
+    });
+  }
+});
+
+test('what went wrong shows above the buttons, with "Try again"', () => {
+  expect(
+    stepOf(input({ refusal: { kind: 'github', message: 'Can not approve your own PR' } }), label),
+  ).toMatchObject({
+    state: 'failed',
+    primary: { label: 'Try again', does: 'submit', busy: false },
+    leave: 'Close',
+    problem: {
+      title: 'Couldn’t submit the review',
+      reason: 'GitHub returned an error.',
+      details: 'Can not approve your own PR',
+    },
+  });
+  expect(stepOf(input({ refusal: { kind: 'pendingUnknown' } }), label)).toMatchObject({
+    state: 'failed',
+    problem: { title: 'Couldn’t submit the review', reason: 'GitHub didn’t respond.' },
+  });
+  // Found not to have gone, it can go again.
+  expect(stepOf(input({ state: 'notSubmitted', sent: 'COMMENT' }), label)).toMatchObject({
+    state: 'failed',
+    primary: { label: 'Try again', does: 'submit' },
+    leave: 'Close',
+    problem: { title: 'Couldn’t submit the review', reason: 'GitHub didn’t respond.' },
+  });
+});
+
+test('a lost answer is still "Submitting…", and once Lo can’t tell, "Check again" only looks', () => {
+  expect(stepOf(input({ state: 'checking', sent: 'COMMENT' }), label)).toMatchObject({
+    state: 'working',
+    primary: { working: 'Submitting…', busy: true },
+    leave: 'Close',
+    stays: false,
+    problem: undefined,
+  });
+  const unknown = stepOf(input({ state: 'unknown', sent: 'COMMENT' }), label);
+  expect(unknown).toMatchObject({
+    state: 'failed',
+    primary: { label: 'Check again', working: 'Checking…', does: 'check', busy: false },
+    leave: 'Close',
+    problem: { title: 'Review not confirmed', reason: 'GitHub didn’t respond.' },
+  });
+  // Named by what was sent, whichever verdict is chosen now.
+  expect(
+    stepOf(input({ state: 'unknown', sent: 'APPROVE', event: 'COMMENT' }), label).problem?.title,
+  ).toBe('Approval not confirmed');
+  // Asked for, the look keeps what it's about above the button, which works until it says.
+  for (const state of ['unknown', 'checking'] as const) {
+    expect(stepOf(input({ state, sent: 'APPROVE', checking: true }), label)).toMatchObject({
+      state: 'working',
+      primary: { label: 'Check again', working: 'Checking…', busy: true, does: 'check' },
+      leave: 'Close',
+      problem: { title: 'Approval not confirmed' },
+    });
+  }
+});
+
+test('an approval ends done, with what it did and "Done"', () => {
+  expect(stepOf(input({ done: 'APPROVE', state: null }), label)).toEqual({
+    state: 'done',
+    primary: { label: 'Done', working: 'Submitting…', busy: false, does: 'close', off: undefined },
+    leave: undefined,
+    stays: false,
+    problem: undefined,
+    result: 'Approved #4821',
+  });
+});
+
+test('the result names the verdict and the pull request', () => {
   expect(toastOf('APPROVE', 4821)).toBe('Approved #4821');
   expect(toastOf('COMMENT', 4821)).toBe('Commented on #4821');
   expect(toastOf('REQUEST_CHANGES', 4821)).toBe('Requested changes on #4821');
-  expect(toastOf(null, 4821)).toBe('Submitted your review of #4821');
+  expect(toastOf(null, 4821)).toBe('Submitted review of #4821');
 });
 
 test('the banner shows while your pending review is on another revision than the one on screen', () => {
   const pending = { kind: 'pending' as const, id: 'PRR_1', commit: R2, comments: 1 };
   expect(otherRevisionOf(pending, R3, label)).toEqual({
     key: `PRR_1|${R2}|${R3}`,
-    title: 'Your pending review is on r2, not r3.',
-    detail: 'It can only go as a comment from here; show r2 to approve or request changes.',
+    title: 'Your pending review is on r2',
     show: R2,
   });
   expect(otherRevisionOf(pending, R2.toUpperCase(), label)).toBeUndefined();
   expect(otherRevisionOf({ kind: 'none' }, R3, label)).toBeUndefined();
-  expect(otherRevisionOf({ ...pending, commit: null }, R3, label)).toMatchObject({
+  expect(otherRevisionOf({ ...pending, commit: null }, R3, label)).toEqual({
+    key: `PRR_1||${R3}`,
+    title: 'Your pending review’s revision is no longer on GitHub',
     show: undefined,
   });
+});
+
+test('a summary kept from before says how long ago, in its largest whole unit', () => {
+  const now = Date.parse('2026-11-22T12:00:00Z');
+  expect(agoOf(now - 30_000, now)).toBe('just now');
+  expect(agoOf(now - 12 * 60_000 - 59_000, now)).toBe('12 min ago');
+  expect(agoOf(now - 2 * 3_600_000 - 50 * 60_000, now)).toBe('2 h ago');
+  expect(agoOf(now - 3 * 86_400_000, now)).toBe('3 d ago');
+  expect(agoOf(Date.parse('2026-09-12T12:00:00Z'), now)).toBe('Sep 12');
+  expect(agoOf(Date.parse('2025-09-12T12:00:00Z'), now)).toBe('Sep 12, 2025');
 });
 
 test('while GitHub asks Lo to hold off, nothing is submitted until the time it gave', () => {

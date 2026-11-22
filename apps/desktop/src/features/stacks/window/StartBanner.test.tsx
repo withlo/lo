@@ -18,8 +18,8 @@ import { startedAt, startSwitch } from './offers.ts';
 const BELOW = '5'.repeat(40);
 
 const OFFER: Offer = {
-  title: "#84's diff includes #83's changes.",
-  action: "Show only #84's",
+  title: 'This diff includes #83’s changes',
+  action: 'Hide #83’s changes',
   commit: BELOW,
 };
 

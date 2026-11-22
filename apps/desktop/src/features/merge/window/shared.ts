@@ -2,7 +2,7 @@
 // from outside its merge panel, as the merge queue's `a` does for one that left the queue, through
 // the panel's own confirmation, so the same checks guard it.
 
-import { notify } from '../../../window/commands/notices.tsx';
+import { notify, refuse } from '../../../window/commands/notices.tsx';
 import { activeTab, withoutBidi } from '../../tab/window/shared.ts';
 import type { MergeView } from '../contract.ts';
 import { openPanel } from './actions.ts';
@@ -41,9 +41,8 @@ export function autoMergeAsked(
       if (auto.kind === 'on') return { kind: 'plan' };
       const why =
         auto.kind === 'off'
-          ? `Auto-merge is on for #${number} already.`
-          : (cantAutoMerge(view.state, number) ??
-            `Lo can’t turn on auto-merge for #${number} now.`);
+          ? 'Auto-merge is already on'
+          : (cantAutoMerge(view.state, number) ?? 'Blocked by GitHub');
       return { kind: 'said', why, panel: true };
     }
     default:
@@ -56,11 +55,11 @@ export function autoMergeAsked(
  * Asks to turn on auto-merge for pull request `number` in view `id`, as `a` in its merge panel does,
  * once the view is on screen and Lo has read whether it can merge: the panel opens, and in its
  * place the confirmation, planned from what GitHub said of it. With auto-merge on already, or when
- * it can't be turned on, the panel opens and says why, and nothing is asked. Lo gives up, saying
- * so, when it hasn't read whether it can merge in 30 s. Returns a function that stops waiting.
+ * it can't be turned on, the panel opens and the reason alone says why, and nothing is asked. Lo
+ * gives up when it hasn't read whether it can merge in 30 s, and says it couldn't. Returns a
+ * function that stops waiting.
  */
 export function askAutoMerge(id: string, number: number): () => void {
-  const title = 'Merge when ready';
   let done = false;
   const stop = () => {
     done = true;
@@ -73,23 +72,20 @@ export function askAutoMerge(id: string, number: number): () => void {
     if (asked === undefined) return;
     if (asked.kind === 'said' && !asked.panel) {
       stop();
-      notify(title, withoutBidi(asked.why));
+      refuse(withoutBidi(asked.why));
       return;
     }
     if (activeTab()?.id !== id) return;
     stop();
     openPanel(id, number);
     if (asked.kind === 'plan') autoMergeFromPanel();
-    else notify(title, withoutBidi(asked.why));
+    else refuse(withoutBidi(asked.why));
   };
   const looking = setInterval(look, LOOK_EVERY);
   const late = setTimeout(() => {
     if (done) return;
     stop();
-    notify(
-      title,
-      `Lo hasn’t read whether #${number} can merge yet. Press a in its merge panel once it has.`,
-    );
+    notify('Couldn’t turn on auto-merge', 'GitHub didn’t respond.');
   }, AUTO_MERGE_WAIT);
   look();
   return stop;

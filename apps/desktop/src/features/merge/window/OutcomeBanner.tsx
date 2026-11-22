@@ -1,6 +1,7 @@
 // The banner on a pull request's tab for a merge Lo sent that needs the reader, once neither dialog
-// is showing it: GitHub refused it, in the core's words, or Lo can't tell whether it merged, with
-// "Ask GitHub again", a read. It offers the merge panel, `m`, and dismissing it forgets the merge.
+// is showing it: one line, what failed and why, and one button. GitHub refused it for a newer
+// revision, with "Show r6"; Lo can't tell whether it merged, with "Check again", a read, busy while
+// it looks; else the merge panel, `m`. Dismissing it forgets the merge.
 
 import { Banner, type BannerAction } from '@lo/ui';
 import { keyLabels } from '@lo/ui/commands';
@@ -10,7 +11,7 @@ import { registry } from '../../../window/commands/registry.ts';
 import { usePull, withoutBidi, type BannerSwitch, type PullTab } from '../../tab/window/shared.ts';
 import type { JobView } from '../contract.ts';
 import { openPanel } from './actions.ts';
-import { askAgain, dismissJob, newerLabel, newerOf, seeNewer } from './merging.ts';
+import { askAgain, checking, dismissJob, newerLabel, newerOf, seeNewer } from './merging.ts';
 import { jobOf, merging, shipping, shipShows, statuses } from './store.ts';
 import { outcomeDetail, outcomeTitle } from './words.ts';
 
@@ -41,36 +42,49 @@ export function OutcomeBanner({ tab }: { tab: PullTab }) {
   usePull(tab.id);
   const job = outcomeOf(tab);
   if (!job) return null;
-  const actions: BannerAction[] = [];
-  if (job.state.kind === 'refused') {
-    const newer = newerOf(tab.id, job.state.refusal, job.head);
-    if (newer) {
-      actions.push({
-        label: newerLabel(tab.id, newer),
-        onClick: () => {
-          dismissJob(job.key);
-          seeNewer(tab.id, newer);
-        },
-      });
-    }
-  }
-  if (job.state.kind === 'unknown') {
-    actions.push({ label: 'Ask GitHub again', onClick: () => askAgain(job.key) });
-  }
-  actions.push({
-    label: 'Merge panel',
-    keys: keyOf('merge.panel'),
-    onClick: () => openPanel(tab.id, tab.number),
-  });
+  const detail = outcomeDetail(job);
   return (
     <Banner
       tone={job.state.kind === 'refused' ? 'danger' : 'warn'}
-      title={outcomeTitle(job)}
-      detail={withoutBidi(outcomeDetail(job))}
-      actions={actions}
+      title={withoutBidi(outcomeTitle(job) ?? '')}
+      detail={detail === '' ? undefined : withoutBidi(detail)}
+      actions={[actionOf(tab, job)]}
       onDismiss={() => dismissJob(job.key)}
     />
   );
+}
+
+/** The banner's one button for `job`: what its end asks for. */
+function actionOf(tab: PullTab, job: JobView): BannerAction {
+  if (job.state.kind === 'refused') {
+    const newer = newerOf(tab.id, job.state.refusal, job.head);
+    if (newer) {
+      return {
+        label: newerLabel(tab.id, newer),
+        // Busy until Lo has read the newer revision.
+        busy: newer.to === undefined,
+        onClick: () => {
+          if (newer.to === undefined) return;
+          dismissJob(job.key);
+          seeNewer(tab.id, newer);
+        },
+      };
+    }
+  }
+  // A chain that stopped waiting to hear how its merge went asks the same.
+  if (job.state.kind === 'unknown') {
+    return {
+      label: 'Check again',
+      busy: checking(job.key),
+      working: 'Checking…',
+      onClick: () => void askAgain(job.key),
+    };
+  }
+  return {
+    label: 'Merge panel',
+    keys: keyOf('merge.panel'),
+    onClick: () => openPanel(tab.id, tab.number),
+  };
 }
 
 /** Whether a tab's banner shows: while its pull request's merge needs the reader. */

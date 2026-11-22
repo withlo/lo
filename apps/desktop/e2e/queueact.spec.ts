@@ -3,9 +3,9 @@
 // writes while two of them were in `e4/queued`'s queue (`app_queue_act`), served with GitHub's
 // answer to the overview ref read again added, as Lo reads it again when its window comes to the
 // front (`app_queue_act_polled`). `J` on the second moves it to the front and `x` on the first
-// takes it out, each once its confirmation says what it does and `⏎` confirms it; the first, at the
-// front, has nowhere to move. An account below admin isn't offered `J`, which GitHub lets only
-// admins do (`app_queue_act_writer`).
+// removes it, each once its dialog says what it does and `⏎` confirms it; the first, at the front,
+// has nowhere to move. An account below admin isn't offered `J`, which GitHub lets only admins do
+// (`app_queue_act_writer`).
 
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -128,46 +128,38 @@ test('`J` moves a pull request to the front of the queue, and `x` takes one out,
   await openQueue(page);
   // The front entry has nowhere to move.
   const front = queue(page).locator(`[data-key="${first}"]`);
-  await expect(front.getByRole('button', { name: /Remove/ })).toBeVisible();
-  await expect(front.getByRole('button', { name: /To the front/ })).toHaveCount(0);
+  await expect(front.getByRole('button', { name: /Remove…/ })).toBeVisible();
+  await expect(front.getByRole('button', { name: /Move to front…/ })).toHaveCount(0);
+  await expect(
+    front.getByRole('button', { name: `More actions for #${pulls.queuedSlow1.number}` }),
+  ).toBeVisible();
   await focus(page, second);
   const row = queue(page).locator(`[data-key="${second}"]`);
-  await expect(row.getByRole('button', { name: /To the front/ })).toBeVisible();
-  await expect(row.getByRole('button', { name: /Remove/ })).toBeVisible();
+  await expect(row.getByRole('button', { name: /Move to front…/ })).toBeVisible();
+  await expect(row.getByRole('button', { name: /Remove…/ })).toBeVisible();
 
   await page.keyboard.press('Shift+J');
-  await expect(dialog(page)).toContainText(
-    `Move #${pulls.queuedSlow2.number} to the front of the merge queue for e4/queued?`,
-  );
-  const move = dialog(page).getByRole('button', { name: /Move to the front/ });
+  await expect(dialog(page)).toContainText(`Move #${pulls.queuedSlow2.number} to front?`);
+  const move = dialog(page).getByRole('button', { name: /Move to front/ });
   await expect(move).not.toHaveAttribute('aria-disabled', 'true');
   await expect(dialog(page)).toContainText('rozed-bot');
   await expect(dialog(page)).toContainText('2nd');
   await expect(dialog(page)).toContainText(
-    'It leaves the queue and joins again at the front, so GitHub tests it, and the entries tested with it, again from the start.',
+    'Checks start again for it and the pull requests tested with it.',
   );
   await page.keyboard.press('Enter');
-  await expect(
-    said(
-      page,
-      `Moved #${pulls.queuedSlow2.number} up to 2nd in the merge queue for e4/queued, behind what GitHub is testing`,
-    ),
-  ).toBeVisible();
+  await expect(said(page, `Moved #${pulls.queuedSlow2.number} to 2nd`)).toBeVisible();
   await expect(dialog(page)).toBeHidden();
   await expect.poll(() => rowKeys(page), { timeout: 60_000 }).toEqual([second, first]);
 
   await focus(page, first);
   await page.keyboard.press('x');
-  await expect(dialog(page)).toContainText(
-    `Take #${pulls.queuedSlow1.number} out of the merge queue for e4/queued?`,
-  );
-  const remove = dialog(page).getByRole('button', { name: /Remove from the queue/ });
+  await expect(dialog(page)).toContainText(`Remove #${pulls.queuedSlow1.number} from merge queue?`);
+  const remove = dialog(page).getByRole('button', { name: /Remove from merge queue/ });
   await expect(remove).not.toHaveAttribute('aria-disabled', 'true');
   await expect(dialog(page)).toContainText('2nd');
   await page.keyboard.press('Enter');
-  await expect(
-    said(page, `Took #${pulls.queuedSlow1.number} out of the merge queue for e4/queued`),
-  ).toBeVisible();
+  await expect(said(page, `Removed #${pulls.queuedSlow1.number} from merge queue`)).toBeVisible();
   await expect(dialog(page)).toBeHidden();
   await expect(queue(page).locator(`[data-key="${first}"]`)).toBeHidden();
   await expect(queue(page).locator(`[data-key="${second}"]`)).toBeVisible();
@@ -180,14 +172,16 @@ test.describe('as an account below admin', () => {
     await openQueue(page);
     await focus(page, second);
     const row = queue(page).locator(`[data-key="${second}"]`);
-    await expect(row.getByRole('button', { name: /Remove/ })).toBeVisible();
-    await expect(row.getByRole('button', { name: /To the front/ })).toHaveCount(0);
-    await page.keyboard.press('Shift+J');
+    await expect(row.getByRole('button', { name: /Remove…/ })).toBeVisible();
+    await expect(row.getByRole('button', { name: /Move to front…/ })).toHaveCount(0);
+    // The status bar's hint for it is dimmed, and the key says why.
     await expect(
-      page.getByText(
-        'GitHub lets only the repository’s admins move a pull request to the front of the merge queue.',
-      ),
-    ).toBeVisible();
+      queue(page)
+        .locator('footer')
+        .getByRole('button', { name: /Move to front…/ }),
+    ).toHaveAttribute('aria-disabled', 'true');
+    await page.keyboard.press('Shift+J');
+    await expect(said(page, 'Only repo admins can move to front')).toBeVisible();
     await expect(dialog(page)).toBeHidden();
   });
 });

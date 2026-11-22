@@ -13,11 +13,12 @@ import type {
 } from '../contract.ts';
 import {
   ago,
+  cantAutoMerge,
   cantMerge,
+  cantOverride,
   chainSteps,
   confirmLabel,
   confirmTitle,
-  doneDetail,
   doneLine,
   duration,
   headerLine,
@@ -27,16 +28,17 @@ import {
   outcomeDetail,
   outcomeTitle,
   panelHead,
+  panelLabel,
   placedLabel,
   placedWhy,
+  queueLine,
   rowPage,
   rowsOf,
-  secondsAgo,
   shownMethod,
   skipsOf,
-  stackLine,
   steppedMethod,
   type Said,
+  type Who,
 } from './words.ts';
 
 /** When the tests' statuses were read: now, so none is out of date unless a test says. */
@@ -44,6 +46,9 @@ const NOW = Date.now();
 
 const PULL_PAGE = 'https://github.com/rozed-dev/e2e/pull/148';
 const RUN = 'https://github.com/rozed-dev/e2e/actions/runs/1';
+
+/** The account and repo a merge acts as, by name. */
+const WHO: Who = { login: 'rozed-bot', repo: 'rozed-dev/e2e' };
 
 /** A pull request ready to squash into `main`, with `change`. */
 function state(change: Partial<MergeState> = {}): MergeState {
@@ -101,7 +106,6 @@ test('the header says each kind in one line, and opens the panel while it can me
     kind: 'ready',
     verdict: 'Ready to merge',
     detail: 'Squash into main',
-    title: undefined,
     opens: true,
   });
   expect(known(GATED)).toMatchObject({
@@ -132,20 +136,36 @@ test('the header says each kind in one line, and opens the panel while it can me
       }),
     )?.detail,
   ).toBe('Conflicts · draft');
+  expect(
+    known(
+      state({
+        verdict: 'blocked',
+        autoMerge: { method: 'SQUASH', by: 'rozed-bot' },
+        blockers: [{ kind: 'outOfDate' }],
+      }),
+    )?.detail,
+  ).toBe('Branch out of date · auto-merge is on');
   expect(known(state({ verdict: 'queued', position: 3 }))).toMatchObject({
     kind: 'queued',
     verdict: 'Queued, 3rd',
     opens: true,
   });
-  expect(
-    known(
-      state({
-        verdict: 'waiting',
-        autoMerge: { method: 'SQUASH', by: 'rozed-bot' },
-        blockers: [{ kind: 'approvals', more: 1, codeOwners: [], codeOwnerRule: false }],
-      }),
-    ),
-  ).toMatchObject({ kind: 'auto', verdict: 'Merges when ready', detail: 'Auto-merge on' });
+  const auto = state({
+    verdict: 'waiting',
+    autoMerge: { method: 'SQUASH', by: 'rozed-bot' },
+    blockers: [{ kind: 'approvals', more: 1, codeOwners: [], codeOwnerRule: false }],
+  });
+  // The verdict says it all, but where it joins a merge queue first.
+  expect(known(auto)).toEqual({
+    kind: 'auto',
+    verdict: 'Auto-merge is on',
+    detail: undefined,
+    opens: true,
+  });
+  expect(known({ ...auto, queue: { required: true, method: 'SQUASH' } })).toMatchObject({
+    verdict: 'Auto-merge is on',
+    detail: 'waiting to join',
+  });
   expect(known(state({ verdict: 'merged' }))).toMatchObject({ verdict: 'Merged', opens: false });
   expect(known(state({ verdict: 'closed' }))).toMatchObject({ verdict: 'Closed', opens: false });
   expect(
@@ -155,69 +175,82 @@ test('the header says each kind in one line, and opens the panel while it can me
         queue: { required: true, method: 'SQUASH' },
       }),
     ),
-  ).toMatchObject({ verdict: 'Ready for the queue', detail: 'through the queue for main' });
+  ).toMatchObject({ verdict: 'Ready for merge queue', detail: 'Merge queue for main' });
 });
 
-test('what may be missing is the hover, and nothing shows before the first read', () => {
-  expect(known({ ...GATED, partial: true })?.title).toBe('Lo may not see every rule');
-  expect(known(state({ incomplete: 'readAgain' }))?.title).toContain('left part of this out');
-  expect(headerLine({ kind: 'loading' })).toBeUndefined();
-  expect(headerLine({ kind: 'none', why: 'Sign in to see whether it can merge.' })).toBeUndefined();
-  expect(headerLine({ kind: 'failed', why: 'GitHub answered 502' })).toMatchObject({
-    title: 'GitHub answered 502',
-    opens: false,
+test('the header says it’s checking before the first read, and that it can’t when that fails', () => {
+  expect(headerLine(undefined)).toBeUndefined();
+  expect(headerLine({ kind: 'none', why: 'Sign in to merge' })).toBeUndefined();
+  // The panel opens on either, saying the same, with the reason for a failure.
+  expect(headerLine({ kind: 'loading' })).toEqual({
+    kind: 'waiting',
+    verdict: 'Checking…',
+    detail: undefined,
+    opens: true,
+  });
+  expect(headerLine({ kind: 'failed', why: 'GitHub answered 502' })).toEqual({
+    kind: 'waiting',
+    verdict: 'Can’t check merge status',
+    detail: undefined,
+    opens: true,
   });
 });
 
-test('a ready pull request GitHub may not have told all of never looks clean', () => {
-  for (const unsure of [state({ incomplete: 'readAgain' }), state({ partial: true })]) {
-    expect(known(unsure)).toMatchObject({
-      kind: 'waiting',
-      verdict: 'Ready to merge',
-      detail: 'Lo may not see everything',
-    });
-    expect(panelHead(unsure).kind).toBe('waiting');
+test('a ready pull request GitHub may not have told all of never looks clean, and says why', () => {
+  const unsure = [
+    [state({ incomplete: 'checksCutShort' }), 'Over 1,000 checks'],
+    [state({ incomplete: 'readAgain' }), 'Checking…'],
+    [state({ partial: true }), 'Some rules aren’t shown'],
+  ] as const;
+  for (const [value, detail] of unsure) {
+    expect(known(value)).toMatchObject({ kind: 'waiting', verdict: 'Ready to merge', detail });
+    expect(panelHead(value).kind).toBe('waiting');
   }
 });
 
-test('a status Lo couldn’t read again, or hasn’t for long, says how old it is', () => {
+test('a status Lo couldn’t read again, or hasn’t for long, says when it was checked', () => {
   const failed = state({ stale: 'GitHub answered 502', readAt: NOW - 3 * 60_000 });
-  expect(headerLine({ kind: 'known', state: failed }, NOW)).toMatchObject({
+  expect(headerLine({ kind: 'known', state: failed }, NOW)).toEqual({
     kind: 'ready',
-    detail: 'Squash into main · as of 3 min ago',
-    title: 'Lo couldn’t check again: GitHub answered 502',
+    verdict: 'Ready to merge',
+    detail: 'Squash into main · Checked 3 min ago',
+    opens: true,
   });
   expect(rowsOf(failed, NOW).at(-1)).toMatchObject({
     key: 'stale',
-    title: 'Lo couldn’t check again',
-    detail: 'GitHub answered 502 What’s shown is as of 3 min ago.',
+    title: 'Checked 3 min ago',
+    detail: 'GitHub answered 502',
     inTheWay: false,
   });
-  // Read five minutes ago it's current: the poller reads it again at most that often.
+  // Read five minutes ago it's current: the poller lets a read stand that long.
   expect(headerLine({ kind: 'known', state: state({ readAt: NOW - 5 * 60_000 }) }, NOW)).toEqual(
     known(state()),
   );
   const old = state({ verdict: 'queued', position: 1, readAt: NOW - 12 * 60_000 });
   expect(headerLine({ kind: 'known', state: old }, NOW)).toMatchObject({
     verdict: 'Queued, 1st',
-    detail: 'as of 12 min ago',
-    title: 'Lo hasn’t read this since 12 min ago.',
+    detail: 'Checked 12 min ago',
   });
-  expect(rowsOf(old, NOW).at(-1)?.title).toBe('As of 12 min ago');
+  expect(rowsOf(old, NOW).at(-1)).toMatchObject({ title: 'Checked 12 min ago', detail: undefined });
   // A merge stays merged.
   expect(
     headerLine({ kind: 'known', state: state({ verdict: 'merged', readAt: 0 }) }, NOW)?.detail,
   ).toBeUndefined();
+});
+
+test('how long ago reads in its largest whole unit', () => {
   expect(
-    [0, 59_000, 60_000, 2 * 3_600_000, 3 * 86_400_000].map((age) => ago(NOW - age, NOW)),
-  ).toEqual(['a moment ago', 'a moment ago', '1 min ago', '2 hours ago', '3 days ago']);
+    [0, 59_000, 60_000, 90 * 60_000, 2 * 3_600_000, 25 * 3_600_000, 3 * 86_400_000].map((age) =>
+      ago(NOW - age, NOW),
+    ),
+  ).toEqual(['just now', 'just now', '1 min ago', '1 h ago', '2 h ago', '1 d ago', '3 d ago']);
 });
 
 test('the panel has a row for each reason, checks of a state together with their runs', () => {
   const rows = rowsOf(GATED);
   expect(rows.map((row) => [row.key, row.title])).toEqual([
     ['checks-failed', '1 required check failed'],
-    ['conversations', '1 unresolved conversation'],
+    ['conversations', '1 unresolved thread'],
     ['approvals', 'Review required'],
     ['checks-running', '2 checks running'],
   ]);
@@ -227,19 +260,20 @@ test('the panel has a row for each reason, checks of a state together with their
       name: 'ci',
       note: 'failed',
       tone: 'fail',
-      link: { label: 'Open the run ↗', url: RUN },
+      link: { label: 'Open in browser', url: RUN },
     },
   ]);
   expect(rows[1]?.nextThread).toBe(true);
-  expect(rows[2]?.detail).toBe('1 more approval, and one from a code owner: @rozed-bot.');
+  expect(rows[2]?.detail).toBe('1 more approval, and 1 from a code owner: @rozed-bot.');
   // `o` opens a reason's page, or its first check's run.
   expect(rows[0] && rowPage(rows[0])).toBe(RUN);
   expect(rows[3] && rowPage(rows[3])).toBeUndefined();
   expect(panelHead(GATED)).toEqual({
     kind: 'blocked',
     verdict: 'Can’t merge',
-    into: true,
-    after: '· 4 things in the way',
+    before: 'into',
+    branch: 'e4/gated',
+    after: '· 4 reasons',
   });
 });
 
@@ -247,17 +281,48 @@ test('rules Lo doesn’t check, and a block it may not see all of, are said and 
   const rows = rowsOf({
     ...GATED,
     blockers: [{ kind: 'unexplained', url: PULL_PAGE }],
-    unchecked: [{ kind: 'signatures' }, { kind: 'other', type: 'max_file_size' }],
+    unchecked: [
+      { kind: 'signatures' },
+      { kind: 'locked' },
+      { kind: 'other', type: 'max_file_size' },
+    ],
   });
   expect(rows.map((row) => [row.title, row.detail])).toEqual([
-    ['GitHub says no, and not why', 'Lo checked reviews, checks, conversations and rules.'],
-    ['Commits must be signed', 'A rule on e4/gated, which Lo doesn’t check.'],
-    ['A rule Lo doesn’t know: max_file_size', 'A rule on e4/gated, which Lo doesn’t check.'],
+    ['Blocked by GitHub', 'GitHub gives no reason.'],
+    ['Commits must be signed', 'Not checked.'],
+    ['e4/gated is locked', 'Not checked.'],
+    ['Another rule on e4/gated', 'Not checked.'],
   ]);
-  expect(rows[0]?.link).toEqual({ label: 'See it on GitHub ↗', url: PULL_PAGE });
+  expect(rows[0]?.link).toEqual({ label: 'Open on GitHub', url: PULL_PAGE });
   expect(rows.filter((row) => row.inTheWay)).toHaveLength(1);
   const partial = rowsOf({ ...GATED, partial: true });
-  expect(partial.at(-1)).toMatchObject({ title: 'Lo may not see every rule', inTheWay: false });
+  expect(partial.at(-1)).toMatchObject({
+    title: 'Some rules aren’t shown',
+    link: { label: 'Open on GitHub', url: PULL_PAGE },
+    inTheWay: false,
+  });
+  const cutShort = rowsOf({ ...GATED, incomplete: 'checksCutShort' });
+  expect(cutShort.at(-1)).toMatchObject({
+    title: 'Over 1,000 checks',
+    detail: 'The first 1,000 are shown.',
+  });
+});
+
+test('a ready pull request that can’t merge names the account or the repo why', () => {
+  const noPermission = state({ action: { kind: 'notPossible', reason: 'noPermission' } });
+  expect(rowsOf(noPermission, NOW, WHO)).toEqual([
+    expect.objectContaining({
+      key: 'noPermission',
+      title: 'rozed-bot can’t merge into main',
+      detail: 'Merging requires write access.',
+      inTheWay: true,
+    }),
+  ]);
+  // Who, when the window can't say.
+  expect(rowsOf(noPermission)[0]?.title).toBe('This account can’t merge into main');
+  expect(
+    rowsOf(state({ action: { kind: 'notPossible', reason: 'noMethod' } }), NOW, WHO)[0]?.title,
+  ).toBe('rozed-dev/e2e allows no merge method');
 });
 
 test('the panel’s head says what it merges into and how it stands', () => {
@@ -265,10 +330,18 @@ test('the panel’s head says what it merges into and how it stands', () => {
     {
       kind: 'ready',
       verdict: 'Ready to merge',
-      into: true,
+      before: 'into',
+      branch: 'main',
       after: '· approved by jun-park · 12 checks passed',
     },
   );
+  expect(panelHead(state())).toEqual({
+    kind: 'ready',
+    verdict: 'Ready to merge',
+    before: 'into',
+    branch: 'main',
+    after: undefined,
+  });
   expect(
     panelHead(
       state({
@@ -279,18 +352,21 @@ test('the panel’s head says what it merges into and how it stands', () => {
     ),
   ).toEqual({
     kind: 'auto',
-    verdict: 'Merges when ready',
-    into: false,
-    after: 'Auto-merge on · squash · turned on by tess-okafor',
+    verdict: 'Auto-merge is on',
+    before: undefined,
+    branch: undefined,
+    after: 'squash · turned on by tess-okafor',
   });
   expect(
     panelHead(
       state({ action: { kind: 'enqueue', method: null }, queue: { required: true, method: null } }),
     ),
-  ).toMatchObject({
-    verdict: 'Ready for the queue',
-    into: false,
-    after: 'main merges through a queue',
+  ).toEqual({
+    kind: 'ready',
+    verdict: 'Ready for merge queue',
+    before: undefined,
+    branch: 'main',
+    after: 'has a merge queue',
   });
 });
 
@@ -305,9 +381,12 @@ test('the methods step round those allowed, and say which are off', () => {
   expect(steppedMethod(two, undefined, -1)).toBe('REBASE');
   // A method chosen that's no longer allowed falls back to the one picked first.
   expect(shownMethod(two, 'MERGE')).toBe('SQUASH');
-  expect(methodNote(two)).toBe('Merge commits are off in this repo');
+  expect(methodNote(two)).toBe('Merge commit is off in this repo.');
+  expect(methodNote(state({ methods: { merge: true, squash: false, rebase: false } }))).toBe(
+    'Squash and Rebase are off in this repo.',
+  );
   expect(methodNote(state({ signedCommits: true }))).toBe(
-    'main needs signed commits, so no rebase',
+    'main requires signed commits, so Rebase is off.',
   );
   expect(methodNote(state())).toBeUndefined();
 });
@@ -329,6 +408,9 @@ test('a pull request blocked from a merge queue shows the queue’s method, or n
   ).toBeUndefined();
   // Straight in, it's the one picked.
   expect(shownMethod(state(blocked), undefined)).toBe('MERGE');
+  // Where the method control would be, the queue's settings choose it.
+  expect(queueLine('SQUASH')).toBe('Squash, set by the merge queue');
+  expect(queueLine(null)).toBe('Method set by the merge queue');
 });
 
 test('places in a queue read as ordinals', () => {
@@ -346,7 +428,7 @@ test('places in a queue read as ordinals', () => {
   ]);
 });
 
-test('a queued pull request’s place, as Lo last read its queue, says when it should merge, or that it will be removed', () => {
+test('a queued pull request’s place, as Lo last read its queue, says when it should merge, or that it’s leaving', () => {
   const queued = { kind: 'known', state: state({ verdict: 'queued', position: 2 }) } as const;
   expect(headerLine(queued, NOW)).toMatchObject({ verdict: 'Queued, 2nd', detail: undefined });
   const place = {
@@ -357,10 +439,10 @@ test('a queued pull request’s place, as Lo last read its queue, says when it s
     failed: [],
     partial: false,
   } satisfies QueuePlace;
-  expect(headerLine(queued, NOW, { place, left: null })).toMatchObject({
+  expect(headerLine(queued, NOW, { place, left: null })).toEqual({
     kind: 'queued',
     verdict: 'Queued, 3rd',
-    detail: 'about 12 min',
+    detail: 'merges in about 12 min',
     opens: true,
   });
   expect(
@@ -374,64 +456,121 @@ test('a queued pull request’s place, as Lo last read its queue, says when it s
     }),
   ).toMatchObject({
     kind: 'blocked',
-    verdict: 'Will be removed',
-    detail: 'ci failed in the queue',
+    verdict: 'Leaving merge queue',
+    detail: 'ci failed',
   });
   expect(headerLine(queued, NOW, { place: failed, left: null })).toMatchObject({
-    verdict: 'Will be removed',
-    detail: 'from the merge queue',
+    verdict: 'Leaving merge queue',
+    detail: undefined,
   });
   // GitHub left part of the queue out: where Lo can't see it, GitHub's own read of its place stands.
   expect(
     headerLine(queued, NOW, { place: { kind: 'unlisted', partial: true }, left: null }),
   ).toMatchObject({ verdict: 'Queued, 2nd' });
   // The queue no longer lists it: it left, never the place it had, until its status says how.
-  const gone = headerLine(queued, NOW, { place: { kind: 'unlisted', partial: false }, left: null });
-  expect(gone).toMatchObject({ kind: 'waiting', verdict: 'Left the queue', detail: 'checking' });
-  expect(gone?.title).toContain('Lo is reading whether it merged');
-  // A failure in a queue GitHub left part of says more may have failed.
   expect(
-    headerLine(queued, NOW, { place: { ...failed, partial: true }, left: null })?.title,
-  ).toContain('more checks may have failed');
+    headerLine(queued, NOW, { place: { kind: 'unlisted', partial: false }, left: null }),
+  ).toEqual({ kind: 'waiting', verdict: 'Left merge queue', detail: 'Checking…', opens: true });
   // No longer queued, its queue's last read says nothing in the header.
   expect(headerLine({ kind: 'known', state: state() }, NOW, { place, left: null })).toMatchObject({
     verdict: 'Ready to merge',
   });
 });
 
-test('GitHub’s estimates read in minutes and hours', () => {
+test('GitHub’s estimates read in their largest whole unit', () => {
   expect([20, 720, 3600, 3900, 7200].map(duration)).toEqual([
     '1 min',
     '12 min',
     '1 h',
-    '1 h 5 min',
+    '1 h',
     '2 h',
   ]);
 });
 
-test('merging is off, with why, offline, while GitHub asks Lo to hold off, signed out, or while it can’t merge', () => {
+test('merging is off, with why, offline, while GitHub’s rate limit holds, signed out, or while it can’t merge', () => {
   expect(cantMerge(state(), 138)).toBeUndefined();
-  expect(cantMerge(state({ off: { kind: 'offline' } }), 138)).toBe(
-    'Offline. Merging waits until you’re back.',
-  );
+  expect(cantMerge(state({ off: { kind: 'offline' } }), 138)).toBe('Offline');
   const at = new Date(2026, 10, 16, 14, 5).getTime();
   expect(cantMerge(state({ off: { kind: 'paused', until: at } }), 138)).toBe(
-    'GitHub asked Lo to hold off until 14:05. Merge then.',
+    'GitHub’s rate limit resets at 14:05',
   );
-  expect(cantMerge(state({ off: { kind: 'signedOut' } }), 138)).toContain('signed out');
+  expect(cantMerge(state({ off: { kind: 'signedOut' } }), 138, WHO)).toBe(
+    'rozed-bot is signed out',
+  );
+  expect(cantMerge(state({ off: { kind: 'signedOut' } }), 138)).toBe('This account is signed out');
+  // Blocked, it's the reasons' titles, a line each.
   expect(
     cantMerge(
       state({
         verdict: 'blocked',
         action: { kind: 'notPossible', reason: 'blocked' },
-        blockers: [{ kind: 'draft' }],
+        blockers: [{ kind: 'draft' }, { kind: 'conflicts' }],
       }),
       142,
     ),
-  ).toBe('#142 can’t merge yet: draft.');
+  ).toBe('Draft pull request\nConflicts with main');
+  expect(
+    cantMerge(
+      state({ verdict: 'blocked', action: { kind: 'notPossible', reason: 'blocked' } }),
+      142,
+    ),
+  ).toBe('Blocked by GitHub');
   expect(
     cantMerge(state({ verdict: 'closed', action: { kind: 'notPossible', reason: 'closed' } }), 9),
-  ).toBe('#9 is closed.');
+  ).toBe('#9 is closed');
+  expect(
+    cantMerge(state({ verdict: 'merged', action: { kind: 'notPossible', reason: 'merged' } }), 9),
+  ).toBe('#9 is already merged');
+  expect(
+    cantMerge(state({ verdict: 'queued', action: { kind: 'notPossible', reason: 'queued' } }), 9),
+  ).toBe('#9 is already in the merge queue');
+  expect(
+    cantMerge(state({ action: { kind: 'notPossible', reason: 'noPermission' } }), 9, WHO),
+  ).toBe('rozed-bot can’t merge into main');
+  expect(cantMerge(state({ action: { kind: 'notPossible', reason: 'noMethod' } }), 9, WHO)).toBe(
+    'rozed-dev/e2e allows no merge method',
+  );
+  expect(cantMerge(state({ incomplete: 'checksCutShort' }), 138)).toBe(
+    '#138 has over 1,000 checks',
+  );
+});
+
+test('auto-merge and a merge past the rules say in a few words why they can’t', () => {
+  const auto = (reason: Extract<MergeState['auto'], { kind: 'notPossible' }>['reason']) =>
+    cantAutoMerge(state({ auto: { kind: 'notPossible', reason } }), 138, WHO);
+  expect(cantAutoMerge(state({ auto: { kind: 'on' } }), 138)).toBeUndefined();
+  expect(auto('ready')).toBe('#138 can merge now');
+  expect(auto('noPermission')).toBe('rozed-bot can’t add to the merge queue');
+  expect(auto('notAllowed')).toBe(
+    'rozed-dev/e2e doesn’t allow auto-merge, or rozed-bot can’t merge',
+  );
+  expect(auto('cantTurnOff')).toBe('rozed-bot can’t turn off auto-merge');
+  // Blocked, only what waiting won't clear.
+  expect(
+    cantAutoMerge(
+      state({
+        verdict: 'blocked',
+        auto: { kind: 'notPossible', reason: 'blocked' },
+        blockers: [
+          { kind: 'conflicts' },
+          { kind: 'check', check: { name: 'ci', state: 'running', url: null } },
+        ],
+      }),
+      138,
+    ),
+  ).toBe('Conflicts with main');
+  expect(cantAutoMerge(state({ auto: { kind: 'on' }, off: { kind: 'offline' } }), 138)).toBe(
+    'Offline',
+  );
+
+  const override = (reason: Extract<MergeState['override'], { kind: 'notPossible' }>['reason']) =>
+    cantOverride(state({ override: { kind: 'notPossible', reason } }), 138, WHO);
+  expect(cantOverride(state({ override: { kind: 'override' } }), 138)).toBeUndefined();
+  expect(override('nothingToSkip')).toBe('No rule blocks #138');
+  expect(override('noPermission')).toBe('rozed-bot can’t bypass rules for main');
+  expect(override('draft')).toBe('Draft pull requests can’t merge');
+  expect(override('conflicts')).toBe('#138 conflicts with main');
+  expect(override('stackLayer')).toBe('Only a GitHub stack’s bottom layer can bypass rules');
 });
 
 /** A merge of #138 into `main` that went, standing as `now`, with `change`. */
@@ -454,31 +593,42 @@ function job(now: JobView['state'], change: Partial<JobView> = {}): JobView {
 }
 
 test('a merge that went says how it ended: done, refused, or not known', () => {
-  expect(doneLine(job({ kind: 'merged' }))).toBe('Merged #138 into main');
+  expect(doneLine(job({ kind: 'merged' }))).toBe('Merged #138');
   expect(doneLine(job({ kind: 'enqueued' }, { kind: 'enqueue', base: 'e4/queued' }))).toBe(
-    'Added #138 to the merge queue for e4/queued',
+    'Added #138 to merge queue',
+  );
+  expect(doneLine(job({ kind: 'autoMergeOn' }, { kind: 'autoMerge' }))).toBe(
+    'Turned on auto-merge for #138',
+  );
+  expect(doneLine(job({ kind: 'autoMergeOff' }, { kind: 'autoMergeOff' }))).toBe(
+    'Turned off auto-merge for #138',
   );
   expect(doneLine(job({ kind: 'pending', trouble: null }))).toBeUndefined();
-  const refused = job({
-    kind: 'refused',
-    refusal: { kind: 'conflict', text: 'It conflicts.', rules: [], until: null, newer: null },
-  });
-  expect(outcomeTitle(refused)).toBe('Couldn’t merge #138.');
+  const refusal = { kind: 'conflict', text: 'It conflicts.', rules: [], until: null, newer: null };
+  const refused = job({ kind: 'refused', refusal });
+  expect(outcomeTitle(refused)).toBe('Couldn’t merge #138');
   expect(outcomeDetail(refused)).toBe('It conflicts.');
-  const unknown = job(
-    {
-      kind: 'unknown',
-      why: 'noAnswer',
-      text: 'Its answer was lost.',
-      askAgain: false,
-      shows: 'open',
-    },
-    { already: true },
+  expect(outcomeTitle(job({ kind: 'refused', refusal }, { kind: 'enqueue' }))).toBe(
+    'Couldn’t add #138 to the merge queue',
   );
-  expect(outcomeTitle(unknown)).toBe('Lo can’t tell whether #138 merged.');
-  expect(outcomeDetail(unknown)).toBe(
-    'GitHub was already merging it, from Lo or elsewhere, so Lo followed that merge. Its answer was lost. GitHub shows it open.',
+  expect(outcomeTitle(job({ kind: 'refused', refusal }, { kind: 'autoMerge' }))).toBe(
+    'Couldn’t turn on auto-merge',
   );
+  expect(outcomeTitle(job({ kind: 'refused', refusal }, { kind: 'autoMergeOff' }))).toBe(
+    'Couldn’t turn off auto-merge',
+  );
+  const lost = {
+    kind: 'unknown',
+    why: 'noAnswer',
+    text: 'Its answer was lost.',
+    askAgain: false,
+    shows: 'open',
+  } as const;
+  // Following a merge GitHub was already running says nothing more.
+  const unknown = job(lost, { already: true });
+  expect(outcomeTitle(unknown)).toBe('Merge not confirmed');
+  expect(outcomeDetail(unknown)).toBe('Its answer was lost. #138 is still open.');
+  expect(outcomeTitle(job(lost, { kind: 'whenReady' }))).toBe('Auto-merge not confirmed');
   expect(outcomeTitle(job({ kind: 'merged' }))).toBeUndefined();
 });
 
@@ -503,42 +653,60 @@ function stacked(landed: number[] | null): Progress {
   };
 }
 
-test('a GitHub stack’s merge names its layers', () => {
+test('a merge’s title and buttons name the pull request, or a GitHub stack’s layers', () => {
   const plan = { kind: 'merge', number: 138, base: 'main', method: 'SQUASH' } as const;
+  expect(confirmTitle({ ...plan, together: null })).toBe('Merge #138');
+  expect(confirmLabel({ ...plan, together: null })).toBe('Merge #138');
   expect(confirmTitle({ ...plan, together: STACK })).toBe('Merge 3 layers');
   expect(confirmLabel({ ...plan, together: STACK })).toBe('Merge 3 layers');
+  // The title has the count for the merge queue; the button is the same either way.
+  expect(confirmTitle({ ...plan, kind: 'enqueue', together: null })).toBe(
+    'Add #138 to merge queue',
+  );
   expect(confirmTitle({ ...plan, kind: 'enqueue', together: STACK })).toBe(
     'Add 3 layers to merge queue',
   );
-  expect(confirmLabel({ ...plan, together: null })).toBe('Squash and merge');
-  const placed: Placement = { kind: 'stack', stack: 90, below: [136, 137] };
-  expect(placedLabel(placed, false, 'Squash and merge')).toBe('Merge 3 layers');
-  expect(placedLabel(placed, true, 'Add to merge queue')).toBe('Add 3 layers to the merge queue');
-  expect(placedLabel({ kind: 'alone' }, false, 'Squash and merge')).toBe('Squash and merge');
+  expect(confirmLabel({ ...plan, kind: 'enqueue', together: STACK })).toBe('Add to merge queue');
+  for (const kind of ['autoMerge', 'whenReady'] as const) {
+    expect(confirmTitle({ ...plan, kind })).toBe('Turn on auto-merge');
+    expect(confirmLabel({ ...plan, kind })).toBe('Turn on auto-merge');
+  }
+  expect(confirmTitle({ ...plan, kind: 'override' })).toBe('Bypass rules and merge');
+  expect(confirmLabel({ ...plan, kind: 'override' })).toBe('Bypass rules and merge');
 
-  const going = job({ kind: 'pending', trouble: null }, { together: stacked(null) });
-  if (going.together?.kind !== 'stack') throw new Error('a stack');
-  expect(stackLine(going, going.together)).toBe('Merging 3 layers into main');
-  expect(secondsAgo(NOW - 40_000, NOW)).toBe('40 s ago');
-  expect(doneLine(job({ kind: 'merged' }, { together: stacked(null) }))).toBe(
-    'Merged 3 layers into main',
+  const placed: Placement = { kind: 'stack', stack: 90, below: [136, 137] };
+  expect(placedLabel(placed, false, 'Merge #138')).toBe('Merge 3 layers');
+  expect(placedLabel(placed, true, 'Add to merge queue')).toBe('Add to merge queue');
+  expect(placedLabel({ kind: 'alone' }, false, 'Merge #138')).toBe('Merge #138');
+  // The panel's button opens the confirmation.
+  expect(panelLabel(placed, false, 138)).toBe('Merge 3 layers…');
+  expect(panelLabel(placed, true, 138)).toBe('Add 3 layers to merge queue…');
+  expect(panelLabel({ kind: 'alone' }, false, 138)).toBe('Merge #138…');
+  expect(panelLabel(undefined, true, 138)).toBe('Add to merge queue…');
+});
+
+test('a GitHub stack’s merge says it merged its layers', () => {
+  expect(doneLine(job({ kind: 'merged' }, { together: stacked(null) }))).toBe('Merged 3 layers');
+  expect(doneLine(job({ kind: 'enqueued' }, { kind: 'enqueue', together: stacked(null) }))).toBe(
+    'Added 3 layers to merge queue',
   );
+  expect(
+    doneLine(job({ kind: 'pending', trouble: null }, { together: stacked(null) })),
+  ).toBeUndefined();
 });
 
 test('a GitHub stack’s merge GitHub stopped says which layers went in, if any did', () => {
   const refusal = { kind: 'failed', text: 'GitHub stopped.', rules: [], until: null, newer: null };
   const stopped = (landed: number[] | null) =>
     job({ kind: 'refused', refusal }, { together: stacked(landed) });
-  expect(outcomeTitle(stopped([]))).toBe('Nothing merged.');
-  expect(outcomeDetail(stopped([]))).toBe('GitHub stopped. No layer went in.');
-  expect(outcomeTitle(stopped([136]))).toBe('Merged #136 only.');
-  expect(outcomeDetail(stopped([136]))).toBe(
-    'GitHub stopped. #136 went in all the same, and the layers above it didn’t.',
-  );
-  expect(outcomeTitle(stopped(null))).toBe('Lo can’t tell which layers merged.');
-  expect(outcomeDetail(stopped(null))).toBe(
-    'GitHub stopped. Lo couldn’t read which layers went in.',
-  );
+  expect(outcomeTitle(stopped([]))).toBe('Couldn’t merge 3 layers');
+  expect(outcomeTitle(stopped([136]))).toBe('Merged #136 only');
+  expect(outcomeTitle(stopped([136, 137]))).toBe('Merged #136 and #137 only');
+  expect(outcomeTitle(stopped(null))).toBe('Merge not confirmed');
+  // The title says which; the reason is GitHub's.
+  for (const landed of [[], [136], null]) {
+    expect(outcomeDetail(stopped(landed))).toBe('GitHub stopped.');
+  }
 });
 
 /** #138's merge, which went, its chain's run as far as `phase`, saying `text`. */
@@ -557,50 +725,34 @@ test('a chain’s merge a layer at a time lists each move, and says how its run 
     needsRebase: [139, 140],
   };
   expect(chainSteps({ number: 138, base: 'main', method: 'SQUASH' }, chain)).toEqual([
-    {
-      key: 'before',
-      title: 'Move #138 onto main',
-      detail: 'From feature, so it merges under main’s rules',
-    },
-    { key: 'merge', title: 'Merge #138 into main', detail: 'Alone' },
-    { key: 'after-139', title: 'Move #139 onto main', detail: 'From chain-1 · needs rebase' },
-    { key: 'rebase-140', title: '#140 stays on main', detail: 'Needs rebase' },
+    { key: 'before', title: 'Move #138 onto main.', detail: 'From feature.' },
+    { key: 'merge', title: 'Merge #138 into main.', detail: undefined },
+    { key: 'after-139', title: 'Move #139 onto main.', detail: 'From chain-1. Needs a rebase.' },
+    { key: 'rebase-140', title: '#140 stays on main.', detail: 'Needs a rebase.' },
   ]);
   // A merge commit lands #138's commits as they are: no rebase after one, and #140 isn't moved.
   expect(chainSteps({ number: 138, base: 'main', method: 'MERGE' }, chain)).toEqual([
-    {
-      key: 'before',
-      title: 'Move #138 onto main',
-      detail: 'From feature, so it merges under main’s rules',
-    },
-    { key: 'merge', title: 'Merge #138 into main', detail: 'Alone' },
-    { key: 'after-139', title: 'Move #139 onto main', detail: 'From chain-1' },
+    { key: 'before', title: 'Move #138 onto main.', detail: 'From feature.' },
+    { key: 'merge', title: 'Merge #138 into main.', detail: undefined },
+    { key: 'after-139', title: 'Move #139 onto main.', detail: 'From chain-1.' },
   ]);
-  // Into a merge queue whose method Lo can't read, they may.
+  // Into a merge queue whose method Lo can't read, it says nothing of a rebase.
   expect(chainSteps({ number: 138, base: 'main', method: null }, chain).slice(2)).toEqual([
-    {
-      key: 'after-139',
-      title: 'Move #139 onto main',
-      detail: 'From chain-1 · may need a rebase',
-    },
-    { key: 'rebase-140', title: '#140 stays on main', detail: 'May need a rebase' },
+    { key: 'after-139', title: 'Move #139 onto main.', detail: 'From chain-1.' },
+    { key: 'rebase-140', title: '#140 stays on main.', detail: undefined },
   ]);
 
   expect(doneLine(ran('moving', null))).toBeUndefined();
-  expect(doneLine(ran('done', '#139 now points at main and needs a rebase.'))).toBe(
-    'Merged #138, one layer at a time',
-  );
-  expect(doneDetail(ran('done', '#139 now points at main and needs a rebase.'))).toBe(
-    '#139 now points at main and needs a rebase.',
-  );
-  const stopped = ran('stopped', '#138 merged, but Lo stopped moving the layers on it.');
-  expect(outcomeTitle(stopped)).toBe('Lo stopped moving the layers on #138.');
-  expect(outcomeDetail(stopped)).toBe('#138 merged, but Lo stopped moving the layers on it.');
+  expect(doneLine(ran('done', '#139 moved onto main.'))).toBe('Merged #138');
+  expect(outcomeTitle(ran('done', '#139 moved onto main.'))).toBeUndefined();
+  const stopped = ran('stopped', 'GitHub didn’t respond.');
+  expect(outcomeTitle(stopped)).toBe('Couldn’t move the layers above #138');
+  expect(outcomeDetail(stopped)).toBe('GitHub didn’t respond.');
 });
 
 test('the merge panel’s `⏎` doesn’t merge a chain stacks could make a GitHub stack first', () => {
   expect(placedWhy({ kind: 'convert', offer: 'These PRs share commits.' })).toBe(
-    'These PRs share commits. Make this a GitHub stack, then merge it.',
+    'Convert to GitHub stack first',
   );
   expect(placedWhy({ kind: 'refused', why: 'Merge #137 first.', again: false })).toBe(
     'Merge #137 first.',
@@ -618,7 +770,7 @@ test('a GitHub stack’s layer says where it stands in its confirmation, once it
   expect(layerLine({ review: null, checks: null })).toBeUndefined();
 });
 
-test('a merge past the rules skips each reason, and the merge queue it merges straight past', () => {
+test('a merge past the rules bypasses each reason, and the merge queue it merges straight past', () => {
   const said: Omit<Said, 'queue'> = {
     blockers: [
       { kind: 'approvals', more: 1, codeOwners: [], codeOwnerRule: false },
@@ -631,21 +783,34 @@ test('a merge past the rules skips each reason, and the merge queue it merges st
   };
   expect(skipsOf({ ...said, queue: { required: false, method: null } })).toEqual([
     '1 more approval',
-    '1 required check still running: ci',
+    '1 check running: ci',
   ]);
   expect(skipsOf({ ...said, queue: { required: true, method: 'SQUASH' } })).toEqual([
     'The merge queue for e4/queued',
     '1 more approval',
-    '1 required check still running: ci',
+    '1 check running: ci',
   ]);
-  // The rules want a code owner's approval GitHub asks nobody for, which may be given already.
+  // The rules want a code owner's approval GitHub asks nobody for: the count says it.
   expect(
     skipsOf({
       ...said,
       blockers: [{ kind: 'approvals', more: 1, codeOwners: [], codeOwnerRule: true }],
       queue: { required: false, method: null },
     }),
-  ).toEqual(['1 more approval, maybe a code owner’s']);
+  ).toEqual(['1 more approval']);
+  expect(
+    skipsOf({
+      ...said,
+      blockers: [{ kind: 'check', check: { name: 'test (node 20)', state: 'failed', url: RUN } }],
+      unchecked: [{ kind: 'signatures' }],
+      partial: true,
+      queue: { required: false, method: null },
+    }),
+  ).toEqual([
+    '1 required check failed: test (node 20)',
+    'Commits must be signed',
+    'Some rules aren’t shown',
+  ]);
 });
 
 /**
@@ -664,15 +829,10 @@ function gated(more: number, codeOwnerRule: boolean): string | undefined {
   ).find((row) => row.key === 'approvals')?.detail;
 }
 
-test('a code owner’s approval the rules require is named, hedged, though GitHub asked no one for it', () => {
-  expect(gated(1, true)).toBe(
-    '1 more approval. e4/gated also requires a code owner’s approval for changed files that have an owner, which may be one of them or given already.',
-  );
-  expect(gated(1, false)).toBe('1 more approval.');
-  expect(gated(0, true)).toBe(
-    'GitHub requires a review it doesn’t name. e4/gated also requires a code owner’s approval for changed files that have an owner, which may be it.',
-  );
-  expect(gated(0, false)).toBe(
-    'GitHub requires a review it doesn’t name, such as one of the latest push.',
-  );
+test('a code owner’s approval the rules require is named, though GitHub asked no one for it', () => {
+  expect(gated(1, true)).toBe('1 more approval. e4/gated requires a code owner’s approval.');
+  expect(gated(2, false)).toBe('2 more approvals.');
+  expect(gated(0, true)).toBe('e4/gated requires a code owner’s approval.');
+  // The title, "Review required", says the rest.
+  expect(gated(0, false)).toBeUndefined();
 });

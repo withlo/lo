@@ -323,12 +323,12 @@ test('a status read before a failed read, or while GitHub can’t be reached, sa
   };
   expect(known().stale).toBeNull();
   followed.fake.fail();
-  expect(known().stale).toContain('Not Found');
+  expect(known().stale).toBe('GitHub returned an error. GitHub answered 404: Not Found');
   followed.fake.read(factsOf(), 3);
   expect(known().stale).toBeNull();
   expect(known().off).toBeNull();
   followed.fake.offline('getaddrinfo ENOTFOUND api.github.com');
-  expect(known().stale).toBe('GitHub can’t be reached: getaddrinfo ENOTFOUND api.github.com');
+  expect(known().stale).toBe('Offline.');
   expect(known().off).toEqual({ kind: 'offline' });
   followed.fake.offline(undefined);
   expect(known().stale).toBeNull();

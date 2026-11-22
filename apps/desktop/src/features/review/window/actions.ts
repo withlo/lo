@@ -1,29 +1,40 @@
-// What the review's key, the status bar's item and the dialog do: open the dialog on the pull
-// request on screen, read what it shows, keep its summary as it's typed, with the files attached
-// to it, and submit. Held keys and a second press while one is sent submit nothing more, and
-// nothing goes while GitHub can't be reached, a file attached to the summary is on its way in or
-// its text holds a placeholder whose upload isn't, or Lo waits to know whether a review whose
-// answer was lost was submitted. Once it's submitted, the summary's files go with it.
+// What the review's key, the header's button, the status bar's item and the dialog do: open the
+// dialog on the pull request on screen, read what it shows, keep its summary as it's typed, with the
+// files attached to it, and submit. Held keys and a second press while one is sent submit nothing
+// more, and nothing goes while GitHub can't be reached, a file attached to the summary is on its way
+// in or its text holds a placeholder whose upload isn't, or Lo waits to know whether a review whose
+// answer was lost was submitted, which "Check again" only looks for. Once it's submitted, the
+// summary's files go with it, and an approval's dialog shows it done; any other review's closes,
+// and a toast says what it did.
 
 import type { Composer } from '@lo/ui/code';
 
 import { IpcError } from '../../../ipc/contract.ts';
-import { announce, notify } from '../../../window/commands/notices.tsx';
+import { announce, refuse } from '../../../window/commands/notices.tsx';
 import { type Attachable, endUploads, uploadsHold } from '../../comments/window/shared.ts';
 import { pullOf, runOf, activeTab, type PullTab } from '../../tab/window/shared.ts';
 import { IN_A_LAYER, SIGN_IN, type ReviewEventRow, type Submission } from '../contract.ts';
 import { main, revisions as revisionsClient, tabs } from './main.ts';
-import { held, OFFLINE, pausedUntil, plannedRefusal, toastOf } from './model.ts';
-import { changeDialog, reviewStore, submitting, takeSubmission } from './store.ts';
+import {
+  OFFLINE,
+  pausedReason,
+  pausedUntil,
+  READING,
+  stepOf,
+  revisionLabel,
+  toastOf,
+  type Step,
+} from './model.ts';
+import { changeDialog, reviewStore, revisions, submitting, takeSubmission } from './store.ts';
 
 /** How long after the last key the summary is saved, in milliseconds. */
 export const SAVE_AFTER = 300;
 
-/** What the command, the dialog and the notes call submitting. */
+/** What the dialog is titled: its command's name. */
 export const TITLE = 'Submit review';
 
 /** Why the dialog's main button is off while a file attached to the summary uploads. */
-export const UPLOADING = 'Uploading. Submit the review once the files are in.';
+export const UPLOADING = 'A file is still uploading';
 
 /**
  * A view's summary as a comment box files are attached to: it outlives the dialog, so a file still
@@ -85,7 +96,7 @@ export function offline(view: string): boolean {
 /** The pull request's tab on screen, if a review can be submitted from it, or why not. */
 export function pullOnScreen(): PullTab | string {
   const tab = activeTab();
-  if (tab?.kind !== 'pull') return 'There’s no pull request on screen.';
+  if (tab?.kind !== 'pull') return 'Open a pull request first';
   const can = canSubmit(tab.id);
   return can === true ? tab : can;
 }
@@ -94,7 +105,7 @@ function messageOf(error: unknown): string {
   return error instanceof IpcError || error instanceof Error ? error.message : String(error);
 }
 
-/** Opens the submit dialog on view `tab`, as `⌘⏎` or the status bar's item does. */
+/** Opens the submit dialog on view `tab`, as `⌘⏎`, the header's button and the status item do. */
 export function openDialog(tab: PullTab): void {
   const { dialog } = reviewStore.getState();
   if (dialog) return;
@@ -118,7 +129,7 @@ export function openDialog(tab: PullTab): void {
     })
     .catch((error: unknown) => {
       closeDialog();
-      notify(TITLE, messageOf(error));
+      refuse(messageOf(error));
     });
 }
 
@@ -170,44 +181,71 @@ export function choose(event: ReviewEventRow): void {
   if (dialog) changeDialog(dialog.view, { event, refusal: undefined });
 }
 
-/** Why the dialog's main button is off now, if it is. */
-export function whyNot(): string | undefined {
+/**
+ * Why nothing can be sent from the dialog now, if it can't: it's still reading, the view can't
+ * submit, it's offline, a file attached to the summary is on its way in, or GitHub asked Lo to
+ * hold off writing until a time still to come.
+ */
+export function whyNot(now = Date.now()): string | undefined {
   const { dialog } = reviewStore.getState();
-  if (!dialog?.read) return 'Lo is reading your pending review.';
+  if (!dialog?.read) return READING;
   const can = canSubmit(dialog.view);
   if (can !== true) return can;
   if (offline(dialog.view)) return OFFLINE;
-  const hold = uploadsHold(summaryBox(dialog.view));
-  if (hold) return UPLOADING;
-  return undefined;
+  if (uploadsHold(summaryBox(dialog.view))) return UPLOADING;
+  const until = pausedUntil(dialog.read, now);
+  return until === undefined ? undefined : pausedReason(until);
+}
+
+/** Where the open dialog has got to, as it shows it, or nothing while none is open. */
+export function stepNow(now = Date.now()): Step | undefined {
+  const { dialog } = reviewStore.getState();
+  if (!dialog) return undefined;
+  const { view } = dialog;
+  const comparison = revisions.get(view);
+  return stepOf(
+    {
+      read: dialog.read,
+      number: dialog.number,
+      event: dialog.event,
+      sent: dialog.sent,
+      text: dialog.text,
+      busy: dialog.busy,
+      checking: dialog.checking === true,
+      refusal: dialog.refusal,
+      done: dialog.done,
+      state: submitting.get(view),
+      blocked: whyNot(now),
+    },
+    (head) => revisionLabel(comparison, head),
+    now,
+  );
 }
 
 /**
- * Submits the review the dialog shows, as its main button or `⌘⏎` does, or, `anyway`, though Lo
- * couldn't tell whether the last was submitted.
+ * Submits the review the dialog shows, as its main button or `⌘⏎` does: only while that button
+ * submits and can be pressed.
  */
-export async function submit(anyway = false): Promise<void> {
+export async function submit(): Promise<void> {
   const { dialog } = reviewStore.getState();
-  if (!dialog?.read || dialog.busy || whyNot() !== undefined) return;
-  const { view, read, event, text } = dialog;
-  // While GitHub asked Lo to hold off, the dialog says until when, and nothing goes.
-  if (pausedUntil(read, Date.now()) !== undefined) return;
-  const state = submitting.get(view);
-  if (state === 'unknown' ? !anyway : held(state)) return;
-  if (plannedRefusal(read, event, text) !== undefined) return;
+  const step = stepNow();
+  if (!dialog?.read || !step) return;
+  const { primary } = step;
+  if (primary.does !== 'submit' || primary.busy || primary.off !== undefined) return;
+  const { view, event, text } = dialog;
   // What waits to be saved goes with it: main keeps it as the summary until GitHub takes it.
   if (saving?.view === view) {
     clearTimeout(saving.timer);
     saving = undefined;
   }
-  changeDialog(view, { busy: true, refusal: undefined });
+  changeDialog(view, { busy: true, sent: event, checking: false, refusal: undefined });
   try {
-    const outcome = await main().submit({ id: view, event, body: text, anyway });
+    const outcome = await main().submit({ id: view, event, body: text });
     switch (outcome.kind) {
       case 'submitted':
-        // The toast comes with what main says of it, for every view of the pull request.
-        if (reviewStore.getState().dialog?.view === view)
-          reviewStore.setState({ dialog: undefined });
+        // The toast, where there is one, comes with what main says of it, for every view of the
+        // pull request.
+        reached(view, outcome.event);
         endUploads(summaryBox(view));
         break;
       case 'refused':
@@ -225,15 +263,70 @@ export async function submit(anyway = false): Promise<void> {
   }
 }
 
-/** Takes what main says of submitting from a view: a review submitted closes its dialog, with a toast. */
+/**
+ * Looks again whether the review sent from the dialog, whose answer was lost, was submitted, as
+ * its "Check again" does once Lo couldn't tell: nothing is sent, and the button is at work until
+ * main says what the look found.
+ */
+export function checkAgain(): void {
+  const { dialog } = reviewStore.getState();
+  if (!dialog || submitting.get(dialog.view) !== 'unknown') return;
+  const { view } = dialog;
+  changeDialog(view, { checking: true });
+  const stop = () => {
+    // Main looks only while it can't tell; if it didn't, the button is its own again.
+    if (submitting.get(view) === 'unknown') changeDialog(view, { checking: false });
+  };
+  main()
+    .check({ id: view })
+    .then(stop, (error: unknown) => {
+      console.error("Lo couldn't ask to look for a review again:", error);
+      stop();
+    });
+}
+
+/** Does what the dialog's main button says, as a click or `⌘⏎` does. */
+export function runPrimary(): void {
+  const does = stepNow()?.primary.does;
+  if (does === 'submit') void submit();
+  else if (does === 'check') checkAgain();
+  else if (does === 'close') closeDialog();
+}
+
+/**
+ * A review submitted from view `view` with verdict `event` ends in its dialog, if it's open there:
+ * an approval stays to show it's done, and any other closes it. Whether the dialog shows it.
+ */
+function reached(view: string, event: ReviewEventRow | null): boolean {
+  const { dialog } = reviewStore.getState();
+  if (dialog?.view !== view) return false;
+  if (dialog.done !== undefined) return true;
+  if (event === 'APPROVE') {
+    changeDialog(view, { done: event, busy: false, checking: false, refusal: undefined });
+    return true;
+  }
+  reviewStore.setState({ dialog: undefined });
+  return false;
+}
+
+/**
+ * Takes what main says of submitting from a view. A review submitted ends in its dialog, if it's
+ * open: an approval shows it's done there, with no toast. Any other closes it, and a toast says what
+ * it did, as it does once the dialog was closed before the end.
+ */
 export function heard(submission: Submission): void {
   takeSubmission(submission);
+  const { id } = submission;
+  if (submission.state !== 'checking') changeDialog(id, { checking: false });
   if (!submission.submitted) return;
   // The summary went with it, and its files.
-  endUploads(summaryBox(submission.id));
+  endUploads(summaryBox(id));
+  const { event } = submission.submitted;
+  if (reached(id, event)) return;
+  // Another view of the pull request shows the approval done already.
   const { dialog } = reviewStore.getState();
-  if (dialog?.view === submission.id) reviewStore.setState({ dialog: undefined });
-  announce(toastOf(submission.submitted.event, submission.number));
+  if (dialog?.done !== undefined && dialog.number === submission.number) return;
+  announce(toastOf(event, submission.number));
 }
 
 /** Shows revision `head` of view `view`'s pull request, whole, as "Show r3" does. */
@@ -244,5 +337,5 @@ export function showRevision(view: string, head: string): void {
     pull?.newer?.toLowerCase() === head.toLowerCase()
       ? tabs().reload({ id: view })
       : revisionsClient().compare({ id: view, from: null, to: head });
-  asked.catch((error: unknown) => notify('Show the revision', messageOf(error)));
+  asked.catch((error: unknown) => refuse(messageOf(error)));
 }

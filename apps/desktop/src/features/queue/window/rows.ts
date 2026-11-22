@@ -108,25 +108,34 @@ export function tableState(state: EntryState): TableEntry['state'] {
   }
 }
 
-/** A length of time in minutes, as the table gives it: "14 min", "2 h", "1 h 5 min". */
-function minutes(count: number): string {
-  if (count < 60) return `${count} min`;
-  const hours = Math.floor(count / 60);
-  const rest = count % 60;
-  return rest === 0 ? `${hours} h` : `${hours} h ${rest} min`;
+const MINUTE = 60_000;
+const HOUR = 60 * MINUTE;
+const DAY = 24 * HOUR;
+
+/** A length of time in its largest whole unit only: "40 s", "14 min", "2 h", "4 d". */
+export function lengthOf(ms: number): string {
+  const at = Math.max(0, ms);
+  if (at < MINUTE) return `${Math.floor(at / 1000)} s`;
+  if (at < HOUR) return `${Math.floor(at / MINUTE)} min`;
+  if (at < DAY) return `${Math.floor(at / HOUR)} h`;
+  return `${Math.floor(at / DAY)} d`;
 }
 
 /** How long an entry has been in the queue, from when it joined: "14 min", or "—" when unknown. */
 export function inQueue(enqueuedAt: number | null, now: number): string {
   if (enqueuedAt === null) return '—';
-  const count = Math.floor(Math.max(0, now - enqueuedAt) / 60_000);
-  return count < 1 ? '<1 min' : minutes(count);
+  return lengthOf(now - enqueuedAt);
 }
 
-/** When an entry should merge, from GitHub's estimate in seconds: "~2 min", or "—" without one. */
+/** GitHub's estimate, in seconds, as an estimate says it: "about 2 min", a minute at least. */
+function about(seconds: number): string {
+  return `about ${lengthOf(Math.max(1, Math.round(seconds / 60)) * MINUTE)}`;
+}
+
+/** When an entry should merge, from GitHub's estimate in seconds: "about 2 min", or "—" without one. */
 export function toMerge(seconds: number | null): string {
   if (seconds === null) return '—';
-  return `~${minutes(Math.max(1, Math.round(seconds / 60)))}`;
+  return about(seconds);
 }
 
 function tableEntry(entry: Entry, now: number): TableEntry {
@@ -135,7 +144,7 @@ function tableEntry(entry: Entry, now: number): TableEntry {
     position: entry.position,
     title: entry.title,
     number: entry.number,
-    author: entry.author ?? 'A deleted account',
+    author: entry.author ?? 'Deleted account',
     state: tableState(entry.state),
     inQueue: inQueue(entry.enqueuedAt, now),
     merges: toMerge(entry.timeToMerge),
@@ -173,21 +182,15 @@ export function itemsOf(entries: readonly Entry[], now: number): QueueItem[] {
 }
 
 /**
- * What a pull request waiting to join waits for before GitHub adds it: an approval, its checks, or
- * nothing more, in which case GitHub adds it shortly.
+ * What a pull request waiting to join waits on before GitHub adds it, as its state: an approval,
+ * its checks, both, or nothing more, which "Waiting to join" says already.
  */
 export function waitsFor({ review, checks }: Pick<WaitingEntry, 'review' | 'checks'>): string {
-  const approval = review === 'required' || review === 'changesRequested';
-  const check =
-    checks === 'failed'
-      ? 'its failed checks pass'
-      : checks === 'running'
-        ? 'checks pass'
-        : undefined;
-  if (approval && check !== undefined) return `when approved and ${check}`;
-  if (approval) return 'when approved';
-  if (check !== undefined) return `when ${check}`;
-  return 'when GitHub adds it';
+  const facts = [
+    ...(review === 'required' || review === 'changesRequested' ? ['needs approval'] : []),
+    ...(checks === 'failed' ? ['checks failed'] : checks === 'running' ? ['checks running'] : []),
+  ];
+  return facts.join(' · ');
 }
 
 /** Those waiting to join as the table lists them. */
@@ -196,21 +199,23 @@ export function waitingOf(waiting: readonly WaitingEntry[]): TableWaiting[] {
     key: waitingKey(entry.number),
     title: entry.title,
     number: entry.number,
-    author: entry.author ?? 'A deleted account',
+    author: entry.author ?? 'Deleted account',
     yours: entry.yours,
     until: waitsFor(entry),
   }));
 }
 
-/** How long ago `at` was, from `now`: "just now", "3 min ago", "2 h ago", "3 days ago". */
+/**
+ * How long ago `at` was, from `now`, in its largest whole unit: "just now", "3 min ago", "2 h ago",
+ * "3 d ago"; and more than 30 days ago, the date: "Nov 12", with its year in another year.
+ */
 export function ago(at: number, now: number): string {
-  const count = Math.floor(Math.max(0, now - at) / 60_000);
-  if (count < 1) return 'just now';
-  if (count < 60) return `${count} min ago`;
-  const hours = Math.floor(count / 60);
-  if (hours < 24) return `${hours} h ago`;
-  const days = Math.floor(hours / 24);
-  return `${days} ${days === 1 ? 'day' : 'days'} ago`;
+  const since = Math.max(0, now - at);
+  if (since < MINUTE) return 'just now';
+  if (since <= 30 * DAY) return `${lengthOf(since)} ago`;
+  const date = new Date(at);
+  const year = date.getFullYear() === new Date(now).getFullYear() ? undefined : 'numeric';
+  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year });
 }
 
 /** Why a pull request left, as the table says it, its failed check's run opening with `open`. */
@@ -236,7 +241,8 @@ function reasonOf(left: LeftEntry, open: (url: string) => void): LeftReason {
     case 'removed':
       return { kind: 'removed', by: why.by ?? undefined };
     case 'other':
-      return { kind: 'other', word: why.reason ?? 'GitHub gave no reason' };
+      // Without GitHub's word, why isn't known.
+      return why.reason === null ? { kind: 'unknown' } : { kind: 'other', word: why.reason };
     default:
       why satisfies never;
       return { kind: 'unknown' };
@@ -263,15 +269,15 @@ export function leftOf(
   }));
 }
 
-/** A queue's method, as its settings line says it. */
+/** A queue's method, as its settings line says it: by its name. */
 function methodWords(method: QueueMethod): string {
   switch (method) {
     case 'merge':
-      return 'merge commits';
+      return 'Merge commit';
     case 'squash':
-      return 'squash';
+      return 'Squash';
     case 'rebase':
-      return 'rebase';
+      return 'Rebase';
     default:
       method satisfies never;
       return method;
@@ -279,38 +285,31 @@ function methodWords(method: QueueMethod): string {
 }
 
 /**
- * The queue's settings, as the header says them after the branch: "squash, groups of up to 5 ·
- * next merges in about 6 min". Nothing for what the account may not read, or GitHub didn't
+ * The queue's settings, as the header says them after the branch: "Squash · groups of up to 5 ·
+ * next merge in about 6 min". Nothing for what the account may not read, or GitHub didn't
  * estimate. The method is the queue's own: every entry merges with it, those that joined with
  * auto-merge on included.
  */
 export function settingsOf(read: QueueRead | undefined): string | undefined {
   if (read?.kind !== 'queue') return undefined;
-  const how = [
+  const parts = [
     ...(read.method === null ? [] : [methodWords(read.method)]),
     ...(read.groups === null
       ? []
       : [read.groups === 1 ? 'one at a time' : `groups of up to ${read.groups}`]),
-  ].join(', ');
-  const next =
-    read.nextMerge === null
-      ? undefined
-      : `next merges in about ${minutes(Math.max(1, Math.round(read.nextMerge / 60)))}`;
-  const parts = [how, next].filter((part) => part !== undefined && part !== '');
+    ...(read.nextMerge === null ? [] : [`next merge in ${about(read.nextMerge)}`]),
+  ];
   return parts.length === 0 ? undefined : parts.join(' · ');
 }
 
-/** When the queue was last read, as the status bar says it: "Updated 10 s ago". */
+/** When the queue was last read from GitHub, as the status bar says it: "Checked 5 min ago". */
 export function updated(readAt: number, now: number): string {
-  const seconds = Math.floor(Math.max(0, now - readAt) / 1000);
-  if (seconds < 5) return 'Updated just now';
-  if (seconds < 60) return `Updated ${seconds} s ago`;
-  return `Updated ${minutes(Math.floor(seconds / 60))} ago`;
+  return `Checked ${ago(readAt, now)}`;
 }
 
-/** When Lo reads again after a failure, as a failure's note says it: "in 40 s". */
+/** When the queue is read again after a failure, counting down: "Retrying in 40 s.". */
 export function retryIn(retryAt: number | null, now: number): string | undefined {
   if (retryAt === null) return undefined;
   const seconds = Math.max(1, Math.ceil((retryAt - now) / 1000));
-  return seconds < 60 ? `in ${seconds} s` : `in ${minutes(Math.ceil(seconds / 60))}`;
+  return seconds < 60 ? `Retrying in ${seconds} s.` : `Retrying in ${Math.ceil(seconds / 60)} min.`;
 }

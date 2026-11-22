@@ -222,37 +222,59 @@ describe('StackTree', () => {
     click(row(alone, 'a'));
   });
 
-  it('says how many layers and how Lo found them', () => {
+  it('says what kind of stack and how many layers, with how Lo found them in its tooltip', () => {
     const heads = (
       found: StackTreeProps['found'],
       layers: StackTreeLayer[] = LAYERS,
       githubStack = false,
-    ) =>
-      render(<StackTree {...props({ found, layers, githubStack })} />)
-        .querySelector('section > div')
-        ?.textContent?.replace('Stack', '');
-    expect(heads(['base'])).toBe('5 layers · by base branch');
-    expect(heads(['commits'])).toBe('5 layers · by shared commits');
-    expect(heads(['commits', 'base'])).toBe('5 layers · by base branch and shared commits');
-    expect(heads(['github'], LAYERS.slice(0, 4), true)).toBe('GitHub stack · 4 layers');
-    expect(heads(undefined, LAYERS.slice(0, 1), true)).toBe('GitHub stack · 1 layer');
+    ) => {
+      const head = render(<StackTree {...props({ found, layers, githubStack })} />).querySelector(
+        'section > div',
+      );
+      return [
+        head?.textContent?.replace('Stack', ''),
+        head?.querySelector('[title]')?.getAttribute('title') ?? null,
+      ];
+    };
+    expect(heads(['base'])).toEqual(['Branch stack · 5 layers', 'By base branch']);
+    expect(heads(['commits'])).toEqual(['Branch stack · 5 layers', 'By shared commits']);
+    expect(heads(['commits', 'base'])).toEqual([
+      'Branch stack · 5 layers',
+      'By base branch and shared commits',
+    ]);
+    expect(heads(['github'], LAYERS.slice(0, 4), true)).toEqual(['GitHub stack · 4 layers', null]);
+    expect(heads(undefined, LAYERS.slice(0, 1), true)).toEqual(['GitHub stack · 1 layer', null]);
     // Linked by GitHub stack alone, through a merged layer, but not every layer is in it.
-    expect(heads(['github'], LAYERS.slice(0, 2))).toBe('2 layers · by GitHub stack');
+    expect(heads(['github'], LAYERS.slice(0, 2))).toEqual([
+      'Branch stack · 2 layers',
+      'By GitHub stack',
+    ]);
     // A GitHub stack along one path of a stack that branches, and other layers off it.
-    expect(heads(['base', 'github'])).toBe('5 layers · by GitHub stack and base branch');
-    expect(heads(['github', 'commits'])).toBe('5 layers · by GitHub stack and shared commits');
-    expect(heads(['commits', 'base', 'github'])).toBe(
-      '5 layers · by GitHub stack, base branch and shared commits',
+    expect(heads(['base', 'github'])[1]).toBe('By GitHub stack and base branch');
+    expect(heads(['github', 'commits'])[1]).toBe('By GitHub stack and shared commits');
+    expect(heads(['commits', 'base', 'github'])[1]).toBe(
+      'By GitHub stack, base branch and shared commits',
     );
     // A layer alone, such as one that needs a rebase, was found by nothing.
-    expect(heads(undefined, LAYERS.slice(0, 1))).toBe('1 layer');
+    expect(heads(undefined, LAYERS.slice(0, 1))).toEqual(['Branch stack · 1 layer', null]);
+  });
+
+  it('keeps its head to one line, cutting its words before its controls', () => {
+    const host = render(
+      <StackTree {...props({ actions: <button type="button">Next layer</button> })} />,
+    );
+    const head = host.querySelector('section > div');
+    expect(head?.className).toContain('whitespace-nowrap');
+    expect(head?.querySelector('[title]')?.className).toContain('truncate');
+    expect(head?.lastElementChild?.textContent).toBe('Next layer');
+    expect(head?.lastElementChild?.className).toContain('flex-none');
   });
 
   it('says V-LINE in its head, in place of how many layers, while a run is chosen', () => {
     const host = render(<StackTree {...props({ choosing: true })} />);
     expect(host.querySelector('section > div')?.textContent).toBe('StackV-LINE');
     rerender(host, <StackTree {...props({ choosing: false })} />);
-    expect(host.querySelector('section > div')?.textContent).toContain('5 layers');
+    expect(host.querySelector('section > div')?.textContent).toContain('Branch stack · 5 layers');
   });
 
   describe('a row', () => {
@@ -286,10 +308,10 @@ describe('StackTree', () => {
       expect(said(row(host, 'e'))).toContain('Changes requested');
       // The checks are an icon alone, so a row keeps to two lines; its name says what it shows.
       const checks = (key: string) => row(host, key).querySelector('[data-checks]');
-      expect(checks('a')?.getAttribute('aria-label')).toBe('Checks passing');
-      expect(checks('a')?.getAttribute('title')).toBe('Checks passing');
+      expect(checks('a')?.getAttribute('aria-label')).toBe('Checks passed');
+      expect(checks('a')?.getAttribute('title')).toBe('Checks passed');
       expect(checks('c')?.getAttribute('aria-label')).toBe('Checks running');
-      expect(checks('e')?.getAttribute('aria-label')).toBe('Checks failing');
+      expect(checks('e')?.getAttribute('aria-label')).toBe('Checks failed');
       expect(checks('a')?.getAttribute('role')).toBe('img');
       expect(checks('a')?.querySelector('svg')).toBeTruthy();
       expect(checks('a')?.textContent).toBe('');
@@ -351,19 +373,19 @@ describe('StackTree', () => {
         'Queued, 111th',
       ]);
       const other = render(<StackTree {...props()} />);
-      expect(said(row(other, 'd'))).toContain('Needs rebase');
-      expect(said(row(other, 'a'))).not.toContain('Needs rebase');
+      expect(said(row(other, 'd'))).toContain('Needs a rebase');
+      expect(said(row(other, 'a'))).not.toContain('Needs a rebase');
     });
 
     it('marks whether it has an overview: current, out of date, none or one that cannot be shown', () => {
       const host = render(<StackTree {...props()} />);
       const marks = (key: string) => row(host, key).querySelector('[data-overview]');
       expect(marks('a')?.getAttribute('aria-label')).toBe('Overview');
-      expect(marks('c')?.getAttribute('aria-label')).toBe('Overview, out of date');
+      expect(marks('c')?.getAttribute('aria-label')).toBe('Overview · out of date');
       expect(marks('c')?.classList.contains('lo-ovmark--stale')).toBe(true);
       expect(marks('d')?.getAttribute('aria-label')).toBe('No overview yet');
       expect(marks('d')?.classList.contains('lo-ovmark--none')).toBe(true);
-      expect(marks('e')?.getAttribute('aria-label')).toBe("Overview, can't be shown");
+      expect(marks('e')?.getAttribute('aria-label')).toBe('Overview · can’t show');
       expect(marks('e')?.classList.contains('lo-ovmark--error')).toBe(true);
       // A layer that can't have one shows no mark at all.
       const [first] = LAYERS;
@@ -376,13 +398,12 @@ describe('StackTree', () => {
 
     it('counts the files viewed, with a plus when only some were counted', () => {
       const host = render(<StackTree {...props()} />);
-      expect(said(row(host, 'c'))).toContain('41+/214');
-      expect(
-        row(host, 'c').querySelector('[title="At least 41 of 214 files viewed"]'),
-      ).toBeTruthy();
-      expect(said(row(host, 'a'))).toContain('12/12');
+      expect(said(row(host, 'c'))).toContain('41+ / 214');
+      const some = row(host, 'c').querySelector('[role="img"][title="41+ / 214 files viewed"]');
+      expect(some?.getAttribute('aria-label')).toBe('41+ / 214 files viewed');
+      expect(said(row(host, 'a'))).toContain('12 / 12');
       expect(said(row(host, 'a'))).not.toContain('12+');
-      expect(row(host, 'a').querySelector('[title="12 of 12 files viewed"]')).toBeTruthy();
+      expect(row(host, 'a').querySelector('[title="12 / 12 files viewed"]')).toBeTruthy();
     });
 
     it('counts its unresolved threads while it has any, with a plus when only some were read', () => {
@@ -401,7 +422,7 @@ describe('StackTree', () => {
       const one = row(host, 'a').querySelector('[role="img"][aria-label="1 unresolved thread"]');
       expect(one?.textContent).toBe('1');
       expect(one?.hasAttribute('data-open')).toBe(true);
-      const some = row(host, 'b').querySelector('[aria-label="At least 3 unresolved threads"]');
+      const some = row(host, 'b').querySelector('[aria-label="3+ unresolved threads"]');
       expect(some?.textContent).toBe('3+');
       // None unresolved, or none read, shows nothing.
       expect(row(host, 'c').querySelector('[aria-label*="unresolved"]')).toBeNull();
@@ -612,13 +633,13 @@ describe('StackTree', () => {
       expect(branch.classList.contains('stack-branch')).toBe(true);
       expect(branch.classList.contains('stack-sprout')).toBe(true);
       expect(branch.querySelector('.stack-rail-sprout')).toBeTruthy();
-      expect(said(branch)).toContain('on #4819');
+      expect(said(branch)).toContain('Based on #4819');
       // The trunk is level one, and has no elbow.
       for (const key of ['a', 'b', 'c', 'd']) {
         expect(row(host, key).getAttribute('aria-level')).toBe('1');
         expect(row(host, key).classList.contains('stack-branch')).toBe(false);
         expect(row(host, key).classList.contains('stack-sprout')).toBe(false);
-        expect(said(row(host, key))).not.toContain(' on #');
+        expect(said(row(host, key))).not.toContain('Based on #');
       }
     });
 
@@ -794,7 +815,10 @@ describe('StackTree', () => {
                   </>
                 ),
               },
-              { key: 'busy', text: 'atlas-api has 1,342 open PRs.' },
+              {
+                key: 'busy',
+                text: 'Stacks are found among the 1,000 newest of 1,342 open pull requests.',
+              },
             ],
           })}
         />,
@@ -802,7 +826,7 @@ describe('StackTree', () => {
       const notes = [...host.querySelectorAll('[role="note"]')];
       expect(notes.map((each) => each.textContent)).toEqual([
         '#4824 needs a rebase. #2260 was squash-merged.',
-        'atlas-api has 1,342 open PRs.',
+        'Stacks are found among the 1,000 newest of 1,342 open pull requests.',
       ]);
       expect(notes[0]?.querySelector('strong')?.textContent).toBe('#4824 needs a rebase.');
       // Under the tree, not inside it.
@@ -812,6 +836,23 @@ describe('StackTree', () => {
           tree(host).compareDocumentPosition(each) & Node.DOCUMENT_POSITION_FOLLOWING,
         ).toBeTruthy();
       }
+    });
+
+    it('draws no frame around a note that has one of its own', () => {
+      const host = render(
+        <StackTree
+          {...props({
+            notes: [
+              { key: 'framed', text: 'Checking merged pull requests…' },
+              { key: 'bare', text: <div role="alert">Couldn’t check</div>, bare: true },
+            ],
+          })}
+        />,
+      );
+      const [framed, bare] = host.querySelectorAll('[role="note"]');
+      expect(framed?.className).toContain('bg-hover');
+      expect(bare?.className).not.toContain('bg-hover');
+      expect(bare?.textContent).toBe('Couldn’t check');
     });
 
     it('has no note, and no callout, unless it is given one', () => {
@@ -824,11 +865,11 @@ describe('StackTree', () => {
     it('puts what it is given as a callout between the head and the rows', () => {
       const host = render(
         <StackTree
-          {...props({ callout: <button type="button">Make this a GitHub stack…</button> })}
+          {...props({ callout: <button type="button">Convert to GitHub stack…</button> })}
         />,
       );
       const offer = [...host.querySelectorAll('button')].find((each) =>
-        each.textContent?.startsWith('Make this a GitHub stack'),
+        each.textContent?.startsWith('Convert to GitHub stack'),
       );
       expect(offer).toBeTruthy();
       const head = host.querySelector('h2');

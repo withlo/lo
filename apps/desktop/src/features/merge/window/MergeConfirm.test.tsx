@@ -1,34 +1,41 @@
 // @vitest-environment jsdom
 // The merge's dialog, with main answered by a stand-in bridge: the confirmation states who merges,
-// how, into what and which revision; only a fresh `⏎` once it shows confirms, never a held one, the
-// press that opened it or one a field took; the merge goes on as main says, and once it merged the
-// dialog goes and a toast says so; a refusal says why and offers the newer push; and `Esc` before
-// confirming forgets the plan. Auto-merge's says what GitHub waits for and what a push would do; a
-// merge past the rules lists what it skips and goes only with the number typed, asked afresh each
-// time; and auto-merge GitHub won't turn on, as it can merge now, shows the merge in its place. A
-// GitHub stack's merge lists its layers, then how GitHub gets on with each, and offers the layer
-// above once they merged; a chain's lists each base branch Lo moves, then how each went, and a toast
-// says how its run ended.
+// how, into what and which revision, under one title and over one body from the check until it's
+// done, and only its foot and the line above it change. Only a fresh `⏎` once it shows confirms,
+// never a held one, the press that opened it or one a field took; its main button is busy while Lo
+// checks and while the merge runs, and "Cancel" turns to "Close" once it's sent. Once it merged the
+// dialog stays, saying so beside the mark's kiss, with "Done", and a toast says it only when the
+// dialog was closed before then. A refusal is a problem above the foot, which offers the newer
+// push, to check again or to try again; and `Esc` before confirming forgets the plan. Auto-merge's
+// says what GitHub waits for and what a push would do; a merge past the rules lists what it bypasses
+// and goes only with the number typed, asked afresh each time; and auto-merge GitHub won't turn on,
+// as it can merge now, shows the merge in its place. A GitHub stack's merge lists its layers, then
+// how GitHub gets on with each, and offers the layer above once they merged; a chain's lists each
+// base branch Lo moves, then how each went.
 
 import { act, type ReactNode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { beforeAll, beforeEach, expect, it, onTestFinished } from 'vitest';
 
-import { notice } from '../../../window/commands/notices.tsx';
+import { notice, notices, withdraw } from '../../../window/commands/notices.tsx';
 import { createRegistry } from '../../../window/commands/registry.ts';
 import { installBridge } from '../../../window/test/bridge.ts';
-import type { JobView, MergePlan, Named, Progress, Together } from '../contract.ts';
+import type { JobView, MergePlan, Named, Progress, Refusal, Together } from '../contract.ts';
 import feature from './index.ts';
 import { MergeConfirm } from './MergeConfirm.tsx';
 import { heardJob, newerFrom, typeNumber } from './merging.ts';
-import { merging, statuses } from './store.ts';
+import { merging, statuses, type MergeDialog } from './store.ts';
 
 const HEAD = 'a'.repeat(40);
 
 /** How main answers a confirmation: sent, unless a test says. */
 let confirming: () => unknown = () => ({ kind: 'sent' });
 
+/** How main answers a request for a plan: it can't plan one now. */
+const planning = () => ({ kind: 'refused', why: 'GitHub didn’t respond.' });
+
 const bridge = installBridge({
+  'merge.plan': () => planning(),
   'merge.confirm': () => confirming(),
   'merge.cancel': () => undefined,
   'merge.askAgain': () => undefined,
@@ -45,8 +52,9 @@ beforeAll(() => {
 beforeEach(() => {
   confirming = () => ({ kind: 'sent' });
   bridge.calls.length = 0;
-  merging.setState({ dialog: undefined, jobs: new Map(), seen: new Set() });
+  merging.setState({ dialog: undefined, jobs: new Map(), seen: new Set(), checking: new Set() });
   statuses.setState({ views: new Map() });
+  for (const note of notices()) withdraw(note.title, note.body);
 });
 
 function planOf(change: Partial<MergePlan> = {}): MergePlan {
@@ -87,6 +95,11 @@ function jobOf(plan: MergePlan, state: JobView['state']): JobView {
   };
 }
 
+/** The dialog once `plan` went. */
+function sentOf(plan: MergePlan): MergeDialog {
+  return { kind: 'sent', plan, note: undefined };
+}
+
 /** Draws `node` on the page, until the test ends. */
 function draw(node: ReactNode): HTMLElement {
   const host = document.createElement('div');
@@ -122,10 +135,62 @@ function dialog(): HTMLElement | null {
   return document.querySelector<HTMLElement>('[role="dialog"]');
 }
 
+function title(): string | undefined {
+  return dialog()?.querySelector('h2')?.textContent ?? undefined;
+}
+
+/** What `element` says, without what's hidden from a screen reader: a key's cap, a ring, a face. */
+function spoken(element: Element): string {
+  const copy = element.cloneNode(true);
+  if (!(copy instanceof Element)) return '';
+  for (const hidden of copy.querySelectorAll('[aria-hidden="true"]')) hidden.remove();
+  return copy.textContent;
+}
+
+/** The dialog's main button, last in its foot. */
+function primary(): HTMLButtonElement {
+  return [...dialog()!.querySelectorAll('button')].at(-1)!;
+}
+
+/** The buttons in the dialog's foot, as each reads, the main one last. */
+function footButtons(): HTMLButtonElement[] {
+  return [...primary().parentElement!.querySelectorAll('button')];
+}
+
+/** The foot, as it reads: "Checking…" for a main button that's checking. */
+function foot(): string[] {
+  return footButtons().map(spoken);
+}
+
+/** Presses the button in the foot that reads `label`. */
+function press(label: string): void {
+  act(() =>
+    footButtons()
+      .find((button) => spoken(button) === label)!
+      .click(),
+  );
+}
+
 /** What the dialog's main button says it's doing, while it's busy. */
 function working(): string | undefined {
   const face = dialog()?.querySelector('button[aria-busy="true"] > span > span:not([aria-hidden])');
   return face?.textContent ?? undefined;
+}
+
+/** The problem above the foot, as it reads: what failed, and why. */
+function problem(): { title: string | undefined; reason: string | undefined } | undefined {
+  const alert = dialog()?.querySelector('[role="alert"]');
+  if (!alert) return undefined;
+  const [what, why] = [...alert.querySelectorAll('p')].map((line) => line.textContent);
+  return { title: what, reason: why };
+}
+
+/** What the line above the foot says is done, beside the mark's kiss: nothing before then. */
+function doneSaid(): string | undefined {
+  const line = [...dialog()!.querySelectorAll('[role="status"]')].find(
+    (each) => each.previousElementSibling?.localName === 'svg',
+  );
+  return line?.textContent ?? undefined;
 }
 
 /** A key-down of `⏎`, made now, so stamped now. */
@@ -139,7 +204,7 @@ function confirms(): number {
 
 it('states the merge under one title from the check on, with only its button waiting', async () => {
   const plan = planOf();
-  const { id, number, login, kind, method, base, head, title } = plan;
+  const { id, number, login, kind, method, base, head, title: commit } = plan;
   draw(<MergeConfirm />);
   act(() =>
     merging.setState({
@@ -147,16 +212,17 @@ it('states the merge under one title from the check on, with only its button wai
         kind: 'planning',
         id,
         number,
-        label: 'Squash and merge',
+        label: 'Merge #138',
         title: 'Merge #138',
-        sketch: { id, number, login, kind, method, base, head, title, stack: false },
+        ask: { id, asked: 'merge', method, title: commit, message: '' },
+        sketch: { id, number, login, kind, method, base, head, title: commit, stack: false },
       },
     }),
   );
   await until(() => dialog() !== null);
   const box = dialog()!;
   const stated = () => ({
-    title: box.querySelector('h2')?.textContent,
+    title: title(),
     facts: [...box.querySelectorAll('dt, dd')].map((each) => each.textContent),
   });
   const checking = stated();
@@ -169,17 +235,19 @@ it('states the merge under one title from the check on, with only its button wai
     'Into',
     'main',
     'Revision',
-    'aaaaaaa of #138, the one on screen',
+    'aaaaaaa',
     'Commit',
     'Rate limit by cost',
   ]);
   expect(working()).toBe('Checking…');
+  expect(foot()).toEqual(['Cancel', 'Checking…']);
   // The plan comes: the same title over the same rows, and the button can be pressed.
   act(() =>
     merging.setState({ dialog: { kind: 'confirm', plan, note: undefined, sending: false } }),
   );
   expect(stated()).toEqual(checking);
   expect(working()).toBeUndefined();
+  expect(foot()).toEqual(['Cancel', 'Merge #138']);
 });
 
 it('states who merges, how, into what and which revision, and nothing of what it won’t do', async () => {
@@ -191,23 +259,13 @@ it('states who merges, how, into what and which revision, and nothing of what it
   );
   await until(() => dialog() !== null);
   const box = dialog()!;
-  expect(box.textContent).toContain('Merge #138');
-  expect([...box.querySelectorAll('dt')].map((each) => each.textContent)).toEqual([
-    'As',
-    'Method',
-    'Into',
-    'Revision',
-    'Commit',
-  ]);
+  const labels = () => [...box.querySelectorAll('dt')].map((each) => each.textContent);
+  expect(title()).toBe('Merge #138');
+  expect(labels()).toEqual(['As', 'Method', 'Into', 'Revision', 'Commit']);
   const values = [...box.querySelectorAll('dd')].map((each) => each.textContent);
-  expect(values.slice(1)).toEqual([
-    'Squash',
-    'main',
-    'aaaaaaa of #138, the one on screen',
-    'Rate limit by cost',
-  ]);
+  expect(values.slice(1)).toEqual(['Squash', 'main', 'aaaaaaa', 'Rate limit by cost']);
   expect(box.textContent).not.toContain('Lo deletes no branches');
-  expect(box.textContent).toContain('Squash and merge');
+  expect(foot()).toEqual(['Cancel', 'Merge #138']);
 
   // Into a merge queue, whose settings choose the method.
   act(() =>
@@ -220,13 +278,13 @@ it('states who merges, how, into what and which revision, and nothing of what it
       },
     }),
   );
-  expect(box.textContent).toContain('Add #138 to merge queue');
-  expect(box.textContent).toContain('The queue’s settings choose the method and the message.');
-  expect(box.textContent).not.toContain('Method');
-  expect(box.textContent).toContain('Add to merge queue');
+  expect(title()).toBe('Add #138 to merge queue');
+  expect(labels()).toEqual(['As', 'Into', 'Revision']);
+  expect(box.textContent).toContain('Method set by the merge queue');
+  expect(foot()).toEqual(['Cancel', 'Add to merge queue']);
 });
 
-it('confirms only on a fresh `⏎` once it shows, then follows the merge until a toast says it merged', async () => {
+it('confirms only on a fresh `⏎` once it shows, then follows the merge with its button at work', async () => {
   const plan = planOf();
   draw(<MergeConfirm />);
   // The press that opened it went down before it showed.
@@ -259,40 +317,36 @@ it('confirms only on a fresh `⏎` once it shows, then follows the merge until a
   expect(bridge.calls.find(([channel]) => channel === 'merge.confirm')?.[1]).toEqual({
     key: plan.key,
   });
+  // Sent, "Cancel" is "Close", and the button says it's merging.
+  expect(foot()).toEqual(['Close', 'Merging…']);
   expect(working()).toBe('Merging…');
-  // What was confirmed stays in view while it's sent, so the button doesn't move.
+  // What was confirmed stays in view while it's sent, under the same title.
   const facts = () => [...dialog()!.querySelectorAll('dd')].map((each) => each.textContent);
   const confirmed = facts();
   expect(confirmed).toContain('Squash');
+  expect(title()).toBe('Merge #138');
 
   act(() => heardJob(jobOf(plan, { kind: 'pending', trouble: null })));
-  // The button says it, and no sentence beside it does.
+  // The button says it, and no line beside it does.
   expect(working()).toBe('Merging…');
   expect(facts()).toEqual(confirmed);
-  expect(dialog()?.textContent).not.toContain('GitHub is merging it');
+  expect(dialog()?.querySelector('[role="status"]')).toBeNull();
   // Nothing more is confirmed, however often `⏎` is pressed.
   act(() => {
     dialog()!.dispatchEvent(enter());
   });
   expect(confirms()).toBe(1);
-
-  act(() => heardJob(jobOf(plan, { kind: 'merged' })));
-  expect(merging.getState().dialog).toBeUndefined();
-  expect(notice()).toMatchObject({ title: 'Merged #138 into main', done: true });
 });
 
 it('keeps what was confirmed once it’s done, with Done as the one button, which `⏎` presses', async () => {
   const plan = planOf();
   draw(<MergeConfirm />);
-  act(() => merging.setState({ dialog: { kind: 'sent', plan } }));
+  act(() => merging.setState({ dialog: sentOf(plan) }));
   await until(() => dialog() !== null);
-  // A merge the tab's watch follows leaves its dialog open.
-  act(() => heardJob({ ...jobOf(plan, { kind: 'merged' }), watch: true }));
-  const buttons = [...dialog()!.querySelectorAll('button')];
-  expect(buttons).toHaveLength(1);
-  expect(buttons[0]?.textContent).toContain('Done');
+  act(() => heardJob(jobOf(plan, { kind: 'merged' })));
+  expect(foot()).toEqual(['Done']);
   expect([...dialog()!.querySelectorAll('dd')].map((each) => each.textContent)).toContain('Squash');
-  await until(() => document.activeElement === buttons[0]);
+  await until(() => document.activeElement === primary());
   await later();
   act(() => {
     dialog()!.dispatchEvent(enter());
@@ -300,27 +354,71 @@ it('keeps what was confirmed once it’s done, with Done as the one button, whic
   expect(merging.getState().dialog).toBeUndefined();
 });
 
-it('says why main refused it, and offers the newer push', async () => {
+it('stays open once the merge it shows is done, saying so beside the mark’s kiss, with no toast', async () => {
+  const plan = planOf({ key: '00000000-0000-4000-8000-000000000005' });
+  draw(<MergeConfirm />);
+  act(() => merging.setState({ dialog: sentOf(plan) }));
+  act(() => heardJob(jobOf(plan, { kind: 'pending', trouble: null })));
+  await until(() => dialog() !== null);
+  expect(doneSaid()).toBeUndefined();
+
+  act(() => heardJob(jobOf(plan, { kind: 'merged' })));
+  expect(merging.getState().dialog?.kind).toBe('sent');
+  expect(title()).toBe('Merge #138');
+  expect(doneSaid()).toBe('Merged #138');
+  expect(foot()).toEqual(['Done']);
+  // The dialog says it, so no toast says it again.
+  expect(notices()).toEqual([]);
+});
+
+it('says in a toast that the merge ended, once its dialog was closed before then', async () => {
+  const plan = planOf({ key: '00000000-0000-4000-8000-000000000006' });
+  draw(<MergeConfirm />);
+  act(() => merging.setState({ dialog: sentOf(plan) }));
+  act(() => heardJob(jobOf(plan, { kind: 'pending', trouble: null })));
+  await until(() => dialog() !== null);
+  press('Close');
+  expect(merging.getState().dialog).toBeUndefined();
+  // It goes on, and nothing is said until it ends.
+  expect(notices()).toEqual([]);
+
+  act(() => heardJob(jobOf(plan, { kind: 'merged' })));
+  expect(notice()).toEqual({ title: 'Merged #138', body: '', done: true });
+});
+
+/** The dialog after main refused `plan`'s merge as it was confirmed, for `refusal`. */
+function refusedOf(plan: MergePlan, refusal: Refusal): MergeDialog {
+  return { kind: 'refused', plan, refusal, note: undefined };
+}
+
+/** Main's refusal for a newer push than the one on screen, to `to` once GitHub names it. */
+function newerPush(to: string | null): Refusal {
+  return {
+    kind: 'newerPush',
+    text: 'This revision is out of date.',
+    rules: [],
+    until: null,
+    newer: { from: HEAD, to },
+  };
+}
+
+it('says why main refused it as a problem, and offers the newer push once Lo has read it', async () => {
   const plan = planOf();
   draw(<MergeConfirm />);
-  act(() =>
-    merging.setState({
-      dialog: {
-        kind: 'refused',
-        plan,
-        refusal: {
-          kind: 'newerPush',
-          text: '#138 has a newer push than the one on screen, so Lo didn’t merge.',
-          rules: [],
-          until: null,
-          newer: { from: HEAD, to: 'b'.repeat(40) },
-        },
-      },
-    }),
-  );
+  act(() => merging.setState({ dialog: refusedOf(plan, newerPush(null)) }));
   await until(() => dialog() !== null);
-  expect(dialog()?.textContent).toContain('#138 has a newer push than the one on screen');
-  expect(dialog()?.textContent).toContain('See the newer push');
+  expect(title()).toBe('Merge #138');
+  expect(problem()).toEqual({
+    title: 'Couldn’t merge #138',
+    reason: 'This revision is out of date.',
+  });
+  // Lo hasn't read the newer push yet, so its button waits.
+  expect(foot()).toEqual(['Close', 'Show latest']);
+  expect(primary().getAttribute('aria-busy')).toBe('true');
+
+  act(() => merging.setState({ dialog: refusedOf(plan, newerPush('b'.repeat(40))) }));
+  expect(foot()).toEqual(['Close', 'Show latest']);
+  expect(primary().hasAttribute('aria-busy')).toBe(false);
 });
 
 it('forgets the plan on `Esc` before it’s confirmed', async () => {
@@ -357,7 +455,7 @@ it('offers the newer push a refusal names, or one Lo read since a refusal that n
   });
 });
 
-it('is busy once confirmed, and `Esc` then cancels it in main', async () => {
+it('is busy checking once confirmed, and `Esc` then cancels it in main', async () => {
   const plan = planOf();
   let answer: ((confirmed: unknown) => void) | undefined;
   confirming = () => new Promise((resolve) => (answer = resolve));
@@ -370,7 +468,9 @@ it('is busy once confirmed, and `Esc` then cancels it in main', async () => {
   act(() => {
     dialog()!.dispatchEvent(enter());
   });
-  await until(() => working() === 'Merging…');
+  await until(() => working() === 'Checking…');
+  // Main checks it again before anything is sent, so it can still be cancelled.
+  expect(foot()).toEqual(['Cancel', 'Checking…']);
 
   act(() => {
     dialog()!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
@@ -380,15 +480,14 @@ it('is busy once confirmed, and `Esc` then cancels it in main', async () => {
     key: plan.key,
   });
 
-  // Had main sent it before the cancel reached it, the reader is told it went.
+  // Had main sent it before the cancel reached it, it goes on, with the dialog closed.
   await act(async () => {
     answer?.({ kind: 'sent' });
     await Promise.resolve();
   });
-  await until(() => notice()?.body.startsWith('Lo had sent') === true);
-  expect(notice()).toMatchObject({
-    body: 'Lo had sent #138’s merge already. The tab shows how it ends.',
-  });
+  await later();
+  expect(merging.getState().dialog).toBeUndefined();
+  expect(notices()).toEqual([]);
 });
 
 it('draws the base in the title without bidi controls', async () => {
@@ -397,45 +496,45 @@ it('draws the base in the title without bidi controls', async () => {
     merging.setState({
       dialog: {
         kind: 'confirm',
-        plan: planOf({ base: 'main\u202Eevil' }),
+        plan: planOf({ base: 'main‮evil' }),
         note: undefined,
         sending: false,
       },
     }),
   );
   await until(() => dialog() !== null);
-  expect(dialog()?.textContent).not.toMatch(/[\u202A-\u202E\u2066-\u2069]/);
+  expect(dialog()?.textContent).not.toMatch(/[‪-‮⁦-⁩]/);
 });
 
-it('offers to ask GitHub again when Lo can’t tell how the last merge went, and goes back', async () => {
+it('offers to check again when Lo can’t tell how the last merge went, busy while it looks, and goes back', async () => {
   const plan = planOf();
   draw(<MergeConfirm />);
   act(() =>
     merging.setState({
-      dialog: {
-        kind: 'refused',
-        plan,
-        refusal: {
-          kind: 'unsettled',
-          text: 'Lo can’t tell whether #138 merged.',
-          rules: [],
-          until: null,
-          newer: null,
-        },
-      },
+      dialog: refusedOf(plan, {
+        kind: 'unsettled',
+        text: 'Merge not confirmed',
+        rules: [],
+        until: null,
+        newer: null,
+      }),
     }),
   );
   await until(() => dialog() !== null);
-  expect(dialog()?.textContent).toContain('Lo can’t tell whether #138 merged.');
-  expect(dialog()?.textContent).toContain('Ask GitHub again');
+  expect(title()).toBe('Merge #138');
+  expect(problem()?.title).toBe('Merge not confirmed');
+  expect(foot()).toEqual(['Close', 'Check again']);
   await later();
   act(() => {
     dialog()!.dispatchEvent(enter());
   });
+  // It only looks: nothing is sent again.
+  expect(working()).toBe('Checking…');
   await until(() => merging.getState().dialog === undefined);
   expect(bridge.calls.find(([channel]) => channel === 'merge.askAgain')?.[1]).toEqual({
     key: plan.key,
   });
+  expect(confirms()).toBe(0);
 });
 
 /**
@@ -470,16 +569,16 @@ it('turning on auto-merge says what GitHub waits for, and what a push before the
   );
   await until(() => dialog() !== null);
   const box = dialog()!;
-  expect(box.textContent).toContain('Turn on auto-merge');
+  expect(title()).toBe('Turn on auto-merge');
   expect(box.textContent).toContain(
-    'GitHub squashes #138 into main once e2e (chromium) and typecheck pass.',
+    'GitHub merges #138 into main once e2e (chromium) and typecheck pass.',
   );
   expect(box.textContent).toContain(
-    'A push before it merges would merge with the approvals already given.',
+    'A commit pushed before it merges will merge with the same approvals.',
   );
-  expect(box.textContent).toContain('Merge when ready');
+  expect(foot()).toEqual(['Cancel', 'Turn on auto-merge']);
 
-  // On a branch with a merge queue, GitHub adds it to the queue once they pass.
+  // On a branch with a merge queue, it joins the queue once they pass.
   act(() =>
     merging.setState({
       dialog: {
@@ -499,13 +598,15 @@ it('turning on auto-merge says what GitHub waits for, and what a push before the
     }),
   );
   expect(box.textContent).toContain(
-    'GitHub adds #138 to the merge queue for e4/queued once e2e (chromium) and typecheck pass.',
+    '#138 joins the merge queue for e4/queued once e2e (chromium) and typecheck pass.',
   );
-  expect(box.textContent).toContain(
-    'The queue’s settings choose the method and the message: squash.',
-  );
-  expect(box.textContent).not.toContain('A push before it merges');
-  expect(box.textContent).not.toContain('Method');
+  expect(box.textContent).toContain('Squash, set by the merge queue');
+  expect(box.textContent).not.toContain('A commit pushed before it merges');
+  expect([...box.querySelectorAll('dt')].map((each) => each.textContent)).toEqual([
+    'As',
+    'Into',
+    'Revision',
+  ]);
 });
 
 it('merges past the rules only with the number typed, which it asks for afresh when it asks again', async () => {
@@ -516,15 +617,15 @@ it('merges past the rules only with the number typed, which it asks for afresh w
   );
   await until(() => dialog() !== null);
   const box = dialog()!;
-  expect(box.textContent).toContain('Merge #138 without the rules');
-  expect(box.textContent).toContain('You can bypass main’s rules in rozed-dev/e2e.');
-  expect(box.textContent).toContain('This skips:');
-  expect(box.textContent).toContain('2 required checks');
+  expect(title()).toBe('Bypass rules and merge');
+  expect(box.textContent).toContain('Bypassed rules');
+  expect([...box.querySelectorAll('li')].map((each) => each.textContent)).toEqual([
+    '2 checks running: e2e (chromium) and typecheck',
+  ]);
   expect(box.textContent).toContain('Type 138 to confirm');
   const field = () => box.querySelector('input')!;
-  const button = [...box.querySelectorAll('button')].find((each) =>
-    each.textContent?.includes('Merge anyway'),
-  )!;
+  const button = primary();
+  expect(foot()).toEqual(['Cancel', 'Bypass rules and merge']);
   expect(button.getAttribute('aria-disabled')).toBe('true');
   await later();
 
@@ -568,7 +669,7 @@ it('shows the merge main planned in auto-merge’s place when GitHub says it can
   const plan = planOf({ kind: 'autoMerge', title: '' });
   const offer = planOf({ kind: 'merge', key: '00000000-0000-4000-8000-000000000003' });
   draw(<MergeConfirm />);
-  act(() => merging.setState({ dialog: { kind: 'sent', plan } }));
+  act(() => merging.setState({ dialog: sentOf(plan) }));
   await until(() => dialog() !== null);
   act(() =>
     heardJob(
@@ -586,8 +687,9 @@ it('shows the merge main planned in auto-merge’s place when GitHub says it can
     ),
   );
   await until(() => merging.getState().dialog?.kind === 'confirm');
-  expect(dialog()?.textContent).toContain('Merge #138');
+  expect(title()).toBe('Merge #138');
   expect(dialog()?.textContent).toContain('It can merge as it is.');
+  expect(foot()).toEqual(['Cancel', 'Merge #138']);
   // Seen here, it needs no banner.
   expect(bridge.calls.find(([channel]) => channel === 'merge.dismiss')?.[1]).toEqual({
     key: plan.key,
@@ -656,24 +758,23 @@ it('lists a GitHub stack’s layers that merge as one, and the one above that st
   );
   await until(() => dialog() !== null);
   const box = dialog()!;
-  expect(box.textContent).toContain('Merge 3 layers');
-  expect(box.textContent).toContain('A GitHub stack merges as one.');
+  expect(title()).toBe('Merge 3 layers');
   // Each layer keeps its own commit.
   expect([...box.querySelectorAll('dt')].map((each) => each.textContent)).not.toContain('Commit');
-  expect(box.textContent).toContain('Squash, one commit per layer');
+  expect(box.textContent).toContain('Squash · 1 commit per layer');
   expect(rows()).toEqual([
     expect.stringMatching(/#136 Move the token bucket.*Approved · checks passed/),
     expect.stringContaining('#137 Load per-plan limits'),
-    expect.stringContaining('The one on screen'),
+    expect.stringContaining('#138'),
   ]);
-  expect(box.textContent).toContain('#139, above it, stays open and moves onto main.');
-  expect(box.textContent).toContain('Merge 3 layers');
+  expect(box.textContent).toContain('#139 stays open and moves onto main.');
+  expect(foot()).toEqual(['Cancel', 'Merge 3 layers']);
 });
 
 it('follows a stack’s merge layer by layer, then offers the layer above', async () => {
   const plan = planOf({ key: '00000000-0000-4000-8000-000000000003', together: STACK });
   draw(<MergeConfirm />);
-  act(() => merging.setState({ dialog: { kind: 'sent', plan } }));
+  act(() => merging.setState({ dialog: sentOf(plan) }));
   act(() =>
     heardJob({
       ...jobOf(plan, { kind: 'pending', trouble: null }),
@@ -681,31 +782,34 @@ it('follows a stack’s merge layer by layer, then offers the layer above', asyn
     }),
   );
   await until(() => dialog() !== null);
-  expect(dialog()?.textContent).toContain('Merging 3 layers into main');
-  expect(dialog()?.textContent).toContain(
-    'Submitted to GitHub’s async merge 40 s ago. Branch rules are checked as it runs.',
-  );
+  expect(title()).toBe('Merge 3 layers');
   expect(rows()).toEqual([
-    expect.stringContaining('Checking rules'),
+    expect.stringContaining('Merging…'),
     expect.stringContaining('Waiting'),
     expect.stringContaining('Waiting'),
   ]);
-  expect(dialog()?.textContent).toContain('You can close this; the tab shows the result.');
+  expect(foot()).toEqual(['Close', 'Merging…']);
 
-  // Merged, the dialog stays to offer the layer above, now on main.
+  // Merged, the dialog says so, and offers the layer above, now on main.
   act(() =>
     heardJob({
       ...jobOf(plan, { kind: 'merged' }),
       together: stackProgress(['merged', 'merged', 'merged']),
     }),
   );
-  expect(notice()).toMatchObject({ title: 'Merged 3 layers into main', done: true });
-  expect(dialog()?.textContent).toContain('#136, #137 and #138. #139 now sits on main.');
-  await later();
-  act(() => {
-    dialog()!.dispatchEvent(enter());
-  });
-  await until(() => merging.getState().dialog === undefined);
+  expect(title()).toBe('Merge 3 layers');
+  expect(rows()).toEqual([
+    expect.stringContaining('Merged'),
+    expect.stringContaining('Merged'),
+    expect.stringContaining('Merged'),
+  ]);
+  expect(dialog()?.textContent).toContain('#139 moved onto main.');
+  expect(doneSaid()).toBe('Merged 3 layers');
+  expect(foot()).toEqual(['Open #139', 'Done']);
+  expect(notices()).toEqual([]);
+  press('Open #139');
+  expect(merging.getState().dialog).toBeUndefined();
+  await until(() => bridge.calls.some(([channel]) => channel === 'tab.open'));
   expect(bridge.calls.find(([channel]) => channel === 'tab.open')?.[1]).toEqual({
     kind: 'pull',
     owner: 'rozed-dev',
@@ -714,10 +818,10 @@ it('follows a stack’s merge layer by layer, then offers the layer above', asyn
   });
 });
 
-it('says nothing merged when GitHub stopped a stack’s merge, in GitHub’s words', async () => {
+it('says GitHub stopped a stack’s merge as a problem in its words, and tries it again from the check', async () => {
   const plan = planOf({ together: STACK });
   draw(<MergeConfirm />);
-  act(() => merging.setState({ dialog: { kind: 'sent', plan } }));
+  act(() => merging.setState({ dialog: sentOf(plan) }));
   const refusal = {
     kind: 'failed',
     text: 'GitHub stopped at #137: "Required status check security/scan is expected."',
@@ -732,8 +836,29 @@ it('says nothing merged when GitHub stopped a stack’s merge, in GitHub’s wor
     }),
   );
   await until(() => dialog() !== null);
-  expect(dialog()?.textContent).toContain('Nothing merged.');
-  expect(dialog()?.textContent).toContain(`${refusal.text} No layer went in.`);
+  expect(title()).toBe('Merge 3 layers');
+  expect(problem()).toEqual({ title: 'Couldn’t merge 3 layers', reason: refusal.text });
+  expect(foot()).toEqual(['Close', 'Try again']);
+
+  // Tried again, it's planned afresh as it was asked, under the same title.
+  await later();
+  act(() => {
+    dialog()!.dispatchEvent(enter());
+  });
+  expect(merging.getState().dialog?.kind).toBe('planning');
+  expect(title()).toBe('Merge 3 layers');
+  expect(working()).toBe('Checking…');
+  expect(bridge.calls.find(([channel]) => channel === 'merge.plan')?.[1]).toEqual({
+    id: 't1',
+    method: 'SQUASH',
+    title: 'Rate limit by cost',
+    message: '',
+  });
+  // Main can't plan it now: the dialog says so, to try again from.
+  await until(() => problem()?.title === 'Couldn’t check #138');
+  expect(problem()?.reason).toBe('GitHub didn’t respond.');
+  expect(title()).toBe('Merge 3 layers');
+  expect(foot()).toEqual(['Close', 'Try again']);
 });
 
 /** #138, the bottom layer of a chain by base branch, with #139 on its branch. */
@@ -758,7 +883,7 @@ function chainProgress(
   };
 }
 
-it('lists a chain’s merge a layer at a time, then each move as it goes, and toasts its end', async () => {
+it('lists a chain’s merge a layer at a time, then each move as it goes, and says when its run is done', async () => {
   const plan = planOf({ key: '00000000-0000-4000-8000-000000000004', together: CHAIN });
   draw(<MergeConfirm />);
   act(() =>
@@ -766,24 +891,26 @@ it('lists a chain’s merge a layer at a time, then each move as it goes, and to
   );
   await until(() => dialog() !== null);
   expect(rows()).toEqual([
-    expect.stringContaining('Merge #138 into main'),
-    expect.stringContaining('Move #139 onto main'),
+    expect.stringContaining('Merge #138 into main.'),
+    expect.stringContaining('Move #139 onto main.'),
   ]);
-  expect(rows()[1]).toContain('From chain-1 · needs rebase');
+  expect(rows()[1]).toContain('From chain-1. Needs a rebase.');
   expect(dialog()?.textContent).toContain(
-    'Lo moves the layers above once it has merged, while Lo is open.',
+    'The layers above move once it has merged, while Lo is open.',
   );
 
-  act(() => merging.setState({ dialog: { kind: 'sent', plan } }));
+  act(() => merging.setState({ dialog: sentOf(plan) }));
   act(() =>
     heardJob({ ...jobOf(plan, { kind: 'merged' }), together: chainProgress('moving', 'now') }),
   );
-  // Merged, it stays while the layer on it moves.
+  // Merged, it's still at work while the layer on it moves.
   expect(merging.getState().dialog?.kind).toBe('sent');
   expect(rows()).toEqual([
     expect.stringContaining('Merged'),
-    expect.stringContaining('Move #139 onto main'),
+    expect.stringContaining('Move #139 onto main.'),
   ]);
+  expect(foot()).toEqual(['Close', 'Merging…']);
+  expect(doneSaid()).toBeUndefined();
 
   act(() =>
     heardJob({
@@ -791,14 +918,13 @@ it('lists a chain’s merge a layer at a time, then each move as it goes, and to
       together: chainProgress('done', 'done', '#139 now points at main and needs a rebase.'),
     }),
   );
-  expect(merging.getState().dialog).toBeUndefined();
-  expect(notice()).toMatchObject({
-    title: 'Merged #138, one layer at a time',
-    body: '#139 now points at main and needs a rebase.',
-  });
+  expect(merging.getState().dialog?.kind).toBe('sent');
+  expect(doneSaid()).toBe('Merged #138');
+  expect(foot()).toEqual(['Done']);
+  expect(notices()).toEqual([]);
 });
 
-it('says in a toast that a chain’s run stopped after its merge, with the dialog closed', () => {
+it('leaves a chain’s run that stopped after its merge to the tab’s banner, not a toast, with the dialog closed', () => {
   const plan = planOf({ key: '00000000-0000-4000-8000-000000000002', together: CHAIN });
   act(() =>
     heardJob({
@@ -810,8 +936,7 @@ it('says in a toast that a chain’s run stopped after its merge, with the dialo
       ),
     }),
   );
-  expect(notice()).toMatchObject({
-    title: 'Lo stopped moving the layers on #138.',
-    body: '#138 merged, but Lo stopped moving the layers on it.',
-  });
+  expect(notices()).toEqual([]);
+  // Not seen, so its banner says it.
+  expect(merging.getState().seen.has(plan.key)).toBe(false);
 });

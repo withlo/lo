@@ -19,6 +19,7 @@ import {
   moveFocus,
   showTarget,
   upTo,
+  upToNamed,
   upToReady,
   walking,
 } from './walk.ts';
@@ -35,11 +36,16 @@ const tree = vi.hoisted(() => ({ goToTree: vi.fn<(tab: string) => void>() }));
 vi.mock('../../tree/window/shared.ts', () => tree);
 const diff = vi.hoisted(() => ({ showDiff: vi.fn<(tab: string) => boolean>(() => true) }));
 vi.mock('../../diff/window/shared.ts', () => diff);
-const middle = vi.hoisted(() => ({
-  escapeInMiddle: vi.fn<() => boolean>(() => false),
-  focusMiddle: vi.fn<() => void>(),
-  escapeToMiddle: vi.fn<() => void>(),
-}));
+const middle = vi.hoisted(() => {
+  const run = vi.fn<(id: string, target: unknown) => void>();
+  return {
+    escapeInMiddle: vi.fn<() => boolean>(() => false),
+    focusMiddle: vi.fn<() => void>(),
+    escapeToMiddle: vi.fn<() => void>(),
+    run,
+    registry: () => ({ run }),
+  };
+});
 vi.mock('../../../window/commands/registry.ts', () => middle);
 
 const bridge = installBridge({
@@ -100,6 +106,10 @@ function showing(number: number, stack: StackView, run?: PullTab['run']): PullTa
 /** Lets the window hear main's answer. */
 const answered = () => new Promise((resolve) => setTimeout(resolve, 0));
 
+/** Waits two frames, as long as the left panel takes to show its tree. */
+const twoFrames = () =>
+  new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+
 beforeEach(() => {
   bridge.calls.length = 0;
   vi.clearAllMocks();
@@ -137,12 +147,22 @@ describe('- in the file tree', () => {
 describe('+ in the stack’s tree', () => {
   it('goes down to the file tree, at the file on screen, while the tree is open', () => {
     const tab = showing(84, STACK);
-    expect(goDown.enabled()).toBe('The file tree isn’t open.');
     const files = document.createElement('div');
     files.dataset['loScope'] = 'tree';
     document.body.append(files);
     expect(goDown.enabled()).toBe(true);
     goDown.run();
+    expect(tree.goToTree).toHaveBeenCalledWith(tab.id);
+    expect(middle.run).not.toHaveBeenCalled();
+  });
+
+  it('shows the left panel first while it’s hidden', async () => {
+    const tab = showing(84, STACK);
+    expect(goDown.enabled()).toBe(true);
+    goDown.run();
+    expect(middle.run).toHaveBeenCalledWith('tab.leftPanel', { kind: 'none' });
+    expect(tree.goToTree).not.toHaveBeenCalled();
+    await twoFrames();
     expect(tree.goToTree).toHaveBeenCalledWith(tab.id);
   });
 });
@@ -203,11 +223,10 @@ describe('choosing a run of layers', () => {
     expect(bridge.calls).toEqual([['tab.layer', { id: tab.id, number: 83 }]]);
   });
 
-  it('views the stack up to a layer from its bottom, and not from the bottom layer itself', async () => {
+  it('shows the layers up to a layer from its bottom, and not from the bottom layer itself', async () => {
     const tab = showing(85, STACK);
-    expect(upToReady({ kind: 'layer', layer: 82 })).toBe(
-      "#82 is the stack's bottom layer, so the stack up to it is that layer alone.",
-    );
+    expect(upToReady({ kind: 'layer', layer: 82 })).toBe('#82 is the bottom layer');
+    expect(upToNamed({ kind: 'layer', layer: 84 })).toBe('Show layers 1–3');
     upTo({ kind: 'layer', layer: 84 });
     await answered();
     expect(bridge.calls).toEqual([['stacks.run', { id: tab.id, bottom: 82, top: 84 }]]);

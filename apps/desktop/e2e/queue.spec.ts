@@ -2,8 +2,8 @@
 // generation 4 of `testing/fixtures/merge.sh`'s pull requests in rozed-dev/e2e, as `app_queue`
 // recorded from the app while two of them were tested together in `e4/queued`'s queue and a third
 // waited to join it with auto-merge on. `gq` in a pull request's tab opens the queue of the branch
-// it goes into, in one tab for the repository and account; `j` and `k` move, `⏎` opens the pull
-// request the keyboard is on, `Tab` shows the next branch's queue, and the tab comes back after Lo
+// it goes into, in one tab for the repository and account; `j` and `k` move, `⏎` or a double click
+// opens the pull request, `Tab` shows the next branch's queue, and the tab comes back after Lo
 // restarts. It's served as `app_queue_polled`, which adds GitHub's answer to each overview ref read
 // again, as Lo does when its window comes to the front.
 
@@ -71,18 +71,29 @@ test('`gq` opens the queue of the branch a pull request goes into, those tested 
   await expect(top).toContainText('rozed-dev/e2e into');
   await expect(top).toContainText('e4/queued');
   // The queue's own method: its entries squash, though GitHub says the auto-merge is a merge.
-  await expect(top).toContainText('squash, groups of up to 5');
+  await expect(top).toContainText('Squash · groups of up to 5');
   await expect(top).toContainText('as rozed-bot');
   await expect(page).toHaveTitle('rozed-dev/e2e — Merge queue · e4/queued');
 
   expect(await rowKeys(page)).toEqual([slow1, passing, slow2]);
   const group = queue(page).locator('[role="rowgroup"][aria-label^="Testing together"]');
-  await expect(group).toHaveAttribute('aria-label', 'Testing together, 2 PRs');
-  await expect(group.locator(`[data-key="${slow1}"]`)).toContainText('yours');
+  await expect(group).toHaveAttribute('aria-label', 'Testing together, 2 pull requests');
+  await expect(
+    group.locator(`[data-key="${slow1}"]`).getByText('you', { exact: true }),
+  ).toBeVisible();
   const joining = queue(page).locator('[role="rowgroup"][aria-label="Waiting to join"]');
   await expect(joining).toContainText('Fixture M4: queued, slow (2)');
-  await expect(joining).toContainText('Auto-merge on');
-  await expect(joining).toContainText('when checks pass');
+  await expect(joining).toContainText('Auto-merge is on');
+  await expect(joining).toContainText('checks running');
+
+  // The row the keyboard is on shows its actions, and the status bar a button for each key.
+  await expect(
+    group.locator(`[data-key="${slow1}"]`).getByRole('button', { name: /Remove…/ }),
+  ).toBeVisible();
+  const hints = queue(page).locator('footer');
+  for (const hint of ['Open', 'Remove…', 'Open on GitHub']) {
+    await expect(hints.getByRole('button', { name: hint, exact: true })).toBeVisible();
+  }
 });
 
 test('`j` and `k` move, `⏎` opens the pull request the keyboard is on, and `Tab` shows the next branch’s queue', async ({
@@ -91,9 +102,9 @@ test('`j` and `k` move, `⏎` opens the pull request the keyboard is on, and `Ta
   await signedIn(page);
   await open(page, pulls.squash.number, 'Fixture M4: squash and merge', 'Ready to merge');
   await gq(page);
-  await expect(queue(page)).toContainText(
-    'merge/4/base has no merge queue: its pull requests merge on their own.',
-  );
+  await expect(
+    queue(page).getByRole('heading', { name: 'merge/4/base has no merge queue' }),
+  ).toBeVisible();
 
   // The queue of another branch shows in the same tab, which offers both.
   await open(page, pulls.queuedSlow1.number, 'Fixture M4: queued, slow (1)', 'Queued, 1st');
@@ -123,6 +134,13 @@ test('`j` and `k` move, `⏎` opens the pull request the keyboard is on, and `Ta
   await page.keyboard.press('Tab');
   expect(await rowKeys(page)).toContain(slow1);
   await expect(branches.nth(0)).toHaveAttribute('aria-selected', 'true');
+
+  // A double click opens a row's pull request, as `⏎` does.
+  await queue(page)
+    .locator(`[data-key="${slow1}"]`)
+    .getByText('Fixture M4: queued, slow (1)')
+    .dblclick();
+  await expect(header(page)).toContainText('Fixture M4: queued, slow (1)');
 });
 
 test('the queue’s tab comes back after Lo restarts, and reads its queue again', async ({

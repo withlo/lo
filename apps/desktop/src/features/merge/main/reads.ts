@@ -25,6 +25,7 @@ import { requiresUpToDate, type Local } from '@lo/review';
 
 import type { PullTabInfo } from '../../tab/service.ts';
 import type { MergeStatusView, MergeView, Method, Off } from '../contract.ts';
+import { clock, explained, type Asker } from './causes.ts';
 import { offOf } from './merging.ts';
 import { pagesOf, stateOf } from './status.ts';
 
@@ -115,29 +116,37 @@ function describe(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+/** Who reads `followed`'s pull request, as `login`, as the causes of a failed read name them. */
+function askerOf(followed: Followed, login = followed.login ?? ''): Asker {
+  return { login, owner: followed.pull.repo.owner };
+}
+
 /** Whether two logins name one account: GitHub's ignore case. */
 function sameLogin(a: string | undefined, b: string | undefined): boolean {
   return a?.toLowerCase() === b?.toLowerCase();
 }
 
 /**
- * Why no read can be answered now, as `status` says: GitHub can't be reached, the account is signed
- * out, or the rate limit holds every read. Nothing when reads go on.
+ * Why no read can be answered now for `login`, as `status` says: GitHub can't be reached, the
+ * account is signed out, or the rate limit holds every read. Nothing when reads go on.
  */
-function stallOf(status: PollStatus): string | undefined {
-  if (status.signedOut) return 'The account is signed out of GitHub.';
-  if (status.offline) return `GitHub can’t be reached: ${status.offline.error}`;
+function stallOf(status: PollStatus, login: string): string | undefined {
+  if (status.signedOut) return `${login} is signed out.`;
+  if (status.offline) return 'Offline.';
   if (status.rateLimit.kind === 'paused') {
-    return `GitHub’s rate limit holds every read until ${new Date(status.rateLimit.until).toISOString()}.`;
+    return `GitHub’s rate limit resets at ${clock(status.rateLimit.until)}.`;
   }
   return undefined;
 }
 
-/** Why a view shows no merge status, when it shows none. */
+/**
+ * Why a view shows no merge status, when it shows none: nothing for a closed view, where the command
+ * isn't offered.
+ */
 export const NO_STATUS = {
-  anonymous: 'Sign in to see whether it can merge.',
-  run: 'Show a layer to see whether it can merge.',
-  closed: 'There’s no pull request in that tab.',
+  anonymous: 'Sign in to merge',
+  run: 'Show a single layer first',
+  closed: '',
 } as const;
 
 export class MergeReads {
@@ -220,11 +229,14 @@ export class MergeReads {
    * The account and pull request view `id` reads as, with its poller, once it reads: for the merge
    * panel's own reads. Nothing for a view that reads nothing.
    */
-  reader(id: string): { pull: PullRef; poller: MergePoller; head: string } | undefined {
+  reader(
+    id: string,
+  ): { pull: PullRef; login: string; poller: MergePoller; head: string } | undefined {
     const followed = this.#views.get(id);
     if (!followed?.poller || followed.view.kind === 'none') return undefined;
     return {
       pull: followed.pull,
+      login: followed.login ?? '',
       poller: followed.poller,
       head: followed.facts?.value.pullRequest.head ?? '',
     };
@@ -297,7 +309,7 @@ export class MergeReads {
       followed.started = false;
       followed.tries += 1;
       followed.retryAt = this.#now() + backoff(followed.tries);
-      this.#fail(followed, describe(error));
+      this.#fail(followed, describe(error), describe(error));
       return;
     }
     if (!this.#current(followed)) return;
@@ -314,7 +326,9 @@ export class MergeReads {
       if (!this.#current(followed)) return;
       if (cached) this.#take(followed, cached);
     } catch (error) {
-      if (this.#current(followed)) this.#fail(followed, describe(error));
+      if (this.#current(followed)) {
+        this.#fail(followed, explained(error, askerOf(followed, login)), describe(error));
+      }
       return;
     }
     this.#stalled(followed, poller);
@@ -327,9 +341,9 @@ export class MergeReads {
    */
   #stalled(followed: Followed, poller: MergePoller): void {
     if (!this.#current(followed) || followed.poller !== poller) return;
-    const why = stallOf(poller.status());
+    const why = stallOf(poller.status(), followed.login ?? '');
     if (followed.facts) this.#stale(followed, why, followed.failedAgain, offOf(poller));
-    else if (why !== undefined) this.#fail(followed, why);
+    else if (why !== undefined) this.#fail(followed, why, why);
   }
 
   /**
@@ -368,10 +382,10 @@ export class MergeReads {
       }
       case 'readFailed': {
         if (!event.pull.equals(followed.pull) || event.name !== MERGE_FACTS.name) return;
-        const why = new GithubError(event.error).message;
+        const why = explained(new GithubError(event.error), askerOf(followed));
         // What was read before stays, saying it may be out of date.
         if (followed.facts) this.#stale(followed, followed.stall, why);
-        else this.#fail(followed, why);
+        else this.#fail(followed, why, new GithubError(event.error).message);
         return;
       }
       case 'summary':
@@ -469,8 +483,9 @@ export class MergeReads {
     return undefined;
   }
 
-  #fail(followed: Followed, why: string): void {
-    this.#options.log(`${followed.pull.toString()}: ${why}`);
+  /** The first read failed, for `why`, the reader's words; `raw` is what failed, for the log. */
+  #fail(followed: Followed, why: string, raw: string): void {
+    this.#options.log(`${followed.pull.toString()}: ${raw}`);
     this.#set(followed, { kind: 'failed', why: why.slice(0, 4096) });
   }
 

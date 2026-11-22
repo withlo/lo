@@ -98,7 +98,7 @@ export default defineFeature(contract, {
     state: ({ id }) => finder?.state(id),
     useStart({ id, commit }) {
       if (!finder?.useStart(id, commit)) {
-        throw new IpcError('moved', 'That start is no longer what the layer is offered.');
+        throw new IpcError('moved', 'The stack has changed.');
       }
     },
     plan({ id }, context) {

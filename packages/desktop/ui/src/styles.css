@@ -605,15 +605,34 @@
 
 /* A row of the merge queue, and its head: its place, the pull request, its state, how long it's been
    queued, when it should merge, and what to do about it. The state takes a list's column of
-   people, the times a list's column of times, and the actions 120 px. */
+   people, the times a list's column of times, and the actions what two buttons and a ⋯ take with
+   their keys. The table is the container (`@container`): narrower, the actions give up their key
+   chips (`queue-chip`), then their labels (`queue-label`), leaving the ⋯, so a row never wraps or
+   clips. */
 @utility queue-columns {
+  --queue-actions: calc(var(--lo-sp-64) * 3 + var(--lo-sp-48) + var(--lo-sp-8));
   display: grid;
   grid-template-columns:
     calc(var(--lo-sp-40) + var(--lo-sp-4)) minmax(0, 1fr) var(--lo-list-who-w)
-    var(--lo-list-when-w) var(--lo-list-when-w)
-    calc(var(--lo-sp-64) + var(--lo-sp-48) + var(--lo-sp-8));
+    var(--lo-list-when-w) var(--lo-list-when-w) var(--queue-actions);
   align-items: center;
   gap: var(--lo-sp-12);
+  @container (width < 960px) {
+    --queue-actions: calc(var(--lo-sp-64) * 3 + var(--lo-sp-16));
+  }
+  @container (width < 880px) {
+    --queue-actions: var(--lo-sp-24);
+  }
+}
+@utility queue-chip {
+  @container (width < 960px) {
+    display: none !important;
+  }
+}
+@utility queue-label {
+  @container (width < 880px) {
+    display: none !important;
+  }
 }
 
 /* A peek: its answers beside its code, with a head and a foot across both. A single answer has no

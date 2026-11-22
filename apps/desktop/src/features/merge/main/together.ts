@@ -137,17 +137,14 @@ export function takingOf(view: TakingView): Taking {
     case 'alone':
       return { kind: 'alone' };
     case 'githubStack':
-      return where.below.length === 0 ? { kind: 'alone' } : stackTaking(view, where.stack);
+      return where.below.length === 0 ? { kind: 'alone' } : stackTaking(view);
     case 'chainBottom':
       return chainTaking(view);
     case 'chainAbove': {
       // Nothing merges from here, so the Stacks API is taken to be there, as the stack's tree does.
       const conversion = forest?.conversion(number, { stacksApi: true, queued: view.queued });
       if (conversion?.kind === 'plan') return { kind: 'convert', offer: conversion.offer };
-      return {
-        kind: 'refused',
-        why: `Merge #${where.bottom} first: it’s this chain’s bottom layer.`,
-      };
+      return { kind: 'refused', why: `Merge #${where.bottom} first` };
     }
     case 'unknown':
       return { kind: 'refused', why: where.text, again: where.listAgain };
@@ -158,22 +155,14 @@ export function takingOf(view: TakingView): Taking {
 }
 
 /**
- * The layers of GitHub stack `stack` below `view`'s pull request, as the Stacks API names them now,
+ * The layers of the GitHub stack below `view`'s pull request, as the Stacks API names them now,
  * which win over the list's: GitHub merges what it holds.
  */
-function stackTaking(view: TakingView, stack: number): Taking {
+function stackTaking(view: TakingView): Taking {
   const { number, github } = view;
-  const changed = {
-    kind: 'refused',
-    why: `GitHub stack #${stack} changed since Lo listed it. Lo is listing the open pull requests again; merge once it has.`,
-  } as const;
+  const changed = { kind: 'refused', why: 'The stack has changed.' } as const;
   if (github === 'unread') return changed;
-  if (github === undefined) {
-    return {
-      kind: 'refused',
-      why: `GitHub’s Stacks API didn’t answer for #${number}, so Lo can’t name the layers that would merge with it. Merge it on GitHub.`,
-    };
-  }
+  if (github === undefined) return { kind: 'refused', why: 'GitHub didn’t respond.' };
   const holding = github.find((found) =>
     openLayers(found).some((layer) => layer.number === number),
   );
@@ -183,7 +172,7 @@ function stackTaking(view: TakingView, stack: number): Taking {
   if (holding.base.ref !== view.base) {
     return {
       kind: 'refused',
-      why: `GitHub stack #${holding.number} merges into ${holding.base.ref} now, not ${view.base}. Lo reads #${number} again; merge once it has.`,
+      why: `The stack’s base branch is now ${holding.base.ref}.`,
       again: true,
       readAgain: true,
     };
@@ -203,37 +192,25 @@ function stackTaking(view: TakingView, stack: number): Taking {
 
 /**
  * A chain's bottom layer: made a GitHub stack first, when stacks could make it one, or merged alone
- * by `mergeOneLayerAtATime`, unless it needs a rebase itself, which only its author can do.
+ * by `mergeOneLayerAtATime`, unless it needs a rebase itself, which only its author can do. Nothing
+ * to say while the stacks are listed, or GitHub's Stacks API asked: the primary reads "Checking…".
  */
 function chainTaking(view: TakingView): Taking {
   const { number, forest, github } = view;
-  if (!forest)
-    return { kind: 'refused', why: "Lo is still listing this repository's open pull requests." };
-  if (github === 'unread') {
-    return {
-      kind: 'refused',
-      why: `Lo hasn’t asked GitHub yet whether #${number} could be in a GitHub stack.`,
-    };
-  }
+  if (!forest || github === 'unread') return { kind: 'refused', why: '' };
   const conversion = forest.conversion(number, {
     stacksApi: github !== undefined,
     queued: view.queued,
   });
   if (conversion.kind === 'plan') return { kind: 'convert', offer: conversion.offer };
   const plan = mergeOneLayerAtATime(forest.stacks, number);
+  // The stacks' reasons say why, joined as facts are; with none, why isn't known.
   if (plan === undefined || 'refusal' in plan) {
-    const why =
-      conversion.words.length > 0 ? conversion.words.join(' ') : 'Lo can’t tell what sits on it.';
-    return { kind: 'refused', why: `Lo can’t merge #${number} a layer at a time: ${why}` };
+    return { kind: 'refused', why: conversion.words.join(' · ') };
   }
-  if (plan.pr !== number) {
-    return { kind: 'refused', why: `Merge #${plan.pr} first: it’s this chain’s bottom layer.` };
-  }
+  if (plan.pr !== number) return { kind: 'refused', why: `Merge #${plan.pr} first` };
   if (layerOf(forest.stacks, number)?.needsRebase !== undefined) {
-    return {
-      kind: 'refused',
-      why: `Change #${number}’s base to ${plan.into} on GitHub, then merge it here.`,
-    };
+    return { kind: 'refused', why: `Change #${number}’s base branch to ${plan.into} first` };
   }
   return { kind: 'chain', plan, reasons: conversion.words };
 }
@@ -297,8 +274,8 @@ export function placementOf(taking: Taking): Placement {
 }
 
 /** Why Lo doesn't merge a pull request that stacks could make a GitHub stack first. */
-export function convertFirst(offer: string): string {
-  return `${offer} Make this a GitHub stack, then merge it.`;
+export function convertFirst(): string {
+  return 'Convert to GitHub stack first';
 }
 
 /**
@@ -343,8 +320,8 @@ export function togetherChanged(was: Together | null, now: Together | null): str
         (layer, index) =>
           layer.number === after[index]?.number && layer.head === after[index]?.head,
       );
-    if (!same) return 'The layers that merge with it changed.';
-    return aboveOf(was) === aboveOf(now) ? undefined : 'The layers above it changed.';
+    if (!same) return 'The layers that merge have changed.';
+    return aboveOf(was) === aboveOf(now) ? undefined : 'The layers above it have changed.';
   }
-  return movesOf(was) === movesOf(now) ? undefined : 'The base branches Lo moves changed.';
+  return movesOf(was) === movesOf(now) ? undefined : 'The layers that move have changed.';
 }

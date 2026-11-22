@@ -17,13 +17,15 @@ import {
 } from '@lo/github';
 
 import type { BaseMove, Method, MoveStatus, Progress, Together } from '../contract.ts';
-import { numbers } from './together.ts';
+import { causeOf } from './causes.ts';
 
 /** Where the merged pull request stands, as a read of it says. */
 export type Looked = 'merged' | 'queued' | 'open' | 'closed';
 
 export interface ChainOptions {
   readonly repo: RepoRef;
+  /** The account it merges and moves the layers as. */
+  readonly login: string;
   /** The bottom layer, which merges. */
   readonly number: number;
   readonly together: Extract<Together, { kind: 'chain' }>;
@@ -61,6 +63,8 @@ interface Move {
   readonly before: boolean;
   status: MoveStatus;
   detail: string | null;
+  /** Why it didn't go, once it failed: nothing where that isn't known. */
+  cause?: string | null;
 }
 
 type Phase = Extract<Progress, { kind: 'chain' }>['phase'];
@@ -130,11 +134,10 @@ export class ChainRun {
     if (this.#over) return false;
     if (!went) {
       this.#skipRest();
-      const { number } = this.#options;
       this.#stop(
         first.status === 'unknown'
-          ? `Lo didn’t merge #${number}, since it can’t tell whether its base branch moved.`
-          : `Lo didn’t merge #${number}, since its base branch didn’t move.`,
+          ? 'Its base branch move isn’t confirmed.'
+          : 'Its base branch didn’t move.',
       );
       return false;
     }
@@ -172,20 +175,20 @@ export class ChainRun {
   failed(): void {
     if (this.#over || this.#moving) return;
     this.#skipRest();
+    // The steps show nothing moved; one moved before it stays where it went.
     const kept = this.#moves.some((move) => move.before && move.status === 'done');
+    const onto = this.#options.together.before?.to;
     this.#stop(
-      kept
-        ? `#${this.#options.number} didn’t merge, and stays on ${this.#options.together.before?.to ?? ''}. Lo moved nothing more.`
-        : `#${this.#options.number} didn’t merge, so Lo moved nothing.`,
+      kept && onto !== undefined ? `#${this.#options.number}’s base branch is now ${onto}.` : null,
     );
   }
 
-  /** Lo is quitting: nothing more is sent. */
+  /** Lo is quitting: nothing more is sent, and the steps show where it stopped. */
   stop(): void {
     if (this.#over) return;
     this.#stopping.abort(new Error('Lo is quitting.'));
     this.#skipRest();
-    this.#stop('Lo stopped before it was done.');
+    this.#stop(null);
   }
 
   /**
@@ -213,10 +216,9 @@ export class ChainRun {
           ? (this.#options.queueFor ?? 6 * 60 * 60_000)
           : (this.#options.lostFor ?? 15 * 60_000));
       this.#phase = 'waiting';
+      // After a lost answer, the step reads "Checking…".
       this.#text =
-        now === 'queue'
-          ? `#${number} is in the merge queue. Lo moves the layers on it once it merges, while Lo is open.`
-          : `Lo can’t tell whether #${number} merged, and reads it to find out.`;
+        now === 'queue' ? 'The layers above move once it has merged, while Lo is open.' : null;
       this.#changed();
     };
     waiting(first);
@@ -229,8 +231,8 @@ export class ChainRun {
           this.#skipRest();
           this.#stop(
             why === 'queue'
-              ? `#${number} didn’t merge within 6 hours of joining the merge queue, so Lo moved nothing.`
-              : `Lo couldn’t tell within 15 minutes whether #${number} merged, so it moved nothing.`,
+              ? `#${number} was still in the merge queue after 6 h.`
+              : 'GitHub didn’t respond.',
           );
           return;
         }
@@ -256,13 +258,13 @@ export class ChainRun {
             // Out of the queue without merging. After a lost answer, it may merge yet.
             if (why === 'queue') {
               this.#skipRest();
-              this.#stop(`#${number} left the merge queue without merging, so Lo moved nothing.`);
+              this.#stop('It left the merge queue.');
               return;
             }
             continue;
           case 'closed':
             this.#skipRest();
-            this.#stop(`#${number} was closed without merging, so Lo moved nothing.`);
+            this.#stop('It was closed.');
             return;
           default:
             looked satisfies never;
@@ -288,42 +290,17 @@ export class ChainRun {
       if (move.before || move.status !== 'todo') continue;
       const went = await this.#run(move);
       if (this.#over) return;
+      // The steps show which moved: the reason is why this one didn't.
       if (!went) {
         this.#skipRest();
-        const moved = this.#moves.filter((each) => !each.before && each.status === 'done');
-        const said =
-          moved.length === 0
-            ? ''
-            : ` It moved ${numbers(moved.map((each) => each.move.pr))} onto ${move.move.to}.`;
-        this.#stop(
-          `#${this.#options.number} merged, but Lo stopped moving the layers on it.${said}`,
-        );
+        this.#stop(move.cause ?? null);
         return;
       }
     }
+    // The toast says it merged, and the stack shows the layers that need a rebase.
     this.#phase = 'done';
-    this.#text = this.#doneText();
+    this.#text = null;
     this.#end();
-  }
-
-  /**
-   * Where the layers on it went, once they have: "#2266 now points at main and needs a rebase.",
-   * which only a squash or a rebase calls for; after a merge commit, only the layers it moved.
-   * Nothing when none moved or needs a rebase.
-   */
-  #doneText(): string | null {
-    const { together, method } = this.#options;
-    const into = this.#moves.at(-1)?.move.to ?? together.before?.to;
-    const rebase = method !== 'MERGE' && together.needsRebase.length > 0;
-    const named = rebase
-      ? together.needsRebase
-      : this.#moves.flatMap((move) => (move.before ? [] : [move.move.pr]));
-    if (named.length === 0 || into === undefined) return null;
-    const one = named.length === 1;
-    const points = `${numbers(named)} now ${one ? 'points' : 'point'} at ${into}`;
-    if (!rebase) return `${points}.`;
-    if (method === null) return `${points} and may need a rebase.`;
-    return `${points} and ${one ? 'needs' : 'need'} a rebase.`;
   }
 
   /** Sends one move, saying how it went: whether it's where the plan wants it now. */
@@ -345,9 +322,9 @@ export class ChainRun {
       }
       const lost = error instanceof GithubError && error.mayHavePosted();
       move.status = lost ? 'unknown' : 'failed';
-      move.detail = lost
-        ? `Lo can’t tell whether #${move.move.pr} moved: ${describe(error)}`
-        : describe(error);
+      move.detail = lost ? 'Not confirmed' : describe(error);
+      const cause = causeOf(error, { login: this.#options.login, owner: this.#options.repo.owner });
+      move.cause = cause === '' ? null : cause;
       this.#changed();
       return false;
     }
@@ -355,7 +332,7 @@ export class ChainRun {
       move.status = 'failed';
       move.detail =
         done.refusal === 'baseChanged'
-          ? `#${move.move.pr} is on ${done.now} now, moved since Lo read it, so Lo left it.`
+          ? `Already on ${done.now}.`
           : `${describeMergeRefusal(done)}.`;
       this.#changed();
       return false;
@@ -370,7 +347,7 @@ export class ChainRun {
     for (const move of this.#moves) if (move.status === 'todo') move.status = 'skipped';
   }
 
-  #stop(text: string): void {
+  #stop(text: string | null): void {
     this.#phase = 'stopped';
     this.#text = text;
     this.#end();

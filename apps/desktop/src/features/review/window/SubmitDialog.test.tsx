@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
-// The submit dialog's verdicts: Comment, Approve and Request changes on someone else's pull
-// request, and Comment only on your own, which its subtitle says.
+// The submit dialog: Comment, Approve and Request changes on someone else's pull request, and on
+// your own, Approve and Request changes dimmed with why; "Submit review" for every verdict; and an
+// approval's end, with what it did and "Done".
 
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
@@ -9,7 +10,7 @@ import { afterEach, beforeAll, expect, onTestFinished, test, vi } from 'vitest';
 import { createRegistry } from '../../../window/commands/registry.ts';
 import { installBridge } from '../../../window/test/bridge.ts';
 import type * as TabShared from '../../tab/window/shared.ts';
-import type { DialogView } from '../contract.ts';
+import type { DialogView, ReviewEventRow } from '../contract.ts';
 import feature from './index.ts';
 import { reviewStore } from './store.ts';
 import { SubmitDialog } from './SubmitDialog.tsx';
@@ -38,8 +39,8 @@ afterEach(() => {
   act(() => reviewStore.setState({ dialog: undefined }));
 });
 
-/** Draws the dialog as main read it for a pull request `own` or not. */
-function render(own: boolean): void {
+/** Draws the dialog as main read it for a pull request `own` or not, done with `done` if given. */
+function render(own: boolean, done?: ReviewEventRow): void {
   const host = document.createElement('div');
   host.id = 'root';
   document.body.append(host);
@@ -72,6 +73,7 @@ function render(own: boolean): void {
         text: '',
         busy: false,
         refusal: undefined,
+        done,
       },
     });
     root.render(<SubmitDialog />);
@@ -84,14 +86,38 @@ const verdicts = () =>
     (radio) => radio.textContent.match(/^(Comment|Approve|Request changes)/)?.[0],
   );
 
-test('someone else’s pull request offers every verdict', () => {
+const dimmed = () =>
+  [...(dialog()?.querySelectorAll('[role="radio"][aria-disabled="true"]') ?? [])].map(
+    (radio) => radio.textContent,
+  );
+/** The dialog's buttons, by what a screen reader hears of them: not what's hidden, as their keys. */
+const buttons = () =>
+  [...(dialog()?.querySelectorAll('button:not([role])') ?? [])].map((button) => {
+    const heard = button.cloneNode(true);
+    if (!(heard instanceof HTMLElement)) return '';
+    for (const hidden of heard.querySelectorAll('[aria-hidden="true"]')) hidden.remove();
+    return heard.textContent.trim();
+  });
+
+test('someone else’s pull request offers every verdict, and the dialog submits whichever', () => {
   render(false);
   expect(verdicts()).toEqual(['Comment', 'Approve', 'Request changes']);
-  expect(dialog()?.textContent).toContain('e2e #94 · on');
+  expect(dimmed()).toEqual([]);
+  expect(dialog()?.querySelector('h2')?.textContent).toBe('Submit review');
+  expect(dialog()?.textContent).toContain('e2e #94 · aaaaaaa');
+  expect(dialog()?.textContent).toContain('2 pending comments');
+  expect(buttons()).toEqual(['Cancel', 'Submit review']);
 });
 
-test('your own pull request offers only Comment, and says why', () => {
+test('on your own pull request, Approve and Request changes are dimmed with why', () => {
   render(true);
-  expect(verdicts()).toEqual(['Comment']);
-  expect(dialog()?.textContent).toContain('your PR, so GitHub takes comments only');
+  expect(verdicts()).toEqual(['Comment', 'Approve', 'Request changes']);
+  const why = 'Authors can’t approve their own pull request';
+  expect(dimmed()).toEqual([`Approve${why}`, `Request changes${why}`]);
+});
+
+test('an approval ends with what it did, and "Done" alone', () => {
+  render(false, 'APPROVE');
+  expect(dialog()?.querySelector('[role="status"]')?.textContent).toBe('Approved #94');
+  expect(buttons()).toEqual(['Done']);
 });

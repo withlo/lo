@@ -7,10 +7,11 @@
 // the file. A box closed with `Esc` keeps its draft on this computer, and after a restart, here
 // with GitHub out of reach, it's back, unfocused, saying so; offline, nothing sends, and it stays
 // until it's discarded. With Vim keys on, a box has Vim's modes, and says which. With the comment
-// pending, `⌘⏎` opens the submit dialog, which offers only Comment on rozed-bot's own pull request
-// and submits the review as `app_comments_write` recorded; Approve is offered, and goes, on
+// pending, `⌘⏎` opens the submit dialog, whose summary is the comment box's, headed "Summary"; on
+// rozed-bot's own pull request Approve and Request changes are dimmed, and "Submit review" submits
+// the review as `app_comments_write` recorded; Approve can be chosen, and goes, on
 // `app_comments_write_others`, derived from it as if someone else had opened the pull request
-// (`testing/src/derivations.ts`).
+// (`testing/src/derivations.ts`), and the dialog stays to show it's done.
 
 import { writeFileSync } from 'node:fs';
 
@@ -191,11 +192,13 @@ async function addComment(page: Page): Promise<Locator> {
  * and waits for its summary to take focus. The dialog.
  */
 async function openSubmit(page: Page): Promise<Locator> {
-  await expect(page.getByTitle('Submit your review: 1 pending comment')).toContainText('1 pending');
+  await expect(page.getByRole('button', { name: '1 pending comment', exact: true })).toBeVisible();
   await page.keyboard.press(`${cmd}+Enter`);
   const dialog = page.getByTestId('submit-review');
   await expect(dialog).toBeVisible();
-  await expect(dialog).toContainText('1 pending comment goes with it');
+  // The summary is the comment box, headed with what it is.
+  await expect(dialog.locator('.lo-diffcomposer__head')).toContainText('Summary');
+  await expect(dialog.getByRole('heading', { name: '1 pending comment' })).toBeVisible();
   await expect(dialog).toContainText(`backoff.ts · line 2${COMMENT}`);
   // The summary's editor takes focus once it's made, in insert mode.
   await expect(dialog.getByRole('textbox', { name: 'Summary' })).toBeFocused();
@@ -209,15 +212,18 @@ test.describe('with a write recorded', () => {
     page,
   }) => {
     const thread = await addComment(page);
-    await test.step('on rozed-bot’s own pull request, the dialog offers only Comment', async () => {
+    await test.step('on rozed-bot’s own pull request, Approve and Request changes are dimmed', async () => {
       const dialog = await openSubmit(page);
-      await expect(dialog).toContainText('e2e #94 · your PR, so GitHub takes comments only');
-      await expect(dialog.getByRole('radio')).toHaveCount(1);
+      await expect(dialog).toContainText(/e2e #94 · r\d+/);
+      await expect(dialog.getByRole('radio')).toHaveCount(3);
       await expect(dialog.getByRole('radio', { name: /Comment/ })).toHaveAttribute(
         'aria-checked',
         'true',
       );
-      await expect(dialog.getByRole('button', { name: /^Comment/ })).toBeVisible();
+      for (const name of [/^Approve/, /^Request changes/]) {
+        await expect(dialog.getByRole('radio', { name })).toHaveAttribute('aria-disabled', 'true');
+      }
+      await expect(dialog.getByRole('button', { name: /^Submit review/ })).toBeVisible();
     });
     await test.step('the summary typed, `⌘⏎` submits the review, and the comment is no longer pending', async () => {
       await page.keyboard.type(SUMMARY);
@@ -232,7 +238,7 @@ test.describe('with a write recorded', () => {
 test.describe('as if someone else had opened the pull request', () => {
   test.use({ cassette: 'app_comments_write_others' });
 
-  test('the submit dialog offers every verdict, and Approve submits the review', async ({
+  test('the submit dialog offers every verdict, and an approval ends in it, done', async ({
     page,
   }) => {
     await addComment(page);
@@ -244,8 +250,15 @@ test.describe('as if someone else had opened the pull request', () => {
     ]);
     await page.keyboard.type(SUMMARY);
     await dialog.getByRole('radio', { name: /Approve/ }).click();
-    await dialog.getByRole('button', { name: /^Approve/ }).click();
-    await expect(toast(page, 'Approved #94')).toBeVisible({ timeout: 20_000 });
+    await dialog.getByRole('button', { name: /^Submit review/ }).click();
+    // The dialog stays to say what it did, with "Done", and no toast says it again.
+    await expect(dialog.getByRole('status').filter({ hasText: 'Approved #94' })).toBeVisible({
+      timeout: 20_000,
+    });
+    const done = dialog.getByRole('button', { name: /^Done/ });
+    await expect(done).toBeFocused();
+    await expect(page.locator('.toast', { hasText: 'Approved #94' })).toHaveCount(0);
+    await done.click();
     await expect(dialog).toBeHidden();
   });
 });

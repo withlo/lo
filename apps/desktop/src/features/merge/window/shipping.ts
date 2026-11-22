@@ -1,10 +1,11 @@
 // What approve and ship does in the window: `⌘⇧⏎` asks main for a plan and shows it in its dialog
-// to confirm; the dialog confirms its key, and `Esc` forgets it. Once confirmed, main runs it and
-// says how it goes on `ships`, and the merge it sent, if any, goes as `jobs` says: done, a toast
-// says so and the dialog closes; stopped, the dialog says where and why while it's open, else a
-// toast does, and a merge GitHub refused shows in the tab's banner. The window sends nothing
-// itself. What the auto-merge watch says of a push after your approval shows in a banner on the
-// pull request's tab, and in a toast while another tab is on screen.
+// to confirm, or why there's none, in the dialog; the dialog confirms its key, and `Esc` forgets
+// it. Once confirmed, main runs it and says how it goes on `ships`, and the merge it sent, if any,
+// goes as `jobs` says: done, the dialog says so while it's open, else a toast does; stopped, the
+// dialog says where and why while it's open, else a toast does, and a merge GitHub refused shows in
+// the tab's banner. The window sends nothing itself. What the auto-merge watch says of a push
+// after your approval shows in a banner on the pull request's tab, and in a toast while another
+// tab is on screen.
 
 import { announce, notify } from '../../../window/commands/notices.tsx';
 import { revisionLabel, revisionsOf } from '../../revisions/window/shared.ts';
@@ -30,56 +31,49 @@ export function labelsOf(id: string): Label {
   return (head) => revisionLabel(revisionsOf(id), head);
 }
 
-/** Whether `⌘⇧⏎` can approve and ship the pull request on screen, or why not. */
+/**
+ * Whether `⌘⇧⏎` can approve and ship the pull request on screen, or why not. While a dialog shows,
+ * it does nothing.
+ */
 export function canShip(): true | string {
   const tab = activeTab();
-  if (tab?.kind !== 'pull') return 'There’s no pull request on screen.';
+  if (tab?.kind !== 'pull') return 'Open a pull request first';
   const can = canOpen();
   if (can !== true) return can;
-  if (shipping.getState().dialog !== undefined) return 'Approve and ship is being confirmed.';
-  if (merging.getState().dialog !== undefined) return 'A merge is being confirmed.';
+  if (shipping.getState().dialog !== undefined || merging.getState().dialog !== undefined) {
+    return true;
+  }
   const job = merging.getState().jobs.get(pullKey(tab.owner, tab.repo, tab.number));
   return job?.state.kind === 'sending' || job?.state.kind === 'pending'
-    ? `Lo is already merging #${tab.number}.`
+    ? `#${tab.number} is still merging`
     : true;
 }
 
 /**
  * Asks main what approve and ship would do for the pull request on screen, and shows it in the
- * dialog to confirm. A plan main refuses says why, and nothing shows.
+ * dialog to confirm. A plan main refuses says why, in the dialog.
  */
 export function shipFromTab(): void {
   const tab = activeTab();
-  if (tab?.kind !== 'pull') return;
-  const why = canShip();
-  if (why !== true) {
-    notify('Approve and ship', withoutBidi(why));
-    return;
-  }
-  const planning: ShipDialog = { kind: 'planning', id: tab.id, number: tab.number };
+  if (tab?.kind !== 'pull' || canShip() !== true) return;
+  if (shipping.getState().dialog !== undefined || merging.getState().dialog !== undefined) return;
   closePanel(tab.id);
+  planShip(tab.id, tab.number);
+}
+
+/** Shows the dialog planning approve and ship for view `id`, and asks main for the plan. */
+function planShip(id: string, number: number): void {
+  const planning: ShipDialog = { kind: 'planning', id, number };
   setDialog(planning);
-  const back = (said: string) => {
+  const refused = (refusal: Refusal) => {
     if (shipping.getState().dialog !== planning) return;
-    setDialog(undefined);
-    notify('Approve and ship', withoutBidi(said));
+    setDialog({ kind: 'refused', id, number, plan: undefined, refusal });
   };
   main()
-    .ship({ id: tab.id })
+    .ship({ id })
     .then((planned) => {
       if (planned.kind === 'refused') {
-        // A newer push since the revision on screen shows as the dialog's stop, to see it.
-        if (planned.refusal.newer !== null && shipping.getState().dialog === planning) {
-          setDialog({
-            kind: 'refused',
-            id: tab.id,
-            number: tab.number,
-            plan: undefined,
-            refusal: planned.refusal,
-          });
-          return;
-        }
-        back(planned.refusal.text);
+        refused(planned.refusal);
         return;
       }
       // Cancelled while it was planned.
@@ -89,7 +83,17 @@ export function shipFromTab(): void {
       }
       setDialog({ kind: 'confirm', plan: planned.plan, note: undefined, sending: false });
     })
-    .catch((error: unknown) => back(messageOf(error)));
+    .catch((error: unknown) =>
+      refused({ kind: 'failed', text: '', rules: [messageOf(error)], until: null, newer: null }),
+    );
+}
+
+/** "Try again" in the dialog: asks main afresh what approve and ship would do now. */
+export function shipAgain(): void {
+  const dialog = shipping.getState().dialog;
+  if (!dialog || dialog.kind === 'planning' || dialog.kind === 'confirm') return;
+  if (dialog.kind === 'refused') planShip(dialog.id, dialog.number);
+  else planShip(dialog.plan.id, dialog.plan.number);
 }
 
 /**
@@ -108,16 +112,8 @@ export function confirmShip(): void {
   main()
     .shipConfirm({ key: plan.key })
     .then((confirmed) => {
-      if (!still()) {
-        // Left as main started it: it goes on, and a toast says how it ends.
-        if (confirmed.kind === 'started') {
-          notify(
-            'Approve and ship',
-            `Lo had started approving and shipping #${plan.number} already. A toast says how it ends.`,
-          );
-        }
-        return;
-      }
+      // Left as main started it: it goes on, and a toast says how it ends.
+      if (!still()) return;
       switch (confirmed.kind) {
         case 'started':
           setDialog({ kind: 'running', plan });
@@ -147,7 +143,7 @@ export function confirmShip(): void {
         id: plan.id,
         number: plan.number,
         plan,
-        refusal: { kind: 'failed', text: messageOf(error), rules: [], until: null, newer: null },
+        refusal: { kind: 'failed', text: '', rules: [messageOf(error)], until: null, newer: null },
       });
     });
 }
@@ -183,17 +179,18 @@ export function leaveShip(): void {
   }
 }
 
-/** "Merge panel `m`", from a stop after approving: the dialog closes, and the panel opens. */
+/** "Merge panel", from a stop after approving: the dialog closes, and the panel opens. */
 export function panelFromShip(id: string, number: number): void {
   leaveShip();
   openPanel(id, number);
 }
 
-/** "See r2 → r3", from a stop for a newer push: the dialog closes, and the diff shows it. */
+/** "Show r3", from a stop for a newer revision: the dialog closes, and the diff shows it. */
 export function seeShipNewer(id: string, refusal: Refusal, head: string): void {
   const newer = newerOf(id, refusal, head);
+  if (newer?.to === undefined) return;
   setDialog(undefined);
-  if (newer) seeNewer(id, newer);
+  seeNewer(id, newer);
 }
 
 /** The keys of runs whose end was said, in the dialog or a toast. */
@@ -207,16 +204,17 @@ export function heardShip(view: ShipView): void {
   settle(view);
 }
 
-/** The run the dialog shows, if it shows `key`'s. */
+/** Whether the dialog shows `key`'s run, or is confirming it, as main starts it. */
 function showing(key: string): boolean {
   const dialog = shipping.getState().dialog;
+  if (dialog?.kind === 'confirm') return dialog.sending && dialog.plan.key === key;
   return dialog?.kind === 'running' && dialog.plan.key === key;
 }
 
 /**
- * A run that's done closes the dialog and says so in a toast, once. One that stopped stays in the
- * dialog while it shows it; else a toast says where it stopped. A merge it sent that GitHub refused
- * shows in the tab's banner once the dialog doesn't.
+ * A run that's done stays in the dialog that shows it, which says so; else a toast says so, once.
+ * One that stopped stays in the dialog while it shows it; else a toast says where it stopped. A
+ * merge it sent that GitHub refused shows in the tab's banner once the dialog doesn't.
  */
 function settle(view: ShipView | undefined): void {
   if (!view || said.has(view.key)) return;
@@ -230,20 +228,19 @@ function settle(view: ShipView | undefined): void {
       return;
     case 'done':
       said.add(view.key);
-      if (showing(view.key)) setDialog(undefined);
-      announce(withoutBidi(shipDoneLine(view, undefined)));
+      if (!showing(view.key)) announce(withoutBidi(shipDoneLine(view, undefined)));
       return;
     case 'stopped':
       said.add(view.key);
       if (!showing(view.key)) {
         notify(
           phase.at === 'approve'
-            ? `Lo didn’t approve #${view.number}`
+            ? `Couldn’t approve #${view.number}`
             : phase.at === 'unsure'
-              ? `Lo can’t tell yet whether it approved #${view.number}`
+              ? 'Approval not confirmed'
               : view.approved
-                ? `Approved #${view.number}, but didn’t merge it`
-                : `Lo didn’t merge #${view.number}`,
+                ? `Approved #${view.number}, but couldn’t merge it`
+                : `Couldn’t merge #${view.number}`,
           withoutBidi(phase.refusal.text),
         );
       }
@@ -253,12 +250,11 @@ function settle(view: ShipView | undefined): void {
   }
 }
 
-/** A run's merge, as `jobs` says it: done, the dialog closes and a toast says so, once. */
+/** A run's merge, as `jobs` says it: done, the dialog says so, else a toast does, once. */
 function settleJob(view: ShipView, job: JobView | undefined): void {
   if (!job || doneLine(job) === undefined || said.has(view.key)) return;
   said.add(view.key);
-  if (showing(view.key)) setDialog(undefined);
-  announce(withoutBidi(shipDoneLine(view, job)));
+  if (!showing(view.key)) announce(withoutBidi(shipDoneLine(view, job)));
 }
 
 /** Follows the merges approve and ship sent, as `jobs` says them. */
@@ -284,8 +280,8 @@ export function heardWatched(watched: Watched): void {
   const here =
     tab?.kind === 'pull' && pullKey(tab.owner, tab.repo, tab.number) === key ? tab : undefined;
   if (here) return;
-  const words = watchedWords(watched, undefined, () => undefined, Date.now());
-  notify(withoutBidi(words.title), withoutBidi(words.detail));
+  const words = watchedWords(watched, undefined, () => undefined);
+  notify(withoutBidi(`#${watched.number}: ${words.title}`), withoutBidi(words.detail ?? ''));
 }
 
 /** Dismisses what the auto-merge watch said of the pull request `key` names. */

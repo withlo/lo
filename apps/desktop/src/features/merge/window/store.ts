@@ -10,6 +10,7 @@ import { createStore } from 'zustand/vanilla';
 
 import { tabState } from '../../tab/window/shared.ts';
 import type {
+  Asked,
   JobView,
   MergePlan,
   MergeStatusView,
@@ -90,6 +91,18 @@ export interface Panel {
    * opens, while Lo lists the open pull requests again, and as `⏎` asks again.
    */
   readonly round: number;
+  /**
+   * What went wrong with what the panel did at once, as turning off auto-merge, shown above its
+   * foot until it's asked again or the panel closes.
+   */
+  readonly trouble: PanelTrouble | undefined;
+}
+
+/** A failure the panel shows: what failed, why, and GitHub's own text. */
+export interface PanelTrouble {
+  readonly title: string;
+  readonly reason: string | undefined;
+  readonly details: string | undefined;
 }
 
 export const panels = tabState<Panel>(() => ({
@@ -101,6 +114,7 @@ export const panels = tabState<Panel>(() => ({
   squash: { kind: 'none' },
   place: { kind: 'none' },
   round: 0,
+  trouble: undefined,
 }));
 
 /**
@@ -150,14 +164,28 @@ export interface Sketch {
 }
 
 /**
+ * What a merge's plan is asked of main with: the view, what was `asked`, the method shown, and the
+ * squash commit's text as typed. Asked again as it was, "Try again" plans the same merge afresh.
+ */
+export interface PlanAsk {
+  readonly id: string;
+  readonly asked: Asked;
+  readonly method: Method | null;
+  readonly title: string;
+  readonly message: string;
+}
+
+/**
  * The merge's dialog, in the panel's place:
  *
- * - `planning`: main is planning the merge view `id` offers, for pull request `number`, which the
- *   panel's main button named `label`, under the `title` its plan will have, with what the panel
- *   knows of it already, `sketch`;
+ * - `planning`: main is planning the merge view `id` offers (`ask`), for pull request `number`,
+ *   which the panel's main button named `label`, under the `title` its plan will have, with what
+ *   the panel knows of it already, `sketch`; or main said why there's none (`failed`, in its
+ *   words, or `error`, what went wrong on the way);
  * - `confirm`: the plan, for the reader to confirm, with `note`, what changed since one before it,
  *   while `sending` the confirmation to main; for a merge past the rules, with the number `typed`;
- * - `sent`: the plan went, and the merge from it goes as `jobs` says;
+ * - `sent`: the plan went, with the `note` it was confirmed with, and the merge from it goes as
+ *   `jobs` says;
  * - `refused`: main refused the plan as it was confirmed, for `refusal`.
  */
 export type MergeDialog =
@@ -167,7 +195,11 @@ export type MergeDialog =
       readonly number: number;
       readonly label: string;
       readonly title: string;
+      readonly ask: PlanAsk;
       readonly sketch?: Sketch | undefined;
+      /** The plan asked again, whose body stays while main plans it afresh. */
+      readonly last?: MergePlan | undefined;
+      readonly failed?: { readonly why: string | undefined; readonly details?: string } | undefined;
     }
   | {
       readonly kind: 'confirm';
@@ -176,8 +208,15 @@ export type MergeDialog =
       readonly sending: boolean;
       readonly typed?: string | undefined;
     }
-  | { readonly kind: 'sent'; readonly plan: MergePlan }
-  | { readonly kind: 'refused'; readonly plan: MergePlan; readonly refusal: Refusal };
+  | { readonly kind: 'sent'; readonly plan: MergePlan; readonly note: string | undefined }
+  | {
+      readonly kind: 'refused';
+      readonly plan: MergePlan;
+      readonly refusal: Refusal;
+      readonly note: string | undefined;
+      /** What went wrong on the way to main, when it never answered. */
+      readonly details?: string | undefined;
+    };
 
 export interface MergingState {
   readonly dialog: MergeDialog | undefined;
@@ -185,12 +224,18 @@ export interface MergingState {
   readonly jobs: ReadonlyMap<string, JobView>;
   /** The keys of the merges whose end the reader dismissed, or saw in the dialog. */
   readonly seen: ReadonlySet<string>;
+  /** The keys of the merges GitHub is being asked about again, as "Check again" does. */
+  readonly checking: ReadonlySet<string>;
+  /** The views whose auto-merge is being turned off, until main answers. */
+  readonly turningOff: ReadonlySet<string>;
 }
 
 export const merging = createStore<MergingState>()(() => ({
   dialog: undefined,
   jobs: new Map(),
   seen: new Set(),
+  checking: new Set(),
+  turningOff: new Set(),
 }));
 
 /** What names a pull request among the merges: its repository, ignoring case, and its number. */

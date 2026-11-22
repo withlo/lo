@@ -1,19 +1,23 @@
-// The merge queue's dialog, in the tab feature's `tab.dialogs` slot: the change `x` or `J` asks
-// for, to confirm, with the account, the queue and the entry's place, and what else it does; then,
-// when it didn't do what was asked, why. `⏎` confirms and `Esc` cancels. A held key confirms
-// nothing, and nor does the press that opened it: only a fresh press of `⏎` once the question
-// shows.
+// The merge queue's dialog, in the tab feature's `tab.dialogs` slot: the change `x` or `J` asks for,
+// under one title and one body from the moment it opens until it's done: the account, the queue,
+// the entry and its place, and what else the change does. Only the line above the foot and the
+// foot change. The main button is busy while main checks the change and while it's sent, and after
+// a failure reads "Try again", or what the reason offers, with the failure above the foot and
+// GitHub's own words behind Details; when GitHub's answer was lost it reads "Check again", which
+// only looks. Cancel stops the change until it's sent, and Close leaves it going. The dialog closes
+// once the change went, and a toast says so. `⏎` presses the main button and `Esc` leaves. A held
+// key presses nothing, and nor does the press that opened it: only a fresh press of `⏎` once what
+// it would press shows.
 
 import {
   Branch,
   Button,
-  Callout,
   Dialog,
   DialogSpacer,
   FactPerson,
   Facts,
   Key,
-  Spinner,
+  Problem,
   type FactItem,
 } from '@lo/ui';
 import { keyLabels, parseKeys, systemStrokes } from '@lo/ui/commands';
@@ -25,14 +29,19 @@ import { withoutBidi } from '../../tab/window/shared.ts';
 import type { ActPlan } from '../contract.ts';
 import {
   acting,
+  checkAgain,
   confirmAct,
   confirmLabel,
   confirmTitle,
   effectsOf,
-  endedTitle,
   leaveAct,
+  nextLabel,
   ordinal,
+  tryAgain,
+  workingWord,
+  type Failure,
   type QueueDialog,
+  type Sketch,
 } from './acting.ts';
 
 /** A key written in Lo's notation, such as `enter`, as this system shows it. */
@@ -41,120 +50,177 @@ function labels(keys: string): string[] {
   return keyLabels(systemStrokes(parseKeys(keys), system), system);
 }
 
-/** What the dialog shows now. */
+/** What the main button says while the change is checked, before it's sent. */
+const CHECKING = 'Checking…';
+
+/** What the dialog shows now, besides its title and its body, which stay. */
 interface Shown {
-  readonly title: string;
-  readonly body: ReactNode;
-  /** Its main button, `⏎`, if it has one now. */
-  readonly primary: { readonly label: string; readonly busy: boolean } | undefined;
-  /** What `Esc` says it does. */
+  /** The line above the foot: what changed, why the question no longer stands, or what failed. */
+  readonly line: ReactNode;
+  /**
+   * Its main button, `⏎`, if it has one now: busy while what it was pressed for runs, saying
+   * `working`, and that's all that says so.
+   */
+  readonly primary:
+    | {
+        readonly label: string;
+        readonly run: () => void;
+        readonly busy: boolean;
+        readonly working?: string;
+      }
+    | undefined;
+  /** What the other button, `Esc`, says: "Cancel" until the change is sent, then "Close". */
   readonly close: string;
-  /** What focus follows: its main button moves to it when this changes. */
+  /** What focus follows: the main button moves to it when this changes. */
   readonly step: string;
 }
 
-/** What the change will do, as facts: who, in which queue, and where the entry stands. */
-function factsOf(plan: ActPlan): FactItem[] {
+/** What the change names, as facts: who, in which queue, and which entry, where it stands. */
+function factsOf(
+  named: Pick<Sketch, 'login' | 'branch' | 'number' | 'title' | 'position'>,
+): FactItem[] {
   return [
-    { label: 'As', value: <FactPerson login={plan.login} /> },
-    { label: 'Queue', value: <Branch name={withoutBidi(plan.branch)} base /> },
+    { label: 'As', value: <FactPerson login={named.login} /> },
+    { label: 'Queue', value: <Branch name={withoutBidi(named.branch)} base /> },
     {
       label: 'Pull request',
       value: (
         <span className="min-w-0 truncate">
-          #{plan.number} {withoutBidi(plan.title)}
+          #{named.number} {withoutBidi(named.title)}
         </span>
       ),
     },
-    { label: 'Place', value: ordinal(plan.position) },
+    ...(named.position > 0 ? [{ label: 'Place', value: ordinal(named.position) }] : []),
   ];
 }
 
+/** The plan the dialog shows, once main has made one. */
+function planOf(dialog: QueueDialog): ActPlan | undefined {
+  const { step } = dialog;
+  return step.kind === 'planning' ? step.again : step.plan;
+}
+
+/**
+ * What the change will do: the same from the check to the end, so nothing in it moves as its
+ * button is pressed. What leaves with an entry shows once main has planned it.
+ */
+function bodyOf(dialog: QueueDialog): ReactNode {
+  const { sketch } = dialog;
+  const plan = planOf(dialog);
+  const effects = effectsOf({ kind: sketch.kind, above: plan?.above ?? [] });
+  return (
+    <>
+      <Facts items={factsOf(plan ?? sketch)} />
+      {effects.map((line) => (
+        <p key={line} className="m-0 text-fg text-small">
+          {withoutBidi(line)}
+        </p>
+      ))}
+    </>
+  );
+}
+
+/** A line above the foot that needs no answer. */
+function Line({ children }: { children: string }) {
+  return (
+    <p role="status" className="m-0 text-fg text-small">
+      {withoutBidi(children)}
+    </p>
+  );
+}
+
+/** What went wrong, above the foot: what failed, why, and GitHub's own words behind Details. */
+function FailureLine({ failure }: { failure: Failure }) {
+  return (
+    <Problem
+      title={withoutBidi(failure.title)}
+      reason={failure.why === '' ? undefined : withoutBidi(failure.why)}
+      details={failure.details}
+    />
+  );
+}
+
 function shownOf(dialog: QueueDialog): Shown {
-  switch (dialog.kind) {
+  const { sketch, step } = dialog;
+  const label = confirmLabel(sketch.kind);
+  switch (step.kind) {
     case 'planning':
       return {
-        title: confirmTitle({ kind: dialog.asked, number: dialog.number, branch: dialog.branch }),
         step: 'planning',
         close: 'Cancel',
         // There from the start, so focus is on it, not on Cancel, when the plan comes.
-        primary: { label: confirmLabel(dialog.asked), busy: true },
-        body: (
-          <div role="status" className="flex items-center gap-8 text-fg-muted text-small">
-            <Spinner />
-            Checking #{dialog.number} with GitHub
-          </div>
-        ),
+        primary: { label, run: () => undefined, busy: true, working: CHECKING },
+        line: step.note !== undefined && <Line>{step.note}</Line>,
       };
-    case 'confirm': {
-      const { plan } = dialog;
+    case 'ask':
       return {
-        title: confirmTitle(plan),
-        step: `confirm ${plan.key}`,
+        step: `ask ${step.plan.key}`,
         close: 'Cancel',
-        primary: { label: confirmLabel(plan.kind), busy: dialog.sending },
-        body: (
-          <>
-            <Facts items={factsOf(plan)} />
-            {effectsOf(plan).map((line) => (
-              <p key={line} className="m-0 text-fg text-small">
-                {withoutBidi(line)}
-              </p>
-            ))}
-            {dialog.note !== undefined && (
-              <Callout tone="warning" role="status">
-                {withoutBidi(dialog.note)}
-              </Callout>
-            )}
-            {dialog.sending && (
-              <div role="status" className="flex items-center gap-8 text-fg-muted text-small">
-                <Spinner />
-                Checking #{plan.number} with GitHub, then sending. Cancel stops it until it’s sent.
-              </div>
-            )}
-          </>
-        ),
+        primary: { label, run: confirmAct, busy: false, working: CHECKING },
+        line: step.note !== undefined && <Line>{step.note}</Line>,
+      };
+    case 'checking':
+      return {
+        step: `ask ${step.plan.key}`,
+        close: 'Cancel',
+        primary: { label, run: () => undefined, busy: true, working: CHECKING },
+        line: undefined,
+      };
+    case 'sent':
+      return {
+        step: `ask ${step.plan.key}`,
+        close: 'Close',
+        primary: { label, run: () => undefined, busy: true, working: workingWord(sketch.kind) },
+        line: undefined,
+      };
+    case 'gone':
+      return { step: 'gone', close: 'Close', primary: undefined, line: <Line>{step.why}</Line> };
+    case 'failed': {
+      const again = nextLabel(step.failure.next);
+      return {
+        step: `failed ${step.failure.title}`,
+        close: 'Close',
+        primary: again === undefined ? undefined : { label: again, run: tryAgain, busy: false },
+        line: <FailureLine failure={step.failure} />,
       };
     }
-    case 'ended':
+    case 'unknown':
       return {
-        title: confirmTitle(dialog.plan),
-        step: `ended ${dialog.plan.key}`,
+        step: 'unknown',
         close: 'Close',
-        primary: undefined,
-        body: (
-          <Callout tone={dialog.how === 'refused' ? 'danger' : 'warning'} role="alert">
-            <strong className="block font-semibold">{endedTitle(dialog.plan, dialog.how)}</strong>
-            <span>{withoutBidi(dialog.why)}</span>
-          </Callout>
-        ),
+        primary: { label: 'Check again', run: checkAgain, busy: step.looking, working: CHECKING },
+        line: <FailureLine failure={step.failure} />,
       };
     default:
-      dialog satisfies never;
-      throw new Error(`a dialog Lo doesn't know: ${JSON.stringify(dialog)}`);
+      step satisfies never;
+      throw new Error(`a step Lo doesn't know: ${JSON.stringify(step)}`);
   }
 }
 
-/** The dialog's main button, with `⏎`. */
+/** The dialog's main button, with `⏎`, as wide while it works as at rest. */
 function PrimaryButton({
   primary,
+  widest,
   button,
 }: {
   primary: NonNullable<Shown['primary']>;
+  widest: string;
   button: RefObject<HTMLButtonElement | null>;
 }) {
   return (
     <Button
       ref={button}
       variant="primary"
-      aria-disabled={primary.busy || undefined}
+      busy={primary.busy}
+      working={primary.working}
+      widest={widest}
       onClick={(event) => {
         // Not a double click's second, which would press what came up in its place unseen.
-        if (event.detail <= 1 && !primary.busy) confirmAct();
+        if (event.detail <= 1 && !primary.busy) primary.run();
       }}
     >
       {primary.label}
-      <Key keys={labels('enter')} decorative className="text-on-accent" />
+      <Key keys={labels('enter')} decorative />
     </Button>
   );
 }
@@ -200,21 +266,23 @@ export function QueueConfirm() {
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.key !== 'Enter' || event.defaultPrevented) return;
     if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return;
-    // Another control with focus, such as Cancel, takes its own press.
+    // Another control with focus, such as Cancel or Details, takes its own press.
     const target = event.target instanceof Element ? event.target.closest(CONTROLS) : null;
     if (target !== null && target !== button.current) return;
     event.preventDefault();
     // Only a fresh press, once what it would press is on screen.
     if (event.repeat || event.timeStamp < shownAt.current) return;
-    if (shown?.primary && !shown.primary.busy) confirmAct();
+    if (shown?.primary && !shown.primary.busy) shown.primary.run();
   };
+  const working = dialog === undefined ? CHECKING : workingWord(dialog.sketch.kind);
   return (
     <Dialog
       open={open}
       onOpenChange={(next) => {
         if (!next) leaveAct();
       }}
-      title={withoutBidi(shown?.title ?? 'Merge queue')}
+      title={dialog && withoutBidi(confirmTitle(dialog.sketch))}
+      size="sm"
       foot={
         shown && (
           <>
@@ -223,7 +291,13 @@ export function QueueConfirm() {
               {shown.close}
               <Key keys={labels('esc')} decorative />
             </Button>
-            {shown.primary && <PrimaryButton primary={shown.primary} button={button} />}
+            {shown.primary && (
+              <PrimaryButton
+                primary={shown.primary}
+                widest={working.length > CHECKING.length ? working : CHECKING}
+                button={button}
+              />
+            )}
           </>
         )
       }
@@ -232,7 +306,8 @@ export function QueueConfirm() {
       container={document.getElementById('root')}
       testId="queue-confirm"
     >
-      {shown?.body}
+      {dialog && bodyOf(dialog)}
+      {shown?.line}
     </Dialog>
   );
 }

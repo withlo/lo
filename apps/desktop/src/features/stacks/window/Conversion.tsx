@@ -1,44 +1,39 @@
-// The dialog for making a chain a GitHub stack, in the tab feature's `tab.dialogs` slot: the plan to
-// confirm, every change as main sends it, and, when it stops partway, what changed, GitHub's reason
-// and how to put the base branches back.
+// The dialog for converting a chain to a GitHub stack, in the tab feature's `tab.dialogs` slot. One
+// title and one body from the check to the end: the account it acts as and the steps it sends, each
+// marked as main sends it, with the steps that undo them below once asked for. Only the buttons
+// and the line above them change: what GitHub will show, then that it's done, stopped or undone, or
+// what went wrong.
 
 import {
-  Avatar,
   Button,
-  Callout,
   Dialog,
   DialogSpacer,
+  FactPerson,
+  Facts,
   Key,
-  Spinner,
+  Problem,
   Steps,
   type StepItem,
   type StepState,
 } from '@lo/ui';
 import { keyLabels, parseKeys, systemStrokes } from '@lo/ui/commands';
-import {
-  useEffect,
-  useRef,
-  type KeyboardEvent,
-  type MouseEvent,
-  type ReactNode,
-  type RefObject,
-} from 'react';
+import { useEffect, useRef, type KeyboardEvent, type ReactNode, type RefObject } from 'react';
 import { useStore } from 'zustand';
 
 import { registry } from '../../../window/commands/registry.ts';
-import { client } from '../../../window/ipc.ts';
-import { contract as tabs } from '../../tab/contract.ts';
 import { withoutBidi } from '../../tab/window/shared.ts';
-import type {
-  Change,
-  ChangeRow,
-  ChangeStatus,
-  ConversionNote,
-  ConversionView,
-  Plan,
-} from '../contract.ts';
-import { confirm, dismiss, putBack, tryAgain, TITLE } from './actions.ts';
-import { stacksStore, type Dialog as Open } from './store.ts';
+import type { Change, ChangeRow, ChangeStatus, ConversionView } from '../contract.ts';
+import {
+  confirm,
+  CONVERT,
+  CONVERTED,
+  dismiss,
+  openOnGithub,
+  putBack,
+  TITLE,
+  tryAgain,
+} from './actions.ts';
+import { stacksStore, type Dialog as Open, type Failure } from './store.ts';
 
 /** A key written in Lo's notation, such as `enter`, as this system shows it. */
 function labels(keys: string): string[] {
@@ -71,327 +66,257 @@ const STEP: Readonly<Record<ChangeStatus, StepState>> = {
   skipped: 'skipped',
 };
 
-/** What a change is, as a step names it. */
+/** What a change is, as its step says it. */
 function changeTitle(change: Change): ReactNode {
   switch (change.kind) {
     case 'retarget':
       return (
         <>
-          #{change.pr}’s base: <Branch name={change.from} /> → <Branch name={change.to} />
+          Move #{change.pr} onto <Branch name={change.to} />.
         </>
       );
     case 'create':
-      return (
-        <>
-          <strong className="font-semibold">Create the stack</strong>,{' '}
-          {change.prs.map((pr) => `#${pr}`).join(' → ')}
-        </>
-      );
+      return `Create the GitHub stack from ${numbers(change.prs)}.`;
     case 'add':
-      return (
-        <>
-          <strong className="font-semibold">Add {numbers(change.prs)}</strong> to GitHub stack #
-          {change.stack}
-        </>
-      );
+      return `Add ${numbers(change.prs)} to the GitHub stack.`;
     case 'unstack':
-      return <strong className="font-semibold">Unstack GitHub stack #{change.stack}</strong>;
+      return 'Unstack the GitHub stack.';
     default:
       throw new Error(`a change Lo doesn't know: ${JSON.stringify(change satisfies never)}`);
   }
 }
 
-/** What's said under a change: what GitHub said of it, or what came of it. */
-function changeDetail(row: ChangeRow): ReactNode {
-  // GitHub's words, or a branch's name, which may carry controls that reorder what follows.
-  const detail = withoutBidi(row.detail ?? '');
-  switch (row.status) {
+/** "GitHub’s rate limit resets at 14:05.", while GitHub has asked Lo to hold off. */
+function waiting(until: number): string {
+  const time = new Date(until).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  return `GitHub’s rate limit resets at ${time}.`;
+}
+
+/**
+ * The line under a step: where a base branch moves from, that it was so already, that its answer
+ * was lost, what it was left as, or, on the step being sent, when GitHub lets it go.
+ */
+function changeDetail(row: ChangeRow, waitingUntil: number | null): ReactNode {
+  const { change, status } = row;
+  if (status === 'now' && waitingUntil !== null) return waiting(waitingUntil);
+  switch (status) {
     case 'unchanged':
-      return 'It was so already, so nothing was sent.';
-    case 'failed':
-      return detail || undefined;
+      return change.kind === 'retarget' ? (
+        <>
+          Already on <Branch name={change.to} />.
+        </>
+      ) : undefined;
     case 'unknown':
-      return `${detail} It may have gone through.`.trim();
+      return 'Not confirmed';
     case 'left':
       // A base branch changed elsewhere names the branch; a stack that changed says how.
-      return row.change.kind === 'retarget' ? (
+      return change.kind === 'retarget' ? (
         <>
-          Its base is now <Branch name={detail} />. Lo left it.
+          Its base branch is now <Branch name={row.detail ?? ''} />.
         </>
       ) : (
-        detail
+        withoutBidi(row.detail ?? '')
       );
-    case 'skipped':
-      return 'Not sent.';
     case 'todo':
     case 'now':
     case 'done':
-      return undefined;
+    case 'failed':
+    case 'skipped':
+      return change.kind === 'retarget' ? (
+        <>
+          From <Branch name={change.from} />.
+        </>
+      ) : undefined;
     default:
-      throw new Error(`a state Lo doesn't know: ${JSON.stringify(row.status satisfies never)}`);
+      throw new Error(`a state Lo doesn't know: ${JSON.stringify(status satisfies never)}`);
   }
 }
 
-function stepsOf(rows: readonly ChangeRow[], which: string): StepItem[] {
-  return rows.map((row, index) => ({
+function stepsOf(rows: readonly ChangeRow[], which: string, waitingUntil: number | null) {
+  return rows.map((row, index): StepItem => ({
     key: `${which}${index}`,
     state: STEP[row.status],
     title: changeTitle(row.change),
-    detail: changeDetail(row),
+    detail: changeDetail(row, waitingUntil),
   }));
+}
+
+/** A button in the foot: what it says, what it runs, and what it says while it runs. */
+interface FootButton {
+  readonly label: string;
+  readonly run: () => void;
+  readonly busy?: boolean;
+  /** What it says while busy, the verb of its label: "Converting…". */
+  readonly working?: string;
+  /** Whether `Esc` presses it too: the button that leaves, or stops what's being sent. */
+  readonly leaves?: boolean;
+}
+
+/** What went wrong, above the buttons. */
+interface Said {
+  readonly title: string;
+  readonly reason: string | null;
+  readonly details: string | null;
 }
 
 /** What the dialog shows now. */
 interface Shown {
-  readonly title: string;
-  readonly description?: ReactNode;
-  readonly body: ReactNode;
-  readonly foot: ReactNode;
+  readonly description?: string | undefined;
+  /** Who it acts as, once the plan says. */
+  readonly login?: string | undefined;
+  readonly steps: readonly StepItem[];
+  /** The steps that undo the conversion, once asked for. */
+  readonly undo: readonly StepItem[];
+  /** The line above the buttons, while nothing went wrong. */
+  readonly line?: string | null | undefined;
+  readonly problem?: Said | undefined;
+  /** Its main button, `⏎`. */
+  readonly primary: FootButton;
+  /** The others, before it. */
+  readonly others: readonly FootButton[];
   /** What focus follows: its main button moves to it when this changes. */
   readonly step: string;
 }
 
-/**
- * `run`, for a button's click, but not for a double click's second: the first can bring up another
- * button in the same place, which the second would press unseen.
- */
-function pressed(run: () => void): (event: MouseEvent) => void {
-  return (event) => {
-    if (event.detail <= 1) run();
-  };
+const LEAVE_CANCEL: FootButton = { label: 'Cancel', run: dismiss, leaves: true };
+const LEAVE_CLOSE: FootButton = { label: 'Close', run: dismiss, leaves: true };
+
+/** What a failure to ask main says, under `title`. */
+function said(title: string, failure: Failure | undefined): Said | undefined {
+  return failure && { title, reason: failure.reason, details: failure.details };
 }
 
-/** A button that closes the dialog, or stops what's being sent, with `Esc`. */
-function escButton(label: string, disabled = false) {
-  return (
-    <Button onClick={pressed(dismiss)} disabled={disabled}>
-      {label}
-      <Key keys={labels('esc')} decorative />
-    </Button>
+/** The steps a plan sends, none sent yet. */
+function planned(changes: readonly Change[]): StepItem[] {
+  return stepsOf(
+    changes.map((change) => ({ change, status: 'todo', detail: null })),
+    'c',
+    null,
   );
 }
 
-/** The dialog's main button, with `⏎`. */
-function enterButton(
-  label: string,
-  run: () => void,
-  primary: RefObject<HTMLButtonElement | null>,
-  busy = false,
-) {
-  return (
-    <Button
-      ref={primary}
-      variant="primary"
-      onClick={pressed(run)}
-      aria-disabled={busy || undefined}
-    >
-      {label}
-      <Key keys={labels('enter')} decorative className="text-on-accent" />
-    </Button>
-  );
-}
-
-/**
- * Each pull request the plan changes, with its base branch and the one it gets. Only titles wrap: a
- * branch too long for the dialog scrolls the table sideways.
- */
-function Bases({ plan }: { plan: Plan }) {
-  const cell = 'border-t border-border-subtle py-6 pe-8 align-middle';
-  return (
-    <div className="overflow-x-auto">
-      <table className="w-full border-collapse text-small">
-        <tbody>
-          {plan.rows.map((row) => (
-            <tr key={row.number} className={row.to === null ? '' : 'bg-accent-soft'}>
-              <td
-                className={`${cell} ps-8 whitespace-nowrap tabular-nums ${row.to === null ? 'text-fg-muted' : 'text-fg'}`}
-              >
-                #{row.number}
-              </td>
-              <td className={`${cell} w-full text-fg`}>{withoutBidi(row.title)}</td>
-              <td className={`${cell} whitespace-nowrap`}>
-                <Branch name={row.base} />
-                {row.to !== null && (
-                  <>
-                    {' → '}
-                    <Branch name={row.to} />
-                  </>
-                )}
-              </td>
-              <td className={`${cell} whitespace-nowrap text-fg-muted`}>
-                {row.to === null ? 'no change' : ''}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
-/** What Lo left, each with GitHub's page for it. */
-function Notes({ notes }: { notes: readonly ConversionNote[] }) {
-  return notes.map((note) => (
-    <Callout key={note.text} tone="warning">
-      <span>{withoutBidi(note.text)}</span>
-      {note.link !== null && (
-        <span className="mt-6 block">
-          <Button
-            size="sm"
-            onClick={() => {
-              const url = note.link;
-              if (url !== null) {
-                client(tabs)
-                  .openExternal({ url })
-                  .catch((error: unknown) => console.error('stacks:', error));
-              }
-            }}
-          >
-            Open on GitHub
-          </Button>
-        </span>
-      )}
-    </Callout>
-  ));
-}
-
-/** "Waiting for GitHub until 14:05", while GitHub has asked Lo to hold off. */
-function waiting(until: number): string {
-  const time = new Date(until).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  return `Waiting for GitHub until ${time}. Lo sends the next change then.`;
-}
-
-function confirmShown(
-  open: Extract<Open, { kind: 'confirm' }>,
-  primary: RefObject<HTMLButtonElement | null>,
-): Shown {
-  const { plan } = open;
+function planningShown(open: Extract<Open, { kind: 'planning' }>): Shown {
+  const problem = said('Couldn’t check the stack', open.problem);
   return {
-    title: plan.title,
-    description: plan.description,
-    step: `confirm ${plan.key}`,
-    body: (
-      <>
-        <section aria-label="Base branches" className="flex flex-col gap-6">
-          <h3 className="m-0 text-small-medium text-fg-muted">{plan.heading}</h3>
-          <Bases plan={plan} />
-        </section>
-        <section aria-label="The stack" className="flex flex-col gap-6">
-          <h3 className="m-0 text-small-medium text-fg-muted">2 · Then the stack, bottom to top</h3>
-          <p className="m-0 text-small">{plan.stack}</p>
-        </section>
-        {plan.warning !== null && <Callout tone="warning">{plan.warning}</Callout>}
-        {open.problem !== undefined && (
-          <Callout tone="danger" role="alert">
-            {open.problem}
-          </Callout>
-        )}
-      </>
-    ),
-    foot: (
-      <>
-        <span className="flex items-center gap-6">
-          <Avatar login={plan.login} size="sm" />
-          <span>
-            as <span className="text-fg">{plan.login}</span>
-          </span>
-        </span>
-        <DialogSpacer />
-        {escButton('Cancel', open.sending)}
-        {enterButton(plan.confirm, confirm, primary, open.sending)}
-      </>
-    ),
+    steps: [],
+    undo: [],
+    problem,
+    primary: problem
+      ? { label: 'Try again', run: tryAgain, busy: false }
+      : { label: CONVERT, run: () => undefined, busy: true, working: 'Checking…' },
+    others: [problem ? LEAVE_CLOSE : LEAVE_CANCEL],
+    step: problem ? 'unchecked' : 'planning',
   };
+}
+
+function confirmShown(open: Extract<Open, { kind: 'confirm' }>): Shown {
+  const { plan } = open;
+  const problem = said('Couldn’t convert to GitHub stack', open.problem);
+  return {
+    description: plan.description,
+    login: plan.login,
+    steps: planned(plan.changes),
+    undo: [],
+    line: problem ? undefined : plan.warning,
+    problem,
+    primary: problem
+      ? { label: 'Try again', run: tryAgain, busy: false }
+      : { label: CONVERT, run: confirm, busy: open.sending, working: 'Converting…' },
+    others: [problem ? LEAVE_CLOSE : LEAVE_CANCEL],
+    step: `confirm ${plan.key} ${problem ? 'failed' : ''}`,
+  };
+}
+
+/** The button that undoes a conversion's changes, busy while it does. */
+function undoButton(working: boolean): FootButton {
+  return { label: 'Undo changes', run: putBack, busy: working, working: 'Undoing…' };
 }
 
 function conversionShown(
+  open: Extract<Open, { kind: 'conversion' }>,
   view: ConversionView | undefined,
-  primary: RefObject<HTMLButtonElement | null>,
-  asking: boolean,
 ): Shown {
-  if (!view) {
-    return {
-      title: TITLE,
-      step: 'sending',
-      body: (
-        <div role="status" className="flex items-center gap-8 text-fg-muted text-small">
-          <Spinner />
-          Sending the first change…
-        </div>
-      ),
-      foot: (
-        <>
-          <DialogSpacer />
-          {escButton('Cancel')}
-        </>
-      ),
-    };
-  }
-  const { phase } = view;
-  const steps = (
-    <>
-      <Steps steps={stepsOf(view.changes, 'c')} label="Changes" />
-      {view.putBack.length > 0 && (
-        <section aria-label="Putting back" className="flex flex-col gap-8">
-          <h3 className="m-0 text-small-medium text-fg-muted">
-            Putting back, the last change first
-          </h3>
-          <Steps steps={stepsOf(view.putBack, 'p')} label="Putting back" />
-        </section>
-      )}
-      <Notes notes={view.notes} />
-    </>
-  );
-  const description =
-    view.waitingUntil === null ? view.description || undefined : waiting(view.waitingUntil);
+  const { plan } = open;
+  const base = {
+    description: plan.description,
+    login: plan.login,
+    steps: view
+      ? stepsOf(view.changes, 'c', view.putBack.length > 0 ? null : view.waitingUntil)
+      : planned(plan.changes),
+    undo: view ? stepsOf(view.putBack, 'u', view.waitingUntil) : [],
+  };
+  // Undoing couldn't be asked for.
+  const refused = said('Couldn’t undo the changes', open.problem);
+  const stop: FootButton = {
+    label: 'Cancel',
+    run: dismiss,
+    leaves: true,
+    busy: view?.stopping === true,
+    working: 'Stopping…',
+  };
+  const phase = view?.phase ?? 'running';
   switch (phase) {
     case 'running':
+      return {
+        ...base,
+        primary: { label: CONVERT, run: () => undefined, busy: true, working: 'Converting…' },
+        others: [stop],
+        step: 'running',
+      };
     case 'puttingBack':
+      return { ...base, primary: undoButton(true), others: [stop], step: 'puttingBack' };
     case 'done':
       return {
-        title: view.title,
-        description,
-        step: phase,
-        body: steps,
-        foot: (
-          <>
-            <DialogSpacer />
-            {escButton(view.stopping ? 'Stopping after this change…' : 'Cancel', view.stopping)}
-          </>
-        ),
+        ...base,
+        line: view?.line ?? CONVERTED,
+        primary: { label: 'Done', run: dismiss },
+        others: [],
+        step: 'done',
       };
     case 'failed':
     case 'stopped':
     case 'putBack': {
-      const label = view.putBackLabel;
+      if (open.asking) {
+        return { ...base, primary: undoButton(true), others: [LEAVE_CLOSE], step: 'asking' };
+      }
+      const problem = refused ?? view?.problem ?? undefined;
+      const undo = view?.undo === true;
+      const link = view?.problem?.link ?? null;
+      const step = `${phase} ${String(undo)} ${link ?? ''} ${refused ? 'refused' : ''}`;
+      // Undone, or left as it was: nothing more to do but close.
+      if (phase === 'putBack' && !undo) {
+        return {
+          ...base,
+          line: view?.line,
+          problem,
+          primary: { label: 'Close', run: dismiss },
+          others: [],
+          step,
+        };
+      }
+      // Undoing went wrong, or stopped, and what's left can be undone again.
+      if (phase === 'putBack' || refused) {
+        return {
+          ...base,
+          line: view?.line,
+          problem,
+          primary: { label: 'Try again', run: putBack, busy: false },
+          others: [LEAVE_CLOSE],
+          step,
+        };
+      }
+      const again: FootButton =
+        link === null
+          ? { label: 'Try again', run: tryAgain, busy: false }
+          : // Not confirmed: GitHub's page shows whether it went.
+            { label: 'Open on GitHub', run: () => openOnGithub(link) };
       return {
-        title: view.title,
-        description,
-        step: `${phase} ${label ?? ''}`,
-        body: steps,
-        foot: (
-          <>
-            <DialogSpacer />
-            {label === null ? (
-              phase === 'putBack' ? (
-                enterButton('Done', dismiss, primary)
-              ) : (
-                <>
-                  {escButton('Close')}
-                  {enterButton('Try again', tryAgain, primary)}
-                </>
-              )
-            ) : (
-              <>
-                {phase === 'putBack' ? null : (
-                  <Button onClick={pressed(tryAgain)}>Try again</Button>
-                )}
-                {escButton('Close')}
-                {enterButton(label, putBack, primary, asking)}
-              </>
-            )}
-          </>
-        ),
+        ...base,
+        line: view?.line,
+        problem,
+        primary: again,
+        others: [LEAVE_CLOSE, ...(undo ? [undoButton(false)] : [])],
+        step,
       };
     }
     default:
@@ -399,36 +324,79 @@ function conversionShown(
   }
 }
 
-function shownOf(
-  open: Open,
-  views: ReadonlyMap<string, ConversionView>,
-  primary: RefObject<HTMLButtonElement | null>,
-): Shown {
+function shownOf(open: Open, views: ReadonlyMap<string, ConversionView>): Shown {
   switch (open.kind) {
     case 'planning':
-      return {
-        title: TITLE,
-        step: 'planning',
-        body: (
-          <div role="status" className="flex items-center gap-8 text-fg-muted text-small">
-            <Spinner />
-            Asking GitHub about #{open.number}’s stack…
-          </div>
-        ),
-        foot: (
-          <>
-            <DialogSpacer />
-            {escButton('Cancel')}
-          </>
-        ),
-      };
+      return planningShown(open);
     case 'confirm':
-      return confirmShown(open, primary);
+      return confirmShown(open);
     case 'conversion':
-      return conversionShown(views.get(open.key), primary, open.asking);
+      return conversionShown(open, views.get(open.key));
     default:
       throw new Error(`a dialog Lo doesn't know: ${JSON.stringify(open satisfies never)}`);
   }
+}
+
+/** What the dialog says: who it acts as, the steps, and the line above its buttons. */
+function Body({ shown }: { shown: Shown }) {
+  const { problem, line } = shown;
+  return (
+    <>
+      {shown.login !== undefined && (
+        <Facts items={[{ label: 'As', value: <FactPerson login={shown.login} /> }]} />
+      )}
+      {shown.steps.length > 0 && <Steps label="Steps" steps={shown.steps} />}
+      {shown.undo.length > 0 && (
+        <div className="flex flex-col gap-8">
+          <h3 className="m-0 text-small-medium text-fg-muted">Undo</h3>
+          <Steps label="Undo" steps={shown.undo} />
+        </div>
+      )}
+      {problem === undefined && line !== undefined && line !== null && (
+        <p role="status" className="m-0 text-fg text-small">
+          {withoutBidi(line)}
+        </p>
+      )}
+      {problem !== undefined && (
+        <Problem
+          layout="inline"
+          title={problem.title}
+          // A reason may name a branch: GitHub's text.
+          reason={problem.reason === null ? undefined : withoutBidi(problem.reason)}
+          details={problem.details === null ? undefined : withoutBidi(problem.details)}
+        />
+      )}
+    </>
+  );
+}
+
+/** A button of the foot. The main one takes `⏎` and focus; the one that leaves shows `Esc`. */
+function FootAction({
+  button,
+  primary = false,
+  buttonRef,
+}: {
+  button: FootButton;
+  primary?: boolean;
+  buttonRef?: RefObject<HTMLButtonElement | null>;
+}) {
+  const keys = primary ? labels('enter') : button.leaves ? labels('esc') : undefined;
+  const busy = button.busy === true;
+  return (
+    <Button
+      ref={buttonRef}
+      variant={primary ? 'primary' : 'secondary'}
+      busy={button.working === undefined ? undefined : busy}
+      working={button.working}
+      onClick={(event) => {
+        // Not a double click's second, which would press what came up in its place unseen.
+        if (event.detail <= 1 && !busy) button.run();
+      }}
+    >
+      {button.label}
+      {keys && <Key keys={keys} decorative />}
+    </Button>
+  );
 }
 
 /** What takes `⏎` for itself: a button, a link or a field. */
@@ -439,12 +407,13 @@ export function ConversionDialog() {
   const open = useStore(stacksStore, (state) => state.dialog);
   const views = useStore(stacksStore, (state) => state.conversions);
   const primary = useRef<HTMLButtonElement>(null);
-  const shown = open && shownOf(open, views, primary);
+  const shown = open && shownOf(open, views);
   const step = shown?.step;
   const isOpen = open !== undefined;
   // A held key repeats, and focus follows each main button as it comes up, so a held `⏎` would
-  // press the next one too, such as "Make the stack" after "Try again". While the dialog is open,
-  // only a key's first press acts: a repeat is stopped before a button, or anything else, sees it.
+  // press the next one too, such as "Convert to GitHub stack" after "Try again". While the dialog
+  // is open, only a key's first press acts: a repeat is stopped before a button, or anything else,
+  // sees it.
   useEffect(() => {
     if (!isOpen) return undefined;
     const held = (event: globalThis.KeyboardEvent) => {
@@ -477,18 +446,26 @@ export function ConversionDialog() {
       onOpenChange={(next) => {
         if (!next) dismiss();
       }}
-      title={shown?.title ?? TITLE}
+      size="md"
+      title={TITLE}
       description={shown?.description}
-      foot={shown?.foot}
+      foot={
+        shown && (
+          <>
+            <DialogSpacer />
+            {shown.others.map((button) => (
+              <FootAction key={button.label} button={button} />
+            ))}
+            <FootAction button={shown.primary} primary buttonRef={primary} />
+          </>
+        )
+      }
       initialFocus={primary}
       onKeyDown={onKeyDown}
       container={document.getElementById('root')}
       testId="make-stack"
     >
-      <span role="status" className="sr-only">
-        {shown?.title}
-      </span>
-      {shown?.body}
+      {shown && <Body shown={shown} />}
     </Dialog>
   );
 }

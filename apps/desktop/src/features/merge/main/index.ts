@@ -11,7 +11,7 @@
 // the watch over auto-merge it turned on after your approval (`./watch.ts`), kept in
 // `merge_shipped` for a Lo started again.
 
-import { GithubError, MergeJobs, squashText } from '@lo/github';
+import { MergeJobs, squashText } from '@lo/github';
 
 import { IpcError } from '../../../ipc/contract.ts';
 import { openPage } from '../../../main/browser.ts';
@@ -24,6 +24,7 @@ import { forest } from '../../stacks/service.ts';
 import { tabs } from '../../tab/service.ts';
 import { contract } from '../contract.ts';
 import { writes } from '../service.ts';
+import { explained } from './causes.ts';
 import { holdsIn } from './holds.ts';
 import { Merging } from './merging.ts';
 import { MethodStore } from './methods.ts';
@@ -45,27 +46,30 @@ let watch: ShipWatch | undefined;
 const turns = new MergeTurns();
 const stops: (() => void)[] = [];
 
-/** What `start` made, for a handler: the window asks nothing before main has started. */
+/**
+ * What `start` made, for a handler: the window asks nothing before main has started, and never
+ * reads why once it stops, as it's closing.
+ */
 function started(): MergeReads {
-  if (reads === undefined) throw new IpcError('stopped', 'Lo is quitting.');
+  if (reads === undefined) throw new IpcError('stopped', '');
   return reads;
 }
 
 /** The merge queues' reads, once `start` made them. */
 function inQueues(): QueueReads {
-  if (queues === undefined) throw new IpcError('stopped', 'Lo is quitting.');
+  if (queues === undefined) throw new IpcError('stopped', '');
   return queues;
 }
 
 /** Merging, once `start` made it. */
 function merges(): Merging {
-  if (merging === undefined) throw new IpcError('stopped', 'Lo is quitting.');
+  if (merging === undefined) throw new IpcError('stopped', '');
   return merging;
 }
 
 /** Approve and ship, once `start` made it. */
 function ships(): Shipping {
-  if (shipping === undefined) throw new IpcError('stopped', 'Lo is quitting.');
+  if (shipping === undefined) throw new IpcError('stopped', '');
   return shipping;
 }
 
@@ -76,17 +80,15 @@ export default defineFeature(contract, {
     state: ({ id }) => started().current(id),
     async panel({ id }) {
       const reader = started().reader(id);
-      if (!reader) {
-        throw new IpcError('unavailable', 'Lo hasn’t read whether this pull request can merge.');
-      }
+      // The merge status reads "Checking…" until it's read.
+      if (!reader) throw new IpcError('unavailable', '');
       try {
         const read = await reader.poller.readOnce((client) => squashText(client, reader.pull));
         return { title: read.title, message: read.message, head: reader.head };
       } catch (error) {
-        const why = error instanceof GithubError ? error.message : String(error);
         throw new IpcError(
           'unavailable',
-          `GitHub didn’t say how it would start the commit: ${why}`,
+          explained(error, { login: reader.login, owner: reader.pull.repo.owner }),
         );
       }
     },
@@ -94,7 +96,8 @@ export default defineFeature(contract, {
       // Only an `https://` page this view's status links: a check's run, or the pull request.
       const linked = started().links(id, url) || inQueues().links(id, url);
       if (URL.parse(url)?.protocol !== 'https:' || !linked) {
-        throw new IpcError('refused', 'Lo opens only the pages the merge status links.');
+        // Never reaches the reader: only a page the window shows a link to is asked for.
+        throw new IpcError('refused', '');
       }
       await openPage(url);
     },

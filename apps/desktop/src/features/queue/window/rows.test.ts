@@ -95,13 +95,13 @@ describe('the queue’s entries', () => {
       yours: true,
       state: 'running',
       inQueue: '14 min',
-      merges: '~2 min',
+      merges: 'about 2 min',
     });
     expect(alone?.kind === 'entry' && alone.entry).toMatchObject({
       key: 'queued-4774',
       state: 'waiting',
       inQueue: '6 min',
-      merges: '~8 min',
+      merges: 'about 8 min',
     });
   });
 
@@ -115,7 +115,7 @@ describe('the queue’s entries', () => {
 
   it('name an author GitHub deleted, rather than leave a blank', () => {
     const [item] = itemsOf([entry(1, 7, { author: null })], NOW);
-    expect(item?.kind === 'entry' && item.entry.author).toBe('A deleted account');
+    expect(item?.kind === 'entry' && item.entry.author).toBe('Deleted account');
   });
 
   it('say how each stands: checks running, waiting, or about to be removed', () => {
@@ -126,25 +126,25 @@ describe('the queue’s entries', () => {
     ).toEqual(['waiting', 'running', 'waiting', 'removal', 'waiting']);
   });
 
-  it('say how long they’ve been queued and when they should merge, or that it isn’t known', () => {
+  it('say how long they’ve been queued and when they should merge, in the largest whole unit, or that it isn’t known', () => {
     expect([
       inQueue(NOW - 30_000, NOW),
       inQueue(NOW - 59 * 60_000, NOW),
       inQueue(NOW - 125 * 60_000, NOW),
-      inQueue(NOW - 120 * 60_000, NOW),
+      inQueue(NOW - 119 * 3_600_000, NOW),
       inQueue(null, NOW),
-    ]).toEqual(['<1 min', '59 min', '2 h 5 min', '2 h', '—']);
+    ]).toEqual(['30 s', '59 min', '2 h', '4 d', '—']);
     expect([toMerge(10), toMerge(130), toMerge(3_600), toMerge(null)]).toEqual([
-      '~1 min',
-      '~2 min',
-      '~1 h',
+      'about 1 min',
+      'about 2 min',
+      'about 1 h',
       '—',
     ]);
   });
 });
 
 describe('those waiting to join', () => {
-  it('say what each waits for before GitHub adds it', () => {
+  it('say what each waits for before GitHub adds it, and nothing once it waits for nothing more', () => {
     expect([
       waitsFor({ review: 'required', checks: null }),
       waitsFor({ review: 'changesRequested', checks: 'running' }),
@@ -152,11 +152,11 @@ describe('those waiting to join', () => {
       waitsFor({ review: null, checks: 'failed' }),
       waitsFor({ review: 'approved', checks: 'passed' }),
     ]).toEqual([
-      'when approved',
-      'when approved and checks pass',
-      'when checks pass',
-      'when its failed checks pass',
-      'when GitHub adds it',
+      'needs approval',
+      'needs approval · checks running',
+      'checks running',
+      'checks failed',
+      '',
     ]);
   });
 
@@ -168,7 +168,7 @@ describe('those waiting to join', () => {
         number: 4826,
         author: 'ravi-k',
         yours: true,
-        until: 'when checks pass',
+        until: 'checks running',
       },
     ]);
   });
@@ -176,12 +176,12 @@ describe('those waiting to join', () => {
 
 describe('the queue’s settings', () => {
   it('name its method, its groups and the next merge, only as far as the account may read them', () => {
-    expect(settingsOf(queue())).toBe('squash, groups of up to 3 · next merges in about 6 min');
+    expect(settingsOf(queue())).toBe('Squash · groups of up to 3 · next merge in about 6 min');
     expect(settingsOf(queue({ method: 'merge', groups: 1, nextMerge: null }))).toBe(
-      'merge commits, one at a time',
+      'Merge commit · one at a time',
     );
     expect(settingsOf(queue({ method: null, groups: null, nextMerge: 90 }))).toBe(
-      'next merges in about 2 min',
+      'next merge in about 2 min',
     );
     expect(settingsOf(queue({ method: null, groups: null, nextMerge: null }))).toBeUndefined();
     expect(settingsOf({ kind: 'none' })).toBeUndefined();
@@ -235,7 +235,7 @@ describe('those that left', () => {
       { key: 'left-3', kind: 'removed', when: '3 h ago', was: '31 min', partial: false },
       { key: 'left-4', kind: 'removed', when: '5 min ago', was: '23 min', partial: false },
       { key: 'left-5', kind: 'merged', when: '5 min ago', was: undefined, partial: false },
-      { key: 'left-6', kind: 'other', when: '5 min ago', was: '23 min', partial: false },
+      { key: 'left-6', kind: 'unknown', when: '5 min ago', was: '23 min', partial: false },
       { key: 'left-7', kind: 'unknown', when: '5 min ago', was: '23 min', partial: true },
     ]);
     const [failed, unlinked, by, nobody, , other] = rows.map(({ reason }) => reason);
@@ -247,15 +247,18 @@ describe('those that left', () => {
     expect(unlinked).toEqual({ kind: 'failed', check: undefined });
     expect(by).toEqual({ kind: 'removed', by: 'dee-adeyemi' });
     expect(nobody).toEqual({ kind: 'removed', by: undefined });
-    expect(other).toEqual({ kind: 'other', word: 'GitHub gave no reason' });
+    // Without GitHub's word for it, why isn't known.
+    expect(other).toEqual({ kind: 'unknown' });
   });
 
-  it('say how long ago they left in words', () => {
+  it('say how long ago they left, in the largest whole unit, and the date after a month', () => {
     expect(ago(NOW - 20_000, NOW)).toBe('just now');
     expect(ago(NOW - 59 * 60_000, NOW)).toBe('59 min ago');
     expect(ago(NOW - 23 * 3_600_000, NOW)).toBe('23 h ago');
-    expect(ago(NOW - 24 * 3_600_000, NOW)).toBe('1 day ago');
-    expect(ago(NOW - 72 * 3_600_000, NOW)).toBe('3 days ago');
+    expect(ago(NOW - 24 * 3_600_000, NOW)).toBe('1 d ago');
+    expect(ago(NOW - 72 * 3_600_000, NOW)).toBe('3 d ago');
+    expect(ago(NOW - 40 * 24 * 3_600_000, NOW)).toBe('Oct 7');
+    expect(ago(NOW - 400 * 24 * 3_600_000, NOW)).toBe('Oct 12, 2025');
   });
 });
 
@@ -289,15 +292,15 @@ describe('the rows the keyboard moves through', () => {
 });
 
 describe('when the queue was read', () => {
-  it('is said in the status bar, and when Lo reads again after a failure', () => {
+  it('is said in the status bar, and when it’s read again after a failure, counting down', () => {
     expect([
       updated(NOW - 2_000, NOW),
       updated(NOW - 10_000, NOW),
       updated(NOW - 3 * 60_000, NOW),
-    ]).toEqual(['Updated just now', 'Updated 10 s ago', 'Updated 3 min ago']);
+    ]).toEqual(['Checked just now', 'Checked just now', 'Checked 3 min ago']);
     expect([retryIn(NOW + 39_500, NOW), retryIn(NOW + 120_000, NOW), retryIn(null, NOW)]).toEqual([
-      'in 40 s',
-      'in 2 min',
+      'Retrying in 40 s.',
+      'Retrying in 2 min.',
       undefined,
     ]);
   });

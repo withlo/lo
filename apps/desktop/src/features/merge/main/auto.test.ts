@@ -128,12 +128,13 @@ test('either goes alone, or from a GitHub stack’s bottom layer, never with lay
   expect(aloneOrBottom({ kind: 'alone' }, 138, true)).toBeUndefined();
   expect(aloneOrBottom({ kind: 'githubStack', stack: 7, below: [] }, 138, false)).toBeUndefined();
   expect(aloneOrBottom({ kind: 'githubStack', stack: 7, below: [136, 137] }, 138, true)).toBe(
-    'GitHub merges past the rules only a stack’s bottom layer, and #136 and #137 are below #138 in GitHub stack #7.',
+    'Only a GitHub stack’s bottom layer can bypass rules',
   );
-  expect(aloneOrBottom({ kind: 'githubStack', stack: 7, below: [137] }, 138, false)).toBe(
-    '#137, below #138 in GitHub stack #7, would merge with it when auto-merge merges it. Merge #137 first.',
+  expect(aloneOrBottom({ kind: 'githubStack', stack: 7, below: [136, 137] }, 138, false)).toBe(
+    'Merge #136 first',
   );
-  expect(aloneOrBottom({ kind: 'chainAbove', bottom: 136 }, 138, false)).toBe(
-    'Merge #136 first: it’s this chain’s bottom layer.',
+  expect(aloneOrBottom({ kind: 'chainBottom' }, 138, false)).toBe(
+    'Layers above #138 would lose their base branch',
   );
+  expect(aloneOrBottom({ kind: 'chainAbove', bottom: 136 }, 138, false)).toBe('Merge #136 first');
 });
