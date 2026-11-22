@@ -92,15 +92,18 @@
 /* Reduce Motion, one switch. The system's setting turns every transition and
    animation off, and so does data-lo-motion="reduce" on <html>, whatever the
    system says; data-lo-motion="full" keeps them on. @lo/ui's setMotion() sets
-   the attribute, and scripts that move things ask its motionReduced(). They
-   last 1 ms rather than none, so what waits for one to end still hears it. */
+   the attribute, and scripts that move things ask its motionReduced(). An
+   animation lasts 1 ms rather than none, so what waits for one to end still
+   hears it. A transition lasts none at all: every element may transition
+   every property, so 1 ms on all of them would hold each change of layout back
+   a frame, and a code view measures its lines the moment it sets them. */
 @media (prefers-reduced-motion: reduce) {
   :root:not([data-lo-motion="full"]) *,
   :root:not([data-lo-motion="full"]) *::before,
   :root:not([data-lo-motion="full"]) *::after {
     animation-duration: 1ms !important;
     animation-iteration-count: 1 !important;
-    transition-duration: 1ms !important;
+    transition-duration: 0s !important;
   }
 }
 :root[data-lo-motion="reduce"] *,
@@ -108,5 +111,5 @@
 :root[data-lo-motion="reduce"] *::after {
   animation-duration: 1ms !important;
   animation-iteration-count: 1 !important;
-  transition-duration: 1ms !important;
+  transition-duration: 0s !important;
 }

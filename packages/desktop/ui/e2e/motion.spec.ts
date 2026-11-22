@@ -159,25 +159,17 @@ test('a thumb slides to the segment chosen, and a switch’s to its other end', 
   await expect.poll(() => middle('[role="switch"] > span')).toBeGreaterThan(before);
 });
 
-test('toasts float fixed to the window, three at most, and a long word wraps inside one', async () => {
+test('a toast floats fixed to the window, and a long word wraps inside it', async () => {
+  // How many show at once and how long each stays are the stack's own tests: here a toast would
+  // be racing the clicks.
   const page = await open();
-  for (let count = 0; count < 4; count += 1) await page.locator('#toast').click();
-  const toasts = page.locator('.toast');
-  await expect(toasts).toHaveCount(3);
-  await expect(toasts.last()).toContainText('Merged #4');
-  expect(
-    await page.evaluate(
-      () => getComputedStyle(document.querySelector('.toast-floating')!).position,
-    ),
-  ).toBe('fixed');
-
   await page.locator('#long-toast').click();
-  await expect(toasts).toHaveCount(1);
-  const fit = await toasts.locator('.line-clamp-3').evaluate((title) => ({
+  const fit = await page.locator('.toast .line-clamp-3').evaluate((title) => ({
     over: title.scrollWidth - title.clientWidth,
     lines: Math.round(title.clientHeight / Number.parseFloat(getComputedStyle(title).lineHeight)),
+    position: getComputedStyle(title.closest('.toast-floating')!).position,
   }));
-  expect(fit).toEqual({ over: 0, lines: 3 });
+  expect(fit).toEqual({ over: 0, lines: 3, position: 'fixed' });
 });
 
 test('the mark plays once and rests, in the color of each theme', async () => {
@@ -234,7 +226,7 @@ test('one switch turns every move off', async () => {
 
   await page.evaluate(() => window.moves.setMotion('reduce'));
   expect(await page.evaluate(() => window.moves.reduced())).toBe(true);
-  expect(await sheetDuration(page)).toBe('0.001s');
+  expect(await sheetDuration(page)).toBe('0s');
   await page.keyboard.press('Escape');
   await expect(page.getByRole('dialog')).toHaveCount(0);
   // What moves from a script shows where it would have ended.
@@ -248,5 +240,5 @@ test('without a call it follows the system’s setting', async () => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.evaluate(() => window.moves.setMotion('system'));
   expect(await page.evaluate(() => window.moves.reduced())).toBe(true);
-  expect(await sheetDuration(page)).toBe('0.001s');
+  expect(await sheetDuration(page)).toBe('0s');
 });

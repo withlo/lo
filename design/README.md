@@ -193,6 +193,8 @@ One switch turns every move off: popups, heights and tints change at once, and t
   reads.
 - The stylesheet reaches every transition and animation. Anything that moves from a script asks
   `motionReduced()` (in a component, `useMotionReduced()`) and shows where it would have ended.
+- Off, a transition takes no time and never ends, since it never starts. Wait for a move with
+  `whenSettled()`, not for `transitionend`.
 
 ### The mark's animations
 
