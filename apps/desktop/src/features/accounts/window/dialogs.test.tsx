@@ -16,6 +16,7 @@ import { AccountDialogs } from './AccountDialogs.tsx';
 import Accounts, { AccountsSection } from './Accounts.tsx';
 import { closeDialog, openImport, openSignIn, openSignOut, pickAccount } from './dialogs.ts';
 import feature from './index.ts';
+import { pressCopyCode } from './SignIn.tsx';
 import { accountsStore, showAccounts } from './store.ts';
 
 beforeAll(() => {
@@ -139,7 +140,9 @@ describe('the sign-in dialog', () => {
     const shown = dialog('sign-in');
     expect(shown?.textContent).toContain('FAKE-1234');
     expect(shown?.textContent).toContain('Enter this code at github.com/login/device');
-    expect(status()).toBe('Waiting for approval…Code expires in 14 min');
+    // How long the code has left is beside the line, not in what a screen reader has read out.
+    expect(status()).toBe('Waiting for approval…');
+    expect(shown?.textContent).toContain('Code expires in 14 min');
     // The main button copies the code and opens GitHub's page, through main.
     expect(document.activeElement?.textContent).toContain('Copy and open GitHub');
     click(button(shown, 'Copy and open GitHub'));
@@ -154,9 +157,11 @@ describe('the sign-in dialog', () => {
     ).toBe('Copied');
     // The body stays as the account is checked: the code keeps its place, and the button is busy.
     act(() => bridge.push('accounts.signingIn', { kind: 'checking', id: 7 }));
-    expect(status()).toBe('Checking account…');
     expect(dialog('sign-in')?.textContent).toContain('FAKE-1234');
     expect(button(shown, 'Copy and open GitHub').getAttribute('aria-busy')).toBe('true');
+    // The busy button is the one thing that shows the wait: no line with a ring of its own.
+    expect(status()).toBe('');
+    expect(shown?.querySelectorAll('.spinner')).toHaveLength(1);
     act(() =>
       bridge.push('accounts.signingIn', {
         kind: 'signedIn',
@@ -178,12 +183,16 @@ describe('the sign-in dialog', () => {
     const answers: ((state: SignInState) => void)[] = [];
     const bridge = installBridge({
       'accounts.signIn': () => new Promise<SignInState>((resolve) => answers.push(resolve)),
+      'accounts.copyCode': () => undefined,
     });
     render();
     act(() => openSignIn());
     await settle();
     const shown = dialog('sign-in');
-    expect(status()).toBe('Getting code…');
+    // The code's box waits as a skeleton, and nothing else shows the wait.
+    expect(shown?.querySelector('[aria-busy="true"] .skeleton')).not.toBeNull();
+    expect(status()).toBe('');
+    expect(shown?.querySelectorAll('.spinner')).toHaveLength(0);
     // Nothing to run yet: the main button is dimmed, and says why to a screen reader.
     const main = button(shown, 'Copy and open GitHub');
     expect(main.getAttribute('aria-disabled')).toBe('true');
@@ -197,6 +206,14 @@ describe('the sign-in dialog', () => {
     await settle();
     expect(button(shown, 'Copy and open GitHub')).toBe(main);
     expect(main.getAttribute('aria-disabled')).toBeNull();
+    expect(shown?.querySelector('[aria-busy="true"]')).toBeNull();
+    // The key for the code presses its Copy button, which says so itself, in the dialog.
+    act(() => pressCopyCode());
+    await settle();
+    expect(bridge.calls).toContainEqual(['accounts.copyCode', { id: 7 }]);
+    expect(
+      button(shown, 'Copy').querySelector('.inline-grid > span:not(.invisible)')?.textContent,
+    ).toBe('Copied');
     press(shown ?? document.body, 'Escape');
     await settle();
     expect(dialog('sign-in')).toBeNull();

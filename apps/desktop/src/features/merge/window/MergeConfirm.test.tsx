@@ -137,7 +137,7 @@ function confirms(): number {
   return bridge.calls.filter(([channel]) => channel === 'merge.confirm').length;
 }
 
-it('states who merges, how, into what and which revision, and that Lo deletes no branches', async () => {
+it('states who merges, how, into what and which revision, and nothing of what it won’t do', async () => {
   draw(<MergeConfirm />);
   act(() =>
     merging.setState({
@@ -161,7 +161,7 @@ it('states who merges, how, into what and which revision, and that Lo deletes no
     'aaaaaaa of #138, the one on screen',
     'Rate limit by cost',
   ]);
-  expect(box.textContent).toContain('Lo deletes no branches; the repo’s own setting applies.');
+  expect(box.textContent).not.toContain('Lo deletes no branches');
   expect(box.textContent).toContain('Squash and merge');
 
   // Into a merge queue, whose settings choose the method.
@@ -215,10 +215,15 @@ it('confirms only on a fresh `⏎` once it shows, then follows the merge until a
     key: plan.key,
   });
   expect(working()).toBe('Merging…');
+  // What was confirmed stays in view while it's sent, so the button doesn't move.
+  const facts = () => [...dialog()!.querySelectorAll('dd')].map((each) => each.textContent);
+  const confirmed = facts();
+  expect(confirmed).toContain('Squash');
 
   act(() => heardJob(jobOf(plan, { kind: 'pending', trouble: null })));
   // The button says it, and no sentence beside it does.
   expect(working()).toBe('Merging…');
+  expect(facts()).toEqual(confirmed);
   expect(dialog()?.textContent).not.toContain('GitHub is merging it');
   // Nothing more is confirmed, however often `⏎` is pressed.
   act(() => {
@@ -229,6 +234,25 @@ it('confirms only on a fresh `⏎` once it shows, then follows the merge until a
   act(() => heardJob(jobOf(plan, { kind: 'merged' })));
   expect(merging.getState().dialog).toBeUndefined();
   expect(notice()).toMatchObject({ title: 'Merged #138 into main', done: true });
+});
+
+it('keeps what was confirmed once it’s done, with Done as the one button, which `⏎` presses', async () => {
+  const plan = planOf();
+  draw(<MergeConfirm />);
+  act(() => merging.setState({ dialog: { kind: 'sent', plan } }));
+  await until(() => dialog() !== null);
+  // A merge the tab's watch follows leaves its dialog open.
+  act(() => heardJob({ ...jobOf(plan, { kind: 'merged' }), watch: true }));
+  const buttons = [...dialog()!.querySelectorAll('button')];
+  expect(buttons).toHaveLength(1);
+  expect(buttons[0]?.textContent).toContain('Done');
+  expect([...dialog()!.querySelectorAll('dd')].map((each) => each.textContent)).toContain('Squash');
+  await until(() => document.activeElement === buttons[0]);
+  await later();
+  act(() => {
+    dialog()!.dispatchEvent(enter());
+  });
+  expect(merging.getState().dialog).toBeUndefined();
 });
 
 it('says why main refused it, and offers the newer push', async () => {

@@ -2,7 +2,7 @@
 // are off for fieldwork/atlas-api" with "Trust repo…", or for a fork, "Trust pull request…", and a
 // dismiss, which holds for the repository. Its button only asks main, which asks the reader in a
 // dialog of its own; while main does, the button is busy and says how far it has got, and once
-// trusting failed, the banner says why, offering to open the settings file when that's what kept
+// trusting failed, the banner says why, offering to open `settings.json` when that's what kept
 // the trust from being saved, and to try again.
 //
 // It's the example of a banner that comes and goes while its tab is open: it opens into the flow
@@ -45,15 +45,15 @@ export function TrustBanner({ tab }: { tab: PullTab }) {
 
   const actions: BannerAction[] = [];
   if (there && banner.openFile === true) {
-    actions.push({ label: 'Open settings file', onClick: () => void openSettingsFile() });
+    actions.push({ label: 'Open settings.json', onClick: () => void openSettingsFile() });
   }
   if (there && banner.action) {
     const { action } = banner;
     actions.push({
       label: action.label,
       busy: action.busy !== undefined,
-      // Said before it's pressed too, unseen: the button is as wide as its label or these words,
-      // and so as wide pressed as before.
+      // Said before it's pressed too, unseen. Its words fit inside the label, so the button is
+      // as wide pressed as before.
       working: action.busy ?? TRUST_STARTS,
       onClick: () => void askToTrust(status, action.pull),
     });

@@ -5,6 +5,7 @@ import { Button } from './Button.tsx';
 import { formatBytes } from './bytes.ts';
 import { showFormat } from './controls.ts';
 import { Popover, PopoverDescription, PopoverTitle } from './Popover.tsx';
+import { Problem } from './Problem.tsx';
 import { ShownText } from './ShownText.tsx';
 import { Spinner } from './Spinner.tsx';
 
@@ -78,10 +79,13 @@ export interface ServerTrust {
   failure?: ServerTrustFailure | undefined;
 }
 
-/** Why trusting didn't happen, in a sentence or two, and what to do about it, if anything. */
+/** Why trusting didn't happen, as a `Problem`, and what to do about it, if anything. */
 export interface ServerTrustFailure {
+  /** What didn't happen: "Couldn’t trust fieldwork/atlas-api". */
+  title: string;
+  /** Why, in a sentence or two. */
   message: string;
-  /** A button that helps: "Open the settings file". */
+  /** A button that helps, after the reason: "Open settings.json". */
   fix?: { label: string; onChoose: () => void } | undefined;
 }
 
@@ -460,9 +464,16 @@ export function ServerStatus({
           <PopoverDescription className="m-0 text-fg-muted text-small">{says}</PopoverDescription>
         )}
         {trust?.failure && (
-          <p role="alert" className="m-0 text-danger text-small">
-            <ShownText text={trust.failure.message} />
-          </p>
+          <Problem
+            title={<ShownText text={trust.failure.title} />}
+            reason={<ShownText text={trust.failure.message} />}
+            action={
+              trust.failure.fix && {
+                label: trust.failure.fix.label,
+                onClick: trust.failure.fix.onChoose,
+              }
+            }
+          />
         )}
         {(again || onShowLog || trust) && (
           <div className="flex flex-wrap gap-6">
@@ -506,11 +517,6 @@ export function ServerStatus({
                 }}
               >
                 {trustLabel(trust.action)}
-              </Button>
-            )}
-            {trust?.failure?.fix && (
-              <Button variant="ghost" size="sm" onClick={trust.failure.fix.onChoose}>
-                {trust.failure.fix.label}
               </Button>
             )}
           </div>

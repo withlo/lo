@@ -22,9 +22,22 @@ export interface LoadingProps {
   onCancel?: (() => void) | undefined;
   /** The key that cancels, as the system shows each key of it. */
   cancelKeys?: readonly string[] | undefined;
+  /**
+   * When the wait began, as `Date.now()` gives it, where that was before this was drawn. A wait
+   * that one view after another draws, as a tab's does while it opens, counts from here in each of
+   * them, so the mark doesn't go and come back, and what's slow is said eight seconds into the
+   * wait, not into its last view. Without it the wait begins as this is drawn.
+   */
+  since?: number | undefined;
 }
 
 type Stage = 'early' | 'waiting' | 'slow';
+
+/** How far a wait has got, `waited` milliseconds in. */
+function stageAfter(waited: number): Stage {
+  if (waited >= LOADING_SLOW_MS) return 'slow';
+  return waited >= LOADING_DELAY_MS ? 'waiting' : 'early';
+}
 
 /**
  * How a view waits when it has nothing to draw yet: the mark melding, round and round, over one
@@ -35,17 +48,27 @@ type Stage = 'early' | 'waiting' | 'slow';
  * It's the first of the three ways Lo waits. A view whose shape is known waits as a `Skeleton` laid
  * out as its content will be, and a control at work is `busy`.
  */
-export function Loading({ status, slow, onCancel, cancelKeys }: LoadingProps) {
-  const [stage, setStage] = useState<Stage>('early');
+export function Loading({ status, slow, onCancel, cancelKeys, since }: LoadingProps) {
+  const [drawn] = useState(Date.now);
+  const began = since ?? drawn;
+  const [wait, setWait] = useState(() => ({ began, waited: Date.now() - began }));
+  if (wait.began !== began) setWait({ began, waited: Date.now() - began });
   useEffect(() => {
-    const shown = setTimeout(() => setStage('waiting'), LOADING_DELAY_MS);
-    const late = setTimeout(() => setStage('slow'), LOADING_SLOW_MS);
+    // A timer may run a moment before it's due by the clock: it has waited its time all the same.
+    const timers = [LOADING_DELAY_MS, LOADING_SLOW_MS]
+      .filter((due) => Date.now() - began < due)
+      .map((due) =>
+        setTimeout(
+          () => setWait({ began, waited: Math.max(due, Date.now() - began) }),
+          began + due - Date.now(),
+        ),
+      );
     return () => {
-      clearTimeout(shown);
-      clearTimeout(late);
+      for (const timer of timers) clearTimeout(timer);
     };
-  }, []);
+  }, [began]);
 
+  const stage = stageAfter(wait.waited);
   const late = stage === 'slow';
   return (
     <div

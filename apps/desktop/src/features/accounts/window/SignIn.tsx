@@ -6,6 +6,10 @@
 // the foot changes, so nothing jumps: the main button is dimmed until there's a code, busy while
 // the account is checked, and "Done" once it's signed in. What went wrong shows once, above the
 // foot, with GitHub's own words behind Details.
+//
+// Each wait shows once, where it is: the code's box holds a skeleton until there's a code, the line
+// says the sign-in waits for GitHub's page, and the button is busy while the account is checked.
+// No line says a wait that the box or the button already shows.
 
 import {
   CopyButton,
@@ -31,11 +35,28 @@ import { keyOf, labels } from './labels.ts';
 import type { SignInDialog } from './store.ts';
 
 /** What the sign-in asks GitHub for, as GitHub's page names each, and what it's for. */
-const SCOPES: readonly (readonly [string, string])[] = [
+const SCOPES: readonly (readonly [string, ReactNode])[] = [
   ['repo', 'Read and review private repos, and merge'],
   ['read:org', 'Team review requests and code owner teams'],
-  ['workflow', 'Merge pull requests that change .github/workflows'],
+  [
+    'workflow',
+    <>
+      Merge pull requests that change <code className="code-small">.github/workflows</code>
+    </>,
+  ],
 ];
+
+/** Marks the code's Copy button, for its key to press. */
+const COPY = 'data-lo-copy-code';
+
+/**
+ * Presses the dialog's Copy button, as its key does. The button says how it went itself, in the
+ * dialog, where a reader looks and a screen reader listens: a toast outside an open dialog is
+ * heard by nobody.
+ */
+export function pressCopyCode(): void {
+  document.querySelector<HTMLButtonElement>(`[${COPY}] button`)?.click();
+}
 
 /** Why each failure ended the sign-in, in a sentence. The ones with none have only their details. */
 function reasonOf(why: SignInFailure | 'cancelled'): string | undefined {
@@ -186,7 +207,11 @@ function Body({ dialog }: { dialog: SignInDialog }) {
   const shown = ended ? undefined : code?.userCode;
   return (
     <>
-      <div className="flex items-center gap-8 rounded-md border border-border bg-bg-well py-12 ps-16 pe-12">
+      <div
+        className="flex items-center gap-8 rounded-md border border-border bg-bg-well py-12 ps-16 pe-12"
+        // The skeleton in it is how the wait for a code shows, and this is how it's heard.
+        aria-busy={shown === undefined && !ended ? true : undefined}
+      >
         <Swap id={shown === undefined ? 'none' : 'code'} className="grid min-w-0 flex-1">
           {/* The room a code takes, before there's one and after it's gone. */}
           <span aria-hidden="true" className="invisible col-start-1 row-start-1 device-code">
@@ -213,7 +238,7 @@ function Body({ dialog }: { dialog: SignInDialog }) {
           )}
         </Swap>
         {/* Its room is kept while there's nothing to copy. */}
-        <span className={waiting ? 'flex-none' : 'invisible flex-none'}>
+        <span className={waiting ? 'flex-none' : 'invisible flex-none'} {...{ [COPY]: '' }}>
           <CopyButton variant="secondary" onCopy={copyCode}>
             Copy
             {copy !== undefined && <Key keys={copy} decorative />}
@@ -237,33 +262,36 @@ function Body({ dialog }: { dialog: SignInDialog }) {
   );
 }
 
-/** The one line that says where the sign-in is. Its room stays when there's nothing to say. */
+/**
+ * The one line that says where the sign-in is. Its room stays when there's nothing to say. How
+ * long the code has left sits beside what's announced, not in it: read out, it would repeat the
+ * line each time it counts down.
+ */
 function Status({ dialog }: { dialog: SignInDialog }) {
-  const now = useNow(dialog.state?.kind === 'waiting');
+  const { state } = dialog;
+  const now = useNow(state?.kind === 'waiting');
+  const left = state?.kind === 'waiting' ? state.expiresAt - now : undefined;
   return (
-    <div role="status" className="flex min-h-1lh items-center gap-8 text-fg-muted text-small">
-      {statusOf(dialog, now)}
+    <div className="flex min-h-1lh items-center gap-8 text-fg-muted text-small">
+      <div role="status" className="flex min-w-0 flex-1 items-center gap-8">
+        {statusOf(dialog, left !== undefined && left <= 0)}
+      </div>
+      {left !== undefined && left > 0 && (
+        <span className="lo-num flex-none">Code expires in {ahead(left)}</span>
+      )}
     </div>
   );
 }
 
-function statusOf({ state, error }: SignInDialog, now: number): ReactNode {
-  if (error !== undefined) return null;
-  if (state === undefined) return <Wait>Getting code…</Wait>;
+function statusOf({ state, error }: SignInDialog, expired: boolean): ReactNode {
+  // Before there's a code, its box waits as a skeleton, and that's the wait shown.
+  if (error !== undefined || state === undefined) return null;
   switch (state.kind) {
-    case 'waiting': {
-      const left = state.expiresAt - now;
-      if (left <= 0) return 'The code expired.';
-      return (
-        <>
-          <Wait>Waiting for approval…</Wait>
-          <span className="flex-1" />
-          <span className="lo-num">Code expires in {ahead(left)}</span>
-        </>
-      );
-    }
+    case 'waiting':
+      return expired ? 'The code expired.' : <Wait>Waiting for approval…</Wait>;
     case 'checking':
-      return <Wait>Checking account…</Wait>;
+      // The main button is busy, and says so.
+      return null;
     case 'signedIn':
       return (
         <>

@@ -237,7 +237,7 @@ test('says in the banner why it couldn’t trust the repo, offers the settings f
   expect(readFileSync(path, 'utf8')).toBe('{ "code.trusted": [\n');
   await expect(status(page, id)).resolves.toMatchObject({ trust: { kind: 'untrusted' } });
 
-  await failed.getByRole('button', { name: 'Open settings file' }).click();
+  await failed.getByRole('button', { name: 'Open settings.json' }).click();
   await expect.poll(opened).toEqual([realpathSync(path)]);
 
   // Fixed: what kept Lo from trusting it is past, and the banner offers it again. Asked again, it's

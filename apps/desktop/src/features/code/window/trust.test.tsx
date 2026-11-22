@@ -190,11 +190,11 @@ describe('asking to trust', () => {
     // What it will say waits unseen beside its label, so pressing it keeps its width.
     const idle = trustButton(page);
     expect(says(idle)).toBe('Trust repo…');
-    expect(idle?.querySelector('[aria-hidden="true"]')?.textContent).toBe('Checking…');
+    expect(idle?.querySelector('[aria-hidden="true"]')?.textContent).toBe('Waiting…');
     act(() => bridge.push('code.status', statusOf('t4', { trusting: 'reading' })));
     const trust = trustButton(page);
     expect(trust).toBe(idle);
-    expect(says(trust)).toBe('Checking…');
+    expect(says(trust)).toBe('Waiting…');
     expect(trust?.getAttribute('aria-disabled')).toBe('true');
     expect(trust?.querySelector('.spinner')).not.toBeNull();
     const before = asked('code.trust');
@@ -204,13 +204,13 @@ describe('asking to trust', () => {
     });
     // A second press, while main is at it, does nothing.
     expect(asked('code.trust')).toBe(before);
-    // While main's dialog asks, nothing says it's trusting: the reader hasn't said so yet.
+    // While main's dialog asks, it says the same: the reader hasn't said to trust yet.
     act(() => bridge.push('code.status', statusOf('t4', { trusting: 'asking' })));
     expect(says(trust)).toBe('Waiting…');
     act(() => bridge.push('code.status', statusOf('t4', { trusting: 'saving' })));
     // The same button, which keeps focus, says what Lo does now.
     expect(trustButton(page)).toBe(trust);
-    expect(says(trust)).toBe('Trusting…');
+    expect(says(trust)).toBe('Saving…');
     // Trusted: the banner goes, and the status item shows the servers starting.
     act(() =>
       bridge.push('code.status', statusOf('t4', { trust: { kind: 'trusted', by: 'repo' } })),
@@ -233,12 +233,12 @@ describe('asking to trust', () => {
       `Couldn’t trust rozed-dev/e2e ${why}`,
     );
     expect([...page.querySelectorAll('button')].map(said)).toEqual([
-      'Open settings file',
+      'Open settings.json',
       'Trust repo…',
       '',
     ]);
     expect(button(page, 'Trust repo…')?.getAttribute('aria-disabled')).toBeNull();
-    act(() => button(page, 'Open settings file')?.click());
+    act(() => button(page, 'Open settings.json')?.click());
     await until(() => asked('settings.openFile') === 1);
 
     // Asked again: what failed goes at once, and a disk that can't take it says so, with nothing
@@ -249,7 +249,7 @@ describe('asking to trust', () => {
     act(() => button(page, 'Trust repo…')?.click());
     expect(page.textContent).toContain('Language servers are off for rozed-dev/e2e');
     await until(() => page.textContent.includes('(ENOSPC)'));
-    expect(button(page, 'Open settings file')).toBeUndefined();
+    expect(button(page, 'Open settings.json')).toBeUndefined();
 
     // Asked again, and trusted.
     answerTrust = () => {
@@ -277,7 +277,7 @@ describe('asking to trust', () => {
       }),
     );
     expect(page.textContent).toContain('Language servers are off for rozed-dev/e2e');
-    expect(button(page, 'Open settings file')).toBeUndefined();
+    expect(button(page, 'Open settings.json')).toBeUndefined();
 
     // What the file didn't cause stays, whatever the settings do.
     answerTrust = () => {

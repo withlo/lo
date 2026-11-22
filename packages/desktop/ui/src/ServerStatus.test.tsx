@@ -528,27 +528,31 @@ describe('ServerStatus', () => {
     // Pressed again, it does nothing until it's done.
     click(button!);
     expect(onChoose).not.toHaveBeenCalled();
-    const message = "Lo couldn't trust rozed-dev/e2e. The settings file isn't valid JSON.";
+    const title = 'Couldn’t trust rozed-dev/e2e';
+    const message = "The settings file isn't valid JSON.";
     rerender(
       host,
       offItem({
         action: 'repo',
         onChoose,
-        failure: { message, fix: { label: 'Open the settings file', onChoose: fix } },
+        failure: { title, message, fix: { label: 'Open settings.json', onChoose: fix } },
       }),
     );
     await settle();
     const open = details()!;
-    expect(open.querySelector('[role="alert"]')?.textContent).toBe(message);
+    // What failed, then why, said once as an alert, and the button that helps after the reason.
+    const alert = open.querySelector('[role="alert"]');
+    expect(alert?.querySelector('strong')?.textContent).toBe(title);
+    expect(alert?.textContent).toBe(`${title} ${message}`);
     const buttons = [...open.querySelectorAll('button')];
-    expect(buttons.map(says)).toEqual(['Trust this repo…', 'Open the settings file']);
+    expect(buttons.map(says)).toEqual(['Open settings.json', 'Trust this repo…']);
     // The button is back, and still has focus.
-    expect(buttons[0]).toBe(button);
+    expect(buttons[1]).toBe(button);
     expect(document.activeElement).toBe(button);
     expect(button?.getAttribute('aria-disabled')).toBeNull();
-    click(buttons[1]!);
-    expect(fix).toHaveBeenCalledTimes(1);
     click(buttons[0]!);
+    expect(fix).toHaveBeenCalledTimes(1);
+    click(buttons[1]!);
     expect(onChoose).toHaveBeenCalledTimes(1);
   });
 

@@ -173,8 +173,8 @@ describe('following the diff', () => {
 
   it('asks the diff to show a changed file, and refuses while no diff can', () => {
     render();
-    expect(showable(TAB.id, 'src/format.ts')).toBe('There’s no diff on screen to show it in.');
-    expect(showable(TAB.id, 'README.md')).toBe('Lo has no whole-file view to open it in.');
+    expect(showable(TAB.id, 'src/format.ts')).toBe('No diff on screen to show it in');
+    expect(showable(TAB.id, 'README.md')).toBe('No whole-file view to open it in');
     const diff = vi.fn<(tab: string, file: string) => void>();
     const stop = onShowFile('diff', diff);
     onTestFinished(stop);

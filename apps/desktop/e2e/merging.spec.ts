@@ -137,7 +137,6 @@ test('`⏎` confirms a squash with the title typed, never on a held key, and a t
     Into: 'merge/5/base',
     Commit: 'Squash two commits, from Lo',
   });
-  await expect(dialog(page)).toContainText('Lo deletes no branches');
   await expect(dialog(page).getByRole('button', { name: /Squash and merge/ })).toBeVisible();
 
   await page.keyboard.press('Enter');

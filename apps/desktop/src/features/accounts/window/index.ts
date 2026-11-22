@@ -1,30 +1,23 @@
 import { handlers } from '@lo/ui/commands';
 import { createElement } from 'react';
 
-import { announce, notify } from '../../../window/commands/notices.tsx';
 import type { WindowFeature } from '../../../window/features.ts';
 import { defineView } from '../../../window/slots.tsx';
 import { dialogs } from '../../tab/window/shared.ts';
 import keys from '../keys.ts';
 import Accounts from './Accounts.tsx';
-import { copyCode, heardSignIn, openSignIn, openSignOut, waitingSignIn } from './dialogs.ts';
+import { heardSignIn, openSignIn, openSignOut, waitingSignIn } from './dialogs.ts';
 import { AccountDialogs } from './AccountDialogs.tsx';
 import { main } from './main.ts';
+import { pressCopyCode } from './SignIn.tsx';
 import { accountsStore, showAccounts } from './store.ts';
 
 export default {
   commands: handlers(keys, {
     copyCode: {
-      // Its key has no button to say so for it.
-      run: () =>
-        copyCode().then(
-          () => announce('Copied sign-in code'),
-          (error: unknown) => {
-            console.error("Lo couldn't copy the code:", error);
-            notify('Couldn’t copy sign-in code', '');
-          },
-        ),
-      enabled: () => (waitingSignIn() === undefined ? 'No sign-in is waiting for its code.' : true),
+      // Its key presses the dialog's own Copy button, which says how it went.
+      run: () => pressCopyCode(),
+      enabled: () => (waitingSignIn() === undefined ? 'No sign-in is waiting for its code' : true),
     },
     addAccount: { run: () => openSignIn() },
     signOut: {

@@ -62,28 +62,31 @@ export function takeStatus(status: Status): void {
   }
 }
 
-/** What a trust button says as main starts to trust its view, before it has got further. */
-export const TRUST_STARTS = 'Checking…';
+/**
+ * What a trust button says from its press until the reader has answered main's dialog: main reads
+ * what it would trust, then asks.
+ */
+export const TRUST_STARTS = 'Waiting…';
 
 /**
  * What a trust button says while main trusts its view, or nothing while it doesn't. Nothing says
- * it's trusting until the reader said "Trust" in main's dialog. Each is no wider than "Trust
- * repo…", so the button keeps its width as it waits.
+ * the trust is being saved until the reader said "Trust" in main's dialog. With its ring, each is
+ * narrower than the shortest label, "Trust repo…", so the button is one width from before its
+ * press until it's done: a word any wider, "Checking…" or "Trusting…", would widen it.
  */
 export function busyLabel(status: Status): string | undefined {
   const { trusting } = status;
   switch (trusting) {
     case 'reading':
-      return TRUST_STARTS;
     case 'asking':
-      return 'Waiting…';
+      return TRUST_STARTS;
     case 'saving':
-      return 'Trusting…';
+      return 'Saving…';
     case undefined:
       return undefined;
     default:
       trusting satisfies never;
-      return 'Trusting…';
+      return 'Saving…';
   }
 }
 
@@ -233,10 +236,7 @@ export async function askToTrust(
     setFailure(view, failure);
     const now = statuses.get(view) ?? status;
     if (elsewhere && !bannerOf(now)) {
-      notify(
-        pull ? 'Trust this PR' : 'Trust this repo',
-        `${failureTitle(now, failure)} ${failure.message}`,
-      );
+      notify(failureTitle(now, failure), failure.message);
     }
   }
 }

@@ -113,6 +113,16 @@ describe('notices', () => {
     expect(toasts().map((each) => each.title)).toEqual(['Two', 'Three', 'Four']);
   });
 
+  it('say a reason that stands alone with no full stop, a line for each', () => {
+    act(() => refuse('Draft pull requests can’t merge.\nSign in to merge'));
+    expect(notices().map((each) => each.title)).toEqual([
+      'Draft pull requests can’t merge\nSign in to merge',
+    ]);
+    // Several sentences keep every stop.
+    act(() => refuse('Lo 0.2.0 is ready. It installs when you quit, or now.'));
+    expect(notices().at(-1)?.title).toBe('Lo 0.2.0 is ready. It installs when you quit, or now.');
+  });
+
   it('say a note once, however often it’s asked for while it shows', () => {
     act(() => {
       refuse('Sign in to comment');
@@ -239,7 +249,7 @@ describe('a command that did nothing', () => {
       registry().run('keys.help', NO_TARGET);
     });
     // The reason alone: never under the name of what was asked for.
-    expect(toasts()).toEqual([{ title: 'Key help is busy.', body: null, icon: true }]);
+    expect(toasts()).toEqual([{ title: 'Key help is busy', body: null, icon: true }]);
   });
 
   it('says nothing when it ran', () => {

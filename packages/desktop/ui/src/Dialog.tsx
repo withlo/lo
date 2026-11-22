@@ -35,6 +35,9 @@ export interface DialogAction {
   /**
    * What the button says after a failure, where running it again isn't the way on: "Sign in
    * again", "Quit Lo". "Try again" without one.
+   *
+   * When what was sent may have gone through and its result isn't known, it's "Check again", and
+   * `onRun` then only looks for the result: it never sends the action a second time.
    */
   again?: string | undefined;
 }

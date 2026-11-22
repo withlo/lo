@@ -37,9 +37,10 @@ export function ServerItems({ tab }: { tab: PullTab }) {
             busy: busyLabel(status),
             failure: failure
               ? {
-                  message: `${failureTitle(status, failure)}. ${failure.message}`,
+                  title: failureTitle(status, failure),
+                  message: failure.message,
                   fix: failure.file
-                    ? { label: 'Open the settings file', onChoose: () => void openSettingsFile() }
+                    ? { label: 'Open settings.json', onChoose: () => void openSettingsFile() }
                     : undefined,
                 }
               : undefined,

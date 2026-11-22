@@ -104,8 +104,8 @@ interface Shown {
     | undefined;
   /** Whether focus goes to the field to type in, not the main button. */
   readonly typing?: boolean;
-  /** What `Esc` says it does. */
-  readonly close: string;
+  /** What `Esc` says it does, on the other button. None once "Done" is all that's left to press. */
+  readonly close: string | undefined;
   /** What focus follows: its main button moves to it when this changes. */
   readonly step: string;
 }
@@ -431,13 +431,60 @@ function Skips({ plan }: { plan: MergePlan }) {
   );
 }
 
+/**
+ * What the plan will do. It's the dialog's body from the question until the merge is done, so
+ * nothing in it moves as its button is pressed, and what was confirmed stays in view while it's
+ * done. A merge past the rules has its number typed in `field`; once sent, the field keeps the
+ * number, and typing in it changes nothing.
+ */
+function planBody(
+  plan: MergePlan,
+  field?: {
+    readonly typed: string;
+    readonly onChange: (value: string) => void;
+    readonly onConfirm: () => void;
+    readonly inputRef: RefObject<HTMLInputElement | null>;
+    readonly note: string | undefined;
+  },
+): ReactNode {
+  const override = plan.kind === 'override';
+  const auto = plan.kind === 'autoMerge' || plan.kind === 'whenReady';
+  return (
+    <>
+      {override && <Skips plan={plan} />}
+      {plan.together?.kind === 'stack' && (
+        <p className="m-0 text-fg-muted text-small">A GitHub stack merges as one.</p>
+      )}
+      <Facts items={factsOf(plan)} />
+      {plan.kind === 'enqueue' && (
+        <p className="m-0 text-fg-muted text-small">{queueLine(plan.method)}</p>
+      )}
+      {togetherShown(plan)}
+      {auto && <AutoLines plan={plan} />}
+      {override && (
+        <TypeToConfirm
+          word={String(plan.number)}
+          value={field?.typed ?? String(plan.number)}
+          onChange={field?.onChange ?? (() => undefined)}
+          onConfirm={field?.onConfirm}
+          inputRef={field?.inputRef}
+        />
+      )}
+      {field?.note !== undefined && (
+        <Callout tone="warning" role="status">
+          {withoutBidi(field.note)}
+        </Callout>
+      )}
+    </>
+  );
+}
+
 function confirmShown(
   dialog: Extract<MergeDialog, { kind: 'confirm' }>,
   field: RefObject<HTMLInputElement | null>,
 ): Shown {
   const { plan } = dialog;
   const override = plan.kind === 'override';
-  const auto = plan.kind === 'autoMerge' || plan.kind === 'whenReady';
   const typed = dialog.typed ?? '';
   const number = String(plan.number);
   return {
@@ -457,35 +504,13 @@ function confirmShown(
       ...(override && { danger: true, off: typed !== number }),
     },
     typing: override,
-    body: (
-      <>
-        {override && <Skips plan={plan} />}
-        {plan.together?.kind === 'stack' && (
-          <p className="m-0 text-fg-muted text-small">A GitHub stack merges as one.</p>
-        )}
-        <Facts items={factsOf(plan)} />
-        {plan.kind === 'enqueue' && (
-          <p className="m-0 text-fg-muted text-small">{queueLine(plan.method)}</p>
-        )}
-        {togetherShown(plan)}
-        {auto && <AutoLines plan={plan} />}
-        {override && (
-          <TypeToConfirm
-            word={number}
-            value={typed}
-            onChange={typeNumber}
-            onConfirm={confirmMerge}
-            inputRef={field}
-          />
-        )}
-        {dialog.note !== undefined && (
-          <Callout tone="warning" role="status">
-            {withoutBidi(dialog.note)}
-          </Callout>
-        )}
-        <Callout tone="info">Lo deletes no branches; the repo’s own setting applies.</Callout>
-      </>
-    ),
+    body: planBody(plan, {
+      typed,
+      onChange: typeNumber,
+      onConfirm: confirmMerge,
+      inputRef: field,
+      note: dialog.note,
+    }),
   };
 }
 
@@ -625,6 +650,20 @@ function atWork(plan: MergePlan): Shown['primary'] {
   };
 }
 
+/**
+ * The merge is done: what was confirmed stays, and the button that did it is "Done", with focus,
+ * so `⏎` closes the dialog.
+ */
+function done(plan: MergePlan): Shown {
+  return {
+    title: confirmTitle(plan),
+    step: 'done',
+    close: undefined,
+    primary: { label: 'Done', run: leaveDialog },
+    body: planBody(plan),
+  };
+}
+
 function sentShown(plan: MergePlan, job: JobView | undefined, now: number): Shown {
   const title = confirmTitle(plan);
   const state = job?.state;
@@ -640,17 +679,28 @@ function sentShown(plan: MergePlan, job: JobView | undefined, now: number): Show
   switch (state?.kind) {
     case undefined:
     case 'sending':
-      return { title, step: 'sending', close: 'Close', primary: atWork(plan), body: undefined };
+      return {
+        title,
+        step: 'sending',
+        close: 'Close',
+        primary: atWork(plan),
+        body: planBody(plan),
+      };
     case 'pending':
       return {
         title,
         step: 'pending',
         close: 'Close',
         primary: atWork(plan),
-        body: state.trouble !== null && (
-          <p role="status" className="m-0 text-fg-muted text-small">
-            {withoutBidi(troubleLine(state.trouble))}
-          </p>
+        body: (
+          <>
+            {planBody(plan)}
+            {state.trouble !== null && (
+              <p role="status" className="m-0 text-fg-muted text-small">
+                {withoutBidi(troubleLine(state.trouble))}
+              </p>
+            )}
+          </>
         ),
       };
     case 'refused':
@@ -678,10 +728,10 @@ function sentShown(plan: MergePlan, job: JobView | undefined, now: number): Show
     case 'enqueued':
     case 'autoMergeOn':
     case 'autoMergeOff':
-      return { title, step: 'done', close: 'Close', primary: undefined, body: undefined };
+      return done(plan);
     default:
       state satisfies never;
-      return { title, step: 'done', close: 'Close', primary: undefined, body: undefined };
+      return done(plan);
   }
 }
 
@@ -842,10 +892,12 @@ export function MergeConfirm() {
         shown && (
           <>
             <DialogSpacer />
-            <Button onClick={leaveDialog}>
-              {shown.close}
-              <Key keys={labels('esc')} decorative />
-            </Button>
+            {shown.close !== undefined && (
+              <Button onClick={leaveDialog}>
+                {shown.close}
+                <Key keys={labels('esc')} decorative />
+              </Button>
+            )}
             {shown.primary && <PrimaryButton primary={shown.primary} button={button} />}
           </>
         )

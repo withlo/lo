@@ -13,7 +13,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import { Slot } from '../../../window/slots.tsx';
 import { useViewedMarks } from '../../revisions/window/shared.ts';
 import { useSetting } from '../../settings/window/shared.ts';
-import { tabState, usePull, type PullTab } from '../../tab/window/shared.ts';
+import { MiddlePlaceholder, tabState, usePull, type PullTab } from '../../tab/window/shared.ts';
 import { orderIn, useOrderMode } from '../../tree/window/shared.ts';
 import { layout as layoutSetting, whitespace as whitespaceSetting } from '../settings.ts';
 import { draw, type Drawing, type Place } from './drawing.ts';
@@ -227,9 +227,18 @@ function Waiting({
 }) {
   const pull = usePull(tab.id);
   const { ready, state, progress } = snapshot;
+  // Until the tab knows its head, it's still opening: the tab's own wait, which this view carries
+  // on from whichever drew it before.
+  if (!pull?.shown && !pull?.problem) {
+    return (
+      <div className="min-h-0 flex-1">
+        <MiddlePlaceholder tab={tab} />
+      </div>
+    );
+  }
   let text: string | undefined = 'Reading what the pull request changes…';
-  // Until the tab knows its head, it's still opening, or can't.
-  if (!pull?.shown) text = pull?.problem ? 'Nothing to show yet.' : 'Opening the pull request…';
+  // It can't open, and the tab's banner says why.
+  if (!pull?.shown) text = 'Nothing to show yet.';
   else if (state?.waiting) text = state.waiting;
   else if (state?.files?.length === 0) {
     text =
