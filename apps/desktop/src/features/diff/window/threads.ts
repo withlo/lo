@@ -65,6 +65,11 @@ export interface Threader {
    * thread's own button that opens or collapses it calls `toggle` with its id.
    */
   render(tab: PullTab, toggle: (thread: string) => void): RenderThread;
+  /**
+   * Someone else's new comment came to a line of tab `tab`'s diff on screen, where it waits for
+   * the reader's next input, its line marked: said to a screen reader.
+   */
+  arrived?(tab: string): void;
 }
 
 /**

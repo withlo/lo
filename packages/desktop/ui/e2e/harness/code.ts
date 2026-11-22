@@ -316,9 +316,9 @@ const harness = {
   vim(on: boolean): void {
     setVim(on);
   },
-  /** Opens a comment box under new line `line`, holding `text`, with focus in it. */
-  compose(line: number, text = ''): void {
-    view().compose({ file: 'a', side: 'new', line }, text, {
+  /** Opens a comment box under `side`'s line `line`, holding `text`, with focus in it. */
+  compose(line: number, text = '', side: 'old' | 'new' = 'new'): void {
+    view().compose({ file: 'a', side, line }, text, {
       change: ignore,
       submit: ignore,
       close: ignore,

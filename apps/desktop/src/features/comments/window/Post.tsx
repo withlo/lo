@@ -30,6 +30,11 @@ export interface PostProps {
   readonly markdown: string;
   /** The pull request it's on, which its references and relative links are read against. */
   readonly pull: PostPull;
+  /**
+   * The lines a suggested change in it replaces, as the diff shows them, for while it's drawn from
+   * its Markdown: GitHub's HTML says so itself.
+   */
+  readonly replaced?: string | undefined;
 }
 
 /**
@@ -54,7 +59,7 @@ function follow(target: Followed): void {
 /** How often a post whose images are on screen, but hidden, looks again to read its HTML. */
 const HIDDEN_RECHECK = 30_000;
 
-export function Post({ view, post: given, markdown, pull }: PostProps) {
+export function Post({ view, post: given, markdown, pull, replaced }: PostProps) {
   const element = useRef<HTMLDivElement>(null);
   const key = given.kind === 'post' ? given.id : '#description';
   // A post is the same post however its object was made.
@@ -129,6 +134,7 @@ export function Post({ view, post: given, markdown, pull }: PostProps) {
           tree={shown.rendered.tree}
           onFollow={follow}
           images={image}
+          replaced={replaced}
           className="lo-prose read-comment"
         />
       ) : (

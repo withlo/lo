@@ -28,6 +28,11 @@ export interface MarkdownProps<X extends Extension = Plain> {
    * {@link MAX_IMAGES} images in the text load; without this, none do.
    */
   images?: ((url: string) => string | undefined) | undefined;
+  /**
+   * The lines a suggested change in it replaces, where the tree doesn't say, as a tree made from
+   * Markdown alone doesn't: those the comment is on, as the diff shows them.
+   */
+  replaced?: string | undefined;
   className?: string | undefined;
 }
 
@@ -42,6 +47,7 @@ export function Markdown<X extends Extension = Plain>({
   onFollow,
   extension,
   images,
+  replaced,
   className,
 }: MarkdownProps<X>) {
   const prefix = scopePrefix(useId());
@@ -62,8 +68,8 @@ export function Markdown<X extends Extension = Plain>({
     [anchors, onFollow],
   );
   const rendering = useMemo<Rendering<X>>(
-    () => ({ anchors, follow, extension: extension ?? NONE, interactive: true, image }),
-    [anchors, follow, extension, image],
+    () => ({ anchors, follow, extension: extension ?? NONE, interactive: true, image, replaced }),
+    [anchors, follow, extension, image, replaced],
   );
   return (
     <MarkdownProvider rendering={rendering}>

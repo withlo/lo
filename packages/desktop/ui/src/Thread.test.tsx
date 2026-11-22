@@ -39,10 +39,19 @@ const MINE: ThreadComment = {
 
 const PROPS: ThreadProps = { comments: [MIRA, RAVI], resolved: false, open: true };
 
+/** How many steps the row `element` is in has given up. */
+function given(element: Element): number {
+  const row = element.closest('[data-gave-up]');
+  return (row?.getAttribute('data-gave-up') ?? '').split(' ').filter(Boolean).length;
+}
+
 /** The buttons whose label starts with `label`. */
 function buttons(host: HTMLElement, label: string): HTMLButtonElement[] {
   return [...host.querySelectorAll('button')].filter((each) => each.textContent.startsWith(label));
 }
+
+// A thread's head row, the one row drawn with a border under it.
+const headRow = (host: HTMLElement) => host.querySelector('.border-b');
 
 describe('Thread', () => {
   it('shows an unresolved thread open: its state, its comments and the slots for their text', () => {
@@ -150,13 +159,25 @@ describe('Thread', () => {
     expect(render(<SentPost label="Saving…" body="x" />).textContent).toContain('Saving…');
   });
 
+  it('draws a new thread’s sent comment under the head row its thread will have', () => {
+    const sent = render(<SentPost state="Pending" author="tess-okafor" body={<p>On its way</p>} />);
+    const thread = render(
+      <Thread {...PROPS} comments={[{ ...MINE, pending: true, body: <p>On its way</p> }]} />,
+    );
+    // The same row, by the same classes, with the same words.
+    expect(headRow(sent)?.className).toBe(headRow(thread)?.className);
+    expect(headRow(sent)?.textContent).toBe('Pending1 comment');
+    expect(headRow(thread)?.textContent).toContain('Pending1 comment');
+    expect(sent.querySelector('[data-sent]')?.previousElementSibling).toBe(headRow(sent));
+  });
+
   it('draws a thread in your pending review by its Pending tag alone', () => {
     const pending: ThreadComment = { ...MINE, id: 'p1', pending: true };
     const host = render(<Thread {...PROPS} comments={[pending]} canResolve />);
     const thread = host.querySelector('[role="group"]');
     expect(thread?.getAttribute('aria-label')).toBe('Pending thread by tess-okafor');
     expect(thread?.textContent).toContain('Pending');
-    expect(thread?.textContent).toContain('Your review, not sent');
+    expect(thread?.textContent).toContain('1 comment');
     expect(thread?.textContent).not.toContain('Unresolved');
     // There's nothing on GitHub to resolve yet.
     expect(buttons(host, 'Resolve')).toHaveLength(0);
@@ -180,7 +201,7 @@ describe('Thread', () => {
       <Thread {...PROPS} outdated tags={[{ label: 'On a newer push', tone: 'warning' }]} />,
     );
     const head = host.querySelector('[role="group"] > div');
-    expect(head?.textContent).toContain('Outdated');
+    expect(head?.textContent).toContain('Out of date');
     expect(head?.textContent).toContain('On a newer push');
   });
 
@@ -224,8 +245,9 @@ describe('Thread', () => {
   it('offers a reply where it can be made, and shows an open reply box in its place', () => {
     const onReply = vi.fn<() => void>();
     const host = render(<Thread {...PROPS} canReply keys={{ reply: ['r'] }} onReply={onReply} />);
-    const [reply] = buttons(host, 'Reply…');
-    expect(reply?.textContent).toBe('Reply…r');
+    const [reply] = buttons(host, 'Reply');
+    // Its key's chip shows only on the card the keyboard is on; elsewhere it's in the tooltip.
+    expect(reply?.textContent).toBe('Replyr');
     click(reply!);
     expect(onReply).toHaveBeenCalledOnce();
 
@@ -233,7 +255,7 @@ describe('Thread', () => {
       <Thread {...PROPS} canReply reply={<div data-testid="box">the reply box</div>} />,
     );
     expect(open.querySelector('[data-testid="box"]')?.textContent).toBe('the reply box');
-    expect(buttons(open, 'Reply…')).toHaveLength(0);
+    expect(buttons(open, 'Reply')).toHaveLength(0);
   });
 
   it('has a "More actions" button where a right-click opens a menu, which opens that menu', () => {
@@ -252,11 +274,41 @@ describe('Thread', () => {
     const host = render(
       <Thread {...PROPS} focused keys={{ toggle: ['z', 'a'] }} onToggle={onToggle} />,
     );
-    const collapse = host.querySelector('button[aria-label="Collapse the thread"]');
-    expect(collapse?.getAttribute('title')).toBe('Collapse the thread (z a)');
+    const collapse = host.querySelector('button[aria-label="Collapse thread"]');
+    expect(collapse?.getAttribute('aria-description')).toBe('Keys z then a');
     click(collapse!);
     expect(onToggle).toHaveBeenCalledOnce();
     expect(host.querySelector('[role="group"]')?.hasAttribute('data-focused')).toBe(true);
+  });
+
+  it('gives up what a narrow comment head draws, in order, until the name is whole', () => {
+    // The name takes 120 px. Each step given up gives it more room: none, the key chips, the
+    // "Author" tag, then the controls' words, which is enough.
+    const room = [40, 60, 90, 130, 160];
+    Object.defineProperty(HTMLElement.prototype, 'clientWidth', {
+      configurable: true,
+      get(this: HTMLElement) {
+        return this.hasAttribute('data-fit') ? room[given(this)] : 0;
+      },
+    });
+    Object.defineProperty(HTMLElement.prototype, 'scrollWidth', {
+      configurable: true,
+      get(this: HTMLElement) {
+        return this.hasAttribute('data-fit') ? 120 : 0;
+      },
+    });
+    try {
+      const host = render(<Thread {...PROPS} comments={[{ ...MINE, byAuthor: true }]} />);
+      const head = host.querySelector('[data-fit]')?.parentElement?.parentElement;
+      expect(head?.getAttribute('data-gave-up')).toBe('keys tag labels');
+      // Each control is its icon then, with its words as its tooltip, and keeps its name.
+      const [edit] = buttons(host, 'Edit');
+      expect(edit?.getAttribute('aria-label')).toBe('Edit comment from just now');
+      expect(edit?.querySelector('[data-takes="labels"] svg')).not.toBeNull();
+    } finally {
+      delete (HTMLElement.prototype as { clientWidth?: number }).clientWidth;
+      delete (HTMLElement.prototype as { scrollWidth?: number }).scrollWidth;
+    }
   });
 
   it('draws nothing for a thread with no comments', () => {

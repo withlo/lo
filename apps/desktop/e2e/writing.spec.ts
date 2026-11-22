@@ -283,8 +283,10 @@ test.describe('with a comment posted at once recorded', () => {
     await page.keyboard.press('Shift+C');
     const box = boxes(page);
     await expect(box).toHaveCount(1);
-    const primary = box.locator('.lo-diffcomposer__foot button').last();
-    await expect(primary).toContainText('Send now');
+    // The buttons keep their order: the fill moves to "Send now".
+    const foot = box.locator('.lo-diffcomposer__foot button');
+    await expect(foot.last()).toContainText('Add to review');
+    const primary = foot.filter({ hasText: 'Send now' });
     await page.keyboard.type('Is two the right start?');
     await primary.click();
     // The box goes, its room held until the reader's next key, and then the thread GitHub made
@@ -374,6 +376,51 @@ test('the `+` the pointer brings beside a line opens a box on that line', async 
   await expect(box.locator('.lo-diffcomposer__head')).toContainText('Line 2');
   await expect(box.locator('.cm-content')).toBeFocused();
   await expect(add).toBeHidden();
+});
+
+/** How far the box's foot is over its pane's: below it where it's less than 0. */
+function footRoom(page: Page): Promise<number> {
+  return boxes(page)
+    .first()
+    .evaluate((box) => {
+      let pane = box.parentElement;
+      while (pane && !['auto', 'scroll'].includes(getComputedStyle(pane).overflowY)) {
+        pane = pane.parentElement;
+      }
+      if (!pane) return Number.NaN;
+      const foot = pane.getBoundingClientRect().top + pane.clientTop + pane.clientHeight;
+      return foot - box.getBoundingClientRect().bottom;
+    });
+}
+
+test('a box being written in stays on screen whole as the window narrows and the code over it wraps again', async ({
+  app,
+  page,
+}) => {
+  await open(page);
+  await onLineTwo(page);
+  // A short window, so the box opens at the foot of the diff.
+  await app.evaluate(({ BrowserWindow }) =>
+    BrowserWindow.getAllWindows()[0]?.setContentSize(1400, 560),
+  );
+  await expect.poll(() => page.evaluate(() => window.innerHeight)).toBe(560);
+  await page.keyboard.press('c');
+  const box = boxes(page);
+  await expect(box).toHaveCount(1);
+  await page.keyboard.type('Wraps');
+  // Whole on screen, 8 px over the pane's foot.
+  await expect.poll(() => footRoom(page)).toBeGreaterThanOrEqual(7.5);
+  // Narrower, the code over it wraps again, a frame or more after the box did, and moves it down:
+  // its foot comes back on screen.
+  for (const width of [1100, 900, 760]) {
+    await app.evaluate(
+      ({ BrowserWindow }, across) => BrowserWindow.getAllWindows()[0]?.setContentSize(across, 560),
+      width,
+    );
+    await expect.poll(() => page.evaluate(() => window.innerWidth)).toBe(width);
+    await expect.poll(() => footRoom(page)).toBeGreaterThanOrEqual(7.5);
+  }
+  await expect(box.locator('.cm-content')).toBeFocused();
 });
 
 test('`c` on lines selected, `s` and a header’s `c` open their boxes; one kept with `Esc` is back after a restart, offline, sending nothing until it’s discarded', async ({

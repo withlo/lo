@@ -9,12 +9,23 @@ import {
 } from 'react';
 
 import { Key } from './Key.tsx';
+import { Tooltip } from './Tooltip.tsx';
 
 /** One segment: what it stands for, and what it says. */
 export interface Segment<T extends string> {
   value: T;
   /** A word or two, with anything that goes before it, such as a mark. */
   label: ReactNode;
+  /**
+   * Its name, for a segment whose label is sometimes its icon alone: a screen reader hears it
+   * throughout.
+   */
+  name?: string | undefined;
+  /**
+   * Its tooltip, while its label is its icon alone: its name. `null` meanwhile, for a segment that
+   * has one some of the time, so it's the same element throughout.
+   */
+  tip?: string | null | undefined;
 }
 
 export interface SegmentedControlProps<T extends string> {
@@ -137,7 +148,7 @@ export function SegmentedControl<T extends string>({
         )}
         {items.map((item) => {
           const chosen = item.value === value;
-          return (
+          const button = (
             <button
               key={item.value}
               ref={(element) => {
@@ -149,6 +160,7 @@ export function SegmentedControl<T extends string>({
               aria-selected={kind === 'views' ? chosen : undefined}
               aria-checked={kind === 'choice' ? chosen : undefined}
               tabIndex={item.value === tabbable ? 0 : -1}
+              aria-label={item.name}
               className={segment({ chosen: chosen ? (thumb ? 'thumb' : true) : false, size })}
               onClick={() => {
                 if (!chosen) onChange(item.value);
@@ -156,6 +168,13 @@ export function SegmentedControl<T extends string>({
             >
               {item.label}
             </button>
+          );
+          return item.tip === undefined ? (
+            button
+          ) : (
+            <Tooltip key={item.value} label={item.tip}>
+              {button}
+            </Tooltip>
           );
         })}
       </div>

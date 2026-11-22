@@ -489,6 +489,9 @@ export function draw(options: DrawOptions): Drawing {
       menu: (target, x, y) => {
         openMenu(target, { x, y });
       },
+      arrived() {
+        threader()?.arrived?.(tab.id);
+      },
       // "Read it in the overview": a jump, from the line the note is under.
       explained(block, line) {
         if (explainer()?.read(tab.id, block)) {

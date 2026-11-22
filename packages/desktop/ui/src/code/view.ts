@@ -204,6 +204,14 @@ const HOLD_AFTER = 2_000;
 /** How far the card `]t` landed on keeps clear of its pane's foot, in pixels (`lo-sp-8`). */
 const CARD_CLEAR = 8;
 
+/**
+ * How narrow a comment box may be, in pixels: side by side, one whose side is narrower takes both
+ * sides. Its head and its foot fit on a line each from this width.
+ */
+const BOX_FLOOR = 256;
+/** The space each side of what's under a line (`.lo-diffthread`), in pixels. */
+const UNDER_INSET = 12;
+
 const setFile = StateEffect.define<{
   file: number;
   from: number;
@@ -385,6 +393,11 @@ class View implements DiffView {
    * until the reader's next input.
    */
   readonly #waiting = new Set<string>();
+  /**
+   * Those of `#waiting` where a thread that wasn't drawn anywhere waits: someone else's new
+   * comment, which its line says has come (`ArrivedWidget`).
+   */
+  readonly #arrived = new Set<string>();
   /** File lines on each side that stay shown: those under threads and comment boxes. */
   readonly #keep: { old: Set<number>; new: Set<number> }[];
   /** Lines comment boxes were opened under, which stay shown once they close. */
@@ -793,6 +806,7 @@ class View implements DiffView {
    * file, which a box moving back down takes away again.
    */
   readonly #keepPlace = (): void => {
+    this.#reach();
     // A scroll whose event hasn't come yet is the reader's, or the view's, not the box's.
     this.#placeChosen();
     this.#boxHeight = this.dom.clientHeight;
@@ -988,8 +1002,48 @@ class View implements DiffView {
     const now = this.#freeLines((file, key) => theirs.has(waitKey(file, key)));
     if (now[0]) this.#keepUnasked(() => this.#showLines(now));
     this.#letThreadsGo(options.now ? 'all' : 'off', true);
+    this.#markArrived();
     this.#dropThreads();
     this.#markKeyed();
+  }
+
+  /**
+   * Marks the lines on screen where someone else's new comment waits, a thread drawn nowhere yet,
+   * so the reader knows it's there before their next input lets it in.
+   */
+  #markArrived(): void {
+    const drawn = new Set<string>();
+    for (const byPlace of this.#threads) {
+      for (const threads of byPlace.values()) for (const thread of threads) drawn.add(thread.id);
+    }
+    const files = new Set<number>();
+    let come = false;
+    for (const each of this.#arrived) {
+      if (this.#waiting.has(each)) continue;
+      this.#arrived.delete(each);
+      files.add(splitKey(each).file);
+    }
+    for (const each of this.#waiting) {
+      const { file, key } = splitKey(each);
+      const arrived = (this.#wanted[file]?.get(key) ?? []).some((thread) => !drawn.has(thread.id));
+      if (arrived === this.#arrived.has(each)) continue;
+      if (arrived) this.#arrived.add(each);
+      else this.#arrived.delete(each);
+      come ||= arrived;
+      files.add(file);
+    }
+    for (const file of files) this.#refresh(file);
+    if (come) this.#on.arrived?.();
+  }
+
+  /** The lines of file `file`, by `side:line`, where someone else's new comment waits. */
+  #arrivedIn(file: number): Set<string> {
+    const lines = new Set<string>();
+    for (const each of this.#arrived) {
+      const at = splitKey(each);
+      if (at.file === file) lines.add(at.key);
+    }
+    return lines;
   }
 
   /**
@@ -1155,6 +1209,7 @@ class View implements DiffView {
     }
     return [...going].map((each) => {
       this.#waiting.delete(each);
+      this.#arrived.delete(each);
       return { ...splitKey(each), threads: wanted(each) };
     });
   }
@@ -3167,10 +3222,13 @@ class View implements DiffView {
   /**
    * What a control's tooltip says: its command's label and key, or why the command can't run on
    * its target now, which also dims it. A control names its own words in `data-tip` where its
-   * state changes what a click does, as the viewed ball's "Unmark viewed" does.
+   * state changes what a click does, as the viewed ball's "Unmark viewed" does. One with no command,
+   * as the marker of a new thread, whose click is the line's, has its words alone.
    */
   #tipOf(control: HTMLElement): Tip | undefined {
     const id = control.dataset.command;
+    if (id === undefined)
+      return control.dataset.tip === undefined ? undefined : { label: control.dataset.tip };
     const target = this.#controlTarget(control);
     const shown = id === undefined || !target ? undefined : controlOf(id, target);
     if (!shown) return undefined;
@@ -3365,6 +3423,8 @@ class View implements DiffView {
     return [
       this.#common(side),
       EditorView.contentAttributes.of({ 'aria-label': side === 'old' ? 'Before' : 'After' }),
+      // Which side it is, for the stylesheet: a box that spans both sides reaches over the other.
+      EditorView.editorAttributes.of({ 'data-side': side }),
       markerGutter({
         active: () => this.#marked.size > 0,
         markerAt: (first, last) => this.#markerAt(side, first, last),
@@ -3548,6 +3608,7 @@ class View implements DiffView {
       this.views.old.dom.hidden = true;
       this.views.new.dom.hidden = true;
       inline.view.dom.hidden = false;
+      this.#reach();
       this.#moveBoxes();
       shown = 'inline';
     } else {
@@ -3556,6 +3617,7 @@ class View implements DiffView {
       this.views.old.dom.hidden = false;
       this.views.new.dom.hidden = false;
       this.#aligner.paused = false;
+      this.#reach();
       this.#moveBoxes();
       // The cursor stays on screen as the sides settle, as after any key that moves it.
       this.#aligner.follow();
@@ -3570,6 +3632,26 @@ class View implements DiffView {
     // Drawn now, where the editor scrolls to, so it can take focus.
     this.#viewOf(shown).lineBlockAtHeight(0);
     peek.block.focus();
+  }
+
+  /**
+   * Side by side, where a side is narrower than a comment box may be (`BOX_FLOOR`), every box takes
+   * both sides: it reaches over the other side, where the room kept for it is, and over the
+   * gutters between (`view.css`). How far it reaches each way is measured as the view changes width
+   * or layout. A view out of sight keeps what it had.
+   */
+  #reach(): void {
+    if (this.dom.clientWidth === 0) return;
+    const old = this.views.old.contentDOM.getBoundingClientRect();
+    const now = this.views.new.contentDOM.getBoundingClientRect();
+    const narrow =
+      this.#pane === 'split' && Math.min(old.width, now.width) - 2 * UNDER_INSET < BOX_FLOOR;
+    this.dom.classList.toggle('is-spanned', narrow);
+    if (!narrow) return;
+    const start = this.dom.getBoundingClientRect().left + this.dom.clientLeft;
+    const end = start + this.dom.clientWidth;
+    this.dom.style.setProperty('--lo-reach-new', `${Math.max(0, now.left - start)}px`);
+    this.dom.style.setProperty('--lo-reach-old', `${Math.max(0, end - old.right)}px`);
   }
 
   /** Shows `pane`, scrolled to `place` with the cursor there, and focus in it unless `focus` is false. */
@@ -3745,6 +3827,7 @@ class View implements DiffView {
       diff: this.#diffs[file],
       moves: this.#moves.filter((move) => move.from.file === file || move.to.file === file),
       threads: this.#viewThreads(file),
+      arrived: this.#arrivedIn(file),
       keep: this.#keep[file]!,
       open: this.#open[file]!,
       gaps: this.#gaps[file]!,
@@ -3872,6 +3955,7 @@ class View implements DiffView {
     swaps: Partial<Record<Pane, readonly Transaction[]>> = {},
   ): void {
     this.#settleUndrawn(file);
+    const marker = this.#markerWithFocus();
     this.#rows[file] = this.#rowsOf(file);
     const effects = [...more, marksChanged.of(null)];
     const split = (): void => {
@@ -3922,7 +4006,27 @@ class View implements DiffView {
       split();
       inline();
     }
+    // A new thread's marker that had focus went as its thread came: the cursor goes to its line,
+    // with focus, so focus doesn't fall to the page.
+    if (marker && !marker.dom.isConnected) {
+      const { doc } = marker.view.state;
+      marker.view.dispatch({
+        selection: { anchor: doc.line(Math.min(marker.line, doc.lines)).from },
+      });
+      marker.view.focus();
+    }
     this.#aligner.schedule();
+  }
+
+  /** A new thread's marker in one of the editors, if it has focus, with its editor and its line. */
+  #markerWithFocus(): { dom: HTMLElement; view: EditorView; line: number } | undefined {
+    const active = document.activeElement;
+    if (!(active instanceof HTMLElement) || !active.classList.contains('lo-arrived')) {
+      return undefined;
+    }
+    const view = this.#editors().find((each) => each.dom.contains(active));
+    if (!view) return undefined;
+    return { dom: active, view, line: view.state.doc.lineAt(view.posAtDOM(active)).number };
   }
 
   /**

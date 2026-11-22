@@ -199,13 +199,13 @@ describe('the text', () => {
 
   test('sizes and what Lo took out read as people say them', () => {
     expect([sizeText(512), sizeText(217_088), sizeText(3_565_158)]).toEqual([
-      '512 bytes',
+      '512 B',
       '212 KB',
       '3.4 MB',
     ]);
     const removed = { location: true, other: true, embedded: false };
     expect(metadataNote('shot.jpg', { kind: 'image', removed })).toBe(
-      'Lo removed where shot.jpg was taken and its other metadata before uploading it.',
+      'shot.jpg · location and metadata removed',
     );
     expect(
       metadataNote('shot.png', {
@@ -213,11 +213,9 @@ describe('the text', () => {
         removed: { location: false, other: false, embedded: false },
       }),
     ).toBeUndefined();
-    expect(metadataNote('storm.gif', { kind: 'asIs' })).toBe(
-      'Lo couldn’t remove metadata from storm.gif, so it uploads as it is.',
-    );
+    expect(metadataNote('storm.gif', { kind: 'asIs' })).toBe('storm.gif · metadata not removed');
     expect(metadataNote('demo.mov', { kind: 'video', removed: { ...removed, other: false } })).toBe(
-      'Lo removed where demo.mov was filmed before uploading it. The rest of its metadata stays, such as when it was filmed and on what.',
+      'demo.mov · location removed',
     );
   });
 });
@@ -229,9 +227,7 @@ describe('attaching', () => {
     expect(box.text()).toMatch(PLACED);
     expect(running(box)).toBe(true);
     const { state } = attachingOf(box);
-    expect(state.rows).toMatchObject([
-      { name: 'retry-storm.png', size: '8 bytes', uploaded: false },
-    ]);
+    expect(state.rows).toMatchObject([{ name: 'retry-storm.png', size: '8 B', uploaded: false }]);
     expect(state.notes[0]).toEqual({ key: 'upload-warning', tone: 'warning', text: WARNING });
     await settle();
     expect(asked.upload).toMatchObject([{ id: 'v1', name: 'retry-storm.png' }]);
@@ -245,7 +241,7 @@ describe('attaching', () => {
     expect(attachingOf(box).state.rows).toMatchObject([{ uploaded: true }]);
     expect(attachingOf(box).state.notes.map(({ text }) => text)).toEqual([
       WARNING,
-      'Lo removed where retry-storm.png was taken before uploading it.',
+      'retry-storm.png · location removed',
     ]);
   });
 
@@ -256,8 +252,8 @@ describe('attaching', () => {
     await settle();
     // Nothing of it was read.
     expect(asked.prepare).toEqual([{ name: 'notes.txt', bytes: null }]);
-    expect(attachingOf(box).state.notes.map(({ text }) => text)).toEqual([
-      'Lo didn’t attach notes.txt: GitHub doesn’t take this kind.',
+    expect(attachingOf(box).state.notes.map(({ title, text }) => [title, text])).toEqual([
+      ['Couldn’t attach notes.txt', 'GitHub doesn’t take this kind.'],
     ]);
     expect(asked.upload).toEqual([]);
   });
@@ -269,18 +265,20 @@ describe('attaching', () => {
     attachFiles(box, shots(0));
     attachFiles(box, [...shots(6), new File(['hi'], 'notes.txt')]);
     expect(attachingOf(box).state.rows).toHaveLength(10);
-    expect(attachingOf(box).state.notes.at(-1)?.text).toBe(
-      'Lo attaches 10 files at a time, so it left out 2 files.',
-    );
+    expect(attachingOf(box).state.notes.at(-1)).toMatchObject({
+      title: 'Couldn’t attach 2 files',
+      text: '10 files attach at a time.',
+    });
     // Once one is in, there's room for another.
     await settle();
     asked.answers[0]!({ kind: 'uploaded', markdown: `![shot-0](${ASSET})`, viaGh: false });
     await settle();
     attachFiles(box, [png('shot-12.png'), png('shot-13.png')]);
     expect(attachingOf(box).state.rows).toHaveLength(11);
-    expect(attachingOf(box).state.notes.at(-1)?.text).toBe(
-      'Lo attaches 10 files at a time, so it left out 1 file.',
-    );
+    expect(attachingOf(box).state.notes.at(-1)).toMatchObject({
+      title: 'Couldn’t attach shot-13.png',
+      text: '10 files attach at a time.',
+    });
   });
 
   test('a file whose metadata Lo can’t read says it goes as it is', async () => {
@@ -290,7 +288,7 @@ describe('attaching', () => {
     expect(attachingOf(box).state.notes).toContainEqual(
       expect.objectContaining({
         tone: 'warning',
-        text: 'Lo couldn’t remove metadata from storm.gif, so it uploads as it is.',
+        text: 'storm.gif · metadata not removed',
       }),
     );
   });
@@ -317,8 +315,9 @@ describe('attaching', () => {
     asked.answers[0]!({ kind: 'failed', message: 'GitHub refused it: Bad size.' });
     await settle();
     expect(box.text()).toBe('Repro: ');
-    expect(attachingOf(box).state.notes.map(({ text }) => text)).toEqual([
-      'retry-storm.png didn’t upload: GitHub refused it: Bad size.',
+    // Why isn't known in the reader's words: the title alone, and the foot's "Attach files…".
+    expect(attachingOf(box).state.notes.map(({ title, text }) => [title, text])).toEqual([
+      ['Couldn’t attach retry-storm.png', ''],
     ]);
     expect(asked.upload).toHaveLength(1);
   });
@@ -333,9 +332,7 @@ describe('attaching', () => {
     expect(box.text()).toBe('');
     expect(asked.upload).toHaveLength(1);
     expect(running(box)).toBe(false);
-    expect(whyNoAttach('v2')).toBe(
-      'Uploads here need gh’s sign-in, since GitHub takes none with Lo’s. Paste an image’s web address instead.',
-    );
+    expect(whyNoAttach('v2')).toBe('Sign in to GitHub CLI to attach files');
     const other = boxWith('', 'v2');
     attachFiles(other, [png()]);
     expect(other.text()).toBe('');
@@ -370,8 +367,9 @@ describe('attaching', () => {
     asked.answers[0]!({ kind: 'uploaded', markdown: `![retry-storm](${ASSET})`, viaGh: true });
     await settle();
     expect(kept.at(-1)).toBe(`Repro: ![retry-storm](${ASSET})`);
-    expect(attachingOf(closed).state.notes.map(({ text }) => text)).toContain(
-      'GitHub took no upload with Lo’s sign-in, so Lo sent retry-storm.png with gh’s.',
+    // Which sign-in sent it is nothing the reader acts on: no note says it.
+    expect(attachingOf(closed).state.notes.map(({ text }) => text)).not.toContainEqual(
+      expect.stringContaining('sign-in'),
     );
   });
 });
@@ -479,8 +477,7 @@ describe('a placeholder whose upload isn’t under way', () => {
 });
 
 describe('a view whose account can’t write to the repository', () => {
-  const CANT =
-    'GitHub takes uploads only from people who can write to e2e. Paste an image’s web address instead.';
+  const CANT = 'rozed-bot can’t attach files in e2e';
 
   test('dropped on before main says, a file goes in at once, and out again once main says it can’t', async () => {
     keepUploadsOf(new Set());

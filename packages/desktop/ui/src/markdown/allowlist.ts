@@ -18,7 +18,8 @@ export const MARKDOWN_ELEMENTS: Readonly<Record<string, readonly string[]>> = Ob
   ul: [],
   ol: ['start'],
   li: ['id', 'tabindex', 'dir'],
-  span: ['role', 'aria-label'],
+  // `aria-hidden` on a suggested change's −/+ signs, which the `del` and `ins` say already.
+  span: ['role', 'aria-label', 'aria-hidden'],
   pre: [],
   code: [],
   table: [],
@@ -34,6 +35,8 @@ export const MARKDOWN_ELEMENTS: Readonly<Record<string, readonly string[]>> = Ob
   strong: [],
   em: [],
   del: [],
+  // A suggested change's added lines, as `del` holds its removed ones.
+  ins: [],
   br: [],
   sub: [],
   sup: [],

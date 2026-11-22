@@ -530,6 +530,11 @@ export const contract = defineContract('comments', {
       }>(),
     },
     /**
+     * Reads view `id`'s review threads and your pending review again now, after a read that failed,
+     * which `threads` then says as it goes: it reads nothing for a view whose last read didn't fail.
+     */
+    reread: { input: z.strictObject({ id: tabId }), reply: reply<void>() },
+    /**
      * Keeps `text` as the draft of the comment box at `place` on view `id`'s pull request, for its
      * account: blank text removes it. `home`, when it's given, is the code block the box was
      * written on, or none; otherwise the draft keeps the one it has. Fails as `missing` for no such
