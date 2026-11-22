@@ -129,3 +129,11 @@ export function sendJumps(view: EditorView, sink: JumpSink): void {
 export function mapJumps(view: EditorView, changes: ChangeDesc): void {
   own.get(view)?.map(changes);
 }
+
+/**
+ * Notes a jump one of a code view's own editors made without Vim, as its plain `G` and `n` do: it
+ * goes where Vim's go from there, so `⌃o` comes back from it.
+ */
+export function noteJump(view: EditorView, from: number, to: number): void {
+  sinks.get(view)?.(from, to);
+}

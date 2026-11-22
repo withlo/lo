@@ -227,6 +227,8 @@ export class CommentBox implements BoxHost, KeySource {
             if (runScopeHandlers(view, event, BOX_KEYS)) return true;
             // With Vim keys on, `Esc` is Vim's until it's in normal mode, waiting on nothing.
             if (event.key !== 'Escape' || (vimOn() && !idle(view))) return false;
+            // While text is being composed, `Esc` is the input method's: it cancels the composition.
+            if (event.isComposing || view.composing) return false;
             if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return false;
             event.preventDefault();
             this.#escape(this);

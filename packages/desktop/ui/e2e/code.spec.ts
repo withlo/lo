@@ -684,6 +684,18 @@ for (const layout of ['split', 'inline'] as const) {
         expect(before.line! - (await lineTop(page, 40))!).toBeGreaterThan(200);
       });
 
+      test(`\`PageDown\` ${narrowing}, with Vim keys off, goes a page on from what the reader saw`, async () => {
+        const page = await wrapping(layout, 0);
+        const before = await lineTop(page, 40);
+
+        if (when === 'as') await page.evaluate(() => window.harness.narrowOnKey(640));
+        else await narrowed(page);
+        await page.keyboard.press('PageDown');
+        await frames(page);
+        // A page is most of the screen, which is more than the narrowing moves anything.
+        expect(before! - (await lineTop(page, 40))!).toBeGreaterThan(400);
+      });
+
       test(`the wheel ${narrowing} scrolls as far as it turns from what the reader saw`, async () => {
         const page = await wrapping(layout);
         await page.mouse.move(300, 300);

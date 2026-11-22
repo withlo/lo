@@ -640,7 +640,7 @@ export interface DiffEvents {
   /** The file at the top of the screen changed: the tree follows. */
   file(id: string): void;
   /**
-   * A jump, from one spot to another: a Vim motion that jumps (`G`, `/`, `]f`), `jump` or
+   * A jump, from one spot to another: a motion that jumps (`G`, `/`, `]f`), `jump` or
    * `otherSide`. The caller records `from` in the tab's history, which `⌃o` walks back with
    * `reveal`.
    */
@@ -872,7 +872,7 @@ export interface FileEvents {
   /** Vim's mode changed in the view's code: for the status bar. */
   mode(mode: Mode): void;
   /**
-   * A jump, from one spot to another: a Vim motion that jumps (`G`, `/`, `%`). The caller records
+   * A jump, from one spot to another: a motion that jumps (`G`, `/`, `%`). The caller records
    * `from` in the tab's history, which `⌃o` walks back with `reveal`.
    */
   jumped(from: Spot, to: Spot): void;

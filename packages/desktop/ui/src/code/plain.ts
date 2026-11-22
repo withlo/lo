@@ -4,7 +4,8 @@
 // on working, since the registry (`@lo/ui/commands`) runs them before a key reaches the editor, its
 // jumps among them. Here are the few keys Lo documents as the code view's own, which Vim runs
 // while it's on: `j` and `k` move by a line, `g g` and `G` go to the top and the end, `/` and `⌘F`
-// search the code, and `n` and `N` go between the matches. A page goes by the box that scrolls
+// search the code, and `n` and `N` go between the matches. Those four are jumps, as Vim's are, so
+// `⌃o` comes back from them. A page goes by the box that scrolls
 // (`screen.ts`), as Vim's does, since an editor here is as tall as its document. `Esc` ends a
 // selection.
 
@@ -24,6 +25,7 @@ import type { Extension } from '@codemirror/state';
 import { type EditorView, keymap, type Panel } from '@codemirror/view';
 
 import { plainKeys } from './api.ts';
+import { noteJump } from './jumps.ts';
 import { pageBy } from './screen.ts';
 
 /** The search's field, at the foot of the code it searches. */
@@ -49,8 +51,8 @@ function searchPanel(view: EditorView): Panel {
     if (event.isComposing || event.metaKey || event.ctrlKey || event.altKey) return;
     if (event.key === 'Enter') {
       event.preventDefault();
-      if (event.shiftKey) findPrevious(view);
-      else findNext(view);
+      if (event.shiftKey) previousMatch(view);
+      else nextMatch(view);
     } else if (event.key === 'Escape') {
       event.preventDefault();
       closeSearchPanel(view);
@@ -75,6 +77,23 @@ function searchPanel(view: EditorView): Panel {
     },
   };
 }
+
+/**
+ * `move` as a jump: where the caret was and where `move` took it go to the editor's jumps, as they
+ * do when Vim makes the move, so `⌃o` comes back.
+ */
+function jump(move: (view: EditorView) => boolean): (view: EditorView) => boolean {
+  return (view) => {
+    const from = view.state.selection.main.head;
+    const moved = move(view);
+    const to = view.state.selection.main.head;
+    if (moved && to !== from) noteJump(view, from, to);
+    return moved;
+  };
+}
+
+const nextMatch = jump(findNext);
+const previousMatch = jump(findPrevious);
 
 /** Opens the search, or puts focus back in its field. */
 function openSearch(view: EditorView): boolean {
@@ -154,10 +173,10 @@ export function plainCode(): Extension {
       { key: plainKeys.up, run: (view) => lineBy(view, -1) },
       { key: plainKeys.search, run: openSearch },
       { key: 'Mod-f', run: openSearch, preventDefault: true },
-      { key: plainKeys.nextMatch, run: findNext },
-      { key: plainKeys.previousMatch, run: findPrevious },
-      { key: topLast, run: top },
-      { key: plainKeys.bottom, run: cursorDocEnd },
+      { key: plainKeys.nextMatch, run: nextMatch },
+      { key: plainKeys.previousMatch, run: previousMatch },
+      { key: topLast, run: jump(top) },
+      { key: plainKeys.bottom, run: jump(cursorDocEnd) },
       { key: 'PageDown', run: (view) => pageBy(view, true) },
       { key: 'PageUp', run: (view) => pageBy(view, false) },
       { key: 'Escape', run: leave },
