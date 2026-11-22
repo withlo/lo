@@ -302,6 +302,9 @@ test('draws every changed file in the left panel’s order, each as it starts ou
     'lockfile',
   );
   await expect(view.getByText('Expand file').first()).toBeVisible();
+  // What says so is a button, which opens the file as `za` does.
+  await view.getByRole('button', { name: 'Expand file' }).first().click();
+  await expect(view.getByText('Expand file')).toHaveCount(0);
   expect(refused).toEqual([]);
 });
 
