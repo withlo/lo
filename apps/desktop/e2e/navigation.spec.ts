@@ -18,7 +18,7 @@ import type { Page } from '@playwright/test';
 import {
   answerDialogs,
   appFolder,
-  DIFF_FIRST,
+  DIFF_FIRST_VIM,
   expect,
   KEYCHAIN,
   test as base,
@@ -51,7 +51,8 @@ const test = base.extend<{ github: ReplayServer }>({
   },
 });
 
-test.use({ settings: DIFF_FIRST });
+// With Vim keys on: these tests put the cursor on a word with Vim's motions (`0`, `f L`).
+test.use({ settings: DIFF_FIRST_VIM });
 
 /** Opens #80 once rozed-bot is signed in, waits for its diff and its syntax index, and returns its tab's id. */
 async function opened(page: Page): Promise<string> {

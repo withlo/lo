@@ -197,12 +197,15 @@ export interface ComposerEvents {
   /** `⌘⏎` adds the comment to the review; `⌥⏎` posts it now. The box stays until it's closed. */
   submit(how: Send): void;
   /**
-   * `Esc` in normal mode, or in the preview, closed the box: `keep` when it held text, which the
-   * caller keeps as the draft for the next box there. A box `createComposer` made stays: closing
-   * it is the caller's.
+   * `Esc` closed the box, or its handle's `leave()` did: `keep` when it held text, which the
+   * caller keeps as the draft for the next box there. With Vim keys on, `Esc` closes it from
+   * normal mode, or the preview. A box `createComposer` made stays: closing it is the caller's.
    */
   close(keep: boolean): void;
-  /** Vim's mode in the box changed: for the frame's foot. */
+  /**
+   * With Vim keys on, Vim's mode in the box changed, or Vim keys went on or off: for the frame's
+   * foot. With them off the box is always written in, which is `insert`.
+   */
   mode?(mode: Mode): void;
   /** `⌘⇧V` showed the preview in the editor's place, or the editor again. */
   preview?(on: boolean): void;
@@ -221,11 +224,14 @@ export interface ComposerEvents {
 export interface Composer {
   /** The text so far. */
   readonly text: string;
-  /** Vim's mode in the box. */
+  /** Vim's mode in the box, or `insert` with Vim keys off, when it's always written in. */
   readonly mode: Mode;
   /** Whether it shows the preview, in the editor's place. */
   readonly previewing: boolean;
-  /** Focuses the box: in insert mode at the end of its text, or its preview while that shows. */
+  /**
+   * Focuses the box, ready to type in, at the end of its text: in insert mode, with Vim keys on.
+   * While its preview shows, that takes focus.
+   */
   focus(): void;
   /**
    * Types `text` at the cursor as the reader sees it: where it is in insert mode, and after the
@@ -238,8 +244,8 @@ export interface Composer {
    */
   replace(from: number, to: number, text: string): void;
   /**
-   * Shows the preview in the editor's place, leaving insert mode, or the editor again, back in
-   * insert mode if it was. Focus in the box goes with it.
+   * Shows the preview in the editor's place, or the editor again. Focus in the box goes with it.
+   * With Vim keys on, the preview leaves insert mode, and the editor comes back in it if it was.
    */
   preview(on: boolean): void;
   /**
@@ -255,10 +261,15 @@ export interface Composer {
    */
   close(): void;
   /**
-   * Closes the box with nothing sent, as a draft discarded or moved elsewhere is: as `Esc Esc`
-   * closes it, but without a word to the caller, and leaving its line no claim on what comes there.
+   * Closes the box with nothing sent, as a draft discarded or moved elsewhere is: as `Esc` closes
+   * it, but without a word to the caller, and leaving its line no claim on what comes there.
    */
   dismiss(): void;
+  /**
+   * Closes the box as `Esc` does, for a control that does: the caller hears `close`, keeping its
+   * draft when it holds text.
+   */
+  leave(): void;
   /**
    * The box as it is, for another to open as it was ({@link ComposeOptions.kept}), as when the view
    * it's in is about to be drawn anew.
@@ -281,7 +292,7 @@ export interface KeptBox {
  * which takes no room while it's empty.
  */
 export interface BoxParts {
-  /** Above the rest: Write and Preview, where the comment goes, and the account. */
+  /** Above the rest: what the comment is on, Write and Preview, and what closes the box. */
   head: HTMLElement;
   /** Under the head: a restored draft, a refusal, a warning. */
   note: HTMLElement;
@@ -291,7 +302,7 @@ export interface BoxParts {
   dropzone: HTMLElement;
   /** Under the editor: the files being attached. */
   uploads: HTMLElement;
-  /** Last: Vim's mode, attaching, and the buttons that send. */
+  /** Last: attaching, discarding the draft, and the buttons that send. */
   foot: HTMLElement;
 }
 
@@ -311,6 +322,8 @@ export interface ComposeOptions {
    * box named otherwise than one open at its place is a box of its own.
    */
   name?: string;
+  /** What the box says while it's empty, naming what the comment is on: "Reply". */
+  hint?: string;
   /**
    * The box this one is, as it was before the view was drawn anew: it opens as that one was, with
    * its caret and selection, undo history, Vim's mode and preview, if its text is the draft. That's
@@ -330,6 +343,8 @@ export interface ComposerInit {
   nonce: string;
   /** What the editor is called, for screen readers: "Comment" unless given. */
   label?: string;
+  /** What the box says while it's empty, naming what the comment is on: "Comment on #264". */
+  hint?: string;
 }
 
 /** How level the rows on screen are, as drawn. */
@@ -955,6 +970,21 @@ export interface ExcerptView extends KeySource {
 
 /** What an excerpt tells its caller, as a whole-file view does. */
 export type ExcerptEvents = FileEvents;
+
+/**
+ * The keys of a code view Lo documents as its own (`vim: 'own'` in a feature's `keys.ts`) that a
+ * code view runs itself while Vim keys are off, by what each does, in CodeMirror's notation. The
+ * others are Vim's alone.
+ */
+export const plainKeys = {
+  down: 'j',
+  up: 'k',
+  search: '/',
+  nextMatch: 'n',
+  previousMatch: 'N',
+  top: 'g g',
+  bottom: 'G',
+} as const;
 
 /**
  * Lo's motions the diff view runs, by the ids of the commands that declare them: in a code view,

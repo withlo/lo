@@ -28,7 +28,7 @@ import {
 } from '../contract.ts';
 import type { Prepared } from '../jobs.ts';
 import { commentsJobs, main } from './main.ts';
-import type { BoxNote } from './writing.ts';
+import { type BoxNote, IN_A_LAYER, OFFLINE } from './writing.ts';
 
 /** The most files a box attaches at once. */
 export const FILES_AT_ONCE = 10;
@@ -38,7 +38,7 @@ export const WARNING =
   'Uploads go to GitHub and stay reachable by link, even if you delete the comment.';
 
 /** Why a box's comment isn't sent while a file uploads. */
-export const UPLOADING = 'Uploading. Send the comment once the files are in.';
+export const UPLOADING = 'A file is still uploading';
 
 /** What uploads use of a comment box. */
 export interface Attachable {
@@ -367,11 +367,11 @@ export function offNote(off: UploadsOff): BoxNote {
 /** Why view `view`'s boxes can't attach files now, if they can't. */
 export function whyNoAttach(view: string): string | undefined {
   const pull = pullOf(view);
-  if (pull?.acting?.kind !== 'account') return 'Sign in to attach files.';
-  if (runOf(view)) return 'Comment in a layer';
+  if (pull?.acting?.kind !== 'account') return 'Sign in to attach files';
+  if (runOf(view)) return IN_A_LAYER;
   const off = uploadsOff(view);
   if (off !== undefined) return offNote(off).text;
-  if (pull.connection.kind === 'offline') return 'Offline. Attach files once Lo can reach GitHub.';
+  if (pull.connection.kind === 'offline') return OFFLINE;
   return undefined;
 }
 

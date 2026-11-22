@@ -140,6 +140,10 @@ Dark (Lo Glow Dark) is the default. Every color comes from `tokens.json` through
   after 500 ms, or at once when another was just showing (one `TooltipGroup` goes around the window,
   in `Window.tsx`). It never carries an error, a state or anything that's the only place to learn
   something.
+- A dimmed control says why in its tooltip, in a few words with no full stop: "Offline", "Write a
+  comment first". Give `Button` the reason as its `hint` while it's off, and name the reason for a
+  screen reader with `aria-describedby`, since a tooltip is never read. A reason with something to
+  do about it isn't a tooltip: it's a line with its button.
 - A screen reader never hears a tooltip's key caps. Give `Button` the key as `aria-keyshortcuts`
   says it, in `hintShortcut` (`liveShortcut` gives it), and it sets the attribute; a sequence, which
   the attribute can't say, is described from `hintKeys`. Anything else in a `Tooltip` sets
@@ -315,7 +319,10 @@ Every action has a key; see `keyboard.md` for the rules and focus, and section 1
   ball) is what's on screen. They can sit on different rows.
 - Show a control's key on the control with `lo-kbd` (or `lo-keys` for a sequence). In menus, the key
   sits at the right.
-- Vim's block cursor is `lo-code-cursor` with a halo; it goes hollow when the view loses focus.
+- Code has a caret, in `lo-code-cursor`. With Vim keys on it's Vim's block cursor, with a halo,
+  which goes hollow when the view loses focus.
+- Vim's mode shows only with Vim keys on: once in the status bar (`StatusMode`), and in the comment
+  box that has focus. Nothing else names a mode.
 
 ## The window
 
@@ -347,7 +354,7 @@ tokens. Their code is the source for how each one looks.
 | Marks            | StatePill, Tag, Avatar, Marks                                            |
 | Floating         | Dialog, Popover, ContextMenu, Palette, Tooltip, ToastStack               |
 | Motion and waits | Collapse, Swap, Loading, Skeleton, Spinner, LogoMotion, Problem          |
-| Review           | Thread, Diff, CodeView                                                   |
+| Review           | Thread, Diff, CodeView, CommentBox                                       |
 | Overview         | OverviewDocument, CodeBlock, Figure, Walkthrough, TabsAndFolds, Glossary |
 | Flows            | Choice, Checklist, Composer, Peek, Timeline                              |
 
@@ -367,6 +374,43 @@ to one job.
   them.
 - Code is set as written: no ligatures. Every rule that sets the mono face turns them off with it.
 - A file's header reads once across both sides. The file you're in stays pinned under the diff bar.
+- **What you open is in view when it opens.** A comment box, a thread or a peek that opens scrolls
+  its pane the least that shows all of it, at once, with `reveal` (`block: 'nearest'`), and never
+  with `scrollIntoView`. One taller than its pane shows from its top. A comment box does this itself
+  whenever it takes focus (`Composer.focus()`), and keeps itself in view as it's laid out, until the
+  reader's next key, press or scroll.
+
+## Comments
+
+**Every place you write is the same box.** A new comment on lines, on a file or on the pull request,
+a reply, an edit and a review's summary are all `CommentBox` (`packages/desktop/ui`), around the one
+editor the code view makes (`compose` on a code view, or `createComposer` outside one). A feature
+never draws its own.
+
+- **Head.** What the comment is on, at the left, in the words a line is named everywhere: "Line 3",
+  "Lines 39–41", "Line 3, removed", "File", "Pull request", "Reply", "Edit", "Summary". Why it's on
+  that, where the reader asked for something else, is one quiet line under it (`why`). Write |
+  Preview is at the right, then the control that closes the box (`close`), which keeps the draft.
+  "as login" shows only when more than one account is signed in.
+- **Body.** The editor, or its preview. The box has one ring, which is its focus; nothing inside it
+  has another. An empty box says what it's for in a quiet hint (`hint`): "Reply", "Comment on #264".
+- **Foot.** "Attach files…" as an icon button at the left, then "Discard draft"; the actions at the
+  right, the main one last, each with its key. The foot is one line and never wraps: as the box
+  narrows it gives up its key chips, then its hint, then the labels of the controls that keep an
+  icon, and the actions keep their words (`box-chip`, `box-hint`, `box-label` in `styles.css`, on
+  the foot's own `@container`). In a box taller than its pane, the foot stays at the pane's foot.
+- **Actions.** "Add to review" and "Send now" under a line or a thread, "Send" under the pull
+  request, "Save" in an edit. While a review is pending GitHub adds every comment to it, so the box
+  has "Add to review" alone. A dimmed action says why in its tooltip, and the one pressed is `busy`
+  with its `working` ("Sending…", "Saving…").
+- **Lines.** Something to know that needs no answer is one quiet line over the foot's controls
+  (`lines`): "Draft from 12 min ago". Something that stops the comment going, with what to do about
+  it, is a note over the editor (`notes`), with its buttons.
+- The mode chip shows only with Vim keys on, in the box that has focus.
+
+`CommentBoxHeadBar`, `CommentBoxNotes` and `CommentBoxFootBar` are the same parts for a caller that
+draws them in the parts a code view makes (`BoxFrame`); `CommentBox` draws all of them around an
+editor given as its child.
 
 ## Overviews
 

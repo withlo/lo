@@ -7,7 +7,7 @@ import { registry } from '../../../window/commands/registry.ts';
 import keys from '../keys.ts';
 
 /** The comment box's keys with a label in its frame, by their commands' names. */
-export type BoxKey = 'addToReview' | 'postNow' | 'preview' | 'attach';
+export type BoxKey = 'addToReview' | 'postNow' | 'preview' | 'attach' | 'close';
 
 /** The keys a declaration of a key gives, in Lo's notation. */
 function written(spec: KeySpec): string {

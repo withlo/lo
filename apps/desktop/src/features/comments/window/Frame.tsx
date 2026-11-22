@@ -1,10 +1,11 @@
-// A comment box's frame in a diff, drawn in the parts the code view makes around its editor: the
-// head, with Write and Preview, where the comment goes, or the thread a reply is to, or that it's
-// an edit, and who it's from; the notes, of a restored draft, a refusal with what to do about it,
-// or how sending stands; the preview, the text as GitHub would render it; the files attached to it
-// (`./Attached.tsx`); and the foot, with Vim's mode, "Attach" and the buttons that send. Each part
-// is a React root of its own, drawn from the box's state, and drawn at once as the box is made, so
-// it's as tall as it'll be before it's on screen.
+// A comment box's frame, the same wherever a comment is written, drawn in the parts the code view
+// makes around its editor: the head, which says what the comment is on, with Write and Preview and
+// the control that closes the box; the notes, of a refusal with what to do about it, or how sending
+// stands; the preview, the text as GitHub would render it; the files attached to it
+// (`./Attached.tsx`); and the foot, with "Attach files…", "Discard draft" and the buttons that
+// send, each dimmed with its reason as its tooltip while it can't. Each part is a React root of its
+// own, drawn from the box's state, and drawn at once as the box is made, so it's as tall as it'll
+// be before it's on screen.
 
 import {
   CommentBoxFootBar,
@@ -21,14 +22,17 @@ import { createRoot } from 'react-dom/client';
 
 import { useMenuTarget } from '../../../window/commands/menus.tsx';
 import { avatarImage } from '../../../window/images.ts';
+import { useAccounts } from '../../accounts/window/shared.ts';
 import { usePull, useRun, useTabState } from '../../tab/window/shared.ts';
 import { act, type Box, type BoxState, pullIn, send, sendingNow, takenDown } from './boxes.ts';
 import { boxKeys } from './boxkeys.ts';
+import { ago } from './Card.tsx';
 import { Preview as Rendering } from './Preview.tsx';
 import { Dropzone, UploadRows, useUploads } from './Attached.tsx';
 import { holdText, takeAddresses, UPLOADING } from './uploads.ts';
 import { held } from './threads.ts';
 import {
+  BLANK,
   IN_A_LAYER,
   notesOf,
   OFFLINE,
@@ -61,56 +65,72 @@ function useWhyNot(box: Box): string | undefined {
   return undefined;
 }
 
-/** What each of a box's buttons says, by what it does: a reply's say it replies. */
-function buttonLabel(state: BoxState, how: 'review' | 'now'): string {
-  if (how === 'review') return 'Add to review';
-  return state.place.kind === 'reply' ? 'Reply now' : 'Comment now';
+/** Whether view `view` has a pending review, which GitHub adds every comment sent to. */
+function usePending(view: string): boolean {
+  return useTabState(held, view, (value) => value.review?.review.kind === 'pending');
 }
 
 /**
- * The foot's buttons: the main one, as `c` or `C` opened the box, last. An edit's has one, which
- * saves it. A comment on the pull request itself joins no review, so its one button posts it, with
- * `⌘⏎` as `⌥⏎` does.
+ * The foot's buttons: the main one, as `c` or `C` opened the box, last. While a pending review
+ * exists GitHub adds every comment to it, so the box has "Add to review" alone. An edit's has one,
+ * which saves it. A comment on the pull request itself joins no review, so its one button sends it,
+ * with `⌘⏎` as `⌥⏎` does. A button that can't be pressed says why in its tooltip, and the one
+ * pressed says it's working until GitHub answers.
  */
-function footOf(box: Box, state: BoxState, why: string | undefined): CommentBoxFoot {
+function footOf(
+  box: Box,
+  state: BoxState,
+  why: string | undefined,
+  pending: boolean,
+): CommentBoxFoot {
   const waiting = sendingNow(state);
   const blank = state.text.trim() === '';
-  const disabled = why !== undefined || waiting || blank;
-  if (state.place.kind === 'conversation') {
-    const post: CommentBoxAction = {
-      label: 'Comment',
-      keys: boxKeys('addToReview'),
-      primary: true,
-      disabled,
-      why,
-      onClick: () => void send(box, 'now'),
-    };
-    return { mode: modes[state.mode], actions: [post] };
-  }
-  if (state.place.kind === 'edit') {
-    const save: CommentBoxAction = {
-      label: 'Save the edit',
-      keys: boxKeys('addToReview'),
-      primary: true,
-      disabled,
-      why,
-      onClick: () => void send(box, 'review'),
-    };
-    return { mode: modes[state.mode], actions: [save] };
-  }
+  const reason = why ?? (blank ? BLANK : undefined);
+  const disabled = reason !== undefined || waiting;
+  const { kind } = state.place;
+  const alone = (label: string, how: 'review' | 'now', working: string): CommentBoxAction => ({
+    label,
+    keys: boxKeys('addToReview'),
+    primary: true,
+    disabled,
+    why: reason,
+    busy: waiting,
+    working,
+    onClick: () => void send(box, how),
+  });
   const button = (how: 'review' | 'now'): CommentBoxAction => ({
-    label: buttonLabel(state, how),
+    label: how === 'review' ? 'Add to review' : 'Send now',
     keys: boxKeys(how === 'review' ? 'addToReview' : 'postNow'),
     primary: state.primary === how,
     disabled,
-    why,
+    why: reason,
+    busy: waiting && box.lastHow === how,
+    working: 'Sending…',
     onClick: () => void send(box, how),
   });
   const actions =
-    state.primary === 'review'
-      ? [button('now'), button('review')]
-      : [button('review'), button('now')];
-  return { mode: modes[state.mode], actions };
+    kind === 'conversation'
+      ? [alone('Send', 'now', 'Sending…')]
+      : kind === 'edit'
+        ? [alone('Save', 'review', 'Saving…')]
+        : pending
+          ? [alone('Add to review', 'review', 'Sending…')]
+          : state.primary === 'review'
+            ? [button('now'), button('review')]
+            : [button('review'), button('now')];
+  return {
+    mode: modes[state.mode],
+    // The pull request's own box never closes: with no text, it has nothing to discard.
+    discard: {
+      disabled: waiting || (blank && kind === 'conversation'),
+      onClick: () => act(box, 'discard'),
+    },
+    lines:
+      state.restored === undefined
+        ? undefined
+        : [{ key: 'restored', text: `Draft from ${ago(state.restored, Date.now())}` }],
+    actions,
+  };
 }
 
 /** A note as the frame draws it, with its offers' buttons. */
@@ -130,14 +150,11 @@ function drawnNote(box: Box, note: BoxNote): CommentBoxNote {
 function Head({ box, composer }: { box: Box; composer: Composer }): ReactNode {
   const state = useBox(box);
   const pull = usePull(box.view);
+  const accounts = useAccounts();
   const login = pull?.acting?.kind === 'account' ? pull.acting.login : undefined;
   const { place } = state;
-  // Who started the thread a reply is to.
-  const started = useTabState(held, box.view, (value) =>
-    place.kind === 'reply'
-      ? value.threads?.threads.find((each) => each.id === place.thread)?.comments[0]?.author
-      : undefined,
-  );
+  // The pull request's own box, at the timeline's end, is always there.
+  const closes = place.kind !== 'conversation' || box.home.kind === 'block';
   return (
     <CommentBoxHeadBar
       previewing={state.previewing}
@@ -147,11 +164,14 @@ function Head({ box, composer }: { box: Box; composer: Composer }): ReactNode {
           box.set({ previewing: on });
         },
         previewKeys: boxKeys('preview'),
-        where: state.where ?? whereText(place, started),
+        where: state.where?.head ?? whereText(place),
+        why: state.where?.why,
+        // Who it's from is worth saying only where it could be someone else.
         account:
-          login === undefined
+          login === undefined || (accounts?.length ?? 0) < 2
             ? undefined
             : { login, image: avatarImage({ login, type: 'User' }, AVATAR) },
+        close: closes ? { keys: boxKeys('close'), onClick: () => composer.leave() } : undefined,
       }}
     />
   );
@@ -160,19 +180,16 @@ function Head({ box, composer }: { box: Box; composer: Composer }): ReactNode {
 function Notes({ box }: { box: Box }): ReactNode {
   const state = useBox(box);
   const uploads = useUploads(box, boxKeys('attach'), state.text);
-  const why = useWhyNot(box) ?? holdText(uploads.hold, UPLOADING);
-  const notes = [
-    ...notesOf(state, Date.now()).map((note) => drawnNote(box, note)),
-    ...uploads.notes,
-  ];
-  return <CommentBoxNotes id={box.id} notes={notes} foot={footOf(box, state, why)} />;
+  const notes = [...notesOf(state).map((note) => drawnNote(box, note)), ...uploads.notes];
+  return <CommentBoxNotes id={box.id} notes={notes} />;
 }
 
 function Foot({ box }: { box: Box }): ReactNode {
   const state = useBox(box);
   const uploads = useUploads(box, boxKeys('attach'), state.text);
+  const pending = usePending(box.view);
   const why = useWhyNot(box) ?? holdText(uploads.hold, UPLOADING);
-  const foot = { ...footOf(box, state, why), attach: uploads.attach };
+  const foot = { ...footOf(box, state, why, pending), attach: uploads.attach };
   return <CommentBoxFootBar id={box.id} foot={foot} focused={state.focused} />;
 }
 
@@ -224,7 +241,7 @@ export function frameOf(box: Box): BoxFrame {
     flushSync(() => {
       for (const [at, root] of made.entries()) root.render(roots[at]![1]);
     });
-    // Focus in the box lights its mode chip.
+    // Focus in the box shows its mode, with Vim keys on.
     const frame = parts.head.parentElement;
     const into = () => box.set({ focused: true });
     const out = (event: FocusEvent) => {

@@ -36,6 +36,7 @@ import type { FileDiff, MovedBlock, RowBlock } from '@lo/diff';
 import {
   type HeaderTarget,
   KEY_EVENT,
+  type KeySource,
   type LineTarget,
   SCOPE_ATTRIBUTE,
   setScopeSource,
@@ -101,15 +102,18 @@ import { InlineLayout, inlineLines, inlineText } from './inline.ts';
 import {
   addCodeEditor,
   clearVim,
+  endSelection,
   handlingKey,
   idle,
   installVim,
   onVimMode,
   ownChange,
   passToVim,
+  selectedLines,
   setVimKeys,
   vimCount,
   vimMode,
+  vimOn,
   vimPending,
 } from './keys.ts';
 import { Layout } from './layout.ts';
@@ -2370,11 +2374,17 @@ class View implements DiffView {
 
   // Keys -------------------------------------------------------------------------------------
 
-  keyState(): { mode: Mode; pending: boolean; count: number | undefined; target: Target } {
+  keyState(): ReturnType<KeySource['keyState']> {
     const pane = this.#activePane();
     const view = this.#viewOf(pane);
     const target = this.#targetOf(pane);
-    return { mode: vimMode(view), pending: vimPending(view), count: vimCount(view), target };
+    return {
+      mode: vimMode(view),
+      pending: vimPending(view),
+      count: vimCount(view),
+      target,
+      plain: !vimOn(),
+    };
   }
 
   passKeys(keys: readonly string[]): void {
@@ -2390,26 +2400,29 @@ class View implements DiffView {
   }
 
   /**
-   * What a key acts on in `pane`: the cursor's line, or the lines `v` selected, and a thread; or
-   * the header the cursor is on. The lines a key takes as they show are `across` where they're
-   * more than one run of one file's lines on one side: those `v` selected, the other side's
-   * between them too, inline; and with a count, as `4yy` takes, that many from the cursor's.
+   * What a key acts on in `pane`: the cursor's line, or the lines `v` selected (with Vim keys off,
+   * the lines a selection over more than one covers), and a thread; or the header the cursor is
+   * on. The lines a key takes as they show are `across` where they're more than one run of one
+   * file's lines on one side: those selected, the other side's between them too, inline; and with
+   * a count, as `4yy` takes, that many from the cursor's.
    * Selected across files or sides, they're the cursor's line, for what acts on one.
    */
   #targetOf(pane: Pane): LineTarget | HeaderTarget {
     const view = this.#viewOf(pane);
     const { doc, selection } = view.state;
-    const { head, anchor } = selection.main;
-    const headLine = doc.lineAt(head);
+    const { head } = selection.main;
+    const lines = selectedLines(view);
+    const headLine = doc.line(lines.head);
     const at = this.#placeAt(pane, headLine.number);
-    const target = this.#lineTarget(at, head - headLine.from);
+    const column = Math.max(0, Math.min(head - headLine.from, headLine.length));
+    const target = this.#lineTarget(at, column);
     if (vimMode(view) !== 'visual') {
       const count = vimCount(view);
       if (count === undefined || count < 2 || target.kind !== 'line') return target;
       const last = Math.min(doc.lines, headLine.number + count - 1);
       return { ...target, across: this.#spansIn(pane, headLine.number, last) };
     }
-    const anchorLine = doc.lineAt(anchor).number;
+    const anchorLine = lines.anchor;
     const other = this.#placeAt(pane, anchorLine);
     const across = this.#spansIn(pane, anchorLine, headLine.number);
     if (other.file === at.file && other.side === at.side) {
@@ -2541,6 +2554,7 @@ class View implements DiffView {
       on,
       frame,
       nonce: this.#nonce,
+      hint: options.hint,
       kept,
       escape: (closed) => {
         const keep = closed.text.trim() !== '';
@@ -2550,12 +2564,18 @@ class View implements DiffView {
       close: (closed) => this.#closeBox(closed, true),
       dismiss: (closed) => this.#closeBox(closed, false),
       resized: (grown) => this.#boxResized(grown, place),
+      // Where the box put itself is where things belong: nothing holds the line it left.
+      shown: () => {
+        this.#holding = undefined;
+        this.#jumped = undefined;
+        this.#aligner.anchorHere();
+      },
     });
     this.#boxes.set(key, { box, place });
     // The lines `v` selected are the box's now, where the reader opened it.
     const focus = options.focus !== false;
     const active = this.#viewOf(this.#activePane());
-    if (focus && !kept && vimMode(active) === 'visual') passToVim(active, ['<Esc>']);
+    if (focus && !kept) endSelection(active);
     const opened = () => {
       if (place.line > 0) this.#boxLines[place.file]![place.side].add(place.line);
       this.#keepAt(place.file);

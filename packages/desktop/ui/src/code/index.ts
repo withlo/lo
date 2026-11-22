@@ -63,10 +63,10 @@ export type {
   VimKey,
   WordRange,
 } from './api.ts';
-export { diffMotions, PEEK_LINES } from './api.ts';
+export { diffMotions, PEEK_LINES, plainKeys } from './api.ts';
 export { createComposer } from './composer.ts';
 export { createExcerptView } from './excerpt.ts';
 export { createFileView } from './file.ts';
 export { createDiffView } from './view.ts';
-export { focusedMode, onFocusedMode, type ModeName } from './mode.ts';
+export { focusedMode, onFocusedMode, onVim, setVim, vimOn, type ModeName } from './mode.ts';
 export { codeTypeface } from './typeface.ts';

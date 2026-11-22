@@ -27,11 +27,14 @@ import type {
   VimKey,
 } from './api.ts';
 import { createExcerptView, excerptLines } from './excerpt.ts';
+import { setVim } from './keys.ts';
 
 const noRects = (): DOMRectList => Object.assign([], { item: () => null });
 
 /** jsdom has no fonts, no resize observer and no layout: the view needs only that they exist. */
 beforeAll(() => {
+  // These are the code views with Vim keys on. `plain.test.ts` has them off, as Lo starts.
+  setVim(true);
   if (!('fonts' in document)) {
     Object.defineProperty(document, 'fonts', {
       value: { addEventListener() {}, removeEventListener() {} },

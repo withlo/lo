@@ -1,6 +1,9 @@
-// Vim in code views, from CodeMirror's Vim package. The registry (`@lo/ui/commands`) sees every key
-// first, runs Lo's commands, and hands the rest on to the focused editor's Vim. Here is what Lo
-// changes in that Vim, once for the window, since its keymap and much of its state are global:
+// Vim in code views, from CodeMirror's Vim package, for those who turn Vim keys on (`setVim`): off,
+// as it is until it's turned on, an editor has its plain keys in Vim's place (`switchVim`), and
+// everything here that asks Vim something answers as an editor with no Vim does. The registry
+// (`@lo/ui/commands`) sees every key first, runs Lo's commands, and hands the rest on to the focused
+// editor: its Vim, or its plain keys. Here is what Lo changes in that Vim, once for the window,
+// since its keymap and much of its state are global:
 //
 // - Lo's jumps are Vim motions, under the keys the registry gives (`setVimKeys`), so counts, visual
 //   mode and operators work with them, and the keymap file's `vim` lines are Vim mappings.
@@ -12,15 +15,18 @@
 //   (`screen.ts`).
 // - Each editor says its mode while it has focus, for the status bar (`mode.ts`).
 
-import { Annotation, EditorState, type Extension } from '@codemirror/state';
+import { Annotation, Compartment, EditorState, type Extension } from '@codemirror/state';
 import { EditorView, ViewPlugin } from '@codemirror/view';
-import { CodeMirror, type CodeMirrorV, getCM, Vim } from '@replit/codemirror-vim';
+import { CodeMirror, type CodeMirrorV, getCM, vim, Vim } from '@replit/codemirror-vim';
 
 import type { JumpTo, Mode, VimKey } from './api.ts';
 import { diffMotions } from './api.ts';
 import { installJumps, type JumpSink, sendJumps } from './jumps.ts';
-import { type ModeName, sayMode } from './mode.ts';
+import { type ModeName, onVim, sayMode, switchWith, vimOn } from './mode.ts';
+import { passPlain, plainPending } from './plain.ts';
 import { defineScreenKeys } from './screen.ts';
+
+export { onVim, setVim, vimOn } from './mode.ts';
 
 /** What one of a code view's own editors does for Vim. */
 export interface CodeEditor {
@@ -30,6 +36,51 @@ export interface CodeEditor {
   jumped: JumpSink;
   /** Vim finished with a key, and anything it tried that a read-only editor refuses is undone. */
   settled(): void;
+}
+
+/** Where each editor has Vim, or its plain keys in Vim's place. */
+const switched = new Compartment();
+/** Every editor on the page that can switch, with the plain keys it has while Vim is off. */
+const switching = new Map<EditorView, Extension>();
+
+// Vim keys go on or off (`setVim` in `mode.ts`) in every editor open: one leaves insert or visual
+// mode while Vim is still there to leave it, and then has its plain keys, or Vim, in the other's
+// place.
+switchWith((on, flip) => {
+  if (on) installVim();
+  else for (const view of switching.keys()) leaveToNormal(view);
+  flip();
+  for (const [view, plain] of switching) {
+    view.dispatch({ effects: switched.reconfigure(on ? vimKeys() : plain) });
+  }
+});
+
+/** What an editor has while Vim keys are on: Vim, saying its mode. */
+function vimKeys(): Extension {
+  return [vim(), showMode];
+}
+
+/**
+ * Vim while Vim keys are on, and `plain`, the editor's own plain keys, while they're off: first in
+ * an editor's extensions, where Vim goes, so its keys come before any other's.
+ */
+export function switchVim(plain: Extension): Extension {
+  return [
+    switched.of(vimOn() ? vimKeys() : plain),
+    ViewPlugin.define((view) => {
+      switching.set(view, plain);
+      return {
+        destroy() {
+          switching.delete(view);
+        },
+      };
+    }),
+  ];
+}
+
+/** Vim's state in `view`, while Vim keys are on and Vim has started there. */
+function vimOf(view: EditorView): CodeMirrorV['state']['vim'] | undefined {
+  return vimOn() ? (getCM(view)?.state.vim ?? undefined) : undefined;
 }
 
 const editors = new WeakMap<EditorView, CodeEditor>();
@@ -126,6 +177,7 @@ export function editsText(input: string): boolean {
  */
 function guardEx(view: EditorView, editor: CodeEditor, event: KeyboardEvent): void {
   const input = event.target;
+  if (!vimOn()) return;
   if (event.key !== 'Enter' || !(input instanceof HTMLInputElement) || busy.has(view)) return;
   if (input.previousSibling?.textContent !== ':' || view.contentDOM.contains(input)) return;
   const before = view.state.selection;
@@ -197,8 +249,8 @@ function refuseEdits<T>(
   handle: () => T,
 ): T {
   const before = view.state.selection;
-  const vim = hasVim(cm) ? cm.state.vim : undefined;
-  const edit = { input: vim?.lastEditInputState, action: vim?.lastEditActionCommand };
+  const state = hasVim(cm) ? cm.state.vim : undefined;
+  const edit = { input: state?.lastEditInputState, action: state?.lastEditActionCommand };
   const handled = handle();
   if (!hasVim(cm)) return handled;
   const after = cm.state.vim;
@@ -253,19 +305,46 @@ export function setVimKeys(keys: readonly VimKey[]): void {
   }
 }
 
-/** Vim's mode in `view`. */
+/**
+ * Vim's mode in `view`. With Vim keys off an editor has no modes, and is as Vim's normal mode is to
+ * Lo's keys, or, while its selection covers more than one line, as visual mode is: a key that takes
+ * the lines `v` selected takes those.
+ */
 export function vimMode(view: EditorView): Mode {
-  const vim = getCM(view)?.state.vim;
-  if (vim?.insertMode) return 'insert';
-  return vim?.visualMode ? 'visual' : 'normal';
+  if (!vimOn()) {
+    const lines = selectedLines(view);
+    return lines.anchor === lines.head ? 'normal' : 'visual';
+  }
+  const state = vimOf(view);
+  if (state?.insertMode) return 'insert';
+  return state?.visualMode ? 'visual' : 'normal';
+}
+
+/**
+ * The document lines `view`'s selection starts and ends on: its anchor's and its head's. With Vim
+ * keys off, a selection that ends at a line's start, as one of whole lines does, ends on the line
+ * before, which is the last it covers.
+ */
+export function selectedLines(view: EditorView): { anchor: number; head: number } {
+  const { doc, selection } = view.state;
+  const { anchor, head, from, to, empty } = selection.main;
+  if (vimOn() || empty) {
+    return { anchor: doc.lineAt(anchor).number, head: doc.lineAt(head).number };
+  }
+  const first = doc.lineAt(from).number;
+  const end = doc.lineAt(to);
+  const last = end.from === to && end.number > first ? end.number - 1 : end.number;
+  return head >= anchor ? { anchor: first, head: last } : { anchor: last, head: first };
 }
 
 /**
  * Whether Vim in `view` is in the middle of a command: after a count, an operator, a register, or
- * the first keys of a longer one.
+ * the first keys of a longer one. With Vim keys off, whether its plain keys are, as after the first
+ * `g` of `g g`.
  */
 export function vimPending(view: EditorView): boolean {
-  const input = getCM(view)?.state.vim?.inputState;
+  if (!vimOn()) return plainPending(view);
+  const input = vimOf(view)?.inputState;
   if (!input) return false;
   return (
     input.keyBuffer.length > 0 ||
@@ -282,7 +361,7 @@ export function vimPending(view: EditorView): boolean {
  * the digits with the keys it has buffered until a command takes them.
  */
 export function vimCount(view: EditorView): number | undefined {
-  const input = getCM(view)?.state.vim?.inputState;
+  const input = vimOf(view)?.inputState;
   if (!input || input.motionRepeat.length > 0) return undefined;
   if (input.operator || input.motion || input.registerName !== undefined) return undefined;
   const digits = [...input.prefixRepeat, ...input.keyBuffer].join('');
@@ -294,12 +373,12 @@ export function vimCount(view: EditorView): number | undefined {
 /** Drops whatever Vim in `view` is in the middle of, leaving its mode. */
 export function clearVim(view: EditorView): void {
   const cm = getCM(view);
-  const vim = cm?.state.vim;
-  if (!cm || !vim || !vimPending(view)) return;
-  const InputState: unknown = Object.getPrototypeOf(vim.inputState)?.constructor;
+  const state = vimOf(view);
+  if (!cm || !state || !vimPending(view)) return;
+  const InputState: unknown = Object.getPrototypeOf(state.inputState)?.constructor;
   if (typeof InputState !== 'function') return;
-  vim.inputState = Reflect.construct(InputState, []);
-  vim.expectLiteralNext = false;
+  state.inputState = Reflect.construct(InputState, []);
+  state.expectLiteralNext = false;
   CodeMirror.signal(cm, 'vim-command-done', 'clear');
 }
 
@@ -309,47 +388,90 @@ export function clearVim(view: EditorView): void {
  * scroller say, Vim would wait for keys that never come, and every key after would go to it.
  */
 export function passToVim(view: EditorView, keys: readonly string[]): void {
+  if (!view.contentDOM.contains(view.root.activeElement)) return;
+  if (!vimOn()) {
+    // A box is typed in: the registry holds no key there.
+    if (view.state.readOnly) passPlain(view, keys);
+    return;
+  }
   const cm = getCM(view);
-  if (!cm || !view.contentDOM.contains(view.root.activeElement)) return;
+  if (!cm) return;
   for (const key of keys) Vim.handleKey(cm, key, 'user');
 }
 
-/** Whether Vim in `view` is in normal mode with nothing typed towards a command. */
+/**
+ * Whether Vim in `view` is in normal mode with nothing typed towards a command: always, with Vim
+ * keys off.
+ */
 export function idle(view: EditorView): boolean {
   return vimMode(view) === 'normal' && !vimPending(view);
+}
+
+/**
+ * Ends the selection of lines in `view`, where there's one: Vim's visual mode, as `Esc` there
+ * does, or, with Vim keys off, a selection over more than one line, which the caret takes the end
+ * of.
+ */
+export function endSelection(view: EditorView): void {
+  if (vimMode(view) !== 'visual') return;
+  if (vimOn()) {
+    passToVim(view, ['<Esc>']);
+    return;
+  }
+  const line = view.state.doc.line(selectedLines(view).head);
+  const { head } = view.state.selection.main;
+  view.dispatch({ selection: { anchor: Math.max(line.from, Math.min(head, line.to)) } });
 }
 
 /** Leaves insert or visual mode in `view`, as `Esc` would, wherever focus is. */
 export function leaveToNormal(view: EditorView): void {
   const cm = getCM(view);
-  if (!cm || !hasVim(cm)) return;
+  if (!vimOn() || !cm || !hasVim(cm)) return;
   if (cm.state.vim.insertMode) Vim.exitInsertMode(cm, true);
   else if (cm.state.vim.visualMode) Vim.exitVisualMode(cm, true);
 }
 
-/** Calls `listener` with Vim's mode in `view` each time it changes. Returns a function that stops. */
+/**
+ * Calls `listener` with Vim's mode in `view` each time it changes, and as Vim keys go on or off
+ * there. Returns a function that stops.
+ */
 export function onVimMode(view: EditorView, listener: (mode: Mode) => void): () => void {
-  const cm = getCM(view);
-  if (!cm) return () => {};
   const changed = (): void => listener(vimMode(view));
-  CodeMirror.on(cm, 'vim-mode-change', changed);
-  return () => CodeMirror.off(cm, 'vim-mode-change', changed);
+  let heard: ReturnType<typeof getCM> = null;
+  let stopped = false;
+  const hear = (): void => {
+    if (heard) CodeMirror.off(heard, 'vim-mode-change', changed);
+    heard = vimOn() && !stopped ? getCM(view) : null;
+    if (heard) CodeMirror.on(heard, 'vim-mode-change', changed);
+  };
+  hear();
+  const stop = onVim(() => {
+    // One stopped as Vim went, by what switched before it, hears nothing of the switch.
+    if (stopped) return;
+    hear();
+    changed();
+  });
+  return () => {
+    stopped = true;
+    stop();
+    hear();
+  };
 }
 
 /** Vim's mode in `view`, as the status bar names it. */
 export function modeName(view: EditorView): ModeName {
-  const vim = getCM(view)?.state.vim;
-  if (vim?.insertMode) return 'INSERT';
-  if (!vim?.visualMode) return 'NORMAL';
-  if (vim.visualLine) return 'V-LINE';
-  return vim.visualBlock ? 'V-BLOCK' : 'VISUAL';
+  const state = vimOf(view);
+  if (state?.insertMode) return 'INSERT';
+  if (!state?.visualMode) return 'NORMAL';
+  if (state.visualLine) return 'V-LINE';
+  return state.visualBlock ? 'V-BLOCK' : 'VISUAL';
 }
 
 /**
- * What a code view's editor has, after Vim, to say its mode while it has focus, and that it has
- * none once focus leaves it.
+ * What an editor has, after Vim and only with it, to say its mode while it has focus, and that it
+ * has none once focus leaves it, or Vim goes.
  */
-export const showMode: Extension = ViewPlugin.define((view) => {
+const showMode: Extension = ViewPlugin.define((view) => {
   const tell = (): void => {
     sayMode(view, view.hasFocus ? modeName(view) : undefined);
   };

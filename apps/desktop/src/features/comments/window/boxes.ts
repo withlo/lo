@@ -67,6 +67,7 @@ import { wrotePull } from './written.ts';
 import {
   blockComment,
   blockWhere,
+  type BoxWhere,
   boxAt,
   commentableOn,
   githubPath,
@@ -121,7 +122,7 @@ export interface BoxState {
    * What its head says of where the comment goes, where that's more than its place says, as for a
    * comment on a block's file in place of its lines.
    */
-  readonly where: string | undefined;
+  readonly where: BoxWhere | undefined;
 }
 
 /**
@@ -219,7 +220,7 @@ function spotOfBox(box: Box): string | undefined {
 }
 
 /** What a box's head says of where a draft written on a block goes, as main kept it. */
-function whereOf(view: string, home: DraftHomeRow, place: DraftPlaceRow): string | undefined {
+function whereOf(view: string, home: DraftHomeRow, place: DraftPlaceRow): BoxWhere | undefined {
   return blockWhere(home.why, place, {
     written: revisionName(view, home.commit),
     now: revisionName(view, home.head),
@@ -529,7 +530,7 @@ function show(box: Box, diff: WritingDiff | undefined): boolean {
     box.focusOnOpen = false;
     return true;
   }
-  const options = { focus: box.focusOnOpen, name: box.id };
+  const options = { focus: box.focusOnOpen, name: box.id, hint: hintOf(box.state.place) };
   try {
     const opens = opensAt(box);
     if (opens.kind === 'block') {
@@ -557,6 +558,12 @@ function show(box: Box, diff: WritingDiff | undefined): boolean {
     return false;
   }
   return true;
+}
+
+/** What a box at `place` says while it's empty, where its place has a name of its own. */
+export function hintOf(place: DraftPlaceRow, pull?: number): string | undefined {
+  if (place.kind === 'reply') return 'Reply';
+  return place.kind === 'conversation' && pull !== undefined ? `Comment on #${pull}` : undefined;
 }
 
 /** Box `box` is drawn, as `composer`, in `where`. */
@@ -680,7 +687,7 @@ function showKept(
   const free = !focused || focused === document.body || diff.hasFocus();
   // Keys held for a sequence count once it ends, and focus moved now would end it in the box.
   const focus = kept.focused && kept.inputs === inputs && free && !registry().isPending();
-  const options = { focus, name: box.id, kept: kept.box };
+  const options = { focus, name: box.id, kept: kept.box, hint: hintOf(box.state.place) };
   try {
     drew(box, diff.compose(at, box.state.text, eventsOf(box), framer?.(box), options), 'diff');
     return true;
@@ -1038,7 +1045,7 @@ export function openAt(
   place: DraftPlaceRow,
   how: Send,
   draft = '',
-  where?: string,
+  where?: BoxWhere,
 ): Box | undefined {
   const own = boxesOf(view);
   const key = placeKey(place);
@@ -1667,6 +1674,23 @@ export function takenDown(box: Box, composer: Composer): void {
     box.kept = { box: composer.keep(), focused: box.state.focused, inputs: inputsSoFar() };
   }
 }
+
+/**
+ * "Discard draft", as the control in a box's foot and as a command on the box: there for any box
+ * but one whose comment is on its way.
+ */
+export const discarding: Handler<BoxTarget> = {
+  run(target) {
+    const box = boxNamed(target.box);
+    if (box && !sendingNow(box.state)) act(box, 'discard');
+  },
+  enabled: (target) => {
+    const box = boxNamed(target.box);
+    if (box === undefined) return 'The comment box has closed.';
+    return !sendingNow(box.state) || 'Sending…';
+  },
+  listed: (target) => boxNamed(target.box) !== undefined,
+};
 
 /**
  * What a box's note offers, as a command on the box: there only while the box offers it, in its

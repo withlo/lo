@@ -1,9 +1,17 @@
 import { cva } from 'class-variance-authority';
-import { useId, useLayoutEffect, useRef, type ReactNode, type Ref } from 'react';
+import {
+  useId,
+  useLayoutEffect,
+  useRef,
+  useSyncExternalStore,
+  type ReactNode,
+  type Ref,
+} from 'react';
 
 import { Avatar } from './Avatar.tsx';
 import type { BannerAction } from './Banner.tsx';
 import { Button } from './Button.tsx';
+import { onVim, vimOn } from './code/mode.ts';
 import { Key } from './Key.tsx';
 import { Meter } from './Meter.tsx';
 import { SegmentedControl } from './SegmentedControl.tsx';
@@ -20,10 +28,27 @@ export interface CommentBoxHead {
   onPreviewing?: ((previewing: boolean) => void) | undefined;
   /** The key that toggles them, as this system shows it. */
   previewKeys?: readonly string[] | undefined;
-  /** Where the comment goes: "On lines 39–41, new side", "On the file", "Reply to tess-okafor's thread". */
+  /**
+   * What the comment is on, as a label: "Line 3", "Lines 39–41", "Line 3, removed", "File",
+   * "Pull request", "Reply", "Edit", "Summary".
+   */
   where?: ReactNode;
-  /** Who it's from. */
+  /**
+   * Why it's on that and not on what was picked, one quiet line under the head: "Those lines aren’t
+   * in the diff."
+   */
+  why?: ReactNode;
+  /** Who it's from. Give it only while more than one account is signed in. */
   account?: CommentBoxAccount | undefined;
+  /** Closes the box, keeping its draft. A box that never closes has none. */
+  close?: CommentBoxClose | undefined;
+}
+
+/** The control that closes a box. */
+export interface CommentBoxClose {
+  /** The key that closes it, as this system shows it. */
+  keys?: readonly string[] | undefined;
+  onClick: () => void;
 }
 
 /** A note over the editor: a restored draft, why a send was refused, or what to know about uploads. */
@@ -35,8 +60,17 @@ export interface CommentBoxNote {
   /** In place of the tone's own: a clock for a restored draft, a cross for a refusal. */
   icon?: 'clock' | 'blocked' | undefined;
   text: ReactNode;
-  /** What it offers to do, each starting with a verb: "Discard", "Load the newer push". */
+  /** What it offers to do, each starting with a verb: "Show latest", "Comment on file". */
   actions?: readonly BannerAction[] | undefined;
+}
+
+/** A quiet line over the foot's buttons, such as a restored draft's "Draft from 12 min ago". */
+export interface CommentBoxLine {
+  /** What identifies it. */
+  key: string;
+  text: ReactNode;
+  /** The one thing it offers to do. */
+  action?: BannerAction | undefined;
 }
 
 /** One file in the box, uploading or uploaded. Its row is as tall in each. */
@@ -69,11 +103,20 @@ export interface CommentBoxMode {
 export interface CommentBoxAttach {
   /** The key that opens the file picker, as this system shows it. */
   keys?: readonly string[] | undefined;
-  /** It can't be used here. The note says why. */
+  /** It can't be used here. */
   disabled?: boolean | undefined;
+  /** Why it can't, as its tooltip says while it's off: "Sign in to attach files". */
+  why?: string | undefined;
   onClick?: (() => void) | undefined;
-  /** After the button; "or drop or paste files" when there isn't one. */
-  hint?: ReactNode;
+}
+
+/** The control that discards a box's draft and closes it. */
+export interface CommentBoxDiscard {
+  /** There's nothing to discard, or it can't be discarded now. */
+  disabled?: boolean | undefined;
+  /** Why it can't, as its tooltip says while it's off. */
+  why?: string | undefined;
+  onClick?: (() => void) | undefined;
 }
 
 /** A button at the end of the foot. */
@@ -85,18 +128,26 @@ export interface CommentBoxAction {
   /** It can't be pressed now. */
   disabled?: boolean | undefined;
   /**
-   * Why it can't, in the box's own words: "Offline. Lo keeps this as a draft until you send it."
-   * The box says it in a note while the button is off, so the reason is never only a tooltip.
+   * Why it can't, as its tooltip says while it's off: "Offline", "Write a comment first". The box
+   * has no line for it.
    */
   why?: string | undefined;
+  /** It's doing what it was pressed for. */
+  busy?: boolean | undefined;
+  /** What it says while busy: "Sending…", "Saving…". */
+  working?: string | undefined;
   onClick?: (() => void) | undefined;
 }
 
 export interface CommentBoxFoot {
+  /** The editor's Vim mode. Its chip shows only with Vim keys on, in the box that has focus. */
   mode?: CommentBoxMode | undefined;
-  /** What the comment is, beside the mode, when the box has no head: "Reply to tess-okafor's thread". */
+  /** A hint beside the controls, the second thing a narrow foot gives up, after its key chips. */
   text?: ReactNode;
   attach?: CommentBoxAttach | undefined;
+  discard?: CommentBoxDiscard | undefined;
+  /** Quiet lines over the buttons. */
+  lines?: readonly CommentBoxLine[] | undefined;
   /** The secondary button first, then the main one. */
   actions?: readonly CommentBoxAction[] | undefined;
 }
@@ -109,7 +160,7 @@ export interface CommentBoxProps {
   children: ReactNode;
   /** What the box is, for screen readers: "New comment", "Reply". */
   label?: string | undefined;
-  /** The editor has focus: the box takes the focus ring, and its mode chip is lit. */
+  /** The editor has focus: the box takes the focus ring, and shows its mode with Vim keys on. */
   focused?: boolean | undefined;
   head?: CommentBoxHead | undefined;
   notes?: readonly CommentBoxNote[] | undefined;
@@ -154,9 +205,19 @@ const mode = cva('flex-none', {
       insert: 'mode-chip mode-chip-insert',
       visual: 'mode-chip',
     },
-    lit: { true: '', false: 'opacity-60' },
   },
 });
+
+/**
+ * How wide the foot is when it starts giving things up, each narrower than the last: its key chips,
+ * then its hint, then the labels of the controls that aren't its buttons. The foot's own box is the
+ * container.
+ */
+const NARROW = {
+  chips: 'box-chip',
+  hint: 'box-hint',
+  labels: 'box-label',
+} as const;
 
 /** The icons a note takes, on the 16 grid. */
 function NoteIcon({ tone, icon }: Pick<CommentBoxNote, 'tone' | 'icon'>) {
@@ -217,7 +278,15 @@ function FileIcon() {
   );
 }
 
+/** How far an upload is, as its row says it: "Uploading…", or "Uploading · 62%" where it's known. */
+function uploading(progress: number | undefined): { percent: number | undefined; text: string } {
+  if (progress === undefined) return { percent: undefined, text: 'Uploading…' };
+  const percent = Math.round(Math.min(Math.max(progress, 0), 1) * 100);
+  return { percent, text: `Uploading · ${percent}%` };
+}
+
 function Upload({ each }: { each: CommentBoxUpload }) {
+  const going = uploading(each.progress);
   return (
     // As tall as its buttons, so it doesn't change height as it lands.
     <li className="flex h-control-h-sm items-center gap-8 text-small">
@@ -228,45 +297,22 @@ function Upload({ each }: { each: CommentBoxUpload }) {
       </span>
       {each.uploaded === true && each.onInsert !== undefined ? (
         <>
-          <span className="text-fg-muted">Not in the comment</span>
-          <Button
-            variant="ghost"
-            size="sm"
-            aria-label={`Insert ${each.name} at the cursor`}
-            onClick={each.onInsert}
-          >
+          <span className="flex-none text-fg-muted">Not in comment</span>
+          <Button variant="ghost" size="sm" onClick={each.onInsert}>
             Insert
           </Button>
         </>
-      ) : each.uploaded === true ? (
-        <span className="inline-flex items-center gap-4 text-success">
-          <svg className="lo-i lo-i--xs" viewBox="0 0 16 16" aria-hidden="true">
-            <path d="M3.5 8.5 6.5 11.5 12.5 4.5" />
-          </svg>
-          Uploaded
-        </span>
-      ) : (
+      ) : each.uploaded === true ? null : (
         <>
-          {each.progress === undefined ? (
-            <span className="inline-flex items-center gap-6 text-fg-muted">
-              <Spinner />
-              Uploading
-            </span>
+          {going.percent === undefined ? (
+            <Spinner />
           ) : (
             <span className="w-1/4 flex-none">
-              <Meter
-                value={Math.round(Math.min(Math.max(each.progress, 0), 1) * 100)}
-                max={100}
-                label={`Uploading ${each.name}`}
-              />
+              <Meter value={going.percent} max={100} label={`Uploading ${each.name}`} />
             </span>
           )}
-          <Button
-            variant="ghost"
-            size="sm"
-            aria-label={`Cancel uploading ${each.name}`}
-            onClick={each.onCancel}
-          >
+          <span className="lo-num flex-none text-fg-muted">{going.text}</span>
+          <Button variant="ghost" size="sm" onClick={each.onCancel}>
             Cancel
           </Button>
         </>
@@ -278,23 +324,44 @@ function Upload({ each }: { each: CommentBoxUpload }) {
 function Attach({ attach }: { attach: CommentBoxAttach }) {
   const off = attach.disabled === true;
   return (
-    <>
-      <Button
-        variant="ghost"
-        size="sm"
-        aria-disabled={off || undefined}
-        onClick={() => {
-          if (!off) attach.onClick?.();
-        }}
-      >
-        <svg className="lo-i lo-i--sm" viewBox="0 0 16 16" aria-hidden="true">
-          <path d="M10.5 4.5 5.75 9.25a1.25 1.25 0 0 0 1.77 1.77l5.3-5.3a2.5 2.5 0 0 0-3.54-3.54L3.9 7.6a3.75 3.75 0 0 0 5.3 5.3l3.55-3.55" />
-        </svg>
-        Attach
-        {attach.keys && <Key keys={attach.keys} decorative />}
-      </Button>
-      {!off && <span>{attach.hint ?? 'or drop or paste files'}</span>}
-    </>
+    <Button
+      variant="ghost"
+      size="sm"
+      icon
+      aria-label="Attach files…"
+      aria-disabled={off || undefined}
+      hint={off && attach.why !== undefined ? attach.why : 'Attach files…'}
+      hintKeys={off ? undefined : attach.keys}
+      onClick={() => {
+        if (!off) attach.onClick?.();
+      }}
+    >
+      <svg className="lo-i lo-i--sm" viewBox="0 0 16 16" aria-hidden="true">
+        <path d="M10.5 4.5 5.75 9.25a1.25 1.25 0 0 0 1.77 1.77l5.3-5.3a2.5 2.5 0 0 0-3.54-3.54L3.9 7.6a3.75 3.75 0 0 0 5.3 5.3l3.55-3.55" />
+      </svg>
+    </Button>
+  );
+}
+
+/** "Discard draft": its label beside its icon, and the icon alone, with a tooltip, in a narrow foot. */
+function Discard({ discard }: { discard: CommentBoxDiscard }) {
+  const off = discard.disabled === true;
+  return (
+    <Button
+      variant="ghost"
+      size="sm"
+      aria-label="Discard draft"
+      aria-disabled={off || undefined}
+      hint={off && discard.why !== undefined ? discard.why : 'Discard draft'}
+      onClick={() => {
+        if (!off) discard.onClick?.();
+      }}
+    >
+      <svg className="lo-i lo-i--sm" viewBox="0 0 16 16" aria-hidden="true">
+        <path d="M3 4.5h10M6.5 4.5V3.25a.75.75 0 0 1 .75-.75h1.5a.75.75 0 0 1 .75.75V4.5M4.5 4.5l.5 8a1 1 0 0 0 1 .95h4a1 1 0 0 0 1-.95l.5-8" />
+      </svg>
+      <span className={NARROW.labels}>Discard draft</span>
+    </Button>
   );
 }
 
@@ -303,16 +370,20 @@ function ActionButton({
   reason,
 }: {
   action: CommentBoxAction;
-  /** The id of the note that says why it's off. */
+  /** The id of the text that says why it's off. */
   reason?: string | undefined;
 }) {
-  const off = action.disabled === true;
+  const busy = action.busy === true;
+  const off = action.disabled === true && !busy;
+  const primary = action.primary === true;
   return (
     <Button
-      variant={action.primary === true ? 'primary' : 'secondary'}
+      variant={primary ? 'primary' : 'secondary'}
       size="sm"
       aria-disabled={off || undefined}
       aria-describedby={off ? reason : undefined}
+      hint={off ? action.why : undefined}
+      {...(action.working === undefined ? {} : { busy, working: action.working })}
       onClick={() => {
         if (!off) action.onClick?.();
       }}
@@ -322,7 +393,7 @@ function ActionButton({
         <Key
           keys={action.keys}
           decorative
-          className={action.primary === true && !off ? 'text-on-accent' : undefined}
+          className={`${NARROW.chips} ${primary && !off ? 'text-on-accent' : ''}`}
         />
       )}
     </Button>
@@ -351,15 +422,17 @@ function reasonsOf(foot: CommentBoxFoot | undefined): string[] {
 }
 
 /**
- * The id of the note that says `why` a button is off, among `reasons`, for a box whose id is `id`.
+ * The id of the text that says `why` a button is off, among `reasons`, for a box whose id is `id`.
  */
 function reasonId(id: string, reasons: readonly string[], why: string | undefined) {
   return why === undefined ? undefined : `${id}-why-${reasons.indexOf(why)}`;
 }
 
 /**
- * A box's head: the Write and Preview switch, where the comment goes and who it's from. For a frame
- * a code view hosts, drawn in the head it makes; `CommentBox` draws it itself.
+ * A box's head: what the comment is on at one end; who it's from, the Write and Preview switch and
+ * the control that closes the box at the other; and, under them, why it's on that, if it's not on
+ * what was picked. For a frame a code view hosts, drawn in the head it makes; `CommentBox` draws it
+ * itself.
  */
 export function CommentBoxHeadBar({
   head,
@@ -369,60 +442,68 @@ export function CommentBoxHeadBar({
   previewing?: boolean | undefined;
 }) {
   return (
-    <div className="flex flex-wrap items-center gap-x-8 gap-y-4 border-b border-border-subtle py-6 ps-12 pe-8 text-fg-muted text-small">
-      <SegmentedControl
-        label="Write or preview"
-        kind="views"
-        size="sm"
-        value={previewing ? 'preview' : 'write'}
-        onChange={(value) => head.onPreviewing?.(value === 'preview')}
-        keys={head.previewKeys}
-        items={[
-          { value: 'write', label: 'Write' },
-          { value: 'preview', label: 'Preview' },
-        ]}
-      />
-      {head.where !== undefined && <span className="min-w-0 truncate">{head.where}</span>}
-      {head.account !== undefined && (
-        <span
-          className="ms-auto inline-flex h-24 min-w-0 shrink-first items-center gap-6 rounded-pill ps-4 pe-8 whitespace-nowrap text-fg"
-          title={`Commenting as ${head.account.login}`}
-        >
-          <Avatar login={head.account.login} image={head.account.image} size="sm" />
-          <span className="min-w-0 truncate">
-            <span className="text-fg-muted">as</span> {head.account.login}
+    <div className="@container border-b border-border-subtle">
+      <div className="flex items-center gap-8 py-4 ps-12 pe-4 text-small">
+        {head.where !== undefined && (
+          <span className="min-w-0 truncate text-small-medium text-fg">{head.where}</span>
+        )}
+        <span className="flex-1" />
+        {head.account !== undefined && (
+          <span className="box-hint inline-flex min-w-0 shrink-first items-center gap-6 whitespace-nowrap text-fg">
+            <Avatar login={head.account.login} image={head.account.image} size="sm" />
+            <span className="min-w-0 truncate">
+              <span className="text-fg-muted">as</span> {head.account.login}
+            </span>
           </span>
+        )}
+        {/* A narrow head gives up who it's from, then the switch's key chip. */}
+        <span className="box-keys inline-flex flex-none items-center gap-8 text-fg-muted">
+          <SegmentedControl
+            label="Write or preview"
+            kind="views"
+            size="sm"
+            value={previewing ? 'preview' : 'write'}
+            onChange={(value) => head.onPreviewing?.(value === 'preview')}
+            keys={head.previewKeys}
+            items={[
+              { value: 'write', label: 'Write' },
+              { value: 'preview', label: 'Preview' },
+            ]}
+          />
         </span>
-      )}
+        {head.close !== undefined && (
+          <Button
+            variant="ghost"
+            size="sm"
+            icon
+            aria-label="Close comment box"
+            hint="Close comment box"
+            hintKeys={head.close.keys}
+            onClick={head.close.onClick}
+          >
+            <svg className="lo-i lo-i--sm" viewBox="0 0 16 16" aria-hidden="true">
+              <path d="M4 4l8 8M12 4l-8 8" />
+            </svg>
+          </Button>
+        )}
+      </div>
+      {head.why !== undefined && <p className="px-12 pb-6 text-fg-muted text-small">{head.why}</p>}
     </div>
   );
 }
 
-/**
- * A box's notes, and a note for each reason one of its foot's buttons is off, which the button
- * names as what describes it. `id` is the box's, as its foot is given it.
- */
+/** A box's notes: what went wrong, or what to know before sending. `id` is the box's. */
 export function CommentBoxNotes({
   id,
   notes = [],
-  foot,
 }: {
   id: string;
   notes?: readonly CommentBoxNote[] | undefined;
-  foot?: CommentBoxFoot | undefined;
 }) {
-  const reasons = reasonsOf(foot);
   return (
     <>
       {notes.map((each) => (
-        <Note key={each.key} each={each} />
-      ))}
-      {reasons.map((why) => (
-        <Note
-          key={why}
-          id={reasonId(id, reasons, why)}
-          each={{ key: why, tone: 'info', text: why }}
-        />
+        <Note key={each.key} id={`${id}-note-${each.key}`} each={each} />
       ))}
     </>
   );
@@ -443,7 +524,7 @@ export function CommentBoxDropzone({ dropping }: { dropping: number }) {
 export function CommentBoxUploads({ uploads }: { uploads: readonly CommentBoxUpload[] }) {
   return (
     <ul
-      aria-label="Uploads"
+      aria-label="Attached files"
       className="flex list-none flex-col gap-6 border-t border-border-subtle px-12 py-8"
     >
       {uploads.map((each) => (
@@ -454,8 +535,11 @@ export function CommentBoxUploads({ uploads }: { uploads: readonly CommentBoxUpl
 }
 
 /**
- * A box's foot: the Vim mode, Attach, and the buttons, the main one last. A button that's off
- * names the note that says why as what describes it: `id` is the box's, as its notes are given it.
+ * A box's foot, on one line whatever its width: "Attach files…" and "Discard draft" at one end, the
+ * Vim mode with Vim keys on, a hint, and the buttons at the other end, the main one last. It never
+ * wraps or clips: narrow, it gives up its key chips, then its hint, then the labels of the controls
+ * that aren't its buttons, which stay icons with tooltips. A button that's off says why in its
+ * tooltip, and names that text as what describes it: `id` is the box's.
  */
 export function CommentBoxFootBar({
   id,
@@ -464,35 +548,59 @@ export function CommentBoxFootBar({
 }: {
   id: string;
   foot: CommentBoxFoot;
-  /** The editor has focus: the mode chip is lit. */
+  /** The editor has focus: with Vim keys on, the foot shows its mode. */
   focused?: boolean | undefined;
 }) {
+  const vim = useSyncExternalStore(onVim, vimOn, () => false);
   const reasons = reasonsOf(foot);
   return (
-    <div className="flex flex-wrap items-center gap-8 border-t border-border-subtle py-8 ps-12 pe-8 text-fg-muted text-small">
-      {foot.mode !== undefined && (
-        <span className={mode({ kind: foot.mode.kind, lit: focused })}>{foot.mode.name}</span>
-      )}
-      {foot.text !== undefined && <span>{foot.text}</span>}
-      {foot.attach !== undefined && <Attach attach={foot.attach} />}
-      <span className="flex-1" />
-      {foot.actions?.map((action) => (
-        <ActionButton
-          key={action.label}
-          action={action}
-          reason={reasonId(id, reasons, action.why)}
-        />
+    <div className="@container border-t border-border-subtle">
+      {foot.lines?.map((line) => (
+        <p key={line.key} className="flex items-center gap-8 px-12 pt-6 text-fg-muted text-small">
+          <span className="min-w-0 truncate">{line.text}</span>
+          {line.action !== undefined && (
+            <Button variant="ghost" size="sm" onClick={line.action.onClick}>
+              {line.action.label}
+            </Button>
+          )}
+        </p>
+      ))}
+      <div className="flex items-center gap-4 p-6 text-fg-muted text-small">
+        {foot.attach !== undefined && <Attach attach={foot.attach} />}
+        {foot.discard !== undefined && <Discard discard={foot.discard} />}
+        {vim && focused && foot.mode !== undefined && (
+          <span className={`ms-4 ${mode({ kind: foot.mode.kind })}`}>{foot.mode.name}</span>
+        )}
+        {foot.text !== undefined && (
+          <span className={`ms-4 min-w-0 truncate ${NARROW.hint}`}>{foot.text}</span>
+        )}
+        <span className="flex-1" />
+        <span className="flex flex-none items-center gap-6">
+          {foot.actions?.map((action) => (
+            <ActionButton
+              key={action.label}
+              action={action}
+              reason={reasonId(id, reasons, action.why)}
+            />
+          ))}
+        </span>
+      </div>
+      {reasons.map((why) => (
+        <span key={why} id={reasonId(id, reasons, why)} className="sr-only">
+          {why}
+        </span>
       ))}
     </div>
   );
 }
 
 /**
- * The frame around a comment's editor: a head with the Write and Preview switch, where the comment
- * goes and who it's from; notes; the editor, or its preview; the files being uploaded; and a foot
- * with the Vim mode, Attach and the buttons. The same frame goes round every box: a line's, a
- * reply, the timeline's and the review summary, each with the parts it needs. It draws what it's
- * given and decides nothing, but for where focus goes when the preview takes the editor's place:
+ * The frame around a comment's editor, the same wherever one is written: a line's, a reply, an
+ * edit, the pull request's and the review summary. A head says what the comment is on, with the
+ * Write and Preview switch and the control that closes the box; then notes; the editor, or its
+ * preview; the files attached; and a foot with "Attach files…", "Discard draft" and the buttons.
+ * One ring goes round the box and none inside it. It draws what it's given and decides nothing, but
+ * for where focus goes when the preview takes the editor's place:
  * the preview, and back to the editor when it goes, so the keys of the box (`box` scope) work
  * throughout. A box a code view hosts has its parts made for it, and its frame draws each part on
  * its own: `CommentBoxHeadBar`, `CommentBoxNotes`, `CommentBoxDropzone`, `CommentBoxUploads` and
@@ -550,7 +658,7 @@ export function CommentBox({
       }}
     >
       {head !== undefined && <CommentBoxHeadBar head={head} previewing={previewing} />}
-      <CommentBoxNotes id={id} notes={notes} foot={foot} />
+      <CommentBoxNotes id={id} notes={notes} />
       <div ref={slot} hidden={previewing} className="relative bg-code-bg text-code-fg code-text">
         {children}
         {dropping !== undefined && !previewing && <CommentBoxDropzone dropping={dropping} />}
@@ -561,9 +669,9 @@ export function CommentBox({
           role="region"
           aria-label="Preview"
           tabIndex={0}
-          className="lo-selectable px-12 py-12 text-fg read-comment focus-visible:shadow-ring-inset"
+          className="lo-selectable px-12 py-12 text-fg outline-none read-comment"
         >
-          {preview ?? <p className="text-fg-muted">Nothing to preview.</p>}
+          {preview ?? <p className="text-fg-muted">Nothing to preview</p>}
         </div>
       )}
       {uploads.length > 0 && <CommentBoxUploads uploads={uploads} />}

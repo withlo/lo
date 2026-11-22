@@ -61,9 +61,9 @@ Each command's id is what [the keymap file](#the-keymap-file) binds keys to.
 | Resolve or unresolve the thread | `x`                               | In `diff`; in code views, only in normal mode                           | `comments.resolve`        |
 | Edit your comment               | `i`                               | In `diff`; in code views, only in normal mode                           | `comments.edit`           |
 | Delete your comment…            | `d d`                             | In `diff`; in code views, only in normal mode                           | `comments.remove`         |
-| Discard the draft               | None: in its menu and the palette | In `box`                                                                | `comments.discard`        |
+| Discard draft                   | None: in its menu and the palette | In `box`                                                                | `comments.discard`        |
 | Send it anyway                  | None: in its menu and the palette | In `box`                                                                | `comments.sendAnyway`     |
-| Move the comment to the file    | None: in its menu and the palette | In `box`                                                                | `comments.moveToFile`     |
+| Move comment to file            | None: in its menu and the palette | In `box`                                                                | `comments.moveToFile`     |
 | Mark viewed                     | `e`                               | In `diff`; in code views, only in normal mode                           | `diff.markViewed`         |
 | Comment on the pull request     | `c`                               | In `timeline`                                                           | `timeline.comment`        |
 | Edit your comment               | `i`                               | In `timeline`                                                           | `timeline.editComment`    |
@@ -155,8 +155,9 @@ Each command's id is what [the keymap file](#the-keymap-file) binds keys to.
 
 | Action                                 | Keys                                           | Where                                                                                               | Command               |
 | -------------------------------------- | ---------------------------------------------- | --------------------------------------------------------------------------------------------------- | --------------------- |
-| Load the newer push                    | None: in its menu and the palette              | In `box`                                                                                            | `comments.loadNewer`  |
-| Show the latest push                   | None: in its menu and the palette              | In `box`                                                                                            | `comments.showLatest` |
+| Show latest                            | None: in its menu and the palette              | In `box`                                                                                            | `comments.loadNewer`  |
+| Show latest                            | None: in its menu and the palette              | In `box`                                                                                            | `comments.showLatest` |
+| Vim keys                               | None: in the app menu on macOS and the palette | Anywhere                                                                                            | `comments.vim`        |
 | Show where kept drafts are             | None: in the app menu on macOS and the palette | Anywhere                                                                                            | `comments.keptDrafts` |
 | Compare revisions                      | `g v`                                          | Anywhere but `menu`, `dialog`, `palette`, `box` and `revisions`; in code views, only in normal mode | `revisions.picker`    |
 | Next middle view                       | `` ` ``                                        | Anywhere but `menu`, `dialog`, `palette` and `box`; in code views, only in normal mode              | `tab.nextView`        |
@@ -239,14 +240,14 @@ Each command's id is what [the keymap file](#the-keymap-file) binds keys to.
 
 ## Comment box
 
-| Action                           | Keys  | Where                                                                                                  | Command                |
-| -------------------------------- | ----- | ------------------------------------------------------------------------------------------------------ | ---------------------- |
-| Add to review                    | `⌘⏎`  | In `box`; the editor's own key, which the keymap file can't change                                     | `comments.addToReview` |
-| Comment or reply now             | `⌥⏎`  | In `box`; the editor's own key, which the keymap file can't change                                     | `comments.postNow`     |
-| Write or preview                 | `⌘⇧V` | In `box`; the editor's own key, which the keymap file can't change                                     | `comments.preview`     |
-| Attach files                     | `⌘⇧A` | In `box`; the editor's own key, which the keymap file can't change                                     | `comments.attach`      |
-| Leave insert mode                | `Esc` | Vim's own key, in code views                                                                           | `comments.leaveInsert` |
-| Close the box and keep the draft | `Esc` | In `box`; in code views, only in normal mode; the editor's own key, which the keymap file can't change | `comments.close`       |
+| Action            | Keys  | Where                                                                                                  | Command                |
+| ----------------- | ----- | ------------------------------------------------------------------------------------------------------ | ---------------------- |
+| Add to review     | `⌘⏎`  | In `box`; the editor's own key, which the keymap file can't change                                     | `comments.addToReview` |
+| Send now          | `⌥⏎`  | In `box`; the editor's own key, which the keymap file can't change                                     | `comments.postNow`     |
+| Preview           | `⌘⇧V` | In `box`; the editor's own key, which the keymap file can't change                                     | `comments.preview`     |
+| Attach files…     | `⌘⇧A` | In `box`; the editor's own key, which the keymap file can't change                                     | `comments.attach`      |
+| Leave INSERT mode | `Esc` | Vim's own key, in code views                                                                           | `comments.leaveInsert` |
+| Close comment box | `Esc` | In `box`; in code views, only in normal mode; the editor's own key, which the keymap file can't change | `comments.close`       |
 
 The comment box's editor runs these keys itself, so Lo's key engine never does: the command palette
 and menus don't offer them, and neither the keymap file nor a `vim` line in it can change them. A

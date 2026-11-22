@@ -149,7 +149,7 @@ async function openBox(page: Page): Promise<void> {
   await expect.poll(() => cursor(page)).toBe('src/backoff.ts new 2');
   await page.keyboard.press('c');
   await expect(boxes(page)).toHaveCount(1);
-  await expect(boxes(page)).toContainText('On line 2, new side');
+  await expect(boxes(page).locator('.lo-diffcomposer__head')).toContainText('Line 2');
   await page.keyboard.type('Repro: ');
 }
 
@@ -225,7 +225,10 @@ test('a PNG dropped on a box is uploaded and its Markdown goes in; a .txt is ref
   await expect(box.locator('.cm-content')).toHaveText(`Repro: ![lo-attachment](${ASSET})`, {
     timeout: 20_000,
   });
-  await expect(box.getByRole('list', { name: 'Uploads' })).toContainText('Uploaded');
+  // Its row stays, with nothing more to say once it's in.
+  const row = box.getByRole('list', { name: 'Attached files' });
+  await expect(row).toContainText('lo-attachment.png');
+  await expect(row.getByRole('button', { name: 'Cancel' })).toHaveCount(0);
   await expect(box).toContainText(
     'Uploads go to GitHub and stay reachable by link, even if you delete the comment.',
   );
@@ -283,13 +286,14 @@ test('while an upload is held on its way, nothing is sent; its row stays as tall
 }) => {
   await openBox(page);
   const box = boxes(page);
-  const rows = box.getByRole('list', { name: 'Uploads' });
+  const rows = box.getByRole('list', { name: 'Attached files' });
   const addToReview = box.getByRole('button', { name: /Add to review/ });
   gate.shut();
   await drop(page, [{ name: 'lo-attachment.png', bytes: PNG }]);
   await expect.poll(() => gate.holding, { timeout: 20_000 }).toBe(1);
-  await expect(box).toContainText('Uploading. Send the comment once the files are in.');
+  await expect(rows.getByRole('button', { name: 'Cancel' })).toBeVisible();
   await expect(addToReview).toHaveAttribute('aria-disabled', 'true');
+  await expect(addToReview).toHaveAccessibleDescription('A file is still uploading');
   // `⌘⏎` sends nothing either.
   await page.keyboard.press(process.platform === 'darwin' ? 'Meta+Enter' : 'Control+Enter');
   const uploading = await rows.boundingBox();
@@ -297,7 +301,7 @@ test('while an upload is held on its way, nothing is sent; its row stays as tall
   await expect(box.locator('.cm-content')).toHaveText(`Repro: ![lo-attachment](${ASSET})`, {
     timeout: 20_000,
   });
-  await expect(rows).toContainText('Uploaded');
+  await expect(rows.getByRole('button', { name: 'Cancel' })).toHaveCount(0);
   // Nothing under the box moved as it landed.
   expect((await rows.boundingBox())?.height).toBe(uploading?.height);
   await expect(addToReview).not.toHaveAttribute('aria-disabled');

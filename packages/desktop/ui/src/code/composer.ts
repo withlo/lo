@@ -18,6 +18,7 @@ export function createComposer(
     frame,
     nonce: init.nonce,
     label: init.label,
+    hint: init.hint,
     // Where it is is the caller's, and so is closing it.
     escape: (escaped) => on.close(escaped.text.trim() !== ''),
     close: (closed) => closed.destroy(),

@@ -390,6 +390,15 @@ export function tabBanners(page: Page): Locator {
  */
 export const DIFF_FIRST = '{ "overview.open": "diff" }\n';
 
+/**
+ * `DIFF_FIRST` with Vim keys on, for tests of Vim's modes and motions in the code, which Lo starts
+ * without.
+ */
+export const DIFF_FIRST_VIM = '{ "overview.open": "diff", "editor.vim": true }\n';
+
+/** A settings file that turns Vim keys on, and nothing else. */
+export const VIM_KEYS = '{ "editor.vim": true }\n';
+
 /** A stand-in token, never a real one: the `user` cassette answers for it as rozed-bot. */
 const TOKEN = 'gho_FAKE_E2E_ACCOUNT';
 

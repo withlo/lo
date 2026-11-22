@@ -8,7 +8,7 @@
 import { CommentableLines, Line, type Lines, type Screen } from '@lo/review';
 import type { OnFile, Place, Span } from '@lo/ui/code';
 
-import { clockOf, savedWhen } from '../../../window/time.ts';
+import { clockOf } from '../../../window/time.ts';
 import type { DrawnDiff, ThreadedFile } from '../../diff/window/shared.ts';
 import type { CommentOnHead, FileWhy } from '../../overview/window/shared.ts';
 import type {
@@ -190,30 +190,28 @@ export function boxAt(
   return { at: { file: file.id, side, line: end.number } };
 }
 
-/** A side as the box's head says it. */
-function sideWords(side: 'LEFT' | 'RIGHT'): string {
-  return side === 'RIGHT' ? 'new side' : 'old side';
+/** A line as a line reference names it: the old side's is "removed", and the new side goes unsaid. */
+function lineWords(line: CommentLinesRow['end']): string {
+  return line.side === 'RIGHT' ? `${line.number}` : `${line.number}, removed`;
 }
 
 /**
- * Where a box's comment goes, as its head says: "On line 41, new side", "On lines 39–41, new side",
- * "On the file", "Reply to mira-chen's thread", "Edit your comment", "On the pull request".
- * `author` started the thread a reply is in, if GitHub still has the account.
+ * What a box's comment is on, as its head says, and as a line is named everywhere: "Line 41",
+ * "Lines 39–41", "Line 41, removed", "Line 3, removed, to line 5", "File", "Pull request", "Reply",
+ * "Edit".
  */
-export function whereText(place: DraftPlaceRow, author?: string | null): string {
-  if (place.kind === 'conversation') return 'On the pull request';
-  if (place.kind === 'reply') {
-    return author ? `Reply to ${author}’s thread` : 'Reply to the thread';
-  }
-  if (place.kind === 'edit') return 'Edit your comment';
+export function whereText(place: DraftPlaceRow): string {
+  if (place.kind === 'conversation') return 'Pull request';
+  if (place.kind === 'reply') return 'Reply';
+  if (place.kind === 'edit') return 'Edit';
   const { lines } = place;
-  if (!lines) return 'On the file';
+  if (!lines) return 'File';
   const { start, end } = lines;
-  if (!start) return `On line ${end.number}, ${sideWords(end.side)}`;
+  if (!start) return `Line ${lineWords(end)}`;
   if (start.side === end.side) {
-    return `On lines ${start.number}–${end.number}, ${sideWords(end.side)}`;
+    return `Lines ${start.number}–${lineWords(end)}`;
   }
-  return `On line ${start.number}, ${sideWords(start.side)}, to line ${end.number}, ${sideWords(end.side)}`;
+  return `Line ${lineWords(start)}, to line ${lineWords(end)}`;
 }
 
 /** What a box's note offers to do about what it says. */
@@ -221,11 +219,11 @@ export type Offer = 'showLatest' | 'loadNewer' | 'onFile' | 'sendAnyway' | 'disc
 
 /** The words on an offer's button. */
 export const offerLabels: Readonly<Record<Offer, string>> = {
-  showLatest: 'Show the latest',
-  loadNewer: 'Load the newer push',
-  onFile: 'Comment on the file',
+  showLatest: 'Show latest',
+  loadNewer: 'Show latest',
+  onFile: 'Comment on file',
   sendAnyway: 'Send it anyway',
-  discard: 'Discard',
+  discard: 'Discard draft',
 };
 
 /** A note in a box's frame, before it's drawn. */
@@ -328,9 +326,9 @@ export function refusalNote(refusal: Refusal, doing: 'comment' | 'edit' = 'comme
     case 'pendingUnknown':
       return note('Lo couldn’t tell whether you have a pending review. Send it again in a moment.');
     case 'signIn':
-      return note('Sign in to comment');
+      return note(SIGN_IN);
     case 'run':
-      return note('Comment in a layer');
+      return note(IN_A_LAYER);
     case 'github':
       return note(refusal.message);
     // An edit's: it's kept, and once it's discarded, an edit starts from GitHub's text.
@@ -391,18 +389,13 @@ export function sendingNote(sending: Sending | null, edit = false): BoxNote | un
   }
 }
 
-/** What a box's notes say, in order: a restored draft, a refusal, how sending stands. */
-export function notesOf(
-  state: {
-    readonly place?: DraftPlaceRow | undefined;
-    readonly restored: number | undefined;
-    readonly refusal: Refusal | undefined;
-    readonly sending: Sending | null;
-  },
-  now: number,
-): BoxNote[] {
+/** What a box's notes say, in order: a refusal, then how sending stands. */
+export function notesOf(state: {
+  readonly place?: DraftPlaceRow | undefined;
+  readonly refusal: Refusal | undefined;
+  readonly sending: Sending | null;
+}): BoxNote[] {
   return [
-    state.restored === undefined ? undefined : restoredNote(state.restored, now),
     state.refusal && refusalNote(state.refusal, state.place?.kind === 'edit' ? 'edit' : 'comment'),
     sendingNote(state.sending, state.place?.kind === 'edit'),
   ].filter((each) => each !== undefined);
@@ -410,18 +403,7 @@ export function notesOf(
 
 /** What a box's notes offer to do now, in their order. */
 export function offersOf(state: Parameters<typeof notesOf>[0]): Offer[] {
-  return notesOf(state, 0).flatMap((each) => each.offers ?? []);
-}
-
-/** What a restored draft's box says. */
-export function restoredNote(savedAt: number, now: number): BoxNote {
-  return {
-    key: 'restored',
-    tone: 'info',
-    icon: 'clock',
-    text: `Restored your draft from ${savedWhen(savedAt, now)}.`,
-    offers: ['discard'],
-  };
+  return notesOf(state).flatMap((each) => each.offers ?? []);
 }
 
 /** Why a thread takes no reply. */
@@ -436,13 +418,16 @@ export const NO_LINES =
   'Lo couldn’t read which of this file’s lines GitHub takes comments on. ⏎ comments on the file instead.';
 
 /** Why sending is off while GitHub can't be reached. */
-export const OFFLINE = 'Offline. Lo keeps this as a draft until you send it.';
+export const OFFLINE = 'Offline';
 
 /** Why a view acting as nobody can't write. */
 export const SIGN_IN = 'Sign in to comment';
 
 /** Why a run of a stack's layers can't take a comment. */
-export const IN_A_LAYER = 'Comment in a layer';
+export const IN_A_LAYER = 'Show a single layer to comment';
+
+/** Why a box with no text can't send. */
+export const BLANK = 'Write a comment first';
 
 /** Why a suggestion can't go on the older side. */
 export const NEW_SIDE_ONLY =
@@ -521,47 +506,59 @@ function lowerFirst(text: string): string {
   return text.charAt(0).toLowerCase() + text.slice(1);
 }
 
+/**
+ * What a box's head says where its place doesn't say it all: what the comment is on, and, under
+ * it, why that's not what was picked.
+ */
+export interface BoxWhere {
+  readonly head: string;
+  readonly why?: string | undefined;
+}
+
 /** What a box on a code block's lines says of a comment on their file, as GitHub refused them. */
-export const ON_FILE_NOT_IN_DIFF = 'On the file, since GitHub takes line comments only in the diff';
+export const ON_FILE_NOT_IN_DIFF: BoxWhere = {
+  head: 'File',
+  why: 'Those lines aren’t in the diff.',
+};
 
 /**
  * What a box on a code block's lines says of where its comment, at `place`, goes, when that's not
  * those lines at the overview's commit: their file or the pull request, and `why`; or, with no
- * `why`, the lines at a newer head. Nothing when its place says it all.
+ * `why`, the lines at a newer head, "Line 3 · r5". Nothing when its place says it all.
  */
 export function blockWhere(
   why: BlockWhy | null,
   place: DraftPlaceRow,
   names: BlockRevisions,
-): string | undefined {
+): BoxWhere | undefined {
   if (why === null) {
     const onLines = place.kind === 'thread' && place.lines !== null;
     return !onLines || names.written === names.now
       ? undefined
-      : `${whereText(place)}, at ${names.now}`;
+      : { head: `${whereText(place)} · ${names.now}` };
   }
   return whyWords(why, names);
 }
 
 /** What a box on a code block's lines says of a comment on their file or the pull request, and why. */
-function whyWords(why: BlockWhy, names: BlockRevisions): string {
+function whyWords(why: BlockWhy, names: BlockRevisions): BoxWhere {
   switch (why) {
     case 'untouched':
-      return 'On the pull request, since it doesn’t change this file';
+      return { head: 'Pull request', why: 'This pull request doesn’t change this file.' };
     case 'gone':
-      return `On the pull request, since this file is gone at ${names.now}`;
+      return { head: 'Pull request', why: `This file is deleted in ${names.now}.` };
     case 'notInDiff':
       return ON_FILE_NOT_IN_DIFF;
     case 'noLines':
-      return 'On the file, since Lo couldn’t read which lines GitHub takes comments on';
+      return { head: 'File', why: 'Couldn’t check which lines take comments.' };
     case 'changed':
-      return `On the file, since these lines changed after ${names.written}`;
-    case 'older':
-      return `On the file, since Lo maps only new-side lines from ${names.written} to ${names.now}`;
+    // Where the lines are at the head isn't known: they may have changed since.
     case 'unknown':
-      return `On the file, since Lo can’t tell where these lines are at ${names.now}`;
+      return { head: 'File', why: `These lines changed since ${names.written}.` };
+    case 'older':
+      return { head: 'File', why: `Removed lines can’t be followed to ${names.now}.` };
     case 'deleted':
-      return 'On the file, which this pull request deletes';
+      return { head: 'File', why: 'This pull request deletes this file.' };
     default:
       why satisfies never;
       throw new Error(`Lo doesn't know why a comment goes elsewhere: ${String(why)}`);

@@ -452,6 +452,32 @@
   font-weight: 500;
 }
 
+/* What a comment box's head and foot give up as the box narrows, each narrower than the last: the
+   key chips, then the hints, then the labels of the controls that keep an icon. Its buttons keep
+   their words at any width. The head and the foot are the containers (`@container`). */
+@utility box-chip {
+  @container (width < 480px) {
+    display: none;
+  }
+}
+@utility box-hint {
+  @container (width < 400px) {
+    display: none;
+  }
+}
+@utility box-label {
+  @container (width < 320px) {
+    display: none;
+  }
+}
+@utility box-keys {
+  @container (width < 320px) {
+    & kbd {
+      display: none;
+    }
+  }
+}
+
 /* Settings: the list of sections beside the sections. */
 @utility settings-page {
   display: grid;

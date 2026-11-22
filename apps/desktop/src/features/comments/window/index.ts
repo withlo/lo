@@ -36,6 +36,7 @@ import {
   comment,
   commentOnBlock,
   commentOnFile,
+  discarding,
   offering,
   frameWith,
   keepBoxesOf,
@@ -68,6 +69,7 @@ import {
   takeReview,
   takeThreads,
 } from './threads.ts';
+import { followVim, switchVim } from './vim.ts';
 
 /** The pull request's tab on screen, where a comment can be written, or why one can't. */
 function writable(): PullTab | string {
@@ -173,11 +175,12 @@ export default {
     resolve: { run: actOn(resolve), enabled: enabled(writable) },
     edit: { run: actOn(edit), enabled: enabled(writable) },
     remove: { run: actOn(remove), enabled: enabled(writable) },
-    discard: offering('discard'),
+    discard: discarding,
     sendAnyway: offering('sendAnyway'),
     moveToFile: offering('onFile'),
     loadNewer: offering('loadNewer'),
     showLatest: offering('showLatest'),
+    vim: { run: switchVim },
     keptDrafts: {
       run: () => {
         const tab = activeTab();
@@ -222,6 +225,7 @@ export default {
     }),
   ],
   start() {
+    followVim();
     tabs().subscribe('tabs', ({ tabs: open }) => {
       const kept = new Set(viewIds(open));
       keepOnly(kept);

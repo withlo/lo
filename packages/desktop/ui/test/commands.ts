@@ -235,6 +235,8 @@ export class FakeView implements KeySource {
   /** The count Vim holds, when that's all it holds. */
   count: number | undefined = undefined;
   target: Target = { kind: 'line', at: { file: 'a.ts', side: 'new', line: 1 } };
+  /** The view has no Vim, as with Vim keys off. */
+  plain = false;
   vimKeys: readonly VimKey[] = [];
   readonly log: string[];
 
@@ -243,7 +245,13 @@ export class FakeView implements KeySource {
   }
 
   keyState() {
-    return { mode: this.mode, pending: this.pending, count: this.count, target: this.target };
+    return {
+      mode: this.mode,
+      pending: this.pending,
+      count: this.count,
+      target: this.target,
+      plain: this.plain,
+    };
   }
 
   passKeys(held: readonly string[]) {

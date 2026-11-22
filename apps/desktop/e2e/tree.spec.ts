@@ -216,11 +216,6 @@ test('a click puts the file’s start at the top of the diff, wherever it was, a
       await expect(row(page, path)).toHaveClass(/tree-current/);
       expect(await cursorPath(page)).toBe(path);
     }
-    // Vim's block cursor on the header draws none of the path under it.
-    const after = page.locator('.lo-diffview .cm-editor', {
-      has: page.locator('.cm-content[aria-label="After"]'),
-    });
-    await expect(after.locator('.cm-fat-cursor')).toHaveCSS('color', 'rgba(0, 0, 0, 0)');
 
     // A folder opens or closes, and is the tree's, and the diff stays where it is.
     await row(page, 'src/text').click();

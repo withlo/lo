@@ -533,6 +533,24 @@ function page(cm: { cm6: unknown }, head: Pos, forward: boolean, count: number):
   return hold(view, stop ? posAt(view, stop, (row) => startOf(view, row)) : head, pin);
 }
 
+/**
+ * A page on in `view`, or back, as `Ctrl-f` and `Ctrl-b` go, for an editor with no Vim: the caret
+ * goes where Vim's cursor would.
+ */
+export function pageBy(view: EditorView, forward: boolean): boolean {
+  const { doc, selection } = view.state;
+  const { head } = selection.main;
+  const line = doc.lineAt(head);
+  const to = page({ cm6: view }, { line: line.number - 1, ch: head - line.from }, forward, 1);
+  const landed = doc.line(Math.min(doc.lines, Math.max(1, to.line + 1)));
+  view.dispatch({
+    selection: { anchor: Math.min(landed.from + to.ch, landed.to) },
+    scrollIntoView: true,
+    userEvent: 'select',
+  });
+  return true;
+}
+
 /** The lines `Ctrl-d` and `Ctrl-u` go in each editor once a count has set it, as Vim's `scroll`. */
 const halfPageLines = new WeakMap<EditorView, number>();
 

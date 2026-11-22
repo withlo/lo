@@ -25,7 +25,7 @@ These bind every change (design section 1).
   sources. Updates come from GitHub Releases.
 - **Never runs a repo's code.** No dependency installs or build steps. Language servers run only on
   repos the user trusts, and overviews contain no scripts.
-- **Keyboard first.** Every action has a key.
+- **Keyboard first, not keyboard only.** Every action has a key and a visible control.
 
 ## Layout
 

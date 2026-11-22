@@ -317,16 +317,43 @@
  * A comment box: a Markdown editor, in a frame its caller draws in the parts around it. A part with
  * nothing in it takes no room.
  */
+/*
+ * One ring goes round the box, over what's in it, so no part's fill hides it: the border at rest,
+ * and the focus ring while focus is anywhere in the box. Nothing inside draws a ring of its own.
+ */
 .lo-diffcomposer {
+  position: relative;
   border-radius: var(--lo-r-md);
   background: var(--lo-bg-raised);
-  box-shadow: inset 0 0 0 1px var(--lo-border);
   color: var(--lo-fg);
   font: var(--lo-text-ui);
   white-space: normal;
 }
-.lo-diffcomposer.is-focused {
+.lo-diffcomposer::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  border-radius: inherit;
+  box-shadow: inset 0 0 0 1px var(--lo-border);
+  pointer-events: none;
+}
+.lo-diffcomposer.is-focused::after {
   box-shadow: var(--lo-ring);
+}
+.lo-diffcomposer__head {
+  border-radius: var(--lo-r-md) var(--lo-r-md) 0 0;
+}
+/*
+ * The foot stays at the foot of the pane the box scrolls in while the box runs under it, as a box
+ * taller than the pane does: its buttons are always in reach. It covers the text it's over.
+ */
+.lo-diffcomposer__foot {
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
+  border-radius: 0 0 var(--lo-r-md) var(--lo-r-md);
+  background: var(--lo-bg-raised);
 }
 .lo-diffcomposer__head:empty,
 .lo-diffcomposer__note:empty,
@@ -350,6 +377,9 @@
 .lo-diffcomposer .cm-content {
   min-height: 60px;
 }
+.lo-diffcomposer .cm-placeholder {
+  color: var(--lo-fg-subtle);
+}
 .lo-diffcomposer .cm-editor.cm-focused {
   outline: none;
 }
@@ -358,8 +388,24 @@
 .lo-diffcomposer [hidden] {
   display: none !important;
 }
-.lo-diffcomposer__hint {
-  padding: 0 12px 8px;
-  font: var(--lo-text-small);
-  color: var(--lo-fg-muted);
+/*
+ * The search of a code view's text with Vim keys off: one field, docked at the foot of the code as
+ * Vim's command line is with them on.
+ */
+.lo-codesearch {
+  display: flex;
+  padding: 0 10px;
+}
+.lo-codesearch__field {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: none;
+  color: var(--lo-fg);
+  font: 400 12px/24px var(--lo-font-mono);
+  font-variant-ligatures: none;
+  outline: none;
+}
+.lo-codesearch__field::placeholder {
+  color: var(--lo-fg-subtle);
 }

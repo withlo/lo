@@ -6,7 +6,7 @@ import { APP_PULL, writeAppRemote } from '@lo/testing/git';
 import { serveReplay, type ReplayServer } from '@lo/testing/server';
 import type { ElectronApplication, Page } from '@playwright/test';
 
-import { appFolder, expect, KEYCHAIN, test } from './app.ts';
+import { appFolder, expect, KEYCHAIN, test, VIM_KEYS } from './app.ts';
 
 declare global {
   interface Window {
@@ -165,43 +165,48 @@ test('each load of the page has a nonce of its own, in its policy and in app.inf
   expect(new Set(nonces).size).toBe(nonces.length);
 });
 
-test('code views style themselves with the nonce, with no inline style refused', async ({
-  page,
-}) => {
-  const messages: string[] = [];
-  page.on('console', (message) => messages.push(message.text()));
-  page.on('pageerror', (error) => messages.push(error.message));
-  const violations = await page.evaluateHandle(() => {
-    const violated: string[] = [];
-    document.addEventListener('securitypolicyviolation', (event) => {
-      violated.push(`${event.effectiveDirective} ${event.blockedURI}`);
+test.describe('with Vim keys on', () => {
+  // Vim's cursor layer and prompt bring styles of their own.
+  test.use({ settings: VIM_KEYS });
+
+  test('code views style themselves with the nonce, with no inline style refused', async ({
+    page,
+  }) => {
+    const messages: string[] = [];
+    page.on('console', (message) => messages.push(message.text()));
+    page.on('pageerror', (error) => messages.push(error.message));
+    const violations = await page.evaluateHandle(() => {
+      const violated: string[] = [];
+      document.addEventListener('securitypolicyviolation', (event) => {
+        violated.push(`${event.effectiveDirective} ${event.blockedURI}`);
+      });
+      return violated;
     });
-    return violated;
-  });
-  await page.waitForFunction(() => window.loCodeViews !== undefined);
-  for (const kind of ['diff', 'file'] as const) {
-    await page.evaluate((each) => window.loCodeViews?.mount(each), kind);
-    const editor = page.locator('.cm-editor').first();
-    await expect(editor).toBeVisible();
-    // CodeMirror's own styles, from its style element, lay the editor out.
-    expect(await editor.evaluate((element) => getComputedStyle(element).display)).toBe('flex');
-    // Keys that move, select and open Vim's prompt, whose panel brings styles of its own.
-    for (const key of ['j', 'Shift+G', 'v', 'Escape', ':', 'Escape'])
-      await page.keyboard.press(key);
+    await page.waitForFunction(() => window.loCodeViews !== undefined);
+    for (const kind of ['diff', 'file'] as const) {
+      await page.evaluate((each) => window.loCodeViews?.mount(each), kind);
+      const editor = page.locator('.cm-editor').first();
+      await expect(editor).toBeVisible();
+      // CodeMirror's own styles, from its style element, lay the editor out.
+      expect(await editor.evaluate((element) => getComputedStyle(element).display)).toBe('flex');
+      // Keys that move, select and open Vim's prompt, whose panel brings styles of its own.
+      for (const key of ['j', 'Shift+G', 'v', 'Escape', ':', 'Escape'])
+        await page.keyboard.press(key);
+      expect(
+        await page
+          .locator('.cm-vimCursorLayer')
+          .first()
+          .evaluate((element) => getComputedStyle(element).animationName),
+      ).toBe('none');
+    }
+    // The file view's jump went to its caller.
     expect(
-      await page
-        .locator('.cm-vimCursorLayer')
-        .first()
-        .evaluate((element) => getComputedStyle(element).animationName),
-    ).toBe('none');
-  }
-  // The file view's jump went to its caller.
-  expect(
-    await page.evaluate(() => window.loCodeViews?.heard.some(({ event }) => event === 'jumped')),
-  ).toBe(true);
-  await page.evaluate(() => window.loCodeViews?.unmount());
-  expect(await violations.evaluate((violated) => violated)).toEqual([]);
-  expect(messages.filter((message) => /security policy/i.test(message))).toEqual([]);
+      await page.evaluate(() => window.loCodeViews?.heard.some(({ event }) => event === 'jumped')),
+    ).toBe(true);
+    await page.evaluate(() => window.loCodeViews?.unmount());
+    expect(await violations.evaluate((violated) => violated)).toEqual([]);
+    expect(messages.filter((message) => /security policy/i.test(message))).toEqual([]);
+  });
 });
 
 test('the content security policy blocks inline code and outside content', async ({ page }) => {

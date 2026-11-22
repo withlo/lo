@@ -15,6 +15,9 @@
 //   chords are Lo's: the rest go to Vim. Vim's own keys (`vim: 'own'`) are never taken, nor the
 //   comment box editor's (`editor`), and Lo's motions (`vim: 'motion'`) are Vim's to run in a code
 //   view.
+// - With Vim keys off a code view has no Vim (`plain`): Lo's motions run as any command does, a
+//   count is Lo's to keep, the keys documented as Vim's own are the view's plain keys', and a
+//   comment box is always typed in, so only chords are Lo's there.
 // - A count is Vim's in a code view: in normal mode, when it's all Vim holds, the keys of a command
 //   that takes one (`count`) are Lo's, and the command gets it. Elsewhere, digits before a key are
 //   held as its count where the focused scope has a command of its own that takes one.
@@ -76,6 +79,8 @@ export interface Focus {
     readonly mode: Mode;
     readonly pending: boolean;
     readonly count?: number | undefined;
+    /** The view has no Vim, as with Vim keys off: Lo's motions are the registry's to run. */
+    readonly plain?: boolean | undefined;
   };
 }
 
@@ -188,12 +193,13 @@ export class Bindings {
   }
 
   /**
-   * Whether digits typed where `focus` is are a count Lo keeps: outside a code view and text, where
-   * a command of the focused scope's own takes one. A command for anywhere doesn't make digits a
-   * count everywhere.
+   * Whether digits typed where `focus` is are a count Lo keeps: outside text and a code view's Vim,
+   * which keeps its own, where a command of the focused scope's own takes one. A command for
+   * anywhere doesn't make digits a count everywhere.
    */
   counts(focus: Focus): boolean {
-    if (focus.view || focus.text) return false;
+    if (focus.text) return false;
+    if (focus.view && (!focus.view.plain || focus.view.mode === 'insert')) return false;
     return this.counting.some(
       (binding) =>
         listOf(binding.command.when?.scope).includes(focus.scope) &&
@@ -204,11 +210,14 @@ export class Bindings {
 
 /**
  * Whether `binding` can be matched where `focus` is, on `system`: never one Vim's own, or an
- * editor's, handles itself, which the registry leaves alone.
+ * editor's, handles itself, which the registry leaves alone, nor one of Lo's motions where Vim
+ * runs it.
  */
 function applies(binding: Binding, focus: Focus, system: System): boolean {
   const { command } = binding;
-  if (isOwned(command) || (command.vim === 'motion' && focus.view)) return false;
+  if (isOwned(command) || (command.vim === 'motion' && focus.view && !focus.view.plain)) {
+    return false;
+  }
   return holds(binding, focus, system);
 }
 

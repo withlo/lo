@@ -27,7 +27,7 @@ import type {
 } from './api.ts';
 import { Aligner } from './aligner.ts';
 import { createComposer } from './composer.ts';
-import { editsText } from './keys.ts';
+import { editsText, setVim } from './keys.ts';
 import { focusedMode } from './mode.ts';
 import { swapping } from './lines.ts';
 import { createDiffView } from './view.ts';
@@ -36,6 +36,8 @@ const noRects = (): DOMRectList => Object.assign([], { item: () => null });
 
 /** jsdom has no fonts, no resize observer and no layout: the view needs only that they exist. */
 beforeAll(() => {
+  // These are the code views with Vim keys on. `plain.test.ts` has them off, as Lo starts.
+  setVim(true);
   if (!('fonts' in document)) {
     Object.defineProperty(document, 'fonts', {
       value: { addEventListener() {}, removeEventListener() {} },
@@ -1071,6 +1073,24 @@ describe('comment boxes', () => {
     box.close();
     expect(parent.querySelector('.lo-diffcomposer')).toBeNull();
     expect(destroy).toHaveBeenCalledOnce();
+  });
+
+  test('a box that takes focus is brought into view, by the least that shows all of it', async () => {
+    // A pane 400 tall that scrolls, with the box 500 down it, 160 tall: 260 of it out of view.
+    parent = document.createElement('div');
+    parent.style.overflowY = 'auto';
+    document.body.append(parent);
+    Object.defineProperties(parent, {
+      scrollHeight: { value: 2000 },
+      clientHeight: { value: 400 },
+    });
+    const box = createComposer(parent, { draft: '', nonce: 'n', label: 'Reply' }, composerEvents());
+    const frame = parent.querySelector('.lo-diffcomposer')!;
+    vi.spyOn(frame, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 500, 800, 160));
+    box.focus();
+    await Promise.resolve();
+    expect(parent.scrollTop).toBe(260);
+    box.close();
   });
 });
 

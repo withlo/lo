@@ -24,6 +24,7 @@ import { Decoration, type DecorationSet, EditorView, lineNumbers } from '@codemi
 import {
   type HeaderTarget,
   KEY_EVENT,
+  type KeySource,
   type LineTarget,
   SCOPE_ATTRIBUTE,
   setScopeSource,
@@ -54,9 +55,11 @@ import {
   installVim,
   onVimMode,
   passToVim,
+  selectedLines,
   setVimKeys,
   vimCount,
   vimMode,
+  vimOn,
   vimPending,
 } from './keys.ts';
 import { marking, marksChanged } from './marks.ts';
@@ -500,10 +503,16 @@ class WholeFile implements FileView {
 
   // Keys -------------------------------------------------------------------------------------
 
-  keyState(): { mode: Mode; pending: boolean; count: number | undefined; target: Target } {
+  keyState(): ReturnType<KeySource['keyState']> {
     const view = this.#view;
     const target = this.#target();
-    return { mode: vimMode(view), pending: vimPending(view), count: vimCount(view), target };
+    return {
+      mode: vimMode(view),
+      pending: vimPending(view),
+      count: vimCount(view),
+      target,
+      plain: !vimOn(),
+    };
   }
 
   passKeys(keys: readonly string[]): void {
@@ -521,12 +530,12 @@ class WholeFile implements FileView {
   /** What a key acts on: the cursor's line, or the lines `v` selected; the header of no lines. */
   #target(): LineTarget | HeaderTarget {
     const { doc, selection } = this.#view.state;
-    const { head, anchor } = selection.main;
+    const { head } = selection.main;
     const line = doc.lineAt(head);
     if (this.#count > 0 && vimMode(this.#view) === 'visual') {
-      const other = doc.lineAt(anchor).number;
-      const from = Math.min(line.number, other);
-      const to = Math.max(line.number, other);
+      const lines = selectedLines(this.#view);
+      const from = Math.min(lines.head, lines.anchor);
+      const to = Math.max(lines.head, lines.anchor);
       return { kind: 'line', at: { file: this.#id, side: this.#side, from, to } };
     }
     return this.#targetAt(line.number, head - line.from);
