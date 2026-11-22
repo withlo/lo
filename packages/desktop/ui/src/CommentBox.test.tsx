@@ -8,7 +8,7 @@ import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { buildCss } from '../scripts/stylesheet.ts';
 import { missingRules } from '../test/classes.ts';
 import { cleanUp, click, focus, render, rerender } from '../test/dom.ts';
-import { setVim } from './code/mode.ts';
+import { setVim } from './vim.ts';
 import { findScope } from './commands/scopes.ts';
 import { CommentBox, type CommentBoxFoot, type CommentBoxProps } from './CommentBox.tsx';
 

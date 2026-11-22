@@ -11,7 +11,7 @@ import {
 import { Avatar } from './Avatar.tsx';
 import type { BannerAction } from './Banner.tsx';
 import { Button } from './Button.tsx';
-import { onVim, vimOn } from './code/mode.ts';
+import { onVim, vimOn } from './vim.ts';
 import { Key } from './Key.tsx';
 import { Meter } from './Meter.tsx';
 import { SegmentedControl } from './SegmentedControl.tsx';
@@ -210,13 +210,14 @@ const mode = cva('flex-none', {
 
 /**
  * How wide the foot is when it starts giving things up, each narrower than the last: its key chips,
- * then its hint, then the labels of the controls that aren't its buttons. The foot's own box is the
- * container.
+ * then its hint, then the labels of the controls that aren't its buttons, where its row may wrap
+ * too. The foot's own box is the container.
  */
 const NARROW = {
   chips: 'box-chip',
   hint: 'box-hint',
   labels: 'box-label',
+  row: 'box-row',
 } as const;
 
 /** The icons a note takes, on the 16 grid. */
@@ -443,7 +444,7 @@ export function CommentBoxHeadBar({
 }) {
   return (
     <div className="@container border-b border-border-subtle">
-      <div className="flex items-center gap-8 py-4 ps-12 pe-4 text-small">
+      <div className="flex box-row items-center gap-8 py-4 ps-12 pe-4 text-small">
         {head.where !== undefined && (
           <span className="min-w-0 truncate text-small-medium text-fg">{head.where}</span>
         )}
@@ -457,7 +458,7 @@ export function CommentBoxHeadBar({
           </span>
         )}
         {/* A narrow head gives up who it's from, then the switch's key chip. */}
-        <span className="box-keys inline-flex flex-none items-center gap-8 text-fg-muted">
+        <span className="box-keys inline-flex flex-none box-row items-center gap-8 text-fg-muted">
           <SegmentedControl
             label="Write or preview"
             kind="views"
@@ -535,11 +536,12 @@ export function CommentBoxUploads({ uploads }: { uploads: readonly CommentBoxUpl
 }
 
 /**
- * A box's foot, on one line whatever its width: "Attach files…" and "Discard draft" at one end, the
- * Vim mode with Vim keys on, a hint, and the buttons at the other end, the main one last. It never
- * wraps or clips: narrow, it gives up its key chips, then its hint, then the labels of the controls
- * that aren't its buttons, which stay icons with tooltips. A button that's off says why in its
- * tooltip, and names that text as what describes it: `id` is the box's.
+ * A box's foot, on one line: "Attach files…" and "Discard draft" at one end, the Vim mode with Vim
+ * keys on, a hint, and the buttons at the other end, the main one last. It never runs past the box:
+ * narrow, it gives up its key chips, then its hint, then the labels of the controls that aren't its
+ * buttons, which stay icons with tooltips. Only a box too narrow for its buttons' words wraps, with
+ * the buttons on a row of their own. A button that's off says why in its tooltip, and names that
+ * text as what describes it: `id` is the box's.
  */
 export function CommentBoxFootBar({
   id,
@@ -565,7 +567,7 @@ export function CommentBoxFootBar({
           )}
         </p>
       ))}
-      <div className="flex items-center gap-4 p-6 text-fg-muted text-small">
+      <div className={`${NARROW.row} flex items-center gap-4 p-6 text-fg-muted text-small`}>
         {foot.attach !== undefined && <Attach attach={foot.attach} />}
         {foot.discard !== undefined && <Discard discard={foot.discard} />}
         {vim && focused && foot.mode !== undefined && (
@@ -575,7 +577,7 @@ export function CommentBoxFootBar({
           <span className={`ms-4 min-w-0 truncate ${NARROW.hint}`}>{foot.text}</span>
         )}
         <span className="flex-1" />
-        <span className="flex flex-none items-center gap-6">
+        <span className={`${NARROW.row} flex flex-none items-center gap-6`}>
           {foot.actions?.map((action) => (
             <ActionButton
               key={action.label}
