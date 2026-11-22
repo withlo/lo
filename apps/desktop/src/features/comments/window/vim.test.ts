@@ -13,6 +13,7 @@ import {
   type Focus,
   type Mode,
   type System,
+  type TargetKind,
 } from '@lo/ui/commands';
 import { describe, expect, test } from 'vitest';
 
@@ -38,14 +39,16 @@ const isCode = (scope: string): boolean => (codeScopes as readonly string[]).inc
 /**
  * Where `command` should run with Vim keys off, in `scope`: a code view with no Vim is in normal
  * mode to Lo's keys, or in visual mode while lines are selected, and a comment box is typed in.
+ * The key acts on what the command is for, if it's for one (`when.on`), and on nothing else.
  */
 function places(command: Command, scope: string): Focus[] {
-  if (!isCode(scope)) return [{ scope, text: false }];
+  const on = (kind: TargetKind) => kind === command.when?.on;
+  if (!isCode(scope)) return [{ scope, text: false, on }];
   const plain: Mode[] = scope === 'box' ? ['insert'] : ['normal', 'visual'];
   const asked = listOf(command.when?.mode);
   return plain
     .filter((mode) => asked.length === 0 || asked.includes(mode))
-    .map((mode) => ({ scope, text: false, view: { mode, pending: false, plain: true } }));
+    .map((mode) => ({ scope, text: false, view: { mode, pending: false, plain: true }, on }));
 }
 
 describe.each(['mac', 'linux'] as const)('with Vim keys off, on %s', (system: System) => {

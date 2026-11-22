@@ -18,8 +18,11 @@ import { main } from './main.ts';
 import { catchUp, marked, views } from './store.ts';
 import {
   countIn,
+  failureIn,
   markable,
   markIn,
+  markRefusal,
+  type MarkFailure,
   shownMarks,
   toggle,
   type Mark,
@@ -27,7 +30,7 @@ import {
   type Toggled,
 } from './viewed.ts';
 
-export type { Mark, ShownMarks, Toggled } from './viewed.ts';
+export type { Mark, MarkFailure, ShownMarks, Toggled } from './viewed.ts';
 export type { Compared, ComparisonView } from '../contract.ts';
 
 /**
@@ -71,6 +74,18 @@ export function viewedMarkOf(
 }
 
 /**
+ * Why the last viewed mark, or clear, on the changed file at `path` (or `previous`, for a rename
+ * GitHub lists by its old path) didn't take, if it didn't: its header shows it until the next.
+ */
+export function viewedFailureOf(
+  marks: ShownMarks,
+  path: TreePath,
+  previous?: TreePath | null,
+): MarkFailure | undefined {
+  return failureIn(marks, path, previous);
+}
+
+/**
  * How many of `files`, the changed files a diff shows, are viewed in `marks`, of how many there
  * are. `marks`' own count is of every file the pull request changes, which a stack's layer's diff,
  * compared with the layer below it, doesn't all show.
@@ -101,6 +116,17 @@ export function toggleViewed(
   file: { readonly path: TreePath; readonly previous: TreePath | null },
 ): Toggled {
   return toggle(tab, file);
+}
+
+/**
+ * Why `e` can't mark or clear the changed file of `tab`'s at `path` now, if it can't: what its
+ * dimmed viewed control says. It changes nothing.
+ */
+export function viewedRefusal(
+  tab: string,
+  file: { readonly path: TreePath; readonly previous: TreePath | null },
+): string | undefined {
+  return markRefusal(tab, file);
 }
 
 /**

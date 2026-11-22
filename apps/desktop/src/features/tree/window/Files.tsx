@@ -191,10 +191,12 @@ export function Files({
       viewed={viewedCount || undefined}
       mode={mode}
       onMode={(next) => void changeSetting(modeSetting, next)}
-      modeKeys={keyOf('tree.mode')}
+      treeKeys={keyOf('tree.asTree')}
+      reviewKeys={keyOf('tree.reviewOrder')}
       changedOnly={chosen.changedOnly}
       onChangedOnly={(changedOnly) => choices.update(tab.id, (now) => ({ ...now, changedOnly }))}
       changedOnlyKeys={keyOf('tree.changedOnly')}
+      waiting={loading}
       note={noteOf(state, model?.omitted ?? 0)}
     >
       {loading ? (

@@ -74,6 +74,12 @@ Each command's id is what [the keymap file](#the-keymap-file) binds keys to.
 | Mark viewed             | `e`                                            | In `tree`                                                               | `tree.markViewed`         |
 | Continue                | `⏎`                                            | In `welcome`                                                            | `welcome.continue`        |
 
+## Threads
+
+| Action          | Keys  | Where                                                           | Command             |
+| --------------- | ----- | --------------------------------------------------------------- | ------------------- |
+| Collapse thread | `z a` | In `diff`; in code views, only in normal mode; only on a thread | `diff.toggleThread` |
+
 ## Code
 
 | Action                                    | Keys                                           | Where                                                            | Command               |
@@ -170,24 +176,25 @@ Each command's id is what [the keymap file](#the-keymap-file) binds keys to.
 
 ## Files
 
-| Action                   | Keys          | Where                                                                                                   | Command            |
-| ------------------------ | ------------- | ------------------------------------------------------------------------------------------------------- | ------------------ |
-| Go to stack              | `-`           | In `tree`                                                                                               | `stacks.focus`     |
-| Go to files              | `+`           | In `stack`                                                                                              | `stacks.files`     |
-| Go to the file tree      | `-`           | Anywhere but `menu`, `dialog`, `palette`, `box`, `tree` and `stack`; in code views, only in normal mode | `tree.focus`       |
-| Tree or review order     | `t`           | In `tree`                                                                                               | `tree.mode`        |
-| Changed files only       | `f`           | In `tree`                                                                                               | `tree.changedOnly` |
-| Next row of the tree     | `j`, `↓`      | In `tree`                                                                                               | `tree.down`        |
-| Previous row of the tree | `k`, `↑`      | In `tree`                                                                                               | `tree.up`          |
-| First row of the tree    | `g g`, `Home` | In `tree`                                                                                               | `tree.top`         |
-| Last row of the tree     | `G`, `End`    | In `tree`                                                                                               | `tree.bottom`      |
-| Page down the tree       | `PgDn`        | In `tree`                                                                                               | `tree.pageDown`    |
-| Page up the tree         | `PgUp`        | In `tree`                                                                                               | `tree.pageUp`      |
-| Open the folder          | `l`, `→`      | In `tree`                                                                                               | `tree.open`        |
-| Close the folder         | `h`, `←`      | In `tree`                                                                                               | `tree.close`       |
-| Open every folder        | `z R`         | In `tree`                                                                                               | `tree.openAll`     |
-| Close every folder       | `z M`         | In `tree`                                                                                               | `tree.closeAll`    |
-| Show the file            | `⏎`           | In `tree`                                                                                               | `tree.show`        |
+| Action                   | Keys                                           | Where                                                                                                   | Command            |
+| ------------------------ | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------- | ------------------ |
+| Go to stack              | `-`                                            | In `tree`                                                                                               | `stacks.focus`     |
+| Go to files              | `+`                                            | In `stack`                                                                                              | `stacks.files`     |
+| Go to the file tree      | `-`                                            | Anywhere but `menu`, `dialog`, `palette`, `box`, `tree` and `stack`; in code views, only in normal mode | `tree.focus`       |
+| Tree                     | None: in the app menu on macOS and the palette | In `tree`                                                                                               | `tree.asTree`      |
+| Review order             | `t`                                            | In `tree`                                                                                               | `tree.reviewOrder` |
+| Changed files only       | `f`                                            | In `tree`                                                                                               | `tree.changedOnly` |
+| Next row of the tree     | `j`, `↓`                                       | In `tree`                                                                                               | `tree.down`        |
+| Previous row of the tree | `k`, `↑`                                       | In `tree`                                                                                               | `tree.up`          |
+| First row of the tree    | `g g`, `Home`                                  | In `tree`                                                                                               | `tree.top`         |
+| Last row of the tree     | `G`, `End`                                     | In `tree`                                                                                               | `tree.bottom`      |
+| Page down the tree       | `PgDn`                                         | In `tree`                                                                                               | `tree.pageDown`    |
+| Page up the tree         | `PgUp`                                         | In `tree`                                                                                               | `tree.pageUp`      |
+| Open the folder          | `l`, `→`                                       | In `tree`                                                                                               | `tree.open`        |
+| Close the folder         | `h`, `←`                                       | In `tree`                                                                                               | `tree.close`       |
+| Open every folder        | `z R`                                          | In `tree`                                                                                               | `tree.openAll`     |
+| Close every folder       | `z M`                                          | In `tree`                                                                                               | `tree.closeAll`    |
+| Show the file            | `⏎`                                            | In `tree`                                                                                               | `tree.show`        |
 
 ## Overview
 
@@ -231,16 +238,17 @@ Each command's id is what [the keymap file](#the-keymap-file) binds keys to.
 
 ## Diff view
 
-| Action                                | Keys  | Where                                         | Command           |
-| ------------------------------------- | ----- | --------------------------------------------- | ----------------- |
-| The other side                        | `Tab` | In `diff`; in code views, only in normal mode | `diff.otherSide`  |
-| Inline or side by side                | `g i` | In `diff`; in code views, only in normal mode | `diff.inline`     |
-| Hide or show whitespace changes       | `g w` | In `diff`; in code views, only in normal mode | `diff.whitespace` |
-| Open unchanged lines                  | `z o` | In `diff`; in code views, only in normal mode | `diff.openRun`    |
-| Close unchanged lines                 | `z c` | In `diff`; in code views, only in normal mode | `diff.closeRun`   |
-| Open every unchanged line in the file | `z R` | In `diff`; in code views, only in normal mode | `diff.openFile`   |
-| Open or close the thread, or the file | `z a` | In `diff`; in code views, only in normal mode | `diff.toggleFile` |
-| Load a large file anyway              | `z a` | In `file`; in code views, only in normal mode | `diff.loadWhole`  |
+| Action                          | Keys                                           | Where                                         | Command           |
+| ------------------------------- | ---------------------------------------------- | --------------------------------------------- | ----------------- |
+| The other side                  | `Tab`                                          | In `diff`; in code views, only in normal mode | `diff.otherSide`  |
+| Side by side                    | None: in the app menu on macOS and the palette | In `diff`                                     | `diff.sideBySide` |
+| Inline                          | `g i`                                          | In `diff`; in code views, only in normal mode | `diff.inline`     |
+| Hide or show whitespace changes | `g w`                                          | In `diff`; in code views, only in normal mode | `diff.whitespace` |
+| Open unchanged lines            | `z o`                                          | In `diff`; in code views, only in normal mode | `diff.openRun`    |
+| Close unchanged lines           | `z c`                                          | In `diff`; in code views, only in normal mode | `diff.closeRun`   |
+| Show all unchanged lines        | `z R`                                          | In `diff`; in code views, only in normal mode | `diff.openFile`   |
+| Collapse file                   | `z a`                                          | In `diff`; in code views, only in normal mode | `diff.toggleFile` |
+| Load a large file anyway        | `z a`                                          | In `file`; in code views, only in normal mode | `diff.loadWhole`  |
 
 ## Comment box
 
@@ -349,7 +357,9 @@ mode. In the box's preview, or on its frame, `Esc` closes it at once, from any m
 
 A key applies in a scope: the nearest part of the window around the focused element that names one,
 or `window`. A key for a scope beats one for anywhere, so the same chord can mean one thing in a
-comment box and another elsewhere.
+comment box and another elsewhere. A key for one kind of thing, such as a review thread, applies
+only while it's on one: the thread `] t` landed on, or the only one under the cursor's line. There
+it beats the key for the scope, so `z a` collapses the thread it's on, and the file elsewhere.
 
 | Scope        | What it is                                                                            |
 | ------------ | ------------------------------------------------------------------------------------- |
@@ -458,7 +468,7 @@ how Lo starts, they run Lo's command too:
 | `i`              | Edit comment                    | `i`       | `diff` (normal)                                                      | `comments.edit`           |
 | `d d`            | Delete comment…                 | `d`       | `diff` (normal)                                                      | `comments.remove`         |
 | `e`              | Mark viewed                     | `e`       | `diff` (normal)                                                      | `diff.markViewed`         |
-| `g i`            | Inline or side by side          | `g i`     | `diff` (normal)                                                      | `diff.inline`             |
+| `g i`            | Inline                          | `g i`     | `diff` (normal)                                                      | `diff.inline`             |
 | `g w`            | Hide or show whitespace changes | `g w`     | `diff` (normal)                                                      | `diff.whitespace`         |
 | `y y`            | Copy the lines                  | `y`       | `diff` and `file`                                                    | `diff.copyLines`          |
 | `y l`            | Copy the line's link            | `y`       | `diff` (normal) and `file` (normal)                                  | `diff.copyLink`           |

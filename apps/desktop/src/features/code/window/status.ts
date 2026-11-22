@@ -7,8 +7,10 @@
 
 import { IpcError } from '../../../ipc/contract.ts';
 import { notify } from '../../../window/commands/notices.tsx';
+import type { SettingsState } from '../../settings/contract.ts';
 import { activeTab, tabState, type BannerSwitch } from '../../tab/window/shared.ts';
 import type { Status } from '../contract.ts';
+import { readTrusted, trusted } from '../settings.ts';
 import { main } from './main.ts';
 
 /** Where each view stands, once main has said. */
@@ -42,13 +44,29 @@ function setFailure(view: string, failure: TrustFailure | null): void {
 
 /**
  * Hears that the settings changed: what the file held that kept Lo from trusting a view may be
- * fixed, so what it said of that goes, and the banner offers to trust it again.
+ * fixed, so what it said of that goes, and the banner offers to trust it again. Not while `state`
+ * still has a problem that keeps Lo from saving what's trusted: main says what it read as it
+ * refuses, and that can reach the window after the refusal does.
  */
-export function settingsChanged(): void {
+export function settingsChanged(state: SettingsState): void {
+  if (blocksTrust(state)) return;
   for (const view of fileFailed) {
     if (failures.get(view)?.file) failures.set(view, null);
   }
   fileFailed.clear();
+}
+
+/**
+ * Whether what `state` says is wrong in the settings file keeps Lo from saving what's trusted: the
+ * whole file can't be read, or `code.trusted` is in it twice or isn't a list. Entries of it that Lo
+ * ignores don't.
+ */
+function blocksTrust(state: SettingsState): boolean {
+  const list = state.values[trusted.key];
+  const ignored = new Set(Array.isArray(list) ? readTrusted(list).problems : []);
+  return state.problems.some(
+    ({ key, message }) => key === undefined || (key === trusted.key && !ignored.has(message)),
+  );
 }
 
 /** Takes what main said of a view. */

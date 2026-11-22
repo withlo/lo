@@ -14,10 +14,14 @@ import { expect, test, type ElectronApplication, type Page } from '@playwright/t
 import type { DiffLayout } from '../src/code/index.ts';
 import { buildPage, launch } from './electron.ts';
 
+/** How tall the file's header pinned over the top of the diff is, as `--lo-file-header-h` has it. */
+const PINNED = 38;
+
 const STYLE = [
   readFileSync(new URL('../src/code/view.css', import.meta.url), 'utf8'),
-  // The one token the page's own measures need: the room a box brought on screen keeps under it.
-  ':root { --lo-sp-8: 8px; }',
+  // The tokens the page's own measures need: the room a box brought on screen keeps under it, and
+  // the height of the file's header pinned over the top.
+  `:root { --lo-sp-8: 8px; --lo-file-header-h: ${PINNED}px; }`,
   'body { margin: 0; } #root { width: 1000px; height: 600px; } .card { background: #ddd; }',
 ].join('\n');
 
@@ -53,6 +57,25 @@ async function open(
       window.harness.scrollTo(20, under);
     },
     { shown: layout, lines: wrapped, under: below, tall: height },
+  );
+  await frames(page);
+  return page;
+}
+
+/**
+ * The page with three files side by side, as `harness.openFiles` draws them, in a box `height`
+ * tall; with `addedLast`, a fourth after them, added whole.
+ */
+async function openFiles(height?: number, addedLast = false): Promise<Page> {
+  app = await launch(harness);
+  const page = await app.firstWindow();
+  await page.waitForFunction(() => 'harness' in window);
+  await page.evaluate(
+    ({ tall, last }) => {
+      if (tall !== undefined) window.harness.setHeight(tall);
+      window.harness.openFiles(last);
+    },
+    { tall: height, last: addedLast },
   );
   await frames(page);
   return page;
@@ -333,7 +356,7 @@ for (const layout of ['split', 'inline'] as const) {
       near([await peekEnd(page)], [end]);
     });
 
-    test('a peek taller than the room under its line puts the line at the very top', async () => {
+    test('a peek taller than the room under its line puts the line at the top, under the file’s pinned header', async () => {
       const page = await open(layout, { height: 300 });
       const below = 300 - (await rowHeight(page));
       await page.evaluate((at) => {
@@ -344,8 +367,8 @@ for (const layout of ['split', 'inline'] as const) {
 
       expect(await page.evaluate(() => window.harness.peek(40, 15))).toBe(true);
       await frames(page);
-      // At the top, within the pixel the scroll rounds to.
-      expect(Math.abs((await lineTop(page, 40))!)).toBeLessThan(1);
+      // At the top, under the header pinned there, within the pixel the scroll rounds to.
+      expect(Math.abs((await lineTop(page, 40))! - PINNED)).toBeLessThan(1);
       expect(await peekEnd(page)).toBeGreaterThan(300);
       const shown = await onScreen(page);
       await page.evaluate(() => window.harness.frames(10));
@@ -914,6 +937,63 @@ test('a comment box that grows as lines are typed in it keeps its foot 8 px clea
     return foot - each.getBoundingClientRect().bottom;
   });
   expect(Math.abs(under - 8)).toBeLessThan(1);
+});
+
+test('equal runs of empty space look equal, at the end of the last file too, and a side with none of a file’s lines is never hatched', async () => {
+  const page = await openFiles();
+  const spacers = async () => {
+    const all = await page.evaluate(() => window.harness.spacers());
+    const of = (path: string) => all.filter((each) => each.path === path && each.height > 1);
+    return { a: of('src/a.ts'), b: of('src/b.ts'), c: of('src/c.ts') };
+  };
+  // src/a.ts and src/c.ts each end with three lines the old side doesn't have; src/b.ts has no old
+  // side at all.
+  await expect
+    .poll(async () => {
+      const { a, b, c } = await spacers();
+      return {
+        a: a.map(({ look }) => look),
+        b: b.map(({ look }) => look),
+        c: c.map(({ look }) => look),
+      };
+    })
+    .toEqual({ a: ['hatched'], b: ['flat'], c: ['hatched'] });
+  const { a, c } = await spacers();
+  expect(Math.abs(a[0]!.height - c[0]!.height)).toBeLessThan(1);
+});
+
+test('an added file’s gap looks the same last in the diff as before another file, its gutter not filled in', async () => {
+  const page = await openFiles(undefined, true);
+  const spacers = async () => {
+    const all = await page.evaluate(() => window.harness.spacers());
+    const of = (path: string) => all.filter((each) => each.path === path && each.height > 1);
+    return { b: of('src/b.ts'), d: of('src/d.ts') };
+  };
+  // src/b.ts's gap is caught up above src/c.ts's header, and src/d.ts's below its own.
+  await expect
+    .poll(async () => {
+      const { b, d } = await spacers();
+      return { b: b.map(({ look }) => look), d: d.map(({ look }) => look) };
+    })
+    .toEqual({ b: ['flat'], d: ['flat'] });
+  const { b, d } = await spacers();
+  expect(Math.abs(b[0]!.height - d[0]!.height)).toBeLessThan(1);
+});
+
+test('the next file’s header pushes the pinned row up as it comes under it, and the row is that file’s once it reaches the top', async () => {
+  const page = await openFiles(100);
+  const pinned = () => page.evaluate(() => window.harness.pinned());
+  // src/c.ts's header 20 px below the top edge: src/b.ts's row, pushed up by the rest of its height.
+  await page.evaluate(() => window.harness.headerAt('src/c.ts', 20));
+  await frames(page);
+  const pushed = await pinned();
+  expect(pushed?.path).toBe('src/b.ts');
+  const shift = Number(/translateY\((-?[\d.]+)px\)/.exec(pushed?.transform ?? '')?.[1]);
+  expect(Math.abs(shift + (PINNED - 20))).toBeLessThan(1);
+  // Past the top edge, it's src/c.ts's, in place.
+  await page.evaluate(() => window.harness.headerAt('src/c.ts', -10));
+  await frames(page);
+  expect(await pinned()).toEqual({ path: 'src/c.ts', transform: '' });
 });
 
 /** Each box on `page`: its width, and whether what's drawn at either end of its middle is the box. */

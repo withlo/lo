@@ -102,10 +102,12 @@ export function showThread(tab: string, thread: string, when: ShowWhen): boolean
 /** A place asked for in each tab before its diff's files were known, and what stops it waiting. */
 const waiting = new Map<string, () => void>();
 
-/** What the notes say while a place waits for the diff's files, and when it's dropped. */
-const WAITING = { title: 'Go to code', body: 'Waiting for the diff’s list of files.' };
-const TOO_LONG = 'The diff’s list of files hasn’t loaded yet. Try again in a moment.';
-const STOPPED = 'Lo stopped waiting for the diff’s list of files.';
+/**
+ * What the notes say while a place waits for the diff's files, and when the reader moves on before
+ * they're read. One dropped as it waited too long says nothing more: the first note said why.
+ */
+const WAITING = { title: 'Reading changed files…', body: '' };
+const STOPPED = 'Couldn’t read the changed files';
 
 /**
  * What the reader does that drops a place waiting for the diff's files, as they've moved on: a key,
@@ -146,12 +148,12 @@ export function showPlace(
     for (const type of INPUT) window.removeEventListener(type, moved, true);
     if (waiting.get(tab) === stop) waiting.delete(tab);
   };
-  const drop = (why: string) => {
+  const drop = (why?: string) => {
     stop();
-    notify(WAITING.title, why);
+    if (why !== undefined) notify(why, '');
   };
   const moved = () => drop(STOPPED);
-  const bound = setTimeout(() => drop(TOO_LONG), holdLimit());
+  const bound = setTimeout(() => drop(), holdLimit());
   const listening = loader.subscribe(() => {
     if (!loader.snapshot().state?.files) return;
     stop();

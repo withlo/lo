@@ -77,8 +77,8 @@ const RUN: PullTab = {
 };
 const LAYER: PullTab = { id: 't1:84', kind: 'pull', owner: 'rozed-dev', repo: 'e2e', number: 84 };
 
-/** The status's items, as their text and the hint each carries. */
-function itemsOf(tab: PullTab, snapshot: Snapshot): { text: string; title: string | null }[] {
+/** The status's items, as their text. */
+function itemsOf(tab: PullTab, snapshot: Snapshot): { text: string }[] {
   loader.snapshot = snapshot;
   const host = document.createElement('div');
   document.body.append(host);
@@ -88,19 +88,13 @@ function itemsOf(tab: PullTab, snapshot: Snapshot): { text: string; title: strin
     act(() => root.unmount());
     host.remove();
   });
-  return [...host.querySelectorAll('[title]')].map((each) => ({
-    text: each.textContent ?? '',
-    title: each.getAttribute('title'),
-  }));
+  return [...host.children].map((each) => ({ text: each.textContent ?? '' }));
 }
 
 describe('the status bar over a run GitHub couldn’t compare', () => {
-  it('says the run wasn’t compared, and what shows, while GitHub’s files are drawn', () => {
+  it('says only the top layer shows, while GitHub’s files are drawn', () => {
     const items = itemsOf(RUN, snapshotOf('github'));
-    expect(items.map((item) => item.text)).toEqual(['GitHub’s diff', 'Run not compared']);
-    expect(items[1]?.title).toBe(
-      'GitHub couldn’t compare the run from where its bottom layer starts, so this is #84’s pull request as GitHub lists it until the local copy is ready.',
-    );
+    expect(items.map((item) => item.text)).toEqual(['GitHub’s diff', 'Showing #84 alone']);
   });
 
   it('says nothing of it once the local copy’s files are drawn, though main still says it', () => {

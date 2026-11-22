@@ -3,6 +3,8 @@
 // palette; and what the status bar says when a key finds nothing.
 
 import {
+  HintButton,
+  HintRow,
   Palette,
   PaletteHint,
   PeekFoot,
@@ -96,7 +98,7 @@ function PeekFrame({ open }: { open: OpenPeek }) {
           name={found.name}
           count={found.answers.length}
           at={open.revision}
-          goLabel={inDiff ? 'Show in the diff' : 'Open the whole file'}
+          goLabel={inDiff ? 'Show in diff' : 'Open whole file'}
           goes={answer !== undefined && !isOutside(answer)}
           source={source?.source}
           note={source?.note}
@@ -163,10 +165,6 @@ export function ReferencesPanel({ tab }: { tab: PullTab }): ReactNode {
     if (typeof row?.scrollIntoView === 'function') row.scrollIntoView({ block: 'nearest' });
   }, [focusedKey]);
   const first = answers[0];
-  const move = pairOf('code.nextReference', 'code.previousReference');
-  const go = keysOf('code.goReference');
-  const back = keysOf('keys.back');
-  const close = keysOf('code.closeReferences');
   return (
     <div className="flex min-h-0 flex-1 flex-col" data-lo-references={tab.id}>
       <div className="flex flex-none items-center gap-6 ps-16 pe-8 pt-12 pb-8">
@@ -185,7 +183,7 @@ export function ReferencesPanel({ tab }: { tab: PullTab }): ReactNode {
       )}
       {list?.found.more && (
         <p className="m-0 px-16 pb-8 text-fg-muted text-small">
-          There are more than Lo lists. {list.found.note}
+          First {answers.length.toLocaleString('en-US')} references shown
         </p>
       )}
       <div ref={box} className="min-h-0 flex-1 overflow-auto">
@@ -198,16 +196,20 @@ export function ReferencesPanel({ tab }: { tab: PullTab }): ReactNode {
             const index = answers.findIndex((answer, at) => answerKey(answer, at) === key);
             if (index >= 0) goToReference(tab.id, index);
           }}
-          empty="Press g r on a word to list where it’s used."
+          empty="No references listed"
           className="outline-none"
           data-lo-scope="references"
         />
       </div>
-      <div className="flex flex-none flex-wrap items-center gap-12 border-t border-border-subtle px-16 py-8 text-fg-muted text-small">
-        {move && <PaletteHint keys={move}>Move</PaletteHint>}
-        {go && <PaletteHint keys={go}>Go</PaletteHint>}
-        {back && <PaletteHint keys={back}>Back</PaletteHint>}
-        {close && <PaletteHint keys={close}>Close</PaletteHint>}
+      {/* One line always: each hint is a button that runs its command, and a foot too narrow for
+          its key chips gives them up, each hint giving its key in its tooltip. */}
+      <div className="flex-none border-t border-border-subtle">
+        <HintRow className="min-w-0 items-center gap-2 px-8 py-4 text-fg-muted text-small">
+          <HintButton command="code.nextReference">Next</HintButton>
+          <HintButton command="code.previousReference">Previous</HintButton>
+          <HintButton command="code.goReference">Go to reference</HintButton>
+          <HintButton command="code.closeReferences">Close</HintButton>
+        </HintRow>
       </div>
     </div>
   );
@@ -295,14 +297,12 @@ function OutlinePalette() {
     (found === undefined ? (
       <span className="inline-flex items-center gap-8">
         <Spinner size="xs" />
-        Reading the file’s symbols…
+        Reading symbols…
       </span>
     ) : typed ? (
-      `No symbol matches "${state.query}".`
-    ) : found.source === 'server' && found.label !== undefined ? (
-      `${found.label} finds no symbols in this file.`
+      `No symbols match “${state.query.trim()}”`
     ) : (
-      'The syntax index finds no symbols in this file.'
+      'No symbols in this file'
     ));
   const go = keysOf('code.outline');
   return (
@@ -313,7 +313,7 @@ function OutlinePalette() {
       }}
       onClosed={outlineClosed}
       label="Outline"
-      placeholder={`Find a symbol in ${state.path}`}
+      placeholder="Filter by name"
       keys={go}
       icon={OUTLINE_ICON}
       query={state.query}
@@ -326,11 +326,9 @@ function OutlinePalette() {
       foot={
         <>
           <span className="lo-num">
-            {state.outline
-              ? `${shown.length} of ${rows.length} ${rows.length === 1 ? 'symbol' : 'symbols'}`
-              : ''}
+            {state.outline ? symbolCount(typed ? shown.length : undefined, rows.length) : ''}
           </span>
-          {state.outline?.more && <span className="min-w-0">Lo lists the first 5,000.</span>}
+          {state.outline?.more && <span className="min-w-0">First 5,000 symbols shown</span>}
           {/* Where they came from, cut short rather than taking a line of its own. */}
           <span className="flex min-w-0 flex-1 basis-0">
             {found && (
@@ -350,6 +348,15 @@ function OutlinePalette() {
       container={document.getElementById('root')}
     />
   );
+}
+
+/** How many symbols the outline lists, as a part of them while a name is typed: "41 / 214 symbols". */
+function symbolCount(shown: number | undefined, all: number): string {
+  const noun = all === 1 ? 'symbol' : 'symbols';
+  const total = all.toLocaleString('en-US');
+  return shown === undefined
+    ? `${total} ${noun}`
+    : `${shown.toLocaleString('en-US')} / ${total} ${noun}`;
 }
 
 /** What code features draw over the window: peeks' frames, the card over a word and the outline. */

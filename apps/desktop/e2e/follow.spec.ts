@@ -747,7 +747,7 @@ test('o puts a block’s code beside the overview, which follows the blocks, and
     await expect(block(page, BLOCK.format)).toHaveClass(/is-focused/);
     // The diff's keys act on it there.
     await press(page, 'g', 'i');
-    await expect(said(page, 'Code beside the overview is always inline.')).toBeVisible();
+    await expect(said(page, 'Code beside is always inline')).toBeVisible();
     await press(page, 'Escape');
     await expect(beside(page)).toHaveCount(0);
     await expect(toc).toBeVisible();

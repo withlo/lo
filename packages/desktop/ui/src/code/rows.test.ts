@@ -63,10 +63,16 @@ describe('fileRows', () => {
     expect(describeRows(rows)).toEqual(['5 -> 7', '. -> 8', '. -> 9']);
   });
 
-  test('collapses a whole file into one row until its diff is ready', () => {
+  test('collapses a whole file into one row under its header until its diff is ready', () => {
+    const rows = fileRows({ header: 1, count: 3 }, { header: 6, count: 2 }, { kind: 'collapsed' });
+
+    expect(describeRows(rows)).toEqual(['1 -> 6', '2-4 -> 7-8 *']);
+  });
+
+  test("puts one side's block in its header's row where the other side has no lines", () => {
     const rows = fileRows({ header: 1, count: 3 }, { header: 1, count: 0 }, { kind: 'collapsed' });
 
-    expect(describeRows(rows)).toEqual(['1 -> 1', '2-4 -> . *']);
+    expect(describeRows(rows)).toEqual(['1-4 -> 1']);
   });
 });
 

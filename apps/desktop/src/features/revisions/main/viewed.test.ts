@@ -240,9 +240,10 @@ describe('marking files viewed', { timeout: 10_000 }, () => {
     );
     const { tab, marks } = viewedTab(fetch);
 
-    await expect(tab.markViewed(FILE, true, HEAD)).rejects.toMatchObject({
-      code: 'failed',
-      message: expect.stringContaining('GitHub asked Lo to slow down'),
+    expect(await tab.markViewed(FILE, true, HEAD)).toMatchObject({
+      kind: 'failed',
+      reason: 'GitHub’s rate limit was reached.',
+      details: expect.stringContaining('secondary rate limit'),
     });
     const now = Date.now();
     const paused = await tab.markViewed(FILE, true, HEAD);
@@ -254,16 +255,17 @@ describe('marking files viewed', { timeout: 10_000 }, () => {
     expect(marks.viewed(LOGIN, PULL)).toEqual([]);
   });
 
-  it('a write GitHub refuses fails with why, and notes nothing', async () => {
+  it('a write GitHub refuses says why, with GitHub’s words apart, and notes nothing', async () => {
     const { tab, marks, logged } = viewedTab(
       replayFetch('graphql_mark_file_as_viewed_unlisted_path'),
     );
-    await expect(tab.markViewed('not-in-this-pull-request.md', true, HEAD)).rejects.toMatchObject({
-      code: 'failed',
-      message: expect.stringContaining(
-        "GitHub doesn't list not-in-this-pull-request.md in this pull request",
-      ),
+    const failed = await tab.markViewed('not-in-this-pull-request.md', true, HEAD);
+    expect(failed).toMatchObject({
+      kind: 'failed',
+      reason: 'GitHub doesn’t list this file in this pull request.',
     });
+    // GitHub's own words are kept whole, for Details, and are no part of the reason.
+    expect(failed.kind === 'failed' && failed.details).not.toBe('');
     expect(marks.viewed(LOGIN, PULL)).toEqual([]);
     expect(logged.join('\n')).toContain('not-in-this-pull-request.md');
   });

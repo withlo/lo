@@ -1,12 +1,12 @@
 // What the status bar says of a pull request's tab's diff: that it's GitHub's until the local copy
 // replaces it, that GitHub listed only some files, that it couldn't compare a stack's layer, or a
-// run of its layers, with the layer below, how far diffing has got, and that changes to whitespace alone are hidden.
+// run of its layers, with the layer below, how far diffing has got, and that changes to whitespace
+// alone are hidden.
 
 import { StatusItem } from '@lo/ui';
 import { useCallback, useSyncExternalStore } from 'react';
 
-import { useLocalCopy, type PullTab } from '../../tab/window/shared.ts';
-import { untilLocalCopy } from './shared.ts';
+import type { PullTab } from '../../tab/window/shared.ts';
 import { loaderOf } from './tabs.ts';
 
 export function DiffStatus({ tab }: { tab: PullTab }) {
@@ -15,50 +15,27 @@ export function DiffStatus({ tab }: { tab: PullTab }) {
   const { ready, progress, state, whitespace } = useSyncExternalStore(subscribe, () =>
     loader.snapshot(),
   );
-  // Without git, what GitHub says is all there is.
-  const later = untilLocalCopy(useLocalCopy(tab.id));
   return (
     <>
-      {ready?.from === 'github' && (
-        <StatusItem dot="busy" title="The local copy’s diff replaces it once it’s ready.">
-          GitHub’s diff
-        </StatusItem>
-      )}
+      {ready?.from === 'github' && <StatusItem dot="busy">GitHub’s diff</StatusItem>}
       {state?.partial && (
-        <StatusItem
-          dot="warn"
-          title={
-            state.compareFrom === null
-              ? 'GitHub lists 3,000 changed files at most.'
-              : `GitHub’s comparison with the layer below ${tab.run ? 'the run ' : ''}lists 300 changed files at most, so the rest are left out${later}.`
-          }
-        >
-          Some files left out
+        <StatusItem dot="warn">
+          {state.compareFrom === null ? 'First 3,000 files shown' : 'First 300 files shown'}
         </StatusItem>
       )}
       {ready?.uncompared &&
         (tab.run ? (
-          <StatusItem
-            dot="warn"
-            title={`GitHub couldn’t compare the run from where its bottom layer starts, so this is #${tab.number}’s pull request as GitHub lists it${later}.`}
-          >
-            Run not compared
-          </StatusItem>
+          <StatusItem dot="warn">Showing #{tab.number} alone</StatusItem>
         ) : (
-          <StatusItem
-            dot="warn"
-            title={`GitHub couldn’t compare this layer with the layer below it, so its diff includes the layers below${later}.`}
-          >
-            Layers below included
-          </StatusItem>
+          <StatusItem dot="warn">Layers below included</StatusItem>
         ))}
       {ready && progress.done < progress.of && (
         <StatusItem>
-          Diffing {progress.done} of {progress.of}
+          Diffing files · {progress.done} of {progress.of}
         </StatusItem>
       )}
       {!whitespace && ready?.from === 'local' && (
-        <StatusItem dot="idle">Whitespace hidden</StatusItem>
+        <StatusItem dot="idle">Whitespace changes hidden</StatusItem>
       )}
     </>
   );

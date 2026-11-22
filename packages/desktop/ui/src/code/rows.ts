@@ -1,6 +1,7 @@
 // The rows the two sides of the diff line up on. Each file starts with its header, on both sides.
 // Unchanged lines pair one for one, a change's lines pair by index, and a run of collapsed lines is
-// one row on both sides. A row has its lines on each side as a range of document lines, or none
+// one row on both sides. A file drawn as one block has it as its second row, or as part of its
+// header's where one side has none of its lines. A row has its lines on each side as a range of document lines, or none
 // on a side with nothing there.
 
 import type { FileDiff } from '@lo/diff';
@@ -173,21 +174,27 @@ export function runAt<T extends { old: LineRange; new: LineRange }>(
 /** A file's rows, header first, from where its lines are and what they show. */
 export function fileRows(old: FileLines, added: FileLines, state: FileState): FileRows {
   const rows = new RowList();
-  rows.push(old.header, old.header, added.header, added.header, false);
   const oldLine = (line: number): number => old.header + line;
   const newLine = (line: number): number => added.header + line;
   if (state.kind === 'collapsed') {
-    if (old.count > 0 || added.count > 0) {
+    // One block on each side with lines, the row under the header. A side with none of the
+    // file's lines draws that row in its header, so the other side's block is part of the
+    // header's row there, and the two line up with no space between.
+    if (old.count > 0 && added.count > 0) {
+      rows.push(old.header, old.header, added.header, added.header, false);
+      rows.push(oldLine(1), oldLine(old.count), newLine(1), newLine(added.count), true);
+    } else {
       rows.push(
-        old.count > 0 ? oldLine(1) : -1,
-        old.count > 0 ? oldLine(old.count) : -1,
-        added.count > 0 ? newLine(1) : -1,
-        added.count > 0 ? newLine(added.count) : -1,
-        true,
+        old.header,
+        old.count > 0 ? oldLine(old.count) : old.header,
+        added.header,
+        added.count > 0 ? newLine(added.count) : added.header,
+        false,
       );
     }
     return rows.done();
   }
+  rows.push(old.header, old.header, added.header, added.header, false);
   const runs = shownRuns(state.diff, state.keep, state.open, state.gaps);
   let run = 0;
   for (const block of state.diff.rows) {

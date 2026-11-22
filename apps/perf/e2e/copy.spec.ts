@@ -39,7 +39,7 @@ test.use({
 });
 
 test('the local copy fills the gaps in place: the cursor and the scroll stay', async ({ page }) => {
-  const missing = page.locator('.lo-collapsed', { hasText: 'not loaded yet' });
+  const missing = page.locator('.lo-collapsed.is-missing');
   await expect(missing.first()).toBeVisible();
   await focusSide(page, 'new');
   // To the third change, below two gaps, in the middle of the screen.

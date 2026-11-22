@@ -1,8 +1,9 @@
 // Matching, as a pure function of the pending sequence, the key, the focused scope and a code
 // view's state, so the listener is a thin adapter around it.
 //
-// - A command for the focused scope beats one for anywhere; at each level a keymap binding beats
-//   a default one, and a later binding an earlier one.
+// - A command for what the key acts on (`when.on`) beats one for the focused scope, which beats
+//   one for anywhere; at each level a keymap binding beats a default one, and a later binding an
+//   earlier one.
 // - A key that starts one of Lo's sequences is held, and the next completes it. If it doesn't, the
 //   held keys go back to the code view they were typed in, or went on in, and the key is matched
 //   afresh, so `y w` still yanks a word. A chord Lo runs drops the held keys instead, so Vim isn't
@@ -37,6 +38,7 @@ import {
   type System,
 } from './notation.ts';
 import type { Mode } from './scopes.ts';
+import type { TargetKind } from './targets.ts';
 
 /** A key binding: a command and the strokes that run it. */
 export interface Binding {
@@ -82,6 +84,11 @@ export interface Focus {
     /** The view has no Vim, as with Vim keys off: Lo's motions are the registry's to run. */
     readonly plain?: boolean | undefined;
   };
+  /**
+   * Whether the key acts on a target of a kind, for a command's `when.on`. Without it, as where
+   * the checks ask of every scope, a command's `on` holds.
+   */
+  readonly on?: ((kind: TargetKind) => boolean) | undefined;
 }
 
 /** What becomes of a key. */
@@ -169,17 +176,17 @@ export class Bindings {
 
   /**
    * What `strokes` run where `focus` is: the command bound to exactly them, if any, else whether
-   * a longer sequence starts with them, looking at the focused scope's bindings before those for
-   * anywhere.
+   * a longer sequence starts with them, looking at the bindings for what the key acts on, then the
+   * focused scope's, before those for anywhere.
    */
   find(strokes: readonly Stroke[], focus: Focus): { command?: Command; longer: boolean } {
     const first = strokes[0];
     const candidates = first === undefined ? undefined : this.byFirst.get(first.id);
     if (!candidates) return { longer: false };
-    for (const scoped of [true, false]) {
+    for (const level of [2, 1, 0]) {
       let longer = false;
       for (const binding of candidates) {
-        if ((binding.command.when?.scope !== undefined) !== scoped) continue;
+        if (precedence(binding.command) !== level) continue;
         if (!startsWith(binding.strokes, strokes) || !applies(binding, focus, this.system)) {
           continue;
         }
@@ -206,6 +213,15 @@ export class Bindings {
         applies(binding, focus, this.system),
     );
   }
+}
+
+/**
+ * How far `command`'s keys win over others on the same keys: one for what the key acts on (2),
+ * for a scope (1), or for anywhere (0).
+ */
+export function precedence(command: Command): number {
+  if (command.when?.on !== undefined) return 2;
+  return command.when?.scope !== undefined ? 1 : 0;
 }
 
 /**
@@ -237,6 +253,7 @@ export function holds(binding: Binding, focus: Focus, system: System): boolean {
   if (focus.scope === 'menu' && !listOf(when?.scope).includes('menu')) return false;
   if (when?.except?.includes(focus.scope)) return false;
   if (when?.system !== undefined && when.system !== system) return false;
+  if (when?.on !== undefined && focus.on !== undefined && !focus.on(when.on)) return false;
   const first = strokes[0];
   if (first === undefined) return false;
   if (view) {

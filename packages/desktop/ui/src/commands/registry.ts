@@ -25,7 +25,7 @@ import {
   type TextKind,
   type VimKey,
 } from './scopes.ts';
-import { fit, NO_TARGET, type Target } from './targets.ts';
+import { fit, isOn, NO_TARGET, type Target, type TargetKind } from './targets.ts';
 
 export interface RegistryOptions {
   readonly system: System;
@@ -478,10 +478,13 @@ export class Registry {
       // A field inside a code view, such as Vim's prompt, is typed into as insert mode is.
       if (place.text === 'field')
         return { scope: name, text: true, view: { mode: 'insert', pending: false } };
-      const { mode, pending, count, plain } = source.keyState();
-      return { scope: name, text: false, view: { mode, pending, count, plain } };
+      const { mode, pending, count, plain, target } = source.keyState();
+      const on = (kind: TargetKind) => isOn(target, kind);
+      return { scope: name, text: false, view: { mode, pending, count, plain }, on };
     }
-    return { scope: name, text: place.text !== undefined };
+    // Asked only of a command that names what it acts on.
+    const on = (kind: TargetKind) => isOn(scopeTarget(place.scope), kind);
+    return { scope: name, text: place.text !== undefined, on };
   }
 
   /**

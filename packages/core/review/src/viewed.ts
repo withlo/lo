@@ -189,53 +189,87 @@ function samePaths(
   return a.size === b.size && [...a].every((path) => b.has(path));
 }
 
-/** The toast for a toggle whose write failed, as `login`: what couldn't be done and why. */
-export function writeFailed(toggle: ViewedToggle, login: string, error: GithubError): string {
-  const what = toggle.mark
-    ? `mark ${toggle.path} viewed`
-    : `clear the viewed mark on ${toggle.path}`;
-  return `Couldn't ${what}: ${whyWriteFailed(toggle, login, error)}. It shows GitHub's mark again.`;
+/** Who a toggle's write was sent as, and where, for the reason a failure gives. */
+export interface WriteWho {
+  /** The account it was sent as. */
+  readonly login: string;
+  /** The repo's owner: an organization can require single sign-on, or not approve Lo. */
+  readonly owner: string;
+  /** Where this computer keeps sign-ins, as a sentence names it: "the Keychain", "the keyring". */
+  readonly keychain: string;
 }
 
-function whyWriteFailed(toggle: ViewedToggle, login: string, error: GithubError): string {
+/**
+ * Why a toggle's write failed, sent as `who`: the reason under the title the window gives it, such
+ * as "Couldn’t mark wrap.ts viewed", in the words each cause has. Nothing for a cause with no
+ * reason line. GitHub's own words aren't part of it: they go behind Details.
+ */
+export function writeFailed(
+  toggle: ViewedToggle,
+  who: WriteWho,
+  error: GithubError,
+): string | undefined {
   const { detail } = error;
+  const { login } = who;
   switch (detail.kind) {
     case 'network':
-      return "Lo can't reach GitHub";
-    case 'rateLimited':
-      return detail.secondary
-        ? 'GitHub asked Lo to slow down'
-        : `${login} has used up GitHub's rate limit`;
+      switch (detail.failure) {
+        case 'offline':
+          return 'Offline.';
+        case 'lost':
+          return 'GitHub didn’t respond.';
+        case 'tunnel':
+          return 'The proxy couldn’t connect to GitHub.';
+        case 'refused':
+        case 'unknown':
+          return undefined;
+        default:
+          detail.failure satisfies never;
+          return undefined;
+      }
+    case 'rateLimited': {
+      const reset = detail.secondary ? undefined : detail.reset;
+      return reset === undefined
+        ? 'GitHub’s rate limit was reached.'
+        : `GitHub’s rate limit resets at ${timeOfDay(reset * 1000)}.`;
+    }
     case 'unauthorized':
-      return `${login} is signed out`;
+      return `${login} is signed out.`;
     case 'tokenUnavailable':
-      return `${login}'s token couldn't be read`;
+      return `${login}’s sign-in can’t be read from ${who.keychain}.`;
     case 'notFound':
-      return `${login} can't see this pull request`;
+      return `${login} can’t see this pull request.`;
     case 'graphql': {
-      const messages = detail.errors.map((graphqlError) => graphqlError.message).join('; ');
       const typed = (type: string): boolean =>
         detail.errors.some((graphqlError) => graphqlError.type === type);
       // GitHub's answer for a path the pull request doesn't list.
-      if (typed('UNPROCESSABLE')) {
-        return `GitHub doesn't list ${toggle.path} in this pull request (${messages})`;
-      }
-      if (typed('FORBIDDEN')) return `${login} isn't allowed to (${messages})`;
-      return `GitHub said: ${messages}`;
+      if (typed('UNPROCESSABLE')) return 'GitHub doesn’t list this file in this pull request.';
+      if (typed('FORBIDDEN')) return `${login} doesn’t have permission.`;
+      return 'GitHub returned an error.';
     }
     case 'api':
       return detail.status === 403
-        ? `${login} isn't allowed to (${detail.message})`
-        : error.message;
+        ? `${login} doesn’t have permission.`
+        : 'GitHub returned an error.';
     case 'ssoRequired':
+      return `${who.owner} requires single sign-on.`;
     case 'oauthAppRestricted':
+      return `${detail.org ?? who.owner} hasn’t approved Lo.`;
     case 'inconsistent':
+      return 'GitHub returned an error.';
     case 'refusedUrl':
     case 'decode':
-      return error.message;
+      return undefined;
     default:
-      throw new Error(`a GitHub error Lo doesn't know: ${JSON.stringify(detail satisfies never)}`);
+      throw new Error(
+        `a GitHub error Lo doesn't know: ${JSON.stringify(detail satisfies never)} (${toggle.path})`,
+      );
   }
+}
+
+/** A time of day, as the system writes one. */
+function timeOfDay(at: number): string {
+  return new Date(at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
 /**

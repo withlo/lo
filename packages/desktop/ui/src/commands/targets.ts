@@ -156,6 +156,14 @@ export function fit<K extends TargetKind>(
   return undefined;
 }
 
+/**
+ * Whether a key acts on a target of kind `kind` at `target`, as a command's `when.on` asks: it's
+ * one, or a line that gives one. A header names its file before anything on it.
+ */
+export function isOn(target: Target, kind: TargetKind): boolean {
+  return target.kind === kind || (target.kind === 'line' && fit([kind], target) !== undefined);
+}
+
 function isOneOf<K extends TargetKind>(target: Target, kinds: readonly K[]): target is TargetOf<K> {
   return kinds.some((kind) => kind === target.kind);
 }

@@ -191,6 +191,74 @@ const harness = {
     );
     shown.setDiff('a', diffText(textOf(old), textOf(changed)));
   },
+  /**
+   * Draws three files side by side: `src/a.ts` and `src/c.ts` each end with three lines added, the
+   * second last in the diff, and `src/b.ts` between them is added whole, three lines long. With
+   * `addedLast`, `src/d.ts`, added whole as `src/b.ts` is, comes last.
+   */
+  openFiles(addedLast = false): void {
+    const ends = { old: ['one', 'two'], new: ['one', 'two', 'three', 'four', 'five'] };
+    const added = { old: [], new: ['one', 'two', 'three'] };
+    const header = { additions: 3, deletions: 0 };
+    const files = [
+      { id: 'a', path: 'src/a.ts', change: 'modified' as const, lines: ends, header },
+      { id: 'b', path: 'src/b.ts', change: 'added' as const, lines: added, header },
+      { id: 'c', path: 'src/c.ts', change: 'modified' as const, lines: ends, header },
+      ...(addedLast
+        ? [{ id: 'd', path: 'src/d.ts', change: 'added' as const, lines: added, header }]
+        : []),
+    ];
+    shown = createDiffView(
+      root(),
+      { files, layout: 'split', vimKeys: [], nonce: 'harness' },
+      {
+        cursor: ignore,
+        mode: ignore,
+        file: ignore,
+        jumped: ignore,
+        load: ignore,
+        menu: ignore,
+      },
+    );
+    for (const { id, lines } of files) {
+      const before = lines.old.length === 0 ? undefined : textOf(lines.old);
+      shown.setDiff(id, diffText(before, textOf(lines.new)));
+    }
+  },
+  /** Each spacer on the old side, by the file it's in or at the end of, with its look. */
+  spacers(): { path: string; look: 'hatched' | 'under' | 'flat'; height: number }[] {
+    const found: { path: string; look: 'hatched' | 'under' | 'flat'; height: number }[] = [];
+    let path = '';
+    const content = document.querySelector('.cm-content[aria-label="Before"]');
+    for (const child of content?.children ?? []) {
+      const head = child.matches('.lo-diffhead')
+        ? child
+        : child.querySelector<HTMLElement>('.lo-diffhead[data-path]');
+      if (head instanceof HTMLElement && head.dataset.path) path = head.dataset.path;
+      if (!child.classList.contains('lo-spacer')) continue;
+      const look = child.classList.contains('is-hatched')
+        ? 'hatched'
+        : child.classList.contains('is-under')
+          ? 'under'
+          : 'flat';
+      found.push({ path, look, height: child.getBoundingClientRect().height });
+    }
+    return found;
+  },
+  /** Scrolls file `path`'s own header to `below` pixels below the top of the screen. */
+  headerAt(path: string, below: number): void {
+    const box = document.querySelector('.lo-diffview');
+    const head = document.querySelector(`.cm-content[aria-label="After"] [data-path="${path}"]`);
+    if (!box || !head) throw new Error(`No header for ${path} on the page.`);
+    box.scrollTop += head.getBoundingClientRect().top - screen().top - below;
+  },
+  /** The file the row pinned over the top names, and how it's moved, or nothing while it's hidden. */
+  pinned(): { path: string | undefined; transform: string } | undefined {
+    const pin = document.querySelector<HTMLElement>('.lo-diffpin');
+    if (!pin || pin.hidden) return undefined;
+    const head = pin.querySelector<HTMLElement>('[data-path]');
+    return { path: head?.dataset.path, transform: pin.style.transform };
+  },
   /** Draws the file's new version whole, new line `line` at the top of the screen. */
   openFile(line: number): void {
     setLines(0);

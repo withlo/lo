@@ -120,10 +120,14 @@ const githubPath = z
  * How marking a file viewed, or clearing its mark, went: `done`, GitHub took it; `paused`, GitHub
  * has asked Lo to hold off writing until `until`, so nothing was sent; `moved`, GitHub's newest head
  * isn't the one the diff shows, `latest`, so marking the file would say the reader saw what they
- * haven't.
+ * haven't; `failed`, GitHub didn't take it: `reason` is why, in the window's words, or none for a
+ * cause with no reason line, and `details` what GitHub or the system said, as it said it.
  */
 export type Marked =
-  { kind: 'done' } | { kind: 'paused'; until: number } | { kind: 'moved'; latest: string | null };
+  | { kind: 'done' }
+  | { kind: 'paused'; until: number }
+  | { kind: 'moved'; latest: string | null }
+  | { kind: 'failed'; reason: string | null; details: string };
 
 export const contract = defineContract('revisions', {
   requests: {
@@ -143,8 +147,8 @@ export const contract = defineContract('revisions', {
      * Marks a changed file viewed on GitHub (`viewed`), or clears its mark, as the tab's account, in
      * the account's turn: `at` is the head of what the diff shows. Marking refuses as `moved` when
      * that isn't GitHub's newest head, and both refuse as `paused` while GitHub has asked Lo to hold
-     * off. Fails as `refused` for a tab that acts as nobody, and as `failed`, with why, when GitHub
-     * didn't take it. A file marked is noted at `at`, and its note forgotten as its mark is cleared.
+     * off, and say why as `failed` when GitHub didn't take it. Fails as `refused` for a tab that acts
+     * as nobody. A file marked is noted at `at`, and its note forgotten as its mark is cleared.
      */
     markViewed: {
       input: z.strictObject({ id: tabId, path: githubPath, viewed: z.boolean(), at: oid }),

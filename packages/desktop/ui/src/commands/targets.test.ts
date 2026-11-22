@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest';
 
-import { fit, plainTarget, type LineTarget, type Target } from './targets.ts';
+import { fit, isOn, plainTarget, type LineTarget, type Target } from './targets.ts';
 
 const line: LineTarget = { kind: 'line', at: { file: 'a.ts', side: 'new', line: 4 }, thread: 't1' };
 
@@ -60,4 +60,12 @@ test('a plain copy keeps a target’s own fields and nothing else', () => {
   // A kind from a caller that broke the types.
   const unknownKind: Target = JSON.parse('{ "kind": "editor" }');
   expect(() => plainTarget(unknownKind)).toThrow('A target of an unknown kind.');
+});
+
+test('a key acts on a thread that is its target, or on a line with one, but not on a header', () => {
+  const at = { file: 'a', side: 'new' as const, line: 3 };
+  expect(isOn({ kind: 'thread', thread: 't' }, 'thread')).toBe(true);
+  expect(isOn({ kind: 'line', at, thread: 't' }, 'thread')).toBe(true);
+  expect(isOn({ kind: 'line', at }, 'thread')).toBe(false);
+  expect(isOn({ kind: 'header', file: 'a', side: 'new', thread: 't' }, 'thread')).toBe(false);
 });
