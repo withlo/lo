@@ -283,8 +283,10 @@ Every action has a key; see `keyboard.md` for the rules and focus, and section 1
   (`lo-tabbar-h`), PR header, banners, body, status bar (`lo-statusbar-h`).
 - The body is left panel (stack, then files), the middle sheet, and the threads panel. Each panel
   opens and closes with a key.
-- The window never scrolls. Panes do. The shell clips what overflows it, and anything brought into
-  view goes through `reveal()`, which scrolls the pane it's in.
+- The window never scrolls. Panes do. The shell hides what overflows it and puts itself back if a
+  script scrolls it, and anything brought into view goes through `reveal()`, which scrolls the pane
+  it's in. The shell hides with `overflow: hidden`, never `clip`: an image loads as it comes near
+  the screen, and a clipped box cuts "near" off at its edge.
 - A toolbar or foot never wraps or clips. Narrow, it drops chips, then hints, then labels.
 - Lo draws its own tab strip on both systems and nothing else. On macOS the strip starts after the
   traffic lights (`--lo-window-inset-start`); on Linux set `data-lo-platform="linux"` on `<html>`.

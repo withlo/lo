@@ -27,6 +27,27 @@ test('the window opens on a fresh data folder, on Recent pull requests alone, in
     });
   });
 
+  await test.step('the shell puts itself back when a script scrolls it', async () => {
+    // Something taller than the shell, past its edge, as a view that overflows would be.
+    const scrolled = await page.evaluate(() => {
+      const shell = document.querySelector('[data-lo-scope="window"]');
+      if (!shell) throw new Error('The window has no shell.');
+      const tall = document.createElement('div');
+      tall.id = 'tall';
+      tall.style.cssText = 'flex: none; height: 200vh';
+      shell.append(tall);
+      shell.scrollTop = 80;
+      return shell.scrollTop;
+    });
+    expect(scrolled).toBe(80);
+    await expect
+      .poll(() =>
+        page.evaluate(() => document.querySelector('[data-lo-scope="window"]')?.scrollTop),
+      )
+      .toBe(0);
+    await page.evaluate(() => document.getElementById('tall')?.remove());
+  });
+
   await test.step("the tab strip's row clears the window's controls", async () => {
     // The strip's row, which holds the tab list between the window's insets.
     const strip = page.getByRole('tablist', { name: 'Pull requests' }).locator('..');

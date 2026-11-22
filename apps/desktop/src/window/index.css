@@ -7,12 +7,15 @@
 /* Classes in the window's code: its own folder, which Tailwind finds by itself, and the features'. */
 @source '../features';
 
-/* The window never scrolls. Its panes do. `clip`, not `hidden`: a hidden box can still be scrolled
-   from a script, and then the tab strip slides off the top. */
+/* The window never scrolls. Its panes do. What overflows the shell is hidden, not clipped: an image
+   loads as it comes near the screen, and a box that clips cuts "near" off at its own edge. A hidden
+   box can still be scrolled from a script, and the shell puts itself back when one is (`Window.tsx`). */
 html,
 body,
 #root {
   height: 100%;
   margin: 0;
-  overflow: clip;
+}
+html {
+  overflow: hidden;
 }

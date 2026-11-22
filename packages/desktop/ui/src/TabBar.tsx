@@ -12,6 +12,7 @@ import {
 } from 'react';
 
 import { withoutBidi } from './controls.ts';
+import { motionReduced } from './motion.ts';
 import { Skeleton, Spinner } from './Spinner.tsx';
 
 /** A tab in the strip: a pull request's (or a whole stack's), or one of Lo's own. */
@@ -469,14 +470,19 @@ function useDrag(
     setDrag(next);
   };
 
-  /** Puts the dragged tab back where it was, sliding, and forgets a press. */
+  /**
+   * Puts the dragged tab back where it was, sliding, and forgets a press. With moves off it's back
+   * at once: no slide runs, so none ends to say it's home.
+   */
   const putBack = () => {
     press.current = undefined;
     const current = live.current;
     if (!current || current.back) return;
     ended.current = true;
     set(
-      current.offset === 0 ? undefined : { ...current, offset: 0, place: current.from, back: true },
+      current.offset === 0 || motionReduced()
+        ? undefined
+        : { ...current, offset: 0, place: current.from, back: true },
     );
   };
 
