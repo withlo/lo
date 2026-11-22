@@ -75,10 +75,15 @@ GitHub’s own name for it.
 | merge method       | How a pull request merges, by its name: Squash, Merge commit, Rebase. Never in a button.                                                                                | strategy, merge type, “Squash and merge”              |
 | approval           | A review that approves: “2 more approvals”. The verb is “approve”. An organization also approves Lo: “Request approval on GitHub”.                                      | sign-off, stamp, LGTM                                 |
 | code owner         | Someone whose approval a changed file requires: “1 approval from a code owner”.                                                                                         | “owner” alone, CODEOWNERS, “code owner review”        |
-| viewed             | A file marked viewed.                                                                                                                                                   | seen, read, done                                      |
+| viewed             | A file marked viewed. Its mark is drawn as a ball and works as a checkbox. A file that changed after it was marked is “Changed since viewed”.                           | seen, read, done                                      |
 | account            | A GitHub account Lo is signed in to, by its name: ravi-k.                                                                                                               | login, user, token, credentials                       |
 | read only          | A pull request opened without an account: “Read only”.                                                                                                                  | anonymous, guest, “signed-out mode”                   |
 | sign-in code       | The code typed on GitHub to sign in: “Copy sign-in code”. In the sign-in dialog it’s “the code”: “The code expired.”                                                    | device code, one-time code, user code                 |
+
+GitHub’s Markdown keeps GitHub’s names for what it draws in a comment or a description: “Suggested
+change”, “Footnotes”, and the alerts “Note”, “Tip”, “Important”, “Warning” and “Caution”. The
+command that writes a suggested change is “Suggest change”, and a suggested change is never a
+“suggestion”. An alert’s “Note” is GitHub’s word. It’s neither a comment nor an overview note.
 
 ### Lo’s things
 
@@ -88,9 +93,11 @@ GitHub’s own name for it.
 | overview skill           | What a coding agent installs to write overviews. In code: `lo-overview`.                                                                                                                                                                           | Lo skill, agent skill, “the skill” alone                  |
 | written for              | The revision an overview or a comment was written at: “Written for r3 · now r5”. After `·` it’s lower case: “ravi-k · 2 d ago · written for r3”.                                                                                                   | “from r3”, “made at r3”, “targets r3”                     |
 | code block, figure, link | What a block of an overview can hold: a code block, a figure, a link into the code. “Part of the figure”.                                                                                                                                          | snippet, diagram, embed                                   |
+| illustration             | A code block in an overview whose code isn’t the pull request’s, such as pseudo-code: “Illustration · not from this pull request”. Always text, never a figure.                                                                                    | example, sample, sketch, mock-up                          |
 | link                     | A web address: “Copy link”, “Paste link”. One to a pull request is a “pull request link”. In an overview’s block, a link goes into the code instead: “No links in this block”.                                                                     | URL, web address, hyperlink                               |
 | walkthrough              | An overview block that goes through code in steps: “Next step”, “No steps in this block”.                                                                                                                                                          | tour, slideshow, guide                                    |
 | overview note            | An overview’s words under a line of the diff: “Show overview note”, “No overview note on this line”. Always both words.                                                                                                                            | annotation, “note” alone, remark                          |
+| glossary                 | The list of words an overview defines. The card on one of those words points to it: “In the glossary.”, “More in the glossary.”                                                                                                                    | definitions, dictionary, word list                        |
 | code beside              | A file’s diff shown beside the overview: “Code beside”, “Close code beside”, “Code beside is closed”.                                                                                                                                              | side diff, split view, companion                          |
 | last opened              | The revision in view when the reader last had the pull request open: “Compare since last opened”.                                                                                                                                                  | last seen, “last looked”, last visit                      |
 | stack                    | Pull requests that each build on the one before.                                                                                                                                                                                                   | chain, train                                              |
@@ -112,11 +119,14 @@ GitHub’s own name for it.
 | toolchain                | What a language server needs to read a language, by its name: Go, Temurin JDK.                                                                                                                                                                     | runtime, compiler, “SDK” alone                            |
 | trust                    | Letting language servers run on a repo or a pull request: “Trust repo…”, “Stop trusting”.                                                                                                                                                          | allow, approve, enable                                    |
 | update                   | A newer version of Lo: “Lo 0.2.0 is available”. Its buttons: “Update”, then “Restart to update”. Its notes: “What’s new”. A check that finds none: “No update available”.                                                                          | release, “is out”, upgrade, Install, changelog            |
+| damaged                  | A file Lo downloads or decodes that fails a check: a download with the wrong checksum, a figure whose image can’t be decoded. “The download was damaged.”, “diagram.png is damaged.” Never a file the reader edits, such as `settings.json`.       | corrupt, corrupted, invalid, broken, “checksum mismatch”  |
 | welcome                  | The steps a new reader sees first. Its one command, in Help and the palette: “Welcome to Lo”.                                                                                                                                                      | onboarding, setup, tour, “Show welcome”                   |
 | Settings                 | Capital S. A place in it is a path: Settings › Storage. The file is `settings.json`.                                                                                                                                                               | preferences, options, config, “the settings file”         |
 | keyboard shortcuts       | The list of Lo’s keys. One of them is a key.                                                                                                                                                                                                       | key help, keybindings, hotkeys                            |
 | keymap file              | The file that holds changed keys: “Open keymap file”.                                                                                                                                                                                              | keybindings file, key config, shortcuts file              |
-| Vim keys                 | The setting for Vim’s modal editing. Its modes are written as Vim writes them: NORMAL, INSERT, VISUAL, V-LINE.                                                                                                                                     | Vim mode, Vim-style keys                                  |
+| fixed                    | A key the keymap file can’t change, such as one of the comment box’s own. Keyboard shortcuts tags it “Fixed”.                                                                                                                                      | locked, reserved, built-in, hard-coded                    |
+| Vim keys                 | The setting for Vim’s modal editing. Its modes are written as Vim writes them: NORMAL, INSERT, VISUAL, V-LINE. The mode in use shows as its name alone.                                                                                            | Vim mode, Vim-style keys                                  |
+| keys typed               | The keys of a command typed so far, at the end of the status bar: `g`, `2y`. The item’s name is “Keys typed”.                                                                                                                                      | pending keys, key buffer, “keys typed so far”             |
 | command                  | A row in the command palette. Something typed in a terminal is a command too, and always says which: “Copy Homebrew command”.                                                                                                                      | action                                                    |
 | `lo` command             | What opens a pull request from a terminal, in code: “Install `lo` command”.                                                                                                                                                                        | command-line tool, CLI, “shell command”                   |
 | comment box              | Where a comment is written: “Close comment box”.                                                                                                                                                                                                   | composer, editor, input, “the box” alone                  |
@@ -130,6 +140,7 @@ GitHub’s own name for it.
 | binary file              | A file that can’t be shown as text: “Binary file”. As a tag it’s lower case, with its sizes: “binary · 69 B → 73 B”.                                                                                                                               | blob, data file, “not text”                               |
 | large file               | A file that shows only when asked: “Show large file”, “Show 5,001 lines”, “2.4 MB file”. Showing it isn’t unfolding it, so the verb is Show, not Expand.                                                                                           | big file, huge file, heavy, “Expand file”                 |
 | text changes             | Changed lines. A file with only a new name or mode has “no text changes”.                                                                                                                                                                          | content changes, “no diff”, “empty diff”                  |
+| A, D, M, R, T            | The letter beside a file in the files, for how the file changes. Each has one name: “Added”, “Deleted”, “Modified”, “Renamed”, “Changed type”.                                                                                                     | New, Removed, Edited, Moved, “Type changed”               |
 | definitions              | What “Show definition” brings up under the line: “Next definition”, “Close definitions”.                                                                                                                                                           | peek, answers, popup                                      |
 | references               | The list of places a name is used: “Show references”, “Next reference”, “Close references”.                                                                                                                                                        | usages, uses, callers                                     |
 | type, type hints         | “Show type” gives one name’s type. Type hints are the types a language server shows in the code, and a switch: “Type hints”.                                                                                                                       | hover, inlay hints, inlays                                |
@@ -222,6 +233,8 @@ For an action that isn’t listed, use the plainest verb for it: Reply, Undo, Re
 - **GitHub CLI** by its name. `gh` only as a command to type.
 - **Git** as a name. `git` only as a command to type.
 - **Homebrew** by its name. `brew` only as a command to type.
+- **This computer** is where Lo runs: “No toolchains for this computer”. Never “this system”, “this
+  machine” or “this device”.
 - **The macOS app menu** keeps the system’s wording: “About Lo”, “Settings…”, “Quit Lo”.
 
 ## Shapes
@@ -395,16 +408,19 @@ A command that can’t run now.
 
 ### Tooltip
 
-Names a control and gives its key.
+Names a control and gives its key, or names a mark.
 
-| Part  | Limit                                        | Example     |
-| ----- | -------------------------------------------- | ----------- |
-| Label | The control’s command label.                 | Merge panel |
-| Key   | A chip beside it, never typed into the text. | `m`         |
+| Part  | Limit                                            | Example     |
+| ----- | ------------------------------------------------ | ----------- |
+| Label | The control’s command label, or the mark’s name. | Merge panel |
+| Key   | A chip beside it, never typed into the text.     | `m`         |
 
 - **A dimmed control’s** tooltip is its refusal reason.
 - **A name cut short** shows whole: a path, a branch.
-- **Never** a sentence, an error, or anything shown nowhere else.
+- **A mark with no words** shows its name alone, with no key, since a mark isn’t a control: the
+  letter A beside a file is “Added”, a layer’s checks mark is “Checks passed”.
+- **Never** a sentence, an error, or anything shown nowhere else. A mark’s name is the one
+  exception: it’s in the tooltip and in what a screen reader reads, and nowhere else.
 
 `packages/desktop/ui/src/MergeStatus.tsx`:
 
