@@ -417,6 +417,9 @@ Names a control and gives its key.
 
 - **A dimmed control’s** tooltip is its refusal reason.
 - **A name cut short** shows whole: a path, a branch.
+- **A mark with no words** shows its name alone, with no key, since a mark isn’t a control: the
+  letter A beside a file is “Added”, its viewed mark is “Viewed”. A screen reader gets the same
+  name, so the tooltip is never the only place it exists.
 - **Never** a sentence, an error, or anything shown nowhere else.
 
 `packages/desktop/ui/src/MergeStatus.tsx`:
