@@ -469,11 +469,12 @@ export class Shipping {
   }
 
   /**
-   * Plans approve and ship for view `id`, from what GitHub said last, and keeps it for the reader
-   * to confirm, in place of the view's last plan; or says why there's none. What it asks GitHub
-   * takes {@link ShippingOptions.planWait} at most, as a read does: then Lo says it couldn't check.
+   * Plans approve and ship for view `id`, from what GitHub said last, or with `afresh`, from what
+   * it says now, read again, and keeps it for the reader to confirm, in place of the view's last
+   * plan; or says why there's none. What it asks GitHub takes {@link ShippingOptions.planWait} at
+   * most, as a read does: then Lo says it couldn't check.
    */
-  async plan(id: string): Promise<ShipPlanned> {
+  async plan(id: string, afresh = false): Promise<ShipPlanned> {
     // Never read: the window is closing.
     if (this.#stopped) return refused(own('stopped', ''));
     const view = this.#options.view(id);
@@ -487,7 +488,7 @@ export class Shipping {
     let planned: PressPlan<Kept> | { kind: 'refused'; refusal: Refusal };
     try {
       planned = await untilAborted(
-        this.#planFor(id, acting.login, pull, checking.signal),
+        this.#planFor(id, acting.login, pull, afresh, checking.signal),
         checking.signal,
       );
     } catch (error) {
@@ -501,11 +502,15 @@ export class Shipping {
     return { kind: 'plan', plan: planned.plan.plan };
   }
 
-  /** What `plan` plans for view `id`'s pull request `pull`, as `login`; given up on `signal`. */
+  /**
+   * What `plan` plans for view `id`'s pull request `pull`, as `login`, read again with `afresh`;
+   * given up on `signal`.
+   */
   async #planFor(
     id: string,
     login: string,
     pull: PullRef,
+    afresh: boolean,
     signal: AbortSignal,
   ): Promise<PressPlan<Kept> | { kind: 'refused'; refusal: Refusal }> {
     let poller: MergingPoller;
@@ -519,7 +524,10 @@ export class Shipping {
     // The control is busy until the head is on screen, and its merge status read.
     const head = this.#options.headOnScreen(id) ?? '';
     if (!FULL.test(head)) return refused(own('unread', ''));
-    const cached = poller.cachedRead(pull, MERGE_FACTS) ?? (await poller.mergeFacts(pull));
+    const cached = afresh
+      ? await readAfresh(poller, pull, this.#options.readWait ?? 20_000, signal, () => this.#now())
+      : (poller.cachedRead(pull, MERGE_FACTS) ?? (await poller.mergeFacts(pull)));
+    if (typeof cached === 'string') return refused(own('unread', cached));
     if (!cached) return refused(own('unread', ''));
     return this.#planOf(id, login, pull, poller, cached.value, signal);
   }
@@ -620,7 +628,7 @@ export class Shipping {
         : await this.#options.merging.goesAs(kind, poller, login, pull, facts, signal);
     // Where Lo can't tell yet, it approves nothing: a read again may settle it.
     if (goes?.kind === 'unread' || (goes?.kind === 'where' && goes.unknown)) {
-      return refused(own(goes.kind, goes.why));
+      return refused(own(goes.kind, goes.why, { details: goes.details }));
     }
     return {
       kind: 'plan',
@@ -1086,7 +1094,7 @@ export class Shipping {
       return;
     }
     if (goes.kind === 'unread') {
-      this.#stopAt(run, own('unread', goes.why));
+      this.#stopAt(run, own('unread', goes.why, { details: goes.details }));
       return;
     }
     const where = goes.kind === 'where' ? goes.why : notAlone(goes.together);

@@ -44,6 +44,8 @@ export type Taking =
       readonly why: string;
       readonly again?: boolean;
       readonly readAgain?: boolean;
+      /** What the error said, for Details. */
+      readonly details?: string;
     };
 
 /** What {@link takingOf} is worked out from. */

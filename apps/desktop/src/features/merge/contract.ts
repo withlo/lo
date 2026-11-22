@@ -953,11 +953,15 @@ export const contract = defineContract('merge', {
      */
     place: { input: z.strictObject({ id: tabId }), reply: reply<Placement>() },
     /**
-     * Plans approve and ship for view `id`, from what GitHub said last: what it approves and what
-     * Lo expects to follow. Keeps it for the reader to confirm, in place of the view's last one, or
-     * says why there's none, before anything is sent.
+     * Plans approve and ship for view `id`, from what GitHub said last, or with `afresh`, from what
+     * it says now, read again: what it approves and what Lo expects to follow. Keeps it for the
+     * reader to confirm, in place of the view's last one, or says why there's none, before
+     * anything is sent.
      */
-    ship: { input: z.strictObject({ id: tabId }), reply: reply<ShipPlanned>() },
+    ship: {
+      input: z.strictObject({ id: tabId, afresh: z.boolean().optional() }),
+      reply: reply<ShipPlanned>(),
+    },
     /**
      * Runs approve and ship from the plan named `key`, once, if it still holds as GitHub says now,
      * read again: else asks again with a new plan, when something it named changed, or refuses.

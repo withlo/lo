@@ -317,6 +317,21 @@ describe('the plan', () => {
     });
   });
 
+  it('plans from GitHub read again when asked to, as once a lost approval’s end is known', async () => {
+    const { shipping, marks } = setup({ reads: [approved()] });
+    // From what it read last, your approval is still to go.
+    await expect(shipping.plan(ID)).resolves.toMatchObject({
+      kind: 'plan',
+      plan: { approval: { kind: 'approve' } },
+    });
+    expect(marks()).toBe(0);
+    await expect(shipping.plan(ID, true)).resolves.toMatchObject({
+      kind: 'plan',
+      plan: { approval: { kind: 'alreadyApproved' } },
+    });
+    expect(marks()).toBe(1);
+  });
+
   it('approves nothing on your own pull request', async () => {
     const { plan } = setup({ facts: factsOf() });
     await expect(plan()).resolves.toMatchObject({

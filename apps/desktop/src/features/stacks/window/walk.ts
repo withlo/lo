@@ -248,6 +248,7 @@ function failed(error: unknown, tab: PullTab, layers: readonly number[]): void {
   runTrouble.set(tab.id, {
     title: `Couldn’t show ${layersName(rows, layers).toLowerCase()}`,
     details: error instanceof Error ? error.message : String(error),
+    layers,
   });
 }
 

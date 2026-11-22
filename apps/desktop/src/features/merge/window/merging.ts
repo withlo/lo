@@ -355,7 +355,12 @@ function plan(planning: Planning): void {
       if (planned.kind === 'refused') {
         // Still finding out, Lo says only how far it has got.
         const why = planned.why === '' && !planned.again ? statusWhy(planning) : planned.why;
-        if (still()) setDialog({ ...planning, failed: { why, again: planned.again } });
+        if (still()) {
+          setDialog({
+            ...planning,
+            failed: { why, details: planned.details, again: planned.again },
+          });
+        }
         return;
       }
       // Cancelled while it was planned.

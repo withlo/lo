@@ -122,7 +122,7 @@ export default defineFeature(contract, {
       merging?.dismiss(key);
     },
     place: ({ id }) => merges().place(id),
-    ship: ({ id }) => ships().plan(id),
+    ship: ({ id, afresh }) => ships().plan(id, afresh === true),
     shipConfirm: ({ key }) => ships().confirm(key),
   },
   start({ use, publish, database }) {

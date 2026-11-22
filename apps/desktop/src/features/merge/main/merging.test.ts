@@ -110,6 +110,8 @@ interface Setup {
   listWait?: number;
   /** What GitHub's Stacks API answers for the stacks holding #138: a 404 for `undefined`. */
   stacks?: unknown[] | undefined;
+  /** What reading GitHub's Stacks API fails with, when it fails other than as not found. */
+  stacksFail?: GithubError | undefined;
   /** The open pull requests' titles, by number. */
   titles?: Record<number, string>;
   /** What a base branch change answers, by the pull request moved. */
@@ -190,6 +192,7 @@ function setup(options: Setup = {}) {
     // GitHub's Stacks API.
     get: (path: string, parse: (json: unknown) => unknown) => {
       reads.push(path);
+      if (options.stacksFail) return Promise.reject(options.stacksFail);
       if (!('stacks' in options) || options.stacks === undefined) {
         return Promise.reject(new GithubError({ kind: 'notFound', message: 'Not Found' }));
       }
@@ -1717,6 +1720,22 @@ describe('a chain’s merge a layer at a time', () => {
     );
     expect(run.moves).toEqual([]);
     expect(run.turns.busy(PULL.repo, [138, 139])).toEqual([]);
+  });
+
+  it('says nothing it can’t tell of why GitHub’s stacks couldn’t be read, and gives what came back for Details', async () => {
+    const run = chained({
+      stacksFail: new GithubError({
+        kind: 'network',
+        failure: 'unknown',
+        message: 'unable to verify the first certificate',
+      }),
+    });
+    expect(await run.merging.plan(ID, SQUASH)).toEqual({
+      kind: 'refused',
+      why: '',
+      again: false,
+      details: expect.stringContaining('unable to verify the first certificate'),
+    });
   });
 
   it('is made a GitHub stack first, when stacks could make it one, and nothing merges', async () => {

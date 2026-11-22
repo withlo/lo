@@ -21,11 +21,12 @@ export const focused = tabState<number | undefined>(() => undefined);
 export const choosing = tabState<Choice | undefined>(() => undefined);
 
 /**
- * What went wrong showing layers as one diff, and what the error said, under the stack's tree
+ * What went wrong showing `layers` as one diff, and what the error said, under the stack's tree
  * until they're shown again.
  */
 export const runTrouble = tabState<
-  { readonly title: string; readonly details: string } | undefined
+  | { readonly title: string; readonly details: string; readonly layers: readonly number[] }
+  | undefined
 >(() => undefined);
 
 /** Takes what main sent of a view's stack. */

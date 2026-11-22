@@ -64,10 +64,11 @@ export function shipFromTab(): void {
 }
 
 /**
- * Shows the dialog planning approve and ship for view `id`, and asks main for the plan; or, with
- * `still`, keeps what it shows, how far Lo has got finding out where its merge would go.
+ * Shows the dialog planning approve and ship for view `id`, and asks main for the plan, with
+ * `afresh` from what GitHub says now, read again; or, with `still`, keeps what it shows, how far
+ * Lo has got finding out where its merge would go.
  */
-function planShip(id: string, number: number, still?: ShipDialog): void {
+function planShip(id: string, number: number, still?: ShipDialog, afresh = false): void {
   const planning: ShipDialog = still ?? { kind: 'planning', id, number };
   setDialog(planning);
   const refused = (refusal: Refusal) => {
@@ -75,7 +76,7 @@ function planShip(id: string, number: number, still?: ShipDialog): void {
     setDialog({ kind: 'refused', id, number, plan: undefined, refusal });
   };
   main()
-    .ship({ id })
+    .ship(afresh ? { id, afresh } : { id })
     .then((planned) => {
       if (planned.kind === 'refused') {
         refused(planned.refusal);
@@ -95,12 +96,20 @@ function planShip(id: string, number: number, still?: ShipDialog): void {
 
 /** "Try again" in the dialog: asks main afresh what approve and ship would do now. */
 export function shipAgain(): void {
+  replan(false);
+}
+
+/**
+ * Asks main again what approve and ship would do now: with `afresh`, from what GitHub says now,
+ * read again, as once a lost approval's end is known, which what Lo read before may not show.
+ */
+function replan(afresh: boolean): void {
   const dialog = shipping.getState().dialog;
   if (!dialog || dialog.kind === 'planning' || dialog.kind === 'confirm') return;
   if (dialog.kind === 'refused') {
-    planShip(dialog.id, dialog.number, stillFinding(dialog) ? dialog : undefined);
+    planShip(dialog.id, dialog.number, stillFinding(dialog) ? dialog : undefined, afresh);
   } else {
-    planShip(dialog.plan.id, dialog.plan.number);
+    planShip(dialog.plan.id, dialog.plan.number, undefined, afresh);
   }
 }
 
@@ -145,7 +154,7 @@ export function checkApproval(): void {
     stop?.();
     clearTimeout(timer);
     if (!still()) return;
-    if (known) shipAgain();
+    if (known) replan(true);
     else looking(false);
   };
   const heard = (state: Submitting | null) => {

@@ -535,7 +535,8 @@ it('a stop where Lo can’t tell whether GitHub took the approval says it isn’
   ]);
   expect(buttons()).toEqual(['Close', 'Check again']);
 
-  // It reads whether the approval went first, sending nothing, and plans afresh once that's known.
+  // It reads whether the approval went first, sending nothing, and plans afresh once that's known,
+  // from GitHub read again: what Lo read before may not show the approval.
   let found: ((read: unknown) => void) | undefined;
   reading = () => new Promise((resolve) => (found = resolve));
   click('Check again');
@@ -545,7 +546,7 @@ it('a stop where Lo can’t tell whether GitHub took the approval says it isn’
   act(() => found?.(dialogRead()));
   await until(() => shipping.getState().dialog?.kind === 'confirm');
   expect(bridge.calls.filter(([channel]) => channel === 'merge.ship')).toEqual([
-    ['merge.ship', { id: plan.id }],
+    ['merge.ship', { id: plan.id, afresh: true }],
   ]);
   expect(confirms()).toBe(0);
   expect(steps()).toEqual([

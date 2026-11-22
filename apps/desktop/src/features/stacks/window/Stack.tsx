@@ -33,7 +33,7 @@ import { makeStack } from './actions.ts';
 import { useLayerCount } from './counts.ts';
 import { catchUp, choosing, focused, keyboardLayer, runTrouble, stacks } from './layers.ts';
 import { chainIn, choiceLine, type Choice } from './runs.ts';
-import { showTarget, stackTarget, stopChoosing, takeRefocus } from './walk.ts';
+import { openRun, showTarget, stackTarget, stopChoosing, takeRefocus } from './walk.ts';
 
 const REVIEWS: Readonly<Record<Review, StackReview>> = {
   approved: 'approved',
@@ -291,7 +291,14 @@ export function Stack({ tab }: { tab: PullTab }) {
     notes.unshift({
       key: 'run',
       bare: true,
-      text: <Problem layout="inline" title={trouble.title} details={trouble.details} />,
+      text: (
+        <Problem
+          layout="inline"
+          title={trouble.title}
+          details={trouble.details}
+          action={{ label: 'Try again', onClick: () => openRun(tab, trouble.layers) }}
+        />
+      ),
     });
   }
   // While layers are selected, the bar saying so takes the offer's place, which can't be used

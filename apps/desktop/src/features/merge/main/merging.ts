@@ -301,8 +301,13 @@ export type Goes =
       readonly onto: (facts: MergeFacts) => MergeFacts;
       readonly together: Together | null;
     }
-  | { readonly kind: 'where'; readonly why: string; readonly unknown: boolean }
-  | { readonly kind: 'unread'; readonly why: string };
+  | {
+      readonly kind: 'where';
+      readonly why: string;
+      readonly unknown: boolean;
+      readonly details?: string | undefined;
+    }
+  | { readonly kind: 'unread'; readonly why: string; readonly details?: string | undefined };
 
 /** A press's plan, and how a read that lands meanwhile plans: nothing when it plans none. */
 export interface PressPlan<P> {
@@ -669,7 +674,7 @@ export class Merging {
     const goes = await this.goesAs(first.kind, poller, login, pull, cached.value);
     // Where Lo can't tell yet, as while it looks up the stack's branches, asking again may say.
     if (goes.kind !== 'goes') {
-      return refuse(goes.why, goes.kind === 'unread' || goes.unknown);
+      return refuse(goes.why, goes.kind === 'unread' || goes.unknown, goes.details);
     }
     // Auto-merge and a merge past the rules take nothing with them.
     if (goesAlone(first.kind)) {
@@ -1139,7 +1144,9 @@ export class Merging {
           // Where it sits, and what goes with it, read afresh: GitHub's stack holds what merges
           // with it.
           const goes = await this.goesAs(plan.kind, poller, plan.login, pull, facts, signal);
-          if (goes.kind !== 'goes') return refused(own(goes.kind, goes.why));
+          if (goes.kind !== 'goes') {
+            return refused(own(goes.kind, goes.why, { details: goes.details }));
+          }
           const planned = (read: MergeFacts) =>
             this.#planOf(plan.id, view, plan.login, goes.onto(read), choice, goes.together);
           const now = planned(facts);
@@ -1271,12 +1278,13 @@ export class Merging {
         kind: 'where',
         why,
         unknown: unknown || (taking.kind === 'refused' && taking.again === true),
+        details: taking.kind === 'refused' ? taking.details : undefined,
       };
     }
     // A chain's bottom layer that moves onto the root first merges under the root's rules.
     const onto = await this.#rulesFor(poller, login, pull, taking, signal);
     signal?.throwIfAborted();
-    if (typeof onto === 'string') return { kind: 'unread', why: onto };
+    if (typeof onto !== 'function') return { kind: 'unread', ...onto };
     return { kind: 'goes', onto, together: togetherOf(taking) };
   }
 
@@ -1448,7 +1456,11 @@ export class Merging {
       } catch (error) {
         signal?.throwIfAborted();
         this.#options.log(`${pull.toString()}: ${describe(error)}`);
-        return { kind: 'refused', why: explained(error, { login, owner: pull.repo.owner }) };
+        return {
+          kind: 'refused',
+          why: explained(error, { login, owner: pull.repo.owner }),
+          details: rawOf(error),
+        };
       }
     }
     const list = poller.openPullRequests(pull.repo)?.value;
@@ -1478,7 +1490,7 @@ export class Merging {
     pull: PullRef,
     taking: Taking,
     signal?: AbortSignal,
-  ): Promise<((facts: MergeFacts) => MergeFacts) | string> {
+  ): Promise<((facts: MergeFacts) => MergeFacts) | { why: string; details: string }> {
     const before = taking.kind === 'chain' ? taking.plan.retargetBefore : undefined;
     if (before === undefined) return asTheyAre;
     try {
@@ -1491,7 +1503,7 @@ export class Merging {
     } catch (error) {
       signal?.throwIfAborted();
       this.#options.log(`${pull.toString()}: ${describe(error)}`);
-      return explained(error, { login, owner: pull.repo.owner });
+      return { why: explained(error, { login, owner: pull.repo.owner }), details: rawOf(error) };
     }
   }
 
@@ -2084,9 +2096,14 @@ function refused(refusal: Refusal): Extract<Confirmed, { kind: 'refused' }> {
   return { kind: 'refused', refusal };
 }
 
-/** No plan, for `why`: `again` where asking again may plan it, as while Lo finds out where it sits. */
-function refuse(why: string, again = false): Planned {
-  return { kind: 'refused', why, again };
+/**
+ * No plan, for `why`: `again` where asking again may plan it, as while Lo finds out where it sits.
+ * `details`, what the error said, for Details.
+ */
+function refuse(why: string, again = false, details?: string): Planned {
+  return details === undefined
+    ? { kind: 'refused', why, again }
+    : { kind: 'refused', why, again, details };
 }
 
 /** Its tab is closed: nothing is left to show why on. */
