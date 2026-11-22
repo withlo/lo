@@ -453,8 +453,10 @@ export interface FileTreePanelProps {
   /** Whether the files show as the tree, or the changed ones in review order. */
   mode: 'tree' | 'review';
   onMode?: ((mode: 'tree' | 'review') => void) | undefined;
-  /** The key that switches between them, as this system shows it. */
-  modeKeys?: readonly string[] | undefined;
+  /** The keys of the command that lists them as the tree, as this system shows them. */
+  treeKeys?: readonly string[] | undefined;
+  /** The keys of the switch to review order, as this system shows them. */
+  reviewKeys?: readonly string[] | undefined;
   changedOnly: boolean;
   onChangedOnly?: ((changedOnly: boolean) => void) | undefined;
   changedOnlyKeys?: readonly string[] | undefined;
@@ -497,7 +499,8 @@ export function FileTreePanel({
   viewed,
   mode,
   onMode,
-  modeKeys,
+  treeKeys,
+  reviewKeys,
   changedOnly,
   onChangedOnly,
   changedOnlyKeys,
@@ -508,8 +511,8 @@ export function FileTreePanel({
   // Dimmed, with why: said to be disabled, not made so, so focus and the tooltip still reach it.
   const dimmed = waiting ? { 'aria-disabled': true, 'aria-description': WAITING } : {};
   // A switch's words are on it: its tooltip is there for its key, or why it's dimmed.
-  const modeTip = (words: string) =>
-    waiting ? WAITING : modeKeys !== undefined && modeKeys.length > 0 ? words : null;
+  const modeTip = (words: string, keys: readonly string[] | undefined) =>
+    waiting ? WAITING : keys !== undefined && keys.length > 0 ? words : null;
   return (
     <section aria-label="Files" className="flex min-h-0 flex-1 flex-col bg-bg-chrome">
       <div className="flex flex-none items-center gap-6 ps-16 pe-8 pt-12 pb-8">
@@ -532,7 +535,7 @@ export function FileTreePanel({
             aria-label="File list"
             className="inline-flex flex-none items-center gap-2 rounded-pill bg-bg-well p-2 inset-ring inset-ring-border"
           >
-            <Tooltip label={modeTip('Tree')} keys={waiting ? undefined : modeKeys}>
+            <Tooltip label={modeTip('Tree', treeKeys)} keys={waiting ? undefined : treeKeys}>
               <button
                 type="button"
                 aria-pressed={mode === 'tree'}
@@ -543,7 +546,10 @@ export function FileTreePanel({
                 Tree
               </button>
             </Tooltip>
-            <Tooltip label={modeTip('Review order')} keys={waiting ? undefined : modeKeys}>
+            <Tooltip
+              label={modeTip('Review order', reviewKeys)}
+              keys={waiting ? undefined : reviewKeys}
+            >
               <button
                 type="button"
                 aria-pressed={mode === 'review'}

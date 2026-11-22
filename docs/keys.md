@@ -177,24 +177,25 @@ Each command's id is what [the keymap file](#the-keymap-file) binds keys to.
 
 ## Files
 
-| Action                                 | Keys          | Where                                                                                                   | Command            |
-| -------------------------------------- | ------------- | ------------------------------------------------------------------------------------------------------- | ------------------ |
-| Go to the stack, or the file on screen | `-`           | In `tree`                                                                                               | `stacks.focus`     |
-| Go to the file tree                    | `+`           | In `stack`                                                                                              | `stacks.files`     |
-| Go to the file tree                    | `-`           | Anywhere but `menu`, `dialog`, `palette`, `box`, `tree` and `stack`; in code views, only in normal mode | `tree.focus`       |
-| Tree or review order                   | `t`           | In `tree`                                                                                               | `tree.mode`        |
-| Changed files only                     | `f`           | In `tree`                                                                                               | `tree.changedOnly` |
-| Next row of the tree                   | `j`, `↓`      | In `tree`                                                                                               | `tree.down`        |
-| Previous row of the tree               | `k`, `↑`      | In `tree`                                                                                               | `tree.up`          |
-| First row of the tree                  | `g g`, `Home` | In `tree`                                                                                               | `tree.top`         |
-| Last row of the tree                   | `G`, `End`    | In `tree`                                                                                               | `tree.bottom`      |
-| Page down the tree                     | `PgDn`        | In `tree`                                                                                               | `tree.pageDown`    |
-| Page up the tree                       | `PgUp`        | In `tree`                                                                                               | `tree.pageUp`      |
-| Open the folder                        | `l`, `→`      | In `tree`                                                                                               | `tree.open`        |
-| Close the folder                       | `h`, `←`      | In `tree`                                                                                               | `tree.close`       |
-| Open every folder                      | `z R`         | In `tree`                                                                                               | `tree.openAll`     |
-| Close every folder                     | `z M`         | In `tree`                                                                                               | `tree.closeAll`    |
-| Show the file                          | `⏎`           | In `tree`                                                                                               | `tree.show`        |
+| Action                                 | Keys                                           | Where                                                                                                   | Command            |
+| -------------------------------------- | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------- | ------------------ |
+| Go to the stack, or the file on screen | `-`                                            | In `tree`                                                                                               | `stacks.focus`     |
+| Go to the file tree                    | `+`                                            | In `stack`                                                                                              | `stacks.files`     |
+| Go to the file tree                    | `-`                                            | Anywhere but `menu`, `dialog`, `palette`, `box`, `tree` and `stack`; in code views, only in normal mode | `tree.focus`       |
+| Tree                                   | None: in the app menu on macOS and the palette | In `tree`                                                                                               | `tree.asTree`      |
+| Review order                           | `t`                                            | In `tree`                                                                                               | `tree.reviewOrder` |
+| Changed files only                     | `f`                                            | In `tree`                                                                                               | `tree.changedOnly` |
+| Next row of the tree                   | `j`, `↓`                                       | In `tree`                                                                                               | `tree.down`        |
+| Previous row of the tree               | `k`, `↑`                                       | In `tree`                                                                                               | `tree.up`          |
+| First row of the tree                  | `g g`, `Home`                                  | In `tree`                                                                                               | `tree.top`         |
+| Last row of the tree                   | `G`, `End`                                     | In `tree`                                                                                               | `tree.bottom`      |
+| Page down the tree                     | `PgDn`                                         | In `tree`                                                                                               | `tree.pageDown`    |
+| Page up the tree                       | `PgUp`                                         | In `tree`                                                                                               | `tree.pageUp`      |
+| Open the folder                        | `l`, `→`                                       | In `tree`                                                                                               | `tree.open`        |
+| Close the folder                       | `h`, `←`                                       | In `tree`                                                                                               | `tree.close`       |
+| Open every folder                      | `z R`                                          | In `tree`                                                                                               | `tree.openAll`     |
+| Close every folder                     | `z M`                                          | In `tree`                                                                                               | `tree.closeAll`    |
+| Show the file                          | `⏎`                                            | In `tree`                                                                                               | `tree.show`        |
 
 ## Overview
 

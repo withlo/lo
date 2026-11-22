@@ -52,7 +52,7 @@ function markup(): string {
     <FileTreePanel
       viewed={{ viewed: 1, total: 3 }}
       mode="tree"
-      modeKeys={['t']}
+      reviewKeys={['t']}
       changedOnly
       changedOnlyKeys={['f']}
       note="Only the changed files show."
