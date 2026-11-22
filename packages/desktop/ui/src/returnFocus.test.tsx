@@ -91,6 +91,24 @@ describe('closing a dialog', () => {
     await vi.waitFor(() => expect(document.activeElement?.tagName).toBe('INPUT'));
     expect(document.activeElement).not.toBe(container);
   });
+
+  it('puts focus back when it rests in a popup of its own that is leaving with it', async () => {
+    const { container, show } = page(dialog);
+    show(true);
+    await vi.waitFor(() => expect(document.activeElement).not.toBe(container));
+    // A menu opened from the dialog and closed with it can't give focus to what opened it, which
+    // is in the dialog, inert as it leaves, so focus rests on the menu, inert as it leaves too. A
+    // browser moves focus off an inert element only as it next draws, after the dialog gives focus
+    // back, and jsdom never does.
+    const menu = document.createElement('div');
+    menu.setAttribute('inert', '');
+    const item = document.createElement('button');
+    menu.append(item);
+    document.body.append(menu);
+    item.focus();
+    show(false);
+    expect(document.activeElement).toBe(container);
+  });
 });
 
 const mergePanel = (open: boolean) => (

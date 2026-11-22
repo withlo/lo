@@ -1,14 +1,16 @@
 import { useRef } from 'react';
 
+import { focusStillIn } from './motion.ts';
+
 /**
  * Gives focus back to where it was when a dialog closes: to the element that had it as the dialog
  * opened, if that's still there. Returns what to call as the dialog closes, with the dialog's own
  * element.
  *
- * Focus goes back only while it's still the dialog's: inside it, or dropped on the page's body.
- * Focus that has gone anywhere else since stays there, so a dialog that gives focus back late, as
- * one that waits for its close to complete does, never takes it from a dialog or popup that opened
- * in its place.
+ * Focus goes back only while it's still the dialog's (`focusStillIn`): inside it, or dropped. Focus
+ * that has gone anywhere else since stays there, so a dialog that gives focus back late, as one
+ * that waits for its close to complete does, never takes it from a dialog or popup that opened in
+ * its place.
  *
  * Base UI would do it, but it goes to the first tabbable element in that element, and one that
  * takes focus without being tabbable, such as the middle of the window, holds tabbable parts of
@@ -29,8 +31,6 @@ export function useReturnFocus(open: boolean): (dialog: Element | null) => void 
     // Not once the dialog has opened again, which has its own origin.
     if (opened.current) return;
     if (!(back instanceof HTMLElement) || !back.isConnected || back === document.body) return;
-    const active = document.activeElement;
-    const dropped = active === null || active === document.body || !active.isConnected;
-    if (dropped || dialog?.contains(active)) back.focus({ preventScroll: true });
+    if (focusStillIn(dialog)) back.focus({ preventScroll: true });
   };
 }
