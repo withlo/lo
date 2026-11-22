@@ -2227,13 +2227,24 @@ describe('headers and notes', () => {
     expect(leftHeader().querySelector('.lo-stat')).toBeNull();
   });
 
-  test('the keyboard on a header rings its band in both columns, and on a line in neither', () => {
+  test('the keyboard on a header rings its band in both columns, focus there or not, and on a line in neither', async () => {
     const shown = open();
     shown.reveal(onHeader('a', 'new'));
     shown.focus();
     expect(rungHeaders()).toBe(2);
-    shown.reveal(onLine('a', 'new', 3));
+    // Focus going elsewhere, as to the tree, leaves the ring where the keys go back to, and it
+    // follows the cursor there.
+    if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+    await Promise.resolve();
+    expect(rungHeaders()).toBe(2);
+    shown.reveal(onHeader('b', 'new'));
     expect(rungHeaders()).toBe(0);
+    expect(
+      document.querySelectorAll('.cm-content[aria-label="After"] [data-row="h:1"].is-keyed'),
+    ).toHaveLength(1);
+    shown.focus();
+    shown.reveal(onLine('a', 'new', 3));
+    expect(document.querySelectorAll('.is-keyed')).toHaveLength(0);
   });
 
   test('a note on the comparison sits above the sides', () => {

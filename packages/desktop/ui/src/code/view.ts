@@ -2135,6 +2135,8 @@ class View implements DiffView {
         ? { selection, effects: EditorView.scrollIntoView(line.from, { y: 'start', yMargin: 0 }) }
         : { selection, scrollIntoView: true },
     );
+    // The ring goes onto a header the cursor moves to, or off one, with focus here or elsewhere.
+    this.#markKeyed(place);
   }
 
   /** The place `at` names, and the column on it, if the view has it. */
@@ -3172,9 +3174,11 @@ class View implements DiffView {
         const top = this.dom.getBoundingClientRect().top - view.documentTop;
         const block = view.lineBlockAtHeight(Math.max(0, top + 1));
         const file = this.#fileAt(pane, view.state.doc.lineAt(block.from).number);
-        // Its header is pinned while it's above the top edge: scrolled into the file.
+        // Its header is pinned while it's above the top edge: scrolled into the file. The header's
+        // own top, not that of what the editor draws before it, such as the room that lines up the
+        // file above.
         const header = this.#docLine(pane, { file, side: 'new', line: 0 });
-        const pinned = view.lineBlockAt(view.state.doc.line(header).from).top < top - 0.5;
+        const pinned = ownTop(view.lineBlockAt(view.state.doc.line(header).from)) < top - 0.5;
         // The path starts where the left column's code does.
         const start = gutterWidth(pane === 'inline' ? view : this.views.old);
         return { file, pinned, start };
@@ -4338,9 +4342,10 @@ class View implements DiffView {
     }
     // Only while the keys are the code's: with focus elsewhere, as in a box, no card's keys work.
     const focused = this.#panes().some((pane) => this.#viewOf(pane).hasFocus);
-    // On a file's header, or the row under it, the ring goes round the header's band.
+    // On a file's header, or the row under it, the ring goes round the header's band, and stays
+    // there while focus is elsewhere, as in the tree, as where the keys go back to.
     const header = place.line === 0 || this.#noteOf(place.file) !== undefined;
-    this.#setRing(focused && header ? place.file : undefined);
+    this.#setRing(header ? place.file : undefined);
     this.#markFold(focused);
     const next = focused ? this.#threadAt(place) : undefined;
     if (this.#keyed !== undefined && this.#keyed !== next) {
