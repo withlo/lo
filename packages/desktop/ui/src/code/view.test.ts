@@ -16,11 +16,13 @@ import type {
   DiffFile,
   DiffInit,
   DiffView,
+  FileProblem,
   Mark,
   OverviewMark,
   PeekFrame,
   PeekView,
   Place,
+  RenderProblem,
   RenderThread,
   Spot,
   ThreadView,
@@ -152,7 +154,7 @@ function open(on: DiffEvents = events(), init: Partial<DiffInit> = {}): DiffView
   document.body.append(parent);
   view = createDiffView(
     parent,
-    { files, layout: 'split', vimKeys: motions, nonce: 'n', ...init },
+    { files, layout: 'split', vimKeys: motions, nonce: 'n', renderProblem: problemTitle, ...init },
     on,
   );
   for (const file of init.files ?? files) {
@@ -273,9 +275,22 @@ function collapsed(): number {
   return parent!.querySelectorAll('.cm-content[aria-label="After"] [data-row^="c:0:"]').length;
 }
 
+/** A file's `Problem` as the app draws it, here only its title. */
+const problemTitle: RenderProblem = (host, problem) => {
+  host.textContent = problem.title;
+  return {
+    update: (now) => void (host.textContent = now.title),
+    destroy() {},
+  };
+};
+
+/**
+ * What the row under each file's header says, in the left column, which draws its words: its
+ * words, or its Problem's title.
+ */
 function notes(): string[] {
-  return [...parent!.querySelectorAll('.cm-content[aria-label="After"] .lo-filenote')].map(
-    (note) => note.textContent ?? '',
+  return [...parent!.querySelectorAll('.cm-content[aria-label="Before"] .lo-filerow')].map(
+    (row) => row.textContent ?? '',
   );
 }
 
@@ -311,10 +326,13 @@ function blank(lines: string[]): string[] {
   return lines.map((each, index) => (index === 0 || index >= 8 ? '' : each));
 }
 
-/** What each block of collapsed lines drawn on the new side says. */
+/**
+ * What each block of collapsed lines says in the left column, which draws its words. Lines GitHub's
+ * diff left out are dimmed.
+ */
 function runs(): string[] {
-  return [...parent!.querySelectorAll('.cm-content[aria-label="After"] .lo-collapsed')].map(
-    (each) => each.lastElementChild?.textContent ?? '',
+  return [...parent!.querySelectorAll('.cm-content[aria-label="Before"] .lo-collapsed')].map(
+    (each) => `${each.textContent}${each.classList.contains('is-missing') ? ', dimmed' : ''}`,
   );
 }
 
@@ -539,22 +557,51 @@ describe('folds', () => {
     const on = events();
     const shown = open(on);
     const lines = { old: numbered(4, 'd'), new: [...numbered(4, 'd'), 'd 5'] };
-    // Drawn, at the end of the documents.
-    shown.reveal({ kind: 'file', file: 'd' });
+    // Drawn, at the end of the documents, in the left column, which says what the row does.
+    shown.reveal(onHeader('d', 'old'));
     expect(notes()).toEqual(['Show 18,000 lines']);
     shown.fold(onHeader('d', 'new'), 'toggle');
     expect(on.load).toHaveBeenCalledWith('d');
-    expect(notes()).toEqual(['Loading the file…']);
+    expect(notes()).toEqual(['Showing…']);
     shown.loadFailed('d');
-    expect(notes()).toEqual(['The file couldn’t be loaded: za tries again']);
+    expect(notes()).toEqual(['Couldn’t read big.json']);
     shown.fold(onHeader('d', 'new'), 'toggle');
     expect(on.load).toHaveBeenCalledTimes(2);
+    expect(notes()).toEqual(['Reading file…']);
     shown.setLines('d', lines);
     shown.setDiff('d', diffOf(lines));
     expect(notes()).toEqual([]);
     shown.reveal(onLine('d', 'new', 5));
     expect(shown.probe.cursor()?.at).toMatchObject(onLine('d', 'new', 5));
     expect(shown.lines({ file: 'd', side: 'new', from: 5, to: 5 })).toEqual(['d 5']);
+  });
+
+  test('a file that couldn’t be read says why, and what was said behind Details', () => {
+    const drawn: FileProblem[] = [];
+    const on = events();
+    const shown = open(on, {
+      renderProblem: (host, problem) => {
+        drawn.push(problem);
+        return { update: (now) => void drawn.push(now), destroy() {} };
+      },
+    });
+    shown.fold(onHeader('d', 'new'), 'toggle');
+    shown.loadFailed('d', { reason: 'The local copy isn’t open.', details: 'ENOENT' });
+    expect(drawn.at(-1)).toMatchObject({
+      title: 'Couldn’t read big.json',
+      reason: 'The local copy isn’t open.',
+      details: 'ENOENT',
+    });
+    // Said as the reason, it isn't said again behind Details.
+    shown.fold(onHeader('d', 'new'), 'toggle');
+    shown.loadFailed('d', {
+      reason: 'GitHub’s diff doesn’t show this file.',
+      details: 'GitHub’s diff doesn’t show this file.',
+    });
+    expect(drawn.at(-1)).toMatchObject({
+      reason: 'GitHub’s diff doesn’t show this file.',
+      details: undefined,
+    });
   });
 });
 
@@ -1436,8 +1483,13 @@ describe('threads', () => {
     const { render, asked } = plain();
     shown.setThreads([onFile('on a', 'a'), thread('line', at('a', 'new', 4))], render);
     expect(asked.toSorted()).toEqual(['draw line', 'draw on a']);
-    const header = () => parent!.querySelector('[data-thread-id="on a"]')?.closest('.lo-fileblock');
-    expect(header()?.textContent).toContain('src/a.ts');
+    const header = () =>
+      parent!
+        .querySelector('[data-thread-id="on a"]')
+        ?.closest('.lo-fileblock')
+        ?.querySelector('.lo-diffhead')
+        ?.getAttribute('data-row');
+    expect(header()).toBe('h:0');
     // The header's block in the newer column holds it; the older column's draws the header alone.
     const [before, after] = parent!.querySelectorAll('.cm-editor');
     expect(after!.querySelector('[data-thread-id="on a"]')).not.toBeNull();
@@ -1445,7 +1497,7 @@ describe('threads', () => {
     // Closed into one block, the file keeps it under its header.
     shown.setCollapsed('a', true);
     expect(drawnThreads()).toEqual(['on a']);
-    expect(header()?.textContent).toContain('src/a.ts');
+    expect(header()).toBe('h:0');
     expect(shown.reveal({ kind: 'thread', thread: 'on a' })).toBe(true);
     expect(shown.probe.cursor()?.at).toEqual(onHeader('a', 'new'));
   });
@@ -2221,6 +2273,60 @@ describe('headers and notes', () => {
     }
   });
 
+  test('a header reads once across both sides: its path and counts left, the rest right', () => {
+    const on = events();
+    const shown = open(on);
+    // The first file's, which both columns draw.
+    shown.setHeader('a', {
+      additions: 5001,
+      deletions: 0,
+      change: 'modified',
+      tags: ['generated', 'lockfile'],
+      viewed: 'unviewed',
+    });
+    expect(leftHeader().querySelector('.lo-path')?.textContent).toBe('src/a.ts');
+    expect(leftHeader().querySelector('.lo-stat')?.textContent).toBe('+5,001−0');
+    expect(leftHeader().querySelector('.lo-filehead__end')).toBeNull();
+    const right = headerOf('h:0');
+    expect(right.querySelector('.lo-path, .lo-stat')).toBeNull();
+    expect(right.querySelector('.lo-diffhead__tags')?.textContent).toBe('generated · lockfile');
+    expect(right.querySelector('.lo-diffhead__letter')?.getAttribute('aria-label')).toBe(
+      'Modified',
+    );
+    const more = right.querySelector('.lo-diffhead__more')!;
+    expect(more.getAttribute('aria-label')).toBe('More actions for a.ts');
+    // The `⋯` opens the header's menu, as a right-click on the header does.
+    more.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    expect(on.menu).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: 'header', file: 'a' }),
+      expect.any(Number),
+      expect.any(Number),
+    );
+    // A file with no text changes draws no counts.
+    shown.setHeader('a', { additions: 0, deletions: 0, counted: false, tags: ['binary'] });
+    expect(leftHeader().querySelector('.lo-stat')).toBeNull();
+  });
+
+  test('the keyboard on a header rings its band in both columns, focus there or not, and on a line in neither', async () => {
+    const shown = open();
+    shown.reveal(onHeader('a', 'new'));
+    shown.focus();
+    expect(rungHeaders()).toBe(2);
+    // Focus going elsewhere, as to the tree, leaves the ring where the keys go back to, and it
+    // follows the cursor there.
+    if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+    await Promise.resolve();
+    expect(rungHeaders()).toBe(2);
+    shown.reveal(onHeader('b', 'new'));
+    expect(rungHeaders()).toBe(0);
+    expect(
+      document.querySelectorAll('.cm-content[aria-label="After"] [data-row="h:1"].is-keyed'),
+    ).toHaveLength(1);
+    shown.focus();
+    shown.reveal(onLine('a', 'new', 3));
+    expect(document.querySelectorAll('.is-keyed')).toHaveLength(0);
+  });
+
   test('a note on the comparison sits above the sides', () => {
     open(events(), { note: { text: 'r3 → r5, since you last looked', tone: 'info' } });
     const note = parent!.querySelector('.lo-diffview > .lo-diffnote--info');
@@ -2500,10 +2606,10 @@ describe('loading', () => {
     const on = events();
     const shown = open(on);
     const lines = { old: numbered(4, 'd'), new: [...numbered(4, 'd'), 'd 5'] };
-    shown.reveal({ kind: 'file', file: 'd' });
+    shown.reveal(onHeader('d', 'old'));
     shown.fold({ kind: 'file', file: 'd' }, 'toggle');
     shown.setDiff('d', diffOf(lines));
-    expect(notes()).toEqual(['Loading the file…']);
+    expect(notes()).toEqual(['Showing…']);
     shown.fold({ kind: 'file', file: 'd' }, 'toggle');
     expect(on.load).toHaveBeenCalledTimes(1);
     shown.setLines('d', lines);
@@ -2558,7 +2664,7 @@ describe('gaps', () => {
 
   test("lines GitHub's diff left out stay collapsed, and say so", () => {
     const shown = gappedView();
-    expect(runs()).toEqual(['18 unchanged lines, not loaded yet']);
+    expect(runs()).toEqual(['18 unchanged lines, dimmed']);
     shown.fold(onLine('e', 'new', 12), 'open');
     shown.fold(onLine('e', 'new', 1), 'file');
     expect(runs()).toHaveLength(1);
@@ -2587,11 +2693,22 @@ describe('gaps', () => {
     shown.setDiff('f', diffOf(lines));
     for (const label of ['Before', 'After']) {
       const content = parent!.querySelector(`.cm-content[aria-label="${label}"]`)!;
-      const blocks = [...content.querySelectorAll('.lo-collapsed')].map((each) => each.textContent);
-      expect(blocks).toEqual([
-        'lines 1–11 unchanged line, not loaded yet',
-        'lines 9–124 unchanged lines, not loaded yet',
+      // Said once, in the left column, and dimmed: nothing can show them yet.
+      const blocks = [...content.querySelectorAll('.lo-collapsed')].map((each) => [
+        each.textContent,
+        each.classList.contains('is-missing'),
       ]);
+      expect(blocks).toEqual(
+        label === 'Before'
+          ? [
+              ['1 unchanged line', true],
+              ['4 unchanged lines', true],
+            ]
+          : [
+              ['', true],
+              ['', true],
+            ],
+      );
       // No placeholder is drawn as a line.
       const drawn = [...content.querySelectorAll('.cm-line')].map((each) => each.textContent);
       expect(drawn).not.toContain('');
@@ -2619,9 +2736,9 @@ describe('gaps', () => {
       ],
     });
     shown.setDiff('g', diffOf(lines));
-    expect(runs()).toEqual(['3 unchanged lines', '1 unchanged line, not loaded yet']);
+    expect(runs()).toEqual(['3 unchanged lines', '1 unchanged line, dimmed']);
     shown.fold(onLine('g', 'new', 8), 'open');
-    expect(runs()).toEqual(['1 unchanged line, not loaded yet']);
+    expect(runs()).toEqual(['1 unchanged line, dimmed']);
     expect(shown.lines({ file: 'g', side: 'new', from: 7, to: 9 })).toEqual(['g 7', 'g 8', 'g 9']);
   });
 
@@ -2696,7 +2813,7 @@ describe('gaps', () => {
     // Without its diff, the short one doesn't fit the whole file, which waits for its own.
     shown.setLines('e', short, diffOf(short));
     shown.setLines('e', { old: tOld, new: tNew });
-    expect(notes()).toEqual(['Working out the diff…']);
+    expect(notes()).toEqual(['Comparing…']);
   });
 
   test('lines that were left out, not held as placeholders, swap whole, the cursor on its text', () => {
@@ -2740,7 +2857,7 @@ describe('gaps', () => {
     // As many lines, but line 3 back as it was and line 5 changed: the diff waits for its new one.
     const other = eOld.map((each, index) => (index === 4 || index === 27 ? `${each}!` : each));
     shown.setLines('e', { old: eOld, new: other });
-    expect(notes()).toEqual(['Working out the diff…']);
+    expect(notes()).toEqual(['Comparing…']);
     shown.setDiff('e', diffOf({ old: eOld, new: other }));
     expect(notes()).toEqual([]);
   });
@@ -2749,7 +2866,7 @@ describe('gaps', () => {
     const shown = gappedView();
     const whole = { old: eOld, new: eNew };
     shown.fold(onLine('e', 'new', 1), 'file');
-    expect(runs()).toEqual(['18 unchanged lines, not loaded yet']);
+    expect(runs()).toEqual(['18 unchanged lines, dimmed']);
     // Opened whole, the file wouldn't draw in the rows it has.
     expect(shown.keepsShape('e', whole, diffOf(whole))).toBe(false);
     shown.setLines('e', whole, diffOf(whole));
@@ -2767,7 +2884,7 @@ describe('gaps', () => {
     // As many lines, but line 3 back as it was and line 5 changed: the diff waits for its new one.
     const other = { old: eOld, new: eOld.map((each, index) => (index === 4 ? `${each}!` : each)) };
     shown.setLines('e', other);
-    expect(notes()).toEqual(['Working out the diff…']);
+    expect(notes()).toEqual(['Comparing…']);
     shown.fold(onHeader('e', 'new'), 'file');
     shown.setDiff('e', diffOf(other));
     expect(runs()).toEqual([]);
@@ -3031,13 +3148,13 @@ describe('overview marks', () => {
     expect(runs()).toEqual(opened);
   });
 
-  test('“Read it in the overview” names the block, when the caller hears it', () => {
+  test('“Show in overview” names the block, when the caller hears it', () => {
     const on = { ...events(), explained: vi.fn<NonNullable<DiffEvents['explained']>>() };
     const shown = open(on);
     shown.setMarks([overview('new', 4, 6, 'block-7')]);
     shown.openNote(at('a', 'new', 4));
     const link = parent!.querySelector<HTMLElement>('.lo-ovnote__read');
-    expect(link?.textContent).toBe('Read it in the overview');
+    expect(link?.textContent).toBe('Show in overview');
     const down = new MouseEvent('mousedown', { bubbles: true, cancelable: true });
     link!.dispatchEvent(down);
     expect(down.defaultPrevented).toBe(true);
@@ -3584,3 +3701,13 @@ describe('its place on the page', () => {
     expect(page.dom().scrollTop).toBe(30);
   });
 });
+
+/** The first file's header, as the left column draws it. */
+function leftHeader(): Element {
+  return document.querySelector('.cm-content[aria-label="Before"] [data-row="h:0"]')!;
+}
+
+/** How many columns ring the first file's header. */
+function rungHeaders(): number {
+  return document.querySelectorAll('[data-row="h:0"].is-keyed').length;
+}

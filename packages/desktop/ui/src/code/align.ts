@@ -27,6 +27,11 @@ export interface Spacer {
   row: number;
   place: 'above' | 'below';
   height: number;
+  /**
+   * It's only the catching up at the end of the last file, below the last row with lines on both
+   * sides, so it's that file's gap, not space beside something under its header.
+   */
+  atEnd?: boolean;
 }
 
 /** Less than this is rounding, not a gap. */
@@ -56,7 +61,9 @@ export type HeldBelow = (side: 'old' | 'new', row: number) => boolean;
  * side catches up above the next row with lines on both. Where `current` has a spacer within
  * `tolerance` of the height needed, it stays, and what it leaves over is caught up at the next
  * place. Where `held` says the spacer below a row's lines stays, it does, and that side catches up
- * at the next place.
+ * at the next place. With `last`, the rows run to the end of both documents, and rows on one side
+ * after the last with lines on both are caught up with below that one, so the end of the last
+ * file leaves the same space as the end of any other.
  */
 export function alignRows(
   rows: readonly RowHeights[],
@@ -64,6 +71,7 @@ export function alignRows(
   newTop: number,
   current: CurrentSpacer = () => undefined,
   held: HeldBelow = () => false,
+  last = false,
 ): Spacer[] {
   const spacers: Spacer[] = [];
   let oldAt = oldTop;
@@ -84,7 +92,26 @@ export function alignRows(
       newAt += row.new.above + row.new.body;
     }
   });
+  if (last) catchUpAtEnd();
   return spacers;
+
+  /** Catches up below the last row with lines on both sides, with what's on one side after it. */
+  function catchUpAtEnd(): void {
+    const row = rows.findLastIndex((each) => each.old && each.new && !each.end);
+    const ahead = oldAt - newAt;
+    if (row === -1 || Math.abs(ahead) < epsilon) return;
+    const side = ahead > 0 ? 'new' : 'old';
+    if (held(side, row)) return;
+    // Added to the one already there, where the row's own catching up put one.
+    const at = spacers.findIndex(
+      (spacer) => spacer.side === side && spacer.row === row && spacer.place === 'below',
+    );
+    const needed = (at === -1 ? 0 : spacers[at]!.height) + Math.abs(ahead);
+    const kept = current(side, row, 'below');
+    const height = kept !== undefined && Math.abs(kept - needed) < tolerance ? kept : needed;
+    if (at === -1) spacers.push({ side, row, place: 'below', height, atEnd: true });
+    else spacers[at] = { side, row, place: 'below', height };
+  }
 
   function catchUp(row: number, place: 'above' | 'below'): void {
     if (place === 'below') {
@@ -110,4 +137,50 @@ export function alignRows(
     if (side === 'new') newAt += height;
     else oldAt += height;
   }
+}
+
+/** A spacer on one side, where it's drawn in that side's document, for finding runs of them. */
+export interface SpacerSpot {
+  /** The line it's drawn against: its row's first line when it's above, its last when below. */
+  line: number;
+  place: 'above' | 'below';
+  height: number;
+  /** It's drawn flat whatever its run, as beside folded lines, and so is its run. */
+  flat: boolean;
+}
+
+/**
+ * Which of one side's spacers keep their hatch: those in a run of adjacent empty space `limit`
+ * tall or less, with nothing in it drawn flat. A run is spacers with no line between them, such
+ * as the one below a row's lines and the one above the next row's. So a run is hatched or flat
+ * throughout, never both.
+ */
+export function hatchedSpots(spots: readonly SpacerSpot[], limit: number): boolean[] {
+  const order = spots
+    .map((spot, at) => ({ spot, at }))
+    .toSorted(
+      (a, b) =>
+        a.spot.line - b.spot.line ||
+        (a.spot.place === b.spot.place ? 0 : a.spot.place === 'above' ? -1 : 1),
+    );
+  const hatched = spots.map(() => false);
+  let run: typeof order = [];
+  const close = () => {
+    const height = run.reduce((sum, { spot }) => sum + spot.height, 0);
+    const keeps = height <= limit + epsilon && run.every(({ spot }) => !spot.flat);
+    for (const { at } of run) hatched[at] = keeps;
+    run = [];
+  };
+  for (const each of order) {
+    const last = run.at(-1)?.spot;
+    const joins =
+      last !== undefined &&
+      last.place === 'below' &&
+      each.spot.place === 'above' &&
+      each.spot.line === last.line + 1;
+    if (!joins) close();
+    run.push(each);
+  }
+  close();
+  return hatched;
 }

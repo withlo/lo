@@ -496,6 +496,14 @@
   }
 }
 
+/* A side panel's toolbar narrower than its one step gives up the words of a control that keeps an
+   icon; the icon and its tooltip stay. The toolbar is the container (`@container`). */
+@utility panel-label {
+  @container (width < 320px) {
+    display: none !important;
+  }
+}
+
 /* A suggested change's lines: each line's sign in a gutter of its own, then the line, a row on the
    code's line each. */
 @utility suggestion-lines {

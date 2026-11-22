@@ -247,7 +247,11 @@ test('draws threads under their lines, resolved ones collapsed, and counts them'
   await expect(page.getByText('This grows without bound')).toHaveCount(0);
 
   // A file's header and its row in the tree count its threads, and how many are unresolved.
-  const header = page.locator('[data-lo-diff] .lo-filehead', { hasText: 'backoff.ts' }).first();
+  // The file's own header, whose right column has the count: the copy pinned under the diff bar
+  // is hidden from screen readers.
+  const header = page
+    .locator('[data-lo-diff] .cm-editor .lo-diffhead--end[data-path="src/backoff.ts"]')
+    .first();
   await expect(header.getByRole('img', { name: '4 unresolved of 5' })).toHaveClass(/is-open/);
   const tree = page.locator('[data-lo-scope="tree"]');
   await expect(tree.getByRole('img', { name: '4 unresolved of 5' })).toBeVisible();

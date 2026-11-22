@@ -70,9 +70,15 @@ export default {
         return ready === true ? treeShown() : ready;
       },
     },
-    mode: {
+    asTree: {
       run: () => {
-        void changeSetting(mode, settingNow(mode) === 'tree' ? 'review' : 'tree');
+        void changeSetting(mode, 'tree');
+      },
+      enabled: inPull,
+    },
+    reviewOrder: {
+      run: () => {
+        void changeSetting(mode, settingNow(mode) === 'review' ? 'tree' : 'review');
       },
       enabled: inPull,
     },
@@ -149,7 +155,7 @@ export default {
     // After the accounts' dialogs and the open box.
     defineView(dialogs, { id: 'tree.finder', order: 20, render: () => createElement(Finder) }),
     // Settings › Pull requests, after how a pull request opens and the diff's rows.
-    settingRow(mode, { order: 40, command: 'tree.mode' }),
+    settingRow(mode, { order: 40, command: 'tree.reviewOrder' }),
     defineView(left, {
       id: 'tree.files',
       order: 20,

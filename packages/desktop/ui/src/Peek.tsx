@@ -3,7 +3,6 @@ import { useId, type HTMLAttributes, type ReactNode, type Ref } from 'react';
 import { Button } from './Button.tsx';
 import { showFormat } from './controls.ts';
 import { Key } from './Key.tsx';
-import { PaletteHint } from './Palette.tsx';
 import { ShownText } from './ShownText.tsx';
 import { PathName, SourceMark, type AnswerSource } from './Source.tsx';
 
@@ -20,7 +19,7 @@ export interface PeekPlace {
   note?: string | undefined;
   /**
    * The module the word is imported from, when this answer is the asking file's import of it and
-   * the language server found no definition: its row says Lo doesn't install it. The path and line
+   * the language server found no definition: its row says it isn't installed. The path and line
    * are the import's own.
    */
   from?: string | undefined;
@@ -143,7 +142,7 @@ export function PeekHead({
   name,
   count,
   at,
-  goLabel = 'Open the whole file',
+  goLabel = 'Open whole file',
   goes,
   source,
   note,
@@ -151,7 +150,6 @@ export function PeekHead({
   onGo,
   onClose,
 }: PeekHeadProps) {
-  const closeLabel = keys?.close ? `Close (${keys.close.join(' ')})` : 'Close';
   return (
     <>
       <EyeIcon />
@@ -163,7 +161,7 @@ export function PeekHead({
       </span>
       {at !== undefined && (
         <span className="flex-none">
-          at <ShownText text={at} />
+          · <ShownText text={at} />
         </span>
       )}
       {source !== undefined && (
@@ -182,7 +180,15 @@ export function PeekHead({
         </Button>
       </span>
       <span className="peek-close">
-        <Button variant="ghost" size="sm" icon aria-label={closeLabel} onClick={() => onClose?.()}>
+        <Button
+          variant="ghost"
+          size="sm"
+          icon
+          aria-label="Close"
+          hint="Close"
+          hintKeys={keys?.close}
+          onClick={() => onClose?.()}
+        >
           <svg className="lo-i lo-i--sm" viewBox="0 0 16 16" aria-hidden="true">
             <path d="M4 4l8 8M12 4l-8 8" />
           </svg>
@@ -213,7 +219,7 @@ export function PeekList({ candidates, selected, onPick, listRef, className = ''
     <div
       ref={listRef}
       role="listbox"
-      aria-label="Candidates"
+      aria-label="Definitions"
       tabIndex={0}
       aria-activedescendant={index === -1 ? undefined : `${prefix}-${index}`}
       className={`group/list flex flex-col gap-2 p-6 ${className}`}
@@ -230,7 +236,7 @@ export function PeekList({ candidates, selected, onPick, listRef, className = ''
         >
           {each.outside === true ? (
             <span className="col-span-full min-w-0 truncate text-fg-muted text-small">
-              Outside this repository
+              Outside this repo
             </span>
           ) : (
             <>
@@ -246,7 +252,7 @@ export function PeekList({ candidates, selected, onPick, listRef, className = ''
               source={each.source}
               note={
                 each.outside !== true && each.from !== undefined
-                  ? `From ${each.from}, which Lo doesn't install`
+                  ? `From ${each.from} · not installed`
                   : each.note
               }
             />
@@ -265,17 +271,17 @@ export interface PeekFootProps {
   keys?: PeekKeys | undefined;
 }
 
-/** The foot of a peek, in a row its caller lays out: where the answer shown is, and the keys. */
-export function PeekFoot({ meta, several, keys }: PeekFootProps) {
+/**
+ * The foot of a peek, in a row its caller lays out: where the answer shown is. Its keys are in Key
+ * help, and the mouse moves between answers in the list.
+ */
+export function PeekFoot({ meta }: PeekFootProps) {
   return (
     <>
       <span className="lo-num min-w-0 truncate">
         {meta !== undefined && <ShownText text={meta} />}
       </span>
       <span className="flex-1" />
-      {keys?.move && several && <PaletteHint keys={keys.move}>Candidate</PaletteHint>}
-      {keys?.references && <PaletteHint keys={keys.references}>References</PaletteHint>}
-      {keys?.back && <PaletteHint keys={keys.back}>Back</PaletteHint>}
     </>
   );
 }
@@ -343,7 +349,7 @@ export function Peek({
           {children ??
             (shown?.outside === true && (
               <p className="m-0 px-12 py-8 text-fg-muted text-small">
-                Lo doesn&apos;t read files outside this repository.
+                Files outside this repo can’t be shown.
               </p>
             ))}
         </div>

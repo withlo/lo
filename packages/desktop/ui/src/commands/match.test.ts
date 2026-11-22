@@ -26,6 +26,11 @@ const diff = view('diff');
 const tree: Focus = { scope: 'tree', text: false };
 const anywhere: Focus = { scope: 'window', text: false };
 
+/** The diff, with the key on a thread, or not. */
+function onThread(thread: boolean): Focus {
+  return { ...diff, on: (kind) => thread && kind === 'thread' };
+}
+
 function said(outcome: Outcome): string {
   switch (outcome.kind) {
     case 'run':
@@ -210,6 +215,34 @@ describe('precedence', () => {
     expect(type(['cmd+o'], diff, { system: 'linux' }).said).toEqual(['run keys.back']);
     expect(type(['cmd+shift+i'], diff, { system: 'mac' }).said).toEqual(['run tab.install']);
     expect(type(['cmd+shift+i'], diff, { system: 'linux' }).said).toEqual(['pass']);
+  });
+
+  test('a command for what the key acts on beats one for the scope, only while it acts on it', () => {
+    const own = defineCommands('diff', {
+      toggleFile: {
+        label: 'Collapse file',
+        group: 'Diff view',
+        keys: ['z a'],
+        targets: ['line', 'header'],
+        when: { scope: 'diff', mode: 'normal' },
+      },
+      toggleThread: {
+        label: 'Collapse thread',
+        group: 'Threads',
+        keys: ['z a'],
+        targets: ['thread'],
+        when: { scope: 'diff', mode: 'normal', on: 'thread' },
+      },
+    });
+    const bindings = new Bindings('mac', declaredBindings(commandsOf(own), 'mac'));
+    expect(type(['z', 'a'], onThread(true), { bindings }).said).toEqual([
+      'hold',
+      'run diff.toggleThread',
+    ]);
+    expect(type(['z', 'a'], onThread(false), { bindings }).said).toEqual([
+      'hold',
+      'run diff.toggleFile',
+    ]);
   });
 
   test('a keymap binding beats a default one at the same level, and a later one an earlier one', () => {

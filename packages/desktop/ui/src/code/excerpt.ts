@@ -1043,9 +1043,11 @@ function moreRow(more: ExcerptLines['more']) {
   const text = `${more.count} more line${more.count === 1 ? '' : 's'} in this change`;
   return EditorView.decorations.compute([], (state) =>
     Decoration.set(
-      Decoration.widget({ widget: new FileNoteWidget(0, text, false), block: true, side: 1 }).range(
-        state.doc.line(more.after).to,
-      ),
+      Decoration.widget({
+        widget: new FileNoteWidget(0, { text }, false, false),
+        block: true,
+        side: 1,
+      }).range(state.doc.line(more.after).to),
     ),
   );
 }

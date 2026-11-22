@@ -12,6 +12,7 @@ import { IpcError } from '../../../ipc/contract.ts';
 import { installBridge } from '../../../window/test/bridge.ts';
 import type { PullTab } from '../../tab/window/shared.ts';
 import type { Status } from '../contract.ts';
+import { readTrusted } from '../settings.ts';
 import feature from './index.ts';
 import { askable, bannerOf, drawn, trustable, trustSwitch, untrustable } from './status.ts';
 import { rowsOf } from './Trusted.tsx';
@@ -272,12 +273,27 @@ describe('asking to trust', () => {
     };
     act(() => button(page, 'Trust repo…')?.click());
     await until(() => page.textContent.includes('Couldn’t trust rozed-dev/e2e'));
-    // Saved, as once it's fixed: the banner offers to trust it, as before it was asked.
+    // What main read as it refused, which can reach the window after the refusal: the file still
+    // can't be read, so what it said stays.
     act(() =>
       bridge.push('settings.state', {
         file: '~/.config/lo/settings.json',
         values: {},
-        problems: [],
+        problems: [{ message: "The settings file isn't valid JSON (x)." }],
+      }),
+    );
+    expect(page.textContent).toContain('Couldn’t trust rozed-dev/e2e');
+    // Saved, as once it's fixed, with an entry Lo ignores, which doesn't keep it from trusting:
+    // the banner offers to trust it, as before it was asked.
+    const ignored = [42];
+    act(() =>
+      bridge.push('settings.state', {
+        file: '~/.config/lo/settings.json',
+        values: { 'code.trusted': ignored },
+        problems: readTrusted(ignored).problems.map((message) => ({
+          key: 'code.trusted',
+          message,
+        })),
       }),
     );
     expect(page.textContent).toContain('Language servers are off for rozed-dev/e2e');

@@ -87,7 +87,7 @@ describe('Peek', () => {
     const dialog = host.querySelector('[role="dialog"]');
     expect(dialog?.getAttribute('aria-label')).toBe('Definitions of estimateCost');
     expect(dialog?.textContent).toContain('estimateCost · 3 definitions');
-    expect(dialog?.textContent).toContain('at r5');
+    expect(dialog?.textContent).toContain('· r5');
     // The code is the child's, in its own place between the list and the foot.
     expect(host.querySelector('pre')?.textContent).toBe('code');
   });
@@ -112,7 +112,7 @@ describe('Peek', () => {
       'false',
     ]);
     const list = host.querySelector('[role="listbox"]');
-    expect(list?.getAttribute('aria-label')).toBe('Candidates');
+    expect(list?.getAttribute('aria-label')).toBe('Definitions');
     expect(list?.getAttribute('aria-activedescendant')).toBe(rows[1]?.id);
     expect(rows[1]?.className).toContain('bg-current-strong');
     expect(rows[0]?.className).not.toContain('bg-current-strong');
@@ -167,12 +167,11 @@ describe('Peek', () => {
     expect(dialog?.textContent).not.toContain('definitions');
     expect(host.querySelector('.peek')?.classList.contains('peek-single')).toBe(true);
     expect(options(host)).toHaveLength(1);
-    // There's nothing for `j` and `k` to pick, so the foot doesn't offer them.
+    // Its keys are in Key help, not in a row of hints.
     expect(dialog?.textContent).not.toContain('Candidate');
-    expect(dialog?.textContent).toContain('References');
   });
 
-  it('points to the keys it was given, and to none it wasn’t', () => {
+  it('shows the key to go to the answer, and the key to close in Close’s tooltip', () => {
     const host = render(
       <Peek
         name="estimateCost"
@@ -185,11 +184,11 @@ describe('Peek', () => {
     const text = host.textContent ?? '';
     expect(text).toContain('src/graphql/cost/estimate.ts · r5 · added in this PR');
     const hints = [...host.querySelectorAll('kbd')].map((key) => key.textContent);
-    expect(hints).toEqual(['⏎', 'j', 'k', 'g', 'r', '⌃o']);
-    expect(text).toContain('Open the whole file');
-    for (const word of ['Candidate', 'References', 'Back']) expect(text).toContain(word);
+    expect(hints).toEqual(['⏎']);
+    expect(text).toContain('Open whole file');
+    for (const word of ['Candidate', 'Back']) expect(text).not.toContain(word);
     const close = [...host.querySelectorAll('button')].at(-1);
-    expect(close?.getAttribute('aria-label')).toBe('Close (Esc)');
+    expect(close?.getAttribute('aria-label')).toBe('Close');
 
     const bare = render(<Peek name="estimateCost" candidates={CANDIDATES} selected="estimate" />);
     expect(bare.querySelectorAll('kbd')).toHaveLength(0);
@@ -207,7 +206,7 @@ describe('Peek', () => {
         candidates={CANDIDATES}
         selected="estimate"
         keys={KEYS}
-        goLabel="Show in the diff"
+        goLabel="Show in diff"
         onPick={onPick}
         onGo={onGo}
         onClose={onClose}
@@ -216,7 +215,7 @@ describe('Peek', () => {
     click(options(host)[2]!);
     expect(onPick).toHaveBeenCalledWith('helpers');
     const buttons = [...host.querySelectorAll('button')];
-    const go = buttons.find((button) => button.textContent?.startsWith('Show in the diff'));
+    const go = buttons.find((button) => button.textContent?.startsWith('Show in diff'));
     expect(go).toBeDefined();
     click(go!);
     expect(onGo).toHaveBeenCalledTimes(1);
@@ -229,7 +228,7 @@ describe('Peek', () => {
     const host = render(<Peek name="estimateCost" candidates={SYNTAX} selected="import" />);
     const rows = options(host);
     expect(rows[0]?.textContent).toBe(
-      "graphql/cost/estimate.ts3Syntax index · From zod, which Lo doesn't install",
+      'graphql/cost/estimate.ts3Syntax index · From zod · not installed',
     );
     expect(rows[1]?.textContent).toBe('test/helpers/cost.ts7Syntax index · same name');
   });
@@ -240,14 +239,14 @@ describe('Peek', () => {
       <Peek name="estimateCost" candidates={SYNTAX} selected="outside" keys={KEYS} onGo={onGo} />,
     );
     const outside = options(host)[2]!;
-    expect(outside.textContent).toBe('Outside this repositorySyntax index');
+    expect(outside.textContent).toBe('Outside this repoSyntax index');
     // No path or line to read, and `aria-selected` says it is the one on.
     expect(outside.getAttribute('aria-selected')).toBe('true');
     expect(outside.querySelector('.font-semibold')).toBeNull();
     // Lo reads nothing there, so the peek says so where the code would be.
-    expect(host.textContent).toContain("Lo doesn't read files outside this repository.");
+    expect(host.textContent).toContain('Files outside this repo can’t be shown.');
     const go = [...host.querySelectorAll('button')].find((button) =>
-      button.textContent?.startsWith('Open the whole file'),
+      button.textContent?.startsWith('Open whole file'),
     )!;
     expect(go.disabled).toBe(true);
     click(go);
@@ -256,7 +255,7 @@ describe('Peek', () => {
     rerender(host, <Peek name="estimateCost" candidates={SYNTAX} selected="import" keys={KEYS} />);
     expect(
       [...host.querySelectorAll('button')].find((button) =>
-        button.textContent?.startsWith('Open the whole file'),
+        button.textContent?.startsWith('Open whole file'),
       )?.disabled,
     ).toBe(false);
     expect(host.textContent).not.toContain("Lo doesn't read files");
@@ -287,7 +286,7 @@ describe('Peek', () => {
     expect(text).toContain('evilU+202Elive');
     expect(text).toContain('src/evilU+202Egnp.ts1');
     expect(text).toContain('TypeU+200BScript · oU+2066verload');
-    expect(text).toContain('at rU+202E5');
+    expect(text).toContain('· rU+202E5');
     const titles = [...host.querySelectorAll('[title^="U+"]')].map((mark) =>
       mark.getAttribute('title'),
     );
@@ -387,7 +386,7 @@ describe('PeekHead', () => {
       </div>,
     );
     expect(host.textContent).toContain(
-      'Line · 1 definitionat r2·Syntax index · TypeScript is starting.',
+      'Line · 1 definition· r2·Syntax index · TypeScript is starting.',
     );
     const server = render(
       <div>

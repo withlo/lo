@@ -22,11 +22,11 @@ const seen = vi.hoisted(() => ({
 }));
 
 vi.mock('../../../window/commands/notices.tsx', () => ({
-  notify: (_title: string, body: string) => {
-    seen.notes.push(body);
+  notify: (title: string, body: string) => {
+    seen.notes.push(body === '' ? title : `${title} ${body}`);
   },
-  withdraw: (_title: string, body: string) => {
-    seen.notes.push(`withdrawn: ${body}`);
+  withdraw: (title: string, body: string) => {
+    seen.notes.push(`withdrawn: ${body === '' ? title : `${title} ${body}`}`);
   },
 }));
 
@@ -144,22 +144,18 @@ describe('showPlace', () => {
     // Once, and the note that it waited is taken back.
     diff.take(state([changed('src/parser.ts')]));
     expect(seen.middles).toEqual(['diff.view']);
-    expect(seen.notes).toEqual([
-      'Waiting for the diff’s list of files.',
-      'withdrawn: Waiting for the diff’s list of files.',
-    ]);
+    expect(seen.notes).toEqual(['Reading changed files…', 'withdrawn: Reading changed files…']);
   });
 
-  it('drops the place, saying so, once it has waited too long', () => {
+  it('drops the place once it has waited too long', () => {
     vi.useFakeTimers();
     const diff = loader();
     showPlace('t1', 'src/parser.ts', 7);
     vi.advanceTimersByTime(999);
-    expect(seen.notes).toEqual(['Waiting for the diff’s list of files.']);
+    expect(seen.notes).toEqual(['Reading changed files…']);
     vi.advanceTimersByTime(1);
-    expect(seen.notes.at(-1)).toBe(
-      'The diff’s list of files hasn’t loaded yet. Try again in a moment.',
-    );
+    // The first note said why; the place goes with nothing more.
+    expect(seen.notes).toEqual(['Reading changed files…']);
     diff.take(state([changed('src/parser.ts')]));
     expect(seen.middles).toEqual([]);
   });
@@ -174,7 +170,7 @@ describe('showPlace', () => {
       seen.notes.length = 0;
       showPlace('t1', 'src/parser.ts', 7);
       window.dispatchEvent(input);
-      expect(seen.notes.at(-1)).toBe('Lo stopped waiting for the diff’s list of files.');
+      expect(seen.notes.at(-1)).toBe('Couldn’t read the changed files');
       diff.take(state([changed('src/parser.ts')]));
       expect(seen.middles).toEqual([]);
     }
@@ -189,9 +185,9 @@ describe('showPlace', () => {
     const diff = loader();
     showPlace('t1', 'src/parser.ts', 7);
     press(']');
-    expect(seen.notes).toEqual(['Waiting for the diff’s list of files.']);
+    expect(seen.notes).toEqual(['Reading changed files…']);
     press('b');
-    expect(seen.notes.at(-1)).toBe('Lo stopped waiting for the diff’s list of files.');
+    expect(seen.notes.at(-1)).toBe('Couldn’t read the changed files');
     diff.take(state([changed('src/parser.ts')]));
     expect(seen.middles).toEqual([]);
   });

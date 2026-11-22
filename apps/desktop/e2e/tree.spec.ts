@@ -158,7 +158,7 @@ test('answers its keys: moving, opening and closing folders, review order and ch
     // Only the changed files, then all of them again.
     await page.keyboard.press('f');
     await expect(row(page, 'README.md')).toHaveCount(0);
-    await expect(page.getByRole('button', { name: 'Changed only' })).toHaveAttribute(
+    await expect(page.getByRole('button', { name: 'Changed files only' })).toHaveAttribute(
       'aria-pressed',
       'true',
     );
@@ -244,6 +244,29 @@ test('a click puts the file’s start at the top of the diff, wherever it was, a
     // As it goes, nothing moves: the header stays where the banner left it.
     await page.waitForTimeout(300);
     expect(await headerBelow(page, 'src/parser.ts'), 'as it goes').toBe(30);
+  });
+
+  await test.step('a scroll set from code to the very end pins the header of the file at the top edge, and the tree agrees', async () => {
+    const view = page.locator('.lo-diffview');
+    await view.evaluate((each) => {
+      each.scrollTop = each.scrollHeight;
+    });
+    // The file whose own header is the last at or above the top edge: what's at the top is its, on
+    // one side or both.
+    const atTop = () =>
+      view.evaluate((each) => {
+        const top = each.getBoundingClientRect().top;
+        const headers = [
+          ...each.querySelectorAll<HTMLElement>('.cm-content[aria-label="After"] [data-path]'),
+        ];
+        return headers.filter((header) => header.getBoundingClientRect().top <= top + 0.5).at(-1)
+          ?.dataset.path;
+      });
+    await expect.poll(atTop).toBeDefined();
+    const path = (await atTop())!;
+    const pinned = view.locator(':scope > .lo-diffpin:not([hidden]) [data-path]');
+    await expect(pinned).toHaveAttribute('data-path', path);
+    await expect(row(page, path)).toHaveClass(/tree-current/);
   });
 
   await test.step('inline too', async () => {

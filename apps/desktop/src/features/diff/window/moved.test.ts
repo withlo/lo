@@ -102,7 +102,8 @@ function shown(
 
 /** The notes drawn in place of files' lines on the new side. */
 function notes(): string[] {
-  return [...parent!.querySelectorAll('.cm-content[aria-label="After"] .lo-filenote')].map(
+  // The left column says what the row under a file's header does; the right draws its ground.
+  return [...parent!.querySelectorAll('.cm-content[aria-label="Before"] .lo-filerow')].map(
     (note) => note.textContent ?? '',
   );
 }

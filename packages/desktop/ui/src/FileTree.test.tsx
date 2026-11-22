@@ -52,7 +52,7 @@ function markup(): string {
     <FileTreePanel
       viewed={{ viewed: 1, total: 3 }}
       mode="tree"
-      modeKeys={['t']}
+      reviewKeys={['t']}
       changedOnly
       changedOnlyKeys={['f']}
       note="Only the changed files show."
@@ -72,7 +72,7 @@ describe('FileTree', () => {
     expect(html).toContain('title="2 changed files"');
     expect(html).not.toContain('title="3 changed files"');
     expect(html).toContain('← b.ts');
-    expect(html).toContain('title="Changed since you viewed it"');
+    expect(html).toContain('title="Changed since viewed"');
     expect(html).toContain('>gen<');
     expect(html).toContain('aria-current="true"');
     expect(html).toContain('1 / 3');
@@ -121,6 +121,22 @@ describe('FileTree', () => {
     expect(b).toContain('aria-label="1 thread, resolved"');
     expect(b).not.toContain('data-open');
     expect(c).not.toContain('role="img"');
+  });
+
+  it('dims the toolbar while the files are read, saying why, and keeps it reachable', () => {
+    const html = renderToStaticMarkup(
+      <FileTreePanel mode="tree" changedOnly={false} waiting>
+        {null}
+      </FileTreePanel>,
+    );
+    const buttons = html.split('<button').slice(1);
+    expect(buttons).toHaveLength(3);
+    for (const button of buttons) {
+      expect(button).toContain('aria-disabled="true"');
+      expect(button).toContain('aria-description="Reading files…"');
+      expect(button).not.toMatch(/\sdisabled=""/);
+      expect(button).not.toContain('tabindex="-1"');
+    }
   });
 
   it("only uses utilities that Lo's stylesheet has, so no spacing is silently dropped", async () => {

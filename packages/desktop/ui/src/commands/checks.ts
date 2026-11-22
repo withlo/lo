@@ -26,6 +26,7 @@ import {
   declaredBindings,
   holds,
   menuArrows,
+  precedence,
   startsWith,
   type Binding,
   type Focus,
@@ -372,8 +373,10 @@ export function checkMenus(features: readonly Declarations[]): string[] {
  * Clashes: in each scope, mode and system, no two of Lo's bindings that hold there claim the same
  * key, nor one the start of another's sequence (a lone `g` against `g S`), since one of the two
  * would never run. Lo's motions count in code views, where Vim runs them. The one exception is the
- * rule matching follows: a command for the focused scope beats one for anywhere on the same keys,
- * so `⌘⏎` can add to the review in a box and submit it elsewhere, unless the key is one the box's
+ * rule matching follows: a command for what the key acts on beats one for the focused scope, and
+ * one for the focused scope beats one for anywhere, on the same keys, so `z a` can collapse a
+ * thread on one and the file elsewhere, and `⌘⏎` can add to the review in a box and submit it
+ * elsewhere, unless the key is one the box's
  * editor handles itself (`editor`), which a command for anywhere would take from it. A motion
  * against another command in a code view has no such exception, since matching never takes the
  * motion there. Nor may a binding start with a key the engine takes first: `j` or `k` in a menu.
@@ -403,11 +406,6 @@ export function checkClashes(features: readonly Declarations[]): string[] {
   return found.list();
 }
 
-/** Whether `command` applies only in the scopes it names, rather than anywhere. */
-function scoped(command: Command): boolean {
-  return command.when?.scope !== undefined;
-}
-
 /**
  * Why a binding never runs at `site` because the engine takes its first key there, if it doesn't:
  * in a menu, `j` and `k` move as the arrows do.
@@ -435,7 +433,9 @@ function clash(a: Binding, b: Binding, site: Site): string | undefined {
     // Nor in one an editor handles itself: matching never takes it, so a command for anywhere that
     // holds there takes the key from the editor.
     const owned = a.command.editor === true || b.command.editor === true;
-    const overridden = scoped(a.command) !== scoped(b.command);
+    // One for what the key acts on beats one for the scope or anywhere, as one for the scope
+    // beats one for anywhere.
+    const overridden = precedence(a.command) !== precedence(b.command);
     if (overridden && !owned && !(motion && site.mode !== undefined)) return undefined;
     return `${quoted(a.strokes, system)} runs both ${a.command.id} and ${b.command.id}`;
   }

@@ -25,6 +25,25 @@
 .lo-diffview > .lo-diffslack {
   flex: 1 0 100%;
 }
+/*
+ * A file's header is as tall in both columns, whatever each draws of it, and as tall as the one
+ * pinned over the top of the scroll, which takes no room: the code scrolls under it, as the view's
+ * measures have it.
+ */
+.lo-diffview .lo-diffhead {
+  box-sizing: border-box;
+  height: var(--lo-file-header-h);
+}
+.lo-diffview > .lo-diffpin {
+  position: sticky;
+  top: 0;
+  flex: 1 0 100%;
+  height: var(--lo-file-header-h);
+  margin-bottom: calc(var(--lo-file-header-h) * -1);
+}
+.lo-diffview > .lo-diffpin[hidden] {
+  display: none;
+}
 .lo-diffview > .cm-editor + .cm-editor {
   box-shadow: inset 1px 0 0 var(--lo-border);
 }
@@ -51,18 +70,11 @@
 }
 
 /*
- * The cursor on a header draws no letter of the path the header's line holds: focused, over the
- * colour Vim gives it; hollow, through the colour the design's hollow cursor takes from its layer.
+ * The cursor on a file's header, or the row under it, is the ring around the header's band: no
+ * column draws a cursor there, focused or hollow.
  */
-.lo-diffview .cm-editor.lo-onheader .cm-fat-cursor {
-  color: transparent !important;
-}
-.lo-diffview .cm-editor.lo-onheader .cm-vimCursorLayer {
-  color: transparent;
-}
-/* A file header inside a document scrolls with its file. */
-.lo-diffhead {
-  position: static;
+.lo-diffview .cm-editor.lo-onheader :is(.cm-cursorLayer, .cm-vimCursorLayer) {
+  visibility: hidden;
 }
 /*
  * A file's viewed mark in its header, as the file tree draws it: an empty ring not yet, a filled
@@ -205,6 +217,7 @@
 .lo-diffview .lo-diffhead,
 .lo-diffview .lo-movedlabel,
 .lo-diffview .lo-collapsed,
+.lo-diffview .lo-filerow,
 .lo-diffview .lo-diffthread {
   contain: inline-size;
 }
@@ -278,20 +291,6 @@
   text-decoration: underline;
   text-underline-offset: 2px;
 }
-/* A file's note looks like collapsed code, but there's nothing under it to open. */
-.lo-filenote,
-.lo-filenote:hover {
-  background: var(--lo-diff-collapsed-bg);
-  color: var(--lo-fg-muted);
-}
-/* Unless it's a button, which shows the file's lines. */
-.lo-filenote.is-act {
-  cursor: pointer;
-}
-.lo-filenote.is-act:hover {
-  background: var(--lo-bg-element);
-  color: var(--lo-fg);
-}
 .lo-diffhead .lo-path,
 .lo-movedlabel__to {
   min-width: 0;
@@ -301,14 +300,15 @@
 }
 /* A moved label's place is a button that goes there, drawn as the design draws its link. */
 .lo-movedlabel__to {
-  font: 400 11.5px/16px var(--lo-font-mono);
+  font: 400 11px/14px var(--lo-font-mono);
   font-variant-ligatures: none;
-  color: var(--lo-fg);
+  color: var(--lo-fg-muted);
   text-decoration: underline;
   text-decoration-color: var(--lo-diff-moved-border);
   text-underline-offset: 3px;
 }
 .lo-movedlabel__to:hover {
+  color: var(--lo-fg);
   text-decoration-color: currentColor;
 }
 

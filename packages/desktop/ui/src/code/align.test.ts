@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 
-import { alignRows } from './align.ts';
+import { alignRows, hatchedSpots, type SpacerSpot } from './align.ts';
 
 const line = { above: 0, body: 20 };
 
@@ -120,5 +120,65 @@ describe('alignRows', () => {
       { side: 'old', row: 0, place: 'below', height: 5 },
       { side: 'old', row: 1, place: 'above', height: 15 },
     ]);
+  });
+});
+
+/** A spacer against line `at`, for `hatchedSpots`. */
+function spot(at: number, place: 'above' | 'below', height: number, flat = false): SpacerSpot {
+  return { line: at, place, height, flat };
+}
+
+describe('alignRows at the end of the last file', () => {
+  const tail = [{ old: line, new: line }, { new: line }, { new: line }, { new: line }];
+
+  test('catches up below the last row on both sides, as above the next file it would', () => {
+    expect(alignRows(tail, 0, 0, undefined, undefined, true)).toEqual([
+      { side: 'old', row: 0, place: 'below', height: 60, atEnd: true },
+    ]);
+  });
+
+  test('leaves it to the rows after, short of the end', () => {
+    expect(alignRows(tail, 0, 0)).toEqual([]);
+  });
+
+  test('adds to what the row itself catches up with there', () => {
+    expect(
+      alignRows(
+        [{ old: line, new: { above: 0, body: 30 } }, { new: line }],
+        0,
+        0,
+        undefined,
+        undefined,
+        true,
+      ),
+    ).toEqual([{ side: 'old', row: 0, place: 'below', height: 30 }]);
+  });
+});
+
+describe('hatchedSpots', () => {
+  test('keeps the hatch on a short gap, and drops it on a tall one', () => {
+    expect(hatchedSpots([spot(3, 'below', 40), spot(9, 'above', 80)], 60)).toEqual([true, false]);
+  });
+
+  test('weighs a run of adjacent gaps as one, so it is hatched or flat throughout', () => {
+    // Below line 4 and above line 5 touch: 40 and 40 is a run of 80.
+    expect(hatchedSpots([spot(5, 'above', 40), spot(4, 'below', 40)], 60)).toEqual([false, false]);
+    // Below line 4 and above line 6 have line 5 between them.
+    expect(hatchedSpots([spot(4, 'below', 40), spot(6, 'above', 40)], 60)).toEqual([true, true]);
+  });
+
+  test('a run with a flat part in it is flat throughout', () => {
+    expect(hatchedSpots([spot(1, 'below', 24, true), spot(2, 'above', 20)], 60)).toEqual([
+      false,
+      false,
+    ]);
+  });
+
+  test('equal runs look equal, the last in the document too', () => {
+    expect(hatchedSpots([spot(4, 'above', 60), spot(20, 'below', 60)], 60)).toEqual([true, true]);
+  });
+
+  test('a run of exactly the limit keeps its hatch', () => {
+    expect(hatchedSpots([spot(2, 'below', 20), spot(3, 'above', 40)], 60)).toEqual([true, true]);
   });
 });

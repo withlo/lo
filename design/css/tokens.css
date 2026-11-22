@@ -98,7 +98,7 @@
   --lo-diff-moved-edit: #2a4466; /* Edits inside a moved block, the only part highlighted. */
   --lo-diff-hunk-bg: #191f27; /* GitHub hunk headers (@@ … @@), before the local copy is ready. */
   --lo-diff-hunk-fg: #9598a5; /* Text of hunk headers and collapsed ranges. */
-  --lo-diff-filler: #fbf8f209; /* Aligned empty space on the side of a diff with no lines. */
+  --lo-diff-filler: #fbf8f204; /* The flat ground of what isn't code in a diff: aligned empty space, folds, the row under a file's header. */
   --lo-diff-filler-stripe: #fbf8f20d; /* The hatch over lo-diff-filler. */
   --lo-diff-collapsed-bg: #1b1c23; /* Collapsed unchanged code. */
   --lo-diff-file-header-bg: #1b1c23; /* Sticky file headers in the diff. */

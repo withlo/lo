@@ -97,17 +97,21 @@ function sizeOf(side: FileVersions['old']): string | undefined {
 
 /** What a header says of where a file shows from, for one a push changed since it was viewed. */
 function sinceText(since: NonNullable<FileVersions['since']>): string {
-  return since.why === 'viewed' ? since.label : `your review in ${since.label}`;
+  return since.why === 'viewed' ? since.label : `your review of ${since.label}`;
 }
 
-/** The labels after a file's counts: where it shows from, and why it starts as it does. */
+/**
+ * The labels at the end of a file's header: where it shows from, and why it starts as it does.
+ * Facts about one thing join with ` · `, as "binary · 69 B → 73 B". A file too large to draw says
+ * so in the row under its header, which shows its lines.
+ */
 export function tagsOf(versions: FileVersions): string[] {
   const tags: string[] = [];
   const { since } = versions;
   // A file nothing changed in since it was viewed says only that.
   if (since && versions.start === 'unchanged') return [`no change since ${sinceText(since)}`];
   if (since) tags.push(`since ${sinceText(since)}`);
-  if (versions.conflicted) tags.push('resolved a conflict');
+  if (versions.conflicted) tags.push('conflict resolved');
   if (versions.generated === 'attribute') tags.push('generated');
   if (versions.generated === 'lockfile') tags.push('lockfile');
   switch (versions.start) {
@@ -122,20 +126,14 @@ export function tagsOf(versions: FileVersions): string[] {
             : old !== undefined || added !== undefined
               ? `${old ?? '?'} → ${added ?? '?'}`
               : undefined;
-      tags.push(sizes === undefined ? 'binary' : `binary, ${sizes}`);
+      tags.push(sizes === undefined ? 'binary' : `binary · ${sizes}`);
       break;
     }
     case 'large':
-      tags.push('large');
       break;
     case 'unchanged':
-      tags.push(
-        versions.submodule === 'both'
-          ? 'submodule'
-          : versions.change === 'renamed'
-            ? 'renamed'
-            : 'no change to its text',
-      );
+      // Renamed, or its mode changed, and nothing in it: its header's letter says which.
+      tags.push(versions.submodule === 'both' ? 'submodule' : 'no text changes');
       break;
     case 'shown':
     case 'collapsed':
@@ -149,10 +147,18 @@ export function tagsOf(versions: FileVersions): string[] {
   return tags;
 }
 
-/** A file's header: its counts, tags and viewed mark, and its threads as the tree counts them. */
+/**
+ * A file's header: its counts, tags, change and viewed mark, and its threads as the tree counts
+ * them. A file with no text to count, binary or with no text changes, draws no counts.
+ */
 export function headerOf(versions: FileVersions, mark?: Mark, threads?: ThreadCounts): FileHeader {
   const tags = tagsOf(versions);
-  const header: FileHeader = { additions: versions.additions, deletions: versions.deletions };
+  const header: FileHeader = {
+    additions: versions.additions,
+    deletions: versions.deletions,
+    change: versions.change,
+  };
+  if (versions.start === 'binary' || versions.start === 'unchanged') header.counted = false;
   if (tags.length > 0) header.tags = tags;
   if (mark) header.viewed = mark === 'dismissed' ? 'stale' : mark;
   if (threads && threads.threads > 0) {

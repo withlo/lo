@@ -44,7 +44,8 @@ import {
   setScopeSource,
   type Target,
 } from '../commands/index.ts';
-import { type Tip, TIPPED, tips } from './tip.ts';
+import { EDIT_SLOT_EVENT } from '../edits.ts';
+import { cutShort, type Tip, TIPPED, tips } from './tip.ts';
 import type {
   Anchor,
   BoxFrame,
@@ -58,7 +59,9 @@ import type {
   DiffLayout,
   DiffView,
   DrawNote,
+  FileFold,
   FileHeader,
+  FileProblem,
   Fold,
   JumpTo,
   Mark,
@@ -72,6 +75,9 @@ import type {
   PeekView,
   Place,
   Probe,
+  ProblemContent,
+  ReadFailure,
+  RenderProblem,
   RenderThread,
   Side,
   Span,
@@ -100,6 +106,7 @@ import {
   type ViewThread,
 } from './decorations.ts';
 import { codeEditor } from './editor.ts';
+import { gutterReach, gutterWidth, HEADER_HEIGHT, Pin } from './heads.ts';
 import { type FileTokens, highlighting, lineStarts, tokensChanged } from './highlight.ts';
 import { columnAt, type FileHints, hintRanges, hintsOf, sameHints } from './hints.ts';
 import { InlineLayout, inlineLines, inlineText } from './inline.ts';
@@ -148,10 +155,16 @@ import {
 import { type ThreadHost, Threads } from './threads.ts';
 import {
   type BoxHost,
+  CollapsedWidget,
+  editSlot,
+  type HeaderProblem,
+  type HeaderRing,
+  headerRow,
   MOVED_ATTRIBUTE,
   movedTo,
   NOTE_BLOCK_ATTRIBUTE,
   type NoteDraw,
+  RING_CLASS,
   ThreadSizes,
 } from './widgets.ts';
 import { watchRests, type Word, wordAnchor, wordUnder } from './words.ts';
@@ -162,6 +175,23 @@ export function createDiffView(parent: HTMLElement, init: DiffInit, on: DiffEven
 }
 
 type Pane = Side | 'inline';
+
+/** A file's `Problem`: the element the caller draws it in, and what it drew. */
+interface ProblemHost {
+  readonly dom: HTMLElement;
+  readonly content: ProblemContent;
+  problem: FileProblem;
+}
+
+/** Whether two problems draw the same. */
+function sameProblem(a: FileProblem, b: FileProblem): boolean {
+  return (
+    a.title === b.title &&
+    a.reason === b.reason &&
+    a.details === b.details &&
+    a.command === b.command
+  );
+}
 
 /**
  * The runs of lines `diff` collapses around `keep`, by their first old line, which `zR` opens:
@@ -383,6 +413,9 @@ class View implements DiffView {
   #wanted: FileThreads[];
   /** Each thread's element, and what the caller drew in it. */
   readonly #hosts: Threads;
+  /** Each file's `Problem`, in the element the caller draws it in, while its header has one. */
+  readonly #problems = new Map<number, ProblemHost>();
+  readonly #renderProblem: RenderProblem | undefined;
   /**
    * Threads held at the height they were drawn at while they're on screen, until the reader's next
    * input.
@@ -430,8 +463,10 @@ class View implements DiffView {
   /** Files closed with `za`, and files kept out being loaded or loaded. */
   readonly #closed = new Set<number>();
   readonly #loading = new Set<number>();
-  /** Files kept out whose lines couldn't be loaded, which `za` tries again. */
-  readonly #failed = new Set<number>();
+  /** Of the files loading, those read again after a read that failed, not asked to show. */
+  readonly #rereading = new Set<number>();
+  /** Files kept out whose lines couldn't be loaded, and why, which `za` tries again. */
+  readonly #failed = new Map<number, ReadFailure>();
   readonly #loaded = new Set<number>();
   /** Each side's highlighting triples, and the same with where each line starts. */
   readonly #triples: { old?: Uint32Array | undefined; new?: Uint32Array | undefined }[];
@@ -462,6 +497,12 @@ class View implements DiffView {
   /** The `+` that follows the pointer down the gutter, and the line it's at. */
   readonly #add = document.createElement('button');
   #addAt: Target | undefined;
+  /** The file whose header's band takes the keyboard's ring: every header reads it as drawn. */
+  readonly #ring: HeaderRing = { file: undefined };
+  /** The header of the file at the top of the scroll, pinned under the diff bar. */
+  readonly #pin = new Pin();
+  /** The row under the pointer that reads as one across both sides, by its key. */
+  #hovered: string | undefined;
   /**
    * The scroll the input asked for since `movement()` was last called: the wheel's, and the
    * scroll CodeMirror makes to bring a cursor into view.
@@ -481,6 +522,8 @@ class View implements DiffView {
     this.#index = new Map(this.#ids.map((id, index) => [id, index]));
     if (this.#index.size !== this.#ids.length) throw new Error('Two files have the same id.');
     this.#files = init.files.map(viewFile);
+    this.#renderProblem = init.renderProblem;
+    this.#files.forEach((_, file) => this.#takeProblem(file));
     this.#lines = init.files.map((file, index) => {
       if (keptOut(file) || !file.lines) return { old: [], new: [] };
       this.#loaded.add(index);
@@ -540,6 +583,7 @@ class View implements DiffView {
         }),
       });
     this.views = { old: make('old'), new: make('new') };
+    this.dom.insertBefore(this.#pin.dom, this.views.old.dom);
     this.#sizes = {
       old: new ThreadSizes(this.views.old.contentDOM),
       new: new ThreadSizes(this.views.new.contentDOM),
@@ -589,6 +633,11 @@ class View implements DiffView {
     this.#add.addEventListener('mousedown', (event) => event.preventDefault());
     this.dom.append(this.#add);
     this.dom.addEventListener('click', this.#runControl);
+    this.dom.addEventListener('click', this.#openMore);
+    this.dom.addEventListener('mouseover', this.#hoverRow, { passive: true });
+    this.dom.addEventListener('mouseleave', this.#hoverRow, { passive: true });
+    // A box editing a comment goes in its place in the card, once the card has drawn the slot.
+    this.dom.addEventListener(EDIT_SLOT_EVENT, this.#placeEdits);
     this.dom.addEventListener('mousemove', this.#followAdd, { passive: true });
     // Focus coming to the code, or leaving it, changes whose the keys are.
     const refocused = (): void =>
@@ -934,17 +983,42 @@ class View implements DiffView {
     this.#bringIn(this.#fileOf(id), lines, diff);
   }
 
-  loadFailed(id: string): void {
+  loadFailed(id: string, failure: ReadFailure = {}): void {
     const file = this.#fileOf(id);
     if (!this.#loading.delete(file)) return;
-    this.#failed.add(file);
+    this.#rereading.delete(file);
+    this.#failed.set(file, failure);
+    this.#takeProblem(file);
     this.#refresh(file);
+  }
+
+  foldOf(id: string): FileFold | undefined {
+    const file = this.#fileOf(id);
+    switch (this.#noteOf(file)) {
+      case undefined:
+        return 'collapse';
+      case 'closed':
+        return 'expand';
+      case 'too-large':
+      case 'failed':
+        return 'show';
+      case 'binary':
+      case 'empty':
+      case 'pending':
+      case 'loading':
+      case 'showing':
+        return undefined;
+      default:
+        throw new Error('A note Lo doesn’t know.');
+    }
   }
 
   setHeader(id: string, header: FileHeader): void {
     const file = this.#fileOf(id);
     this.#files[file] = { ...this.#files[file]!, header };
+    this.#takeProblem(file);
     this.#refresh(file);
+    this.#watchFile();
   }
 
   setLayout(layout: DiffLayout): void {
@@ -2099,7 +2173,7 @@ class View implements DiffView {
   };
 
   /**
-   * "Read it in the overview", in a note: the caller shows the overview at the block. A note held
+   * "Show in overview", in a note: the caller shows the overview at the block. A note held
    * as it was on screen, its mark changed since, takes the change first, as input lets it: one whose
    * mark went closes, and shows nothing, since the overview no longer says it.
    */
@@ -2167,6 +2241,8 @@ class View implements DiffView {
         ? { selection, effects: EditorView.scrollIntoView(line.from, { y: 'start', yMargin: 0 }) }
         : { selection, scrollIntoView: true },
     );
+    // The ring goes onto a header the cursor moves to, or off one, with focus here or elsewhere.
+    this.#markKeyed(place);
   }
 
   /** The place `at` names, and the column on it, if the view has it. */
@@ -2525,6 +2601,8 @@ class View implements DiffView {
     cancelAnimationFrame(this.#takeFrame);
     cancelAnimationFrame(this.#addFrame);
     this.#hosts.destroy();
+    for (const problem of this.#problems.values()) problem.content.destroy();
+    this.#problems.clear();
     for (const sizes of [this.#sizes.old, this.#sizes.new, this.#inline?.sizes]) sizes?.destroy();
     for (const view of this.#editors()) view.destroy();
     this.dom.remove();
@@ -2708,6 +2786,7 @@ class View implements DiffView {
     const box = new CommentBox({
       target,
       thread: 'thread' in at && !header ? at.thread : undefined,
+      edits: 'thread' in at && !header ? options.edits : undefined,
       draft,
       on,
       frame,
@@ -2913,10 +2992,10 @@ class View implements DiffView {
 
   /**
    * Brings `opened`, under a line on screen, on screen whole, once what it moved is lined up: the
-   * least scroll that ends it at the screen's foot, its line going no higher than the top, where a
-   * peek taller than the room under it puts it. It's a jump the reader asked for, as `reveal`'s:
-   * the editor scrolls to the line, the cursor on it where the peek has it. A peek on screen whole
-   * moves nothing.
+   * least scroll that ends it at the screen's foot, its line going no higher than under the header
+   * pinned over the top, where a peek taller than the room under it puts it. It's a jump the reader
+   * asked for, as `reveal`'s: the editor scrolls to the line, the cursor on it where the peek has
+   * it. A peek on screen whole moves nothing.
    */
   #showPeek(opened: { place: At; block: PeekBlock }): void {
     // After the pass that keeps the line where it is, which the change scheduled first.
@@ -2934,8 +3013,11 @@ class View implements DiffView {
       const span = this.#spanOf(block.dom);
       if (top === undefined || !text || !span) return;
       const screen = this.dom.getBoundingClientRect().top;
-      const to = peekShownAt(top - screen, span.bottom - top, this.dom.clientHeight);
-      if (to === undefined) return;
+      const shown = peekShownAt(top - screen, span.bottom - top, this.dom.clientHeight);
+      if (shown === undefined) return;
+      // The editor scrolls the line clear of the header pinned over the top, so it goes no higher
+      // than under it.
+      const to = Math.max(shown, HEADER_HEIGHT);
       this.#holding = undefined;
       this.#jumped = undefined;
       this.#lastPane = pane;
@@ -2943,7 +3025,10 @@ class View implements DiffView {
       this.#aligner.follow(pane === 'inline' ? undefined : pane);
       view.dispatch({
         selection: { anchor: line.from + Math.min(block.at.column ?? 0, line.length) },
-        effects: EditorView.scrollIntoView(line.from, { y: 'start', yMargin: to + text.top - top }),
+        effects: EditorView.scrollIntoView(line.from, {
+          y: 'start',
+          yMargin: to - HEADER_HEIGHT + text.top - top,
+        }),
       });
     });
   }
@@ -3185,20 +3270,41 @@ class View implements DiffView {
   }
 
   /**
-   * Says which file is at the top of the screen when it changes: read as the editor next reads the
-   * layout, with what else it reads, once a frame at most.
+   * Says which file is at the top of the screen when it changes, and pins its header: read as the
+   * editor next reads the layout, with what else it reads, once a frame at most. It's asked after
+   * every scroll, the reader's or one set from code, and whenever what an editor drew moves, which
+   * no scroll event follows.
    */
   readonly #watchFile = (): void => {
     const pane: Pane = this.#pane === 'inline' ? 'inline' : 'new';
+    // Asked by an editor's update while the inline one is still being made.
+    if (pane === 'inline' && !this.#inline) return;
     const view = this.#viewOf(pane);
     view.requestMeasure({
       key: this.#watchFile,
       read: () => {
         const top = this.dom.getBoundingClientRect().top - view.documentTop;
         const block = view.lineBlockAtHeight(Math.max(0, top + 1));
-        return this.#fileAt(pane, view.state.doc.lineAt(block.from).number);
+        // A file's header's own top, below the top edge or above it: not that of what the editor
+        // draws before it, such as the room that lines up the file above.
+        const headerTop = (file: number): number => {
+          const header = this.#docLine(pane, { file, side: 'new', line: 0 });
+          return ownTop(view.lineBlockAt(view.state.doc.line(header).from)) - top;
+        };
+        let file = this.#fileAt(pane, view.state.doc.lineAt(block.from).number);
+        // The room over a header that's still below the top edge is the file above's.
+        if (file > 0 && headerTop(file) > 0.5) file -= 1;
+        // Its header is pinned while it's above the top edge: scrolled into the file.
+        const pinned = headerTop(file) < -0.5;
+        // The next file's header pushes it up as it comes under it.
+        const next = file + 1 < this.#files.length ? headerTop(file + 1) : Infinity;
+        const shift = Math.min(0, next - HEADER_HEIGHT);
+        // The path starts where the left column's code does.
+        const start = gutterWidth(pane === 'inline' ? view : this.views.old);
+        return { file, pinned, shift, start };
       },
-      write: (file) => {
+      write: ({ file, pinned, shift, start }) => {
+        this.#pin.show(pinned ? { file, info: this.#files[file]!, shift } : undefined, start);
         if (file === this.#said.file) return;
         this.#said.file = file;
         this.#on.file(this.#ids[file]!);
@@ -3207,11 +3313,70 @@ class View implements DiffView {
   };
 
   /**
+   * A press on a header's `⋯`, or the pinned row's: its file's menu, under it, as a right-click
+   * on the header opens it.
+   */
+  readonly #openMore = (event: MouseEvent): void => {
+    const more =
+      event.target instanceof Element
+        ? event.target.closest<HTMLElement>('.lo-diffhead__more')
+        : null;
+    if (!more || !this.dom.contains(more)) return;
+    const target = this.#controlTarget(more);
+    if (!target) return;
+    event.preventDefault();
+    const at = more.getBoundingClientRect();
+    this.#on.menu(target, at.left, at.bottom);
+  };
+
+  /**
+   * The pointer over a row that reads as one across both sides, the button under a file's header
+   * or collapsed lines: both columns' halves take its hover, as one target.
+   */
+  readonly #hoverRow = (event: MouseEvent): void => {
+    const row =
+      event.type === 'mouseover' && event.target instanceof Element
+        ? event.target.closest<HTMLElement>('.lo-filerow[data-row], .lo-collapsed[data-row]')
+        : null;
+    const key = row && this.dom.contains(row) ? row.dataset.row : undefined;
+    if (key === this.#hovered) return;
+    if (this.#hovered !== undefined) {
+      for (const each of this.dom.querySelectorAll(`[data-row="${this.#hovered}"]`)) {
+        each.classList.remove('is-hover');
+      }
+    }
+    this.#hovered = key;
+    if (key === undefined) return;
+    for (const each of this.dom.querySelectorAll(`[data-row="${key}"]`)) {
+      each.classList.add('is-hover');
+    }
+  };
+
+  /**
+   * Puts each box editing a comment in the slot its thread's card draws in the comment's place, as
+   * the card draws it: until then, the box is under the card.
+   */
+  readonly #placeEdits = (): void => {
+    for (const { box } of this.#boxes.values()) {
+      if (box.edits === undefined || box.thread === undefined) continue;
+      const host = this.#hosts.get(box.thread);
+      const slot = host && editSlot(host.dom, box);
+      if (slot && box.dom.parentElement !== slot) box.attach(slot);
+    }
+  };
+
+  /**
    * What a control the view draws runs its command on: the `+`'s line, or the file whose header
    * the control is in.
    */
   #controlTarget(control: HTMLElement): Target | undefined {
     if (control === this.#add) return this.#addAt;
+    if (this.#pin.dom.contains(control)) {
+      const file = this.#pin.file;
+      return file === undefined
+        ? undefined
+        : { kind: 'header', file: this.#ids[file]!, side: 'new' };
+    }
     const pane = this.#panes().find((each) => this.#viewOf(each).dom.contains(control));
     if (!pane) return undefined;
     const view = this.#viewOf(pane);
@@ -3227,10 +3392,16 @@ class View implements DiffView {
    */
   #tipOf(control: HTMLElement): Tip | undefined {
     const id = control.dataset.command;
-    if (id === undefined)
-      return control.dataset.tip === undefined ? undefined : { label: control.dataset.tip };
+    // A mark, or a name cut short, which says what it is, and no key.
+    if (id === undefined) {
+      const tip = control.dataset.tip;
+      if (tip === undefined || (control.dataset.tipCut !== undefined && !cutShort(control))) {
+        return undefined;
+      }
+      return { label: tip };
+    }
     const target = this.#controlTarget(control);
-    const shown = id === undefined || !target ? undefined : controlOf(id, target);
+    const shown = target ? controlOf(id, target) : undefined;
     if (!shown) return undefined;
     if (shown.off === undefined) control.removeAttribute('aria-disabled');
     else control.setAttribute('aria-disabled', 'true');
@@ -3331,6 +3502,9 @@ class View implements DiffView {
     if (card?.dataset.threadId) {
       const id = card.dataset.threadId;
       clicked = { kind: 'thread', thread: id, collapsed: this.#hosts.get(id)?.open === false };
+    } else if (this.#pin.dom.contains(target)) {
+      clicked = this.#controlTarget(this.#pin.dom);
+      if (!clicked) return;
     } else {
       const pane = this.#panes().find((each) => this.#viewOf(each).dom.contains(target));
       if (!pane) return;
@@ -3402,20 +3576,36 @@ class View implements DiffView {
     return [
       codeEditor(this.#nonce, moved),
       fileField,
-      // Vim's block cursor draws the character under it, which on a header is the path its line
-      // holds, under the header: the cursor there shows none.
+      // A file's header, and the row under it, draw a band through the gutters.
+      gutterReach(),
+      // The cursor on a file's header, or the row under it, shows as the ring around the band: the
+      // cursor itself shows none there.
       EditorView.editorAttributes.of((view) =>
         this.#onHeader(pane, view) ? { class: 'lo-onheader' } : null,
       ),
+      // Nothing lands under the header pinned over the top of the scroll: what's brought into
+      // view comes clear of it. A header brought to the top is itself what's there, and none is
+      // pinned over it.
+      EditorView.scrollMargins.of((view) =>
+        this.#onHeader(pane, view) ? null : { top: HEADER_HEIGHT },
+      ),
+      // What's at the top of the screen moves with what the editor drew, as the room the spacer
+      // pass adds, or the lines it measures once a scroll set from code brings them in.
+      EditorView.updateListener.of((update) => {
+        if (update.heightChanged || update.viewportChanged || update.geometryChanged) {
+          this.#watchFile();
+        }
+      }),
     ];
   }
 
-  /** Whether editor `view`, of `pane`, has its cursor on a file's header. */
+  /** Whether editor `view`, of `pane`, has its cursor on a file's header or the row under it. */
   #onHeader(pane: Pane, view: EditorView): boolean {
     // The inline editor is asked as it's made, before the view has its layout.
     if (pane === 'inline' && this.#inline?.view !== view) return false;
     const line = view.state.doc.lineAt(view.state.selection.main.head).number;
-    return this.#placeAt(pane, line).line === 0;
+    const place = this.#placeAt(pane, line);
+    return place.line === 0 || this.#noteOf(place.file) !== undefined;
   }
 
   #extensions(side: Side): Extension[] {
@@ -3710,7 +3900,7 @@ class View implements DiffView {
 
   #noteOf(file: number): FileNote | undefined {
     const { skipped } = this.#files[file]!;
-    if (this.#loading.has(file)) return 'loading';
+    if (this.#loading.has(file)) return this.#rereading.has(file) ? 'loading' : 'showing';
     if (this.#failed.has(file)) return 'failed';
     if (skipped === 'binary') return 'binary';
     if (skipped === 'empty') return 'empty';
@@ -3833,7 +4023,64 @@ class View implements DiffView {
       gaps: this.#gaps[file]!,
       note: this.#noteOf(file),
       draw: this.#draw,
+      ring: this.#ring,
+      problem: this.#problemOf(file),
     };
+  }
+
+  /**
+   * File `file`'s `Problem` as its header draws it: the element the caller drew it in, and when it
+   * must be drawn again, to move it into the editor showing.
+   */
+  #problemOf(file: number): HeaderProblem | undefined {
+    const held = this.#problems.get(file);
+    return held && { dom: held.dom, drawing: this.#drawing };
+  }
+
+  /**
+   * File `file`'s `Problem`: its lines that couldn't be read, or else what its header has, such as
+   * a refused "Mark viewed".
+   */
+  #problemFor(file: number): FileProblem | undefined {
+    const { path, header } = this.#files[file]!;
+    const failed = this.#failed.get(file);
+    if (!failed) return header.problem;
+    const name = path.slice(path.lastIndexOf('/') + 1);
+    // What was said goes behind Details, unless it's the reason itself.
+    const { reason, details } = failed;
+    return {
+      title: `Couldn’t read ${name}`,
+      reason,
+      details: details === reason ? undefined : details,
+      command: viewControls.toggle,
+    };
+  }
+
+  /**
+   * Has the caller draw file `file`'s `Problem` as it now is, in an element made the first time
+   * and kept until the file has none, or takes it down then.
+   */
+  #takeProblem(file: number): void {
+    const problem = this.#problemFor(file);
+    const held = this.#problems.get(file);
+    const render = this.#renderProblem;
+    if (!problem || !render) {
+      if (!held) return;
+      this.#problems.delete(file);
+      held.dom.remove();
+      held.content.destroy();
+      return;
+    }
+    if (held) {
+      if (sameProblem(held.problem, problem)) return;
+      held.problem = problem;
+      held.content.update(problem);
+      return;
+    }
+    const dom = document.createElement('div');
+    dom.className = 'lo-filerow lo-fileproblem';
+    const content = render(dom, problem, this.#ids[file]!);
+    this.#problems.set(file, { dom, content, problem });
   }
 
   /** Has the caller draw a thread, the first time it's drawn. */
@@ -3845,7 +4092,6 @@ class View implements DiffView {
       ...this.#base(file),
       side,
       lines: lines[side],
-      otherLines: lines[side === 'old' ? 'new' : 'old'].count > 0,
       doc,
       sizes: this.#sizes[side],
     });
@@ -4030,7 +4276,8 @@ class View implements DiffView {
   }
 
   /**
-   * Draws the files with threads, comment boxes or a peek again, so the editors showing take them.
+   * Draws the files with threads, comment boxes, a peek or a `Problem` again, so the editors
+   * showing take them.
    */
   #moveBoxes(): void {
     this.#drawing++;
@@ -4042,6 +4289,7 @@ class View implements DiffView {
     this.#threads.forEach((byPlace, file) => {
       if (byPlace.size > 0) files.add(file);
     });
+    for (const file of this.#problems.keys()) files.add(file);
     for (const file of files) this.#refresh(file);
   }
 
@@ -4068,7 +4316,9 @@ class View implements DiffView {
     };
     this.#loaded.add(file);
     this.#loading.delete(file);
+    this.#rereading.delete(file);
     this.#failed.delete(file);
+    this.#takeProblem(file);
     this.#gaps[file] = [];
     this.#lines[file] = { old: given.old, new: given.new };
     if (diff) this.#diffs[file] = diff;
@@ -4325,12 +4575,67 @@ class View implements DiffView {
     }
     // Only while the keys are the code's: with focus elsewhere, as in a box, no card's keys work.
     const focused = this.#panes().some((pane) => this.#viewOf(pane).hasFocus);
+    // On a file's header, or the row under it, the ring goes round the header's band, and stays
+    // there while focus is elsewhere, as in the tree, as where the keys go back to.
+    const header = place.line === 0 || this.#noteOf(place.file) !== undefined;
+    this.#setRing(header ? place.file : undefined);
+    this.#markFold(focused);
     const next = focused ? this.#threadAt(place) : undefined;
     if (this.#keyed !== undefined && this.#keyed !== next) {
       this.#hosts.get(this.#keyed)?.setFocused(false);
     }
     this.#keyed = next;
     if (next !== undefined) this.#hosts.get(next)?.setFocused(true);
+  }
+
+  /** The fold of unchanged lines the cursor is on, which takes the active line's ground. */
+  #cursorFold: HTMLElement | undefined;
+
+  /** Marks the fold the cursor is on, in the column it's in, while the keys are the code's. */
+  #markFold(focused: boolean): void {
+    let fold: HTMLElement | undefined;
+    if (focused) {
+      const view = this.#viewOf(this.#activePane());
+      const head = view.state.selection.main.head;
+      const line = view.lineBlockAt(head);
+      const blocks = Array.isArray(line.type) ? (line.type as readonly BlockInfo[]) : [line];
+      const widget = blocks.find(
+        (each) => each.from <= head && head <= each.to && each.widget instanceof CollapsedWidget,
+      )?.widget;
+      const row = widget instanceof CollapsedWidget ? widget.row : undefined;
+      if (row !== undefined) {
+        fold =
+          view.contentDOM.querySelector<HTMLElement>(`.lo-collapsed[data-row="${row}"]`) ??
+          undefined;
+      }
+    }
+    if (fold === this.#cursorFold) return;
+    this.#cursorFold?.classList.remove('is-cursor');
+    fold?.classList.add('is-cursor');
+    this.#cursorFold = fold;
+  }
+
+  /**
+   * Puts the keyboard's ring around file `file`'s header band, in every column that draws it, and
+   * takes it from the one that had it. Headers drawn later read it as they're drawn.
+   */
+  #setRing(file: number | undefined): void {
+    const was = this.#ring.file;
+    if (file === was) return;
+    this.#ring.file = file;
+    for (const view of this.#editors()) {
+      const { contentDOM } = view;
+      if (was !== undefined) {
+        for (const head of contentDOM.querySelectorAll(`[data-row="${headerRow(was)}"]`)) {
+          head.classList.remove(RING_CLASS);
+        }
+      }
+      if (file !== undefined) {
+        for (const head of contentDOM.querySelectorAll(`[data-row="${headerRow(file)}"]`)) {
+          head.classList.add(RING_CLASS);
+        }
+      }
+    }
   }
 
   /**
@@ -4347,9 +4652,8 @@ class View implements DiffView {
         card.getBoundingClientRect().bottom + CARD_CLEAR - (pane.top + this.dom.clientHeight);
       if (under <= 0) return;
       const { top } = this.#cursorReading();
-      // Its file's header stays at the top of the pane, over what scrolls under it.
-      const stuck = this.dom.querySelector<HTMLElement>('.lo-diffhead')?.offsetHeight ?? 0;
-      const by = Math.min(under, top - pane.top - stuck);
+      // The header pinned at the top of the pane stays over what scrolls under it.
+      const by = Math.min(under, top - pane.top - HEADER_HEIGHT);
       if (by > 0) this.#scrollBy(by);
     };
     // The frame after the one the editor brings the cursor's line on screen in.
@@ -4426,7 +4730,9 @@ class View implements DiffView {
     const note = this.#noteOf(file);
     if (note === 'too-large' || note === 'failed') {
       this.#failed.delete(file);
+      if (note === 'failed') this.#rereading.add(file);
       this.#loading.add(file);
+      this.#takeProblem(file);
       this.#refresh(file);
       this.#on.load(this.#ids[file]!);
       return;

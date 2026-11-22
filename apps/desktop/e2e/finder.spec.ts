@@ -71,7 +71,7 @@ const options = (page: Page) => finder(page).getByRole('option');
 const middle = (page: Page) => page.locator('main[data-lo-middle]');
 /** A file's header in the diff's new side. */
 const diffHeader = (page: Page, path: string) =>
-  page.locator('.lo-diffview .cm-editor').nth(1).locator('.lo-diffhead', { hasText: path });
+  page.locator('.lo-diffview .cm-editor').nth(1).locator(`.lo-diffhead[data-path="${path}"]`);
 
 /** The key of the row the tree's keyboard is on. */
 async function focused(page: Page): Promise<string | null> {

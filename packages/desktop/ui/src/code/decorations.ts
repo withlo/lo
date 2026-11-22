@@ -1,12 +1,12 @@
 // A file's decorations in one document, in two kinds. Its blocks, which change the document's
-// heights: its header, with a note in it where the file has no lines, a note where its lines
-// aren't shown, its collapsed code, the labels on its moved code, and its threads, comment boxes,
-// overview markers' notes and peek; each carries the file's index, so a file's can be replaced
-// alone when its diff or the moves arrive, a run opens, a comment is written or a note opens. And
-// its marks: changed lines and words, and moved lines and their edits, which the view makes only
-// for the lines it draws, so a transaction's cost doesn't grow with the pull request. A side's
-// document and the inline one draw the same things; the inline one has both sides' lines, one
-// after the other.
+// heights: its header, with the row under it in it where the side has none of the file's lines,
+// that row where its lines aren't shown, its collapsed code, the labels on its moved code, and its
+// threads, comment boxes, overview markers' notes and peek; each carries the file's index, so a
+// file's can be replaced alone when its diff or the moves arrive, a run opens, a comment is written
+// or a note opens. And its marks: changed lines and words, and moved lines and their edits, which
+// the view makes only for the lines it draws, so a transaction's cost doesn't grow with the pull
+// request. A side's document and the inline one draw the same things; the inline one has both
+// sides' lines, one after the other.
 
 import type { Range, Text } from '@codemirror/state';
 import { Decoration } from '@codemirror/view';
@@ -19,8 +19,12 @@ import {
   ArrivedWidget,
   type BoxHost,
   CollapsedWidget,
+  type FileRow,
   FileNoteWidget,
   type HeaderInfo,
+  type HeaderPart,
+  type HeaderProblem,
+  type HeaderRing,
   HeaderWidget,
   MovedLabelWidget,
   type NoteDraw,
@@ -58,9 +62,13 @@ export interface ViewThread {
   peek?: PeekHost | undefined;
 }
 
-/** What a file shows where its lines would be, when they aren't shown as a diff. */
+/**
+ * What a file shows where its lines would be, when they aren't shown as a diff: `showing` is a
+ * file too large to draw unasked whose lines were asked for, and `loading` one read again after
+ * it failed.
+ */
 export type FileNote =
-  'pending' | 'too-large' | 'loading' | 'failed' | 'binary' | 'empty' | 'closed';
+  'pending' | 'too-large' | 'showing' | 'loading' | 'failed' | 'binary' | 'empty' | 'closed';
 
 export interface Common {
   index: number;
@@ -85,25 +93,39 @@ export interface Common {
   gaps: readonly Gap[];
   /** Why the file's lines aren't drawn as a diff, when they aren't. */
   note?: FileNote | undefined;
+  /** The file whose header the keyboard is on, which every header reads. */
+  ring: HeaderRing;
+  /** The file's `Problem`, as the caller drew it, first under its header. */
+  problem?: HeaderProblem | undefined;
 }
 
-/** Whether a file's note is a button, which shows its lines: one closed, or too large unasked. */
-function noteActs(note: FileNote | undefined): boolean {
-  return note === 'too-large' || note === 'closed';
-}
-
-function noteText(file: ViewFile, note: FileNote): string {
-  const { additions, deletions } = file.header;
-  const texts: Record<FileNote, string> = {
-    'too-large': `Show ${(additions + deletions).toLocaleString('en-US')} lines`,
-    loading: 'Loading the file…',
-    failed: 'The file couldn’t be loaded: za tries again',
-    binary: 'A binary file',
-    empty: 'No lines changed',
-    pending: 'Working out the diff…',
-    closed: 'Expand file',
-  };
-  return texts[note];
+/**
+ * The row under a file's header in place of its lines: a button that shows them, or a wait. A
+ * binary file, or one with no text changes, has none: its header's tag says so. Nor has a file
+ * whose lines couldn't be read: its `Problem` is drawn with its header.
+ */
+export function fileRow(file: ViewFile, note: FileNote): FileRow | undefined {
+  switch (note) {
+    case 'too-large': {
+      const { additions, deletions } = file.header;
+      return { text: `Show ${(additions + deletions).toLocaleString('en-US')} lines`, act: true };
+    }
+    case 'closed':
+      return { text: 'Expand file', act: true };
+    case 'showing':
+      return { text: 'Showing…', busy: true };
+    case 'loading':
+      return { text: 'Reading file…', busy: true };
+    case 'pending':
+      return { text: 'Comparing…', busy: true };
+    case 'failed':
+    case 'binary':
+    case 'empty':
+      return undefined;
+    default:
+      note satisfies never;
+      throw new Error(`A note Lo doesn't know: ${JSON.stringify(note)}.`);
+  }
 }
 
 /** The file's blocks in one side's document, in no particular order. */
@@ -111,30 +133,23 @@ export function fileBlocks(
   input: Common & {
     side: Side;
     lines: FileLines;
-    /** Whether the file has lines on the other side. */
-    otherLines: boolean;
   },
 ): Range<Decoration>[] {
   const { side, index, file, lines, doc, diff, threads, keep, open, gaps } = input;
   const tag = { file: index };
   const line = (number: number): { from: number; to: number } => doc.line(lines.header + number);
   const headerLine = doc.line(lines.header);
-  const text = input.note && noteText(file, input.note);
-  // A side without lines beside one with them gets a spacer, not a note.
+  const row = input.note && fileRow(file, input.note);
+  // The header reads once across both sides: the left column draws its start and the row's words,
+  // the right its end and the row's ground.
+  const part: HeaderPart = side === 'old' ? 'start' : 'end';
+  const quiet = side === 'new';
   const onFile = threads.find((thread) => thread.line === 0 && thread.side === side);
-  const act = noteActs(input.note);
-  const out = [
-    header(
-      input,
-      headerLine,
-      lines.count === 0 && !input.otherLines ? text : undefined,
-      onFile,
-      act,
-    ),
-  ];
-  if (text) {
-    if (lines.count > 0) {
-      const widget = new FileNoteWidget(index, text, input.otherLines, act);
+  // A side with none of the file's lines draws the row under the header in the header.
+  const out = [header(input, headerLine, part, lines.count === 0 ? row : undefined, onFile)];
+  if (input.note) {
+    if (row && lines.count > 0) {
+      const widget = new FileNoteWidget(index, row, quiet, true);
       out.push(
         Decoration.replace({ widget, block: true, ...tag }).range(
           line(1).from,
@@ -148,7 +163,7 @@ export function fileBlocks(
 
   for (const run of shownRuns(diff, keep, open, gaps)) {
     const { first, last } = run[side];
-    const widget = collapsed(index, run.old.first, first, last, inGap(run, gaps));
+    const widget = collapsed(index, run.old.first, first, last, inGap(run, gaps), quiet);
     out.push(
       Decoration.replace({ widget, block: true, ...tag }).range(line(first).from, line(last).to),
     );
@@ -178,13 +193,12 @@ export function inlineBlocks(
   const tag = { file: index };
   const headerLine = doc.line(lines.header);
   const note = input.note ?? (diff && inline ? undefined : 'pending');
-  const text = note && noteText(file, note);
+  const row = note && fileRow(file, note);
   const onFile = threads.find((thread) => thread.line === 0);
-  const act = noteActs(note);
-  const out = [header(input, headerLine, lines.count === 0 ? text : undefined, onFile, act)];
-  if (text) {
-    if (lines.count > 0) {
-      const widget = new FileNoteWidget(index, text, true, act);
+  const out = [header(input, headerLine, 'both', lines.count === 0 ? row : undefined, onFile)];
+  if (note) {
+    if (row && lines.count > 0) {
+      const widget = new FileNoteWidget(index, row, false, true);
       out.push(
         Decoration.replace({ widget, block: true, ...tag }).range(
           doc.line(lines.header + 1).from,
@@ -224,16 +238,16 @@ export function inlineBlocks(
 }
 
 /**
- * The file's header, with `note` in it, where the file has no lines, and `onFile`, the threads and
- * comment boxes on the file: as blocks of their own after the header, CodeMirror can draw them above
- * the lines it draws (see `HeaderWidget`).
+ * The file's header, the part of it a column draws, with `row` in it, where the side has none of
+ * the file's lines, and `onFile`, the threads and comment boxes on the file: as blocks of their own
+ * after the header, CodeMirror can draw them above the lines it draws (see `HeaderWidget`).
  */
 function header(
   input: Common,
   line: { from: number; to: number },
-  note?: string,
+  part: HeaderPart,
+  row?: FileRow,
   onFile?: ViewThread,
-  act = false,
 ): Range<Decoration> {
   const under = onFile && {
     threads: onFile.threads,
@@ -241,25 +255,31 @@ function header(
     drawing: onFile.drawing ?? 0,
     draw: input.draw,
   };
-  const widget = new HeaderWidget(input.index, input.file, note, under, act);
+  // The left column draws the problem with the path; the right lines up beside it.
+  const problem = part === 'end' ? undefined : input.problem;
+  const widget = new HeaderWidget(input.index, input.file, part, input.ring, row, under, problem);
   return Decoration.replace({ widget, block: true, file: input.index }).range(line.from, line.to);
 }
 
-/** Unchanged lines collapsed: `missing` when the view has them only as placeholders. */
+/**
+ * Unchanged lines collapsed: `missing` when the view has them only as placeholders; `quiet` on the
+ * side that draws the row's ground alone.
+ */
 function collapsed(
   file: number,
   key: number,
   first: number,
   last: number,
   missing: boolean,
+  quiet = false,
 ): CollapsedWidget {
   const count = last - first + 1;
-  const lines = `${count} unchanged line${count === 1 ? '' : 's'}`;
   return new CollapsedWidget(
     `${file}:${key}${missing ? ':missing' : ''}`,
-    missing ? `${lines}, not loaded yet` : lines,
-    `lines ${first}–${last}`,
+    `${count.toLocaleString('en-US')} unchanged line${count === 1 ? '' : 's'}`,
     `c:${file}:${key}`,
+    quiet,
+    missing,
   );
 }
 
