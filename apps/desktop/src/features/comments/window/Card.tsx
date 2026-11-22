@@ -253,6 +253,8 @@ export function ThreadCard({
         edit: keysOf('comments.edit'),
         delete: keysOf('comments.remove'),
       }}
+      // Every card is drawn in a code view, whose right-click on it opens the thread's menu.
+      menu
       onToggle={onToggle}
       onReply={actions?.onReply}
       onResolve={actions?.onResolve}

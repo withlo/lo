@@ -4,6 +4,7 @@ import type { ReactNode } from 'react';
 import { Avatar } from './Avatar.tsx';
 import { Button } from './Button.tsx';
 import { Key, keyAria } from './Key.tsx';
+import { MoreButton } from './MoreButton.tsx';
 import { Spinner } from './Spinner.tsx';
 import { Tag, type TagTone } from './Tag.tsx';
 import { CommentIcon } from './ThreadCount.tsx';
@@ -80,6 +81,11 @@ export interface ThreadProps {
   /** You can reply to it. */
   canReply?: boolean | undefined;
   keys?: ThreadKeys | undefined;
+  /**
+   * A right-click on the card opens a menu where it's drawn, as in a code view: its head has the
+   * `⋯` button that opens the same menu.
+   */
+  menu?: boolean | undefined;
   /** An open reply box, in place of the row that offers one. */
   reply?: ReactNode;
   /** The collapse or the line was clicked. */
@@ -197,6 +203,7 @@ export function Thread({
   resolving = false,
   deleting,
   keys = {},
+  menu = false,
   reply,
   onToggle,
   onResolve,
@@ -297,6 +304,7 @@ export function Thread({
               {keys.resolve && <Key keys={keys.resolve} when="focus" decorative />}
             </Button>
           )}
+          {menu && <MoreButton />}
           <Button
             variant="ghost"
             size="sm"

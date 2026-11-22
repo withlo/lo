@@ -14,7 +14,8 @@ code editor it started as.
    links, the main button and the thing on screen. Nothing else is Powder.
 3. **Status keeps GitHub's meanings.** Green is open, added or passing; red is closed, removed or
    failing; purple is merged; amber is waiting or changed. Never use these colors for decoration.
-4. **The keyboard is visible.** Every action has a key, and every control that has one shows it.
+4. **The keyboard is discoverable.** Every action has a key and a visible control. A control shows
+   its key where the key works now, and in its tooltip everywhere else.
 5. **The middle view is a sheet.** The overview, diff and timeline sit on the ground (`lo-bg`) with
    round top corners, set into the lighter chrome the way the mark's ball sits in its socket.
 6. **Show what's true.** Real code, real states, real counts. Don't fake progress, round away errors
@@ -148,6 +149,36 @@ Dark (Lo Glow Dark) is the default. Every color comes from `tokens.json` through
   says it, in `hintShortcut` (`liveShortcut` gives it), and it sets the attribute; a sequence, which
   the attribute can't say, is described from `hintKeys`. Anything else in a `Tooltip` sets
   `aria-keyshortcuts` itself.
+
+### Every action has a control
+
+Keyboard first isn't keyboard only: whatever a key does, the mouse does too, from a control drawn
+where the action's target is.
+
+- **A control is its command's.** It takes its label, its key and whether it can run from the
+  registry, and runs the command as the key does: `controlOf(id, target)` and
+  `runControl(id, target)` in `@lo/ui/commands`. It never keeps a label or a key of its own, so it
+  follows the keymap file, and while its command can't run it's dimmed with the command's reason as
+  its tooltip.
+- **Every command names its route.** In a feature's `keys.ts`, a command says how the mouse reaches
+  it: `control` (where its control is drawn, in a few words), `menu` (a right-click menu) or `bar`
+  (the app menu). The route check (`checkRoutes`) fails on a command with none. The commands still
+  waiting for one are listed in `apps/desktop/src/window/commands/routes.ts`: take a command off the
+  list in the change that gives it a route, and never add to it.
+- **Hints are buttons.** A row of key hints, such as a panel's foot, is made of `HintButton`: a
+  command's label and its key, which runs the command when clicked.
+  `<HintButton command="comments.showThread" target={target}>Show</HintButton>`. Give it the target
+  the key would act on, and words of its own only where the command's label is too long for the row.
+  A click leaves focus where it was, so the keys beside it go on working. No hint is only text.
+- **Anything with a right-click menu has a `⋯` button.** `MoreButton` goes inside the element whose
+  right-click opens the menu, at the end of its row (before a chevron that opens or closes the row,
+  as on a thread's card), and opens that same menu under itself (`openMenuUnder`), so the two can
+  never list different things. It's named "More actions", or "More actions for retry.ts" (`label`)
+  where a row has several.
+- **A control a code view draws** in its own DOM, where React doesn't reach, carries its command's
+  id in `data-command`. The view runs the command on the line or file the control is drawn at, and
+  gives it the tooltip a `Button` would have: the command's label and key, or why it can't run.
+  `data-tip` holds other words where the control's state changes what a click does.
 
 ## Motion
 
@@ -318,8 +349,15 @@ Every action has a key; see `keyboard.md` for the rules and focus, and section 1
   `--lo-ring-inset` so they don't jump. Never remove a focus style without replacing it.
 - Focus and "current" are different: focus is where the keyboard is; current (`lo-current`, a Powder
   ball) is what's on screen. They can sit on different rows.
-- Show a control's key on the control with `lo-kbd` (or `lo-keys` for a sequence). In menus, the key
-  sits at the right.
+- Show a control's key on the control with `Key` (`lo-kbd`, or `lo-keys` for a sequence). The chip
+  comes last, after the label; in menus it sits at the right.
+- **A chip shows where its key works now.** Always on a surface's main button, dialog buttons, menu
+  and palette rows and `HintButton`. On a control that every card or row repeats, only on the one
+  the keyboard is on: give those `Key` `when="focus"`, and mark the card or row `data-key-scope`
+  (with `data-focused` while the keyboard is on it, if it doesn't hold DOM focus). The others give
+  the key in their tooltip. A chip never comes on hover, which would move the buttons beside it.
+- A chip takes its control's state by itself: on a main button's fill it's drawn in the fill's text
+  colour, and on a dimmed control or menu row it dims with the label. Don't colour a chip by hand.
 - Code has a caret, in `lo-code-cursor`. With Vim keys on it's Vim's block cursor, with a halo,
   which goes hollow when the view loses focus.
 - Vim's mode shows only with Vim keys on: once in the status bar (`StatusMode`), and in the comment
@@ -347,17 +385,17 @@ Every action has a key; see `keyboard.md` for the rules and focus, and section 1
 Lo's components are React components in `packages/desktop/ui`, styled with Tailwind CSS on these
 tokens. Their code is the source for how each one looks.
 
-| Group            | Components                                                               |
-| ---------------- | ------------------------------------------------------------------------ |
-| Window           | PullRequestTab, TabBar, PRHeader, StatusBar, Banner                      |
-| Panels           | StackTree, FileTree                                                      |
-| Controls         | Button, CopyButton, Key, SegmentedControl, Switch, Input                 |
-| Marks            | StatePill, Tag, Avatar, Marks                                            |
-| Floating         | Dialog, Popover, ContextMenu, Palette, Tooltip, ToastStack               |
-| Motion and waits | Collapse, Swap, Loading, Skeleton, Spinner, LogoMotion, Problem          |
-| Review           | Thread, Diff, CodeView, CommentBox                                       |
-| Overview         | OverviewDocument, CodeBlock, Figure, Walkthrough, TabsAndFolds, Glossary |
-| Flows            | Choice, Checklist, Composer, Peek, Timeline                              |
+| Group            | Components                                                                       |
+| ---------------- | -------------------------------------------------------------------------------- |
+| Window           | PullRequestTab, TabBar, PRHeader, StatusBar, Banner                              |
+| Panels           | StackTree, FileTree                                                              |
+| Controls         | Button, HintButton, MoreButton, CopyButton, Key, SegmentedControl, Switch, Input |
+| Marks            | StatePill, Tag, Avatar, Marks                                                    |
+| Floating         | Dialog, Popover, ContextMenu, Palette, Tooltip, ToastStack                       |
+| Motion and waits | Collapse, Swap, Loading, Skeleton, Spinner, LogoMotion, Problem                  |
+| Review           | Thread, Diff, CodeView, CommentBox                                               |
+| Overview         | OverviewDocument, CodeBlock, Figure, Walkthrough, TabsAndFolds, Glossary         |
+| Flows            | Choice, Checklist, Composer, Peek, Timeline                                      |
 
 Build new screens from these. If something new is needed, make it from the same tokens and keep it
 to one job.
@@ -375,6 +413,16 @@ to one job.
   them.
 - Code is set as written: no ligatures. Every rule that sets the mono face turns them off with it.
 - A file's header reads once across both sides. The file you're in stays pinned under the diff bar.
+- **The viewed ball is a checkbox drawn as the ball.** It has a checkbox's semantics
+  (`role="checkbox"`, `aria-checked`, named "Viewed") and is never drawn as a box. A click marks or
+  unmarks the file, as `e` does. Its tooltip is what a click does, with the key: "Mark viewed" or
+  "Unmark viewed", or the reason while it can't. A file changed since it was viewed isn't viewed:
+  its ball is the amber ring, unchecked, and "Changed since viewed" is written beside it in the
+  header, in amber, so the third state is in words and not only in the ball. The tooltip stays the
+  command.
+- **A `+` follows the pointer down the gutter** beside each line that takes a comment. A click
+  comments on that line, as `c` does. It sits over the gutter, takes no room and moves nothing, and
+  it's gone over a header, a thread or a box.
 - **What you open is in view when it opens.** A comment box, a thread or a peek that opens scrolls
   its pane the least that shows all of it, at once, with `reveal` (`block: 'nearest'`), and never
   with `scrollIntoView`. One taller than its pane shows from its top. A comment box does this itself
@@ -411,8 +459,23 @@ copy its foot.
   under 320px (`box-row`). In a box taller than its pane, the foot stays at the pane's foot.
 - **Actions.** "Add to review" and "Send now" under a line or a thread, "Send" under the pull
   request, "Save" in an edit. While a review is pending GitHub adds every comment to it, so the box
-  has "Add to review" alone. A dimmed action says why in its tooltip, and the one pressed is `busy`
-  with its `working` ("Sending…", "Saving…").
+  has "Add to review" alone. A dimmed action says why in its tooltip.
+- **Sending.** A comment is its card from the moment it's sent: the box draws the text as it will
+  read, with "Sending…" where its time will be (`SentPost`; "Saving…" for an edit), and the card
+  from GitHub takes its place. The text never leaves the screen. A send that fails turns back into
+  the open box with the text as it was, under a note that says what wasn't sent and why, with "Try
+  again".
+- **Never a blind resend.** When GitHub's answer never came, nobody knows whether the comment
+  posted, and sending it again could post it twice. The box then says "Comment not confirmed" and
+  offers "Check again", which only looks. Its buttons are dimmed with "Check again first" until Lo
+  knows: found, the card takes the box's place; not found, the note offers "Try again". An edit and
+  a resolve follow the same rule.
+- **Attached files.** A file goes in at the cursor as a placeholder while it uploads. If the upload
+  fails or is refused, Lo takes the placeholder out itself and the file's row says what happened. A
+  comment isn't sent while a placeholder is in its text.
+- **A line reference is data.** What a comment is on is held as its side, lines and revision
+  (`LineRef`) and worded in one place (`lineRefText`): "Line 3", "Lines 39–41", "Line 3, removed",
+  with "· r2" where the revision isn't the one on screen. Never build the words by hand.
 - **Lines.** Something to know that needs no answer is one quiet line over the foot's controls
   (`lines`): "Draft from 12 min ago". Something that stops the comment going, with what to do about
   it, is a note over the editor (`notes`), with its buttons.

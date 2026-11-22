@@ -3151,7 +3151,13 @@ class View implements DiffView {
         ? this.#panes().find((each) => this.#viewOf(each).dom.contains(target))
         : undefined;
     const view = pane && this.#viewOf(pane);
-    const block = view?.elementAtHeight(event.clientY - view.documentTop);
+    const height = view ? event.clientY - view.documentTop : 0;
+    const whole = view?.elementAtHeight(height);
+    // A line with a thread or a box under it is several blocks: the `+` is for its text alone.
+    const block =
+      whole && Array.isArray(whole.type)
+        ? whole.type.find((each) => each.top <= height && height < each.bottom)
+        : whole;
     if (!pane || !view || block?.type !== BlockType.Text) {
       this.#hideAdd();
       return;

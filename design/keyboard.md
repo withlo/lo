@@ -27,9 +27,14 @@ code view and comment box follows at once.
 
 - **Every action gets a key before it ships,** and appears in the command palette (`⌘⇧P`), the key
   help (`?`) and the right-click menu where one makes sense.
-- **Show the key on the control.** Buttons, menu items, segmented controls and hint rows carry
-  `lo-kbd` (one key) or `lo-keys` (a sequence such as `] b`). Chords are one key (`⌘⇧P`); sequences
-  are separate keys with no plus sign.
+- **Every action gets a control too,** drawn where its target is, which runs the command as its key
+  does. Its command says where in `keys.ts` (`control`, `menu` or `bar`), and a check fails on one
+  that doesn't. "Every action has a control" in [`README.md`](README.md#every-action-has-a-control)
+  has the pieces: `HintButton`, `MoreButton` and the controls a code view draws.
+- **Show the key where it works now.** Main buttons, dialog buttons, menu items, segmented controls
+  and hint rows carry `lo-kbd` (one key) or `lo-keys` (a sequence such as `] b`), after the label. A
+  control repeated on every card or row shows its key only on the one the keyboard is on, and in its
+  tooltip on the others. Chords are one key (`⌘⇧P`); sequences are separate keys with no plus sign.
 - **Write keys in their macOS form in docs.** On Linux, Ctrl replaces `⌘`; the app shows each
   platform its own. The exceptions are under Linux, below.
 - **Don't take a key that's already used,** by Lo or by Vim habits people bring with them

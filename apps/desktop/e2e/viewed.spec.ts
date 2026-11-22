@@ -637,6 +637,27 @@ test('clearing a viewed file’s mark opens it again, and the cursor stays', asy
   expect(await cursorPath(page)).toBe('src/format.ts');
 });
 
+test('a click on a file’s viewed ball unmarks it, and another marks it', async ({ page, fake }) => {
+  test.setTimeout(60_000);
+  fake.marks.set('src/format.ts', 'VIEWED');
+  await shown(page);
+  const mark = headerBall(page, 'src/format.ts');
+  await expect(mark).toHaveRole('checkbox');
+  await expect(mark).toHaveAccessibleName('Viewed');
+  await expect(mark).toHaveAttribute('aria-checked', 'true');
+  // Its tooltip is what a click does.
+  await mark.hover();
+  await expect(page.getByRole('tooltip')).toContainText('Unmark viewed');
+  await mark.click();
+  await expect(mark).toHaveAttribute('aria-checked', 'false');
+  await expect.poll(() => fake.writes).toEqual(['UnmarkFileAsViewed src/format.ts']);
+  await mark.click();
+  await expect(mark).toHaveAttribute('aria-checked', 'true');
+  await expect
+    .poll(() => fake.writes)
+    .toEqual(['UnmarkFileAsViewed src/format.ts', 'MarkFileAsViewed src/format.ts']);
+});
+
 /**
  * Lo started again on the test's data folder, the first run's database holding that the reader
  * marked src/parser.ts viewed at the first push.

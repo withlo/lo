@@ -2065,9 +2065,9 @@ describe('headers and notes', () => {
       const tipOn = (): string | undefined => {
         ballOf('h:1')!.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
         vi.advanceTimersByTime(TIP_DELAY);
-        const said = document.querySelector('.lo-tip')?.textContent;
+        const words = document.querySelector('.lo-tip')?.textContent;
         ballOf('h:1')!.dispatchEvent(new MouseEvent('mouseout', { bubbles: true }));
-        return said ?? undefined;
+        return words ?? undefined;
       };
       expect(tipOn()).toBe('Mark viewede');
       expect(document.querySelector('.lo-tip')).toBeNull();

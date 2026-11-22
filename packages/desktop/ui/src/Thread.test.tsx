@@ -227,6 +227,17 @@ describe('Thread', () => {
     expect(buttons(open, 'Reply…')).toHaveLength(0);
   });
 
+  it('has a "More actions" button where a right-click opens a menu, which opens that menu', () => {
+    expect(
+      render(<Thread {...PROPS} />).querySelector('button[aria-label="More actions"]'),
+    ).toBeNull();
+    const host = render(<Thread {...PROPS} menu />);
+    const asked: MouseEvent[] = [];
+    host.addEventListener('contextmenu', (event) => asked.push(event));
+    click(host.querySelector('button[aria-label="More actions"]')!);
+    expect(asked).toHaveLength(1);
+  });
+
   it('collapses from its head, with the key in the tooltip, and rings the thread the keyboard is on', () => {
     const onToggle = vi.fn<() => void>();
     const host = render(
