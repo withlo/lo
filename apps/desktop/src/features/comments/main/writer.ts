@@ -460,6 +460,10 @@ export class Writer {
           : 'It’s being sent already.';
       return Promise.resolve({ kind: 'refused', refusal: { kind: 'github', message } });
     }
+    // Sent, and nobody knows whether it posted: only a look that finds it didn't lets it go again.
+    if (stands === 'unknown') {
+      return Promise.resolve({ kind: 'refused', refusal: { kind: 'unconfirmed' } });
+    }
     this.#options.drafts.save(target.login, target.pull, place, text);
     const pull = target.pull.key;
     this.#sending.set(key, this.#lastWrite.has(pull) ? 'waiting' : 'sending');
@@ -502,6 +506,20 @@ export class Writer {
     if (refusal) return { kind: 'refused', refusal };
     if (this.#options.drafts.startEdit(login, pull, place, base)) this.#changed(target);
     return { kind: 'done' };
+  }
+
+  /**
+   * Looks again, when the reader asks, whether the draft at `place` on view `id` posted: one sent
+   * whose answer was lost, and that Lo couldn't tell of when it looked by itself (`unknown`). It's
+   * `checking` until a read says, as after the send. Nothing is sent.
+   */
+  check(id: string, place: DraftPlaceRow): void {
+    const target = this.#targetOf(id);
+    if (!target) return;
+    const key = this.#key(target, place);
+    const kept = this.#options.drafts.get(target.login, target.pull, place);
+    if (kept?.sent == null || this.#sending.get(key) !== 'unknown') return;
+    this.#lost(target, key, place, kept.sent, kept.sentAt);
   }
 
   /**

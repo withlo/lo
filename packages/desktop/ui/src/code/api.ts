@@ -250,7 +250,9 @@ export interface Composer {
   preview(on: boolean): void;
   /**
    * Holds the text as it is, as while it's being sent, so that nothing typed then is lost as the
-   * box closes once it's sent: no key changes it, and insert mode ends. `false` lets it go.
+   * box closes once it's sent: no key changes it, and insert mode ends. While it's held the box
+   * shows only its `sent` part, the comment as a card. `false` lets it go, and the box is back as
+   * it was, with its text.
    */
   hold(on: boolean): void;
   /**
@@ -298,6 +300,11 @@ export interface BoxParts {
   note: HTMLElement;
   /** In the editor's place while the box previews: the text rendered. */
   preview: HTMLElement;
+  /**
+   * In place of everything else while the box's text is held (`hold`), as from the moment it's
+   * sent: the comment as its card will draw it, marked as being sent.
+   */
+  sent: HTMLElement;
   /** Over the editor, shown while files are dragged over the box. */
   dropzone: HTMLElement;
   /** Under the editor: the files being attached. */

@@ -452,6 +452,16 @@
   font-weight: 500;
 }
 
+/* A key chip on a control that every card or row repeats (`Key` with `when="focus"`): there only
+   on the card or row the keyboard is on, or the pointer is over. A scope is whatever is marked
+   `data-key-scope`, and it's the keyboard's while it has `data-focused` or focus inside it. */
+@utility key-focus {
+  display: none;
+  [data-key-scope]:is([data-focused], :hover, :focus-within) & {
+    display: inline-flex;
+  }
+}
+
 /* What a comment box's head and foot give up as the box narrows, each narrower than the last: the
    key chips, then the hints, then the labels of the controls that keep an icon. Its buttons keep
    their words at any width, so under the last width the rows wrap instead of running past the box.

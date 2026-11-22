@@ -4,6 +4,7 @@ import type { ReactNode } from 'react';
 import { Avatar } from './Avatar.tsx';
 import { Button } from './Button.tsx';
 import { Key, keyAria } from './Key.tsx';
+import { Spinner } from './Spinner.tsx';
 import { Tag, type TagTone } from './Tag.tsx';
 import { CommentIcon } from './ThreadCount.tsx';
 
@@ -69,6 +70,11 @@ export interface ThreadProps {
   focused?: boolean | undefined;
   /** You can resolve it, or unresolve it once it's resolved. */
   canResolve?: boolean | undefined;
+  /**
+   * Resolve or Unresolve was asked and GitHub hasn't answered: `resolved` is already what was asked
+   * for, and the control says it's working.
+   */
+  resolving?: boolean | undefined;
   /** You can reply to it. */
   canReply?: boolean | undefined;
   keys?: ThreadKeys | undefined;
@@ -124,6 +130,42 @@ function Chevron({ up }: { up: boolean }) {
   );
 }
 
+export interface SentPostProps {
+  /** Who it's from: the account that wrote it. */
+  author: string;
+  image?: string | undefined;
+  /** An edit being saved, not a comment being sent. */
+  saving?: boolean | undefined;
+  /** The text as it will read, already drawn. */
+  body: ReactNode;
+}
+
+/**
+ * A comment the reader has sent that GitHub hasn't answered for yet, drawn as it will be on its
+ * card, with "Sending…" where its time will be. The comment box draws it in its own place from the
+ * moment it's sent, so the text never leaves the screen; the card takes its place when it arrives.
+ */
+export function SentPost({ author, image, saving = false, body }: SentPostProps) {
+  return (
+    <div role="status" data-sent="" className="flex gap-8 px-12 py-8">
+      <Avatar login={author} image={image} size="sm" />
+      <div className="min-w-0 flex-1">
+        <div className="flex min-h-24 flex-wrap items-center gap-x-8 gap-y-2 text-fg-muted text-small">
+          <span className="font-semibold whitespace-nowrap text-fg">
+            {author}
+            <span className="font-normal text-fg-muted"> (you)</span>
+          </span>
+          <span className="inline-flex items-center gap-6 whitespace-nowrap">
+            <Spinner />
+            {saving ? 'Saving…' : 'Sending…'}
+          </span>
+        </div>
+        <div className="lo-selectable mt-2 text-fg read-comment">{body}</div>
+      </div>
+    </div>
+  );
+}
+
 /** What a button's keys say to a screen reader, and what they add to its tooltip. */
 function withKeys(label: string, keys: readonly string[] | undefined) {
   return {
@@ -148,6 +190,7 @@ export function Thread({
   focused = false,
   canResolve = false,
   canReply = false,
+  resolving = false,
   keys = {},
   reply,
   onToggle,
@@ -216,6 +259,7 @@ export function Thread({
       aria-label={`${word} thread by ${first.author}`}
       data-thread-state={state}
       data-focused={focused ? '' : undefined}
+      data-key-scope=""
       className={`${card({ view: 'open', ground })} ${className}`}
     >
       <div className="flex min-h-32 items-center gap-8 border-b border-border-subtle py-4 ps-12 pe-6 text-fg-muted text-small">
@@ -234,9 +278,18 @@ export function Thread({
         </span>
         <span className="flex flex-none items-center gap-2">
           {canResolve && !pendingAll && (
-            <Button variant="ghost" size="sm" onClick={onResolve}>
+            <Button
+              variant="ghost"
+              size="sm"
+              // Asked already, it shows what was asked for: the word is the one being done.
+              busy={resolving}
+              working={resolved ? 'Resolving…' : 'Unresolving…'}
+              hint={resolved ? 'Unresolve' : 'Resolve'}
+              hintKeys={keys.resolve}
+              onClick={onResolve}
+            >
               {resolved ? 'Unresolve' : 'Resolve'}
-              {keys.resolve && <Key keys={keys.resolve} decorative />}
+              {keys.resolve && <Key keys={keys.resolve} when="focus" decorative />}
             </Button>
           )}
           <Button
@@ -274,20 +327,26 @@ export function Thread({
                     variant="ghost"
                     size="sm"
                     aria-label={`Edit your comment from ${comment.when}`}
+                    hint="Edit"
+                    hintKeys={comment.id === newestMine ? keys.edit : undefined}
                     onClick={() => onEdit?.(comment.id)}
                   >
                     Edit
-                    {comment.id === newestMine && keys.edit && <Key keys={keys.edit} decorative />}
+                    {comment.id === newestMine && keys.edit && (
+                      <Key keys={keys.edit} when="focus" decorative />
+                    )}
                   </Button>
                   <Button
                     variant="ghost"
                     size="sm"
                     aria-label={`Delete your comment from ${comment.when}`}
+                    hint="Delete…"
+                    hintKeys={comment.id === newestMine ? keys.delete : undefined}
                     onClick={() => onDelete?.(comment.id)}
                   >
                     Delete
                     {comment.id === newestMine && keys.delete && (
-                      <Key keys={keys.delete} decorative />
+                      <Key keys={keys.delete} when="focus" decorative />
                     )}
                   </Button>
                 </span>
@@ -307,7 +366,7 @@ export function Thread({
             Reply…
             {keys.reply && (
               <span className="ms-auto">
-                <Key keys={keys.reply} quiet decorative />
+                <Key keys={keys.reply} when="focus" quiet decorative />
               </span>
             )}
           </button>

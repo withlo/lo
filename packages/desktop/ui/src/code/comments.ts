@@ -154,13 +154,16 @@ export class CommentBox implements BoxHost, KeySource {
       head: part('head'),
       note: part('note'),
       preview: part('preview'),
+      sent: part('sent'),
       dropzone: part('dropzone'),
       uploads: part('uploads'),
       foot: part('foot'),
     };
-    const { head, note, preview, dropzone, uploads, foot } = this.#parts;
+    const { head, note, preview, sent, dropzone, uploads, foot } = this.#parts;
     preview.hidden = true;
     preview.tabIndex = -1;
+    sent.hidden = true;
+    sent.tabIndex = -1;
     dropzone.hidden = true;
     const body = document.createElement('div');
     body.className = 'lo-diffcomposer__body';
@@ -254,7 +257,7 @@ export class CommentBox implements BoxHost, KeySource {
       state: was?.state ?? EditorState.create({ doc: options.draft, extensions }),
     });
     body.append(preview, dropzone);
-    this.dom.append(head, note, body, uploads, foot);
+    this.dom.append(sent, head, note, body, uploads, foot);
     this.composer = this.#handle(options);
     if (options.frame) this.#frame = options.frame(this.#parts, this.composer);
     this.#stops.push(
@@ -433,12 +436,23 @@ export class CommentBox implements BoxHost, KeySource {
     this.view.dispatch({ changes: { from: start, to: end, insert: text } });
   }
 
-  /** Holds the text as it is, leaving Vim's insert mode, or lets it go. */
+  /**
+   * Holds the text as it is, leaving Vim's insert mode, or lets it go. Held, the box is the comment
+   * it sent: its `sent` part shows in place of everything else, and the rest comes back, with the
+   * text and focus where they were, when it's let go, as after a send that failed.
+   */
   hold(on: boolean): void {
     if (on === this.#holding) return;
+    const focused = this.dom.contains(this.dom.ownerDocument.activeElement);
     this.#holding = on;
     if (on) leaveToNormal(this.view);
     this.view.dispatch({ effects: this.#held.reconfigure(on ? readOnly() : []) });
+    this.#parts.sent.hidden = !on;
+    this.dom.classList.toggle('is-sent', on);
+    if (!focused) return;
+    // Focus stays in the box, so its keys and the code's don't change hands while it's sent.
+    if (on) this.#parts.sent.focus({ preventScroll: true });
+    else this.focusShown();
   }
 
   /**

@@ -594,8 +594,40 @@ describe('a lost answer', () => {
     refusing.threads.now = new GithubError({ kind: 'notFound', message: 'gone' });
     await vi.advanceTimersByTimeAsync(10_000);
     expect(unknown.last()).toMatchObject([{ sending: 'unknown', sent: 'Lost?' }]);
-    // Nothing was sent again; the reader may send it anyway.
+    // Nothing was sent again, and nothing is until a look finds it didn't post.
+    expect(await unknown.made.send('t1', onLine(), 'Lost?', 'review')).toEqual({
+      kind: 'refused',
+      refusal: { kind: 'unconfirmed' },
+    });
     expect([...missing.sent, ...away.sent, ...refusing.sent]).toHaveLength(3);
+  });
+
+  test('looks again when asked, for one it couldn’t tell of: found, the draft goes; not there, it can be sent again', async () => {
+    vi.useFakeTimers();
+    const lostOnce = async (now: unknown) => {
+      const fake = poller([lost()]);
+      const made = writer(fake);
+      await made.made.send('t1', onLine(), 'Lost?', 'review');
+      fake.threads.now = new GithubError({ kind: 'notFound', message: 'gone' });
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(made.last()).toMatchObject([{ sending: 'unknown', sent: 'Lost?' }]);
+      fake.threads.now = now as typeof fake.threads.now;
+      made.made.check('t1', onLine());
+      expect(made.last()).toMatchObject([{ sending: 'checking' }]);
+      await vi.advanceTimersByTimeAsync(1_000);
+      return { fake, ...made };
+    };
+    // It's there: it posted, and the draft goes.
+    const there = await lostOnce({ nodes: [node('src/backoff.ts', 'Lost?')], missing: 0 });
+    expect(there.last()).toEqual([]);
+    expect(there.fake.sent).toHaveLength(1);
+    // It isn't: now it's known, and sending it again posts it once.
+    const absent = await lostOnce({ nodes: [node('src/backoff.ts', 'Other')], missing: 0 });
+    expect(absent.last()).toMatchObject([{ sending: 'notPosted', sent: null, text: 'Lost?' }]);
+    expect(absent.fake.sent).toHaveLength(1);
+    // A look for a draft that isn't in doubt does nothing.
+    absent.made.check('t1', onLine());
+    expect(absent.last()).toMatchObject([{ sending: 'notPosted' }]);
   });
 
   describe('found in your pending review', () => {

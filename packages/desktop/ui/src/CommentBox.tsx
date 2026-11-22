@@ -59,6 +59,8 @@ export interface CommentBoxNote {
   tone: 'info' | 'warning';
   /** In place of the tone's own: a clock for a restored draft, a cross for a refusal. */
   icon?: 'clock' | 'blocked' | undefined;
+  /** What went wrong, for one that says so: "Couldn’t send the comment". `text` is then why. */
+  title?: string | undefined;
   text: ReactNode;
   /** What it offers to do, each starting with a verb: "Show latest", "Comment on file". */
   actions?: readonly BannerAction[] | undefined;
@@ -171,6 +173,12 @@ export interface CommentBoxProps {
   previewing?: boolean | undefined;
   /** Files are being dragged over it: how many. */
   dropping?: number | undefined;
+  /**
+   * The comment as its card will draw it (`SentPost`), from the moment it's sent until GitHub
+   * answers: the box draws only this, with the editor kept out of sight, so the text never leaves
+   * the screen and is there to come back to if the send fails.
+   */
+  sent?: ReactNode;
   foot?: CommentBoxFoot | undefined;
   /** More classes for the box, such as the space the code view leaves around it. */
   className?: string | undefined;
@@ -255,7 +263,10 @@ function Note({ each, id }: { each: CommentBoxNote; id?: string | undefined }) {
   return (
     <div id={id} role="status" className={note({ tone: each.tone })}>
       <NoteIcon tone={each.tone} icon={each.icon} />
-      <span className="min-w-0 flex-1">{each.text}</span>
+      <span className="min-w-0 flex-1">
+        {each.title !== undefined && <b className="text-ui-strong">{each.title} </b>}
+        {each.text}
+      </span>
       {each.actions !== undefined && each.actions.length > 0 && (
         <span className="flex flex-none items-center gap-2">
           {each.actions.map((action) => (
@@ -618,6 +629,7 @@ export function CommentBox({
   preview,
   previewing = false,
   dropping,
+  sent,
   foot,
   className = '',
   frameRef,
@@ -650,7 +662,8 @@ export function CommentBox({
       aria-label={label}
       data-lo-scope="box"
       data-focused={focused ? '' : undefined}
-      className={`${box({ focused })} ${className}`}
+      // A sent comment is a card, with no ring of the box's.
+      className={`${box({ focused: focused && sent === undefined })} ${className}`}
       onFocus={() => {
         held.current = true;
       }}
@@ -659,13 +672,20 @@ export function CommentBox({
         if (next instanceof Node && !event.currentTarget.contains(next)) held.current = false;
       }}
     >
-      {head !== undefined && <CommentBoxHeadBar head={head} previewing={previewing} />}
-      <CommentBoxNotes id={id} notes={notes} />
-      <div ref={slot} hidden={previewing} className="relative bg-code-bg text-code-fg code-text">
+      {sent !== undefined && sent}
+      {sent === undefined && head !== undefined && (
+        <CommentBoxHeadBar head={head} previewing={previewing} />
+      )}
+      {sent === undefined && <CommentBoxNotes id={id} notes={notes} />}
+      <div
+        ref={slot}
+        hidden={previewing || sent !== undefined}
+        className="relative bg-code-bg text-code-fg code-text"
+      >
         {children}
         {dropping !== undefined && !previewing && <CommentBoxDropzone dropping={dropping} />}
       </div>
-      {previewing && (
+      {previewing && sent === undefined && (
         <div
           ref={pane}
           role="region"
@@ -676,8 +696,10 @@ export function CommentBox({
           {preview ?? <p className="text-fg-muted">Nothing to preview</p>}
         </div>
       )}
-      {uploads.length > 0 && <CommentBoxUploads uploads={uploads} />}
-      {foot !== undefined && <CommentBoxFootBar id={id} foot={foot} focused={focused} />}
+      {sent === undefined && uploads.length > 0 && <CommentBoxUploads uploads={uploads} />}
+      {sent === undefined && foot !== undefined && (
+        <CommentBoxFootBar id={id} foot={foot} focused={focused} />
+      )}
     </div>
   );
 }
