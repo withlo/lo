@@ -70,6 +70,11 @@ export interface SetupItemProps {
   done?: ReactNode;
   /** One picture of what the step adds, under its line. */
   figure?: ReactNode;
+  /**
+   * What its button's last press left to say, under its line: a step still to take, such as a
+   * folder to add to `PATH`, or a `Problem` where it failed.
+   */
+  below?: ReactNode;
   /** Its one button, at the end of the row, while it isn't done. */
   children?: ReactNode;
 }
@@ -78,7 +83,15 @@ export interface SetupItemProps {
  * One thing to set up: an icon, what it is and adds, and its own button, which gives way to the
  * step's state once it's done.
  */
-export function SetupItem({ icon, title, description, done, figure, children }: SetupItemProps) {
+export function SetupItem({
+  icon,
+  title,
+  description,
+  done,
+  figure,
+  below,
+  children,
+}: SetupItemProps) {
   const end = done !== undefined ? <SetupDone>{done}</SetupDone> : children;
   return (
     <li className="setup-item border-t border-border-subtle px-16 py-12 first:border-t-0">
@@ -88,6 +101,7 @@ export function SetupItem({ icon, title, description, done, figure, children }: 
       <span className="text-ui-strong">{title}</span>
       <span className="col-start-2 text-fg-muted text-small">{description}</span>
       {end !== undefined && <span className="col-start-3 row-span-2 row-start-1">{end}</span>}
+      {below !== undefined && <div className="col-span-2 col-start-2 pt-6">{below}</div>}
       {figure !== undefined && <div className="col-span-2 col-start-2 pt-8">{figure}</div>}
     </li>
   );

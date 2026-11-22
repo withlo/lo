@@ -2,11 +2,18 @@
 // stands. Lo's own rows are the `lo` command and sending pull request links to Lo; other features
 // add theirs through the `welcome.setup` slot.
 
-import { Button, SetupItem, SetupList } from '@lo/ui';
-import { useEffect, useId, useState, type ReactNode } from 'react';
+import { Button, Problem, SetupItem, SetupList } from '@lo/ui';
+import { useEffect, useId, type ReactNode } from 'react';
 
 import { Slot } from '../../../window/slots.tsx';
-import { findCommand, installCommand, useCommand } from '../../open/window/shared.ts';
+import {
+  findCommand,
+  installCommand,
+  useCommand,
+  useCommandInstall,
+  type Installed,
+} from '../../open/window/shared.ts';
+import { StepHeading } from './Heading.tsx';
 import { setup } from './shared.ts';
 import { welcomeStore } from './store.ts';
 
@@ -26,10 +33,46 @@ function LinkIcon() {
   );
 }
 
-/** Installing the `lo` command, through the open feature, which says in a notice when it can't. */
+/** `lo`, as code, as a name that's code is in a label. */
+const LO = <span className="code-text">lo</span>;
+
+/** What the row's last install left to say under its line: a folder to add to `PATH`, or why not. */
+function Result({ done }: { done: Installed | undefined }): ReactNode {
+  if (done?.kind === 'installed') {
+    if (done.onPath) return null;
+    return (
+      <p className="m-0 text-fg-muted text-small">
+        Add{' '}
+        <span className="break-all text-fg code-small">
+          {done.path.slice(0, done.path.lastIndexOf('/'))}
+        </span>{' '}
+        to your PATH.
+      </p>
+    );
+  }
+  const title = <>Couldn’t install the {LO} command</>;
+  if (done?.kind === 'taken') {
+    return (
+      <Problem
+        title={title}
+        reason={<>Another {LO} file is already there.</>}
+        details={done.path}
+      />
+    );
+  }
+  return (
+    <Problem
+      title={title}
+      details={done?.message}
+      action={{ label: 'Try again', onClick: () => void installCommand('row') }}
+    />
+  );
+}
+
+/** Installing the `lo` command, through the open feature, which says how it went on this row. */
 export function CommandStep() {
   const command = useCommand();
-  const [installing, setInstalling] = useState(false);
+  const { installing, done } = useCommandInstall();
   useEffect(() => {
     void findCommand();
   }, []);
@@ -37,11 +80,7 @@ export function CommandStep() {
   return (
     <SetupItem
       icon={<TerminalIcon />}
-      title={
-        <>
-          <span className="code-text">lo</span> command
-        </>
-      }
+      title={<>{LO} command</>}
       description={
         <>
           Opens a pull request from a terminal with{' '}
@@ -49,15 +88,13 @@ export function CommandStep() {
         </>
       }
       done={installed ? 'Installed' : undefined}
+      below={done === null ? undefined : <Result done={done} />}
     >
       <Button
         size="sm"
         busy={installing}
         working="Installing…"
-        onClick={() => {
-          setInstalling(true);
-          void installCommand().finally(() => setInstalling(false));
-        }}
+        onClick={() => void installCommand('row')}
       >
         Install
       </Button>
@@ -84,14 +121,11 @@ export function SetupStep(): ReactNode {
   const heading = useId();
   return (
     <>
-      <div className="flex flex-col gap-6">
-        <h1 id={heading} className="m-0 text-heading">
-          Use Lo with your other tools
-        </h1>
-        <p className="m-0 text-fg-muted text-ui">
-          Each of these is also in Settings › Integrations.
-        </p>
-      </div>
+      <StepHeading
+        id={heading}
+        title="Use Lo with your other tools"
+        line="Each of these is also in Settings › Integrations."
+      />
       <SetupList labelledBy={heading}>
         <Slot slot={setup} props={{}} />
       </SetupList>

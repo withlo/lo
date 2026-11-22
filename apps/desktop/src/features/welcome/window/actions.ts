@@ -1,7 +1,7 @@
 // What the welcome does: opening and leaving, walking its steps, signing in, choosing keys,
 // looking for Git again, opening a pull request, and what `⏎` does with the control that has focus.
 
-import { onVim, vimOn } from '@lo/ui/code';
+import { vimOn } from '@lo/ui/code';
 import { NO_TARGET } from '@lo/ui/commands';
 
 import { registry } from '../../../window/commands/registry.ts';
@@ -12,7 +12,7 @@ import { contract as tabs } from '../../tab/contract.ts';
 import { activeTab } from '../../tab/window/shared.ts';
 import { DOCS } from './routers.ts';
 import { main } from './main.ts';
-import { stepFrom, welcomeStore, type Step } from './store.ts';
+import { stepFrom, welcomeStore, type MarkMove, type Step } from './store.ts';
 
 /** The welcome's element while it's on screen, which `⏎` looks inside for the control to press. */
 let screen: HTMLElement | undefined;
@@ -31,12 +31,14 @@ export function touch(): void {
  * `⏎` in the welcome: the control with focus does what it says, a button or a card by being
  * pressed and the link field, once it holds something, by opening its link. With focus anywhere
  * else, the empty link field included, the step's main button is pressed, the one marked
- * `data-welcome-default`. A field outside a form, the practice's comment box, keeps `⏎` to itself.
+ * `data-welcome-default`. The practice's comment box keeps `⏎` to itself.
  */
 export function enter(): void {
   touch();
   const focused = document.activeElement;
   if (screen?.contains(focused ?? null)) {
+    // A comment box's keys are its own, buttons and all, as the registry has them there.
+    if (focused?.closest('[data-lo-scope="box"]')) return;
     if (focused instanceof HTMLButtonElement) {
       focused.click();
       return;
@@ -71,7 +73,13 @@ export async function loadState(): Promise<void> {
  */
 export function openFirst(): void {
   if (welcomeStore.getState().open) return;
-  welcomeStore.setState({ open: true, over: undefined, touched: false, step: 'account' });
+  welcomeStore.setState({
+    open: true,
+    over: undefined,
+    touched: false,
+    step: 'account',
+    played: [],
+  });
 }
 
 /**
@@ -85,6 +93,7 @@ export function show(): void {
     over: tab === undefined || tab.kind === 'recent' ? undefined : tab.id,
     touched: true,
     step: 'account',
+    played: [],
   });
 }
 
@@ -135,16 +144,19 @@ export async function loadGh(): Promise<void> {
   }
 }
 
-/** Looks for Git again, for a Git installed since, and says by the button when it couldn't look. */
+/**
+ * Looks for Git again, for a Git installed since, and says where the notice was when it couldn't
+ * look, with main's words behind Details.
+ */
 export async function checkGit(): Promise<void> {
   if (welcomeStore.getState().checking) return;
-  welcomeStore.setState({ checking: true, checkFailed: false });
-  let failed = false;
+  welcomeStore.setState({ checking: true });
+  let failed: string | undefined;
   try {
     await main().checkGit();
   } catch (error) {
     console.error("Lo couldn't look for Git:", error);
-    failed = true;
+    failed = error instanceof Error ? error.message : String(error);
   }
   welcomeStore.setState((state) => ({
     checking: false,
@@ -153,49 +165,43 @@ export async function checkGit(): Promise<void> {
   }));
 }
 
-/** Whether a choice of keys is on its way to the settings file, so a second press waits for it. */
-let switching = false;
-
 /**
  * Chooses the keys code and comment boxes are edited with: Vim's, or the standard ones. It's the
- * `editor.vim` setting, switched as "Vim keys" in the command palette switches it.
+ * `editor.vim` setting, switched as "Vim keys" in the command palette switches it. A press while
+ * the last is on its way asks for the same again, which changes nothing, so a write that never
+ * lands leaves the cards working.
  */
 export function chooseVim(on: boolean): void {
-  if (switching || vimOn() === on) return;
-  switching = true;
-  const settled = onVim(() => {
-    switching = false;
-    settled();
-  });
-  // Refused, or never answered, the next press asks again.
-  if (registry().run('comments.vim', NO_TARGET) !== true) {
-    switching = false;
-    settled();
-  }
+  if (vimOn() === on) return;
+  registry().run('comments.vim', NO_TARGET);
 }
 
-/** Opens the page that writes the rules out, and resolves whether it did. */
-export async function openDocs(): Promise<boolean> {
+/** Notes that the mark played `move` since the welcome opened: a step that shows again rests. */
+export function markPlayed(move: MarkMove): void {
+  const { played } = welcomeStore.getState();
+  if (!played.includes(move)) welcomeStore.setState({ played: [...played, move] });
+}
+
+/** Opens the page that writes the rules out, and resolves with main's words when it didn't. */
+export async function openDocs(): Promise<string | undefined> {
   try {
     await client(tabs).openExternal({ url: DOCS });
-    return true;
+    return undefined;
   } catch (error) {
     console.error("Lo couldn't open the documentation:", error);
-    return false;
+    return error instanceof Error ? error.message : String(error);
   }
 }
-
-/** What the link field says when a link didn't open and nothing says why. */
-export const NOT_OPENED = 'Couldn’t open the link';
 
 /**
  * Opens the pull request link typed or pasted in the last step's field, or the sample's, through
- * the open feature. Resolves with why it didn't, or nothing when it opened. A pull request's tab
- * leaves the welcome, since the tab is what shows next; a link that went to the browser doesn't.
+ * the open feature. Resolves with why it didn't, empty when nothing says why, or nothing when it
+ * opened. A pull request's tab leaves the welcome, since the tab is what shows next; a link that
+ * went to the browser doesn't.
  */
 export async function openPublic(text: string): Promise<string | undefined> {
   const done = await openLink(text.trim());
-  if (done === undefined) return NOT_OPENED;
+  if (done === undefined) return '';
   if (done.kind === 'refused') return done.message;
   if (done.kind === 'tab') leave();
   return undefined;

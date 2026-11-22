@@ -1,6 +1,16 @@
 // The dialog of ready-made rules for the apps that open links, to copy.
 
-import { Button, Collapse, CopyButton, Dialog, DialogSpacer, Key, useCopy } from '@lo/ui';
+import {
+  Button,
+  Collapse,
+  CopyButton,
+  Dialog,
+  DialogSpacer,
+  Key,
+  Problem,
+  Ticks,
+  useCopy,
+} from '@lo/ui';
 import { keyLabels, parseKeys, systemStrokes } from '@lo/ui/commands';
 import { useEffect, useRef, useState } from 'react';
 import { useStore } from 'zustand';
@@ -9,7 +19,6 @@ import { registry } from '../../../window/commands/registry.ts';
 import { openDocs } from './actions.ts';
 import { routers } from './routers.ts';
 import { welcomeStore } from './store.ts';
-import { Ticks } from './Ticks.tsx';
 
 function close(): void {
   welcomeStore.setState({ rules: false });
@@ -21,10 +30,10 @@ export function Rules() {
   const done = useRef<HTMLButtonElement>(null);
   const copy = useCopy();
   const { system } = registry();
-  /** Whether the documentation didn't open, which the line by its button says. */
-  const [unopened, setUnopened] = useState(false);
+  /** Why the documentation didn't open, as main said it, which shows over the foot. */
+  const [unopened, setUnopened] = useState<string>();
   useEffect(() => {
-    if (!open) setUnopened(false);
+    if (!open) setUnopened(undefined);
   }, [open]);
   return (
     <Dialog
@@ -40,17 +49,12 @@ export function Rules() {
           <Button
             variant="ghost"
             onClick={() => {
-              setUnopened(false);
-              void openDocs().then((opened) => setUnopened(!opened));
+              setUnopened(undefined);
+              void openDocs().then(setUnopened);
             }}
           >
             Open documentation
           </Button>
-          <Collapse open={unopened}>
-            <span role="alert" className="text-danger text-small">
-              Couldn’t open the documentation
-            </span>
-          </Collapse>
           <DialogSpacer />
           <Button ref={done} variant="primary" onClick={close}>
             Done
@@ -85,6 +89,11 @@ export function Rules() {
           </div>
         </section>
       ))}
+      <Collapse open={unopened !== undefined}>
+        {unopened !== undefined && (
+          <Problem title="Couldn’t open the documentation" details={unopened} />
+        )}
+      </Collapse>
     </Dialog>
   );
 }

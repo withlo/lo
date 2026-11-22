@@ -34,15 +34,25 @@ export interface WelcomeState {
   readonly git: GitInfo | undefined;
   /** Whether "Check again" is looking for Git. */
   readonly checking: boolean;
-  /** Whether the last look the reader asked for failed, which the line by the button says. */
-  readonly checkFailed: boolean;
+  /**
+   * Why the last look the reader asked for failed, as main said it, which takes the notice's place;
+   * `undefined` while it didn't.
+   */
+  readonly checkFailed: string | undefined;
   /** How many looks the reader asked for have ended, so a screen reader hears each. */
   readonly checks: number;
   /** What GitHub CLI has to import, once Lo has asked; nothing when there's none Lo runs. */
   readonly gh: GhListing | undefined;
   /** Whether the dialog of rules for the apps that open links is open. */
   readonly rules: boolean;
+  /** Whether the last step's link field holds a link to open, which makes Open the main button. */
+  readonly linked: boolean;
+  /** The mark's moves played since the welcome opened, which draw the mark at rest after. */
+  readonly played: readonly MarkMove[];
 }
+
+/** The mark's moves the welcome plays: Unmeld on its first step, Kiss on its last. */
+export type MarkMove = 'unmeld' | 'kiss';
 
 export const welcomeStore = createStore<WelcomeState>()(() => ({
   shown: false,
@@ -53,10 +63,12 @@ export const welcomeStore = createStore<WelcomeState>()(() => ({
   finished: undefined,
   git: undefined,
   checking: false,
-  checkFailed: false,
+  checkFailed: undefined,
   checks: 0,
   gh: undefined,
   rules: false,
+  linked: false,
+  played: [],
 }));
 
 /** Takes what Lo found of Git. */

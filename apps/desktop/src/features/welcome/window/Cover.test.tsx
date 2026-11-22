@@ -8,6 +8,7 @@ import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, beforeAll, describe, expect, it, onTestFinished, vi } from 'vitest';
 
+import { notices } from '../../../window/commands/notices.tsx';
 import { createRegistry, focusMiddle } from '../../../window/commands/registry.ts';
 import { Slot, Slots } from '../../../window/slots.tsx';
 import { installBridge as install, type FakeBridge } from '../../../window/test/bridge.ts';
@@ -29,13 +30,21 @@ const pull: Tab = { id: 'one', kind: 'pull', owner: 'o', repo: 'r', number: 1 };
 // opens its dialogs only through `window/shared.ts`, which this stands in for.
 const accounts = vi.hoisted(() => {
   let value: readonly AccountSummary[] | undefined;
+  let failed = false;
   const listeners = new Set<() => void>();
   return {
     get: (): readonly AccountSummary[] | undefined => value,
     set(next: readonly AccountSummary[] | undefined) {
       value = next;
+      failed = false;
       for (const listener of listeners) listener();
     },
+    /** Main couldn't be asked for the accounts. */
+    fail() {
+      failed = true;
+      for (const listener of listeners) listener();
+    },
+    unlisted: (): boolean => failed,
     subscribe: (listener: () => void) => {
       listeners.add(listener);
       return () => {
@@ -51,6 +60,11 @@ vi.mock('../../accounts/window/shared.ts', async () => {
   const { useSyncExternalStore } = await import('react');
   return {
     useAccounts: () => useSyncExternalStore(accounts.subscribe, () => accounts.get()),
+    useAccountsHeard: () =>
+      useSyncExternalStore(
+        accounts.subscribe,
+        () => accounts.get() !== undefined || accounts.unlisted(),
+      ),
     signIn: accounts.signIn,
     importFromGh: accounts.importFromGh,
   };
@@ -101,6 +115,22 @@ let shared: FakeBridge;
 
 beforeAll(() => {
   Reflect.set(globalThis, 'IS_REACT_ACT_ENVIRONMENT', true);
+  // jsdom has no fonts, no resize observer and no layout: the practice's comment box needs only
+  // that they exist.
+  if (!('fonts' in document)) {
+    Object.defineProperty(document, 'fonts', {
+      value: { addEventListener() {}, removeEventListener() {} },
+    });
+  }
+  if (!('getClientRects' in Range.prototype)) {
+    Object.defineProperty(Range.prototype, 'getClientRects', { value: () => [] });
+    Object.defineProperty(Range.prototype, 'getBoundingClientRect', { value: () => new DOMRect() });
+  }
+  globalThis.ResizeObserver ??= class {
+    observe(): void {}
+    unobserve(): void {}
+    disconnect(): void {}
+  };
   createRegistry(feature.commands ?? [], 'mac');
   // The features' clients keep the bridge they were made with, so there is one for the file.
   shared = install(answers);
@@ -120,10 +150,12 @@ afterEach(() => {
     finished: undefined,
     git: undefined,
     checking: false,
-    checkFailed: false,
+    checkFailed: undefined,
     checks: 0,
     gh: undefined,
     rules: false,
+    linked: false,
+    played: [],
   });
   setScreen(undefined);
 });
@@ -166,7 +198,7 @@ function main(given: Readonly<Record<string, (input: unknown) => unknown>> = {})
       'welcome.finish': () => undefined,
       'accounts.ghAccounts': () => ({ kind: 'missing', message: 'Lo found no gh.' }),
       'open.command': () => ({ installed: [] }),
-      'app.info': () => ({ git: { status: 'found', version: '2.54.0' } }),
+      'app.info': () => ({ git: { status: 'found', version: '2.54.0' }, nonce: '' }),
     },
     given,
   );
@@ -292,6 +324,16 @@ describe('when it opens', () => {
     expect(welcomeStore.getState().shown).toBe(true);
   });
 
+  it('opens all the same when main couldn’t list the accounts', async () => {
+    main();
+    render();
+    await settle();
+    expect(screen()).toBeNull();
+    act(() => accounts.fail());
+    await settle();
+    expect(stepOnScreen()).toBe('account');
+  });
+
   it('covers Recent with plain ground until Lo knows its accounts and whether it was finished', async () => {
     main();
     render();
@@ -384,6 +426,20 @@ describe('walking it', () => {
     expect(screen()?.querySelector('[role="status"].sr-only')?.textContent).toBe('Step 2 of 4');
     click(button('Back'));
     expect(stepOnScreen()).toBe('account');
+  });
+
+  it('draws the steps done filled, the one on screen in the accent, and the rest as rings', async () => {
+    await first();
+    await goTo('setup');
+    const balls = [
+      ...(screen()?.querySelectorAll('[role="img"][aria-label^="Step"] > span') ?? []),
+    ];
+    expect(balls.map((ball) => ball.className.split(' ').at(-1))).toEqual([
+      'bg-fg',
+      'bg-fg',
+      'bg-accent',
+      'hollow',
+    ]);
   });
 
   it('leaves with Skip, keeps that it was finished, and gives the page back its keys', async () => {
@@ -524,11 +580,36 @@ describe('the first step', () => {
     expect(onScreen().textContent).not.toContain('Check again');
   });
 
-  it('says so by the button when it couldn’t look for Git', async () => {
-    await first({ 'app.info': () => ({ git: missing }) });
+  it('says so in the notice’s place when it couldn’t look for Git, with main’s words', async () => {
+    let fails = true;
+    await first({
+      'app.info': () => ({ git: missing }),
+      'welcome.checkGit': () => {
+        if (fails) throw new Error('No answer');
+      },
+    });
     click(button('Check again'));
     await settle();
-    expect(onScreen().querySelector('[role="alert"]')?.textContent).toBe('Couldn’t check for Git');
+    const alert = onScreen().querySelector('[role="alert"]');
+    expect(alert?.textContent).toBe('Couldn’t check for Git');
+    expect(onScreen().textContent).not.toContain("Lo can't find git.");
+    // Its one button looks again, and a look that works brings the notice back.
+    fails = false;
+    click(button('Try again', onScreen()));
+    await settle();
+    expect(onScreen().querySelector('[role="alert"]')).toBeNull();
+    expect(onScreen().textContent).toContain("Lo can't find git.");
+  });
+
+  it('unmelds the mark as it opens, and draws it at rest when the reader comes back', async () => {
+    await first();
+    // The mark at rest is the one a screen reader would name, kept from it here.
+    expect(onScreen().querySelector('svg[aria-label="Lo"]')).toBeNull();
+    click(button('Continue'));
+    click(button('Back'));
+    await settle();
+    expect(stepOnScreen()).toBe('account');
+    expect(onScreen().querySelector('svg[aria-label="Lo"]')).not.toBeNull();
   });
 });
 
@@ -563,7 +644,7 @@ describe('the keys step', () => {
     const rows = [...onScreen().querySelectorAll('[role="option"]')];
     click(rows[0] ?? document.body);
     expect(rows[0]?.getAttribute('aria-selected')).toBe('true');
-    click(button('Line down', onScreen()));
+    click(button('Next line', onScreen()));
     expect(rows[1]?.getAttribute('aria-selected')).toBe('true');
   });
 
@@ -571,10 +652,20 @@ describe('the keys step', () => {
     const { bridge } = await first();
     await goTo('keys');
     const before = bridge.calls.length;
+    // The box is drawn from the start, out of reach, so opening it moves nothing.
+    const box = onScreen().querySelector<HTMLElement>('[data-lo-scope="box"]');
+    expect(box?.closest('[inert]')).not.toBeNull();
+    // It's no part of the lines' list.
+    expect(box?.closest('[role="listbox"]')).toBeNull();
     press('c');
-    const box = onScreen().querySelector<HTMLInputElement>('input');
-    expect(box?.placeholder).toBe('Write a comment. Nothing here is sent.');
-    expect(document.activeElement).toBe(box);
+    await settle();
+    expect(box?.closest('[inert]')).toBeNull();
+    expect(box?.textContent).toContain('Line 42');
+    expect(box?.contains(document.activeElement)).toBe(true);
+    // The line keeps its tint, and gives the one ring to the box.
+    const cursor = onScreen().querySelector('[role="option"][aria-selected="true"]');
+    expect(cursor?.className).not.toContain('shadow-ring-inset');
+    expect(cursor?.querySelector('.bg-on-screen')).not.toBeNull();
     // ⏎ in it is the box's own, not Continue.
     act(() => enter());
     expect(stepOnScreen()).toBe('keys');
@@ -583,7 +674,7 @@ describe('the keys step', () => {
       closed = escapePractice();
     });
     expect(closed).toBe(true);
-    expect(onScreen().querySelector('input')).toBeNull();
+    expect(box?.closest('[inert]')).not.toBeNull();
     expect(document.activeElement?.getAttribute('role')).toBe('listbox');
     expect(bridge.calls).toHaveLength(before);
     // With no box open, Esc is the window's again.
@@ -622,6 +713,30 @@ describe('the set-up step', () => {
     const row = onScreen().querySelector('ul > li');
     expect(row?.textContent).toContain('Installed');
     expect(row?.querySelector('button')).toBeNull();
+    // Said on the row, and nowhere else.
+    expect(notices()).toEqual([]);
+  });
+
+  it('says on the row which folder to add to PATH, and why an install failed', async () => {
+    let answer: unknown = { kind: 'installed', path: '/opt/lo/bin/lo', onPath: false };
+    await first({ 'open.installCommand': () => answer });
+    await goTo('setup');
+    const row = () => onScreen().querySelector('ul > li');
+    click(button('Install', onScreen()));
+    await settle();
+    expect(row()?.textContent).toContain('Add /opt/lo/bin to your PATH.');
+    const code = [...(row()?.querySelectorAll('.code-small') ?? [])].map(
+      (each) => each.textContent,
+    );
+    expect(code).toContain('/opt/lo/bin');
+    answer = { kind: 'failed', message: 'EACCES: permission denied' };
+    click(button('Install', row() ?? document));
+    await settle();
+    expect(row()?.querySelector('[role="alert"]')?.textContent).toBe(
+      'Couldn’t install the lo command',
+    );
+    expect(button('Try again', row() ?? document)).toBeDefined();
+    expect(notices()).toEqual([]);
   });
 
   it('shows the rules for each app that opens links, copies one, and opens the documentation', async () => {
@@ -679,15 +794,50 @@ describe('opening a pull request', () => {
     const field = type('owner/repo#1');
     click(button('Open', onScreen()));
     await settle();
-    expect(onScreen().querySelector('[role="alert"]')?.textContent).toBe(
-      'That isn’t a link Lo opens.',
-    );
+    const alert = onScreen().querySelector('[role="alert"]');
+    expect(alert?.querySelector('p')?.textContent).toBe('Couldn’t open the link');
+    expect(alert?.textContent).toContain('That isn’t a link Lo opens.');
     expect(field.getAttribute('aria-invalid')).toBe('true');
     expect(field.value).toBe('owner/repo#1');
     expect(stepOnScreen()).toBe('open');
     // Changing the text takes the reason away.
     type('owner/repo#12');
     expect(onScreen().querySelector('[role="alert"]')).toBeNull();
+  });
+
+  it('makes Open the main button, with ⏎, once the field holds a link', async () => {
+    const { bridge } = await first({
+      'open.open': () => ({ kind: 'tab', id: 't', choice: 'none' }),
+    });
+    await goTo('open');
+    const done = button('Done');
+    const open = button('Open', onScreen());
+    expect(done.hasAttribute('data-welcome-default')).toBe(true);
+    expect(open.hasAttribute('data-welcome-default')).toBe(false);
+    type('https://github.com/rozed-dev/e2e/pull/78');
+    expect(done.hasAttribute('data-welcome-default')).toBe(false);
+    expect(done.querySelector('.text-on-accent')).toBeNull();
+    expect(open.hasAttribute('data-welcome-default')).toBe(true);
+    expect(open.querySelector('.text-on-accent')).not.toBeNull();
+    // With focus off the field, ⏎ opens the link, as Open's chip says.
+    act(() => {
+      if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+    });
+    act(() => enter());
+    await settle();
+    expect(bridge.calls).toContainEqual([
+      'open.open',
+      { text: 'https://github.com/rozed-dev/e2e/pull/78' },
+    ]);
+  });
+
+  it('kisses as the last step first shows, and rests when the reader comes back', async () => {
+    await first();
+    await goTo('open');
+    expect(onScreen().querySelector('svg[aria-label="Lo"]')).toBeNull();
+    click(button('Back'));
+    await goTo('open');
+    expect(onScreen().querySelector('svg[aria-label="Lo"]')).not.toBeNull();
   });
 
   it('says so when main couldn’t be asked', async () => {
@@ -708,9 +858,9 @@ describe('opening a pull request', () => {
     await goTo('open');
     click(button('Paste link'));
     await settle();
-    expect(onScreen().querySelector('[role="alert"]')?.textContent).toBe(
-      'No pull request link on the clipboard',
-    );
+    // Nothing happened, and a refusal says why.
+    expect(notices().map((note) => note.title)).toContain('No pull request link on the clipboard');
+    expect(onScreen().querySelector('[role="alert"]')).toBeNull();
     held = 'https://github.com/rozed-dev/e2e/pull/78';
     click(button('Paste link'));
     await settle();
@@ -723,7 +873,7 @@ describe('opening a pull request', () => {
     });
     await goTo('open');
     const sample = onScreen().querySelector('ul[aria-label="Sample pull request"] > li');
-    expect(sample?.textContent).toContain('withlo/lo #182');
+    expect(sample?.textContent).toContain('withlo/lo#182');
     click(button('Open', sample ?? document));
     await settle();
     expect(bridge.calls).toContainEqual(['open.open', { text: SAMPLE.link }]);

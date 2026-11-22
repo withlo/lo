@@ -150,15 +150,16 @@ test('a first launch shows the welcome over Recent, and its four steps are walke
     await expect(chosen(page)).not.toHaveText(first ?? '');
     await page.keyboard.press('k');
     await expect(chosen(page)).toHaveText(first ?? '');
-    // `c` opens a comment box that sends nothing; ⏎ in it isn't Continue, and Esc closes it.
+    // `c` opens the comment box every comment is written in, which sends nothing; ⏎ in it isn't
+    // Continue, and Esc closes it.
     await page.keyboard.press('c');
-    const box = step(page).getByPlaceholder('Write a comment. Nothing here is sent.');
+    const box = step(page).getByRole('textbox', { name: 'Comment' });
     await expect(box).toBeFocused();
     await page.keyboard.type('Looks right');
     await page.keyboard.press('Enter');
     await expect(heading(page)).toHaveText('Choose your keys');
     await page.keyboard.press('Escape');
-    await expect(box).toHaveCount(0);
+    await expect(box).toBeHidden();
     await expect(practice(page)).toBeFocused();
     // Vim keys is the `editor.vim` setting, written to the settings file.
     await step(page)
@@ -259,7 +260,7 @@ test('opens a public pull request without signing in, and opens again over it wh
   await welcome(page).getByRole('button', { name: 'Open public pull request…' }).click();
   await expect(heading(page)).toHaveText('Open a pull request');
   await expect(step(page).getByRole('list', { name: 'Sample pull request' })).toContainText(
-    'withlo/lo #182',
+    'withlo/lo#182',
   );
   await expect(
     step(page).getByRole('button', { name: 'Open', exact: true }).first(),
@@ -267,7 +268,8 @@ test('opens a public pull request without signing in, and opens again over it wh
   // A link Lo doesn't open is refused by the field, and the welcome stays.
   await linkField(page).fill('owner/repo#1');
   await page.keyboard.press('Enter');
-  await expect(step(page).getByRole('alert')).toContainText('Lo opens links to pull requests');
+  await expect(step(page).getByRole('alert')).toContainText('Couldn’t open the link');
+  await expect(step(page).getByRole('alert')).toContainText('A pull request link looks like');
   await expect(page.getByTestId('sign-in')).toHaveCount(0);
 
   // ⏎ in the field opens its link, and the pull request is what shows.

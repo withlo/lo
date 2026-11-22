@@ -329,6 +329,9 @@ A feature that needs set-up adds a step to the welcome flow and a row in Setting
   place, so the row never changes height.
 - `figure` is a picture of what the row sets up, drawn under its line from Lo's own pieces. Use it
   only where the words can't show it, such as what an overview looks like.
+- `below` is what the button's last press left to say, under the row's line: a step still to take
+  ("Add `/opt/lo/bin` to your PATH."), or a `Problem` where it failed. A row says how its own press
+  went, and no toast says it again.
 - `SetupDone` is the same mark and word by itself, for a step that's done outside a row: "Signed in
   as ravi-k".
 - The welcome's steps, its buttons and its keys are in `AGENTS.md`, under "The welcome flow".

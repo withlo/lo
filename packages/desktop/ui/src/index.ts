@@ -282,6 +282,7 @@ export {
 export { showFormat, showProse } from './controls.ts';
 export { hoverLinks, type HoverLink } from './hoverDocs.ts';
 export { ShownText } from './ShownText.tsx';
+export { Ticks } from './Ticks.tsx';
 export { PathName, SourceMark, sourceName, type AnswerSource } from './Source.tsx';
 export {
   TypeHover,

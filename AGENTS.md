@@ -1187,20 +1187,26 @@ pull request.
      again" is here when Lo can't find a Git it can run: `welcome.checkGit` asks main to look again
      (`git.check()`), and what Lo finds reaches the window on `app.git`.
   2. Standard keys or Vim keys, which is the `editor.vim` setting, and a diff drawn for the step
-     where `j`, `k` and `c` work. Nothing typed there is sent.
+     where `j`, `k` and `c` work. `c` opens the comment box every comment is written in
+     (`createComposer`), with the keys chosen. Nothing typed there is sent.
   3. The rows in its `welcome.setup` slot: installing the `lo` command, which the open feature does,
      and sending pull request links to Lo, with the rules for Finicky, Velja and Choosy in
      `docs/link-routers.md`. Another feature's row goes in the slot as a `SetupItem` from `@lo/ui`,
-     in `order`, and the same thing has a row in Settings.
+     in `order`, and the same thing has a row in Settings. A row says how its button's press went on
+     itself (`below`), never in a toast: the `lo` command's row installs with
+     `installCommand('row')`, which leaves the result for the row.
   4. A field that opens a pull request's link through the open feature, and a sample pull request.
-     The mark plays Kiss as the step appears.
+     The mark plays Kiss as the step first appears.
+- **Moving between steps.** Each step is drawn afresh as it shows, in a `Swap`. The mark's moves
+  play once each time the welcome opens: a step the reader comes back to draws the mark at rest.
 - **Keys.** Under the welcome the tab's view is `inert`, so no key or reader reaches it. The welcome
   is a form like Settings: its scope has `data-lo-tab="browser"`, so `Tab` walks its controls. `⏎`
   is `welcome.continue`: it presses the button with focus, opens the link in the field once it holds
   one, and anywhere else presses the step's main button, which is "Sign in with GitHub…" on the
-  first step until an account is signed in, and "Continue" or "Done" after. Every step is in the
-  tree from the start, in one grid cell, so the foot's buttons never move; the steps off screen are
-  `inert`.
+  first step until an account is signed in, "Open" on the last while the field holds a link, and
+  "Continue" or "Done" otherwise. The main button carries the `⏎` chip. Every step is in the tree
+  from the start, in one grid cell, so the foot's buttons never move; the steps off screen are
+  `inert`. "Continue" holds the room of its label with its key in every state.
 - **A feature that needs set-up** adds a row to the third step and a row in Settings. It doesn't put
   up a banner or a dialog of its own.
 

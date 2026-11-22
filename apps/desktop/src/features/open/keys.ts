@@ -33,6 +33,17 @@ export default defineCommands(
       keys: ['/'],
       when: { scope: 'recent' },
     },
+    /**
+     * In Recent, empties the filter, so every pull request shows again: the button where the filter
+     * matches nothing. `⌘⌫` is what empties a line of text, as it does in the filter itself.
+     */
+    clearFilter: {
+      label: 'Clear filter',
+      control: 'Clear filter in Recent, where the filter matches nothing',
+      group: 'Find',
+      keys: ['cmd+backspace'],
+      when: { scope: 'recent' },
+    },
     /** In Recent, opens the pull request chosen. */
     openRecent: {
       label: 'Open the pull request',

@@ -118,6 +118,7 @@ export function RecentTab() {
   }, [any]);
 
   const shown = filterRecent(rows ?? [], query);
+  const matched = shown.length > 0;
   const current = chosenRow(shown, chosen);
   const groups = groupRecent(shown, now);
   return (
@@ -150,15 +151,17 @@ export function RecentTab() {
               />
             </div>
             <KeyFor id="open.filter" />
+            {/* Before any pull request is listed, the empty state offers this as its own, and
+                while the filter matches nothing, its Clear filter is the main button. */}
+            <Button
+              variant={matched ? 'primary' : 'secondary'}
+              onClick={() => registry().run('open.box', NO_TARGET)}
+            >
+              Open pull request…
+              <KeyFor id="open.box" className={matched ? 'text-on-accent' : undefined} />
+            </Button>
           </>
         )}
-        <Button
-          variant={any ? 'primary' : 'secondary'}
-          onClick={() => registry().run('open.box', NO_TARGET)}
-        >
-          Open pull request…
-          <KeyFor id="open.box" className={any ? 'text-on-accent' : undefined} />
-        </Button>
       </header>
       <main className="relative min-h-0 flex-1 overflow-auto sheet">
         <div
@@ -175,9 +178,7 @@ export function RecentTab() {
           {rows === undefined ? null : !any ? (
             <FirstRun />
           ) : shown.length === 0 ? (
-            <p className="m-0 p-32 text-center text-fg-muted text-ui">
-              No recent pull request matches “{query}”.
-            </p>
+            <EmptyState title="No matches" actions={['open.clearFilter']} />
           ) : (
             groups.map((group) => (
               <div

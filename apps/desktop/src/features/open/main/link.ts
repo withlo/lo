@@ -63,7 +63,7 @@ export function readLink(text: string): ReadLink {
   if (!url) {
     return {
       kind: 'invalid',
-      message: `Lo opens links to pull requests, such as ${EXAMPLE}.`,
+      message: `A pull request link looks like \`${EXAMPLE}\`.`,
     };
   }
   return { kind: 'web', url: url.href, ...describeWeb(url), secure: url.protocol === 'https:' };

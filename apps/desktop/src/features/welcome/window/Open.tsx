@@ -1,19 +1,35 @@
 // The welcome's last step: how a review starts. A field for a pull request's link, with the link
 // on the clipboard a button away, and a sample pull request to open. The mark kisses as the step
-// shows: the set-up is done.
+// first shows: the set-up is done.
 
-import { Button, Collapse, Input, LogoMotion, Mark, SetupItem, SetupList } from '@lo/ui';
-import { useId, useState, type FormEvent, type ReactNode } from 'react';
+import {
+  Button,
+  Collapse,
+  Input,
+  Key,
+  LogoMotion,
+  Mark,
+  Problem,
+  SetupItem,
+  SetupList,
+  Ticks,
+} from '@lo/ui';
+import { useEffect, useId, useState, type FormEvent, type ReactNode } from 'react';
 
+import { refuse } from '../../../window/commands/notices.tsx';
 import { client } from '../../../window/ipc.ts';
 import { contract as open } from '../../open/contract.ts';
-import { NOT_OPENED, openPublic } from './actions.ts';
+import { openPublic } from './actions.ts';
+import { StepHeading } from './Heading.tsx';
+import { keyOf } from './labels.ts';
+import { usePlayOnce } from './played.ts';
+import { welcomeStore } from './store.ts';
 
 /** A merged pull request of Lo's own, which is public and stays up, with an overview to read. */
 export const SAMPLE = {
   link: 'https://github.com/withlo/lo/pull/182',
   title: 'Go to the other end of moved code',
-  where: 'withlo/lo #182',
+  where: 'withlo/lo#182',
 } as const;
 
 function PullIcon() {
@@ -29,33 +45,59 @@ function PullIcon() {
 
 type Busy = 'field' | 'paste' | 'sample' | undefined;
 
+/** What went wrong opening a link, said under the field. */
+interface Failure {
+  readonly title: string;
+  /** Main's reason, where it gave one: a sentence, with code between backticks. */
+  readonly reason?: string | undefined;
+  /** What came back, as it came. */
+  readonly details?: string | undefined;
+}
+
+const NOT_OPENED = 'Couldn’t open the link';
+
+/** An error's own words, for Details. */
+function wordsOf(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
 export function OpenStep({ shown }: { shown: boolean }): ReactNode {
   const [text, setText] = useState('');
   const [busy, setBusy] = useState<Busy>();
-  const [problem, setProblem] = useState<string>();
+  const [failure, setFailure] = useState<Failure>();
   const why = useId();
+  const kiss = usePlayOnce('kiss', shown);
+  const typed = text.trim() !== '';
+  const key = keyOf('welcome.continue');
+
+  // With a link in the field, Open is the step's main button, in the foot's place.
+  useEffect(() => {
+    if (!shown) return undefined;
+    welcomeStore.setState({ linked: typed });
+    return () => welcomeStore.setState({ linked: false });
+  }, [shown, typed]);
 
   /** Opens `link` for `from`, and says under the field why it didn't. */
   const openFrom = (from: NonNullable<Busy>, link: string) => {
     setBusy(from);
-    setProblem(undefined);
+    setFailure(undefined);
     openPublic(link).then(
       (refused) => {
         setBusy(undefined);
-        setProblem(refused);
         if (refused === undefined) setText('');
+        else setFailure({ title: NOT_OPENED, reason: refused === '' ? undefined : refused });
       },
       (error: unknown) => {
         console.error("Lo couldn't open the link:", error);
         setBusy(undefined);
-        setProblem(NOT_OPENED);
+        setFailure({ title: NOT_OPENED, details: wordsOf(error) });
       },
     );
   };
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
-    if (busy !== undefined || text.trim() === '') return;
+    if (busy !== undefined || !typed) return;
     openFrom('field', text);
   };
 
@@ -63,14 +105,14 @@ export function OpenStep({ shown }: { shown: boolean }): ReactNode {
   const paste = () => {
     if (busy !== undefined) return;
     setBusy('paste');
-    setProblem(undefined);
+    setFailure(undefined);
     client(open)
       .clipboard()
       .then(
         (link) => {
           if (link === null) {
             setBusy(undefined);
-            setProblem('No pull request link on the clipboard');
+            refuse('No pull request link on the clipboard');
             return;
           }
           setText(link);
@@ -79,38 +121,40 @@ export function OpenStep({ shown }: { shown: boolean }): ReactNode {
         (error: unknown) => {
           console.error("Lo couldn't read the clipboard:", error);
           setBusy(undefined);
-          setProblem(NOT_OPENED);
+          setFailure({ title: 'Couldn’t read the clipboard', details: wordsOf(error) });
         },
       );
   };
 
   return (
     <>
-      <div className="flex flex-col gap-6">
-        <div className="flex items-center gap-12">
-          {/* The kiss plays each time the step shows, and never while it's only holding room. */}
-          {shown ? (
+      <StepHeading
+        mark={
+          // The kiss plays as the step first shows, and the mark rests after.
+          kiss ? (
             <LogoMotion play="kiss" className="size-40 flex-none" decorative />
           ) : (
-            <Mark className="size-40 flex-none" />
-          )}
-          <h1 className="m-0 text-heading">Open a pull request</h1>
-        </div>
-        <p className="m-0 text-fg-muted text-ui">Paste a link from GitHub, or open a sample.</p>
-      </div>
-      <form className="flex flex-col gap-6" onSubmit={submit}>
+            <span className="flex flex-none" aria-hidden="true">
+              <Mark className="size-40" />
+            </span>
+          )
+        }
+        title="Open a pull request"
+        line="Paste a link from GitHub, or open a sample."
+      />
+      <form className="flex flex-col gap-8" onSubmit={submit}>
         <div className="flex gap-8">
           <Input
             mono
             data-welcome-focus
             aria-label="Pull request link"
-            aria-describedby={problem === undefined ? undefined : why}
+            aria-describedby={failure === undefined ? undefined : why}
             placeholder="https://github.com/owner/repo/pull/123"
             value={text}
-            invalid={problem !== undefined}
+            invalid={failure !== undefined}
             onChange={(event) => {
               setText(event.target.value);
-              setProblem(undefined);
+              setFailure(undefined);
             }}
           />
           <Button busy={busy === 'paste'} onClick={paste}>
@@ -118,18 +162,25 @@ export function OpenStep({ shown }: { shown: boolean }): ReactNode {
           </Button>
           <Button
             type="submit"
+            variant={typed ? 'primary' : 'secondary'}
+            {...(typed ? { 'data-welcome-default': true } : {})}
             busy={busy === 'field'}
             working="Opening…"
-            disabled={busy === undefined && text.trim() === ''}
+            disabled={busy === undefined && !typed}
           >
             Open
+            {typed && key && <Key keys={key} decorative className="text-on-accent" />}
           </Button>
         </div>
-        <Collapse open={problem !== undefined}>
-          {problem !== undefined && (
-            <p id={why} role="alert" className="m-0 text-danger text-small">
-              {problem}
-            </p>
+        <Collapse open={failure !== undefined}>
+          {failure !== undefined && (
+            <div id={why}>
+              <Problem
+                title={failure.title}
+                reason={failure.reason === undefined ? undefined : <Ticks text={failure.reason} />}
+                details={failure.details}
+              />
+            </div>
           )}
         </Collapse>
       </form>

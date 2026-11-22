@@ -1,11 +1,23 @@
 // The welcome's second step: choosing the keys code and comment boxes are edited with, the
 // standard ones or Vim's, over a few lines of diff to try Lo's own single keys on, by key or by
-// click.
+// click, and a comment box to try the choice in.
 
-import { Button, Choices, HintButton, Input, Key, type ChoiceItem } from '@lo/ui';
-import { onVim, vimOn } from '@lo/ui/code';
+import {
+  Button,
+  Choices,
+  CommentBoxFootBar,
+  CommentBoxHeadBar,
+  HintButton,
+  Key,
+  type ChoiceItem,
+  type CommentBoxMode,
+} from '@lo/ui';
+import { createComposer, onVim, vimOn, type BoxParts, type Composer, type Mode } from '@lo/ui/code';
+import { keyLabels, parseKeys, systemStrokes } from '@lo/ui/commands';
 import {
   useEffect,
+  useId,
+  useLayoutEffect,
   useRef,
   useState,
   useSyncExternalStore,
@@ -13,8 +25,12 @@ import {
   type MouseEvent,
   type ReactNode,
 } from 'react';
+import { createPortal } from 'react-dom';
 
+import { registry } from '../../../window/commands/registry.ts';
 import { chooseVim } from './actions.ts';
+import { StepHeading } from './Heading.tsx';
+import { useNonce } from './nonce.ts';
 import { setPracticeEscape } from './practice.ts';
 
 type Editing = 'standard' | 'vim';
@@ -50,11 +66,25 @@ const LINES: readonly Line[] = [
 
 const START = 2;
 
-const ROW = 'flex h-code-line cursor-default items-center whitespace-pre code-text';
+const ROW =
+  'relative isolate flex h-code-line cursor-default items-center whitespace-pre code-text';
 const ROW_SIGN = { '+': 'bg-diff-add-bg', '-': 'bg-diff-del-bg', ' ': '' } as const;
 const NUMBER = 'w-40 flex-none pe-8 text-end lo-num';
 const MARK = 'w-16 flex-none';
 const MARK_SIGN = { '+': 'text-diff-add-fg', '-': 'text-diff-del-fg', ' ': '' } as const;
+
+/** Vim's modes, as the comment box's foot names them. */
+const MODES: Readonly<Record<Mode, CommentBoxMode>> = {
+  normal: { name: 'NORMAL', kind: 'normal' },
+  insert: { name: 'INSERT', kind: 'insert' },
+  visual: { name: 'VISUAL', kind: 'visual' },
+};
+
+/** A key as this system shows it, from its name in the keymap file. */
+function shown(key: string): string[] {
+  const { system } = registry();
+  return keyLabels(systemStrokes(parseKeys(key), system), system);
+}
 
 /** A hint that's a button, as `HintButton` is, for a key that's only the practice's. */
 function PracticeHint({
@@ -82,12 +112,145 @@ function PracticeHint({
 }
 
 /**
+ * The comment box `c` opens, the one every comment is written in, with the keys chosen above.
+ * Nothing in it is sent: its own send keys do nothing, and `Esc` or its close control put it away,
+ * keeping what was typed. It's drawn from the start and only shown while it's open, over the keys'
+ * buttons, so opening it moves nothing.
+ */
+function PracticeBox({
+  open,
+  line,
+  onClose,
+}: {
+  open: boolean;
+  /** The number of the line it's on. */
+  line: number;
+  /** Puts it away: `Esc` in it, or its close control. */
+  onClose: () => void;
+}) {
+  const host = useRef<HTMLDivElement>(null);
+  const nonce = useNonce();
+  const id = useId();
+  const box = useRef<Composer>(undefined);
+  const [parts, setParts] = useState<BoxParts>();
+  const [mode, setMode] = useState<Mode>('insert');
+  const [previewing, setPreviewing] = useState(false);
+  const [text, setText] = useState('');
+  const [focused, setFocused] = useState(false);
+  const closing = useRef(onClose);
+  closing.current = onClose;
+
+  useLayoutEffect(() => {
+    const parent = host.current;
+    if (!parent || nonce === undefined) return undefined;
+    const made = createComposer(
+      parent,
+      { draft: '', nonce, label: 'Comment' },
+      {
+        change: setText,
+        // Nothing here is sent.
+        submit() {},
+        close: () => closing.current(),
+        mode: setMode,
+        preview: setPreviewing,
+      },
+      (given) => {
+        setParts(given);
+        return { destroy: () => setParts(undefined) };
+      },
+    );
+    box.current = made;
+    return () => {
+      box.current = undefined;
+      made.dismiss();
+    };
+  }, [nonce]);
+
+  // It takes focus as it opens, ready to type in, as a comment box does.
+  useEffect(() => {
+    if (open) box.current?.focus();
+  }, [open, parts]);
+
+  // Focus in the box lights its mode chip, with Vim keys on.
+  useEffect(() => {
+    const frame = parts?.foot.parentElement;
+    if (!frame) return undefined;
+    const into = () => setFocused(true);
+    const out = (event: FocusEvent) => {
+      const to = event.relatedTarget;
+      if (!(to instanceof Node) || !frame.contains(to)) setFocused(false);
+    };
+    frame.addEventListener('focusin', into);
+    frame.addEventListener('focusout', out);
+    return () => {
+      frame.removeEventListener('focusin', into);
+      frame.removeEventListener('focusout', out);
+    };
+  }, [parts]);
+
+  const preview = (on: boolean) => {
+    box.current?.preview(on);
+    setPreviewing(on);
+  };
+  const discard = () => {
+    const made = box.current;
+    made?.replace(0, made.text.length, '');
+    closing.current();
+  };
+  return (
+    <div
+      ref={host}
+      className={open ? undefined : 'invisible'}
+      inert={!open}
+      aria-hidden={open ? undefined : true}
+    >
+      {parts &&
+        createPortal(
+          <CommentBoxHeadBar
+            head={{
+              where: `Line ${line}`,
+              onPreviewing: preview,
+              close: { keys: shown('esc'), onClick: () => box.current?.leave() },
+            }}
+            previewing={previewing}
+          />,
+          parts.head,
+          'head',
+        )}
+      {parts &&
+        previewing &&
+        createPortal(
+          <p className="m-0 whitespace-pre-wrap read-comment">{text}</p>,
+          parts.preview,
+          'preview',
+        )}
+      {parts &&
+        createPortal(
+          <CommentBoxFootBar
+            id={id}
+            focused={focused}
+            foot={{
+              mode: MODES[mode],
+              discard: {
+                disabled: text === '',
+                why: text === '' ? 'Nothing to discard' : undefined,
+                onClick: discard,
+              },
+            }}
+          />,
+          parts.foot,
+          'foot',
+        )}
+    </div>
+  );
+}
+
+/**
  * A few lines of diff with a cursor: `j` and `k` move it, as the arrows and a click do, and `c`
  * opens a comment box on its line, which nothing sends. Under it, each key is a button.
  */
 function Practice() {
   const lines = useRef<HTMLDivElement>(null);
-  const field = useRef<HTMLInputElement>(null);
   const [at, setAt] = useState(START);
   const [writing, setWriting] = useState(false);
   const writes = useRef(writing);
@@ -110,11 +273,6 @@ function Practice() {
     return () => setPracticeEscape(undefined);
   }, []);
 
-  // The box takes focus as it opens, as a comment box does.
-  useEffect(() => {
-    if (writing) field.current?.focus();
-  }, [writing]);
-
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.target !== event.currentTarget) return;
     if (event.metaKey || event.ctrlKey || event.altKey) return;
@@ -135,23 +293,30 @@ function Practice() {
         aria-activedescendant={`welcome-line-${at}`}
         tabIndex={0}
         data-welcome-focus
-        className="overflow-hidden rounded-md border border-border bg-code-bg pt-4 focus-visible:shadow-ring"
+        className="overflow-hidden rounded-md border border-border bg-code-bg py-4 focus-visible:shadow-ring"
         onKeyDown={onKeyDown}
       >
-        {LINES.map((line, index) => (
-          <div key={index}>
+        {LINES.map((line, index) => {
+          const current = index === at;
+          return (
             <div
+              key={index}
               id={`welcome-line-${index}`}
               role="option"
-              aria-selected={index === at}
-              className={`${ROW} ${ROW_SIGN[line.sign]} ${index === at ? 'shadow-ring-inset' : ''}`}
+              aria-selected={current}
+              // The cursor's line keeps its tint while the box is open, and only its ring goes:
+              // one ring at a time, the box's.
+              className={`${ROW} ${ROW_SIGN[line.sign]} ${current && !writing ? 'shadow-ring-inset' : ''}`}
               onClick={() => {
                 setAt(index);
                 lines.current?.focus();
               }}
             >
+              {current && (
+                <span className="absolute inset-0 -z-1 bg-on-screen" aria-hidden="true" />
+              )}
               <span
-                className={`${NUMBER} ${index === at ? 'text-code-gutter-active' : 'text-code-gutter'}`}
+                className={`${NUMBER} ${current ? 'text-code-gutter-active' : 'text-code-gutter'}`}
               >
                 {line.number}
               </span>
@@ -160,37 +325,31 @@ function Practice() {
               </span>
               <span className="text-code-fg">{line.code}</span>
             </div>
-            {writing && index === at && (
-              <div className="flex h-48 items-center gap-8 border-y border-border-subtle bg-bg-chrome px-12">
-                <Input
-                  ref={field}
-                  aria-label={`Comment on line ${here?.number ?? ''}`}
-                  placeholder="Write a comment. Nothing here is sent."
-                />
-                <Button size="sm" onClick={close}>
-                  Close
-                  <Key keys={['Esc']} quiet decorative />
-                </Button>
-              </div>
-            )}
-          </div>
-        ))}
-        {/* The room a comment box takes, kept, so opening one moves nothing under the diff. */}
-        {!writing && <div className="h-48" />}
+          );
+        })}
       </div>
-      <div className="flex flex-wrap items-center gap-2">
-        <PracticeHint keys="j" onPress={() => move(1)}>
-          Line down
-        </PracticeHint>
-        <PracticeHint keys="k" onPress={() => move(-1)}>
-          Line up
-        </PracticeHint>
-        <PracticeHint keys="c" onPress={comment}>
-          Comment
-        </PracticeHint>
-        <span className="flex-1" />
-        <HintButton command="keys.help" />
-        <HintButton command="keys.palette" />
+      {/* The box opens under the lines, over the keys' buttons, in room held for it. */}
+      <div className="grid">
+        <div
+          className={`col-start-1 row-start-1 flex flex-wrap items-start gap-2 ${writing ? 'invisible' : ''}`}
+          inert={writing}
+        >
+          <PracticeHint keys="j" onPress={() => move(1)}>
+            Next line
+          </PracticeHint>
+          <PracticeHint keys="k" onPress={() => move(-1)}>
+            Previous line
+          </PracticeHint>
+          <PracticeHint keys="c" onPress={comment}>
+            Comment
+          </PracticeHint>
+          <span className="flex-1" />
+          <HintButton command="keys.help" />
+          <HintButton command="keys.palette" />
+        </div>
+        <div className="col-start-1 row-start-1">
+          <PracticeBox open={writing} line={here?.number ?? 0} onClose={close} />
+        </div>
       </div>
     </div>
   );
@@ -200,12 +359,7 @@ export function KeysStep(): ReactNode {
   const vim = useSyncExternalStore(onVim, vimOn, vimOn);
   return (
     <>
-      <div className="flex flex-col gap-6">
-        <h1 className="m-0 text-heading">Choose your keys</h1>
-        <p className="m-0 text-fg-muted text-ui">
-          Lo’s single keys work with both, and so does the mouse.
-        </p>
-      </div>
+      <StepHeading title="Choose your keys" line="Single keys and the mouse work with both." />
       <Choices
         label="Keys"
         items={EDITING}

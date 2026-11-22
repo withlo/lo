@@ -10,7 +10,7 @@ import { heardSignIn, openSignIn, openSignOut, waitingSignIn } from './dialogs.t
 import { AccountDialogs } from './AccountDialogs.tsx';
 import { main } from './main.ts';
 import { pressCopyCode } from './SignIn.tsx';
-import { accountsStore, showAccounts } from './store.ts';
+import { accountsStore, showAccounts, unlistedAccounts } from './store.ts';
 
 export default {
   commands: handlers(keys, {
@@ -50,6 +50,9 @@ export default {
       .then((list) => {
         if (!pushed) showAccounts(list);
       })
-      .catch((error: unknown) => console.error("Lo couldn't list its accounts:", error));
+      .catch((error: unknown) => {
+        console.error("Lo couldn't list its accounts:", error);
+        if (!pushed) unlistedAccounts();
+      });
   },
 } satisfies WindowFeature;

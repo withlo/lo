@@ -3,12 +3,12 @@
 // the reader has finished it or signed in, and "Welcome to Lo" opens it again over any tab. It's a
 // form like Settings, so `Tab` walks its controls.
 
-import { Button, Key } from '@lo/ui';
+import { Button, Key, Swap } from '@lo/ui';
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { useStore } from 'zustand';
 
 import { focusMiddle, setMiddle, useKeys } from '../../../window/commands/registry.ts';
-import { useAccounts } from '../../accounts/window/shared.ts';
+import { useAccounts, useAccountsHeard } from '../../accounts/window/shared.ts';
 import { activeTab, useTabs, type Tab } from '../../tab/window/shared.ts';
 import { AccountStep } from './Account.tsx';
 import { back, leave, loadGh, next, openFirst, setScreen, touch } from './actions.ts';
@@ -63,11 +63,19 @@ function giveFocusBack(): void {
 }
 
 // Every step is laid out in the same cell, so the welcome is as tall as its tallest step from the
-// start, and its foot never moves under the pointer. The one on screen fades in as `Swap` does.
-const STEP_BOX = 'col-start-1 row-start-1 flex min-w-0 flex-col gap-24';
+// start, and its foot never moves under the pointer. The one on screen fades in, in a `Swap`.
+const STEP_CELL = 'col-start-1 row-start-1 min-w-0';
+const STEP_BOX = 'flex min-w-0 flex-col gap-24';
 const BALL = 'size-8 rounded-pill move-tint';
 
-/** Where the walk is: a ball for each step, filled up to the one on screen. */
+/** A step's ball: done, the one on screen, or not yet. */
+function ballOf(index: number, at: number): string {
+  if (index < at) return 'bg-fg';
+  if (index === at) return 'bg-accent';
+  return 'text-fg-subtle hollow';
+}
+
+/** Where the walk is: a ball for each step, the one on screen in the accent. */
 function Progress({ step }: { step: Step }) {
   const at = STEPS.indexOf(step);
   const said = `Step ${at + 1} of ${STEPS.length}`;
@@ -79,10 +87,7 @@ function Progress({ step }: { step: Step }) {
     <>
       <div role="img" aria-label={said} className="flex items-center gap-8">
         {STEPS.map((each, index) => (
-          <span
-            key={each}
-            className={`${BALL} ${index <= at ? 'bg-fg' : 'text-border-strong hollow'}`}
-          />
+          <span key={each} className={`${BALL} ${ballOf(index, at)}`} />
         ))}
       </div>
       <span role="status" className="sr-only">
@@ -109,6 +114,7 @@ function Welcome(): ReactNode {
   useKeys();
   const root = useRef<HTMLDivElement>(null);
   const step = useStore(welcomeStore, (state) => state.step);
+  const linked = useStore(welcomeStore, (state) => state.linked);
   const accounts = useAccounts();
   const signedIn = accounts?.some((account) => account.signedOut === null) ?? false;
 
@@ -181,8 +187,9 @@ function Welcome(): ReactNode {
 
   const first = step === STEPS[0];
   const last = step === STEPS.at(-1);
-  // The first step's own button, signing in, is its main one until an account is signed in.
-  const own = first && !signedIn;
+  // The step's own button is its main one: signing in on the first until an account is signed in,
+  // and on the last, opening the link once the field holds one.
+  const own = (first && !signedIn) || (last && linked);
   const key = keyOf('welcome.continue');
   return (
     <div
@@ -206,15 +213,19 @@ function Welcome(): ReactNode {
                 data-welcome-step={each}
                 aria-hidden={shown ? undefined : true}
                 inert={!shown}
-                className={`${STEP_BOX} ${shown ? 'move-swap' : 'invisible'}`}
+                className={`${STEP_CELL} ${shown ? '' : 'invisible'}`}
               >
-                <View shown={shown} />
+                {/* Drawn afresh as it shows, and as it goes, so each step shows how it stands. */}
+                <Swap id={shown ? 'shown' : 'hidden'} className={STEP_BOX}>
+                  <View shown={shown} />
+                </Swap>
               </section>
             );
           })}
         </div>
         <div className="flex items-center gap-8 border-t border-border-subtle pt-16">
-          <div className="flex flex-1 justify-start">
+          {/* Back's label starts where the column does, as the steps' own words do. */}
+          <div className="-ms-12 flex flex-1 justify-start">
             <Held away={first}>
               <Button variant="ghost" disabled={first} onClick={back}>
                 Back
@@ -233,14 +244,21 @@ function Welcome(): ReactNode {
               {...(own ? {} : { 'data-welcome-default': true })}
               onClick={next}
             >
-              {/* Both labels take the room of the longer, so the button holds still. */}
-              <span className="inline-grid justify-items-center">
-                <span className="col-start-1 row-start-1">{last ? 'Done' : 'Continue'}</span>
-                <span className="invisible col-start-1 row-start-1" aria-hidden="true">
+              {/* It holds the room of "Continue" with its key in every state, its words in the
+                  middle, so neither it nor Skip moves as its words or its key come and go. */}
+              <span className="inline-grid place-items-center">
+                <span className="col-start-1 row-start-1 inline-flex items-center gap-6">
+                  {last ? 'Done' : 'Continue'}
+                  {!own && key && <Key keys={key} decorative className="text-on-accent" />}
+                </span>
+                <span
+                  className="invisible col-start-1 row-start-1 inline-flex items-center gap-6"
+                  aria-hidden="true"
+                >
                   Continue
+                  {key && <Key keys={key} decorative />}
                 </span>
               </span>
-              {!own && key && <Key keys={key} decorative className="text-on-accent" />}
             </Button>
           </div>
         </div>
@@ -259,12 +277,14 @@ function Welcome(): ReactNode {
  */
 export function Cover({ tab }: { tab: Tab }): ReactNode {
   const accounts = useAccounts();
+  const heard = useAccountsHeard();
   const { tabs } = useTabs();
   const open = useStore(welcomeStore, (state) => state.open);
   const over = useStore(welcomeStore, (state) => state.over);
   const finished = useStore(welcomeStore, (state) => state.finished);
   const touched = useStore(welcomeStore, (state) => state.touched);
-  const known = accounts !== undefined && finished !== undefined;
+  // Accounts main couldn't list count as known: none is signed in that the window knows of.
+  const known = heard && finished !== undefined;
   const signedIn = accounts?.some((account) => account.signedOut === null) ?? false;
   const recent = tab.kind === 'recent';
   const first = known && recent && !open && !finished && !signedIn;

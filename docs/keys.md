@@ -150,6 +150,7 @@ Each command's id is what [the keymap file](#the-keymap-file) binds keys to.
 | Review a pull request          | `⌘L`, `⌘O` (macOS only) | Anywhere but `dialog` and `palette` | `open.box`           |
 | Open the link on the clipboard | `⌘V`                    | In `recent`                         | `open.paste`         |
 | Filter recent pull requests    | `/`                     | In `recent`                         | `open.filter`        |
+| Clear filter                   | `⌘⌫`                    | In `recent`                         | `open.clearFilter`   |
 | Open the pull request          | `⏎`                     | In `recent`                         | `open.openRecent`    |
 | Go to a file                   | `⌘P`                    | Anywhere but `dialog` and `palette` | `tree.find`          |
 
