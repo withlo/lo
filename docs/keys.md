@@ -152,8 +152,8 @@ Each command's id is what [the keymap file](#the-keymap-file) binds keys to.
 | Filter recent pull requests    | `/`                     | In `recent`                         | `open.filter`          |
 | Clear filter                   | `⌘⌫`                    | In `recent`                         | `open.clearFilter`     |
 | Open the pull request          | `⏎`                     | In `recent`                         | `open.openRecent`      |
-| Search settings                | `/`, `⌘F`               | In `settings`                       | `settings.search`      |
-| Clear search                   | `⌘⌫`                    | In `settings`                       | `settings.clearSearch` |
+| Search settings                | `/`, `⌘F`               | In `settings` and `noMatch`         | `settings.search`      |
+| Clear search                   | `⌘⌫`                    | In `noMatch`                        | `settings.clearSearch` |
 | Go to a file                   | `⌘P`                    | Anywhere but `dialog` and `palette` | `tree.find`            |
 
 ## View
@@ -370,6 +370,7 @@ comment box and another elsewhere.
 | `queue`      | Named by `queue`.                                                                     |
 | `revisions`  | Named by `revisions`.                                                                 |
 | `settings`   | Named by `settings`.                                                                  |
+| `noMatch`    | Named by `settings`.                                                                  |
 | `stack`      | Named by `stacks`.                                                                    |
 | `timeline`   | Named by `timeline`.                                                                  |
 | `tree`       | Named by `tree`.                                                                      |

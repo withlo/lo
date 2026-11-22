@@ -227,8 +227,9 @@ export function SettingsTab() {
       >
         <Problems />
         {searched !== '' && shown.length === 0 && (
-          // The rest of the column, as a view with nothing in it fills its view.
-          <div className="grid min-w-0 flex-1">
+          // The rest of the column, as a view with nothing in it fills its view. Its scope is where
+          // "Clear search"'s key works, which leaves the fields' keys to them.
+          <div className="grid min-w-0 flex-1" data-lo-scope="noMatch">
             <EmptyState
               title={`No settings match “${searched}”`}
               actions={['settings.clearSearch']}

@@ -2,12 +2,12 @@
 // Settings' page: the rows features put in the slot, in their groups, with the list of groups
 // beside them, the search that filters them, what's wrong in the settings file, and focus.
 
-import { holdRegistry } from '@lo/ui/commands';
+import { holdRegistry, listen } from '@lo/ui/commands';
 import { act, type ReactNode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, beforeAll, describe, expect, it, onTestFinished, vi } from 'vitest';
 
-import { createRegistry, focusMiddle } from '../../../window/commands/registry.ts';
+import { createRegistry, focusMiddle, registry } from '../../../window/commands/registry.ts';
 import { Slots, type View } from '../../../window/slots.tsx';
 import type { SettingsState } from '../contract.ts';
 import feature from './index.ts';
@@ -44,6 +44,16 @@ function click(element: Element | undefined): void {
 function scroll(element: Element): void {
   act(() => {
     element.dispatchEvent(new Event('scroll', { bubbles: true }));
+  });
+}
+
+/** `⌘⌫` going down, as the window hears it. */
+function backspace(): KeyboardEvent {
+  return new KeyboardEvent('keydown', {
+    key: 'Backspace',
+    metaKey: true,
+    bubbles: true,
+    cancelable: true,
   });
 }
 
@@ -208,6 +218,35 @@ describe('the search', () => {
     click(clear);
     expect(page.rows()).toHaveLength(3);
     expect(document.activeElement).toBe(page.field);
+  });
+
+  it('leaves ⌘⌫ in the search to the field, and clears with it only from "Clear search"', () => {
+    const stop = listen(window, registry());
+    // Stopping lets go of the registry the controls read, which the other tests hold.
+    onTestFinished(() => {
+      stop();
+      holdRegistry(registry());
+    });
+    const page = render();
+    type(page.field, 'purple');
+    // Typing, the key is the field's, which deletes what it deletes: the command doesn't run.
+    act(() => page.field.focus());
+    const typed = backspace();
+    act(() => {
+      page.field.dispatchEvent(typed);
+    });
+    expect(typed.defaultPrevented).toBe(false);
+    expect(page.field.value).toBe('purple');
+    // On the button, it's the command's.
+    const clear = [...page.container.querySelectorAll<HTMLElement>('button')].find((each) =>
+      each.textContent.startsWith('Clear search'),
+    );
+    act(() => clear?.focus());
+    act(() => {
+      clear?.dispatchEvent(backspace());
+    });
+    expect(page.field.value).toBe('');
+    expect(page.rows()).toHaveLength(3);
   });
 
   it('is gone to by its command, with what it holds selected', () => {

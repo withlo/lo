@@ -119,7 +119,7 @@ export const LinksRow = defineRow({
   // After the `lo` command (10), as on the welcome.
   order: 15,
   label: 'Link routers',
-  description: 'Pull request links clicked in other apps open in Lo.',
+  description: 'Opens pull request links clicked in other apps.',
   words: () => ['send pull request links to Lo', 'Finicky', 'Velja', 'Choosy', 'browser', 'rules'],
   render: Links,
 });

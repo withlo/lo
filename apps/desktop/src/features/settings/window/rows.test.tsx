@@ -355,7 +355,7 @@ describe('Cache', () => {
       });
     }
     expect(container.querySelector('[role="alert"]')?.textContent).toBe(
-      'Can’t use the cache folder',
+      'Can’t use the cache folder The folder hasn’t opened.',
     );
     // Asked to look again, it asks main again.
     const asked = bridge.calls.length;

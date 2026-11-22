@@ -26,11 +26,14 @@ export function measureCache(): void {
     );
 }
 
-/** Why the cache's folder can't be shown now, as the command's reason: while there's no cache. */
+/**
+ * Why the cache's folder can't be shown now, as the command's reason: while it hasn't opened, which
+ * can last, or while there's no cache.
+ */
 export function cacheShowable(): true | string {
   const { usage } = cacheStore.getState();
   if (usage === undefined || usage.status === 'ready') return true;
-  return usage.status === 'checking' ? 'The cache isn’t ready' : 'No cache folder yet';
+  return usage.status === 'checking' ? 'The cache folder hasn’t opened' : 'No cache folder yet';
 }
 
 /** Shows the cache's folder in Finder, and says why in a toast when it can't. */

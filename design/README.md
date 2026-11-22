@@ -455,9 +455,9 @@ a list of its groups on the left, and the rows in a 720 px column beside it, und
 chip at its end until it has focus or holds text, and room is kept for the scrollbar under it as
 beside the rows (`gutter-stable`), so the two line up and nothing moves as the scrollbar comes and
 goes. A search that finds nothing is an `EmptyState` in the middle of the column, with "Clear
-search" (`⌘⌫`). The groups are Accounts, Appearance, Keyboard, Pull requests, Code intelligence,
-Storage, Integrations and About, in that order. At the foot of the list, "Open `settings.json`" and
-"Open keymap file".
+search", whose key (`⌘⌫`) works on it alone, so in a field the key stays the field's. The groups are
+Accounts, Appearance, Keyboard, Pull requests, Code intelligence, Storage, Integrations and About,
+in that order. At the foot of the list, "Open `settings.json`" and "Open keymap file".
 
 A preference is a setting with a row. The menu bar and the palette may toggle it, and never own it.
 

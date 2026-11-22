@@ -75,6 +75,7 @@ function Usage({
     return gaveUp ? (
       <Problem
         title="Can’t use the cache folder"
+        reason="The folder hasn’t opened."
         action={{ label: 'Check again', onClick: again }}
       />
     ) : (

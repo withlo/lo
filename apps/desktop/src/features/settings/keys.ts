@@ -37,18 +37,19 @@ export default defineCommands(
       control: "the search field over Settings' rows",
       group: 'Find',
       keys: ['/', 'cmd+f'],
-      when: { scope: 'settings' },
+      when: { scope: ['settings', 'noMatch'] },
     },
     /**
-     * Empties the search, so every row shows again: the button where it finds nothing. `⌘⌫` is
-     * what empties a line of text on macOS.
+     * Empties the search, so every row shows again: the button where it finds nothing. Its key
+     * works only there, in `noMatch`, so in the search field and the rows' own fields `⌘⌫` (Ctrl+⌫
+     * on Linux) stays the field's, which deletes text.
      */
     clearSearch: {
       label: 'Clear search',
       control: 'Clear search in Settings, where the search finds nothing',
       group: 'Find',
       keys: ['cmd+backspace'],
-      when: { scope: 'settings' },
+      when: { scope: 'noMatch' },
     },
     /** Opens the settings file in the system's text editor, so the person can fix it. */
     openFile: {
@@ -67,5 +68,5 @@ export default defineCommands(
       when: { scope: 'settings' },
     },
   },
-  { scopes: ['settings'] },
+  { scopes: ['settings', 'noMatch'] },
 );
