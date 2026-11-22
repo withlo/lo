@@ -12,7 +12,7 @@ import { registry, useKeys } from '../../../window/commands/registry.ts';
 import { client } from '../../../window/ipc.ts';
 import { signIn } from '../../accounts/window/shared.ts';
 import { contract as tabContract } from '../../tab/contract.ts';
-import { runLayersOf, useTabState, withoutBidi, type PullTab } from '../../tab/window/shared.ts';
+import { useRunLayers, useTabState, withoutBidi, type PullTab } from '../../tab/window/shared.ts';
 import updates from '../../updates/keys.ts';
 import type { Problem as ReadProblem, SkillState } from '../contract.ts';
 import { copyPrompt, promptFor } from './copy.ts';
@@ -168,9 +168,10 @@ export function ReadFailed({ tab, problem }: { tab: PullTab; problem: ReadProble
 /** A run of a stack's layers on screen as one diff has no overview: each layer has its own. */
 export function NoneInRun({ tab }: { tab: PullTab }) {
   useKeys();
+  const layers = useRunLayers(tab.id);
   return (
     <EmptyState
-      title={`No overview for ${runLayersOf(tab)}`}
+      title={`No overview for ${layers}`}
       line="Each layer has its own."
       actions={[{ command: BACK, label: 'Show single layer' }]}
     />

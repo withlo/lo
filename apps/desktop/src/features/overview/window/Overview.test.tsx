@@ -420,14 +420,11 @@ describe('as the tab opens', () => {
 
 describe('a run of a stack’s layers on screen as one diff', () => {
   it('says it has no overview, naming its layers, and leaves the tab to open on the diff', () => {
-    const tab: PullTab = {
-      ...tabOf(),
-      stack: { layers: [5, 6, 7, 8], root: 'main' },
-      run: { layers: [6, 7], start: 'a'.repeat(40), from: 7 },
-    };
+    // On screen, the run's view holds no stack: its tab in the strip does, and names the places.
+    const tab: PullTab = { ...tabOf(), run: { layers: [6, 7], start: 'a'.repeat(40), from: 7 } };
     const view = render(tab);
     expect(view.querySelector('[data-lo-overview="run"] h2')?.textContent).toBe(
-      'No overview for layers 2–3',
+      'No overview for these layers',
     );
     expect(view.textContent).toContain('Each layer has its own.');
     expect(openings.get(tab.id).on).toBeUndefined();

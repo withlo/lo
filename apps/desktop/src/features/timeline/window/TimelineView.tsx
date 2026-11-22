@@ -53,8 +53,8 @@ import {
 import { showDiff } from '../../diff/window/shared.ts';
 import {
   MiddlePlaceholder,
-  runLayersOf,
   usePull,
+  useRunLayers,
   useTabState,
   withoutBidi,
   type PullTab,
@@ -153,9 +153,10 @@ function Note({ shown, children }: { shown: boolean; children: ReactNode }) {
 /** A run of a stack's layers on screen as one diff has no timeline: each layer has its own. */
 function NoneInRun({ tab }: { tab: PullTab }) {
   useKeys();
+  const layers = useRunLayers(tab.id);
   return (
     <EmptyState
-      title={`No timeline for ${runLayersOf(tab)}`}
+      title={`No timeline for ${layers}`}
       line="Each layer has its own."
       actions={[{ command: 'stacks.back', label: 'Show single layer' }]}
     />
