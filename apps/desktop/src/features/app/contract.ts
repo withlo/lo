@@ -54,6 +54,11 @@ export const appInfo = z.strictObject({
    * source takes. Absent otherwise.
    */
   holdLimit: z.number().int().nonnegative().optional(),
+  /**
+   * `reduce` when a test asked for every move off, which only a build run from source takes: the
+   * window then sets its motion switch to it. Absent otherwise, and the window follows the system.
+   */
+  motion: z.literal('reduce').optional(),
 });
 export type AppInfo = z.output<typeof appInfo>;
 

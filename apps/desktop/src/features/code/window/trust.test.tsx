@@ -160,13 +160,16 @@ describe('the banner', () => {
 const asked = (channel: string) => bridge.calls.filter(([name]) => name === channel).length;
 /** The banner's button that trusts, whatever it says now. */
 const trustButton = (page: HTMLElement) => [...page.querySelectorAll('button')].at(-2);
+/** What a button at work says: the words on it that show, in place of its label. */
+const says = (control: HTMLElement | undefined) =>
+  control?.querySelector('span > span:not([aria-hidden])')?.textContent;
 
 describe('asking to trust', () => {
   it('waits while main reads, asks and saves, saying how far it has got, and asks once', async () => {
     const page = draw(<TrustBanner tab={tabOf('t4')} />);
     act(() => bridge.push('code.status', statusOf('t4', { trusting: 'reading' })));
     const trust = trustButton(page);
-    expect(trust?.textContent).toBe('Checking with GitHub');
+    expect(says(trust)).toBe('Checking with GitHub');
     expect(trust?.getAttribute('aria-disabled')).toBe('true');
     expect(trust?.querySelector('.spinner')).not.toBeNull();
     const before = asked('code.trust');
@@ -178,11 +181,11 @@ describe('asking to trust', () => {
     expect(asked('code.trust')).toBe(before);
     // While main's dialog asks, nothing says it's trusting: the reader hasn't said so yet.
     act(() => bridge.push('code.status', statusOf('t4', { trusting: 'asking' })));
-    expect(trust?.textContent).toBe('Waiting for your answer');
+    expect(says(trust)).toBe('Waiting for your answer');
     act(() => bridge.push('code.status', statusOf('t4', { trusting: 'saving' })));
     // The same button, which keeps focus, says what Lo does now.
     expect(trustButton(page)).toBe(trust);
-    expect(trust?.textContent).toBe('Trusting');
+    expect(says(trust)).toBe('Trusting');
     // Trusted: the banner goes, and the status item shows the servers starting.
     act(() =>
       bridge.push('code.status', statusOf('t4', { trust: { kind: 'trusted', by: 'repo' } })),

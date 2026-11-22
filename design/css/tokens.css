@@ -32,7 +32,7 @@
   --lo-fg: #fbf8f2; /* Primary text and icons on lo-bg, lo-bg-chrome, lo-bg-raised and lo-bg-overlay. */
   --lo-fg-muted: #a7a398; /* Secondary text and meta on every surface: times, counts, labels, path folders. */
   --lo-fg-subtle: #96938d; /* Placeholders, twisties, separators. */
-  --lo-fg-dim: #8a8780; /* Unchanged files beside changed ones in the tree, pending checks. Still 4.5:1 on chrome. */
+  --lo-fg-dim: #8a8780; /* Unchanged files beside changed ones in the tree, pending checks, the ring of a switch that's off. Still 4.5:1 on chrome. */
   --lo-fg-disabled: #6b6c74; /* Disabled text only. Below 4.5:1 on purpose. */
   --lo-fg-accent: #a5c5e9; /* Accent text: links, the current step, labels of overview notes. */
   --lo-icon: #d7d4ce; /* Icons on chrome at full strength. */
@@ -193,14 +193,14 @@
   --lo-selected: #15161d13;
   --lo-current: #0664b214;
   --lo-current-strong: #0664b21f;
-  --lo-scrim: #15161d59;
+  --lo-scrim: #2b281f33;
   --lo-border: #e1ded8;
   --lo-border-subtle: #ece9e4;
   --lo-border-strong: #d1cdc7;
   --lo-rule: #e1ded8;
   --lo-fg: #15161d;
-  --lo-fg-muted: #66625a;
-  --lo-fg-subtle: #66635c;
+  --lo-fg-muted: #55524b;
+  --lo-fg-subtle: #66625a;
   --lo-fg-dim: #716d66;
   --lo-fg-disabled: #a7a49e;
   --lo-fg-accent: #0664b2;
@@ -262,7 +262,7 @@
   --lo-diff-del-word: #ffd3d2;
   --lo-diff-del-gutter: #ffdddb;
   --lo-diff-moved-fg: #0664b2;
-  --lo-diff-moved-bg: #e3ecf7;
+  --lo-diff-moved-bg: #eef0f2;
   --lo-diff-moved-border: #bad4f2;
   --lo-diff-moved-edit: #c3d8f1;
   --lo-diff-hunk-bg: #e3ecf7;
@@ -394,7 +394,11 @@
   --lo-settings-w: 760px; /* Widest a section of Settings grows. */
   --lo-swatch-w: 132px; /* Width of a theme's swatch in Settings. */
   --lo-swatch-h: 72px; /* Height of a theme's swatch in Settings. */
-  --lo-dialog-w: 540px; /* Width of a dialog: signing in, importing accounts, choosing an account. */
+  --lo-dialog-w: 540px; /* Width of a medium dialog, the default: signing in, importing accounts, choosing an account. */
+  --lo-dialog-w-sm: 420px; /* Width of a small dialog: one question and its two buttons. */
+  --lo-dialog-w-lg: 720px; /* Width of a large dialog: one that holds a list or code. */
+  --lo-dialog-top: 96px; /* From the window's top to a dialog's top edge, which stays put while its height changes. */
+  --lo-mark-lg: 96px; /* The mark on the first screen of the welcome, where it unmelds. */
   --lo-avatar-lg: 28px; /* A large avatar, beside an account's name in lists of accounts. */
   --lo-switch-w: 26px; /* Width of a switch's track. */
   --lo-file-header-h: 38px; /* Sticky file headers in the diff. */
@@ -409,6 +413,13 @@
   --lo-code-line-small: 18px; /* Line height of small code. */
   --lo-code-inline-size: 0.88em; /* Inline code inside prose, relative to the text. */
   --lo-read-measure: 680px; /* Widest line of reading text in overviews. */
+  /* motion */
+  --lo-dur-fast: 90ms; /* Tint, Pop and Swap, and every exit. */
+  --lo-dur: 160ms; /* Sheet, Open and Slide. */
+  --lo-dur-slow: 260ms; /* Land's fade. Nothing in the interface runs longer. */
+  --lo-ease-out: cubic-bezier(0.2, 0.7, 0.3, 1); /* Things arriving. */
+  --lo-ease-in: cubic-bezier(0.6, 0, 0.9, 0.5); /* Things leaving. */
+  --lo-ease-in-out: cubic-bezier(0.45, 0, 0.55, 1); /* Things moving from one place to another, or changing size. */
   --font-ui: "Host Grotesk", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Cantarell, "Noto Sans", sans-serif;
   --font-mono: "Fragment Mono", ui-monospace, "SF Mono", Menlo, "DejaVu Sans Mono", monospace;
 }

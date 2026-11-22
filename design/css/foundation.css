@@ -1,6 +1,6 @@
 /* ==========================================================================
    Lo foundation — the tokens tokens.json can't hold: color scheme, focus
-   rings, font aliases, tracking, motion, layers and platform insets.
+   rings, font aliases, tracking, layers and platform insets.
    Hand-written. Every color and length lives in tokens.json.
    ========================================================================== */
 
@@ -29,15 +29,6 @@
   --lo-track-tight: -0.015em;    /* titles and headings */
   --lo-track-wordmark: -0.02em;  /* only where the name is set as a word */
   --lo-track-label: 0.06em;      /* uppercase labels */
-
-  /* Motion: the brand's curves. Things arriving use out, things settling
-     use in-out. Nothing waits on an animation. */
-  --lo-ease-in-out: cubic-bezier(0.45, 0, 0.55, 1);
-  --lo-ease-in: cubic-bezier(0.6, 0, 0.9, 0.5);
-  --lo-ease-out: cubic-bezier(0.2, 0.7, 0.3, 1);
-  --lo-dur-fast: 90ms;
-  --lo-dur: 160ms;
-  --lo-dur-slow: 260ms;
 
   /* Layers */
   --lo-z-sticky: 10;

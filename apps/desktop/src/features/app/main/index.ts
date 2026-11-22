@@ -4,7 +4,7 @@ import { formatVersion, type GitStatus } from '@lo/git';
 import { app, BrowserWindow, nativeTheme } from 'electron';
 
 import { launch, query } from '../../../main/editor.ts';
-import { holdLimit, keymapEditor } from '../../../main/environment.ts';
+import { holdLimit, keymapEditor, reducedMotion } from '../../../main/environment.ts';
 import { defineFeature } from '../../../main/features.ts';
 import { pageNonce } from '../../../main/security.ts';
 import { IpcError } from '../../../ipc/contract.ts';
@@ -53,6 +53,9 @@ export default defineFeature(contract, {
         commit: shortHash(LO_COMMIT),
         nonce: pageNonce(),
         holdLimit: holdLimit({ packaged: app.isPackaged, env: process.env }),
+        motion: reducedMotion({ packaged: app.isPackaged, env: process.env })
+          ? 'reduce'
+          : undefined,
       }),
     about() {
       app.showAboutPanel();

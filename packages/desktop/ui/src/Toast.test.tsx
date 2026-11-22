@@ -32,7 +32,7 @@ describe('Toast', () => {
     );
     expect(order.every((part) => markup.includes(part))).toBe(true);
     // The title is in the second column beside the icon; the body and buttons under it.
-    expect(markup).toMatch(/<div class="font-semibold">Lo 0\.10 is ready<\/div>/);
+    expect(markup).toMatch(/<div class="[^"]*font-semibold[^"]*">Lo 0\.10 is ready<\/div>/);
     expect(markup).toMatch(/<div class="col-start-2 [^"]*text-small">It installs/);
     expect(markup).toMatch(/<div class="col-start-2 mt-8 flex gap-6"><button/);
   });

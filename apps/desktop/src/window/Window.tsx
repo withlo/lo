@@ -18,7 +18,7 @@ export function Window() {
   const menu = useMenuTarget(NO_TARGET);
   return (
     <div
-      className="relative flex h-full flex-col overflow-hidden bg-bg-chrome"
+      className="relative flex h-full flex-col overflow-clip bg-bg-chrome"
       data-lo-scope="window"
       {...menu}
     >

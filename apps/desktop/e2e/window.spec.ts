@@ -14,6 +14,8 @@ test('the window opens on a fresh data folder, on Recent pull requests alone, in
     expect(await page.title()).toBe('Lo');
     expect(app.windows()).toHaveLength(1);
     await expect(page.getByRole('tablist', { name: 'Pull requests' })).toBeVisible();
+    // Tests start Lo with every move off.
+    await expect(page.locator('html')).toHaveAttribute('data-lo-motion', 'reduce');
 
     const paths = await app.evaluate((electron) => ({
       data: electron.app.getPath('userData'),

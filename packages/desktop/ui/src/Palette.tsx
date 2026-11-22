@@ -4,6 +4,7 @@ import { useRef, type ReactNode } from 'react';
 
 import { useTakeFocus } from './focus.ts';
 import { Key, type KeyAria } from './Key.tsx';
+import { useHeld, useOnClose } from './motion.ts';
 import { useReturnFocus } from './returnFocus.ts';
 
 /** A run of a palette's items, under a label or none. */
@@ -52,58 +53,42 @@ export interface PaletteProps<T> {
   foot?: ReactNode;
   /** Where the dialog is put in the page: an element inside `.lo-app`. */
   container?: HTMLElement | null | undefined;
-  /** The palette has closed, and focus has gone back to where it was. */
+  /**
+   * The palette has closed, and focus has gone back to where it was. This comes as it starts to
+   * leave, not once it has faded, and it keeps what it showed while it fades, so a caller is free
+   * to clear the query here.
+   */
   onClosed?: (() => void) | undefined;
 }
 
 /**
  * A keyboard list over the window: the command palette, the file finder and the box that takes a
  * pull request's link. Typing narrows it, the arrows move through it, and `⏎` acts on the
- * highlighted row, which is always one: nothing hides behind a second step.
+ * highlighted row, which is always one: nothing hides behind a second step. It comes and goes with
+ * the Pop move, from the top of the window.
  */
-export function Palette<T>({
-  open,
-  onOpenChange,
-  label,
-  placeholder,
-  keys,
-  query,
-  onQueryChange,
-  groups,
-  itemId,
-  renderItem,
-  itemKeys,
-  onRun,
-  onHighlight,
-  empty,
-  mono,
-  icon,
-  mode,
-  message,
-  onSubmit,
-  foot,
-  container,
-  onClosed,
-}: PaletteProps<T>) {
+export function Palette<T>(props: PaletteProps<T>) {
+  const { open, onOpenChange, onQueryChange, itemId, itemKeys, onRun, onHighlight, onSubmit } =
+    props;
+  const { container, onClosed } = props;
+  // What it shows stays as it was while it leaves.
+  const held = useHeld(open, props);
+  const { label, placeholder, keys, query, groups, renderItem, empty, mono, icon, mode } = held;
+  const { message, foot } = held;
   const input = useRef<HTMLInputElement>(null);
   const returnFocus = useReturnFocus(open);
+  useOnClose(open, () => {
+    returnFocus();
+    onClosed?.();
+  });
   // The input has focus as the palette mounts, not a frame on, so the keys typed after the one
   // that opened it are the palette's.
   const takeFocus = useTakeFocus(input);
   const rows = groups.some((group) => group.items.length > 0);
   return (
-    <Dialog.Root
-      open={open}
-      onOpenChange={(next) => onOpenChange(next)}
-      onOpenChangeComplete={(next) => {
-        if (!next) {
-          returnFocus();
-          onClosed?.();
-        }
-      }}
-    >
+    <Dialog.Root open={open} onOpenChange={(next) => onOpenChange(next)}>
       <Dialog.Portal container={container}>
-        <Dialog.Backdrop className="fixed inset-0 z-dialog bg-scrim" />
+        <Dialog.Backdrop className="move-scrim fixed inset-0 z-dialog bg-scrim move-scrim-fast" />
         <Dialog.Viewport className="fixed inset-0 z-dialog flex items-start justify-center px-16 pt-64 pb-16">
           <Dialog.Popup
             ref={takeFocus}
@@ -111,7 +96,7 @@ export function Palette<T>({
             finalFocus={false}
             aria-label={label}
             data-lo-scope="palette"
-            className="flex max-h-full w-palette-w max-w-full flex-col overflow-hidden rounded-lg bg-bg-overlay text-fg shadow-dialog"
+            className="move-pop flex max-h-full w-palette-w max-w-full flex-col overflow-hidden rounded-lg bg-bg-overlay text-fg shadow-dialog move-pop-down"
           >
             <Autocomplete.Root
               inline

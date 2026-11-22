@@ -42,6 +42,11 @@ describe('appInfo', () => {
     }
   });
 
+  it('carries the word to turn every move off, when a test asked for it', () => {
+    expect(appInfo.parse({ ...info, motion: 'reduce' })).toEqual({ ...info, motion: 'reduce' });
+    expect(appInfo.safeParse({ ...info, motion: 'system' }).success).toBe(false);
+  });
+
   it('refuses anything the contract doesn’t name', () => {
     for (const wrong of [
       { ...info, token: 'hunter2' },

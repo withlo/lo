@@ -144,7 +144,7 @@ function BrewCommand() {
   }, [copied]);
   return (
     <div className="mt-8 flex items-center gap-8 rounded-sm bg-bg-well py-6 ps-8 pe-6 text-fg inset-ring inset-ring-border">
-      <code className="min-w-0 flex-1 break-all select-text code-small">{BREW_UPGRADE}</code>
+      <code className="min-w-0 flex-1 break-all code-small select-text">{BREW_UPGRADE}</code>
       <Button
         variant="ghost"
         size="sm"

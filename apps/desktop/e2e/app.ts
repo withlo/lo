@@ -163,6 +163,9 @@ export function appEnvironment(data: string): Record<string, string> {
   // Never the gh on PATH, which holds the tokens of whoever runs the tests; a test brings its own.
   env.LO_GH = 'none';
   env.LO_HOLD_LIMIT_MS = String(HELD_LONG);
+  // Every move is off, so no test waits on a popup fading or a height settling, and none meets a
+  // popup that's still leaving. A run that's there to watch Lo move sets `LO_MOTION=system` itself.
+  env.LO_MOTION ??= 'reduce';
   return env;
 }
 

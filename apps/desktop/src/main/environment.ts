@@ -269,6 +269,21 @@ export function holdLimit(options: { packaged: boolean; env: Environment }): num
 }
 
 /**
+ * Whether the window turns every move off, as it does with the system's Reduce Motion on, from
+ * `LO_MOTION` in a build run from source: `reduce` turns them off, and `system`, or nothing, follows
+ * the system. Tests start Lo with them off, so none waits on a popup fading or a height settling,
+ * and a run that's there to watch Lo move asks for `system`. A packaged build ignores it.
+ */
+export function reducedMotion(options: { packaged: boolean; env: Environment }): boolean {
+  const motion = options.env.LO_MOTION;
+  if (options.packaged || motion === undefined || motion === 'system') return false;
+  if (motion !== 'reduce') {
+    throw new Error(`LO_MOTION must be "reduce" or "system", not "${motion}".`);
+  }
+  return true;
+}
+
+/**
  * How long a sign-in waits between polls for the token, in milliseconds, from `LO_DEVICE_POLL_MS`
  * in a build run from source, in place of GitHub's interval, so a test needn't wait seconds for a
  * poll; nothing to follow GitHub's. A packaged build ignores it.

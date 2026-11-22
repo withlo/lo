@@ -89,7 +89,7 @@ export function ServerLog() {
       ) : log === undefined ? null : lines.length === 0 ? (
         <p className="m-0 text-fg-muted">Nothing is in the log yet.</p>
       ) : (
-        <pre className="m-0 overflow-auto rounded-sm bg-bg-well px-12 py-8 text-fg code-small no-ligatures">
+        <pre className="m-0 overflow-auto rounded-sm bg-bg-well px-12 py-8 text-fg code-small">
           {lines.join('\n')}
         </pre>
       )}

@@ -18,6 +18,7 @@
   background: var(--lo-code-bg);
   color: var(--lo-code-fg);
   font-family: var(--lo-font-mono);
+  font-variant-ligatures: none;
   font-size: var(--lo-code-size);
 }
 .lo-app .cm-editor.cm-focused { outline: none; }
@@ -74,7 +75,7 @@
 /* Panels docked in an editor (Vim's command line, search) */
 .lo-app .cm-editor .cm-panels { background: var(--lo-bg-chrome); color: var(--lo-fg); }
 .lo-app .cm-editor .cm-panels-bottom { border-top: 1px solid var(--lo-border); }
-.lo-app .cm-editor .cm-vim-panel { padding: 0 10px; font: 400 12px/24px var(--lo-font-mono); }
+.lo-app .cm-editor .cm-vim-panel { padding: 0 10px; font: 400 12px/24px var(--lo-font-mono); font-variant-ligatures: none; }
 .lo-app .cm-editor .cm-vim-panel input { color: var(--lo-fg); font: inherit; }
 
 /* Tooltips: type hovers, overview marker notes */
@@ -97,6 +98,7 @@
   background: var(--lo-code-hint-bg);
   color: var(--lo-code-hint);
   font: italic 400 11px/16px var(--lo-font-mono);
+  font-variant-ligatures: none;
   vertical-align: 1px;
 }
 
@@ -196,7 +198,7 @@
 .lo-app .cm-collapsedLines::after { content: none; }
 .lo-app .cm-collapsedLines:hover,
 .lo-collapsed:hover { background: var(--lo-bg-element); color: var(--lo-fg); }
-.lo-collapsed .lo-collapsed__range { font: 400 11px/1 var(--lo-font-mono); color: var(--lo-diff-hunk-fg); }
+.lo-collapsed .lo-collapsed__range { font: 400 11px/1 var(--lo-font-mono); font-variant-ligatures: none; color: var(--lo-diff-hunk-fg); }
 .lo-collapsed .lo-collapsed__action { margin-left: auto; display: flex; gap: 6px; align-items: center; }
 
 /* GitHub's hunk header, shown before the local copy is ready */
@@ -204,6 +206,7 @@
   background: var(--lo-diff-hunk-bg);
   color: var(--lo-diff-hunk-fg);
   font: 400 11.5px/var(--lo-code-line) var(--lo-font-mono);
+  font-variant-ligatures: none;
 }
 
 /* Lines picked with v, and their gutters */
@@ -223,7 +226,7 @@
   color: var(--lo-diff-moved-fg);
   font: 500 12px/16px var(--lo-font-ui);
 }
-.lo-movedlabel a { font: 400 11.5px/16px var(--lo-font-mono); color: var(--lo-fg); text-decoration: underline; text-decoration-color: var(--lo-diff-moved-border); text-underline-offset: 3px; }
+.lo-movedlabel a { font: 400 11.5px/16px var(--lo-font-mono); font-variant-ligatures: none; color: var(--lo-fg); text-decoration: underline; text-decoration-color: var(--lo-diff-moved-border); text-underline-offset: 3px; }
 .lo-movedlabel .lo-muted { font-weight: 400; }
 
 /* Overview markers: a ball on the first line the overview explains, a rail
@@ -262,7 +265,7 @@
 }
 .lo-ovnote__label .lo-ov-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--lo-accent); }
 .lo-ovnote__foot { display: flex; align-items: center; gap: 12px; margin-top: 8px; font: var(--lo-text-small); color: var(--lo-fg-muted); }
-.lo-ovnote code { font-family: var(--lo-font-mono); font-size: var(--lo-code-inline-size); }
+.lo-ovnote code { font-family: var(--lo-font-mono); font-variant-ligatures: none; font-size: var(--lo-code-inline-size); }
 
 
 /* --------------------------------------------------------------------------
@@ -308,6 +311,7 @@
 .lo-path {
   min-width: 0; overflow: hidden; text-overflow: ellipsis;
   font: 400 12px/1 var(--lo-font-mono);
+  font-variant-ligatures: none;
   color: var(--lo-fg-muted);
   direction: ltr;
   user-select: text;
@@ -315,7 +319,7 @@
 .lo-path b { color: var(--lo-fg); font-weight: 400; }
 .lo-filehead.is-viewed .lo-path b { color: var(--lo-fg-muted); }
 .lo-path--old { color: var(--lo-fg-subtle); text-decoration: line-through; text-decoration-color: var(--lo-fg-disabled); flex-shrink: 3; }
-.lo-stat { display: inline-flex; gap: 6px; font: 500 11px/1 var(--lo-font-mono); flex: none; }
+.lo-stat { display: inline-flex; gap: 6px; font: 500 11px/1 var(--lo-font-mono); font-variant-ligatures: none; flex: none; }
 .lo-stat .add { color: var(--lo-diff-add-fg); }
 .lo-stat .del { color: var(--lo-diff-del-fg); }
 .lo-filehead__end { margin-left: auto; display: flex; align-items: center; gap: 4px; flex: none; }
@@ -349,6 +353,7 @@
 .lo-uni {
   display: grid;
   font: 400 var(--lo-code-size)/var(--lo-code-line) var(--lo-font-mono);
+  font-variant-ligatures: none;
   color: var(--lo-code-fg);
   background: var(--lo-code-bg);
 }

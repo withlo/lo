@@ -18,9 +18,9 @@
     "lo-check-classes": "./scripts/check-classes.ts"
   },
   "scripts": {
-    "codegen": "node scripts/theme.ts && prettier --write src/theme.css",
+    "codegen": "node scripts/theme.ts && node scripts/logo.ts && prettier --write src/theme.css src/logoKeys.ts",
     "e2e": "playwright test --config e2e/playwright.config.ts",
-    "lint": "oxlint && stylelint --config ../../../design/stylelint.config.mjs 'src/overview/*.css' && node scripts/check-classes.ts src && node scripts/check-surface.ts",
+    "lint": "oxlint && stylelint --config ../../../design/stylelint.config.mjs 'src/overview/*.css' && node scripts/check-classes.ts src && node scripts/check-popups.ts src && node scripts/check-surface.ts",
     "test": "vitest run --root ../../.. --project @lo/ui"
   },
   "dependencies": {
@@ -79,10 +79,13 @@
       "codegen": {
         "inputs": [
           "{workspaceRoot}/design/tokens.json",
-          "{projectRoot}/scripts/theme.ts"
+          "{workspaceRoot}/brand/motion/motion.json",
+          "{projectRoot}/scripts/theme.ts",
+          "{projectRoot}/scripts/logo.ts"
         ],
         "outputs": [
-          "{projectRoot}/src/theme.css"
+          "{projectRoot}/src/theme.css",
+          "{projectRoot}/src/logoKeys.ts"
         ]
       },
       "e2e": {

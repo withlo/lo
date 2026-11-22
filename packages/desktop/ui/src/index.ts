@@ -14,7 +14,18 @@ export {
   type ContextMenuProps,
 } from './ContextMenu.tsx';
 export { Key, keyAria, type KeyAria, type KeyProps } from './Key.tsx';
-export { Toast, ToastRegion, type ToastProps, type ToastTone } from './Toast.tsx';
+export {
+  Toast,
+  ToastRegion,
+  ToastStack,
+  TOAST_MAX,
+  TOAST_MS,
+  type StackedToast,
+  type ToastAction,
+  type ToastProps,
+  type ToastStackProps,
+  type ToastTone,
+} from './Toast.tsx';
 export { KeyHelp, type KeyHelpProps } from './KeyHelp.tsx';
 export { Palette, PaletteHint, type PaletteGroup, type PaletteProps } from './Palette.tsx';
 export { Banner, type BannerAction, type BannerProps } from './Banner.tsx';
@@ -80,7 +91,41 @@ export { Avatar, avatarHue, initials, type AvatarProps } from './Avatar.tsx';
 export { Callout, type CalloutProps, type CalloutTone } from './Callout.tsx';
 export { Choices, type ChoiceItem, type ChoicesProps } from './Choices.tsx';
 export { SegmentedControl, type Segment, type SegmentedControlProps } from './SegmentedControl.tsx';
-export { Dialog, DialogSpacer, type DialogProps } from './Dialog.tsx';
+export {
+  Dialog,
+  DialogSpacer,
+  type DialogAction,
+  type DialogProps,
+  type DialogSize,
+  type DialogState,
+} from './Dialog.tsx';
+export { Popover, PopoverDescription, PopoverTitle, type PopoverProps } from './Popover.tsx';
+export {
+  Tooltip,
+  TooltipGroup,
+  TOOLTIP_DELAY,
+  type TooltipGroupProps,
+  type TooltipProps,
+} from './Tooltip.tsx';
+export { Collapse, Swap, type CollapseProps, type SwapProps } from './Collapse.tsx';
+export { Problem, type ProblemAction, type ProblemProps } from './Problem.tsx';
+export { CopyButton, COPIED_MS, type CopyButtonProps } from './CopyButton.tsx';
+export { Loading, LOADING_DELAY_MS, LOADING_SLOW_MS, type LoadingProps } from './Loading.tsx';
+export { LogoMotion, type LogoMotionProps, type LogoPlay } from './LogoMotion.tsx';
+export {
+  LAND_CLASS,
+  giveFocusBack,
+  land,
+  motion,
+  motionReduced,
+  setMotion,
+  useHeld,
+  useMotionReduced,
+  useOnClose,
+  whenSettled,
+  type Motion,
+} from './motion.ts';
+export { reveal, scrollPane, type RevealBlock, type RevealOptions } from './reveal.ts';
 export { Steps, type StepItem, type StepsProps, type StepState } from './Steps.tsx';
 export { Mark, type MarkProps } from './Mark.tsx';
 export { SetupItem, SetupList, type SetupItemProps, type SetupListProps } from './Setup.tsx';

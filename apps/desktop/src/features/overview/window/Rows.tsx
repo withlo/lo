@@ -82,7 +82,7 @@ export function InstallCommandRow() {
       label="Install from a terminal"
       description={
         <>
-          <span className="text-fg select-all code-small">{INSTALL_COMMAND}</span> installs the
+          <span className="text-fg code-small select-all">{INSTALL_COMMAND}</span> installs the
           skill Lo does, for each agent set up on the computer you run it on.
         </>
       }

@@ -1,11 +1,9 @@
-import { Popover } from '@base-ui/react/popover';
 import { cva } from 'class-variance-authority';
-import { useCallback, type ReactNode, type Ref } from 'react';
+import { useCallback, useRef, type ReactNode, type Ref } from 'react';
 
 import { Button } from './Button.tsx';
-import { useTakeFocus } from './focus.ts';
 import { Key } from './Key.tsx';
-import { useReturnFocus } from './returnFocus.ts';
+import { Popover } from './Popover.tsx';
 import { Tag } from './Tag.tsx';
 
 /** A marker on a revision: your last review, last seen here, the newest, or the overview's. */
@@ -161,15 +159,14 @@ export function RevisionPicker({
   note,
   listRef,
 }: RevisionPickerProps) {
-  const returnFocus = useReturnFocus(open);
-  const takeFocus = useTakeFocus();
+  const listElement = useRef<HTMLDivElement | null>(null);
   const list = useCallback(
     (element: HTMLDivElement | null) => {
-      takeFocus(element);
+      listElement.current = element;
       if (typeof listRef === 'function') listRef(element);
       else if (listRef) listRef.current = element;
     },
-    [takeFocus, listRef],
+    [listRef],
   );
   const prefix = 'lo-revision';
   const from = ends === undefined ? -1 : rows.findIndex((each) => each.key === ends.from);
@@ -177,139 +174,124 @@ export function RevisionPicker({
   // Newest first: the newer end comes before the older.
   const [first, last] = from < to ? [from, to] : [to, from];
   return (
-    <Popover.Root
+    <Popover
       open={open}
-      onOpenChange={(next) => onOpenChange(next)}
-      onOpenChangeComplete={(next) => {
-        if (!next) returnFocus();
-      }}
+      onOpenChange={onOpenChange}
+      anchor={anchor}
+      label="Revisions"
+      // The list takes the keys, so it takes focus.
+      initialFocus={listElement}
+      container={container}
+      className="w-revpicker-w max-w-full overflow-hidden"
     >
-      <Popover.Portal container={container}>
-        <Popover.Positioner
-          anchor={anchor}
-          side="bottom"
-          align="start"
-          sideOffset={6}
-          collisionPadding={8}
-          className="z-popover outline-none"
-        >
-          <Popover.Popup
-            initialFocus={false}
-            finalFocus={false}
-            aria-label="Revisions"
-            className="w-revpicker-w max-w-full overflow-hidden rounded-md bg-bg-overlay text-fg shadow-pop outline-none text-ui"
-          >
-            <div className="flex items-center gap-8 px-12 pt-12 pb-8 text-fg-muted text-small">
-              <span className="flex min-w-0 flex-1 items-center gap-6">{heading}</span>
-              {openKeys && <Key keys={openKeys} decorative />}
-            </div>
+      <div className="flex items-center gap-8 px-12 pt-12 pb-8 text-fg-muted text-small">
+        <span className="flex min-w-0 flex-1 items-center gap-6">{heading}</span>
+        {openKeys && <Key keys={openKeys} decorative />}
+      </div>
+      <div
+        ref={list}
+        role="listbox"
+        aria-label="Revisions"
+        aria-multiselectable="true"
+        tabIndex={-1}
+        data-lo-scope={scope}
+        aria-activedescendant={focused === undefined ? undefined : rowId(prefix, focused)}
+        className="group/list flex max-h-palette-list-h flex-col overflow-auto px-6 pb-6 outline-none"
+      >
+        {rows.map((each, index) => {
+          const end = index === first || index === last;
+          const between = first >= 0 && index > first && index < last;
+          return (
             <div
-              ref={list}
-              role="listbox"
-              aria-label="Revisions"
-              aria-multiselectable="true"
-              tabIndex={-1}
-              data-lo-scope={scope}
-              aria-activedescendant={focused === undefined ? undefined : rowId(prefix, focused)}
-              className="group/list flex max-h-palette-list-h flex-col overflow-auto px-6 pb-6 outline-none"
-            >
-              {rows.map((each, index) => {
-                const end = index === first || index === last;
-                const between = first >= 0 && index > first && index < last;
-                return (
-                  <div
-                    key={each.key}
-                    id={rowId(prefix, each.key)}
-                    role="option"
-                    aria-selected={end}
-                    aria-disabled={each.disabled ? true : undefined}
-                    data-key={each.key}
-                    className={row({
-                      between,
-                      focused: each.key === focused,
-                      disabled: each.disabled === true,
-                    })}
-                    onClick={() => onRowClick?.(each.key)}
-                  >
-                    <span
-                      className={dot({ mark: end ? 'end' : between ? 'between' : 'none' })}
-                      aria-hidden="true"
-                    />
-                    <span
-                      className={`w-32 flex-none code-small ${each.base ? 'text-fg-muted' : 'font-bold'}`}
-                    >
-                      {each.label}
-                    </span>
-                    <span className="flex min-w-0 flex-1 flex-col gap-2">
-                      <span className="flex min-w-0 items-center gap-6">
-                        {each.forced && <ForcedIcon />}
-                        <span
-                          className={`min-w-0 truncate ${each.base ? 'rounded-xs bg-hover px-6 code-small' : ''}`}
-                        >
-                          {each.line}
-                        </span>
-                      </span>
-                      <span className="truncate text-fg-muted text-small">{each.meta}</span>
-                    </span>
-                    {each.tags && each.tags.length > 0 && (
-                      <span className="flex flex-none flex-col items-end gap-2">
-                        {each.tags.map((tag) => (
-                          <RevisionMark key={tag.label} tag={tag} />
-                        ))}
-                      </span>
-                    )}
-                  </div>
-                );
+              key={each.key}
+              id={rowId(prefix, each.key)}
+              role="option"
+              aria-selected={end}
+              aria-disabled={each.disabled ? true : undefined}
+              data-key={each.key}
+              className={row({
+                between,
+                focused: each.key === focused,
+                disabled: each.disabled === true,
               })}
-            </div>
-            {shortcuts.length > 0 && (
-              <div className="flex flex-wrap gap-6 px-12 pt-4 pb-12">
-                {shortcuts.map((shortcut) => (
-                  <button
-                    key={shortcut.id}
-                    type="button"
-                    aria-pressed={shortcut.pressed === true}
-                    tabIndex={-1}
-                    className={`inline-flex h-control-h-sm items-center gap-6 rounded-pill px-8 text-small-medium whitespace-nowrap focus-visible:shadow-ring ${shortcut.pressed ? 'bg-accent-soft text-fg-accent inset-ring inset-ring-accent-line' : 'text-fg-muted inset-ring inset-ring-border hover:bg-hover hover:text-fg'}`}
-                    onClick={() => onShortcut?.(shortcut.id)}
-                  >
-                    {shortcut.label}
-                    {shortcut.keys && <Key keys={shortcut.keys} quiet decorative />}
-                  </button>
-                ))}
-              </div>
-            )}
-            {note !== undefined && note !== null && (
-              <p className="m-0 px-12 pb-12 text-fg-muted text-small" role="status">
-                {note}
-              </p>
-            )}
-            <div className="flex items-center gap-12 border-t border-border-subtle bg-bg-chrome px-12 py-8 text-fg-muted text-small">
-              {moveKeys && (
-                <span className="inline-flex items-center gap-4">
-                  <Key keys={moveKeys} quiet decorative /> Move
-                </span>
-              )}
-              {endKeys && (
-                <span className="inline-flex items-center gap-4">
-                  <Key keys={endKeys} quiet decorative /> Set an end
-                </span>
-              )}
-              <span className="flex-1" />
-              <Button
-                variant="primary"
-                size="sm"
-                tabIndex={-1}
-                disabled={compare.disabled}
-                onClick={() => onCompare?.()}
+              onClick={() => onRowClick?.(each.key)}
+            >
+              <span
+                className={dot({ mark: end ? 'end' : between ? 'between' : 'none' })}
+                aria-hidden="true"
+              />
+              <span
+                className={`w-32 flex-none code-small ${each.base ? 'text-fg-muted' : 'font-bold'}`}
               >
-                {compare.label}
-                {compare.keys && <Key keys={compare.keys} quiet decorative />}
-              </Button>
+                {each.label}
+              </span>
+              <span className="flex min-w-0 flex-1 flex-col gap-2">
+                <span className="flex min-w-0 items-center gap-6">
+                  {each.forced && <ForcedIcon />}
+                  <span
+                    className={`min-w-0 truncate ${each.base ? 'rounded-xs bg-hover px-6 code-small' : ''}`}
+                  >
+                    {each.line}
+                  </span>
+                </span>
+                <span className="truncate text-fg-muted text-small">{each.meta}</span>
+              </span>
+              {each.tags && each.tags.length > 0 && (
+                <span className="flex flex-none flex-col items-end gap-2">
+                  {each.tags.map((tag) => (
+                    <RevisionMark key={tag.label} tag={tag} />
+                  ))}
+                </span>
+              )}
             </div>
-          </Popover.Popup>
-        </Popover.Positioner>
-      </Popover.Portal>
-    </Popover.Root>
+          );
+        })}
+      </div>
+      {shortcuts.length > 0 && (
+        <div className="flex flex-wrap gap-6 px-12 pt-4 pb-12">
+          {shortcuts.map((shortcut) => (
+            <button
+              key={shortcut.id}
+              type="button"
+              aria-pressed={shortcut.pressed === true}
+              tabIndex={-1}
+              className={`inline-flex h-control-h-sm items-center gap-6 rounded-pill px-8 text-small-medium whitespace-nowrap focus-visible:shadow-ring ${shortcut.pressed ? 'bg-accent-soft text-fg-accent inset-ring inset-ring-accent-line' : 'text-fg-muted inset-ring inset-ring-border hover:bg-hover hover:text-fg'}`}
+              onClick={() => onShortcut?.(shortcut.id)}
+            >
+              {shortcut.label}
+              {shortcut.keys && <Key keys={shortcut.keys} quiet decorative />}
+            </button>
+          ))}
+        </div>
+      )}
+      {note !== undefined && note !== null && (
+        <p className="m-0 px-12 pb-12 text-fg-muted text-small" role="status">
+          {note}
+        </p>
+      )}
+      <div className="flex items-center gap-12 border-t border-border-subtle bg-bg-chrome px-12 py-8 text-fg-muted text-small">
+        {moveKeys && (
+          <span className="inline-flex items-center gap-4">
+            <Key keys={moveKeys} quiet decorative /> Move
+          </span>
+        )}
+        {endKeys && (
+          <span className="inline-flex items-center gap-4">
+            <Key keys={endKeys} quiet decorative /> Set an end
+          </span>
+        )}
+        <span className="flex-1" />
+        <Button
+          variant="primary"
+          size="sm"
+          tabIndex={-1}
+          disabled={compare.disabled}
+          onClick={() => onCompare?.()}
+        >
+          {compare.label}
+          {compare.keys && <Key keys={compare.keys} quiet decorative />}
+        </Button>
+      </div>
+    </Popover>
   );
 }
