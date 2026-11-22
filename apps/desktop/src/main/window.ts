@@ -2,6 +2,7 @@ import { fileURLToPath } from 'node:url';
 
 import { BrowserWindow, Menu, nativeTheme, type Session } from 'electron';
 
+import { REDUCE_MOTION } from '../ipc/motion.ts';
 import { editMenu, paintChrome, windowChrome, type Strip } from '../platform/index.ts';
 import { tokens, type Theme } from './tokens.ts';
 
@@ -18,12 +19,18 @@ function strip(): Strip {
   };
 }
 
+/** How the window starts, besides where it loads from. */
+export interface WindowOptions {
+  /** Every move off from the first frame, as tests ask: the preload sets the motion switch. */
+  reduceMotion: boolean;
+}
+
 /**
  * Opens Lo's window on `url`, in `session`. The page runs sandboxed, in its own JavaScript world,
  * with no Node and no webviews; `secureSession` and `secureContents` decide what it may load. Its
  * only way to main is the preload's `window.lo`.
  */
-export function openWindow(session: Session, url: string): BrowserWindow {
+export function openWindow(session: Session, url: string, options: WindowOptions): BrowserWindow {
   const colors = strip();
   const window = new BrowserWindow({
     title: 'Lo',
@@ -42,6 +49,7 @@ export function openWindow(session: Session, url: string): BrowserWindow {
       nodeIntegration: false,
       webSecurity: true,
       webviewTag: false,
+      additionalArguments: options.reduceMotion ? [REDUCE_MOTION] : [],
     },
   });
   window.once('ready-to-show', () => window.show());

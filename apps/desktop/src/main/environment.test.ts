@@ -17,6 +17,7 @@ import {
   compareWait,
   devicePoll,
   holdLimit,
+  reducedMotion,
   offlineAfter,
 } from './environment.ts';
 
@@ -123,6 +124,18 @@ describe('compareWait', () => {
     expect(compareWait({ packaged: true, env: { LO_COMPARE_WAIT_MS: '20000' } })).toBe(undefined);
     expect(() => compareWait({ packaged: false, env: { LO_COMPARE_WAIT_MS: 'soon' } })).toThrow(
       'LO_COMPARE_WAIT_MS',
+    );
+  });
+});
+
+describe('reducedMotion', () => {
+  it('turns every move off in a build run from source when asked, for tests, and follows the system otherwise', () => {
+    expect(reducedMotion({ packaged: false, env: { LO_MOTION: 'reduce' } })).toBe(true);
+    expect(reducedMotion({ packaged: false, env: { LO_MOTION: 'system' } })).toBe(false);
+    expect(reducedMotion({ packaged: false, env: {} })).toBe(false);
+    expect(reducedMotion({ packaged: true, env: { LO_MOTION: 'reduce' } })).toBe(false);
+    expect(() => reducedMotion({ packaged: false, env: { LO_MOTION: 'off' } })).toThrow(
+      'LO_MOTION',
     );
   });
 });

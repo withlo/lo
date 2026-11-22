@@ -75,7 +75,7 @@ export function Rules() {
             </Button>
           </div>
           <p className="m-0 text-fg-muted text-small">{router.steps}</p>
-          <pre className="m-0 overflow-auto rounded-sm bg-bg-well px-12 py-8 text-fg code-small no-ligatures">
+          <pre className="m-0 overflow-auto rounded-sm bg-bg-well px-12 py-8 text-fg code-small">
             {router.rule}
           </pre>
         </section>

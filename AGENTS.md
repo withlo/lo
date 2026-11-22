@@ -276,7 +276,11 @@ pnpm nx run desktop:release  # build it, then make a release's DMGs and zips (ne
   shows one that then passes as flaky. A test drives Lo's window only once it has drawn, through the
   `page` fixture or, for a copy of Lo it starts itself, `drawnWindow`: the page runs before
   Electron's GPU process has started, which in CI has taken up to half a minute, and until it has,
-  nothing that waits on a frame happens, such as a closed dialog leaving. Its specs are
+  nothing that waits on a frame happens, such as a closed dialog leaving. Tests start Lo with every
+  move off: `appEnvironment` sets `LO_MOTION=reduce`, which a build run from source passes to its
+  window's preload, on the window's command line, and the preload sets the motion switch before the
+  page's code runs (a packaged build ignores it), so no test waits on a popup fading or meets one
+  still leaving. A run that's there to watch Lo move sets `LO_MOTION=system`. Its specs are
   `e2e/*.spec.ts`, and a `*.test.ts` beside them is a unit test of what they use. A run on GitHub
   itself, with the system's keychain, is a `*.live.ts` spec, which only `nx run desktop:live` runs,
   one at a time, as `testing/README.md` describes.
@@ -1716,6 +1720,13 @@ utilities.
   file Tailwind reads classes from, `.html` and `.md` as well as scripts. Where Tailwind can't
   reach, add a utility to `src/styles.css` with `@utility`, reading `var(--lo-*)`.
 - Variants go through `cva` from `class-variance-authority`. Prettier sorts the classes.
+- Anything that appears, leaves or changes size takes one of the moves in `design/README.md`'s
+  "Motion", by its class (`move-pop`, `move-open`) or its component (`Collapse`, `Swap`). No
+  component writes a duration or a curve of its own. `setMotion` is the one switch that turns the
+  moves off; without a call Lo follows the system.
+- A popup (a dialog, menu, popover, tooltip or toast) is drawn by one of `ui`'s shared pieces, which
+  hold how it comes and goes and where focus returns. Lint fails a Base UI popup imported anywhere
+  else (`scripts/check-popups.ts`).
 - The fonts, Host Grotesk and Fragment Mono, are bundled as files (never `data:` addresses, which
   the content security policy blocks), and their licenses ship beside the window's files.
 - Screenshot baselines are made on Linux only, in `apps/desktop/e2e/snapshots/`.

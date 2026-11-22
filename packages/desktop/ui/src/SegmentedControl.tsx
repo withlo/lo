@@ -1,5 +1,12 @@
 import { cva } from 'class-variance-authority';
-import { useRef, type KeyboardEvent, type ReactNode } from 'react';
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type ReactNode,
+} from 'react';
 
 import { Key } from './Key.tsx';
 
@@ -29,11 +36,13 @@ export interface SegmentedControlProps<T extends string> {
 }
 
 const segment = cva(
-  'inline-flex items-center rounded-pill whitespace-nowrap focus-visible:shadow-ring',
+  'relative inline-flex items-center rounded-pill whitespace-nowrap move-tint focus-visible:shadow-ring',
   {
     variants: {
       chosen: {
+        // Drawn on the segment itself until the thumb has been measured, and where it can't be.
         true: 'bg-bg-element text-fg ring-1 ring-border-strong',
+        thumb: 'text-fg',
         false: 'text-fg-muted hover:text-fg',
       },
       size: {
@@ -51,7 +60,8 @@ const PREVIOUS = new Set(['ArrowLeft', 'ArrowUp']);
 /**
  * Two to four options in a pill track, exactly one chosen at a time, each a state rather than an
  * action: the middle-view switch, or a setting's choices. The arrow keys move between the segments
- * and choose as they go; the control's own key, when it has one, follows it.
+ * and choose as they go; the control's own key, when it has one, follows it. One thumb marks the
+ * chosen segment and slides to the next: the Slide move.
  */
 export function SegmentedControl<T extends string>({
   label,
@@ -63,6 +73,38 @@ export function SegmentedControl<T extends string>({
   keys,
 }: SegmentedControlProps<T>) {
   const buttons = useRef(new Map<T, HTMLButtonElement>());
+  // Where the thumb is: under the chosen segment, measured, so it can slide from one to the next.
+  const [thumb, setThumb] = useState<{ left: number; width: number } | undefined>();
+  // The segments there are, which a caller's new array of the same ones doesn't change: a label
+  // that changes is the observer's to see.
+  const segments = JSON.stringify(items.map((item) => item.value));
+  useLayoutEffect(() => {
+    const chosen = value === undefined ? undefined : buttons.current.get(value);
+    const measure = () => {
+      const next =
+        chosen && chosen.offsetWidth > 0
+          ? { left: chosen.offsetLeft, width: chosen.offsetWidth }
+          : undefined;
+      setThumb((was) => (was?.left === next?.left && was?.width === next?.width ? was : next));
+    };
+    measure();
+    if (!chosen || typeof ResizeObserver === 'undefined') return undefined;
+    // A label that changes, or a font that loads, moves the segments under it.
+    const watch = new ResizeObserver(measure);
+    for (const button of buttons.current.values()) watch.observe(button);
+    return () => watch.disconnect();
+  }, [value, segments, size]);
+  // It's put in place, not slid there, the first time.
+  const placed = thumb !== undefined;
+  const [slides, setSlides] = useState(false);
+  useEffect(() => {
+    if (!placed) {
+      setSlides(false);
+      return undefined;
+    }
+    const frame = requestAnimationFrame(() => setSlides(true));
+    return () => cancelAnimationFrame(frame);
+  }, [placed]);
   // The chosen segment takes focus by `Tab`, else the first.
   const tabbable = items.some((item) => item.value === value) ? value : items[0]?.value;
 
@@ -83,9 +125,16 @@ export function SegmentedControl<T extends string>({
       <div
         role={kind === 'views' ? 'tablist' : 'radiogroup'}
         aria-label={label}
-        className="inline-flex items-center gap-2 rounded-pill bg-bg-well p-2 inset-ring inset-ring-border"
+        className="relative inline-flex items-center gap-2 rounded-pill bg-bg-well p-2 inset-ring inset-ring-border"
         onKeyDown={onKeyDown}
       >
+        {thumb && (
+          <span
+            aria-hidden="true"
+            className={`absolute inset-y-2 left-0 rounded-pill bg-bg-element ring-1 ring-border-strong ${slides ? 'move-slide' : ''}`}
+            style={{ translate: `${thumb.left}px 0`, width: thumb.width }}
+          />
+        )}
         {items.map((item) => {
           const chosen = item.value === value;
           return (
@@ -100,7 +149,7 @@ export function SegmentedControl<T extends string>({
               aria-selected={kind === 'views' ? chosen : undefined}
               aria-checked={kind === 'choice' ? chosen : undefined}
               tabIndex={item.value === tabbable ? 0 : -1}
-              className={segment({ chosen, size })}
+              className={segment({ chosen: chosen ? (thumb ? 'thumb' : true) : false, size })}
               onClick={() => {
                 if (!chosen) onChange(item.value);
               }}

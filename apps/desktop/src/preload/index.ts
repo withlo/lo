@@ -8,6 +8,7 @@ import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron';
 import type { Bridge } from '../ipc/bridge.ts';
 import { channelName, isResult, type Result } from '../ipc/contract.ts';
 import { codeHandOver, handOver, isCodeHandOver, isHandOver } from '../ipc/jobs.ts';
+import { REDUCE_MOTION } from '../ipc/motion.ts';
 
 const unavailable = (channel: unknown): Result<never> => ({
   ok: false,
@@ -45,6 +46,19 @@ const bridge: Bridge = {
 };
 
 contextBridge.exposeInMainWorld('lo', bridge);
+
+// Every move off from the first frame, when main asks, as it does for tests: the motion switch
+// that the stylesheet and `setMotion` in `@lo/ui` read, set on `<html>` before the page's own code
+// runs. The page's script is a module, which runs once the document is parsed, so the switch is
+// there by then even when `<html>` isn't yet.
+function reduceMotion(): void {
+  document.documentElement.setAttribute('data-lo-motion', 'reduce');
+}
+if (process.argv.includes(REDUCE_MOTION)) {
+  const root: HTMLElement | null = document.documentElement;
+  if (root) reduceMotion();
+  else document.addEventListener('readystatechange', reduceMotion, { once: true });
+}
 
 // News of the background process from main: a port to it, sent each time the page loads and after
 // each restart, or word that it stopped. A MessagePort can't cross the bridge, so it all goes to

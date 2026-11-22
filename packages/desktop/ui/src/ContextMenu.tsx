@@ -1,9 +1,10 @@
 import { Menu } from '@base-ui/react/menu';
 import { Separator } from '@base-ui/react/separator';
-import { Fragment, useCallback, useMemo, useRef } from 'react';
+import { Fragment, useCallback, useLayoutEffect, useMemo, useRef } from 'react';
 
 import { useTakeFocus } from './focus.ts';
 import { Key, keyAria } from './Key.tsx';
+import { giveFocusBack, useHeld, useOnClose } from './motion.ts';
 
 /** One action in a context menu. */
 export interface ContextMenuItem {
@@ -52,7 +53,9 @@ export interface ContextMenuProps {
   highlightFirst?: boolean | undefined;
   /**
    * The menu has closed, and focus has gone back to where it was, with the action chosen, by `⏎`
-   * or a click, if one was. A caller runs it here, so it acts where its key would have.
+   * or a click, if one was. A caller runs it here, so it acts where its key would have. This comes
+   * as the menu starts to leave, not once it has faded, and the menu keeps what it showed while it
+   * fades, so a caller is free to clear its state here.
    */
   onClosed?: ((chosen: string | undefined) => void) | undefined;
   /** Where the menu is put in the page: an element inside `.lo-app`. */
@@ -62,7 +65,8 @@ export interface ContextMenuProps {
 /**
  * A menu at a point: the actions that can be done to what was right-clicked, each with its key,
  * and greyed with the reason when it can't be done now. Keys move through it (`j` and `k` as the
- * arrows do, in the `menu` scope), `⏎` chooses, and `Esc` closes it and gives focus back.
+ * arrows do, in the `menu` scope), `⏎` chooses, and `Esc` closes it and gives focus back. It comes
+ * and goes with the Pop move.
  */
 export function ContextMenu({
   open,
@@ -87,32 +91,37 @@ export function ContextMenu({
     [takeFocus],
   );
   const at = useMemo(() => (anchor ? virtual(anchor) : undefined), [anchor]);
+  const shown = open && at !== undefined;
+  // What it shows, and where, stay as they were while it leaves.
+  const held = useHeld(shown, { at, sections, label });
+  // Each opening starts with nothing chosen: an action pressed as the last one faded ran nothing,
+  // and isn't this one's.
+  useLayoutEffect(() => {
+    if (shown) chosen.current = undefined;
+  }, [shown]);
+  useOnClose(shown, () => {
+    // Focus goes back to the element itself. Base UI would give it to the element's first
+    // tabbable child when the element is focusable only from a script, such as a block of
+    // text with a link in it. Focus that has gone somewhere else by itself stays there.
+    giveFocusBack(finalFocus, popup.current);
+    const id = chosen.current;
+    chosen.current = undefined;
+    onClosed?.(id);
+  });
+  // Focusing an action is what highlights it. It waits for the frame in which Base UI has taken
+  // note of the menu's actions, and for nothing else: not for the menu to finish coming.
+  useLayoutEffect(() => {
+    if (!shown || !highlightFirst) return undefined;
+    const frame = requestAnimationFrame(() => {
+      queueMicrotask(() => popup.current?.querySelector<HTMLElement>('[role="menuitem"]')?.focus());
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [shown, highlightFirst]);
   return (
-    <Menu.Root
-      open={open && at !== undefined}
-      onOpenChange={(next) => onOpenChange(next)}
-      onOpenChangeComplete={(next) => {
-        if (next) {
-          // Focusing an action is what highlights it.
-          if (highlightFirst)
-            popup.current?.querySelector<HTMLElement>('[role="menuitem"]')?.focus();
-          return;
-        }
-        // Focus goes back to the element itself. Base UI would give it to the element's first
-        // tabbable child when the element is focusable only from a script, such as a block of
-        // text with a link in it.
-        const active = document.activeElement;
-        const lost = active === null || active === document.body || !active.isConnected;
-        if (finalFocus?.isConnected && (lost || popup.current?.contains(active)))
-          finalFocus.focus({ preventScroll: true });
-        const id = chosen.current;
-        chosen.current = undefined;
-        onClosed?.(id);
-      }}
-    >
+    <Menu.Root open={shown} onOpenChange={(next) => onOpenChange(next)}>
       <Menu.Portal container={container}>
         <Menu.Positioner
-          anchor={at}
+          anchor={held.at}
           side="bottom"
           align="start"
           sideOffset={0}
@@ -122,11 +131,14 @@ export function ContextMenu({
           <Menu.Popup
             ref={mounted}
             finalFocus={() => !finalFocus?.isConnected}
-            aria-label={label}
+            // Leaving, it takes no focus: a caller that focuses something in it as it closes, a
+            // frame or two on, would leave focus on nothing once it's gone.
+            inert={!shown}
+            aria-label={held.label}
             data-lo-scope="menu"
-            className="min-w-menu-w rounded-md bg-bg-overlay p-4 text-fg shadow-pop outline-none text-ui"
+            className="move-pop min-w-menu-w rounded-md bg-bg-overlay p-4 text-fg shadow-pop outline-none text-ui"
           >
-            {sections.map((section, index) => (
+            {held.sections.map((section, index) => (
               <Fragment key={section.map((item) => item.id).join(' ')}>
                 {index > 0 && <Separator className="mx-6 my-4 h-px bg-border" />}
                 {section.map((item) => (
@@ -136,7 +148,8 @@ export function ContextMenu({
                     disabled={item.disabled !== undefined}
                     {...keyAria(item.keys, item.shortcut)}
                     onClick={() => {
-                      chosen.current = item.id;
+                      // Leaving, it has said what was chosen already.
+                      if (shown) chosen.current = item.id;
                     }}
                     className="group flex min-h-menu-item-h cursor-default items-center gap-8 rounded-sm px-8 py-2 text-fg outline-none select-none focus-visible:shadow-none data-disabled:text-fg-disabled data-highlighted:bg-accent data-highlighted:text-on-accent data-highlighted:data-disabled:bg-hover data-highlighted:data-disabled:text-fg-disabled"
                   >

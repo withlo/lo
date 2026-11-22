@@ -32,9 +32,26 @@ describe('Toast', () => {
     );
     expect(order.every((part) => markup.includes(part))).toBe(true);
     // The title is in the second column beside the icon; the body and buttons under it.
-    expect(markup).toMatch(/<div class="font-semibold">Lo 0\.10 is ready<\/div>/);
-    expect(markup).toMatch(/<div class="col-start-2 [^"]*text-small">It installs/);
+    expect(markup).toMatch(/<div class="[^"]*font-semibold[^"]*">Lo 0\.10 is ready<\/div>/);
+    expect(markup).toMatch(/<div class="col-start-2 [^"]*text-small[^"]*">It installs/);
     expect(markup).toMatch(/<div class="col-start-2 mt-8 flex gap-6"><button/);
+  });
+
+  it('wraps a long body in its width, and shows three lines of plain words at most', () => {
+    const path = '/Users/someone/src/a-repository-with-a-long-name/packages/and/folders/deep/down';
+    const plain = renderToStaticMarkup(
+      <Toast tone="info" icon={icon} title="Lo couldn’t open it" body={`Nothing is at ${path}.`} />,
+    );
+    expect(plain).toMatch(
+      /<div class="col-start-2 min-w-0 wrap-anywhere [^"]*line-clamp-3">Nothing/,
+    );
+    // A body of its own markup, such as a command to copy, shows whole.
+    const marked = renderToStaticMarkup(
+      <Toast tone="info" icon={icon} title="Update Lo" body={<code>brew upgrade lo</code>} />,
+    );
+    expect(marked).toMatch(
+      /<div class="col-start-2 min-w-0 wrap-anywhere text-fg-muted text-small"><code>/,
+    );
   });
 
   it('colors the icon by its tone, and leaves out the body and buttons it hasn’t got', () => {

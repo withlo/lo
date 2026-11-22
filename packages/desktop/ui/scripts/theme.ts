@@ -19,6 +19,7 @@ export interface TokenFile {
   shadow: { tokens: Token[] };
   spacing: { tokens: Token[] };
   size: { tokens: Token[] };
+  motion: { tokens: Token[] };
   type: { groups: { styles: { name: string; fontWeight: number | string }[] }[] };
 }
 
@@ -26,9 +27,7 @@ export interface TokenFile {
 const foundation = [
   '  --shadow-ring: var(--lo-ring);',
   '  --shadow-ring-inset: var(--lo-ring-inset);',
-  '  --ease-in: var(--lo-ease-in);',
-  '  --ease-out: var(--lo-ease-out);',
-  '  --ease-in-out: var(--lo-ease-in-out);',
+  // A transition that names no duration or curve is a Tint: fast, and arriving.
   '  --default-transition-duration: var(--lo-dur-fast);',
   '  --default-transition-timing-function: var(--lo-ease-out);',
   // font-sans and font-code: the design system's own stacks are --font-ui and --font-mono, which
@@ -48,6 +47,18 @@ const weights: Record<string, string> = {
 
 /** `lo-bg-chrome` as Tailwind names it: `bg-chrome`. */
 const bare = (name: string, prefix = 'lo-') => name.slice(prefix.length);
+
+/**
+ * A motion token as Tailwind's theme names it: a curve is `ease-out`, and a duration is
+ * `duration-fast`, `duration-base` (`lo-dur`, which has no word of its own) or `duration-slow`.
+ */
+function motion(name: string): string {
+  if (name.startsWith('lo-ease-')) return `  --ease-${bare(name, 'lo-ease-')}: var(--${name});`;
+  if (name === 'lo-dur') return `  --transition-duration-base: var(--${name});`;
+  if (name.startsWith('lo-dur-'))
+    return `  --transition-duration-${bare(name, 'lo-dur-')}: var(--${name});`;
+  throw new Error(`A motion token the theme has no name for: ${name}`);
+}
 
 export function theme(tokens: TokenFile): string {
   const styles = tokens.type.groups.flatMap((group) => group.styles);
@@ -69,9 +80,15 @@ export function theme(tokens: TokenFile): string {
       ({ name }) => `  --shadow-${bare(name, 'lo-shadow-')}: var(--${name});`,
     ),
     ...usedWeights.map((weight) => `  --font-weight-${weights[weight] ?? weight}: ${weight};`),
+    ...tokens.motion.tokens.map(({ name }) => motion(name)),
     ...foundation,
   ];
-  const type = styles.map(({ name }) => `@utility ${name} {\n  font: var(--lo-${name});\n}`);
+  // Code is set as written. `font` puts ligatures back on, so a code style turns them off after it.
+  const type = styles.map(({ name }) =>
+    name.startsWith('code-')
+      ? `@utility ${name} {\n  font: var(--lo-${name});\n  font-variant-ligatures: none;\n}`
+      : `@utility ${name} {\n  font: var(--lo-${name});\n}`,
+  );
   return [
     "/* Lo's Tailwind theme, generated from design/tokens.json by scripts/theme.ts. Don't edit it:",
     '   change the tokens and run `pnpm nx run ui:codegen`. */',

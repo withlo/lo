@@ -46,6 +46,10 @@
   --spacing-swatch-w: var(--lo-swatch-w);
   --spacing-swatch-h: var(--lo-swatch-h);
   --spacing-dialog-w: var(--lo-dialog-w);
+  --spacing-dialog-w-sm: var(--lo-dialog-w-sm);
+  --spacing-dialog-w-lg: var(--lo-dialog-w-lg);
+  --spacing-dialog-top: var(--lo-dialog-top);
+  --spacing-mark-lg: var(--lo-mark-lg);
   --spacing-avatar-lg: var(--lo-avatar-lg);
   --spacing-switch-w: var(--lo-switch-w);
   --spacing-file-header-h: var(--lo-file-header-h);
@@ -242,11 +246,14 @@
   --font-weight-semibold: 600;
   --font-weight-bold: 700;
   --font-weight-extrabold: 800;
+  --transition-duration-fast: var(--lo-dur-fast);
+  --transition-duration-base: var(--lo-dur);
+  --transition-duration-slow: var(--lo-dur-slow);
+  --ease-out: var(--lo-ease-out);
+  --ease-in: var(--lo-ease-in);
+  --ease-in-out: var(--lo-ease-in-out);
   --shadow-ring: var(--lo-ring);
   --shadow-ring-inset: var(--lo-ring-inset);
-  --ease-in: var(--lo-ease-in);
-  --ease-out: var(--lo-ease-out);
-  --ease-in-out: var(--lo-ease-in-out);
   --default-transition-duration: var(--lo-dur-fast);
   --default-transition-timing-function: var(--lo-ease-out);
   --font-sans: var(--lo-font-ui);
@@ -308,16 +315,20 @@
 
 @utility code-text {
   font: var(--lo-code-text);
+  font-variant-ligatures: none;
 }
 
 @utility code-small {
   font: var(--lo-code-small);
+  font-variant-ligatures: none;
 }
 
 @utility code-key {
   font: var(--lo-code-key);
+  font-variant-ligatures: none;
 }
 
 @utility code-display {
   font: var(--lo-code-display);
+  font-variant-ligatures: none;
 }

@@ -55,7 +55,7 @@
   font: var(--lo-text-small); color: var(--lo-fg-muted);
 }
 .lo-ov-byline strong { color: var(--lo-fg); font-weight: 600; }
-.lo-ov-byline .lo-commit { font: 400 11.5px/1 var(--lo-font-mono); color: var(--lo-fg); }
+.lo-ov-byline .lo-commit { font: 400 11.5px/1 var(--lo-font-mono); font-variant-ligatures: none; color: var(--lo-fg); }
 .lo-ov-byline__end { margin-left: auto; display: flex; gap: 6px; }
 
 /* "Written for r3. The PR is at r5." */
@@ -99,7 +99,8 @@
 .lo-prose :where(a) { color: var(--lo-link); text-decoration: underline; text-decoration-color: var(--lo-accent-line); text-underline-offset: 3px; }
 .lo-prose :where(a):focus-visible { box-shadow: var(--lo-ring); border-radius: 2px; text-decoration: none; }
 .lo-prose :where(code) {
-  font-family: var(--lo-font-mono); font-size: var(--lo-code-inline-size);
+  font-family: var(--lo-font-mono);
+  font-variant-ligatures: none; font-size: var(--lo-code-inline-size);
   padding: 1px 5px; border-radius: var(--lo-r-xs);
   background: var(--lo-hover); box-shadow: inset 0 0 0 1px var(--lo-border-subtle);
 }
@@ -159,9 +160,9 @@
   font: var(--lo-text-small); color: var(--lo-fg-muted);
   white-space: nowrap;
 }
-.lo-codeblock__path { font: 400 12px/1 var(--lo-font-mono); color: var(--lo-fg-muted); overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.lo-codeblock__path { font: 400 12px/1 var(--lo-font-mono); font-variant-ligatures: none; color: var(--lo-fg-muted); overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .lo-codeblock__path b { color: var(--lo-fg); font-weight: 400; }
-.lo-codeblock__lines { font: 400 11.5px/1 var(--lo-font-mono); color: var(--lo-fg-muted); flex: none; }
+.lo-codeblock__lines { font: 400 11.5px/1 var(--lo-font-mono); font-variant-ligatures: none; color: var(--lo-fg-muted); flex: none; }
 .lo-codeblock__actions { margin-left: auto; display: flex; align-items: center; gap: 2px; flex: none; }
 .lo-codeblock__flag {
   display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
@@ -198,6 +199,7 @@
 .lo-codeblock--illustration pre {
   margin: 0; padding: 12px 16px 14px;
   font: 400 var(--lo-code-size)/var(--lo-code-line) var(--lo-font-mono);
+  font-variant-ligatures: none;
   color: var(--lo-code-fg);
   overflow-x: auto;
   user-select: text;
@@ -228,7 +230,7 @@
 .lo-figure__frame > svg:not(.lo-i) { font-family: var(--fig-font); }
 .lo-figure__frame > canvas { aspect-ratio: var(--lo-fig-aspect); object-fit: contain; }
 /* Agents write font-family="monospace" for code; Lo maps it to Fragment Mono */
-.lo-figure__frame > svg:not(.lo-i) [font-family="monospace"] { font-family: var(--fig-mono); }
+.lo-figure__frame > svg:not(.lo-i) [font-family="monospace"] { font-family: var(--fig-mono); font-variant-ligatures: none; }
 .lo-figure figcaption { margin-top: 10px; font: 400 13px/19px var(--lo-font-ui); color: var(--lo-fg-muted); max-width: var(--lo-read-measure); }
 .lo-figure figcaption b { color: var(--lo-fg); font-weight: 600; }
 /* Lo wraps each linked part in <g class="lo-fig-link" tabindex="0"> and adds a
@@ -244,7 +246,8 @@
 .lo-figpreview__head {
   display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 10px;
   border-bottom: 1px solid var(--lo-border-subtle);
-  font: 400 11.5px/1 var(--lo-font-mono); color: var(--lo-fg-muted);
+  font: 400 11.5px/1 var(--lo-font-mono);
+  font-variant-ligatures: none; color: var(--lo-fg-muted);
 }
 .lo-figpreview__head b { color: var(--lo-fg); font-weight: 400; }
 .lo-figpreview__foot { display: flex; gap: 12px; padding: 6px 10px; border-top: 1px solid var(--lo-border-subtle); }
@@ -296,12 +299,13 @@
 .lo-walk__step.is-done::before { box-shadow: none; background: var(--lo-bg-element-press); color: var(--lo-fg); }
 .lo-walk__step[aria-current="step"] { background: var(--lo-current); color: var(--lo-fg); }
 .lo-walk__step[aria-current="step"]::before { background: var(--lo-accent); color: var(--lo-on-accent); box-shadow: none; }
-.lo-walk__step code { font-family: var(--lo-font-mono); font-size: var(--lo-code-inline-size); }
+.lo-walk__step code { font-family: var(--lo-font-mono); font-variant-ligatures: none; font-size: var(--lo-code-inline-size); }
 .lo-walk__code { min-width: 0; background: var(--lo-code-bg); }
 .lo-walk__codehead {
   display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 12px;
   border-bottom: 1px solid var(--lo-border-subtle);
-  font: 400 11.5px/1 var(--lo-font-mono); color: var(--lo-fg-muted);
+  font: 400 11.5px/1 var(--lo-font-mono);
+  font-variant-ligatures: none; color: var(--lo-fg-muted);
 }
 .lo-walk__codehead b { color: var(--lo-fg); font-weight: 400; }
 .lo-walk-hl { background-image: linear-gradient(var(--lo-code-highlight-line), var(--lo-code-highlight-line)); }

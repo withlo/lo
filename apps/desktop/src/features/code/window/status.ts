@@ -62,24 +62,28 @@ export function takeStatus(status: Status): void {
   }
 }
 
+/** What a trust button says as main starts to trust its view, before it has got further. */
+export const TRUST_STARTS = 'Checking…';
+
 /**
  * What a trust button says while main trusts its view, or nothing while it doesn't. Nothing says
- * it's trusting until the reader said "Trust" in main's dialog.
+ * it's trusting until the reader said "Trust" in main's dialog. Each is no wider than "Trust this
+ * repo", so the button keeps its width as it waits.
  */
 export function busyLabel(status: Status): string | undefined {
   const { trusting } = status;
   switch (trusting) {
     case 'reading':
-      return 'Checking with GitHub';
+      return TRUST_STARTS;
     case 'asking':
-      return 'Waiting for your answer';
+      return 'Waiting…';
     case 'saving':
-      return 'Trusting';
+      return 'Trusting…';
     case undefined:
       return undefined;
     default:
       trusting satisfies never;
-      return 'Trusting';
+      return 'Trusting…';
   }
 }
 

@@ -8,12 +8,14 @@ const css = theme({
   shadow: { tokens: [{ name: 'lo-shadow-pop' }] },
   spacing: { tokens: [{ name: 'lo-sp-4' }, { name: 'lo-sp-12' }] },
   size: { tokens: [{ name: 'lo-tabbar-h' }] },
+  motion: { tokens: [{ name: 'lo-dur' }, { name: 'lo-dur-fast' }, { name: 'lo-ease-in' }] },
   type: {
     groups: [
       {
         styles: [
           { name: 'text-ui', fontWeight: 400 },
           { name: 'text-label', fontWeight: 600 },
+          { name: 'code-text', fontWeight: 400 },
         ],
       },
     ],
@@ -39,6 +41,12 @@ describe('theme', () => {
     expect(css).toContain('  --spacing-tabbar-h: var(--lo-tabbar-h);');
   });
 
+  it('names the times and curves of motion, so a move is written with the tokens alone', () => {
+    expect(css).toContain('  --transition-duration-base: var(--lo-dur);');
+    expect(css).toContain('  --transition-duration-fast: var(--lo-dur-fast);');
+    expect(css).toContain('  --ease-in: var(--lo-ease-in);');
+  });
+
   it('names the weights the type styles use', () => {
     expect(css).toContain('  --font-weight-normal: 400;');
     expect(css).toContain('  --font-weight-semibold: 600;');
@@ -48,6 +56,12 @@ describe('theme', () => {
   it('makes each type style a utility setting the whole font', () => {
     expect(css).toContain('@utility text-ui {\n  font: var(--lo-text-ui);\n}');
     expect(css).toContain('@utility text-label {\n  font: var(--lo-text-label);\n}');
+  });
+
+  it('sets code as written: a code style turns ligatures off, after the font that turns them on', () => {
+    expect(css).toContain(
+      '@utility code-text {\n  font: var(--lo-code-text);\n  font-variant-ligatures: none;\n}',
+    );
   });
 
   it("leaves the design system's own font stacks alone", () => {

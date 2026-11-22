@@ -8,7 +8,14 @@ import { app, type BrowserWindow, dialog, session, type Session } from 'electron
 import { refusedArguments, refusedEnvironment } from './arguments.ts';
 import { startBackground, type Background } from './background.ts';
 import { openDatabase, type Database } from './database.ts';
-import { appName, backgroundSettings, dataFolder, devServer, settingsFile } from './environment.ts';
+import {
+  appName,
+  backgroundSettings,
+  dataFolder,
+  devServer,
+  reducedMotion,
+  settingsFile,
+} from './environment.ts';
 import { loadFeatures, type Feature } from './features.ts';
 import {
   cacheFolder,
@@ -160,7 +167,9 @@ function start(): void {
   const show = (): BrowserWindow | undefined => {
     if (!windowSession) return undefined;
     if (!window) {
-      window = openWindow(windowSession, dev?.href ?? windowUrl);
+      window = openWindow(windowSession, dev?.href ?? windowUrl, {
+        reduceMotion: reducedMotion({ packaged: app.isPackaged, env }),
+      });
       background?.attach(window.webContents);
       window.once('closed', () => (window = undefined));
     }

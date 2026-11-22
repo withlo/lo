@@ -14,6 +14,8 @@ test('the window opens on a fresh data folder, on Recent pull requests alone, in
     expect(await page.title()).toBe('Lo');
     expect(app.windows()).toHaveLength(1);
     await expect(page.getByRole('tablist', { name: 'Pull requests' })).toBeVisible();
+    // Tests start Lo with every move off.
+    await expect(page.locator('html')).toHaveAttribute('data-lo-motion', 'reduce');
 
     const paths = await app.evaluate((electron) => ({
       data: electron.app.getPath('userData'),
@@ -23,6 +25,42 @@ test('the window opens on a fresh data folder, on Recent pull requests alone, in
       data: dataFolder(),
       window: join(dataFolder(), 'Partitions', 'window'),
     });
+  });
+
+  await test.step('the shell and the page put themselves back when a script scrolls them', async () => {
+    // Something taller than the shell, past its edge, as a view that overflows would be.
+    const scrolled = await page.evaluate(() => {
+      const shell = document.querySelector('[data-lo-scope="window"]');
+      if (!shell) throw new Error('The window has no shell.');
+      const tall = document.createElement('div');
+      tall.id = 'tall';
+      tall.style.cssText = 'flex: none; height: 200vh';
+      shell.append(tall);
+      shell.scrollTop = 80;
+      return shell.scrollTop;
+    });
+    expect(scrolled).toBe(80);
+    await expect
+      .poll(() =>
+        page.evaluate(() => document.querySelector('[data-lo-scope="window"]')?.scrollTop),
+      )
+      .toBe(0);
+    await page.evaluate(() => document.getElementById('tall')?.remove());
+
+    // The page itself hides what overflows it too, and puts itself back the same way.
+    const pageScrolled = await page.evaluate(() => {
+      const root = document.scrollingElement;
+      if (!root) throw new Error('The page has no scrolling element.');
+      const tall = document.createElement('div');
+      tall.id = 'tall-page';
+      tall.style.cssText = 'height: 200vh';
+      document.body.append(tall);
+      root.scrollTop = 80;
+      return root.scrollTop;
+    });
+    expect(pageScrolled).toBe(80);
+    await expect.poll(() => page.evaluate(() => document.scrollingElement?.scrollTop)).toBe(0);
+    await page.evaluate(() => document.getElementById('tall-page')?.remove());
   });
 
   await test.step("the tab strip's row clears the window's controls", async () => {

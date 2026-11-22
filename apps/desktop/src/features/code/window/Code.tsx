@@ -243,7 +243,7 @@ function HoverCard() {
   return (
     <div
       ref={card}
-      className="invisible fixed z-dialog"
+      className="invisible fixed z-popover"
       onPointerLeave={() => closeHover()}
       data-lo-hover
     >
