@@ -19,6 +19,7 @@ import {
   type RenderThread,
 } from '../../src/code/index.ts';
 import { listen, Registry } from '../../src/commands/index.ts';
+import { setVim } from '../../src/vim.ts';
 
 /** What the next key does first, before Lo's key listener, or anything else, hears of it. */
 let beforeKey: (() => void) | undefined;
@@ -32,7 +33,7 @@ window.addEventListener(
   { capture: true },
 );
 
-// No command of Lo's: every key is Vim's, and the reader's input as it comes.
+// No command of Lo's: every key is the editor's, and the reader's input as it comes.
 listen(window, new Registry({ system: 'linux', commands: [] }));
 
 let old: string[] = [];
@@ -311,9 +312,13 @@ const harness = {
     const cursor = view().probe.cursor();
     return cursor && cursor.top - screen().top;
   },
-  /** Opens a comment box under new line `line`, with focus in it. */
-  compose(line: number): void {
-    view().compose({ file: 'a', side: 'new', line }, '', {
+  /** Turns Vim keys on or off, as the setting does: they're off as the page opens. */
+  vim(on: boolean): void {
+    setVim(on);
+  },
+  /** Opens a comment box under new line `line`, holding `text`, with focus in it. */
+  compose(line: number, text = ''): void {
+    view().compose({ file: 'a', side: 'new', line }, text, {
       change: ignore,
       submit: ignore,
       close: ignore,
