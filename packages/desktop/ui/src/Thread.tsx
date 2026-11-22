@@ -78,6 +78,11 @@ export interface ThreadProps {
   resolving?: boolean | undefined;
   /** The comment of yours whose delete was asked and GitHub hasn't answered for, by its `id`. */
   deleting?: string | undefined;
+  /**
+   * The comments a box under the card is editing, by their `id`s. The box is the comment meanwhile,
+   * so the open card draws without them: a comment's text shows once.
+   */
+  editing?: ReadonlySet<string> | undefined;
   /** You can reply to it. */
   canReply?: boolean | undefined;
   keys?: ThreadKeys | undefined;
@@ -203,6 +208,7 @@ export function Thread({
   canReply = false,
   resolving = false,
   deleting,
+  editing,
   keys = {},
   menu = false,
   reply,
@@ -295,6 +301,7 @@ export function Thread({
 
   const tone: TagTone = state === 'resolved' ? 'ok' : 'warning';
   const showReply = reply === undefined && canReply;
+  const drawn = editing ? comments.filter((each) => !editing.has(each.id)) : comments;
   return (
     <div
       role="group"
@@ -349,7 +356,7 @@ export function Thread({
           </Button>
         </span>
       </div>
-      {comments.map((comment, index) => (
+      {drawn.map((comment, index) => (
         <div
           key={comment.id}
           data-comment={comment.id}

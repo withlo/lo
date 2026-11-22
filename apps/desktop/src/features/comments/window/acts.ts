@@ -110,7 +110,8 @@ function settled(view: string, key: string, did: boolean): void {
  * card's control is its own again.
  */
 export function settleActs(view: string): void {
-  for (const key of [...(settling.get(view)?.keys() ?? [])]) {
+  // Settling one takes it out of the map this goes through, which a `Map` allows.
+  for (const key of settling.get(view)?.keys() ?? []) {
     const row = acting.get(view).get(key);
     if (!row || shows(view, row)) settled(view, key, true);
   }

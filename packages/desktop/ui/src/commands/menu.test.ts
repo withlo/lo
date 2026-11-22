@@ -218,6 +218,24 @@ describe('a right-click menu', () => {
       'Open or close the thread, or the file z a',
     ]);
     expect(named(file)).toEqual([]);
+    // A handler names what it would do there, over what the menu says.
+    const telling = new Registry({
+      system: 'mac',
+      commands: handlers(fold, {
+        toggle: {
+          ...run,
+          named: (target) => (target.kind === 'thread' && target.collapsed ? 'Expand' : undefined),
+        },
+      }),
+    });
+    const labelled = (target: Target) =>
+      menuSections(telling, target)
+        .flat()
+        .map((item) => item.label);
+    expect(labelled({ kind: 'thread', thread: 't1', collapsed: true })).toEqual(['Expand']);
+    expect(labelled({ kind: 'thread', thread: 't1', collapsed: false })).toEqual([
+      'Open or close the thread, or the file',
+    ]);
   });
 
   it('lists the commands for the system it is on only', () => {

@@ -355,7 +355,9 @@ Every action has a key; see `keyboard.md` for the rules and focus, and section 1
   and palette rows and `HintButton`. On a control that every card or row repeats, only on the one
   the keyboard is on: give those `Key` `when="focus"`, and mark the card or row `data-key-scope`
   (with `data-focused` while the keyboard is on it, if it doesn't hold DOM focus). The others give
-  the key in their tooltip. A chip never comes on hover, which would move the buttons beside it.
+  the key in their tooltip. A chip never comes on hover, which would move the buttons beside it. A
+  thread's card is the keyboard's whenever the code cursor is on its line and its keys would act on
+  it, not only after `]t`, which also brings the whole card into view.
 - A chip takes its control's state by itself: on a main button's fill it's drawn in the fill's text
   colour, and on a dimmed control or menu row it dims with the label. Don't colour a chip by hand.
 - Code has a caret, in `lo-code-cursor`. With Vim keys on it's Vim's block cursor, with a halo,
@@ -412,7 +414,8 @@ to one job.
 - Long lines wrap. Wrapped lines continue four columns past the line's own indent (`--ind`).
 - Whitespace changes show by default; a re-indented line highlights only its new leading spaces.
 - Generated files, lockfiles and very large files start collapsed with a reason and a way to open
-  them.
+  them. The way is a button under the file's header that says what a click shows, "Expand file" or
+  "Show 18,000 lines", and runs what `za` runs there. Its tooltip gives the key.
 - Code is set as written: no ligatures. Every rule that sets the mono face turns them off with it.
 - A file's header reads once across both sides. The file you're in stays pinned under the diff bar.
 - **The viewed ball is a checkbox drawn as the ball.** It has a checkbox's semantics
@@ -425,6 +428,8 @@ to one job.
 - **A `+` follows the pointer down the gutter** beside each line that takes a comment. A click
   comments on that line, as `c` does. It sits over the start of the line's number, clear of the
   overview markers, takes no room and moves nothing, and it's gone over a header, a thread or a box.
+  It's an outline until it's pressed, when it fills: the accent is spent on the press, not the
+  hover. On a line that takes no comment it's dimmed from the first frame.
 - **What you open is in view when it opens.** A comment box, a thread or a peek that opens scrolls
   its pane the least that shows all of it, at once, with `reveal` (`block: 'nearest'`), and never
   with `scrollIntoView`. One taller than its pane shows from its top. A comment box does this itself
@@ -469,12 +474,20 @@ copy its foot.
   box had. The box keeps that height, and the comment on it, until the card from GitHub is drawn,
   and gives way to it in one frame: the text never leaves the screen, and what's under it moves
   once. A send that fails turns back into the open box with the text as it was, under a note that
-  says what wasn't sent and why, with "Try again".
+  says what wasn't sent and why, in the danger tone. The box's own action sends it again: a note
+  never offers a second button for what a button under it does. A screen reader hears each step from
+  the comments' one live region (`tell`): that it's sending, that it was sent, or the note.
+- **An edit's box is the comment.** From an edit opening to its card showing what was saved, the
+  comment's text shows once, in the box: the thread's card draws without that comment and offers no
+  reply meanwhile.
 - **Never a blind resend.** When GitHub's answer never came, nobody knows whether the comment
   posted, and sending it again could post it twice. The box then says "Comment not confirmed" and
   offers "Check again", which only looks. Its buttons are dimmed with "Check again first" until Lo
-  knows: found, the card takes the box's place; not found, the note offers "Try again". An edit and
-  a resolve follow the same rule.
+  knows: found, the card takes the box's place; not found, the box's action sends it again. An edit
+  and a resolve follow the same rule: a card's "Resolve not confirmed" offers "Check again", and
+  "Try again" only once Lo knows it didn't go. A resolve, an unresolve or a delete shows as asked,
+  its control at work, until the thread itself shows it, so a card never flips back between GitHub's
+  answer and the next read of its threads.
 - **Attached files.** A file goes in at the cursor as a placeholder while it uploads. If the upload
   fails or is refused, Lo takes the placeholder out itself and the file's row says what happened. A
   comment isn't sent while a placeholder is in its text.

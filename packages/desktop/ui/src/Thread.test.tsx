@@ -62,6 +62,15 @@ describe('Thread', () => {
     expect(host.textContent).not.toContain('Reply…');
   });
 
+  it('draws without a comment a box under it is editing, and still counts it', () => {
+    const host = render(
+      <Thread {...PROPS} comments={[MIRA, RAVI, MINE]} editing={new Set(['c3'])} canReply />,
+    );
+    expect(host.querySelector('[data-comment="c3"]')).toBeNull();
+    expect(host.querySelector('[data-comment="c2"]')).not.toBeNull();
+    expect(host.textContent).toContain('3 comments');
+  });
+
   it('collapses a resolved thread to one line, and opens it from there', () => {
     const onToggle = vi.fn<() => void>();
     const host = render(

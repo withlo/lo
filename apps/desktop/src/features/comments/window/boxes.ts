@@ -257,10 +257,10 @@ export function sendingNow(state: BoxState): boolean {
 
 /** Whether focus is somewhere a box mustn't take it from: a dialog, a menu, or other writing. */
 function focusElsewhere(): boolean {
-  const held = document.activeElement?.closest(
+  const taken = document.activeElement?.closest(
     '[role="dialog"], [role="menu"], input, textarea, .lo-diffcomposer',
   );
-  return held !== null && held !== undefined;
+  return taken !== null && taken !== undefined;
 }
 
 /**
@@ -272,9 +272,9 @@ function focusElsewhere(): boolean {
 function told(box: Box, was: BoxState): void {
   const now = box.state;
   const edit = now.place.kind === 'edit';
-  const held = sendingNow(now);
+  const heldNow = sendingNow(now);
   const heldBefore = sendingNow(was);
-  if (held) {
+  if (heldNow) {
     if (now.landing) return;
     const label = sentLabel(now.sending, edit);
     if (heldBefore && !was.landing && label === sentLabel(was.sending, edit)) return;
@@ -1387,11 +1387,11 @@ function takeAway(box: Box, how: 'close' | 'landed' | 'dismiss'): void {
 }
 
 /**
- * Closes the box of a comment or an edit GitHub took: `landed`, its card is drawn already. One
+ * Closes the box of a comment or an edit GitHub took: `drawn`, its card is drawn already. One
  * closed before its card came stays drawn as it is where the view keeps it (`Composer.close`),
  * which its state says for as long: it's still `landing`.
  */
-function closeSent(box: Box, landed = false): void {
+function closeSent(box: Box, drawn = false): void {
   const { view } = box;
   const waiting = landings.get(box);
   if (waiting) clearTimeout(waiting.timer);
@@ -1401,8 +1401,8 @@ function closeSent(box: Box, landed = false): void {
   if (own.get(box.key) === box) own.delete(box.key);
   box.open = false;
   unsay(box);
-  if (!landed) box.set({ landing: true });
-  takeAway(box, landed ? 'landed' : 'close');
+  if (!drawn) box.set({ landing: true });
+  takeAway(box, drawn ? 'landed' : 'close');
   replyingChanged(view);
 }
 
@@ -1443,7 +1443,8 @@ function beforeOf(view: string, place: DraftPlaceRow): Before {
     case 'conversation':
       return {};
     default:
-      return place satisfies never;
+      place satisfies never;
+      return {};
   }
 }
 
@@ -1493,14 +1494,15 @@ function landedIn(
     case 'conversation':
       return undefined;
     default:
-      return place satisfies never;
+      place satisfies never;
+      return undefined;
   }
 }
 
 /** The boxes whose comments GitHub took, waiting for their cards, each with what tells it came. */
 const landings = new Map<
   Box,
-  { landed: (rows: readonly ThreadRow[]) => boolean; timer: ReturnType<typeof setTimeout> }
+  { shows: (rows: readonly ThreadRow[]) => boolean; timer: ReturnType<typeof setTimeout> }
 >();
 
 /**
@@ -1510,18 +1512,18 @@ const landings = new Map<
  * now, and so does one whose card hasn't come in `LAND_WAIT`.
  */
 function closeOnceLanded(box: Box, thread: string | null): void {
-  const landed = box.composer && box.drawnIn !== 'timeline' ? landedIn(box, thread) : undefined;
-  if (!landed) {
+  const shows = box.composer && box.drawnIn !== 'timeline' ? landedIn(box, thread) : undefined;
+  if (!shows) {
     closeSent(box);
     return;
   }
-  if (landed(rowsOf(box.view))) {
+  if (shows(rowsOf(box.view))) {
     closeSent(box, true);
     return;
   }
   box.set({ landing: true });
   const timer = setTimeout(() => closeSent(box), LAND_WAIT);
-  landings.set(box, { landed, timer });
+  landings.set(box, { shows, timer });
 }
 
 /**
@@ -1530,8 +1532,9 @@ function closeOnceLanded(box: Box, thread: string | null): void {
  */
 export function landBoxes(view: string): void {
   const rows = rowsOf(view);
-  for (const [box, { landed }] of [...landings]) {
-    if (box.view === view && landed(rows)) closeSent(box);
+  // Closing one takes it out of the map this goes through, which a `Map` allows.
+  for (const [box, { shows }] of landings) {
+    if (box.view === view && shows(rows)) closeSent(box);
   }
 }
 
@@ -1747,6 +1750,12 @@ export function keepBoxesOf(kept: ReadonlySet<string>): void {
 export const replying = tabState<ReadonlySet<string>>(() => new Set());
 
 /**
+ * The comments of each view's threads an edit box is open on, by their ids: a comment's text shows
+ * once, in its box, from the edit opening to its card showing what was saved.
+ */
+export const editing = tabState<ReadonlySet<string>>(() => new Set());
+
+/**
  * The boxes of each view its timeline draws: the pull request's own, if there's one yet, and the
  * edits of your comments on the pull request itself that are open, by the comments' ids.
  */
@@ -1954,16 +1963,37 @@ export function leftTimeline(box: Box, composer: Composer): void {
 function replyingChanged(view: string): void {
   timelineChanged(view);
   const now = new Set<string>();
+  // Each comment an edit box is open on, with its thread.
+  const edits = new Map<string, string>();
   for (const box of views.get(view)?.values() ?? []) {
-    if (box.open && box.state.place.kind === 'reply') now.add(box.state.place.thread);
+    const { place } = box.state;
+    if (!box.open) continue;
+    if (place.kind === 'reply') now.add(place.thread);
+    else if (place.kind === 'edit' && place.thread !== null) edits.set(place.comment, place.thread);
+  }
+  const diff = writingDiff(view);
+  const edited = editing.get(view);
+  if (edited.size !== edits.size || [...edits.keys()].some((each) => !edited.has(each))) {
+    // The card that draws without its comment, or with it again, is the reader's doing too.
+    const threads = new Set(edits.values());
+    for (const each of edited) {
+      const thread = edits.has(each) ? undefined : threadOf(view, each);
+      if (thread !== undefined) threads.add(thread);
+    }
+    if (diff) for (const thread of threads) claimBriefly(diff, thread);
+    editing.set(view, new Set(edits.keys()));
   }
   const was = replying.get(view);
   if (was.size === now.size && [...now].every((thread) => was.has(thread))) return;
-  const diff = writingDiff(view);
   for (const thread of new Set([...was, ...now])) {
     if (was.has(thread) !== now.has(thread) && diff) claimBriefly(diff, thread);
   }
   replying.set(view, now);
+}
+
+/** The thread of view `view` that holds the comment with id `id`, by its own. */
+function threadOf(view: string, id: string): string | undefined {
+  return rowsOf(view).find((row) => row.comments.some((each) => each.id === id))?.id;
 }
 
 /**

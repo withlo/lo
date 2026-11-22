@@ -313,7 +313,7 @@ test('while an upload is held on its way, nothing is sent; its row stays as tall
   await expect.poll(() => gate.holding, { timeout: 20_000 }).toBe(1);
   await page.reload();
   await expect(box).toContainText('Couldn’t attach lo-attachment.png', { timeout: 20_000 });
-  await expect(box).toContainText('Attach it again.');
+  await expect(box.getByRole('button', { name: 'Attach files…' })).toBeVisible();
   await expect(box.locator('.cm-content')).toHaveText(`Repro: ![lo-attachment](${ASSET})`);
   await expect(addToReview).not.toHaveAttribute('aria-disabled');
   gate.open();

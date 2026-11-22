@@ -27,7 +27,7 @@ import {
   tryAgain,
   underWay,
 } from './acts.ts';
-import { replying } from './boxes.ts';
+import { editing, replying } from './boxes.ts';
 import { useExcerpt } from './excerpts.ts';
 import { landed } from './landed.ts';
 import { Post, type PostPull } from './Post.tsx';
@@ -66,7 +66,7 @@ export interface CardProps {
   readonly id: string;
   /** Whether it shows open, or collapsed to one line. */
   readonly open: boolean;
-  /** The keyboard is on it: `]t` landed on it. */
+  /** The keyboard is on it: the code cursor is on its line, and its keys act on it. */
   readonly focused?: boolean;
   /** Opens or collapses it, as its own buttons ask. */
   readonly onToggle: () => void;
@@ -82,6 +82,7 @@ export function Card({ tab, id, open, focused = false, onToggle }: CardProps): R
   const login = shown?.acting?.kind === 'account' ? shown.acting.login : undefined;
   const newer = useTabState(landed, view, (ids) => ids.has(id));
   const replied = useTabState(replying, view, (ids) => ids.has(id));
+  const edited = useTabState(editing, view);
   const asked = useTabState(acting, view, (acts) => acts.get(id));
   const isClosed = useTabState(
     closedActs,
@@ -111,6 +112,7 @@ export function Card({ tab, id, open, focused = false, onToggle }: CardProps): R
         landed={newer}
         login={login}
         replying={replied}
+        editing={edited}
         actions={{
           onReply: () => reply(tab, thread),
           onResolve: () => void resolveThread(tab, row),
@@ -149,6 +151,14 @@ function focusCard(from: Element): void {
  * and "Try again", or "Check again" where nobody knows whether it went, and "Dismiss". Whoever
  * shows it says it to a screen reader: it's drawn with its words on it.
  */
+/** Runs a note's button, focus going to its card first: the button goes with the note. */
+function then(act: () => void) {
+  return (event: MouseEvent<HTMLElement>): void => {
+    focusCard(event.currentTarget);
+    act();
+  };
+}
+
 export function ActCallout({
   note,
   onAgain,
@@ -158,10 +168,6 @@ export function ActCallout({
   onAgain: () => void;
   onClose: () => void;
 }): ReactNode {
-  const then = (act: () => void) => (event: MouseEvent<HTMLElement>) => {
-    focusCard(event.currentTarget);
-    act();
-  };
   return (
     <Callout tone="warning">
       <div className="flex flex-wrap items-center gap-8">
@@ -203,6 +209,7 @@ export function ThreadCard({
   landed: newer = false,
   login,
   replying: replied = false,
+  editing: edited,
   actions,
   now = Date.now(),
 }: {
@@ -213,7 +220,7 @@ export function ThreadCard({
    */
   asked?: ActRow | undefined;
   open: boolean;
-  /** The keyboard is on it: `]t` landed on it. */
+  /** The keyboard is on it: the code cursor is on its line, and its keys act on it. */
   focused?: boolean;
   onToggle: () => void;
   /** The pull request's author's login, if GitHub still has the account. */
@@ -231,10 +238,16 @@ export function ThreadCard({
   login?: string | undefined;
   /** A reply box is open in it, right after it, in place of its own row that offers one. */
   replying?: boolean;
+  /**
+   * Its comments an edit box is open on, right after it, by their ids: the box is the comment
+   * meanwhile, so the card draws without it, and offers no reply.
+   */
+  editing?: ReadonlySet<string> | undefined;
   /** What its buttons do: it has none without. */
   actions?: CardActions | undefined;
   now?: number;
 }): ReactNode {
+  const inBox = edited !== undefined && row.comments.some((comment) => edited.has(comment.id));
   const comments = row.comments.map((comment): ThreadComment => ({
     id: comment.id,
     // GitHub shows a deleted account as "ghost".
@@ -258,6 +271,7 @@ export function ThreadCard({
       resolved={resolved}
       resolving={resolving}
       deleting={deleting ?? undefined}
+      editing={inBox ? edited : undefined}
       open={open}
       focused={focused}
       outdated={row.outdated}
@@ -269,7 +283,9 @@ export function ThreadCard({
         // At work, it's the control that was pressed, whatever the thread takes next.
         (resolving || (row.resolved ? row.viewerCanUnresolve : row.viewerCanResolve))
       }
-      canReply={actions !== undefined && login !== undefined && row.viewerCanReply && !replied}
+      canReply={
+        actions !== undefined && login !== undefined && row.viewerCanReply && !replied && !inBox
+      }
       keys={{
         toggle: keysOf('diff.toggleFile'),
         reply: keysOf('comments.reply'),

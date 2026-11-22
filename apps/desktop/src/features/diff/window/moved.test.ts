@@ -164,7 +164,7 @@ describe('the other end of moved code', () => {
   it('is the same line in the other file, gone into, opened if it’s closed, with the cursor and focus', () => {
     const diff = shown(aToB('closed'), aToBMoves());
     diff.view.reveal({ kind: 'line', at: line('a', 'old', 4) });
-    expect(notes()).toEqual(['+4 −0, closed: za opens it']);
+    expect(notes()).toEqual(['Expand file']);
     expect(fromMoved(diff, line('a', 'old', 4))).toBe(true);
     expect(entered).toEqual(['b']);
     expect(notes()).toEqual([]);

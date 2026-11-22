@@ -80,6 +80,9 @@ const motions: VimKey[] = [{ kind: 'motion', command: 'diff.nextChange', keys: '
 let view: ExcerptView | undefined;
 let parent: HTMLElement | undefined;
 
+/** The comment boxes drawn now. */
+const boxes = () => parent!.querySelectorAll('.lo-diffcomposer');
+
 afterEach(() => {
   view?.destroy();
   parent?.remove();
@@ -697,7 +700,6 @@ describe('threads and comment boxes', () => {
     const shown = open();
     await frame();
     const on = composerEvents();
-    const boxes = () => parent!.querySelectorAll('.lo-diffcomposer');
     const sent = shown.compose(at(6), 'Sent', on);
     sent.hold(true);
     sent.close();

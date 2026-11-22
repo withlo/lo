@@ -78,6 +78,7 @@ import {
   takeJoined,
   takenDown,
   takeOffer,
+  editing,
   replying,
   timelineBox,
   timelineBoxes,
@@ -85,6 +86,7 @@ import {
 } from './boxes.ts';
 import { landed } from './landed.ts';
 import type * as Main from './main.ts';
+import type * as SaidModule from './Said.tsx';
 import * as threads from './threads.ts';
 import { NEW_SIDE_ONLY, NO_LINES, NOT_IN_DIFF, offersOf } from './writing.ts';
 
@@ -93,6 +95,19 @@ const OLDER = 'b'.repeat(40);
 let VIEW = 'v0';
 
 // The background process prepares each file attached as it is.
+/** What a screen reader was told, in order. */
+const heard = vi.hoisted((): string[] => []);
+vi.mock('./Said.tsx', async (original) => {
+  const actual = await original<typeof SaidModule>();
+  return {
+    ...actual,
+    tell: (text: string): void => {
+      heard.push(text);
+      actual.tell(text);
+    },
+  };
+});
+
 vi.mock('./main.ts', async (original) => ({
   ...(await original<typeof Main>()),
   commentsJobs: () => ({
@@ -182,11 +197,11 @@ function composerOf(draft: string, on: ComposerEvents): Drawn['composer'] {
     },
     preview: vi.fn<(on: boolean) => void>(),
     held: false,
-    hold(held: boolean) {
-      composer.held = held;
+    hold(sent: boolean) {
+      composer.held = sent;
     },
-    close(landed?: boolean) {
-      composer.closed = landed ? 'landed' : 'close';
+    close(drawn?: boolean) {
+      composer.closed = drawn ? 'landed' : 'close';
     },
     leave() {
       on.close(true);
@@ -1380,11 +1395,14 @@ describe('sending', () => {
       landedOn: { head: null },
     };
     answers['comments.send'] = () => outcome;
+    heard.length = 0;
     await send(box, 'review');
     expect(asked('comments.send')).toEqual([
       { id: VIEW, place: onLines(null, 5), text: 'Ship it?', how: 'review' },
     ]);
     expect(landed.get(VIEW).has('T_1')).toBe(true);
+    // A screen reader hears it go, and that it went.
+    expect(heard).toEqual(['Sending…', 'Added comment to review']);
     // The box shows the comment, held, until its thread's card comes, and goes with it.
     expect(drawn[0]!.composer.closed).toBeUndefined();
     expect(drawn[0]!.composer.held).toBe(true);
@@ -1482,9 +1500,10 @@ describe('sending', () => {
       id: VIEW,
       drafts: [row(onLines(null, 5), 'Ship it?', { sending: 'unknown', sent: 'Ship it?' })],
     });
-    // The open box again, with its text.
+    // The open box again, with its text, and its note said.
     expect(drawn[0]!.composer.held).toBe(false);
     expect(offersOf(box.state)).toEqual(['checkAgain']);
+    expect(heard.at(-1)).toBe('Comment not confirmed. GitHub didn’t respond.');
     await send(box, 'now');
     act(box, 'sendAgain');
     expect(asked('comments.send')).toEqual([]);
@@ -1779,6 +1798,46 @@ describe('acting on a thread', () => {
     expect(asked('comments.editing')).toEqual([]);
   });
 
+  test('a change GitHub took stays as asked until the threads show it, or the wait ends', () => {
+    vi.useFakeTimers();
+    try {
+      const going = { thread: 'T2', comment: null, change: 'resolve', stands: 'sending' } as const;
+      withThreads(threadRow('T2', 2));
+      heard.length = 0;
+      acts.takeActs({ id: VIEW, acts: [going] });
+      // Main is done as GitHub answers; the threads still say unresolved.
+      acts.takeActs({ id: VIEW, acts: [] });
+      expect(acts.acting.get(VIEW).get('T2')).toEqual(going);
+      // Their next read shows it: the card is its threads' again.
+      threadsCome(threadRow('T2', 2, { resolved: true }));
+      acts.settleActs(VIEW);
+      expect(acts.acting.get(VIEW).size).toBe(0);
+      expect(heard).toEqual(['Resolving…', 'Resolved thread']);
+      // One the threads never show goes back once the wait ends.
+      const back = { ...going, change: 'unresolve' } as const;
+      acts.takeActs({ id: VIEW, acts: [back] });
+      acts.takeActs({ id: VIEW, acts: [] });
+      acts.settleActs(VIEW);
+      expect(acts.acting.get(VIEW).get('T2')).toEqual(back);
+      vi.advanceTimersByTime(acts.SETTLE_WAIT);
+      expect(acts.acting.get(VIEW).size).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test('a note closed stays closed while main says the same, and comes back when it changes', () => {
+    withThreads(threadRow('T2', 2));
+    const lost = { thread: 'T2', comment: null, change: 'resolve', stands: 'unknown' } as const;
+    acts.takeActs({ id: VIEW, acts: [lost] });
+    acts.closeAct(VIEW, lost);
+    // Main says it again, as it does with every change of another thread's.
+    acts.takeActs({ id: VIEW, acts: [{ ...lost }] });
+    expect(acts.closedActs.get(VIEW).has(acts.noteKey(lost))).toBe(true);
+    acts.takeActs({ id: VIEW, acts: [{ ...lost, stands: 'notDone' }] });
+    expect(acts.closedActs.get(VIEW).size).toBe(0);
+  });
+
   test('a reply box closed and kept lets the card offer “Reply…” again', () => {
     const { drawn } = withThreads(threadRow('T2', 2));
     acts.reply(tab(), ON_TWO);
@@ -1838,6 +1897,8 @@ describe('acting on a thread', () => {
     expect(drawn.map((each) => [each.at, each.composer.text])).toEqual([
       [{ thread: 'T2' }, 'Mine.'],
     ]);
+    // The box is the comment from here: its card draws without it.
+    expect([...editing.get(VIEW)]).toEqual(['C_mine']);
     drawn[0]!.composer.replace(0, 5, 'Mine, edited.');
     drawn[0]!.on.submit('review');
     await vi.waitFor(() =>
@@ -1846,6 +1907,7 @@ describe('acting on a thread', () => {
     // The box shows the new text until the comment's card does.
     await vi.waitFor(() => expect(boxIn(drawn[0]!).state.landing).toBe(true));
     expect(drawn[0]!.composer.closed).toBeUndefined();
+    expect([...editing.get(VIEW)]).toEqual(['C_mine']);
     threadsCome(
       threadRow('T2', 2, {
         comments: [
@@ -1856,6 +1918,7 @@ describe('acting on a thread', () => {
       threadRow('T5', 5, { comments: [threadComment('C_theirs', 'ravi-k', 'Theirs.')] }),
     );
     expect(drawn[0]!.composer.closed).toBe('close');
+    expect(editing.get(VIEW).size).toBe(0);
     // Someone else's is refused in Lo's words.
     await acts.edit(tab(), ON_FIVE);
     expect(notice()?.body).toBe(
