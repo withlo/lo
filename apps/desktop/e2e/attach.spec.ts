@@ -218,8 +218,9 @@ test('a PNG dropped on a box is uploaded and its Markdown goes in; a .txt is ref
   await openBox(page);
   const box = boxes(page);
   await drop(page, [{ name: 'notes.txt', bytes: [...Buffer.from('not a picture\n')] }]);
+  await expect(box).toContainText('Couldn’t attach notes.txt');
   await expect(box).toContainText(
-    'Lo didn’t attach notes.txt: GitHub takes PNG, JPEG, GIF, WebP and SVG images and MP4, MOV and WebM videos.',
+    'GitHub takes PNG, JPEG, GIF, WebP and SVG images and MP4, MOV and WebM videos.',
   );
   await drop(page, [{ name: 'lo-attachment.png', bytes: PNG }]);
   await expect(box.locator('.cm-content')).toHaveText(`Repro: ![lo-attachment](${ASSET})`, {
@@ -229,9 +230,7 @@ test('a PNG dropped on a box is uploaded and its Markdown goes in; a .txt is ref
   const row = box.getByRole('list', { name: 'Attached files' });
   await expect(row).toContainText('lo-attachment.png');
   await expect(row.getByRole('button', { name: 'Cancel' })).toHaveCount(0);
-  await expect(box).toContainText(
-    'Uploads go to GitHub and stay reachable by link, even if you delete the comment.',
-  );
+  await expect(box).toContainText('Attached files stay on GitHub if the comment is deleted.');
   // Once uploaded, the comment can be sent.
   await expect(box.getByRole('button', { name: /Add to review/ })).not.toHaveAttribute(
     'aria-disabled',
@@ -253,10 +252,7 @@ test.describe('where GitHub answers the upload Not Found', () => {
     await openBox(page);
     const box = boxes(page);
     await drop(page, [{ name: 'lo-attachment.png', bytes: PNG }]);
-    await expect(box).toContainText(
-      'Uploads here need gh’s sign-in, since GitHub takes none with Lo’s. Paste an image’s web address instead.',
-      { timeout: 20_000 },
-    );
+    await expect(box).toContainText('Sign in to gh to attach files', { timeout: 20_000 });
     await expect(box.locator('.cm-content')).toHaveText('Repro: ');
     await expect(box.getByRole('button', { name: /Attach/ })).toHaveAttribute(
       'aria-disabled',

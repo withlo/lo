@@ -16,6 +16,7 @@
 // out again before they're sent. Nothing is uploaded again by itself.
 
 import type { Metadata } from '@lo/github';
+import { formatBytes } from '@lo/ui';
 import type { Composer } from '@lo/ui/code';
 
 import { clockOf } from '../../../window/time.ts';
@@ -34,8 +35,7 @@ import { type BoxNote, IN_A_LAYER, OFFLINE } from './writing.ts';
 export const FILES_AT_ONCE = 10;
 
 /** What the box says while files are in it. */
-export const WARNING =
-  'Uploads go to GitHub and stay reachable by link, even if you delete the comment.';
+export const WARNING = 'Attached files stay on GitHub if the comment is deleted.';
 
 /** Why a box's comment isn't sent while a file uploads. */
 export const UPLOADING = 'A file is still uploading';
@@ -368,12 +368,12 @@ export function keepUploadsOf(kept: ReadonlySet<string>): void {
   for (const [key, { view }] of checks) if (!kept.has(view)) checks.delete(key);
 }
 
-/** What a box says while its view's boxes take no uploads. */
-export function offNote(off: UploadsOff): BoxNote {
+/** What a box says while its view's boxes take no uploads, which `login` writes as. */
+export function offNote(off: UploadsOff, login = 'This account'): BoxNote {
   const text =
     off.kind === 'cantWrite'
-      ? `GitHub takes uploads only from people who can write to ${off.repo}. Paste an image’s web address instead.`
-      : 'Uploads here need gh’s sign-in, since GitHub takes none with Lo’s. Paste an image’s web address instead.';
+      ? `${login} can’t attach files in ${off.repo}`
+      : 'Sign in to gh to attach files';
   return { key: 'uploads-off', tone: 'info', text };
 }
 
@@ -383,19 +383,14 @@ export function whyNoAttach(view: string): string | undefined {
   if (pull?.acting?.kind !== 'account') return 'Sign in to attach files';
   if (runOf(view)) return IN_A_LAYER;
   const off = uploadsOff(view);
-  if (off !== undefined) return offNote(off).text;
+  if (off !== undefined) return offNote(off, pull.acting.login).text;
   if (pull.connection.kind === 'offline') return OFFLINE;
   return undefined;
 }
 
-/** `bytes` as people read sizes, in units of 1,024: "212 KB", "3.4 MB". */
+/** `bytes` as people read sizes, as Lo writes them everywhere: "512 B", "38 KB", "6.2 MB". */
 export function sizeText(bytes: number): string {
-  const KIB = 1024;
-  if (bytes < KIB) return `${bytes} bytes`;
-  if (bytes < KIB * KIB) return `${(bytes / KIB).toFixed(0)} KB`;
-  const megabytes = bytes / (KIB * KIB);
-  const whole = megabytes - Math.trunc(megabytes) < 0.05 || megabytes >= 10;
-  return `${megabytes.toFixed(whole ? 0 : 1)} MB`;
+  return formatBytes(bytes);
 }
 
 /**
@@ -473,13 +468,6 @@ function edit(
   return true;
 }
 
-/** "a", "a and b", "a, b and c". */
-function listed(what: readonly string[]): string {
-  const last = what.at(-1) ?? '';
-  const rest = what.slice(0, -1);
-  return rest.length === 0 ? last : `${rest.join(', ')} and ${last}`;
-}
-
 /**
  * What the box says Lo took out of file `name` before uploading it, or that it couldn't, if there's
  * anything to say.
@@ -487,25 +475,15 @@ function listed(what: readonly string[]): string {
 export function metadataNote(name: string, metadata: Metadata): string | undefined {
   switch (metadata.kind) {
     case 'asIs':
-      return `Lo couldn’t remove metadata from ${name}, so it uploads as it is.`;
-    case 'image': {
-      const { location, other, embedded } = metadata.removed;
-      const what: string[] = [];
-      if (location) what.push(`where ${name} was taken`);
-      if (other) what.push(location ? 'its other metadata' : `${name}’s metadata`);
-      if (embedded)
-        what.push(what.length > 0 ? 'an image stored inside it' : `an image stored inside ${name}`);
-      return what.length === 0 ? undefined : `Lo removed ${listed(what)} before uploading it.`;
-    }
+      return `${name} · metadata not removed`;
+    case 'image':
     case 'video': {
       const { location, other } = metadata.removed;
-      const stays = 'The rest of its metadata stays, such as when it was filmed and on what.';
-      const what: string[] = [];
-      if (location) what.push(`where ${name} was filmed`);
-      if (other) what.push(location ? 'its XMP metadata' : `${name}’s XMP metadata`);
-      return what.length === 0
-        ? `Lo found no location in ${name}. ${stays}`
-        : `Lo removed ${listed(what)} before uploading it. ${stays}`;
+      const embedded = metadata.kind === 'image' && metadata.removed.embedded;
+      if (location && (other || embedded)) return `${name} · location and metadata removed`;
+      if (location) return `${name} · location removed`;
+      if (other || embedded) return `${name} · metadata removed`;
+      return undefined;
     }
     default:
       metadata satisfies never;
@@ -513,32 +491,39 @@ export function metadataNote(name: string, metadata: Metadata): string | undefin
   }
 }
 
+/** A reason that came as part of a sentence, as a line of its own: "It’s empty." */
+function asReason(why: string): string {
+  const line = why.charAt(0).toUpperCase() + why.slice(1);
+  return /[.!?]$/.test(line) ? line : `${line}.`;
+}
+
 /**
  * What the box says of file `name`, which main didn't upload, refused before anything was sent:
- * why, under a title where it says what failed.
+ * why, under a title where it says what failed. `login` is the account the box writes as.
  */
 export function refusedNote(
   name: string,
   refusal: UploadRefusal,
+  login?: string,
 ): { title?: string; text: string } {
   switch (refusal.kind) {
     case 'file':
-      return { text: `Lo didn’t attach ${name}: ${refusal.why}.` };
+      return { title: couldntAttach(name), text: asReason(refusal.why) };
     case 'cantWrite':
     case 'needsGh':
-      return { text: offNote(refusal).text };
+      return { text: offNote(refusal, login).text };
     case 'paused':
       return {
         title: couldntAttach(name),
         text: `GitHub’s rate limit resets at ${clockOf(refusal.until)}.`,
       };
     case 'signIn':
-      return { text: 'Sign in to attach files.' };
+      return { text: 'Sign in to attach files' };
     case 'run':
-      return { text: 'Comment in a layer' };
+      return { text: IN_A_LAYER };
     default:
       refusal satisfies never;
-      return { text: `Lo didn’t attach ${name}.` };
+      return { title: couldntAttach(name), text: '' };
   }
 }
 
@@ -582,10 +567,12 @@ export function attachFiles(box: Attachable, files: readonly File[]): void {
   const room = Math.max(0, FILES_AT_ONCE - attaching.running.length);
   const taken = attachable.slice(0, room);
   if (attachable.length > room) {
-    const rest = attachable.length - room;
+    const rest = attachable.slice(room);
     attaching.say(
       'upload-many',
-      `Lo attaches ${FILES_AT_ONCE} files at a time, so it left out ${rest} ${rest === 1 ? 'file' : 'files'}.`,
+      `${FILES_AT_ONCE} files attach at a time.`,
+      'danger',
+      rest.length === 1 ? couldntAttach(rest[0]!.name) : `Couldn’t attach ${rest.length} files`,
     );
   }
   const coming: { file: File; attachment: Attachment }[] = [];
@@ -622,11 +609,14 @@ async function refuseUnread(attaching: Attaching, file: File): Promise<void> {
   let why: string;
   try {
     const answer = await commentsJobs().prepare({ name: file.name, bytes: null });
-    why = answer.kind === 'refused' ? answer.why : 'GitHub doesn’t take it';
+    why =
+      answer.kind === 'refused'
+        ? answer.why
+        : 'GitHub takes PNG, JPEG, GIF, WebP, SVG, MP4, MOV and WebM.';
   } catch (error) {
     why = describe(error);
   }
-  attaching.say(`upload-refused-${uploadKey()}`, `Lo didn’t attach ${file.name}: ${why}.`);
+  attaching.say(`upload-refused-${uploadKey()}`, asReason(why), 'danger', couldntAttach(file.name));
 }
 
 /** Prepares `file` in the background process, then uploads it through main. */
@@ -647,8 +637,8 @@ async function attachOne(attaching: Attaching, file: File, attachment: Attachmen
     const bytes = new Uint8Array(await file.arrayBuffer());
     if (attachment.cancelled) return;
     prepared = await commentsJobs().prepare({ name, bytes });
-  } catch (error) {
-    if (!attachment.cancelled) failed(`Lo couldn’t read ${name}: ${describe(error)}`);
+  } catch {
+    if (!attachment.cancelled) failed('It can’t be read.', couldntAttach(name));
     return;
   }
   if (attachment.cancelled) return;
@@ -658,7 +648,7 @@ async function attachOne(attaching: Attaching, file: File, attachment: Attachmen
     return;
   }
   if (prepared.kind === 'refused') {
-    failed(`Lo didn’t attach ${name}: ${prepared.why}.`);
+    failed(asReason(prepared.why), couldntAttach(name));
     return;
   }
   const said = metadataNote(name, prepared.metadata);
@@ -674,7 +664,7 @@ async function attachOne(attaching: Attaching, file: File, attachment: Attachmen
     attachment.notes.push({
       key: `upload-paid-${attachment.key}`,
       tone: 'warning',
-      text: `GitHub takes a video over 10 MB, as ${name} is, only on a paid plan.`,
+      text: 'Videos over 10 MB need a paid GitHub plan.',
     });
   }
   attachment.stage = 'uploading';
@@ -705,13 +695,6 @@ async function attachOne(attaching: Attaching, file: File, attachment: Attachmen
       );
       // What's left of a placeholder edited meanwhile goes: its row offers to insert the file.
       if (attachment.unplaced) clearStranded(box);
-      if (outcome.viaGh) {
-        attachment.notes.push({
-          key: `upload-gh-${attachment.key}`,
-          tone: 'info',
-          text: `GitHub took no upload with Lo’s sign-in, so Lo sent ${name} with gh’s.`,
-        });
-      }
       attaching.changed();
       return;
     case 'refused': {
@@ -721,7 +704,7 @@ async function attachOne(attaching: Attaching, file: File, attachment: Attachmen
         if (login !== undefined) setOff(box.view, login, refusal);
         return;
       }
-      const { title, text } = refusedNote(name, refusal);
+      const { title, text } = refusedNote(name, refusal, login);
       failed(text, title);
       return;
     }
@@ -729,7 +712,8 @@ async function attachOne(attaching: Attaching, file: File, attachment: Attachmen
       attaching.remove(attachment);
       return;
     case 'failed':
-      failed(`${name} didn’t upload: ${outcome.message}`);
+      // Why isn't known in the reader's words: the title alone, and the foot's "Attach files…".
+      failed('', couldntAttach(name));
       return;
     default:
       outcome satisfies never;

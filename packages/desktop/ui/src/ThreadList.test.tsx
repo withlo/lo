@@ -105,7 +105,8 @@ describe('ThreadList', () => {
     const [a, b, c, d, e, f] = rows(host);
     expect(a?.textContent).toContain('old 30');
     expect(a?.textContent).toContain('1 reply');
-    expect(a?.textContent).toContain('Unresolved');
+    // An open thread is what the list is mostly of: only the other states are tagged.
+    expect(a?.textContent).not.toContain('Unresolved');
     expect(a?.textContent).toContain('tess-okafor This throws with retryAfter: 0.');
     expect(b?.textContent).toContain('2 replies');
     // Yours and not sent: Pending, never Unresolved too.
@@ -113,11 +114,15 @@ describe('ThreadList', () => {
     expect(c?.textContent).not.toContain('Unresolved');
     expect(c?.textContent).not.toContain('repl');
     expect(d?.textContent).toContain('Resolved');
+    // A resolved row steps back a text level, never by opacity, so it reads in both themes.
+    expect(d?.innerHTML).not.toContain('opacity');
+    expect(d?.querySelector('.code-small')?.className).toContain('text-fg-subtle');
+    expect(a?.querySelector('.code-small')?.className).toContain('text-fg-muted');
     expect(e?.textContent).toContain('r2 · line 22');
-    expect(e?.textContent).toContain('Outdated');
-    expect(e?.textContent).toContain('Unresolved');
+    expect(e?.textContent).toContain('Out of date');
+    expect(e?.textContent).not.toContain('Unresolved');
     expect(f?.textContent).toContain('r3 · line 8');
-    // The rows say Unresolved, never Open.
+    // No row says Open: an open thread is untagged.
     expect(host.textContent).not.toMatch(/\bOpen\b/);
   });
 

@@ -163,6 +163,21 @@ describe('Markdown', () => {
     expect(disallowed(page.firstElementChild!, allowed)).toEqual([]);
   });
 
+  it('draws a suggested change as the diff does: the lines it replaces over the lines it suggests', () => {
+    const page = render(
+      <Markdown
+        tree={tree([{ kind: 'suggestion', text: 'return 2;\nreturn 3;', removed: 'return 1;' }])}
+      />,
+    );
+    expect(page.querySelector('p')?.textContent).toBe('Suggested change');
+    const [removed, added] = [...page.querySelectorAll('pre')];
+    expect(removed?.querySelector('del')?.textContent).toBe('return 1;');
+    expect(removed?.className).toContain('bg-diff-del-bg');
+    expect(added?.querySelector('ins')?.textContent).toBe('return 2;\nreturn 3;');
+    expect(added?.className).toContain('bg-diff-add-bg');
+    expect(disallowed(page.firstElementChild!, allowed)).toEqual([]);
+  });
+
   it('keeps the newlines of text that stands in for what Lo doesn’t show as line breaks', () => {
     const page = render(<Markdown tree={tree([paragraph(text('one\ntwo\nthree'))])} />);
     expect(page.querySelector('p')?.innerHTML).toBe('one<br>two<br>three');

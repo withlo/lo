@@ -39,6 +39,7 @@ import { DiscardedToast } from './Discarded.tsx';
 import {
   atWork,
   edit,
+  OPENING,
   keepActsOf,
   remove,
   reply,
@@ -97,7 +98,7 @@ import { followVim, switchVim, vimDetail } from './vim.ts';
 /** The pull request's tab on screen, where a comment can be written, or why one can't. */
 function writable(): PullTab | string {
   const tab = activeTab();
-  if (tab?.kind !== 'pull') return 'There’s no pull request on screen.';
+  if (tab?.kind !== 'pull') return 'Open a pull request first';
   const can = canWrite(tab.id);
   if (can !== true) return can;
   return tab;
@@ -108,9 +109,7 @@ function inDiff(): PullTab | string {
   const tab = writable();
   if (typeof tab === 'string') return tab;
   if (writingDiff(tab.id, true)) return tab;
-  return writingDiff(tab.id)
-    ? 'Comments are written in the diff, not in the code beside another view.'
-    : 'The diff isn’t drawn yet.';
+  return writingDiff(tab.id) ? 'Go to the diff to comment' : OPENING;
 }
 
 function enabled(check: () => PullTab | string) {
@@ -130,6 +129,14 @@ function free(target: ThreadKeyTarget): true | string {
   if (typeof tab === 'string') return tab;
   const row = threadFor(tab.id, target);
   return typeof row === 'string' ? true : (atWork(tab.id, row.id) ?? true);
+}
+
+/** Whether the thread on `target` shows as resolved now, a resolve or unresolve asked counted. */
+function onResolved(target: ThreadKeyTarget): boolean {
+  const tab = activeTab();
+  if (tab?.kind !== 'pull') return false;
+  const row = threadFor(tab.id, target);
+  return typeof row !== 'string' && resolvedNow(tab.id, row);
 }
 
 /** The pull request's tab on screen, where a comment can be written on `target`, a code block's. */
@@ -210,13 +217,10 @@ export default {
     resolve: {
       run: actOn(resolve),
       enabled: free,
-      // A menu names it by what it would do to the thread it's on, as its card shows it.
-      named: (target) => {
-        const tab = activeTab();
-        if (tab?.kind !== 'pull' || target.kind !== 'thread') return undefined;
-        const row = threadFor(tab.id, target);
-        return typeof row !== 'string' && resolvedNow(tab.id, row) ? 'Unresolve' : undefined;
-      },
+      // Named by what it would do to the thread it's on, as its card shows it: in the thread's own
+      // menu without the object.
+      named: (target) => (target.kind === 'thread' && onResolved(target) ? 'Unresolve' : undefined),
+      labelled: (target) => (onResolved(target) ? 'Unresolve thread' : undefined),
     },
     edit: { run: actOn(edit), enabled: enabled(writable) },
     remove: { run: actOn(remove), enabled: free },
@@ -234,7 +238,7 @@ export default {
       },
       enabled: () => {
         const tab = activeTab();
-        return tab && keptAway.get(tab.id).length > 0 ? true : 'No draft is kept.';
+        return tab && keptAway.get(tab.id).length > 0 ? true : 'No kept drafts';
       },
     },
     nextThread: { run: () => moveRow(1), enabled: inPanel },
@@ -243,6 +247,7 @@ export default {
     filterThreads: { run: stepFilter, enabled: inPanel },
     resolveInPanel: {
       run: actOn(resolve),
+      labelled: (target) => (onResolved(target) ? 'Unresolve thread' : undefined),
       enabled: (target) => {
         const on = onThread(target);
         return on === true && target.kind === 'thread' ? free(target) : on;

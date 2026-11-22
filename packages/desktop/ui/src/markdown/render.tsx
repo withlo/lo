@@ -376,10 +376,18 @@ export function drawBlock<X extends Extension>(node: Block<X>, r: Rendering<X>):
     case 'details':
       return r.extension.details ? r.extension.details(plain) : <Fold node={plain} />;
     case 'suggestion':
+      // As the diff draws a change: the lines it replaces, where known, over the lines it suggests.
       return (
         <div className="max-w-read-measure overflow-hidden rounded-md border border-border">
           <p className="bg-bg-chrome px-12 py-6 text-fg-muted text-small">Suggested change</p>
-          <Fence text={plain.text} bare />
+          {plain.removed === undefined ? (
+            <Fence text={plain.text} bare />
+          ) : (
+            <>
+              <Fence text={plain.removed} bare tone="removed" />
+              {plain.text !== '' && <Fence text={plain.text} bare tone="added" />}
+            </>
+          )}
         </div>
       );
     case 'footnotes':
@@ -552,12 +560,37 @@ function footnotes<X extends Extension>(node: Footnotes<X>, r: Rendering<X>): Re
 }
 
 /** Code as written, never highlighted: Lo can't know it's the language it says. */
-function Fence({ text, bare = false }: { text: string; bare?: boolean }) {
+/** A fence's ground: a code block's, or a suggested change's removed or added lines, as the diff's. */
+const FENCE_GROUND = {
+  plain: 'bg-bg',
+  removed: 'bg-diff-del-bg',
+  added: 'bg-diff-add-bg',
+} as const;
+
+function Fence({
+  text,
+  bare = false,
+  tone = 'plain',
+}: {
+  text: string;
+  bare?: boolean;
+  /** Lines a suggested change removes or adds, drawn as the diff draws them, and named so. */
+  tone?: keyof typeof FENCE_GROUND;
+}) {
+  const code = (
+    <code className="rounded-none bg-transparent p-0 shadow-none code-text">{text}</code>
+  );
   return (
     <pre
-      className={`overflow-x-auto px-12 py-8 ${bare ? 'bg-bg' : 'max-w-read-measure rounded-md bg-hover'}`}
+      className={`overflow-x-auto px-12 py-8 ${bare ? FENCE_GROUND[tone] : 'max-w-read-measure rounded-md bg-hover'}`}
     >
-      <code className="rounded-none bg-transparent p-0 shadow-none code-text">{text}</code>
+      {tone === 'removed' ? (
+        <del className="no-underline">{code}</del>
+      ) : tone === 'added' ? (
+        <ins className="no-underline">{code}</ins>
+      ) : (
+        code
+      )}
     </pre>
   );
 }

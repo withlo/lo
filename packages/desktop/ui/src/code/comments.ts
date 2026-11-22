@@ -374,10 +374,12 @@ export class CommentBox implements BoxHost, KeySource {
       reveal(this.dom);
       if (pane && pane.scrollTop !== before) this.#shown?.(this);
     };
-    // Once what opening it moved is back in place, and then as it's laid out.
+    // Once what opening it moved is back in place, and then as it's laid out, and as what's around
+    // it is: the code over it wraps anew, as the window narrows, a frame or two after the box did.
     queueMicrotask(show);
     const watch = new ResizeObserver(show);
     watch.observe(this.dom);
+    for (const around of scrollPane(this.dom)?.children ?? []) watch.observe(around);
     const page = this.dom.ownerDocument;
     const settle = (): void => {
       watch.disconnect();
@@ -398,11 +400,26 @@ export class CommentBox implements BoxHost, KeySource {
    */
   #followGrowth(): void {
     if (typeof ResizeObserver === 'undefined') return;
-    const watch = new ResizeObserver(() => this.#grew());
+    // What's around it, which moves it as it's laid out anew: the code over it wraps again as the
+    // window narrows, a frame or two after the box itself did.
+    const around = new ResizeObserver(() => this.#moved());
+    let pane: HTMLElement | null = null;
+    const watchAround = (): void => {
+      const now = this.dom.isConnected ? scrollPane(this.dom) : null;
+      if (now === pane) return;
+      around.disconnect();
+      pane = now;
+      for (const each of pane?.children ?? []) around.observe(each);
+    };
+    const watch = new ResizeObserver(() => {
+      watchAround();
+      this.#grew();
+    });
     watch.observe(this.dom);
     const page = this.dom.ownerDocument;
     // Before what the input changes is laid out: where the foot is now is where the reader has it.
     const acted = (event: Event): void => {
+      watchAround();
       const { target } = event;
       const inBox = event.type !== 'wheel' && target instanceof Node && this.dom.contains(target);
       // What the last input grew, if no frame has laid it out since, is followed first.
@@ -414,8 +431,27 @@ export class CommentBox implements BoxHost, KeySource {
     }
     this.#stops.push(() => {
       watch.disconnect();
+      around.disconnect();
       for (const type of INPUTS) page.removeEventListener(type, acted, { capture: true });
     });
+  }
+
+  /**
+   * What's around the box was laid out anew and moved it: with focus in it and its foot on screen
+   * as the reader last acted in it, its foot comes back on screen, by the least scroll that does.
+   */
+  #moved(): void {
+    if (this.#settle || this.#whole !== true || !this.hasFocus) return;
+    const at = this.#foot();
+    if (!at) return;
+    const { pane, box, foot, below } = at;
+    // Taller than its pane, it shows from its top.
+    if (box.height + below > pane.clientHeight) return;
+    const over = box.bottom + below - foot;
+    if (over < 0.5) return;
+    const before = pane.scrollTop;
+    pane.scrollTop = before + over;
+    if (pane.scrollTop !== before) this.#shown?.(this);
   }
 
   /** Where the box's foot is, and its pane's, with the room the box keeps clear under it. */

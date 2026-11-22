@@ -8,11 +8,11 @@
 
 import { DEFAULT_PANEL_FILTER, place, type PanelFilter } from '@lo/review';
 import type { ThreadListGroup } from '@lo/ui';
-import { keyLabels, type Target } from '@lo/ui/commands';
+import { keyLabels, runControl, type Target } from '@lo/ui/commands';
 import { useStore } from 'zustand';
 import { createStore } from 'zustand/vanilla';
 
-import { notify } from '../../../window/commands/notices.tsx';
+import { refuse } from '../../../window/commands/notices.tsx';
 import { registry } from '../../../window/commands/registry.ts';
 import { diffStateOf, showThread as showInDiff, type ShowWhen } from '../../diff/window/shared.ts';
 import {
@@ -65,34 +65,63 @@ export const shownRows = tabState<string | undefined>(() => undefined);
  */
 export const moves = tabState<number>(() => 0);
 
-/** What the panel says when it lists nothing, for what main last sent of a view's threads. */
-export function emptyText(threads: ThreadsView | undefined, filter: PanelFilter): string {
+/**
+ * What the panel shows when it lists nothing: the wait for the threads' first read; why there are
+ * none to list, as an empty state's heading, with its one line and its button where it has them;
+ * or the read that failed, with why.
+ */
+export type PanelEmpty =
+  | { readonly kind: 'reading' }
+  | {
+      readonly kind: 'none';
+      readonly heading: string;
+      readonly line?: string | undefined;
+      /** The command its button runs. */
+      readonly action?: 'stacks.back' | 'accounts.addAccount' | undefined;
+    }
+  | { readonly kind: 'failed'; readonly reason: string | undefined };
+
+/** What view `view`'s panel shows when it lists nothing, for what main last sent of its threads. */
+export function emptyOf(
+  threads: ThreadsView | undefined,
+  filter: PanelFilter,
+  run?: readonly number[],
+): PanelEmpty {
   const status = threads?.status;
   switch (status) {
     case undefined:
     case 'loading':
-      return 'Reading the review threads…';
+      return { kind: 'reading' };
     case 'run':
-      return 'A run has no threads. Show one of its layers to see them.';
+      return {
+        kind: 'none',
+        // By how many: where each layer is in its stack isn't known here.
+        heading:
+          run && run.length > 1
+            ? `No threads for these ${run.length} layers`
+            : 'No threads for these layers',
+        line: 'Each layer has its own.',
+        action: 'stacks.back',
+      };
     case 'signIn':
-      return 'Sign in to see comments.';
+      return { kind: 'none', heading: 'Sign in to see threads', action: 'accounts.addAccount' };
     case 'failed':
-      return `The review threads didn’t load. ${threads?.problem ?? ''}`.trim();
+      return { kind: 'failed', reason: threads?.problem ?? undefined };
     case 'ready':
       switch (filter) {
         case 'unresolved':
-          return 'No unresolved threads.';
+          return { kind: 'none', heading: 'No unresolved threads' };
         case 'all':
-          return 'No review threads yet.';
+          return { kind: 'none', heading: 'No threads yet' };
         case 'yours':
-          return 'You haven’t started or replied in a thread.';
+          return { kind: 'none', heading: 'No threads of yours' };
         default:
           filter satisfies never;
-          return '';
+          return { kind: 'none', heading: 'No threads yet' };
       }
     default:
       status satisfies never;
-      return '';
+      return { kind: 'reading' };
   }
 }
 
@@ -125,7 +154,7 @@ export function groupsIn(view: string, filter: PanelFilter): ThreadListGroup[] {
 /** The pull request's tab on screen, as its view on screen, or why a panel key can't run. */
 export function pullOnScreen(): PullTab | string {
   const tab = activeTab();
-  return tab?.kind === 'pull' ? tab : 'There’s no pull request on screen.';
+  return tab?.kind === 'pull' ? tab : 'Open a pull request first';
 }
 
 /** Whether a panel key can run: there's a pull request on screen, or why not. */
@@ -156,7 +185,7 @@ export function panelTarget(view: string): Target {
 export function onThread(target: Target): true | string {
   const tab = pullOnScreen();
   if (typeof tab === 'string') return tab;
-  if (target.kind !== 'thread') return 'No thread has focus.';
+  if (target.kind !== 'thread') return 'Go to a thread first';
   const found = threadIn(held.get(tab.id).threads, target.thread);
   return typeof found === 'string' ? found : true;
 }
@@ -165,17 +194,17 @@ export function onThread(target: Target): true | string {
  * What's true of a row the panel lists whose thread main's threads don't hold: it was listed
  * before main sent them again without it, and the list is catching up.
  */
-export const GONE = 'That thread has just gone from the pull request. The list is catching up.';
+export const GONE = 'That thread was deleted elsewhere';
 
 /** Thread `id` in the threads main sent, or why there's none to act on. */
 export function threadIn(threads: ThreadsView | undefined, id: string): ThreadRow | string {
   return threads?.threads.find((row) => row.id === id) ?? GONE;
 }
 
-/** What the notes about showing a thread say they're about. */
-export const SHOW = 'Show the thread';
+/** What a failed comparison asked for to show a thread says it was for. */
+export const SHOW = 'Show in diff';
 
-/** `⏎` in the panel, or Show the thread in the diff from the palette. */
+/** `⏎` in the panel, or Show in diff from the palette. */
 export function showTarget(target: Target): void {
   const tab = pullOnScreen();
   if (typeof tab === 'string' || target.kind !== 'thread') return;
@@ -183,9 +212,9 @@ export function showTarget(target: Target): void {
 }
 
 /** The keys command `id` has first, as this system shows them, if it has any. */
-function keyOf(id: string): string | undefined {
+function keysOf(id: string): string[] | undefined {
   const [first] = registry().keysOf(id);
-  return first && keyLabels(first, registry().system).join(' ');
+  return first && keyLabels(first, registry().system);
 }
 
 /**
@@ -195,7 +224,7 @@ function keyOf(id: string): string | undefined {
 export function showThread(tab: PullTab, id: string): void {
   const row = threadIn(held.get(tab.id).threads, id);
   if (typeof row === 'string') {
-    notify(SHOW, row);
+    refuse(row);
     return;
   }
   focusedRows.set(tab.id, id);
@@ -218,17 +247,21 @@ export function showThread(tab: PullTab, id: string): void {
     case 'compare': {
       // The place it leaves goes in the history first, with what's compared now.
       show(tab.id, row, 'drawn');
-      const back = keyOf('keys.back');
-      // Said as it's asked for, and taken back if a later move calls it off.
+      // Said as it's asked for, with the way back, and taken back if a later move calls it off.
       const asked = compareTo(tab.id, plan.compared, SHOW, {
-        title: `Comparing base → ${plan.label}`,
-        body: `This thread is on ${plan.label}.${back === undefined ? '' : ` ${back} goes back.`}`,
+        title: `Showing ${plan.label} for this thread`,
+        body: '',
+        action: {
+          label: 'Back',
+          keys: keysOf('keys.back'),
+          onClick: () => runControl('keys.back'),
+        },
       });
-      if (typeof asked !== 'string') notify(SHOW, asked.why);
+      if (typeof asked !== 'string') refuse(asked.why);
       return;
     }
     case 'why':
-      notify(SHOW, plan.why);
+      refuse(plan.why);
       return;
     default:
       plan satisfies never;
@@ -289,7 +322,7 @@ export function planShow(
   const compared: Compared = { from: null, to: elsewhere.head };
   if (sameCompared(coming, compared)) return { kind: 'coming' };
   if (!coming && sameCompared(now, compared)) {
-    return { kind: 'why', why: 'This thread’s lines aren’t in the diff on screen.' };
+    return { kind: 'why', why: 'This thread’s lines aren’t in this diff' };
   }
   return { kind: 'compare', compared, label: elsewhere.label };
 }
@@ -304,15 +337,15 @@ export function comparisonFor(
   known: ComparisonView | undefined,
 ): { readonly head: string; readonly label: string } | { readonly why: string } {
   const head = row.outdated ? row.writtenOn : (row.currentOn ?? row.writtenOn);
-  if (head === null) return { why: 'GitHub no longer has the commit this thread is on.' };
+  if (head === null) return { why: 'This thread’s commit is no longer on GitHub' };
   if (known?.status !== 'ready') {
-    return { why: known?.problem ?? 'Lo hasn’t read the pull request’s revisions yet.' };
+    return { why: known?.problem ?? 'Reading revisions…' };
   }
   const revision = known.revisions.find((each) => each.head === head);
   if (!revision) {
-    return { why: 'This thread is on a commit that isn’t one of the pull request’s pushes.' };
+    return { why: 'This thread’s commit isn’t a revision' };
   }
   const label = revisionLabel(known, head) ?? head.slice(0, 7);
-  if (!revision.available) return { why: `GitHub no longer has ${label}, so Lo can’t show it.` };
+  if (!revision.available) return { why: `${label} is no longer on GitHub` };
   return { head, label };
 }

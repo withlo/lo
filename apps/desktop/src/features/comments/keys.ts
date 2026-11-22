@@ -62,7 +62,7 @@ export default defineCommands(
     },
     /** The same box, whose main button posts the comment right away, outside your pending review. */
     commentNow: {
-      label: 'Comment right away',
+      label: 'Comment now',
       group: 'Act',
       keys: ['C'],
       targets: ['line', 'header'],
@@ -75,7 +75,7 @@ export default defineCommands(
      * side only, since GitHub applies suggestions there.
      */
     suggest: {
-      label: 'Suggest a change',
+      label: 'Suggest change',
       group: 'Act',
       keys: ['s'],
       targets: ['line'],
@@ -88,7 +88,7 @@ export default defineCommands(
      * tree.
      */
     commentOnFile: {
-      label: 'Comment on the file',
+      label: 'Comment on file',
       group: 'Act',
       keys: ['c'],
       targets: ['header', 'file'],
@@ -102,7 +102,7 @@ export default defineCommands(
      * request changes it; otherwise on the pull request itself.
      */
     commentOnBlock: {
-      label: 'Comment on these lines',
+      label: 'Comment on lines',
       group: 'Act',
       keys: ['c'],
       targets: ['block', 'line'],
@@ -115,7 +115,8 @@ export default defineCommands(
      * Otherwise it's Vim's `⏎`.
      */
     onFileInstead: {
-      label: 'Comment on the file instead',
+      label: 'Comment on file',
+      control: 'Comment on file on the toast after a line takes no comment',
       group: 'Act',
       keys: ['enter'],
       targets: ['line'],
@@ -124,30 +125,31 @@ export default defineCommands(
     },
     /** A reply box in the thread, right after its card. */
     reply: {
-      label: 'Reply to the thread',
+      label: 'Reply',
       control: "Reply on a thread's card",
       group: 'Act',
       keys: ['r'],
       targets: ['line', 'header', 'thread'],
       overVim: true,
       when: onThread,
-      menu: { on: 'thread', order: 10, label: 'Reply' },
+      menu: { on: 'thread', order: 10 },
     },
     /** Resolves the thread, or unresolves it once it's resolved, where GitHub lets you. */
     resolve: {
-      label: 'Resolve or unresolve the thread',
+      label: 'Resolve thread',
       control: "Resolve on a thread's card",
       group: 'Act',
       keys: ['x'],
       targets: ['line', 'header', 'thread'],
       overVim: true,
       when: onThread,
-      // Named by which it would do: the handler says "Unresolve" on one that's resolved.
+      // Named by which it would do: the handler says "Unresolve thread", and the thread's own menu
+      // "Unresolve", on one that's resolved.
       menu: { on: 'thread', order: 20, label: 'Resolve' },
     },
     /** A box with your newest comment in the thread, to edit it and save it over GitHub's text. */
     edit: {
-      label: 'Edit your comment',
+      label: 'Edit comment',
       control: 'Edit on your comment',
       group: 'Act',
       keys: ['i'],
@@ -158,7 +160,7 @@ export default defineCommands(
     },
     /** Deletes your newest comment in the thread, once you say so. */
     remove: {
-      label: 'Delete your comment…',
+      label: 'Delete comment…',
       control: 'Delete on your comment',
       group: 'Act',
       keys: ['d d'],
@@ -315,13 +317,13 @@ export default defineCommands(
      * as a click on the status bar's note for them does.
      */
     keptDrafts: {
-      label: 'Show where kept drafts are',
+      label: 'Show kept drafts',
       group: 'View',
       keys: [],
       bar: { menu: 'Review', order: 20 },
     },
     nextThread: {
-      label: 'Next thread in the panel',
+      label: 'Next thread',
       control: "Next in the threads panel's foot",
       group: 'Panels',
       keys: ['j', 'down'],
@@ -329,7 +331,7 @@ export default defineCommands(
       repeat: true,
     },
     previousThread: {
-      label: 'Previous thread in the panel',
+      label: 'Previous thread',
       control: "Previous in the threads panel's foot",
       group: 'Panels',
       keys: ['k', 'up'],
@@ -342,7 +344,7 @@ export default defineCommands(
      * in the diff of the revision it's on. A jump, which `⌃o` comes back from.
      */
     showThread: {
-      label: 'Show the thread in the diff',
+      label: 'Show in diff',
       control: 'a row of the threads panel',
       group: 'Panels',
       keys: ['enter'],
@@ -351,7 +353,7 @@ export default defineCommands(
     },
     /** Resolves the thread the keyboard is on, or unresolves it, as `x` in the diff does. */
     resolveInPanel: {
-      label: 'Resolve or unresolve the thread',
+      label: 'Resolve thread',
       control: "Resolve in the threads panel's foot",
       group: 'Panels',
       keys: ['x'],
@@ -360,7 +362,7 @@ export default defineCommands(
     },
     /** Lists the unresolved threads, every thread, or yours, round the end. */
     filterThreads: {
-      label: 'Unresolved, all or your threads',
+      label: 'Next thread filter',
       control: "the filter over the threads panel's list",
       group: 'Panels',
       keys: ['f'],

@@ -34,6 +34,8 @@ export const MARKDOWN_ELEMENTS: Readonly<Record<string, readonly string[]>> = Ob
   strong: [],
   em: [],
   del: [],
+  // A suggested change's added lines, as `del` holds its removed ones.
+  ins: [],
   br: [],
   sub: [],
   sup: [],

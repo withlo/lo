@@ -136,7 +136,7 @@ test('a collapsed thread whose opening isn’t read yet shows its author alone',
   expect(line?.textContent).not.toContain('Fixture C');
 });
 
-test('a thread GitHub put on a newer push says so', () => {
+test('a thread GitHub put on a later revision says which', () => {
   const element = document.createElement('div');
   document.body.append(element);
   const root = createRoot(element);
@@ -148,15 +148,15 @@ test('a thread GitHub put on a newer push says so', () => {
         onToggle={() => undefined}
         author="rozed-bot"
         body={(each) => <p>{each.body}</p>}
-        landed
+        landed="r5"
         now={NOW}
       />,
     ),
   );
-  expect(element.textContent).toContain('On a newer push');
+  expect(element.textContent).toContain('On r5');
   act(() => root.unmount());
   element.remove();
-  expect(drawn(row(), true).textContent).not.toContain('On a newer push');
+  expect(drawn(row(), true).textContent).not.toContain('On r5');
 });
 
 /**

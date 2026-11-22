@@ -84,7 +84,8 @@ function usePending(view: string): boolean {
 }
 
 /**
- * The foot's buttons: the main one, as `c` or `C` opened the box, last. While a pending review
+ * The foot's buttons, always in one order, "Send now" then "Add to review": only the fill moves, to
+ * the main one, as `c` or `C` opened the box. While a pending review
  * exists GitHub adds every comment to it, so the box has "Add to review" alone. An edit's has one,
  * which saves it. A comment on the pull request itself joins no review, so its one button sends it,
  * with `⌘⏎` as `⌥⏎` does. A button that can't be pressed says why in its tooltip, and the one
@@ -131,9 +132,7 @@ function footOf(
         ? [alone('Save', 'review', 'Saving…')]
         : pending
           ? [alone('Add to review', 'review', 'Sending…')]
-          : state.primary === 'review'
-            ? [button('now'), button('review')]
-            : [button('review'), button('now')];
+          : [button('now'), button('review')];
   return {
     mode: modes[state.mode],
     // With no text there's nothing to discard: the head's control closes the box.

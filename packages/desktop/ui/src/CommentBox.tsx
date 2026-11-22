@@ -587,7 +587,7 @@ export function CommentBoxUploads({ uploads }: { uploads: readonly CommentBoxUpl
 
 /**
  * A box's foot, on one line: "Attach files…" and "Discard draft" at one end, the Vim mode with Vim
- * keys on, a hint, and the buttons at the other end, the main one last. It never runs past the box:
+ * keys on, a hint, and the buttons at the other end, in the order given. It never runs past the box:
  * narrow, it gives up its key chips, then the labels of the controls that aren't its buttons, which
  * stay icons with tooltips, then its hint. Whatever still doesn't fit wraps: the buttons go to a
  * row of their own, at its end, and under that one under the other. A button that's off says why in
@@ -722,7 +722,8 @@ export function CommentBox({
           role="region"
           aria-label="Preview"
           tabIndex={0}
-          className="lo-selectable px-12 py-12 text-fg outline-none read-comment"
+          // The box's one ring is its focus: the preview, in the editor's place, draws none.
+          className="lo-selectable px-12 py-12 text-fg shadow-none outline-none read-comment"
         >
           {preview ?? <p className="text-fg-muted">Nothing to preview</p>}
         </div>

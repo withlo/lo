@@ -1,6 +1,6 @@
 // The dialog that asks before your comment is deleted, in the tab feature's `tab.dialogs` slot: the
 // comment's first line, whether it leaves your pending review, and whether its thread goes with
-// it. Delete (`⏎`) deletes it; Cancel (`Esc`) leaves it. A held or repeated key never presses
+// it. Delete comment (`⏎`) deletes it, and the card says "Deleting…"; Cancel (`Esc`) leaves it. A held or repeated key never presses
 // either: while the dialog is open, only a key's first press acts.
 
 import { Button, Dialog, DialogSpacer, Key } from '@lo/ui';
@@ -53,7 +53,7 @@ const CONTROLS = 'button, a[href], input, textarea, select, [role="button"]';
 export function deleteNotes(asking: { pending: boolean; onlyComment: boolean }): string[] {
   const notes: string[] = [];
   if (asking.pending) notes.push('It leaves your pending review.');
-  if (asking.onlyComment) notes.push('It’s the thread’s only comment, so the thread goes too.');
+  if (asking.onlyComment) notes.push('The thread is deleted with it.');
   return notes;
 }
 
@@ -73,7 +73,7 @@ export function DeleteDialog(): ReactNode {
     document.addEventListener('keydown', held, true);
     return () => document.removeEventListener('keydown', held, true);
   }, [open]);
-  // `⏎` on the dialog itself, where a click leaves focus, presses Delete.
+  // `⏎` on the dialog itself, where a click leaves focus, presses Delete comment.
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.key !== 'Enter' || event.repeat || event.defaultPrevented) return;
     if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return;
@@ -87,7 +87,7 @@ export function DeleteDialog(): ReactNode {
       onOpenChange={(next) => {
         if (!next) cancelDelete();
       }}
-      title="Delete your comment?"
+      title="Delete comment?"
       description={asking && firstLine(asking.body)}
       foot={
         <>
@@ -97,7 +97,7 @@ export function DeleteDialog(): ReactNode {
             <Key keys={labels('esc')} decorative />
           </Button>
           <Button ref={primary} variant="primary" onClick={pressed(() => void confirmDelete())}>
-            Delete
+            Delete comment
             <Key keys={labels('enter')} decorative className="text-on-accent" />
           </Button>
         </>

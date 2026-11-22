@@ -132,22 +132,27 @@ function Row({
       className={`flex items-start gap-8 rounded-sm px-8 py-8 hover:bg-hover ${current ? 'bg-on-screen' : ''} ${focused ? 'group-focus-visible/list:shadow-ring-inset' : ''}`}
       onClick={() => onShow?.(row.key)}
     >
-      <span className={`mt-2 flex-none ${row.resolved ? 'opacity-60' : ''}`}>
+      <span className="mt-2 flex-none">
         <Avatar login={row.author} image={row.image} size="sm" />
       </span>
       <div className="flex min-w-0 flex-1 flex-col gap-2">
+        {/* A resolved row steps back a text level, never by opacity, so it reads in both themes. */}
         <div className="flex items-center gap-6">
-          <span className="min-w-0 truncate text-fg-muted code-small">{row.where}</span>
+          <span
+            className={`min-w-0 truncate code-small ${row.resolved ? 'text-fg-subtle' : 'text-fg-muted'}`}
+          >
+            {row.where}
+          </span>
+          {/* An open thread is what the list is mostly of: only the other states are tagged. */}
           <span className="ms-auto flex flex-none items-center gap-6 text-fg-muted text-micro">
             {row.replies > 0 && (
               <span className="lo-num">
                 {row.replies} {row.replies === 1 ? 'reply' : 'replies'}
               </span>
             )}
-            {row.outdated === true && <Tag>Outdated</Tag>}
+            {row.outdated === true && <Tag>Out of date</Tag>}
             {state === 'pending' && <Tag tone="warning">Pending</Tag>}
             {state === 'resolved' && <Tag tone="ok">Resolved</Tag>}
-            {state === 'unresolved' && <Tag tone="warning">Unresolved</Tag>}
           </span>
         </div>
         {/* Always two lines tall, whatever it holds, so the words coming never move a row. */}

@@ -6,6 +6,8 @@
 // Each tab's revisions and what it compares, for another feature to read, and to compare another
 // pair, as the threads panel does to show a thread, and the diff's history to go back.
 
+import type { ToastAction } from '@lo/ui';
+
 import { IpcError } from '../../../ipc/contract.ts';
 import { announce, notify, withdraw } from '../../../window/commands/notices.tsx';
 import { useTabState } from '../../tab/window/shared.ts';
@@ -188,6 +190,8 @@ export function comparisonComing(tab: string): Compared | undefined {
 export interface Said {
   readonly title: string;
   readonly body: string;
+  /** Its one button, as "Back". */
+  readonly action?: ToastAction | undefined;
 }
 
 /** The note each tab's last comparison asked for put up, and that comparison. */
@@ -226,7 +230,7 @@ export function compareTo(
   asked.set(tab, compared);
   if (say) {
     said.set(tab, { ...say, compared });
-    announce(say.title, say.body);
+    announce(say.title, say.body, say.action);
   }
   const taken = () => {
     if (asked.get(tab) === compared) asked.delete(tab);

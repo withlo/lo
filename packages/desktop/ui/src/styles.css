@@ -521,6 +521,31 @@
   }
 }
 
+/* What a thread's comment head gives up as its card narrows, as in a split diff beside the threads
+   panel: Edit and Delete… drop their words for their icons, whose tooltips keep the words, so the
+   head stays one line. The head is the container (`@container`). */
+@utility thread-words {
+  @container (width < 22rem) {
+    display: none !important;
+  }
+}
+@utility thread-icons {
+  display: none !important;
+  @container (width < 22rem) {
+    display: contents !important;
+  }
+}
+
+/* The threads panel's foot gives up its key chips as the panel narrows, which stay in each hint's
+   tooltip, so it stays one line. The foot is the container (`@container`). */
+@utility threads-keys {
+  @container (width < 20rem) {
+    & kbd {
+      display: none;
+    }
+  }
+}
+
 /* Settings: the list of sections beside the sections. */
 @utility settings-page {
   display: grid;

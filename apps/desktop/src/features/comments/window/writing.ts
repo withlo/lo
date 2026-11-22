@@ -268,57 +268,57 @@ export type Refusal = SendRefusal | ActRefusal;
 /** What was being done: a comment written, an edit saved, or a change to a thread. */
 export type Doing = 'comment' | 'edit' | 'resolve' | 'unresolve' | 'delete';
 
-/** How the end of a sentence asks for it again: "Send it then." */
-const AGAIN: Readonly<Record<Doing, string>> = {
-  comment: 'Send it',
-  edit: 'Save it',
-  resolve: 'Resolve it',
-  unresolve: 'Unresolve it',
-  delete: 'Delete it',
-};
-
-/** Why GitHub doesn't let you change a comment, by its reasons (`CommentCannotUpdateReason`). */
-const CANNOT: Readonly<Record<string, string>> = {
-  ARCHIVED: 'the repository is archived',
-  LOCKED: 'the conversation is locked',
-  INSUFFICIENT_ACCESS: 'your account can’t write there',
-  VERIFIED_EMAIL_REQUIRED: 'your account’s email address isn’t verified',
-  LOGIN_REQUIRED: 'your account is signed out',
-  MAINTENANCE: 'GitHub is under maintenance',
+/** What a write's control says while it's at work, which a refusal while one is says too. */
+const AT_WORK: Readonly<Record<Doing, string>> = {
+  comment: 'Sending…',
+  edit: 'Saving…',
+  resolve: 'Resolving…',
+  unresolve: 'Unresolving…',
+  delete: 'Deleting…',
 };
 
 /**
- * Why a change to a thread, or to one of your comments, wasn't made, in Lo's words, with what to
- * do. The refusals of a comment written are its box's (`refusalNote`).
+ * Why GitHub doesn't let `login` change a comment, by its reasons (`CommentCannotUpdateReason`), as
+ * a refusal says it.
  */
-export function actText(refusal: ActRefusal, doing: Doing): string {
+const CANNOT: Readonly<Record<string, (login: string) => string>> = {
+  ARCHIVED: () => 'This repo is archived',
+  LOCKED: () => 'This pull request is locked',
+  INSUFFICIENT_ACCESS: (login) => `${login} doesn’t have permission`,
+  VERIFIED_EMAIL_REQUIRED: (login) => `${login}’s email address isn’t verified`,
+  LOGIN_REQUIRED: (login) => `${login} is signed out`,
+  MAINTENANCE: () => 'GitHub is under maintenance',
+};
+
+/** Who a refusal names where it doesn't know the account: the one the view writes as. */
+const ACCOUNT = 'This account';
+
+/**
+ * Why a change to a thread, or to one of your comments, wasn't made, as a refusal says it: a line
+ * with no full stop, the fact or what to do first. `login` is the account the view writes as. The
+ * refusals of a comment written are its box's (`refusalNote`).
+ */
+export function actText(refusal: ActRefusal, doing: Doing, login = ACCOUNT): string {
   switch (refusal.kind) {
     case 'theirs':
-      return `It’s ${refusal.author ?? 'a deleted account'}’s comment. You can edit and delete only your own.`;
+      return 'This comment isn’t yours';
     case 'notAllowed': {
       const why = refusal.reasons.map((reason) => CANNOT[reason]).find((each) => each);
-      const verb = doing === 'delete' ? 'delete' : 'edit';
-      return why === undefined
-        ? `GitHub doesn’t let you ${verb} it now.`
-        : `GitHub doesn’t let you ${verb} it: ${why}.`;
+      if (why) return why(login);
+      return `${login} can’t ${doing === 'delete' ? 'delete' : 'edit'} this comment`;
     }
     case 'cantResolve':
-      return `GitHub doesn’t let you ${refusal.resolved ? 'resolve' : 'unresolve'} this thread. The pull request’s author and people who can write to the repository can.`;
+      return `${login} can’t ${refusal.resolved ? 'resolve' : 'unresolve'} this thread`;
     case 'changed':
-      return doing === 'delete'
-        ? 'It changed on GitHub since you asked. Look at it again, then delete it.'
-        : 'It was edited on GitHub since you started. Your text is kept here; copy it, then edit again.';
+      return 'This comment was edited elsewhere';
     case 'gone':
-      if (doing === 'edit') {
-        return 'It was deleted on GitHub. Your text is kept here; copy it, then discard it.';
-      }
-      return doing === 'delete'
-        ? 'It’s gone from GitHub already.'
-        : 'The thread is gone from GitHub.';
+      return doing === 'resolve' || doing === 'unresolve'
+        ? 'That thread was deleted elsewhere'
+        : 'That comment was deleted elsewhere';
     case 'busy':
-      return 'It’s being sent already, or Lo is still checking whether it went.';
+      return AT_WORK[doing];
     case 'paused':
-      return `GitHub asked Lo to hold off until ${clockOf(refusal.until)}. ${AGAIN[doing]} then.`;
+      return `GitHub’s rate limit resets at ${clockOf(refusal.until)}`;
     case 'signIn':
       return SIGN_IN;
     case 'run':
@@ -327,12 +327,16 @@ export function actText(refusal: ActRefusal, doing: Doing): string {
       return refusal.message;
     default:
       refusal satisfies never;
-      return 'GitHub didn’t take it.';
+      return 'GitHub returned an error';
   }
 }
 
 /** What a box says of why its text, a comment or an edit, wasn't sent, and what it offers to do. */
-export function refusalNote(refusal: Refusal, doing: 'comment' | 'edit' = 'comment'): BoxNote {
+export function refusalNote(
+  refusal: Refusal,
+  doing: 'comment' | 'edit' = 'comment',
+  login?: string,
+): BoxNote {
   switch (refusal.kind) {
     case 'notLatest':
       return note('This revision is out of date.', ['showLatest'], COULDNT[doing]);
@@ -367,10 +371,10 @@ export function refusalNote(refusal: Refusal, doing: 'comment' | 'edit' = 'comme
     case 'notAllowed':
     case 'cantResolve':
     case 'busy':
-      return note(actText(refusal, doing));
+      return note(actText(refusal, doing, login));
     default:
       refusal satisfies never;
-      return note('GitHub didn’t take it.');
+      return note('GitHub returned an error.', undefined, COULDNT[doing]);
   }
 }
 
@@ -444,16 +448,16 @@ export function offersOf(state: Parameters<typeof notesOf>[0]): Offer[] {
   return notesOf(state).flatMap((each) => each.offers ?? []);
 }
 
-/** Why a thread takes no reply. */
-export const NO_REPLY = 'GitHub doesn’t let you reply to this thread';
+/** Why a thread takes no reply from `login`, the account the view writes as. */
+export function noReply(login = ACCOUNT): string {
+  return `${login} can’t reply to this thread`;
+}
 
-/** Why a line refuses a comment, after `c` on it: what `⏎` does next. */
-export const NOT_IN_DIFF =
-  'GitHub takes comments only on lines in the pull request’s diff. ⏎ comments on the file instead.';
+/** Why a line refuses a comment, after `c` on it: `⏎` comments on the file instead. */
+export const NOT_IN_DIFF = 'Those lines aren’t in the diff';
 
-/** Why a line refuses a comment where Lo couldn't read its file's patch: what `⏎` does next. */
-export const NO_LINES =
-  'Lo couldn’t read which of this file’s lines GitHub takes comments on. ⏎ comments on the file instead.';
+/** Why a line refuses a comment where Lo couldn't read its file's patch. */
+export const NO_LINES = 'Couldn’t check which lines take comments';
 
 /** Why sending is off while GitHub can't be reached. */
 export const OFFLINE = 'Offline';
@@ -478,8 +482,7 @@ export const DISCARDED = 'Discarded draft';
 export const UNDO = 'Undo';
 
 /** Why a suggestion can't go on the older side. */
-export const NEW_SIDE_ONLY =
-  'Suggestions work on the new side only, since GitHub applies them there';
+export const NEW_SIDE_ONLY = 'New side only';
 
 /**
  * Why a comment on a code block's lines goes on their file: GitHub takes line comments only on
@@ -549,11 +552,6 @@ export interface BlockRevisions {
   readonly now: string;
 }
 
-/** `text` with its first letter lowered, to follow a comma. */
-function lowerFirst(text: string): string {
-  return text.charAt(0).toLowerCase() + text.slice(1);
-}
-
 /**
  * What a box's head says where its place doesn't say it all: what the comment is on, and, under
  * it, why that's not what was picked.
@@ -616,28 +614,28 @@ function whyWords(why: BlockWhy, names: BlockRevisions): BoxWhere {
 
 /**
  * What's said once a comment written on a code block is sent, where it won't show under the block:
- * on the pull request, on the file, or on lines of a newer head than `written`, the overview's
- * commit. `pending` when it went into your pending review. Nothing when it shows under the block.
+ * on the pull request, `pull` ("#264"), on the file, or on lines of a newer head than `written`,
+ * the overview's commit, in one line. `pending` when it went into your pending review. Nothing when
+ * it shows under the block.
  */
 export function sentFromBlock(
   place: DraftPlaceRow,
   written: string,
   pending: boolean,
-  names: BlockRevisions,
+  names: BlockRevisions & { readonly pull: string },
 ): { readonly title: string; readonly body: string } | undefined {
-  if (place.kind === 'conversation') {
-    return { title: 'Posted on the pull request', body: 'It shows in the timeline.' };
-  }
+  if (place.kind === 'conversation') return { title: `Sent comment on ${names.pull}`, body: '' };
   if (place.kind !== 'thread') return undefined;
   if (!place.lines) {
+    const name = place.path.slice(place.path.lastIndexOf('/') + 1);
     return {
-      title: pending ? 'Added to your review, on the file' : 'Posted on the file',
-      body: `${place.path}. It shows under the file’s header in the diff.`,
+      title: pending ? `Added comment on ${name} to review` : `Sent comment on ${name}`,
+      body: '',
     };
   }
   if (place.commit.toLowerCase() === written.toLowerCase()) return undefined;
   return {
-    title: pending ? `Added to your review, at ${names.now}` : `Posted at ${names.now}`,
-    body: `${place.path}, ${lowerFirst(whereText(place))}. It shows in the diff; this block shows ${names.written}.`,
+    title: pending ? `Added comment at ${names.now} to review` : `Sent comment at ${names.now}`,
+    body: '',
   };
 }

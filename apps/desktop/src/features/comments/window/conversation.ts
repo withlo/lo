@@ -7,7 +7,7 @@
 
 import { changeRefusal } from '@lo/review';
 
-import { notify } from '../../../window/commands/notices.tsx';
+import { refuse } from '../../../window/commands/notices.tsx';
 import type { PullTab } from '../../tab/window/shared.ts';
 import type { EditPlaceRow } from '../contract.ts';
 import { OFFLINE_ACT, setAsking } from './acts.ts';
@@ -25,9 +25,6 @@ export interface PullComment {
   readonly viewerCanUpdate: boolean;
   readonly viewerCanDelete: boolean;
 }
-
-/** What a change to a comment is called, as a refusal's title says. */
-const TITLES = { edit: 'Edit your comment', delete: 'Delete your comment' } as const;
 
 /**
  * Why `login` can't make `change` to `comment`, in Lo's words: nothing when it's theirs and GitHub
@@ -56,27 +53,26 @@ export function pullChangeRefusal(
   if (refused === undefined) return undefined;
   switch (refused.refusal) {
     case 'theirs':
-      return actText({ kind: 'theirs', author: refused.author ?? null }, change);
+      return actText({ kind: 'theirs', author: refused.author ?? null }, change, login);
     case 'notAllowed':
     case 'noneOfYours':
-      return actText({ kind: 'notAllowed', reasons: [] }, change);
+      return actText({ kind: 'notAllowed', reasons: [] }, change, login);
     default:
       refused satisfies never;
-      return actText({ kind: 'notAllowed', reasons: [] }, change);
+      return actText({ kind: 'notAllowed', reasons: [] }, change, login);
   }
 }
 
-/** Whether tab `tab` may change `comment` now, saying why not under `change`'s title. */
+/** Whether tab `tab` may change `comment` now, saying why not. */
 function may(tab: PullTab, comment: PullComment, change: 'edit' | 'delete'): boolean {
-  const title = TITLES[change];
   const can = canWrite(tab.id);
   if (can !== true) {
-    notify(title, can);
+    refuse(can);
     return false;
   }
   const why = pullChangeRefusal(comment, loginOf(tab.id), change);
   if (why !== undefined) {
-    notify(title, why);
+    refuse(why);
     return false;
   }
   return true;
@@ -93,11 +89,11 @@ export async function editOnPull(tab: PullTab, comment: PullComment): Promise<vo
   try {
     const outcome = await main().editing({ id: tab.id, place, base: comment.body });
     if (outcome.kind === 'refused') {
-      notify(TITLES.edit, actText(outcome.refusal, 'edit'));
+      refuse(actText(outcome.refusal, 'edit', loginOf(tab.id)));
       return;
     }
   } catch (error) {
-    notify(TITLES.edit, error instanceof Error ? error.message : String(error));
+    refuse(error instanceof Error ? error.message : String(error));
     return;
   }
   knowPull(tab);
@@ -112,7 +108,7 @@ export function removeOnPull(tab: PullTab, comment: PullComment): void {
   if (!may(tab, comment, 'delete')) return;
   // Nothing would go: it's refused now, not after the question.
   if (offline(tab.id)) {
-    notify(TITLES.delete, OFFLINE_ACT);
+    refuse(OFFLINE_ACT);
     return;
   }
   setAsking({
@@ -141,15 +137,14 @@ export function setPullBoxFocus(view: string, focus: () => void): () => void {
  * it can't take a comment.
  */
 export function focusPullBox(tab: PullTab): void {
-  const title = 'Comment on the pull request';
   const can = canWrite(tab.id);
   if (can !== true) {
-    notify(title, can);
+    refuse(can);
     return;
   }
   // The draft is under the code block it was written on: it comes here, and takes focus as it does.
   if (bringToTimeline(tab.id)) return;
   const focus = focusers.get(tab.id);
   if (focus) focus();
-  else notify(title, 'The timeline isn’t drawn yet.');
+  else refuse('Opening pull request…');
 }

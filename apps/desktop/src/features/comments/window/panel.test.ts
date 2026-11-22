@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { ComparisonView, RevisionRow } from '../../revisions/contract.ts';
 import type { ThreadRow, ThreadsView } from '../contract.ts';
-import { comparisonFor, emptyText, GONE, planShow, threadIn } from './panel.ts';
+import { comparisonFor, emptyOf, GONE, planShow, threadIn } from './panel.ts';
 
 const FIRST = 'f'.repeat(40);
 const SECOND = 's'.repeat(40);
@@ -81,19 +81,17 @@ describe('a thread the diff on screen doesn’t show', () => {
   it('says why when no revision’s diff can show it', () => {
     const why = comparisonFor;
     expect(why(row({ writtenOn: null }), revisions())).toEqual({
-      why: 'GitHub no longer has the commit this thread is on.',
+      why: 'This thread’s commit is no longer on GitHub',
     });
-    expect(why(row(), undefined)).toEqual({
-      why: 'Lo hasn’t read the pull request’s revisions yet.',
-    });
+    expect(why(row(), undefined)).toEqual({ why: 'Reading revisions…' });
     expect(why(row(), revisions({ status: 'failed', problem: 'GitHub returned 502.' }))).toEqual({
       why: 'GitHub returned 502.',
     });
     expect(why(row({ writtenOn: 'c'.repeat(40) }), revisions())).toEqual({
-      why: 'This thread is on a commit that isn’t one of the pull request’s pushes.',
+      why: 'This thread’s commit isn’t a revision',
     });
     const gone = revisions({ revisions: [revision(FIRST, 1, false), revision(HEAD, 2)] });
-    expect(why(row(), gone)).toEqual({ why: 'GitHub no longer has r1, so Lo can’t show it.' });
+    expect(why(row(), gone)).toEqual({ why: 'r1 is no longer on GitHub' });
   });
 });
 
@@ -117,11 +115,11 @@ describe('⏎ on a thread', () => {
     // That revision's whole diff on screen doesn't show it either.
     expect(planShow(outdated, false, revisions({ comparison: first }), undefined)).toEqual({
       kind: 'why',
-      why: 'This thread’s lines aren’t in the diff on screen.',
+      why: 'This thread’s lines aren’t in this diff',
     });
     expect(planShow(row({ writtenOn: null }), false, revisions(), undefined)).toEqual({
       kind: 'why',
-      why: 'GitHub no longer has the commit this thread is on.',
+      why: 'This thread’s commit is no longer on GitHub',
     });
   });
 
@@ -151,23 +149,35 @@ function emptyView(status: ThreadsView['status'], problem: string | null = null)
 
 describe('the panel with nothing to list', () => {
   it('says why: reading, a run, signed out or a failed read', () => {
-    expect(emptyText(undefined, 'unresolved')).toBe('Reading the review threads…');
-    expect(emptyText(emptyView('loading'), 'unresolved')).toBe('Reading the review threads…');
-    expect(emptyText(emptyView('run'), 'all')).toBe(
-      'A run has no threads. Show one of its layers to see them.',
-    );
-    expect(emptyText(emptyView('signIn'), 'all')).toBe('Sign in to see comments.');
-    expect(emptyText(emptyView('failed', 'GitHub can’t be reached.'), 'all')).toBe(
-      'The review threads didn’t load. GitHub can’t be reached.',
-    );
+    expect(emptyOf(undefined, 'unresolved')).toEqual({ kind: 'reading' });
+    expect(emptyOf(emptyView('loading'), 'unresolved')).toEqual({ kind: 'reading' });
+    expect(emptyOf(emptyView('run'), 'all', [83, 84, 85])).toEqual({
+      kind: 'none',
+      heading: 'No threads for these 3 layers',
+      line: 'Each layer has its own.',
+      action: 'stacks.back',
+    });
+    expect(emptyOf(emptyView('signIn'), 'all')).toEqual({
+      kind: 'none',
+      heading: 'Sign in to see threads',
+      action: 'accounts.addAccount',
+    });
+    expect(emptyOf(emptyView('failed', 'Offline.'), 'all')).toEqual({
+      kind: 'failed',
+      reason: 'Offline.',
+    });
   });
 
-  it('says what the filter found none of', () => {
-    expect(emptyText(emptyView('ready'), 'unresolved')).toBe('No unresolved threads.');
-    expect(emptyText(emptyView('ready'), 'all')).toBe('No review threads yet.');
-    expect(emptyText(emptyView('ready'), 'yours')).toBe(
-      'You haven’t started or replied in a thread.',
-    );
+  it('says what the filter found none of, as a heading', () => {
+    expect(emptyOf(emptyView('ready'), 'unresolved')).toEqual({
+      kind: 'none',
+      heading: 'No unresolved threads',
+    });
+    expect(emptyOf(emptyView('ready'), 'all')).toEqual({ kind: 'none', heading: 'No threads yet' });
+    expect(emptyOf(emptyView('ready'), 'yours')).toEqual({
+      kind: 'none',
+      heading: 'No threads of yours',
+    });
   });
 });
 
@@ -190,6 +200,6 @@ describe('a row whose thread main no longer holds', () => {
   it('says what’s true of one that has just gone, rather than nothing or what isn’t', () => {
     expect(threadIn(threads(row({ id: 'T2' })), 'T1')).toBe(GONE);
     expect(threadIn(undefined, 'T1')).toBe(GONE);
-    expect(GONE).toBe('That thread has just gone from the pull request. The list is catching up.');
+    expect(GONE).toBe('That thread was deleted elsewhere');
   });
 });

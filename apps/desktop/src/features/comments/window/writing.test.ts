@@ -162,20 +162,28 @@ describe('a comment on a code block’s lines', () => {
   });
 
   test('once sent, says where a comment that won’t show under the block went', () => {
-    const names = { written: 'r1', now: 'r2' };
+    const names = { written: 'r1', now: 'r2', pull: '#264' };
     expect(sentFromBlock({ kind: 'conversation' }, BASE, false, names)).toEqual({
-      title: 'Posted on the pull request',
-      body: 'It shows in the timeline.',
+      title: 'Sent comment on #264',
+      body: '',
     });
     expect(sentFromBlock(placeOf(HEAD, path, undefined), BASE, true, names)).toEqual({
-      title: 'Added to your review, on the file',
-      body: 'src/backoff.ts. It shows under the file’s header in the diff.',
+      title: 'Added comment on backoff.ts to review',
+      body: '',
+    });
+    expect(sentFromBlock(placeOf(HEAD, path, undefined), BASE, false, names)).toEqual({
+      title: 'Sent comment on backoff.ts',
+      body: '',
     });
     const lines = placeOf(HEAD, path, { end: Line.right(5) });
     expect(sentFromBlock(lines, HEAD, false, names)).toBeUndefined();
     expect(sentFromBlock(lines, BASE, false, names)).toEqual({
-      title: 'Posted at r2',
-      body: 'src/backoff.ts, line 5. It shows in the diff; this block shows r1.',
+      title: 'Sent comment at r2',
+      body: '',
+    });
+    expect(sentFromBlock(lines, BASE, true, names)).toEqual({
+      title: 'Added comment at r2 to review',
+      body: '',
     });
   });
 
@@ -354,16 +362,23 @@ describe('a box’s notes', () => {
 
   test('a change to a thread that wasn’t made says why, in Lo’s words', () => {
     expect(actText({ kind: 'theirs', author: 'ravi-k' }, 'delete')).toBe(
-      'It’s ravi-k’s comment. You can edit and delete only your own.',
+      'This comment isn’t yours',
     );
     expect(actText({ kind: 'notAllowed', reasons: ['LOCKED'] }, 'edit')).toBe(
-      'GitHub doesn’t let you edit it: the conversation is locked.',
+      'This pull request is locked',
     );
-    expect(actText({ kind: 'cantResolve', resolved: false }, 'unresolve')).toMatch(
-      /^GitHub doesn’t let you unresolve this thread\./,
+    expect(
+      actText({ kind: 'notAllowed', reasons: ['INSUFFICIENT_ACCESS'] }, 'edit', 'rozed-bot'),
+    ).toBe('rozed-bot doesn’t have permission');
+    expect(actText({ kind: 'notAllowed', reasons: [] }, 'delete', 'rozed-bot')).toBe(
+      'rozed-bot can’t delete this comment',
     );
-    expect(actText({ kind: 'changed' }, 'delete')).toBe(
-      'It changed on GitHub since you asked. Look at it again, then delete it.',
+    expect(actText({ kind: 'cantResolve', resolved: false }, 'unresolve', 'rozed-bot')).toBe(
+      'rozed-bot can’t unresolve this thread',
+    );
+    expect(actText({ kind: 'changed' }, 'delete')).toBe('This comment was edited elsewhere');
+    expect(actText({ kind: 'paused', until: 0 }, 'resolve')).toMatch(
+      /^GitHub’s rate limit resets at [^.]+$/,
     );
   });
 

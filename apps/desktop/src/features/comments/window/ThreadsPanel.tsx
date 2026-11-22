@@ -4,21 +4,21 @@
 // as the panel opens. And the count the header's toggle shows: the unresolved threads, yours not
 // yet sent among them.
 
-import { HintButton, Key, ThreadFilter, ThreadList } from '@lo/ui';
-import { keyLabels, setScopeSource } from '@lo/ui/commands';
+import { Button, HintButton, Loading, Problem, reveal, ThreadFilter, ThreadList } from '@lo/ui';
+import { controlOf, keyLabels, runControl, setScopeSource } from '@lo/ui/commands';
 import { useCallback, useEffect, useMemo, useRef, type ReactNode } from 'react';
 
 import { registry, useKeys } from '../../../window/commands/registry.ts';
 import { threadsChanged } from '../../diff/window/shared.ts';
 import { catchUpRevisions, useRevisions } from '../../revisions/window/shared.ts';
-import { usePull, useTabState, type PullTab } from '../../tab/window/shared.ts';
+import { usePull, useRun, useTabState, type PullTab } from '../../tab/window/shared.ts';
 import { useFileOrder } from '../../tree/window/shared.ts';
 import type { ThreadsView } from '../contract.ts';
 import { acting as asked, resolvedNow, unshown } from './acts.ts';
 import { useExcerpts } from './excerpts.ts';
 import { filterCounts, focusedIn, rowKeys } from './list.ts';
 import {
-  emptyText,
+  emptyOf,
   focusedRows,
   groupsIn,
   listable,
@@ -28,6 +28,7 @@ import {
   showThread,
   shownRows,
   useFilter,
+  type PanelEmpty,
 } from './panel.ts';
 import { catchUp, held, listed } from './threads.ts';
 
@@ -56,6 +57,45 @@ export function UnresolvedCount({ tab }: { tab: PullTab }): ReactNode {
   );
 }
 
+/** A button that runs command `id`, by its label, as its key would from anywhere. */
+function CommandButton({ id }: { id: string }): ReactNode {
+  const control = controlOf(id);
+  if (!control) return null;
+  return (
+    <Button size="sm" onClick={() => runControl(id)}>
+      {control.label}
+    </Button>
+  );
+}
+
+/**
+ * What the panel shows when it lists nothing: the wait for the first read, an empty state's
+ * heading with its line and button, or why the read failed.
+ */
+function Empty({ empty }: { empty: PanelEmpty }): ReactNode {
+  switch (empty.kind) {
+    case 'reading':
+      return (
+        <div className="py-24">
+          <Loading status="Reading threads…" />
+        </div>
+      );
+    case 'failed':
+      return <Problem title="Can’t show the threads" reason={empty.reason} />;
+    case 'none':
+      return (
+        <div className="flex flex-col items-start gap-8">
+          <p className="text-fg text-ui-strong">{empty.heading}</p>
+          {empty.line !== undefined && <p>{empty.line}</p>}
+          {empty.action !== undefined && <CommandButton id={empty.action} />}
+        </div>
+      );
+    default:
+      empty satisfies never;
+      return null;
+  }
+}
+
 /** The threads panel of view `tab`, the view on screen. */
 export function ThreadsPanel({ tab }: { tab: PullTab }): ReactNode {
   useKeys();
@@ -63,6 +103,7 @@ export function ThreadsPanel({ tab }: { tab: PullTab }): ReactNode {
   // What it lists is main's threads once their openings are read, so no row draws without one.
   const threads = useTabState(listed, view);
   const filter = useFilter();
+  const run = useRun(view);
   // What the list reads, so it's drawn again when any of them changes.
   useFileOrder(view);
   useRevisions(view);
@@ -115,8 +156,8 @@ export function ThreadsPanel({ tab }: { tab: PullTab }): ReactNode {
     if (last.view !== view || last.moved === moved) return;
     const rows = list.current?.querySelectorAll<HTMLElement>('[role="option"]') ?? [];
     const row = [...rows].find((each) => each.dataset['key'] === on);
-    // Not in jsdom, which lays nothing out.
-    if (typeof row?.scrollIntoView === 'function') row.scrollIntoView({ block: 'nearest' });
+    // Its own pane scrolls, and nothing else.
+    if (row) reveal(row);
   }, [view, moved, on]);
 
   const filters = keysOf('comments.filterThreads');
@@ -129,16 +170,11 @@ export function ThreadsPanel({ tab }: { tab: PullTab }): ReactNode {
   const onResolved =
     target.kind === 'thread' &&
     listable(threads).some((row) => row.id === target.thread && resolvedNow(view, row));
-  const panelKey = keysOf('tab.rightPanel');
   return (
     <div className="flex min-h-0 flex-1 flex-col" data-lo-threads={view}>
+      {/* The key that opens the panel is on its toggle, not here: it's open already. */}
       <div className="flex flex-none items-center gap-6 ps-16 pe-8 pt-12 pb-8">
         <h2 className="label-caps text-fg-muted text-label">Threads</h2>
-        {panelKey && (
-          <span className="ms-auto">
-            <Key keys={panelKey} quiet decorative />
-          </span>
-        )}
       </div>
       <div className="flex flex-none items-center gap-6 ps-12 pe-8 pb-8">
         <ThreadFilter value={filter} counts={counts} onChange={setFilter} keys={filters} />
@@ -149,22 +185,30 @@ export function ThreadsPanel({ tab }: { tab: PullTab }): ReactNode {
           current={current}
           focused={on}
           onShow={(key) => showThread(tab, key)}
-          empty={emptyText(threads, filter)}
+          empty={<Empty empty={emptyOf(threads, filter, run?.layers)} />}
           listRef={listRef}
           className="outline-none"
           data-lo-scope="threads"
         />
       </div>
-      {/* One line always: the filter's key is on the filter itself. */}
-      <div className="flex min-w-0 flex-none items-center gap-2 overflow-hidden border-t border-border-subtle px-8 py-4 whitespace-nowrap text-fg-muted text-small">
-        <HintButton command="comments.nextThread">Next</HintButton>
-        <HintButton command="comments.previousThread">Previous</HintButton>
-        <HintButton command="comments.showThread" target={target}>
-          Show
-        </HintButton>
-        <HintButton command="comments.resolveInPanel" target={target}>
-          {onResolved ? 'Unresolve' : 'Resolve'}
-        </HintButton>
+      {/* One line always: the filter's key is on the filter itself, and a narrow foot gives up
+          its key chips first, which stay in each hint's tooltip. */}
+      <div className="@container flex-none border-t border-border-subtle">
+        <div
+          data-lo-threads-foot
+          className="flex threads-keys min-w-0 items-center gap-2 overflow-hidden px-8 py-4 whitespace-nowrap text-fg-muted text-small"
+        >
+          <HintButton command="comments.nextThread">Next</HintButton>
+          <HintButton command="comments.previousThread">Previous</HintButton>
+          {/* "Show in diff" with its key is 31 px wider than the panel's 340: on the panel, "in
+              diff" goes, as "thread" does from Next and Previous. */}
+          <HintButton command="comments.showThread" target={target}>
+            Show
+          </HintButton>
+          <HintButton command="comments.resolveInPanel" target={target}>
+            {onResolved ? 'Unresolve' : 'Resolve'}
+          </HintButton>
+        </div>
       </div>
     </div>
   );

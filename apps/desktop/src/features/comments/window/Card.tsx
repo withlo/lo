@@ -10,6 +10,7 @@ import type { MouseEvent, ReactNode } from 'react';
 
 import { registry } from '../../../window/commands/registry.ts';
 import { avatarImage } from '../../../window/images.ts';
+import { revisionLabel, useRevisions } from '../../revisions/window/shared.ts';
 import { usePull, useTabState, type PullTab } from '../../tab/window/shared.ts';
 import type { ActRow, ThreadCommentRow, ThreadRow } from '../contract.ts';
 import {
@@ -82,6 +83,7 @@ export function Card({ tab, id, open, focused = false, onToggle }: CardProps): R
   const author = shown?.header?.author;
   const login = shown?.acting?.kind === 'account' ? shown.acting.login : undefined;
   const newer = useTabState(landed, view, (ids) => ids.has(id));
+  const revisions = useRevisions(view);
   const replied = useTabState(replying, view, (ids) => ids.has(id));
   const edited = useTabState(editing, view);
   const asked = useTabState(acting, view, (acts) => acts.get(id));
@@ -112,7 +114,12 @@ export function Card({ tab, id, open, focused = false, onToggle }: CardProps): R
         author={author}
         body={body}
         excerpt={opening}
-        landed={newer}
+        landed={
+          newer
+            ? ((row.currentOn === null ? undefined : revisionLabel(revisions, row.currentOn)) ??
+              'a later revision')
+            : undefined
+        }
         login={login}
         replying={replied}
         editing={edited}
@@ -149,11 +156,6 @@ function focusCard(from: Element): void {
   control?.focus({ preventScroll: true });
 }
 
-/**
- * What a card says of a change asked of it that didn't go, or may not have: what wasn't done, why,
- * and "Try again", or "Check again" where nobody knows whether it went, and "Dismiss". Whoever
- * shows it says it to a screen reader: it's drawn with its words on it.
- */
 /** Runs a note's button, focus going to its card first: the button goes with the note. */
 function then(act: () => void) {
   return (event: MouseEvent<HTMLElement>): void => {
@@ -162,6 +164,11 @@ function then(act: () => void) {
   };
 }
 
+/**
+ * What a card says of a change asked of it that didn't go, or may not have: what wasn't done, why,
+ * and "Try again", or "Check again" where nobody knows whether it went, and "Dismiss". Whoever
+ * shows it says it to a screen reader: it's drawn with its words on it.
+ */
 export function ActCallout({
   note,
   onAgain,
@@ -172,10 +179,12 @@ export function ActCallout({
   onClose: () => void;
 }): ReactNode {
   return (
-    <Callout tone="warning">
+    // Known not to have gone, it's a failure; nobody knowing whether it went, a wait.
+    <Callout tone={note.again === 'try' ? 'danger' : 'warning'}>
       <div className="flex flex-wrap items-center gap-8">
-        <span className="min-w-0 flex-1">
-          <b className="text-ui-strong">{note.title}</b> {note.text}
+        <span className="flex min-w-0 flex-1 flex-col">
+          <b className="text-ui-strong">{note.title}</b>
+          <span>{note.text}</span>
         </span>
         <span className="flex flex-none gap-4">
           <Button size="sm" onClick={then(onAgain)}>
@@ -210,7 +219,7 @@ export function ThreadCard({
   author,
   body,
   excerpt,
-  landed: newer = false,
+  landed: newer,
   login,
   replying: replied = false,
   editing: edited,
@@ -239,10 +248,10 @@ export function ThreadCard({
   /** The first comment's opening as one line of plain text, which the collapsed line shows. */
   excerpt?: string | undefined;
   /**
-   * You wrote it on a revision, and GitHub put it on a newer push, where its lines may hold other
-   * code.
+   * You wrote it on a revision, and GitHub put it on a later one, where its lines may hold other
+   * code: that revision, as "r5".
    */
-  landed?: boolean;
+  landed?: string | undefined;
   /** The account the view writes as, whose comments are yours: nobody's while it writes as none. */
   login?: string | undefined;
   /** A reply box is open in it, right after it, in place of its own row that offers one. */
@@ -290,7 +299,7 @@ export function ThreadCard({
       open={open}
       focused={focused}
       outdated={row.outdated}
-      tags={newer ? [{ label: 'On a newer push', tone: 'warning' }] : undefined}
+      tags={newer === undefined ? undefined : [{ label: `On ${newer}`, tone: 'warning' }]}
       excerpt={excerpt === '' ? undefined : excerpt}
       canResolve={
         actions !== undefined &&

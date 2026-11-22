@@ -156,7 +156,7 @@ describe('Thread', () => {
     const thread = host.querySelector('[role="group"]');
     expect(thread?.getAttribute('aria-label')).toBe('Pending thread by tess-okafor');
     expect(thread?.textContent).toContain('Pending');
-    expect(thread?.textContent).toContain('Your review, not sent');
+    expect(thread?.textContent).toContain('1 comment');
     expect(thread?.textContent).not.toContain('Unresolved');
     // There's nothing on GitHub to resolve yet.
     expect(buttons(host, 'Resolve')).toHaveLength(0);
@@ -180,7 +180,7 @@ describe('Thread', () => {
       <Thread {...PROPS} outdated tags={[{ label: 'On a newer push', tone: 'warning' }]} />,
     );
     const head = host.querySelector('[role="group"] > div');
-    expect(head?.textContent).toContain('Outdated');
+    expect(head?.textContent).toContain('Out of date');
     expect(head?.textContent).toContain('On a newer push');
   });
 
@@ -224,8 +224,9 @@ describe('Thread', () => {
   it('offers a reply where it can be made, and shows an open reply box in its place', () => {
     const onReply = vi.fn<() => void>();
     const host = render(<Thread {...PROPS} canReply keys={{ reply: ['r'] }} onReply={onReply} />);
-    const [reply] = buttons(host, 'Reply…');
-    expect(reply?.textContent).toBe('Reply…r');
+    const [reply] = buttons(host, 'Reply');
+    // Its key's chip shows only on the card the keyboard is on; elsewhere it's in the tooltip.
+    expect(reply?.textContent).toBe('Replyr');
     click(reply!);
     expect(onReply).toHaveBeenCalledOnce();
 
@@ -233,7 +234,7 @@ describe('Thread', () => {
       <Thread {...PROPS} canReply reply={<div data-testid="box">the reply box</div>} />,
     );
     expect(open.querySelector('[data-testid="box"]')?.textContent).toBe('the reply box');
-    expect(buttons(open, 'Reply…')).toHaveLength(0);
+    expect(buttons(open, 'Reply')).toHaveLength(0);
   });
 
   it('has a "More actions" button where a right-click opens a menu, which opens that menu', () => {
@@ -252,8 +253,8 @@ describe('Thread', () => {
     const host = render(
       <Thread {...PROPS} focused keys={{ toggle: ['z', 'a'] }} onToggle={onToggle} />,
     );
-    const collapse = host.querySelector('button[aria-label="Collapse the thread"]');
-    expect(collapse?.getAttribute('title')).toBe('Collapse the thread (z a)');
+    const collapse = host.querySelector('button[aria-label="Collapse thread"]');
+    expect(collapse?.getAttribute('aria-description')).toBe('Keys z then a');
     click(collapse!);
     expect(onToggle).toHaveBeenCalledOnce();
     expect(host.querySelector('[role="group"]')?.hasAttribute('data-focused')).toBe(true);

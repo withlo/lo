@@ -511,9 +511,13 @@
   position: absolute;
   inset: 0;
 }
+/* The box's one ring is its focus: the preview, which takes focus in the editor's place, draws none. */
 .lo-diffcomposer__preview {
   min-height: 60px;
   outline: none;
+}
+.lo-diffcomposer__preview:focus-visible {
+  box-shadow: none;
 }
 .lo-diffcomposer .cm-content {
   min-height: 60px;
