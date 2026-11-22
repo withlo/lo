@@ -50,7 +50,7 @@ export const IN_A_LAYER = 'Submit a review in a layer';
 export interface PendingCommentRow {
   /** Its file's name, as the list shows it. */
   file: string;
-  /** Where in the file: `new 41`, `old 30`, or `null` for a comment on the file. */
+  /** Where in the file: `line 41`, `line 30, removed`, or `null` for a comment on the file. */
   line: string | null;
   /** Whether it replies to a thread. */
   reply: boolean;

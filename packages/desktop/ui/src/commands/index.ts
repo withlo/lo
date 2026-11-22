@@ -8,6 +8,7 @@ export {
   checkIds,
   checkKeys,
   checkMenus,
+  checkRoutes,
   checkVim,
   codeModes,
   keyless,
@@ -23,6 +24,13 @@ export {
   type VimKeys,
   type VimMeeting,
 } from './checks.ts';
+export {
+  controlOf,
+  heldRegistry,
+  holdRegistry,
+  runControl,
+  type CommandControl,
+} from './control.ts';
 export {
   commandsOf,
   defineCommands,

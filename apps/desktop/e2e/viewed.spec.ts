@@ -306,7 +306,7 @@ function closed(page: Page, path: string): Promise<boolean> {
     // Past the spacers that keep the sides level.
     while (next?.classList.contains('lo-spacer')) next = next.nextElementSibling;
     return Boolean(
-      next?.classList.contains('lo-filenote') && next.textContent?.includes('closed: za opens it'),
+      next?.classList.contains('lo-filenote') && next.textContent?.includes('Expand file'),
     );
   }, path);
 }
@@ -635,6 +635,27 @@ test('clearing a viewed file’s mark opens it again, and the cursor stays', asy
   await expect.poll(() => fake.writes).toEqual(['UnmarkFileAsViewed src/format.ts']);
   await expect.poll(() => closed(page, 'src/format.ts')).toBe(false);
   expect(await cursorPath(page)).toBe('src/format.ts');
+});
+
+test('a click on a file’s viewed ball unmarks it, and another marks it', async ({ page, fake }) => {
+  test.setTimeout(60_000);
+  fake.marks.set('src/format.ts', 'VIEWED');
+  await shown(page);
+  const mark = headerBall(page, 'src/format.ts');
+  await expect(mark).toHaveRole('checkbox');
+  await expect(mark).toHaveAccessibleName('Viewed');
+  await expect(mark).toHaveAttribute('aria-checked', 'true');
+  // Its tooltip is what a click does.
+  await mark.hover();
+  await expect(page.getByRole('tooltip')).toContainText('Unmark viewed');
+  await mark.click();
+  await expect(mark).toHaveAttribute('aria-checked', 'false');
+  await expect.poll(() => fake.writes).toEqual(['UnmarkFileAsViewed src/format.ts']);
+  await mark.click();
+  await expect(mark).toHaveAttribute('aria-checked', 'true');
+  await expect
+    .poll(() => fake.writes)
+    .toEqual(['UnmarkFileAsViewed src/format.ts', 'MarkFileAsViewed src/format.ts']);
 });
 
 /**

@@ -1,5 +1,5 @@
 import { cva } from 'class-variance-authority';
-import { useState } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
 
 const avatar = cva(
   'inline-grid flex-none place-items-center overflow-hidden rounded-pill text-micro',
@@ -71,15 +71,22 @@ export function Avatar({ login, size = 'lg', image }: AvatarProps) {
 
 /**
  * The picture over the initials. The image is laid out from the start, unseen, so it loads at
- * once, and takes the initials' place only when it has.
+ * once, and takes the initials' place only when it has. One the window already holds, as an avatar
+ * drawn elsewhere on the page is, shows from the first frame, with no initials first.
  */
 function Picture({ login, image }: { login: string; image: string }) {
   const [state, setState] = useState<'loading' | 'loaded' | 'failed'>('loading');
+  const picture = useRef<HTMLImageElement>(null);
+  useLayoutEffect(() => {
+    const drawn = picture.current;
+    if (drawn?.complete && drawn.naturalWidth > 0) setState('loaded');
+  }, []);
   return (
     <>
       {state !== 'loaded' && <span className="col-start-1 row-start-1">{initials(login)}</span>}
       {state !== 'failed' && (
         <img
+          ref={picture}
           src={image}
           alt=""
           decoding="async"

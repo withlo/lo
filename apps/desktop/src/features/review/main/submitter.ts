@@ -20,6 +20,7 @@ import {
   type ReviewWriteRefusal,
 } from '@lo/github';
 import {
+  lineRefText,
   pendingReviewFrom,
   REVIEW_EVENTS,
   sameCommentText,
@@ -241,12 +242,15 @@ function fileName(path: string): string {
   return path.slice(path.lastIndexOf('/') + 1);
 }
 
-/** Where a thread is in its file, as the dialog's list says it: `new 41`, `old 30`, or on the file. */
+/**
+ * Where a thread is in its file, as the dialog's list says it after the file's name: `line 41`,
+ * `line 30, removed`, or nothing for one on the file.
+ */
 function lineOf(thread: ThreadRow): string | null {
   if (thread.subject === 'FILE') return null;
   const line = thread.line ?? thread.originalLine;
   if (line === null) return null;
-  return `${thread.side === 'RIGHT' ? 'new' : 'old'} ${line}`;
+  return lineRefText({ lines: { end: { side: thread.side, number: line } } }, true);
 }
 
 /** The comments of `login`'s pending review among `threads`, in the threads' order. */

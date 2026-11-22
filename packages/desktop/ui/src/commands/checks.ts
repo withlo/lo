@@ -253,6 +253,51 @@ export function keyless(command: Command): boolean {
   return command.keys.length === 0 && (command.bar !== undefined || command.menu !== undefined);
 }
 
+/**
+ * Whether the mouse reaches `command`: by a control drawn where its target is (`control`), a
+ * right-click menu (`menu`) or the app menu (`bar`). One of Vim's own keys has no route to have:
+ * Lo documents it and never runs it.
+ */
+export function routed(command: Command): boolean {
+  return (
+    command.vim === 'own' ||
+    command.control !== undefined ||
+    command.menu !== undefined ||
+    command.bar !== undefined
+  );
+}
+
+/**
+ * Routes: every command names how the mouse reaches it, so no action is the keyboard's alone.
+ * `without` lists the ids of the commands that have no route yet. The list only shrinks: a command
+ * on it that has gained a route, or is gone, fails too, so it comes off the list in the change
+ * that gives it one, and a new command can never join it.
+ */
+export function checkRoutes(
+  features: readonly Declarations[],
+  without: readonly string[] = [],
+): string[] {
+  const commands = features.flatMap(commandsOf);
+  const byId = new Map(commands.map((command) => [command.id, command]));
+  const waiting = new Set(without);
+  return [
+    ...commands
+      .filter((command) => !routed(command) && !waiting.has(command.id))
+      .map(
+        (command) =>
+          `${command.id} has no control, right-click menu or app menu item: only its key runs it.`,
+      ),
+    ...without.flatMap((id) => {
+      const command = byId.get(id);
+      if (!command)
+        return [`${id} is listed as having no mouse route, but no feature declares it.`];
+      return routed(command)
+        ? [`${id} is listed as having no mouse route, but it has one now.`]
+        : [];
+    }),
+  ];
+}
+
 /** Keys: every command has a default key on each system it's on, unless it's {@link keyless}. */
 export function checkKeys(features: readonly Declarations[]): string[] {
   return features.flatMap(commandsOf).flatMap((command) =>

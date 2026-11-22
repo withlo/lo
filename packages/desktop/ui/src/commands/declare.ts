@@ -120,6 +120,13 @@ export interface Declaration {
   readonly menu?: MenuPlace | readonly MenuPlace[];
   /** It's in this menu of the macOS app menu. */
   readonly bar?: { readonly menu: BarMenu; readonly order: number };
+  /**
+   * The control that runs it, drawn where its target is, in a few words: "the viewed ball in a
+   * file's header". Every action has a key and a visible control, so every command names how the
+   * mouse reaches it: its `control`, a right-click `menu`, or the app menu (`bar`). The route check
+   * (`checkRoutes`) fails on a command with none.
+   */
+  readonly control?: string;
 }
 
 /** A feature's declarations, as `keys.ts` exports them. */
@@ -148,6 +155,12 @@ export interface Handler<T extends Target = Target> {
    * "Submit review · 3 pending". Nothing, or without this, the label alone.
    */
   detail?(target: T): string | undefined;
+  /**
+   * What a right-click menu calls it on `target` now, for a command that does one of two things by
+   * how its target stands: "Unresolve" on a resolved thread. Nothing, or without this, the menu's
+   * own label for it.
+   */
+  named?(target: T): string | undefined;
 }
 
 /** The target a command's handler gets, from the kinds it declares. */

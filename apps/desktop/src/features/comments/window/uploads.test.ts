@@ -26,6 +26,7 @@ import {
   sizeText,
   takeAddresses,
   takeProgress,
+  clearStranded,
   uploadsHold,
   WARNING,
   whyNoAttach,
@@ -159,10 +160,9 @@ function running(box: Attachable): boolean {
   return uploadsHold(box)?.kind === 'running';
 }
 
-/** What `box` says holds its comment, if anything does. */
-function held(box: Attachable): string | undefined {
-  const hold = uploadsHold(box);
-  return hold?.kind === 'stranded' ? hold.text : hold?.kind;
+/** What `box` says of its files, each note's title and text. */
+function notes(box: Attachable): (string | undefined)[][] {
+  return attachingOf(box).state.notes.map((note) => [note.title, note.text]);
 }
 
 describe('the text', () => {
@@ -378,52 +378,61 @@ describe('attaching', () => {
 
 describe('a placeholder whose upload isn’t under way', () => {
   const ONE = placeholderFor('retry-storm.png', '9f86d081884c7d65');
+  const LOST = [['Couldn’t attach retry-storm.png', '']];
 
-  test('holds the comment, saying which file didn’t finish, until the reader takes it out', () => {
+  test('goes from the text by itself, with the file named to attach again', () => {
     // As after Lo restarts with a file on its way in: the draft comes back with its placeholder.
     const box = boxWith(`Repro: ${ONE}`);
-    expect(held(box)).toBe(
-      'retry-storm.png didn’t finish uploading. Attach it again, and take out its placeholder.',
-    );
-    // Partly edited, it still holds it.
-    expect(held(boxWith(`Repro: ${ONE.slice(1, -1)}`))).toBe(
-      'retry-storm.png didn’t finish uploading. Attach it again, and take out its placeholder.',
-    );
-    expect(held(boxWith('Repro: ![retry](lo-upload:9f86d081884c7d65'))).toBe(
-      'Take out what’s left of an upload’s placeholder.',
-    );
+    expect(running(box)).toBe(false);
+    clearStranded(box);
+    expect(box.text()).toBe('Repro: ');
+    expect(notes(box)).toEqual(LOST);
+    // Partly edited, what's left of it goes too.
+    const cut = boxWith(`Repro: ${ONE.slice(1, -1)} then`);
+    clearStranded(cut);
+    expect(cut.text()).toBe('Repro:  then');
+    expect(notes(cut)).toEqual(LOST);
+    // With its name gone, there's no file to name.
+    const bare = boxWith('Repro: ![retry](lo-upload:9f86d081884c7d65');
+    clearStranded(bare);
+    expect(bare.text()).toBe('Repro: ');
+    expect(notes(bare)).toEqual([]);
     const two = boxWith(
       `${placeholderFor('a.png', '0000000000000001')} ${placeholderFor('b.gif', '0000000000000002')}`,
     );
-    expect(held(two)).toBe(
-      'a.png and b.gif didn’t finish uploading. Attach them again, and take out their placeholders.',
-    );
-    // Nothing is taken out by itself.
-    expect(box.text()).toBe(`Repro: ${ONE}`);
+    clearStranded(two);
+    expect(two.text()).toBe(' ');
+    expect(notes(two)).toEqual([
+      ['Couldn’t attach a.png', ''],
+      ['Couldn’t attach b.gif', ''],
+    ]);
   });
 
-  test('is only one Lo wrote: what’s typed or pasted like one goes as it is', () => {
+  test('is only one Lo wrote: what’s typed or pasted like one stays as it is', () => {
     for (const text of [
       'Retries stall while uploading big files… then time out.',
       'See [notes](uploading guide.md).',
       '```suggestion\nlog.info("uploading %d files…", count);\n```',
       '![shot](lo-upload:not-a-token)',
     ]) {
-      expect(held(boxWith(text))).toBeUndefined();
+      const box = boxWith(text);
+      clearStranded(box);
+      expect(box.text()).toBe(text);
+      expect(notes(box)).toEqual([]);
     }
   });
 
-  test('one under way holds it as uploading, and only its own placeholder counts as under way', async () => {
+  test('one under way holds the comment as uploading, and only its own placeholder stays', async () => {
     const box = boxWith(`Old: ${ONE}\n`);
     attachFiles(box, [png()]);
-    expect(held(box)).toBe('running');
+    expect(running(box)).toBe(true);
+    clearStranded(box);
+    expect(box.text()).toMatch(/^Old: !\[Uploading retry-storm\.png…\]\(lo-upload:[0-9a-f]{16}\)$/);
     await settle();
     asked.answers[0]!({ kind: 'uploaded', markdown: `![retry-storm](${ASSET})`, viaGh: false });
     await settle();
-    expect(box.text()).toBe(`Old: ${ONE}\n![retry-storm](${ASSET})`);
-    expect(held(box)).toBe(
-      'retry-storm.png didn’t finish uploading. Attach it again, and take out its placeholder.',
-    );
+    expect(box.text()).toBe(`Old: ![retry-storm](${ASSET})`);
+    expect(running(box)).toBe(false);
   });
 
   test('taken out while it uploaded, its row says so and offers to put it in at the cursor', async () => {
@@ -435,13 +444,13 @@ describe('a placeholder whose upload isn’t under way', () => {
     await settle();
     expect(box.text()).toBe('Repro: ');
     expect(attachingOf(box).state.rows).toMatchObject([{ uploaded: true, unplaced: true }]);
-    expect(held(box)).toBeUndefined();
+    expect(running(box)).toBe(false);
     insertUpload(box, attachingOf(box).state.rows[0]!.key);
     expect(box.text()).toBe(`Repro: ![retry-storm](${ASSET})`);
     expect(attachingOf(box).state.rows).toMatchObject([{ uploaded: true, unplaced: false }]);
   });
 
-  test('partly edited while it uploaded, it holds the comment and says so', async () => {
+  test('partly edited while it uploaded, what’s left of it goes and its row offers to insert it', async () => {
     const box = boxWith();
     attachFiles(box, [png()]);
     await settle();
@@ -449,11 +458,23 @@ describe('a placeholder whose upload isn’t under way', () => {
     box.composer!.replace(box.text().length - 1, box.text().length, '');
     asked.answers[0]!({ kind: 'uploaded', markdown: `![retry-storm](${ASSET})`, viaGh: false });
     await settle();
-    expect(box.text()).toMatch(/^Repro: !\[Uploading retry-storm\.png…\]\(lo-upload:[0-9a-f]{16}$/);
-    expect(attachingOf(box).state.rows).toMatchObject([{ unplaced: true }]);
-    expect(held(box)).toBe(
-      'Lo didn’t put retry-storm.png in, as its placeholder changed. Take it out, and “Insert” puts the file at the cursor.',
-    );
+    expect(box.text()).toBe('Repro: ');
+    expect(attachingOf(box).state.rows).toMatchObject([{ uploaded: true, unplaced: true }]);
+    // The file is uploaded, so nothing says to attach it again.
+    expect(notes(box).map(([title]) => title)).not.toContain('Couldn’t attach retry-storm.png');
+  });
+
+  test('back whole once its file is uploaded, as when its going in is undone, the file goes in', async () => {
+    const box = boxWith();
+    attachFiles(box, [png()]);
+    await settle();
+    const placeholder = box.text().slice('Repro: '.length);
+    asked.answers[0]!({ kind: 'uploaded', markdown: `![retry-storm](${ASSET})`, viaGh: false });
+    await settle();
+    box.composer!.replace(0, box.text().length, `Repro: ${placeholder}`);
+    clearStranded(box);
+    expect(box.text()).toBe(`Repro: ![retry-storm](${ASSET})`);
+    expect(attachingOf(box).state.rows).toMatchObject([{ uploaded: true, unplaced: false }]);
   });
 });
 

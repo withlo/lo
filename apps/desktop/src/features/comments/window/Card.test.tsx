@@ -159,6 +159,63 @@ test('a thread GitHub put on a newer push says so', () => {
   expect(drawn(row(), true).textContent).not.toContain('On a newer push');
 });
 
+/**
+ * A resolved-or-not thread's card while a resolve asked of it stands as `stands`, its control at
+ * work unless `atWork` says not.
+ */
+function resolving(stands: 'sending' | 'notDone', atWork = true): HTMLElement {
+  const element = document.createElement('div');
+  document.body.append(element);
+  const root = createRoot(element);
+  act(() =>
+    root.render(
+      <ThreadCard
+        row={row()}
+        asked={{ thread: 'T1', comment: null, change: 'resolve', stands }}
+        atWork={atWork}
+        open
+        onToggle={() => undefined}
+        author="rozed-bot"
+        body={(each) => <p>{each.body}</p>}
+        login="rozed-bot"
+        actions={{
+          onReply: () => undefined,
+          onResolve: () => undefined,
+          onEdit: () => undefined,
+          onDelete: () => undefined,
+        }}
+        now={NOW}
+      />,
+    ),
+  );
+  onTestFinished(() => {
+    act(() => root.unmount());
+    element.remove();
+  });
+  return element;
+}
+
+test('a resolve asked for shows at once, with the control at work, and goes back if it didn’t go', () => {
+  const sending = resolving('sending');
+  expect(sending.querySelector('[role="group"]')?.getAttribute('aria-label')).toBe(
+    'Resolved thread by rozed-bot',
+  );
+  const busy = sending.querySelector('button[aria-busy="true"]');
+  expect(busy?.textContent).toContain('Resolving…');
+  // GitHub never took it: the thread is as it was, with its control to ask again.
+  const back = resolving('notDone');
+  expect(back.querySelector('[role="group"]')?.getAttribute('aria-label')).toBe(
+    'Unresolved thread by rozed-bot',
+  );
+  expect(back.querySelector('button[aria-busy="true"]')).toBeNull();
+  // GitHub took it, and the threads don't show it yet: still resolved, its control its own again.
+  const taken = resolving('sending', false);
+  expect(taken.querySelector('[role="group"]')?.getAttribute('aria-label')).toBe(
+    'Resolved thread by rozed-bot',
+  );
+  expect(taken.querySelector('button[aria-busy="true"]')).toBeNull();
+});
+
 test('when a comment was written, in words', () => {
   expect(ago(NOW - 20_000, NOW)).toBe('just now');
   expect(ago(NOW - 5 * 60_000, NOW)).toBe('5 min ago');

@@ -13,6 +13,7 @@ export {
   type ContextMenuItem,
   type ContextMenuProps,
 } from './ContextMenu.tsx';
+export { HintButton, type HintButtonProps } from './HintButton.tsx';
 export { Key, keyAria, type KeyAria, type KeyProps } from './Key.tsx';
 export {
   Toast,
@@ -27,6 +28,7 @@ export {
   type ToastTone,
 } from './Toast.tsx';
 export { KeyHelp, type KeyHelpProps } from './KeyHelp.tsx';
+export { MORE_ACTIONS, MoreButton, openMenuUnder, type MoreButtonProps } from './MoreButton.tsx';
 export { Palette, PaletteHint, type PaletteGroup, type PaletteProps } from './Palette.tsx';
 export { Banner, type BannerAction, type BannerProps } from './Banner.tsx';
 export { PRHeader, type HeaderConnection, type PRHeaderProps } from './PRHeader.tsx';
@@ -176,6 +178,8 @@ export {
 export { Label, labelColor, type LabelProps } from './Label.tsx';
 export { CommentIcon, ThreadCount, type ThreadCountProps } from './ThreadCount.tsx';
 export {
+  SentPost,
+  type SentPostProps,
   Thread,
   type ThreadComment,
   type ThreadKeys,

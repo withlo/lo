@@ -5,7 +5,7 @@
 // an edit of your comment on it are; and what a box's frame says of where it is and how sending it
 // stands, and why a change to a thread, or to a comment, wasn't made.
 
-import { CommentableLines, Line, type Lines, type Screen } from '@lo/review';
+import { CommentableLines, Line, lineRefText, type Lines, type Screen } from '@lo/review';
 import type { OnFile, Place, Span } from '@lo/ui/code';
 
 import { clockOf } from '../../../window/time.ts';
@@ -190,55 +190,77 @@ export function boxAt(
   return { at: { file: file.id, side, line: end.number } };
 }
 
-/** A line as a line reference names it: the old side's is "removed", and the new side goes unsaid. */
-function lineWords(line: CommentLinesRow['end']): string {
-  return line.side === 'RIGHT' ? `${line.number}` : `${line.number}, removed`;
-}
-
 /**
- * What a box's comment is on, as its head says, and as a line is named everywhere: "Line 41",
- * "Lines 39–41", "Line 41, removed", "Line 3, removed, to line 5", "File", "Pull request", "Reply",
+ * What a box's comment is on, as its head says: its line reference, or "Pull request", "Reply",
  * "Edit".
  */
 export function whereText(place: DraftPlaceRow): string {
   if (place.kind === 'conversation') return 'Pull request';
   if (place.kind === 'reply') return 'Reply';
   if (place.kind === 'edit') return 'Edit';
-  const { lines } = place;
-  if (!lines) return 'File';
-  const { start, end } = lines;
-  if (!start) return `Line ${lineWords(end)}`;
-  if (start.side === end.side) {
-    return `Lines ${start.number}–${lineWords(end)}`;
-  }
-  return `Line ${lineWords(start)}, to line ${lineWords(end)}`;
+  return lineRefText({ lines: place.lines });
 }
 
 /** What a box's note offers to do about what it says. */
-export type Offer = 'showLatest' | 'loadNewer' | 'onFile' | 'sendAnyway' | 'discard';
+export type Offer = 'showLatest' | 'loadNewer' | 'onFile' | 'sendAgain' | 'checkAgain' | 'discard';
 
-/** The words on an offer's button. */
+/**
+ * The words on an offer's button. Sending again is "Try again" in the box's menu, under a title
+ * that says what wasn't sent; the note has no button for it, since the foot's own send it.
+ */
 export const offerLabels: Readonly<Record<Offer, string>> = {
   showLatest: 'Show latest',
   loadNewer: 'Show latest',
   onFile: 'Comment on file',
-  sendAnyway: 'Send it anyway',
+  sendAgain: 'Try again',
+  checkAgain: 'Check again',
   discard: 'Discard draft',
 };
 
 /** A note in a box's frame, before it's drawn. */
 export interface BoxNote {
   readonly key: string;
-  readonly tone: 'info' | 'warning';
+  /** `danger` once a send failed; `warning` while nobody knows whether it went, or it's refused. */
+  readonly tone: 'info' | 'warning' | 'danger';
   readonly icon?: 'clock' | 'blocked' | undefined;
+  /** What wasn't done, for a send that failed: `text` is then why. */
+  readonly title?: string | undefined;
   readonly text: string;
   readonly offers?: readonly Offer[] | undefined;
+  /** It offers "Attach files…", as the box's foot does: a file's, which didn't attach. */
+  readonly attach?: boolean | undefined;
 }
 
-/** A refusal's note. */
-function note(text: string, offers?: readonly Offer[]): BoxNote {
-  return { key: 'refusal', tone: 'warning', icon: 'blocked', text, offers };
+/** A refusal's note: under a title, it says a send failed, in the tone a `Problem` has. */
+function note(text: string, offers?: readonly Offer[], title?: string): BoxNote {
+  return title === undefined
+    ? { key: 'refusal', tone: 'warning', icon: 'blocked', text, offers }
+    : { key: 'refusal', tone: 'danger', title, text, offers };
 }
+
+/** What a box's note is titled once its text, a comment or an edit, wasn't sent. */
+const COULDNT: Readonly<Record<'comment' | 'edit', string>> = {
+  comment: 'Couldn’t send the comment',
+  edit: 'Couldn’t save the comment',
+};
+
+/** What a box's note is titled while nobody knows whether GitHub took its text. */
+const NOT_CONFIRMED: Readonly<Record<'comment' | 'edit', string>> = {
+  comment: 'Comment not confirmed',
+  edit: 'Edit not confirmed',
+};
+
+/** Why a send failed, or isn't confirmed, when GitHub's answer never came. */
+const NO_ANSWER = 'GitHub didn’t respond.';
+
+/** Why nothing was sent, when Lo couldn't read whether a pending review would take the comment. */
+const NO_PENDING_READ = 'Couldn’t check for a pending review.';
+
+/**
+ * Why a box's buttons don't send while nobody knows whether its text is on GitHub already: sending
+ * it then could post it twice, so "Check again" comes first.
+ */
+export const CHECK_FIRST = 'Check again first';
 
 /** Why a box's text, or a change to a thread, wasn't sent. */
 export type Refusal = SendRefusal | ActRefusal;
@@ -313,28 +335,34 @@ export function actText(refusal: ActRefusal, doing: Doing): string {
 export function refusalNote(refusal: Refusal, doing: 'comment' | 'edit' = 'comment'): BoxNote {
   switch (refusal.kind) {
     case 'notLatest':
-      return note(
-        'Your pending review is on the latest push, and GitHub adds its comments there, not to the revision on screen.',
-        ['showLatest'],
-      );
+      return note('This revision is out of date.', ['showLatest'], COULDNT[doing]);
     case 'headMoved':
-      return note('Someone pushed since, so GitHub would put it on the newer push.', ['loadNewer']);
+      return note('This revision is out of date.', ['loadNewer'], COULDNT[doing]);
     case 'notInDiff':
-      return note('GitHub takes comments only on lines in the pull request’s diff.', ['onFile']);
+      return note('Those lines aren’t in the diff.', ['onFile']);
     case 'paused':
-      return note(actText(refusal, doing));
+      return note(
+        `GitHub’s rate limit resets at ${clockOf(refusal.until)}.`,
+        undefined,
+        COULDNT[doing],
+      );
+    // Nothing was sent, so sending it again is safe.
     case 'pendingUnknown':
-      return note('Lo couldn’t tell whether you have a pending review. Send it again in a moment.');
+      return note(NO_PENDING_READ, ['sendAgain'], COULDNT[doing]);
+    // Sent before, and nobody knows whether it posted: only a look says whether it can go again.
+    case 'unconfirmed':
+      return unconfirmed(doing);
     case 'signIn':
       return note(SIGN_IN);
     case 'run':
       return note(IN_A_LAYER);
     case 'github':
-      return note(refusal.message);
+      return note(refusal.message, undefined, COULDNT[doing]);
     // An edit's: it's kept, and once it's discarded, an edit starts from GitHub's text.
     case 'changed':
+      return note('It was edited elsewhere.', ['discard'], COULDNT.edit);
     case 'gone':
-      return note(actText(refusal, doing), ['discard']);
+      return note('It was deleted elsewhere.', ['discard'], COULDNT.edit);
     case 'theirs':
     case 'notAllowed':
     case 'cantResolve':
@@ -346,43 +374,45 @@ export function refusalNote(refusal: Refusal, doing: 'comment' | 'edit' = 'comme
   }
 }
 
-/** What a box says of how sending its text stands, if anything: an edit's, `edit`. */
+/** What a box says while nobody knows whether GitHub took its text: it offers to look. */
+function unconfirmed(doing: 'comment' | 'edit'): BoxNote {
+  return {
+    key: 'sending',
+    tone: 'warning',
+    title: NOT_CONFIRMED[doing],
+    text: NO_ANSWER,
+    offers: ['checkAgain'],
+  };
+}
+
+/**
+ * What a box says of how sending its text stands, once it's the open box again: an edit's, `edit`.
+ * While the text is on its way, or Lo is looking whether it went, the box is the comment's card,
+ * which says so itself. Known not to have gone, it offers to send it again; not known, only to look
+ * again, since sending it then could post it twice.
+ */
 export function sendingNote(sending: Sending | null, edit = false): BoxNote | undefined {
+  const doing = edit ? 'edit' : 'comment';
   switch (sending) {
     case null:
-    case 'sending':
-      return undefined;
     case 'waiting':
-      return { key: 'sending', tone: 'info', text: 'Waiting for your last comment' };
+    case 'sending':
     case 'checking':
-      return {
-        key: 'sending',
-        tone: 'info',
-        text: edit
-          ? 'GitHub’s answer was lost. Lo is checking whether it saved the edit.'
-          : 'GitHub’s answer was lost. Lo is checking whether it posted.',
-      };
+      return undefined;
     case 'notPosted':
       return {
         key: 'sending',
-        tone: 'warning',
-        text: edit ? 'It wasn’t saved. Save it again.' : 'It didn’t post. Send it again.',
+        tone: 'danger',
+        title: COULDNT[doing],
+        text: NO_ANSWER,
+        offers: ['sendAgain'],
       };
     case 'unknown':
-      return {
-        key: 'sending',
-        tone: 'warning',
-        text: edit ? 'Lo can’t tell whether it saved.' : 'Lo can’t tell whether it posted.',
-        offers: ['sendAnyway'],
-      };
+      return unconfirmed(doing);
     case 'changed':
+      return note('It was edited elsewhere.', ['discard'], COULDNT.edit);
     case 'gone':
-      return {
-        key: 'sending',
-        tone: 'warning',
-        text: actText({ kind: sending }, 'edit'),
-        offers: ['discard'],
-      };
+      return note('It was deleted elsewhere.', ['discard'], COULDNT.edit);
     default:
       sending satisfies never;
       return undefined;
@@ -395,10 +425,18 @@ export function notesOf(state: {
   readonly refusal: Refusal | undefined;
   readonly sending: Sending | null;
 }): BoxNote[] {
-  return [
+  const notes = [
     state.refusal && refusalNote(state.refusal, state.place?.kind === 'edit' ? 'edit' : 'comment'),
     sendingNote(state.sending, state.place?.kind === 'edit'),
   ].filter((each) => each !== undefined);
+  // One note for one thing: a refusal that says what the standing does is said once.
+  return notes.filter((each, at) => notes.findIndex((other) => other.key === each.key) === at);
+}
+
+/** What a sent comment's card says while GitHub hasn't answered for it: an edit's, `edit`. */
+export function sentLabel(sending: Sending | null, edit: boolean): string {
+  if (sending === 'checking') return 'Checking…';
+  return edit ? 'Saving…' : 'Sending…';
 }
 
 /** What a box's notes offer to do now, in their order. */
@@ -545,7 +583,7 @@ export function blockWhere(
     const onLines = place.kind === 'thread' && place.lines !== null;
     return !onLines || names.written === names.now
       ? undefined
-      : { head: `${whereText(place)} · ${names.now}` };
+      : { head: lineRefText({ lines: place.lines, revision: names.now }) };
   }
   return whyWords(why, names);
 }

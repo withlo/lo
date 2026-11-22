@@ -263,7 +263,11 @@ export default {
     openRun: { run: withDiff(fold('open')), enabled: drawnNow },
     closeRun: { run: withDiff(fold('close')), enabled: drawnNow },
     openFile: { run: withDiff(fold('file')), enabled: drawnNow },
-    toggleFile: { run: withDiff(toggle), enabled: drawnNow },
+    toggleFile: {
+      run: withDiff(toggle),
+      enabled: drawnNow,
+      named: (target) => (target.kind === 'thread' && target.collapsed ? 'Expand' : undefined),
+    },
     wholeFile: {
       run: withDiff((drawn, target) => {
         const tab = activeTab();

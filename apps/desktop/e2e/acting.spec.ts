@@ -212,8 +212,16 @@ test('`r` replies, `i` edits the reply, `dd` deletes it, and `x` unresolves and 
     await expect(fifth).toHaveAttribute('data-thread-state', 'resolved');
     await page.keyboard.press('x');
     await expect(fifth).toHaveAttribute('data-thread-state', 'unresolved', { timeout: 20_000 });
+    // The card shows what was asked at once, and opens, its button at rest, once GitHub answers:
+    // `x` again is for after that.
+    const working = fifth.locator('button[aria-busy="true"]');
+    await expect(fifth.getByRole('button', { name: 'Collapse the thread' })).toBeVisible({
+      timeout: 20_000,
+    });
+    await expect(working).toHaveCount(0, { timeout: 20_000 });
     await page.keyboard.press('x');
     await expect(fifth).toHaveAttribute('data-thread-state', 'resolved', { timeout: 20_000 });
+    await expect(working).toHaveCount(0, { timeout: 20_000 });
   });
 });
 

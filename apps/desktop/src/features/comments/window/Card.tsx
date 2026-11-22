@@ -4,27 +4,31 @@
 // and, under it, how a change asked of it stands while GitHub's answer was lost. A comment's text
 // is drawn as GitHub renders it, through `Post`.
 
-import { Button, Callout, Spinner, Thread, type ThreadComment } from '@lo/ui';
+import { Button, Callout, Thread, type ThreadComment } from '@lo/ui';
 import { keyLabels } from '@lo/ui/commands';
-import type { ReactNode } from 'react';
+import type { MouseEvent, ReactNode } from 'react';
 
 import { registry } from '../../../window/commands/registry.ts';
 import { avatarImage } from '../../../window/images.ts';
 import { usePull, useTabState, type PullTab } from '../../tab/window/shared.ts';
-import type { ThreadCommentRow, ThreadRow } from '../contract.ts';
+import type { ActRow, ThreadCommentRow, ThreadRow } from '../contract.ts';
 import {
   acting,
   actNote,
   type ActNote,
+  checkAgain,
   closeAct,
   closedActs,
   edit,
+  noteKey,
   remove,
   reply,
   resolveThread,
   tryAgain,
+  underWay,
+  unshown,
 } from './acts.ts';
-import { replying } from './boxes.ts';
+import { editing, replying } from './boxes.ts';
 import { useExcerpt } from './excerpts.ts';
 import { landed } from './landed.ts';
 import { Post, type PostPull } from './Post.tsx';
@@ -63,7 +67,7 @@ export interface CardProps {
   readonly id: string;
   /** Whether it shows open, or collapsed to one line. */
   readonly open: boolean;
-  /** The keyboard is on it: `]t` landed on it. */
+  /** The keyboard is on it: the code cursor is on its line, and its keys act on it. */
   readonly focused?: boolean;
   /** Opens or collapses it, as its own buttons ask. */
   readonly onToggle: () => void;
@@ -79,8 +83,14 @@ export function Card({ tab, id, open, focused = false, onToggle }: CardProps): R
   const login = shown?.acting?.kind === 'account' ? shown.acting.login : undefined;
   const newer = useTabState(landed, view, (ids) => ids.has(id));
   const replied = useTabState(replying, view, (ids) => ids.has(id));
+  const edited = useTabState(editing, view);
   const asked = useTabState(acting, view, (acts) => acts.get(id));
-  const isClosed = useTabState(closedActs, view, (rows) => asked !== undefined && rows.has(asked));
+  const kept = useTabState(unshown, view, (keys) => keys.has(id));
+  const isClosed = useTabState(
+    closedActs,
+    view,
+    (keys) => asked !== undefined && keys.has(noteKey(asked)),
+  );
   const row = threads?.threads.find((each) => each.id === id);
   // Its first comment's opening, as plain words, which it shows while it's collapsed.
   const opening = useExcerpt(row?.comments[0]?.body, !open);
@@ -94,6 +104,8 @@ export function Card({ tab, id, open, focused = false, onToggle }: CardProps): R
     <>
       <ThreadCard
         row={row}
+        asked={asked}
+        atWork={!kept}
         open={open}
         focused={focused}
         onToggle={onToggle}
@@ -103,6 +115,7 @@ export function Card({ tab, id, open, focused = false, onToggle }: CardProps): R
         landed={newer}
         login={login}
         replying={replied}
+        editing={edited}
         actions={{
           onReply: () => reply(tab, thread),
           onResolve: () => void resolveThread(tab, row),
@@ -111,10 +124,10 @@ export function Card({ tab, id, open, focused = false, onToggle }: CardProps): R
         }}
       />
       {note && asked && (
-        <div className="mt-8 max-w-read-measure">
+        <div data-act-note="" className="mt-8 max-w-read-measure">
           <ActCallout
             note={note}
-            onAgain={() => tryAgain(tab, asked)}
+            onAgain={() => (note.again === 'check' ? checkAgain(tab, asked) : tryAgain(tab, asked))}
             onClose={() => closeAct(view, asked)}
           />
         </div>
@@ -124,9 +137,31 @@ export function Card({ tab, id, open, focused = false, onToggle }: CardProps): R
 }
 
 /**
- * What a card says of a change asked of it while GitHub's answer was lost, with "Try again" and
- * "Close" once Lo found it didn't go, or can't tell.
+ * Gives focus to the card a note is under, at its first control: the note goes as its buttons are
+ * pressed, and focus goes nowhere with it otherwise.
  */
+function focusCard(from: Element): void {
+  const card = from.closest('[data-act-note]')?.previousElementSibling;
+  const control =
+    card?.querySelector<HTMLElement>('button, [tabindex]') ??
+    // No card over it, as in the timeline: whatever holds it that takes focus.
+    from.parentElement?.closest<HTMLElement>('[tabindex]');
+  control?.focus({ preventScroll: true });
+}
+
+/**
+ * What a card says of a change asked of it that didn't go, or may not have: what wasn't done, why,
+ * and "Try again", or "Check again" where nobody knows whether it went, and "Dismiss". Whoever
+ * shows it says it to a screen reader: it's drawn with its words on it.
+ */
+/** Runs a note's button, focus going to its card first: the button goes with the note. */
+function then(act: () => void) {
+  return (event: MouseEvent<HTMLElement>): void => {
+    focusCard(event.currentTarget);
+    act();
+  };
+}
+
 export function ActCallout({
   note,
   onAgain,
@@ -137,20 +172,19 @@ export function ActCallout({
   onClose: () => void;
 }): ReactNode {
   return (
-    <Callout tone={note.checking ? 'info' : 'warning'} role="status">
+    <Callout tone="warning">
       <div className="flex flex-wrap items-center gap-8">
-        {note.checking && <Spinner />}
-        <span className="min-w-0 flex-1">{note.text}</span>
-        {note.again && (
-          <span className="flex flex-none gap-4">
-            <Button size="sm" onClick={onAgain}>
-              Try again
-            </Button>
-            <Button size="sm" variant="ghost" onClick={onClose}>
-              Close
-            </Button>
-          </span>
-        )}
+        <span className="min-w-0 flex-1">
+          <b className="text-ui-strong">{note.title}</b> {note.text}
+        </span>
+        <span className="flex flex-none gap-4">
+          <Button size="sm" onClick={then(onAgain)}>
+            {note.again === 'check' ? 'Check again' : 'Try again'}
+          </Button>
+          <Button size="sm" variant="ghost" onClick={then(onClose)}>
+            Dismiss
+          </Button>
+        </span>
       </div>
     </Callout>
   );
@@ -168,6 +202,8 @@ export interface CardActions {
 /** A thread's card, from what main sent of it. */
 export function ThreadCard({
   row,
+  asked,
+  atWork = true,
   open,
   focused = false,
   onToggle,
@@ -177,12 +213,23 @@ export function ThreadCard({
   landed: newer = false,
   login,
   replying: replied = false,
+  editing: edited,
   actions,
   now = Date.now(),
 }: {
   row: ThreadRow;
+  /**
+   * The change asked of it that GitHub hasn't answered for: the card shows it done already, with
+   * its control at work, and goes back to what `row` says if it doesn't go.
+   */
+  asked?: ActRow | undefined;
+  /**
+   * Whether that change's control is still at work. It isn't once GitHub took the change and the
+   * threads didn't show it in time: the card still shows it done, until they're read again.
+   */
+  atWork?: boolean;
   open: boolean;
-  /** The keyboard is on it: `]t` landed on it. */
+  /** The keyboard is on it: the code cursor is on its line, and its keys act on it. */
   focused?: boolean;
   onToggle: () => void;
   /** The pull request's author's login, if GitHub still has the account. */
@@ -200,11 +247,23 @@ export function ThreadCard({
   login?: string | undefined;
   /** A reply box is open in it, right after it, in place of its own row that offers one. */
   replying?: boolean;
+  /**
+   * Its comments an edit box is open on, right after it, by their ids: the box is the comment
+   * meanwhile, so the card draws without it, and offers no reply.
+   */
+  editing?: ReadonlySet<string> | undefined;
   /** What its buttons do: it has none without. */
   actions?: CardActions | undefined;
   now?: number;
 }): ReactNode {
-  const comments = row.comments.map((comment): ThreadComment => ({
+  const inBox = edited !== undefined && row.comments.some((comment) => edited.has(comment.id));
+  // What was asked, while the card shows it done.
+  const done = underWay(asked) ? asked : undefined;
+  const toggled = done !== undefined && done.change !== 'delete';
+  // A comment GitHub deleted that the threads still hold isn't drawn.
+  const gone = done?.change === 'delete' && !atWork ? done.comment : null;
+  const kept = row.comments.filter((comment) => comment.id !== gone);
+  const comments = kept.map((comment): ThreadComment => ({
     id: comment.id,
     // GitHub shows a deleted account as "ghost".
     author: comment.author ?? 'ghost',
@@ -218,10 +277,16 @@ export function ThreadCard({
     mine: actions !== undefined && login !== undefined && same(comment.author, login),
     body: body(comment),
   }));
+  const resolving = toggled && atWork;
+  const resolved = toggled ? done.change === 'resolve' : row.resolved;
+  const deleting = done?.change === 'delete' && atWork ? done.comment : null;
   return (
     <Thread
       comments={comments}
-      resolved={row.resolved}
+      resolved={resolved}
+      resolving={resolving}
+      deleting={deleting ?? undefined}
+      editing={inBox ? edited : undefined}
       open={open}
       focused={focused}
       outdated={row.outdated}
@@ -230,9 +295,12 @@ export function ThreadCard({
       canResolve={
         actions !== undefined &&
         login !== undefined &&
-        (row.resolved ? row.viewerCanUnresolve : row.viewerCanResolve)
+        // It's the control that was pressed, whatever the thread takes next.
+        (toggled || (row.resolved ? row.viewerCanUnresolve : row.viewerCanResolve))
       }
-      canReply={actions !== undefined && login !== undefined && row.viewerCanReply && !replied}
+      canReply={
+        actions !== undefined && login !== undefined && row.viewerCanReply && !replied && !inBox
+      }
       keys={{
         toggle: keysOf('diff.toggleFile'),
         reply: keysOf('comments.reply'),
@@ -240,6 +308,8 @@ export function ThreadCard({
         edit: keysOf('comments.edit'),
         delete: keysOf('comments.remove'),
       }}
+      // Every card is drawn in a code view, whose right-click on it opens the thread's menu.
+      menu
       onToggle={onToggle}
       onReply={actions?.onReply}
       onResolve={actions?.onResolve}

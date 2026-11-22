@@ -48,10 +48,11 @@ const button = cva(
 );
 
 /** The two things a button that does work says, one over the other, so its width never changes. */
-const face = cva('col-start-1 row-start-1 inline-flex items-center justify-center', {
+const face = cva('col-start-1 row-start-1 inline-flex items-center', {
   variants: {
     size: { md: 'gap-6', sm: 'gap-4' },
     shown: { true: '', false: 'invisible' },
+    align: { center: 'justify-center', end: 'justify-end' },
   },
 });
 
@@ -76,6 +77,12 @@ export interface ButtonProps
    * the ring's, from before its press, so nothing it comes to say changes its width.
    */
   widest?: string | undefined;
+  /**
+   * Where what it says sits in the room it holds for what it says while busy: in the middle, or
+   * at the `end`, for a button at the end of a row, whose label then ends where the row does
+   * whichever it says.
+   */
+  align?: 'center' | 'end' | undefined;
   /**
    * Its tooltip: what it is or does, for a button whose face doesn't say, such as an icon's. On a
    * `disabled` button it's the reason it can't be pressed now, in a few words with no full stop:
@@ -110,6 +117,7 @@ export function Button({
   busy,
   working,
   widest,
+  align = 'center',
   hint,
   hintKeys,
   hintShortcut,
@@ -127,6 +135,8 @@ export function Button({
     <button
       type={type}
       className={button({ variant, size, icon })}
+      // A key cap on its fill is drawn in the fill's text colour (`key-cap`).
+      data-fill={variant === 'primary' ? '' : undefined}
       disabled={refused ? undefined : disabled}
       onClick={(event: MouseEvent<HTMLButtonElement>) => {
         if (busy === true || refused) event.preventDefault();
@@ -149,13 +159,13 @@ export function Button({
       {works ? (
         <span className="inline-grid">
           <span
-            className={face({ size: size ?? 'md', shown: busy !== true })}
+            className={face({ size: size ?? 'md', shown: busy !== true, align })}
             aria-hidden={busy === true ? true : undefined}
           >
             {children}
           </span>
           <span
-            className={face({ size: size ?? 'md', shown: busy === true })}
+            className={face({ size: size ?? 'md', shown: busy === true, align })}
             aria-hidden={busy === true ? undefined : true}
           >
             {busy === true ? (
@@ -168,7 +178,7 @@ export function Button({
             {working ?? children}
           </span>
           {widest !== undefined && (
-            <span className={face({ size: size ?? 'md', shown: false })} aria-hidden="true">
+            <span className={face({ size: size ?? 'md', shown: false, align })} aria-hidden="true">
               <span className={size === 'sm' ? 'size-8 flex-none' : 'size-12 flex-none'} />
               {widest}
             </span>

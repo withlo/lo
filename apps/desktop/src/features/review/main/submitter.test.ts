@@ -266,7 +266,12 @@ describe('the dialog', () => {
       head: HEAD,
       pending: { kind: 'pending', id: 'PRR_1', commit: HEAD, comments: 2 },
       comments: [
-        { file: 'rate-limit.ts', line: 'old 30', reply: true, opening: 'Thanks, linked is fine.' },
+        {
+          file: 'rate-limit.ts',
+          line: 'line 30, removed',
+          reply: true,
+          opening: 'Thanks, linked is fine.',
+        },
         { file: 'limits.yaml', line: null, reply: false, opening: 'limit: 2000' },
       ],
       summary: null,

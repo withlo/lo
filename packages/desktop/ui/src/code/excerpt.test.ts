@@ -80,6 +80,9 @@ const motions: VimKey[] = [{ kind: 'motion', command: 'diff.nextChange', keys: '
 let view: ExcerptView | undefined;
 let parent: HTMLElement | undefined;
 
+/** The comment boxes drawn now. */
+const boxes = () => parent!.querySelectorAll('.lo-diffcomposer');
+
 afterEach(() => {
   view?.destroy();
   parent?.remove();
@@ -631,7 +634,11 @@ describe('threads and comment boxes', () => {
     });
     const click = new MouseEvent('contextmenu', { bubbles: true, cancelable: true });
     parent!.querySelector('[data-thread-id="here"]')!.dispatchEvent(click);
-    expect(on.menu).toHaveBeenLastCalledWith({ kind: 'thread', thread: 'here' }, 0, 0);
+    expect(on.menu).toHaveBeenLastCalledWith(
+      { kind: 'thread', thread: 'here', collapsed: false },
+      0,
+      0,
+    );
     expect(shown.openThread('here', 'toggle')).toBe(true);
     expect(shown.openThread('out', true)).toBe(false);
     shown.setThreads([], render);
@@ -689,19 +696,50 @@ describe('threads and comment boxes', () => {
     below.mockRestore();
   });
 
-  test('a box sent on screen keeps its room until the reader acts, and one opened there takes it', async () => {
+  test('a box sent on screen stays drawn, its comment on it, until the reader acts, and one opened there takes its place', async () => {
     const shown = open();
     await frame();
     const on = composerEvents();
-    const room = () => parent!.querySelector('.lo-diffcomposer-room');
-    shown.compose(at(6), 'Sent', on).close();
-    expect(parent!.querySelector('.lo-diffcomposer')).toBeNull();
-    expect(room()).not.toBeNull();
+    const sent = shown.compose(at(6), 'Sent', on);
+    sent.hold(true);
+    sent.close();
+    expect(boxes()).toHaveLength(1);
+    expect(boxes()[0]!.classList).toContain('is-sent');
     expect(on.close).not.toHaveBeenCalled();
-    shown.compose(at(6), 'Next', on).close();
-    expect(parent!.querySelectorAll('.lo-diffcomposer-room')).toHaveLength(1);
+    const next = shown.compose(at(6), 'Next', on);
+    expect(boxes()).toHaveLength(1);
+    expect(boxes()[0]!.classList).not.toContain('is-sent');
+    next.hold(true);
+    next.close();
+    expect(boxes()).toHaveLength(1);
     editor().contentDOM.dispatchEvent(new Event('pointerdown', { bubbles: true }));
-    expect(room()).toBeNull();
+    expect(boxes()).toHaveLength(0);
+  });
+
+  test('a thread that comes under a sent box’s line takes the box’s place in one frame', async () => {
+    const sizes = observers();
+    const shown = open();
+    await frame();
+    const { render } = plain();
+    const sent = shown.compose(at(6), 'Sent', composerEvents());
+    sent.hold(true);
+    sent.close();
+    shown.setThreads([thread('here', 6)], render);
+    expect(drawnThreads()).toEqual(['here']);
+    const card = parent!.querySelector<HTMLElement>('[data-thread-id="here"]')!;
+    // The thread is drawn on screen.
+    const drawnAt = new DOMRect(0, 100, 400, 60);
+    vi.spyOn(Element.prototype, 'getClientRects').mockImplementation(function (this: Element) {
+      const rects = this.closest('[data-thread-id]') ? [drawnAt] : [];
+      return Object.assign(rects, { item: (index: number) => rects[index] ?? null });
+    });
+    sizes.resize(card.querySelector('.lo-diffthread__host')!, 60);
+    expect(card.style.height).toBe('0px');
+    expect(parent!.querySelector('.lo-diffcomposer')).not.toBeNull();
+    await frame();
+    expect(card.style.height).toBe('60px');
+    expect(parent!.querySelector('.lo-diffcomposer')).toBeNull();
+    vi.restoreAllMocks();
   });
 
   test('a key the registry takes, in the excerpt or out of it, lets what waits come, as the listener tells of it', async () => {
@@ -766,7 +804,7 @@ describe('threads and comment boxes', () => {
     expect(drawnThreads()).toEqual([]);
   });
 
-  test('a reply that comes once its box closed on screen takes the room the box left', async () => {
+  test('a reply that comes once its box closed on screen takes the box’s place as its thread grows', async () => {
     const sizes = observers();
     const shown = open();
     const { render } = plain();
@@ -791,22 +829,18 @@ describe('threads and comment boxes', () => {
     const card = parent!.querySelector<HTMLElement>('[data-thread-id="here"]')!;
     const content = card.querySelector('.lo-diffthread__host')!;
     sizes.resize(content, 40);
-    // Closed as GitHub answered, before the reply is in the thread.
-    shown.compose({ thread: 'here' }, 'A reply', composerEvents()).close();
-    const room = parent!.querySelector<HTMLElement>('.lo-diffcomposer-room')!;
-    expect(room.style.height).toBe('80px');
+    // Closed as the reply came in the thread's rows: the box stays, the reply on it.
+    const reply = shown.compose({ thread: 'here' }, 'A reply', composerEvents());
+    reply.hold(true);
     shown.setThreads([{ ...thread('here', 6), version: 2 }], render);
+    reply.close();
+    expect(parent!.querySelector('.lo-diffcomposer')).not.toBeNull();
     sizes.resize(content, 90);
+    expect(card.style.height).toBe('40px');
     await frame();
     expect(card.style.height).toBe('90px');
     expect(card.classList).not.toContain('is-held');
-    expect(room.style.height).toBe('30px');
-    // More than the room has left waits for the reader.
-    shown.setThreads([{ ...thread('here', 6), version: 3 }], render);
-    sizes.resize(content, 150);
-    await frame();
-    expect(card.style.height).toBe('90px');
-    expect(card.classList).toContain('is-held');
+    expect(parent!.querySelector('.lo-diffcomposer')).toBeNull();
     vi.restoreAllMocks();
   });
 
@@ -828,7 +862,7 @@ describe('threads and comment boxes', () => {
     const shown = open();
     const on = composerEvents();
     shown.compose(at(6), 'Moved', on).dismiss();
-    expect(parent!.querySelector('.lo-diffcomposer, .lo-diffcomposer-room')).toBeNull();
+    expect(parent!.querySelector('.lo-diffcomposer')).toBeNull();
     expect(on.close).not.toHaveBeenCalled();
     expect(document.activeElement).toBe(editor().contentDOM);
     expect(shown.keyState().target).toMatchObject({ kind: 'line', at: at(6) });

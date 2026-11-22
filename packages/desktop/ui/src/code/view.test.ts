@@ -5,7 +5,8 @@ import { diffPullRequest, diffText } from '@lo/diff';
 import { getCM, Vim } from '@replit/codemirror-vim';
 import { afterEach, beforeAll, describe, expect, type Mock, test, vi } from 'vitest';
 
-import { findScope, isKeySource, KEY_EVENT } from '../commands/index.ts';
+import { testCommands, type Ran } from '../../test/commands.ts';
+import { findScope, holdRegistry, isKeySource, KEY_EVENT, Registry } from '../commands/index.ts';
 import type {
   BoxFrame,
   ComposeOptions,
@@ -30,6 +31,7 @@ import { createComposer } from './composer.ts';
 import { editsText, setVim } from './keys.ts';
 import { focusedMode } from './mode.ts';
 import { swapping } from './lines.ts';
+import { TIP_DELAY } from './tip.ts';
 import { createDiffView } from './view.ts';
 
 const noRects = (): DOMRectList => Object.assign([], { item: () => null });
@@ -528,7 +530,7 @@ describe('folds', () => {
     shown.fold(onLine('a', 'new', 1), 'file');
     expect(collapsed()).toBe(0);
     shown.fold(onHeader('a', 'new'), 'toggle');
-    expect(notes()).toEqual(['+3 −2, closed: za opens it']);
+    expect(notes()).toEqual(['Expand file']);
     shown.fold(onLine('a', 'new', 3), 'toggle');
     expect(notes()).toEqual([]);
   });
@@ -539,7 +541,7 @@ describe('folds', () => {
     const lines = { old: numbered(4, 'd'), new: [...numbered(4, 'd'), 'd 5'] };
     // Drawn, at the end of the documents.
     shown.reveal({ kind: 'file', file: 'd' });
-    expect(notes()).toEqual(['18000 changed lines: za loads them']);
+    expect(notes()).toEqual(['Show 18,000 lines']);
     shown.fold(onHeader('d', 'new'), 'toggle');
     expect(on.load).toHaveBeenCalledWith('d');
     expect(notes()).toEqual(['Loading the file…']);
@@ -659,7 +661,11 @@ describe('targets', () => {
     shown.setThreads([thread('right', at('a', 'new', 10))], plain().render);
     const card = parent!.querySelector('[data-thread-id="right"]')!;
     card.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }));
-    expect(on.menu).toHaveBeenCalledWith({ kind: 'thread', thread: 'right' }, 0, 0);
+    expect(on.menu).toHaveBeenCalledWith(
+      { kind: 'thread', thread: 'right', collapsed: false },
+      0,
+      0,
+    );
   });
 });
 
@@ -866,6 +872,7 @@ describe('comment boxes', () => {
     expect(frame).toHaveBeenCalledWith(expect.anything(), box);
     const drawn = parent!.querySelector('.lo-diffcomposer')!;
     expect([...drawn.children].map((part) => part.className)).toEqual([
+      'lo-diffcomposer__sent',
       'lo-diffcomposer__head',
       'lo-diffcomposer__note',
       'lo-diffcomposer__body',
@@ -1533,7 +1540,8 @@ describe('threads', () => {
     expect(document.activeElement).toBe(vimIn('After').content);
   });
 
-  test('a box closed on screen as its answer came keeps its room, and what it sent waits there, until input', async () => {
+  test('a box sent and closed on screen stays drawn, its comment on it, until the comment’s thread takes its place in one frame', async () => {
+    const sizes = observers();
     const shown = open();
     const { render } = plain();
     const box = shown.compose(at('a', 'new', 4), 'Sent', composerEvents());
@@ -1549,16 +1557,82 @@ describe('threads', () => {
       if (this.classList.contains('lo-diffview')) return new DOMRect(0, 0, 800, 600);
       return boxOrThread(this) ? new DOMRect(0, 100, 400, 80) : new DOMRect();
     });
+    box.hold(true);
+    const drawn = parent!.querySelector<HTMLElement>('.lo-diffcomposer')!;
+    // Held, it's as tall as it was written in.
+    expect(drawn.style.minHeight).toBe('80px');
     box.close();
-    expect(parent!.querySelector('.lo-diffcomposer')).toBeNull();
-    expect(parent!.querySelector<HTMLElement>('.lo-diffcomposer-room')?.style.height).toBe('80px');
+    expect(parent!.querySelector('.lo-diffcomposer')).toBe(drawn);
+    expect(drawn.classList).toContain('is-sent');
+    // Its thread comes under its line at once, taking no room until it's measured and a frame on.
     shown.setThreads([thread('sent', at('a', 'new', 4))], render);
-    expect(drawnThreads()).toEqual([]);
-    // The reader's next key: the room goes, and what was sent comes.
+    expect(drawnThreads()).toEqual(['sent']);
+    const card = parent!.querySelector<HTMLElement>('[data-thread-id="sent"]')!;
+    sizes.resize(card.querySelector('.lo-diffthread__host')!, 60);
+    expect(card.style.height).toBe('0px');
+    expect(parent!.querySelector('.lo-diffcomposer')).toBe(drawn);
+    await nextFrame();
+    expect(card.style.height).toBe('60px');
+    expect(card.classList).not.toContain('is-held');
+    expect(parent!.querySelector('.lo-diffcomposer')).toBeNull();
+  });
+
+  test('a box sent and closed on screen whose thread hasn’t come goes at the reader’s next input', async () => {
+    const shown = open();
+    const box = shown.compose(at('a', 'new', 4), 'Sent', composerEvents());
+    shown.focus();
+    onScreen(['line 4']);
+    vi.spyOn(Element.prototype, 'getClientRects').mockImplementation(function (this: Element) {
+      return boxOrThread(this) ? oneRect(new DOMRect(0, 100, 400, 80)) : noRects();
+    });
+    vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (
+      this: Element,
+    ) {
+      if (this.classList.contains('lo-diffview')) return new DOMRect(0, 0, 800, 600);
+      return boxOrThread(this) ? new DOMRect(0, 100, 400, 80) : new DOMRect();
+    });
+    box.hold(true);
+    box.close();
+    expect(parent!.querySelector('.lo-diffcomposer')).not.toBeNull();
     press(scroller(), 'j');
     await new Promise((resolve) => setTimeout(resolve));
-    expect(parent!.querySelector('.lo-diffcomposer-room')).toBeNull();
-    expect(drawnThreads()).toEqual(['sent']);
+    expect(parent!.querySelector('.lo-diffcomposer')).toBeNull();
+  });
+
+  test('a box closed once what it sent is drawn goes by itself, two frames on', async () => {
+    const shown = open();
+    const box = shown.compose(at('a', 'new', 4), 'Sent', composerEvents());
+    shown.focus();
+    onScreen(['line 4']);
+    vi.spyOn(Element.prototype, 'getClientRects').mockImplementation(function (this: Element) {
+      return boxOrThread(this) ? oneRect(new DOMRect(0, 100, 400, 80)) : noRects();
+    });
+    vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (
+      this: Element,
+    ) {
+      if (this.classList.contains('lo-diffview')) return new DOMRect(0, 0, 800, 600);
+      return boxOrThread(this) ? new DOMRect(0, 100, 400, 80) : new DOMRect();
+    });
+    box.hold(true);
+    box.close(true);
+    // A card that's still to be measured has a frame to take the box's place in.
+    expect(parent!.querySelector('.lo-diffcomposer')).not.toBeNull();
+    await nextFrame();
+    await nextFrame();
+    expect(parent!.querySelector('.lo-diffcomposer')).toBeNull();
+  });
+
+  test('`Esc` in a box held, as while it’s sent, leaves the box and gives its line focus', () => {
+    const shown = open();
+    const on = composerEvents();
+    const box = shown.compose(at('a', 'new', 4), 'Sent', on);
+    box.focus();
+    box.hold(true);
+    const drawn = parent!.querySelector<HTMLElement>('.lo-diffcomposer')!;
+    press(drawn.querySelector<HTMLElement>('.lo-diffcomposer__sent')!, 'Escape');
+    expect(parent!.querySelector('.lo-diffcomposer')).toBe(drawn);
+    expect(drawn.contains(document.activeElement)).toBe(false);
+    expect(on.close).not.toHaveBeenCalled();
   });
 
   test('a box held, as while it’s sent, takes no change to its text until it’s let go', () => {
@@ -1574,6 +1648,26 @@ describe('threads', () => {
     box.hold(false);
     comment.keys('0', 'x');
     expect(box.text).toBe('ent as it is');
+  });
+
+  test('held, the box shows only its sent part, with focus, and is the open box again once let go', () => {
+    const shown = open();
+    const box = shown.compose(at('a', 'new', 4), 'Sent as it is', composerEvents());
+    box.focus();
+    const drawn = parent!.querySelector<HTMLElement>('.lo-diffcomposer')!;
+    const sent = drawn.querySelector<HTMLElement>('.lo-diffcomposer__sent')!;
+    expect(sent.hidden).toBe(true);
+    box.hold(true);
+    expect(sent.hidden).toBe(false);
+    expect(drawn.classList.contains('is-sent')).toBe(true);
+    expect(document.activeElement).toBe(sent);
+    // A send that failed: the editor is back, with its text and focus.
+    box.hold(false);
+    expect(sent.hidden).toBe(true);
+    expect(drawn.classList.contains('is-sent')).toBe(false);
+    expect(drawn.contains(document.activeElement)).toBe(true);
+    expect(document.activeElement).not.toBe(sent);
+    expect(box.text).toBe('Sent as it is');
   });
 
   test(']t lands on each thread drawn, of a line or a file, and keys act on the one it landed on', () => {
@@ -1619,6 +1713,31 @@ describe('threads', () => {
     expect(shown.keyState().target).toMatchObject({ kind: 'line', thread: 'two' });
     // Its card says the keyboard is on it.
     expect(landed).toEqual(['one', 'two', 'on b', 'also on b', 'two']);
+  });
+
+  test('the only thread under the cursor’s line shows the keyboard is on it, while the code has focus', async () => {
+    const shown = open();
+    const keyed: [string, boolean][] = [];
+    const render: RenderThread = () => ({
+      update(next) {
+        keyed.push([next.id, next.focused === true]);
+      },
+      destroy() {},
+    });
+    shown.setThreads([thread('one', at('a', 'new', 4))], render);
+    shown.focus();
+    shown.reveal(onLine('a', 'new', 4));
+    expect(keyed).toEqual([['one', true]]);
+    // On another line, or with focus elsewhere, no key acts on it.
+    shown.reveal(onLine('a', 'new', 5));
+    expect(keyed.at(-1)).toEqual(['one', false]);
+    shown.reveal(onLine('a', 'new', 4));
+    expect(keyed.at(-1)).toEqual(['one', true]);
+    const other = document.body.appendChild(document.createElement('button'));
+    other.focus();
+    await Promise.resolve();
+    expect(keyed.at(-1)).toEqual(['one', false]);
+    other.remove();
   });
 
   test('a thread ]t landed on that’s no longer drawn there is no key’s to act on', () => {
@@ -1716,13 +1835,13 @@ describe('threads', () => {
     },
   );
 
-  test('a reply that comes once its box closed on screen takes the room the box left', async () => {
+  test('a reply that comes once its box closed on screen takes the box’s place as its thread grows', async () => {
     const sizes = observers();
     const shown = open();
     const { render } = plain();
     shown.setThreads([thread('one', at('a', 'new', 4))], render);
     onScreen(['line 4'], ['one']);
-    // The box, the room it leaves and the thread are on screen, each 80 px tall as first drawn.
+    // The box and the thread are on screen, each 80 px tall as first drawn.
     vi.spyOn(Element.prototype, 'getClientRects').mockImplementation(function (this: Element) {
       return boxOrThread(this) ? oneRect(new DOMRect(0, 100, 400, 80)) : noRects();
     });
@@ -1737,22 +1856,20 @@ describe('threads', () => {
     sizes.resize(content, 40);
     const box = shown.compose({ thread: 'one' }, 'A reply', composerEvents());
     shown.focus();
-    // Closed as GitHub answered, before the reply is in the thread.
-    box.close();
-    const room = parent!.querySelector<HTMLElement>('.lo-diffcomposer-room')!;
-    expect(room.style.height).toBe('80px');
+    box.hold(true);
+    // Closed as the reply came in the thread's rows: the box stays, the reply on it.
     shown.setThreads([thread('one', at('a', 'new', 4), true, 2)], render);
+    box.close();
+    const drawn = parent!.querySelector<HTMLElement>('.lo-diffcomposer')!;
+    expect(drawn.classList).toContain('is-sent');
+    // The thread grows a frame after it's measured, and the box goes in the same step.
     sizes.resize(content, 90);
+    expect(card.style.height).toBe('40px');
+    expect(parent!.querySelector('.lo-diffcomposer')).toBe(drawn);
     await nextFrame();
     expect(card.style.height).toBe('90px');
     expect(card.classList).not.toContain('is-held');
-    expect(room.style.height).toBe('30px');
-    // More than the room has left waits for the reader's next input.
-    shown.setThreads([thread('one', at('a', 'new', 4), true, 3)], render);
-    sizes.resize(content, 150);
-    await nextFrame();
-    expect(card.style.height).toBe('90px');
-    expect(card.classList).toContain('is-held');
+    expect(parent!.querySelector('.lo-diffcomposer')).toBeNull();
   });
 });
 
@@ -1811,7 +1928,7 @@ function onScreen(lines: string[], threads: string[] = [], top = 100) {
 
 /** Whether `element` is in a comment box, the room one left, or a thread. */
 function boxOrThread(element: Element): boolean {
-  return element.closest('.lo-diffcomposer, .lo-diffcomposer-room, [data-thread-id]') !== null;
+  return element.closest('.lo-diffcomposer, [data-thread-id]') !== null;
 }
 
 /** The thread `element` is in, if it's in one. */
@@ -1993,9 +2110,6 @@ describe('headers and notes', () => {
     );
     expect(resolved?.getAttribute('aria-label')).toBe('1 thread, resolved');
     expect(resolved?.classList.contains('is-open')).toBe(false);
-    expect(header.querySelector('.lo-diffhead__ball.is-viewed')?.getAttribute('title')).toBe(
-      'Viewed',
-    );
   });
 
   test('a header draws its viewed mark as a ball', () => {
@@ -2007,7 +2121,63 @@ describe('headers and notes', () => {
     expect(headerOf('h:1').classList.contains('is-viewed')).toBe(false);
     shown.setHeader('b', { additions: 1, deletions: 0, viewed: 'stale' });
     expect(ballOf('h:1')?.className).toBe('lo-diffhead__ball is-stale');
-    expect(ballOf('h:1')?.getAttribute('aria-label')).toBe('Changed since you viewed it');
+  });
+
+  test('the viewed ball is a checkbox named "Viewed", and a file changed since says so', () => {
+    const shown = open();
+    shown.reveal({ kind: 'file', file: 'b' });
+    shown.setHeader('b', { additions: 1, deletions: 0, viewed: 'unviewed' });
+    expect(ballOf('h:1')?.getAttribute('role')).toBe('checkbox');
+    expect(ballOf('h:1')?.getAttribute('aria-label')).toBe('Viewed');
+    expect(ballOf('h:1')?.getAttribute('aria-checked')).toBe('false');
+    expect(headerOf('h:1').querySelector('.lo-diffhead__changed')).toBeNull();
+    shown.setHeader('b', { additions: 1, deletions: 0, viewed: 'viewed' });
+    expect(ballOf('h:1')?.getAttribute('aria-checked')).toBe('true');
+    // Changed since it was viewed, it isn't viewed: unchecked, with words beside it that say why.
+    shown.setHeader('b', { additions: 1, deletions: 0, viewed: 'stale' });
+    expect(ballOf('h:1')?.getAttribute('aria-checked')).toBe('false');
+    expect(ballOf('h:1')?.hasAttribute('aria-description')).toBe(false);
+    expect(headerOf('h:1').querySelector('.lo-diffhead__changed')?.textContent).toBe(
+      'Changed since viewed',
+    );
+  });
+
+  test('a click on the ball runs "Mark viewed" on its file, and its tip is the command’s', () => {
+    const ran: Ran[] = [];
+    let offline = false;
+    const commands = testCommands(ran).map((command) =>
+      command.id === 'diff.markViewed' && command.handler
+        ? { ...command, handler: { ...command.handler, enabled: () => !offline || 'Offline' } }
+        : command,
+    );
+    const release = holdRegistry(new Registry({ system: 'mac', commands }));
+    vi.useFakeTimers();
+    try {
+      const shown = open();
+      shown.reveal({ kind: 'file', file: 'b' });
+      shown.setHeader('b', { additions: 1, deletions: 0, viewed: 'unviewed' });
+      const tipOn = (): string | undefined => {
+        ballOf('h:1')!.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+        vi.advanceTimersByTime(TIP_DELAY);
+        const words = document.querySelector('.lo-tip')?.textContent;
+        ballOf('h:1')!.dispatchEvent(new MouseEvent('mouseout', { bubbles: true }));
+        return words ?? undefined;
+      };
+      expect(tipOn()).toBe('Mark viewede');
+      expect(document.querySelector('.lo-tip')).toBeNull();
+      ballOf('h:1')!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      expect(ran).toEqual([['diff.markViewed', expect.objectContaining({ kind: 'file' })]]);
+      // Viewed, a click unmarks it, and the tip says so.
+      shown.setHeader('b', { additions: 1, deletions: 0, viewed: 'viewed' });
+      expect(tipOn()).toBe('Unmark viewede');
+      // Where the command can't run, the ball is dimmed and its tip is the reason.
+      offline = true;
+      expect(tipOn()).toBe('Offline');
+      expect(ballOf('h:1')?.getAttribute('aria-disabled')).toBe('true');
+    } finally {
+      vi.useRealTimers();
+      release();
+    }
   });
 
   test('a note on the comparison sits above the sides', () => {
@@ -3308,10 +3478,45 @@ describe('its place on the page', () => {
     page.frame();
     watch.resize(page.dom(), 600, 800);
     expect(page.room()).toBe(0);
-    // From there, a banner coming leaves the diff where it was seen, by the scroll.
+    // From there, once the box has been still, a banner coming leaves the diff where it was seen,
+    // by the scroll.
+    page.frame();
+    page.frame();
     page.box.top = 30;
     watch.resize(page.dom(), 570, 800);
     expect(page.dom().scrollTop).toBe(30);
+  });
+
+  test('first seen under a banner still opening, follows its box until it’s still, with no scroll', () => {
+    const watch = observers();
+    const page = boxed(26);
+    open();
+    // The view's first frame is one of the banner's move, which goes on for two more.
+    page.frame();
+    for (const top of [28, 30]) {
+      page.box.top = top;
+      page.frame();
+      watch.resize(page.dom(), 600 - top, 800);
+      expect(page.dom().scrollTop).toBe(0);
+      expect(page.room()).toBe(0);
+    }
+    // Still for two frames, its place is kept from there.
+    page.frame();
+    page.frame();
+    page.box.top = 60;
+    watch.resize(page.dom(), 540, 800);
+    expect(page.dom().scrollTop).toBe(30);
+  });
+
+  test('the reader’s input ends that: what they act on stays where it is as the box moves on', () => {
+    const watch = observers();
+    const page = boxed(26);
+    open();
+    page.frame();
+    page.dom().dispatchEvent(new Event('wheel'));
+    page.box.top = 30;
+    watch.resize(page.dom(), 570, 800);
+    expect(page.dom().scrollTop).toBe(4);
   });
 
   test('drawn hidden, starts where it’s first shown: a banner that goes meanwhile leaves no room above the first file', () => {
@@ -3331,6 +3536,8 @@ describe('its place on the page', () => {
     page.frame();
     watch.resize(page.dom(), 600, 800);
     expect(page.room()).toBe(0);
+    page.frame();
+    page.frame();
     page.box.top = 30;
     watch.resize(page.dom(), 570, 800);
     expect(page.dom().scrollTop).toBe(30);

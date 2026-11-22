@@ -12,7 +12,7 @@ import { KEY_EVENT } from '@lo/ui/commands';
 import { useEffect, useLayoutEffect, useMemo, useRef, type ReactNode, type RefObject } from 'react';
 
 import { useTabState, type PullTab } from '../../tab/window/shared.ts';
-import { acting, closeAct, closedActs, noteOf } from './acts.ts';
+import { acting, checkAgain, closeAct, closedActs, noteKey, noteOf } from './acts.ts';
 import {
   type Box,
   bringToTimeline,
@@ -211,12 +211,17 @@ export interface PullNoteProps {
 
 /**
  * What the card of your comment `comment` says while its delete's answer was lost: that Lo is
- * checking whether it went, or that it didn't, or may not have, with "Try again", which asks again.
+ * checking whether it went, or that it didn't, with "Try again", which asks again, or may not have,
+ * with "Check again", which looks again.
  */
 export function PullNote({ tab, comment }: PullNoteProps): ReactNode {
   const view = tab.id;
   const asked = useTabState(acting, view, (acts) => acts.get(comment.id));
-  const isClosed = useTabState(closedActs, view, (rows) => asked !== undefined && rows.has(asked));
+  const isClosed = useTabState(
+    closedActs,
+    view,
+    (keys) => asked !== undefined && keys.has(noteKey(asked)),
+  );
   // The comment is still in the timeline, so what was asked doesn't show.
   const note = asked && noteOf(asked, false, isClosed);
   if (!note || !asked) return null;
@@ -225,6 +230,11 @@ export function PullNote({ tab, comment }: PullNoteProps): ReactNode {
       <ActCallout
         note={note}
         onAgain={() => {
+          // Nobody knows whether it went: only a look is safe.
+          if (note.again === 'check') {
+            checkAgain(tab, asked);
+            return;
+          }
           closeAct(view, asked);
           removeOnPull(tab, comment);
         }}

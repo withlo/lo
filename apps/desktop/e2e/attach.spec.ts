@@ -279,7 +279,7 @@ test.describe('where GitHub answers the upload Not Found', () => {
   });
 });
 
-test('while an upload is held on its way, nothing is sent; its row stays as tall once it’s in; loaded again, the draft says it didn’t finish', async ({
+test('while an upload is held on its way, nothing is sent; its row stays as tall once it’s in; loaded again, the draft comes back without its placeholder', async ({
   page,
   github,
   gate,
@@ -306,19 +306,19 @@ test('while an upload is held on its way, nothing is sent; its row stays as tall
   expect((await rows.boundingBox())?.height).toBe(uploading?.height);
   await expect(addToReview).not.toHaveAttribute('aria-disabled');
 
-  // Another, held as the window is loaded again: its placeholder comes back with the draft.
+  // Another, held as the window is loaded again: the draft comes back without its placeholder,
+  // which Lo takes out, and the box says which file to attach again.
   gate.shut();
   await drop(page, [{ name: 'lo-attachment.png', bytes: PNG }]);
   await expect.poll(() => gate.holding, { timeout: 20_000 }).toBe(1);
   await page.reload();
-  await expect(box.locator('.cm-content')).toContainText(
-    /!\[Uploading lo-attachment\.png…\]\(lo-upload:[0-9a-f]{16}\)/,
-    { timeout: 20_000 },
-  );
-  await expect(box).toContainText(
-    'lo-attachment.png didn’t finish uploading. Attach it again, and take out its placeholder.',
-  );
-  await expect(addToReview).toHaveAttribute('aria-disabled', 'true');
+  await expect(box).toContainText('Couldn’t attach lo-attachment.png', { timeout: 20_000 });
+  // The note has the button, beside the foot's own.
+  await expect(
+    box.locator('[data-note]').getByRole('button', { name: 'Attach files…' }),
+  ).toBeVisible();
+  await expect(box.locator('.cm-content')).toHaveText(`Repro: ![lo-attachment](${ASSET})`);
+  await expect(addToReview).not.toHaveAttribute('aria-disabled');
   gate.open();
   await expect.poll(() => gate.holding).toBe(0);
   expect(writes(github)).toEqual([]);

@@ -4,6 +4,8 @@ import type { ReactNode } from 'react';
 import { Avatar } from './Avatar.tsx';
 import { Button } from './Button.tsx';
 import { Key, keyAria } from './Key.tsx';
+import { MoreButton } from './MoreButton.tsx';
+import { Spinner } from './Spinner.tsx';
 import { Tag, type TagTone } from './Tag.tsx';
 import { CommentIcon } from './ThreadCount.tsx';
 
@@ -69,9 +71,26 @@ export interface ThreadProps {
   focused?: boolean | undefined;
   /** You can resolve it, or unresolve it once it's resolved. */
   canResolve?: boolean | undefined;
+  /**
+   * Resolve or Unresolve was asked and GitHub hasn't answered: `resolved` is already what was asked
+   * for, and the control says it's working.
+   */
+  resolving?: boolean | undefined;
+  /** The comment of yours whose delete was asked and GitHub hasn't answered for, by its `id`. */
+  deleting?: string | undefined;
+  /**
+   * The comments a box under the card is editing, by their `id`s. The box is the comment meanwhile,
+   * so the open card draws without them: a comment's text shows once.
+   */
+  editing?: ReadonlySet<string> | undefined;
   /** You can reply to it. */
   canReply?: boolean | undefined;
   keys?: ThreadKeys | undefined;
+  /**
+   * A right-click on the card opens a menu where it's drawn, as in a code view: its head has the
+   * `⋯` button that opens the same menu.
+   */
+  menu?: boolean | undefined;
   /** An open reply box, in place of the row that offers one. */
   reply?: ReactNode;
   /** The collapse or the line was clicked. */
@@ -124,6 +143,45 @@ function Chevron({ up }: { up: boolean }) {
   );
 }
 
+export interface SentPostProps {
+  /** Who it's from: the account that wrote it, where that's known. */
+  author?: string | undefined;
+  image?: string | undefined;
+  /** What's being done with it, where its time will be: "Sending…", or "Saving…" for an edit. */
+  label?: string | undefined;
+  /** The text as it will read, already drawn. */
+  body: ReactNode;
+}
+
+/**
+ * A comment the reader has sent that GitHub hasn't answered for yet, drawn as it will be on its
+ * card, with "Sending…" where its time will be. The comment box draws it in its own place from the
+ * moment it's sent, so the text never leaves the screen; the card takes its place when it arrives.
+ */
+export function SentPost({ author, image, label = 'Sending…', body }: SentPostProps) {
+  return (
+    // Whoever sends it says so to a screen reader: drawn with its words, this would say nothing.
+    <div data-sent="" className="flex gap-8 px-12 py-8">
+      {author !== undefined && <Avatar login={author} image={image} size="sm" />}
+      <div className="min-w-0 flex-1">
+        <div className="flex min-h-24 flex-wrap items-center gap-x-8 gap-y-2 text-fg-muted text-small">
+          {author !== undefined && (
+            <span className="font-semibold whitespace-nowrap text-fg">
+              {author}
+              <span className="font-normal text-fg-muted"> (you)</span>
+            </span>
+          )}
+          <span className="inline-flex items-center gap-6 whitespace-nowrap">
+            <Spinner />
+            {label}
+          </span>
+        </div>
+        <div className="lo-selectable mt-2 text-fg read-comment">{body}</div>
+      </div>
+    </div>
+  );
+}
+
 /** What a button's keys say to a screen reader, and what they add to its tooltip. */
 function withKeys(label: string, keys: readonly string[] | undefined) {
   return {
@@ -148,7 +206,11 @@ export function Thread({
   focused = false,
   canResolve = false,
   canReply = false,
+  resolving = false,
+  deleting,
+  editing,
   keys = {},
+  menu = false,
   reply,
   onToggle,
   onResolve,
@@ -168,6 +230,13 @@ export function Thread({
 
   if (!open) {
     const said = replies(comments);
+    const working = resolving
+      ? resolved
+        ? 'Resolving…'
+        : 'Unresolving…'
+      : deleting !== undefined
+        ? 'Deleting…'
+        : undefined;
     return (
       <div
         role="group"
@@ -176,46 +245,70 @@ export function Thread({
         data-focused={focused ? '' : undefined}
         className={`${card({ view: 'collapsed', ground })} ${className}`}
       >
-        <button
-          type="button"
-          aria-expanded={false}
-          {...withKeys('Open the thread', keys.toggle)}
-          className="flex h-32 w-full items-center gap-8 px-12 text-start text-fg-muted text-small hover:bg-hover focus-visible:shadow-ring-inset"
-          onClick={onToggle}
-        >
-          {state === 'resolved' ? (
-            <svg
-              className="lo-i lo-i--sm flex-none text-success"
-              viewBox="0 0 16 16"
-              aria-hidden="true"
-            >
-              <circle cx="8" cy="8" r="6.25" />
-              <path d="M5.5 8.25 7.25 10l3.25-3.75" />
-            </svg>
-          ) : (
-            <CommentIcon />
-          )}
-          <span className="flex-none">{word}</span>
-          <Avatar login={first.author} image={first.image} size="sm" />
-          <span className="min-w-0 flex-1 truncate">
-            <span className="font-semibold text-fg">{first.author}</span>
-            {excerpt !== undefined && ` ${excerpt}`}
-          </span>
-          {said !== undefined && <span className="lo-num flex-none">{said}</span>}
-          <Chevron up={false} />
-        </button>
+        {/* The line opens the thread wherever it's clicked; `⋯` alone is a control of its own. */}
+        <div className="flex h-32 items-center gap-2 pe-6 text-fg-muted text-small hover:bg-hover">
+          <button
+            type="button"
+            aria-expanded={false}
+            {...withKeys('Open the thread', keys.toggle)}
+            className="flex h-full min-w-0 flex-1 items-center gap-8 ps-12 pe-6 text-start focus-visible:shadow-ring-inset"
+            onClick={onToggle}
+          >
+            {state === 'resolved' ? (
+              <svg
+                className="lo-i lo-i--sm flex-none text-success"
+                viewBox="0 0 16 16"
+                aria-hidden="true"
+              >
+                <circle cx="8" cy="8" r="6.25" />
+                <path d="M5.5 8.25 7.25 10l3.25-3.75" />
+              </svg>
+            ) : (
+              <CommentIcon />
+            )}
+            <span className="flex-none">{word}</span>
+            <Avatar login={first.author} image={first.image} size="sm" />
+            <span className="min-w-0 flex-1 truncate">
+              <span className="font-semibold text-fg">{first.author}</span>
+              {excerpt !== undefined && ` ${excerpt}`}
+            </span>
+            {working !== undefined ? (
+              // A change asked from its menu or by its key is at work, as its open card's control says.
+              <span className="inline-flex flex-none items-center gap-6">
+                <Spinner />
+                {working}
+              </span>
+            ) : (
+              said !== undefined && <span className="lo-num flex-none">{said}</span>
+            )}
+          </button>
+          {menu && <MoreButton />}
+          <Button
+            variant="ghost"
+            size="sm"
+            icon
+            // The line is the control a key or a screen reader opens it by.
+            tabIndex={-1}
+            aria-hidden="true"
+            onClick={onToggle}
+          >
+            <Chevron up={false} />
+          </Button>
+        </div>
       </div>
     );
   }
 
   const tone: TagTone = state === 'resolved' ? 'ok' : 'warning';
   const showReply = reply === undefined && canReply;
+  const drawn = editing ? comments.filter((each) => !editing.has(each.id)) : comments;
   return (
     <div
       role="group"
       aria-label={`${word} thread by ${first.author}`}
       data-thread-state={state}
       data-focused={focused ? '' : undefined}
+      data-key-scope=""
       className={`${card({ view: 'open', ground })} ${className}`}
     >
       <div className="flex min-h-32 items-center gap-8 border-b border-border-subtle py-4 ps-12 pe-6 text-fg-muted text-small">
@@ -234,11 +327,22 @@ export function Thread({
         </span>
         <span className="flex flex-none items-center gap-2">
           {canResolve && !pendingAll && (
-            <Button variant="ghost" size="sm" onClick={onResolve}>
+            <Button
+              variant="ghost"
+              size="sm"
+              // Asked already, it shows what was asked for: the word is the one being done.
+              busy={resolving}
+              working={resolved ? 'Resolving…' : 'Unresolving…'}
+              align="end"
+              hint={resolved ? 'Unresolve' : 'Resolve'}
+              hintKeys={keys.resolve}
+              onClick={onResolve}
+            >
               {resolved ? 'Unresolve' : 'Resolve'}
-              {keys.resolve && <Key keys={keys.resolve} decorative />}
+              {keys.resolve && <Key keys={keys.resolve} when="focus" decorative />}
             </Button>
           )}
+          {menu && <MoreButton />}
           <Button
             variant="ghost"
             size="sm"
@@ -252,7 +356,7 @@ export function Thread({
           </Button>
         </span>
       </div>
-      {comments.map((comment, index) => (
+      {drawn.map((comment, index) => (
         <div
           key={comment.id}
           data-comment={comment.id}
@@ -274,20 +378,29 @@ export function Thread({
                     variant="ghost"
                     size="sm"
                     aria-label={`Edit your comment from ${comment.when}`}
+                    hint="Edit"
+                    hintKeys={comment.id === newestMine ? keys.edit : undefined}
                     onClick={() => onEdit?.(comment.id)}
                   >
                     Edit
-                    {comment.id === newestMine && keys.edit && <Key keys={keys.edit} decorative />}
+                    {comment.id === newestMine && keys.edit && (
+                      <Key keys={keys.edit} when="focus" decorative />
+                    )}
                   </Button>
                   <Button
                     variant="ghost"
                     size="sm"
                     aria-label={`Delete your comment from ${comment.when}`}
+                    busy={comment.id === deleting}
+                    working="Deleting…"
+                    align="end"
+                    hint="Delete…"
+                    hintKeys={comment.id === newestMine ? keys.delete : undefined}
                     onClick={() => onDelete?.(comment.id)}
                   >
-                    Delete
+                    Delete…
                     {comment.id === newestMine && keys.delete && (
-                      <Key keys={keys.delete} decorative />
+                      <Key keys={keys.delete} when="focus" decorative />
                     )}
                   </Button>
                 </span>
@@ -301,13 +414,14 @@ export function Thread({
         <div className="border-t border-border-subtle py-8 ps-40 pe-12">
           <button
             type="button"
+            {...withKeys('Reply', keys.reply)}
             className="flex h-control-h w-full items-center gap-8 rounded-sm border border-border bg-bg-well px-8 text-start text-fg-subtle text-ui hover:border-border-strong focus-visible:shadow-ring"
             onClick={onReply}
           >
             Reply…
             {keys.reply && (
               <span className="ms-auto">
-                <Key keys={keys.reply} quiet decorative />
+                <Key keys={keys.reply} when="focus" quiet decorative />
               </span>
             )}
           </button>

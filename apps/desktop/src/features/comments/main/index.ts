@@ -108,6 +108,12 @@ export default defineFeature(contract, {
     commentable: ({ id, commit, path, previous }) =>
       started(commentable).read(id, commit, path, previous),
     send: ({ id, place, text, how }) => started(writer).send(id, place, text, how),
+    check({ id, place }) {
+      started(writer).check(id, place);
+    },
+    checkAct({ id, node }) {
+      started(writer).checkAct(id, node);
+    },
     attachable: ({ id }) => started(uploads).check(id),
     upload: ({ id, upload, name, bytes }) => started(uploads).upload(id, upload, name, bytes),
     cancelUpload({ id, upload }) {

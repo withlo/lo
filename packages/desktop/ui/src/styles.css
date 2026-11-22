@@ -66,6 +66,21 @@
   box-shadow: inset 0 -1px 0 var(--lo-border-strong);
 }
 
+/* A key cap takes the state of the control it's on. On a main button's fill, where its own grey
+   can't be read, it's the fill's text colour with a lighter outline. On a dimmed control it dims
+   with the label. A button at work is neither: it only looks busy. */
+@utility key-cap {
+  [data-fill] &,
+  :is(:disabled, [aria-disabled='true']:not([aria-busy='true']), [data-disabled]) & {
+    border-color: color-mix(in srgb, currentcolor 45%, transparent);
+    color: inherit;
+    box-shadow: none;
+  }
+  [data-fill]:not(:disabled, [aria-disabled='true']:not([aria-busy='true'])) &.bg-hover {
+    background: color-mix(in srgb, currentcolor 16%, transparent);
+  }
+}
+
 /* Panel labels: small capitals, tracked out. */
 @utility label-caps {
   letter-spacing: var(--lo-track-label);
@@ -456,6 +471,17 @@
 @utility text-small-medium {
   font: var(--lo-text-small);
   font-weight: 500;
+}
+
+/* A key chip on a control that every card or row repeats (`Key`'s `when="focus"`): it shows only
+   on the card or row the keyboard is on. A scope is whatever is marked `data-key-scope`, and it's
+   the keyboard's while it has `data-focused`, or focus the keyboard put there. Never on hover:
+   a chip that came under the pointer would move the buttons beside it. */
+@utility key-focus {
+  display: none;
+  [data-key-scope]:is([data-focused], :focus-visible, :has(:focus-visible)) & {
+    display: inline-flex;
+  }
 }
 
 /* What a comment box's head and foot give up as the box narrows, each narrower than the last: the

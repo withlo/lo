@@ -36,12 +36,12 @@ Each command's id is what [the keymap file](#the-keymap-file) binds keys to.
 
 | Action                       | Keys  | Where                                                                                  | Command                |
 | ---------------------------- | ----- | -------------------------------------------------------------------------------------- | ---------------------- |
-| Next change                  | `] c` | In `diff`; in code views, Vim's motion                                                 | `diff.nextChange`      |
-| Previous change              | `[ c` | In `diff`; in code views, Vim's motion                                                 | `diff.previousChange`  |
-| Next file                    | `] f` | In `diff`; in code views, Vim's motion                                                 | `diff.nextFile`        |
-| Previous file                | `[ f` | In `diff`; in code views, Vim's motion                                                 | `diff.previousFile`    |
-| Next thread                  | `] t` | In `diff`; in code views, Vim's motion                                                 | `diff.nextThread`      |
-| Previous thread              | `[ t` | In `diff`; in code views, Vim's motion                                                 | `diff.previousThread`  |
+| Next change                  | `] c` | In `diff`; in code views with Vim keys on, Vim's motion                                | `diff.nextChange`      |
+| Previous change              | `[ c` | In `diff`; in code views with Vim keys on, Vim's motion                                | `diff.previousChange`  |
+| Next file                    | `] f` | In `diff`; in code views with Vim keys on, Vim's motion                                | `diff.nextFile`        |
+| Previous file                | `[ f` | In `diff`; in code views with Vim keys on, Vim's motion                                | `diff.previousFile`    |
+| Next thread                  | `] t` | In `diff`; in code views with Vim keys on, Vim's motion                                | `diff.nextThread`      |
+| Previous thread              | `[ t` | In `diff`; in code views with Vim keys on, Vim's motion                                | `diff.previousThread`  |
 | The other end of moved code  | `g m` | In `diff`; in code views, only in normal mode                                          | `diff.otherEnd`        |
 | Next layer                   | `] s` | Anywhere but `menu`, `dialog`, `palette` and `box`; in code views, only in normal mode | `stacks.nextLayer`     |
 | Previous layer               | `[ s` | Anywhere but `menu`, `dialog`, `palette` and `box`; in code views, only in normal mode | `stacks.previousLayer` |
@@ -63,7 +63,8 @@ Each command's id is what [the keymap file](#the-keymap-file) binds keys to.
 | Delete your comment…            | `d d`                                          | In `diff`; in code views, only in normal mode                           | `comments.remove`         |
 | Discard draft                   | None: in its menu and the palette              | In `box`                                                                | `comments.discard`        |
 | Undo discard                    | None: in the app menu on macOS and the palette | Anywhere                                                                | `comments.undiscard`      |
-| Send it anyway                  | None: in its menu and the palette              | In `box`                                                                | `comments.sendAnyway`     |
+| Send again                      | None: in its menu and the palette              | In `box`                                                                | `comments.sendAnyway`     |
+| Check again                     | None: in its menu and the palette              | In `box`                                                                | `comments.checkAgain`     |
 | Move comment to file            | None: in its menu and the palette              | In `box`                                                                | `comments.moveToFile`     |
 | Mark viewed                     | `e`                                            | In `diff`; in code views, only in normal mode                           | `diff.markViewed`         |
 | Comment on the pull request     | `c`                                            | In `timeline`                                                           | `timeline.comment`        |

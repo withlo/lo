@@ -101,7 +101,7 @@ export function draggingOver(box: Attachable, count: number): void {
 
 /**
  * Why what comment box `box` is in isn't sent yet for its files, if it isn't: a file is still on its
- * way in, or its text holds a placeholder whose upload isn't, with what the box says of that.
+ * way in.
  */
 export function uploadsHold(box: Attachable): UploadsHold | undefined {
   return hold(box);

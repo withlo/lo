@@ -36,7 +36,19 @@ import {
 import { fileCountsChanged, setFileCounts } from '../../tree/window/shared.ts';
 import keys from '../keys.ts';
 import { DiscardedToast } from './Discarded.tsx';
-import { edit, remove, reply, resolve, takeActs, type ThreadKeyTarget } from './acts.ts';
+import {
+  atWork,
+  edit,
+  keepActsOf,
+  remove,
+  reply,
+  resolve,
+  resolvedNow,
+  settleActs,
+  takeActs,
+  threadFor,
+  type ThreadKeyTarget,
+} from './acts.ts';
 import { threadsOnBlock } from './blocks.ts';
 import {
   canWrite,
@@ -50,6 +62,7 @@ import {
   frameWith,
   keepBoxesOf,
   keptAway,
+  landBoxes,
   knowPull,
   restore,
   reopenAll,
@@ -65,6 +78,7 @@ import { frameOf } from './Frame.tsx';
 import { KeptStatus } from './KeptStatus.tsx';
 import { main, tabs } from './main.ts';
 import { inPanel, moveRow, onThread, showTarget, stepFilter } from './panel.ts';
+import { Said } from './Said.tsx';
 import { ThreadsPanel, UnresolvedCount, unresolvedOf } from './ThreadsPanel.tsx';
 import { renderThreads } from './render.ts';
 import { keepOnly } from './store.ts';
@@ -104,6 +118,18 @@ function enabled(check: () => PullTab | string) {
     const tab = check();
     return typeof tab === 'string' ? tab : true;
   };
+}
+
+/**
+ * Whether a thread can be resolved, or a comment of it deleted, on `target`: a comment can be
+ * written, and no change to the thread is at work, which is one at a time. Otherwise why not, as
+ * the thread's control says it: "Resolving…".
+ */
+function free(target: ThreadKeyTarget): true | string {
+  const tab = writable();
+  if (typeof tab === 'string') return tab;
+  const row = threadFor(tab.id, target);
+  return typeof row === 'string' ? true : (atWork(tab.id, row.id) ?? true);
 }
 
 /** The pull request's tab on screen, where a comment can be written on `target`, a code block's. */
@@ -181,12 +207,23 @@ export default {
       },
     },
     reply: { run: actOn(reply), enabled: enabled(writable) },
-    resolve: { run: actOn(resolve), enabled: enabled(writable) },
+    resolve: {
+      run: actOn(resolve),
+      enabled: free,
+      // A menu names it by what it would do to the thread it's on, as its card shows it.
+      named: (target) => {
+        const tab = activeTab();
+        if (tab?.kind !== 'pull' || target.kind !== 'thread') return undefined;
+        const row = threadFor(tab.id, target);
+        return typeof row !== 'string' && resolvedNow(tab.id, row) ? 'Unresolve' : undefined;
+      },
+    },
     edit: { run: actOn(edit), enabled: enabled(writable) },
-    remove: { run: actOn(remove), enabled: enabled(writable) },
+    remove: { run: actOn(remove), enabled: free },
     discard: discarding,
     undiscard: undiscarding,
-    sendAnyway: offering('sendAnyway'),
+    sendAnyway: offering('sendAgain'),
+    checkAgain: offering('checkAgain'),
     moveToFile: offering('onFile'),
     showLatest: offering('showLatest', 'loadNewer'),
     vim: { run: switchVim, detail: vimDetail },
@@ -208,7 +245,7 @@ export default {
       run: actOn(resolve),
       enabled: (target) => {
         const on = onThread(target);
-        return on === true ? enabled(writable)() : on;
+        return on === true && target.kind === 'thread' ? free(target) : on;
       },
     },
   }),
@@ -225,6 +262,13 @@ export default {
       id: 'comments.delete',
       order: 40,
       render: () => createElement(DeleteDialog),
+    }),
+    // Nothing to see: what the comments say to a screen reader as it happens. Beside the dialogs,
+    // outside the toasts' own region: a region inside another is read by one of them at most.
+    defineView(dialogs, {
+      id: 'comments.said',
+      order: 41,
+      render: () => createElement(Said),
     }),
     // Under the updates' offer.
     defineView(toasts, {
@@ -245,6 +289,7 @@ export default {
       const kept = new Set(viewIds(open));
       keepOnly(kept);
       keepBoxesOf(kept);
+      keepActsOf(kept);
       keepUploadsOf(kept);
     });
     main().subscribe('drafts', takeDrafts);
@@ -264,7 +309,12 @@ export default {
     // What waits to be saved is saved as the window goes.
     window.addEventListener('pagehide', saveAll);
     main().subscribe('threads', (view) => {
-      if (takeThreads(view)) changed(view.id);
+      if (!takeThreads(view)) return;
+      // A change GitHub took that the threads now show is done with, in the same drawing.
+      settleActs(view.id);
+      changed(view.id);
+      // Once they're drawn: a box that showed its comment until its card came goes with it.
+      landBoxes(view.id);
     });
     main().subscribe('review', takeReview);
     main().subscribe('acts', takeActs);

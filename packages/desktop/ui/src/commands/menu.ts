@@ -47,7 +47,7 @@ export function menuSections(registry: Registry, target: Target): MenuItem[][] {
     const ready = registry.enabled(command.id, target);
     const item: MenuItem = {
       id: command.id,
-      label: place.label ?? command.label,
+      label: registry.named(command.id, target) ?? place.label ?? command.label,
       keys: liveKeys(registry, command)[0],
       shortcut: liveShortcut(registry, command),
       disabled: ready === true ? undefined : ready,

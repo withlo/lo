@@ -6,7 +6,7 @@ import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { cleanUp, click, render } from '../test/dom.ts';
 import { missingRules } from '../test/classes.ts';
-import { Thread, type ThreadComment, type ThreadProps } from './Thread.tsx';
+import { SentPost, Thread, type ThreadComment, type ThreadProps } from './Thread.tsx';
 
 beforeAll(() => {
   Reflect.set(globalThis, 'IS_REACT_ACT_ENVIRONMENT', true);
@@ -62,6 +62,15 @@ describe('Thread', () => {
     expect(host.textContent).not.toContain('Reply…');
   });
 
+  it('draws without a comment a box under it is editing, and still counts it', () => {
+    const host = render(
+      <Thread {...PROPS} comments={[MIRA, RAVI, MINE]} editing={new Set(['c3'])} canReply />,
+    );
+    expect(host.querySelector('[data-comment="c3"]')).toBeNull();
+    expect(host.querySelector('[data-comment="c2"]')).not.toBeNull();
+    expect(host.textContent).toContain('3 comments');
+  });
+
   it('collapses a resolved thread to one line, and opens it from there', () => {
     const onToggle = vi.fn<() => void>();
     const host = render(
@@ -83,8 +92,8 @@ describe('Thread', () => {
       expect(line?.textContent).toContain(part);
     }
     expect(line?.getAttribute('aria-expanded')).toBe('false');
-    // Only the line: none of the comments are drawn.
-    expect(host.querySelectorAll('button')).toHaveLength(1);
+    // Only the line, and the mouse's own way to open it: none of the comments are drawn.
+    expect(host.querySelectorAll('button:not([aria-hidden])')).toHaveLength(1);
     expect(host.querySelector('[data-comment]')).toBeNull();
     click(line!);
     expect(onToggle).toHaveBeenCalledOnce();
@@ -99,10 +108,46 @@ describe('Thread', () => {
       'Resolved thread by mira-chen',
     );
     const [unresolve] = buttons(host, 'Unresolve');
-    expect(unresolve?.textContent).toBe('Unresolvex');
+    // Its key's chip, and what it says while GitHub hasn't answered.
+    expect(unresolve?.textContent).toBe('UnresolvexResolving…');
+    expect(unresolve?.getAttribute('aria-busy')).toBeNull();
     click(unresolve!);
     expect(onResolve).toHaveBeenCalledOnce();
     expect(buttons(host, 'Resolve')).toHaveLength(0);
+  });
+
+  it('shows what was asked for at once, with the control at work until GitHub answers', () => {
+    const onResolve = vi.fn<() => void>();
+    const host = render(
+      <Thread
+        {...PROPS}
+        resolved
+        resolving
+        canResolve
+        keys={{ resolve: ['x'] }}
+        onResolve={onResolve}
+      />,
+    );
+    const [unresolve] = buttons(host, 'Unresolve');
+    expect(unresolve?.getAttribute('aria-busy')).toBe('true');
+    click(unresolve!);
+    expect(onResolve).not.toHaveBeenCalled();
+  });
+
+  it('marks the open card as the scope its repeated controls’ key chips show in', () => {
+    const host = render(<Thread {...PROPS} focused canResolve keys={{ resolve: ['x'] }} />);
+    const card = host.querySelector('[data-key-scope]');
+    expect(card?.hasAttribute('data-focused')).toBe(true);
+    expect(card?.querySelector('.key-focus kbd')?.textContent).toBe('x');
+  });
+
+  it('draws a sent comment as its card will, with what’s being done where its time will be', () => {
+    const host = render(<SentPost author="tess-okafor" body={<p>On its way</p>} />);
+    const sent = host.querySelector('[data-sent]');
+    expect(sent?.textContent).toContain('tess-okafor (you)');
+    expect(sent?.textContent).toContain('Sending…');
+    expect(sent?.textContent).toContain('On its way');
+    expect(render(<SentPost label="Saving…" body="x" />).textContent).toContain('Saving…');
   });
 
   it('draws a thread in your pending review by its Pending tag alone', () => {
@@ -165,7 +210,11 @@ describe('Thread', () => {
     expect(host.querySelector('[data-comment="c2"]')?.textContent).not.toContain('Delete');
     // The keys act on the newest of yours, so only its buttons show them.
     expect(edits.map((each) => each.textContent)).toEqual(['Edit', 'Editi']);
-    expect(deletes.map((each) => each.textContent)).toEqual(['Delete', 'Deletedd']);
+    // Each also holds what it says while its delete is on its way.
+    expect(deletes.map((each) => each.textContent)).toEqual([
+      'Delete…Deleting…',
+      'Delete…ddDeleting…',
+    ]);
     click(edits[0]!);
     click(deletes[1]!);
     expect(onEdit).toHaveBeenCalledWith('m1');
@@ -185,6 +234,17 @@ describe('Thread', () => {
     );
     expect(open.querySelector('[data-testid="box"]')?.textContent).toBe('the reply box');
     expect(buttons(open, 'Reply…')).toHaveLength(0);
+  });
+
+  it('has a "More actions" button where a right-click opens a menu, which opens that menu', () => {
+    expect(
+      render(<Thread {...PROPS} />).querySelector('button[aria-label="More actions"]'),
+    ).toBeNull();
+    const host = render(<Thread {...PROPS} menu />);
+    const asked: MouseEvent[] = [];
+    host.addEventListener('contextmenu', (event) => asked.push(event));
+    click(host.querySelector('button[aria-label="More actions"]')!);
+    expect(asked).toHaveLength(1);
   });
 
   it('collapses from its head, with the key in the tooltip, and rings the thread the keyboard is on', () => {

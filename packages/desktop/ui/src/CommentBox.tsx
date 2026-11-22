@@ -55,11 +55,19 @@ export interface CommentBoxClose {
 export interface CommentBoxNote {
   /** What identifies it. */
   key: string;
-  /** `warning` for what needs care or went wrong; `info` for the rest. */
-  tone: 'info' | 'warning';
+  /**
+   * `danger` for what failed, `warning` for what needs care, as a send nobody can confirm; `info`
+   * for the rest.
+   */
+  tone: 'info' | 'warning' | 'danger';
   /** In place of the tone's own: a clock for a restored draft, a cross for a refusal. */
   icon?: 'clock' | 'blocked' | undefined;
-  text: ReactNode;
+  /**
+   * What went wrong, for one that says so: "Couldn’t send the comment". It has a line of its own,
+   * and `text`, why, is under it, if there's any.
+   */
+  title?: string | undefined;
+  text?: ReactNode;
   /** What it offers to do, each starting with a verb: "Show latest", "Comment on file". */
   actions?: readonly BannerAction[] | undefined;
 }
@@ -187,15 +195,19 @@ const box = cva('max-w-read-measure overflow-hidden rounded-md bg-bg-raised text
   },
 });
 
-const note = cva(
-  'flex items-center gap-8 border-b border-border-subtle px-12 py-6 text-fg text-small',
-  {
-    variants: { tone: { info: 'bg-info-bg', warning: 'bg-warning-bg' } },
+const note = cva('flex gap-8 border-b border-border-subtle px-12 py-6 text-fg text-small', {
+  variants: {
+    tone: { info: 'bg-info-bg', warning: 'bg-warning-bg', danger: 'bg-danger-bg' },
+    // With a title, why is on a line under it, and the icon and buttons stay on the title's line.
+    titled: { true: 'items-start', false: 'items-center' },
   },
-);
+});
 
 const noteIcon = cva('flex-none', {
-  variants: { tone: { info: 'text-info', warning: 'text-warning' } },
+  variants: {
+    tone: { info: 'text-info', warning: 'text-warning', danger: 'text-danger' },
+    titled: { true: 'mt-2', false: '' },
+  },
 });
 
 const mode = cva('flex-none', {
@@ -219,7 +231,11 @@ const NARROW = {
 } as const;
 
 /** The icons a note takes, on the 16 grid. */
-function NoteIcon({ tone, icon }: Pick<CommentBoxNote, 'tone' | 'icon'>) {
+function NoteIcon({
+  tone,
+  icon,
+  titled,
+}: Pick<CommentBoxNote, 'tone' | 'icon'> & { titled: boolean }) {
   const shapes =
     icon === 'clock' ? (
       <>
@@ -231,7 +247,7 @@ function NoteIcon({ tone, icon }: Pick<CommentBoxNote, 'tone' | 'icon'>) {
         <circle cx="8" cy="8" r="6.25" />
         <path d="M5.75 5.75l4.5 4.5M10.25 5.75l-4.5 4.5" />
       </>
-    ) : tone === 'warning' ? (
+    ) : tone !== 'info' ? (
       <>
         <path d="M7.13 2.5a1 1 0 0 1 1.74 0l5.2 9.5a1 1 0 0 1-.87 1.5H2.8a1 1 0 0 1-.87-1.5Z" />
         <path d="M8 6.25v3M8 11.25v.01" />
@@ -243,21 +259,41 @@ function NoteIcon({ tone, icon }: Pick<CommentBoxNote, 'tone' | 'icon'>) {
       </>
     );
   return (
-    <svg className={`lo-i lo-i--sm ${noteIcon({ tone })}`} viewBox="0 0 16 16" aria-hidden="true">
+    <svg
+      className={`lo-i lo-i--sm ${noteIcon({ tone, titled })}`}
+      viewBox="0 0 16 16"
+      aria-hidden="true"
+    >
       {shapes}
     </svg>
   );
 }
 
+/**
+ * A note: what it says, and what it offers. One with a title says what went wrong on a line of its
+ * own and why under it, as a `Problem` does. It's said to a screen reader by whoever shows it, as
+ * it comes: it's drawn with its text, which a live region here wouldn't read.
+ */
 function Note({ each, id }: { each: CommentBoxNote; id?: string | undefined }) {
+  const titled = each.title !== undefined;
   return (
-    <div id={id} role="status" className={note({ tone: each.tone })}>
-      <NoteIcon tone={each.tone} icon={each.icon} />
-      <span className="min-w-0 flex-1">{each.text}</span>
+    <div id={id} data-note={each.tone} className={note({ tone: each.tone, titled })}>
+      <NoteIcon tone={each.tone} icon={each.icon} titled={titled} />
+      {titled ? (
+        <span className="flex min-w-0 flex-1 flex-col">
+          <b className="font-semibold text-fg">{each.title}</b>
+          {each.text !== undefined && each.text !== '' && (
+            <span className="text-fg-muted">{each.text}</span>
+          )}
+        </span>
+      ) : (
+        <span className="min-w-0 flex-1">{each.text}</span>
+      )}
       {each.actions !== undefined && each.actions.length > 0 && (
-        <span className="flex flex-none items-center gap-2">
+        // On the first line, and no taller than it.
+        <span className={`flex flex-none items-center gap-6 ${titled ? 'h-1lh' : ''}`}>
           {each.actions.map((action) => (
-            <Button key={action.label} variant="ghost" size="sm" onClick={action.onClick}>
+            <Button key={action.label} variant="secondary" size="sm" onClick={action.onClick}>
               {action.label}
             </Button>
           ))}
@@ -277,10 +313,14 @@ function FileIcon() {
   );
 }
 
-/** How far an upload is, as its row says it: "Uploading…", or "Uploading · 62%" where it's known. */
+/**
+ * How far an upload is, as its row says it: "Uploading · 62%" while its bytes go, and "Uploading…"
+ * where that isn't known, or once they've all gone and GitHub hasn't answered: it isn't done at
+ * 100%.
+ */
 function uploading(progress: number | undefined): { percent: number | undefined; text: string } {
-  if (progress === undefined) return { percent: undefined, text: 'Uploading…' };
-  const percent = Math.round(Math.min(Math.max(progress, 0), 1) * 100);
+  if (progress === undefined || progress >= 1) return { percent: undefined, text: 'Uploading…' };
+  const percent = Math.round(Math.max(progress, 0) * 100);
   return { percent, text: `Uploading · ${percent}%` };
 }
 
@@ -304,7 +344,14 @@ function Upload({ each }: { each: CommentBoxUpload }) {
       ) : each.uploaded === true ? null : (
         <>
           {going.percent === undefined ? (
-            <Spinner />
+            // In the meter's room where there was one, so the row's words stay where they were.
+            <span
+              className={
+                each.progress === undefined ? 'flex-none' : 'flex w-1/4 flex-none justify-end'
+              }
+            >
+              <Spinner />
+            </span>
           ) : (
             <span className="w-1/4 flex-none">
               <Meter value={going.percent} max={100} label={`Uploading ${each.name}`} />
@@ -399,13 +446,7 @@ function ActionButton({
       }}
     >
       {action.label}
-      {action.keys && (
-        <Key
-          keys={action.keys}
-          decorative
-          className={`${NARROW.chips} ${primary && !off ? 'text-on-accent' : ''}`}
-        />
-      )}
+      {action.keys && <Key keys={action.keys} decorative className={NARROW.chips} />}
     </Button>
   );
 }

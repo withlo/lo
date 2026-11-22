@@ -116,7 +116,7 @@ describe('docs/keys.md', () => {
       '| Mark viewed | `e` | In `diff` and `tree`; in code views, only in normal mode | `diff.markViewed` |',
     );
     expect(section('## Jump')).toContain(
-      "| Next file | `] f` | Anywhere; in code views, Vim's motion | `diff.nextFile` |",
+      "| Next file | `] f` | Anywhere; in code views with Vim keys on, Vim's motion | `diff.nextFile` |",
     );
     expect(section('## Move')).toContain(
       "| Line down | `j` | Vim's own key, in code views | `diff.down` |",

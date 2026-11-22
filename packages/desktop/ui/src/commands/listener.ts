@@ -5,6 +5,7 @@
 // particular that goes on where Lo moved focus; a press or a click, with the pointer or without,
 // drops the pending sequence.
 
+import { holdRegistry } from './control.ts';
 import { contradicts, eventStrokes, type KeyEventLike, type Layout } from './notation.ts';
 import type { Registry } from './registry.ts';
 import { endsTab, findScope, isNowhere, textKind } from './scopes.ts';
@@ -178,7 +179,11 @@ export function listen(win: Win, registry: Registry): () => void {
   // The keyboard's layout, read again whenever the window comes back, in case it changed.
   win.addEventListener('focus', readLayout);
   readLayout();
+  // The window's controls run their commands through the registry its keys go through.
+  const release = holdRegistry(registry);
+
   return () => {
+    release();
     clearTimeout(tabTimer);
     win.removeEventListener('keydown', onKey, capture);
     win.removeEventListener('keydown', backstop);

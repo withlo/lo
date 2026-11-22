@@ -894,3 +894,24 @@ test('a comment box opened under the last line on screen comes on screen whole, 
   });
   expect(Math.abs(under - 8)).toBeLessThan(1);
 });
+
+test('a comment box that grows as lines are typed in it keeps its foot 8 px clear of the pane’s', async () => {
+  const page = await open('split');
+  const lines = await onScreen(page);
+  await page.evaluate((at) => window.harness.compose(at), lines.at(-1)!.line);
+  await frames(page);
+  const box = page.locator('.lo-diffcomposer');
+  const tall = (await box.boundingBox())!.height;
+  await page.keyboard.type('one');
+  for (const line of ['two', 'three', 'four', 'five', 'six']) {
+    await page.keyboard.press('Enter');
+    await page.keyboard.type(line);
+  }
+  await frames(page);
+  expect((await box.boundingBox())!.height).toBeGreaterThan(tall);
+  const under = await box.evaluate((each) => {
+    const foot = document.querySelector('#root')!.getBoundingClientRect().bottom;
+    return foot - each.getBoundingClientRect().bottom;
+  });
+  expect(Math.abs(under - 8)).toBeLessThan(1);
+});

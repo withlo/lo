@@ -2,7 +2,7 @@
 // An avatar's initials, and its picture: the initials until it has loaded, and for good if it can't.
 
 import { act } from 'react';
-import { afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { cleanUp, render, rerender } from '../test/dom.ts';
 import { Avatar } from './Avatar.tsx';
@@ -43,6 +43,16 @@ describe('Avatar', () => {
     happens(img!, 'load');
     expect(host.textContent).toBe('');
     expect(picture(host)).not.toBeNull();
+  });
+
+  it('shows a picture the window already holds from the first frame, with no initials', () => {
+    const complete = vi.spyOn(HTMLImageElement.prototype, 'complete', 'get').mockReturnValue(true);
+    const width = vi.spyOn(HTMLImageElement.prototype, 'naturalWidth', 'get').mockReturnValue(56);
+    const host = render(<Avatar login="mira-chen" image="lo-image://avatar/mira-chen?s=56" />);
+    expect(host.textContent).toBe('');
+    expect(picture(host)?.className).not.toContain('opacity-0');
+    complete.mockRestore();
+    width.mockRestore();
   });
 
   it('keeps the initials, and drops the picture, when it fails', () => {

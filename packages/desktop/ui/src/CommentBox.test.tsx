@@ -102,7 +102,7 @@ describe('CommentBox', () => {
       'Add to review⌘⏎',
     ]);
     // Nothing is off, so there's nothing to explain.
-    expect(box?.querySelector('[role="status"]')).toBeNull();
+    expect(box?.querySelector('[data-note]')).toBeNull();
   });
 
   it('shows Vim’s mode only with Vim keys on, in the box that has focus', () => {
@@ -328,7 +328,7 @@ describe('CommentBox', () => {
     expect(onClick).not.toHaveBeenCalled();
     // Why they're off is no line in the box: it's what describes the buttons, said once, and their
     // tooltip.
-    const notes = [...box.querySelectorAll('[role="status"]')].map((each) => each.textContent);
+    const notes = [...box.querySelectorAll('[data-note]')].map((each) => each.textContent);
     expect(notes).toEqual([
       'Uploads go to GitHub and stay reachable by link, even if you delete the comment.',
     ]);
@@ -337,6 +337,47 @@ describe('CommentBox', () => {
     );
     expect(why).toHaveLength(1);
     expect(labelled(host, 'Add to review')?.getAttribute('aria-describedby')).toBe(why[0]?.id);
+  });
+
+  it('says a file whose bytes have all gone is still uploading, with no number', () => {
+    const host = render(
+      <CommentBox
+        {...WRITING}
+        uploads={[{ key: 'a', name: 'retry-storm.gif', size: '3.4 MB', progress: 1 }]}
+      />,
+    );
+    const row = host.querySelector('[aria-label="Attached files"] > li');
+    // GitHub hasn't answered: it isn't done at 100%, and no meter says it is.
+    expect(row?.textContent).toMatch(/^retry-storm\.gif3\.4 MBUploading…/);
+    expect(row?.querySelector('[role="meter"]')).toBeNull();
+  });
+
+  it('says what failed on a line of its own, why under it, and what to do in one button', () => {
+    const onClick = vi.fn<() => void>();
+    const host = render(
+      <CommentBox
+        {...WRITING}
+        notes={[
+          {
+            key: 'sending',
+            tone: 'danger',
+            title: 'Couldn’t send the comment',
+            text: 'GitHub didn’t respond.',
+            actions: [{ label: 'Check again', onClick }],
+          },
+        ]}
+      />,
+    );
+    const note = host.querySelector('[data-note="danger"]');
+    expect(note?.querySelector('b')?.textContent).toBe('Couldn’t send the comment');
+    // The reason isn't on the title's line.
+    expect(note?.querySelector('b')?.nextElementSibling?.textContent).toBe(
+      'GitHub didn’t respond.',
+    );
+    // It's drawn with its words on it: whoever shows it says it to a screen reader.
+    expect(note?.getAttribute('role')).toBeNull();
+    click(note!.querySelector('button')!);
+    expect(onClick).toHaveBeenCalledOnce();
   });
 
   it('says how many files are over it while they are dragged, and not over a preview', () => {
@@ -365,7 +406,7 @@ describe('CommentBox', () => {
         {EDITOR}
       </CommentBox>,
     );
-    expect(host.querySelector('[role="status"]')).toBeNull();
+    expect(host.querySelector('[data-note]')).toBeNull();
     const foot = host.querySelector('[role="group"]')?.lastElementChild;
     expect(foot?.textContent).toBe('Draft from 12 min agoDiscard draftSend now⌥⏎Add to review⌘⏎');
     // Not focused, where the box with the editor focused is.

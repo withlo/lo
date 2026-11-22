@@ -1,7 +1,7 @@
 import { cva } from 'class-variance-authority';
 
 const cap = cva(
-  'inline-flex h-kbd-h min-w-kbd-h flex-none items-center justify-center rounded-xs px-4 whitespace-nowrap text-fg-muted code-key',
+  'inline-flex h-kbd-h min-w-kbd-h flex-none items-center justify-center rounded-xs key-cap px-4 whitespace-nowrap text-fg-muted code-key',
   {
     variants: {
       quiet: {
@@ -27,6 +27,13 @@ export interface KeyProps {
    * `keyAria`) instead of having the key caps read out as letters.
    */
   decorative?: boolean | undefined;
+  /**
+   * `focus` for a control repeated on every card or row: the chip shows only on the one the
+   * keyboard is on, the nearest element marked `data-key-scope` that has `data-focused` or keyboard
+   * focus in it. The others give the key in their tooltip (`hint` and `hintKeys` on `Button`).
+   * Scopes don't nest.
+   */
+  when?: 'always' | 'focus' | undefined;
 }
 
 /** The attributes that say a control's key to a screen reader. */
@@ -52,9 +59,17 @@ export function keyAria(
 
 /**
  * A key, or a sequence of keys, shown wherever an action has one. A chord is one key (`⌘⇧P`); a
- * sequence's keys sit side by side, never joined with a plus sign.
+ * sequence's keys sit side by side, never joined with a plus sign. In a control it comes last,
+ * after the label. It takes its control's state by itself: on a main button's fill it's drawn in
+ * the fill's text colour, and on a dimmed control it dims with the label.
  */
-export function Key({ keys, quiet = false, className, decorative = false }: KeyProps) {
+export function Key({
+  keys,
+  quiet = false,
+  className,
+  decorative = false,
+  when = 'always',
+}: KeyProps) {
   const caps = keys.map((key, index) => (
     <kbd
       key={index}
@@ -64,6 +79,9 @@ export function Key({ keys, quiet = false, className, decorative = false }: KeyP
       {key}
     </kbd>
   ));
+  // A wrapper of its own carries the rule, since a key cap sets its own display.
+  if (when === 'focus')
+    return <span className="key-focus flex-none items-center gap-2">{caps}</span>;
   if (caps.length === 1) return caps[0];
   return <span className="inline-flex flex-none items-center gap-2">{caps}</span>;
 }

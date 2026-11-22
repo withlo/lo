@@ -7,15 +7,43 @@
 import { WidgetType } from '@codemirror/view';
 
 import { COMMENT_PATH, threadWords } from '../counts.ts';
-import type { DrawNote, FileHeader } from './api.ts';
+import { type DrawNote, type FileHeader, viewControls } from './api.ts';
 import type { ThreadHost } from './threads.ts';
 
 /** How each viewed mark is drawn: a ring, a filled ball, or an amber ring with a dot. */
-const BALLS: Record<NonNullable<FileHeader['viewed']>, { className: string; title: string }> = {
-  unviewed: { className: '', title: 'Not viewed' },
-  viewed: { className: ' is-viewed', title: 'Viewed' },
-  stale: { className: ' is-stale', title: 'Changed since you viewed it' },
+const BALLS: Record<NonNullable<FileHeader['viewed']>, string> = {
+  unviewed: '',
+  viewed: ' is-viewed',
+  stale: ' is-stale',
 };
+
+/** What the viewed ball is named: a checkbox, so unchecked it reads "Viewed, not checked". */
+export const VIEWED = 'Viewed';
+/** What a header says of a file a push changed after it was marked viewed. */
+export const CHANGED_SINCE = 'Changed since viewed';
+/** What the ball's tooltip says while its file is viewed, in place of its command's label. */
+export const UNMARK_VIEWED = 'Unmark viewed';
+
+/**
+ * A file's viewed ball: a control, with a checkbox's semantics, drawn as the ball and never as a
+ * box. A click runs "Mark viewed" on its file, as `e` does. A file changed since it was viewed
+ * isn't viewed, so its ball is unchecked, and `tag`, beside it, says what the amber ring means.
+ */
+function viewedBall(viewed: NonNullable<FileHeader['viewed']>): {
+  ball: HTMLElement;
+  tag: HTMLElement | undefined;
+} {
+  const ball = element('span', `lo-diffhead__ball${BALLS[viewed]}`);
+  ball.setAttribute('role', 'checkbox');
+  ball.setAttribute('aria-checked', viewed === 'viewed' ? 'true' : 'false');
+  ball.setAttribute('aria-label', VIEWED);
+  ball.dataset.command = viewControls.viewed;
+  if (viewed === 'viewed') ball.dataset.tip = UNMARK_VIEWED;
+  if (viewed !== 'stale') return { ball, tag: undefined };
+  // The words beside it say why it isn't checked, to a screen reader too.
+  const tag = element('span', 'lo-diffhead__changed', CHANGED_SINCE);
+  return { ball, tag };
+}
 
 /** What a file header shows. */
 export interface HeaderInfo {
@@ -51,19 +79,23 @@ export class HeaderWidget extends WidgetType {
   readonly info: HeaderInfo;
   readonly note: string | undefined;
   readonly under: UnderHeader | undefined;
+  readonly act: boolean;
 
-  constructor(file: number, info: HeaderInfo, note?: string, under?: UnderHeader) {
+  /** With `act`, its note is a button, which shows the file's lines. */
+  constructor(file: number, info: HeaderInfo, note?: string, under?: UnderHeader, act = false) {
     super();
     this.file = file;
     this.info = info;
     this.note = note;
     this.under = under;
+    this.act = act;
   }
 
   override eq(other: HeaderWidget): boolean {
     return (
       other.file === this.file &&
       other.note === this.note &&
+      other.act === this.act &&
       other.info === this.info &&
       sameUnder(other.under, this.under)
     );
@@ -75,7 +107,7 @@ export class HeaderWidget extends WidgetType {
     const block = element('div', 'lo-fileblock');
     block.append(head);
     if (this.note !== undefined) {
-      const note = element('div', 'lo-collapsed lo-filenote', this.note);
+      const note = fileNote(this.note, this.act);
       note.dataset.row = `n:${this.file}`;
       block.append(note);
     }
@@ -113,11 +145,8 @@ export class HeaderWidget extends WidgetType {
       const after = element('span', 'lo-filehead__end', end.join(' · '));
       if (threads) after.append(threadCount(threads.total, threads.unresolved));
       if (header.viewed) {
-        const { className, title } = BALLS[header.viewed];
-        const ball = element('span', `lo-diffhead__ball${className}`);
-        ball.title = title;
-        ball.setAttribute('role', 'img');
-        ball.setAttribute('aria-label', title);
+        const { ball, tag } = viewedBall(header.viewed);
+        if (tag) after.append(tag);
         after.append(ball);
       }
       head.append(after);
@@ -550,6 +579,21 @@ function noteElement(note: NoteDraw): HTMLElement {
 }
 
 /**
+ * What's under the header of a file whose lines aren't drawn: a label, or with `act`, a button that
+ * shows them, as `za` there does.
+ */
+function fileNote(text: string, act: boolean): HTMLElement {
+  const note = element('div', 'lo-collapsed lo-filenote', text);
+  if (!act) return note;
+  note.classList.add('is-act');
+  note.setAttribute('role', 'button');
+  note.dataset.command = viewControls.toggle;
+  // Its tooltip names what a click does here, with the command's key.
+  note.dataset.tip = text;
+  return note;
+}
+
+/**
  * A note in place of a file's lines: too many to show, while they load or its diff is worked out,
  * or while it's closed. Where a file has no lines, its header holds the note.
  */
@@ -557,21 +601,31 @@ export class FileNoteWidget extends WidgetType {
   readonly file: number;
   readonly text: string;
   readonly paired: boolean;
+  readonly act: boolean;
 
-  /** `paired` when both sides draw it, so it's a row to check the alignment of. */
-  constructor(file: number, text: string, paired: boolean) {
+  /**
+   * `paired` when both sides draw it, so it's a row to check the alignment of. With `act`, it's a
+   * button, which shows the file's lines.
+   */
+  constructor(file: number, text: string, paired: boolean, act = false) {
     super();
     this.file = file;
     this.text = text;
     this.paired = paired;
+    this.act = act;
   }
 
   override eq(other: FileNoteWidget): boolean {
-    return other.file === this.file && other.text === this.text && other.paired === this.paired;
+    return (
+      other.file === this.file &&
+      other.text === this.text &&
+      other.paired === this.paired &&
+      other.act === this.act
+    );
   }
 
   toDOM(): HTMLElement {
-    const note = element('div', 'lo-collapsed lo-filenote', this.text);
+    const note = fileNote(this.text, this.act);
     if (this.paired) note.dataset.row = `n:${this.file}`;
     return note;
   }

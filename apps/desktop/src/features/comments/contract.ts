@@ -333,6 +333,8 @@ export type Commentable =
  * - `notInDiff`: GitHub takes no comment on those lines;
  * - `paused`: GitHub asked Lo to hold off writing until `until`;
  * - `pendingUnknown`: Lo couldn't tell whether you have a pending review;
+ * - `unconfirmed`: it was sent before, GitHub's answer was lost, and Lo couldn't tell whether it
+ *   posted: sending it again could post it twice, so only `check` goes on from there;
  * - `signIn`: the view acts as nobody; `run`: it shows a run of a stack's layers;
  * - `github`: anything else GitHub refused, or that went wrong, in a sentence.
  */
@@ -342,6 +344,7 @@ export type SendRefusal =
   | { kind: 'notInDiff' }
   | { kind: 'paused'; until: number }
   | { kind: 'pendingUnknown' }
+  | { kind: 'unconfirmed' }
   | { kind: 'signIn' }
   | { kind: 'run' }
   | { kind: 'github'; message: string };
@@ -569,6 +572,12 @@ export const contract = defineContract('comments', {
       reply: reply<SendOutcome>(),
     },
     /**
+     * Looks again whether the draft at `place` on view `id` posted, for one sent whose answer was
+     * lost and that Lo couldn't tell of (`unknown`): its `sending` says how the look stands, and
+     * what it found. Nothing is sent, and nothing happens for a draft that isn't `unknown`.
+     */
+    check: { input: z.strictObject({ id: tabId, place: draftPlace }), reply: reply<void>() },
+    /**
      * Whether view `id`'s account can upload files to its pull request's repository, read once for
      * each account and repository, so a box where it can't takes none, and says so, before anything
      * is sent.
@@ -628,6 +637,13 @@ export const contract = defineContract('comments', {
       input: z.strictObject({ id: tabId, thread: nodeId, resolved: z.boolean() }),
       reply: reply<ActOutcome>(),
     },
+    /**
+     * Looks again whether the change to the thread, or the comment on the pull request itself,
+     * `node` on view `id` went, for one whose answer was lost and that Lo couldn't tell of
+     * (`unknown`): its row in `acts` says how the look stands, and what it found. Nothing is sent,
+     * and nothing happens for a change that isn't `unknown`.
+     */
+    checkAct: { input: z.strictObject({ id: tabId, node: nodeId }), reply: reply<void>() },
     /**
      * Deletes your comment `comment` in the thread `thread` on view `id`'s pull request, or, with no
      * thread, on the pull request itself, once the last write to the pull request has its answer,

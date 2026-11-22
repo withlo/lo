@@ -196,7 +196,7 @@ async function openSubmit(page: Page): Promise<Locator> {
   const dialog = page.getByTestId('submit-review');
   await expect(dialog).toBeVisible();
   await expect(dialog).toContainText('1 pending comment goes with it');
-  await expect(dialog).toContainText(`backoff.ts · new 2${COMMENT}`);
+  await expect(dialog).toContainText(`backoff.ts · line 2${COMMENT}`);
   // The summary's editor takes focus once it's made, in insert mode.
   await expect(dialog.getByRole('textbox', { name: 'Summary' })).toBeFocused();
   return dialog;
@@ -341,6 +341,40 @@ async function closeEmpty(page: Page, where: string): Promise<void> {
   for (const key of [`${cmd}+a`, 'Backspace', 'Escape']) await page.keyboard.press(key);
   await expect(box).toHaveCount(0);
 }
+
+test('the `+` the pointer brings beside a line opens a box on that line', async ({ page }) => {
+  await open(page);
+  await onLineTwo(page);
+  // Line 2 of src/backoff.ts is the line over its thread.
+  const thread = await page.evaluate(() => {
+    const diff = window.loDiff;
+    const file = diff?.files.find((each) => each.path === 'src/backoff.ts')?.id;
+    return diff
+      ?.threads()
+      .find((each) => 'line' in each.at && each.at.file === file && each.at.line === 2)?.id;
+  });
+  expect(thread).toBeDefined();
+  const line = page
+    .locator(`[data-lo-diff] .cm-content[aria-label="After"] [data-thread-id="${thread}"]`)
+    .locator('xpath=preceding::div[contains(concat(" ", @class, " "), " cm-line ")][1]');
+  const add = page.locator('[data-lo-diff] .lo-gutteradd');
+  await expect(add).toBeHidden();
+  // A scroll takes the `+` away until the pointer next moves, so the pointer moves once the line
+  // is where it stays.
+  await line.scrollIntoViewIfNeeded();
+  await expect(async () => {
+    await line.hover({ position: { x: 60, y: 6 } });
+    await line.hover({ position: { x: 64, y: 8 } });
+    await expect(add).toBeVisible({ timeout: 1000 });
+  }).toPass({ timeout: 15_000 });
+  await expect(add).toHaveAccessibleName('Comment');
+  await add.click();
+  const box = boxes(page);
+  await expect(box).toHaveCount(1);
+  await expect(box.locator('.lo-diffcomposer__head')).toContainText('Line 2');
+  await expect(box.locator('.cm-content')).toBeFocused();
+  await expect(add).toBeHidden();
+});
 
 test('`c` on lines selected, `s` and a header’s `c` open their boxes; one kept with `Esc` is back after a restart, offline, sending nothing until it’s discarded', async ({
   app,

@@ -6,6 +6,7 @@ import {
   checkIds,
   checkKeys,
   checkMenus,
+  checkRoutes,
   checkVim,
   vimMeetings,
 } from './checks.ts';
@@ -205,6 +206,29 @@ describe('keys', () => {
         }),
       ]),
     ).toEqual(['diff.hidden has no key on macOS.', 'diff.hidden has no key on Linux.']);
+  });
+});
+
+describe('routes', () => {
+  const some = defineCommands('some', {
+    key: { label: 'Only a key', group: 'Act', keys: ['a'] },
+    button: { label: 'A button', group: 'Act', keys: ['b'], control: 'a button in the header' },
+    menu: { label: 'A menu row', group: 'Act', keys: ['m'], bar: { menu: 'View', order: 1 } },
+    down: { label: 'Line down', group: 'Move', keys: ['j'], vim: 'own' },
+  });
+
+  test('fail a command only its key runs, and pass one with a control or a menu', () => {
+    expect(checkRoutes([some])).toEqual([
+      'some.key has no control, right-click menu or app menu item: only its key runs it.',
+    ]);
+  });
+
+  test('pass the commands listed as waiting for one, and fail a listing that’s out of date', () => {
+    expect(checkRoutes([some], ['some.key'])).toEqual([]);
+    expect(checkRoutes([some], ['some.key', 'some.button', 'some.gone'])).toEqual([
+      'some.button is listed as having no mouse route, but it has one now.',
+      'some.gone is listed as having no mouse route, but no feature declares it.',
+    ]);
   });
 });
 

@@ -50,7 +50,7 @@ export interface ThreadListRow {
   /** The first comment's author, by login. */
   author: string;
   image?: string | undefined;
-  /** Where it is: "new 41", "old 30", "On the file", or for an outdated one "r2 · line 22". */
+  /** Where it is: "Line 41", "Line 30, removed", "File", or for an outdated one "Line 22 · r2". */
   where: string;
   /** How many replies it has. */
   replies: number;
