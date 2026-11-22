@@ -252,11 +252,12 @@ Lo waits in three ways. Use the first that fits, and never two for one wait.
 ## Floating pieces
 
 Everything that floats over the window is one of these, from `packages/desktop/ui`. Each comes and
-goes with its move, takes focus as it mounts, and gives it back as it's asked to close. `onClosed`
-fires then, while it fades, and it keeps what it showed until it's gone, so a caller can clear its
-state at once. While it fades it takes no clicks and no focus: a caller that focuses something in it
-then, as one that follows its main button from step to step does a frame or two later, leaves focus
-where it went back.
+goes with its move, takes focus as it mounts, and gives it back as it's asked to close, only while
+focus is still its own: focus that moved into a dialog or popup that opened in its place stays
+there. `onClosed` fires then, while it fades, and it keeps what it showed until it's gone, so a
+caller can clear its state at once. While it fades it takes no clicks and no focus: a caller that
+focuses something in it then, as one that follows its main button from step to step does a frame or
+two later, leaves focus where it went back.
 
 They sit in layers, lowest first: a dialog or the palette (`z-dialog`), then a popover or menu
 (`z-popover`), which can open from a dialog, then toasts (`z-toast`), then tooltips (`z-tooltip`),

@@ -80,9 +80,10 @@ export interface DialogProps {
   /** Where the dialog is put in the page: an element inside `.lo-app`. */
   container?: HTMLElement | null | undefined;
   /**
-   * It has closed, and focus has gone back to where it was. This comes as it starts to leave, not
-   * once it has faded: nothing waits on an animation. It keeps what it showed while it fades, so a
-   * caller is free to clear its state here.
+   * It has closed, and focus has gone back to where it was, if focus was still its own: focus that
+   * moved into a dialog or popup that opened in its place stays there. This comes as it starts to
+   * leave, not once it has faded: nothing waits on an animation. It keeps what it showed while it
+   * fades, so a caller is free to clear its state here.
    */
   onClosed?: (() => void) | undefined;
   /** For tests to find it by. */
@@ -111,8 +112,9 @@ export function Dialog(props: DialogProps) {
   const { title, description, children, size, state, action, problem, note, leaveKeys, foot } =
     useHeld(open, props);
   const returnFocus = useReturnFocus(open);
+  const panel = useRef<HTMLDivElement | null>(null);
   useOnClose(open, () => {
-    returnFocus();
+    returnFocus(panel.current);
     onClosed?.();
   });
   const main = useRef<HTMLButtonElement>(null);
@@ -124,6 +126,7 @@ export function Dialog(props: DialogProps) {
   const grow = useGrow(body);
   const mounted = useCallback(
     (element: HTMLDivElement | null) => {
+      panel.current = element;
       grow(element);
       if (focus) takeFocus(element);
     },

@@ -1,6 +1,6 @@
 import { Autocomplete } from '@base-ui/react/autocomplete';
 import { Dialog } from '@base-ui/react/dialog';
-import { useRef, type ReactNode } from 'react';
+import { useCallback, useRef, type ReactNode } from 'react';
 
 import { useTakeFocus } from './focus.ts';
 import { Key, type KeyAria } from './Key.tsx';
@@ -76,14 +76,22 @@ export function Palette<T>(props: PaletteProps<T>) {
   const { label, placeholder, keys, query, groups, renderItem, empty, mono, icon, mode } = held;
   const { message, foot } = held;
   const input = useRef<HTMLInputElement>(null);
+  const popup = useRef<HTMLDivElement | null>(null);
   const returnFocus = useReturnFocus(open);
   useOnClose(open, () => {
-    returnFocus();
+    returnFocus(popup.current);
     onClosed?.();
   });
   // The input has focus as the palette mounts, not a frame on, so the keys typed after the one
   // that opened it are the palette's.
   const takeFocus = useTakeFocus(input);
+  const mounted = useCallback(
+    (element: HTMLDivElement | null) => {
+      popup.current = element;
+      takeFocus(element);
+    },
+    [takeFocus],
+  );
   const rows = groups.some((group) => group.items.length > 0);
   return (
     <Dialog.Root open={open} onOpenChange={(next) => onOpenChange(next)}>
@@ -91,7 +99,7 @@ export function Palette<T>(props: PaletteProps<T>) {
         <Dialog.Backdrop className="move-scrim fixed inset-0 z-dialog bg-scrim move-scrim-fast" />
         <Dialog.Viewport className="fixed inset-0 z-dialog flex items-start justify-center px-16 pt-64 pb-16">
           <Dialog.Popup
-            ref={takeFocus}
+            ref={mounted}
             initialFocus={input}
             finalFocus={false}
             // Leaving, it takes no focus: a caller that focuses something in it as it closes, a
