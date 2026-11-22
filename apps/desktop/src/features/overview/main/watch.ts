@@ -422,7 +422,8 @@ export class OverviewTab {
     } catch (error) {
       if (this.#closed) return;
       this.#failures += 1;
-      const { problem, wait } = problemOf(error, acting, this.#failures, this.#now());
+      const { owner } = pull.repository;
+      const { problem, wait } = problemOf(error, acting, this.#failures, this.#now(), owner);
       this.#problem = problem;
       this.#options.log(`reading ${overviewRef(pull.number)}: ${describe(error)}`);
       this.#retryIn(wait);

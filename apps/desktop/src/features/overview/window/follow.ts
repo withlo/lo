@@ -221,11 +221,8 @@ export function focusBlock(overview: DrawnOverview, block: HTMLElement): void {
   if (scroller) bringOnScreen(scroller, block);
 }
 
-/**
- * What `nextBlock` answers while the overview's first blocks draw: no reason, since a key pressed
- * then waits for the overview rather than failing.
- */
-export const NOT_DRAWN = '';
+/** Why the block keys can't move while the overview's first blocks draw, unseen. */
+const NOT_DRAWN = 'The overview isn’t drawn yet';
 
 /**
  * The block `]b` (`1`) or `[b` (`-1`) goes to: the next or previous one the block keys stop at,
@@ -239,8 +236,7 @@ export function nextBlock(
 ): HTMLElement | string {
   const article = articleOf(overview);
   const scroller = overview.scroller();
-  // Unseen while its first blocks draw, it has nothing to take focus yet: the key waits for it, and
-  // says nothing.
+  // Unseen while its first blocks draw, it has nothing to take focus yet.
   if (!article || !scroller || getComputedStyle(article).visibility === 'hidden') {
     return NOT_DRAWN;
   }
@@ -379,6 +375,20 @@ export function followOf(overview: DrawnOverview, block: HTMLElement): Follow | 
 }
 
 /**
+ * What `⏎` on `block` is called, by what it does there: "Open link" where it follows a link or a
+ * part, and a fold's "Expand" or "Collapse". Nothing where it goes to code, which its label says,
+ * or where there's nothing to follow.
+ */
+export function followName(overview: DrawnOverview, block: HTMLElement): string | undefined {
+  const found = followOf(overview, block);
+  if (typeof found === 'string' || found.kind === 'code') return undefined;
+  if (block instanceof HTMLDetailsElement && found.element === focusTargetOf(block)) {
+    return block.open ? 'Collapse' : 'Expand';
+  }
+  return 'Open link';
+}
+
+/**
  * Follows `block`, as `⏎` does: the link, part or control in it that has focus, or for the block
  * itself, a fold opens or closes, and code goes to the diff. The block takes focus first, so the
  * place the tab's history records is the block, and `⌃o` comes back to it.
@@ -475,6 +485,17 @@ export function recordFrom(overview: DrawnOverview, from: Element): void {
   // The overview has already moved to where the link goes: the block is brought on screen again.
   if (at.kind === 'block') left.get(overview.tab)?.delete(at.block);
   registry().history.record({ view: 'overview', at });
+}
+
+/**
+ * What `→` on `block` is called: "Next tab" on tabs. Nothing on a walkthrough, which its label
+ * says, or where there's nothing to step.
+ */
+export function stepName(block: HTMLElement): string | undefined {
+  const own = block.matches('.lo-walk, .lo-tabs')
+    ? block
+    : block.querySelector('.lo-walk, .lo-tabs');
+  return own?.matches('.lo-tabs') ? 'Next tab' : undefined;
 }
 
 /** Whether `block` has a walkthrough or tabs to step, or why not. */

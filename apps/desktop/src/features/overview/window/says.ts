@@ -37,13 +37,6 @@ export function ago(then: number, now: number): string {
   return said === undefined ? 'just now' : `${said} ago`;
 }
 
-/** How long until `then`, from `now`, for what counts down: "8 s", "2 min". */
-export function until(then: number, now: number): string {
-  const seconds = Math.max(1, Math.ceil((then - now) / 1000));
-  if (seconds < 60) return `${seconds} s`;
-  return whole(Math.ceil(seconds / 60) * 60) ?? `${seconds} s`;
-}
-
 /**
  * Who wrote an overview: their login, when GitHub matched the commit to an account; else the name
  * the commit gives its author, which anyone can write, so it's never drawn as Lo's own words; or
@@ -194,26 +187,33 @@ function timeOfDay(at: number): string {
 }
 
 /**
- * Why the overview couldn't be fetched, and when it's fetched again, as an error's reason says it:
- * "Offline. Retrying in 8 s." GitHub's own words go behind Details.
+ * Why the overview couldn't be fetched, as an error's reason says it: its cause, "Offline.", and
+ * when it's fetched again, `retryAt`, which the reason counts down after it ("Retrying in 8 s.")
+ * unless the cause says when itself. GitHub's own words go behind Details.
  */
-export function problemReason(problem: Problem, now: number): string {
-  const again = `Retrying in ${until(problem.retryAt, now)}.`;
+export function problemReason(problem: Problem): { cause: string; retryAt?: number | undefined } {
+  const { retryAt } = problem;
   switch (problem.kind) {
     case 'signedOut':
-      return `${problem.login} is signed out.`;
+      return { cause: `${problem.login} is signed out.` };
     case 'rateLimited':
       return problem.secondary
-        ? `GitHub’s rate limit was reached. ${again}`
-        : `GitHub’s rate limit resets at ${timeOfDay(problem.retryAt)}.`;
+        ? { cause: 'GitHub’s rate limit was reached.', retryAt }
+        : { cause: `GitHub’s rate limit resets at ${timeOfDay(retryAt)}.` };
     case 'blocked':
-      return again;
+      return {
+        cause:
+          problem.why === 'sso'
+            ? `${problem.org} requires single sign-on.`
+            : `${problem.org} hasn’t approved Lo.`,
+        retryAt,
+      };
     case 'offline':
-      return `Offline. ${again}`;
+      return { cause: 'Offline.', retryAt };
     case 'failed':
-      return `GitHub returned an error. ${again}`;
+      return { cause: 'GitHub returned an error.', retryAt };
     default:
       problem satisfies never;
-      return again;
+      return { cause: '', retryAt };
   }
 }

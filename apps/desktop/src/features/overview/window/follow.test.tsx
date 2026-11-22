@@ -14,12 +14,14 @@ import { blockId } from './blocks.ts';
 import {
   besideFor,
   blockAt,
+  followName,
   followOf,
   focusedBlock,
   looseControl,
   nextBlock,
   nextLink,
   scroll,
+  stepName,
   targetOf,
   type DrawnOverview,
   type Scroll,
@@ -229,6 +231,36 @@ describe('following a block', () => {
       kind: 'activate',
       element: fold.querySelector('summary'),
     });
+  });
+
+  it('is named by what it does: Go to code, which is its label, Open link, or a fold’s own', () => {
+    const { overview, stops, tree } = drawn();
+    const code = stops.find((stop) => kindOf(tree, stop) === 'excerpt')!;
+    expect(followName(overview, code)).toBeUndefined();
+    // Prose whose first link is to code goes there; one with focus on a link opens it.
+    const last = stops.at(-1)!;
+    expect(followName(overview, last)).toBeUndefined();
+    last.focus();
+    [...last.querySelectorAll<HTMLElement>('[role="link"]')].at(-1)!.focus();
+    expect(followName(overview, last)).toBe('Open link');
+    // Prose that links only to a term opens it.
+    const term = stops.find((stop) => kindOf(tree, stop) === 'paragraph')!;
+    expect(followName(overview, term)).toBe('Open link');
+    const fold = stops.find((stop) => kindOf(tree, stop) === 'details');
+    if (!(fold instanceof HTMLDetailsElement)) throw new Error('No fold');
+    expect(followName(overview, fold)).toBe('Expand');
+    fold.open = true;
+    expect(followName(overview, fold)).toBe('Collapse');
+    // Nothing to follow: no name, and its label says it can't.
+    const tabs = stops.find((stop) => kindOf(tree, stop) === 'tabs')!;
+    expect(followName(overview, tabs)).toBeUndefined();
+  });
+
+  it('names → by what it steps: Next tab on tabs, and a walkthrough’s own label', () => {
+    const { stops, tree } = drawn();
+    expect(stepName(stops.find((stop) => kindOf(tree, stop) === 'tabs')!)).toBe('Next tab');
+    expect(stepName(stops.find((stop) => kindOf(tree, stop) === 'walkthrough')!)).toBeUndefined();
+    expect(stepName(stops.find((stop) => kindOf(tree, stop) === 'excerpt')!)).toBeUndefined();
   });
 
   it('says so for tabs, which point at no code and have nothing to follow', () => {

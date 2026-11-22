@@ -89,15 +89,18 @@ export type OverviewCommit = z.output<typeof overviewCommit>;
 /**
  * Why main couldn't read the overview just now, worst first, each with when it tries again: the
  * account is signed out; the rate limit is used up, or GitHub asked Lo to slow down; an
- * organization blocks the account until it's authorized, with GitHub's links to fix that; GitHub
- * can't be reached; or anything else GitHub answered, or sent, such as a file that isn't the one its
- * ID names.
+ * organization, `org`, blocks the account until it's authorized for single sign-on (`sso`) or
+ * until the organization approves Lo (`approval`), with GitHub's links to fix that; GitHub can't
+ * be reached; or anything else GitHub answered, or sent, such as a file that isn't the one its ID
+ * names.
  */
 export const problem = z.discriminatedUnion('kind', [
   z.strictObject({ kind: z.literal('signedOut'), login, retryAt: time }),
   z.strictObject({ kind: z.literal('rateLimited'), secondary: z.boolean(), retryAt: time }),
   z.strictObject({
     kind: z.literal('blocked'),
+    why: z.enum(['sso', 'approval']),
+    org: repository.shape.owner,
     message: z.string(),
     links: z.array(helpLink),
     retryAt: time,
@@ -169,6 +172,37 @@ export const CODE_LIMIT = 500;
 export const PATH_LIMIT = 1024;
 
 /**
+ * Why Lo couldn't read a file of the code an overview names, which the window words. Main says
+ * the cause, never a sentence, and what went wrong beyond it goes to main's log:
+ *
+ * - `noGit`: there's no git;
+ * - `notFetched`: the pull request's local copy couldn't be fetched;
+ * - `notReady`: the local copy isn't there yet, or isn't open;
+ * - `noCommit`: the local copy doesn't have the overview's commit, and can't get it;
+ * - `noFile`: there's no file at that path at the overview's commit;
+ * - `notFile`: what's at that path isn't a file Lo reads;
+ * - `binary`: it isn't text;
+ * - `tooLarge`: it's larger than the most Lo reads of a file;
+ * - `offline`: the local copy is offline, and doesn't have it;
+ * - `spent`: Lo read as much of the overview's code as it reads for one;
+ * - `notDownloaded`: Lo couldn't download it;
+ * - `unknown`: anything else, such as a read that failed or was stopped.
+ */
+export type CodeCause =
+  | 'noGit'
+  | 'notFetched'
+  | 'notReady'
+  | 'noCommit'
+  | 'noFile'
+  | 'notFile'
+  | 'binary'
+  | 'tooLarge'
+  | 'offline'
+  | 'spent'
+  | 'notDownloaded'
+  | 'unknown';
+
+/**
  * A file an overview's code names, as `code` replies, for the overview's checks to read:
  *
  * - `file`: its size, and as much of it as the checks read: none, for a file named whole or one
@@ -185,7 +219,7 @@ export type CodeAnswer =
   | { kind: 'missing' }
   | { kind: 'notFile'; is: 'link' | 'folder' | 'submodule' }
   | { kind: 'noCommit' }
-  | { kind: 'unread'; why: string };
+  | { kind: 'unread'; why: CodeCause };
 
 /**
  * The code an overview names, as `code` replies: each file asked for, read; or none, since the
@@ -195,7 +229,7 @@ export type CodeReply =
   | { kind: 'read'; files: CodeAnswer[] }
   | { kind: 'waiting' }
   | { kind: 'noGit' }
-  | { kind: 'failed'; why: string };
+  | { kind: 'failed'; why: CodeCause };
 
 /**
  * How a file a block shows was where the overview's commit branched off the base branch, which is
@@ -217,7 +251,7 @@ export type BaseText =
  * where its diff starts when that was asked for; or why Lo couldn't read it now.
  */
 export type BlockText =
-  { kind: 'text'; text: string; base: BaseText | null } | { kind: 'unread'; why: string };
+  { kind: 'text'; text: string; base: BaseText | null } | { kind: 'unread'; why: CodeCause };
 
 /**
  * What changed in a pull request since the commit its overview describes, up to the head on
@@ -230,7 +264,7 @@ export type SinceReply =
   | { kind: 'read'; files: number | null }
   | { kind: 'waiting' }
   | { kind: 'noGit' }
-  | { kind: 'failed'; why: string };
+  | { kind: 'failed'; why: CodeCause };
 
 /**
  * A file at an overview's commit, as it is at the head on screen, as `sinceFile` replies:
@@ -250,11 +284,11 @@ export type FileSinceText =
       kind: 'changed';
       path: string;
       pushed: boolean;
-      texts: { old: string; new: string } | { why: string };
+      texts: { old: string; new: string } | { why: CodeCause };
     }
   | { kind: 'deleted' }
   | { kind: 'waiting' }
-  | { kind: 'unread'; why: string };
+  | { kind: 'unread'; why: CodeCause };
 
 /** A coding agent that Lo installs the overview skill for. */
 export const agent = z.enum(['claude', 'codex']);

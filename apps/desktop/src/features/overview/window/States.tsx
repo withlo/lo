@@ -3,9 +3,9 @@
 // be shown, couldn't be checked or couldn't be fetched is a problem in the view's place: what
 // failed, why, the one thing to do, and what was found behind Details.
 
-import { EmptyState, Problem, type EmptyAction, type ProblemAction } from '@lo/ui';
+import { Countdown, EmptyState, Problem, type EmptyAction, type ProblemAction } from '@lo/ui';
 import { NO_TARGET } from '@lo/ui/commands';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useStore } from 'zustand';
 
 import { registry, useKeys } from '../../../window/commands/registry.ts';
@@ -96,52 +96,70 @@ function openPage(url: string): void {
     .catch((error: unknown) => console.error("Lo couldn't open the page:", error));
 }
 
-/** Reads the overview again now, without waiting for the retry's count to run out. */
-function tryNow(tab: PullTab): ProblemAction {
-  return {
-    label: 'Try now',
-    onClick: () => {
-      main()
-        .retry({ id: tab.id })
-        .catch((error: unknown) => console.error("Lo couldn't read the overview again:", error));
-    },
-  };
-}
-
-/** What to do about a read that failed: sign in again, GitHub's own page, or try now. */
-function readAction(tab: PullTab, problem: ReadProblem): ProblemAction | undefined {
+/** What to do about a read that failed: sign in again, GitHub's own page, or `again`, Try now. */
+function readAction(problem: ReadProblem, again: ProblemAction): ProblemAction | undefined {
   switch (problem.kind) {
     case 'signedOut':
       return { label: 'Sign in again', onClick: signIn };
     case 'rateLimited':
       // Until the limit resets, there's nothing to try.
-      return problem.secondary ? tryNow(tab) : undefined;
+      return problem.secondary ? again : undefined;
     case 'blocked': {
       const [link] = problem.links;
-      return link ? { label: link.label, onClick: () => openPage(link.url) } : tryNow(tab);
+      return link ? { label: link.label, onClick: () => openPage(link.url) } : again;
     }
     case 'offline':
     case 'failed':
-      return tryNow(tab);
+      return again;
     default:
       problem satisfies never;
-      return tryNow(tab);
+      return again;
   }
 }
 
-/** Main couldn't fetch the overview, and has nothing to show: why, and when it's fetched again. */
+/**
+ * Main couldn't fetch the overview, and has nothing to show: why, and when it's fetched again,
+ * counted down. Try now reads it again without waiting, and is busy until main says how that went:
+ * a problem with a new time to try again, or the overview.
+ */
 export function ReadFailed({ tab, problem }: { tab: PullTab; problem: ReadProblem }) {
-  const now = useNow(true);
+  // The try that Try now asked for, by when the problem it was pressed on said to try again.
+  const [tried, setTried] = useState<number | undefined>(undefined);
+  const { cause, retryAt } = problemReason(problem);
   const details =
     problem.kind === 'blocked' || problem.kind === 'failed' || problem.kind === 'offline'
       ? withoutBidi(problem.message)
       : undefined;
+  const tryNow: ProblemAction = {
+    label: 'Try now',
+    busy: tried === problem.retryAt,
+    working: 'Trying…',
+    onClick: () => {
+      setTried(problem.retryAt);
+      main()
+        .retry({ id: tab.id })
+        .catch((error: unknown) => {
+          console.error("Lo couldn't read the overview again:", error);
+          setTried(undefined);
+        });
+    },
+  };
   return (
     <Problem
       layout="view"
-      title="Couldn’t fetch the overview"
-      reason={problemReason(problem, now)}
-      action={readAction(tab, problem)}
+      title="Can’t fetch the overview"
+      reason={
+        <>
+          {cause}
+          {retryAt !== undefined && (
+            <>
+              {' '}
+              Retrying <Countdown at={retryAt} />.
+            </>
+          )}
+        </>
+      }
+      action={readAction(problem, tryNow)}
       details={details}
     />
   );
@@ -239,10 +257,14 @@ export function CantShow({
       return (
         <Problem
           layout="view"
-          title="Couldn’t check the overview"
+          title="Can’t check the overview"
           reason={standing.why === '' ? undefined : standing.why}
           action={latest ?? { label: 'Check again', onClick: () => checkAgain(tab.id) }}
-          details={written}
+          details={
+            standing.details === undefined
+              ? written
+              : [written, withoutBidi(standing.details)].join('\n')
+          }
         />
       );
     default:

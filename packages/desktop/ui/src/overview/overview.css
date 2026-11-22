@@ -335,13 +335,28 @@
  * What a code block says in its code's place: its title on a line of its own and the reason under
  * it, two lines kept whether a reason comes or not, so what it says can change and move nothing.
  * In an excerpt it's as tall as one line with the frame's padding was, no taller than a short
- * excerpt's room.
+ * excerpt's room: its two lines and the padding over and under them make 54 px, as that did.
  */
 .lo-codeblock__said {
   min-height: 2lh;
 }
 .lo-codeblock__body > .lo-codeblock__msg {
-  padding-block: 7px;
+  padding-block: var(--lo-sp-6) var(--lo-sp-8);
+}
+/*
+ * A code block's code while the local copy comes: a bar on each line, as long as code runs, in the
+ * middle of the line's height, so the lines are as tall as the code's.
+ */
+.lo-codeblock__skeleton .skeleton {
+  display: inline-block;
+  width: 62%;
+  vertical-align: middle;
+}
+.lo-codeblock__skeleton .cm-line:nth-child(3n + 2) .skeleton {
+  width: 78%;
+}
+.lo-codeblock__skeleton .cm-line:nth-child(3n) .skeleton {
+  width: 45%;
 }
 .lo-codeblock--illustration .lo-codeblock__head strong {
   color: var(--lo-fg);

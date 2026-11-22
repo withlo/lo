@@ -20,7 +20,7 @@ export type Checked = Extract<CheckedOverview, { kind: 'checked' }>;
  * - `none`: the ref holds no overview: nothing, or something other than a commit (`notCommit`);
  * - `failed`: main couldn't read the ref, and has nothing to show;
  * - `checking`: main read the overview, and the window hasn't checked it yet;
- * - `unchecked`: the window couldn't check it, and why;
+ * - `unchecked`: the window couldn't check it, why, and what main said of it, behind Details;
  * - `invalid`, `tooLarge`, `newer`: it can't be shown, as its check found;
  * - `shown`: it shows, as its check left it.
  */
@@ -29,7 +29,7 @@ export type Standing =
   | { kind: 'none'; notCommit: boolean }
   | { kind: 'failed'; problem: Problem }
   | { kind: 'checking'; commit: OverviewCommit }
-  | { kind: 'unchecked'; commit: OverviewCommit; why: string }
+  | { kind: 'unchecked'; commit: OverviewCommit; why: string; details?: string | undefined }
   | { kind: 'invalid'; commit: OverviewCommit; findings: readonly Finding[] }
   | {
       kind: 'tooLarge';
@@ -63,7 +63,9 @@ export function standingOf(
   if (result?.commit.id !== commit.id || result.commit.source !== commit.source) {
     return { kind: 'checking', commit };
   }
-  if (result.kind === 'failed') return { kind: 'unchecked', commit, why: result.why };
+  if (result.kind === 'failed') {
+    return { kind: 'unchecked', commit, why: result.why, details: result.details };
+  }
   const { outcome, findings } = result.checked;
   switch (outcome.kind) {
     case 'invalid':
@@ -73,10 +75,8 @@ export function standingOf(
     case 'newer':
       return { kind: 'newer', commit, format: outcome.format };
     case 'shown':
-      // A shown overview was parsed: its text is what was checked.
-      if (!result.parsed) {
-        return { kind: 'unchecked', commit, why: 'GitHub returned an error.' };
-      }
+      // A shown overview was parsed: its text is what was checked. Without it, Lo can't say why.
+      if (!result.parsed) return { kind: 'unchecked', commit, why: '' };
       return { kind: 'shown', commit, header: outcome.header, parsed: result.parsed, result };
     default:
       // From the background process: say so, rather than show what Lo doesn't know.

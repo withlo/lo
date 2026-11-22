@@ -889,8 +889,9 @@ test('says when the overview couldn’t be fetched, and reads it again on Try no
     await expect(middleView(page, 'diff.view')).toBeVisible();
     await overviewTab(page).click();
     const failed = overview(page, 'failed');
-    await expect(failed.getByRole('alert')).toContainText('Couldn’t fetch the overview');
-    await expect(failed).toContainText(/GitHub returned an error\. Retrying in \d+ (s|min)\./);
+    await expect(failed.getByRole('alert')).toContainText('Can’t fetch the overview');
+    // The count is for the eye; a screen reader hears "soon".
+    await expect(failed).toContainText(/GitHub returned an error\. Retrying in \d+ (s|min)/);
 
     ref.holds = { kind: 'cassette' };
     await failed.getByRole('button', { name: 'Try now' }).click();

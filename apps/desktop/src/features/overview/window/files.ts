@@ -11,7 +11,7 @@ import { LIMITS } from '@lo/artifact';
 import { diffText, type FileDiff } from '@lo/diff';
 
 import { diffTexts, type DiffedText } from '../../diff/window/shared.ts';
-import type { BlockText } from '../contract.ts';
+import type { BlockText, CodeCause } from '../contract.ts';
 import { main } from './main.ts';
 import { excerptOf, textsOf } from './targets.ts';
 
@@ -27,7 +27,7 @@ export interface Tokens {
  * be read.
  */
 export type FileCode =
-  | { kind: 'unread'; why: string }
+  | { kind: 'unread'; why: CodeCause }
   | {
       kind: 'code';
       lines: { old: string[]; new: string[] };
@@ -35,6 +35,9 @@ export type FileCode =
       /** Each side's highlighting, from the diff's job, which this starts if it hasn't. */
       highlighted(): Promise<Tokens>;
     };
+
+/** A file main couldn't be asked for: why is for the console, and Lo can't say it. */
+const UNREAD: FileCode = { kind: 'unread', why: 'unknown' };
 
 /** A block's hold on a file's code: the code once it's in, and the way to let it go. */
 export interface FileHold {
@@ -93,7 +96,8 @@ async function read(
   try {
     text = await main().texts({ id: tab, commit, path, base: true });
   } catch (error) {
-    return { code: unread(error), size: 0, keep: false };
+    if (!signal.aborted) console.error("Lo couldn't read a file an overview shows:", error);
+    return { code: UNREAD, size: 0, keep: false };
   }
   if (text.kind === 'unread') return { code: text, size: 0, keep: false };
   const size = text.text.length + (text.base?.kind === 'changed' ? text.base.text.length : 0);
@@ -220,8 +224,4 @@ function forget(entry: Entry): void {
 /** How many files are held or kept, for tests. */
 export function heldFiles(): number {
   return entries.size;
-}
-
-function unread(error: unknown): FileCode {
-  return { kind: 'unread', why: error instanceof Error ? error.message : String(error) };
 }

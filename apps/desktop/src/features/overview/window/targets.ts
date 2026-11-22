@@ -7,7 +7,7 @@ import { LIMITS, type CheckedCode, type CodeRange, type CodeState } from '@lo/ar
 import { splitLines, type FileDiff } from '@lo/diff';
 
 import type { DiffedText } from '../../diff/window/shared.ts';
-import type { BlockText } from '../contract.ts';
+import type { BlockText, CodeCause } from '../contract.ts';
 import type { CodeRead, CodeSeen } from './checking.ts';
 
 /** How the check left a block's code, and what main answered for its file, if it read it. */
@@ -55,12 +55,14 @@ export type Words = readonly (string | { readonly code: string })[];
  * What a block shows:
  *
  * - `code`: the code, read from the local copy;
+ * - `waiting`: the code's room, as the code will be laid out, while the local copy comes;
  * - `note`: what it says in its place, in a frame for its variant, with what the reader can do:
  *   find a file of the name it gave (`find`), or open the file at the newest revision Lo has
  *   (`latest`).
  */
 export type Shows =
   | { readonly kind: 'code' }
+  | { readonly kind: 'waiting' }
   | {
       readonly kind: 'note';
       readonly variant: 'code' | 'unresolved' | 'missing';
@@ -121,7 +123,7 @@ export function showsOf(target: CodeRange, found: Target, read: CodeRead, writte
     case 'resolved':
       return { kind: 'code' };
     case 'unread':
-      return unreadShows(read, answer, code.why);
+      return unreadShows(read, answer, code.why, target.path, written);
     case 'broken': {
       const { why } = code;
       switch (why) {
@@ -147,13 +149,13 @@ export function showsOf(target: CodeRange, found: Target, read: CodeRead, writte
           });
         default:
           why satisfies never;
-          return unreadShows(read, answer, 'failed');
+          return unreadShows(read, answer, 'failed', target.path, written);
       }
     }
     default:
       // From the background process: say so, rather than show what Lo doesn't know.
       code satisfies never;
-      return unreadShows(read, answer, 'failed');
+      return unreadShows(read, answer, 'failed', target.path, written);
   }
 }
 
@@ -162,23 +164,63 @@ function note(title: string, words: Words): Shows {
   return { kind: 'note', variant: 'code', title, words };
 }
 
-/** What a block shows when its code wasn't read: why, where Lo knows. */
+/**
+ * Why Lo couldn't read a block's code, at `path`, as main gives its cause, in `written`, the
+ * revision the overview describes as Lo names it: nothing where Lo doesn't know the cause, or the
+ * wait says it.
+ */
+export function causeWords(cause: CodeCause, path: string, written: string): Words {
+  const file = { code: path };
+  switch (cause) {
+    case 'noGit':
+      return ['Git wasn’t found.'];
+    case 'notFetched':
+      return ['The local copy couldn’t be fetched.'];
+    case 'noCommit':
+      return [`${written}’s commit isn’t in the local copy.`];
+    case 'noFile':
+      return [file, ` isn’t in ${written}.`];
+    case 'notFile':
+      return [file, ` isn’t a file in ${written}.`];
+    case 'binary':
+      return [file, ' isn’t text.'];
+    case 'tooLarge':
+      return [file, ` is over the ${LIMITS.file / 2 ** 20} MB limit.`];
+    case 'offline':
+      return ['Offline.'];
+    case 'spent':
+      return ['This overview’s code is over the size limit.'];
+    case 'notDownloaded':
+      return ['GitHub didn’t respond.'];
+    case 'notReady':
+    case 'unknown':
+      return [];
+    default:
+      // From main: say nothing, rather than what Lo doesn't know.
+      cause satisfies never;
+      return [];
+  }
+}
+
+/** What a block shows when its code, at `path` in `written`, wasn't read: why, where Lo knows. */
 function unreadShows(
   read: CodeRead,
   answer: CodeSeen | undefined,
   why: 'failed' | 'stopped',
+  path: string,
+  written: string,
 ): Shows {
   switch (read.kind) {
     case 'waiting':
-      return note('Fetching local copy…', []);
+      return { kind: 'waiting' };
     case 'noGit':
-      return note(CANT_SHOW, ['Git wasn’t found.']);
+      return note(CANT_SHOW, causeWords('noGit', path, written));
     case 'failed':
-      return note(CANT_SHOW, read.why === '' ? [] : [read.why]);
+      return note(CANT_SHOW, causeWords(read.why, path, written));
     case 'none':
     case 'read':
       if (answer?.kind === 'unread') {
-        return note(CANT_SHOW, answer.why === '' ? [] : [answer.why]);
+        return note(CANT_SHOW, causeWords(answer.why, path, written));
       }
       return note(CANT_SHOW, why === 'stopped' ? ['It took too long.'] : []);
     default:

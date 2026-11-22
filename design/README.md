@@ -373,7 +373,8 @@ that floats.
 - **`ContextMenu`** is the menu at a point: what can be done to what was right-clicked, each with
   its key. A command that does one of two things is named by which it would do there, from its
   handler's `named`: "Unresolve" on a resolved thread, "Expand" on one drawn collapsed (a
-  `ThreadTarget`'s `collapsed`).
+  `ThreadTarget`'s `collapsed`). A focused overview block's chip names its buttons the same way:
+  "Open link" for `⏎` on prose that links to a page, "Next tab" for `→` on tabs.
 - **`Palette`** is the box that finds things by typing, from the top of the window.
 - **`Tooltip`** names a control and its key: see [Controls](#controls).
 - **`ToastStack`** shows results at the bottom right, above the status bar: three at most, four
@@ -388,6 +389,9 @@ that floats.
   so a name that's code stays code in it: "Open `settings.json`". `layout="view"` takes a failed
   view's place; `layout="inline"` sits by the control whose action failed. It's said once: no toast
   repeats it. A screen reader hears what failed and why as an alert, and not the buttons.
+- **Nothing in a `Problem` changes on a timer except through `Countdown`.** A retry's wait is
+  `Retrying <Countdown at={retryAt} />.`: it counts "in 8 s" down for the eye, and a screen reader
+  hears "soon" throughout, so the alert is read once, not every second.
 - **`CopyButton`** copies and says so itself: it reads "Copied" for two seconds, and no toast says
   it again. When copying throws or rejects, it reads "Couldn’t copy" instead. A live region beside
   it says the same to a screen reader.

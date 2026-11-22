@@ -4,13 +4,14 @@ import type { Overview, Walkthrough as WalkthroughNode } from '@lo/artifact';
 
 import { Button } from '../Button.tsx';
 import { MarkdownBlocks } from '../markdown/index.ts';
+import { useControl } from '../useControl.ts';
 import { PathName } from './CodeBlock.tsx';
 import { setStepper } from './moving.ts';
 import { lineRange } from './placeholders.tsx';
 
-/** The keys that step a walkthrough back and on, which its buttons' tooltips show. */
-const STEP_BACK = ['←'];
-const STEP_ON = ['→'];
+/** The commands that step a walkthrough back and on, whose keys its buttons' tooltips show. */
+const STEP_BACK = 'overview.previousStep';
+const STEP_ON = 'overview.nextStep';
 
 /**
  * A walkthrough: its numbered steps beside a code view that follows the current one, `code`, which
@@ -31,6 +32,11 @@ export function Walkthrough({
 }) {
   const count = node.steps.length;
   const shown = node.steps[current];
+  // Their keys as the keymap has them now.
+  const back = useControl(STEP_BACK)?.keys;
+  const on = useControl(STEP_ON)?.keys;
+  const first = current === 0;
+  const last = current >= count - 1;
   const own = useRef<HTMLDivElement>(null);
   const latest = useRef({ current, count, step });
   latest.current = { current, count, step };
@@ -53,21 +59,22 @@ export function Walkthrough({
           Step {current + 1} of {count}
         </span>
         <span className="lo-walk__nav">
+          {/* Dimmed at either end, each says why as its tooltip. */}
           <Button
             variant="ghost"
             size="sm"
-            disabled={current === 0}
-            hint={current === 0 ? null : 'Previous step'}
-            hintKeys={STEP_BACK}
+            disabled={first}
+            hint={first ? 'First step' : 'Previous step'}
+            hintKeys={first ? undefined : back}
             onClick={() => step(current - 1)}
           >
             Previous
           </Button>
           <Button
             size="sm"
-            disabled={current >= count - 1}
-            hint={current >= count - 1 ? null : 'Next step'}
-            hintKeys={STEP_ON}
+            disabled={last}
+            hint={last ? 'Last step' : 'Next step'}
+            hintKeys={last ? undefined : on}
             onClick={() => step(current + 1)}
           >
             Next

@@ -347,7 +347,7 @@ describe('as the tab opens', () => {
     });
     expect(openings.get(tab.id)).toMatchObject({ on: 'diff', late: true });
     expect(showDiff).toHaveBeenCalledTimes(1);
-    expect(problemTitle(view, 'unchecked')).toBe('Couldn’t check the overview');
+    expect(problemTitle(view, 'unchecked')).toBe('Can’t check the overview');
     expect(view.textContent).toContain('Check again');
 
     // The diff is on screen, and the check goes through.
@@ -563,7 +563,7 @@ describe('an overview that can’t be shown', () => {
     expect(bridge.calls.filter(([channel]) => channel === 'tab.openExternal')).toEqual([]);
   });
 
-  it('says when it couldn’t be fetched and when it’s fetched again, with Try now', async () => {
+  it('says when it couldn’t be fetched and when it’s fetched again, with Try now, busy once pressed', async () => {
     const tab = tabOf();
     act(() =>
       states.set(
@@ -577,12 +577,17 @@ describe('an overview that can’t be shown', () => {
     );
     const view = render(tab);
     expect(view.querySelector('[role="alert"] > p:first-child')?.textContent).toBe(
-      'Couldn’t fetch the overview',
+      'Can’t fetch the overview',
     );
-    expect(view.textContent).toMatch(/Offline\. Retrying in [78] s\./);
+    // The count is for the eye: a screen reader hears "soon", so the alert isn't read each second.
+    expect(view.querySelector('[role="alert"]')?.textContent).toMatch(
+      /^Can’t fetch the overviewOffline\. Retrying in [78] ssoon\.$/,
+    );
     const retry = buttonOf(view, 'Try now');
+    expect(retry?.getAttribute('aria-busy')).toBeNull();
     act(() => retry?.click());
     await until(() => bridge.calls.some(([channel]) => channel === 'overview.retry'));
+    expect(retry?.getAttribute('aria-busy')).toBe('true');
   });
 });
 
@@ -663,9 +668,10 @@ describe('an overview on screen', () => {
   it('keeps every node, its folds open and focus where it was, when it’s checked again or copied', async () => {
     const tab = tabOf();
     const checking = checkingFor(tab);
-    act(() => states.set(tab.id, stateOf(tab)));
+    // The local copy couldn't be fetched: each code block says so in its code's place.
+    act(() => states.set(tab.id, stateOf(tab, { code: 'failed' })));
     const view = render(tab);
-    checking.take(stateOf(tab));
+    checking.take(stateOf(tab, { code: 'failed' }));
     await until(() => view.querySelector('[data-lo-overview="shown"]') !== null);
     // Seen once its blocks have drawn, or at the bound: the tab's placeholder goes.
     await until(() => view.querySelector('.lo-ov.is-drawing') === null);

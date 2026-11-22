@@ -32,6 +32,7 @@ import {
   useEffect,
   useLayoutEffect,
   useMemo,
+  useReducer,
   useRef,
   useState,
   type Ref,
@@ -205,8 +206,15 @@ function partTarget(target: FigurePart['target']): OverviewTarget | undefined {
   return url === undefined ? undefined : { kind: 'web', url };
 }
 
-/** The buttons under the outline: the block keys, which step from block to block. */
-function OutlineFoot() {
+/**
+ * The buttons under the outline: the block keys, which step from block to block. They can't
+ * before the overview's blocks have drawn, so they ask again once they have.
+ */
+function OutlineFoot({ drawing }: { drawing: boolean }) {
+  const [, askAgain] = useReducer((count: number) => count + 1, 0);
+  useLayoutEffect(() => {
+    if (!drawing) askAgain();
+  }, [drawing]);
   return (
     // Buttons for the mouse: the keys they show are the keyboard's way, so `Tab` passes them.
     <div className="flex flex-col items-start" data-lo-hints="">
@@ -349,7 +357,8 @@ export function Shown({
     }),
     [tab, parsed.tree, header.commit, written, head, result.code, code],
   );
-  // What each focused block's chip offers, run on that block.
+  // What each focused block's chip offers, run on that block, asked again as the code beside opens
+  // or closes, which one of them then does.
   const generation = context.tree;
   const hints = useCallback(
     (block: Parameters<typeof blockHints>[0], number: number) =>
@@ -357,7 +366,7 @@ export function Shown({
         ...hint,
         target: { kind: 'block' as const, block: blockId(generation, number) },
       })),
-    [generation],
+    [generation, beside],
   );
   const excerpt = useCallback(
     (node: Excerpt) => <ExcerptBlock node={node} context={context} />,
@@ -433,7 +442,7 @@ export function Shown({
           seen={seen}
           focused={focused}
           outline={!beside}
-          outlineFoot={<OutlineFoot />}
+          outlineFoot={<OutlineFoot drawing={drawing} />}
           hints={hints}
           onFollow={follow}
         />

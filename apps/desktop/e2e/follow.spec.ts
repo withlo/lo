@@ -391,7 +391,8 @@ test('from the overview itself, Tab goes through the outline to the first block,
     await menu.getByRole('menuitem', { name: /^Code beside/ }).click();
     await expect(beside(page).locator('.lo-split__bar .lo-path')).toHaveText('src/parser.ts');
     await block(page, BLOCK.parser).click(CORNER);
-    await menu.getByRole('menuitem', { name: /^Code beside/ }).click();
+    // With the code beside, the menu names what it does now.
+    await menu.getByRole('menuitem', { name: /^Close code beside/ }).click();
     await expect(beside(page)).toHaveCount(0);
 
     // A block with no code lists neither.
@@ -710,7 +711,7 @@ test('o puts a block’s code beside the overview, which follows the blocks, and
     expect(Math.abs((await topOf(page, BLOCK.parser)) - top)).toBeLessThanOrEqual(1);
     expect(await focused(page)).toMatchObject({ block: BLOCK.parser, own: true });
     await expect(block(page, BLOCK.parser).locator('.lo-block__hints')).toContainText(
-      'Code beside',
+      'Close code beside',
     );
     // The block's first line, on screen in the code, inline.
     const code = beside(page).locator('[data-lo-beside-code]');

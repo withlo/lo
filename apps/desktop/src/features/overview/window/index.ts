@@ -39,15 +39,16 @@ import {
   focusBlock,
   focusLink,
   follow,
+  followName,
   followOf,
   keepPlaces,
   loadNewer,
   looseControl,
   nextBlock,
   nextLink,
-  NOT_DRAWN,
   scroll,
   step,
+  stepName,
   stepsIn,
   toggleBeside,
   type DrawnOverview,
@@ -145,7 +146,7 @@ function moving(by: 1 | -1) {
       const overview = onScreen();
       if (typeof overview === 'string') return overview;
       const next = nextBlock(overview, by);
-      return typeof next === 'string' && next !== NOT_DRAWN ? next : true;
+      return typeof next === 'string' ? next : true;
     },
   };
 }
@@ -166,7 +167,7 @@ function linking(by: 1 | -1) {
       const overview = onScreen();
       if (typeof overview === 'string') return overview;
       const next = nextLink(overview, by);
-      return typeof next === 'string' && next !== NOT_DRAWN ? next : true;
+      return typeof next === 'string' ? next : true;
     },
   };
 }
@@ -176,6 +177,14 @@ function stepping(by: 1 | -1) {
   return {
     run: withBlock((_overview, block) => step(block, by)),
     enabled: onBlock((_overview, block) => stepsIn(block)),
+  };
+}
+
+/** What `act` calls a block's command on the block `target` names, as its chip and menu say it. */
+function naming(act: (overview: DrawnOverview, block: HTMLElement) => string | undefined) {
+  return (target: Target): string | undefined => {
+    const found = blockOf(target);
+    return typeof found === 'string' ? undefined : act(found.overview, found.block);
   };
 }
 
@@ -196,7 +205,7 @@ export default {
     previousBlock: moving(-1),
     nextLink: linking(1),
     previousLink: linking(-1),
-    nextStep: stepping(1),
+    nextStep: { ...stepping(1), named: naming((_overview, block) => stepName(block)) },
     previousStep: stepping(-1),
     follow: {
       run: (target) => {
@@ -212,6 +221,7 @@ export default {
         })(target);
       },
       listed: hasCode,
+      named: naming(followName),
     },
     beside: {
       run: (target) => {
@@ -229,6 +239,12 @@ export default {
         return typeof chosen === 'string' ? chosen : true;
       },
       listed: hasCode,
+      // Pressed again, it closes the code beside.
+      named: () => {
+        const overview = onScreen();
+        if (typeof overview === 'string') return undefined;
+        return besides.get(overview.tab) === undefined ? undefined : 'Close code beside';
+      },
     },
     closeBeside: {
       run: () => {

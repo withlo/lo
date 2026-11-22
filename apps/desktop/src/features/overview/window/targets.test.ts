@@ -135,19 +135,31 @@ describe('showsOf', () => {
     const unread: Target = { code: { state: 'unread', why: 'failed' }, answer: undefined };
     const title = (read: CodeRead, found = unread) => {
       const shows = showsOf(target, found, read, 'r3');
-      return shows.kind === 'note' ? [shows.variant, shows.title, ...shows.words] : [];
+      return shows.kind === 'note' ? [shows.variant, shows.title, ...shows.words] : [shows.kind];
     };
-    expect(title({ kind: 'waiting' })).toEqual(['code', 'Fetching local copy…']);
+    // While the local copy comes, the code's room, laid out as the code will be.
+    expect(title({ kind: 'waiting' })).toEqual(['waiting']);
     expect(title({ kind: 'noGit' })).toEqual(['code', 'Can’t show this code', 'Git wasn’t found.']);
-    expect(title({ kind: 'failed', why: 'It broke.' })).toEqual([
+    expect(title({ kind: 'failed', why: 'notFetched' })).toEqual([
       'code',
       'Can’t show this code',
-      'It broke.',
+      'The local copy couldn’t be fetched.',
     ]);
-    expect(title(READ, { ...unread, answer: { kind: 'unread', why: 'Git failed.' } })).toEqual([
+    // Main says the cause, and Lo words it: nothing where main doesn't know it.
+    expect(title(READ, { ...unread, answer: { kind: 'unread', why: 'binary' } })).toEqual([
       'code',
       'Can’t show this code',
-      'Git failed.',
+      { code: target.path },
+      ' isn’t text.',
+    ]);
+    expect(title(READ, { ...unread, answer: { kind: 'unread', why: 'noCommit' } })).toEqual([
+      'code',
+      'Can’t show this code',
+      'r3’s commit isn’t in the local copy.',
+    ]);
+    expect(title(READ, { ...unread, answer: { kind: 'unread', why: 'unknown' } })).toEqual([
+      'code',
+      'Can’t show this code',
     ]);
     expect(title(READ, { code: { state: 'unread', why: 'stopped' }, answer: undefined })).toEqual([
       'code',

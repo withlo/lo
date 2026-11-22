@@ -140,7 +140,8 @@ export function sinceCount(tab: string, commit: string, head: string): Promise<S
     })
     .catch((error: unknown): SinceReply => {
       if (entry.count === count) entry.count = undefined;
-      return { kind: 'failed', why: error instanceof Error ? error.message : String(error) };
+      console.error("Lo couldn't count what changed since the overview:", error);
+      return { kind: 'failed', why: 'unknown' };
     });
   entry.count = count;
   return count;

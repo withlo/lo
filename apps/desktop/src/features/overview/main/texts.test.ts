@@ -210,7 +210,7 @@ describe('BlockTexts', () => {
       text: 'after\n',
       base: {
         kind: 'unknown',
-        why: 'Lo downloaded as much of this overview’s code as it downloads for one.',
+        why: 'spent',
       },
     });
     expect(caps).toEqual([PROBE]);
@@ -221,17 +221,17 @@ describe('BlockTexts', () => {
     const texts = new BlockTexts();
     const read = (path: string, commit = second) =>
       texts.read(local, () => Promise.resolve(repo), commit, path, true);
-    expect(await read('src/link.ts')).toEqual({ kind: 'unread', why: 'It isn’t a file.' });
-    expect(await read('data.bin')).toEqual({ kind: 'unread', why: 'It isn’t text.' });
+    expect(await read('src/link.ts')).toEqual({ kind: 'unread', why: 'notFile' });
+    expect(await read('data.bin')).toEqual({ kind: 'unread', why: 'binary' });
     expect(await read('huge.txt')).toEqual({
       kind: 'unread',
-      why: `It’s larger than ${LIMITS.file / 2 ** 20} MB, the most Lo reads of a file.`,
+      why: 'tooLarge',
     });
     expect(await read('src')).toMatchObject({ kind: 'unread' });
     expect(await read('nowhere.ts')).toMatchObject({ kind: 'unread' });
     expect(await read('src/parser.ts', '1'.repeat(40))).toEqual({
       kind: 'unread',
-      why: 'The local copy doesn’t have the commit the overview describes.',
+      why: 'noCommit',
     });
   });
 
@@ -247,10 +247,10 @@ describe('BlockTexts', () => {
       states.map((local) => texts.read(local, opened, second, 'README.md', true)),
     );
     expect(answers).toEqual([
-      { kind: 'unread', why: 'The pull request’s local copy isn’t here yet.' },
-      { kind: 'unread', why: 'The pull request’s local copy isn’t here yet.' },
-      { kind: 'unread', why: 'Lo needs git to read the code.' },
-      { kind: 'unread', why: 'The pull request’s local copy couldn’t be fetched: It broke.' },
+      { kind: 'unread', why: 'notReady' },
+      { kind: 'unread', why: 'notReady' },
+      { kind: 'unread', why: 'noGit' },
+      { kind: 'unread', why: 'notFetched' },
     ]);
   });
 
@@ -270,7 +270,7 @@ describe('BlockTexts', () => {
     const read = texts.read(local, () => Promise.resolve(waiting), second, 'src/old.ts', false);
     await downloading;
     texts.stop();
-    expect(await read).toEqual({ kind: 'unread', why: 'The read was stopped.' });
+    expect(await read).toEqual({ kind: 'unread', why: 'unknown' });
   });
 });
 

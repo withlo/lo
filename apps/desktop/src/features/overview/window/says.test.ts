@@ -14,7 +14,6 @@ import {
   shortId,
   sizeRows,
   tooLargeWords,
-  until,
   writtenText,
 } from './says.ts';
 
@@ -150,21 +149,32 @@ describe('an overview in a newer format', () => {
 });
 
 describe('a ref that couldn’t be fetched', () => {
-  it('says why, and when it’s fetched again, with GitHub’s words left for Details', () => {
-    const now = 1_000_000;
-    expect(until(now + 7_200, now)).toBe('8 s');
-    expect(until(now + 2 * MINUTE, now)).toBe('2 min');
-    expect(
-      problemReason({ kind: 'offline', message: 'ECONNRESET', retryAt: now + 8_000 }, now),
-    ).toBe('Offline. Retrying in 8 s.');
-    expect(
-      problemReason({ kind: 'failed', message: 'GitHub answered 502.', retryAt: now + 5_000 }, now),
-    ).toBe('GitHub returned an error. Retrying in 5 s.');
-    expect(problemReason({ kind: 'signedOut', login: 'tess', retryAt: now + 5_000 }, now)).toBe(
-      'tess is signed out.',
+  it('says why, and when it’s fetched again, to count down, with GitHub’s words left for Details', () => {
+    const at = 1_000_000;
+    expect(problemReason({ kind: 'offline', message: 'ECONNRESET', retryAt: at })).toEqual({
+      cause: 'Offline.',
+      retryAt: at,
+    });
+    expect(problemReason({ kind: 'failed', message: 'GitHub answered 502.', retryAt: at })).toEqual(
+      { cause: 'GitHub returned an error.', retryAt: at },
     );
-    expect(
-      problemReason({ kind: 'rateLimited', secondary: true, retryAt: now + 60_000 }, now),
-    ).toBe('GitHub’s rate limit was reached. Retrying in 1 min.');
+    expect(problemReason({ kind: 'rateLimited', secondary: true, retryAt: at })).toEqual({
+      cause: 'GitHub’s rate limit was reached.',
+      retryAt: at,
+    });
+    // Signed out, nothing to count down: it takes a sign-in.
+    expect(problemReason({ kind: 'signedOut', login: 'tess', retryAt: at })).toEqual({
+      cause: 'tess is signed out.',
+    });
+    // An organization that blocks the account says which, and why.
+    const blocked = { kind: 'blocked', org: 'rozed-dev', message: 'SAML.', links: [], retryAt: at };
+    expect(problemReason({ ...blocked, kind: 'blocked', why: 'sso' })).toEqual({
+      cause: 'rozed-dev requires single sign-on.',
+      retryAt: at,
+    });
+    expect(problemReason({ ...blocked, kind: 'blocked', why: 'approval' })).toEqual({
+      cause: 'rozed-dev hasn’t approved Lo.',
+      retryAt: at,
+    });
   });
 });

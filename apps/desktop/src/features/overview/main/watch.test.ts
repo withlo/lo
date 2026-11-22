@@ -775,6 +775,8 @@ describe('failing', () => {
           ),
         {
           kind: 'blocked',
+          why: 'sso',
+          org: 'rozed-dev',
           message: 'Resource protected by organization SAML enforcement.',
           links: [
             {
@@ -1125,7 +1127,7 @@ describe('the code', () => {
         new Promise((resolve) => {
           signal.addEventListener('abort', () => {
             stopped = true;
-            resolve({ kind: 'failed', why: 'stopped' });
+            resolve({ kind: 'failed', why: 'unknown' });
           });
         }),
     );

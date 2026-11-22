@@ -20,7 +20,7 @@ import { BINARY_WINDOW, LIMITS } from '@lo/artifact';
 import { parseOid, type ChangedFile, type FileVersion, type Oid, type Repo } from '@lo/git';
 
 import type { LocalState } from '../../tab/contract.ts';
-import type { BaseText, BlockText } from '../contract.ts';
+import type { BaseText, BlockText, CodeCause } from '../contract.ts';
 import { DOWNLOAD_LIMIT, pastCap, PROBE } from './code.ts';
 
 /** What the files are read through: the pull request's local copy. */
@@ -119,25 +119,25 @@ export class BlockTexts {
       case 'ready':
         break;
       case 'noGit':
-        return unread('Lo needs git to read the code.');
+        return unread('noGit');
       case 'failed':
-        return unread(`The pull request’s local copy couldn’t be fetched: ${local.message}`);
+        return unread('notFetched');
       case 'waiting':
       case 'fetching':
       case 'retrying':
-        return unread('The pull request’s local copy isn’t here yet.');
+        return unread('notReady');
       default:
         local satisfies never;
-        return unread('The pull request’s local copy isn’t here yet.');
+        return unread('notReady');
     }
     const opening = clone();
-    if (!opening) return unread('The pull request’s local copy isn’t open.');
+    if (!opening) return unread('notReady');
     try {
       return await this.#read(await opening, local, parseOid(commit), path, withBase);
     } catch (error) {
-      if (this.#stopped.signal.aborted) return unread('The read was stopped.');
+      if (this.#stopped.signal.aborted) return unread('unknown');
       this.#log(`reading the code a block of the overview shows: ${describe(error)}`);
-      return unread(`Lo couldn’t read it from the local copy: ${describe(error)}`);
+      return unread('unknown');
     }
   }
 
@@ -154,12 +154,12 @@ export class BlockTexts {
     withBase: boolean,
   ): Promise<BlockText> {
     if (!(await clone.hasCommit(commit))) {
-      return unread('The local copy doesn’t have the commit the overview describes.');
+      return unread('noCommit');
     }
     const bytes = encoder.encode(path);
     const [found] = await clone.fileVersions(commit, [bytes]);
     if (found === undefined || found === 'folder') {
-      return unread('There’s no file at that path at the commit the overview describes.');
+      return unread('noFile');
     }
     const changes = this.#changesAt(clone, local, commit, withBase);
     const text = await readWhole(clone, found, changes.budget, this.#stopped.signal);
@@ -262,15 +262,15 @@ export async function readWhole(
   version: FileVersion,
   budget: Budget,
   signal: AbortSignal,
-): Promise<string | { why: string }> {
+): Promise<string | { why: CodeCause }> {
   if (version.mode !== 'regular' && version.mode !== 'executable') {
-    return { why: 'It isn’t a file.' };
+    return { why: 'notFile' };
   }
   let { size } = version;
   if (size === undefined) {
-    if (clone.offline) return { why: 'The local copy is offline, and lacks it.' };
+    if (clone.offline) return { why: 'offline' };
     const cap = Math.min(PROBE, budget.left);
-    if (cap <= 0) return { why: SPENT };
+    if (cap <= 0) return { why: 'spent' };
     try {
       await clone.download([version.oid], DOWNLOADING, {
         maxBytes: cap,
@@ -280,26 +280,20 @@ export async function readWhole(
         },
       });
     } catch (error) {
-      if (pastCap(error)) return { why: cap === PROBE ? TOO_LARGE : SPENT };
+      if (pastCap(error)) return { why: cap === PROBE ? 'tooLarge' : 'spent' };
       throw error;
     }
     [size] = await clone.objectSizes([version.oid]);
-    if (size === undefined) return { why: 'The local copy doesn’t have it.' };
+    if (size === undefined) return { why: 'notDownloaded' };
   }
-  if (size > LIMITS.file) return { why: TOO_LARGE };
+  if (size > LIMITS.file) return { why: 'tooLarge' };
   const bytes = await clone.readBlob(version.oid, { maxBytes: LIMITS.file });
-  if (bytes?.length !== size) return { why: 'Lo couldn’t read it from the local copy.' };
-  if (bytes.subarray(0, BINARY_WINDOW).includes(0)) return { why: 'It isn’t text.' };
+  if (bytes?.length !== size) return { why: 'unknown' };
+  if (bytes.subarray(0, BINARY_WINDOW).includes(0)) return { why: 'binary' };
   return decoder.decode(bytes);
 }
 
-/** Why a file isn't shown once what Lo downloads for a commit's code is spent. */
-const SPENT = 'Lo downloaded as much of this overview’s code as it downloads for one.';
-
-/** Why a file larger than Lo reads isn't shown. */
-const TOO_LARGE = `It’s larger than ${LIMITS.file / 2 ** 20} MB, the most Lo reads of a file.`;
-
-function unread(why: string): Extract<BlockText, { kind: 'unread' }> {
+function unread(why: CodeCause): Extract<BlockText, { kind: 'unread' }> {
   return { kind: 'unread', why };
 }
 

@@ -15,12 +15,19 @@ import {
 } from '@lo/artifact';
 
 import { buildCss, hasRule } from '../../scripts/stylesheet.ts';
-import { commandsOf, defineCommands, holdRegistry, Registry } from '../commands/index.ts';
+import {
+  commandsOf,
+  defineCommands,
+  holdRegistry,
+  Registry,
+  type Target,
+} from '../commands/index.ts';
 import { cleanUp, click, disallowed, focus, ids, press, render, rerender } from '../../test/dom.ts';
 import { FakeResizeObserver, resize } from '../../test/figures.ts';
 import { isMarkdownAttribute, MARKDOWN_ELEMENTS } from '../markdown/index.ts';
 import {
   alphabetical,
+  blockHints,
   closeCards,
   HOVER_CLOSE_MS,
   HOVER_OPEN_MS,
@@ -363,6 +370,14 @@ function blockKey(label: string, key: string) {
   };
 }
 
+/** What each block's chip offers, run on the block, by its number. */
+function onBlock(block: OverviewBlock, number: number) {
+  return blockHints(block).map((hint) => ({
+    ...hint,
+    target: { kind: 'block' as const, block: String(number) },
+  }));
+}
+
 /** The block keys the focused block's chip offers. */
 const BLOCK_KEYS = defineCommands('overview', {
   follow: blockKey('Go to code', 'enter'),
@@ -427,26 +442,34 @@ describe('blocks', () => {
     ]);
   });
 
-  it('draws the focused block’s ring and its keys, and keeps prose’s spacing around prose', () => {
+  it('draws the focused block’s ring and its keys, named by what each does there, and keeps prose’s spacing around prose', () => {
     const tree = fixture('valid/example');
     const at = (kind: OverviewBlock['kind']) =>
       tree.blocks.findIndex((block) => block.kind === kind);
     const focusedOn = (index: number) => {
       cleanUp();
-      return render(<OverviewDocument tree={tree} focused={index} />);
+      return render(<OverviewDocument tree={tree} focused={index} hints={onBlock} />);
     };
 
-    // The block keys, as the overview declares them, which the chip's buttons take their words,
-    // keys and runs from.
+    // The block keys, as the overview declares them, which the chip's buttons take their keys and
+    // runs from, and their words, as each names itself on the block: `⏎` opens a link anywhere
+    // but in code, and `→` goes to the next of a set of tabs.
+    const kindOf = (target: Target) =>
+      target.kind === 'block' ? tree.blocks[Number(target.block)]?.kind : undefined;
+    const names: Record<string, (target: Target) => string | undefined> = {
+      'overview.follow': (target) => (kindOf(target) === 'excerpt' ? undefined : 'Open link'),
+      'overview.nextStep': (target) => (kindOf(target) === 'tabs' ? 'Next tab' : undefined),
+    };
     const ran: string[] = [];
     onTestFinished(
       holdRegistry(
         new Registry({
           system: 'mac',
-          commands: commandsOf(BLOCK_KEYS).map((each) => ({
-            ...each,
-            handler: { run: () => void ran.push(each.id) },
-          })),
+          commands: commandsOf(BLOCK_KEYS).map((each) => {
+            const run = () => void ran.push(each.id);
+            const named = names[each.id];
+            return { ...each, handler: named ? { run, named } : { run } };
+          }),
         }),
       ),
     );
@@ -461,7 +484,7 @@ describe('blocks', () => {
     expect(ran).toEqual(['overview.beside']);
 
     page = focusedOn(at('tabs'));
-    expect(hints(page.querySelector('.is-focused')!)).toEqual(['Next step→']);
+    expect(hints(page.querySelector('.is-focused')!)).toEqual(['Next tab→']);
 
     page = focusedOn(at('details'));
     block = page.querySelector('.is-focused')!;
@@ -474,7 +497,7 @@ describe('blocks', () => {
     block = page.querySelector('.is-focused')!;
     expect(block.className).toBe('lo-block lo-block--prose is-focused');
     expect(block.firstElementChild?.localName).toBe('p');
-    expect(hints(block)).toEqual(['Next linkTab', 'Go to code⏎']);
+    expect(hints(block)).toEqual(['Next linkTab', 'Open link⏎']);
 
     // Unfocused, no chip is drawn at all.
     page = focusedOn(-1);

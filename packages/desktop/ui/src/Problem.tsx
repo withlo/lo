@@ -27,7 +27,10 @@ export interface ProblemAction {
 export interface ProblemProps {
   /** What failed, in a few words with no status code in them: "Couldn't fetch the diff". */
   title: ReactNode;
-  /** Why, or what to do about it, in a sentence. */
+  /**
+   * Why, or what to do about it, in a sentence, and any retry: "Offline. Retrying in 8 s.". What
+   * counts down in it is a `Countdown`, so the alert it's in reads the same throughout.
+   */
   reason?: ReactNode;
   action?: ProblemAction | undefined;
   /**
@@ -56,7 +59,7 @@ const problem = cva('min-w-0 text-ui', {
  * Something that went wrong, in one shape wherever it shows: what failed, why, the one
  * thing to do about it, and the raw text behind Details. It's said once, here: no toast or second
  * line repeats it. A screen reader hears what failed and why at once, as an alert, and not its
- * buttons.
+ * buttons. Nothing in it changes on a timer except through `Countdown`, so the alert is read once.
  */
 export function Problem({ title, reason, action, details, layout = 'inline' }: ProblemProps) {
   const copy = useCopy();

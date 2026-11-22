@@ -24,6 +24,7 @@ import {
   FIRST_FIGURES,
   type CodeAccess,
   type CodeAnswer,
+  type CodeCause,
   type CodeReply,
   type OverviewCommit,
   type OverviewFile,
@@ -51,7 +52,7 @@ export type CodeRead =
   | { kind: 'none' }
   | { kind: 'waiting' }
   | { kind: 'noGit' }
-  | { kind: 'failed'; why: string }
+  | { kind: 'failed'; why: CodeCause }
   | { kind: 'read'; commit: string; files: (CodeFile & { answer: CodeSeen })[] };
 
 /**
@@ -82,10 +83,23 @@ export type CheckedOverview =
       coming: readonly string[];
       code: CodeRead;
     }
-  | { kind: 'failed'; key: string; commit: OverviewCommit; why: string };
+  | {
+      kind: 'failed';
+      key: string;
+      commit: OverviewCommit;
+      why: string;
+      details?: string | undefined;
+    };
 
-/** `artifact.md` couldn't be read, as main says why, which the log keeps. */
-class Unread extends Error {}
+/** `artifact.md` couldn't be read, and main's why, which Details shows as main said it. */
+class Unread extends Error {
+  readonly why: string;
+
+  constructor(why: string) {
+    super(`Lo couldn't read artifact.md: ${why}`);
+    this.why = why;
+  }
+}
 
 /**
  * Why a check failed of the background process's own failures, where the reader can know why. A
@@ -99,12 +113,17 @@ const JOB_FAILURES = new Map([
 
 /**
  * Why a check failed, as the overview says it: the cause where Lo knows it, and nothing (`''`)
- * where it doesn't. What the error itself said goes only to the log.
+ * where it doesn't, as for `artifact.md` that main couldn't read, which it read from GitHub or from
+ * what it kept. What the error itself said goes only to the log.
  */
 export function failedWhy(error: unknown): string {
-  if (error instanceof Unread) return 'GitHub returned an error.';
   const known = error instanceof IpcError ? JOB_FAILURES.get(error.code) : undefined;
   return known ?? '';
+}
+
+/** What a failed check has behind Details: main's why for `artifact.md` it couldn't read. */
+export function failedDetails(error: unknown): string | undefined {
+  return error instanceof Unread ? error.why : undefined;
 }
 
 /** What a tab's checking reads with, and where it sends what it found. */
@@ -253,6 +272,7 @@ export class Checking {
         if (running.signal.aborted) return;
         this.#failed = true;
         const why = failedWhy(error);
+        const details = failedDetails(error);
         this.#parts.log(`Lo couldn't check the overview of tab ${this.#id}:`, error);
         // What was shown of the commit stays, until a check succeeds. Of one nothing was shown of
         // yet, as a newer commit than the last result's, why is said, so it isn't left looking as
@@ -260,7 +280,7 @@ export class Checking {
         if (this.#told) return;
         const key = `${commit.id} ${commit.source} failed`;
         this.#published = key;
-        this.#parts.publish({ kind: 'failed', key, commit, why });
+        this.#parts.publish({ kind: 'failed', key, commit, why, details });
       })
       .finally(() => {
         if (this.#running === running) this.#running = undefined;
@@ -297,7 +317,7 @@ export class Checking {
               commit: fresh.code.commit,
               files: fresh.code.files.map(({ path }, index) => ({
                 path,
-                answer: fresh.answers?.[index] ?? { kind: 'unread', why: 'Main gave no answer.' },
+                answer: fresh.answers?.[index] ?? { kind: 'unread', why: 'unknown' },
               })),
             }
           : null,
@@ -365,7 +385,7 @@ export class Checking {
     // Main reads no file of a commit its listing says is too large, or that holds no artifact.md.
     if (!commit.read) return { artifact: null, parse: undefined };
     const [text] = await this.#parts.files({ id: this.#id, commit: commit.id, paths: [ARTIFACT] });
-    if (text?.kind === 'unread') throw new Unread(`Lo couldn't read artifact.md: ${text.why}`);
+    if (text?.kind === 'unread') throw new Unread(text.why);
     // The listing says what else it is, which the check reports.
     if (text?.kind !== 'file' || text.bytes === null) return { artifact: null, parse: undefined };
     const artifact = text.bytes;
@@ -469,7 +489,7 @@ export class Checking {
       case 'noGit':
         return { kind: 'noGit' };
       case 'failed':
-        return { kind: 'failed', why: 'The local copy couldn’t be fetched.' };
+        return { kind: 'failed', why: 'notFetched' };
       default:
         this.#access satisfies never;
         return { kind: 'waiting' };
@@ -528,10 +548,7 @@ export class Checking {
       case 'noGit':
         return { code: { kind: 'noGit' }, answers: undefined };
       case 'failed':
-        return {
-          code: { kind: 'failed', why: 'The local copy couldn’t be fetched.' },
-          answers: undefined,
-        };
+        return { code: { kind: 'failed', why: 'notFetched' }, answers: undefined };
       case 'ready':
       case 'offline':
         break;
@@ -553,7 +570,7 @@ export class Checking {
     }
     const files = parse.code.map((file, index) => ({
       ...file,
-      answer: seen(reply.files[index] ?? { kind: 'unread', why: 'Main gave no answer for it.' }),
+      answer: seen(reply.files[index] ?? { kind: 'unread', why: 'unknown' }),
     }));
     // Read again, but less of it.
     if (
