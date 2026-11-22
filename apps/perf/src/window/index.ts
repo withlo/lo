@@ -15,6 +15,7 @@ import {
   type DiffView,
   type Mark,
   type Place,
+  setVim,
   type Span,
 } from '@lo/ui/code';
 import { type Entry, listen, Registry } from '@lo/ui/commands';
@@ -78,6 +79,9 @@ const registry: Registry = new Registry({
 });
 registry.tab(tab);
 listen(window, registry);
+// The suite measures the view with Vim keys on, the longer of its two key paths. Lo starts with
+// them off.
+setVim(true);
 
 view = createDiffView(
   root,
