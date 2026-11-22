@@ -697,8 +697,9 @@ export const SHOW_NEW_THREAD = 'Show new thread';
 
 /**
  * Someone else's new thread on a line on screen, which waits there so nothing moves under the
- * reader: the line says so at its end, over the code, taking no room. A click on it is a click on
- * the line, which lets what waits in, as any input of the reader's does, so it's named for that.
+ * reader: the line says so at its end, over the code, taking no room. It's a button, named for
+ * what pressing it does: a click or a key, as any input of the reader's, lets what waits in, and
+ * the view puts the cursor on its line as it goes.
  */
 export class ArrivedWidget extends WidgetType {
   override eq(): boolean {
@@ -706,8 +707,8 @@ export class ArrivedWidget extends WidgetType {
   }
 
   toDOM(): HTMLElement {
-    const marker = element('span', 'lo-arrived', NEW_THREAD);
-    marker.setAttribute('role', 'button');
+    const marker = element('button', 'lo-arrived', NEW_THREAD);
+    marker.type = 'button';
     marker.setAttribute('aria-label', SHOW_NEW_THREAD);
     marker.dataset.tip = SHOW_NEW_THREAD;
     return marker;

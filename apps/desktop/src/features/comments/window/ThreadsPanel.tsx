@@ -30,6 +30,7 @@ import {
   emptyOf,
   focusedRows,
   groupsIn,
+  holdFocusInList,
   listable,
   moves,
   panelTarget,
@@ -90,6 +91,8 @@ export function Failed({ view, reason }: { view: string; reason: string | undefi
         action={{
           label: 'Try again',
           onClick: () => {
+            // The button goes as the read is asked for: focus stays in the list.
+            holdFocusInList();
             setAgain('asking');
             // Asked, main says the read is on again, which draws the panel anew.
             main()

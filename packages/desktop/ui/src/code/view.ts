@@ -3423,6 +3423,8 @@ class View implements DiffView {
     return [
       this.#common(side),
       EditorView.contentAttributes.of({ 'aria-label': side === 'old' ? 'Before' : 'After' }),
+      // Which side it is, for the stylesheet: a box that spans both sides reaches over the other.
+      EditorView.editorAttributes.of({ 'data-side': side }),
       markerGutter({
         active: () => this.#marked.size > 0,
         markerAt: (first, last) => this.#markerAt(side, first, last),
@@ -3953,6 +3955,7 @@ class View implements DiffView {
     swaps: Partial<Record<Pane, readonly Transaction[]>> = {},
   ): void {
     this.#settleUndrawn(file);
+    const marker = this.#markerWithFocus();
     this.#rows[file] = this.#rowsOf(file);
     const effects = [...more, marksChanged.of(null)];
     const split = (): void => {
@@ -4003,7 +4006,27 @@ class View implements DiffView {
       split();
       inline();
     }
+    // A new thread's marker that had focus went as its thread came: the cursor goes to its line,
+    // with focus, so focus doesn't fall to the page.
+    if (marker && !marker.dom.isConnected) {
+      const { doc } = marker.view.state;
+      marker.view.dispatch({
+        selection: { anchor: doc.line(Math.min(marker.line, doc.lines)).from },
+      });
+      marker.view.focus();
+    }
     this.#aligner.schedule();
+  }
+
+  /** A new thread's marker in one of the editors, if it has focus, with its editor and its line. */
+  #markerWithFocus(): { dom: HTMLElement; view: EditorView; line: number } | undefined {
+    const active = document.activeElement;
+    if (!(active instanceof HTMLElement) || !active.classList.contains('lo-arrived')) {
+      return undefined;
+    }
+    const view = this.#editors().find((each) => each.dom.contains(active));
+    if (!view) return undefined;
+    return { dom: active, view, line: view.state.doc.lineAt(view.posAtDOM(active)).number };
   }
 
   /**

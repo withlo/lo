@@ -37,7 +37,8 @@
         "default",
         "^production",
         "{workspaceRoot}/.oxlintrc.json",
-        "{workspaceRoot}/scripts/oxlint/plugin.ts"
+        "{workspaceRoot}/scripts/oxlint/plugin.ts",
+        "{workspaceRoot}/design/stylelint.config.mjs"
       ]
     },
     "test": {

@@ -1194,9 +1194,10 @@ describe('threads', () => {
         (each) => each.closest('.cm-line')?.textContent?.replace('New thread', '') ?? '',
       );
     expect(marked()).toEqual(['line 4']);
-    // Named for what a click on it does, which is the line's: it lets the thread in.
+    // A button, named for what pressing it does: it lets the thread in.
     const marker = scroller().querySelector<HTMLElement>('.lo-arrived');
-    expect(marker?.getAttribute('role')).toBe('button');
+    expect(marker?.tagName).toBe('BUTTON');
+    expect(marker?.getAttribute('type')).toBe('button');
     expect(marker?.getAttribute('aria-label')).toBe('Show new thread');
     expect(marker?.dataset['tip']).toBe('Show new thread');
     expect(marker?.dataset['command']).toBeUndefined();
@@ -1211,10 +1212,17 @@ describe('threads', () => {
     }
     // And the caller is told, for a screen reader, which isn't reading where the mark is.
     expect(told).toBe(1);
+    // With focus on it as it goes, focus goes to its line, not to the page.
+    marker!.focus();
+    expect(document.activeElement).toBe(marker);
     screen.lines.clear();
     scroller().dispatchEvent(new Event('scroll'));
     expect(drawnThreads()).toEqual(['here', 'below']);
     expect(marked()).toEqual([]);
+    const editor = parent!.querySelector<HTMLElement>('.cm-editor[data-side="new"]')!;
+    expect(editor.contains(document.activeElement)).toBe(true);
+    const { state } = EditorView.findFromDOM(editor)!;
+    expect(state.doc.lineAt(state.selection.main.head).text).toBe('line 4');
     // What a thread there says changes at once.
     screen.lines.add('line 4');
     shown.setThreads([thread('here', at('a', 'new', 4), true, 2), below], render);

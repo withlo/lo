@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 // The threads panel when its threads couldn't be read: why, and a way to read them again, which
-// waits as the first read did, and says so again if it couldn't even be asked for.
+// waits as the first read did, focus staying in the list, and says so again if it couldn't even
+// be asked for.
 
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
@@ -16,7 +17,10 @@ beforeAll(() => {
 test('a read again that can’t be asked for shows why the threads can’t be shown again', async () => {
   // Main doesn't answer: the ask for a read again is refused.
   const bridge = installBridge();
+  // In the panel's list, which takes focus as Try again goes.
   const element = document.createElement('div');
+  element.dataset['loScope'] = 'threads';
+  element.tabIndex = -1;
   document.body.append(element);
   const root = createRoot(element);
   onTestFinished(() => {
@@ -28,10 +32,12 @@ test('a read again that can’t be asked for shows why the threads can’t be sh
   const again = [...element.querySelectorAll('button')].find(
     (each) => each.textContent === 'Try again',
   )!;
+  again.focus();
   await act(async () => {
     again.click();
     await Promise.resolve();
   });
+  expect(document.activeElement).toBe(element);
   expect(bridge.calls.map(([channel]) => channel)).toEqual(
     expect.arrayContaining([expect.stringContaining('reread')]),
   );

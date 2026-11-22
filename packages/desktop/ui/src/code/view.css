@@ -66,14 +66,17 @@
 }
 /*
  * A file's viewed mark in its header, as the file tree draws it: an empty ring not yet, a filled
- * ball viewed, an amber ring with a dot when a push changed it since.
+ * ball viewed, an amber ring with a dot when a push changed it since. It's a control: a click
+ * marks the file.
  */
 .lo-diffhead__ball {
+  position: relative;
   width: calc(var(--lo-sp-12) - var(--lo-sp-2));
   height: calc(var(--lo-sp-12) - var(--lo-sp-2));
   flex: none;
   border-radius: 50%;
   box-shadow: inset 0 0 0 1.5px var(--lo-fg-dim);
+  cursor: default;
 }
 .lo-diffhead__ball.is-viewed {
   background: var(--lo-fg-muted);
@@ -95,14 +98,7 @@
   box-shadow: inset 0 0 0 1.5px var(--lo-warning);
   background: radial-gradient(circle, var(--lo-warning) 0 2px, transparent 2.5px);
 }
-/*
- * The ball is a control: a click marks the file. It keeps its size, and takes clicks a little
- * around it. One that can't run is dimmed.
- */
-.lo-diffhead__ball {
-  position: relative;
-  cursor: default;
-}
+/* The ball keeps its size, and takes clicks a little around it. One that can't run is dimmed. */
 .lo-diffhead__ball::after {
   content: '';
   position: absolute;
@@ -437,16 +433,16 @@
  */
 /*
  * A box reaches over the other side only while the other side has none, so two boxes never cover
- * each other: with one on each side, each keeps its own side.
+ * each other: with one on each side, each keeps its own side. Each editor says its side
+ * (`data-side`), so no `:has()` is inside another, which Chromium drops the whole rule for.
  */
-.lo-diffview.is-spanned:not(:has(> .cm-editor:has(+ .cm-editor) .lo-diffcomposer))
-  > .cm-editor
-  + .cm-editor
+.lo-diffview.is-spanned:not(:has(> .cm-editor[data-side='old'] .lo-diffcomposer))
+  > .cm-editor[data-side='new']
   .lo-diffcomposer {
   margin-inline-start: calc(-1 * var(--lo-reach-new));
 }
-.lo-diffview.is-spanned:not(:has(> .cm-editor + .cm-editor .lo-diffcomposer))
-  > .cm-editor:has(+ .cm-editor)
+.lo-diffview.is-spanned:not(:has(> .cm-editor[data-side='new'] .lo-diffcomposer))
+  > .cm-editor[data-side='old']
   .lo-diffcomposer {
   margin-inline-end: calc(-1 * var(--lo-reach-old));
 }
@@ -455,19 +451,22 @@
   z-index: 201;
 }
 /* Each editor draws over the one before it: the old side, reaching over the new, comes above. */
-.lo-diffview.is-spanned:not(:has(> .cm-editor + .cm-editor .lo-diffcomposer))
-  > .cm-editor:has(+ .cm-editor):has(.lo-diffcomposer) {
+.lo-diffview.is-spanned:not(:has(> .cm-editor[data-side='new'] .lo-diffcomposer))
+  > .cm-editor[data-side='old']:has(.lo-diffcomposer) {
   z-index: 1;
 }
 
 /*
- * Someone else's new comment, waiting on a line on screen until the reader's next input: the line
+ * Someone else's new thread, waiting on a line on screen until the reader's next input: the line
  * says so at its end, over the code, taking no room in the line. A click on it lets it in, as a
  * click anywhere does.
  */
 .lo-arrived {
   position: absolute;
   inset-inline-end: var(--lo-sp-8);
+  margin: 0;
+  border: none;
+  padding-block: 0;
   padding-inline: var(--lo-sp-6);
   border-radius: var(--lo-r-pill);
   background: var(--lo-info-bg);
@@ -476,6 +475,12 @@
   font: var(--lo-text-micro);
   cursor: pointer;
   user-select: none;
+}
+/* It's a button, which a keyboard can reach: its ring is the focus ring, round its own edge. */
+.lo-arrived:focus-visible {
+  box-shadow:
+    inset 0 0 0 1px var(--lo-info-border),
+    var(--lo-ring);
 }
 
 /* The inline layout's two columns of line numbers, old then new. */

@@ -20,7 +20,7 @@
   "scripts": {
     "codegen": "node scripts/theme.ts && node scripts/logo.ts && prettier --write src/theme.css src/logoKeys.ts",
     "e2e": "playwright test --config e2e/playwright.config.ts",
-    "lint": "oxlint && stylelint --config ../../../design/stylelint.config.mjs 'src/overview/*.css' && node scripts/check-classes.ts src && node scripts/check-popups.ts src && node scripts/check-surface.ts",
+    "lint": "oxlint && stylelint --config ../../../design/stylelint.config.mjs 'src/**/*.css' && node scripts/check-classes.ts src && node scripts/check-popups.ts src && node scripts/check-surface.ts",
     "test": "vitest run --root ../../.. --project @lo/ui"
   },
   "dependencies": {

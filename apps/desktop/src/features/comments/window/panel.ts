@@ -181,14 +181,19 @@ export function canClearFilter(): true | string {
 const PANEL_LIST = '[data-lo-scope="threads"]';
 
 /**
- * Clear filter: the panel lists every thread. Pressed in the panel, as its empty state's button,
- * focus stays in the list, which the button leaves with the empty state.
+ * With focus on a control in the panel's list that's about to go, as a button of its empty state
+ * does once pressed, focus goes to the list, so it doesn't fall to the page.
  */
-export function clearFilter(): void {
+export function holdFocusInList(): void {
   const active = document.activeElement;
   const list = active instanceof HTMLElement ? active.closest<HTMLElement>(PANEL_LIST) : null;
-  setFilter('all');
   list?.focus();
+}
+
+/** Clear filter: the panel lists every thread, focus staying in the list. */
+export function clearFilter(): void {
+  holdFocusInList();
+  setFilter('all');
 }
 
 /** `j` (1) and `k` (-1): the keyboard moves a thread on, stopping at the ends. */
