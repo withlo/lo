@@ -360,6 +360,14 @@ test('answers its keys: files, changes, sides, layout, whitespace and folds, Esc
     await press(page, 'Tab');
     await expect.poll(async () => (await cursor(page))?.pane).toBe('new');
 
+    // The diff bar's Previous change and Next change jump as `[c` and `]c` do, and leave focus in
+    // the diff.
+    const landed = await cursor(page);
+    await page.getByRole('button', { name: 'Previous change' }).click();
+    await expect.poll(() => cursor(page)).not.toEqual(landed);
+    await page.getByRole('button', { name: 'Next change' }).click();
+    await expect.poll(() => cursor(page)).toEqual(landed);
+
     // `zR` opens the file's unchanged lines: src/parser.ts is the sixth file.
     const collapsed = page.locator('.lo-diffview [data-row^="c:5:"]');
     await expect(collapsed.first()).toBeVisible();

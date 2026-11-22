@@ -9,7 +9,7 @@
 // file on screen, and asks the diff to show the files it picks.
 
 import { HintButton } from '@lo/ui';
-import { useEffect, useLayoutEffect, useMemo, useRef } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useReducer, useRef } from 'react';
 
 import { Slot } from '../../../window/slots.tsx';
 import {
@@ -28,7 +28,7 @@ import type { Snapshot } from './loader.ts';
 import { usePage } from './page.ts';
 import { placesFor } from './places.ts';
 import { notes } from './shared.ts';
-import { loaderOf, useSnapshot } from './tabs.ts';
+import { loaderOf, onDrawn, useSnapshot } from './tabs.ts';
 import { useSaysWaiting, useThreadsSettled } from './settled.ts';
 
 /** Where each tab's view was when it last went, to come back to. */
@@ -207,7 +207,7 @@ export function Diff({ tab, shown }: { tab: PullTab; shown: boolean }) {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <Slot slot={notes} props={{ tab, end: changeJumps }} />
+      <Slot slot={notes} props={{ tab, end: <ChangeJumps tab={tab.id} /> }} />
       {!ready || nonceValue === undefined || !settled ? (
         <Waiting tab={tab} snapshot={snapshot} threads={saysWaiting} />
       ) : (
@@ -217,13 +217,26 @@ export function Diff({ tab, shown }: { tab: PullTab; shown: boolean }) {
   );
 }
 
-/** The diff bar's buttons for the change jumps, which say why they're dimmed until it's drawn. */
-const changeJumps = (
-  <span className="flex flex-none items-center gap-2">
-    <HintButton command="diff.previousChange" />
-    <HintButton command="diff.nextChange" />
-  </span>
-);
+/**
+ * The diff bar's buttons for the change jumps, which say why they're dimmed until the diff is
+ * drawn, and are drawn again each time it is.
+ */
+function ChangeJumps({ tab }: { tab: string }) {
+  const [, redraw] = useReducer((times: number) => times + 1, 0);
+  useEffect(
+    () =>
+      onDrawn((id) => {
+        if (id === tab) redraw();
+      }),
+    [tab],
+  );
+  return (
+    <span className="flex flex-none items-center gap-2">
+      <HintButton command="diff.previousChange" />
+      <HintButton command="diff.nextChange" />
+    </span>
+  );
+}
 
 /**
  * What the middle shows until the diff is drawn. While the tab opens and its files are read, it's
