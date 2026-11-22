@@ -117,8 +117,13 @@ export function verdictRefusal(
   // Any summary, so a blank one says nothing here: that's the main button's to say.
   const refusal = plannedRefusal(view, event, 'summary');
   if (refusal?.kind !== 'ownPullRequest' && refusal?.kind !== 'otherRevision') return undefined;
+  // Each verdict says what it is its author can't do.
+  if (refusal.kind === 'ownPullRequest' && event === 'REQUEST_CHANGES') return OWN_CHANGES;
   return reasonOf(refusal, label);
 }
+
+/** Why Request changes is dimmed on your own pull request. */
+const OWN_CHANGES = 'Its author can’t request changes';
 
 /**
  * The verdicts the dialog offers, in `@lo/review`'s order, each dimmed with why where it can't be
@@ -243,10 +248,13 @@ export function pausedReason(until: number): string {
 /** What went wrong, as the line above the dialog's buttons says it. */
 export interface Problem {
   readonly title: string;
-  readonly reason: string;
+  readonly reason?: string | undefined;
   /** What GitHub, or the error, said, behind Details. */
   readonly details?: string | undefined;
 }
+
+/** What failed when what the dialog shows couldn't be read. */
+export const UNREAD = 'Couldn’t read the pending review';
 
 /** What went wrong when GitHub refused the review, or Lo couldn't plan it, if `refusal` says so. */
 export function problemOf(refusal: SubmitRefusal): Problem | undefined {
@@ -262,8 +270,11 @@ export function notConfirmed(event: ReviewEventRow): string {
   return event === 'APPROVE' ? 'Approval not confirmed' : 'Review not confirmed';
 }
 
-/** What the dialog's main button does: submit, look again for a review sent, or close it. */
-export type Does = 'submit' | 'check' | 'close';
+/**
+ * What the dialog's main button does: submit, look again for a review sent, read again what the
+ * dialog shows, or close it.
+ */
+export type Does = 'submit' | 'check' | 'read' | 'close';
 
 /**
  * Where the dialog has got to, from the moment it opens until the review is done: its state, its
@@ -281,10 +292,6 @@ export interface Step {
     /** Why it can't be pressed now, which dims it. */
     readonly off: string | undefined;
   };
-  /** The button that leaves, if there is one besides the main button: none once it's done. */
-  readonly leave: 'Cancel' | 'Close' | undefined;
-  /** Leaving is refused: the review is being sent. */
-  readonly stays: boolean;
   readonly problem: Problem | undefined;
   /** What was done: "Approved #264". */
   readonly result: string | undefined;
@@ -313,6 +320,8 @@ export interface StepInput {
   readonly state: Submitting | null;
   /** Why nothing can be sent now: offline, signed out, a pause, a file uploading. */
   readonly blocked: string | undefined;
+  /** What went wrong reading what the dialog shows, if it couldn't be read. */
+  readonly unread?: string | undefined;
 }
 
 const SUBMIT = 'Submit review';
@@ -320,7 +329,12 @@ const SUBMITTING = 'Submitting…';
 const CHECK = 'Check again';
 const CHECKING = 'Checking…';
 
-/** Where the dialog has got to, and what it shows for it. `label` names a revision by its head. */
+/**
+ * Where the dialog has got to, and what it shows for it. `label` names a revision by its head. Its
+ * state is the foot's: `working` while the review is sent, when nothing leaves it; `failed` while
+ * what went wrong, or what isn't known, shows above the foot, with what to do; `done` once an
+ * approval is.
+ */
 export function stepOf(input: StepInput, label: (head: string) => string, now = Date.now()): Step {
   const { read, event, state } = input;
   const step = (
@@ -330,8 +344,6 @@ export function stepOf(input: StepInput, label: (head: string) => string, now = 
   ): Step => ({
     state: at,
     primary: { working: SUBMITTING, busy: false, off: undefined, ...primary },
-    leave: 'Cancel',
-    stays: false,
     problem: undefined,
     result: undefined,
     ...rest,
@@ -340,37 +352,34 @@ export function stepOf(input: StepInput, label: (head: string) => string, now = 
     return step(
       'done',
       { label: 'Done', does: 'close' },
-      { leave: undefined, result: toastOf(input.done, input.number) },
+      { result: toastOf(input.done, input.number) },
     );
   }
   if (input.busy || state === 'sending') {
-    return step('working', { label: SUBMIT, does: 'submit', busy: true }, { stays: true });
+    return step('working', { label: SUBMIT, does: 'submit', busy: true });
   }
   const unconfirmed: Problem = { title: notConfirmed(input.sent ?? event), reason: NO_ANSWER };
-  // Looked for as the reader asked: "Not confirmed" stays above the button until the look says.
-  if (input.checking && (state === 'checking' || state === 'unknown')) {
+  // Its answer lost, Lo looks for it, by itself or as the reader asked: "Not confirmed" stays above
+  // the button, at work, until the look says. Only a read is at work, so the dialog can be left.
+  if (state === 'checking' || (input.checking && state === 'unknown')) {
     return step(
-      'working',
+      'failed',
       { label: CHECK, working: CHECKING, does: 'check', busy: true },
-      { leave: 'Close', problem: unconfirmed },
+      { problem: unconfirmed },
     );
-  }
-  // Its answer lost, it's looked for by itself: it's still being submitted, as far as anyone knows.
-  if (state === 'checking') {
-    return step('working', { label: SUBMIT, does: 'submit', busy: true }, { leave: 'Close' });
   }
   if (state === 'unknown') {
     return step(
       'failed',
       { label: CHECK, working: CHECKING, does: 'check' },
-      { leave: 'Close', problem: unconfirmed },
+      { problem: unconfirmed },
     );
   }
   if (state === 'notSubmitted') {
     return step(
       'failed',
       { label: 'Try again', does: 'submit', off: input.blocked },
-      { leave: 'Close', problem: { title: COULDNT, reason: NO_ANSWER } },
+      { problem: { title: COULDNT, reason: NO_ANSWER } },
     );
   }
   const failed = input.refusal && problemOf(input.refusal);
@@ -378,7 +387,14 @@ export function stepOf(input: StepInput, label: (head: string) => string, now = 
     return step(
       'failed',
       { label: 'Try again', does: 'submit', off: input.blocked },
-      { leave: 'Close', problem: failed },
+      { problem: failed },
+    );
+  }
+  if (read === undefined && input.unread !== undefined) {
+    return step(
+      'failed',
+      { label: 'Try again', does: 'read' },
+      { problem: { title: UNREAD, details: input.unread } },
     );
   }
   const refused = input.refusal && reasonOf(input.refusal, label, now);

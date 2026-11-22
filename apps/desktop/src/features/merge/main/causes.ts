@@ -1,7 +1,6 @@
 // Why something asked of GitHub failed, in the interface's words: one reason for each cause,
 // whatever was asked, and none where the cause isn't known. GitHub's own text stays out of the
-// reason, except where the reason says only that GitHub returned an error, or nothing: there it
-// follows, as all there is to say why. Nothing here calls Electron or GitHub.
+// reason: it goes behind Details, as it came. Nothing here calls Electron or GitHub.
 
 import { GithubError, type GithubErrorDetail, type NetworkFailure } from '@lo/github';
 
@@ -89,12 +88,14 @@ export function causeOf(error: unknown, asker: Asker): string {
 }
 
 /**
- * Why `error` happened, for the reader: its cause's reason, followed by GitHub's own text where the
- * reason doesn't say why, or alone where there's no reason.
+ * Why `error` happened, for the reader: its cause's reason, or nothing where the cause isn't known.
+ * GitHub's own text never joins it: that's {@link rawOf}'s, which only Details shows.
  */
 export function explained(error: unknown, asker: Asker): string {
-  const reason = causeOf(error, asker);
-  if (reason !== '' && reason !== RETURNED) return reason;
-  const raw = error instanceof Error ? error.message : String(error);
-  return reason === '' ? raw : `${reason} ${raw}`;
+  return causeOf(error, asker);
+}
+
+/** What `error` said, as it came: GitHub's own text, for Details. */
+export function rawOf(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }

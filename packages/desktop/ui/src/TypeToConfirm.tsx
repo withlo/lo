@@ -24,6 +24,11 @@ export interface TypeToConfirmProps {
    * the same press would act twice, or on a word not yet typed.
    */
   onConfirm?: (() => void) | undefined;
+  /**
+   * What was typed has gone with what it confirmed: the field keeps it, in the quieter colour,
+   * takes no focus and draws no ring, and nothing typed changes it.
+   */
+  readOnly?: boolean | undefined;
 }
 
 /**
@@ -32,7 +37,14 @@ export interface TypeToConfirmProps {
  * confirms only once it is, on a press of its own. It marks the `⏎` it handles with
  * `preventDefault()`: see `onConfirm`.
  */
-export function TypeToConfirm({ word, value, onChange, inputRef, onConfirm }: TypeToConfirmProps) {
+export function TypeToConfirm({
+  word,
+  value,
+  onChange,
+  inputRef,
+  onConfirm,
+  readOnly = false,
+}: TypeToConfirmProps) {
   const id = useId();
   const onKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
     if (event.key !== 'Enter') return;
@@ -54,6 +66,8 @@ export function TypeToConfirm({ word, value, onChange, inputRef, onConfirm }: Ty
         value={value}
         autoComplete="off"
         spellCheck={false}
+        readOnly={readOnly}
+        tabIndex={readOnly ? -1 : undefined}
         onChange={(event) => onChange(event.currentTarget.value)}
         onKeyDown={onKeyDown}
       />

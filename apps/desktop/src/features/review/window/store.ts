@@ -33,7 +33,8 @@ export const dismissed = tabState<ReadonlySet<string>>(() => new Set());
  * opened, once it has; `event` the verdict chosen; `text` the summary as typed; `busy` while main
  * is asked to submit; `sent`, the verdict it last sent, while its result isn't known; `checking`,
  * once the reader asked Lo to look again for it; `refusal`, why the last submit didn't go; `done`,
- * the verdict of an approval submitted, which the dialog stays open to show.
+ * the verdict of an approval submitted, which the dialog stays open to show; `unread`, what went
+ * wrong reading what it shows, which "Try again" reads again.
  */
 export interface Dialog {
   readonly view: string;
@@ -46,6 +47,9 @@ export interface Dialog {
   readonly checking?: boolean | undefined;
   readonly refusal: SubmitRefusal | undefined;
   readonly done?: ReviewEventRow | undefined;
+  readonly unread?: string | undefined;
+  /** A revision "Show r3" couldn't show, and what went wrong. */
+  readonly unshown?: { readonly head: string; readonly details: string } | undefined;
 }
 
 export interface ReviewWindowState {

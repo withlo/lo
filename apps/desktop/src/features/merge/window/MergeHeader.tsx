@@ -635,6 +635,7 @@ function StatusPanel({
           <Problem
             title={CANT_CHECK}
             reason={view.why === '' ? undefined : withoutBidi(view.why)}
+            details={view.details}
           />
         </div>
       )}

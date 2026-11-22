@@ -17,7 +17,15 @@ import { contract as tabContract } from '../../tab/contract.ts';
 import { revisionLabel, revisionsOf } from '../../revisions/window/shared.ts';
 import { activeTab, pullOf, withoutBidi } from '../../tab/window/shared.ts';
 import type { Asked, JobView, MergePlan, MergeState, PlanKind, Refusal } from '../contract.ts';
-import { canOpen, closePanel, openPanel, opened, PANEL_FIRST, whoOf } from './actions.ts';
+import {
+  canOpen,
+  closePanel,
+  openPanel,
+  opened,
+  PANEL_FIRST,
+  panelTrouble,
+  whoOf,
+} from './actions.ts';
 import { main } from './main.ts';
 import { placeNow } from './placing.ts';
 import {
@@ -34,6 +42,7 @@ import {
   cantMerge,
   cantOverride,
   confirmLabel,
+  detailsOf,
   doneLine,
   mergeLabel,
   mergeTitle,
@@ -72,9 +81,37 @@ export function canMerge(): true | string {
   return canAsk(cantMerge);
 }
 
-/** Whether `a` in the open panel can turn auto-merge on, or off, or why not. */
+/**
+ * Whether `a` in the open panel can turn auto-merge on, or off, or why not: not while a merge of the
+ * pull request Lo sent is at work, which auto-merge turned off is too, one at a time.
+ */
 export function canAutoMerge(): true | string {
-  return canAsk(cantAutoMerge);
+  const can = canAsk(cantAutoMerge);
+  const tab = activeTab();
+  if (can !== true || tab?.kind !== 'pull') return can;
+  const job = merging.getState().jobs.get(pullKey(tab.owner, tab.repo, tab.number));
+  return job && (job.state.kind === 'sending' || job.state.kind === 'pending')
+    ? workingOf(job)
+    : true;
+}
+
+/** What a merge Lo sent is doing while it's at work, as the reason the controls it holds are dimmed. */
+function workingOf(job: JobView): string {
+  switch (job.kind) {
+    case 'merge':
+    case 'override':
+      return 'Merging…';
+    case 'enqueue':
+      return 'Adding…';
+    case 'autoMerge':
+    case 'whenReady':
+      return 'Turning on…';
+    case 'autoMergeOff':
+      return 'Turning off…';
+    default:
+      job.kind satisfies never;
+      return 'Merging…';
+  }
 }
 
 /** Whether `⌥⏎` in the open panel can merge past the rules, or why not. */
@@ -161,11 +198,7 @@ export async function turnOffAutoMerge(tab: {
       return { turningOff: next };
     });
   const failed = (reason: string | undefined, details: string | undefined) => {
-    if (!panels.get(id).open) openPanel(id, tab.number);
-    panels.update(id, (panel) => ({
-      ...panel,
-      trouble: { title: 'Couldn’t turn off auto-merge', reason, details },
-    }));
+    panelTrouble(id, tab.number, { title: 'Couldn’t turn off auto-merge', reason, details });
     return false;
   };
   asking(true);
@@ -174,10 +207,7 @@ export async function turnOffAutoMerge(tab: {
     const done = await main().autoMergeOff({ id });
     if (done.kind !== 'refused') return true;
     const { refusal } = done;
-    return failed(
-      refusal.text === '' ? undefined : withoutBidi(refusal.text),
-      refusal.rules.length > 0 ? refusal.rules.join('\n') : undefined,
-    );
+    return failed(refusal.text === '' ? undefined : withoutBidi(refusal.text), detailsOf(refusal));
   } catch (error) {
     return failed(undefined, messageOf(error));
   } finally {
@@ -323,8 +353,10 @@ function plan(planning: Planning): void {
     })
     .then((planned) => {
       if (planned.kind === 'refused') {
-        const why = planned.why === '' ? statusWhy(planning) : planned.why;
-        if (still()) setDialog({ ...planning, failed: { why } });
+        // Still finding out, Lo says only how far it has got.
+        const why = planned.why === '' && !planned.again ? statusWhy(planning) : planned.why;
+        const { again, details } = planned;
+        if (still()) setDialog({ ...planning, failed: { why, again, details } });
         return;
       }
       // Cancelled while it was planned.
@@ -348,7 +380,9 @@ export function planAgain(): void {
   const dialog = merging.getState().dialog;
   if (!dialog || dialog.kind === 'confirm') return;
   if (dialog.kind === 'planning') {
-    if (dialog.failed !== undefined) plan({ ...dialog, failed: undefined });
+    // While Lo is still finding out, how far it has got stays on screen as it's asked again.
+    if (dialog.failed?.again === true) plan({ ...dialog });
+    else if (dialog.failed !== undefined) plan({ ...dialog, failed: undefined });
     return;
   }
   const { plan: was } = dialog;
@@ -499,35 +533,72 @@ export function checking(key: string): boolean {
   return merging.getState().checking.has(key);
 }
 
+/** Marks the merge named `key` as being looked for again, or not. */
+function markChecking(key: string, on: boolean): void {
+  merging.setState(({ checking: was }) => {
+    const next = new Set(was);
+    if (on) next.add(key);
+    else next.delete(key);
+    return { checking: next };
+  });
+}
+
 /**
  * "Check again": asks GitHub again how the merge named `key` went, a read, nothing sent again. Its
  * button is busy until main answers, and how the merge stands then says the rest.
  */
 export function askAgain(key: string): Promise<void> {
   if (checking(key)) return Promise.resolve();
-  const mark = (on: boolean) =>
-    merging.setState(({ checking: was }) => {
-      const next = new Set(was);
-      if (on) next.add(key);
-      else next.delete(key);
-      return { checking: next };
-    });
-  mark(true);
+  markChecking(key, true);
   return main()
     .askAgain({ key })
     .catch((error: unknown) => console.error('Lo couldn’t ask GitHub again:', error))
-    .finally(() => mark(false));
+    .finally(() => markChecking(key, false));
 }
 
+/** How long "Check again" waits to hear how the last merge ended before its button is its own. */
+const LOOK_FOR = 30_000;
+
 /**
- * "Check again" in the dialog, where main refused a merge since the last one's end isn't known:
- * asks GitHub how that one went, then goes back to the panel, from where it may merge again.
+ * "Check again" in the dialog, where main refused `plan` since the last merge of its pull request
+ * hasn't a known end: asks GitHub how that one went, its button busy until what the look found
+ * comes, then goes back to the panel, from where it may merge again. Found not to be known still,
+ * the dialog stays, to check again.
  */
-export function askAgainBack(key: string): void {
-  void askAgain(key).then(() => {
+export function askAgainBack(plan: MergePlan): void {
+  const { key } = plan;
+  if (checking(key)) return;
+  const pull = pullKey(plan.owner, plan.repo, plan.number);
+  const before = merging.getState().jobs.get(pull);
+  markChecking(key, true);
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let stop = (): void => undefined;
+  const end = (leave: boolean) => {
+    stop();
+    clearTimeout(timer);
+    markChecking(key, false);
     const dialog = merging.getState().dialog;
-    if (dialog?.kind === 'refused' && dialog.plan.key === key) leaveDialog();
+    if (leave && dialog?.kind === 'refused' && dialog.plan.key === key) leaveDialog();
+  };
+  stop = merging.subscribe((state, previous) => {
+    if (state.dialog !== previous.dialog && state.dialog?.kind !== 'refused') {
+      end(false);
+      return;
+    }
+    if (state.jobs === previous.jobs) return;
+    const job = state.jobs.get(pull);
+    if (!job || job === before) return;
+    if (job.state.kind === 'sending' || job.state.kind === 'pending') return;
+    end(job.state.kind !== 'unknown');
   });
+  // GitHub may have nothing more to say of it: the button is its own again after a while.
+  timer = setTimeout(() => end(false), LOOK_FOR);
+  main()
+    .askAgain({ key })
+    .catch((error: unknown) => {
+      console.error('Lo couldn’t ask GitHub again:', error);
+      end(false);
+    });
 }
 
 /** A newer push than the one a merge was confirmed at: from that head, to the newer one if known. */

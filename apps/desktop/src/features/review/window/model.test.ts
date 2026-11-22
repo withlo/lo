@@ -87,9 +87,10 @@ test('every verdict is offered, and on your own pull request Approve and Request
   expect(verdictsOf(mine, label).map(({ event, off }) => [event, off])).toEqual([
     ['COMMENT', undefined],
     ['APPROVE', own],
-    ['REQUEST_CHANGES', own],
+    ['REQUEST_CHANGES', 'Its author can’t request changes'],
   ]);
   expect(verdictsOf(mine, label)[1]?.description).toBe(own);
+  expect(verdictsOf(mine, label)[2]?.description).toBe('Its author can’t request changes');
 });
 
 test('a pending review on another revision dims Approve and Request changes, with "Show r2" while GitHub has it', () => {
@@ -116,8 +117,6 @@ test('the dialog asks with "Submit review", dimmed with why while what can’t g
       does: 'submit',
       off: undefined,
     },
-    leave: 'Cancel',
-    stays: false,
     problem: undefined,
     result: undefined,
   });
@@ -154,11 +153,17 @@ test('it says "Submitting…" while it goes, and nothing leaves it until GitHub 
     expect(stepOf(each, label)).toMatchObject({
       state: 'working',
       primary: { label: 'Submit review', working: 'Submitting…', busy: true },
-      leave: 'Cancel',
-      stays: true,
       problem: undefined,
     });
   }
+});
+
+test('what the dialog shows that couldn’t be read says so, with "Try again", which reads it again', () => {
+  expect(stepOf(input({ read: undefined, unread: 'GitHub returned 502' }), label)).toMatchObject({
+    state: 'failed',
+    primary: { label: 'Try again', does: 'read', busy: false },
+    problem: { title: 'Couldn’t read the pending review', details: 'GitHub returned 502' },
+  });
 });
 
 test('what went wrong shows above the buttons, with "Try again"', () => {
@@ -167,7 +172,6 @@ test('what went wrong shows above the buttons, with "Try again"', () => {
   ).toMatchObject({
     state: 'failed',
     primary: { label: 'Try again', does: 'submit', busy: false },
-    leave: 'Close',
     problem: {
       title: 'Couldn’t submit the review',
       reason: 'GitHub returned an error.',
@@ -182,24 +186,20 @@ test('what went wrong shows above the buttons, with "Try again"', () => {
   expect(stepOf(input({ state: 'notSubmitted', sent: 'COMMENT' }), label)).toMatchObject({
     state: 'failed',
     primary: { label: 'Try again', does: 'submit' },
-    leave: 'Close',
     problem: { title: 'Couldn’t submit the review', reason: 'GitHub didn’t respond.' },
   });
 });
 
-test('a lost answer is still "Submitting…", and once Lo can’t tell, "Check again" only looks', () => {
+test('a lost answer is "not confirmed" at once, looked for with "Checking…", and the dialog can be left', () => {
   expect(stepOf(input({ state: 'checking', sent: 'COMMENT' }), label)).toMatchObject({
-    state: 'working',
-    primary: { working: 'Submitting…', busy: true },
-    leave: 'Close',
-    stays: false,
-    problem: undefined,
+    state: 'failed',
+    primary: { label: 'Check again', working: 'Checking…', busy: true, does: 'check' },
+    problem: { title: 'Review not confirmed', reason: 'GitHub didn’t respond.' },
   });
   const unknown = stepOf(input({ state: 'unknown', sent: 'COMMENT' }), label);
   expect(unknown).toMatchObject({
     state: 'failed',
     primary: { label: 'Check again', working: 'Checking…', does: 'check', busy: false },
-    leave: 'Close',
     problem: { title: 'Review not confirmed', reason: 'GitHub didn’t respond.' },
   });
   // Named by what was sent, whichever verdict is chosen now.
@@ -209,9 +209,8 @@ test('a lost answer is still "Submitting…", and once Lo can’t tell, "Check a
   // Asked for, the look keeps what it's about above the button, which works until it says.
   for (const state of ['unknown', 'checking'] as const) {
     expect(stepOf(input({ state, sent: 'APPROVE', checking: true }), label)).toMatchObject({
-      state: 'working',
+      state: 'failed',
       primary: { label: 'Check again', working: 'Checking…', busy: true, does: 'check' },
-      leave: 'Close',
       problem: { title: 'Approval not confirmed' },
     });
   }
@@ -221,8 +220,6 @@ test('an approval ends done, with what it did and "Done"', () => {
   expect(stepOf(input({ done: 'APPROVE', state: null }), label)).toEqual({
     state: 'done',
     primary: { label: 'Done', working: 'Submitting…', busy: false, does: 'close', off: undefined },
-    leave: undefined,
-    stays: false,
     problem: undefined,
     result: 'Approved #4821',
   });

@@ -31,6 +31,8 @@ export type Submitting = z.output<typeof submitting>;
  */
 export const submission = z.strictObject({
   id: tabId,
+  /** The pull request's repository, `owner/repo`, which tells it from another with its number. */
+  repo: z.string().max(256),
   number: z
     .number()
     .int()

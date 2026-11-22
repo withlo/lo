@@ -100,6 +100,12 @@ export const SETTLE_AFTER = 10_000;
 export const RETRY_AFTER = 30_000;
 
 /**
+ * How many times Lo tries to read your reviews, looking for one whose answer was lost, before it
+ * says it can't tell, and "Check again" looks once more.
+ */
+export const LOOKS = 3;
+
+/**
  * How much earlier than it was sent, by GitHub's clock, GitHub may say a review was submitted: its
  * times, and the `Date` its clock is read from, are to the second, and the answer took a while.
  */
@@ -358,8 +364,9 @@ export class Submitter {
     const { login, pull } = target;
     const poller = await this.#options.poller(login);
     const details = poller.pullRequest(pull)?.details;
+    // Still being read: the dialog asks again in a moment.
     if (!details) {
-      throw new IpcError('refused', READING);
+      throw new IpcError('reading', READING);
     }
     const current = this.#options.reviews.current(id);
     let pending = current.review?.review;
@@ -601,7 +608,7 @@ export class Submitter {
    * clock, was lost: the summary stays marked sent, and submitting is `checking` until Lo knows.
    * Once the wait after it was sent has passed, Lo reads your reviews afresh, then, and looks for
    * it. When the read can't be made, as while offline, it stays `checking` and Lo tries again in a
-   * while.
+   * while, {@link LOOKS} times in all, and then it's `unknown`.
    */
   #lost(target: Target, sent: string, sentAt: number): void {
     const { login, pull } = target;
@@ -611,14 +618,16 @@ export class Submitter {
     // Settled, or sent again, meanwhile: what's found says nothing of it.
     const still = () =>
       !this.#stopped && this.#options.drafts.summary(login, pull)?.sentAt === sentAt;
+    let looks = 0;
     const look = async (): Promise<void> => {
       if (!still()) return;
+      looks += 1;
       let read: ReviewsRead;
       try {
         read = await this.#options.readReviews(login, pull);
       } catch (error) {
         if (!still()) return;
-        if (!(error instanceof GithubError) || error.isWaitable()) {
+        if ((!(error instanceof GithubError) || error.isWaitable()) && looks < LOOKS) {
           later(retryAfter);
           return;
         }
@@ -697,10 +706,12 @@ export class Submitter {
   }
 
   #publish(id: string, state: Submitting | null, submitted: Submission['submitted']): void {
-    const number = this.#options.view(id)?.number;
-    if (this.#stopped || number === undefined) return;
+    const info = this.#options.view(id);
+    if (this.#stopped || info === undefined) return;
+    const { number } = info;
+    const repo = `${info.repository.owner}/${info.repository.name}`;
     try {
-      this.#options.publish({ id, number, state, submitted });
+      this.#options.publish({ id, repo, number, state, submitted });
     } catch (error) {
       this.#options.log(`telling how a review stands: ${describe(error)}`);
     }

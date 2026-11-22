@@ -2,12 +2,12 @@
 // from outside its merge panel, as the merge queue's `a` does for one that left the queue, through
 // the panel's own confirmation, so the same checks guard it.
 
-import { notify, refuse } from '../../../window/commands/notices.tsx';
+import { refuse } from '../../../window/commands/notices.tsx';
 import { activeTab, withoutBidi } from '../../tab/window/shared.ts';
 import type { MergeView } from '../contract.ts';
-import { openPanel } from './actions.ts';
+import { openPanel, panelTrouble } from './actions.ts';
 import { autoMergeFromPanel } from './merging.ts';
-import { statuses } from './store.ts';
+import { shipping, statuses } from './store.ts';
 import { cantAutoMerge } from './words.ts';
 
 /** How long Lo waits for a view to say whether it can merge before giving up: 30 s. */
@@ -82,11 +82,28 @@ export function askAutoMerge(id: string, number: number): () => void {
     else refuse(withoutBidi(asked.why));
   };
   const looking = setInterval(look, LOOK_EVERY);
+  // What went wrong shows in the panel it would have opened, never in a toast.
   const late = setTimeout(() => {
     if (done) return;
     stop();
-    notify('Couldn’t turn on auto-merge', 'GitHub didn’t respond.');
+    panelTrouble(id, number, {
+      title: 'Couldn’t turn on auto-merge',
+      reason: 'GitHub didn’t respond.',
+      details: undefined,
+    });
   }, AUTO_MERGE_WAIT);
   look();
   return stop;
+}
+
+/**
+ * Whether approve and ship's dialog shows view `id`'s pull request now: what it does there, an
+ * approval among it, is said in the dialog, and nothing else says it again.
+ */
+export function shipShowing(id: string): boolean {
+  const { dialog } = shipping.getState();
+  if (!dialog) return false;
+  return (
+    (dialog.kind === 'planning' || dialog.kind === 'refused' ? dialog.id : dialog.plan.id) === id
+  );
 }

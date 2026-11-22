@@ -12,6 +12,7 @@ import type { Composer } from '@lo/ui/code';
 import { IpcError } from '../../../ipc/contract.ts';
 import { announce, refuse } from '../../../window/commands/notices.tsx';
 import { type Attachable, endUploads, uploadsHold } from '../../comments/window/shared.ts';
+import { shipShowing } from '../../merge/window/shared.ts';
 import { pullOf, runOf, activeTab, type PullTab } from '../../tab/window/shared.ts';
 import { IN_A_LAYER, SIGN_IN, type ReviewEventRow, type Submission } from '../contract.ts';
 import { main, revisions as revisionsClient, tabs } from './main.ts';
@@ -121,16 +122,55 @@ export function openDialog(tab: PullTab): void {
       refusal: undefined,
     },
   });
+  readDialog(view);
+}
+
+/** How long the dialog waits to ask again for what it shows while its pull request is read. */
+const READ_AGAIN = 1_000;
+
+/**
+ * Asks main for what the dialog on view `view` shows. While the pull request is still being read,
+ * it asks again in a moment; what can't be read is said in the dialog, with "Try again".
+ */
+function readDialog(view: string): void {
+  const open = () => reviewStore.getState().dialog?.view === view;
   main()
     .dialog({ id: view })
     .then((read) => {
-      takeSubmission({ id: view, number: tab.number, state: read.submitting, submitted: null });
-      changeDialog(view, { read, text: read.summary?.text ?? '' });
+      if (!open()) return;
+      takeSubmission({
+        id: view,
+        repo: `${read.owner}/${read.repo}`,
+        number: read.number,
+        state: read.submitting,
+        submitted: null,
+      });
+      changeDialog(view, { read, text: read.summary?.text ?? '', unread: undefined });
     })
     .catch((error: unknown) => {
-      closeDialog();
-      refuse(messageOf(error));
+      if (!open()) return;
+      if (error instanceof IpcError && error.code === 'reading') {
+        setTimeout(() => {
+          if (open()) readDialog(view);
+        }, READ_AGAIN);
+        return;
+      }
+      // Why this view can't submit at all: the reason alone, as its control would say it.
+      if (error instanceof IpcError && error.code === 'refused') {
+        closeDialog();
+        refuse(error.message);
+        return;
+      }
+      changeDialog(view, { unread: messageOf(error) });
     });
+}
+
+/** "Try again" in the dialog, once what it shows couldn't be read: reads it again. */
+export function readAgain(): void {
+  const { dialog } = reviewStore.getState();
+  if (!dialog || dialog.read || dialog.unread === undefined) return;
+  changeDialog(dialog.view, { unread: undefined });
+  readDialog(dialog.view);
 }
 
 let saving: { view: string; timer: ReturnType<typeof setTimeout> } | undefined;
@@ -171,6 +211,8 @@ export function saveNow(): void {
 
 /** Closes the dialog, keeping its summary. */
 export function closeDialog(): void {
+  // While the review is sent nothing leaves the dialog, `Esc` in the summary included.
+  if (stepNow()?.state === 'working') return;
   saveNow();
   reviewStore.setState({ dialog: undefined });
 }
@@ -216,6 +258,7 @@ export function stepNow(now = Date.now()): Step | undefined {
       done: dialog.done,
       state: submitting.get(view),
       blocked: whyNot(now),
+      unread: dialog.unread,
     },
     (head) => revisionLabel(comparison, head),
     now,
@@ -287,9 +330,13 @@ export function checkAgain(): void {
 
 /** Does what the dialog's main button says, as a click or `⌘⏎` does. */
 export function runPrimary(): void {
-  const does = stepNow()?.primary.does;
+  const step = stepNow();
+  // At work, it's pressed already: a held or second `⌘⏎` does nothing more.
+  if (step === undefined || step.primary.busy) return;
+  const does = step.primary.does;
   if (does === 'submit') void submit();
   else if (does === 'check') checkAgain();
+  else if (does === 'read') readAgain();
   else if (does === 'close') closeDialog();
 }
 
@@ -323,19 +370,35 @@ export function heard(submission: Submission): void {
   endUploads(summaryBox(id));
   const { event } = submission.submitted;
   if (reached(id, event)) return;
-  // Another view of the pull request shows the approval done already.
+  // Another view of the pull request shows the approval done already: the same pull request, by
+  // its repository too, since another repository's may have its number.
   const { dialog } = reviewStore.getState();
-  if (dialog?.done !== undefined && dialog.number === submission.number) return;
+  const read = dialog?.read;
+  if (
+    dialog?.done !== undefined &&
+    read !== undefined &&
+    dialog.number === submission.number &&
+    `${read.owner}/${read.repo}`.toLowerCase() === submission.repo.toLowerCase()
+  ) {
+    return;
+  }
+  // Approve and ship's dialog says what it approved, and nothing else says it again.
+  if (shipShowing(id)) return;
   announce(toastOf(event, submission.number));
 }
 
-/** Shows revision `head` of view `view`'s pull request, whole, as "Show r3" does. */
+/**
+ * Shows revision `head` of view `view`'s pull request, whole, as "Show r3" does. The dialog stays
+ * until it's shown, and says so if it can't be.
+ */
 export function showRevision(view: string, head: string): void {
-  closeDialog();
   const pull = pullOf(view);
   const asked =
     pull?.newer?.toLowerCase() === head.toLowerCase()
       ? tabs().reload({ id: view })
       : revisionsClient().compare({ id: view, from: null, to: head });
-  asked.catch((error: unknown) => refuse(messageOf(error)));
+  asked.then(
+    () => closeDialog(),
+    (error: unknown) => changeDialog(view, { unshown: { head, details: messageOf(error) } }),
+  );
 }

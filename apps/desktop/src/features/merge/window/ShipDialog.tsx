@@ -1,28 +1,33 @@
 // Approve and ship's dialog, in the tab feature's `tab.dialogs` slot: its two steps, the approval
 // then what follows it, under one title and over the revision it approves, from the moment it opens
-// until it's done. Only the steps' marks, the foot and the line above it change: the main button is
-// busy while Lo checks and while each step runs, saying which, "Cancel" turns to "Close" the moment
-// it's sent, a stop is a problem above the foot, with "Try again" or what its reason asks, and once
-// it's done the line above the foot says so beside the mark's kiss, with "Done" the one button.
-// `⏎` presses the main button and `Esc` leaves. A held key confirms nothing, and nor does the press
-// that opened it: only a fresh press of `⏎` once the plan shows.
+// until it's done. Only the steps' marks, the foot `Dialog` draws and the line above it change: the
+// main button is busy while Lo checks and while each step runs, saying which, and nothing leaves the
+// dialog from the press until it has run; a stop is a problem above the foot, with "Try again" or
+// what its reason asks, and once it's done the line above the foot says so, with "Done" the one
+// button, beside the mark's kiss where it merged. `⏎` presses the main button and `Esc` leaves. A
+// held key confirms nothing, and nor does the press that opened it: only a fresh press of `⏎` once
+// the plan shows.
 
-import { Button, Callout, Dialog, DialogSpacer, Key, LogoMotion, Problem, Steps } from '@lo/ui';
+import { Callout, Dialog, LogoMotion, Problem, Steps, type DialogState } from '@lo/ui';
 import { keyLabels, parseKeys, systemStrokes } from '@lo/ui/commands';
-import { useEffect, useRef, type KeyboardEvent, type ReactNode, type RefObject } from 'react';
+import { useEffect, useRef, type KeyboardEvent, type ReactNode } from 'react';
 import { useStore } from 'zustand';
 
 import { registry } from '../../../window/commands/registry.ts';
-import { usePull, withoutBidi } from '../../tab/window/shared.ts';
+import { usePull, useTabState, withoutBidi } from '../../tab/window/shared.ts';
 import type { ShipPlan } from '../contract.ts';
+import { withBranch } from './chips.tsx';
 import { askAgain, checking, jobsByKey, newerLabel, newerOf } from './merging.ts';
+import { shapes } from './placing.ts';
 import {
+  checkApproval,
   confirmShip,
   labelsOf,
   leaveShip,
   panelFromShip,
   seeShipNewer,
   shipAgain,
+  stillFinding,
 } from './shipping.ts';
 import {
   newerEnd,
@@ -37,6 +42,7 @@ import {
   type StepWords,
 } from './shipWords.ts';
 import { merging, shipping, statuses, type ShipDialog as Dialogue } from './store.ts';
+import { detailsOf } from './words.ts';
 
 /** A key written in Lo's notation, such as `enter`, as this system shows it. */
 function labels(keys: string): string[] {
@@ -64,16 +70,16 @@ interface Trouble {
 interface Shown {
   /** The steps, the same from the question until it's done, but for their marks. */
   readonly body: ReactNode;
-  /** A line under them, above the foot: what changed since the last plan. */
+  /** A line under them, above the foot: what changed since the last plan, or how far a check is. */
   readonly line?: ReactNode;
   /** What went wrong, above the foot. */
   readonly problem?: Trouble | undefined;
-  /** What it did, once it's done, above the foot. */
-  readonly done?: string | undefined;
-  /** Its main button, `⏎`, always there: busy while it works, "Done" once it has. */
+  /** What it did, once it's done, above the foot, and whether it merged: the kiss marks that. */
+  readonly done?: { readonly line: string; readonly landed: boolean } | undefined;
+  /** Where it has got to, which the foot follows: nothing leaves it while it's `working`. */
+  readonly state: DialogState;
+  /** Its main button, `⏎`: busy while it works, "Done" once it has. */
   readonly primary: Primary;
-  /** The button that leaves, `Esc`: "Cancel" before anything is sent, then "Close". */
-  readonly close: 'Cancel' | 'Close' | undefined;
   /** What focus follows: its main button moves to it when this changes. */
   readonly step: string;
 }
@@ -81,17 +87,20 @@ interface Shown {
 /** What the main button says while main checks the plan, before and as it's confirmed. */
 const CHECKING = 'Checking…';
 
-/** The steps, as a list, and what it warns of a push after your approval. */
-function StepList({ steps, plan }: { steps: readonly StepWords[]; plan?: ShipPlan | undefined }) {
-  const warning = plan && shipWarning(plan);
+/**
+ * The steps, as a list, and what it warns of a push after your approval. The branch it merges into
+ * is drawn as a branch wherever a step names it.
+ */
+function StepList({ steps, plan }: { steps: readonly StepWords[]; plan: ShipPlan }) {
+  const warning = shipWarning(plan);
   return (
     <>
       <Steps
         label="Steps"
         steps={steps.map((step) => ({
           ...step,
-          title: withoutBidi(step.title),
-          detail: step.detail === undefined ? undefined : withoutBidi(step.detail),
+          title: withBranch(step.title, plan.base),
+          detail: step.detail === undefined ? undefined : withBranch(step.detail, plan.base),
         }))}
       />
       {warning !== undefined && (
@@ -112,13 +121,16 @@ function noteLine(note: string | undefined): ReactNode {
   );
 }
 
-/** The main button where it stopped, as `again` says, for view `id`'s pull request `number`. */
-function againOf(again: Again, id: string, number: number): Primary {
+/**
+ * The main button where it stopped, as `again` says, for view `id`'s pull request `number`;
+ * `looking` while "Check again" looks for an approval whose answer was lost.
+ */
+function againOf(again: Again, id: string, number: number, looking: boolean): Primary {
   switch (again.kind) {
     case 'try':
       return { label: 'Try again', run: shipAgain, busy: false };
     case 'look':
-      return { label: 'Check again', run: shipAgain, busy: false, working: CHECKING };
+      return { label: 'Check again', run: checkApproval, busy: looking, working: CHECKING };
     case 'panel':
       return { label: 'Merge panel', run: () => panelFromShip(id, number), busy: false };
     case 'check': {
@@ -146,33 +158,38 @@ function againOf(again: Again, id: string, number: number): Primary {
   }
 }
 
-/** The foot and the line above it for how a run stands, `end`. */
+/**
+ * The foot and the line above it for how a run stands, `end`; `merged` once what it sent merged,
+ * which the kiss marks, and `looking` while "Check again" looks for a lost approval.
+ */
 function endShown(
   end: End,
   id: string,
   number: number,
-): Pick<Shown, 'primary' | 'close' | 'problem' | 'done'> {
+  merged = false,
+  looking = false,
+): Pick<Shown, 'primary' | 'state' | 'problem' | 'done'> {
   switch (end.kind) {
     case 'running':
       return {
+        state: 'working',
         primary: { label: shipLabel(), run: () => undefined, busy: true, working: end.working },
-        close: 'Close',
       };
     case 'done':
       return {
+        state: 'done',
         primary: { label: 'Done', run: leaveShip, busy: false },
-        close: undefined,
-        done: end.line,
+        done: { line: end.line, landed: merged },
       };
     case 'failed':
       return {
-        primary: againOf(end.again, id, number),
-        close: 'Close',
-        problem: { title: end.title, reason: end.reason },
+        state: 'failed',
+        primary: againOf(end.again, id, number, looking),
+        problem: { title: end.title, reason: end.reason, details: end.details },
       };
     default:
       end satisfies never;
-      return { primary: { label: 'Done', run: leaveShip, busy: false }, close: undefined };
+      return { state: 'done', primary: { label: 'Done', run: leaveShip, busy: false } };
   }
 }
 
@@ -182,7 +199,7 @@ function shownOf(dialog: Dialogue): Shown {
       return {
         // There from the start, so focus is on it, not on Cancel, when the plan comes.
         step: 'planning',
-        close: 'Cancel',
+        state: 'ask',
         primary: { label: shipLabel(), run: () => undefined, busy: true, working: CHECKING },
         body: undefined,
       };
@@ -190,8 +207,8 @@ function shownOf(dialog: Dialogue): Shown {
       const { plan } = dialog;
       return {
         step: `confirm ${plan.key}`,
-        close: 'Cancel',
-        // Pressed, main checks it again before anything is sent.
+        // Pressed, main checks it again before anything is sent, and runs it: nothing leaves it.
+        state: dialog.sending ? 'working' : 'ask',
         primary: { label: shipLabel(), run: confirmShip, busy: dialog.sending, working: CHECKING },
         body: <StepList steps={plannedSteps(plan)} plan={plan} />,
         line: noteLine(dialog.note),
@@ -201,19 +218,31 @@ function shownOf(dialog: Dialogue): Shown {
       const { plan, refusal } = dialog;
       const body = plan && <StepList steps={plannedSteps(plan)} plan={plan} />;
       const head = plan?.head ?? refusal.newer?.from;
-      const details = refusal.rules.length > 0 ? refusal.rules.join('\n') : undefined;
+      const details = detailsOf(refusal);
       const step = `refused ${plan?.key ?? dialog.id}`;
+      // Lo is still finding out where its merge would go: that's progress, not a failure, and the
+      // dialog asks again as it goes.
+      if (stillFinding(dialog)) {
+        return {
+          step: 'planning',
+          state: 'ask',
+          primary: { label: shipLabel(), run: () => undefined, busy: true, working: CHECKING },
+          body,
+          line: refusal.text === '' ? undefined : noteLine(refusal.text),
+        };
+      }
       if (refusal.newer !== null && head !== undefined) {
+        const end = newerEnd(dialog.number, refusal, head);
         return {
           step,
           body,
-          ...endShown(newerEnd(dialog.number, refusal, head), dialog.id, dialog.number),
+          ...endShown(end.kind === 'failed' ? { ...end, details } : end, dialog.id, dialog.number),
         };
       }
       return {
         step,
         body,
-        close: 'Close',
+        state: 'failed',
         primary: { label: 'Try again', run: shipAgain, busy: false },
         problem: {
           // Asked before anything was sent: main couldn't plan it, or checking it again stopped it.
@@ -232,7 +261,13 @@ function shownOf(dialog: Dialogue): Shown {
       return {
         step: `running ${plan.key} ${phase?.kind ?? ''} ${shown.end.kind}`,
         body: <StepList steps={shown.steps} plan={plan} />,
-        ...endShown(shown.end, plan.id, plan.number),
+        ...endShown(
+          shown.end,
+          plan.id,
+          plan.number,
+          job?.state.kind === 'merged',
+          dialog.looking === true,
+        ),
       };
     }
     default:
@@ -262,37 +297,11 @@ const WORDS = [
   'Merge panel',
 ];
 
-/** The dialog's main button, with `⏎`. It keeps one width and its fill from checking to done. */
-function PrimaryButton({
-  primary,
-  button,
-}: {
-  primary: Primary;
-  button: RefObject<HTMLButtonElement | null>;
-}) {
-  return (
-    <Button
-      ref={button}
-      variant="primary"
-      busy={primary.busy}
-      working={primary.working}
-      widest={widestOf([...WORDS, primary.label])}
-      onClick={(event) => {
-        // Not a double click's second, which would press what came up in its place unseen.
-        if (event.detail <= 1 && !primary.busy) primary.run();
-      }}
-    >
-      {primary.label}
-      <Key keys={labels('enter')} decorative />
-    </Button>
-  );
-}
-
-/** What's done, beside the mark's kiss, which plays once. */
-function DoneRow({ line }: { line: string }) {
+/** What's done, beside the mark's kiss where it merged, which plays once. */
+function DoneRow({ line, landed }: { line: string; landed: boolean }) {
   return (
     <div className="flex items-center gap-12">
-      <LogoMotion play="kiss" className="size-40" decorative />
+      {landed && <LogoMotion play="kiss" className="size-40" decorative />}
       <p role="status" className="m-0 text-fg text-ui">
         {withoutBidi(line)}
       </p>
@@ -334,6 +343,7 @@ export function ShipDialog() {
   useStore(statuses);
   const { id, number } = aboutOf(dialog);
   const pull = usePull(id);
+  useReplan(dialog, id);
   const button = useRef<HTMLButtonElement>(null);
   /** When what the dialog shows now came up: a press before then isn't one for it. */
   const shownAt = useRef(Number.POSITIVE_INFINITY);
@@ -375,8 +385,10 @@ export function ShipDialog() {
     event.preventDefault();
     // Only a fresh press, once what it would press is on screen.
     if (event.repeat || event.timeStamp < shownAt.current) return;
-    if (shown && !shown.primary.busy) shown.primary.run();
+    if (shown && shown.state !== 'working' && !shown.primary.busy) shown.primary.run();
   };
+  const primary = shown?.primary;
+  const failed = shown?.state === 'failed';
   return (
     <Dialog
       open={open}
@@ -386,20 +398,19 @@ export function ShipDialog() {
       title={open ? shipTitle(number) : shipLabel()}
       description={description === '' ? undefined : withoutBidi(description)}
       size="md"
-      foot={
-        shown && (
-          <>
-            <DialogSpacer />
-            {shown.close !== undefined && (
-              <Button onClick={leaveShip}>
-                {shown.close}
-                <Key keys={labels('esc')} decorative />
-              </Button>
-            )}
-            <PrimaryButton primary={shown.primary} button={button} />
-          </>
-        )
-      }
+      state={shown?.state}
+      action={{
+        label: failed ? shipLabel() : (primary?.label ?? shipLabel()),
+        again: failed ? (primary?.label ?? null) : undefined,
+        onRun: () => primary?.run(),
+        busy: primary?.busy === true,
+        working: primary?.working,
+        widest: widestOf([...WORDS, primary?.label]),
+        keys: labels('enter'),
+      }}
+      leaveKeys={labels('esc')}
+      stays="Wait for it to finish"
+      mainRef={button}
       initialFocus={button}
       onKeyDown={onKeyDown}
       container={document.getElementById('root')}
@@ -417,7 +428,30 @@ export function ShipDialog() {
           details={shown.problem.details}
         />
       )}
-      {shown?.done !== undefined && <DoneRow line={shown.done} />}
+      {shown?.done !== undefined && <DoneRow line={shown.done.line} landed={shown.done.landed} />}
     </Dialog>
   );
+}
+
+/** How long the dialog waits before it asks main again for a plan it's still finding out. */
+const REPLAN_AFTER = 30_000;
+
+/**
+ * While main is still finding out where the merge after approving in `dialog` would go, as while
+ * it looks up a stack's branches, asks it again whenever view `id`'s stack changes, and after a
+ * while if it doesn't.
+ */
+function useReplan(dialog: Dialogue | undefined, id: string): void {
+  const waiting = stillFinding(dialog);
+  const shape = useTabState(shapes, id);
+  useEffect(() => {
+    if (!waiting) return undefined;
+    const timer = setTimeout(shipAgain, REPLAN_AFTER);
+    return () => clearTimeout(timer);
+  }, [waiting, dialog]);
+  const last = useRef(shape);
+  useEffect(() => {
+    if (waiting && last.current !== shape) shipAgain();
+    last.current = shape;
+  }, [waiting, shape]);
 }

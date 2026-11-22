@@ -108,7 +108,7 @@ import type {
 } from '../contract.ts';
 import type { MergeTurn, MergeWrites } from '../service.ts';
 import { aboveStackBottom, aloneOrBottom, autoActionOf, overrideActionOf } from './auto.ts';
-import { clock, explained, type Asker } from './causes.ts';
+import { clock, explained, rawOf, type Asker } from './causes.ts';
 import { ChainRun, type Looked } from './chains.ts';
 import { namedOf } from './status.ts';
 import {
@@ -396,10 +396,20 @@ export function refusalOf(refusal: MergeRefusal, head: string): Refusal {
     });
   }
   if (refusal.refusal === 'headMoved') {
-    return own('headMoved', text, { newer: { from: head, to: null } });
+    return own('headMoved', OUT_OF_DATE, { newer: { from: head, to: null } });
+  }
+  // GitHub's own words go behind Details.
+  if (refusal.refusal === 'other') {
+    return own('other', RETURNED, { details: refusal.message });
   }
   return own(refusal.refusal, text);
 }
+
+/** Why a merge of a revision that's no longer the head didn't go. */
+export const OUT_OF_DATE = 'This revision is out of date.';
+
+/** Why a merge GitHub refused in words of its own didn't go: its words are behind Details. */
+const RETURNED = 'GitHub returned an error.';
 
 /**
  * How a write to auto-merge whose answer Lo couldn't read ended, as a read since `shows`: as asked,
@@ -443,7 +453,8 @@ function autoRefusalOf(refusal: MergeRefusal, head: string, repo: string): Refus
  * in, or an account signed out, as `asker` sees it.
  */
 function unsentOf(detail: GithubErrorDetail, asker: Asker): Refusal {
-  return own(detail.kind, explained(new GithubError(detail), asker));
+  const error = new GithubError(detail);
+  return own(detail.kind, explained(error, asker), { details: rawOf(error) });
 }
 
 /**
@@ -629,33 +640,41 @@ export class Merging {
    * reader to confirm, in place of the view's last plan; or says why there's none.
    */
   async plan(id: string, choice: Choice): Promise<Planned> {
+    const refuse = (why: string, again = false, details?: string): Planned =>
+      details === undefined
+        ? { kind: 'refused', why, again }
+        : { kind: 'refused', why, again, details };
     // Never read: the window is closing.
-    if (this.#stopped) return { kind: 'refused', why: '' };
+    if (this.#stopped) return refuse('');
     const view = this.#options.view(id);
     const acting = actingOf(view);
-    if (typeof acting === 'string') return { kind: 'refused', why: acting };
-    if (!view) return { kind: 'refused', why: '' };
+    if (typeof acting === 'string') return refuse(acting);
+    if (!view) return refuse('');
     const { login } = acting;
     let poller: MergingPoller;
     try {
       poller = await this.#options.poller(login);
     } catch (error) {
-      return { kind: 'refused', why: describe(error) };
+      // Lo's own words, as why the account can't read.
+      return refuse(describe(error));
     }
     const off = offOf(poller);
-    if (off) return { kind: 'refused', why: offText(off, login) };
+    if (off) return refuse(offText(off, login));
     const pull = new PullRef(view.repository.owner, view.repository.name, view.number);
     const cached = poller.cachedRead(pull, MERGE_FACTS) ?? (await poller.mergeFacts(pull));
     // The merge status reads "Checking…" until then.
-    if (!cached) return { kind: 'refused', why: '' };
+    if (!cached) return refuse('', true);
     const first = this.#planOf(id, view, login, cached.value, choice);
-    if (typeof first === 'string') return { kind: 'refused', why: first };
+    if (typeof first === 'string') return refuse(first);
     // The panel's own `⏎` merges it, as it says.
     if (choice.asked === 'autoMerge' && !isAuto(first.kind)) {
-      return { kind: 'refused', why: `#${view.number} can merge now` };
+      return refuse(`#${view.number} can merge now`);
     }
     const goes = await this.goesAs(first.kind, poller, login, pull, cached.value);
-    if (goes.kind !== 'goes') return { kind: 'refused', why: goes.why };
+    // Where Lo can't tell yet, as while it looks up the stack's branches, asking again may say.
+    if (goes.kind !== 'goes') {
+      return refuse(goes.why, goes.kind === 'unread' || goes.unknown);
+    }
     // Auto-merge and a merge past the rules take nothing with them.
     if (goesAlone(first.kind)) {
       this.#keep(first, pull);
@@ -663,7 +682,7 @@ export class Merging {
     }
     // A chain's bottom layer that moves onto the root first merges under the root's rules.
     const planned = this.#planOf(id, view, login, goes.onto(cached.value), choice, goes.together);
-    if (typeof planned === 'string') return { kind: 'refused', why: planned };
+    if (typeof planned === 'string') return refuse(planned);
     this.#keep(planned, pull);
     return { kind: 'plan', plan: planned };
   }
@@ -721,7 +740,9 @@ export class Merging {
       } catch (error) {
         if (signal.aborted) return refused(cancelled());
         this.#options.log(`${kept.pull.toString()}: ${describe(error)}`);
-        return refused(own('failed', explained(error, askerOf(kept.plan))));
+        return refused(
+          own('failed', explained(error, askerOf(kept.plan)), { details: rawOf(error) }),
+        );
       }
       // Cancelled while it checked: nothing goes, and no plan is kept in its place.
       if (signal.aborted || this.#stopped) {
@@ -1388,6 +1409,7 @@ export class Merging {
           openFrom.set(why.branch, read);
         } catch (error) {
           signal?.throwIfAborted();
+          this.#options.log(`${pull.toString()}: ${describe(error)}`);
           return {
             kind: 'unknown',
             why,
@@ -1429,6 +1451,7 @@ export class Merging {
         );
       } catch (error) {
         signal?.throwIfAborted();
+        this.#options.log(`${pull.toString()}: ${describe(error)}`);
         return { kind: 'refused', why: explained(error, { login, owner: pull.repo.owner }) };
       }
     }
@@ -1471,6 +1494,7 @@ export class Merging {
       return (facts) => factsOnto(facts, onto);
     } catch (error) {
       signal?.throwIfAborted();
+      this.#options.log(`${pull.toString()}: ${describe(error)}`);
       return explained(error, { login, owner: pull.repo.owner });
     }
   }

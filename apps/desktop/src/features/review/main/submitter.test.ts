@@ -314,6 +314,7 @@ describe('submitting', () => {
     expect(summary()).toBeUndefined();
     expect(published.at(-1)).toEqual({
       id: 't1',
+      repo: 'rozed-dev/e2e',
       number: 94,
       state: null,
       submitted: { event: 'APPROVE' },
@@ -477,6 +478,22 @@ describe('a lost answer', () => {
     await vi.advanceTimersByTimeAsync(30_000);
     expect(readAt).toHaveLength(2);
     expect(state()).toBe('notSubmitted');
+  });
+
+  test('a read that still can’t be made after three tries leaves it unknown, to check again', async () => {
+    vi.useFakeTimers();
+    const offline = new GithubError({ kind: 'network', failure: 'offline', message: 'offline' });
+    const { made, state, readAt } = setup({
+      answers: [lost()],
+      reads: [offline, offline, offline],
+    });
+    await made.submit('t1', 'COMMENT', 'Reads well.');
+    await vi.advanceTimersByTimeAsync(10_000);
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(state()).toBe('checking');
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(readAt).toHaveLength(3);
+    expect(state()).toBe('unknown');
   });
 
   test('when Lo can’t tell, nothing is sent again, and “Check again” only looks', async () => {

@@ -317,8 +317,10 @@ it('confirms only on a fresh `⏎` once it shows, then follows the merge with it
   expect(bridge.calls.find(([channel]) => channel === 'merge.confirm')?.[1]).toEqual({
     key: plan.key,
   });
-  // Sent, "Cancel" is "Close", and the button says it's merging.
-  expect(foot()).toEqual(['Close', 'Merging…']);
+  // Sent, nothing leaves it until GitHub answers: Cancel is dimmed, and the button says it's
+  // merging.
+  expect(foot()).toEqual(['Cancel', 'Merging…']);
+  expect(footButtons()[0]?.getAttribute('aria-disabled')).toBe('true');
   expect(working()).toBe('Merging…');
   // What was confirmed stays in view while it's sent, under the same title.
   const facts = () => [...dialog()!.querySelectorAll('dd')].map((each) => each.textContent);
@@ -377,8 +379,8 @@ it('says in a toast that the merge ended, once its dialog was closed before then
   act(() => merging.setState({ dialog: sentOf(plan) }));
   act(() => heardJob(jobOf(plan, { kind: 'pending', trouble: null })));
   await until(() => dialog() !== null);
-  press('Close');
-  expect(merging.getState().dialog).toBeUndefined();
+  // Nothing leaves it while GitHub runs it, but its tab can close meanwhile.
+  act(() => merging.setState({ dialog: undefined }));
   // It goes on, and nothing is said until it ends.
   expect(notices()).toEqual([]);
 
@@ -528,8 +530,11 @@ it('offers to check again when Lo can’t tell how the last merge went, busy whi
   act(() => {
     dialog()!.dispatchEvent(enter());
   });
-  // It only looks: nothing is sent again.
+  // It only looks: nothing is sent again, and it stays until the look has settled.
   expect(working()).toBe('Checking…');
+  await later();
+  expect(merging.getState().dialog?.kind).toBe('refused');
+  act(() => heardJob(jobOf(plan, { kind: 'merged' })));
   await until(() => merging.getState().dialog === undefined);
   expect(bridge.calls.find(([channel]) => channel === 'merge.askAgain')?.[1]).toEqual({
     key: plan.key,
@@ -618,7 +623,9 @@ it('merges past the rules only with the number typed, which it asks for afresh w
   await until(() => dialog() !== null);
   const box = dialog()!;
   expect(title()).toBe('Bypass rules and merge');
-  expect(box.textContent).toContain('Bypassed rules');
+  // Nothing is bypassed yet: what will be is named so.
+  expect(box.textContent).toContain('Rules to bypass');
+  expect(box.textContent).not.toContain('Bypassed rules');
   expect([...box.querySelectorAll('li')].map((each) => each.textContent)).toEqual([
     '2 checks running: e2e (chromium) and typecheck',
   ]);
@@ -788,7 +795,7 @@ it('follows a stack’s merge layer by layer, then offers the layer above', asyn
     expect.stringContaining('Waiting'),
     expect.stringContaining('Waiting'),
   ]);
-  expect(foot()).toEqual(['Close', 'Merging…']);
+  expect(foot()).toEqual(['Cancel', 'Merging…']);
 
   // Merged, the dialog says so, and offers the layer above, now on main.
   act(() =>
@@ -909,7 +916,7 @@ it('lists a chain’s merge a layer at a time, then each move as it goes, and sa
     expect.stringContaining('Merged'),
     expect.stringContaining('Move #139 onto main.'),
   ]);
-  expect(foot()).toEqual(['Close', 'Merging…']);
+  expect(foot()).toEqual(['Cancel', 'Merging…']);
   expect(doneSaid()).toBeUndefined();
 
   act(() =>

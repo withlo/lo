@@ -65,9 +65,30 @@ const REVISIONS: ComparisonView = {
 let confirming: () => unknown = () => ({ kind: 'started' });
 /** How main answers a request for a plan: with one, unless a test says. */
 let planning: () => unknown = () => ({ kind: 'plan', plan: planOf() });
+/** How main answers a read of the review dialog, as "Check again" reads whether an approval went. */
+let reading: () => unknown = () => dialogRead();
+
+/** What main reads for the review dialog: no review being submitted, so the approval's known. */
+function dialogRead(): unknown {
+  return {
+    login: 'rozed-bot',
+    owner: 'rozed-dev',
+    repo: 'e2e',
+    number: 138,
+    own: false,
+    on: HEAD,
+    head: HEAD,
+    pending: { kind: 'none' },
+    comments: [],
+    summary: null,
+    submitting: null,
+    pausedUntil: null,
+  };
+}
 
 const bridge = installBridge({
   'merge.ship': () => planning(),
+  'review.dialog': () => reading(),
   'merge.shipConfirm': () => confirming(),
   'merge.cancel': () => undefined,
   'merge.dismiss': () => undefined,
@@ -87,6 +108,7 @@ beforeAll(async () => {
 beforeEach(() => {
   confirming = () => ({ kind: 'started' });
   planning = () => ({ kind: 'plan', plan: planOf() });
+  reading = () => dialogRead();
   bridge.calls.length = 0;
   merging.setState({ dialog: undefined, jobs: new Map(), seen: new Set(), checking: new Set() });
   shipping.setState({ dialog: undefined, runs: new Map(), watched: new Map() });
@@ -340,13 +362,14 @@ it('keeps one title over its two steps, checks while it plans and as it confirms
   expect(primary()).toEqual({ says: 'Checking…', busy: true });
   expect(buttons()).toEqual(['Cancel', 'Checking…']);
 
-  // Sent, Cancel turns to Close, and the main button says which step runs.
+  // Sent, nothing leaves it until GitHub answers: Cancel is dimmed, and the main button says which
+  // step runs.
   expect(start).toBeDefined();
   act(() => start?.({ kind: 'started' }));
   await until(() => shipping.getState().dialog?.kind === 'running');
   expect(title()).toBe('Approve and ship #138?');
   expect(description()).toBe('r3');
-  expect(buttons()).toEqual(['Close', 'Approving…']);
+  expect(buttons()).toEqual(['Cancel', 'Approving…']);
   act(() => heardShip(viewOf(plan, { kind: 'approving' }, false)));
   expect(steps()).toEqual([
     [
@@ -363,11 +386,15 @@ it('keeps one title over its two steps, checks while it plans and as it confirms
   );
   act(() => heardJob(jobOf(plan, job, { kind: 'pending', trouble: null })));
   expect(title()).toBe('Approve and ship #138?');
+  // The approval keeps the words it was asked with: its marker says it's done.
   expect(steps()).toEqual([
-    ['Done: Approved as rozed-bot.'],
+    [
+      'Done: Approve #138 as rozed-bot.',
+      'Your summary and 1 pending comment are submitted with it.',
+    ],
     ['Now: Squash and merge it into main.'],
   ]);
-  expect(buttons()).toEqual(['Close', 'Merging…']);
+  expect(buttons()).toEqual(['Cancel', 'Merging…']);
   // GitHub can merge it now: Lo merges it instead, and the step says so in place.
   act(() =>
     heardJob(
@@ -377,8 +404,14 @@ it('keeps one title over its two steps, checks while it plans and as it confirms
       }),
     ),
   );
-  expect(steps()).toEqual([['Done: Approved as rozed-bot.'], ['Now: Merge it into main.']]);
-  expect(buttons()).toEqual(['Close', 'Merging…']);
+  expect(steps()).toEqual([
+    [
+      'Done: Approve #138 as rozed-bot.',
+      'Your summary and 1 pending comment are submitted with it.',
+    ],
+    ['Now: Merge it into main.'],
+  ]);
+  expect(buttons()).toEqual(['Cancel', 'Merging…']);
   // Nothing more is confirmed, however often `⏎` is pressed.
   act(() => {
     dialog()!.dispatchEvent(press('Enter'));
@@ -403,7 +436,7 @@ it('a run that ends while the dialog shows it stays there, says what it did besi
   expect(title()).toBe('Approve and ship #264?');
   expect(description()).toBe('r3');
   expect(steps()).toEqual([
-    ['Done: Approved as rozed-bot.'],
+    ['Done: Approve #264 as rozed-bot.', 'Your summary is submitted with it.'],
     ['Done: Squash and merge it into main.'],
   ]);
   expect(doneRow()).toEqual({ line: 'Approved and merged #264', mark: true });
@@ -430,8 +463,8 @@ it('a run whose dialog was closed before it ended says how it ended in a toast',
   );
   act(() => heardJob(jobOf(plan, job, { kind: 'pending', trouble: null })));
   await until(() => dialog() !== null);
-  click('Close');
-  expect(shipping.getState().dialog).toBeUndefined();
+  // Nothing leaves it while GitHub runs the merge, but its tab can close meanwhile.
+  act(() => shipping.setState({ dialog: undefined }));
 
   act(() => heardJob(jobOf(plan, job, { kind: 'merged' })));
   expect(notice()).toEqual({ title: 'Approved and merged #138', body: '', done: true });
@@ -463,7 +496,7 @@ it('a stop after approving says it couldn’t merge it, and why, with the approv
     reason: 'Can’t merge yet. Conflicts.',
   });
   expect(steps()).toEqual([
-    ['Done: Approved as rozed-bot.'],
+    ['Done: Approve #138 as rozed-bot.', 'Your summary is submitted with it.'],
     ['Stopped: Squash and merge it into main.'],
   ]);
   expect(buttons()).toEqual(['Close', 'Merge panel']);
@@ -502,9 +535,14 @@ it('a stop where Lo can’t tell whether GitHub took the approval says it isn’
   ]);
   expect(buttons()).toEqual(['Close', 'Check again']);
 
+  // It reads whether the approval went first, sending nothing, and plans afresh once that's known.
+  let found: ((read: unknown) => void) | undefined;
+  reading = () => new Promise((resolve) => (found = resolve));
   click('Check again');
-  expect(problem()).toBeUndefined();
-  expect(buttons()).toEqual(['Cancel', 'Checking…']);
+  expect(buttons()).toEqual(['Close', 'Checking…']);
+  expect(bridge.calls.filter(([channel]) => channel === 'merge.ship')).toEqual([]);
+  await until(() => found !== undefined);
+  act(() => found?.(dialogRead()));
   await until(() => shipping.getState().dialog?.kind === 'confirm');
   expect(bridge.calls.filter(([channel]) => channel === 'merge.ship')).toEqual([
     ['merge.ship', { id: plan.id }],

@@ -104,7 +104,13 @@ test('once the review is submitted, the files attached to its summary go with it
   await submit();
   expect(ended).toEqual([summaryBox('v0')]);
   // As when main says it was submitted from another view of the pull request.
-  heard({ id: 'v1', number: 94, state: null, submitted: { event: 'APPROVE' } });
+  heard({
+    id: 'v1',
+    repo: 'rozed-dev/e2e',
+    number: 94,
+    state: null,
+    submitted: { event: 'APPROVE' },
+  });
   expect(ended).toEqual([summaryBox('v0'), summaryBox('v1')]);
 });
 
@@ -112,7 +118,13 @@ test('an approval ends in the dialog with no toast, and any other review closes 
   vi.setSystemTime(10_000);
   open(read());
   await submit();
-  heard({ id: 'v0', number: 94, state: null, submitted: { event: 'APPROVE' } });
+  heard({
+    id: 'v0',
+    repo: 'rozed-dev/e2e',
+    number: 94,
+    state: null,
+    submitted: { event: 'APPROVE' },
+  });
   expect(stepNow()?.state).toBe('done');
   expect(toasts()).not.toContain('Approved #94');
   reviewStore.setState({ dialog: undefined });
@@ -120,18 +132,44 @@ test('an approval ends in the dialog with no toast, and any other review closes 
   open(read(), 'COMMENT');
   await submit();
   expect(reviewStore.getState().dialog).toBeUndefined();
-  heard({ id: 'v0', number: 94, state: null, submitted: { event: 'COMMENT' } });
+  heard({
+    id: 'v0',
+    repo: 'rozed-dev/e2e',
+    number: 94,
+    state: null,
+    submitted: { event: 'COMMENT' },
+  });
   expect(toasts()).toContain('Commented on #94');
 });
 
+test('an approval of a pull request with the same number in another repository leaves this one’s dialog be', async () => {
+  open(read());
+  await submit();
+  expect(stepNow()?.state).toBe('done');
+  heard({
+    id: 'v2',
+    repo: 'rozed-dev/other',
+    number: 94,
+    state: null,
+    submitted: { event: 'APPROVE' },
+  });
+  expect(toasts()).toContain('Approved #94');
+});
+
 test('an approval found once the dialog was closed says so in a toast', () => {
-  heard({ id: 'v0', number: 94, state: null, submitted: { event: 'APPROVE' } });
+  heard({
+    id: 'v0',
+    repo: 'rozed-dev/e2e',
+    number: 94,
+    state: null,
+    submitted: { event: 'APPROVE' },
+  });
   expect(toasts()).toContain('Approved #94');
 });
 
 test('once Lo can’t tell whether it went, nothing is sent again, and "Check again" only looks', async () => {
   open(read(), 'COMMENT');
-  heard({ id: 'v0', number: 94, state: 'unknown', submitted: null });
+  heard({ id: 'v0', repo: 'rozed-dev/e2e', number: 94, state: 'unknown', submitted: null });
   expect(stepNow()).toMatchObject({
     state: 'failed',
     primary: { label: 'Check again', does: 'check' },
@@ -144,10 +182,12 @@ test('once Lo can’t tell whether it went, nothing is sent again, and "Check ag
     ['review.check', { id: 'v0' }],
   ]);
   expect(stepNow()?.primary).toMatchObject({ busy: true, working: 'Checking…' });
-  heard({ id: 'v0', number: 94, state: 'checking', submitted: null });
+  heard({ id: 'v0', repo: 'rozed-dev/e2e', number: 94, state: 'checking', submitted: null });
   expect(stepNow()?.primary).toMatchObject({ busy: true, working: 'Checking…' });
+  // It's only looking: the dialog can be left meanwhile.
+  expect(stepNow()?.state).toBe('failed');
   // Not found: now it can go again.
-  heard({ id: 'v0', number: 94, state: 'notSubmitted', submitted: null });
+  heard({ id: 'v0', repo: 'rozed-dev/e2e', number: 94, state: 'notSubmitted', submitted: null });
   expect(stepNow()).toMatchObject({
     state: 'failed',
     primary: { label: 'Try again', does: 'submit', busy: false },

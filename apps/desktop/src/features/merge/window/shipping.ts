@@ -8,15 +8,17 @@
 // tab is on screen.
 
 import { announce, notify } from '../../../window/commands/notices.tsx';
+import { client } from '../../../window/ipc.ts';
+import { contract as reviewContract, type Submitting } from '../../review/contract.ts';
 import { revisionLabel, revisionsOf } from '../../revisions/window/shared.ts';
 import { activeTab, withoutBidi } from '../../tab/window/shared.ts';
 import type { JobView, Refusal, ShipView, Watched } from '../contract.ts';
-import { canOpen, closePanel, openPanel } from './actions.ts';
+import { canOpen, closePanel, openPanel, panelTrouble } from './actions.ts';
 import { main } from './main.ts';
 import { jobsByKey, newerOf, seeNewer } from './merging.ts';
 import { merging, pullKey, shipping, type ShipDialog } from './store.ts';
 import { shipDoneLine, watchedWords, type Label } from './shipWords.ts';
-import { doneLine } from './words.ts';
+import { detailsOf, doneLine } from './words.ts';
 
 function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -61,9 +63,12 @@ export function shipFromTab(): void {
   planShip(tab.id, tab.number);
 }
 
-/** Shows the dialog planning approve and ship for view `id`, and asks main for the plan. */
-function planShip(id: string, number: number): void {
-  const planning: ShipDialog = { kind: 'planning', id, number };
+/**
+ * Shows the dialog planning approve and ship for view `id`, and asks main for the plan; or, with
+ * `still`, keeps what it shows, how far Lo has got finding out where its merge would go.
+ */
+function planShip(id: string, number: number, still?: ShipDialog): void {
+  const planning: ShipDialog = still ?? { kind: 'planning', id, number };
   setDialog(planning);
   const refused = (refusal: Refusal) => {
     if (shipping.getState().dialog !== planning) return;
@@ -92,8 +97,76 @@ function planShip(id: string, number: number): void {
 export function shipAgain(): void {
   const dialog = shipping.getState().dialog;
   if (!dialog || dialog.kind === 'planning' || dialog.kind === 'confirm') return;
-  if (dialog.kind === 'refused') planShip(dialog.id, dialog.number);
-  else planShip(dialog.plan.id, dialog.plan.number);
+  if (dialog.kind === 'refused') {
+    planShip(dialog.id, dialog.number, stillFinding(dialog) ? dialog : undefined);
+  } else {
+    planShip(dialog.plan.id, dialog.plan.number);
+  }
+}
+
+/**
+ * Whether main refused to plan approve and ship in `dialog` only because Lo is still finding out
+ * where its merge would go, as while it looks up a stack's branches: asking again may plan it.
+ */
+export function stillFinding(dialog: ShipDialog | undefined): boolean {
+  return (
+    dialog?.kind === 'refused' &&
+    dialog.plan === undefined &&
+    (dialog.refusal.kind === 'unread' || dialog.refusal.kind === 'where')
+  );
+}
+
+/** How long "Check again" waits to hear whether a lost approval went through. */
+const LOOK_FOR = 60_000;
+
+/**
+ * "Check again" under "Approval not confirmed": looks whether the approval whose answer was lost
+ * went through, a read of your reviews that sends nothing, its button busy meanwhile; then, once
+ * that's known, plans afresh, so "Approve and ship" approves again only where it didn't go. While
+ * it still can't be told, the dialog stays as it was, to check again.
+ */
+export function checkApproval(): void {
+  const dialog = shipping.getState().dialog;
+  if (dialog?.kind !== 'running' || dialog.looking === true) return;
+  const { plan } = dialog;
+  const still = () => {
+    const now = shipping.getState().dialog;
+    return now?.kind === 'running' && now.plan.key === plan.key ? now : undefined;
+  };
+  const looking = (on: boolean) => {
+    const now = still();
+    if (now) setDialog({ ...now, looking: on });
+  };
+  looking(true);
+  const reviews = client(reviewContract);
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let stop = (): void => undefined;
+  const end = (known: boolean) => {
+    stop();
+    clearTimeout(timer);
+    if (!still()) return;
+    if (known) shipAgain();
+    else looking(false);
+  };
+  const heard = (state: Submitting | null) => {
+    if (state === 'checking' || state === 'sending') return;
+    end(state !== 'unknown');
+  };
+  stop = reviews.subscribe('submitted', (submission) => {
+    if (submission.id === plan.id) heard(submission.state);
+  });
+  timer = setTimeout(() => end(false), LOOK_FOR);
+  reviews
+    .dialog({ id: plan.id })
+    .then(async (read) => {
+      // Lo still can't tell: it looks, and says what it found as above.
+      if (read.submitting === 'unknown') await reviews.check({ id: plan.id });
+      else heard(read.submitting);
+    })
+    .catch((error: unknown) => {
+      console.error('Lo couldn’t look for the approval:', error);
+      end(false);
+    });
 }
 
 /**
@@ -105,6 +178,7 @@ export function confirmShip(): void {
   if (dialog?.kind !== 'confirm' || dialog.sending) return;
   const { plan } = dialog;
   setDialog({ ...dialog, sending: true });
+  viewOf.set(plan.key, plan.id);
   const still = () => {
     const now = shipping.getState().dialog;
     return now?.kind === 'confirm' && now.plan.key === plan.key;
@@ -196,6 +270,9 @@ export function seeShipNewer(id: string, refusal: Refusal, head: string): void {
 /** The keys of runs whose end was said, in the dialog or a toast. */
 const said = new Set<string>();
 
+/** The view each run confirmed here was confirmed in, by its plan's key. */
+const viewOf = new Map<string, string>();
+
 /** Takes a run as main says it, and says how it ended, once it has. */
 export function heardShip(view: ShipView): void {
   const runs = new Map(shipping.getState().runs);
@@ -232,17 +309,21 @@ function settle(view: ShipView | undefined): void {
       return;
     case 'stopped':
       said.add(view.key);
-      if (!showing(view.key)) {
-        notify(
-          phase.at === 'approve'
-            ? `Couldn’t approve #${view.number}`
-            : phase.at === 'unsure'
-              ? 'Approval not confirmed'
-              : view.approved
-                ? `Approved #${view.number}, but couldn’t merge it`
-                : `Couldn’t merge #${view.number}`,
-          withoutBidi(phase.refusal.text),
-        );
+      // Left before it stopped: the merge panel says where and why, never a toast.
+      const id = viewOf.get(view.key);
+      if (!showing(view.key) && id !== undefined) {
+        panelTrouble(id, view.number, {
+          title:
+            phase.at === 'approve'
+              ? `Couldn’t approve #${view.number}`
+              : phase.at === 'unsure'
+                ? 'Approval not confirmed'
+                : view.approved
+                  ? `Approved #${view.number}, but couldn’t merge it`
+                  : `Couldn’t merge #${view.number}`,
+          reason: phase.refusal.text === '' ? undefined : withoutBidi(phase.refusal.text),
+          details: detailsOf(phase.refusal),
+        });
       }
       return;
     default:

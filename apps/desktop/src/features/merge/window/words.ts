@@ -20,6 +20,7 @@ import type {
   Off,
   Placement,
   PlanKind,
+  Refusal,
   Reviewer,
   StackLayer,
   Together,
@@ -1265,6 +1266,8 @@ export function placedWhy(placement: Placement | undefined): string | undefined 
 export interface ChainStep {
   readonly key: string;
   readonly title: string;
+  /** The branch the title names, which it draws as a branch. */
+  readonly branch: string;
   readonly detail: string | undefined;
 }
 
@@ -1286,12 +1289,14 @@ export function chainSteps(
     steps.push({
       key: 'before',
       title: `Move #${together.before.pr} onto ${together.before.to}.`,
+      branch: together.before.to,
       detail: `From ${together.before.from}.`,
     });
   }
   steps.push({
     key: 'merge',
     title: `Merge #${plan.number} into ${plan.base}.`,
+    branch: plan.base,
     detail: undefined,
   });
   for (const move of together.after) {
@@ -1299,6 +1304,7 @@ export function chainSteps(
     steps.push({
       key: `after-${move.pr}`,
       title: `Move #${move.pr} onto ${move.to}.`,
+      branch: move.to,
       detail: rebased ? `From ${move.from}. Needs a rebase.` : `From ${move.from}.`,
     });
   }
@@ -1307,6 +1313,7 @@ export function chainSteps(
     steps.push({
       key: `rebase-${pr}`,
       title: `#${pr} stays on ${plan.base}.`,
+      branch: plan.base,
       detail: known ? 'Needs a rebase.' : undefined,
     });
   }
@@ -1448,6 +1455,15 @@ export function outcomeDetail(job: JobView): string {
     if (!said.includes(together.text)) said.push(together.text);
   }
   return said.filter((part) => part !== '').join(' ');
+}
+
+/** Why a merge of a revision that's no longer the pull request's head didn't go. */
+export const OUT_OF_DATE = 'This revision is out of date.';
+
+/** What a refusal has behind Details: GitHub's own text, or the rules it named, a line each. */
+export function detailsOf(refusal: Refusal): string | undefined {
+  if (refusal.details !== undefined && refusal.details !== '') return refusal.details;
+  return refusal.rules.length > 0 ? refusal.rules.join('\n') : undefined;
 }
 
 /** The reason a merge still at work says when Lo's last question about it got no answer. */

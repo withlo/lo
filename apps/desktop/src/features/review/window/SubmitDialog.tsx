@@ -1,13 +1,14 @@
 // The submit dialog, in the tab feature's `tab.dialogs` slot: one body from the moment it opens
 // until it's done, the summary, the verdict and the pending comments that go with it, with "Cancel"
-// and "Submit review". Only the buttons and the line above them change: "Submitting…" while it
-// goes, what went wrong, with "Try again", or, once GitHub's answer was lost and Lo can't tell
-// whether it was submitted, "Check again", which only looks. An approval ends here, done, with the
-// mark's kiss; any other review closes it. What can't go dims the button, or the verdict, with why.
+// and "Submit review", in the shared dialog foot. Only the buttons and the line above them change:
+// "Submitting…" while it goes, when nothing leaves it; what went wrong, with "Try again" and Close;
+// or, once GitHub's answer was lost and Lo can't tell whether it was submitted, "Check again", which
+// only looks, and Close, which leaves while it looks. An approval ends here, done, with the mark's
+// kiss; any other review closes it. What can't go dims the button, or the verdict, with why.
 // `⌘⏎` presses the main button from anywhere in it, the summary included, and a held key presses
 // nothing more.
 
-import { Button, Choices, Dialog, DialogSpacer, Key, LogoMotion, Problem, Spinner } from '@lo/ui';
+import { Button, Choices, Dialog, LogoMotion, Spinner } from '@lo/ui';
 import { keyLabels, parseKeys, systemStrokes } from '@lo/ui/commands';
 import { useEffect, useRef, useState } from 'react';
 import { useStore } from 'zustand';
@@ -144,52 +145,35 @@ export function SubmitDialog() {
       description={read ? subtitleOf(read, label) : undefined}
       size="md"
       // While it's sent, nothing leaves it: Cancel, `Esc` and a click outside refuse.
-      state={step?.stays === true ? 'working' : undefined}
+      state={step?.state}
+      action={
+        step && {
+          label: step.primary.label,
+          working: step.primary.working,
+          onRun: runPrimary,
+          keys,
+          disabled: off,
+          again: step.state === 'failed' ? step.primary.label : undefined,
+          busy: step.primary.busy,
+          // As wide whatever it says, from "Submit review" to "Done".
+          widest: 'Submit review',
+        }
+      }
+      problem={step?.problem}
+      leaveKeys={labels('esc')}
+      mainRef={primary}
       initialFocus={read ? editor : primary}
       container={document.getElementById('root')}
       testId="submit-review"
-      foot={
-        step && (
-          <>
-            <DialogSpacer />
-            {step.leave !== undefined && (
-              <Button
-                disabled={step.stays}
-                hint={step.stays ? 'Wait for it to finish' : null}
-                onClick={closeDialog}
-              >
-                {step.leave}
-                <Key keys={labels('esc')} decorative />
-              </Button>
-            )}
-            <Button
-              ref={primary}
-              variant="primary"
-              busy={step.primary.busy}
-              working={step.primary.working}
-              // As wide whatever it says, from "Submit review" to "Done".
-              widest="Submit review"
-              aria-disabled={off === undefined ? undefined : true}
-              aria-description={off}
-              aria-keyshortcuts={keys.join('')}
-              hint={off ?? null}
-              onClick={(click) => {
-                // Not a double click's second: the first may have just submitted.
-                if (click.detail <= 1 && off === undefined) runPrimary();
-              }}
-            >
-              {step.primary.label}
-              <Key keys={keys} decorative />
-            </Button>
-          </>
-        )
-      }
     >
       {!open || !read ? (
-        <div role="status" className="flex items-center gap-8 text-fg-muted text-small">
-          <Spinner />
-          Reading pending review…
-        </div>
+        // What couldn't be read shows only as the `Problem` above the buttons.
+        step?.state !== 'failed' && (
+          <div role="status" className="flex items-center gap-8 text-fg-muted text-small">
+            <Spinner />
+            Reading pending review…
+          </div>
+        )
       ) : (
         <>
           <Summary
@@ -222,14 +206,6 @@ export function SubmitDialog() {
             )}
           </div>
           <Pending read={read} />
-          {step?.problem && (
-            <Problem
-              title={step.problem.title}
-              reason={step.problem.reason}
-              details={step.problem.details}
-              layout="inline"
-            />
-          )}
           {step?.result !== undefined && (
             <div className="flex items-center gap-12">
               <LogoMotion play="kiss" className="size-40" decorative />

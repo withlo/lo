@@ -112,8 +112,10 @@ test('someone else’s pull request offers every verdict, and the dialog submits
 test('on your own pull request, Approve and Request changes are dimmed with why', () => {
   render(true);
   expect(verdicts()).toEqual(['Comment', 'Approve', 'Request changes']);
-  const why = 'Authors can’t approve their own pull request';
-  expect(dimmed()).toEqual([`Approve${why}`, `Request changes${why}`]);
+  expect(dimmed()).toEqual([
+    'ApproveAuthors can’t approve their own pull request',
+    'Request changesIts author can’t request changes',
+  ]);
 });
 
 test('an approval ends with what it did, and "Done" alone', () => {

@@ -4,7 +4,7 @@
 import { GithubError } from '@lo/github';
 import { describe, expect, it } from 'vitest';
 
-import { causeOf, clock, explained } from './causes.ts';
+import { causeOf, clock, explained, rawOf } from './causes.ts';
 
 const ASKER = { login: 'ravi-k', owner: 'rozed-dev' };
 
@@ -46,10 +46,12 @@ describe('why something asked of GitHub failed', () => {
     expect(causeOf(new Error('Lo stopped'), ASKER)).toBe('');
   });
 
-  it('keeps GitHub’s own text only where the reason doesn’t say why', () => {
+  it('keeps GitHub’s own text out of the reason, for Details alone', () => {
     const failed = new GithubError({ kind: 'api', status: 422, message: 'Invalid', errors: [] });
-    expect(explained(failed, ASKER)).toBe('GitHub returned an error. GitHub answered 422: Invalid');
-    expect(explained(new Error('No token for ravi-k'), ASKER)).toBe('No token for ravi-k');
+    expect(explained(failed, ASKER)).toBe('GitHub returned an error.');
+    expect(rawOf(failed)).toBe('GitHub answered 422: Invalid');
+    expect(explained(new Error('No token for ravi-k'), ASKER)).toBe('');
+    expect(rawOf(new Error('No token for ravi-k'))).toBe('No token for ravi-k');
     expect(
       explained(
         new GithubError({ kind: 'network', failure: 'offline', message: 'ENOTFOUND' }),

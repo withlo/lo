@@ -223,8 +223,9 @@ it('says how a run stands as it goes: approving, then what follows', () => {
     viewOf(plan, { approved: true, phase: { kind: 'reading' } }),
     undefined,
   );
+  // The approval this run made keeps the words it was asked with: its ball says it's done.
   expect(reading.steps.map((step) => [step.state, step.title])).toEqual([
-    ['done', 'Approved as tess-okafor.'],
+    ['done', 'Approve #138 as tess-okafor.'],
     ['now', 'Squash and merge it into main.'],
   ]);
   expect(reading.end).toEqual({ kind: 'running', working: 'Merging…' });
@@ -307,7 +308,7 @@ it('says where a run stopped, what went wrong, and what the button does', () => 
     undefined,
   );
   expect(blocked.steps.map((step) => [step.state, step.title])).toEqual([
-    ['done', 'Approved as tess-okafor.'],
+    ['done', 'Approve #138 as tess-okafor.'],
     ['stopped', 'Squash and merge it into main.'],
   ]);
   expect(blocked.end).toEqual({

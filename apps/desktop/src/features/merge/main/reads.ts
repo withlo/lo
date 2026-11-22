@@ -309,6 +309,7 @@ export class MergeReads {
       followed.started = false;
       followed.tries += 1;
       followed.retryAt = this.#now() + backoff(followed.tries);
+      // Lo's own words, as why the account can't read.
       this.#fail(followed, describe(error), describe(error));
       return;
     }
@@ -486,7 +487,13 @@ export class MergeReads {
   /** The first read failed, for `why`, the reader's words; `raw` is what failed, for the log. */
   #fail(followed: Followed, why: string, raw: string): void {
     this.#options.log(`${followed.pull.toString()}: ${raw}`);
-    this.#set(followed, { kind: 'failed', why: why.slice(0, 4096) });
+    // What it said goes behind Details, unless it's only the reason again.
+    const details = raw === why ? undefined : raw.slice(0, 4096);
+    this.#set(followed, {
+      kind: 'failed',
+      why: why.slice(0, 4096),
+      ...(details === undefined ? {} : { details }),
+    });
   }
 
   #set(followed: Followed, view: MergeView): void {

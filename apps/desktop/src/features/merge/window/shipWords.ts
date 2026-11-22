@@ -21,6 +21,7 @@ import {
   ago,
   capitalized,
   counted,
+  detailsOf,
   doneLine,
   inTheWayOf,
   outcomeDetail,
@@ -75,10 +76,10 @@ function approveStep(
       };
     case 'alreadyApproved':
       return { key, state: 'done', title: `Approved as ${login}.` };
+    // The step keeps the words it was asked with in every state: its ball says it's done.
     case 'approve':
     case 'submitPending':
     case 'reapproveDismissed': {
-      if (state === 'done') return { key, state, title: `Approved as ${login}.` };
       const again = approval.kind === 'reapproveDismissed' ? ' again' : '';
       return {
         key,
@@ -315,8 +316,8 @@ export function approves(approval: ShipApproval): boolean {
 /**
  * What the main button does where it stopped: "Try again", which plans it afresh; "Show r6" for a
  * newer revision; "Merge panel", to merge from there once it has approved; "Check again" for a
- * merge whose end isn't known, or, for an approval whose end isn't known, `look`, which plans it
- * afresh and so shows whether it approved, sending nothing.
+ * merge whose end isn't known, or, for an approval whose end isn't known, `look`, which reads your
+ * reviews to tell whether it went, sending nothing, and plans afresh once that's known.
  */
 export type Again =
   | { readonly kind: 'try' }
@@ -336,6 +337,8 @@ export type End =
       readonly kind: 'failed';
       readonly title: string;
       readonly reason: string | undefined;
+      /** GitHub's own text, or the error's, which only Details shows. */
+      readonly details?: string | undefined;
       readonly again: Again;
     };
 
@@ -424,6 +427,7 @@ export function runningOf(
                 : phase.at === 'unsure'
                   ? 'GitHub didn’t respond.'
                   : undefined,
+            details: detailsOf(refusal),
             again: phase.at === 'unsure' ? { kind: 'look' } : { kind: 'try' },
           },
         };
@@ -447,6 +451,7 @@ export function runningOf(
           kind: 'failed',
           title: unmerged(plan),
           reason: why === '' ? undefined : why,
+          details: detailsOf(refusal),
           again:
             refusal.newer !== null
               ? { kind: 'newer', refusal, head: plan.head }
@@ -496,6 +501,7 @@ function sendingOf(
           kind: 'failed',
           title: unmerged(plan),
           reason: (job ? outcomeDetail(job) : state.refusal.text) || undefined,
+          details: detailsOf(state.refusal),
           again:
             state.refusal.newer !== null
               ? { kind: 'newer', refusal: state.refusal, head: plan.head }

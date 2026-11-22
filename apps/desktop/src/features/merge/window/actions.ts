@@ -12,7 +12,7 @@ import type { MergeState } from '../contract.ts';
 import { main } from './main.ts';
 import { panelRows } from './places.ts';
 import { queueOf } from './queued.ts';
-import { panels, statuses } from './store.ts';
+import { panels, statuses, type PanelTrouble } from './store.ts';
 import { rowPage, shownMethod, steppedMethod, type Row, type Who } from './words.ts';
 
 /** Why the panel's own commands can't run while it's closed. */
@@ -124,6 +124,16 @@ export function openPanel(id?: string, number = 0): void {
   }));
 }
 
+/**
+ * Says what went wrong with something the merge panel did, or was asked to do from elsewhere, in
+ * view `id`'s merge panel, above its foot, opening it to say so: a failure is said where it
+ * happened, never in a toast. It stays until the panel closes or is asked again.
+ */
+export function panelTrouble(id: string, number: number, trouble: PanelTrouble): void {
+  if (!panels.get(id).open) openPanel(id, number);
+  panels.update(id, (panel) => ({ ...panel, trouble }));
+}
+
 /** Opens or closes view `id`'s merge panel, as a click on the header's status does. */
 export function togglePanel(id: string, number: number): void {
   if (panels.get(id).open) closePanel(id);
@@ -178,12 +188,17 @@ export function reasonHasPage(target: Target): boolean {
 
 /** Opens `url`, a page view `id`'s status links, in the system's browser. */
 export function openPage(id: string, url: string): void {
-  // Nothing opened: the reason alone says why.
+  // Nothing opened: the panel the link is in says so, with what went wrong behind Details.
   main()
     .open({ id, url })
-    .catch((error: unknown) =>
-      refuse(withoutBidi(error instanceof Error ? error.message : String(error))),
-    );
+    .catch((error: unknown) => {
+      const tab = activeTab();
+      panelTrouble(id, tab?.id === id && tab.kind === 'pull' ? tab.number : 0, {
+        title: 'Couldn’t open the page',
+        reason: undefined,
+        details: error instanceof Error ? error.message : String(error),
+      });
+    });
 }
 
 /** Opens the page of the reason right-clicked, or the one the keyboard is on. */

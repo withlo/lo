@@ -199,7 +199,19 @@ export type MergeDialog =
       readonly sketch?: Sketch | undefined;
       /** The plan asked again, whose body stays while main plans it afresh. */
       readonly last?: MergePlan | undefined;
-      readonly failed?: { readonly why: string | undefined; readonly details?: string } | undefined;
+      /**
+       * Why main planned nothing: `again` true while Lo is still finding out what the merge takes,
+       * as while it looks up a stack's branches, which the dialog waits on, asking again as it
+       * goes, and false where it can't go as things are; none for a request that never reached
+       * main. `details`, what GitHub or the error said.
+       */
+      readonly failed?:
+        | {
+            readonly why: string | undefined;
+            readonly details?: string | undefined;
+            readonly again?: boolean | undefined;
+          }
+        | undefined;
     }
   | {
       readonly kind: 'confirm';
@@ -255,7 +267,8 @@ export function jobOf(tab: { owner: string; repo: string; number: number }): Job
  * - `confirm`: the plan, for the reader to confirm, with `note`, what changed since one before it,
  *   while `sending` the confirmation to main;
  * - `refused`: main refused it, for `refusal`, and nothing was sent: as it planned, for a newer push
- *   than the one on screen, or as it was confirmed, `plan`;
+ *   than the one on screen, or as it was confirmed, `plan`; or, for a refusal of kind `unread` or
+ *   `where` with no plan, Lo is still finding out where its merge would go, and asks again;
  * - `running`: it was confirmed and runs, as `runs` says.
  */
 export type ShipDialog =
@@ -273,7 +286,12 @@ export type ShipDialog =
       readonly plan: ShipPlan | undefined;
       readonly refusal: Refusal;
     }
-  | { readonly kind: 'running'; readonly plan: ShipPlan };
+  | {
+      readonly kind: 'running';
+      readonly plan: ShipPlan;
+      /** "Check again" is looking whether an approval whose answer was lost went through. */
+      readonly looking?: boolean | undefined;
+    };
 
 export interface ShippingState {
   readonly dialog: ShipDialog | undefined;

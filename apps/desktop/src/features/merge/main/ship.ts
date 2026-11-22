@@ -71,7 +71,7 @@ import type {
 } from '../contract.ts';
 import type { MergeTurn, MergeWrites } from '../service.ts';
 import { afterPushOf } from './auto.ts';
-import { explained, type Asker } from './causes.ts';
+import { explained, rawOf, type Asker } from './causes.ts';
 import {
   anotherRound,
   busyText,
@@ -549,7 +549,9 @@ export class Shipping {
         // Cancelled, the dialog closes.
         if (checking.signal.aborted) return refused(own('cancelled', ''));
         this.#options.log(`${kept.pull.toString()}: ${describe(error)}`);
-        return refused(own('failed', explained(error, askerOf(kept.plan))));
+        return refused(
+          own('failed', explained(error, askerOf(kept.plan)), { details: rawOf(error) }),
+        );
       }
       if (checked.kind !== 'run') return checked;
       const { run } = checked;
@@ -839,7 +841,10 @@ export class Shipping {
       await this.#ship(run);
     } catch (error) {
       this.#options.log(`${run.pull.toString()}: ${describe(error)}`);
-      this.#stopAt(run, own('failed', explained(error, askerOf(run.plan))));
+      this.#stopAt(
+        run,
+        own('failed', explained(error, askerOf(run.plan)), { details: rawOf(error) }),
+      );
     } finally {
       run.turn?.give();
       run.turn = undefined;

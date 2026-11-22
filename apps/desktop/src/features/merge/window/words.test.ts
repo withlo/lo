@@ -725,21 +725,26 @@ test('a chain’s merge a layer at a time lists each move, and says how its run 
     needsRebase: [139, 140],
   };
   expect(chainSteps({ number: 138, base: 'main', method: 'SQUASH' }, chain)).toEqual([
-    { key: 'before', title: 'Move #138 onto main.', detail: 'From feature.' },
-    { key: 'merge', title: 'Merge #138 into main.', detail: undefined },
-    { key: 'after-139', title: 'Move #139 onto main.', detail: 'From chain-1. Needs a rebase.' },
-    { key: 'rebase-140', title: '#140 stays on main.', detail: 'Needs a rebase.' },
+    { key: 'before', title: 'Move #138 onto main.', detail: 'From feature.', branch: 'main' },
+    { key: 'merge', title: 'Merge #138 into main.', detail: undefined, branch: 'main' },
+    {
+      key: 'after-139',
+      title: 'Move #139 onto main.',
+      detail: 'From chain-1. Needs a rebase.',
+      branch: 'main',
+    },
+    { key: 'rebase-140', title: '#140 stays on main.', detail: 'Needs a rebase.', branch: 'main' },
   ]);
   // A merge commit lands #138's commits as they are: no rebase after one, and #140 isn't moved.
   expect(chainSteps({ number: 138, base: 'main', method: 'MERGE' }, chain)).toEqual([
-    { key: 'before', title: 'Move #138 onto main.', detail: 'From feature.' },
-    { key: 'merge', title: 'Merge #138 into main.', detail: undefined },
-    { key: 'after-139', title: 'Move #139 onto main.', detail: 'From chain-1.' },
+    { key: 'before', title: 'Move #138 onto main.', detail: 'From feature.', branch: 'main' },
+    { key: 'merge', title: 'Merge #138 into main.', detail: undefined, branch: 'main' },
+    { key: 'after-139', title: 'Move #139 onto main.', detail: 'From chain-1.', branch: 'main' },
   ]);
   // Into a merge queue whose method Lo can't read, it says nothing of a rebase.
   expect(chainSteps({ number: 138, base: 'main', method: null }, chain).slice(2)).toEqual([
-    { key: 'after-139', title: 'Move #139 onto main.', detail: 'From chain-1.' },
-    { key: 'rebase-140', title: '#140 stays on main.', detail: undefined },
+    { key: 'after-139', title: 'Move #139 onto main.', detail: 'From chain-1.', branch: 'main' },
+    { key: 'rebase-140', title: '#140 stays on main.', detail: undefined, branch: 'main' },
   ]);
 
   expect(doneLine(ran('moving', null))).toBeUndefined();

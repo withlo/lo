@@ -2,9 +2,11 @@
 // parts the box makes with the comment box's own anatomy. The head says what it is, "Summary", who
 // it's from where that could be someone else, and Write | Preview; the notes say what to know about
 // the files attached to it, as to any comment box; the foot has "Attach files…" at its start, Vim's
-// mode with Vim keys on, and a summary kept from before as its line. While it's sent, the box shows
-// the summary as it will read, and nothing typed then is lost. The dialog takes `⌘⏎` before the box
-// hears it, and `Esc Esc` in the box closes the dialog, keeping the summary.
+// mode with Vim keys on, and a summary kept from before as its line. While it's sent, the box stays
+// as it is, in the room it took: its text is read-only and muted, "No summary" where there's none,
+// and Write | Preview and "Attach files…" dim, so nothing typed then is lost and nothing under it
+// moves. The dialog takes `⌘⏎` before the box hears it, and `Esc Esc` in the box closes the dialog,
+// keeping the summary.
 
 import {
   CommentBoxFootBar,
@@ -29,6 +31,12 @@ import {
 } from '../../comments/window/shared.ts';
 import { closeDialog, summaryBox, typed } from './actions.ts';
 import { useNonce } from './page.ts';
+
+/** What the summary says, held, where it has no text. */
+const HELD = { empty: 'No summary' } as const;
+
+/** Why "Attach files…" is dimmed while the summary is held. */
+const SENT = 'The review is sent';
 
 const MODES: Readonly<Record<Mode, { name: string; kind: Mode }>> = {
   normal: { name: 'NORMAL', kind: 'normal' },
@@ -117,7 +125,7 @@ export function Summary({ view, pull, initial, line, account, held, editor }: Su
     };
   }, [nonce, editor, attached]);
 
-  useEffect(() => box.current?.hold(held), [held, parts]);
+  useEffect(() => box.current?.hold(held, HELD), [held, parts]);
 
   // Focus in the box lights its mode chip.
   useEffect(() => {
@@ -155,6 +163,7 @@ export function Summary({ view, pull, initial, line, account, held, editor }: Su
               onPreviewing: show,
               previewKeys: boxKeys('preview'),
               account,
+              held,
             }}
           />,
           parts.head,
@@ -164,11 +173,6 @@ export function Summary({ view, pull, initial, line, account, held, editor }: Su
       {parts &&
         previewing &&
         createPortal(<Preview view={view} text={text} pull={pull} />, parts.preview, 'preview')}
-      {/* Held, as while it's sent, the box is the summary as it will read. */}
-      {parts &&
-        held &&
-        text.trim() !== '' &&
-        createPortal(<Preview view={view} text={text} pull={pull} />, parts.sent, 'sent')}
       {parts && createPortal(<Dropzone box={attached} />, parts.dropzone, 'dropzone')}
       {parts && createPortal(<UploadRows box={attached} />, parts.uploads, 'uploads')}
       {parts &&
@@ -178,7 +182,7 @@ export function Summary({ view, pull, initial, line, account, held, editor }: Su
             focused={focused}
             foot={{
               mode: MODES[mode],
-              attach: uploads.attach,
+              attach: held ? { ...uploads.attach, disabled: true, why: SENT } : uploads.attach,
               lines: line === undefined || edited ? undefined : [{ key: 'restored', text: line }],
             }}
           />,
