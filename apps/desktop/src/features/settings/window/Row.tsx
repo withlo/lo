@@ -70,7 +70,11 @@ function CommandTip({ id, children }: { id: string; children: ReactElement }) {
   );
 }
 
-/** A change main refused, under the row: what failed, why, and the one thing to do. */
+/**
+ * A change main refused, under the row: what failed, why, and the one thing to do: open the file
+ * that has the error, or try a save that failed again. A change main refused outright has nothing
+ * to try again.
+ */
 function Refused({ name, refusal, again }: { name: string; refusal: Refusal; again: () => void }) {
   const file = refusal.cause === 'file';
   const reason =
@@ -90,7 +94,9 @@ function Refused({ name, refusal, again }: { name: string; refusal: Refusal; aga
               label: <Ticks text="Open `settings.json`" />,
               onClick: () => void registry().run('settings.openFile', NO_TARGET),
             }
-          : { label: 'Try again', onClick: again }
+          : refusal.cause === 'unsaved'
+            ? { label: 'Try again', onClick: again }
+            : undefined
       }
       details={refusal.details}
     />

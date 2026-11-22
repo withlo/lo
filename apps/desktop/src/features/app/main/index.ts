@@ -26,6 +26,12 @@ function loWindow(): BrowserWindow | undefined {
 /** The zoom the window draws at, from `window.zoom`, once main has read it. */
 let drawnAt = 100;
 
+/**
+ * How many zoom steps are being written. The window is drawn at each step before it's written, so
+ * the file catching up meanwhile, a step behind, isn't drawn: fast presses would flash back.
+ */
+let zoomWrites = 0;
+
 /** Draws `contents` at the zoom set, as it is now. */
 function applyZoom(contents: WebContents): void {
   contents.setZoomFactor(drawnAt / 100);
@@ -80,11 +86,14 @@ export default defineFeature(contract, {
     async zoom({ step }, { use }) {
       const next = zoomed(drawnAt, step);
       drawAt(next);
+      zoomWrites += 1;
       try {
         await use(settings).update(zoom, () => next);
       } catch (error) {
         if (!(error instanceof IpcError)) throw error;
         console.error(`Lo couldn't save the zoom: ${error.message}`);
+      } finally {
+        zoomWrites -= 1;
       }
     },
     fullScreen() {
@@ -118,7 +127,9 @@ export default defineFeature(contract, {
     app.on('browser-window-created', (_event, window) => {
       window.webContents.on('did-navigate', () => applyZoom(window.webContents));
     });
-    use(settings).watch(zoom, drawAt);
+    use(settings).watch(zoom, (percent) => {
+      if (zoomWrites === 0) drawAt(percent);
+    });
     app.setAboutPanelOptions(
       aboutOptions({
         platform: process.platform,

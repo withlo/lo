@@ -325,9 +325,10 @@ that floats.
   toast the same object while it shows. To show one again, as a second "Copied path", put a new
   object with the same `id` in `toasts`: it stays in its place and its four seconds start over.
 - **`Problem`** is something that went wrong, in one shape: what failed, why, the one thing to do,
-  and the raw text behind Details with Copy. `layout="view"` takes a failed view's place;
-  `layout="inline"` sits by the control whose action failed. It's said once: no toast repeats it. A
-  screen reader hears what failed and why as an alert, and not the buttons.
+  and the raw text behind Details with Copy. The action's label starts with a verb, and is a node,
+  so a name that's code stays code in it: "Open `settings.json`". `layout="view"` takes a failed
+  view's place; `layout="inline"` sits by the control whose action failed. It's said once: no toast
+  repeats it. A screen reader hears what failed and why as an alert, and not the buttons.
 - **`CopyButton`** copies and says so itself: it reads "Copied" for two seconds, and no toast says
   it again. When copying throws or rejects, it reads "Couldn’t copy" instead. A live region beside
   it says the same to a screen reader.
@@ -395,10 +396,10 @@ Settings is a page in a tab of its own (`⌘,`, the gear at the end of the tab s
 a list of its groups on the left, and the rows in a 720 px column beside it, under a search field
 (`/` or `⌘F`) that filters them by label, line and key. The field spans the column, with its key's
 chip at its end until it has focus or holds text, and room is kept for the scrollbar under it as
-beside the rows, so the two line up. A search that finds nothing is a heading and "Clear search" in
-the middle of the column. The groups are Accounts, Appearance, Keyboard, Pull requests, Code
-intelligence, Storage, Integrations and About, in that order. At the foot of the list, "Open
-`settings.json`" and "Open keymap file".
+beside the rows (`gutter-stable`), so the two line up and nothing moves as the scrollbar comes and
+goes. A search that finds nothing is a heading and "Clear search" in the middle of the column. The
+groups are Accounts, Appearance, Keyboard, Pull requests, Code intelligence, Storage, Integrations
+and About, in that order. At the foot of the list, "Open `settings.json`" and "Open keymap file".
 
 A preference is a setting with a row. The menu bar and the palette may toggle it, and never own it.
 

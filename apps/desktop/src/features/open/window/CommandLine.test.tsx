@@ -53,16 +53,17 @@ it('says what the command does, then where it is and whose it is', async () => {
   main({ installed: [] });
   const host = await render();
   expect(host.querySelector('.text-ui-strong')?.textContent).toBe('lo command');
-  expect(host.querySelector('[role="status"]')?.textContent).toBe(
-    'Opens a pull request from a terminal with lo <link>.',
-  );
+  expect(host.textContent).toContain('Opens a pull request from a terminal with lo <link>.');
+  expect(host.querySelector('[role="status"]')).toBeNull();
   expect(host.querySelector('button')?.textContent).toContain('Install');
   act(() =>
     commandStore.setState({ state: { installed: [{ path: '/opt/bin/lo', current: false }] } }),
   );
+  // The path is under the line, which still says what the command does.
   expect(host.querySelector('[role="status"]')?.textContent).toBe(
     'Installed at /opt/bin/lo. It opens another copy of Lo.',
   );
+  expect(host.textContent).toContain('Opens a pull request from a terminal with lo <link>.');
   expect(host.querySelector('button')?.textContent).toContain('Install again');
 });
 

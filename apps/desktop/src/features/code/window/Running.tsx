@@ -49,7 +49,7 @@ function Item({ view }: { view: Shown }) {
         target={target}
         size="sm"
         variant="ghost"
-        aria-label={`Show language server log of ${name}`}
+        aria-label={`Show log of ${name}`}
       >
         Show log
       </SettingsCommand>

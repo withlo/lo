@@ -28,8 +28,11 @@ export interface SkillStore {
   readonly installing: boolean;
   /** What went wrong when main couldn't be asked to install it, until the next install. */
   readonly said: string | undefined;
-  /** Main couldn't be asked to install it when a row asked, which the row says, until the next. */
-  readonly failed: boolean;
+  /**
+   * Main couldn't be asked to install it when a row asked: the error's words, which the row gives
+   * behind Details, until the next install.
+   */
+  readonly failed: string | undefined;
   /** Whether the install command was copied a moment ago: not since Settings' row appeared. */
   readonly copied: boolean;
 }
@@ -38,7 +41,7 @@ export const skillStore = createStore<SkillStore>()(() => ({
   state: undefined,
   installing: false,
   said: undefined,
-  failed: false,
+  failed: undefined,
   copied: false,
 }));
 
@@ -79,7 +82,7 @@ export async function installSkill(
   from: 'command' | 'row' = 'command',
 ): Promise<readonly SkillResult[] | undefined> {
   if (skillStore.getState().installing) return undefined;
-  skillStore.setState({ installing: true, said: undefined, failed: false });
+  skillStore.setState({ installing: true, said: undefined, failed: undefined });
   let said: string | undefined;
   let results: readonly SkillResult[] | undefined;
   try {
@@ -98,7 +101,7 @@ export async function installSkill(
   } catch (error) {
     console.error("Lo couldn't install the overview skill:", error);
     if (from === 'row') {
-      skillStore.setState({ failed: true });
+      skillStore.setState({ failed: error instanceof Error ? error.message : String(error) });
     } else {
       said = "Lo couldn't install the overview skill.";
       skillStore.setState({ said });

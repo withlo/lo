@@ -63,10 +63,11 @@ function Skill({ label, description }: { label: string; description: string }) {
       label={label}
       description={description}
       below={
-        failed ? (
+        failed !== undefined ? (
           <Problem
             title="Couldn’t install the overview skill"
             action={{ label: 'Try again', onClick: install }}
+            details={failed}
           />
         ) : (
           <div role="status" className="text-fg-muted text-small">

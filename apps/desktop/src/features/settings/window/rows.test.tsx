@@ -190,6 +190,25 @@ describe('Appearance', () => {
     ]);
   });
 
+  it('offers nothing to try again for a change main refused outright', async () => {
+    const quiet = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    onTestFinished(() => quiet.mockRestore());
+    installBridge({
+      'settings.set': () => {
+        throw new IpcError('unwritable', 'theme is only the file’s to change.');
+      },
+    });
+    const container = render(Appearance);
+    click(container.querySelector('[role="radiogroup"][aria-label="Theme"] [role="radio"]'));
+    await settle();
+    expect(container.querySelector('[role="alert"]')?.textContent).toBe(
+      'Couldn’t change the theme',
+    );
+    expect(
+      [...container.querySelectorAll('button')].some((each) => each.textContent === 'Try again'),
+    ).toBe(false);
+  });
+
   it('says a change the file’s error kept from being made, with the way to the file, until the file changes', async () => {
     const quiet = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     onTestFinished(() => quiet.mockRestore());

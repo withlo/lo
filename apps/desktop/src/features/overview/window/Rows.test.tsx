@@ -69,7 +69,7 @@ afterEach(() => {
     state: undefined,
     installing: false,
     said: undefined,
-    failed: false,
+    failed: undefined,
     copied: false,
   });
 });
@@ -353,6 +353,9 @@ describe('Settings’ row', () => {
     expect(row()?.querySelector('[role="alert"]')?.textContent).toBe(
       'Couldn’t install the overview skill',
     );
+    // What failed, in its own words, is behind Details.
+    click(button(row(), 'Details'));
+    expect(row()?.textContent).toContain('overview.installSkill failed.');
     expect(notices()).toEqual(before);
     click(button(row(), 'Try again'));
     await settle();
