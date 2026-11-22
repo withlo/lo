@@ -998,6 +998,17 @@ export const plainKeys = {
  * Vim runs them under the keys the registry gives (`setVimKeys`), so counts and visual mode work.
  * A motion the registry gives that isn't here is refused, rather than left a dead key.
  */
+/**
+ * The commands a diff view's own controls run, by id, on what they're drawn at: the viewed ball in
+ * a file's header, and the `+` that follows the pointer down the gutter. They run through the
+ * registry the window's keys go through (`runControl` in `@lo/ui/commands`), so a control does
+ * what its key does and says what its command says.
+ */
+export const viewControls = {
+  viewed: 'diff.markViewed',
+  comment: 'comments.comment',
+} as const;
+
 export const diffMotions: Readonly<Record<string, { to: JumpTo; forward: boolean }>> = {
   'diff.nextChange': { to: 'change', forward: true },
   'diff.previousChange': { to: 'change', forward: false },

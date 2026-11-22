@@ -401,13 +401,7 @@ function ActionButton({
       }}
     >
       {action.label}
-      {action.keys && (
-        <Key
-          keys={action.keys}
-          decorative
-          className={`${NARROW.chips} ${primary && !off ? 'text-on-accent' : ''}`}
-        />
-      )}
+      {action.keys && <Key keys={action.keys} decorative className={NARROW.chips} />}
     </Button>
   );
 }

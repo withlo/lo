@@ -34,14 +34,17 @@ import {
 import type { FileDiff, MovedBlock, RowBlock } from '@lo/diff';
 
 import {
+  controlOf,
   type HeaderTarget,
   KEY_EVENT,
   type KeySource,
   type LineTarget,
+  runControl,
   SCOPE_ATTRIBUTE,
   setScopeSource,
   type Target,
 } from '../commands/index.ts';
+import { type Tip, TIPPED, tips } from './tip.ts';
 import type {
   Anchor,
   BoxFrame,
@@ -77,6 +80,7 @@ import type {
   Viewport,
   VimKey,
 } from './api.ts';
+import { viewControls } from './api.ts';
 import {
   Aligner,
   alignerFields,
@@ -434,6 +438,9 @@ class View implements DiffView {
   /** What the events last said, so each says only what changed. */
   #said: { cursor?: string; mode: Mode; file: number } = { mode: 'normal', file: -1 };
   readonly #stops: (() => void)[] = [];
+  /** The `+` that follows the pointer down the gutter, and the line it's at. */
+  readonly #add = document.createElement('button');
+  #addAt: Target | undefined;
   /**
    * The scroll the input asked for since `movement()` was last called: the wheel's, and the
    * scroll CodeMirror makes to bring a cursor into view.
@@ -549,6 +556,23 @@ class View implements DiffView {
     // The box itself, not what's inside its padding, which is the room after the last file.
     this.#boxWatch.observe(this.dom, { box: 'border-box' });
     this.dom.addEventListener('contextmenu', (event) => this.#contextMenu(event));
+    // The view's own controls: the viewed ball in a file's header and the `+` in the gutter.
+    this.#add.className = 'lo-gutteradd';
+    this.#add.type = 'button';
+    this.#add.tabIndex = -1;
+    this.#add.hidden = true;
+    this.#add.textContent = '+';
+    this.#add.dataset.command = viewControls.comment;
+    // A press on it leaves focus, and what's selected, where they are.
+    this.#add.addEventListener('mousedown', (event) => event.preventDefault());
+    this.dom.append(this.#add);
+    this.dom.addEventListener('click', this.#runControl);
+    this.dom.addEventListener('mousemove', this.#followAdd, { passive: true });
+    this.dom.addEventListener('mouseleave', this.#hideAdd);
+    for (const type of ['wheel', 'scroll', KEY_EVENT] as const) {
+      this.dom.addEventListener(type, this.#hideAdd, { passive: true, capture: true });
+    }
+    this.#stops.push(tips(this.dom, (control) => this.#tipOf(control)));
     this.dom.addEventListener('keydown', this.#escape, { capture: true });
     this.dom.addEventListener('scroll', this.#letNotesGo, { passive: true });
     this.dom.addEventListener('scroll', this.#noteInlineTop, { passive: true });
@@ -3073,6 +3097,85 @@ class View implements DiffView {
   };
 
   /** A right-click: the menu of the thread or the line under the pointer. */
+  /**
+   * What a control the view draws runs its command on: the `+`'s line, or the file whose header
+   * the control is in.
+   */
+  #controlTarget(control: HTMLElement): Target | undefined {
+    if (control === this.#add) return this.#addAt;
+    const pane = this.#panes().find((each) => this.#viewOf(each).dom.contains(control));
+    if (!pane) return undefined;
+    const view = this.#viewOf(pane);
+    const line = view.state.doc.lineAt(view.posAtDOM(control)).number;
+    return this.#lineTarget(this.#placeAt(pane, line));
+  }
+
+  /**
+   * What a control's tooltip says: its command's label and key, or why the command can't run on
+   * its target now, which also dims it. A control names its own words in `data-tip` where its
+   * state changes what a click does, as the viewed ball's "Unmark viewed" does.
+   */
+  #tipOf(control: HTMLElement): Tip | undefined {
+    const id = control.dataset.command;
+    const target = this.#controlTarget(control);
+    const shown = id === undefined || !target ? undefined : controlOf(id, target);
+    if (!shown) return undefined;
+    if (shown.off === undefined) control.removeAttribute('aria-disabled');
+    else control.setAttribute('aria-disabled', 'true');
+    if (shown.off !== undefined) return { label: shown.off };
+    return { label: control.dataset.tip ?? shown.label, keys: shown.keys };
+  }
+
+  /** A click on one of the view's own controls runs its command, as its key would. */
+  #runControl = (event: MouseEvent): void => {
+    const control =
+      event.target instanceof Element ? event.target.closest<HTMLElement>(TIPPED) : null;
+    const id = control?.dataset.command;
+    if (!control || id === undefined || !this.dom.contains(control)) return;
+    const target = this.#controlTarget(control);
+    if (!target) return;
+    event.preventDefault();
+    this.#hideAdd();
+    runControl(id, target);
+  };
+
+  /**
+   * Puts the `+` in the gutter beside the line of code the pointer is over, where a click comments
+   * on that line, and takes it away over anything else: a header, a thread, a box, a note.
+   */
+  #followAdd = (event: MouseEvent): void => {
+    const { target } = event;
+    if (target === this.#add) return;
+    const pane =
+      target instanceof Element && event.buttons === 0
+        ? this.#panes().find((each) => this.#viewOf(each).dom.contains(target))
+        : undefined;
+    const view = pane && this.#viewOf(pane);
+    const block = view?.elementAtHeight(event.clientY - view.documentTop);
+    if (!pane || !view || block?.type !== BlockType.Text) {
+      this.#hideAdd();
+      return;
+    }
+    const at = this.#placeAt(pane, view.state.doc.lineAt(block.from).number);
+    const gutters = view.dom.querySelector('.cm-gutters')?.getBoundingClientRect();
+    const shown = at.line === 0 || !gutters ? undefined : controlOf(viewControls.comment);
+    if (!shown || !gutters) {
+      this.#hideAdd();
+      return;
+    }
+    this.#addAt = this.#lineTarget(at);
+    const add = this.#add;
+    add.setAttribute('aria-label', shown.label);
+    add.style.left = `${gutters.left + 2}px`;
+    add.style.top = `${view.documentTop + block.top + (view.defaultLineHeight - 16) / 2}px`;
+    add.hidden = false;
+  };
+
+  #hideAdd = (): void => {
+    this.#add.hidden = true;
+    this.#add.removeAttribute('aria-disabled');
+  };
+
   #contextMenu(event: MouseEvent): void {
     const { target } = event;
     if (event.defaultPrevented || !(target instanceof Element)) return;

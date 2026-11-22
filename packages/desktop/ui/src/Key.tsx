@@ -1,7 +1,7 @@
 import { cva } from 'class-variance-authority';
 
 const cap = cva(
-  'inline-flex h-kbd-h min-w-kbd-h flex-none items-center justify-center rounded-xs px-4 whitespace-nowrap text-fg-muted code-key',
+  'inline-flex h-kbd-h min-w-kbd-h flex-none items-center justify-center rounded-xs key-cap px-4 whitespace-nowrap text-fg-muted code-key',
   {
     variants: {
       quiet: {
@@ -59,7 +59,9 @@ export function keyAria(
 
 /**
  * A key, or a sequence of keys, shown wherever an action has one. A chord is one key (`⌘⇧P`); a
- * sequence's keys sit side by side, never joined with a plus sign.
+ * sequence's keys sit side by side, never joined with a plus sign. In a control it comes last,
+ * after the label. It takes its control's state by itself: on a main button's fill it's drawn in
+ * the fill's text colour, and on a dimmed control it dims with the label.
  */
 export function Key({
   keys,

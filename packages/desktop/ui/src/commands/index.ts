@@ -24,6 +24,13 @@ export {
   type VimMeeting,
 } from './checks.ts';
 export {
+  controlOf,
+  heldRegistry,
+  holdRegistry,
+  runControl,
+  type CommandControl,
+} from './control.ts';
+export {
   commandsOf,
   defineCommands,
   groups,

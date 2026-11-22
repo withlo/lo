@@ -95,6 +95,102 @@
   box-shadow: inset 0 0 0 1.5px var(--lo-warning);
   background: radial-gradient(circle, var(--lo-warning) 0 2px, transparent 2.5px);
 }
+/*
+ * The ball is a control: a click marks the file. It keeps its size, and takes clicks a little
+ * around it. One that can't run is dimmed.
+ */
+.lo-diffhead__ball {
+  position: relative;
+  cursor: default;
+}
+.lo-diffhead__ball::after {
+  content: '';
+  position: absolute;
+  inset: calc(var(--lo-sp-6) * -1);
+}
+.lo-diffhead__ball:hover {
+  box-shadow: inset 0 0 0 1.5px var(--lo-fg-muted);
+}
+.lo-diffhead__ball.is-viewed:hover {
+  background: var(--lo-fg);
+  box-shadow: none;
+}
+.lo-diffhead__ball.is-stale:hover {
+  box-shadow: inset 0 0 0 1.5px var(--lo-warning);
+}
+.lo-diffhead__ball[aria-disabled='true'] {
+  opacity: 0.5;
+}
+/* What the amber ring means, in words beside it. */
+.lo-diffhead__changed {
+  flex: none;
+  font: var(--lo-text-micro);
+  color: var(--lo-warning);
+}
+
+/*
+ * The `+` that follows the pointer down the gutter: a click comments on its line. It sits over the
+ * gutter, takes no room, and moves nothing.
+ */
+.lo-gutteradd {
+  position: fixed;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--lo-sp-16);
+  height: var(--lo-sp-16);
+  padding: 0;
+  border: 0;
+  border-radius: var(--lo-r-xs);
+  background: var(--lo-accent);
+  color: var(--lo-on-accent);
+  font: 600 13px/1 var(--lo-font-mono);
+  cursor: default;
+}
+.lo-gutteradd[hidden] {
+  display: none;
+}
+.lo-gutteradd[aria-disabled='true'] {
+  background: var(--lo-bg-element);
+  color: var(--lo-fg-disabled);
+  box-shadow: inset 0 0 0 1px var(--lo-border-subtle);
+}
+
+/* A tip for a control the view draws itself, as `Tooltip` draws one for a React control. */
+.lo-tip {
+  position: fixed;
+  z-index: var(--lo-z-tooltip);
+  display: flex;
+  align-items: center;
+  gap: var(--lo-sp-8);
+  max-width: calc(100vw - var(--lo-sp-32));
+  padding: var(--lo-sp-4) var(--lo-sp-8);
+  border-radius: var(--lo-r-sm);
+  background: var(--lo-bg-overlay);
+  box-shadow: var(--lo-shadow-pop);
+  color: var(--lo-fg);
+  font: var(--lo-text-small);
+  pointer-events: none;
+}
+.lo-tip__keys {
+  display: inline-flex;
+  flex: none;
+  gap: var(--lo-sp-2);
+}
+.lo-tip kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: var(--lo-kbd-h);
+  height: var(--lo-kbd-h);
+  padding: 0 var(--lo-sp-4);
+  border-radius: var(--lo-r-xs);
+  background: var(--lo-hover);
+  color: var(--lo-fg-muted);
+  font: var(--lo-code-key);
+  font-variant-ligatures: none;
+}
 
 /*
  * No block the editors draw between lines may make their content wider than the editor: a long

@@ -105,6 +105,8 @@ export function Button({
     <button
       type={type}
       className={button({ variant, size, icon })}
+      // A key cap on its fill is drawn in the fill's text colour (`key-cap`).
+      data-fill={variant === 'primary' ? '' : undefined}
       onClick={(event: MouseEvent<HTMLButtonElement>) => {
         if (busy === true) event.preventDefault();
         else onClick?.(event);
