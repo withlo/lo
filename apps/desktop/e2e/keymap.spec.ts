@@ -156,7 +156,8 @@ test.describe('with a keymap file that opening could run', () => {
 
     await pressOpen(page);
     await expect(toast(page, 'executable, so Lo won')).toBeVisible();
-    await expect(toast(page, 'Open the keymap file')).toBeVisible();
+    // The reason alone, not under the command's name.
+    await expect(toast(page, 'Open the keymap file')).toHaveCount(0);
     // Nothing was started.
     await page.waitForTimeout(300);
     expect(opened()).toEqual([]);

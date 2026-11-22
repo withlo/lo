@@ -8,7 +8,7 @@ import { act } from 'react';
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { IpcError } from '../../../ipc/contract.ts';
-import { notice, withdraw } from '../../../window/commands/notices.tsx';
+import { notice, notices, withdraw } from '../../../window/commands/notices.tsx';
 import { createRegistry, registry } from '../../../window/commands/registry.ts';
 import { installBridge } from '../../../window/test/bridge.ts';
 import { releasePage, type CheckAnswer, type UpdateState } from '../contract.ts';
@@ -48,8 +48,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  const note = notice();
-  if (note) withdraw(note.title, note.body);
+  for (const note of notices()) withdraw(note.title, note.body);
 });
 
 /** Runs a command as the palette does, and lets what it asked of main settle. */
@@ -178,8 +177,8 @@ describe('the other commands', () => {
     await run('updates.later');
     expect(requests().map(([channel]) => channel)).toEqual(['updates.check']);
     expect(notice()).toEqual({
-      title: 'Hide the update until Lo restarts',
-      body: 'Lo 0.2.0 is ready. It installs when you quit, or now.',
+      title: 'Lo 0.2.0 is ready. It installs when you quit, or now.',
+      body: '',
     });
   });
 });

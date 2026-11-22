@@ -32,6 +32,11 @@ export interface BannerAction {
   busy?: boolean | undefined;
   /** What the button says while busy, the verb of its label: "Trusting". */
   working?: string | undefined;
+  /**
+   * The widest thing it says while busy, when `working` changes as the work goes on: the button
+   * holds that room from before its press, as a `Button` with one does.
+   */
+  widest?: string | undefined;
   /** The key that does the same from anywhere in the tab, as the system shows it: `['m']`. */
   keys?: readonly string[] | undefined;
 }
@@ -68,6 +73,7 @@ export function Banner({ tone, title, detail, actions = [], onDismiss }: BannerP
               size="sm"
               busy={action.busy}
               working={action.working}
+              widest={action.widest}
               onClick={action.onClick}
             >
               {action.label}

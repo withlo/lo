@@ -28,7 +28,11 @@ export function TooltipGroup({ children, container }: TooltipGroupProps) {
 }
 
 export interface TooltipProps {
-  /** What the control is or does, in a few words: "Next unread file". */
+  /**
+   * What the control is or does, in a few words: "Next unread file". With `null` there's nothing
+   * to show and it stays shut, in place: a control whose tooltip comes and goes is the same
+   * element throughout.
+   */
   label: ReactNode;
   /** Its key, as the system shows each key of it: `[']', 'f']`. */
   keys?: readonly string[] | undefined;
@@ -41,7 +45,9 @@ export interface TooltipProps {
 /**
  * A control's name and its key, shown after the pointer rests on it or focus reaches it by key.
  * It names the control and nothing more: it never carries an error, a state, or anything that's
- * the only place to learn something. `Button` takes one through its `hint`.
+ * the only place to learn something. The one exception is a dimmed control, whose tooltip is the
+ * reason it can't be used now, which a screen reader hears as the control's description. `Button`
+ * takes either through its `hint`.
  *
  * It isn't the control's accessible name: an icon button still has its `aria-label`, and gives its
  * key with `aria-keyshortcuts`, as `Button` does from its `hintShortcut`.
@@ -49,7 +55,7 @@ export interface TooltipProps {
 export function Tooltip({ label, keys, side = 'bottom', children }: TooltipProps) {
   const container = useContext(Container);
   return (
-    <Base.Root>
+    <Base.Root disabled={label === null}>
       <Base.Trigger render={children} delay={TOOLTIP_DELAY} />
       <Base.Portal container={container ?? globalThis.document?.querySelector('.lo-app')}>
         <Base.Positioner side={side} sideOffset={6} collisionPadding={8} className="z-tooltip">

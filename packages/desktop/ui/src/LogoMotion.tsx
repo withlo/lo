@@ -20,6 +20,12 @@ export interface LogoMotionProps {
   onDone?: (() => void) | undefined;
   /** Beside words that already say what it stands for, so a screen reader passes over it. */
   decorative?: boolean | undefined;
+  /**
+   * When it began to play, as `Date.now()` gives it, where that was before this was drawn: it's
+   * drawn as far in as it would be by now. `Loading` gives it, so the loop of a wait drawn in one
+   * view after another carries on and doesn't start over.
+   */
+  since?: number | undefined;
 }
 
 const { l, socket, rest, goo } = LOGO;
@@ -48,7 +54,13 @@ function draw(ball: SVGEllipseElement | null, pool: SVGPathElement | null, frame
  * anything up: what it celebrates has already happened, and what it waits for shows when it comes.
  * To play the same animation again, give it a new `key`.
  */
-export function LogoMotion({ play, className, onDone, decorative = false }: LogoMotionProps) {
+export function LogoMotion({
+  play,
+  className,
+  onDone,
+  decorative = false,
+  since,
+}: LogoMotionProps) {
   const reduced = useMotionReduced();
   const [played, setPlayed] = useState<LogoPlay | undefined>(undefined);
   const still = reduced || played === play;
@@ -80,7 +92,7 @@ export function LogoMotion({ play, className, onDone, decorative = false }: Logo
     const loops = logoLoops(play);
     let started: number | undefined;
     let frame = requestAnimationFrame(function step(now) {
-      started ??= now;
+      started ??= now - (since === undefined ? 0 : Math.max(0, Date.now() - since));
       const seconds = (now - started) / 1000;
       const at = logoFrame(play, seconds);
       draw(ball.current, pool.current, at);
@@ -94,7 +106,7 @@ export function LogoMotion({ play, className, onDone, decorative = false }: Logo
       frame = requestAnimationFrame(step);
     });
     return () => cancelAnimationFrame(frame);
-  }, [play, still]);
+  }, [play, still, since]);
 
   const name = decorative ? { 'aria-hidden': true } : { role: 'img', 'aria-label': 'Lo' };
   const size = className === undefined ? 'overflow-visible' : `overflow-visible ${className}`;
@@ -108,7 +120,7 @@ export function LogoMotion({ play, className, onDone, decorative = false }: Logo
       </svg>
     );
   }
-  const first = logoFrame(play, 0);
+  const first = logoFrame(play, since === undefined ? 0 : Math.max(0, Date.now() - since) / 1000);
   const shapes = (poolRef: typeof pool, ballRef: typeof ball) => (
     <>
       <path d={l} />

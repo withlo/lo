@@ -13,7 +13,13 @@ import { useEffect, useRef, type ReactNode } from 'react';
 
 import { openMenu } from '../../../window/commands/menus.tsx';
 import { registry, setMiddle, useKeys } from '../../../window/commands/registry.ts';
-import { tabState, useLocalCopy, useTabState, type PullTab } from '../../tab/window/shared.ts';
+import {
+  MiddlePlaceholder,
+  tabState,
+  useLocalCopy,
+  useTabState,
+  type PullTab,
+} from '../../tab/window/shared.ts';
 import type { TreePath } from '../../tree/contract.ts';
 import { followFile } from '../../tree/window/shared.ts';
 import type { FileVersions, Version } from '../contract.ts';
@@ -324,6 +330,7 @@ export function WholeFile({ tab, shown }: { tab: PullTab; shown: boolean }) {
         <div ref={box} className="min-h-0 flex-1" />
       ) : (
         <Note
+          tab={tab}
           open={open}
           content={content}
           waiting={head === undefined ? 'opening' : 'copy'}
@@ -397,11 +404,13 @@ function Bar({
 
 /** What shows in place of the file's lines: why there are none, or none yet. */
 function Note({
+  tab,
   open,
   content,
   waiting,
   path,
 }: {
+  tab: PullTab;
   open: Opened | undefined;
   content: Content | undefined;
   waiting: 'opening' | 'copy';
@@ -425,7 +434,14 @@ function Note({
   switch (content?.kind) {
     case undefined:
     case 'reading':
-      if (waiting === 'opening') return <Said>Opening the pull request…</Said>;
+      // The tab's own wait, which this view carries on.
+      if (waiting === 'opening') {
+        return (
+          <div className="min-h-0 flex-1">
+            <MiddlePlaceholder tab={tab} />
+          </div>
+        );
+      }
       return (
         <Said>
           <span className="inline-flex items-center gap-8">

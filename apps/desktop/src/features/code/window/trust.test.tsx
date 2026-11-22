@@ -13,7 +13,7 @@ import { installBridge } from '../../../window/test/bridge.ts';
 import type { PullTab } from '../../tab/window/shared.ts';
 import type { Status } from '../contract.ts';
 import feature from './index.ts';
-import { askable, bannerOf, trustable, trustSwitch, untrustable } from './status.ts';
+import { askable, bannerOf, drawn, trustable, trustSwitch, untrustable } from './status.ts';
 import { daysAgo, rowsOf } from './Trusted.tsx';
 import { TrustBanner } from './TrustBanner.tsx';
 
@@ -76,13 +76,13 @@ async function until(done: () => boolean): Promise<void> {
   expect(done()).toBe(true);
 }
 
-/** What a button says now: for one that can be busy, the face of it that shows. */
-const shown = (control: Element) =>
-  (control.querySelector('span > span:not([aria-hidden])') ?? control).textContent;
+/** What a button says: the words on it that show, for one that says something else at work. */
+const said = (control: HTMLElement) =>
+  control.querySelector('span > span:not([aria-hidden])')?.textContent ?? control.textContent;
 
 const button = (page: HTMLElement, name: string) =>
   [...page.querySelectorAll('button')].find(
-    (each) => shown(each) === name || each.getAttribute('aria-label') === name,
+    (each) => said(each) === name || each.getAttribute('aria-label') === name,
   );
 
 describe('the banner', () => {
@@ -90,9 +90,11 @@ describe('the banner', () => {
     const page = draw(<TrustBanner tab={tabOf('t1')} />);
     expect(page.textContent).toBe('');
     act(() => bridge.push('code.status', statusOf('t1')));
-    expect(page.textContent).toContain('Language servers are off for rozed-dev/e2e.');
-    expect(page.textContent).toContain('Lo runs them only on repos you trust.');
-    act(() => button(page, 'Trust this repo')?.click());
+    // One fact, in one line.
+    expect(page.querySelector('[role="status"] p')?.textContent).toBe(
+      'Language servers are off for rozed-dev/e2e',
+    );
+    act(() => button(page, 'Trust repo…')?.click());
     await until(() => bridge.calls.some(([channel]) => channel === 'code.trust'));
     expect(bridge.calls.find(([channel]) => channel === 'code.trust')?.[1]).toEqual({
       view: 't1',
@@ -111,8 +113,8 @@ describe('the banner', () => {
         statusOf('t2', { pull: 97, head: { kind: 'fork', repo: 'rozed-bot/e2e' } }),
       ),
     );
-    expect(page.textContent).toContain('This PR comes from a fork, rozed-bot/e2e.');
-    act(() => button(page, 'Trust this PR')?.click());
+    expect(page.textContent).toContain('Language servers are off for the fork rozed-bot/e2e');
+    act(() => button(page, 'Trust pull request…')?.click());
     await until(() =>
       bridge.calls.some(
         ([channel, input]) => channel === 'code.trust' && Reflect.get(Object(input), 'pull') === 97,
@@ -142,12 +144,26 @@ describe('the banner', () => {
     // A repository by the name trusted that isn't the one.
     expect(bannerOf(statusOf('t', { trust: { kind: 'untrusted', why: 'other' } }))?.action).toEqual(
       {
-        label: 'Trust this repo',
+        label: 'Trust repo…',
         pull: false,
       },
     );
     // A fork GitHub no longer has can't be trusted.
     expect(bannerOf(statusOf('t', { head: { kind: 'gone' } }))?.action).toBeUndefined();
+  });
+
+  it('keeps its place in the tab until it has closed', () => {
+    const tab = tabOf('t9');
+    draw(<TrustBanner tab={tab} />);
+    act(() => bridge.push('code.status', statusOf('t9')));
+    expect(drawn.get('t9')).toBe('on');
+    expect(trustSwitch.shows(tab)).toBe(true);
+    act(() =>
+      bridge.push('code.status', statusOf('t9', { trust: { kind: 'trusted', by: 'repo' } })),
+    );
+    // Closing takes no time here, so it's gone, and nothing holds its place.
+    expect(drawn.get('t9')).toBe('off');
+    expect(trustSwitch.shows(tab)).toBe(false);
   });
 
   it('asks main where a view drawn before it said anything stands', async () => {
@@ -165,8 +181,7 @@ const asked = (channel: string) => bridge.calls.filter(([name]) => name === chan
 /** The banner's button that trusts, whatever it says now. */
 const trustButton = (page: HTMLElement) => [...page.querySelectorAll('button')].at(-2);
 /** What a button at work says: the words on it that show, in place of its label. */
-const says = (control: HTMLElement | undefined) =>
-  control?.querySelector('span > span:not([aria-hidden])')?.textContent;
+const says = (control: HTMLElement | undefined) => control && said(control);
 
 describe('asking to trust', () => {
   it('waits while main reads, asks and saves, saying how far it has got, and asks once', async () => {
@@ -174,12 +189,14 @@ describe('asking to trust', () => {
     act(() => bridge.push('code.status', statusOf('t4')));
     // What it will say waits unseen beside its label, so pressing it keeps its width.
     const idle = trustButton(page);
-    expect(says(idle)).toBe('Trust this repo');
-    expect(idle?.querySelector('[aria-hidden="true"]')?.textContent).toBe('Checking…');
+    expect(says(idle)).toBe('Trust repo…');
+    const unseen = () =>
+      [...(idle?.querySelectorAll('.invisible') ?? [])].map((face) => face.textContent);
+    expect(unseen()).toEqual(['Waiting…', 'Trusting…']);
     act(() => bridge.push('code.status', statusOf('t4', { trusting: 'reading' })));
     const trust = trustButton(page);
     expect(trust).toBe(idle);
-    expect(says(trust)).toBe('Checking…');
+    expect(says(trust)).toBe('Waiting…');
     expect(trust?.getAttribute('aria-disabled')).toBe('true');
     expect(trust?.querySelector('.spinner')).not.toBeNull();
     const before = asked('code.trust');
@@ -189,13 +206,15 @@ describe('asking to trust', () => {
     });
     // A second press, while main is at it, does nothing.
     expect(asked('code.trust')).toBe(before);
-    // While main's dialog asks, nothing says it's trusting: the reader hasn't said so yet.
+    // While main's dialog asks, it says the same: the reader hasn't said to trust yet.
     act(() => bridge.push('code.status', statusOf('t4', { trusting: 'asking' })));
     expect(says(trust)).toBe('Waiting…');
     act(() => bridge.push('code.status', statusOf('t4', { trusting: 'saving' })));
     // The same button, which keeps focus, says what Lo does now.
     expect(trustButton(page)).toBe(trust);
     expect(says(trust)).toBe('Trusting…');
+    // Its widest words keep their room through every stage, so it's one width throughout.
+    expect(unseen()).toEqual(['Trust repo…', 'Trusting…']);
     // Trusted: the banner goes, and the status item shows the servers starting.
     act(() =>
       bridge.push('code.status', statusOf('t4', { trust: { kind: 'trusted', by: 'repo' } })),
@@ -211,19 +230,19 @@ describe('asking to trust', () => {
     answerTrust = () => {
       throw new IpcError('settingsFile', why);
     };
-    act(() => button(page, 'Trust this repo')?.click());
-    await until(() => page.textContent.includes("Lo couldn't trust rozed-dev/e2e."));
+    act(() => button(page, 'Trust repo…')?.click());
+    await until(() => page.textContent.includes('Couldn’t trust rozed-dev/e2e'));
     // In its own body, as an alert, with the button back.
     expect(page.querySelector('[role="alert"] p')?.textContent).toBe(
-      `Lo couldn't trust rozed-dev/e2e. ${why}`,
+      `Couldn’t trust rozed-dev/e2e ${why}`,
     );
-    expect([...page.querySelectorAll('button')].map(shown)).toEqual([
-      'Open the settings file',
-      'Trust this repo',
+    expect([...page.querySelectorAll('button')].map(said)).toEqual([
+      'Open settings.json',
+      'Trust repo…',
       '',
     ]);
-    expect(button(page, 'Trust this repo')?.getAttribute('aria-disabled')).toBeNull();
-    act(() => button(page, 'Open the settings file')?.click());
+    expect(button(page, 'Trust repo…')?.getAttribute('aria-disabled')).toBeNull();
+    act(() => button(page, 'Open settings.json')?.click());
     await until(() => asked('settings.openFile') === 1);
 
     // Asked again: what failed goes at once, and a disk that can't take it says so, with nothing
@@ -231,17 +250,17 @@ describe('asking to trust', () => {
     answerTrust = () => {
       throw new IpcError('unsaved', "Lo couldn't write the settings file (ENOSPC).");
     };
-    act(() => button(page, 'Trust this repo')?.click());
-    expect(page.textContent).toContain('Language servers are off for rozed-dev/e2e.');
+    act(() => button(page, 'Trust repo…')?.click());
+    expect(page.textContent).toContain('Language servers are off for rozed-dev/e2e');
     await until(() => page.textContent.includes('(ENOSPC)'));
-    expect(button(page, 'Open the settings file')).toBeUndefined();
+    expect(button(page, 'Open settings.json')).toBeUndefined();
 
     // Asked again, and trusted.
     answerTrust = () => {
       bridge.push('code.status', statusOf('t5', { trust: { kind: 'trusted', by: 'repo' } }));
       return 'trusted';
     };
-    act(() => button(page, 'Trust this repo')?.click());
+    act(() => button(page, 'Trust repo…')?.click());
     await until(() => page.textContent === '');
   });
 
@@ -251,8 +270,8 @@ describe('asking to trust', () => {
     answerTrust = () => {
       throw new IpcError('settingsFile', "The settings file isn't valid JSON (x). Fix that.");
     };
-    act(() => button(page, 'Trust this repo')?.click());
-    await until(() => page.textContent.includes("Lo couldn't trust rozed-dev/e2e."));
+    act(() => button(page, 'Trust repo…')?.click());
+    await until(() => page.textContent.includes('Couldn’t trust rozed-dev/e2e'));
     // Saved, as once it's fixed: the banner offers to trust it, as before it was asked.
     act(() =>
       bridge.push('settings.state', {
@@ -261,14 +280,14 @@ describe('asking to trust', () => {
         problems: [],
       }),
     );
-    expect(page.textContent).toContain('Language servers are off for rozed-dev/e2e.');
-    expect(button(page, 'Open the settings file')).toBeUndefined();
+    expect(page.textContent).toContain('Language servers are off for rozed-dev/e2e');
+    expect(button(page, 'Open settings.json')).toBeUndefined();
 
     // What the file didn't cause stays, whatever the settings do.
     answerTrust = () => {
       throw new IpcError('unsaved', "Lo couldn't write the settings file (ENOSPC).");
     };
-    act(() => button(page, 'Trust this repo')?.click());
+    act(() => button(page, 'Trust repo…')?.click());
     await until(() => page.textContent.includes('(ENOSPC)'));
     act(() =>
       bridge.push('settings.state', {
@@ -289,12 +308,12 @@ describe('asking to trust', () => {
     answerTrust = () => {
       throw new IpcError('asking', elsewhere);
     };
-    act(() => button(page, 'Trust this repo')?.click());
+    act(() => button(page, 'Trust repo…')?.click());
     await until(() => page.textContent.includes(elsewhere));
-    expect(button(page, 'Trust this repo')?.getAttribute('aria-disabled')).toBeNull();
+    expect(button(page, 'Trust repo…')?.getAttribute('aria-disabled')).toBeNull();
     answerTrust = () => 'cancelled';
     const before = asked('code.trust');
-    act(() => button(page, 'Trust this repo')?.click());
+    act(() => button(page, 'Trust repo…')?.click());
     await until(() => asked('code.trust') === before + 1);
     await until(() => !page.textContent.includes(elsewhere));
   });
@@ -305,14 +324,14 @@ describe('asking to trust', () => {
     // Main never answers this one.
     answerTrust = () => new Promise(() => undefined);
     const before = asked('code.trust');
-    act(() => button(page, 'Trust this repo')?.click());
+    act(() => button(page, 'Trust repo…')?.click());
     await until(() => asked('code.trust') === before + 1);
     // The button waits only while main says it's at it.
-    expect(button(page, 'Trust this repo')?.getAttribute('aria-disabled')).toBeNull();
+    expect(button(page, 'Trust repo…')?.getAttribute('aria-disabled')).toBeNull();
     act(() => bridge.push('code.status', statusOf('t6', { trusting: 'asking' })));
     expect(trustButton(page)?.getAttribute('aria-disabled')).toBe('true');
     act(() => bridge.push('code.status', statusOf('t6')));
-    act(() => button(page, 'Trust this repo')?.click());
+    act(() => button(page, 'Trust repo…')?.click());
     await until(() => asked('code.trust') === before + 2);
     answerTrust = () => 'cancelled';
   });
