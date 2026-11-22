@@ -137,6 +137,9 @@ const HIGHLIGHT_BYTES = 2 * 1024 * 1024;
 const BUDGET = 1000;
 const LOADED_BUDGET = 5000;
 
+/** What's behind Details when a read came back with nothing for a file. */
+const NO_ANSWER = 'No answer came for it.';
+
 /** Whether a file shows its lines from the start: not kept out, and with lines to show. */
 export function showsLines(versions: FileVersions): boolean {
   return versions.start === 'shown' || versions.start === 'collapsed';
@@ -603,9 +606,7 @@ export class Loader {
         this.#fail(
           run,
           entry,
-          text
-            ? { reason: text.reason, details: text.why }
-            : { details: 'Main sent nothing for it.' },
+          text ? { reason: text.reason, details: text.why } : { details: NO_ANSWER },
         );
       }
     });
@@ -636,7 +637,7 @@ export class Loader {
       const result = results[index];
       if (!result?.ok) {
         this.#fail(run, entry, {
-          details: result?.why ?? 'The background process sent nothing for it.',
+          details: result?.why ?? NO_ANSWER,
         });
         return;
       }
