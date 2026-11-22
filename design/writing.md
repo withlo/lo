@@ -89,15 +89,25 @@ GitHub’s own name for it.
 | keyboard shortcuts | The list of Lo’s keys. One of them is a key.                                                                              | key help, keybindings, hotkeys                    |
 | Vim keys           | The setting for Vim’s modal editing. Its modes are written as Vim writes them: NORMAL, INSERT, V-LINE.                    | Vim mode, Vim-style keys                          |
 | command            | A row in the command palette.                                                                                             | action                                            |
+| comment box        | Where a comment is written: “Close comment box”.                                                                          | composer, editor, input, “the box” alone          |
+| preview            | The comment as it will read once sent. Its switch in the comment box: “Preview”.                                          | “Write or preview”, rendered                      |
+| whole file         | A file in full, not only its changed lines: “Open whole file”.                                                            | full file, entire file, file view                 |
+| definitions        | What “Show definition” brings up under the line: “Next definition”, “Close definitions”.                                  | peek, answers, popup                              |
+| rule               | What an app such as Finicky uses to send pull request links to Lo: “Show rules”, “Copy rule”.                             | handler, setup, config                            |
 
 ### The window
 
-| Write | For                                                                | Never                             |
-| ----- | ------------------------------------------------------------------ | --------------------------------- |
-| tab   | One pull request or stack, the Recent tab, a merge queue.          | page, window                      |
-| view  | What fills the middle of a tab: Overview, Diff or Timeline.        | middle view, mode, pane, screen   |
-| panel | The left panel, the threads panel, the merge panel.                | sidebar, pane, drawer             |
-| files | The list of files in the left panel, as a tree or in review order. | “the tree”, explorer, file finder |
+| Write | For                                                                                 | Never                             |
+| ----- | ----------------------------------------------------------------------------------- | --------------------------------- |
+| tab   | One pull request or stack, the Recent tab, a merge queue.                           | page, window                      |
+| view  | What fills the middle of a tab: Overview, Diff or Timeline.                         | middle view, mode, pane, screen   |
+| panel | The left panel, the threads panel, the merge panel.                                 | sidebar, pane, drawer             |
+| files | The list of files in the left panel, as a tree or in review order.                  | “the tree”, explorer, file finder |
+| area  | Where a key works: Diff, Files, Comment box. Keyboard shortcuts has a tab for each. | scope, context, mode              |
+
+What a list holds has one noun, and stepping uses it: a block in the overview, an event on the
+timeline, a row in the files, a group in Settings, a reason in the merge panel. “Next block”,
+“Previous event”.
 
 Component names never reach the screen: banner, toast, dialog, popover, callout, notice, status
 item. Nor does “on screen”: write “this revision”, not “the revision on screen”.
@@ -106,8 +116,9 @@ item. Nor does “on screen”: write “this revision”, not “the revision o
 
 | Write                     | For                                                                                                                                                    | Never                                                |
 | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------- |
-| Open                      | Bring a pull request, a file or a link into Lo: “Open pull request…”. “Open on GitHub” goes to the browser.                                            | Load, Launch, View, Review                           |
+| Open                      | Bring a pull request, a file or a link into Lo: “Open pull request…”. “Open on GitHub” goes to the browser. A page off GitHub: “Open in browser”.      | Load, Launch, View, Review                           |
 | Show, Hide                | Bring something into view, or put it out of view until it’s shown again: “Show r5”, “Hide whitespace changes”.                                         | Load, Display, See, Toggle                           |
+| Collapse, Expand          | Fold a folder, a file or a thread, and unfold it: “Collapse file”, then “Expand file”.                                                                 | Open, Close, Fold, Toggle                            |
 | Go to                     | Move to a place in the code or the window: “Go to file…”, “Go to definition”.                                                                          | Jump to, Navigate to                                 |
 | Next, Previous            | Step through one kind of thing: “Next change”. Back and Forward are for history alone.                                                                 | Prev                                                 |
 | Send                      | A comment or a reply: “Sending…”.                                                                                                                      | Post, Publish                                        |
@@ -119,7 +130,7 @@ item. Nor does “on screen”: write “this revision”, not “the revision o
 | Delete                    | Destroy something for good: “Delete comment…”.                                                                                                         | Remove, Erase                                        |
 | Discard                   | Throw away text not yet sent: “Discard draft”.                                                                                                         | Delete, Drop                                         |
 | Clear                     | Empty a store or a field: “Clear cache”.                                                                                                               | Purge, Wipe                                          |
-| Reset                     | Put a setting back to its default.                                                                                                                     | Restore, Revert                                      |
+| Reset                     | Put a setting back to its default: “Reset zoom”.                                                                                                       | Restore, Revert, Actual size                         |
 | Dismiss                   | Put away a banner or a toast for good.                                                                                                                 | Hide, Close                                          |
 | Copy                      | To the clipboard: “Copy link”. The button reads “Copied” for 2 s.                                                                                      | Yank                                                 |
 | Install                   | Put something on this computer: the `lo` command, the overview skill, a language server.                                                               | Set up, Add                                          |
@@ -168,16 +179,21 @@ The title’s three forms:
 
 One wording per cause:
 
-| Cause                  | Reason                                    | Button               |
-| ---------------------- | ----------------------------------------- | -------------------- |
-| No connection          | Offline.                                  | Try again            |
-| GitHub failed          | GitHub returned an error.                 | Try again            |
-| No answer in time      | GitHub didn’t respond.                    | Try again            |
-| Sent, result not known | GitHub didn’t respond.                    | Check again          |
-| Rate limit             | GitHub’s rate limit resets at 14:05.      | None                 |
-| Signed out             | ravi-k is signed out.                     | Sign in again        |
-| Missing or hidden      | It doesn’t exist, or ravi-k can’t see it. | Sign in with GitHub… |
-| Unknown                | No reason line.                           | Try again            |
+| Cause                  | Reason                                    | Button                     |
+| ---------------------- | ----------------------------------------- | -------------------------- |
+| No connection          | Offline.                                  | Try again                  |
+| GitHub failed          | GitHub returned an error.                 | Try again                  |
+| No answer in time      | GitHub didn’t respond.                    | Try again                  |
+| Sent, result not known | GitHub didn’t respond.                    | Check again                |
+| Rate limit             | GitHub’s rate limit resets at 14:05.      | None                       |
+| Signed out             | ravi-k is signed out.                     | Sign in again              |
+| Missing or hidden      | It doesn’t exist, or ravi-k can’t see it. | Sign in with GitHub…       |
+| Newer revision         | #264 has a newer revision.                | Show latest                |
+| Single sign-on         | rozed-dev requires single sign-on.        | Authorize on GitHub        |
+| Lo not approved        | rozed-dev hasn’t approved Lo.             | Request approval on GitHub |
+| Proxy                  | The proxy couldn’t connect to GitHub.     | Try again                  |
+| Disk full              | The disk is full.                         | Clear cache                |
+| Unknown                | No reason line.                           | Try again                  |
 
 “Try again” repeats the action. Where repeating could do it twice, as with a merge that was sent and
 never answered, the button is “Check again”, which only looks.
@@ -331,8 +347,15 @@ its tooltip.
 - **A command that changes something on GitHub is never a switch.** It takes the name of what it
   does now: “Resolve thread”, then “Unresolve thread”. “Turn on auto-merge”, then “Turn off
   auto-merge”.
+- **Nor is a fold.** It takes the name of what it does now: “Collapse file”, then “Expand file”.
 - **Stepping names the thing, not the place:** “Next thread”. Not “Next thread in the panel”.
+- **A key that steps through three or more options** is named the same way: “Next merge method”,
+  “Next thread filter”. The control lists the options by name.
 - **A menu on the thing itself** may drop the object: “Reply”, “Resolve”.
+- **A label can be filled in.** The palette, the menus and the keyboard shortcuts show it plain:
+  “Show latest”, “Merge…”, “Compare”. A control on the thing names what it acts on: “Show r5”,
+  “Merge #264”, “Compare r2 → r5”.
+- **A name that’s code stays code inside a label:** “Install `lo` command”.
 - **A description,** where a command has one, is one line that adds what the label can’t.
 - **Never** “OK”, “Yes” or a bare “Submit”.
 
