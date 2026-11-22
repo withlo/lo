@@ -421,8 +421,8 @@ to one job.
   header, in amber, so the third state is in words and not only in the ball. The tooltip stays the
   command.
 - **A `+` follows the pointer down the gutter** beside each line that takes a comment. A click
-  comments on that line, as `c` does. It sits over the gutter, takes no room and moves nothing, and
-  it's gone over a header, a thread or a box.
+  comments on that line, as `c` does. It sits over the start of the line's number, clear of the
+  overview markers, takes no room and moves nothing, and it's gone over a header, a thread or a box.
 - **What you open is in view when it opens.** A comment box, a thread or a peek that opens scrolls
   its pane the least that shows all of it, at once, with `reveal` (`block: 'nearest'`), and never
   with `scrollIntoView`. One taller than its pane shows from its top. A comment box does this itself

@@ -3163,16 +3163,20 @@ class View implements DiffView {
       return;
     }
     const at = this.#placeAt(pane, view.state.doc.lineAt(block.from).number);
-    const gutters = view.dom.querySelector('.cm-gutters')?.getBoundingClientRect();
-    const shown = at.line === 0 || !gutters ? undefined : controlOf(viewControls.comment);
-    if (!shown || !gutters) {
+    // Over the start of the line's number, past the column of overview markers, which take clicks
+    // of their own.
+    const numbers = (
+      view.dom.querySelector('.cm-gutters .cm-lineNumbers') ?? view.dom.querySelector('.cm-gutters')
+    )?.getBoundingClientRect();
+    const shown = at.line === 0 || !numbers ? undefined : controlOf(viewControls.comment);
+    if (!shown || !numbers) {
       this.#hideAdd();
       return;
     }
     this.#addAt = this.#lineTarget(at);
     const add = this.#add;
     add.setAttribute('aria-label', shown.label);
-    add.style.left = `${gutters.left + 2}px`;
+    add.style.left = `${numbers.left}px`;
     add.style.top = `${view.documentTop + block.top + (view.defaultLineHeight - 16) / 2}px`;
     add.hidden = false;
   };

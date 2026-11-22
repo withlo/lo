@@ -368,7 +368,7 @@ onStacks(
     await expect.poll(() => placed(page), { timeout: 20_000 }).toEqual(['src/cost.ts new 5']);
     await settled(page);
     await page.keyboard.press(PANEL);
-    await expect.poll(() => rows(page)).toEqual(['src/cost.ts new 5']);
+    await expect.poll(() => rows(page)).toEqual(['src/cost.ts Line 5']);
     // #B's row, the layer on screen, counts its unresolved thread.
     const stack = page.locator('[data-lo-scope="stack"]');
     await expect(

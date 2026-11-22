@@ -130,7 +130,7 @@
 
 /*
  * The `+` that follows the pointer down the gutter: a click comments on its line. It sits over the
- * gutter, takes no room, and moves nothing.
+ * start of the line's number, clear of the overview markers, takes no room, and moves nothing.
  */
 .lo-gutteradd {
   position: fixed;

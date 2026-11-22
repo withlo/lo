@@ -579,6 +579,10 @@ export function hintOf(place: DraftPlaceRow, pull?: number): string | undefined 
 function drew(box: Box, composer: Composer, where: 'diff' | 'block'): void {
   box.composer = composer;
   box.drawnIn = where;
+  // Its text was rewritten as its frame was drawn, before there was an editor to change, as when a
+  // draft comes back with a placeholder whose upload is gone: the editor takes the text as it is.
+  const { text } = box.state;
+  if (composer.text !== text) composer.replace(0, composer.text.length, text);
   composer.hold(sendingNow(box.state));
   box.set({ mode: composer.mode, previewing: composer.previewing });
   box.focusOnOpen = false;
