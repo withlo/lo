@@ -10,7 +10,9 @@ import { github } from '../../accounts/service.ts';
 import { comparisons } from '../../revisions/service.ts';
 import type { Acting } from '../../tab/contract.ts';
 import { tabs } from '../../tab/service.ts';
+import { settings } from '../../settings/service.ts';
 import { contract } from '../contract.ts';
+import { mode } from '../settings.ts';
 import { TreeTab } from './tree.ts';
 
 const trees = new Map<string, TreeTab>();
@@ -57,7 +59,7 @@ function follow(context: FeatureContext<typeof contract>, id: string): void {
 }
 
 export default defineFeature(contract, {
-  uses: [tabs, github, comparisons],
+  uses: [tabs, github, comparisons, settings],
   handlers: {
     current: ({ id }) => trees.get(id)?.state(),
     folder: ({ id, at, paths }) => treeOf(id).folders(at, paths),
@@ -66,6 +68,8 @@ export default defineFeature(contract, {
     },
   },
   start(context) {
+    // The window lists the files as the setting says, so main only declares it, for it to change.
+    context.use(settings).declare(mode);
     const service = context.use(tabs);
     unfollow.push(
       service.onPull((id) => follow(context, id)),

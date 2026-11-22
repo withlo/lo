@@ -14,12 +14,18 @@ export interface CommandStore {
   readonly installing: boolean;
   /** What the last install said. */
   readonly said: string | undefined;
+  /**
+   * What the last install a row asked for did, which the row shows; `undefined` when main couldn't
+   * be asked, and `null` for nothing to show.
+   */
+  readonly done: Installed | null | undefined;
 }
 
 export const commandStore = createStore<CommandStore>()(() => ({
   state: undefined,
   installing: false,
   said: undefined,
+  done: null,
 }));
 
 /** Asks main where `lo` is. */
@@ -49,24 +55,26 @@ export function installedWords(done: Installed): string {
 }
 
 /**
- * Installs `lo`, asking for an administrator on macOS, and says how it went: in a notice, and
- * wherever the command's state shows. Resolves with what main did, or nothing when it couldn't be
- * asked.
+ * Installs `lo`, asking for an administrator on macOS, and says how it went once: on the row that
+ * asked (`row`), which keeps what it did for the row to show, or in a notice when a command did.
+ * Resolves with what main did, or nothing when it couldn't be asked.
  */
-export async function installCommand(): Promise<Installed | undefined> {
+export async function installCommand(
+  from: 'command' | 'row' = 'command',
+): Promise<Installed | undefined> {
   if (commandStore.getState().installing) return undefined;
-  commandStore.setState({ installing: true, said: undefined });
+  commandStore.setState({ installing: true, said: undefined, done: null });
   try {
     const done = await main().installCommand();
     const said = installedWords(done);
-    commandStore.setState({ said });
-    notify('Install command-line tool', said);
+    commandStore.setState({ said, done: from === 'row' ? done : null });
+    if (from === 'command') notify('Install command-line tool', said);
     return done;
   } catch (error) {
     console.error("Lo couldn't install the lo command:", error);
     const said = "Lo couldn't install the lo command.";
-    commandStore.setState({ said });
-    notify('Install command-line tool', said);
+    commandStore.setState({ said, done: from === 'row' ? undefined : null });
+    if (from === 'command') notify('Install command-line tool', said);
     return undefined;
   } finally {
     commandStore.setState({ installing: false });

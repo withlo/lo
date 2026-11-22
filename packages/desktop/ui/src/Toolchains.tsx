@@ -1,8 +1,8 @@
-import { useLayoutEffect, useRef } from 'react';
+import { useLayoutEffect, useRef, type ReactNode } from 'react';
 
 import { Button } from './Button.tsx';
-import { Setting } from './Settings.tsx';
-import { Spinner } from './Spinner.tsx';
+import { EmptyState } from './EmptyState.tsx';
+import { SettingsListItem } from './Settings.tsx';
 
 /** A toolchain language servers use, as Settings lists it: one Lo downloads, or the system's. */
 export type ToolchainEntry = DownloadedToolchain | SystemToolchain;
@@ -22,8 +22,10 @@ export interface DownloadedToolchain {
   download: string;
   /** The language servers that use it, by name. */
   uses: readonly string[];
-  /** Whether it's being removed: its button waits, and takes no press, until it's done. */
+  /** Whether it's being deleted: its button is busy, and takes no press, until it's done. */
   removing?: boolean | undefined;
+  /** Why deleting it didn't work, under its line, while that holds. */
+  problem?: ReactNode;
 }
 
 /**
@@ -43,14 +45,14 @@ export interface SystemToolchain {
   uses: readonly string[];
 }
 
-/** Whether `entry` is one of Lo's, downloaded, so it has a "Remove". */
+/** Whether `entry` is one of Lo’s, downloaded, so it has a "Delete". */
 function downloaded(entry: ToolchainEntry): entry is DownloadedToolchain {
   return entry.kind !== 'system' && entry.installed !== undefined;
 }
 
 export interface ToolchainRowProps {
   entry: ToolchainEntry;
-  /** Remove was pressed: the servers that use it stop, and its files go. */
+  /** Delete was pressed: the servers that use it stop, and its files go. */
   onRemove?: ((id: string) => void) | undefined;
 }
 
@@ -65,8 +67,7 @@ function listed(names: readonly string[]): string {
  * uses it.
  */
 function described(entry: ToolchainEntry): string {
-  const uses =
-    entry.uses.length === 0 ? 'No language server uses it yet' : `For ${listed(entry.uses)}`;
+  const uses = entry.uses.length === 0 ? 'Not used yet' : `For ${listed(entry.uses)}`;
   if (entry.kind === 'system') {
     return `${entry.from === undefined ? `Needs ${entry.needs}` : `From ${entry.from}`} · ${uses}`;
   }
@@ -76,46 +77,41 @@ function described(entry: ToolchainEntry): string {
 }
 
 /**
- * One toolchain as a setting: its name and version, how much room it takes or that it isn't
- * downloaded and how large it is, what uses it, and, once it's downloaded, the button that
- * removes it. One of the system's says where it's from, or what it needs, and has no button.
+ * One toolchain as an item of Settings' list: its name and version, how much room it takes or that
+ * it isn't downloaded and how large it is, what uses it, and, once it's downloaded, the button that
+ * deletes it. One of the system's says where it's from, or what it needs, and has no button.
  */
 export function ToolchainRow({ entry, onRemove }: ToolchainRowProps) {
+  const removing = entry.kind !== 'system' && entry.removing === true;
   return (
-    <Setting
+    <SettingsListItem
+      data={{ 'data-id': entry.id }}
       label={
         entry.kind === 'system' ? (
           entry.name
         ) : (
-          <>
+          <span>
             {entry.name} <span className="tabular-nums">{entry.version}</span>
-          </>
+          </span>
         )
       }
       description={<span className="tabular-nums">{described(entry)}</span>}
+      note={entry.kind === 'system' ? undefined : entry.problem}
     >
       {downloaded(entry) && (
         <Button
           variant="ghost"
           size="sm"
-          // Not `disabled`, which would drop focus from it.
-          aria-disabled={entry.removing === true ? true : undefined}
-          aria-label={`${entry.removing === true ? 'Removing' : 'Remove'} ${entry.name}`}
-          onClick={() => {
-            if (entry.removing !== true) onRemove?.(entry.id);
-          }}
+          align="end"
+          busy={removing}
+          working="Deleting…"
+          aria-label={`Delete ${entry.name}`}
+          onClick={() => onRemove?.(entry.id)}
         >
-          {entry.removing === true ? (
-            <span className="inline-flex items-center gap-6">
-              <Spinner size="xs" />
-              Removing
-            </span>
-          ) : (
-            'Remove'
-          )}
+          Delete
         </Button>
       )}
-    </Setting>
+    </SettingsListItem>
   );
 }
 
@@ -132,9 +128,9 @@ interface Removal {
 }
 
 /**
- * Settings' list of the toolchains Lo downloads for language servers: a row each. Once a row's
- * toolchain is removed its button goes, and focus doesn't fall to the page with it: it moves to the
- * next downloaded row's "Remove", or the previous one's, or to the list itself when none is left.
+ * Settings' list of the toolchains Lo downloads for language servers: an item each. Once an item's
+ * toolchain is deleted its button goes, and focus doesn't fall to the page with it: it moves to the
+ * next downloaded item's "Delete", or the previous one's, or to the list itself when none is left.
  */
 export function ToolchainList({ entries, onRemove }: ToolchainListProps) {
   const list = useRef<HTMLDivElement>(null);
@@ -166,21 +162,15 @@ export function ToolchainList({ entries, onRemove }: ToolchainListProps) {
   return (
     <div
       ref={list}
-      // With nothing to list it's a group holding the line, not a list without items.
+      // With nothing to list it's a group holding the empty state, not a list without items.
       role={entries.length === 0 ? 'group' : 'list'}
       aria-label="Toolchains"
       tabIndex={-1}
       className="outline-none focus-visible:shadow-ring-inset"
     >
-      {entries.length === 0 && (
-        <p className="m-0 border-t border-border-subtle py-12 text-fg-muted text-ui">
-          Lo downloads no toolchains for this system.
-        </p>
-      )}
+      {entries.length === 0 && <EmptyState level={3} title="No toolchains for this computer" />}
       {entries.map((entry) => (
-        <div key={entry.id} role="listitem" data-id={entry.id}>
-          <ToolchainRow entry={entry} onRemove={remove} />
-        </div>
+        <ToolchainRow key={entry.id} entry={entry} onRemove={remove} />
       ))}
     </div>
   );

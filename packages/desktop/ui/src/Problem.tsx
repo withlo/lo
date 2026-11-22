@@ -6,9 +6,12 @@ import { Collapse } from './Collapse.tsx';
 import { CopyButton, useCopy } from './CopyButton.tsx';
 import { Key } from './Key.tsx';
 
-/** The one thing to do about a problem. Its label starts with a verb: "Try again". */
+/**
+ * The one thing to do about a problem. Its label starts with a verb: "Try again". A name that's
+ * code stays code in it: "Open `settings.json`".
+ */
 export interface ProblemAction {
-  label: string;
+  label: ReactNode;
   onClick: () => void;
   /** Its key, as the system shows each key of it. */
   keys?: readonly string[] | undefined;

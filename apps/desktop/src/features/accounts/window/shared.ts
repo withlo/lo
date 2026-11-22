@@ -16,6 +16,14 @@ export function useAccounts(): readonly AccountSummary[] | undefined {
   return useStore(accountsStore, (state) => state.accounts);
 }
 
+/**
+ * Whether the window has heard all it will about the accounts for now: what they are, or that main
+ * couldn't be asked, in which case `useAccounts` stays undefined until main next says.
+ */
+export function useAccountsHeard(): boolean {
+  return useStore(accountsStore, (state) => state.accounts !== undefined || state.unlisted);
+}
+
 /** Opens the sign-in dialog and starts signing in with GitHub, as the welcome screen's `⏎` does. */
 export function signIn(): void {
   openSignIn();

@@ -1,24 +1,17 @@
 // What the open feature shares with other features' window code: the open box, opening a link as
 // the box does, and the `lo` command, for the welcome screen's box and its row for the command;
-// opening a web link another view follows; and the slot for other command-line tools' rows in
-// Settings.
+// and opening a web link another view follows.
 
+import { createElement, type ReactNode } from 'react';
 import { useStore } from 'zustand';
 
-import { defineSlot } from '../../../window/slots.tsx';
 import type { CommandState, Installed, Opened } from '../contract.ts';
 import { followLink as follow } from './actions.ts';
 import { openBox as openTheBox, openText } from './box.ts';
 import { checkCommand, commandStore, installCommand as install } from './command.ts';
+import { InstallResult as Result } from './InstallResult.tsx';
 
 export type { CommandState, Installed, Opened } from '../contract.ts';
-
-/**
- * The rows of Settings' Command line section after the `lo` command's, one `Setting` per view, in
- * `order`, lower first: another feature's tool for the command line or for the agents that run
- * there, such as installing a skill for them.
- */
-export const commandLine = defineSlot('open.commandLine');
 
 /** Opens the open box, with `text` in it, or else the pull request link on the clipboard, if any. */
 export function openBox(text?: string): void {
@@ -48,12 +41,36 @@ export function useCommand(): CommandState | undefined {
   return useStore(commandStore, (state) => state.state);
 }
 
+/**
+ * Whether the `lo` command is being installed, and what the last install a row asked for did:
+ * `undefined` when main couldn't be asked, and `null` when there's nothing for a row to show.
+ */
+export function useCommandInstall(): {
+  installing: boolean;
+  done: Installed | null | undefined;
+} {
+  const installing = useStore(commandStore, (state) => state.installing);
+  const done = useStore(commandStore, (state) => state.done);
+  return { installing, done };
+}
+
 /** Looks again for where the `lo` command is. */
 export function findCommand(): Promise<void> {
   return checkCommand();
 }
 
-/** Installs the `lo` command, and says how it went in a notice. */
-export function installCommand(): Promise<Installed | undefined> {
-  return install();
+/**
+ * Installs the `lo` command, and says how it went once: in a notice, or, from a row (`row`), on
+ * the row, which reads it with `useCommandInstall`.
+ */
+export function installCommand(from?: 'command' | 'row'): Promise<Installed | undefined> {
+  return install(from);
+}
+
+/**
+ * What the last install a row asked for left to say under that row, from `useCommandInstall`'s
+ * `done`: the folder to add to `PATH`, or why it failed, with a way to try again.
+ */
+export function InstallResult(props: { done: Installed | undefined }): ReactNode {
+  return createElement(Result, props);
 }

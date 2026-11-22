@@ -1,10 +1,11 @@
-import { useId, useSyncExternalStore, type MouseEvent, type ReactNode } from 'react';
+import { useId, type MouseEvent, type ReactNode } from 'react';
 
 import { Button } from './Button.tsx';
-import { controlOf, heldRegistry, runControl } from './commands/control.ts';
+import { runControl } from './commands/control.ts';
 import type { Target } from './commands/targets.ts';
 import { useHintsSqueezed } from './HintRow.tsx';
 import { Key, keyAria } from './Key.tsx';
+import { useControl } from './useControl.ts';
 
 export interface HintButtonProps {
   /** The command it runs, by its id: `comments.reply`. */
@@ -14,15 +15,6 @@ export interface HintButtonProps {
   /** Its words, where the command's label isn't what the row says. */
   children?: ReactNode;
 }
-
-/** How many times the keys have changed, which draws each hint again. */
-let changes = 0;
-
-const subscribe = (listener: () => void): (() => void) =>
-  heldRegistry()?.subscribe(() => {
-    changes += 1;
-    listener();
-  }) ?? (() => undefined);
 
 /**
  * A hint that's a button: a command's label and its key, which runs the command when clicked.
@@ -34,15 +26,10 @@ const subscribe = (listener: () => void): (() => void) =>
  * for a command that isn't there.
  */
 export function HintButton({ command, target, children }: HintButtonProps) {
-  // Drawn again when the keymap changes.
-  useSyncExternalStore(
-    subscribe,
-    () => changes,
-    () => 0,
-  );
   const why = useId();
   const squeezed = useHintsSqueezed();
-  const control = controlOf(command, target);
+  const control = useControl(command, target);
+  // Every hook comes before this: a command can come and go while its hint is drawn.
   if (!control) return null;
   const off = control.off !== undefined;
   // One tooltip throughout, with nothing to say while its chip shows, so it stays one element.

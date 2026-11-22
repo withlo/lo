@@ -25,9 +25,18 @@ export type Read =
   /** The file's object, or what's wrong with it. */
   | Parsed;
 
-/** A problem with the file, which says only what's wrong. */
-function problem(cause: string): Read {
-  return { kind: 'problem', problem: cause, cause };
+/**
+ * A problem with the file, which says only what's wrong, the same as a line and as a reason, with
+ * `settings.json` as code, and in plain words as the cause.
+ */
+function problem(said: string, details?: string): Read {
+  return {
+    kind: 'problem',
+    problem: said,
+    reason: said,
+    cause: said.replaceAll('`', ''),
+    ...(details === undefined ? {} : { details }),
+  };
 }
 
 /** The first `length` characters of `text`, with an ellipsis when it was cut. */
@@ -50,11 +59,8 @@ export async function readSettings(path: string): Promise<Read> {
   }
   try {
     const info = await handle.stat();
-    if (!info.isFile())
-      return problem("The settings file isn't a plain file, so Lo didn't read it.");
-    const tooBig = problem(
-      `The settings file is over ${SETTINGS_SIZE_LIMIT / 1024 ** 2} MiB, so Lo didn't read it.`,
-    );
+    if (!info.isFile()) return problem('`settings.json` isn’t a file.');
+    const tooBig = problem(`\`settings.json\` is over ${SETTINGS_SIZE_LIMIT / 1024 ** 2} MB.`);
     if (info.size > SETTINGS_SIZE_LIMIT) return tooBig;
     // One byte past the limit, in case the file grew since `stat`.
     const buffer = Buffer.alloc(SETTINGS_SIZE_LIMIT + 1);
@@ -72,7 +78,7 @@ export async function readSettings(path: string): Promise<Read> {
         buffer.subarray(0, length),
       );
     } catch {
-      return problem("The settings file isn't UTF-8 text, so Lo didn't read it.");
+      return problem('`settings.json` isn’t UTF-8 text.');
     }
     return parseSettings(text);
   } catch (error) {
@@ -92,15 +98,15 @@ async function failure(error: unknown, path: string): Promise<Read> {
       () => false,
     );
     return link
-      ? problem("The settings file is a link to a file that isn't there.")
+      ? problem('`settings.json` is a link to a file that isn’t there.')
       : { kind: 'missing' };
   }
   if (code === 'ENOTDIR') return { kind: 'missing' };
   if (code === 'EACCES' || code === 'EPERM') {
-    return problem("Lo isn't allowed to read the settings file.");
+    return problem('`settings.json` isn’t readable.');
   }
-  if (code === 'ELOOP') return problem('The settings file is a link that leads back to itself.');
-  return problem(`Lo couldn't read the settings file${code ? ` (${code})` : ''}.`);
+  if (code === 'ELOOP') return problem('`settings.json` is a link that leads back to itself.');
+  return problem('`settings.json` couldn’t be read.', code);
 }
 
 /** The code on an error from the file system, if it has one. */

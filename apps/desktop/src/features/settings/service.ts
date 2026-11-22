@@ -6,17 +6,26 @@ import type { Setting } from './contract.ts';
  * Why a change to a setting wasn't written, as `unwritable`: the message names the setting, as
  * Settings says it; `why` says what's wrong alone, in a sentence, without what to do, for a caller
  * to say that in its own words; and `inFile` is whether what the file holds is the cause, which
- * editing the file fixes, rather than the disk or someone else saving it.
+ * editing the file fixes, rather than the disk or someone else saving it. Settings says it as
+ * `said` has it, when it does: a `reason` in a sentence, where what's between backticks is code,
+ * and `details`, the words of what failed.
  */
 export class Unwritten extends IpcError {
   readonly why: string;
   readonly inFile: boolean;
+  readonly said: { readonly reason?: string; readonly details?: string };
 
-  constructor(message: string, why: string, inFile: boolean) {
+  constructor(
+    message: string,
+    why: string,
+    inFile: boolean,
+    said: { readonly reason?: string; readonly details?: string } = {},
+  ) {
     super('unwritable', message);
     this.name = 'Unwritten';
     this.why = why;
     this.inFile = inFile;
+    this.said = said;
   }
 }
 

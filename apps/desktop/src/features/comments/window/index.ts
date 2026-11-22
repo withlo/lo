@@ -23,19 +23,23 @@ import {
   onOverviewChanged,
   setBlockThreads,
 } from '../../overview/window/shared.ts';
+import { settingRow } from '../../settings/window/shared.ts';
 import { setLayerCounts } from '../../stacks/window/shared.ts';
 import { viewIds } from '../../tab/contract.ts';
 import {
   activeTab,
   dialogs,
   right,
+  showTabOf,
   status,
   toasts,
   type PullTab,
 } from '../../tab/window/shared.ts';
 import { fileCountsChanged, setFileCounts } from '../../tree/window/shared.ts';
 import keys from '../keys.ts';
+import { vim } from '../settings.ts';
 import { DiscardedToast } from './Discarded.tsx';
+import KeptRow from './KeptRow.tsx';
 import {
   atWork,
   edit,
@@ -241,13 +245,23 @@ export default {
     showLatest: offering('showLatest', 'loadNewer'),
     vim: { run: switchVim, detail: vimDetail },
     keptDrafts: {
-      run: () => {
-        const tab = activeTab();
-        if (tab) showKeptDrafts(tab.id);
+      run: (target) => {
+        if (target.kind !== 'tab') {
+          const tab = activeTab();
+          if (tab) showKeptDrafts(tab.id);
+          return;
+        }
+        // From Settings, for a pull request whose tab may not be on screen: its tab first, so the
+        // list opens over its status bar where it can be seen.
+        const view = target.tab;
+        showTabOf(view).then(
+          () => showKeptDrafts(view),
+          (error: unknown) => console.error("Lo couldn't show the tab:", error),
+        );
       },
-      enabled: () => {
-        const tab = activeTab();
-        return tab && keptAway.get(tab.id).length > 0 ? true : 'No kept drafts';
+      enabled: (target) => {
+        const view = target.kind === 'tab' ? target.tab : activeTab()?.id;
+        return view !== undefined && keptAway.get(view).length > 0 ? true : 'No kept drafts';
       },
     },
     nextThread: { run: () => moveRow(1), enabled: rowsListed },
@@ -265,6 +279,9 @@ export default {
     },
   }),
   views: [
+    // Settings › Keyboard, first.
+    settingRow(vim, { order: 10, id: 'comments.vim' }),
+    KeptRow,
     defineView(right, {
       id: 'comments.panel',
       order: 10,

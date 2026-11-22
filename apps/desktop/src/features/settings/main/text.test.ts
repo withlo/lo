@@ -36,6 +36,12 @@ const nestedFile = (levels: number) =>
 const problemOf = (read: ReturnType<typeof parseSettings>) =>
   read.kind === 'problem' ? read.problem : undefined;
 
+/** What's wrong with `text`, in plain words, if anything is. */
+function causeOf(text: string): string | undefined {
+  const read = parseSettings(text);
+  return read.kind === 'problem' ? read.cause : undefined;
+}
+
 /** A settings file as people write them, in an editor that takes comments. */
 const COMMENTED = `// Lo's settings.
 // Each key is written out whole.
@@ -106,34 +112,33 @@ describe('parseSettings', () => {
   });
 
   it('says what is wrong with text that is not JSON, and where', () => {
-    const fix = 'Fix it, and Lo applies it as soon as you save.';
-    expect(problemOf(parseSettings('{ "theme": }'))).toBe(
-      `The settings file isn't valid JSON (Lo expected a value at line 1, column 12). ${fix}`,
-    );
-    // And what's wrong alone, for what says what to do in its own words.
-    expect(parseSettings('{ "theme": }')).toMatchObject({
+    expect(parseSettings('{ "theme": }')).toEqual({
+      kind: 'problem',
+      problem: 'Line 1, column 12 isn’t valid JSON.',
+      reason: '`settings.json` isn’t valid JSON.',
+      // The parser's own words.
+      details: 'ValueExpected at line 1, column 12',
+      // And what's wrong alone, for what says what to do in its own words.
       cause: "The settings file isn't valid JSON (Lo expected a value at line 1, column 12).",
     });
     // Lines are counted past comments, at the key the comma should come before.
     expect(problemOf(parseSettings(`${COMMENTED.slice(0, -2)}  "x": 1\n}\n`))).toBe(
-      `The settings file isn't valid JSON (Lo expected a comma at line 9, column 3). ${fix}`,
+      'Line 9, column 3 isn’t valid JSON.',
     );
-    expect(problemOf(parseSettings('{ "theme": "dark" /* open'))).toContain(
+    expect(causeOf('{ "theme": "dark" /* open')).toContain(
       "a /* comment isn't closed at line 1, column 19",
     );
-    expect(problemOf(parseSettings("{ 'theme': 'dark' }"))).toContain(
+    expect(causeOf("{ 'theme': 'dark' }")).toContain(
       "Lo found something JSON doesn't have at line 1, column 3",
     );
-    expect(problemOf(parseSettings('{ "theme": "dark" } {}'))).toContain(
+    expect(causeOf('{ "theme": "dark" } {}')).toContain(
       'Lo expected nothing more after the object',
     );
   });
 
   it('says so when the text is JSON but not one object', () => {
     for (const text of ['null', '[]', '[{"theme":"dark"}]', '"dark"', '3', 'true', '// x\n[]']) {
-      expect(problemOf(parseSettings(text))).toBe(
-        'The settings file should hold one JSON object, such as { "theme": "dark" }. Fix it, and Lo applies it as soon as you save.',
-      );
+      expect(problemOf(parseSettings(text))).toBe('`settings.json` isn’t a JSON object.');
     }
   });
 
@@ -172,7 +177,7 @@ describe('parseSettings', () => {
       text,
       repeated: [],
     });
-    expect(problemOf(parseSettings('\uFEFF{ "theme": }'))).toContain('at line 1, column 12');
+    expect(problemOf(parseSettings('\uFEFF{ "theme": }'))).toContain('Line 1, column 12');
   });
 
   it('reads objects and lists nested up to the limit, and leaves a file nested deeper unread', () => {
@@ -180,8 +185,7 @@ describe('parseSettings', () => {
       kind: 'ok',
       values: { x: nested(SETTINGS_DEPTH_LIMIT - 1) },
     });
-    const deep =
-      "The settings file nests objects and lists over 100 levels deep, so Lo didn't read it.";
+    const deep = '`settings.json` nests over 100 levels deep.';
     expect(problemOf(parseSettings(nestedFile(SETTINGS_DEPTH_LIMIT + 1)))).toBe(deep);
     // Deep enough to run a parser that calls itself out of stack.
     expect(problemOf(parseSettings(nestedFile(100_000)))).toBe(deep);

@@ -82,14 +82,19 @@ export { Meter, type MeterProps } from './Meter.tsx';
 export { formatBytes } from './bytes.ts';
 export {
   Setting,
+  SettingsCommand,
+  SettingsGroup,
+  SettingsList,
+  SettingsListItem,
   SettingsPage,
-  SettingsSection,
   type SettingProps,
+  type SettingsCommandProps,
+  type SettingsGroupProps,
+  type SettingsListItemProps,
+  type SettingsListProps,
   type SettingsNavItem,
   type SettingsPageProps,
-  type SettingsSectionProps,
 } from './Settings.tsx';
-export { ThemeChoice, type ThemeChoiceProps, type ThemeName } from './ThemeChoice.tsx';
 export { Avatar, avatarHue, initials, type AvatarProps } from './Avatar.tsx';
 export { Callout, type CalloutProps, type CalloutTone } from './Callout.tsx';
 export { Choices, type ChoiceItem, type ChoicesProps } from './Choices.tsx';
@@ -112,6 +117,7 @@ export {
 } from './Tooltip.tsx';
 export { Collapse, Swap, type CollapseProps, type SwapProps } from './Collapse.tsx';
 export { Problem, type ProblemAction, type ProblemProps } from './Problem.tsx';
+export { EmptyState, type EmptyAction, type EmptyStateProps } from './EmptyState.tsx';
 export {
   CopyButton,
   CopyRoute,
@@ -139,7 +145,15 @@ export {
 export { reveal, scrollPane, type RevealBlock, type RevealOptions } from './reveal.ts';
 export { Steps, type StepItem, type StepsProps, type StepState } from './Steps.tsx';
 export { Mark, type MarkProps } from './Mark.tsx';
-export { SetupItem, SetupList, type SetupItemProps, type SetupListProps } from './Setup.tsx';
+export {
+  SetupDone,
+  SetupItem,
+  SetupList,
+  type SetupDoneProps,
+  type SetupItemProps,
+  type SetupListProps,
+} from './Setup.tsx';
+export { useControl } from './useControl.ts';
 export { Switch, type SwitchProps } from './Switch.tsx';
 export { Tag, type TagTone } from './Tag.tsx';
 export {
@@ -274,6 +288,7 @@ export {
 export { showFormat, showProse } from './controls.ts';
 export { hoverLinks, type HoverLink } from './hoverDocs.ts';
 export { ShownText } from './ShownText.tsx';
+export { Ticks } from './Ticks.tsx';
 export { PathName, SourceMark, sourceName, type AnswerSource } from './Source.tsx';
 export {
   TypeHover,
@@ -286,6 +301,7 @@ export {
 } from './TypeHover.tsx';
 export {
   ServerStatus,
+  ServerWords,
   type ServerFailure,
   type ServerState,
   type ServerStatusProps,

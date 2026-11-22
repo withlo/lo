@@ -73,16 +73,31 @@ export function readHow(): Promise<void> {
 }
 
 /**
- * Checks GitHub Releases now, whether or not Lo checks by itself, and says what it found. A check
- * already going is the one that answers: asking again meanwhile does nothing more.
+ * Checks GitHub Releases now, whether or not Lo checks by itself, and says what it found: in a note
+ * when a command asked, and on its row when Settings did, which keeps when it answered and why it
+ * failed. A failure is said once: a check a command asked for that fails is the note's alone. A
+ * check already going is the one that answers: asking again meanwhile does nothing more.
  */
-export async function check(): Promise<void> {
+export async function check(from: 'command' | 'settings' = 'command'): Promise<void> {
   if (updatesStore.getState().checking) return;
   setChecking(true);
+  updatesStore.setState({ failed: undefined });
   try {
-    tell(await main().check());
+    const answer = await main().check();
+    if (answer.status !== 'failed') {
+      updatesStore.setState({ checkedAt: Date.now(), failed: undefined });
+    } else if (from === 'settings') {
+      updatesStore.setState({ failed: { reason: answer.reason } });
+    }
+    if (from === 'command') tell(answer);
   } catch (error) {
-    notify('Lo couldn’t check for updates', whyNot(error));
+    if (from === 'settings') {
+      updatesStore.setState({
+        failed: { reason: error instanceof IpcError ? error.message : undefined },
+      });
+    } else {
+      notify('Lo couldn’t check for updates', whyNot(error));
+    }
   } finally {
     setChecking(false);
     // Lo may have been moved since it last said, and the answer may have taken an offer back.

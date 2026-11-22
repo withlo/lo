@@ -315,12 +315,15 @@ export default defineCommands(
     },
     /**
      * Says where each draft is that the diff, drawn again, had nowhere to open, and when it opens,
-     * as a click on the status bar's note for them does.
+     * as a click on the status bar's note for them does: the pull request on screen's, or the tab's
+     * that Settings' list of kept drafts names.
      */
     keptDrafts: {
       label: 'Show kept drafts',
+      control: 'Show on a pull request in Settings › Storage › Kept drafts',
       group: 'View',
       keys: [],
+      targets: ['none', 'tab'],
       bar: { menu: 'Review', order: 20 },
     },
     nextThread: {

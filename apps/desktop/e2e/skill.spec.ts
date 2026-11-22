@@ -50,15 +50,15 @@ const test = base.extend<{ home: string }>({
 
 const welcome = (page: Page) => page.locator('[data-lo-scope="welcome"]');
 const step = (page: Page) =>
-  welcome(page).getByRole('listitem').filter({ hasText: 'Install the overview skill' });
+  welcome(page).getByRole('listitem').filter({ hasText: 'Overview skill' });
 const toast = (page: Page, text: string) =>
   page.getByRole('status').filter({ hasText: text }).first();
 
-/** The skill's row, in Settings' Command line section. */
-const row = (page: Page) =>
-  page.locator('[data-settings-section="open.command"]').locator('.setting-row').filter({
-    hasText: 'Overview skill',
-  });
+/** The skill's row, in Settings › Integrations. */
+const row = (page: Page) => page.locator('[data-settings-row="overview.skillRow"]');
+
+/** What Settings' row says of each agent, a line each. */
+const lines = (page: Page) => row(page).getByRole('status').locator('li');
 
 /** Where an agent's copy of the skill's `SKILL.md` goes in `home`. */
 const claudeSkill = (home: string) => join(home, '.claude', 'skills', 'lo-overview', 'SKILL.md');
@@ -86,19 +86,26 @@ async function openSettings(page: Page): Promise<void> {
 }
 
 test.describe('on the welcome screen', () => {
-  test('the step installs the skill for the agent that is set up, and for no other', async ({
+  test('the step installs the skill for the agent that is set up, and for no other, and says so itself', async ({
     page,
     home,
   }) => {
     mkdirSync(join(home, '.claude'));
+    // The skill's row is on the welcome's set-up step, two on from the first.
+    await welcome(page)
+      .getByRole('button', { name: /^Continue/ })
+      .click();
+    await welcome(page)
+      .getByRole('button', { name: /^Continue/ })
+      .click();
     await expect(step(page)).toContainText(
       'Teaches Claude Code and Codex to write overviews that Lo shows.',
     );
     await step(page).getByRole('button', { name: 'Install', exact: true }).click();
-    await expect(step(page).getByRole('button', { name: 'Installed' })).toBeDisabled();
-    await expect(toast(page, 'Installed the overview skill')).toHaveText(
-      'Install overview skillInstalled the overview skill for Claude Code in ~/.claude/skills.',
-    );
+    // The step says so, and nothing else says it again.
+    await expect(step(page)).toContainText('Installed');
+    await expect(step(page).getByRole('button')).toHaveCount(0);
+    await expect(toast(page, 'Installed the overview skill')).toHaveCount(0);
     expect(isSkill(claudeSkill(home))).toBe(true);
     expect(existsSync(join(home, '.agents'))).toBe(false);
   });
@@ -117,18 +124,20 @@ test.describe('in Settings', () => {
     writeFileSync(claudeSkill(home), `${readFileSync(claudeSkill(home), 'utf8')}\nMine.\n`);
 
     await openSettings(page);
-    await expect(row(page).getByRole('status')).toHaveText(
-      'Installed for Claude Code in ~/.claude/skills. Not installed for Codex, which reads ~/.agents/skills.',
-    );
+    await expect(lines(page)).toHaveText([
+      'Claude Code · installed in ~/.claude/skills',
+      'Codex · not installed',
+    ]);
     await row(page).getByRole('button', { name: 'Install for Codex' }).click();
-    await expect(row(page).getByRole('status')).toHaveText(
-      'Installed for Claude Code in ~/.claude/skills. Installed for Codex in ~/.agents/skills.',
-    );
+    await expect(lines(page)).toHaveText([
+      'Claude Code · installed in ~/.claude/skills',
+      'Codex · installed in ~/.agents/skills',
+    ]);
     expect(isSkill(codexSkill(home))).toBe(true);
     expect(readFileSync(claudeSkill(home), 'utf8')).toContain('Mine.');
 
+    // The row says where the skill stands, and nothing else says it again.
     await row(page).getByRole('button', { name: 'Install again' }).click();
-    await expect(toast(page, 'Installed the overview skill for Claude Code')).toBeVisible();
     await expect.poll(() => readFileSync(claudeSkill(home), 'utf8')).not.toContain('Mine.');
     expect(isSkill(claudeSkill(home))).toBe(true);
   });
@@ -150,17 +159,16 @@ test.describe('in Settings', () => {
 
     await openSettings(page);
     // What would stop the install is said before it's tried.
-    await expect(row(page).getByRole('status')).toHaveText(
-      `Not installed for Claude Code, which reads ~/.claude/skills. Not installed for Codex, which reads ~/.agents/skills. ${link}`,
-    );
+    await expect(lines(page)).toHaveText([
+      'Claude Code · not installed',
+      `Codex · not installed ${link}`,
+    ]);
     await row(page).getByRole('button', { name: 'Install', exact: true }).click();
-    await expect(toast(page, 'Installed the overview skill')).toHaveText(
-      `Install overview skillInstalled the overview skill for Claude Code in ~/.claude/skills. Not installed for Codex. ${link}`,
-    );
     // It stays said, since the link is still there, and it isn't in the way of Claude Code's.
-    await expect(row(page).getByRole('status')).toHaveText(
-      `Installed for Claude Code in ~/.claude/skills. Not installed for Codex, which reads ~/.agents/skills. ${link}`,
-    );
+    await expect(lines(page)).toHaveText([
+      'Claude Code · installed in ~/.claude/skills',
+      `Codex · not installed ${link}`,
+    ]);
     expect(isSkill(claudeSkill(home))).toBe(true);
     expect(lstatSync(join(skills, 'lo-overview')).isSymbolicLink()).toBe(true);
     expect(readdirSync(outside)).toEqual([]);
@@ -181,12 +189,9 @@ test.describe('in Settings, from a terminal', () => {
     const command = `npx @withlo/overview@${pinned} install`;
 
     await openSettings(page);
-    const terminal = page
-      .locator('[data-settings-section="open.command"]')
-      .locator('.setting-row')
-      .filter({ hasText: 'Install from a terminal' });
+    const terminal = page.locator('[data-settings-row="overview.installCommand"]');
     await expect(terminal).toContainText(
-      `${command} installs the skill Lo does, for each agent set up on the computer you run it on.`,
+      `On another computerThe overview skill installs from a terminal.${command}`,
     );
     // Writing the clipboard only where it's the test's own: not on a Mac someone works on.
     test.skip(mac, "The Mac's clipboard is its user's.");

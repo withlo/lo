@@ -186,16 +186,17 @@ Keys are written as macOS shows them. On Linux, Ctrl takes the place of `⌘`.
 - **In Lo:** press `⌘L` and paste a pull request's link, such as
   `https://github.com/owner/repo/pull/123`. In the list of recent pull requests, `⌘V` opens the link
   on the clipboard.
-- **From a terminal:** install the `lo` command from the welcome screen, or with "Install
-  command-line tool" in the command palette (on macOS, the app menu has it too). Then run
-  `lo <link>`. The Linux packages install the command already.
+- **From a terminal:** install the `lo` command from the welcome, or with "Install command-line
+  tool" in the command palette (on macOS, the app menu has it too). Then run `lo <link>`. The Linux
+  packages install the command already.
 - **From a link:** Lo opens `lo://` links, such as `lo://github.com/owner/repo/pull/123`. To have
   pull request links you click in other apps open in Lo while your browser stays the default, use a
   link router: [`docs/link-routers.md`](docs/link-routers.md) has rules for Finicky, Velja and
   Choosy. They follow each app's documentation.
 
 Public pull requests open without signing in, read-only. To open private ones, sign in from the
-welcome screen, through GitHub's device flow or by importing your accounts from `gh`.
+welcome, through GitHub's device flow or by importing your accounts from GitHub CLI. "Welcome to Lo"
+in the Help menu and the command palette opens the welcome again.
 
 ### Keys and settings
 

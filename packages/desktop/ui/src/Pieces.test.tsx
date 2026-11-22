@@ -4,7 +4,7 @@
 // the mark that moves.
 
 import { act, useState } from 'react';
-import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 
 import { buildCss, declarations } from '../scripts/stylesheet.ts';
 import { missingRules } from '../test/classes.ts';
@@ -245,6 +245,46 @@ describe('a button that can’t be pressed now', () => {
     expect(host.querySelector('.tooltip')?.textContent).toBe('Sign in to comment');
   });
 
+  it('shows its tooltip for the pointer alone when asked, never for focus put on it', () => {
+    const host = render(
+      <div className="lo-app">
+        <TooltipGroup>
+          <Button hint="Done" hintKeys={['⏎']} hintOn="hover">
+            Done
+          </Button>
+        </TooltipGroup>
+      </div>,
+    );
+    const button = host.querySelector('button')!;
+    act(() => {
+      button.focus();
+      vi.advanceTimersByTime(TOOLTIP_DELAY);
+    });
+    expect(host.querySelector('.tooltip')).toBeNull();
+    act(() => {
+      button.dispatchEvent(new MouseEvent('mouseover', { bubbles: true, relatedTarget: host }));
+      button.dispatchEvent(new MouseEvent('mouseenter', { relatedTarget: host }));
+      button.dispatchEvent(new MouseEvent('mousemove', { bubbles: true }));
+      vi.advanceTimersByTime(TOOLTIP_DELAY);
+    });
+    expect(host.querySelector('.tooltip')?.textContent).toContain('Done');
+  });
+
+  it('shows its tooltip for focus too, by default', () => {
+    const host = render(
+      <div className="lo-app">
+        <TooltipGroup>
+          <Button hint="Merge panel">Merge</Button>
+        </TooltipGroup>
+      </div>,
+    );
+    act(() => {
+      host.querySelector('button')!.focus();
+      vi.advanceTimersByTime(TOOLTIP_DELAY);
+    });
+    expect(host.querySelector('.tooltip')?.textContent).toContain('Merge panel');
+  });
+
   it('is plainly disabled with no reason to give', () => {
     const host = render(<Button disabled>Open</Button>);
     const button = host.querySelector('button')!;
@@ -451,6 +491,43 @@ describe('a dialog that does something', () => {
     rerender(host, asking('failed'));
     escape();
     expect(change).toHaveBeenCalledWith(false);
+  });
+
+  const copying = (state: DialogState) => (
+    <Dialog
+      open
+      onOpenChange={() => {}}
+      title="Sign in to GitHub"
+      state={state}
+      action={{ label: 'Open GitHub', working: 'Waiting', onRun: run }}
+    >
+      {/* Its row stays once there's nothing left to copy, so the dialog keeps its height. */}
+      <div className={state === 'ask' ? undefined : 'invisible'}>
+        <button type="button">Copy</button>
+      </div>
+    </Dialog>
+  );
+
+  it('gives focus to its main button when the control that had it goes out of sight', async () => {
+    // jsdom draws nothing and has no `checkVisibility`: what's out of sight is what's in an
+    // invisible box.
+    Object.defineProperty(HTMLElement.prototype, 'checkVisibility', {
+      configurable: true,
+      value(this: HTMLElement) {
+        return this.closest('.invisible') === null;
+      },
+    });
+    onTestFinished(() => {
+      Reflect.deleteProperty(HTMLElement.prototype, 'checkVisibility');
+    });
+    const host = render(copying('ask'));
+    await settle();
+    act(() => {
+      [...popup().querySelectorAll('button')].find((each) => each.textContent === 'Copy')!.focus();
+    });
+    expect(document.activeElement?.textContent).toBe('Copy');
+    rerender(host, copying('working'));
+    expect(document.activeElement).toBe(named('Waiting'));
   });
 
   it('says it has closed the moment it’s asked to, and keeps its words while it leaves', () => {

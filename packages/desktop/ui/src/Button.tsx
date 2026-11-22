@@ -102,6 +102,8 @@ export interface ButtonProps
    * in place of the tooltip's key caps. A sequence has none, and is described from `hintKeys`.
    */
   hintShortcut?: string | undefined;
+  /** With `'hover'`, the tooltip comes for the pointer alone, as `Tooltip`'s `on` says. */
+  hintOn?: 'hover' | undefined;
 }
 
 /**
@@ -122,6 +124,7 @@ export function Button({
   hint,
   hintKeys,
   hintShortcut,
+  hintOn,
   disabled,
   onClick,
   children,
@@ -192,7 +195,7 @@ export function Button({
   );
   if (hint === undefined) return control;
   return (
-    <Tooltip label={hint} keys={refused ? undefined : hintKeys}>
+    <Tooltip label={hint} keys={refused ? undefined : hintKeys} on={hintOn}>
       {control}
     </Tooltip>
   );

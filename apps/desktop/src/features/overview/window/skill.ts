@@ -7,7 +7,7 @@ import { createStore } from 'zustand/vanilla';
 import { notify } from '../../../window/commands/notices.tsx';
 import type { Agent, SkillResult, SkillState } from '../contract.ts';
 import { main, tabs } from './main.ts';
-import { agentsToInstall, resultWords } from './words.ts';
+import { agentsToInstall, refusalWords, resultWords } from './words.ts';
 
 /** The checker Lo builds in, `@withlo/overview@<version>`, as electron.vite.config.ts reads it. */
 declare const LO_OVERVIEW_CHECKER: string;
@@ -28,6 +28,11 @@ export interface SkillStore {
   readonly installing: boolean;
   /** What went wrong when main couldn't be asked to install it, until the next install. */
   readonly said: string | undefined;
+  /**
+   * Main couldn't be asked to install it when a row asked: the error's words, which the row gives
+   * behind Details, until the next install.
+   */
+  readonly failed: string | undefined;
   /** Whether the install command was copied a moment ago: not since Settings' row appeared. */
   readonly copied: boolean;
 }
@@ -36,6 +41,7 @@ export const skillStore = createStore<SkillStore>()(() => ({
   state: undefined,
   installing: false,
   said: undefined,
+  failed: undefined,
   copied: false,
 }));
 
@@ -66,31 +72,45 @@ export function followSkill(): () => void {
 
 /**
  * Installs the skill for `only`, the agents a row names, or else for the agents that lack it, or
- * again for those that are set up, and says how it went in a notice. Where the skill stands then,
- * and what stops it where it does, are the rows' to say. Resolves with what main did, or nothing
- * when it couldn't be asked.
+ * again for those that are set up, and says how it went once: in a notice when a command asked, and
+ * on the row when a row did (`row`), with a notice only when no agent is set up. Where the skill stands then, and what stops it
+ * where it does, are the rows' to say. Resolves with what main did, or nothing when it couldn't be
+ * asked.
  */
 export async function installSkill(
   only?: readonly Agent[],
+  from: 'command' | 'row' = 'command',
 ): Promise<readonly SkillResult[] | undefined> {
   if (skillStore.getState().installing) return undefined;
-  skillStore.setState({ installing: true, said: undefined });
-  let said: string;
+  skillStore.setState({ installing: true, said: undefined, failed: undefined });
+  let said: string | undefined;
   let results: readonly SkillResult[] | undefined;
   try {
     // Asked just now, so the choice is made of where things stand and not of when the window looked.
     const before = await main().currentSkill();
     results = await main().installSkill({ agents: [...(only ?? agentsToInstall(before))] });
-    said = resultWords(results, before);
+    // A row says where the skill stands for each agent, and not that none is set up, which is why
+    // nothing happened.
+    const none = results.find((each) => each.kind === 'refused' && each.agent === null);
+    said =
+      from === 'command'
+        ? resultWords(results, before)
+        : none?.kind === 'refused'
+          ? refusalWords(none.why, before)
+          : undefined;
   } catch (error) {
     console.error("Lo couldn't install the overview skill:", error);
-    said = "Lo couldn't install the overview skill.";
-    skillStore.setState({ said });
+    if (from === 'row') {
+      skillStore.setState({ failed: error instanceof Error ? error.message : String(error) });
+    } else {
+      said = "Lo couldn't install the overview skill.";
+      skillStore.setState({ said });
+    }
   }
   // Still installing while the window learns where things stand, so no button offers what it was.
   await checkSkill();
   skillStore.setState({ installing: false });
-  notify(TITLE, said);
+  if (said !== undefined) notify(TITLE, said);
   return results;
 }
 

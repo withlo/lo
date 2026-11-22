@@ -5,18 +5,16 @@
 // yet sent among them.
 
 import {
-  Button,
+  EmptyState,
   HintButton,
   HintRow,
-  Key,
-  keyAria,
   Loading,
   Problem,
   reveal,
   ThreadFilter,
   ThreadList,
 } from '@lo/ui';
-import { controlOf, keyLabels, runControl, setScopeSource } from '@lo/ui/commands';
+import { keyLabels, setScopeSource } from '@lo/ui/commands';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 
 import { registry, useKeys } from '../../../window/commands/registry.ts';
@@ -66,28 +64,6 @@ export function UnresolvedCount({ tab }: { tab: PullTab }): ReactNode {
       {count}
       <span className="sr-only"> unresolved</span>
     </span>
-  );
-}
-
-/**
- * The main button of the panel's empty state: command `id`, run as its key would from anywhere,
- * with its label and its key from the registry, and dimmed, with why, while it can't run.
- */
-function CommandButton({ id }: { id: string }): ReactNode {
-  const control = controlOf(id);
-  if (!control) return null;
-  const off = control.off !== undefined;
-  return (
-    <Button
-      variant="primary"
-      disabled={off}
-      hint={control.off ?? null}
-      {...(off ? {} : keyAria(control.keys, control.shortcut))}
-      onClick={() => runControl(id)}
-    >
-      {control.label}
-      {control.keys && <Key keys={control.keys} decorative />}
-    </Button>
   );
 }
 
@@ -143,15 +119,16 @@ function Empty({ view, empty }: { view: string; empty: PanelEmpty }): ReactNode 
     case 'failed':
       return <Failed view={view} reason={empty.reason} />;
     case 'none':
-      // An empty state's shape: what's absent as a heading, its line and its button, in the middle
-      // of the panel's body.
+      // In the middle of the panel's body, under its heading, in the text's own colour: the list
+      // around it draws its words muted.
       return (
-        <div className="flex flex-1 flex-col items-center justify-center gap-16 p-32 text-center">
-          <div className="flex max-w-read-measure flex-col gap-6">
-            <h3 className="m-0 text-balance text-fg text-heading">{empty.heading}</h3>
-            {empty.line !== undefined && <p className="m-0 text-fg-muted text-ui">{empty.line}</p>}
-          </div>
-          {empty.action !== undefined && <CommandButton id={empty.action} />}
+        <div className="flex flex-1 flex-col justify-center text-fg">
+          <EmptyState
+            level={3}
+            title={empty.heading}
+            line={empty.line}
+            actions={empty.action === undefined ? [] : [empty.action]}
+          />
         </div>
       );
     default:

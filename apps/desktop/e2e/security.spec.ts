@@ -186,7 +186,8 @@ for (const vim of [false, true]) {
       await page.waitForFunction(() => window.loCodeViews !== undefined);
       for (const kind of ['diff', 'file'] as const) {
         await page.evaluate((each) => window.loCodeViews?.mount(each), kind);
-        const editor = page.locator('.cm-editor').first();
+        // The one on screen: the welcome, open over Recent, holds its practice's box out of sight.
+        const editor = page.locator('.cm-editor:visible').first();
         await expect(editor).toBeVisible();
         // CodeMirror's own styles, from its style element, lay the editor out.
         expect(await editor.evaluate((element) => getComputedStyle(element).display)).toBe('flex');
@@ -195,7 +196,7 @@ for (const vim of [false, true]) {
           for (const key of ['j', 'Shift+G', 'v', 'Escape', ':', 'Escape'])
             await page.keyboard.press(key);
           expect(
-            await page
+            await editor
               .locator('.cm-vimCursorLayer')
               .first()
               .evaluate((element) => getComputedStyle(element).animationName),

@@ -183,12 +183,12 @@ test('trusts the repo only once main’s own dialog says Trust, and Settings lis
   ]);
 
   await page.evaluate(() => window.lo.invoke('tab.open', { kind: 'settings' }));
-  const list = page.getByRole('list', { name: 'Trusted repos and PRs' });
+  const list = page.getByRole('list', { name: 'Trusted repos and pull requests' });
   await expect(list.getByRole('listitem')).toHaveCount(1);
   await expect(list).toContainText('rozed-dev/e2e');
-  await expect(list).toContainText('Repo · trusted today');
-  await list.getByRole('button', { name: 'Remove rozed-dev/e2e' }).click();
-  await expect(page.getByText('Nothing is trusted yet.')).toBeVisible();
+  await expect(list).toContainText(/Repo · trusted (just now|\d+ min ago)/);
+  await list.getByRole('button', { name: 'Stop trusting rozed-dev/e2e' }).click();
+  await expect(page.getByText('No trusted repos or pull requests')).toBeVisible();
   expect(trustedInFile()).toEqual([]);
   await expect
     .poll(() => status(page, id))
