@@ -14,6 +14,7 @@ import {
   type Problem,
   type Setting,
   type SettingsGroup,
+  type SettingsState,
 } from '../contract.ts';
 import { SettingRowView, type ControlProps } from './Row.tsx';
 import { settingsStore } from './store.ts';
@@ -175,11 +176,12 @@ export async function openSettingsFile(): Promise<void> {
 }
 
 /**
- * Calls `listener` each time main says the settings changed: the file was saved, by a person or by
- * Lo, and a value, a problem in it, or where it is changed. Returns a function that stops it.
+ * Calls `listener` with the settings each time main says they changed: the file was saved, by a
+ * person or by Lo, and a value, a problem in it, or where it is changed. Returns a function that
+ * stops it.
  */
-export function onSettingsChange(listener: () => void): () => void {
-  return client(contract).subscribe('state', () => listener());
+export function onSettingsChange(listener: (state: SettingsState) => void): () => void {
+  return client(contract).subscribe('state', (state) => listener(state));
 }
 
 /** What is wrong in the settings file now: the whole file's problem, or a setting's. */
