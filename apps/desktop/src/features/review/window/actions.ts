@@ -178,7 +178,7 @@ export function whyNot(): string | undefined {
   if (can !== true) return can;
   if (offline(dialog.view)) return OFFLINE;
   const hold = uploadsHold(summaryBox(dialog.view));
-  if (hold) return hold.kind === 'running' ? UPLOADING : hold.text;
+  if (hold) return UPLOADING;
   return undefined;
 }
 

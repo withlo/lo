@@ -87,8 +87,10 @@ export function actNote(
 
 /** Whether a change asked for is still on its way, or Lo is looking whether it went. */
 export function underWay(row: ActRow | undefined): row is ActRow {
-  return row?.stands === 'waiting' || row?.stands === 'sending' || row?.stands === 'checking';
+  return row !== undefined && UNDER_WAY.has(row.stands);
 }
+
+const UNDER_WAY: ReadonlySet<ActRow['stands']> = new Set(['waiting', 'sending', 'checking']);
 
 /** What a note is titled once a change is known not to have gone. */
 const NOT_DONE: Readonly<Record<ActRow['change'], string>> = {
@@ -111,7 +113,7 @@ const NOT_CONFIRMED: Readonly<Record<ActRow['change'], string>> = {
  * nothing for a change GitHub already has.
  */
 export function noteOf(row: ActRow, asked: boolean, isClosed: boolean): ActNote | undefined {
-  if (isClosed || asked || underWay(row)) return undefined;
+  if (isClosed || asked || UNDER_WAY.has(row.stands)) return undefined;
   const titles = row.stands === 'notDone' ? NOT_DONE : NOT_CONFIRMED;
   return { title: titles[row.change], text: 'GitHub didn’t respond.' };
 }

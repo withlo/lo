@@ -62,7 +62,14 @@ import { screenOf } from './placing.ts';
 import type { PostPull } from './Post.tsx';
 import { landed } from './landed.ts';
 import { held, shownAt } from './threads.ts';
-import { attachFiles, draggingOver, endUploads, pickFiles, uploadsHold } from './uploads.ts';
+import {
+  attachFiles,
+  clearStranded,
+  draggingOver,
+  endUploads,
+  pickFiles,
+  uploadsHold,
+} from './uploads.ts';
 import { wrotePull } from './written.ts';
 import {
   blockComment,
@@ -1223,8 +1230,10 @@ export async function commentOnFile(tab: PullTab, key: string): Promise<void> {
  */
 export async function send(box: Box, how: Send): Promise<void> {
   const { view } = box;
-  const { place, text } = box.state;
   if (sendingNow(box.state) || uploadsHold(box) !== undefined) return;
+  // What's left of an upload that didn't finish never goes to GitHub, nor holds the comment back.
+  clearStranded(box);
+  const { place, text } = box.state;
   // Sent before, and nobody knows whether it posted: it's looked up first ("Check again").
   if (box.state.sending === 'unknown') return;
   if (text.trim() === '' || offline(view) || canWrite(view) !== true) return;

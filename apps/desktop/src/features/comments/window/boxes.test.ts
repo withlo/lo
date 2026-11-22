@@ -1479,7 +1479,7 @@ describe('files attached', () => {
     });
   });
 
-  test('a restored draft holding a placeholder whose upload isn’t under way isn’t sent until it’s taken out', async () => {
+  test('a restored draft holding a placeholder whose upload isn’t under way is sent without it', async () => {
     const { drawn } = fakeDiff();
     // As Lo wrote it before it quit, and partly edited.
     const placeholder = '![Uploading shot.png…](lo-upload:9f86d081884c7d65)';
@@ -1495,12 +1495,8 @@ describe('files attached', () => {
     const [box, other] = [boxIn(drawn[0]!), boxIn(drawn[1]!)];
     await send(box, 'review');
     await send(other, 'review');
-    expect(asked('comments.send')).toEqual([]);
-    // Nothing takes it out but the reader.
-    expect(drawn[0]!.composer.text).toBe(text);
-    drawn[0]!.composer.replace(7, text.length, '');
-    await send(box, 'review');
-    expect(asked('comments.send')).toHaveLength(1);
+    // Lo takes what's left of each out: none goes to GitHub, and none holds its comment back.
+    expect(asked('comments.send')).toMatchObject([{ text: 'Repro: ' }, { text: 'Before: ' }]);
   });
 
   test('text that only reads like a placeholder is sent as it is', async () => {

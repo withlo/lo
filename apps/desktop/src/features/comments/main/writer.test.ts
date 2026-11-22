@@ -604,14 +604,14 @@ describe('a lost answer', () => {
 
   test('looks again when asked, for one it couldn’t tell of: found, the draft goes; not there, it can be sent again', async () => {
     vi.useFakeTimers();
-    const lostOnce = async (now: unknown) => {
+    const lostOnce = async (now: ReviewThreadList | Error) => {
       const fake = poller([lost()]);
       const made = writer(fake);
       await made.made.send('t1', onLine(), 'Lost?', 'review');
       fake.threads.now = new GithubError({ kind: 'notFound', message: 'gone' });
       await vi.advanceTimersByTimeAsync(10_000);
       expect(made.last()).toMatchObject([{ sending: 'unknown', sent: 'Lost?' }]);
-      fake.threads.now = now as typeof fake.threads.now;
+      fake.threads.now = now;
       made.made.check('t1', onLine());
       expect(made.last()).toMatchObject([{ sending: 'checking' }]);
       await vi.advanceTimersByTimeAsync(1_000);

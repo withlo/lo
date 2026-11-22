@@ -20,10 +20,12 @@ import {
   attachingOf,
   cancelUpload,
   checkUploads,
+  clearStranded,
   insertUpload,
   offNote,
   onUploadsOff,
   pickFiles,
+  PLACEHOLDER_MARK,
   uploadsHold,
   uploadsOff,
   type UploadsHold,
@@ -41,8 +43,7 @@ export interface BoxUploads {
   readonly notes: CommentBoxNote[];
   readonly attach: CommentBoxAttach;
   /**
-   * Why the comment isn't sent yet for its files: one is on its way in, or the text holds a
-   * placeholder whose upload isn't.
+   * Why the comment isn't sent yet for its files: one is on its way in.
    */
   readonly hold: UploadsHold | undefined;
 }
@@ -61,17 +62,27 @@ export function useUploads(box: Attachable, keys: readonly string[], text: strin
   useEffect(() => {
     if (login !== undefined) void checkUploads(box.view);
   }, [box.view, login]);
+  // A placeholder whose upload isn't under way goes, as one a draft comes back with after Lo
+  // restarts with a file on its way in.
+  useEffect(() => {
+    if (text.includes(PLACEHOLDER_MARK)) clearStranded(box);
+  }, [box, text]);
   const notes = [...(off === undefined ? [] : [offNote(off)]), ...state.notes];
   const why = whyNoAttach(box.view);
   return {
-    notes: notes.map((note) => ({ key: note.key, tone: note.tone, text: note.text })),
+    notes: notes.map((note) => ({
+      key: note.key,
+      tone: note.tone,
+      title: note.title,
+      text: note.text,
+    })),
     attach: {
       keys,
       disabled: why !== undefined,
       why,
       onClick: () => pickFiles(box),
     },
-    hold: uploadsHold(box, text),
+    hold: uploadsHold(box),
   };
 }
 

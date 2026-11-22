@@ -150,9 +150,9 @@ class Attaching {
     for (const listener of this.#listeners) listener();
   }
 
-  /** Says `text` of the files it didn't attach. */
-  say(key: string, text: string, tone: 'info' | 'warning' = 'warning'): void {
-    this.said = [...this.said, { key, tone, text }];
+  /** Says `text` of the files it didn't attach, under `title` where it names one. */
+  say(key: string, text: string, tone: 'info' | 'warning' = 'warning', title?: string): void {
+    this.said = [...this.said.filter((each) => each.key !== key), { key, tone, title, text }];
     this.changed();
   }
 
@@ -195,29 +195,23 @@ export function attachingOf(box: Attachable): Attaching {
   return attaching;
 }
 
-/**
- * Why `box`'s text isn't sent yet for the files attached to it: `running`, while one is on its way
- * in; `stranded`, while `text`, its text, holds a placeholder, whole or partly edited, whose upload
- * isn't under way, as after Lo restarts or the placeholder changed, with what the box says of it.
- */
-export type UploadsHold = { kind: 'running' } | { kind: 'stranded'; text: string };
+/** Why `box`'s text isn't sent yet for the files attached to it: one is still on its way in. */
+export interface UploadsHold {
+  readonly kind: 'running';
+}
 
 /** Why `box`'s text isn't sent yet for its files, if it isn't. */
-export function uploadsHold(
-  box: Attachable,
-  text = box.composer?.text ?? box.state.text,
-): UploadsHold | undefined {
-  const attaching = attachings.get(box);
-  if ((attaching?.running.length ?? 0) > 0) return { kind: 'running' };
-  const found = strandedIn(attaching, text);
-  return found.size === 0 ? undefined : { kind: 'stranded', text: strandedText(attaching, found) };
+export function uploadsHold(box: Attachable): UploadsHold | undefined {
+  return (attachings.get(box)?.running.length ?? 0) > 0 ? { kind: 'running' } : undefined;
 }
 
 /** What a box says of `hold`, why it isn't sent: `uploading` while a file is on its way in. */
 export function holdText(hold: UploadsHold | undefined, uploading: string): string | undefined {
-  if (hold === undefined) return undefined;
-  return hold.kind === 'running' ? uploading : hold.text;
+  return hold === undefined ? undefined : uploading;
 }
+
+/** What every placeholder's address starts with. */
+export const PLACEHOLDER_MARK = 'lo-upload:';
 
 /**
  * What marks a placeholder Lo wrote, whole or partly edited: its address, which holds a token made
@@ -254,40 +248,44 @@ function strandedIn(
   return found;
 }
 
-/** What a box says of the placeholders `found` in its text, whose uploads aren't under way. */
-function strandedText(
-  attaching: Attaching | undefined,
-  found: ReadonlyMap<string, string | undefined>,
-): string {
-  const unplaced = new Map(
-    (attaching?.files ?? [])
-      .filter((file) => file.unplaced)
-      .map((file) => [file.token, file.name] as const),
-  );
-  const changed = new Set<string>();
+/** What's left in `text` of the placeholder of token `token`, whole or partly edited, taken out. */
+function withoutLeftover(text: string, token: string): TextChange | undefined {
+  const whole = new RegExp(`!?\\[(?:\\\\[^\\n]|[^[\\]\\\\\\n])*\\]\\(lo-upload:${token}\\)?`);
+  const found = whole.exec(text) ?? new RegExp(`\\(?lo-upload:${token}\\)?`).exec(text);
+  return found ? withoutPlaceholder(text, found[0]) : undefined;
+}
+
+/**
+ * Clears `box`'s text of each placeholder whose upload isn't under way, as after Lo restarts with a
+ * file on its way in, or once a placeholder was edited while its file uploaded: nothing of an
+ * upload is the reader's to clean up, and none holds a comment back. A file that's uploaded goes in
+ * where its placeholder is whole again, as when its going in is undone, and else keeps its row,
+ * which offers to insert it. One that didn't finish is named, to attach again.
+ */
+export function clearStranded(box: Attachable): void {
+  const attaching = attachings.get(box);
+  const found = strandedIn(attaching, box.composer?.text ?? box.state.text);
+  if (found.size === 0) return;
   const lost = new Set<string>();
-  let unnamed = false;
   for (const [token, name] of found) {
-    const mine = unplaced.get(token);
-    if (mine !== undefined) changed.add(mine);
-    else if (name === undefined) unnamed = true;
-    else lost.add(name);
+    const file = attaching?.files.find((each) => each.token === token);
+    const markdown = file?.markdown;
+    if (file && markdown !== undefined) {
+      file.unplaced = !edit(box, (text) => inPlaceOf(text, file.placeholder, markdown));
+      if (!file.unplaced) continue;
+    }
+    edit(box, (text) => withoutLeftover(text, token));
+    if (markdown === undefined && name !== undefined) lost.add(name);
   }
-  const said: string[] = [];
-  if (lost.size > 0) {
-    const one = lost.size === 1;
-    said.push(
-      `${listed([...lost])} didn’t finish uploading. Attach ${one ? 'it' : 'them'} again, and take out ${one ? 'its placeholder' : 'their placeholders'}.`,
-    );
+  attaching?.changed();
+  for (const name of lost) {
+    attachingOf(box).say(`upload-lost-${name}`, 'Attach it again.', 'warning', couldntAttach(name));
   }
-  if (changed.size > 0) {
-    const one = changed.size === 1;
-    said.push(
-      `Lo didn’t put ${listed([...changed])} in, as ${one ? 'its placeholder' : 'their placeholders'} changed. Take ${one ? 'it' : 'them'} out, and “Insert” puts ${one ? 'the file' : 'each'} at the cursor.`,
-    );
-  }
-  if (unnamed) said.push('Take out what’s left of an upload’s placeholder.');
-  return said.join(' ');
+}
+
+/** What a note is titled when a file didn't attach. */
+function couldntAttach(name: string): string {
+  return `Couldn’t attach ${name}`;
 }
 
 /** The login view `view` writes as, if it writes as anyone. */
@@ -671,6 +669,8 @@ async function attachOne(attaching: Attaching, file: File, attachment: Attachmen
       attachment.unplaced = !edit(box, (text) =>
         inPlaceOf(text, attachment.placeholder, outcome.markdown),
       );
+      // What's left of a placeholder edited meanwhile goes: its row offers to insert the file.
+      if (attachment.unplaced) clearStranded(box);
       if (outcome.viaGh) {
         attachment.notes.push({
           key: `upload-gh-${attachment.key}`,
