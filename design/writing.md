@@ -13,10 +13,10 @@ This file covers every string a person reads: the window, the menus and the syst
 ## Rules
 
 1. **The thing is the subject, not Lo.** “Couldn’t send the comment”, not “Lo couldn’t send your
-   comment”. Lo never does anything in a string. Name it only as a thing: the app a link opens in,
-   or a version of it. “Open in Lo”, “Lo 0.2.0 is available”. Only a version’s name starts a string
-   with “Lo”. Say “you” only where a line is unclear without it: “Offline”, not “You’re offline”.
-   Never “we” or “I”.
+   comment”. Lo never does anything in a string. Name it only as a thing: the app by name, the app a
+   link opens in, or a version of it. “Welcome to Lo”, “Open in Lo”, “Lo 0.2.0 is available”. Only a
+   version’s name starts a string with “Lo”. Say “you” only where a line is unclear without it:
+   “Offline”, not “You’re offline”. Never “we” or “I”.
 2. **One fact, one action.** A title says what happened. A reason follows only if it changes what
    the reader does. The button is the next step. Nothing restates the title.
 3. **The reader’s words.** Where [Terms](#terms) names a thing, use its word. No refs, job names,
@@ -263,11 +263,11 @@ carries a risk.
 
 `code/main/confirm.ts`:
 
-|         | Before                                                                                                                                                                                                                                                               | After                                                                                                             |
-| ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| Title   | Trust rozed-dev/e2e?                                                                                                                                                                                                                                                 | Trust rozed-dev/e2e?                                                                                              |
-| Body    | Lo will check out its pull requests and run language servers on them. The servers read its code and settings. Lo limits what they run, but they aren’t sandboxed. The repo’s settings can still steer them. A file that exploits a bug in one could run code as you. | Language servers read this repo’s code and settings, and aren’t sandboxed. Trust only repos whose code you’d run. |
-| Buttons | Trust · Cancel                                                                                                                                                                                                                                                       | Trust repo · Cancel                                                                                               |
+|         | Before                                                                                                                                                                                                                                                               | After                                                                                                              |
+| ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| Title   | Trust rozed-dev/e2e?                                                                                                                                                                                                                                                 | Trust rozed-dev/e2e?                                                                                               |
+| Body    | Lo will check out its pull requests and run language servers on them. The servers read its code and settings. Lo limits what they run, but they aren’t sandboxed. The repo’s settings can still steer them. A file that exploits a bug in one could run code as you. | Language servers read this repo’s code and settings. They aren’t sandboxed. Trust only repos whose code you’d run. |
+| Buttons | Trust · Cancel                                                                                                                                                                                                                                                       | Trust repo · Cancel                                                                                                |
 
 ### Refusal
 
@@ -372,7 +372,7 @@ One screen of the welcome, with one job: sign in, choose keys, set up, open a pu
 | Heading | Six words, no full stop: the step’s job. The first step’s says what Lo is for.                     | Review pull requests from the keyboard            |
 | Line    | One: what the reader gets, or where to change it later.                                            | Each of these is also in Settings › Integrations. |
 | Row     | A label of six words, one line and one button. Once it’s done, its state takes the button’s place. | Overview skill · “Install”, then “Installed”      |
-| Buttons | “Back”, “Continue” and “Skip”, in those words on every step.                                       | Continue                                          |
+| Buttons | “Continue” and “Skip” on every step, and “Back” from the second step on. Only these words.         | Continue                                          |
 
 - **Continue** goes to the next step with what’s set. **Skip** leaves the welcome from any step.
   **Back** goes to the step before.
@@ -386,11 +386,11 @@ One screen of the welcome, with one job: sign in, choose keys, set up, open a pu
 
 `welcome/window/Cover.tsx` and `welcome/window/Steps.tsx`:
 
-|         | Before                                                                                                                        | After                                                                                          |
-| ------- | ----------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
-| Heading | Review pull requests from the keyboard.                                                                                       | Review pull requests from the keyboard                                                         |
-| Line    | Lo reads whole stacks, shows the overviews your coding agent writes, and has a key for every action.                          | Whole stacks, overviews from your coding agent, and a key for every action.                    |
-| Row     | Send PR links to Lo · Lets a link router such as Finicky hand GitHub PR links to Lo. Your browser stays the default. · Set up | Send pull request links to Lo · Pull request links clicked in other apps open in Lo. · Set up… |
+|         | Before                                                                                                                        | After                                                                                             |
+| ------- | ----------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| Heading | Review pull requests from the keyboard.                                                                                       | Review pull requests from the keyboard                                                            |
+| Line    | Lo reads whole stacks, shows the overviews your coding agent writes, and has a key for every action.                          | Every action has a key.                                                                           |
+| Row     | Send PR links to Lo · Lets a link router such as Finicky hand GitHub PR links to Lo. Your browser stays the default. · Set up | Send pull request links to Lo · Pull request links clicked in other apps open in Lo. · Show rules |
 
 ### Result
 
