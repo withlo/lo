@@ -625,7 +625,8 @@ for (const layout of ['split', 'inline'] as const) {
 
     test('a new line typed in a comment box as the view narrows leaves the box where it is', async () => {
       const page = await wrapping(layout);
-      await page.evaluate(() => window.harness.compose(30));
+      // Holding as many lines as it shows with none, so the next makes it taller.
+      await page.evaluate(() => window.harness.compose(30, 'one\ntwo\nthree'));
       await frames(page);
       const box = () => page.evaluate(() => window.harness.top('.lo-diffcomposer'));
       const height = () =>
@@ -670,6 +671,8 @@ for (const layout of ['split', 'inline'] as const) {
 
       test(`\`Ctrl-d\` ${narrowing} scrolls half a screen from what the reader saw, the cursor staying on its row`, async () => {
         const page = await wrapping(layout, 0);
+        // `Ctrl-d` is Vim's key.
+        await page.evaluate(() => window.harness.vim(true));
         const cursor = () => page.evaluate(() => window.harness.cursorTop());
         const before = { cursor: await cursor(), line: await lineTop(page, 40) };
 
@@ -843,8 +846,6 @@ test('closing a comment box with `Esc` leaves its line where it is, above the sc
   // The reader wheels the box's line off the top, the box on screen with focus in it.
   await page.mouse.move(300, 500);
   await page.mouse.wheel(0, (await lineTop(page, line))! + 40);
-  await frames(page);
-  await page.keyboard.press('Escape');
   await frames(page);
   await expect(page.locator('.lo-diffcomposer')).toHaveCount(1);
   const before = await lineTop(page, line);
