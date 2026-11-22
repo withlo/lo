@@ -14,12 +14,16 @@ import {
   TOAST_MAX,
   TOAST_MS,
   ToastStack,
+  toastTime,
   type StackedToast,
   type ToastAction,
 } from '@lo/ui';
 import { useEffect, useMemo, useSyncExternalStore, type ReactNode } from 'react';
 
-/** How long a note stays, in ms, while the pointer and focus are off it. */
+/**
+ * How long a note stays, in ms, while the pointer and focus are off it. One with a button or
+ * Details stays twice as long: see `toastTime`.
+ */
 export const NOTICE_TIME = TOAST_MS;
 
 /**
@@ -30,10 +34,16 @@ export interface Note {
   readonly title: string;
   readonly body: string;
   readonly done?: boolean | undefined;
-  /** The one thing to do about it, at its end. */
+  /** Its one button, as "Back" on a note that something moved. */
   readonly action?: ToastAction | undefined;
   /** What main or the system said of a failure, as it came, behind Details. */
   readonly details?: string | undefined;
+  /**
+   * Its tone where it isn't the usual one: `danger` for a failure, and `warning` for what can't be
+   * done here at all, as a check for updates on a build from source, which isn't a failure.
+   * Without it, a note with Details is a failure, and the rest are news.
+   */
+  readonly tone?: 'warning' | 'danger' | undefined;
 }
 
 /**
@@ -80,9 +90,10 @@ function time(id: string): void {
   clearTimeout(timers.get(id));
   timers.delete(id);
   if (drawing > 0) return;
+  const note = shown.find((each) => each.id === id)?.note;
   timers.set(
     id,
-    setTimeout(() => dismiss(id), NOTICE_TIME),
+    setTimeout(() => dismiss(id), note === undefined ? NOTICE_TIME : toastTime(note)),
   );
 }
 
@@ -96,7 +107,8 @@ const same = (one: Note, other: Note) =>
   one.body === other.body &&
   (one.done ?? false) === (other.done ?? false) &&
   one.action?.label === other.action?.label &&
-  one.details === other.details;
+  one.details === other.details &&
+  one.tone === other.tone;
 
 /**
  * Shows `note` under the others. One already showing that says the same isn't said twice: it's the
@@ -124,30 +136,42 @@ export function notices(): readonly Note[] {
 /**
  * Says why a command asked for by its key can't run now, with no control in view to say it: the
  * reason alone, in a line with no full stop, such as "Sign in to comment". Never the command's
- * name. Several reasons are a line each.
+ * name. Several reasons are a line each. `action` is its one button, where the next step is one:
+ * "Comment on file" for lines that take no comment.
  */
-export function refuse(reason: string): void {
-  show({ title: reason, body: '' });
+export function refuse(reason: string, action?: ToastAction): void {
+  show({ title: reason, body: '', action });
 }
 
 /**
  * Says that something asked for is done, in a line: the verb in the past, then what it acted on,
- * such as "Merged #264". Nothing for what already shows where the reader is looking.
+ * such as "Merged #264". Nothing for what already shows where the reader is looking. `action` is
+ * its one button, where there's a way back from it: "Back".
  */
-export function announce(title: string, body = ''): void {
-  show({ title, body, done: true });
+export function announce(title: string, body = '', action?: ToastAction): void {
+  show({ title, body, done: true, action });
+}
+
+/** What a note of the older shape may carry besides its words. */
+export interface NoteMore {
+  /** The one thing to do about it. */
+  readonly action?: ToastAction | undefined;
+  /** What main or the system said of a failure, as it came, behind Details. */
+  readonly details?: string | undefined;
+  /** `danger` for a failure with no Details, `warning` for what can't be done here at all. */
+  readonly tone?: 'warning' | 'danger' | undefined;
 }
 
 /**
  * Says `title` with `body` under it, a line a reason: the older shape of a note that says why
- * something didn't happen, with `action`, the one thing to do about it, where there's one. A
+ * something didn't happen, with `more.action`, the one thing to do about it, where there's one. A
  * command that can't run uses {@link refuse}. Something that failed says so where it was asked
  * for, not here, unless nothing in view can hold it, as for a command run from the menu or a toast
- * that has gone: then the note is the error, `title` what failed and `body` why, with `details`,
- * what main or the system said, behind Details.
+ * that has gone: then the note is the error, `title` what failed and `body` why, with
+ * `more.details`, what main or the system said, behind Details, and its tone says it failed.
  */
-export function notify(title: string, body: string, action?: ToastAction, details?: string): void {
-  show({ title, body, action, details });
+export function notify(title: string, body: string, more: NoteMore = {}): void {
+  show({ title, body, ...more });
 }
 
 /** Takes back the note `title` and `body` say, if it's showing: what it said is over. */
@@ -178,11 +202,14 @@ function lineOf(note: Note): ReactNode {
   );
 }
 
-/** A note's toast: an info icon and the reason, or a tick and what's done. */
+/**
+ * A note's toast: a tick and what's done, a failure's icon and what failed, for one with Details,
+ * a warning's for what can't be done here at all, or else an info icon and the reason.
+ */
 function toastOf(id: string, note: Note): StackedToast {
   return {
     id,
-    tone: note.done ? 'success' : 'info',
+    tone: note.done ? 'success' : (note.tone ?? (note.details === undefined ? 'info' : 'danger')),
     title: lineOf(note),
     action: note.action,
     details: note.details,

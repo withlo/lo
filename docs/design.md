@@ -538,10 +538,10 @@ A repo's or a user's instructions can drop, add or reorder everything except the
   same caret and undo history, on its line. Where the diff drawn anew doesn't show that line, as in
   a file closed as viewed, it goes under its file's header, still a comment on the line; only where
   the diff has neither does the draft open under its block, if the overview has it. Otherwise it's
-  in no box, and the status bar says the draft was kept, until its line or block is shown again: one
-  note for all such drafts, which says where each is. Focus comes back only to a box that had it,
-  and only if you've done nothing since. Threads that arrive, grow or go while a block is on screen
-  move nothing you're reading.
+  in no box, and the status bar counts it as a kept draft, until its line or block is shown again:
+  one item for all such drafts ("2 kept drafts"), which opens their list, where each is ("retry.ts ·
+  line 41 · r2"). Focus comes back only to a box that had it, and only if you've done nothing since.
+  Threads that arrive, grow or go while a block is on screen move nothing you're reading.
 - **From the block to the code.** Following a block jumps to the diff at that spot, or to the
   whole-file view when the code is outside the diff. `⌃o` returns to the same place in the overview.
   A menu and a key open the code beside the overview instead.
@@ -773,11 +773,12 @@ trust.
   until it knows, the comment can't be sent again. Lo never sends it again by itself. The same goes
   for a lost answer to an edit, a resolve or a delete: Lo reads the comment or the thread again
   after a while to see whether it went, says it's checking meanwhile, and if it can't tell, says so
-  and offers to try again. A comment that GitHub puts on a newer push than the one it was written on
-  is labeled "On a newer push".
+  and offers to try again. A comment that GitHub puts on a later revision than the one it was
+  written on is labeled with that revision: "On r5".
 - **Suggestions.** `s` opens the comment box with the selected lines in a `suggestion` block, ready
   to edit. It works on the new side only, because GitHub can only apply suggestions there. Applying
-  them happens on GitHub.
+  them happens on GitHub. A thread shows a suggested change as the diff shows a change: the lines it
+  replaces over the lines it suggests.
 - **Outdated threads.** A thread whose line has since changed appears where it was written when you
   view that revision, and is labeled outdated elsewhere.
 - **Attachments.** Drag, paste or pick (`⌘⇧A`) files (PNG, JPEG, GIF, WebP, SVG, MP4, MOV or WebM),
@@ -825,12 +826,12 @@ and `f` steps to all threads, then to yours: the ones you started or replied in.
 `j` and `k` move through it, and `x` resolves or unresolves the thread the keyboard is on. `⏎` or a
 click shows the thread in the diff, opened, at the top of the screen, and focus stays in the panel.
 It's a jump, so `⌃o` goes back. A thread the diff on screen doesn't show, such as an outdated one,
-shows in the whole diff of the revision it's on, which Lo compares first, saying so: "Comparing base
-→ r1". `⌃o` then goes back to the comparison before and the place in it, and `⌃i` comes forward
-again. The last move wins: a comparison still coming is called off, with what Lo said of it, when
-the diff on screen shows the next thread asked for, or when `⌃o` or `⌃i` goes elsewhere first. A
-file-level thread shows its file's header. In the diff, `]t` and `[t` jump between threads, a stop
-for each, a file's threads under its header included, and the thread landed on is ringed.
+shows in the whole diff of the revision it's on, which Lo compares first, saying so: "Showing r1 for
+this thread", with Back. `⌃o` then goes back to the comparison before and the place in it, and `⌃i`
+comes forward again. The last move wins: a comparison still coming is called off, with what Lo said
+of it, when the diff on screen shows the next thread asked for, or when `⌃o` or `⌃i` goes elsewhere
+first. A file-level thread shows its file's header. In the diff, `]t` and `[t` jump between threads,
+a stop for each, a file's threads under its header included, and the thread landed on is ringed.
 
 ### Timeline
 

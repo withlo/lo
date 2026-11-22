@@ -14,13 +14,16 @@ export {
   type ContextMenuProps,
 } from './ContextMenu.tsx';
 export { HintButton, type HintButtonProps } from './HintButton.tsx';
+export { HintRow, type HintRowProps } from './HintRow.tsx';
 export { Key, keyAria, type KeyAria, type KeyProps } from './Key.tsx';
 export {
   Toast,
   ToastRegion,
   ToastStack,
+  TOAST_LONG_MS,
   TOAST_MAX,
   TOAST_MS,
+  toastTime,
   type StackedToast,
   type ToastAction,
   type ToastProps,

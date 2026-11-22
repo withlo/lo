@@ -281,7 +281,7 @@ test('says it was written for r1 from its first frame, and flags the block on li
     await parser.click({ button: 'right', position: { x: 4, y: 4 } });
     await page
       .getByRole('menu', { name: 'Block actions' })
-      .getByRole('menuitem', { name: /^Comment on these lines/ })
+      .getByRole('menuitem', { name: /^Comment on lines/ })
       .click();
     const onFile = parser.locator('.lo-diffcomposer');
     const head = onFile.locator('.lo-diffcomposer__head');

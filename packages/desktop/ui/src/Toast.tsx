@@ -1,10 +1,10 @@
 import { cva } from 'class-variance-authority';
-import { useEffect, useId, useReducer, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useReducer, useRef, useState, type ReactNode } from 'react';
 
 import { Button } from './Button.tsx';
 import { Collapse } from './Collapse.tsx';
 import { Key } from './Key.tsx';
-import { DetailsText } from './Problem.tsx';
+import { useDetails } from './Problem.tsx';
 
 const icon = cva('flex-none', {
   variants: {
@@ -80,6 +80,8 @@ export interface ToastProps {
    * button under the line, with Copy.
    */
   details?: string | undefined;
+  /** Called as Details opens and closes, so a stack holds the toast while its text is read. */
+  onDetails?: ((open: boolean) => void) | undefined;
 }
 
 const more = cva('col-start-2 min-w-0 wrap-anywhere text-fg-muted text-small', {
@@ -92,9 +94,18 @@ const more = cva('col-start-2 min-w-0 wrap-anywhere text-fg-muted text-small', {
  * such as an update, may add a body and buttons. Not for an error that needs action, which is a
  * `Problem` in place, and not for what already shows where the reader is looking.
  */
-export function Toast({ tone, icon: mark, title, body, actions, action, details }: ToastProps) {
-  const [detailed, setDetailed] = useState(false);
-  const detailsId = useId();
+export function Toast({
+  tone,
+  icon: mark,
+  title,
+  body,
+  actions,
+  action,
+  details,
+  onDetails,
+}: ToastProps) {
+  const { more: opener, shown, open } = useDetails(details);
+  useEffect(() => onDetails?.(open), [open, onDetails]);
   return (
     <div className="grid w-toast-w toast items-start rounded-md bg-bg-overlay text-fg shadow-pop text-ui">
       <span className={icon({ tone })}>{mark ?? ICONS[tone]}</span>
@@ -111,16 +122,8 @@ export function Toast({ tone, icon: mark, title, body, actions, action, details 
       {actions !== undefined && <div className="col-start-2 mt-8 flex gap-6">{actions}</div>}
       {details !== undefined && (
         <div className="col-start-2 col-end-4 min-w-0">
-          <Button
-            variant="ghost"
-            size="sm"
-            aria-expanded={detailed}
-            aria-controls={detailsId}
-            onClick={() => setDetailed((was) => !was)}
-          >
-            Details
-          </Button>
-          <DetailsText id={detailsId} open={detailed} details={details} gap={false} />
+          {opener}
+          {shown}
         </div>
       )}
     </div>
@@ -152,6 +155,20 @@ export function ToastRegion({ children, waiting }: { children?: ReactNode; waiti
 
 /** How long a toast in a stack stays, in milliseconds, while the pointer and focus are off it. */
 export const TOAST_MS = 4000;
+
+/**
+ * How long one with a button or Details stays, in milliseconds: twice as long, since there's
+ * something on it to do or read.
+ */
+export const TOAST_LONG_MS = 8000;
+
+/** How long `toast` stays in a stack, in milliseconds, while the pointer and focus are off it. */
+export function toastTime(toast: {
+  readonly action?: unknown;
+  readonly details?: string | undefined;
+}): number {
+  return toast.action !== undefined || toast.details !== undefined ? TOAST_LONG_MS : TOAST_MS;
+}
 
 /** How many toasts a stack shows at once. */
 export const TOAST_MAX = 3;
@@ -189,8 +206,8 @@ export interface ToastStackProps {
 
 /**
  * Where toasts float, at the bottom right of the window above its status bar: up to three, the
- * newest lowest. Each stays four seconds of its own, which stop while the pointer or focus is on
- * it, and a fourth sends the oldest away. One comes by making its room and rising into it, and
+ * newest lowest. Each stays four seconds of its own, or eight with a button or Details, which stop
+ * while the pointer or focus is on it or its Details is open, and a fourth sends the oldest away. One comes by making its room and rising into it, and
  * goes by fading and giving the room back.
  *
  * The region is always there, and isn't atomic, so a screen reader hears each toast as it comes
@@ -242,13 +259,21 @@ export function ToastStack({ toasts, onDismiss, waiting }: ToastStackProps) {
               redraw();
             }}
           >
-            <Timed id={toast.id} times={shown.current.get(toast.id)?.times ?? 1} onDone={dismiss}>
-              <Toast
-                tone={toast.tone}
-                title={toast.title}
-                action={toast.action}
-                details={toast.details}
-              />
+            <Timed
+              id={toast.id}
+              times={shown.current.get(toast.id)?.times ?? 1}
+              time={toastTime(toast)}
+              onDone={dismiss}
+            >
+              {(hold) => (
+                <Toast
+                  tone={toast.tone}
+                  title={toast.title}
+                  action={toast.action}
+                  details={toast.details}
+                  onDetails={hold}
+                />
+              )}
             </Timed>
           </Collapse>
         ))}
@@ -263,23 +288,26 @@ export function ToastStack({ toasts, onDismiss, waiting }: ToastStackProps) {
 }
 
 /**
- * A toast's place in the stack, which counts its time while the pointer and focus are off it, and
- * starts it again each time the toast is shown again (`times`).
+ * A toast's place in the stack, which counts its `time` while the pointer and focus are off it and
+ * its Details is closed, and starts it again each time the toast is shown again (`times`).
+ * `children` draws the toast, given what holds it while its Details is open.
  */
 function Timed({
   id,
   times,
+  time,
   onDone,
   children,
 }: {
   id: string;
   times: number;
+  time: number;
   onDone: { readonly current: (id: string) => void };
-  children: ReactNode;
+  children: (hold: (open: boolean) => void) => ReactNode;
 }) {
-  const [held, setHeld] = useState({ pointer: false, focus: false });
-  const paused = held.pointer || held.focus;
-  const left = useRef(TOAST_MS);
+  const [held, setHeld] = useState({ pointer: false, focus: false, details: false });
+  const paused = held.pointer || held.focus || held.details;
+  const left = useRef(time);
   const counted = useRef(times);
   useEffect(() => {
     if (paused) return undefined;
@@ -287,7 +315,7 @@ function Timed({
     // what it had used.
     if (counted.current !== times) {
       counted.current = times;
-      left.current = TOAST_MS;
+      left.current = time;
     }
     const started = Date.now();
     const timer = setTimeout(() => onDone.current(id), left.current);
@@ -295,7 +323,11 @@ function Timed({
       clearTimeout(timer);
       left.current = Math.max(0, left.current - (Date.now() - started));
     };
-  }, [paused, id, times, onDone]);
+  }, [paused, id, times, time, onDone]);
+  const hold = useCallback(
+    (open: boolean) => setHeld((was) => (was.details === open ? was : { ...was, details: open })),
+    [],
+  );
   return (
     <div
       className="move-pop pt-8"
@@ -305,7 +337,7 @@ function Timed({
       onFocus={() => setHeld((was) => ({ ...was, focus: true }))}
       onBlur={() => setHeld((was) => ({ ...was, focus: false }))}
     >
-      {children}
+      {children(hold)}
     </div>
   );
 }

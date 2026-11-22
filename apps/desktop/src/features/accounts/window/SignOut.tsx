@@ -11,10 +11,21 @@ import { closeDialog } from './dialogs.ts';
 import { enterOffControls } from './focus.ts';
 import { labels } from './labels.ts';
 import { main } from './main.ts';
-import { how } from './Picker.tsx';
+import type { AccountSummary } from '../contract.ts';
 import { accountsStore, type OpenDialog } from './store.ts';
 
 type SignOut = Extract<OpenDialog, { kind: 'signOut' }>;
+
+/**
+ * What's said of `account` under its login: its name, and where it came from when that isn't the
+ * usual way, signing in with GitHub.
+ */
+function how(account: AccountSummary | undefined): string | undefined {
+  if (account === undefined) return undefined;
+  const fromCli = account.source === 'gh';
+  if (account.name === null) return fromCli ? 'From GitHub CLI' : undefined;
+  return fromCli ? `${account.name} · from GitHub CLI` : account.name;
+}
 
 /** The sign-out dialog, open while `dialog` is the dialog open. */
 export function SignOutView({

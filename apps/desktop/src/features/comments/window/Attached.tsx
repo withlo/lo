@@ -75,6 +75,7 @@ export function useUploads(box: Attachable, keys: readonly string[], text: strin
       tone: note.tone,
       title: note.title,
       text: note.text,
+      details: note.details,
       // The way to attach it again, where files can be attached.
       actions:
         note.attach && why === undefined

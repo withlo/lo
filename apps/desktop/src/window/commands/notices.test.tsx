@@ -195,7 +195,7 @@ describe('notices', () => {
   });
 
   it('keep what came with a failure behind Details, with Copy', async () => {
-    act(() => notify('Couldn’t update Lo', '', undefined, 'Failed to copy Lo.app'));
+    act(() => notify('Couldn’t update Lo', '', { details: 'Failed to copy Lo.app' }));
     const card = status()?.querySelector('.toast');
     const details = [...(card?.querySelectorAll('button') ?? [])].find(
       (button) => button.textContent === 'Details',
@@ -210,6 +210,52 @@ describe('notices', () => {
     const text = document.getElementById(details?.getAttribute('aria-controls') ?? '');
     expect(text?.textContent).toContain('Failed to copy Lo.app');
     expect(text?.querySelector('button')?.textContent).toMatch(/^Copy/);
+  });
+
+  it('show a failure as one, a block as a warning, and the rest as news', () => {
+    act(() => {
+      notify('Couldn’t update Lo', '', { details: 'Failed to copy Lo.app' });
+      notify('Couldn’t open #82', 'The browser sent it straight back.', { tone: 'danger' });
+      notify('Can’t check for updates', 'This copy of Lo is built from source.', {
+        tone: 'warning',
+      });
+    });
+    const icons = [...(status()?.querySelectorAll('.toast > span:first-child') ?? [])];
+    expect(icons.map((icon) => icon.className)).toEqual([
+      'flex-none text-danger',
+      'flex-none text-danger',
+      'flex-none text-warning',
+    ]);
+    act(() => notify('Back', "There's nowhere to go back to."));
+    const newest = [...(status()?.querySelectorAll('.toast > span:first-child') ?? [])].at(-1);
+    expect(newest?.className).toBe('flex-none text-info');
+  });
+
+  it('keep a note with Details or a button twice as long, whether or not a window draws it', () => {
+    const back = { label: 'Back', onClick: () => undefined };
+    act(() => {
+      notify('Couldn’t update Lo', '', { details: 'Failed to copy Lo.app' });
+      announce('Moved the comment', '', back);
+      announce('Copied path');
+    });
+    act(() => {
+      vi.advanceTimersByTime(NOTICE_TIME);
+    });
+    expect(notices().map((each) => each.title)).toEqual([
+      'Couldn’t update Lo',
+      'Moved the comment',
+    ]);
+    act(() => {
+      vi.advanceTimersByTime(NOTICE_TIME);
+    });
+    expect(notices()).toEqual([]);
+    act(() => root?.unmount());
+    root = undefined;
+    notify('Couldn’t update Lo', '', { details: 'Failed to copy Lo.app' });
+    vi.advanceTimersByTime(NOTICE_TIME);
+    expect(notice()).toMatchObject({ title: 'Couldn’t update Lo' });
+    vi.advanceTimersByTime(NOTICE_TIME);
+    expect(notice()).toBeUndefined();
   });
 
   it('say what’s done with a tick, in one line', () => {

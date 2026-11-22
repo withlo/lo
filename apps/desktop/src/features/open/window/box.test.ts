@@ -201,6 +201,14 @@ describe('the open box', () => {
       'Sign in with GitHub…',
     );
     expect(enterAction(holding(E2E, refused({ kind: 'missing' })))).toBeUndefined();
+    // GitHub's rate limit holds opening anyway too: nothing to press.
+    const limit = { kind: 'rateLimit', resets: null } as const;
+    expect(
+      enterAction(
+        holding(E2E, refused({ kind: 'refused', cause: limit, links: [], openAnyway: true })),
+      ),
+    ).toBeUndefined();
+    expect(enterAction(holding(E2E, refused({ kind: 'unchecked', cause: limit })))).toBeUndefined();
     expect(enterAction({ ...holding(E2E, pull), error: { title: 'x', retry: true } })).toBe(
       'Try again',
     );

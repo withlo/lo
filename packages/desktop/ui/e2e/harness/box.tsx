@@ -22,8 +22,8 @@ createRoot(root).render(
           attach: { keys: ['⌘', '⇧', 'A'] },
           discard: {},
           actions: [
-            { label: 'Send now', keys: ['⌥', '⏎'] },
-            { label: 'Add to review', keys: ['⌘', '⏎'], primary: true },
+            { label: 'Send now', keys: ['⌥', '⏎'], icon: 'send' },
+            { label: 'Add to review', keys: ['⌘', '⏎'], primary: true, icon: 'review' },
           ],
         }}
       >

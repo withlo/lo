@@ -451,15 +451,20 @@ describe("GitHub's rendering", () => {
     expect(collect(tree(reference!, reference!.source), 'link').map((link) => link.target)).toEqual(
       [{ kind: 'web', url: 'https://github.com/rozed-dev/e2e/pull/75' }],
     );
-    // A review comment's suggested change, which GitHub draws as a diff, reads as Markdown's does.
+    // A review comment's suggested change, which GitHub draws as a diff, reads as Markdown's does,
+    // with the lines it replaces besides, which Markdown alone doesn't have.
     const suggesting = posts.filter((post) => post.markdown.includes('```suggestion'));
     expect(suggesting).toHaveLength(1);
     const { markdown, html, source } = suggesting[0]!;
     const suggestion = tree({ html, markdown }, source).blocks;
     expect(collect({ blocks: suggestion, notes: [], diagnostics: [] }, 'suggestion')).toEqual([
-      { kind: 'suggestion', text: 'slow\npass' },
+      { kind: 'suggestion', text: 'slow\npass', removed: 'slow' },
     ]);
-    expect(suggestion).toEqual(markdownTree(markdown, { page: source }).blocks);
+    expect(
+      suggestion.map((block) =>
+        block.kind === 'suggestion' ? { kind: block.kind, text: block.text } : block,
+      ),
+    ).toEqual(markdownTree(markdown, { page: source }).blocks);
   });
 });
 
@@ -528,7 +533,7 @@ describe('forged markup', () => {
       '<tr><td class="blob-code-addition">new</td></tr></table>';
     expect(
       tree(`<div class="js-suggested-changes-blob">Suggested change${rows}</div>`).blocks,
-    ).toEqual([{ kind: 'suggestion', text: 'new' }]);
+    ).toEqual([{ kind: 'suggestion', text: 'new', removed: 'old' }]);
     expect(tree(`<div class="js-suggested-changes-blob">Hidden text${rows}</div>`).blocks).toEqual([
       { kind: 'paragraph', children: [text('Hidden text')] },
       { kind: 'table', align: ['none'], head: [], rows: [[[text('old')]], [[text('new')]]] },

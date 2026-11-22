@@ -1,7 +1,7 @@
 // The accounts feature's keys: copying the code in the sign-in dialog, and adding and signing out of
 // accounts, which are done once in a while, so they have no key: the app menu and the command
 // palette reach them. The dialogs' other keys are their widgets' own: `⏎` on the main button, `Esc`
-// to cancel, `Space` on a switch, and `j`, `k` or the arrows among an account picker's choices.
+// to cancel, `Space` on a switch, and `j`, `k` or the arrows among the sign-out dialog's choices.
 
 import { defineCommands } from '@lo/ui/commands';
 

@@ -103,9 +103,12 @@ export function failureWay(why: Failure): 'again' | 'github' | undefined {
   }
 }
 
+/** Whether a check is blocked, not failed: this copy doesn't check, as a build from source. */
+export function checkBlocked(why: Failure): boolean {
+  return why === 'source' || why === 'unreleased';
+}
+
 /** A failed check's title: blocked, for a copy that doesn't check, or else failed. */
 export function checkFailedTitle(why: Failure): string {
-  return why === 'source' || why === 'unreleased'
-    ? 'Can’t check for updates'
-    : 'Couldn’t check for updates';
+  return checkBlocked(why) ? 'Can’t check for updates' : 'Couldn’t check for updates';
 }

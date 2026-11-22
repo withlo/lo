@@ -58,7 +58,8 @@ import {
   frameWith,
   keepBoxesOf,
   keptAway,
-  keptSummary,
+  keptCount,
+  keptOpen,
   LAND_WAIT,
   landBoxes,
   discardable,
@@ -523,7 +524,7 @@ describe('opening a box', () => {
     const { drawn, vim } = fakeDiff();
     await comment(tab(), { kind: 'line', at: { file: 'f0', side: 'new', line: 40 } }, 'review');
     expect(drawn).toEqual([]);
-    expect(notice()?.body).toBe(NOT_IN_DIFF);
+    expect(notice()?.title).toBe(NOT_IN_DIFF);
     expect(takeOffer(tab())).toBe(true);
     await vi.waitFor(() => expect(drawn.map((each) => each.at)).toEqual([{ file: 'f0' }]));
     // Once taken, `⏎` is Vim's again.
@@ -537,7 +538,7 @@ describe('opening a box', () => {
     const line = { kind: 'line', at: { file: 'f0', side: 'new', line: 5 } } as const;
     await comment(tab(), line, 'review');
     expect(drawn).toEqual([]);
-    expect(notice()?.body).toBe(NO_LINES);
+    expect(notice()?.title).toBe(NO_LINES);
     expect(takeOffer(tab())).toBe(true);
     await vi.waitFor(() => expect(drawn.map((each) => each.at)).toEqual([{ file: 'f0' }]));
     // Main can tell now: the line takes its comment.
@@ -564,7 +565,7 @@ describe('opening a box', () => {
       'review',
       true,
     );
-    expect(notice()?.body).toBe(NEW_SIDE_ONLY);
+    expect(notice()?.title).toBe(NEW_SIDE_ONLY);
     expect(drawn).toHaveLength(1);
   });
 
@@ -732,7 +733,7 @@ describe('drafts', () => {
     expect(discard.listed?.(target)).toBe(true);
     expect(discard.enabled?.(target)).toBe(true);
     expect(sendAgain.listed?.(target)).toBe(false);
-    expect(sendAgain.enabled?.(target)).toBe('“Try again” isn’t offered in this box now.');
+    expect(sendAgain.enabled?.(target)).toBe('');
     void discard.run(target);
     expect(drawn[0]!.composer.closed).toBe('dismiss');
     expect(asked('comments.discard')).toEqual([{ id: VIEW, place: onLines(null, 5) }]);
@@ -1147,9 +1148,7 @@ describe('a box on a code block', () => {
       [{ file: 'x0', side: 'new', line: 4 }, false],
     ]);
     // The other is in no box, and the status bar says so, once.
-    expect(keptAway.get(VIEW).map(({ note }) => note)).toEqual([
-      'Draft kept · lines 5–6 of backoff.ts at r2 · opens when those lines show',
-    ]);
+    expect(keptAway.get(VIEW).map((kept) => kept.where)).toEqual(['backoff.ts · lines 5–6 · r2']);
     restore(VIEW);
     expect(keptAway.get(VIEW)).toHaveLength(1);
     // The next diff with its lines opens it there, unfocused, as a draft restored.
@@ -1165,7 +1164,7 @@ describe('a box on a code block', () => {
     expect(keptAway.get(VIEW)).toEqual([]);
   });
 
-  test('drafts the diff drawn again had nowhere to open have one note in the status bar, which says where each is', async () => {
+  test('drafts the diff drawn again had nowhere to open have one item in the status bar, whose list says where each is', async () => {
     const onDiff = fakeDiff();
     takeDrafts({
       id: VIEW,
@@ -1182,22 +1181,17 @@ describe('a box on a code block', () => {
     restore(VIEW);
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(other.drawn).toEqual([]);
-    const each = [
-      'Lines 5–6 of src/backoff.ts at r2 · opens when those lines show',
-      'Line 8 of src/backoff.ts at r2 · opens when that line shows',
-    ];
-    expect(keptSummary(keptAway.get(VIEW))).toEqual({
-      note: '2 drafts kept',
-      title: each.join('\n'),
-    });
-    // Its click, and its command, say where each is in a note.
+    expect(keptAway.get(VIEW).map((kept) => kept.where)).toEqual([
+      'backoff.ts · lines 5–6 · r2',
+      'backoff.ts · line 8 · r2',
+    ]);
+    expect(keptCount(keptAway.get(VIEW))).toBe('2 kept drafts');
+    expect(keptCount(keptAway.get(VIEW).slice(1))).toBe('1 kept draft');
+    expect(keptCount([])).toBeUndefined();
+    // Its click, and its command, open the list of them.
+    expect(keptOpen.get(VIEW)).toBe(false);
     showKeptDrafts(VIEW);
-    expect(notice()).toMatchObject({ title: '2 drafts kept', body: each.join('\n') });
-    // One kept is its own note.
-    expect(keptSummary(keptAway.get(VIEW).slice(1))).toEqual({
-      note: 'Draft kept · line 8 of backoff.ts at r2 · opens when that line shows',
-      title: 'Draft kept · line 8 of src/backoff.ts at r2 · opens when that line shows',
-    });
+    expect(keptOpen.get(VIEW)).toBe(true);
   });
 
   test('a box the diff drawn again had nowhere to open is kept nowhere: its block takes it once the overview has it', async () => {
@@ -1218,12 +1212,7 @@ describe('a box on a code block', () => {
     restore(VIEW);
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(without.drawn).toEqual([]);
-    expect(keptAway.get(VIEW).map(({ note, title }) => [note, title])).toEqual([
-      [
-        'Draft kept · line 4 of backoff.ts at r2 · opens when that line or its code block shows',
-        'Draft kept · line 4 of src/backoff.ts at r2 · opens when that line or its code block shows',
-      ],
-    ]);
+    expect(keptAway.get(VIEW).map((kept) => kept.where)).toEqual(['backoff.ts · line 4 · r2']);
     // The overview has its block now: it opens there, unfocused, and the status bar says no more.
     overview.has.delete(key);
     const block = fakeBlock();
@@ -1357,10 +1346,7 @@ describe('a box on a code block', () => {
     drawn[0]!.on.change('On the file.');
     await send(boxIn(drawn[0]!), 'review');
     expect(drawn[0]!.composer.closed).toBe('close');
-    expect(notice()).toMatchObject({
-      title: 'Added to your review, on the file',
-      body: 'src/backoff.ts. It shows under the file’s header in the diff.',
-    });
+    expect(notice()).toMatchObject({ title: 'Added comment on backoff.ts to review', body: '' });
     answers['comments.commentable'] = () => ({ kind: 'notInDiff' });
     answers['comments.send'] = (): SendOutcome => ({
       kind: 'sent',
@@ -1377,10 +1363,7 @@ describe('a box on a code block', () => {
     );
     drawn[1]!.on.change('On the pull request.');
     await send(boxIn(drawn[1]!), 'now');
-    expect(notice()).toMatchObject({
-      title: 'Posted on the pull request',
-      body: 'It shows in the timeline.',
-    });
+    expect(notice()?.title).toMatch(/^Sent comment on #\d+$/);
   });
 });
 
@@ -1863,9 +1846,9 @@ describe('acting on a thread', () => {
     expect(replying.get(VIEW).has('T2')).toBe(true);
     // Two threads on a line: `]t` picks one.
     acts.reply(tab(), ON_FIVE);
-    expect(notice()?.body).toBe('There are 2 threads here. Press ]t to pick one.');
+    expect(notice()?.title).toBe('Go to one of the 2 threads first');
     acts.reply(tab(), { kind: 'line', at: { file: 'f0', side: 'new', line: 9 } });
-    expect(notice()?.body).toBe('There’s no thread on this line.');
+    expect(notice()?.title).toBe('No thread on this line');
     // One `]t` landed on is the one.
     acts.reply(tab(), { ...ON_FIVE, thread: 'T5b' });
     expect(drawn.map((each) => each.at)).toEqual([{ thread: 'T2' }, { thread: 'T5b' }]);
@@ -1876,11 +1859,11 @@ describe('acting on a thread', () => {
     onScreen.clear();
     answers['comments.resolve'] = (): ActOutcome => ({ kind: 'done' });
     acts.resolve(tab(), ON_TWO);
-    expect(notice()?.body).toBe('There’s no thread on this line.');
+    expect(notice()?.title).toBe('No thread on this line');
     acts.reply(tab(), ON_TWO);
     await acts.edit(tab(), ON_TWO);
     acts.remove(tab(), ON_TWO);
-    expect(notice()?.body).toBe('There’s no thread on this line.');
+    expect(notice()?.title).toBe('No thread on this line');
     expect(drawn).toEqual([]);
     expect(acts.deleteAsking()).toBeUndefined();
     expect(asked('comments.resolve')).toEqual([]);
@@ -1950,7 +1933,7 @@ describe('acting on a thread', () => {
     const { drawn } = withThreads(threadRow('T2', 2, { viewerCanReply: false }));
     acts.reply(tab(), ON_TWO);
     expect(drawn).toEqual([]);
-    expect(notice()?.body).toBe('GitHub doesn’t let you reply to this thread.');
+    expect(notice()?.title).toMatch(/ can’t reply to this thread$/);
   });
 
   test('`x` claims the thread and resolves it; a refusal says why and lets the claim go', async () => {
@@ -1968,7 +1951,7 @@ describe('acting on a thread', () => {
     });
     acts.resolve(tab(), ON_TWO);
     await vi.waitFor(() => expect(released).toEqual(['T2']));
-    expect(notice()?.body).toMatch(/^GitHub asked Lo to hold off until .+\. Resolve it then\.$/);
+    expect(notice()?.title).toMatch(/^GitHub’s rate limit resets at [^.]+$/);
   });
 
   test('while a change to a thread is at work, nothing else is asked of it', async () => {
@@ -1990,12 +1973,12 @@ describe('acting on a thread', () => {
   test('`x` where GitHub doesn’t let you, or offline, sends nothing', () => {
     withThreads(threadRow('T2', 2, { viewerCanResolve: false }), threadRow('T5', 5));
     acts.resolve(tab(), ON_TWO);
-    expect(notice()?.body).toMatch(/^GitHub doesn’t let you resolve this thread\./);
+    expect(notice()?.title).toMatch(/ can’t resolve this thread$/);
     said.pull = pull({
       connection: { kind: 'offline', savedAt: null, retryAt: null, error: 'down' },
     });
     acts.resolve(tab(), ON_FIVE);
-    expect(notice()?.body).toBe('Offline. Try again once GitHub can be reached.');
+    expect(notice()?.title).toBe('Offline');
     expect(asked('comments.resolve')).toEqual([]);
   });
 
@@ -2037,14 +2020,12 @@ describe('acting on a thread', () => {
     expect(editing.get(VIEW).size).toBe(0);
     // Someone else's is refused in Lo's words.
     await acts.edit(tab(), ON_FIVE);
-    expect(notice()?.body).toBe(
-      'None of this thread’s comments are yours. You can edit and delete only your own.',
-    );
+    expect(notice()?.title).toBe('None of these comments are yours');
     await acts.edit(tab(), { kind: 'thread', thread: 'T5' }, 'C_theirs');
-    expect(notice()?.body).toBe('It’s ravi-k’s comment. You can edit and delete only your own.');
+    expect(notice()?.title).toBe('This comment isn’t yours');
   });
 
-  test('a reply and an edit the diff drawn again has nowhere to open are drafts kept, which say whose and where their threads are', async () => {
+  test('a reply and an edit the diff drawn again has nowhere to open are drafts kept, which say what they are and where their threads are', async () => {
     const rows = [threadRow('T2', 2), threadRow('T5', 5, { startLine: 3 })];
     const { drawn } = withThreads(...rows);
     answers['comments.editing'] = (): ActOutcome => ({ kind: 'done' });
@@ -2056,20 +2037,10 @@ describe('acting on a thread', () => {
     threads.held.set(VIEW, { threads: { ...threads.held.get(VIEW).threads!, threads: rows } });
     restore(VIEW);
     await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(keptAway.get(VIEW).map(({ note, title }) => [note, title])).toEqual([
-      [
-        'Draft kept · your edit on line 2 of backoff.ts · opens when its thread shows',
-        'Draft kept · your edit on line 2 of src/backoff.ts · opens when its thread shows',
-      ],
-      [
-        'Draft kept · your reply on lines 3–5 of backoff.ts · opens when its thread shows',
-        'Draft kept · your reply on lines 3–5 of src/backoff.ts · opens when its thread shows',
-      ],
+    expect(keptAway.get(VIEW).map((kept) => kept.where)).toEqual([
+      'Edit · backoff.ts · line 2',
+      'Reply · backoff.ts · lines 3–5',
     ]);
-    expect(keptSummary(keptAway.get(VIEW))?.title).toBe(
-      'Your edit on line 2 of src/backoff.ts · opens when its thread shows\n' +
-        'Your reply on lines 3–5 of src/backoff.ts · opens when its thread shows',
-    );
   });
 
   test('an edit closed with no text is discarded, as is one edited on GitHub since', async () => {
@@ -2117,7 +2088,7 @@ describe('acting on a thread', () => {
     });
     acts.remove(tab(), ON_TWO);
     expect(acts.deleteAsking()).toBeUndefined();
-    expect(notice()?.body).toBe('Offline. Try again once GitHub can be reached.');
+    expect(notice()?.title).toBe('Offline');
   });
 
   test('a change on its way says nothing on the card, whose control is at work; one that didn’t go, or may not have, says so until the thread shows it', () => {

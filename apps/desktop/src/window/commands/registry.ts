@@ -36,7 +36,10 @@ export function createRegistry(commands: readonly Command[], system: System): Re
     here: () => middle()?.here(),
     // A command asked for that can't run says why, whoever asked: a key, a menu or the palette.
     // The reason alone, never under the command's name.
-    onRefused: (reason) => refuse(reason),
+    // A command with no reason to give, as one only a note offers, does nothing, and says nothing.
+    onRefused: (reason) => {
+      if (reason !== '') refuse(reason);
+    },
   });
   current = created;
   return current;

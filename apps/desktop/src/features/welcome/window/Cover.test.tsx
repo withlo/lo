@@ -825,7 +825,7 @@ describe('opening a pull request', () => {
     expect(welcomeStore.getState().open).toBe(false);
   });
 
-  it('says why a link didn’t open, keeps it, and stays', async () => {
+  it('says text isn’t a pull request link as the open box does, keeps it, and stays', async () => {
     await first({
       'open.open': () => ({ kind: 'refused', why: 'link' }),
     });
@@ -833,15 +833,37 @@ describe('opening a pull request', () => {
     const field = type('owner/repo#1');
     click(button('Open', onScreen()));
     await settle();
-    const alert = onScreen().querySelector('[role="alert"]');
-    expect(alert?.querySelector('p')?.textContent).toBe('Couldn’t open the link');
-    expect(alert?.textContent).toContain('A pull request link looks like');
-    expect(field.getAttribute('aria-invalid')).toBe('true');
+    // A warning, not a failure: the box's note, with what a link looks like.
+    expect(onScreen().querySelector('[role="alert"]')).toBeNull();
+    const note = document.getElementById(field.getAttribute('aria-describedby') ?? '');
+    expect(note?.querySelector('svg.text-warning')).not.toBeNull();
+    expect(note?.querySelector('[role="status"]')?.textContent).toBe(
+      'Not a pull request linkA pull request link looks like https://github.com/owner/repo/pull/123.',
+    );
+    expect(note?.querySelector('.code-small')?.textContent).toBe(
+      'https://github.com/owner/repo/pull/123',
+    );
+    expect(field.getAttribute('aria-invalid')).not.toBe('true');
     expect(field.value).toBe('owner/repo#1');
     expect(stepOnScreen()).toBe('open');
-    // Changing the text takes the reason away.
+    // Changing the text takes the note away.
     type('owner/repo#12');
-    expect(onScreen().querySelector('[role="alert"]')).toBeNull();
+    expect(onScreen().textContent).not.toContain('Not a pull request link');
+  });
+
+  it('says why a link that is one didn’t open, and stays', async () => {
+    await first({
+      'open.open': () => ({ kind: 'refused', why: 'cameBack' }),
+    });
+    await goTo('open');
+    const field = type('https://github.com/rozed-dev/e2e/issues/1');
+    click(button('Open', onScreen()));
+    await settle();
+    const alert = onScreen().querySelector('[role="alert"]');
+    expect(alert?.querySelector('p')?.textContent).toBe('Couldn’t open the link');
+    expect(alert?.textContent).toContain('The browser sent it straight back.');
+    expect(field.getAttribute('aria-invalid')).toBe('true');
+    expect(stepOnScreen()).toBe('open');
   });
 
   it('makes Open the main button, with ⏎, once the field holds a link', async () => {

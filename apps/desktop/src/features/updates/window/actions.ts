@@ -17,7 +17,7 @@ import {
   type UpdateState,
 } from '../contract.ts';
 import { setChecking, showHow, showState, updatesStore } from './store.ts';
-import { checkFailedTitle, failureReason, failureWay } from './words.ts';
+import { checkBlocked, checkFailedTitle, failureReason, failureWay } from './words.ts';
 
 let connected: Client<typeof contract> | undefined;
 
@@ -43,7 +43,7 @@ async function asking(title: string, request: () => Promise<void>): Promise<void
   } catch (error) {
     console.error(`${title}:`, error);
     if (error instanceof IpcError && error.code === 'unavailable') refuse(error.message);
-    else notify(title, '', undefined, said(error));
+    else notify(title, '', { details: said(error), tone: 'danger' });
   }
 }
 
@@ -71,12 +71,12 @@ function tell(answer: CheckAnswer): void {
       announce('No update available');
       return;
     case 'failed':
-      notify(
-        checkFailedTitle(answer.why),
-        failureReason(answer.why) ?? '',
-        checkWay(answer.why, 'command'),
-        answer.details,
-      );
+      // A copy that doesn't check is blocked, not failed: a warning, with the way on.
+      notify(checkFailedTitle(answer.why), failureReason(answer.why) ?? '', {
+        action: checkWay(answer.why, 'command'),
+        details: answer.details,
+        tone: checkBlocked(answer.why) ? 'warning' : 'danger',
+      });
       return;
     case 'available':
     case 'downloading':
@@ -178,7 +178,7 @@ export async function openPage(page: string): Promise<void> {
     await client(tabs).openExternal({ url: page });
   } catch (error) {
     console.error("Lo couldn't open the update's page:", error);
-    notify('Couldn’t open the update’s page', '');
+    notify('Couldn’t open the update’s page', '', { details: said(error), tone: 'danger' });
   }
 }
 
@@ -189,7 +189,7 @@ export async function copyBrewCommand(): Promise<boolean> {
     return true;
   } catch (error) {
     console.error("Lo couldn't copy the command:", error);
-    notify('Couldn’t copy the Homebrew command', '');
+    notify('Couldn’t copy the Homebrew command', '', { details: said(error), tone: 'danger' });
     return false;
   }
 }

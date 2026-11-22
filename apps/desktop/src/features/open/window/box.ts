@@ -189,7 +189,7 @@ export async function openText(text: string, login?: string): Promise<OpenedHere
 /**
  * Opens the pull request in the box as `login`, one of the accounts that can see it, and
  * remembers that account for its owner, or for its repository alone when the owner's repositories
- * open with another account, as the account picker does by default.
+ * open with another account.
  */
 export async function openAs(login: string): Promise<void> {
   const state = boxStore.getState();

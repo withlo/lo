@@ -1,7 +1,7 @@
 // The open box (`⌘L`): a link to a pull request, filled in from the clipboard when it holds one,
 // with what it opens and as whom, or why it can't, and what `⏎` does about it.
 
-import { Button, Key, Palette, PaletteHint, Problem, Spinner, StatePill, Ticks } from '@lo/ui';
+import { Palette, PaletteHint, Problem, Spinner, StatePill, Ticks } from '@lo/ui';
 import { keyLabels, parseKeys, systemStrokes } from '@lo/ui/commands';
 import type { ReactNode } from 'react';
 import { useStore } from 'zustand';
@@ -22,6 +22,7 @@ import {
   typeText,
   type BoxState,
 } from './box.ts';
+import { LinkNote } from './Note.tsx';
 import { blockedWords, notPullLine, wayLabel, webWords } from './words.ts';
 
 /** A row of the box: the pull request, or one of the accounts that can open it. */
@@ -45,13 +46,6 @@ const LINK_ICON = (
   </svg>
 );
 
-const WARN_ICON = (
-  <svg className="lo-i lo-i--sm mt-2 flex-none text-warning" viewBox="0 0 16 16" aria-hidden="true">
-    <path d="M7.13 2.5a1 1 0 0 1 1.74 0l5.2 9.5a1 1 0 0 1-.87 1.5H2.8a1 1 0 0 1-.87-1.5Z" />
-    <path d="M8 6.25v3M8 11.25v.01" />
-  </svg>
-);
-
 /** An account, as the box draws one beside its name. */
 const PERSON = (
   <svg className="lo-i lo-i--sm flex-none text-fg-muted" viewBox="0 0 16 16" aria-hidden="true">
@@ -67,45 +61,6 @@ function Waiting({ children }: { children: string }) {
       <Spinner size="xs" />
       {children}
     </span>
-  );
-}
-
-/**
- * What a link that isn't a pull request is, under the input: a title, one reason when it changes
- * what the reader does, and the one button `⏎` runs, if there's one.
- */
-function Note({
-  title,
-  reason,
-  action,
-}: {
-  title: string;
-  reason?: string | undefined;
-  action?: { label: string; onClick: () => void } | undefined;
-}) {
-  return (
-    <>
-      {WARN_ICON}
-      <div className="flex min-w-0 flex-1 flex-col gap-2">
-        {/* What a screen reader hears as it comes: the title and the reason, not the button. */}
-        <span role="status" className="flex flex-col gap-2">
-          <span className="font-semibold">{title}</span>
-          {reason !== undefined && (
-            <span className="text-fg-muted text-small">
-              <Ticks text={reason} />
-            </span>
-          )}
-        </span>
-        {action !== undefined && (
-          <span className="mt-6 flex">
-            <Button size="sm" onClick={action.onClick}>
-              {action.label}
-              <Key keys={labels('enter')} decorative />
-            </Button>
-          </span>
-        )}
-      </div>
-    </>
   );
 }
 
@@ -153,14 +108,14 @@ function messageFor(state: BoxState, preview: Preview | undefined): ReactNode {
     case 'pull':
       return undefined;
     case 'invalid':
-      return <Note title="Not a pull request link" reason={notPullLine(preview.why)} />;
+      return <LinkNote title="Not a pull request link" reason={notPullLine(preview.why)} />;
     case 'web': {
       const words = webWords(preview);
       return (
-        <Note
+        <LinkNote
           title={words.title}
           reason={words.reason}
-          action={{ label: words.action, onClick: fromField(submit) }}
+          action={{ label: words.action, onClick: fromField(submit), keys: labels('enter') }}
         />
       );
     }

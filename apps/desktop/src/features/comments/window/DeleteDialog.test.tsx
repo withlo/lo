@@ -52,7 +52,7 @@ test('shows the comment’s first line, not the rest of it', () => {
   const dialog = render(
     '\nFixture C: Start a little higher?\n\n```suggestion\nconst FIRST = 500;\n```',
   );
-  expect(dialog.textContent).toContain('Delete your comment?');
+  expect(dialog.textContent).toContain('Delete comment?');
   expect(dialog.textContent).toContain('Fixture C: Start a little higher?');
   expect(dialog.textContent).not.toContain('suggestion');
   expect(dialog.textContent).not.toContain('FIRST');
@@ -61,7 +61,7 @@ test('shows the comment’s first line, not the rest of it', () => {
 test('says a pending comment leaves your review, and a thread’s only comment takes it too', () => {
   const dialog = render('Mine.', { pending: true, onlyComment: true });
   expect(dialog.textContent).toContain('It leaves your pending review.');
-  expect(dialog.textContent).toContain('It’s the thread’s only comment, so the thread goes too.');
+  expect(dialog.textContent).toContain('The thread is deleted with it.');
 });
 
 test('cuts a long first line short', () => {

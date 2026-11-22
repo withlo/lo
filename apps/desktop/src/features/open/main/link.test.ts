@@ -413,6 +413,30 @@ describe('look', () => {
     });
   });
 
+  it('says when GitHub’s rate limit resets, for a 403 that says the limit was reached', async () => {
+    const resets = 1_793_001_800;
+    const limited: typeof globalThis.fetch = () =>
+      Promise.resolve(
+        new Response('{"message":"API rate limit exceeded for user ID 1."}', {
+          status: 403,
+          headers: {
+            'content-type': 'application/json',
+            'x-ratelimit-remaining': '0',
+            'x-ratelimit-reset': String(resets),
+            'retry-after': '1800',
+          },
+        }),
+      );
+    const preview = await look(
+      'https://github.com/rozed-dev/limited/pull/1',
+      await signedIn(['rozed-bot'], limited),
+    );
+    expect(preview).toMatchObject({
+      kind: 'blocked',
+      why: { kind: 'refused', cause: { kind: 'rateLimit', resets: resets * 1000 } },
+    });
+  });
+
   it('says GitHub couldn’t be asked, and that opening it tries again', async () => {
     expect(await look(E2E, await signedIn(['rozed-bot'], offline))).toMatchObject({
       kind: 'blocked',

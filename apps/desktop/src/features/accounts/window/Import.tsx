@@ -135,6 +135,14 @@ function failureWords(
   }
 }
 
+/**
+ * Whether importing the account again could go another way: it failed for want of an answer, or
+ * GitHub's error, not for what GitHub CLI holds.
+ */
+function canRetry(why: ImportFailure): boolean {
+  return why.kind === 'unknown';
+}
+
 /** Sign-ins are kept in the system's keychain, which isn't there, as this system says it. */
 function keyringReason(): string {
   return registry().system === 'mac'
@@ -156,11 +164,15 @@ function loginOf(account: GhAccount): string {
 export function ImportView({ open, container }: { open: boolean; container: HTMLElement | null }) {
   const [step, setStep] = useState<Step>({ kind: 'loading' });
   const [chosen, setChosen] = useState<ReadonlySet<string>>(new Set());
+  // The accounts an import refused for a reason a second try can't change, and why: they can't be
+  // chosen again until GitHub CLI has been read again.
+  const [refused, setRefused] = useState<ReadonlyMap<string, ImportFailure>>(new Map());
   const opened = useRef(0);
 
   const load = () => {
     const turn = ++opened.current;
     setStep({ kind: 'loading' });
+    setRefused(new Map());
     const api = main();
     Promise.all([api.keyring(), api.ghAccounts()]).then(
       ([problem, listing]) => {
@@ -198,7 +210,17 @@ export function ImportView({ open, container }: { open: boolean; container: HTML
       .importGh({ logins: [...logins] })
       .then(
         (results) => {
-          if (turn === opened.current) setStep({ kind: 'done', found, results });
+          if (turn !== opened.current) return;
+          const failures = results.flatMap((result) => (result.ok ? [] : [result]));
+          // Nothing imported, and trying again would only hear the same: back to choosing, with
+          // those accounts out of it and why in their place.
+          if (failures.length === results.length && failures.every(({ why }) => !canRetry(why))) {
+            setRefused(new Map(failures.map(({ login, why }) => [login, why])));
+            setChosen(new Set(logins.filter((login) => !failures.some((f) => f.login === login))));
+            setStep({ kind: 'choosing', found });
+            return;
+          }
+          setStep({ kind: 'done', found, results });
         },
         (error: unknown) => {
           if (turn !== opened.current) return;
@@ -230,7 +252,7 @@ export function ImportView({ open, container }: { open: boolean; container: HTML
     }
   };
 
-  const shown = view(step, { chosen, choose: setChosen, importChosen, importAll, load });
+  const shown = view(step, { chosen, refused, choose: setChosen, importChosen, importAll, load });
   return (
     <Dialog
       open={open}
@@ -263,6 +285,8 @@ interface Shown {
 
 interface Doing {
   chosen: ReadonlySet<string>;
+  /** Accounts an import refused for good, and why. */
+  refused: ReadonlyMap<string, ImportFailure>;
   choose: (chosen: ReadonlySet<string>) => void;
   importChosen: () => void;
   importAll: (found: Found, logins: readonly string[]) => void;
@@ -290,7 +314,7 @@ function unlisted(listing: Unlisted | undefined): {
 }
 
 function view(step: Step, doing: Doing): Shown {
-  const { chosen, choose, importChosen, importAll, load } = doing;
+  const { chosen, refused, choose, importChosen, importAll, load } = doing;
   const importing: DialogAction = {
     label: 'Import',
     working: 'Importing…',
@@ -334,12 +358,17 @@ function view(step: Step, doing: Doing): Shown {
   const version = found.version === null ? '' : ` ${found.version}`;
   const description = `GitHub CLI${version} · ${count(accounts.length, 'account')}`;
   if (accounts.length === 0) {
+    // What's wrong, then the command that fixes it, under its reason.
     return {
       description,
-      body: <SignInFirst />,
+      body: (
+        <>
+          <Problem title="Can’t import accounts" reason="GitHub CLI isn’t signed in." />
+          <SignInFirst />
+        </>
+      ),
       state: 'failed',
       action: { ...importing, again: 'Check again', onRun: load },
-      problem: { title: 'Can’t import accounts', reason: 'GitHub CLI isn’t signed in.' },
     };
   }
 
@@ -347,15 +376,22 @@ function view(step: Step, doing: Doing): Shown {
   const results = step.kind === 'done' ? step.results : [];
   const imported = results.filter((result) => result.ok).map(({ login }) => login);
   const failed = results.flatMap((result) => (result.ok ? [] : [result]));
-  // What the accounts chosen can't do stays while they're imported, so the body holds still.
+  // What the accounts chosen can't do stays while they're imported, so the body holds still; so
+  // does why an import refused an account for good.
   const warnings =
     step.kind === 'choosing' || step.kind === 'importing'
-      ? accounts
-          .filter((account) => chosen.has(account.login))
-          .flatMap((account) => {
-            const lack = lacking(account);
-            return lack === undefined ? [] : [{ login: account.login, ...lack }];
-          })
+      ? accounts.flatMap((account) => {
+          const why = refused.get(account.login);
+          if (why !== undefined) {
+            const { reason } = failureWords(account.login, why);
+            return reason === undefined
+              ? []
+              : [{ login: account.login, line: reason, signIn: false }];
+          }
+          if (!chosen.has(account.login)) return [];
+          const lack = lacking(account);
+          return lack === undefined ? [] : [{ login: account.login, ...lack }];
+        })
       : [];
   const body = (
     <>
@@ -377,7 +413,7 @@ function view(step: Step, doing: Doing): Shown {
             <Switch
               aria-label={`Import ${account.login}`}
               checked={chosen.has(account.login)}
-              disabled={!account.usable || step.kind !== 'choosing'}
+              disabled={!account.usable || refused.has(account.login) || step.kind !== 'choosing'}
               onCheckedChange={(on) => {
                 const next = new Set(chosen);
                 if (on) next.add(account.login);
@@ -426,7 +462,8 @@ function view(step: Step, doing: Doing): Shown {
   // did come through.
   if (step.kind === 'done' && imported.length === 0) {
     const [first] = failed;
-    const logins = failed.map(({ login }) => login);
+    // Only those a second try could change are tried again.
+    const logins = failed.filter(({ why }) => canRetry(why)).map(({ login }) => login);
     return {
       description,
       body,

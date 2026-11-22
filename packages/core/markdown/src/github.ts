@@ -791,11 +791,12 @@ class Mapper {
 
 /**
  * A review comment's suggested change as GitHub draws it, a diff: the lines it suggests, in its
- * added rows. The removed rows are the lines it replaces, which the code shows. Anything besides
- * the rows and GitHub's label, and it's only content.
+ * added rows, and the lines it replaces, in its removed rows. Anything besides the rows and
+ * GitHub's label, and it's only content.
  */
 function suggested(node: Element): Suggestion | undefined {
   const added: string[] = [];
+  const removed: string[] = [];
   let other = '';
   const stack: ElementContent[] = node.children.toReversed();
   while (stack.length > 0) {
@@ -804,12 +805,17 @@ function suggested(node: Element): Suggestion | undefined {
     if (next.type !== 'element') continue;
     if (next.tagName === 'td' && hasClass(next, 'blob-code-addition')) {
       added.push(rawText(next));
-    } else if (!(next.tagName === 'td' && hasClass(next, 'blob-code-deletion'))) {
+    } else if (next.tagName === 'td' && hasClass(next, 'blob-code-deletion')) {
+      removed.push(rawText(next));
+    } else {
       for (let i = next.children.length - 1; i >= 0; i--) stack.push(next.children[i]!);
     }
   }
   if (collapse(other).trim() !== 'Suggested change') return undefined;
-  return { kind: 'suggestion', text: added.join('\n') };
+  const text = added.join('\n');
+  return removed.length > 0
+    ? { kind: 'suggestion', text, removed: removed.join('\n') }
+    : { kind: 'suggestion', text };
 }
 
 /** Whether `node` is GitHub's footnote section. */

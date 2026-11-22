@@ -6,7 +6,7 @@
 import { act, useState } from 'react';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 
-import { buildCss, declarations } from '../scripts/stylesheet.ts';
+import { buildCss, declarations, hasRule } from '../scripts/stylesheet.ts';
 import { missingRules } from '../test/classes.ts';
 import { cleanUp, click, render, rerender } from '../test/dom.ts';
 import { Button } from './Button.tsx';
@@ -17,8 +17,9 @@ import { LogoMotion } from './LogoMotion.tsx';
 import { setMotion } from './motion.ts';
 import { Popover } from './Popover.tsx';
 import { Problem } from './Problem.tsx';
+import { StatusItem } from './StatusBar.tsx';
 import { Switch } from './Switch.tsx';
-import { TOAST_MAX, TOAST_MS, ToastStack, type StackedToast } from './Toast.tsx';
+import { TOAST_LONG_MS, TOAST_MAX, TOAST_MS, ToastStack, type StackedToast } from './Toast.tsx';
 import { TOOLTIP_DELAY, TooltipGroup } from './Tooltip.tsx';
 
 beforeAll(() => {
@@ -83,6 +84,21 @@ const stage = (busy: boolean, working: string) => (
     Trust repo…
   </Button>
 );
+
+/** A popover opened from a status bar item, as the kept drafts' is. */
+function Kept() {
+  const [open, setOpen] = useState(false);
+  return (
+    <Popover
+      open={open}
+      onOpenChange={setOpen}
+      label="Kept drafts"
+      trigger={<StatusItem title="Show kept drafts">2 kept drafts</StatusItem>}
+    >
+      <p>retry.ts · line 41 · r2</p>
+    </Popover>
+  );
+}
 
 describe('a button at work', () => {
   it('says what it’s doing in the room it kept, keeps focus, and does nothing when pressed', () => {
@@ -192,6 +208,21 @@ describe('a control that can’t be used', () => {
     const css = await buildCss(['inset-ring-fg-dim']);
     expect(declarations(css, 'inset-ring-fg-dim')).toContain('var(--lo-fg-dim)');
     expect(host.querySelector('[role="switch"]')?.className).toContain('inset-ring-fg-dim');
+  });
+
+  it('keeps a switch that’s on reading as on while it can’t be changed: its accent at half', async () => {
+    const half = 'data-disabled:data-checked:bg-accent/50';
+    const css = await buildCss([half]);
+    expect(hasRule(css, half)).toBe(true);
+    expect(css).toContain('color-mix(in oklab, var(--lo-accent) 50%, transparent)');
+    const host = render(
+      <Switch checked onCheckedChange={() => {}} disabled aria-label="Import rozed-bot" />,
+    );
+    const track = host.querySelector('[role="switch"]');
+    expect(track?.className).toContain(half);
+    expect(track?.querySelector('span')?.className).toContain(
+      'data-disabled:data-checked:bg-on-accent',
+    );
   });
 });
 
@@ -321,6 +352,34 @@ describe('Problem', () => {
     cleanUp();
     const whole = render(<Problem layout="view" title="Can’t open #264" />);
     expect(await missingRules(whole)).toEqual([]);
+  });
+
+  it('keeps a view’s text behind Details in a well as wide as what failed, under the buttons', async () => {
+    const host = render(
+      <Problem
+        layout="view"
+        title="Can’t show the timeline"
+        reason="GitHub returned an error."
+        action={{ label: 'Try again', onClick: () => {} }}
+        details="GitHub answered 502: Bad Gateway"
+      />,
+    );
+    click([...host.querySelectorAll('button')].find((b) => b.textContent === 'Details')!);
+    const well = host.querySelector('pre')?.parentElement;
+    // The well's own look, its Copy inside it after the text, and its text to the left.
+    expect(well?.className).toContain('bg-bg-well');
+    expect(well?.className).toContain('rounded-sm');
+    expect(well?.className).toContain('p-12');
+    expect(well?.className).toContain('text-start');
+    expect(well?.querySelector(':scope > pre ~ button')?.textContent).toMatch(/^Copy/);
+    // 12 px under the buttons, inside what opens, and in the column the alert sets the width of,
+    // adding none of its own.
+    expect(well?.parentElement?.className).toBe('pt-12');
+    const column = host.querySelector('[role="alert"]')?.parentElement;
+    expect(column?.className).toContain('max-w-read-measure');
+    expect(column?.contains(well ?? null)).toBe(true);
+    expect(well?.closest('.w-0.min-w-full')).not.toBeNull();
+    expect(await missingRules(host)).toEqual([]);
   });
 });
 
@@ -556,6 +615,21 @@ describe('Popover', () => {
     expect(document.activeElement).toBe(trigger);
     expect(await missingRules(document.body)).toEqual([]);
   });
+
+  it('opens from a status bar item as its trigger', async () => {
+    const host = render(<Kept />);
+    const item = host.querySelector('button')!;
+    expect(item.textContent).toBe('2 kept drafts');
+    click(item);
+    await settle();
+    expect(item.getAttribute('aria-expanded')).toBe('true');
+    expect(document.body.querySelector('[role="dialog"]')?.textContent).toBe(
+      'retry.ts · line 41 · r2',
+    );
+    click(item);
+    await settle();
+    expect(item.getAttribute('aria-expanded')).toBe('false');
+  });
 });
 
 const toast = (id: string): StackedToast => ({ id, tone: 'success', title: `Merged #${id}` });
@@ -605,6 +679,40 @@ describe('ToastStack', () => {
     expect(dismiss.mock.calls).toEqual([['1']]);
     later(TOAST_MS - 1000);
     expect(dismiss.mock.calls).toEqual([['1'], ['2']]);
+  });
+
+  it('keeps one with a button or Details twice as long, and while its Details is open', () => {
+    vi.useFakeTimers();
+    const dismiss = vi.fn<(id: string) => void>();
+    const failed: StackedToast = {
+      id: 'f',
+      tone: 'danger',
+      title: 'Couldn’t update Lo',
+      details: 'Failed to copy Lo.app',
+    };
+    const undo: StackedToast = {
+      id: 'u',
+      tone: 'success',
+      title: 'Moved the comment',
+      action: { label: 'Back', onClick: () => {} },
+    };
+    const host = render(<ToastStack toasts={[failed, undo]} onDismiss={dismiss} />);
+    later(TOAST_MS);
+    expect(dismiss).not.toHaveBeenCalled();
+    // Details opened before the eight seconds are up holds it, and closed lets the rest go.
+    const opener = [...host.querySelectorAll('button')].find((b) => b.textContent === 'Details')!;
+    later(TOAST_LONG_MS - TOAST_MS - 1000);
+    click(opener);
+    expect(dismiss.mock.calls).toEqual([]);
+    later(2000);
+    expect(dismiss.mock.calls).toEqual([['u']]);
+    later(TOAST_LONG_MS);
+    expect(dismiss.mock.calls).toEqual([['u']]);
+    click(opener);
+    later(999);
+    expect(dismiss.mock.calls).toEqual([['u']]);
+    later(1);
+    expect(dismiss.mock.calls).toEqual([['u'], ['f']]);
   });
 
   it('shows three at most: one more sends the oldest away', async () => {

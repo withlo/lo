@@ -12,7 +12,7 @@ import { KEY_EVENT } from '@lo/ui/commands';
 import { useEffect, useLayoutEffect, useMemo, useRef, type ReactNode, type RefObject } from 'react';
 
 import { useTabState, type PullTab } from '../../tab/window/shared.ts';
-import { acting, checkAgain, closeAct, closedActs, noteKey, noteOf } from './acts.ts';
+import { acting, checkAgain, closeAct, closedActs, noteKey, noteOf, threw } from './acts.ts';
 import {
   type Box,
   bringToTimeline,
@@ -26,7 +26,7 @@ import {
   timelineEvents,
   timelineFrame,
 } from './boxes.ts';
-import { ActCallout } from './Card.tsx';
+import { ActCallout, ThrewProblem } from './Card.tsx';
 import { type PullComment, removeOnPull, setPullBoxFocus } from './conversation.ts';
 import { useNonce } from './page.ts';
 import { ON_PULL } from './writing.ts';
@@ -212,7 +212,8 @@ export interface PullNoteProps {
 /**
  * What the card of your comment `comment` says while its delete's answer was lost: that Lo is
  * checking whether it went, or that it didn't, with "Try again", which asks again, or may not have,
- * with "Check again", which looks again.
+ * with "Check again", which looks again. Or that an edit or delete of it failed before GitHub had
+ * it, with what came back.
  */
 export function PullNote({ tab, comment }: PullNoteProps): ReactNode {
   const view = tab.id;
@@ -222,8 +223,17 @@ export function PullNote({ tab, comment }: PullNoteProps): ReactNode {
     view,
     (keys) => asked !== undefined && keys.has(noteKey(asked)),
   );
+  const thrown = useTabState(threw, view, (all) => all.get(comment.id));
   // The comment is still in the timeline, so what was asked doesn't show.
   const note = asked && noteOf(asked, false, isClosed);
+  // A write that failed before GitHub had it says so in the note's place: one note on a card.
+  if (thrown) {
+    return (
+      <div className="mb-8">
+        <ThrewProblem view={view} id={comment.id} thrown={thrown} />
+      </div>
+    );
+  }
   if (!note || !asked) return null;
   return (
     <div className="mb-8">

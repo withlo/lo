@@ -59,9 +59,9 @@ const problem = cva('min-w-0 text-ui', {
  * buttons.
  */
 export function Problem({ title, reason, action, details, layout = 'inline' }: ProblemProps) {
-  const [detailed, setDetailed] = useState(false);
-  const detailsId = useId();
   const view = layout === 'view';
+  // In a view, the text sits 12 px under the buttons, in a roomier well; inline, under the line.
+  const { more, shown } = useDetails(details, view ? 'pt-12' : 'pt-8', view ? 'p-12' : 'p-8');
   const act = action && (
     <Button
       variant={view ? 'primary' : 'secondary'}
@@ -74,32 +74,26 @@ export function Problem({ title, reason, action, details, layout = 'inline' }: P
       {action.keys && <Key keys={action.keys} decorative />}
     </Button>
   );
-  const more = details !== undefined && (
-    <Button
-      variant="ghost"
-      size="sm"
-      aria-expanded={detailed}
-      aria-controls={detailsId}
-      onClick={() => setDetailed((was) => !was)}
-    >
-      Details
-    </Button>
-  );
   return (
     <div className={problem({ layout })}>
       {view ? (
-        <>
-          <div role="alert" className="flex max-w-read-measure flex-col gap-4">
+        // One column, centred, as wide as what failed and why: the buttons under it, and the
+        // text behind Details as wide as it, so the text adds no width as it opens.
+        <div className="flex max-w-read-measure flex-col items-center gap-12">
+          <div role="alert" className="flex flex-col gap-4">
             <p className="m-0 text-title">{title}</p>
             {reason !== undefined && <p className="m-0 text-fg-muted">{reason}</p>}
           </div>
           {(act || more) && (
-            <div className="flex items-center gap-8">
-              {act}
-              {more}
+            <div className="flex flex-col items-center self-stretch">
+              <div className="flex items-center gap-8">
+                {act}
+                {more}
+              </div>
+              {details !== undefined && <div className="w-0 min-w-full">{shown}</div>}
             </div>
           )}
-        </>
+        </div>
       ) : (
         <div className="flex items-start gap-8">
           <svg
@@ -127,42 +121,42 @@ export function Problem({ title, reason, action, details, layout = 'inline' }: P
           )}
         </div>
       )}
-      {details !== undefined && (
-        <DetailsText
-          id={detailsId}
-          open={detailed}
-          details={details}
-          className={view ? 'w-full max-w-read-measure' : undefined}
-          gap={!view}
-        />
-      )}
+      {!view && details !== undefined && shown}
     </div>
   );
 }
 
-export interface DetailsTextProps {
-  /** For the Details button's `aria-controls`. */
-  id: string;
-  open: boolean;
-  /** What came back, as it came. */
-  details: string;
-  className?: string | undefined;
-  /** A gap above it, inside what opens, for when it sits under a line of its own. */
-  gap?: boolean | undefined;
-}
-
 /**
- * The raw text behind a Details button, with Copy, which opens and closes under what failed. A
- * `Problem` holds one, and so does a note that says a failure nothing in view could hold.
+ * The raw text behind Details, wherever something that failed shows it: `more`, the Details button
+ * that opens it, and `shown`, what opens, the text with Copy in a well padded by `padding`, under a
+ * gap of `gap` inside what opens, so a closed one takes no room. `open` says whether it's open.
+ * Nothing for no `details`.
  */
-export function DetailsText({ id, open, details, className, gap = true }: DetailsTextProps) {
+export function useDetails(
+  details: string | undefined,
+  gap?: string,
+  padding = 'p-8',
+): { more: ReactNode; shown: ReactNode; open: boolean } {
   const copy = useCopy();
-  return (
-    <div id={id} className={className}>
-      <Collapse open={open}>
-        {/* Its gap is inside what opens, so a closed one takes no room. */}
-        <div className={gap ? 'pt-8' : undefined}>
-          <div className="flex items-start gap-8 rounded-sm bg-bg-well p-8 text-start">
+  const [detailed, setDetailed] = useState(false);
+  const id = useId();
+  if (details === undefined) return { more: null, shown: null, open: false };
+  const more = (
+    <Button
+      variant="ghost"
+      size="sm"
+      aria-expanded={detailed}
+      aria-controls={id}
+      onClick={() => setDetailed((was) => !was)}
+    >
+      Details
+    </Button>
+  );
+  const shown = (
+    <div id={id}>
+      <Collapse open={detailed}>
+        <div className={gap}>
+          <div className={`flex items-start gap-8 rounded-sm bg-bg-well text-start ${padding}`}>
             <pre className="m-0 problem-details min-w-0 flex-1 overflow-auto wrap-anywhere whitespace-pre-wrap text-fg-muted code-small">
               {details}
             </pre>
@@ -172,4 +166,5 @@ export function DetailsText({ id, open, details, className, gap = true }: Detail
       </Collapse>
     </div>
   );
+  return { more, shown, open: detailed };
 }

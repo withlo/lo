@@ -91,6 +91,7 @@ describe('Check for updates', () => {
       title: 'Couldn’t check for updates',
       body: 'Offline.',
       details: 'ERR_INTERNET_DISCONNECTED',
+      tone: 'danger',
     });
     expect(notice()?.action?.label).toBe('Try again');
   });
@@ -98,9 +99,11 @@ describe('Check for updates', () => {
   it('offers Lo’s releases on GitHub where this copy can’t check, as a build from source', async () => {
     answers['updates.check'] = (): CheckAnswer => ({ status: 'failed', why: 'source' });
     await run('updates.check');
+    // Blocked, not failed: a warning.
     expect(notice()).toMatchObject({
       title: 'Can’t check for updates',
       body: 'This copy of Lo is built from source.',
+      tone: 'warning',
     });
     expect(notice()?.action?.label).toBe('Open on GitHub');
     bridge.calls.length = 0;
@@ -197,7 +200,7 @@ describe('the other commands', () => {
       throw new IpcError('failed', 'Failed to copy Lo.app');
     };
     await run(id);
-    expect(notice()).toEqual({ title, body: '', details: 'Failed to copy Lo.app' });
+    expect(notice()).toEqual({ title, body: '', details: 'Failed to copy Lo.app', tone: 'danger' });
   });
 
   it('never ask for more than they say: no command installs or restarts but its own', async () => {

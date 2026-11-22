@@ -34,18 +34,38 @@ async function open(): Promise<Page> {
   return page;
 }
 
-/** How the foot's controls sit in a box `width` wide. */
+/** How the head's and the foot's controls sit in a box `width` wide. */
 function foot(page: Page, width: number, vim: boolean) {
   return page.evaluate(
-    ([wide, on]) => {
+    async ([wide, on]) => {
       window.box.vim(on);
       window.box.width(wide);
+      // What it gives up is measured as the frame is laid out, before it's painted.
+      for (let frame = 0; frame < 2; frame += 1) {
+        await new Promise((resolve) => requestAnimationFrame(resolve));
+      }
       const frame = document.querySelector('#box [role="group"], #box > *')!;
       const edge = frame.getBoundingClientRect().right;
       const controls = [...frame.querySelectorAll<HTMLElement>('button, .mode-chip')].filter(
         (each) => each.getClientRects().length > 0,
       );
       const row = frame.querySelector('button[aria-label="Discard draft"]')!.parentElement!;
+      const head = frame.querySelector('[role="tablist"]')!.closest('.give-up')!;
+      /** How many lines `within`'s controls sit on. */
+      const lines = (within: Element) =>
+        new Set(
+          controls
+            .filter((each) => within.contains(each))
+            .map((each) =>
+              Math.round(
+                each.getBoundingClientRect().top + each.getBoundingClientRect().height / 2,
+              ),
+            ),
+        ).size;
+      const words = (text: string) =>
+        [...frame.querySelectorAll('span')].some(
+          (each) => each.textContent === text && each.getClientRects().length > 0,
+        );
       return {
         width: wide,
         vim: on,
@@ -53,18 +73,11 @@ function foot(page: Page, width: number, vim: boolean) {
           Math.max(0, ...controls.map((each) => each.getBoundingClientRect().right - edge)),
         ),
         over: row.scrollWidth - row.clientWidth,
-        rows: new Set(
-          controls
-            .filter((each) => row.contains(each))
-            .map((each) =>
-              Math.round(
-                each.getBoundingClientRect().top + each.getBoundingClientRect().height / 2,
-              ),
-            ),
-        ).size,
-        label: [...row.querySelectorAll('span')].some(
-          (each) => each.textContent === 'Discard draft' && each.getClientRects().length > 0,
-        ),
+        rows: lines(row),
+        heads: lines(head),
+        label: words('Discard draft'),
+        send: words('Send now'),
+        add: words('Add to review'),
       };
     },
     [width, vim] as const,
@@ -72,15 +85,21 @@ function foot(page: Page, width: number, vim: boolean) {
 }
 
 for (const vim of [false, true]) {
-  test(`the foot never runs past its box, with Vim keys ${vim ? 'on' : 'off'}`, async () => {
+  test(`the head and the foot never wrap or run past their box, with Vim keys ${vim ? 'on' : 'off'}`, async () => {
     const page = await open();
-    // A box beside the code is any of these widths; the narrowest is under its buttons' own.
-    for (const width of [500, 410, 360, 330, 250, 200]) {
+    // A box beside the code is any of these widths: 256 is the narrowest a box side by side is.
+    for (const width of [500, 410, 360, 330, 256, 200]) {
       const sits = await foot(page, width, vim);
-      expect(sits, `${width}px`).toMatchObject({ past: 0, over: 0 });
-      // The labels go before the row wraps, and the row wraps only once they have.
-      if (sits.rows > 1) expect(sits.label, `${width}px`).toBe(false);
+      expect(sits, `${width}px`).toMatchObject({ past: 0, over: 0, rows: 1, heads: 1 });
+      // The buttons keep their words down to the narrowest a box side by side is, or with Vim's
+      // mode beside them a little wider, and then give them up for their icons, the filled one's
+      // last.
+      if (width >= (vim ? 330 : 256)) {
+        expect(sits, `${width}px`).toMatchObject({ send: true, add: true });
+      }
+      if (!sits.add) expect(sits.send, `${width}px`).toBe(false);
     }
-    expect((await foot(page, 500, vim)).rows).toBe(1);
+    expect(await foot(page, 500, vim)).toMatchObject({ label: true, send: true, add: true });
+    expect(await foot(page, 200, vim)).toMatchObject({ label: false, send: false });
   });
 }

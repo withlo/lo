@@ -72,6 +72,15 @@ export function blockedWords(
 ): BlockedWords {
   const name = `${owner}/${repo}#${number}`;
   const cant = `Can’t open ${name}`;
+  // GitHub's rate limit holds every read until it resets, opening anyway too: the time is all
+  // there is to say, with nothing to press.
+  if ((why.kind === 'unchecked' || why.kind === 'refused') && why.cause.kind === 'rateLimit') {
+    return {
+      title: why.kind === 'unchecked' ? `Couldn’t check ${name}` : cant,
+      reason: explain(why.cause),
+      way: undefined,
+    };
+  }
   switch (why.kind) {
     case 'unchecked':
       return {
@@ -82,7 +91,7 @@ export function blockedWords(
     case 'missing':
       return {
         title: cant,
-        reason: `${owner}/${repo} has no pull request #${number}.`,
+        reason: `${owner}/${repo} has no #${number}.`,
         way: undefined,
       };
     case 'hidden':

@@ -1,7 +1,6 @@
 // What the Recent list's keys and buttons do: move through it, open a row, open the link on the
 // clipboard, and go to the filter.
 
-import { IpcError } from '../../../ipc/contract.ts';
 import { notify, refuse } from '../../../window/commands/notices.tsx';
 import type { Opened, RecentPull } from '../contract.ts';
 import { main } from './main.ts';
@@ -37,13 +36,15 @@ export function stepChosen(step: 1 | -1): void {
 export function said(title: string, done: Opened): void {
   if (done.kind !== 'refused') return;
   if (done.why === 'empty') refuse('No link to open');
-  else if (isNotPull(done.why)) notify('Not a pull request link', notPullLine(done.why) ?? '');
-  else notify(title, refusalReason(done.why) ?? '');
+  // Text that isn't a link to one is a warning, as the open box draws it; anything else failed.
+  else if (isNotPull(done.why)) {
+    notify('Not a pull request link', notPullLine(done.why) ?? '', { tone: 'warning' });
+  } else notify(title, refusalReason(done.why) ?? '', { tone: 'danger' });
 }
 
-/** What main said went wrong, as it came, when it said, for Details. */
+/** What main or the system said went wrong, as it came, for Details. */
 function details(error: unknown): string | undefined {
-  return error instanceof IpcError ? error.message : undefined;
+  return error instanceof Error ? error.message : undefined;
 }
 
 /** Opens `row`, or the one chosen: with its account while it can see the repository. */
@@ -59,7 +60,7 @@ export async function openRow(row?: RecentPull): Promise<void> {
     said(title, await main().open({ text: rowLink(opening), login: opening.login }));
   } catch (error) {
     console.error("Lo couldn't open the pull request:", error);
-    notify(title, '', undefined, details(error));
+    notify(title, '', { details: details(error), tone: 'danger' });
   }
 }
 
@@ -72,7 +73,7 @@ export async function followLink(url: string): Promise<void> {
     said('Couldn’t open the link', await main().open({ text: url }));
   } catch (error) {
     console.error("Lo couldn't open the link:", error);
-    notify('Couldn’t open the link', '', undefined, details(error));
+    notify('Couldn’t open the link', '', { details: details(error), tone: 'danger' });
   }
 }
 
@@ -87,7 +88,7 @@ export async function pasteLink(): Promise<void> {
     said('Couldn’t open the link', await main().open({ text: link }));
   } catch (error) {
     console.error("Lo couldn't open the link on the clipboard:", error);
-    notify('Couldn’t open the link', '', undefined, details(error));
+    notify('Couldn’t open the link', '', { details: details(error), tone: 'danger' });
   }
 }
 

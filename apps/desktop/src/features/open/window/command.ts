@@ -56,19 +56,17 @@ export function folderOf(path: string): string {
  */
 function tell(done: Installed | undefined, details?: string): void {
   if (done === undefined) {
-    notify(NOT_INSTALLED, '', undefined, details);
+    notify(NOT_INSTALLED, '', { details, tone: 'danger' });
   } else if (done.kind === 'installed') {
     announce(
       'Installed `lo` command',
       done.onPath ? '' : `Add \`${folderOf(done.path)}\` to \`PATH\`.`,
     );
   } else {
-    notify(
-      NOT_INSTALLED,
-      notInstalledReason(done),
-      undefined,
-      done.kind === 'taken' ? done.path : done.details,
-    );
+    notify(NOT_INSTALLED, notInstalledReason(done), {
+      details: done.kind === 'taken' ? done.path : done.details,
+      tone: 'danger',
+    });
   }
 }
 
