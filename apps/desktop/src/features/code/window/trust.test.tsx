@@ -191,7 +191,7 @@ describe('asking to trust', () => {
     const idle = trustButton(page);
     expect(says(idle)).toBe('Trust repo…');
     const unseen = () =>
-      [...(idle?.querySelectorAll('.invisible') ?? [])].map((it) => it.textContent);
+      [...(idle?.querySelectorAll('.invisible') ?? [])].map((face) => face.textContent);
     expect(unseen()).toEqual(['Waiting…', 'Trusting…']);
     act(() => bridge.push('code.status', statusOf('t4', { trusting: 'reading' })));
     const trust = trustButton(page);

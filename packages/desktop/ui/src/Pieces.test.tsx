@@ -77,6 +77,13 @@ async function settle(): Promise<void> {
   });
 }
 
+/** A button that says more than one thing as its work goes on, at one stage of it. */
+const stage = (busy: boolean, working: string) => (
+  <Button size="sm" busy={busy} working={working} widest="Trusting…">
+    Trust repo…
+  </Button>
+);
+
 describe('a button at work', () => {
   it('says what it’s doing in the room it kept, keeps focus, and does nothing when pressed', () => {
     const run = vi.fn<() => void>();
@@ -121,11 +128,6 @@ describe('a button at work', () => {
   });
 
   it('holds the room of the widest thing it says, unseen, whatever it says now', () => {
-    const stage = (busy: boolean, working: string) => (
-      <Button size="sm" busy={busy} working={working} widest="Trusting…">
-        Trust repo…
-      </Button>
-    );
     const host = render(stage(false, 'Waiting…'));
     const button = host.querySelector('button')!;
     const held = () => button.querySelector('.inline-grid > span:last-child')!;
