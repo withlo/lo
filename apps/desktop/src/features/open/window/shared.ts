@@ -5,13 +5,13 @@
 import { createElement, type ReactNode } from 'react';
 import { useStore } from 'zustand';
 
-import type { CommandState, Installed } from '../contract.ts';
+import type { CommandState, Installed, NotPull, Refusal } from '../contract.ts';
 import { followLink as follow } from './actions.ts';
 import { openBox as openTheBox, openText, type OpenedHere } from './box.ts';
 import { checkCommand, commandStore, installCommand as install } from './command.ts';
 import { InstallResult as Result } from './InstallResult.tsx';
-import { NotPullNote } from './Note.tsx';
-import { isNotPull } from './words.ts';
+import { NotPullNote as Note } from './Note.tsx';
+import { isNotPull as notPull } from './words.ts';
 
 export type { CommandState, Installed } from '../contract.ts';
 export type { OpenedHere as Opened } from './box.ts';
@@ -34,13 +34,17 @@ export function openLink(text: string): Promise<OpenedHere | undefined> {
  * Whether a refusal is that the text isn't a pull request link, which a field says as the open box
  * does, with {@link NotPullNote}.
  */
-export { isNotPull };
+export function isNotPull(why: Refusal): why is NotPull {
+  return notPull(why);
+}
 
 /**
  * The open box's note for text that isn't a pull request link: a warning, with what one looks
  * like. `id` is for the field it describes.
  */
-export { NotPullNote };
+export function NotPullNote(props: { why: NotPull; id?: string | undefined }): ReactNode {
+  return createElement(Note, props);
+}
 
 /**
  * Opens `url`, an `https` link followed in another view, such as a link in an overview: a pull
