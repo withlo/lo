@@ -226,7 +226,14 @@ export function Dialog(props: DialogProps) {
                     </Button>
                   )}
                   {state === 'done' ? (
-                    <Button ref={main} variant="primary" onClick={() => onOpenChange(false)}>
+                    // A hint that says nothing, as the button it follows has when it can run: the
+                    // same element, so focus stays on it.
+                    <Button
+                      ref={main}
+                      variant="primary"
+                      hint={null}
+                      onClick={() => onOpenChange(false)}
+                    >
                       Done
                       {action.keys && <Key keys={action.keys} decorative />}
                     </Button>

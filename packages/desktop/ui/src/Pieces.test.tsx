@@ -359,12 +359,12 @@ describe('a dialog that does something', () => {
   });
 
   it('keeps focus on a main button that can’t run yet, which says why, until it can', async () => {
-    const waiting = (disabled?: string) => (
+    const waiting = (disabled?: string, state: DialogState = 'ask') => (
       <Dialog
         open
         onOpenChange={() => {}}
         title="Sign in to GitHub"
-        state="ask"
+        state={state}
         action={{ label: 'Open GitHub', onRun: run, disabled }}
       />
     );
@@ -383,6 +383,10 @@ describe('a dialog that does something', () => {
     expect(main.hasAttribute('aria-disabled')).toBe(false);
     click(main);
     expect(run).toHaveBeenCalledTimes(1);
+    // Done is that button too, so `⏎` closes the dialog.
+    rerender(host, waiting(undefined, 'done'));
+    expect(named('Done')).toBe(main);
+    expect(document.activeElement).toBe(main);
   });
 
   it('can’t be left while it works: Esc asks nothing until the work is done', async () => {
