@@ -13,11 +13,10 @@ import type {
 } from '@lo/github';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { QueueState } from '../contract.ts';
+import { QUEUE_EVERY, type QueueState } from '../contract.ts';
 import {
   LEFT_AGAIN,
   LEFT_MOST,
-  QUEUE_EVERY,
   QUEUE_MOST,
   QueueWatch,
   WAITING_EVERY,

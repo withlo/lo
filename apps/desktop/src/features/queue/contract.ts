@@ -14,6 +14,12 @@ import { z } from 'zod';
 import { defineContract, reply } from '../../ipc/contract.ts';
 import { branchName, pullNumber, tabId } from '../tab/contract.ts';
 
+/**
+ * How often the queue on screen is read while reads succeed, so how long after a read the next one
+ * is, as a countdown says.
+ */
+export const QUEUE_EVERY = 20_000;
+
 /** A moment, in milliseconds since the Unix epoch. */
 const time = z.number().int().nonnegative();
 
@@ -171,7 +177,7 @@ export type BranchCount = z.output<typeof branchCount>;
  * A merge queue's tab as main has it, sent each time it changes: the branch it shows, the branches
  * it can show, what was read of the branch's queue and when, and why the last read failed, with
  * when Lo reads again. `away` says its account is signed out or gone, so nothing is read, and
- * nothing in the queue is changed, until it's back.
+ * nothing in the queue is changed, until it's back: `failure.message` then says why.
  */
 export const queueState = z.strictObject({
   id: tabId,
@@ -179,7 +185,14 @@ export const queueState = z.strictObject({
   branches: z.array(branchCount),
   read: queueRead,
   readAt: time.nullable(),
-  failure: z.strictObject({ message: z.string(), retryAt: time.nullable() }).nullable(),
+  failure: z
+    .strictObject({
+      message: z.string(),
+      retryAt: time.nullable(),
+      /** Why, in the reader's words, where the cause is known: GitHub's text is `message`. */
+      reason: z.string().optional(),
+    })
+    .nullable(),
   away: z.boolean(),
 });
 export type QueueState = z.output<typeof queueState>;
@@ -218,10 +231,30 @@ export interface ActPlan {
   readonly above: readonly number[];
 }
 
-/** A change to confirm, or why there's none, in Lo's words. */
+/**
+ * What the reader can do about a change that didn't go: nothing given, try it again; `signIn`, sign
+ * in to its account again; `open`, open the pull request, to add it to the queue again from its
+ * merge panel; `remove`, remove it from the queue; `ask`, see the question again, asked afresh;
+ * `none`, nothing, as for a wait or a refusal; `gone`, nothing, since the question no longer
+ * stands.
+ */
+export type ActNext = 'signIn' | 'open' | 'remove' | 'ask' | 'none' | 'gone';
+
+/**
+ * Why a change didn't go, or isn't known to have: `why`, one line in the reader's words, empty for
+ * a cause not known; `details`, GitHub's own text, as it came; `next`, what can be done about it;
+ * `checking`, that it failed while Lo checked the queue, before it asked.
+ */
+export interface ActWhy {
+  readonly why: string;
+  readonly details?: string | undefined;
+  readonly next?: ActNext | undefined;
+  readonly checking?: boolean | undefined;
+}
+
+/** A change to confirm, or why there's none. */
 export type ActPlanned =
-  | { readonly kind: 'plan'; readonly plan: ActPlan }
-  | { readonly kind: 'refused'; readonly why: string };
+  { readonly kind: 'plan'; readonly plan: ActPlan } | ({ readonly kind: 'refused' } & ActWhy);
 
 /**
  * How a change to the queue went:
@@ -233,19 +266,19 @@ export type ActPlanned =
  * - `again`: something the confirmation named changed since it was shown, as `why` says: the new
  *   plan, under a key of its own, is for the reader to confirm;
  * - `refused`: nothing changed, for `why`;
- * - `partly`: GitHub did part of it, as `why` says, such as taking an entry out to move it to the
- *   front and not adding it back;
- * - `unknown`: Lo can't tell what GitHub did, as `why` says. Main reads the queue again, which
- *   shows it, and sends nothing again.
+ * - `partly`: GitHub did part of it, such as taking an entry out to move it to the front and not
+ *   adding it back;
+ * - `unknown`: GitHub's answer was lost, so what it did isn't known. Main reads the queue again,
+ *   which shows it, and sends nothing again.
  */
 export type Acted =
   | { readonly kind: 'removed'; readonly numbers: readonly number[] }
   | { readonly kind: 'moved'; readonly position: number }
   | { readonly kind: 'autoMergeOff' }
   | { readonly kind: 'again'; readonly plan: ActPlan; readonly why: string }
-  | { readonly kind: 'refused'; readonly why: string }
-  | { readonly kind: 'partly'; readonly why: string }
-  | { readonly kind: 'unknown'; readonly why: string };
+  | ({ readonly kind: 'refused' } & ActWhy)
+  | ({ readonly kind: 'partly' } & ActWhy)
+  | ({ readonly kind: 'unknown' } & ActWhy);
 
 export const contract = defineContract('queue', {
   requests: {
@@ -281,6 +314,12 @@ export const contract = defineContract('queue', {
     /** Forgets the plan named `key`, and stops its confirmation while it's checked, before it's sent. */
     cancel: { input: z.strictObject({ key: planKey }), reply: reply<void>() },
     /**
+     * Reads merge queue tab `id`'s queue and those waiting to join it again, both begun now, and
+     * replies once they answer, with why one failed, if one did. What they read comes as `queue`
+     * first: what "Check again" looks at, after a change whose answer was lost.
+     */
+    look: { input: z.strictObject({ id: tabId }), reply: reply<string | undefined>() },
+    /**
      * Turns off auto-merge for pull request `number`, waiting to join merge queue tab `id`'s queue,
      * at once, asking nothing, since that merges nothing.
      */
@@ -292,5 +331,7 @@ export const contract = defineContract('queue', {
   topics: {
     /** A merge queue's tab, each time what it shows changes. */
     queue: queueState,
+    /** The change the plan named `key` holds passed its checks, and is being sent. */
+    sent: z.strictObject({ key: planKey }),
   },
 });

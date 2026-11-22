@@ -464,7 +464,7 @@ describe('a dialog that does something', () => {
     // was, and so is the main one, which keeps focus.
     const cancel = named('Cancel');
     expect(cancel?.getAttribute('aria-disabled')).toBe('true');
-    expect(cancel?.getAttribute('aria-description')).toBe('Wait for it to finish');
+    expect(cancel?.getAttribute('aria-description')).toBe('Wait for GitHub to answer');
     expect(cancel?.tabIndex).toBe(-1);
     expect(document.activeElement).toBe(merging);
     click(merging);
@@ -571,6 +571,39 @@ describe('a dialog that does something', () => {
     expect(document.activeElement?.textContent).toBe('Copy');
     rerender(host, copying('working'));
     expect(document.activeElement).toBe(named('Waiting'));
+  });
+
+  const ending = (state: DialogState, again: string | null = null) => (
+    <Dialog
+      open
+      onOpenChange={() => {}}
+      title="Merge #264"
+      state={state}
+      action={{ label: 'Merge #264', onRun: run, again, shortcut: 'Meta+Enter' }}
+      problem={{ title: 'Can’t merge #264' }}
+    />
+  );
+
+  it('gives focus to the button that leaves when the main one goes, with nothing to do again', async () => {
+    const host = render(ending('ask'));
+    await settle();
+    const main = named('Merge #264')!;
+    expect(document.activeElement).toBe(main);
+    // Its key, said to a screen reader in place of the key caps.
+    expect(main.getAttribute('aria-keyshortcuts')).toBe('Meta+Enter');
+    rerender(host, ending('failed'));
+    expect(named('Merge #264')).toBeUndefined();
+    expect(document.activeElement).toBe(named('Close'));
+  });
+
+  it('gives focus to the button that leaves when the main one goes in a failure that stays one', async () => {
+    const host = render(ending('failed', 'Check again'));
+    await settle();
+    expect(document.activeElement).toBe(named('Check again'));
+    // Still failed, with nothing to do again now.
+    rerender(host, ending('failed'));
+    expect(named('Check again')).toBeUndefined();
+    expect(document.activeElement).toBe(named('Close'));
   });
 
   it('says it has closed the moment it’s asked to, and keeps its words while it leaves', () => {

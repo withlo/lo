@@ -1,16 +1,16 @@
-// The banner on a pull request's tab once Lo saw it leave its merge queue without merging: why, in
-// a sentence, and the merge panel, `m`, whose first row says the same with the failed checks'
-// runs. Dismissing it forgets why it left.
+// The banner on a pull request's tab once Lo saw it leave its merge queue without merging: one line,
+// and the merge panel, `m`, whose first row says why, with the failed checks' runs. Dismissing it
+// forgets why it left.
 
 import { Banner } from '@lo/ui';
 import { keyLabels } from '@lo/ui/commands';
 import { useStore } from 'zustand';
 
 import { registry } from '../../../window/commands/registry.ts';
-import { withoutBidi, type BannerSwitch, type PullTab } from '../../tab/window/shared.ts';
+import type { BannerSwitch, PullTab } from '../../tab/window/shared.ts';
 import type { LeftQueue } from '../contract.ts';
 import { openPanel } from './actions.ts';
-import { leftNow, leftTitle, leftTone, leftWhy } from './places.ts';
+import { leftNow, leftTitle, leftTone } from './places.ts';
 import { dismissLeft, queues } from './queued.ts';
 import { statuses } from './store.ts';
 
@@ -38,7 +38,6 @@ export function LeftBanner({ tab }: { tab: PullTab }) {
     <Banner
       tone={leftTone(found.left)}
       title={leftTitle(tab.number)}
-      detail={withoutBidi(leftWhy(found.left, found.base))}
       actions={[
         {
           label: 'Merge panel',

@@ -158,15 +158,12 @@ describe("a tab's stack", () => {
     expect(view).toMatchObject({ githubStack: true, found: ['github'], root: 'main', notes: [] });
   });
 
-  it('shows a layer alone that needs a rebase, with why', async () => {
+  it('shows a layer alone that needs a rebase', async () => {
     const found = await recorded('stacks_e2e', E2E, LAYERS);
     // #11 sits alone on the branch of #10, which was squash-merged.
     const { view, ids } = viewOf(input(found, 11));
     expect(brief(view)).toEqual(['#11 current needs rebase']);
-    expect(view).toMatchObject({
-      found: null,
-      notes: [{ kind: 'needsRebase', text: expect.stringContaining('#10 was squash-merged') }],
-    });
+    expect(view).toMatchObject({ found: null, notes: [] });
     expect(ids).toEqual(idsOf(found.list, [11]));
   });
 
@@ -313,13 +310,12 @@ describe('the overviews', () => {
   });
 });
 
-describe('the offer to make the chain a GitHub stack', () => {
-  it('says how the chain through the layer on screen was found, while Lo could plan it', async () => {
+describe('the offer to convert the chain to a GitHub stack', () => {
+  it('says how a branch stack merges, while Lo could plan it', async () => {
     const found = await recorded('stacks_e2e', E2E, LAYERS);
     // a, b, c, and d, which sits on c by its commits.
     expect(viewOf(input(found, 4)).view).toMatchObject({
-      callout:
-        "These PRs sit on each other's branches and share commits but aren't a GitHub stack. As one, they'd merge together.",
+      callout: 'This branch stack merges one layer at a time.',
     });
   });
 
@@ -366,21 +362,12 @@ describe("the app's stacks", () => {
     expect(ids).toEqual(idsOf(found.list, [82, 83, 84, 85]));
   });
 
-  it('show #E alone, on #M, which was squash-merged, with why its diff hides #M’s changes', async () => {
+  it('show #E alone, on #M, which was squash-merged, needing a rebase', async () => {
     const found = await recorded('app_stack', E2E);
     expect(forestOf(found).layers[87]?.needsRebase).toMatchObject({ merged: 86 });
     const { view, ids } = viewOf(input(found, 87));
     expect(brief(view)).toEqual(['#87 current needs rebase']);
-    expect(view).toMatchObject({
-      root: 'stack/mroot',
-      found: null,
-      notes: [
-        {
-          kind: 'needsRebase',
-          text: "#87 needs a rebase. #86 was squash-merged, so its changes are hidden here, and #87 is compared with #86's last commit.",
-        },
-      ],
-    });
+    expect(view).toMatchObject({ root: 'stack/mroot', found: null, notes: [] });
     expect(ids).toEqual(idsOf(found.list, [87]));
   });
 
@@ -445,68 +432,52 @@ describe('the notes', () => {
       notes: [
         {
           kind: 'busy',
-          text: 'e2e has 1,342 open PRs. Lo looks for stacks among the 1,000 opened most recently.',
+          text: 'Stacks are found among the 1,000 newest of 1,342 open pull requests.',
         },
       ],
     });
   });
 
-  it("say when merged pull requests weren't looked up, from the list or the layers' read", async () => {
+  it("say while merged pull requests aren't looked up, and when looking them up failed", async () => {
     const found = await recorded('stacks_e2e', E2E, LAYERS);
-    const text = "Some merged PRs weren't looked up yet, so a layer may show on its own.";
     const list = { ...found.list, mergedTruncated: true };
     const fromList = viewOf(input(found, 4, { forest: stacksOf(list, found.rules), list }));
-    expect(fromList.view).toMatchObject({ notes: [{ kind: 'merged', text }] });
+    expect(fromList.view).toMatchObject({
+      notes: [{ kind: 'merged', text: 'Checking merged pull requests…' }],
+    });
     const layers = found.layers && { ...found.layers, lookupsFailed: 'a lookup failed' };
     expect(viewOf(input(found, 4, { layers })).view).toMatchObject({
-      notes: [{ kind: 'merged', text }],
+      notes: [{ kind: 'mergedFailed', text: 'Couldn’t check merged pull requests' }],
     });
   });
 
-  it("say when the repository's rulesets couldn't be read", async () => {
+  it("say nothing of the repository's rulesets, which only the offer needs", async () => {
     const found = await recorded('stacks_e2e', E2E, LAYERS);
     const rules = { ...found.rules, unavailable: 'GitHub answered 502' };
     const { view } = viewOf(input(found, 4, { forest: stacksOf(found.list, rules) }));
-    expect(view).toMatchObject({
-      notes: [
-        {
-          kind: 'rulesets',
-          text: "Lo couldn't read e2e's rulesets, so it can't make a GitHub stack here yet.",
-        },
-      ],
-    });
+    expect(view).toMatchObject({ notes: [] });
   });
 
-  it('say which pull requests sat on each other, and which Lo put on its own base', async () => {
+  it('say which pull requests are based on each other', async () => {
     const found = await recorded('stacks_e2e', E2E, LAYERS);
     // a targets b's branch, and b a's.
     const list = changePull(found.list, 2, (pr) => ({ ...pr, baseRefName: 'e2/b' }));
     const { view } = viewOf(input(found, 4, { forest: stacksOf(list, found.rules), list }));
     expect(view).toMatchObject({
       root: 'e2/b',
-      notes: [
-        { kind: 'cycle', text: '#2 and #3 each sit on the other. Lo shows #2 on its own base.' },
-      ],
+      notes: [{ kind: 'cycle', text: '#2 and #3 are each based on the other.' }],
     });
     // d goes into `main`, a trunk, so it no longer sits on a stack on another root.
     expect(brief(view)).toEqual(['#2', '#3', '#4 current', '#5 branch on #3']);
   });
 
-  it('say which layer needs a rebase, and why', async () => {
+  it('leave a layer that needs a rebase to its row', async () => {
     const found = await recorded('stacks_e2e', E2E, LAYERS);
     // e goes on y, which still carries x's commits.
     const list = changePull(found.list, 5, (pr) => ({ ...pr, baseRefName: 'e3/y' }));
     const { view } = viewOf(input(found, 5, { forest: stacksOf(list, found.rules), list }));
     expect(brief(view)).toEqual(['#11 needs rebase', '#5 current']);
-    expect(view).toMatchObject({
-      found: ['baseBranch'],
-      notes: [
-        {
-          kind: 'needsRebase',
-          text: "#11 needs a rebase. #10 was squash-merged, so its changes are hidden here, and #11 is compared with #10's last commit.",
-        },
-      ],
-    });
+    expect(view).toMatchObject({ found: ['baseBranch'], notes: [] });
   });
 });
 

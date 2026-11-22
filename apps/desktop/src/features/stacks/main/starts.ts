@@ -72,7 +72,7 @@ export function planStart(
     commit === view.compareFrom ||
     (start.kind === 'baseBranch' && start.tip !== undefined && start.tip === view.compareFrom);
   if (same) {
-    return view.missing ? { ...none, note: missingNote(view, start) } : none;
+    return view.missing ? { ...none, note: missingNote(start) } : none;
   }
   if (!view.drawn) return { ...none, set: commit ?? null };
   return { ...none, offer: offerOf(view, start, kept, forest.prs) };
@@ -97,22 +97,22 @@ function offerOf(
   if (start.kind !== 'baseBranch' && view.compareFrom !== undefined) {
     const below = start.kind === 'sharedCommits' ? start.below : start.merged;
     return {
-      title: `${layer} now sits on #${below}.`,
-      action: `Compare with #${below}`,
+      title: `${layer} is now based on #${below}`,
+      action: `Hide #${below}’s changes`,
       commit: start.commit,
     };
   }
   switch (start.kind) {
     case 'sharedCommits':
       return {
-        title: `${layer}'s diff includes #${start.below}'s changes.`,
-        action: `Show only ${layer}'s`,
+        title: `This diff includes #${start.below}’s changes`,
+        action: `Hide #${start.below}’s changes`,
         commit: start.commit,
       };
     case 'needsRebase':
       return {
-        title: `${layer}'s diff includes #${start.merged}'s, which was squash-merged.`,
-        action: 'Hide them',
+        title: `This diff includes #${start.merged}’s merged changes`,
+        action: `Hide #${start.merged}’s changes`,
         commit: start.commit,
       };
     case 'baseBranch': {
@@ -121,8 +121,8 @@ function offerOf(
       return {
         title:
           below === undefined
-            ? `${layer} no longer sits on the layer it's compared with.`
-            : `${layer} no longer sits on #${below}.`,
+            ? `${layer} is no longer based on the layer below`
+            : `${layer} is no longer based on #${below}`,
         action: `Compare with ${start.branch}`,
         commit: null,
       };
@@ -153,19 +153,12 @@ function sittingOn(
 }
 
 /** What the stack says when the local copy couldn't get the commit `view` is compared with. */
-function missingNote(view: StartView, start: LayerStart): Note | undefined {
-  const layer = `#${view.number}`;
+function missingNote(start: LayerStart): Note | undefined {
   switch (start.kind) {
     case 'sharedCommits':
-      return {
-        kind: 'start',
-        text: `Lo couldn't fetch #${start.below}'s head, so ${layer}'s diff includes #${start.below}'s changes.`,
-      };
+      return { kind: 'start', text: `This diff includes #${start.below}’s changes.` };
     case 'needsRebase':
-      return {
-        kind: 'start',
-        text: `Lo couldn't fetch #${start.merged}'s last commit, so ${layer}'s diff includes #${start.merged}'s changes.`,
-      };
+      return { kind: 'start', text: `This diff includes #${start.merged}’s merged changes.` };
     case 'baseBranch':
       return undefined;
     default:

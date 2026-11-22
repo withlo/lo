@@ -23,7 +23,6 @@
 // that merges nothing, in its turn too. Nothing here calls Electron.
 
 import {
-  describeMergeRefusal,
   GithubError,
   isFullSha,
   isRefusal,
@@ -46,7 +45,17 @@ import {
 import type { MergeTurn, MergeWrites } from '../../merge/service.ts';
 import type { Converting } from '../../stacks/service.ts';
 import type { QueueTab } from '../../tab/contract.ts';
-import type { Acted, ActKind, ActPlan, ActPlanned } from '../contract.ts';
+import type { Acted, ActKind, ActPlan, ActPlanned, ActWhy } from '../contract.ts';
+import {
+  causeOf,
+  LEFT_OUT,
+  NO_ANSWER,
+  QUEUE_CHANGED,
+  rateLimited,
+  refusalOf,
+  signedOut,
+  textOf,
+} from './causes.ts';
 import type { QueueWatch } from './watch.ts';
 
 /** How old a read of the queue a change may act on: 40 s. Older, it's read again first. */
@@ -96,6 +105,8 @@ export interface QueueActsOptions {
   readonly now?: () => number;
   /** A new plan's key. */
   readonly newKey?: () => string;
+  /** The change the plan named `key` holds passed its checks, and is about to be sent. */
+  readonly sent?: (key: string) => void;
 }
 
 /** A plan kept for the reader to confirm. */
@@ -134,12 +145,6 @@ function describe(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-/** `text` as a sentence, ending with a full stop if it ends without one. */
-function sentence(text: string): string {
-  const trimmed = text.trim();
-  return /[.!?…]$/.test(trimmed) ? trimmed : `${trimmed}.`;
-}
-
 /** Pull requests' numbers as a sentence names them: "#45", "#45 and #46", "#45, #46 and #47". */
 export function numbers(prs: readonly number[]): string {
   const named = prs.map((pr) => `#${pr}`);
@@ -147,36 +152,28 @@ export function numbers(prs: readonly number[]): string {
   return named.length === 0 ? last : `${named.join(', ')} and ${last}`;
 }
 
-/** A number of minutes or hours, as a clock writes it: "05". */
-function twoDigits(value: number): string {
-  return String(value).padStart(2, '0');
-}
-
-/** A clock time as the interface writes it: "14:05". */
-function clock(at: number): string {
-  const time = new Date(at);
-  return `${twoDigits(time.getHours())}:${twoDigits(time.getMinutes())}`;
-}
-
-/** Why Lo changes nothing in a queue now with `poller`, whatever the queue holds, if it doesn't. */
-export function offText(poller: Pick<ActPoller, 'status' | 'writesHeldUntil'>): string | undefined {
+/**
+ * Why nothing in a queue changes now as `login` with `poller`, whatever the queue holds, if
+ * nothing does.
+ */
+export function offWhy(
+  poller: Pick<ActPoller, 'status' | 'writesHeldUntil'>,
+  login: string,
+): ActWhy | undefined {
   const status = poller.status();
-  if (status.signedOut)
-    return 'The account is signed out of GitHub. Sign in again, then try again.';
-  if (status.offline) return 'Offline. Change the queue once you’re back.';
+  if (status.signedOut) return signedOut(login);
+  if (status.offline) return { why: 'Offline.' };
   const until = poller.writesHeldUntil();
-  return until === undefined
-    ? undefined
-    : `GitHub asked Lo to hold off until ${clock(until)}. Change the queue then.`;
+  return until === undefined ? undefined : rateLimited(until);
 }
 
-/** GitHub's refusal, or Lo's before asking it, as a sentence. */
-function refusalText(refusal: MergeRefusal): string {
-  if (refusal.refusal === 'paused') {
-    return `GitHub asked Lo to hold off until ${clock(refusal.until)}. Change the queue then.`;
-  }
-  return sentence(describeMergeRefusal(refusal));
+/** Why a read of the queue, or of those waiting to join it, failed: `text`, GitHub's own. */
+function unread(text: string, checking = false): ActWhy {
+  return { why: '', details: text, ...(checking && { checking }) };
 }
+
+/** Why a change no longer stands, with nothing said: the reader can't see the question any more. */
+const UNSEEN: ActWhy = { why: '', next: 'gone' };
 
 /** Pull request `number`'s entry in `view`'s queue, if the read lists it. */
 function entryIn(view: QueueView, number: number): QueueEntryFacts | undefined {
@@ -184,10 +181,18 @@ function entryIn(view: QueueView, number: number): QueueEntryFacts | undefined {
 }
 
 /** Why pull request `number` can't be changed in `view`'s queue: it isn't listed. */
-function unlisted(view: QueueView, number: number): string {
-  return queueViewCutShort(view)
-    ? `Lo can’t see #${number} in the merge queue for ${view.branch}: GitHub didn’t list all of it.`
-    : `#${number} isn’t in the merge queue for ${view.branch} any more.`;
+function unlisted(view: QueueView, number: number): ActWhy {
+  return queueViewCutShort(view) ? { why: LEFT_OUT } : left(number);
+}
+
+/** Why a question about pull request `number` no longer stands: it left the queue. */
+function left(number: number): ActWhy {
+  return { why: `#${number} left the merge queue.`, next: 'gone' };
+}
+
+/** Why a merge write to `busy` holds back a change to the queue. */
+function merging(busy: number): ActWhy {
+  return { why: `#${busy} is still merging.` };
 }
 
 /**
@@ -203,18 +208,18 @@ function same(a: readonly number[], b: readonly number[]): boolean {
   return a.length === b.length && a.every((each, index) => each === b[index]);
 }
 
-function refused(why: string): Extract<Acted, { kind: 'refused' }> {
-  return { kind: 'refused', why };
+function refused(why: ActWhy): Extract<Acted, { kind: 'refused' }> {
+  return { kind: 'refused', ...why };
 }
 
 /** Why only an admin moves an entry to the front, for `login`. */
-function notAdmin(login: string): string {
-  return `GitHub lets only the repository’s admins move a pull request to the front of the merge queue, and ${login} isn’t one.`;
+function notAdmin(login: string): ActWhy {
+  return { why: `${login} doesn’t have permission.`, next: 'none' };
 }
 
 /** Why the entry of pull request `number`, at the front, isn't moved there. */
-function atFront(number: number): string {
-  return `#${number} is at the front of the merge queue already.`;
+function atFront(number: number): ActWhy {
+  return { why: `#${number} is already at the front.`, next: 'none' };
 }
 
 export class QueueActs {
@@ -244,7 +249,7 @@ export class QueueActs {
    */
   async plan(id: string, number: number, kind: ActKind): Promise<ActPlanned> {
     const asked = await this.#ask(id, number, kind);
-    if (typeof asked === 'string') return { kind: 'refused', why: asked };
+    if (!('plan' in asked)) return { kind: 'refused', ...asked };
     this.#keep(asked);
     return { kind: 'plan', plan: asked.plan };
   }
@@ -255,17 +260,13 @@ export class QueueActs {
    */
   async confirm(key: string): Promise<Acted> {
     const kept = this.#kept.get(key);
-    if (!kept) {
-      return refused(
-        this.#used.has(key)
-          ? 'That change was confirmed already.'
-          : 'Lo no longer has that question. Ask again from the queue.',
-      );
-    }
+    // Confirmed already, its button is busy until it's answered: one confirmed again was asked by
+    // nothing on screen.
+    if (!kept) return refused(this.#used.has(key) ? UNSEEN : { why: QUEUE_CHANGED });
     // A plan runs once, whatever comes of it.
     this.#kept.delete(key);
     this.#used.add(key);
-    if (this.#stopped) return refused('Lo is quitting.');
+    if (this.#stopped) return refused(UNSEEN);
     const checking = new AbortController();
     this.#checking.set(key, checking);
     try {
@@ -273,7 +274,7 @@ export class QueueActs {
       // Cancelled while it checked: nothing goes, and no plan is kept in its place.
       if (checking.signal.aborted || this.#stopped) {
         if (checked.kind === 'again') this.#kept.delete(checked.plan.key);
-        return refused(this.#stopped ? 'Lo is quitting.' : 'Cancelled. Nothing was sent.');
+        return refused(UNSEEN);
       }
       if (checked.kind !== 'send') return checked;
       // What the checks found at their start, once more, right before it goes: nothing waits from
@@ -283,7 +284,8 @@ export class QueueActs {
       const { plan } = kept;
       const repo = new RepoRef(plan.owner, plan.repo);
       const turn = this.#options.writes.take(repo, [plan.number, ...plan.above]);
-      if ('busy' in turn) return refused(`Lo is already merging #${turn.busy}.`);
+      if ('busy' in turn) return refused(merging(turn.busy));
+      this.#options.sent?.(key);
       return await this.#send(kept, checked.poller, turn);
     } finally {
       this.#checking.delete(key);
@@ -306,47 +308,45 @@ export class QueueActs {
    * list it with auto-merge on, out of the queue.
    */
   async autoMergeOff(id: string, number: number): Promise<Acted> {
-    if (this.#stopped) return refused('Lo is quitting.');
+    if (this.#stopped) return refused(UNSEEN);
     const found = this.#options.tab(id);
-    if (!found) return refused('The merge queue’s tab is closed.');
+    if (!found) return refused(UNSEEN);
     const { tab, watch } = found;
     const branch = watch.branch;
-    if (watch.away !== undefined) return refused(watch.away);
+    if (watch.away !== undefined) return refused(signedOut(tab.login));
     let poller: ActPoller;
     try {
       poller = await this.#options.poller(tab.login);
     } catch (error) {
-      return refused(describe(error));
+      return refused(causeOf(error, tab.login, tab.owner));
     }
-    const off = offText(poller);
+    const off = offWhy(poller, tab.login);
     if (off !== undefined) return refused(off);
     const waiting = await watch.freshWaiting(ACT_WITHIN, this.#ended.get(id));
-    if (typeof waiting === 'string') {
-      return refused(
-        `Lo couldn’t read the pull requests waiting to join the merge queue for ${branch} again, so it didn’t turn off auto-merge: ${sentence(waiting)}`,
-      );
-    }
+    if (typeof waiting === 'string') return refused(unread(waiting));
     const pull = waiting.pullRequests.find((each) => each.number === number);
     if (!pull) {
       return refused(
         waiting.total > waiting.pullRequests.length || waiting.leftOut.length > 0
-          ? `Lo can’t see #${number} among the pull requests into ${branch}: GitHub didn’t list all of them.`
-          : `#${number} isn’t open into ${branch} any more.`,
+          ? { why: LEFT_OUT }
+          : { why: `#${number} is no longer open into ${branch}.`, next: 'gone' },
       );
     }
-    if (pull.inQueue) return refused(`#${number} is in the merge queue already.`);
-    if (pull.autoMerge === undefined) return refused(`Auto-merge is off for #${number} already.`);
+    if (pull.inQueue) {
+      return refused({ why: `#${number} is already in the merge queue.`, next: 'none' });
+    }
+    if (pull.autoMerge === undefined) {
+      return refused({ why: 'Auto-merge is already off.', next: 'none' });
+    }
     // Once more right before it goes: nothing waits from here to the send.
     const now = this.#options.tab(id);
-    if (now?.watch.branch !== branch) {
-      return refused('The merge queue’s tab changed. Turn off auto-merge from it again.');
-    }
-    if (now.watch.away !== undefined) return refused(now.watch.away);
-    const stillOff = offText(poller);
+    if (now?.watch.branch !== branch) return refused({ why: QUEUE_CHANGED });
+    if (now.watch.away !== undefined) return refused(signedOut(tab.login));
+    const stillOff = offWhy(poller, tab.login);
     if (stillOff !== undefined) return refused(stillOff);
     const repo = new RepoRef(tab.owner, tab.repo);
     const turn = this.#options.writes.take(repo, [number]);
-    if ('busy' in turn) return refused(`Lo is already merging #${turn.busy}.`);
+    if ('busy' in turn) return refused(merging(turn.busy));
     let answer: AutoMergeState | MergeRefusal;
     try {
       answer = await poller.disableAutoMerge(PullRef.of(repo, number), pull.id);
@@ -354,26 +354,24 @@ export class QueueActs {
       const endedAt = this.#endedNow(id);
       if (error instanceof GithubError && !error.mayHavePosted()) {
         turn.give();
-        return refused(`${sentence(error.message)} Nothing was sent.`);
+        return refused(causeOf(error, tab.login, tab.owner));
       }
       this.#settle({ id, on: tab, branch, kind: 'waiting', endedAt }, turn);
-      return {
-        kind: 'unknown',
-        why: `Lo can’t tell whether auto-merge is off for #${number}: ${this.#lost(error)} Lo reads the pull requests waiting to join again, which shows whether it is, and sends nothing again.`,
-      };
+      return { kind: 'unknown', why: NO_ANSWER, details: this.#lost(error) };
     }
     const endedAt = this.#endedNow(id);
     if (isRefusal(answer)) {
       turn.give();
       this.#refresh(id, endedAt);
-      return refused(refusalText(answer));
+      return refused(refusalOf(answer, tab.login));
     }
     if (answer.inQueue) {
       turn.give();
       this.#refresh(id, endedAt);
       return {
         kind: 'partly',
-        why: `#${number} joined the merge queue for ${branch} before auto-merge went off, so it merges once the queue’s checks pass. Take it out of the queue to stop it.`,
+        why: `#${number} had already joined the merge queue.`,
+        next: 'remove',
       };
     }
     if (answer.autoMerge === undefined) {
@@ -382,10 +380,8 @@ export class QueueActs {
       return { kind: 'autoMergeOff' };
     }
     this.#settle({ id, on: tab, branch, kind: 'waiting', endedAt }, turn);
-    return {
-      kind: 'unknown',
-      why: `GitHub answered, but not with auto-merge off for #${number}. Lo reads the pull requests waiting to join again, which shows whether it is.`,
-    };
+    // GitHub answered, but not with auto-merge off: a read of those waiting shows whether it is.
+    return { kind: 'unknown', why: '' };
   }
 
   /**
@@ -427,53 +423,49 @@ export class QueueActs {
   }
 
   /** Why `plan`'s question no longer stands after `view`, a read of its queue, or nothing. */
-  #dropped(plan: ActPlan, view: QueueView): string | undefined {
-    if (view.branch !== plan.branch) return `The tab shows ${view.branch}’s queue now.`;
+  #dropped(plan: ActPlan, view: QueueView): ActWhy | undefined {
+    // The dialog closes as its tab shows another branch.
+    if (view.branch !== plan.branch) return UNSEEN;
     const entry = entryIn(view, plan.number);
-    if (!entry) {
-      return queueViewCutShort(view)
-        ? undefined
-        : `#${plan.number} left the merge queue for ${plan.branch} since Lo asked.`;
-    }
+    if (!entry) return queueViewCutShort(view) ? undefined : left(plan.number);
     if (entry.pullRequest?.head !== plan.head) {
-      return `#${plan.number} has a newer push since Lo asked, so Lo didn’t change the queue.`;
+      return { why: `#${plan.number}’s revision is out of date.`, next: 'ask' };
     }
     return undefined;
   }
 
   /** What `kind` for `number` in tab `id`'s queue would do, read afresh, or why it can't. */
-  async #ask(id: string, number: number, kind: ActKind): Promise<Kept | string> {
-    if (this.#stopped) return 'Lo is quitting.';
+  async #ask(id: string, number: number, kind: ActKind): Promise<Kept | ActWhy> {
+    if (this.#stopped) return UNSEEN;
     const found = this.#options.tab(id);
-    if (!found) return 'The merge queue’s tab is closed.';
+    if (!found) return UNSEEN;
     const { tab, watch } = found;
     const branch = watch.branch;
-    if (watch.away !== undefined) return watch.away;
+    if (watch.away !== undefined) return signedOut(tab.login);
     let poller: ActPoller;
     try {
       poller = await this.#options.poller(tab.login);
     } catch (error) {
-      return describe(error);
+      return causeOf(error, tab.login, tab.owner);
     }
-    const off = offText(poller);
+    const off = offWhy(poller, tab.login);
     if (off !== undefined) return off;
     const view = await watch.fresh(ACT_WITHIN, this.#ended.get(id));
-    if (typeof view === 'string') {
-      return `Lo couldn’t read the merge queue for ${branch} again: ${sentence(view)}`;
-    }
+    if (typeof view === 'string') return unread(view, true);
     const entry = entryIn(view, number);
     const pull = entry?.pullRequest;
     if (!entry || !pull) return unlisted(view, number);
     if (kind === 'jump' && view.viewerPermission !== 'ADMIN') return notAdmin(tab.login);
     if (kind === 'jump' && entry.position <= 1) return atFront(number);
-    if (!isFullSha(pull.head)) return `Lo hasn’t read #${number}’s head.`;
+    // Its head as GitHub listed it, cut short: it's checked as it's read again.
+    if (!isFullSha(pull.head)) return { why: '', checking: true };
     const repo = new RepoRef(tab.owner, tab.repo);
     // Its GitHub stack as GitHub has it now, which decides what leaves with it.
     let holding: GithubStack[] | undefined;
     try {
       holding = await poller.readOnce((client) => stacksHolding(client, repo, number));
     } catch (error) {
-      return `Lo couldn’t read #${number}’s GitHub stack, so it didn’t ask: ${describe(error)}`;
+      return { ...causeOf(error, tab.login, tab.owner), checking: true };
     }
     const stack = holding?.find((each) =>
       openLayers(each).some((layer) => layer.number === number),
@@ -484,17 +476,18 @@ export class QueueActs {
     if (kind === 'remove') {
       const [bottom] = layers;
       if (bottom !== undefined && bottom !== number) {
-        return `Take #${bottom} out instead: GitHub takes a stack out from its bottom layer.`;
+        // GitHub takes a stack out from its bottom layer.
+        return { why: `Remove the bottom layer, #${bottom}, instead`, next: 'none' };
       }
       above = aboveIn(view, layers.slice(1));
     } else if (stack && others.length > 0) {
-      return `#${number} is in GitHub stack #${stack.number} with ${numbers(others)}, which GitHub queues in order, so Lo doesn’t move it to the front on its own.`;
+      return { why: 'GitHub queues a stack’s layers in order', next: 'none' };
     }
     const [busy] = this.#options.writes.busy(repo, [number, ...above]);
-    if (busy !== undefined) return `Lo is already merging #${busy}.`;
+    if (busy !== undefined) return merging(busy);
     // The tab may have moved on while Lo read.
     const now = this.#options.tab(id);
-    if (now?.watch.branch !== branch) return 'The merge queue’s tab changed. Ask again from it.';
+    if (now?.watch.branch !== branch) return { why: QUEUE_CHANGED };
     return {
       plan: {
         key: this.#newKey(),
@@ -523,14 +516,12 @@ export class QueueActs {
   }
 
   /** Why `plan` can't go from its tab now, as the tab and its account's `poller` say. */
-  #holds(plan: ActPlan, poller: ActPoller | undefined): string | undefined {
+  #holds(plan: ActPlan, poller: ActPoller | undefined): ActWhy | undefined {
     const found = this.#options.tab(plan.id);
-    if (!found) return 'The merge queue’s tab is closed. Nothing was sent.';
-    if (found.watch.branch !== plan.branch) {
-      return `The tab shows ${found.watch.branch}’s queue now. Nothing was sent.`;
-    }
-    if (found.watch.away !== undefined) return found.watch.away;
-    return poller && offText(poller);
+    // The dialog closes with its tab, and as the tab shows another branch.
+    if (!found || found.watch.branch !== plan.branch) return UNSEEN;
+    if (found.watch.away !== undefined) return signedOut(plan.login);
+    return poller && offWhy(poller, plan.login);
   }
 
   /**
@@ -550,18 +541,14 @@ export class QueueActs {
     try {
       poller = await this.#options.poller(plan.login);
     } catch (error) {
-      return refused(describe(error));
+      return refused(causeOf(error, plan.login, plan.owner));
     }
     const held = this.#holds(plan, poller);
     if (held !== undefined) return refused(held);
     const found = this.#options.tab(plan.id);
-    if (!found) return refused('The merge queue’s tab is closed. Nothing was sent.');
+    if (!found) return refused(UNSEEN);
     const view = await found.watch.fresh(ACT_WITHIN, this.#ended.get(plan.id));
-    if (typeof view === 'string') {
-      return refused(
-        `Lo couldn’t read the merge queue for ${plan.branch} again, so it didn’t send it: ${sentence(view)}`,
-      );
-    }
+    if (typeof view === 'string') return refused(unread(view));
     const dropped = this.#dropped(plan, view);
     if (dropped !== undefined) return refused(dropped);
     const entry = entryIn(view, plan.number);
@@ -578,23 +565,17 @@ export class QueueActs {
           plan: { ...plan, key: this.#newKey(), above, position: entry.position },
         };
         this.#keep(again);
-        return {
-          kind: 'again',
-          plan: again.plan,
-          why: `The layers of #${plan.number}’s GitHub stack in the queue changed. Check what leaves with it now, then confirm.`,
-        };
+        return { kind: 'again', plan: again.plan, why: 'The layers removed with it have changed.' };
       }
     }
     const prs = [plan.number, ...plan.above];
     const repo = new RepoRef(plan.owner, plan.repo);
     const converting = this.#options.converting(repo);
     if (converting && prs.some((pr) => converting.prs.includes(pr))) {
-      return refused(
-        `Lo is making ${numbers(converting.prs)} a GitHub stack. Change the queue once that’s done.`,
-      );
+      return refused({ why: 'GitHub is still changing this stack.' });
     }
     const [busy] = this.#options.writes.busy(repo, prs);
-    if (busy !== undefined) return refused(`Lo is already merging #${busy}.`);
+    if (busy !== undefined) return refused(merging(busy));
     return { kind: 'send', poller };
   }
 
@@ -615,17 +596,10 @@ export class QueueActs {
       const endedAt = this.#endedNow(plan.id);
       if (error instanceof GithubError && !error.mayHavePosted()) {
         turn.give();
-        return refused(`${sentence(error.message)} Nothing was sent.`);
+        return refused(causeOf(error, plan.login, plan.owner));
       }
       this.#settle(this.#changeOf(plan, endedAt), turn);
-      const lost = this.#lost(error);
-      return {
-        kind: 'unknown',
-        why:
-          plan.kind === 'remove'
-            ? `Lo can’t tell whether #${plan.number} left the merge queue for ${plan.branch}: ${lost} It may be out. Lo reads the queue again, which shows it, and sends nothing again.`
-            : `Lo can’t tell whether GitHub took #${plan.number} out of the merge queue for ${plan.branch} to move it: ${lost} It may be out, and Lo didn’t add it back. Lo reads the queue again, which shows it.`,
-      };
+      return { kind: 'unknown', why: NO_ANSWER, details: this.#lost(error) };
     }
     const endedAt = this.#endedNow(plan.id);
     const done = (acted: Acted): Acted => {
@@ -633,37 +607,31 @@ export class QueueActs {
       this.#refresh(plan.id, endedAt);
       return acted;
     };
-    if (isRefusal(answer)) return done(refused(refusalText(answer)));
+    if (isRefusal(answer)) return done(refused(refusalOf(answer, plan.login)));
     switch (answer.kind) {
       case 'dequeued':
         return done(
           isRefusal(answer.answer)
-            ? refused(refusalText(answer.answer))
+            ? refused(refusalOf(answer.answer, plan.login))
             : { kind: 'removed', numbers: [plan.number, ...plan.above] },
         );
       case 'moved':
         return done({ kind: 'moved', position: answer.entry.position });
       case 'notBack': {
+        // GitHub took it out of the queue to move it, then didn't add it back.
         const { failure } = answer;
-        const out = `GitHub took #${plan.number} out of the merge queue for ${plan.branch} to move it`;
+        const out = {
+          kind: 'partly',
+          why: 'It left the merge queue and wasn’t added back.',
+          next: 'open',
+        } as const;
         if (isRefusal(failure)) {
-          return done({
-            kind: 'partly',
-            why: `${out}, then wouldn’t add it back: ${refusalText(failure)} It’s out of the queue. Add it again from its merge panel.`,
-          });
+          return done({ ...out, details: refusalOf(failure, plan.login).details });
         }
         const error = new GithubError(failure);
-        if (!error.mayHavePosted()) {
-          return done({
-            kind: 'partly',
-            why: `${out}, then Lo couldn’t add it back: ${sentence(error.message)} It’s out of the queue. Add it again from its merge panel.`,
-          });
-        }
+        if (!error.mayHavePosted()) return done({ ...out, details: error.message });
         this.#settle(this.#changeOf(plan, endedAt), turn);
-        return {
-          kind: 'unknown',
-          why: `${out}, and Lo can’t tell whether it added it back: ${sentence(error.message)} It may be out. Lo reads the queue again, which shows it, and sends nothing again.`,
-        };
+        return { kind: 'unknown', why: NO_ANSWER, details: error.message };
       }
       default:
         answer satisfies never;
@@ -678,12 +646,11 @@ export class QueueActs {
     return at;
   }
 
-  /** Why a change's answer may be lost, as a sentence. */
+  /** What a change whose answer may be lost heard instead, as it came. */
   #lost(error: unknown): string {
-    if (error instanceof GithubError)
-      return `GitHub’s answer didn’t reach Lo: ${sentence(error.message)}`;
-    this.#options.log(`changing a merge queue: ${describe(error)}`);
-    return `Lo couldn’t read GitHub’s answer: ${sentence(describe(error))}`;
+    if (!(error instanceof GithubError))
+      this.#options.log(`changing a merge queue: ${describe(error)}`);
+    return textOf(error);
   }
 
   /** Reads tab `id`'s queue and those waiting to join again, after a change that ended at `endedAt`. */

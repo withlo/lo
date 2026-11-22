@@ -163,7 +163,7 @@ describe('a GitHub stack’s layer', () => {
       ),
     ).toEqual({
       kind: 'refused',
-      why: 'GitHub stack #90 merges into main now, not release. Lo reads #12 again; merge once it has.',
+      why: 'The stack’s base branch is now main.',
       again: true,
       readAgain: true,
     });
@@ -171,13 +171,13 @@ describe('a GitHub stack’s layer', () => {
 
   it('refuses when GitHub’s stack no longer holds it, or the Stacks API doesn’t answer', () => {
     const where: Where = { kind: 'githubStack', stack: 90, below: [10, 11] };
-    expect(takingOf(view(12, where, { github: [] }))).toMatchObject({
+    expect(takingOf(view(12, where, { github: [] }))).toEqual({
       kind: 'refused',
-      why: expect.stringContaining('GitHub stack #90 changed since Lo listed it.'),
+      why: 'The stack has changed.',
     });
-    expect(takingOf(view(12, where, { github: undefined }))).toMatchObject({
+    expect(takingOf(view(12, where, { github: undefined }))).toEqual({
       kind: 'refused',
-      why: expect.stringContaining('Merge it on GitHub.'),
+      why: 'GitHub didn’t respond.',
     });
   });
 
@@ -238,11 +238,11 @@ describe('a chain that isn’t a GitHub stack', () => {
   it('refuses above the bottom layer, and a bottom layer that needs a rebase', () => {
     expect(takingOf(view(3, { kind: 'chainAbove', bottom: 2 }, { queued: [2] }))).toEqual({
       kind: 'refused',
-      why: 'Merge #2 first: it’s this chain’s bottom layer.',
+      why: 'Merge #2 first',
     });
     expect(takingOf(view(31, { kind: 'chainBottom' }, { github: undefined }))).toEqual({
       kind: 'refused',
-      why: 'Change #31’s base to main on GitHub, then merge it here.',
+      why: 'Change #31’s base branch to main first',
     });
   });
 
@@ -303,11 +303,13 @@ describe('what a merge names', () => {
           { number: 11, title: '', head: 'c'.repeat(40), review: null, checks: null },
         ],
       }),
-    ).toBe('The layers that merge with it changed.');
-    expect(togetherChanged(stack, { ...stack, above: [] })).toBe('The layers above it changed.');
-    expect(togetherChanged(null, stack)).toBe('The layers that merge with it changed.');
+    ).toBe('The layers that merge have changed.');
+    expect(togetherChanged(stack, { ...stack, above: [] })).toBe(
+      'The layers above it have changed.',
+    );
+    expect(togetherChanged(null, stack)).toBe('The layers that merge have changed.');
     expect(togetherChanged(chain, { ...chain, needsRebase: [6] })).toBe(
-      'The base branches Lo moves changed.',
+      'The layers that move have changed.',
     );
   });
 });

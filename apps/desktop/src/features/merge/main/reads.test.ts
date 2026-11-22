@@ -188,7 +188,12 @@ test('a first read that fails says why, and a later failure keeps what was read'
   const failing = reads({ poller: fakePoller(new Error('GitHub answered 502')) });
   failing.followed.follow('t1');
   await settled();
-  expect(failing.followed.current('t1')).toEqual({ kind: 'failed', why: 'GitHub answered 502' });
+  // What it said, with no cause to tell, is behind Details.
+  expect(failing.followed.current('t1')).toEqual({
+    kind: 'failed',
+    why: '',
+    details: 'GitHub answered 502',
+  });
 
   const kept = reads();
   kept.followed.follow('t1');
@@ -323,12 +328,12 @@ test('a status read before a failed read, or while GitHub can’t be reached, sa
   };
   expect(known().stale).toBeNull();
   followed.fake.fail();
-  expect(known().stale).toContain('Not Found');
+  expect(known().stale).toBe('GitHub returned an error.');
   followed.fake.read(factsOf(), 3);
   expect(known().stale).toBeNull();
   expect(known().off).toBeNull();
   followed.fake.offline('getaddrinfo ENOTFOUND api.github.com');
-  expect(known().stale).toBe('GitHub can’t be reached: getaddrinfo ENOTFOUND api.github.com');
+  expect(known().stale).toBe('Offline.');
   expect(known().off).toEqual({ kind: 'offline' });
   followed.fake.offline(undefined);
   expect(known().stale).toBeNull();

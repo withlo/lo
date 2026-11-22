@@ -8,11 +8,14 @@ import keys from '../keys.ts';
 import {
   act,
   autoMerge,
+  autoMergeName,
   canAct,
   canAutoMerge,
   closedQueue,
   followQueues,
   offersJump,
+  openRow,
+  sentPlan,
 } from './acting.ts';
 import {
   canOpenOnGithub,
@@ -22,7 +25,6 @@ import {
   move,
   onQueueRow,
   openOnGithub,
-  openRow,
   queueOnScreen,
   showQueueTab,
   stepBranch,
@@ -55,7 +57,12 @@ export default {
       // Offered only to the repository's admins, whom GitHub lets move an entry.
       listed: (target) => onQueueRow(target) && offersJump(target),
     },
-    autoMerge: { run: autoMerge, enabled: canAutoMerge, listed: onQueueRow },
+    autoMerge: {
+      run: autoMerge,
+      enabled: canAutoMerge,
+      listed: onQueueRow,
+      named: autoMergeName,
+    },
     nextBranch: { run: () => stepBranch(1), enabled: canStepBranch },
     previousBranch: { run: () => stepBranch(-1), enabled: canStepBranch },
     openOnGithub: { run: openOnGithub, enabled: canOpenOnGithub, listed: onQueueRow },
@@ -76,6 +83,7 @@ export default {
   ],
   start() {
     main().subscribe('queue', showQueue);
+    main().subscribe('sent', sentPlan);
     onClosed(forgetQueue);
     onClosed(closedQueue);
     followQueues();

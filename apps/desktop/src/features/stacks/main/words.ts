@@ -1,14 +1,15 @@
-// What making a chain a GitHub stack says: why it can't, what a plan will do, and how it went. Main
-// words it all, from the core's reasons and plans and GitHub's answers. Nothing here calls Electron
-// or GitHub.
+// What converting a chain to a GitHub stack says: why it can't, what a plan will do, and why it
+// went wrong. Main words it all, from the core's reasons and plans and GitHub's answers. Nothing
+// here calls Electron or GitHub.
 
 import {
+  describeMergeRefusal,
   GithubError,
   MAX_OPEN_PULL_REQUESTS,
-  openPullRequest,
+  type MergeRefusal,
   type OpenPullRequestList,
 } from '@lo/github';
-import { layerOf, type Gap, type Plan, type Reason, type Rule, type Stacks } from '@lo/stacks';
+import { layerOf, type Gap, type Plan, type Reason, type Stacks } from '@lo/stacks';
 
 /** Pull requests' numbers as a sentence names them: "#45", "#45 and #46", "#45, #46 and #47". */
 export function numbers(prs: readonly number[]): string {
@@ -40,7 +41,7 @@ export interface ReasonContext {
   readonly list: OpenPullRequestList;
 }
 
-/** Why the chain through `context.number` can't be made a GitHub stack, a sentence a reason. */
+/** Why the chain through `context.number` can't be converted to a GitHub stack, a line a reason. */
 export function reasonsText(reasons: readonly Reason[], context: ReasonContext): string[] {
   return reasons.flatMap((reason) => reasonText(reason, context));
 }
@@ -51,192 +52,228 @@ function reasonText(reason: Reason, context: ReasonContext): string[] {
     case 'incomplete':
       return reason.gaps.map((gap) => gapText(gap, context));
     case 'notOpen':
-      return [`#${number} isn't open.`];
+      return [`#${number} isn’t open`];
     case 'alreadyStacked':
-      return [`This is GitHub stack #${reason.stack} already.`];
+      return ['Already a GitHub stack'];
     case 'noStacksApi':
-      return [`GitHub's Stacks API isn't available for ${repository}.`];
+      return [`GitHub stacks aren’t available for ${repository}`];
     case 'tooShort': {
       const above = layerOf(forest, number)?.children.length ?? 0;
       return [
         above > 1
-          ? `#${number} has ${above} layers on it. Show one of them, then try again.`
-          : 'A GitHub stack needs two PRs.',
+          ? `Show one of the layers above #${number} first`
+          : 'A GitHub stack needs 2 pull requests',
       ];
     }
     case 'stackGoesOn':
-      return [
-        `GitHub stack #${reason.stack} goes on above #${reason.past} with other PRs, and a stack takes new PRs only at its top.`,
-      ];
+      return [`The GitHub stack has other layers above #${reason.past}`];
     case 'fromFork':
-      return [
-        `#${reason.pr} comes from a fork, and a GitHub stack holds only PRs from ${repository}.`,
-      ];
+      return [`#${reason.pr} is from a fork`];
     case 'queued':
-      return [`#${reason.pr} is in a merge queue.`];
+      return [`#${reason.pr} is in the merge queue`];
     case 'onTrunk':
-      return [
-        `#${reason.pr} merges into ${reason.base}, a long-lived branch, and Lo never moves a PR off one.`,
-      ];
+      return [`#${reason.pr}’s base branch is ${reason.base}`];
     case 'inAnotherStack':
-      return [
-        `#${reason.pr} is in GitHub stack #${reason.stack} already, and a PR can be in only one.`,
-      ];
+      return [`#${reason.pr} is in another GitHub stack`];
     default:
       throw new Error(`a reason Lo doesn't know: ${JSON.stringify(reason satisfies never)}`);
   }
 }
 
 /** Why what Lo read leaves it unsure of the stack. */
-function gapText(gap: Gap, { repository, list }: ReasonContext): string {
+function gapText(gap: Gap, { repository }: ReasonContext): string {
   switch (gap.kind) {
     case 'openPullRequests':
-      return `Lo reads the ${counted(MAX_OPEN_PULL_REQUESTS)} newest of ${repository}'s ${counted(list.totalCount)} open PRs, so it can't be sure of this stack.`;
+      return `${repository} has over ${counted(MAX_OPEN_PULL_REQUESTS)} open pull requests`;
     case 'mergedPullRequests':
-      return "Some merged PRs weren't looked up yet, so Lo can't be sure of this stack.";
+      return CHECKING_MERGED;
     case 'rulesets':
-      return `Lo couldn't read ${repository}'s rulesets, so it can't be sure of this stack.`;
+      return `Couldn’t read ${repository}’s branch rules`;
     default:
       throw new Error(`a gap Lo doesn't know: ${JSON.stringify(gap satisfies never)}`);
   }
 }
 
+/** What's said while merged pull requests a stack links through are still being looked up. */
+export const CHECKING_MERGED = 'Checking merged pull requests…';
+
+/** What's said while what a refusal waits on is still being read. */
+const CHECKING = 'Checking…';
+
 /** Lo's own reasons, before it asks GitHub or the core anything. */
 export const OWN = {
-  nobody: 'Sign in to change base branches.',
-  noAccountYet: 'Lo is still working out which account this tab acts as.',
-  running: (repository: string) =>
-    `Lo is already changing ${repository}'s base branches. Wait for that to finish.`,
-  merging: (prs: readonly number[]) => `Lo is merging ${numbers(prs)}. Wait for that to finish.`,
-  unread: (repository: string) => `Lo is still reading ${repository}'s open PRs.`,
-  stale: (repository: string) =>
-    `Lo couldn't list ${repository}'s open PRs again since its last changes. Try again in a moment.`,
-  stacksChanged: (repository: string) =>
-    `${repository}'s GitHub stacks changed since Lo last listed its PRs. Try again in a moment.`,
-  stacksUnread: (number: number, error: unknown) =>
-    `Lo couldn't ask GitHub which stack #${number} is in: ${errorText(error)}`,
-  layersUnread: "Lo is still reading these PRs' state. Try again in a moment.",
-  noPoller: (login: string, error: unknown) => `Lo can't act as ${login} now: ${errorText(error)}`,
+  nobody: 'Sign in to convert to GitHub stack',
+  noAccountYet: CHECKING,
+  running: (repository: string) => `Another stack in ${repository} is still converting`,
+  merging: (prs: readonly number[]) =>
+    `${numbers(prs)} ${prs.length === 1 ? 'is' : 'are'} still merging`,
+  unread: CHECKING,
+  layersUnread: CHECKING,
 } as const;
 
-/** An error as the dialog says it: GitHub's own words when they're known. */
+/** Why something sent or read didn't go, and GitHub's own words for it. */
+export interface Cause {
+  /** One line, from the causes every error is worded by, or nothing for a cause not known. */
+  readonly reason: string | null;
+  /** GitHub's own words, or the error's, as they came. */
+  readonly details: string | null;
+}
+
+/** What GitHub said, as a sentence. */
+function detailsOf(error: unknown): string {
+  return error instanceof Error ? sentence(error.message) : sentence(String(error));
+}
+
+/** A time of day, as this computer writes it: "14:05". */
+function timeOf(at: number): string {
+  return new Date(at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+
+/** Why `error` stopped what was asked of GitHub as `login`, as every error says it. */
+export function causeOf(error: unknown, login: string): Cause {
+  const details = detailsOf(error);
+  if (!(error instanceof GithubError)) return { reason: null, details };
+  const { detail } = error;
+  switch (detail.kind) {
+    case 'network':
+      if (detail.failure === 'offline') return { reason: 'Offline.', details };
+      if (detail.failure === 'tunnel') {
+        return { reason: 'The proxy couldn’t connect to GitHub.', details };
+      }
+      return { reason: NO_ANSWER, details };
+    case 'rateLimited': {
+      const at =
+        detail.reset === undefined
+          ? detail.retryAfter === undefined
+            ? undefined
+            : Date.now() + detail.retryAfter * 1000
+          : detail.reset * 1000;
+      return {
+        reason:
+          at === undefined
+            ? 'GitHub’s rate limit was reached.'
+            : `GitHub’s rate limit resets at ${timeOf(at)}.`,
+        details,
+      };
+    }
+    case 'unauthorized':
+      return { reason: `${detail.missing ?? login} is signed out.`, details };
+    case 'tokenUnavailable':
+      return {
+        reason: `${login}’s sign-in can’t be read from the ${process.platform === 'darwin' ? 'Keychain' : 'keyring'}.`,
+        details,
+      };
+    case 'notFound':
+      return { reason: `It doesn’t exist, or ${login} can’t see it.`, details };
+    case 'api':
+    case 'graphql':
+      return { reason: 'GitHub returned an error.', details };
+    case 'ssoRequired':
+    case 'oauthAppRestricted':
+    case 'refusedUrl':
+    case 'inconsistent':
+    case 'decode':
+      // No cause of its own: GitHub's words say it.
+      return { reason: null, details };
+    default:
+      // GitHub may fail in a way Lo doesn't know yet: its words say it.
+      detail satisfies never;
+      return { reason: null, details };
+  }
+}
+
+/** Why GitHub's answer is not known. */
+export const NO_ANSWER = 'GitHub didn’t respond.';
+
+/** Why GitHub refused a change a conversion sent, as every refused write says it. */
+export function refusalCause(refusal: MergeRefusal, login: string): Cause {
+  const details = `${describeMergeRefusal(refusal)}.`;
+  switch (refusal.refusal) {
+    case 'stackChanged':
+      return { reason: STACK_CHANGED, details };
+    case 'noPermission':
+      return { reason: `${login} doesn’t have permission.`, details };
+    case 'alreadyStacked':
+      return { reason: 'One of these pull requests is already in a GitHub stack.', details };
+    case 'notAChain':
+      return { reason: 'Each pull request must be based on the one below it.', details };
+    case 'stackBusy':
+      return { reason: 'GitHub is still changing this stack.', details };
+    case 'baseChanged':
+      return { reason: `Its base branch is now ${refusal.now}.`, details };
+    case 'paused':
+      return { reason: `GitHub’s rate limit resets at ${timeOf(refusal.until)}.`, details };
+    case 'other':
+      return { reason: 'GitHub returned an error.', details };
+    // Refusals of a merge, never of a conversion's change: GitHub's words say them.
+    case 'autoMergeNotAllowed':
+    case 'canMergeNow':
+    case 'closed':
+    case 'conflict':
+    case 'draft':
+    case 'headMoved':
+    case 'layerMoved':
+    case 'merged':
+    case 'noMergeQueue':
+    case 'notACommit':
+    case 'queueUnchecked':
+    case 'rules':
+    case 'stackNeedsRebase':
+    case 'stacked':
+    case 'unchecked':
+    case 'unnamedAbove':
+    case 'unnamedLayers':
+      return { reason: null, details };
+    default:
+      refusal satisfies never;
+      return { reason: null, details };
+  }
+}
+
+/** Why a plan is gone, or GitHub's stacks aren't as the list has them. */
+export const STACK_CHANGED = 'The stack has changed.';
+
+/** An error as GitHub's own words say it, a sentence. */
 export function errorText(error: unknown): string {
-  if (error instanceof GithubError) return sentence(error.message);
-  if (error instanceof Error) return sentence(error.message);
-  return sentence(String(error));
+  return detailsOf(error);
 }
 
-/** What the confirmation shows of a plan, in words, but its rows. */
-export interface PlanWords {
-  readonly title: string;
-  readonly description: string;
-  readonly heading: string;
-  readonly stack: string;
-  readonly warning: string | undefined;
-  readonly confirm: string;
-}
-
-/** The pull requests a plan makes a GitHub stack of, or adds to one, bottom to top. */
+/** The pull requests a plan converts to a GitHub stack, or adds to one, bottom to top. */
 export function stackedBy(plan: Plan): readonly number[] {
   const last = plan.steps.at(-1);
   return last && last.kind !== 'retarget' ? last.prs : plan.path;
 }
 
-/** What the confirmation of `plan` says, for the pull request `number` in `repository`. */
-export function planWords(
-  plan: Plan,
-  { repository, forest, list }: Omit<ReasonContext, 'number'>,
-): PlanWords {
-  const last = plan.steps.at(-1);
-  const added = stackedBy(plan);
-  const moves = plan.steps.flatMap((step) => (step.kind === 'retarget' ? [step.retarget] : []));
-  const changes = moves.length;
-  const heading =
-    changes === 0
-      ? '1 · No base branch changes'
-      : changes === 1
-        ? '1 · One base branch changes'
-        : `1 · ${changes} base branches change`;
-  const heads = new Map(
-    plan.path.map((number) => [openPullRequest(list, number)?.headRefName, number] as const),
-  );
-  // Each pull request moved onto the head branch of the one below shows only its own commits.
-  const shrinking = moves.filter((move) => heads.has(move.to));
-  const who = shrinking.map((move) => {
-    const author = openPullRequest(list, move.pr)?.author?.login;
-    return `${author ?? `#${move.pr}'s author`} will see #${move.pr}'s diff shrink to its own commits.`;
-  });
-  const warning =
-    changes === 0
-      ? undefined
-      : ['Base branches change for everyone, on GitHub too.', ...who].join(' ');
-  if (last?.kind === 'addToStack') {
-    return {
-      title: `Add ${added.length === 1 ? 'this PR' : `these ${added.length} PRs`} to GitHub stack #${last.stack}?`,
-      description: `${repository} · on GitHub stack #${last.stack}`,
-      heading,
-      stack: `${numbers(added)} ${added.length === 1 ? 'joins' : 'join'} GitHub stack #${last.stack}, at its top.`,
-      warning,
-      confirm: 'Add to the stack',
-    };
-  }
+/** What the confirmation of `plan` says, but its steps. */
+export interface PlanWords {
+  /** The repository and how many layers: "e2e · 3 layers". */
+  readonly description: string;
+  /** What GitHub will show once a layer moves, when one does. */
+  readonly warning: string | undefined;
+}
+
+/** What the confirmation of `plan` says, for a pull request in `repository`. */
+export function planWords(plan: Plan, repository: string): PlanWords {
+  const layers = stackedBy(plan).length;
+  const moves = plan.steps.some((step) => step.kind === 'retarget');
   return {
-    title: `Make these ${plan.path.length} PRs a GitHub stack?`,
-    description: `${repository} · ${foundBy(plan, forest)}`,
-    heading,
-    stack: `${plan.path.map((number) => `#${number}`).join(' → ')}, through GitHub's Stacks API.`,
-    warning,
-    confirm: 'Make the stack',
+    description: `${repository} · ${layers} ${layers === 1 ? 'layer' : 'layers'}`,
+    warning: moves
+      ? 'On GitHub, each moved pull request’s diff shows only its own commits.'
+      : undefined,
   };
 }
 
 /**
- * The rules that linked the path's layers to each other, a GitHub stack's as a base branch's, since
- * its layers sit on each other's branches.
+ * What the offer over the stack's tree says of `plan`, before anyone asks for it, in one line: a
+ * branch stack merges a layer at a time, and layers that sit on a GitHub stack aren't in it.
  */
-function rulesOf(plan: Plan, forest: Stacks): ReadonlySet<Rule> {
-  return new Set<Rule>(
-    plan.path.flatMap((number) => {
-      const rule = layerOf(forest, number)?.rule;
-      return rule === undefined ? [] : [rule === 'nativeStack' ? 'baseBranch' : rule];
-    }),
-  );
-}
-
-/** How the path's layers were found to sit on each other: "found by base branch". */
-function foundBy(plan: Plan, forest: Stacks): string {
-  const rules = rulesOf(plan, forest);
-  if (rules.has('baseBranch') && rules.has('sharedCommits')) {
-    return 'found by base branch and shared commits';
-  }
-  if (rules.has('sharedCommits')) return 'found by shared commits';
-  return 'found by base branch';
-}
-
-/**
- * What the offer over the stack's tree says of `plan`, before anyone asks for it: what the chain is
- * now, worded for how it was found, and what being a GitHub stack would change.
- */
-export function calloutText(plan: Plan, forest: Stacks): string {
+export function calloutText(plan: Plan): string {
   const last = plan.steps.at(-1);
   if (last?.kind === 'addToStack') {
-    const one = last.prs.length === 1;
-    return `${numbers(last.prs)} ${one ? 'sits' : 'sit'} on GitHub stack #${last.stack} but ${one ? "isn't" : "aren't"} in it. In it, ${one ? 'it' : 'they'}'d merge with the layers below.`;
+    return last.prs.length === 1
+      ? `${numbers(last.prs)} isn’t in the GitHub stack below it.`
+      : `${numbers(last.prs)} aren’t in the GitHub stack below them.`;
   }
-  const rules = rulesOf(plan, forest);
-  const now =
-    rules.has('baseBranch') && rules.has('sharedCommits')
-      ? "sit on each other's branches and share commits"
-      : rules.has('sharedCommits')
-        ? 'share commits'
-        : "sit on each other's branches";
-  return `These PRs ${now} but aren't a GitHub stack. As one, they'd merge together.`;
-}
-
-/** What a conversion made, once it's done, for the toast: "Made #1, #2 and #3 a GitHub stack". */
-export function madeText(plan: Plan): string {
-  const last = plan.steps.at(-1);
-  if (last?.kind === 'addToStack')
-    return `Added ${numbers(last.prs)} to GitHub stack #${last.stack}`;
-  return `Made ${numbers(stackedBy(plan))} a GitHub stack`;
+  return 'This branch stack merges one layer at a time.';
 }

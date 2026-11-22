@@ -162,9 +162,7 @@ describe('opening a merge queue', () => {
   it('refuses a tab that reads without signing in, or hasn’t chosen its account yet', () => {
     const { queues, opened } = harness({ anonymous: { kind: 'anonymous' }, choosing: undefined });
     queues.start();
-    expect(() => queues.show('anonymous', 'main')).toThrow(
-      'Lo reads a merge queue as a signed-in account. This tab reads without signing in.',
-    );
+    expect(() => queues.show('anonymous', 'main')).toThrow('Sign in to open the merge queue');
     expect(() => queues.show('choosing', 'main')).toThrow(
       'Lo is still working out which account this tab uses.',
     );
@@ -219,6 +217,20 @@ describe('reading the queues', () => {
     expect(queues.state('q')).toBeUndefined();
   });
 
+  it('reads the queue and those waiting to join again when asked to look, begun since', async () => {
+    const { queues, asked, setTabs } = harness();
+    setTabs({ tabs: [RECENT, queueTab('q', 'main')], active: 'q' });
+    queues.start();
+    await vi.advanceTimersByTimeAsync(1_000);
+    asked.length = 0;
+    // Read a moment ago, both are read again all the same.
+    const looking = queues.look('q');
+    await vi.advanceTimersByTimeAsync(0);
+    expect(await looking).toBeUndefined();
+    expect(asked).toEqual(['q view main', 'q waiting main']);
+    expect(await queues.look('closed')).toBeUndefined();
+  });
+
   it('reads nothing once Lo quits', async () => {
     const { queues, asked, setTabs } = harness();
     setTabs({ tabs: [RECENT, queueTab('q', 'main')], active: 'q' });
@@ -244,7 +256,7 @@ describe('an account that goes away', () => {
     signOut('tess-okafor');
     await vi.advanceTimersByTimeAsync(0);
     expect(queues.state('q')?.failure).toEqual({
-      message: 'tess-okafor is signed out. Lo reads the queue again once you sign in to it.',
+      message: 'tess-okafor is signed out.',
       retryAt: null,
     });
     // Another account's queue isn't held.
@@ -269,9 +281,7 @@ describe('an account that goes away', () => {
     remove('tess-okafor');
     expect(asked).toEqual(['q forgets its poller']);
     await vi.advanceTimersByTimeAsync(0);
-    expect(queues.state('q')?.failure?.message).toBe(
-      'Lo isn’t signed in to tess-okafor, and reads the queue again once you sign in to it.',
-    );
+    expect(queues.state('q')?.failure?.message).toBe('tess-okafor is signed out.');
     asked.length = 0;
     await vi.advanceTimersByTimeAsync(10 * 60_000);
     expect(asked).toEqual([]);
@@ -291,9 +301,7 @@ describe('an account that goes away', () => {
     queues.start();
     await vi.advanceTimersByTimeAsync(0);
     expect(asked).toEqual([]);
-    expect(queues.state('q')?.failure?.message).toBe(
-      'tess-okafor is signed out. Lo reads the queue again once you sign in to it.',
-    );
+    expect(queues.state('q')?.failure?.message).toBe('tess-okafor is signed out.');
 
     setTabs({
       tabs: [RECENT, queueTab('q', 'main'), queueTab('s', 'main', 'sam-lee')],
@@ -301,9 +309,7 @@ describe('an account that goes away', () => {
     });
     await vi.advanceTimersByTimeAsync(10 * 60_000);
     expect(asked).toEqual([]);
-    expect(queues.state('s')?.failure?.message).toBe(
-      'Lo isn’t signed in to sam-lee, and reads the queue again once you sign in to it.',
-    );
+    expect(queues.state('s')?.failure?.message).toBe('sam-lee is signed out.');
     signIn('sam-lee');
     await vi.advanceTimersByTimeAsync(0);
     expect(asked).toEqual(['s view main', 's waiting main']);
@@ -323,9 +329,7 @@ describe('an account that goes away', () => {
     signIn('tess-okafor');
     await vi.advanceTimersByTimeAsync(0);
     expect(asked).toEqual(['q view main', 'q waiting main']);
-    expect(queues.state('r')?.failure?.message).toBe(
-      'rozed-bot is signed out. Lo reads the queue again once you sign in to it.',
-    );
+    expect(queues.state('r')?.failure?.message).toBe('rozed-bot is signed out.');
     asked.length = 0;
     setTabs({ tabs: both, active: 'r' });
     await vi.advanceTimersByTimeAsync(10 * 60_000);
@@ -343,7 +347,7 @@ describe('an account that goes away', () => {
     signOut('tess-okafor');
     answerCheck();
     await vi.advanceTimersByTimeAsync(0);
-    const signedOut = 'tess-okafor is signed out. Lo reads the queue again once you sign in to it.';
+    const signedOut = 'tess-okafor is signed out.';
     expect(queues.state('q')?.failure?.message).toBe(signedOut);
     asked.length = 0;
     await vi.advanceTimersByTimeAsync(10 * 60_000);

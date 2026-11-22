@@ -193,6 +193,7 @@ function view(number: number, more: Partial<WhereView> = {}, at: Repository = MA
   const layer = layerOf(at.stacks, number);
   return {
     number,
+    repo: 'rozed-dev/e2e',
     facts: layer ? placedIn(layer, at) : { base: 'main', stack: undefined },
     forest: forest({}, at),
     openFrom: readFrom(at),
@@ -254,7 +255,7 @@ describe('where a pull request sits', () => {
     expect(where(view(70, { openFrom: opened }, before))).toEqual({
       kind: 'unknown',
       why: { kind: 'unlistedBelow', pr: 71, branch: 'feat' },
-      text: "#71 comes from feat but isn't in Lo's list yet, so Lo can't tell what #70 sits on. Lo is listing the open pull requests again.",
+      text: '',
       listAgain: true,
     });
     // Listed again, it's below.
@@ -332,7 +333,7 @@ describe('where a pull request sits is unknown', () => {
     expect(where(view(1, { forest: undefined }))).toEqual({
       kind: 'unknown',
       why: { kind: 'unread' },
-      text: "Lo is still listing this repository's open pull requests.",
+      text: '',
       listAgain: false,
     });
   });
@@ -341,7 +342,7 @@ describe('where a pull request sits is unknown', () => {
     const answer = {
       kind: 'unknown',
       why: { kind: 'tooMany' },
-      text: "This repository has over 1,000 open pull requests, so Lo can't tell what this one sits on. Merge it on GitHub.",
+      text: 'rozed-dev/e2e has over 1,000 open pull requests.',
       listAgain: false,
     };
     expect(where(view(1, { forest: forest({ whole: false }) }))).toEqual(answer);
@@ -355,22 +356,22 @@ describe('where a pull request sits is unknown', () => {
     expect(where(view(1, { forest: forest({ listedAt: listedAt - 1 }) }))).toEqual({
       kind: 'unknown',
       why: { kind: 'stale', listedAt: listedAt - 1 },
-      text: "Lo's list of this repository's open pull requests is 3 minutes old. Lo is listing the open pull requests again.",
+      text: '',
       listAgain: true,
     });
     // Listed every 5 minutes, as in the background, it's still recent.
     const background = forest({ listedAt: NOW - 5.5 * 60_000, listEvery: 5 * 60_000 });
     expect(where(view(1, { forest: background }))).toEqual({ kind: 'alone' });
     expect(
-      unsure(where(view(1, { forest: forest({ listedAt: NOW - 2 * 3_600_000 }) }))).text,
-    ).toMatch(/ is 2 hours old\. /);
+      unsure(where(view(1, { forest: forest({ listedAt: NOW - 2 * 3_600_000 }) }))).why,
+    ).toEqual({ kind: 'stale', listedAt: NOW - 2 * 3_600_000 });
   });
 
   it("while the list doesn't hold the pull request", () => {
     expect(where(view(99))).toEqual({
       kind: 'unknown',
       why: { kind: 'missing' },
-      text: "#99 isn't in Lo's list of this repository's open pull requests yet. Lo is listing the open pull requests again.",
+      text: '',
       listAgain: true,
     });
   });
@@ -379,7 +380,7 @@ describe('where a pull request sits is unknown', () => {
     expect(where(view(3, { facts: { base: 'main', stack: undefined } }))).toEqual({
       kind: 'unknown',
       why: { kind: 'moved', listed: { base: 'b2', stack: undefined } },
-      text: "GitHub says #3 merges into main, but Lo's list says b2. Lo is listing the open pull requests again.",
+      text: '#3’s base branch is now main.',
       listAgain: true,
     });
   });
@@ -387,21 +388,19 @@ describe('where a pull request sits is unknown', () => {
   it('while the list has it in another GitHub stack than the merge facts, or none', () => {
     expect(unsure(stackSaid(2, { number: 90, position: 1, base: 'main' }))).toMatchObject({
       why: { kind: 'moved', listed: { base: 'main', stack: undefined } },
-      text: "GitHub says #2 is in GitHub stack #90, but Lo's list has it in none. Lo is listing the open pull requests again.",
+      text: 'The stack has changed.',
       listAgain: true,
     });
-    expect(unsure(stackSaid(11, undefined)).text).toBe(
-      "GitHub says #11 is in no GitHub stack, but Lo's list has it in #90. Lo is listing the open pull requests again.",
-    );
+    expect(unsure(stackSaid(11, undefined)).text).toBe('The stack has changed.');
     expect(unsure(stackSaid(11, { number: 97, position: 2, base: 'main' })).text).toBe(
-      "GitHub says #11 is in GitHub stack #97, but Lo's list has it in #90. Lo is listing the open pull requests again.",
+      'The stack has changed.',
     );
   });
 
   it('while the list has it at another place in its GitHub stack than the merge facts', () => {
     expect(unsure(stackSaid(11, { number: 90, position: 1, base: 'main' }))).toMatchObject({
       why: { kind: 'moved', listed: { stack: { number: 90, position: 2, base: 'main' } } },
-      text: "GitHub says #11 is layer 1 of GitHub stack #90, but Lo's list has it as layer 2. Lo is listing the open pull requests again.",
+      text: 'The stack has changed.',
       listAgain: true,
     });
     // Never the bottom of the stack, with nothing below, while they disagree.
@@ -412,7 +411,7 @@ describe('where a pull request sits is unknown', () => {
     // #10, the stack's bottom layer, moved onto release since the list was read.
     expect(unsure(stackSaid(11, { number: 90, position: 2, base: 'release' }))).toMatchObject({
       why: { kind: 'moved', listed: { stack: { number: 90, position: 2, base: 'main' } } },
-      text: "GitHub says GitHub stack #90 merges into release, but Lo's list says main. Lo is listing the open pull requests again.",
+      text: 'The stack has changed.',
       listAgain: true,
     });
   });
@@ -429,12 +428,12 @@ describe('where a pull request sits is unknown', () => {
     expect(where(view(51, {}, at))).toEqual({
       kind: 'unknown',
       why: { kind: 'cycle', prs: [50, 51] },
-      text: "#50 and #51 each sit on the other, so Lo can't tell what this one sits on. Merge it on GitHub.",
+      text: '#50 and #51 are each based on the other.',
       listAgain: false,
     });
     // A layer on the loop is unsure too. The loop is named in the order each sits on the next.
     expect(unsure(where(view(63, {}, at))).text).toBe(
-      "#60, #62 and #61 sit on each other in a loop, so Lo can't tell what this one sits on. Merge it on GitHub.",
+      '#60, #62 and #61 are based on each other in a loop.',
     );
   });
 
@@ -445,12 +444,12 @@ describe('where a pull request sits is unknown', () => {
     expect(where(view(31, {}, unlooked))).toEqual({
       kind: 'unknown',
       why: { kind: 'lookups' },
-      text: "Some merged pull requests weren't looked up yet, so Lo can't tell what #31 sits on. Lo looks them up 20 branches at a time, minutes apart.",
+      text: 'Checking stack…',
       listAgain: true,
     });
     // With how many branches are left, which says how long it may take.
     expect(unsure(where(view(31, { toLookUp: () => 16 }, unlooked))).text).toBe(
-      "Some merged pull requests weren't looked up yet, so Lo can't tell what #31 sits on. Lo looks them up 20 branches at a time, minutes apart, and has 16 to go.",
+      'Checking stack · 16 branches left',
     );
     // A stack on a trunk sits on no merged pull request's branch.
     expect(where(view(29, {}, unlooked))).toEqual({ kind: 'alone' });
@@ -515,7 +514,7 @@ describe('where a pull request sits is unknown', () => {
     expect(where(view(3, { openFrom: readingFrom(MAIN, 'b2', undefined) }))).toEqual({
       kind: 'unknown',
       why: { kind: 'unconfirmed', branch: 'b2' },
-      text: "Lo hasn't asked GitHub yet which open pull requests come from b2.",
+      text: '',
       listAgain: false,
     });
   });
@@ -525,7 +524,7 @@ describe('where a pull request sits is unknown', () => {
     expect(where(view(3, { openFrom: readingFrom(MAIN, 'b2', some) }))).toEqual({
       kind: 'unknown',
       why: { kind: 'cutShort', branch: 'b2' },
-      text: "GitHub gave only some of the open pull requests from b2, so Lo can't tell what this one sits on. Merge it on GitHub.",
+      text: 'GitHub lists only some pull requests from b2.',
       listAgain: false,
     });
   });

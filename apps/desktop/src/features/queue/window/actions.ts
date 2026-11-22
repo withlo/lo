@@ -1,21 +1,27 @@
 // What the merge queue's keys do: `gq` from a pull request's tab, and in the queue's tab moving
 // between its rows, opening the one the keyboard is on, showing another branch's queue, and opening
-// a pull request or the queue on GitHub. A row's right-click menu and the palette do the same for
-// the row right-clicked or the one the keyboard is on.
+// a pull request or the queue on GitHub. A row's right-click menu, its buttons, the status bar's
+// hints and the palette do the same for the row right-clicked or the one the keyboard is on.
 
+import { reveal } from '@lo/ui';
 import type { NoTarget, RowTarget, Target } from '@lo/ui/commands';
 
-import { notify } from '../../../window/commands/notices.tsx';
 import type { QueueTab } from '../../tab/contract.ts';
 import { activeTab, pullOf } from '../../tab/window/shared.ts';
 import { main, tabs } from './main.ts';
 import { focusedRow, rowsOf, stepRow, type Row } from './rows.ts';
 import { focusedRows, queueOf } from './store.ts';
 
-/** Says what went wrong with what `title` asked for. */
-function failed(title: string): (error: unknown) => void {
-  return (error) => notify(title, error instanceof Error ? error.message : String(error));
+/**
+ * Logs what went wrong with `what`: something outside Lo, such as the browser, that didn't open,
+ * or a queue that didn't show, where nothing on screen is there to say it.
+ */
+function failed(what: string): (error: unknown) => void {
+  return (error) => console.error(`Lo couldn't ${what}:`, error);
 }
+
+/** What a dimmed control says while what it needs is still being read. */
+const CHECKING = 'Checking…';
 
 /**
  * The base branch of the pull request on screen, and its tab's view, for `gq`, or why there's no
@@ -23,17 +29,13 @@ function failed(title: string): (error: unknown) => void {
  */
 function queueFromPull(): { id: string; branch: string } | string {
   const tab = activeTab();
-  if (tab?.kind !== 'pull') return 'There’s no pull request on screen.';
+  if (tab?.kind !== 'pull') return 'Open a pull request first';
   const view = pullOf(tab.id);
   const branch = view?.header?.base.branch;
-  if (branch === undefined) return 'Lo hasn’t read this pull request yet.';
+  if (branch === undefined) return CHECKING;
   const acting = view?.acting;
-  if (acting === null || acting === undefined) {
-    return 'Lo is still working out which account this tab uses.';
-  }
-  if (acting.kind !== 'account') {
-    return 'Lo reads a merge queue as a signed-in account. This tab reads without signing in.';
-  }
+  if (acting === null || acting === undefined) return CHECKING;
+  if (acting.kind !== 'account') return 'Sign in to open the merge queue';
   return { id: tab.id, branch };
 }
 
@@ -47,13 +49,18 @@ export function canShowQueue(): true | string {
 export async function showQueueTab(): Promise<void> {
   const found = queueFromPull();
   if (typeof found === 'string') return;
-  await main().show(found).catch(failed('Merge queue'));
+  await main().show(found).catch(failed('show a merge queue'));
 }
 
 /** The merge queue's tab on screen, or why a key for one can't run. */
 export function queueOnScreen(): QueueTab | string {
   const tab = activeTab();
-  return tab?.kind === 'queue' ? tab : 'There’s no merge queue on screen.';
+  return tab?.kind === 'queue' ? tab : 'Open the merge queue first';
+}
+
+/** The pull request a row's key names: `260` for `queued-260`. */
+export function numberOf(key: string): number {
+  return Number(key.slice(key.lastIndexOf('-') + 1));
 }
 
 /** The rows of the merge queue's tab `tab`, as main last said. */
@@ -85,8 +92,8 @@ export function focusRow(tab: string, key: string): void {
   const element = table?.tab === tab ? table.element() : null;
   if (element && document.activeElement !== element) element.focus({ preventScroll: true });
   requestAnimationFrame(() => {
-    const row = element?.querySelector(`[data-key="${CSS.escape(key)}"]`);
-    row?.scrollIntoView({ block: 'nearest' });
+    const row = element?.querySelector<HTMLElement>(`[data-key="${CSS.escape(key)}"]`);
+    if (row) reveal(row);
   });
 }
 
@@ -103,7 +110,7 @@ function rowAt(target: RowTarget): { tab: QueueTab; row: Row } | string {
   const tab = queueOnScreen();
   if (typeof tab === 'string') return tab;
   const row = rowsIn(tab.id).find((each) => each.key === target.row);
-  return row ? { tab, row } : 'That pull request isn’t in the queue any more.';
+  return row ? { tab, row } : `#${numberOf(target.row)} left the queue`;
 }
 
 /** The merge queue tab whose table is drawn now, if one is. */
@@ -124,13 +131,6 @@ export function onQueueRow(target: RowTarget | NoTarget): boolean {
 export function canOpenRow(target: RowTarget): true | string {
   const at = rowAt(target);
   return typeof at === 'string' ? at : true;
-}
-
-/** `⏎`: opens the pull request of the row `target` names, as the queue's account. */
-export async function openRow(target: RowTarget): Promise<void> {
-  const at = rowAt(target);
-  if (typeof at === 'string') return;
-  await main().open({ id: at.tab.id, number: at.row.number }).catch(failed('Open'));
 }
 
 /**
@@ -154,19 +154,19 @@ export function canOpenOnGithub(target: RowTarget | NoTarget): true | string {
     const at = rowAt(target);
     if (typeof at === 'string') return at;
   }
-  return pageOf(target) === '' ? 'Lo hasn’t read this branch’s merge queue.' : true;
+  return pageOf(target) === '' ? CHECKING : true;
 }
 
 /** `gx`: opens the pull request, or the queue, on GitHub. */
 export async function openOnGithub(target: RowTarget | NoTarget): Promise<void> {
   const url = pageOf(target);
   if (url === '') return;
-  await tabs().openExternal({ url }).catch(failed('Open on GitHub'));
+  await tabs().openExternal({ url }).catch(failed('open a page on GitHub'));
 }
 
 /** Opens `url`, a page on GitHub a row links, such as a failed check's run. */
 export function openPage(url: string): void {
-  tabs().openExternal({ url }).catch(failed('Open on GitHub'));
+  tabs().openExternal({ url }).catch(failed('open a page on GitHub'));
 }
 
 /**
@@ -177,7 +177,7 @@ function branchesOnScreen(): { tab: QueueTab; names: string[]; at: number } | st
   const tab = queueOnScreen();
   if (typeof tab === 'string') return tab;
   const names = (queueOf(tab.id)?.branches ?? []).map(({ name }) => name);
-  if (names.length < 2) return 'Lo knows of no other branch with a merge queue here.';
+  if (names.length < 2) return 'No other branch has a merge queue';
   return { tab, names, at: names.indexOf(tab.branch) };
 }
 
@@ -189,7 +189,7 @@ export function canStepBranch(): true | string {
 
 /** Shows `branch`'s queue in merge queue tab `tab`. */
 export async function showBranch(tab: string, branch: string): Promise<void> {
-  await main().show({ id: tab, branch }).catch(failed('Show the branch’s queue'));
+  await main().show({ id: tab, branch }).catch(failed('show a branch’s merge queue'));
 }
 
 /** `Tab` and `⇧Tab`: the next or previous branch's queue, round the ends. */
