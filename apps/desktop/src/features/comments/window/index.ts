@@ -78,7 +78,7 @@ import {
   takeReview,
   takeThreads,
 } from './threads.ts';
-import { followVim, switchVim } from './vim.ts';
+import { followVim, switchVim, vimDetail } from './vim.ts';
 
 /** The pull request's tab on screen, where a comment can be written, or why one can't. */
 function writable(): PullTab | string {
@@ -188,9 +188,8 @@ export default {
     undiscard: undiscarding,
     sendAnyway: offering('sendAnyway'),
     moveToFile: offering('onFile'),
-    loadNewer: offering('loadNewer'),
-    showLatest: offering('showLatest'),
-    vim: { run: switchVim },
+    showLatest: offering('showLatest', 'loadNewer'),
+    vim: { run: switchVim, detail: vimDetail },
     keptDrafts: {
       run: () => {
         const tab = activeTab();

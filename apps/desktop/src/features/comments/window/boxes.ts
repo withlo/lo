@@ -1796,20 +1796,25 @@ export const discarding: Handler<BoxTarget> = {
 
 /**
  * What a box's note offers, as a command on the box: there only while the box offers it, in its
- * frame's menu and in the palette.
+ * frame's menu and in the palette. Offers that read the same, as both ways to "Show latest" do, are
+ * one command, which does whichever the box offers.
  */
-export function offering(offer: Offer): Handler<BoxTarget> {
-  const offers = (target: BoxTarget) => {
+export function offering(...among: readonly Offer[]): Handler<BoxTarget> {
+  const offerIn = (target: BoxTarget) => {
     const box = boxNamed(target.box);
-    return box !== undefined && offersOf(box.state).includes(offer);
+    const offers = box && offersOf(box.state);
+    return among.find((each) => offers?.includes(each));
   };
   return {
     run(target) {
       const box = boxNamed(target.box);
-      if (box && offers(target)) act(box, offer);
+      const offer = offerIn(target);
+      if (box && offer !== undefined) act(box, offer);
     },
-    enabled: (target) => offers(target) || `“${offerLabels[offer]}” isn’t offered in this box now.`,
-    listed: offers,
+    enabled: (target) =>
+      offerIn(target) !== undefined ||
+      `“${among[0] === undefined ? '' : offerLabels[among[0]]}” isn’t offered in this box now.`,
+    listed: (target) => offerIn(target) !== undefined,
   };
 }
 

@@ -35,3 +35,8 @@ export function followVim(): void {
 export async function switchVim(): Promise<void> {
   await changeSetting(vim, !vimOn());
 }
+
+/** What the palette says after "Vim keys": whether they're on. */
+export function vimDetail(): string {
+  return vimOn() ? 'On' : 'Off';
+}

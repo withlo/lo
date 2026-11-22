@@ -425,11 +425,11 @@ test('`c` on lines selected, `s` and a header’s `c` open their boxes; one kept
     await box.getByRole('button', { name: 'Discard draft' }).click();
     await expect(box).toHaveCount(0);
     // A toast says so, and its "Undo" opens the box again where it was, with its text.
-    const toast = again.page.locator('.toast', { hasText: 'Discarded draft' });
-    await toast.getByRole('button', { name: 'Undo' }).click();
+    const discarded = again.page.locator('.toast', { hasText: 'Discarded draft' });
+    await discarded.getByRole('button', { name: 'Undo' }).click();
     await expect(box).toHaveCount(1);
     await expect(box.locator('.cm-content')).toHaveText('Kept for later.');
-    await expect(toast).toHaveCount(0);
+    await expect(discarded).toHaveCount(0);
     // Emptied, the box has nothing to discard, and says so.
     await box.locator('.cm-content').click();
     await again.page.keyboard.press(`${cmd}+a`);

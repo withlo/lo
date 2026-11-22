@@ -165,7 +165,7 @@ export function PullBox({ tab, leave, keys }: PullBoxProps): ReactNode {
         {box ? (
           <TimelineComposer
             box={box}
-            label="Pull request"
+            label={`Comment on #${tab.number}`}
             hint={hintOf(box.state.place, tab.number)}
             leave={leave}
           />
@@ -195,7 +195,7 @@ export interface PullEditProps {
 export function PullEdit({ tab, comment, leave }: PullEditProps): ReactNode {
   const box = useTabState(timelineBoxes, tab.id, (boxes) => boxes.edits.get(comment));
   if (!box) return null;
-  return <TimelineComposer box={box} label="Edit" leave={leave} />;
+  return <TimelineComposer box={box} label="Edit comment" leave={leave} />;
 }
 
 /** The comments on view `view`'s pull request whose edit boxes are open, by their node IDs. */

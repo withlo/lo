@@ -562,9 +562,10 @@ function whyWords(why: BlockWhy, names: BlockRevisions): BoxWhere {
     case 'noLines':
       return { head: 'File', why: 'Couldn’t check which lines take comments.' };
     case 'changed':
-    // Where the lines are at the head isn't known: they may have changed since.
-    case 'unknown':
       return { head: 'File', why: `These lines changed since ${names.written}.` };
+    // Where the lines are at the head isn't known: whether they changed since isn't either.
+    case 'unknown':
+      return { head: 'File', why: `Couldn’t follow these lines to ${names.now}.` };
     case 'older':
       return { head: 'File', why: `Removed lines can’t be followed to ${names.now}.` };
     case 'deleted':

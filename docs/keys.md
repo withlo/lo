@@ -156,7 +156,6 @@ Each command's id is what [the keymap file](#the-keymap-file) binds keys to.
 
 | Action                                 | Keys                                           | Where                                                                                               | Command               |
 | -------------------------------------- | ---------------------------------------------- | --------------------------------------------------------------------------------------------------- | --------------------- |
-| Show latest                            | None: in its menu and the palette              | In `box`                                                                                            | `comments.loadNewer`  |
 | Show latest                            | None: in its menu and the palette              | In `box`                                                                                            | `comments.showLatest` |
 | Vim keys                               | None: in the app menu on macOS and the palette | Anywhere                                                                                            | `comments.vim`        |
 | Show where kept drafts are             | None: in the app menu on macOS and the palette | Anywhere                                                                                            | `comments.keptDrafts` |
@@ -259,9 +258,9 @@ command leaves them as they are.
 a comment on the pull request itself, which joins no review, it posts the comment; in a box that
 edits one of your comments it saves the edit; and in the review summary's box it submits the review.
 `⌥⏎` posts a comment, or a reply, right away, outside your pending review, and posts or saves in the
-pull request's own box and an edit's, as `⌘⏎` does. `Esc` leaves insert mode, which is Vim's; once
-in normal mode, `Esc` closes the box and keeps the draft. In the box's preview, or on its frame,
-`Esc` closes it at once, from any mode.
+pull request's own box and an edit's, as `⌘⏎` does. `Esc` closes the box and keeps the draft. With
+Vim keys on, `Esc` leaves insert mode first, which is Vim's, and closes the box once it's in normal
+mode. In the box's preview, or on its frame, `Esc` closes it at once, from any mode.
 
 ## Merge queue
 
@@ -370,22 +369,26 @@ comment box and another elsewhere.
 | `toasts`     | Named by `updates`.                                                                   |
 | `welcome`    | Named by `welcome`.                                                                   |
 
-In a code view, keys follow Vim's mode. In insert mode, and while Vim waits for the rest of a
-command (after a count or an operator), only chords are Lo's, and other keys go to Vim, but for the
-keys of Lo's commands that take a count, after a count alone in normal mode (see [Counts](#counts)).
-In a text field, typing and moving through the text are the field's.
+Vim keys are a setting, `editor.vim`, off as Lo starts. Off, a code view has a plain caret: Lo's
+keys run there as they do anywhere, and of the keys listed as Vim's own the code view runs `j`, `k`,
+`g g`, `G`, `/`, `n` and `N` itself. A comment box is typed in from the moment it has focus, so only
+chords are Lo's there. With Vim keys on, keys in a code view follow Vim's mode. In insert mode, and
+while Vim waits for the rest of a command (after a count or an operator), only chords are Lo's, and
+other keys go to Vim, but for the keys of Lo's commands that take a count, after a count alone in
+normal mode (see [Counts](#counts)). In a text field, typing and moving through the text are the
+field's.
 
 A key that starts one of Lo's sequences waits for the rest. In a code view it waits however long it
-takes, as Vim's own `y` and `g` do, and a key that doesn't go on with it goes to Vim after it, so
-`y w` still yanks a word. Anywhere else it waits up to 1 s, and if the rest doesn't come it's
-dropped, and the next key counts on its own. A chord Lo runs drops the waiting key, as do `Esc`,
-focus leaving, a click, by the pointer or as VoiceOver and Voice Control click, and a tab switch. A
-key typed with focus nowhere in particular, rather than on a button or another control, as while a
-pull request's tab is still loading, isn't dropped when Lo gives a view focus: it goes on there, if
-one of the view's sequences starts with it, still for up to 1 s, and in a code view a key that
-doesn't go on with it goes to Vim after it, as if both were typed there, so `g g` still goes to the
-top. The status bar shows the keys waiting, after any count, as Vim shows a command it's waiting on
-the rest of.
+takes, as Vim's own `y` and `g` do, and a key that doesn't go on with it goes to the code view after
+it, so with Vim keys on `y w` still yanks a word. Anywhere else it waits up to 1 s, and if the rest
+doesn't come it's dropped, and the next key counts on its own. A chord Lo runs drops the waiting
+key, as do `Esc`, focus leaving, a click, by the pointer or as VoiceOver and Voice Control click,
+and a tab switch. A key typed with focus nowhere in particular, rather than on a button or another
+control, as while a pull request's tab is still loading, isn't dropped when Lo gives a view focus:
+it goes on there, if one of the view's sequences starts with it, still for up to 1 s, and in a code
+view a key that doesn't go on with it goes to the code view after it, as if both were typed there,
+so `g g` still goes to the top. The status bar shows the keys waiting, after any count, as Vim shows
+a command it's waiting on the rest of.
 
 `Tab` doesn't move focus out of a scope; only dialogs and forms keep the browser's `Tab`.
 
@@ -393,8 +396,8 @@ the rest of.
 
 Digits typed just before a key are a count, as in Vim, for the commands that take one: `3 e` marks
 three files viewed, and `1 e` one, where `e` alone clears a mark. Before any other key a count is
-dropped, and the key runs once; in a code view it goes on to Vim with the key, so `3 j` still moves
-three lines. `Esc` drops a count and does nothing else.
+dropped, and the key runs once; in a code view with Vim keys on it goes on to Vim with the key, so
+`3 j` still moves three lines. `Esc` drops a count and does nothing else.
 
 | Action                   | Keys     | Counts | Where                                                                                  | Command                |
 | ------------------------ | -------- | ------ | -------------------------------------------------------------------------------------- | ---------------------- |
@@ -406,9 +409,10 @@ three lines. `Esc` drops a count and does nothing else.
 | Previous row of the tree | `k`, `↑` | rows   | In `tree`                                                                              | `tree.up`              |
 | Mark viewed              | `e`      | files  | In `tree`                                                                              | `tree.markViewed`      |
 
-In a code view the count is Vim's until one of these keys takes it, in normal mode only. Elsewhere
-digits are a count only in `tree`, where a command of the scope's own takes one, and a count waits
-for its key as a sequence's first key does.
+In a code view with Vim keys on, the count is Vim's until one of these keys takes it, in normal mode
+only; with them off, a code view counts as any other scope does. Elsewhere digits are a count only
+in `tree`, where a command of the scope's own takes one, and a count waits for its key as a
+sequence's first key does.
 
 ## Keys for one system
 
@@ -431,8 +435,9 @@ meanings.
 
 ## Keys over Vim's
 
-Code views (`diff`, `file`, `peek` and `box`) run Vim, and Lo leaves Vim's keys to it there, except
-these, which run Lo's command in place of Vim's key:
+With Vim keys on, code views (`diff`, `file`, `peek` and `box`) run Vim, and Lo leaves Vim's keys to
+it there, except these, which run Lo's command in place of Vim's key. With Vim keys off, which is
+how Lo starts, they run Lo's command too:
 
 | Keys             | Action                          | Vim's key | Where                                                                | Command                   |
 | ---------------- | ------------------------------- | --------- | -------------------------------------------------------------------- | ------------------------- |
@@ -470,9 +475,9 @@ these, which run Lo's command in place of Vim's key:
 | `Ctrl+W` (Linux) | Close tab                       | `Ctrl+W`  | `diff` (normal), `file` (normal), `peek` (normal) and `box` (normal) | `tab.close`               |
 | `Ctrl+P` (Linux) | Go to a file                    | `Ctrl+P`  | `diff`, `file`, `peek` and `box` (normal and visual)                 | `tree.find`               |
 
-In code views, Vim runs Lo's motions (next change, previous change, next file, previous file, next
-thread and previous thread) under Lo's keys, so a count repeats them and they extend a selection in
-visual mode.
+With Vim keys on, Vim runs Lo's motions in code views (next change, previous change, next file,
+previous file, next thread and previous thread) under Lo's keys, so a count repeats them and they
+extend a selection in visual mode. With Vim keys off, Lo runs them itself.
 
 ## The keymap file
 

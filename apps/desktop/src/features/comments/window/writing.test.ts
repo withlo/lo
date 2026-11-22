@@ -145,8 +145,8 @@ describe('a comment on a code block’s lines', () => {
     expect(words('notInDiff')).toEqual(onTheFile('Those lines aren’t in the diff.'));
     expect(words('noLines')).toEqual(onTheFile('Couldn’t check which lines take comments.'));
     expect(words('older')).toEqual(onTheFile('Removed lines can’t be followed to r2.'));
-    // Where the lines are now isn't known, which is as much as their having changed.
-    expect(words('unknown')).toEqual(words('changed'));
+    // Where the lines are now isn't known, and it says that much, not that they changed.
+    expect(words('unknown')).toEqual(onTheFile('Couldn’t follow these lines to r2.'));
     expect(words('deleted')).toEqual(onTheFile('This pull request deletes this file.'));
     expect(words('untouched')).toEqual({
       head: 'Pull request',
