@@ -67,6 +67,7 @@ import { wrotePull } from './written.ts';
 import {
   blockComment,
   blockWhere,
+  type BoxWhere,
   boxAt,
   commentableOn,
   githubPath,
@@ -87,6 +88,8 @@ import {
   sentFromBlock,
   SIGN_IN,
   whyOf,
+  NOTHING_TO_DISCARD,
+  NOTHING_TO_UNDO,
 } from './writing.ts';
 
 /** How long after the last key a box's text is saved, in milliseconds. */
@@ -121,7 +124,7 @@ export interface BoxState {
    * What its head says of where the comment goes, where that's more than its place says, as for a
    * comment on a block's file in place of its lines.
    */
-  readonly where: string | undefined;
+  readonly where: BoxWhere | undefined;
 }
 
 /**
@@ -219,7 +222,7 @@ function spotOfBox(box: Box): string | undefined {
 }
 
 /** What a box's head says of where a draft written on a block goes, as main kept it. */
-function whereOf(view: string, home: DraftHomeRow, place: DraftPlaceRow): string | undefined {
+function whereOf(view: string, home: DraftHomeRow, place: DraftPlaceRow): BoxWhere | undefined {
   return blockWhere(home.why, place, {
     written: revisionName(view, home.commit),
     now: revisionName(view, home.head),
@@ -529,7 +532,7 @@ function show(box: Box, diff: WritingDiff | undefined): boolean {
     box.focusOnOpen = false;
     return true;
   }
-  const options = { focus: box.focusOnOpen, name: box.id };
+  const options = { focus: box.focusOnOpen, name: box.id, hint: hintOf(box.state.place) };
   try {
     const opens = opensAt(box);
     if (opens.kind === 'block') {
@@ -557,6 +560,11 @@ function show(box: Box, diff: WritingDiff | undefined): boolean {
     return false;
   }
   return true;
+}
+
+/** What a box at `place` says while it's empty, where its place has a name of its own. */
+export function hintOf(place: DraftPlaceRow, pull?: number): string | undefined {
+  return place.kind === 'conversation' && pull !== undefined ? `Comment on #${pull}` : undefined;
 }
 
 /** Box `box` is drawn, as `composer`, in `where`. */
@@ -680,7 +688,7 @@ function showKept(
   const free = !focused || focused === document.body || diff.hasFocus();
   // Keys held for a sequence count once it ends, and focus moved now would end it in the box.
   const focus = kept.focused && kept.inputs === inputs && free && !registry().isPending();
-  const options = { focus, name: box.id, kept: kept.box };
+  const options = { focus, name: box.id, kept: kept.box, hint: hintOf(box.state.place) };
   try {
     drew(box, diff.compose(at, box.state.text, eventsOf(box), framer?.(box), options), 'diff');
     return true;
@@ -1038,7 +1046,7 @@ export function openAt(
   place: DraftPlaceRow,
   how: Send,
   draft = '',
-  where?: string,
+  where?: BoxWhere,
 ): Box | undefined {
   const own = boxesOf(view);
   const key = placeKey(place);
@@ -1348,6 +1356,11 @@ export function act(box: Box, offer: Offer): void {
  */
 function drop(box: Box): void {
   const { view, key } = box;
+  const text = box.composer?.text ?? box.state.text;
+  if (text.trim() !== '') {
+    const { place, primary, where } = box.state;
+    remember({ view, place, home: box.home, primary, text, where });
+  }
   endUploads(box);
   boxesOf(view).delete(key);
   box.dropSave();
@@ -1358,6 +1371,91 @@ function drop(box: Box): void {
   discard(box);
   replyingChanged(view);
 }
+
+/** A draft "Discard draft" took, with what brings its box back as it was. */
+export interface Discarded {
+  readonly view: string;
+  readonly place: DraftPlaceRow;
+  readonly home: Home;
+  readonly primary: Send;
+  readonly text: string;
+  readonly where: BoxWhere | undefined;
+}
+
+/** How long "Undo" is offered for a draft discarded, in ms. */
+export const UNDO_TIME = 8000;
+
+/** The last draft discarded, while "Undo" brings it back. */
+let discarded: Discarded | undefined;
+let forgetting: ReturnType<typeof setTimeout> | undefined;
+const discardedListeners = new Set<() => void>();
+
+function setDiscarded(next: Discarded | undefined): void {
+  clearTimeout(forgetting);
+  forgetting = undefined;
+  discarded = next;
+  for (const listener of discardedListeners) listener();
+}
+
+/** Holds `draft` as the one "Undo" brings back, for {@link UNDO_TIME}. */
+function remember(draft: Discarded): void {
+  setDiscarded(draft);
+  forgetting = setTimeout(() => setDiscarded(undefined), UNDO_TIME);
+}
+
+/** The draft "Undo" would bring back now. */
+export function lastDiscarded(): Discarded | undefined {
+  return discarded;
+}
+
+/** Calls `listener` as a draft is discarded, comes back, or its "Undo" runs out. */
+export function onDiscarded(listener: () => void): () => void {
+  discardedListeners.add(listener);
+  return () => {
+    discardedListeners.delete(listener);
+  };
+}
+
+/**
+ * Brings back the draft "Discard draft" last took, as "Undo" does: its box opens where it was, with
+ * its text, focused, and the draft is saved again. A box opened at its place since keeps what was
+ * typed in it, with the draft's text after.
+ */
+export function undiscard(): void {
+  const last = discarded;
+  if (!last) return;
+  setDiscarded(undefined);
+  const { view, place, home, primary, text, where } = last;
+  const own = boxesOf(view);
+  const key = placeKey(place);
+  dropped.get(view)?.delete(key);
+  let box = own.get(key);
+  if (!box) {
+    box = new Box(view, place, primary, text);
+    box.home = home;
+    box.set({ where });
+    own.set(key, box);
+  } else {
+    const typed = (box.composer?.text ?? box.state.text).replace(/\s+$/, '');
+    const whole = typed === '' ? text : `${typed}\n\n${text}`;
+    if (box.composer) box.composer.replace(0, box.composer.text.length, whole);
+    else box.set({ text: whole, restored: undefined });
+  }
+  box.open = true;
+  box.focusOnOpen = true;
+  // Saved in a moment, as typing is: main's drafts from before it hears leave the box be meanwhile.
+  box.saveSoon();
+  box.composer?.focus();
+  reopen(view);
+  replyingChanged(view);
+}
+
+/** "Undo", for the draft last discarded: in the palette while there's one to bring back. */
+export const undiscarding: Handler = {
+  run: undiscard,
+  enabled: () => discarded !== undefined || NOTHING_TO_UNDO,
+  listed: () => discarded !== undefined,
+};
 
 /** Has main discard `box`'s draft. */
 function discard(box: Box): void {
@@ -1410,6 +1508,7 @@ export function keepBoxesOf(kept: ReadonlySet<string>): void {
     views.delete(view);
     pulls.delete(view);
     dropped.delete(view);
+    if (discarded?.view === view) setDiscarded(undefined);
     caught.delete(view);
     clearTimeout(retrying.get(view));
     retrying.delete(view);
@@ -1669,21 +1768,52 @@ export function takenDown(box: Box, composer: Composer): void {
 }
 
 /**
- * What a box's note offers, as a command on the box: there only while the box offers it, in its
- * frame's menu and in the palette.
+ * Whether a box in `state` has a draft "Discard draft" can take, or why not: one with no text has
+ * nothing to discard, and one whose comment is on its way is held.
  */
-export function offering(offer: Offer): Handler<BoxTarget> {
-  const offers = (target: BoxTarget) => {
+export function discardable(state: BoxState): true | string {
+  if (sendingNow(state)) return 'Sending…';
+  return state.text.trim() !== '' || NOTHING_TO_DISCARD;
+}
+
+/**
+ * "Discard draft", as the control in a box's foot and as a command on the box: there for any box
+ * with text but one whose comment is on its way. "Undo" brings the draft back for a few seconds.
+ */
+export const discarding: Handler<BoxTarget> = {
+  run(target) {
     const box = boxNamed(target.box);
-    return box !== undefined && offersOf(box.state).includes(offer);
+    if (box && discardable(box.state) === true) act(box, 'discard');
+  },
+  enabled: (target) => {
+    const box = boxNamed(target.box);
+    if (box === undefined) return 'The comment box has closed.';
+    return discardable(box.state);
+  },
+  listed: (target) => boxNamed(target.box) !== undefined,
+};
+
+/**
+ * What a box's note offers, as a command on the box: there only while the box offers it, in its
+ * frame's menu and in the palette. Offers that read the same, as both ways to "Show latest" do, are
+ * one command, which does whichever the box offers.
+ */
+export function offering(...among: readonly Offer[]): Handler<BoxTarget> {
+  const offerIn = (target: BoxTarget) => {
+    const box = boxNamed(target.box);
+    const offers = box && offersOf(box.state);
+    return among.find((each) => offers?.includes(each));
   };
   return {
     run(target) {
       const box = boxNamed(target.box);
-      if (box && offers(target)) act(box, offer);
+      const offer = offerIn(target);
+      if (box && offer !== undefined) act(box, offer);
     },
-    enabled: (target) => offers(target) || `“${offerLabels[offer]}” isn’t offered in this box now.`,
-    listed: offers,
+    enabled: (target) =>
+      offerIn(target) !== undefined ||
+      `“${among[0] === undefined ? '' : offerLabels[among[0]]}” isn’t offered in this box now.`,
+    listed: (target) => offerIn(target) !== undefined,
   };
 }
 

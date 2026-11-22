@@ -284,11 +284,11 @@ test('says it was written for r1 from its first frame, and flags the block on li
       .getByRole('menuitem', { name: /^Comment on these lines/ })
       .click();
     const onFile = parser.locator('.lo-diffcomposer');
-    await expect(onFile).toContainText('On the file, since these lines changed after r1', {
-      timeout: 20_000,
-    });
-    await expect(onFile.locator('.mode-chip')).toHaveText('INSERT');
-    for (const key of ['Escape', 'Escape']) await page.keyboard.press(key);
+    const head = onFile.locator('.lo-diffcomposer__head');
+    await expect(head).toContainText('File', { timeout: 20_000 });
+    await expect(head).toContainText('These lines changed since r1.');
+    await expect(onFile.locator('.cm-content')).toBeFocused();
+    await page.keyboard.press('Escape');
     await expect(boxes).toHaveCount(0);
 
     // `c` on a line of the README's block, which the pull request doesn't touch.
@@ -297,10 +297,12 @@ test('says it was written for r1 from its first frame, and flags the block on li
     await readme.locator('.cm-line:visible').first().click();
     await page.keyboard.press('c');
     const onPull = readme.locator('.lo-diffcomposer');
-    await expect(onPull).toContainText('On the pull request, since it doesn’t change this file', {
+    await expect(onPull.locator('.lo-diffcomposer__head')).toContainText('Pull request', {
       timeout: 20_000,
     });
-    for (const key of ['Escape', 'Escape']) await page.keyboard.press(key);
+    await expect(onPull).toContainText('This pull request doesn’t change this file.');
+    await expect(onPull.locator('.cm-content')).toBeFocused();
+    await page.keyboard.press('Escape');
     await expect(boxes).toHaveCount(0);
   });
 

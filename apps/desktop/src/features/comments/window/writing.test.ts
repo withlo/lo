@@ -20,7 +20,6 @@ import {
   placeOf,
   offersOf,
   refusalNote,
-  restoredNote,
   sendingNote,
   sentFromBlock,
   whereText,
@@ -142,21 +141,21 @@ describe('a comment on a code block’s lines', () => {
     const names = { written: 'r1', now: 'r2' };
     const onFile = placeOf(HEAD, path, undefined);
     const words = (why: Parameters<typeof blockWhere>[0]) => blockWhere(why, onFile, names);
-    expect(words('changed')).toBe('On the file, since these lines changed after r1');
-    expect(words('notInDiff')).toBe(
-      'On the file, since GitHub takes line comments only in the diff',
-    );
-    expect(words('noLines')).toBe(
-      'On the file, since Lo couldn’t read which lines GitHub takes comments on',
-    );
-    expect(words('older')).toBe('On the file, since Lo maps only new-side lines from r1 to r2');
-    expect(words('unknown')).toBe('On the file, since Lo can’t tell where these lines are at r2');
-    expect(words('deleted')).toBe('On the file, which this pull request deletes');
-    expect(words('untouched')).toBe('On the pull request, since it doesn’t change this file');
-    expect(words('gone')).toBe('On the pull request, since this file is gone at r2');
+    expect(words('changed')).toEqual(onTheFile('These lines changed since r1.'));
+    expect(words('notInDiff')).toEqual(onTheFile('Those lines aren’t in the diff.'));
+    expect(words('noLines')).toEqual(onTheFile('Couldn’t check which lines take comments.'));
+    expect(words('older')).toEqual(onTheFile('Removed lines can’t be followed to r2.'));
+    // Where the lines are now isn't known, and it says that much, not that they changed.
+    expect(words('unknown')).toEqual(onTheFile('Couldn’t follow these lines to r2.'));
+    expect(words('deleted')).toEqual(onTheFile('This pull request deletes this file.'));
+    expect(words('untouched')).toEqual({
+      head: 'Pull request',
+      why: 'This pull request doesn’t change this file.',
+    });
+    expect(words('gone')).toEqual({ head: 'Pull request', why: 'This file is deleted in r2.' });
     const lines = placeOf(HEAD, path, { end: Line.right(5) });
     expect(blockWhere(null, lines, { written: 'r2', now: 'r2' })).toBeUndefined();
-    expect(blockWhere(null, lines, names)).toBe('On line 5, new side, at r2');
+    expect(blockWhere(null, lines, names)).toEqual({ head: 'Line 5 · r2' });
     expect(whyOf({ kind: 'lines', lines: { end: Line.right(5) } })).toBeNull();
     expect(whyOf({ kind: 'pull', why: 'gone' })).toBe('gone');
   });
@@ -175,17 +174,22 @@ describe('a comment on a code block’s lines', () => {
     expect(sentFromBlock(lines, HEAD, false, names)).toBeUndefined();
     expect(sentFromBlock(lines, BASE, false, names)).toEqual({
       title: 'Posted at r2',
-      body: 'src/backoff.ts, on line 5, new side. It shows in the diff; this block shows r1.',
+      body: 'src/backoff.ts, line 5. It shows in the diff; this block shows r1.',
     });
   });
 
   test('a comment on the pull request says so, and has no box in the diff', () => {
     const onPull: DraftPlaceRow = { kind: 'conversation' };
-    expect(whereText(onPull)).toBe('On the pull request');
+    expect(whereText(onPull)).toBe('Pull request');
     expect(boxAt(drawn, Screen.full(HEAD), onPull)).toBeUndefined();
     expect(placeKey(onPull)).not.toBe(placeKey(placeOf(drawn.at, 'src/backoff.ts', undefined)));
   });
 });
+
+/** What a box says of a comment that goes on the file, and `why`. */
+function onTheFile(why: string): { head: string; why: string } {
+  return { head: 'File', why };
+}
 
 describe('a draft’s place', () => {
   const onLines = placeOf(drawn.at, 'src/backoff.ts', {
@@ -206,16 +210,20 @@ describe('a draft’s place', () => {
   });
 
   test('says where it is', () => {
-    expect(whereText(onLines)).toBe('On lines 4–6, new side');
-    expect(
-      whereText({ ...onLines, lines: { start: null, end: { side: 'LEFT', number: 41 } } }),
-    ).toBe('On line 41, old side');
-    expect(whereText({ ...onLines, lines: null })).toBe('On the file');
-    expect(whereText({ kind: 'reply', thread: 'T1' }, 'mira-chen')).toBe(
-      'Reply to mira-chen’s thread',
+    const on = (lines: NonNullable<typeof onLines.lines>) => whereText({ ...onLines, lines });
+    expect(whereText(onLines)).toBe('Lines 4–6');
+    expect(on({ start: null, end: { side: 'RIGHT', number: 3 } })).toBe('Line 3');
+    // A removed line says so; a line the pull request has says nothing more.
+    expect(on({ start: null, end: { side: 'LEFT', number: 41 } })).toBe('Line 41, removed');
+    expect(on({ start: { side: 'LEFT', number: 39 }, end: { side: 'LEFT', number: 41 } })).toBe(
+      'Lines 39–41, removed',
     );
-    expect(whereText({ kind: 'reply', thread: 'T1' }, null)).toBe('Reply to the thread');
-    expect(whereText({ kind: 'edit', thread: 'T1', comment: 'C1' })).toBe('Edit your comment');
+    expect(on({ start: { side: 'LEFT', number: 3 }, end: { side: 'RIGHT', number: 5 } })).toBe(
+      'Line 3, removed, to line 5',
+    );
+    expect(whereText({ ...onLines, lines: null })).toBe('File');
+    expect(whereText({ kind: 'reply', thread: 'T1' })).toBe('Reply');
+    expect(whereText({ kind: 'edit', thread: 'T1', comment: 'C1' })).toBe('Edit');
   });
 
   test('a reply’s is its thread’s, and an edit’s its comment’s, whatever the revision', () => {
@@ -280,15 +288,6 @@ describe('where a draft’s box goes', () => {
 });
 
 describe('a box’s notes', () => {
-  const NOW = new Date(2026, 10, 13, 12, 0).getTime();
-
-  test('a restored draft says when it was saved, and offers to discard it', () => {
-    const yesterday = new Date(2026, 10, 12, 18, 40).getTime();
-    const note = restoredNote(yesterday, NOW);
-    expect(note.text).toMatch(/^Restored your draft from yesterday, .+\.$/);
-    expect(note.offers).toEqual(['discard']);
-  });
-
   test('a refusal says why, with what to do', () => {
     expect(refusalNote({ kind: 'notLatest', head: HEAD }).offers).toEqual(['showLatest']);
     expect(refusalNote({ kind: 'headMoved', head: null }).offers).toEqual(['loadNewer']);
@@ -298,24 +297,24 @@ describe('a box’s notes', () => {
       /^GitHub asked Lo to hold off until .+\. Send it then\.$/,
     );
     expect(refusalNote({ kind: 'signIn' }).text).toBe('Sign in to comment');
-    expect(refusalNote({ kind: 'run' }).text).toBe('Comment in a layer');
+    expect(refusalNote({ kind: 'run' }).text).toBe('Show a single layer to comment');
     expect(refusalNote({ kind: 'github', message: 'Nope.' }).text).toBe('Nope.');
   });
 
   test('what the notes offer, in their order, is what the box’s menu has', () => {
-    const none = { restored: undefined, refusal: undefined, sending: null };
+    const none = { refusal: undefined, sending: null };
     expect(offersOf(none)).toEqual([]);
-    expect(
-      offersOf({ restored: 1, refusal: { kind: 'headMoved', head: null }, sending: 'unknown' }),
-    ).toEqual(['discard', 'loadNewer', 'sendAnyway']);
+    // A draft restored has no note: the foot says so, beside "Discard draft".
+    expect(offersOf({ refusal: { kind: 'headMoved', head: null }, sending: 'unknown' })).toEqual([
+      'loadNewer',
+      'sendAnyway',
+    ]);
     expect(offersOf({ ...none, refusal: { kind: 'paused', until: 0 } })).toEqual([]);
   });
 
   test('an edit’s refusals keep its text, and offer to discard it to start again', () => {
     const edit = { kind: 'edit', thread: 'T1', comment: 'C1' } as const;
-    expect(
-      notesOf({ place: edit, restored: undefined, refusal: { kind: 'changed' }, sending: null }, 0),
-    ).toMatchObject([
+    expect(notesOf({ place: edit, refusal: { kind: 'changed' }, sending: null })).toMatchObject([
       {
         text: 'It was edited on GitHub since you started. Your text is kept here; copy it, then edit again.',
         offers: ['discard'],

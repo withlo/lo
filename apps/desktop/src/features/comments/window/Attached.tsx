@@ -1,8 +1,9 @@
 // What a comment box's frame draws of the files attached to it (`./uploads.ts`): their notes, the
 // warning first; a row for each file, with its size, how far it has gone and "Cancel", then
 // "Uploaded", or "Insert" for one whose placeholder went meanwhile; the dropzone while files are
-// dragged over it; and "Attach" in its foot, off where the view's boxes take no uploads. As a box is
-// drawn, main is asked once a view whether its account can upload at all.
+// dragged over it; and "Attach files…" in its foot, dimmed where the view's boxes take no uploads,
+// with why as its tooltip. As a box is drawn, main is asked once a view whether its account can
+// upload at all.
 
 import {
   CommentBoxDropzone,
@@ -61,11 +62,13 @@ export function useUploads(box: Attachable, keys: readonly string[], text: strin
     if (login !== undefined) void checkUploads(box.view);
   }, [box.view, login]);
   const notes = [...(off === undefined ? [] : [offNote(off)]), ...state.notes];
+  const why = whyNoAttach(box.view);
   return {
     notes: notes.map((note) => ({ key: note.key, tone: note.tone, text: note.text })),
     attach: {
       keys,
-      disabled: whyNoAttach(box.view) !== undefined,
+      disabled: why !== undefined,
+      why,
       onClick: () => pickFiles(box),
     },
     hold: uploadsHold(box, text),

@@ -16,6 +16,8 @@ import { buildPage, launch } from './electron.ts';
 
 const STYLE = [
   readFileSync(new URL('../src/code/view.css', import.meta.url), 'utf8'),
+  // The one token the page's own measures need: the room a box brought on screen keeps under it.
+  ':root { --lo-sp-8: 8px; }',
   'body { margin: 0; } #root { width: 1000px; height: 600px; } .card { background: #ddd; }',
 ].join('\n');
 
@@ -625,7 +627,8 @@ for (const layout of ['split', 'inline'] as const) {
 
     test('a new line typed in a comment box as the view narrows leaves the box where it is', async () => {
       const page = await wrapping(layout);
-      await page.evaluate(() => window.harness.compose(30));
+      // Holding as many lines as it shows with none, so the next makes it taller.
+      await page.evaluate(() => window.harness.compose(30, 'one\ntwo\nthree'));
       await frames(page);
       const box = () => page.evaluate(() => window.harness.top('.lo-diffcomposer'));
       const height = () =>
@@ -670,6 +673,8 @@ for (const layout of ['split', 'inline'] as const) {
 
       test(`\`Ctrl-d\` ${narrowing} scrolls half a screen from what the reader saw, the cursor staying on its row`, async () => {
         const page = await wrapping(layout, 0);
+        // `Ctrl-d` is Vim's key.
+        await page.evaluate(() => window.harness.vim(true));
         const cursor = () => page.evaluate(() => window.harness.cursorTop());
         const before = { cursor: await cursor(), line: await lineTop(page, 40) };
 
@@ -679,6 +684,18 @@ for (const layout of ['split', 'inline'] as const) {
         await frames(page);
         expect(Math.abs((await cursor())! - before.cursor!)).toBeLessThan(1);
         expect(before.line! - (await lineTop(page, 40))!).toBeGreaterThan(200);
+      });
+
+      test(`\`PageDown\` ${narrowing}, with Vim keys off, goes a page on from what the reader saw`, async () => {
+        const page = await wrapping(layout, 0);
+        const before = await lineTop(page, 40);
+
+        if (when === 'as') await page.evaluate(() => window.harness.narrowOnKey(640));
+        else await narrowed(page);
+        await page.keyboard.press('PageDown');
+        await frames(page);
+        // A page is most of the screen, which is more than the narrowing moves anything.
+        expect(before! - (await lineTop(page, 40))!).toBeGreaterThan(400);
       });
 
       test(`the wheel ${narrowing} scrolls as far as it turns from what the reader saw`, async () => {
@@ -844,8 +861,6 @@ test('closing a comment box with `Esc` leaves its line where it is, above the sc
   await page.mouse.move(300, 500);
   await page.mouse.wheel(0, (await lineTop(page, line))! + 40);
   await frames(page);
-  await page.keyboard.press('Escape');
-  await frames(page);
   await expect(page.locator('.lo-diffcomposer')).toHaveCount(1);
   const before = await lineTop(page, line);
   expect(before).toBeLessThan(0);
@@ -854,4 +869,28 @@ test('closing a comment box with `Esc` leaves its line where it is, above the sc
   await expect(page.locator('.lo-diffcomposer')).toHaveCount(0);
   await frames(page);
   expect(Math.abs((await lineTop(page, line))! - before!)).toBeLessThan(1);
+});
+
+test('with Vim keys off, the cursor line’s number is marked and the caret doesn’t blink', async () => {
+  const page = await open('split');
+  await page.evaluate(() => window.harness.cursor(25));
+  await frames(page);
+  await expect(page.locator('.cm-lineNumbers .cm-activeLineGutter').first()).toBeVisible();
+  const blink = await page
+    .locator('.cm-cursorLayer')
+    .first()
+    .evaluate((layer) => getComputedStyle(layer).animationDuration);
+  expect(blink).toBe('0s');
+});
+
+test('a comment box opened under the last line on screen comes on screen whole, 8 px clear of the foot', async () => {
+  const page = await open('split');
+  const lines = await onScreen(page);
+  await page.evaluate((at) => window.harness.compose(at), lines.at(-1)!.line);
+  await frames(page);
+  const under = await page.locator('.lo-diffcomposer').evaluate((box) => {
+    const foot = document.querySelector('#root')!.getBoundingClientRect().bottom;
+    return foot - box.getBoundingClientRect().bottom;
+  });
+  expect(Math.abs(under - 8)).toBeLessThan(1);
 });

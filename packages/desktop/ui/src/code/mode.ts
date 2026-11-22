@@ -1,7 +1,9 @@
-// Vim's mode in the code view that has focus, for the status bar: `NORMAL`, `VISUAL`, `V-LINE`,
-// `V-BLOCK` or `INSERT`, as Vim names them, or nothing while no code view's editor has focus. Every
-// code view's editors say theirs (`showMode` in `keys.ts`), so the window has one to show,
-// whichever view it is.
+// Vim's mode in the code view that has focus, while Vim keys are on (`../vim.ts`), for the status
+// bar: `NORMAL`, `VISUAL`, `V-LINE`, `V-BLOCK` or `INSERT`, as Vim names them, or nothing while no
+// code view's editor has focus. Every code view's editors say theirs (`showMode` in `keys.ts`), so
+// the window has one to show, whichever view it is. Nothing here is CodeMirror's.
+
+export { onVim, setVim, switchWith, vimOn } from '../vim.ts';
 
 /** Vim's mode, as the status bar names it. */
 export type ModeName = 'NORMAL' | 'VISUAL' | 'V-LINE' | 'V-BLOCK' | 'INSERT';

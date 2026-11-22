@@ -1,8 +1,27 @@
 # Keyboard and focus
 
-Lo is keyboard first: every action has a key, and you can reach and open every block, row, link and
-control without a mouse. Keys are Vim-style single keys from CodeMirror's Vim package; arrow keys
-also work. Every key can be remapped in `~/.config/lo/keymap`.
+Lo is keyboard first, not keyboard only: every action has a key and a visible control, and you can
+reach and open every block, row, link and control without a mouse. Lo's keys are single keys that
+act on what has focus. They work with Vim keys off, the default, and on. Nothing may depend on Vim.
+Every key can be remapped in `~/.config/lo/keymap`.
+
+## Vim keys
+
+"Vim keys" in the command palette and the View menu switches the `editor.vim` setting, and every
+code view and comment box follows at once.
+
+- **Off, as Lo starts,** code has a caret, as text anywhere does: click to place it, arrows to move
+  it, Shift with either to select, `⌘C` to copy, and `/` or `⌘F` to search. A comment box is typed
+  in from the moment it has focus, and one `Esc` closes it and keeps the draft. No mode shows
+  anywhere.
+- **On,** code views and comment boxes run CodeMirror's Vim package: modes, counts, operators and
+  visual mode. A box opens in insert mode; `Esc` leaves it, and `Esc` again closes the box.
+- **Lo's own keys are the same either way:** `j` `k`, `g d`, `] c`, `c`, `e` and the rest. A key
+  that acts on the lines `v` selected acts on the lines a selection covers with Vim keys off.
+- **A new command must run with Vim keys off.** A test runs every command's keys that way and fails
+  on one only a Vim mode could reach. The keys documented as Vim's own are `j`, `k`, `g g`, `G`,
+  `/`, `n` and `N`, which a code view runs itself while Vim keys are off, and `v` and the box's
+  `Esc` out of insert mode, which only Vim has.
 
 ## Rules
 
@@ -34,8 +53,9 @@ also work. Every key can be remapped in `~/.config/lo/keymap`.
 - Focus is where the keyboard is. **Current** (a Powder ball, `lo-current` behind) is what's on
   screen. Both can show at once, on different rows.
 - A focused overview block shows its keys in a hint chip at its bottom right.
-- In code, the block cursor glows while the view has focus and goes hollow when it loses it. The
-  mode (`NORMAL`, `V-LINE`, `INSERT`) shows in the status bar and in comment boxes.
+- In code, the cursor glows while the view has focus and goes hollow when it loses it.
+- The mode (`NORMAL`, `V-LINE`, `INSERT`) shows only with Vim keys on, and then once in the status
+  bar and in the focused box.
 - `Esc` always returns focus to the middle view and closes the nearest popover.
 
 ## Linux
@@ -49,6 +69,6 @@ from what that rule would give, on both systems:
 
 `⌃⇥` and `⌃⇧⇥` also move to the next and previous tab, on both systems, beside `⌘⇧]` and `⌘⇧[`.
 
-In a comment box in insert mode, Ctrl+C, Ctrl+X, Ctrl+V, Ctrl+A and Ctrl+Z keep their usual editing
-meanings, and Ctrl+W deletes the previous word, as in Vim and terminals. It doesn't close the tab
-there; anywhere else, Ctrl+W does.
+In a comment box that's being typed in (always, with Vim keys off; in insert mode with them on),
+Ctrl+C, Ctrl+X, Ctrl+V, Ctrl+A and Ctrl+Z keep their usual editing meanings, and Ctrl+W deletes the
+previous word, as in Vim and terminals. It doesn't close the tab there; anywhere else, Ctrl+W does.

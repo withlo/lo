@@ -221,10 +221,11 @@ export class Registry {
    * Runs `id` on `target`, as a key, a menu or the palette asks, with the `count` typed before its
    * keys for a command that takes one: `true`, or why it didn't. A `jump` command records where the tab is in its
    * history first. A command that can't run is reported to `onRefused`, and a handler that throws
-   * or rejects to `onError`, never thrown to the caller.
+   * or rejects to `onError`, never thrown to the caller. `moving` is one of Lo's motions run from its
+   * key, in a code view with no Vim: it goes from the cursor, wherever that is.
    */
-  run(id: string, target: Target, count?: number): true | string {
-    const ready = this.prepare(id, target);
+  run(id: string, target: Target, count?: number, moving = false): true | string {
+    const ready = this.prepare(id, target, moving);
     if (typeof ready === 'string') {
       this.onRefused?.(ready, id);
       return ready;
@@ -317,7 +318,7 @@ export class Registry {
         }
         // A count Vim held is the command's now, and Vim drops it.
         if (outcome.count !== undefined && isKeySource(source)) this.clear(source);
-        this.run(outcome.command.id, target, outcome.count);
+        this.run(outcome.command.id, target, outcome.count, outcome.command.vim === 'motion');
         return STOP;
       }
       case 'arrow':
@@ -447,8 +448,8 @@ export class Registry {
       // A field inside a code view, such as Vim's prompt, is typed into as insert mode is.
       if (place.text === 'field')
         return { scope: name, text: true, view: { mode: 'insert', pending: false } };
-      const { mode, pending, count } = source.keyState();
-      return { scope: name, text: false, view: { mode, pending, count } };
+      const { mode, pending, count, plain } = source.keyState();
+      return { scope: name, text: false, view: { mode, pending, count, plain } };
     }
     return { scope: name, text: place.text !== undefined };
   }
@@ -509,6 +510,7 @@ export class Registry {
   private prepare(
     id: string,
     target: Target,
+    moving = false,
   ): { command: Command; handler: Handler; target: Target } | string {
     const command = this.byId.get(id);
     if (!command) return `There's no command called ${id}.`;
@@ -518,7 +520,9 @@ export class Registry {
         ? `${command.label} is its editor's own key.`
         : `${command.label} is Vim's.`;
     }
-    const fitted = fit(command.targets ?? ['none'], target);
+    // A motion's key moves the cursor from a header as from a line, as Vim runs it: what it's
+    // declared to act on is where a menu offers it.
+    const fitted = fit(command.targets ?? ['none'], target) ?? (moving ? target : undefined);
     if (!fitted) return `${command.label} doesn't apply here.`;
     let enabled: true | string;
     try {

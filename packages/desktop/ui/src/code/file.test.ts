@@ -7,11 +7,14 @@ import { afterEach, beforeAll, describe, expect, type Mock, test, vi } from 'vit
 import { findScope, isKeySource, KEY_EVENT } from '../commands/index.ts';
 import type { FileEvents, FileInit, FileView, Mark, PeekView, Place, Spot, VimKey } from './api.ts';
 import { createFileView } from './file.ts';
+import { setVim } from './keys.ts';
 
 const noRects = (): DOMRectList => Object.assign([], { item: () => null });
 
 /** jsdom has no fonts, no resize observer and no layout: the view needs only that they exist. */
 beforeAll(() => {
+  // These are the code views with Vim keys on. `plain.test.ts` has them off, as Lo starts.
+  setVim(true);
   if (!('fonts' in document)) {
     Object.defineProperty(document, 'fonts', {
       value: { addEventListener() {}, removeEventListener() {} },

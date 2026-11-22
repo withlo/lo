@@ -22,7 +22,7 @@ export const codeScopes = ['diff', 'file', 'peek', 'box'] as const;
  */
 export const TAB_ATTRIBUTE = 'data-lo-tab';
 
-/** A code view's Vim mode. */
+/** A code view's Vim mode, or what a view with no Vim is as to Lo's keys. */
 export type Mode = 'normal' | 'visual' | 'insert';
 
 /** What the registry asks of every code view. */
@@ -30,9 +30,18 @@ export interface KeySource {
   /**
    * Vim's state: its mode, whether it's in the middle of a command (after a count or an
    * operator), the count when that's all Vim holds, and what a key there acts on: the cursor's
-   * line, the lines `v` selected, a thread.
+   * line, the lines `v` selected, a thread. `plain` says the view has no Vim, as with Vim keys off:
+   * it's in normal mode to Lo's keys, in visual mode while lines are selected, or, where every key
+   * types, in insert mode; nothing is pending but a key of its own it was handed back (the first
+   * `g` of `g g`), and Lo's motions are the registry's to run.
    */
-  keyState(): { mode: Mode; pending: boolean; count?: number | undefined; target: Target };
+  keyState(): {
+    mode: Mode;
+    pending: boolean;
+    count?: number | undefined;
+    target: Target;
+    plain?: boolean | undefined;
+  };
   /** Keys the registry held back, replayed into Vim, in Vim's key notation (`y`, `<C-o>`). */
   passKeys(keys: readonly string[]): void;
   /**

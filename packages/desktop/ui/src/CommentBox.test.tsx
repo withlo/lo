@@ -1,13 +1,14 @@
 // @vitest-environment jsdom
 // The comment box's frame in each state the design draws: writing, previewing, uploading under the
 // warning, files dragged over it, a restored draft, and a repository that takes no uploads. The
-// editor is a slot, and the account is shown, never chosen.
+// editor is a slot; the account is shown, never chosen; and Vim's mode shows only with Vim keys on.
 
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { buildCss } from '../scripts/stylesheet.ts';
 import { missingRules } from '../test/classes.ts';
 import { cleanUp, click, focus, render, rerender } from '../test/dom.ts';
+import { setVim } from './vim.ts';
 import { findScope } from './commands/scopes.ts';
 import { CommentBox, type CommentBoxFoot, type CommentBoxProps } from './CommentBox.tsx';
 
@@ -17,12 +18,13 @@ beforeAll(() => {
 
 afterEach(() => {
   cleanUp();
+  setVim(false);
 });
 
 const EDITOR = <div data-testid="editor">This throws with `retryAfter: 0`.</div>;
 
 const ACTIONS: NonNullable<CommentBoxFoot['actions']> = [
-  { label: 'Comment now', keys: ['⌥⏎'] },
+  { label: 'Send now', keys: ['⌥⏎'] },
   { label: 'Add to review', keys: ['⌘⏎'], primary: true },
 ];
 
@@ -32,18 +34,27 @@ const WRITING: CommentBoxProps = {
   focused: true,
   head: {
     previewKeys: ['⌘⇧V'],
-    where: 'On lines 39–41, new side',
+    where: 'Lines 39–41',
     account: { login: 'tess-okafor' },
   },
   foot: {
     mode: { name: 'INSERT', kind: 'insert' },
     attach: { keys: ['⌘⇧A'] },
+    discard: {},
     actions: ACTIONS,
   },
 };
 
+/** What the mode chip under `host` says, if there's one. */
+function chip(host: HTMLElement): string | undefined {
+  return host.querySelector('.mode-chip')?.textContent;
+}
+
+/** The button that says `text`, or is named it. */
 function labelled(host: HTMLElement, text: string): HTMLButtonElement | undefined {
-  return [...host.querySelectorAll('button')].find((each) => each.textContent.startsWith(text));
+  return [...host.querySelectorAll('button')].find(
+    (each) => each.textContent.startsWith(text) || each.getAttribute('aria-label') === text,
+  );
 }
 
 /** A box with a real editor in it, as it is when the preview is switched on and off. */
@@ -75,27 +86,99 @@ describe('CommentBox', () => {
     expect(box?.querySelector('[data-testid="editor"]')?.textContent).toBe(
       'This throws with `retryAfter: 0`.',
     );
-    // The head: Write and Preview with the key, where it goes, and who it's from.
+    // The head: what it's on first, then who it's from (after their initials, which stand in for
+    // a picture), and Write and Preview with the key.
     const head = box?.firstElementChild;
-    expect(head?.textContent).toContain('WritePreview⌘⇧V');
-    expect(head?.textContent).toContain('On lines 39–41, new side');
-    expect(head?.textContent).toContain('as tess-okafor');
-    // The foot: the mode, Attach with its key, the hint, then the buttons.
+    expect(head?.textContent).toBe('Lines 39–41TOas tess-okaforWritePreview⌘⇧V');
+    // The foot: the icon that attaches, "Discard draft", then the buttons with their keys. No mode
+    // with Vim keys off, and no line of keys.
     const foot = box?.lastElementChild;
-    expect(foot?.textContent).toBe(
-      'INSERTAttach⌘⇧Aor drop or paste filesComment now⌥⏎Add to review⌘⏎',
-    );
-    const buttons = [...(foot?.querySelectorAll('button') ?? [])].map((each) => each.textContent);
-    expect(buttons.at(-1)).toBe('Add to review⌘⏎');
+    expect(foot?.textContent).toBe('Discard draftSend now⌥⏎Add to review⌘⏎');
+    const buttons = [...(foot?.querySelectorAll('button') ?? [])];
+    expect(buttons.map((each) => each.getAttribute('aria-label') ?? each.textContent)).toEqual([
+      'Attach files…',
+      'Discard draft',
+      'Send now⌥⏎',
+      'Add to review⌘⏎',
+    ]);
     // Nothing is off, so there's nothing to explain.
     expect(box?.querySelector('[role="status"]')).toBeNull();
   });
 
+  it('shows Vim’s mode only with Vim keys on, in the box that has focus', () => {
+    expect(chip(render(<CommentBox {...WRITING} />))).toBeUndefined();
+    setVim(true);
+    expect(chip(render(<CommentBox {...WRITING} />))).toBe('INSERT');
+    expect(chip(render(<CommentBox {...WRITING} focused={false} />))).toBeUndefined();
+  });
+
   it('shows the account and never offers to choose another', () => {
     const host = render(<CommentBox {...WRITING} />);
-    const account = host.querySelector('[title="Commenting as tess-okafor"]');
-    expect(account?.tagName).toBe('SPAN');
     expect(host.querySelector('[role="menu"], [aria-haspopup]')).toBeNull();
+    // A box given no account, as where one is signed in, says nothing of who it's from.
+    const alone = render(<CommentBox {...WRITING} head={{ where: 'Reply' }} />);
+    expect(alone.querySelector('[role="group"]')?.firstElementChild?.textContent).toBe(
+      'ReplyWritePreview',
+    );
+  });
+
+  it('closes from its head and discards from its foot, each with a control', () => {
+    const onClose = vi.fn<() => void>();
+    const onDiscard = vi.fn<() => void>();
+    const host = render(
+      <CommentBox
+        {...WRITING}
+        head={{
+          ...WRITING.head,
+          why: 'Those lines aren’t in the diff.',
+          close: { keys: ['Esc'], onClick: onClose },
+        }}
+        foot={{ ...WRITING.foot, discard: { onClick: onDiscard } }}
+      />,
+    );
+    // Why the comment is on what the head says, under it.
+    expect(host.querySelector('[role="group"]')?.firstElementChild?.textContent).toContain(
+      'Those lines aren’t in the diff.',
+    );
+    click(labelled(host, 'Close comment box')!);
+    expect(onClose).toHaveBeenCalledOnce();
+    click(labelled(host, 'Discard draft')!);
+    expect(onDiscard).toHaveBeenCalledOnce();
+    // With nothing to discard it's dimmed, says why, and does nothing.
+    const off = render(
+      <CommentBox
+        {...WRITING}
+        foot={{
+          ...WRITING.foot,
+          discard: { disabled: true, why: 'Nothing to discard', onClick: onDiscard },
+        }}
+      />,
+    );
+    const dimmed = labelled(off, 'Discard draft');
+    expect(dimmed?.getAttribute('aria-disabled')).toBe('true');
+    expect(
+      off.ownerDocument.getElementById(dimmed?.getAttribute('aria-describedby') ?? '')?.textContent,
+    ).toBe('Nothing to discard');
+    click(labelled(off, 'Discard draft')!);
+    expect(onDiscard).toHaveBeenCalledOnce();
+  });
+
+  it('gives up its key chips, then its labels, then its hint as it narrows', () => {
+    const host = render(
+      <CommentBox {...WRITING} foot={{ ...WRITING.foot, text: 'Summary · Markdown' }} />,
+    );
+    const foot = host.querySelector('[role="group"]')!.lastElementChild!;
+    // The foot's own box is what its parts measure.
+    expect(foot.className).toContain('@container');
+    const classes = (selector: string) =>
+      [...foot.querySelectorAll(selector)].map((each) => each.classList.contains('box-chip'));
+    expect(classes('kbd')).toEqual([true, true]);
+    const said = (text: string) =>
+      [...foot.querySelectorAll('span')].find((each) => each.textContent === text);
+    expect(said('Summary · Markdown')?.classList.contains('box-hint')).toBe(true);
+    expect(said('Discard draft')?.classList.contains('box-label')).toBe(true);
+    // The buttons keep their words at any width.
+    expect(labelled(host, 'Add to review')?.className).toContain('whitespace-nowrap');
   });
 
   it('switches between Write and Preview, and keeps the editor in the box while it previews', () => {
@@ -177,7 +260,7 @@ describe('CommentBox', () => {
 
   it('says there is nothing to preview when there is nothing', () => {
     const host = render(<CommentBox {...WRITING} previewing />);
-    expect(host.querySelector('[role="region"]')?.textContent).toBe('Nothing to preview.');
+    expect(host.querySelector('[role="region"]')?.textContent).toBe('Nothing to preview');
   });
 
   it('shows the upload warning first, each file with its size and progress, and holds the buttons', () => {
@@ -205,7 +288,7 @@ describe('CommentBox', () => {
           actions: ACTIONS.map((each) => ({
             ...each,
             disabled: true,
-            why: 'Sending waits while a file uploads.',
+            why: 'A file is still uploading',
             onClick,
           })),
         }}
@@ -216,40 +299,44 @@ describe('CommentBox', () => {
     // The warning above the editor, the editor above the uploads, the uploads above the foot.
     expect(html.indexOf('Uploads go to GitHub')).toBeLessThan(html.indexOf('data-testid="editor"'));
     expect(html.indexOf('data-testid="editor"')).toBeLessThan(html.indexOf('retry-storm.gif'));
-    expect(html.indexOf('retry-storm.gif')).toBeLessThan(html.indexOf('INSERT'));
+    expect(html.indexOf('retry-storm.gif')).toBeLessThan(html.indexOf('Add to review'));
     const [moving, done, unknown, unplaced] = [
-      ...box.querySelectorAll('[aria-label="Uploads"] > li'),
+      ...box.querySelectorAll('[aria-label="Attached files"] > li'),
     ];
-    // (The meter holds a hidden character of Base UI's own between the size and the button.)
-    expect(moving?.textContent).toMatch(/^retry-storm\.gif3\.4 MB.*Cancel$/);
+    // (The meter holds a hidden character of Base UI's own between the size and the percent.)
+    expect(moving?.textContent).toMatch(/^retry-storm\.gif3\.4 MB.*Uploading · 62%Cancel$/);
     expect(moving?.querySelector('[role="meter"]')?.getAttribute('aria-valuenow')).toBe('62');
-    expect(done?.textContent).toBe('grafana-429s.png212 KBUploaded');
+    // One that's in says nothing more: its row has no spinner.
+    expect(done?.textContent).toBe('grafana-429s.png212 KB');
     expect(done?.querySelector('button')).toBeNull();
     // A progress it can't know shows no bar and no number.
-    expect(unknown?.textContent).toBe('trace.mp49 MBUploadingCancel');
+    expect(unknown?.textContent).toBe('trace.mp49 MBUploading…Cancel');
     expect(unknown?.querySelector('[role="meter"]')).toBeNull();
     // One uploaded whose placeholder went says it isn't in the comment, and offers to put it in.
-    expect(unplaced?.textContent).toBe('flame.png2 KBNot in the commentInsert');
+    expect(unplaced?.textContent).toBe('flame.png2 KBNot in commentInsert');
     const insert = unplaced!.querySelector('button')!;
-    expect(insert.getAttribute('aria-label')).toBe('Insert flame.png at the cursor');
     click(insert);
     expect(onInsert).toHaveBeenCalledOnce();
     click(moving!.querySelector('button')!);
     expect(onCancel).toHaveBeenCalledOnce();
     // Sending waits while an upload runs.
-    for (const name of ['Comment now', 'Add to review']) {
+    for (const name of ['Send now', 'Add to review']) {
       const button = labelled(host, name);
       expect(button?.getAttribute('aria-disabled')).toBe('true');
       click(button!);
     }
     expect(onClick).not.toHaveBeenCalled();
-    // Why they're off is in the box, said once, and the buttons point to it.
+    // Why they're off is no line in the box: it's what describes the buttons, said once, and their
+    // tooltip.
     const notes = [...box.querySelectorAll('[role="status"]')].map((each) => each.textContent);
-    expect(notes.filter((each) => each === 'Sending waits while a file uploads.')).toHaveLength(1);
-    const why = [...box.querySelectorAll('[role="status"]')].find(
-      (each) => each.textContent === 'Sending waits while a file uploads.',
+    expect(notes).toEqual([
+      'Uploads go to GitHub and stay reachable by link, even if you delete the comment.',
+    ]);
+    const why = [...box.querySelectorAll('.sr-only')].filter(
+      (each) => each.textContent === 'A file is still uploading',
     );
-    expect(labelled(host, 'Add to review')?.getAttribute('aria-describedby')).toBe(why?.id);
+    expect(why).toHaveLength(1);
+    expect(labelled(host, 'Add to review')?.getAttribute('aria-describedby')).toBe(why[0]?.id);
   });
 
   it('says how many files are over it while they are dragged, and not over a preview', () => {
@@ -263,36 +350,24 @@ describe('CommentBox', () => {
     );
   });
 
-  it('draws a restored draft with its Discard, the mode dimmed and what it is in the foot', () => {
-    const onDiscard = vi.fn<() => void>();
+  it('says a draft was restored in one quiet line over the buttons', () => {
     const host = render(
       <CommentBox
         label="Reply"
-        notes={[
-          {
-            key: 'restored',
-            tone: 'info',
-            icon: 'clock',
-            text: 'Restored your draft from yesterday, 18:40.',
-            actions: [{ label: 'Discard', onClick: onDiscard }],
-          },
-        ]}
+        head={{ where: 'Reply' }}
         foot={{
           mode: { name: 'NORMAL', kind: 'normal' },
-          text: "Reply to tess-okafor's thread",
-          actions: [{ label: 'Reply now', keys: ['⌥⏎'] }, ...ACTIONS.slice(1)],
+          lines: [{ key: 'restored', text: 'Draft from 12 min ago' }],
+          discard: {},
+          actions: ACTIONS,
         }}
       >
         {EDITOR}
       </CommentBox>,
     );
-    expect(host.querySelector('[role="status"]')?.textContent).toBe(
-      'Restored your draft from yesterday, 18:40.Discard',
-    );
-    click(labelled(host, 'Discard')!);
-    expect(onDiscard).toHaveBeenCalledOnce();
+    expect(host.querySelector('[role="status"]')).toBeNull();
     const foot = host.querySelector('[role="group"]')?.lastElementChild;
-    expect(foot?.textContent).toBe("NORMALReply to tess-okafor's threadReply now⌥⏎Add to review⌘⏎");
+    expect(foot?.textContent).toBe('Draft from 12 min agoDiscard draftSend now⌥⏎Add to review⌘⏎');
     // Not focused, where the box with the editor focused is.
     expect(host.querySelector('[role="group"]')?.hasAttribute('data-focused')).toBe(false);
     expect(
@@ -302,49 +377,51 @@ describe('CommentBox', () => {
     ).toBe(true);
   });
 
-  it('turns Attach off where uploads are refused, with its note, and leaves out the hint', () => {
+  it('says a button is working while what it was pressed for is on its way', () => {
+    const host = render(
+      <CommentBox
+        {...WRITING}
+        foot={{
+          actions: [
+            { label: 'Send now', disabled: true },
+            {
+              label: 'Add to review',
+              primary: true,
+              disabled: true,
+              busy: true,
+              working: 'Sending…',
+            },
+          ],
+        }}
+      />,
+    );
+    const sending = labelled(host, 'Add to review');
+    expect(sending?.getAttribute('aria-busy')).toBe('true');
+    expect(sending?.textContent).toContain('Sending…');
+  });
+
+  it('dims "Attach files…" where uploads are refused, and attaches from it where they aren’t', () => {
     const onAttach = vi.fn<() => void>();
     const host = render(
       <CommentBox
         {...WRITING}
-        notes={[
-          {
-            key: 'refused',
-            tone: 'warning',
-            icon: 'blocked',
-            text: "GitHub won't take uploads from tess-o in this repo. Link the file instead.",
-          },
-        ]}
         foot={{
-          mode: { name: 'INSERT', kind: 'insert' },
-          attach: { disabled: true, onClick: onAttach },
+          attach: { disabled: true, why: 'Sign in to attach files', onClick: onAttach },
           actions: ACTIONS,
         }}
       />,
     );
-    const attach = labelled(host, 'Attach');
+    const attach = labelled(host, 'Attach files…');
     expect(attach?.getAttribute('aria-disabled')).toBe('true');
     click(attach!);
     expect(onAttach).not.toHaveBeenCalled();
-    expect(host.textContent).not.toContain('or drop or paste files');
-    expect(host.querySelector('[role="status"]')?.textContent).toContain(
-      "GitHub won't take uploads",
+    const on = render(
+      <CommentBox {...WRITING} foot={{ attach: { keys: ['⌘⇧A'], onClick: onAttach } }} />,
     );
-  });
-
-  it('attaches from its button, and says the other ways in', () => {
-    const onAttach = vi.fn<() => void>();
-    const host = render(
-      <CommentBox
-        {...WRITING}
-        foot={{
-          attach: { keys: ['⌘⇧A'], onClick: onAttach, hint: 'Drop, paste or pick images' },
-        }}
-      />,
-    );
-    click(labelled(host, 'Attach')!);
+    click(labelled(on, 'Attach files…')!);
     expect(onAttach).toHaveBeenCalledOnce();
-    expect(host.textContent).toContain('Drop, paste or pick images');
+    // The ways in besides aren't spelled out in the foot.
+    expect(on.textContent).not.toContain('drop or paste');
   });
 
   it('colors the mode chip by its mode: Powder soft for Normal, green for Insert, Powder for Visual', async () => {
@@ -389,6 +466,18 @@ describe('CommentBox', () => {
             },
           ]}
           dropping={2}
+          head={{
+            ...WRITING.head,
+            why: 'three',
+            close: { onClick: vi.fn<() => void>() },
+          }}
+          foot={{
+            ...WRITING.foot,
+            text: 'four',
+            lines: [
+              { key: 'l', text: 'five', action: { label: 'Go', onClick: vi.fn<() => void>() } },
+            ],
+          }}
         />
         <CommentBox {...WRITING} previewing preview={<p>x</p>} />
       </>,

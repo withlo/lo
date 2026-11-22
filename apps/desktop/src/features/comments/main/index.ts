@@ -24,9 +24,11 @@ import { serveImages, type ServedImage } from '../../../main/security.ts';
 import { provides } from '../../../main/services.ts';
 import { github } from '../../accounts/service.ts';
 import { comparisons } from '../../revisions/service.ts';
+import { settings } from '../../settings/service.ts';
 import { tabs } from '../../tab/service.ts';
 import { contract } from '../contract.ts';
 import { bodies, drafts, reviews } from '../service.ts';
+import { vim } from '../settings.ts';
 import { readBodies } from './bodies.ts';
 import { CommentableReads } from './commentable.ts';
 import { DraftStore } from './drafts.ts';
@@ -60,7 +62,7 @@ function started<T>(made: T | undefined): T {
 }
 
 export default defineFeature(contract, {
-  uses: [github, tabs, comparisons],
+  uses: [github, tabs, comparisons, settings],
   provide: (context) => [
     provides(bodies, {
       read: (id, posts, options) =>
@@ -117,6 +119,7 @@ export default defineFeature(contract, {
     remove: ({ id, thread, comment, asked }) => started(writer).remove(id, thread, comment, asked),
   },
   start({ use, publish, database }) {
+    use(settings).declare(vim);
     const service = use(tabs);
     const kept = new DraftStore(database);
     store = kept;

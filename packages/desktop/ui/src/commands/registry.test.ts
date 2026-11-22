@@ -188,6 +188,22 @@ describe('keys', () => {
     expect(errors.map(([, id]) => id)).toEqual(['diff.markViewed']);
   });
 
+  test('in a code view with no Vim, a motion’s key runs it, from a header as from a line', () => {
+    const { registry, ran, refused, press } = setup();
+    const view = new FakeView();
+    // With Vim, the motion is Vim's to run: its keys go on to it.
+    expect(press([']', 'f'], scope('diff', view))).toEqual(['pass', 'pass']);
+    expect(ran).toEqual([]);
+    view.plain = true;
+    const header: Target = { kind: 'header', file: 'a.ts', side: 'new' };
+    view.target = header;
+    expect(press([']', 'f'], scope('diff', view))).toEqual(['stop', 'stop']);
+    expect(ran).toEqual([['diff.nextFile', header]]);
+    expect(refused).toEqual([]);
+    // Asked for any other way, it acts on what it's declared to.
+    expect(registry.run('diff.nextFile', header)).toBe("Next file doesn't apply here.");
+  });
+
   test('a held key goes back to the code view when the next doesn’t complete a sequence', () => {
     const { ran, press } = setup();
     const view = new FakeView();

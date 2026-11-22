@@ -112,6 +112,7 @@ function boxWith(text = 'Repro: ', view = 'v1'): Attachable & { text(): string }
     preview() {},
     hold() {},
     close() {},
+    leave() {},
     dismiss() {},
     keep: () => ({ text: current, editor: undefined }),
   };
@@ -346,9 +347,7 @@ describe('attaching', () => {
     const box = boxWith();
     attachFiles(box, [png()]);
     expect(box.text()).toBe('Repro: ');
-    expect(attachingOf(box).state.notes.map(({ text }) => text)).toEqual([
-      'Offline. Attach files once Lo can reach GitHub.',
-    ]);
+    expect(attachingOf(box).state.notes.map(({ text }) => text)).toEqual(['Offline']);
   });
 
   test('a box no longer drawn takes the Markdown into its draft', async () => {

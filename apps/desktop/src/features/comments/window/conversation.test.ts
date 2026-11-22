@@ -83,6 +83,7 @@ function drawn(box: Box): Composer {
     preview() {},
     hold() {},
     close() {},
+    leave() {},
     dismiss() {},
     keep: () => ({ text, editor: undefined }),
   } satisfies Composer;

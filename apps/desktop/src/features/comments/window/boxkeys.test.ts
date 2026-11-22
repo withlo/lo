@@ -4,7 +4,7 @@
 // it did before, and the labels in the box's foot are read from the declarations, so they can't
 // say something the box doesn't do.
 
-import { createComposer, type ComposerEvents } from '@lo/ui/code';
+import { createComposer, setVim, type ComposerEvents } from '@lo/ui/code';
 import {
   helpGroups,
   listen,
@@ -58,11 +58,12 @@ function events(): Events {
   };
 }
 
-/** The keys the box's frame names, which the editor runs. */
-const named: readonly BoxKey[] = ['addToReview', 'postNow', 'preview', 'attach'];
+/** The keys the box's frame names that do one thing wherever the box is, which the editor runs. */
+type Named = Exclude<BoxKey, 'close'>;
+const named: readonly Named[] = ['addToReview', 'postNow', 'preview', 'attach'];
 
 /** What the editor does for each of its keys, which is what the box's frame says it does. */
-const does: Readonly<Record<BoxKey, (on: Events) => void>> = {
+const does: Readonly<Record<Named, (on: Events) => void>> = {
   addToReview: (on) => expect(on.submit).toHaveBeenLastCalledWith('review'),
   postNow: (on) => expect(on.submit).toHaveBeenLastCalledWith('now'),
   preview: (on) => expect(on.preview).toHaveBeenLastCalledWith(true),
@@ -75,7 +76,7 @@ function written(spec: KeySpec): string {
 }
 
 /** The key a declaration of `name` gives first, as a key event, which Linux sends as Ctrl. */
-function eventOf(name: BoxKey | 'close'): KeyboardEventInit {
+function eventOf(name: BoxKey): KeyboardEventInit {
   const [first] = keys.commands[name].keys;
   if (first === undefined) throw new Error(`comments.${name} has no key.`);
   const [stroke] = systemStrokes(parseKeys(written(first)), 'linux');
@@ -124,6 +125,7 @@ beforeEach(() => {
 afterEach(() => {
   document.removeEventListener('keydown', record, true);
   stop();
+  setVim(false);
 });
 
 /** Presses a key on the box's editor. */
@@ -143,16 +145,25 @@ describe('the keys the box’s editor runs', () => {
     },
   );
 
-  test('Esc leaves insert mode, and then closes the box, keeping the draft', () => {
+  test('Esc closes the box, keeping the draft', () => {
     const esc = eventOf('close');
     press(esc);
+    expect(seen).toEqual([{ key: 'Escape', prevented: false }]);
+    expect(on.close).toHaveBeenCalledExactlyOnceWith(true);
+  });
+
+  test('with Vim keys on, Esc leaves insert mode, and then closes the box, keeping the draft', () => {
+    setVim(true);
+    const esc = eventOf('close');
+    press(esc);
+    expect(on.mode).toHaveBeenCalledWith('normal');
+    expect(on.close).not.toHaveBeenCalled();
     press(esc);
     expect(seen).toEqual([
       { key: 'Escape', prevented: false },
       { key: 'Escape', prevented: false },
     ]);
-    expect(on.mode).toHaveBeenCalledWith('normal');
-    expect(on.close).toHaveBeenCalledWith(true);
+    expect(on.close).toHaveBeenCalledExactlyOnceWith(true);
   });
 
   test('every key declared as the editor’s is covered here', () => {
@@ -187,6 +198,7 @@ describe('the keys in the box’s foot', () => {
     ['postNow', '⌥⏎'],
     ['preview', '⌘⇧V'],
     ['attach', '⌘⇧A'],
+    ['close', 'Esc'],
   ] as const)('%s is shown as %s, as the keys of the docs and key help show it', (name, label) => {
     const mac = createRegistry(featureCommands(), 'mac');
     expect(boxKeys(name)).toEqual([label]);

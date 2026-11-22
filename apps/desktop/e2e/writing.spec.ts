@@ -1,15 +1,16 @@
 // Writing comments in the diff: Lo, started on the replay server as rozed-bot, on the comments
 // fixture (`testing/fixtures/comments.sh`), rozed-dev/e2e#94. `c` on a line opens a box under it,
-// whose frame says where the comment goes and who it's from, and `⌘⏎` adds it to a pending review
+// whose head says what the comment is on, typed in at once, and `⌘⏎` adds it to a pending review
 // it starts, as `app_comments_write` recorded from the app; the thread comes under the line. `C`
-// opens one whose button posts it at once, as `app_comments_now` recorded. `v` then `c` opens one on
-// the lines selected, `s` one with them in a suggestion block, and `c` on a file's header one on
-// the file. A box closed with `Esc Esc` keeps its draft on this computer, and after a restart, here
+// opens one whose button sends it at once, as `app_comments_now` recorded. `c` with lines selected
+// opens one on them, `s` one with them in a suggestion block, and `c` on a file's header one on
+// the file. A box closed with `Esc` keeps its draft on this computer, and after a restart, here
 // with GitHub out of reach, it's back, unfocused, saying so; offline, nothing sends, and it stays
-// until it's discarded from its frame's right-click menu. With the comment pending, `⌘⏎` opens the
-// submit dialog, which offers only Comment on rozed-bot's own pull request and submits the review
-// as `app_comments_write` recorded; Approve is offered, and goes, on `app_comments_write_others`,
-// derived from it as if someone else had opened the pull request (`testing/src/derivations.ts`).
+// until it's discarded. With Vim keys on, a box has Vim's modes, and says which. With the comment
+// pending, `⌘⏎` opens the submit dialog, which offers only Comment on rozed-bot's own pull request
+// and submits the review as `app_comments_write` recorded; Approve is offered, and goes, on
+// `app_comments_write_others`, derived from it as if someone else had opened the pull request
+// (`testing/src/derivations.ts`).
 
 import { writeFileSync } from 'node:fs';
 
@@ -28,6 +29,7 @@ import {
   appFolder,
   dataFolder,
   DIFF_FIRST,
+  DIFF_FIRST_VIM,
   expect,
   KEYCHAIN,
   test as base,
@@ -166,10 +168,12 @@ async function addComment(page: Page): Promise<Locator> {
   await page.keyboard.press('c');
   const box = boxes(page);
   await expect(box).toHaveCount(1);
-  await expect(box).toContainText('On line 2, new side');
-  await expect(box).toContainText('as rozed-bot');
+  await expect(box.locator('.lo-diffcomposer__head')).toContainText('Line 2');
+  // One account is signed in: the head doesn't say whose comment it is.
+  await expect(box).not.toContainText('as rozed-bot');
   await expect(box.getByRole('button', { name: /Add to review/ })).toBeVisible();
-  await expect(box.locator('.mode-chip')).toHaveText('INSERT');
+  // With Vim keys off, as Lo starts, the box is typed in at once, and says no mode.
+  await expect(box.locator('.mode-chip')).toHaveCount(0);
   await page.keyboard.type(COMMENT);
   await page.keyboard.press(`${cmd}+Enter`);
   await expect(box).toHaveCount(0, { timeout: 20_000 });
@@ -273,14 +277,14 @@ test.describe('when the connection drops once a comment has gone', () => {
 test.describe('with a comment posted at once recorded', () => {
   test.use({ cassette: 'app_comments_now' });
 
-  test('`C` opens a box whose button posts the comment at once', async ({ page }) => {
+  test('`C` opens a box whose button sends the comment at once', async ({ page }) => {
     const tab = await open(page);
     await onLineTwo(page);
     await page.keyboard.press('Shift+C');
     const box = boxes(page);
     await expect(box).toHaveCount(1);
     const primary = box.locator('.lo-diffcomposer__foot button').last();
-    await expect(primary).toContainText('Comment now');
+    await expect(primary).toContainText('Send now');
     await page.keyboard.type('Is two the right start?');
     await primary.click();
     // The box goes, its room held until the reader's next key, and then the thread GitHub made
@@ -329,16 +333,16 @@ async function launchOffline(
   return { app, page };
 }
 
-/** Closes the box focus is in, as `Esc Esc` does, once it says `where`, emptied first. */
+/** Closes the box focus is in, as `Esc` does, once its head says `where`, emptied first. */
 async function closeEmpty(page: Page, where: string): Promise<void> {
   const box = boxes(page);
   await expect(box).toHaveCount(1);
-  await expect(box).toContainText(where);
-  for (const key of ['Escape', 'g', 'g', 'd', 'G', 'Escape']) await page.keyboard.press(key);
+  await expect(box.locator('.lo-diffcomposer__head')).toContainText(where);
+  for (const key of [`${cmd}+a`, 'Backspace', 'Escape']) await page.keyboard.press(key);
   await expect(box).toHaveCount(0);
 }
 
-test('`v` `c`, `s` and a header’s `c` open their boxes; one kept with `Esc Esc` is back after a restart, offline, sending nothing until it’s discarded', async ({
+test('`c` on lines selected, `s` and a header’s `c` open their boxes; one kept with `Esc` is back after a restart, offline, sending nothing until it’s discarded', async ({
   app,
   page,
   front,
@@ -347,28 +351,33 @@ test('`v` `c`, `s` and a header’s `c` open their boxes; one kept with `Esc Esc
   test.setTimeout(90_000);
   const tab = await open(page);
   await onLineTwo(page);
-  // `v` then `c`: under the last of the lines selected, on them all. Closed, the cursor is there.
-  for (const key of ['v', 'j', 'c']) await page.keyboard.press(key);
-  await closeEmpty(page, 'On lines 2–3, new side');
+  // Shift selects, as in text anywhere, and `c` opens a box under the last of the lines selected,
+  // on them all. Closed, the cursor is there.
+  for (const key of ['Shift+ArrowDown', 'Shift+ArrowDown', 'c']) await page.keyboard.press(key);
+  await closeEmpty(page, 'Lines 2–3');
   await expect.poll(() => cursor(page)).toBe('src/backoff.ts new 3');
   // `s`: the line in a suggestion block, the cursor in it.
   await page.keyboard.press('s');
   await expect(boxes(page).locator('.cm-content')).toContainText('```suggestion');
-  await expect(boxes(page).locator('.mode-chip')).toHaveText('INSERT');
-  await closeEmpty(page, 'On line 3, new side');
+  await closeEmpty(page, 'Line 3');
   // `c` on the file's header: on the file, under it.
   for (const key of ['g', 'g', ']', 'f']) await page.keyboard.press(key);
   await expect.poll(() => cursor(page)).toBe('src/backoff.ts header');
   await page.keyboard.press('c');
-  await closeEmpty(page, 'On the file');
+  await closeEmpty(page, 'File');
   for (const key of ['j', 'j']) await page.keyboard.press(key);
   await expect.poll(() => cursor(page)).toBe('src/backoff.ts new 2');
   await page.keyboard.press('c');
-  await expect(boxes(page)).toHaveCount(1);
+  const kept = boxes(page);
+  await expect(kept).toHaveCount(1);
+  // The box opens in view, all of it, with its controls for closing and discarding.
+  await expect(kept).toBeInViewport({ ratio: 1 });
+  await expect(kept.getByRole('button', { name: 'Close comment box' })).toBeVisible();
+  await expect(kept.getByRole('button', { name: 'Discard draft' })).toBeVisible();
   await page.keyboard.type('Kept for later.');
+  // One `Esc` closes it, and keeps the draft.
   await page.keyboard.press('Escape');
-  await page.keyboard.press('Escape');
-  await expect(boxes(page)).toHaveCount(0);
+  await expect(kept).toHaveCount(0);
   // Saved on this computer, as the box closed.
   await expect
     .poll(async () =>
@@ -385,17 +394,16 @@ test('`v` `c`, `s` and a header’s `c` open their boxes; one kept with `Esc Esc
   try {
     const box = boxes(again.page);
     await expect(box).toHaveCount(1, { timeout: 30_000 });
-    await expect(box).toContainText(/Restored your draft from today, .+\./);
+    await expect(box).toContainText(/Draft from .+/);
     await expect(box.locator('.cm-content')).toHaveText('Kept for later.');
     await expect
       .poll(() =>
         again.page.evaluate(() => document.activeElement?.closest('.lo-diffcomposer') === null),
       )
       .toBe(true);
-    // Offline, it says so, and `⌘⏎` sends nothing: the draft stays.
-    await expect(box).toContainText('Offline. Lo keeps this as a draft until you send it.', {
-      timeout: 20_000,
-    });
+    // Offline, its buttons are dimmed, saying why, and `⌘⏎` sends nothing: the draft stays.
+    const add = box.getByRole('button', { name: /Add to review/ });
+    await expect(add).toHaveAccessibleDescription('Offline', { timeout: 20_000 });
     await box.locator('.cm-content').click();
     await again.page.keyboard.press(`${cmd}+Enter`);
     await expect(box).toHaveCount(1);
@@ -406,15 +414,56 @@ test('`v` `c`, `s` and a header’s `c` open their boxes; one kept with `Esc Esc
         ),
       )
       .toMatch(/"text":"Kept for later\.".*"sending":null/);
-    // What the note's button does is on the frame's right-click menu too, and only what the box
-    // offers.
+    // What the foot's "Discard draft" does is on the frame's right-click menu too, and only what
+    // the box offers.
     await box.locator('.lo-diffcomposer__head').click({ button: 'right' });
     const menu = again.page.getByRole('menu', { name: 'Comment box actions' });
-    await expect(menu.getByRole('menuitem', { name: /^Discard the draft/ })).toBeVisible();
+    await expect(menu.getByRole('menuitem', { name: /^Discard draft/ })).toBeVisible();
     await expect(menu.getByRole('menuitem', { name: /^Send it anyway/ })).toHaveCount(0);
-    await menu.getByRole('menuitem', { name: /^Discard the draft/ }).click();
+    await again.page.keyboard.press('Escape');
+    await expect(menu).toHaveCount(0);
+    await box.getByRole('button', { name: 'Discard draft' }).click();
     await expect(box).toHaveCount(0);
+    // A toast says so, and its "Undo" opens the box again where it was, with its text.
+    const discarded = again.page.locator('.toast', { hasText: 'Discarded draft' });
+    await discarded.getByRole('button', { name: 'Undo' }).click();
+    await expect(box).toHaveCount(1);
+    await expect(box.locator('.cm-content')).toHaveText('Kept for later.');
+    await expect(discarded).toHaveCount(0);
+    // Emptied, the box has nothing to discard, and says so.
+    await box.locator('.cm-content').click();
+    await again.page.keyboard.press(`${cmd}+a`);
+    await again.page.keyboard.press('Backspace');
+    const discard = box.getByRole('button', { name: 'Discard draft' });
+    await expect(discard).toBeDisabled();
+    await expect(discard).toHaveAccessibleDescription('Nothing to discard');
   } finally {
     await again.app.close();
   }
+});
+
+test.describe('with Vim keys on', () => {
+  test.use({ settings: DIFF_FIRST_VIM });
+
+  test('a box opens in insert mode and says so; `Esc` leaves it, and `Esc` again closes the box', async ({
+    page,
+  }) => {
+    await open(page);
+    await onLineTwo(page);
+    const status = page.locator('footer[aria-label="Status"]');
+    await expect(status).toContainText('NORMAL');
+    // `v` then `c`: on the lines selected.
+    for (const key of ['v', 'j', 'c']) await page.keyboard.press(key);
+    const box = boxes(page);
+    await expect(box.locator('.lo-diffcomposer__head')).toContainText('Lines 2–3');
+    // The mode shows once in the focused box, and once in the status bar.
+    await expect(box.locator('.mode-chip')).toHaveText('INSERT');
+    await expect(status).toContainText('INSERT');
+    await page.keyboard.type('Kept.');
+    await page.keyboard.press('Escape');
+    await expect(box.locator('.mode-chip')).toHaveText('NORMAL');
+    await page.keyboard.press('Escape');
+    await expect(box).toHaveCount(0);
+    await expect.poll(() => cursor(page)).toBe('src/backoff.ts new 3');
+  });
 });

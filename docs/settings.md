@@ -56,16 +56,17 @@ list.
 
 ## The settings
 
-| Setting           | Takes                                  | Default      | What it does                                                                                                                                     |
-| ----------------- | -------------------------------------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `theme`           | dark, light or system                  | `"system"`   | The theme: Lo Glow in dark or light, or whichever the system is in.                                                                              |
-| `cache.cap`       | a whole number of GB, from 1 to 10,000 | `10`         | The size Lo keeps its local copies of repos under. Past it, the least recently used go.                                                          |
-| `diff.layout`     | split or inline                        | `"split"`    | The diff's layout: the two sides next to each other, or one column of both. `gi` switches it.                                                    |
-| `diff.whitespace` | show or hide                           | `"show"`     | Whether the diff shows changes to whitespace alone. `gw` switches it. GitHub's diff, shown until the local copy is ready, shows them either way. |
-| `code.trusted`    | a list of trusted repos and PRs        | `[]`         | The repos, and pull requests from forks, that language servers may run on, as below.                                                             |
-| `overview.open`   | overview or diff                       | `"overview"` | What a pull request opens on when it has an overview Lo can show: the overview, or the diff. Without one, it always opens on the diff.           |
-| `updates.check`   | true or false                          | `true`       | Whether Lo checks GitHub Releases for a newer version by itself: 30 s after it starts, then every 6 hours. Off, it checks only when you ask.     |
-| `app.gpu`         | true or false                          | `true`       | Whether Lo draws with the graphics card. Off, it draws with the processor alone, for a window that stays blank. It applies at the next start.    |
+| Setting           | Takes                                  | Default      | What it does                                                                                                                                                 |
+| ----------------- | -------------------------------------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `theme`           | dark, light or system                  | `"system"`   | The theme: Lo Glow in dark or light, or whichever the system is in.                                                                                          |
+| `cache.cap`       | a whole number of GB, from 1 to 10,000 | `10`         | The size Lo keeps its local copies of repos under. Past it, the least recently used go.                                                                      |
+| `diff.layout`     | split or inline                        | `"split"`    | The diff's layout: the two sides next to each other, or one column of both. `gi` switches it.                                                                |
+| `diff.whitespace` | show or hide                           | `"show"`     | Whether the diff shows changes to whitespace alone. `gw` switches it. GitHub's diff, shown until the local copy is ready, shows them either way.             |
+| `code.trusted`    | a list of trusted repos and PRs        | `[]`         | The repos, and pull requests from forks, that language servers may run on, as below.                                                                         |
+| `overview.open`   | overview or diff                       | `"overview"` | What a pull request opens on when it has an overview Lo can show: the overview, or the diff. Without one, it always opens on the diff.                       |
+| `editor.vim`      | true or false                          | `false`      | Whether code and comment boxes take Vim's keys. Off, they have a plain caret, and a box takes typing as soon as it has focus. Lo's own keys work either way. |
+| `updates.check`   | true or false                          | `true`       | Whether Lo checks GitHub Releases for a newer version by itself: 30 s after it starts, then every 6 hours. Off, it checks only when you ask.                 |
+| `app.gpu`         | true or false                          | `true`       | Whether Lo draws with the graphics card. Off, it draws with the processor alone, for a window that stays blank. It applies at the next start.                |
 
 `app.gpu` is only in the file, since a window that draws nothing couldn't reach it in Settings. Lo
 reads it as it starts, before it draws anything, so a change applies the next time Lo starts. It

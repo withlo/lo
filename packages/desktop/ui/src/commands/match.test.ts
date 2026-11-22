@@ -262,6 +262,17 @@ describe('Vim', () => {
     expect(type([']', 'f'], diff).said).toEqual(['pass', 'pass']);
     expect(type([']', 'f'], tree).said).toEqual(['hold', 'run diff.nextFile']);
   });
+
+  test('with Vim keys off a code view has no Vim, so Lo runs its motions there too', () => {
+    const plain: Focus = {
+      scope: 'diff',
+      text: false,
+      view: { mode: 'normal', pending: false, plain: true },
+    };
+    expect(type([']', 'f'], plain).said).toEqual(['hold', 'run diff.nextFile']);
+    // The keys documented as Vim's own go on to the view, which has plain keys for them.
+    expect(type(['j'], plain).said).toEqual(['pass']);
+  });
 });
 
 describe('the Linux box rule', () => {
@@ -502,6 +513,22 @@ describe('counts', () => {
     ]);
     // `0` starts none, as in Vim.
     expect(type(['0'], tree, { bindings }).said).toEqual(['pass']);
+  });
+
+  test('with Vim keys off, a code view’s count is Lo’s to keep, as it is elsewhere', () => {
+    const plain: Focus = {
+      scope: 'diff',
+      text: false,
+      view: { mode: 'normal', pending: false, plain: true },
+    };
+    expect(type(['2', 'y', 'y'], plain, { bindings }).said).toEqual([
+      'hold',
+      'hold',
+      'run counted.copyLines ×2',
+    ]);
+    // A box is typed in: a digit there is text.
+    const box: Focus = { scope: 'box', text: false, view: { ...plain.view!, mode: 'insert' } };
+    expect(type(['2'], box, { bindings }).said).toEqual(['pass']);
   });
 
   test('a count before a command that takes none is dropped, and the command runs once', () => {

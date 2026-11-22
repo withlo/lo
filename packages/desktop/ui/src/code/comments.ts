@@ -1,16 +1,24 @@
-// Comment boxes: a small Markdown editor with Vim's keys, under the line it comments on, in the
-// thread there if there is one, or on its own where a caller puts it. It grows as you type. Around
-// the editor sits a frame the caller draws in the parts the box makes: a head, a note, a preview
-// that takes the editor's place, a dropzone over it, the uploads and a foot. `⌘⏎` adds the comment
-// to the review and `⌥⏎` posts it now; `⌘⇧V` shows the preview or the editor, and `⌘⇧A` asks to
-// attach files; `Esc` leaves insert mode, and `Esc` again closes the box. Files dropped or pasted
-// go to the caller, never into the text. While the caller holds it, as while it's sent, no key
-// changes its text. The box is a scope of its own, `box`, so Lo's keys for the
-// diff don't reach it, and its Vim keeps its own jumps: `⌃o` and `⌃i` there are Vim's. A box can
-// open as another was, as when the view it's in is drawn anew: in the same mode, with the same
-// caret, selection, undo history and preview.
+// Comment boxes: a small Markdown editor, under the line it comments on, in the thread there if
+// there is one, or on its own where a caller puts it. It grows as you type. Around the editor sits a
+// frame the caller draws in the parts the box makes: a head, a note, a preview that takes the
+// editor's place, a dropzone over it, the uploads and a foot. `⌘⏎` adds the comment to the review
+// and `⌥⏎` posts it now; `⌘⇧V` shows the preview or the editor, and `⌘⇧A` asks to attach files;
+// `Esc` closes the box. Focus in it means typing: it's a plain editor, with a caret. With Vim keys
+// on (`setVim`) it has Vim's keys instead: it opens in insert mode, `Esc` leaves that, and `Esc`
+// again closes the box. Files dropped or pasted go to the caller, never into the text. While the
+// caller holds it, as while it's sent, no key changes its text. The box is a scope of its own,
+// `box`, so Lo's keys for the diff don't reach it, and its Vim keeps its own jumps: `⌃o` and `⌃i`
+// there are Vim's. A box can open as another was, as when the view it's in is drawn anew: in the
+// same mode, with the same caret, selection, undo history and preview.
 
-import { history, historyField, indentLess, indentMore } from '@codemirror/commands';
+import {
+  defaultKeymap,
+  history,
+  historyField,
+  historyKeymap,
+  indentLess,
+  indentMore,
+} from '@codemirror/commands';
 import { markdown } from '@codemirror/lang-markdown';
 import { syntaxHighlighting } from '@codemirror/language';
 import {
@@ -20,9 +28,9 @@ import {
   findClusterBreak,
   Prec,
 } from '@codemirror/state';
-import { drawSelection, EditorView, keymap, runScopeHandlers } from '@codemirror/view';
+import { drawSelection, EditorView, keymap, placeholder, runScopeHandlers } from '@codemirror/view';
 import { classHighlighter } from '@lezer/highlight';
-import { getCM, Vim, vim } from '@replit/codemirror-vim';
+import { getCM, Vim } from '@replit/codemirror-vim';
 
 import {
   type KeySource,
@@ -31,6 +39,7 @@ import {
   type Target,
   type VimKey,
 } from '../commands/index.ts';
+import { reveal, scrollPane } from '../reveal.ts';
 import type { BoxFrame, BoxParts, Composer, ComposerEvents, KeptBox, Mode, Send } from './api.ts';
 import { mapJumps } from './jumps.ts';
 import {
@@ -39,12 +48,14 @@ import {
   installVim,
   leaveToNormal,
   modeName,
+  onVim,
   onVimMode,
   passToVim,
   readOnly,
   setVimKeys,
-  showMode,
+  switchVim,
   vimMode,
+  vimOn,
   vimPending,
 } from './keys.ts';
 import type { Side } from './layout.ts';
@@ -53,6 +64,9 @@ import type { BoxHost } from './widgets.ts';
 
 /** The scope of the box's own keys, `⌘⏎`, `⌥⏎`, `⌘⇧V` and `⌘⇧A`, which its editor runs first. */
 const BOX_KEYS = 'box-keys';
+
+/** The reader's input that takes a box's place on screen from it, as it opens. */
+const INPUTS = ['keydown', 'pointerdown', 'wheel'] as const;
 
 /** Where a box is: under a file's line on one side, by the file's index. */
 export interface BoxPlace {
@@ -76,9 +90,14 @@ export interface BoxOptions {
   frame: BoxFrame | undefined;
   nonce: string | undefined;
   label?: string | undefined;
+  /** What it says while it's empty. */
+  hint?: string | undefined;
   /** The box this one is, as it was, to open as it was where its text is the draft. */
   kept?: KeptBox | undefined;
-  /** `Esc` in normal mode, or in the preview: the box's owner closes it, or tells the caller. */
+  /**
+   * `Esc` in the box, in Vim's normal mode with Vim keys on, or in the preview: the box's owner
+   * closes it, or tells the caller.
+   */
   escape: (box: CommentBox) => void;
   /** `close()` on its handle. */
   close: (box: CommentBox) => void;
@@ -86,6 +105,8 @@ export interface BoxOptions {
   dismiss?: ((box: CommentBox) => void) | undefined;
   /** The box grew or shrank as it was typed in, or as its editor changed width. */
   resized?: ((box: CommentBox) => void) | undefined;
+  /** The box scrolled its pane to come on screen whole, as it took focus. */
+  shown?: ((box: CommentBox) => void) | undefined;
 }
 
 export class CommentBox implements BoxHost, KeySource {
@@ -114,6 +135,9 @@ export class CommentBox implements BoxHost, KeySource {
   #holding = false;
   /** Focus left the box as it moved into another widget, and is on its way back. */
   #refocusing = false;
+  readonly #shown: ((box: CommentBox) => void) | undefined;
+  /** Stops keeping the box on screen whole, while it's kept there. */
+  #settle: (() => void) | undefined;
 
   constructor(options: BoxOptions) {
     installVim();
@@ -122,6 +146,7 @@ export class CommentBox implements BoxHost, KeySource {
     this.thread = options.thread;
     this.#on = on;
     this.#escape = options.escape;
+    this.#shown = options.shown;
     this.dom = document.createElement('div');
     this.dom.className = 'lo-diffcomposer';
     this.dom.setAttribute(SCOPE_ATTRIBUTE, 'box');
@@ -144,8 +169,8 @@ export class CommentBox implements BoxHost, KeySource {
       return true;
     };
     const extensions: Extension[] = [
-      vim(),
-      showMode,
+      // Without Vim, the editor's own keys: typing, moving, selecting and undoing, as anywhere.
+      switchVim(keymap.of([...historyKeymap, ...defaultKeymap])),
       this.#held.of([]),
       drawSelection(),
       history(),
@@ -153,15 +178,20 @@ export class CommentBox implements BoxHost, KeySource {
       syntaxHighlighting(classHighlighter),
       EditorView.lineWrapping,
       EditorView.contentAttributes.of({ 'aria-label': options.label ?? 'Comment' }),
+      options.hint === undefined ? [] : placeholder(options.hint),
+      // The foot stays at the foot of the box's pane while the box runs under it (`view.css`): the
+      // caret keeps clear of it.
+      EditorView.scrollMargins.of(() => ({ bottom: foot.offsetHeight })),
       options.nonce ? EditorView.cspNonce.of(options.nonce) : [],
       Prec.highest(
         keymap.of([
-          // The box keeps Tab: it indents in insert mode, as in a Markdown list, and does nothing
-          // otherwise, where the browser would move focus out of the box and into the diff.
+          // The box keeps Tab: it indents while the box is typed in, as in a Markdown list, and
+          // does nothing in Vim's other modes, where the browser would move focus out of the box
+          // and into the diff.
           {
             key: 'Tab',
-            run: (view) => (vimMode(view) === 'insert' ? indentMore(view) : true),
-            shift: (view) => (vimMode(view) === 'insert' ? indentLess(view) : true),
+            run: (view) => (this.#typing() ? indentMore(view) : true),
+            shift: (view) => (this.#typing() ? indentLess(view) : true),
             preventDefault: true,
           },
         ]),
@@ -195,7 +225,11 @@ export class CommentBox implements BoxHost, KeySource {
         EditorView.domEventHandlers({
           keydown: (event, view) => {
             if (runScopeHandlers(view, event, BOX_KEYS)) return true;
-            if (event.key !== 'Escape' || !idle(view)) return false;
+            // With Vim keys on, `Esc` is Vim's until it's in normal mode, waiting on nothing.
+            if (event.key !== 'Escape' || (vimOn() && !idle(view))) return false;
+            // While text is being composed, `Esc` is the input method's: it cancels the composition.
+            if (event.isComposing || view.composing) return false;
+            if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return false;
             event.preventDefault();
             this.#escape(this);
             return true;
@@ -224,17 +258,14 @@ export class CommentBox implements BoxHost, KeySource {
     body.append(preview, dropzone);
     this.dom.append(head, note, body, uploads, foot);
     this.composer = this.#handle(options);
-    if (options.frame) {
-      this.#frame = options.frame(this.#parts, this.composer);
-    } else {
-      const hint = document.createElement('div');
-      hint.className = 'lo-diffcomposer__hint';
-      hint.textContent = '⌘⏎ add to the review · ⌥⏎ comment now · Esc Esc close and keep the draft';
-      this.dom.append(hint);
-    }
+    if (options.frame) this.#frame = options.frame(this.#parts, this.composer);
     this.#stops.push(
       setScopeSource(this.dom, this),
-      onVimMode(this.view, (mode) => on.mode?.(mode)),
+      onVimMode(this.view, () => on.mode?.(this.#mode())),
+      // A box open as Vim keys go on is still being typed in.
+      onVim(() => {
+        if (vimOn() && !this.#holding && !this.#previewing) this.#insertMode();
+      }),
     );
     // The box's own keys, where the editor doesn't hear them: in the preview, or on the frame.
     this.dom.addEventListener('keydown', (event) => this.#frameKey(event));
@@ -278,13 +309,79 @@ export class CommentBox implements BoxHost, KeySource {
     return this.#refocusing || this.dom.contains(this.dom.ownerDocument.activeElement);
   }
 
-  /** Focuses the box: in insert mode at the end of the draft, or its preview while that shows. */
+  /**
+   * The box's mode as its caller and Lo's keys see it: Vim's, or, with Vim keys off, insert mode,
+   * since every key there types.
+   */
+  #mode(): Mode {
+    return vimOn() ? vimMode(this.view) : 'insert';
+  }
+
+  /** Whether a key in the box now types in it: focus is in its text, in insert mode. */
+  #typing(): boolean {
+    return this.view.hasFocus && this.#mode() === 'insert';
+  }
+
+  /** Puts Vim in insert mode, where the caret is. */
+  #insertMode(): void {
+    const cm = getCM(this.view);
+    if (!vimOn() || !cm || cm.state.vim?.insertMode === true) return;
+    const { main } = this.view.state.selection;
+    Vim.handleKey(cm, 'i', 'user');
+    this.view.dispatch({ selection: { anchor: main.anchor, head: main.head } });
+  }
+
+  /**
+   * Focuses the box, the caret at the end of the draft, in insert mode with Vim keys on; or its
+   * preview while that shows. The box comes on screen whole.
+   */
   focus(): void {
+    this.#takeFocus();
+    this.#show();
+  }
+
+  /**
+   * Brings the box on screen whole, by the least scroll of its pane that does, and keeps it there
+   * as its frame draws and it grows, until the reader's next key, press or wheel: where it is from
+   * then on is theirs. A box taller than its pane shows from its top, its foot at the pane's
+   * (`view.css`).
+   */
+  #show(): void {
+    this.#settle?.();
+    const show = (): void => {
+      if (!this.dom.isConnected) return;
+      const pane = scrollPane(this.dom);
+      const before = pane?.scrollTop;
+      reveal(this.dom);
+      if (pane && pane.scrollTop !== before) this.#shown?.(this);
+    };
+    // Once what opening it moved is back in place, and then as it's laid out.
+    queueMicrotask(show);
+    const watch = new ResizeObserver(show);
+    watch.observe(this.dom);
+    const page = this.dom.ownerDocument;
+    const settle = (): void => {
+      watch.disconnect();
+      for (const type of INPUTS) page.removeEventListener(type, settle, { capture: true });
+      this.#settle = undefined;
+    };
+    for (const type of INPUTS) {
+      page.addEventListener(type, settle, { capture: true, passive: true });
+    }
+    this.#settle = settle;
+  }
+
+  #takeFocus(): void {
     if (this.#previewing) {
       this.#parts.preview.focus();
       return;
     }
     const { doc } = this.view.state;
+    if (!vimOn()) {
+      this.view.dispatch({ selection: { anchor: doc.length } });
+      this.view.focus();
+      return;
+    }
     const cm = getCM(this.view);
     // In insert mode the cursor goes to the end itself; otherwise `A` takes it there, into insert
     // mode.
@@ -298,11 +395,11 @@ export class CommentBox implements BoxHost, KeySource {
 
   /** The box as it is, for another to open as it was. */
   keep(): KeptBox {
-    const cm = getCM(this.view);
+    const cm = vimOn() ? getCM(this.view) : null;
     const sel = cm?.state.vim?.visualMode ? cm.state.vim.sel : undefined;
     const editor: Editor = {
       state: this.view.state.toJSON({ history: historyField }),
-      mode: modeName(this.view),
+      mode: vimOn() ? modeName(this.view) : 'INSERT',
       sel:
         cm && sel
           ? { anchor: cm.indexFromPos(sel.anchor), head: cm.indexFromPos(sel.head) }
@@ -315,7 +412,7 @@ export class CommentBox implements BoxHost, KeySource {
   }
 
   insert(text: string): void {
-    if (vimMode(this.view) === 'insert' || text === '') {
+    if (this.#mode() === 'insert' || text === '') {
       this.view.dispatch(this.view.state.replaceSelection(text));
       return;
     }
@@ -338,7 +435,7 @@ export class CommentBox implements BoxHost, KeySource {
     this.view.dispatch({ changes: { from: start, to: end, insert: text } });
   }
 
-  /** Holds the text as it is, leaving insert mode, or lets it go. */
+  /** Holds the text as it is, leaving Vim's insert mode, or lets it go. */
   hold(on: boolean): void {
     if (on === this.#holding) return;
     this.#holding = on;
@@ -347,15 +444,17 @@ export class CommentBox implements BoxHost, KeySource {
   }
 
   /**
-   * Shows the preview in the editor's place, leaving insert mode, or the editor again, in insert
-   * mode where it was if it was.
+   * Shows the preview in the editor's place, or the editor again, its caret where it was. With Vim
+   * keys on, the preview leaves insert mode, and the editor comes back in it if it was.
    */
   preview(on: boolean): void {
     if (on === this.#previewing) return;
     const focused = this.dom.contains(this.dom.ownerDocument.activeElement);
     if (on) {
       this.#resume =
-        vimMode(this.view) === 'insert' ? this.view.state.selection.main.head : undefined;
+        vimOn() && vimMode(this.view) === 'insert'
+          ? this.view.state.selection.main.head
+          : undefined;
       leaveToNormal(this.view);
     }
     this.#previewing = on;
@@ -364,7 +463,7 @@ export class CommentBox implements BoxHost, KeySource {
     this.dom.classList.toggle('is-preview', on);
     const resume = on ? undefined : this.#resume;
     const cm = getCM(this.view);
-    if (resume !== undefined && cm) {
+    if (resume !== undefined && cm && vimOn()) {
       // Back in insert mode, where the cursor was.
       this.#resume = undefined;
       Vim.handleKey(cm, 'i', 'user');
@@ -374,7 +473,12 @@ export class CommentBox implements BoxHost, KeySource {
   }
 
   keyState(): ReturnType<KeySource['keyState']> {
-    return { mode: vimMode(this.view), pending: vimPending(this.view), target: this.target };
+    return {
+      mode: this.#mode(),
+      pending: vimPending(this.view),
+      target: this.target,
+      plain: !vimOn(),
+    };
   }
 
   passKeys(keys: readonly string[]): void {
@@ -391,6 +495,7 @@ export class CommentBox implements BoxHost, KeySource {
 
   destroy(): void {
     this.#refocusing = false;
+    this.#settle?.();
     for (const stop of this.#stops) stop();
     this.#stops.length = 0;
     const frame = this.#frame;
@@ -409,7 +514,7 @@ export class CommentBox implements BoxHost, KeySource {
   /** The caller's handle on the box. */
   #handle(options: BoxOptions): Composer {
     const draft = (): string => this.text;
-    const mode = (): Mode => vimMode(this.view);
+    const mode = (): Mode => this.#mode();
     const previewing = (): boolean => this.previewing;
     return {
       get text() {
@@ -428,6 +533,7 @@ export class CommentBox implements BoxHost, KeySource {
       preview: (on) => this.preview(on),
       close: () => options.close(this),
       dismiss: () => (options.dismiss ?? options.close)(this),
+      leave: () => this.#escape(this),
       keep: () => this.keep(),
     };
   }
@@ -437,7 +543,7 @@ export class CommentBox implements BoxHost, KeySource {
    * box this one is: its caret, selection and undo history came with its editor's state.
    */
   #resumeAs(was: Editor): void {
-    const cm = getCM(this.view);
+    const cm = vimOn() ? getCM(this.view) : null;
     const { length } = this.view.state.doc;
     const { main } = this.view.state.selection;
     if (cm && was.mode === 'INSERT') {
@@ -466,15 +572,16 @@ export class CommentBox implements BoxHost, KeySource {
 
   /**
    * A key in the box outside its editor, in the preview or on the frame: the box's own keys, as
-   * in the editor, and `Esc`, which closes the box, as in normal mode.
+   * in the editor, and `Esc`, which closes the box.
    */
   #frameKey(event: KeyboardEvent): void {
     const { target } = event;
     if (event.defaultPrevented || !(target instanceof Node) || this.view.dom.contains(target)) {
       return;
     }
+    // Of the editor's own keys, only `Tab` is the frame's too, which keeps focus in the box.
     if (
-      runScopeHandlers(this.view, event, 'editor') ||
+      (event.key === 'Tab' && runScopeHandlers(this.view, event, 'editor')) ||
       runScopeHandlers(this.view, event, BOX_KEYS)
     ) {
       event.preventDefault();

@@ -13,7 +13,14 @@ import type {
   Place,
   Span,
 } from '@lo/ui/code';
-import { commandsOf, defineCommands, type LineTarget, listen, Registry } from '@lo/ui/commands';
+import {
+  commandsOf,
+  defineCommands,
+  type LineTarget,
+  listen,
+  NO_TARGET,
+  Registry,
+} from '@lo/ui/commands';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from 'vitest';
 
 import { runFromBar } from '../../../window/commands/bar.ts';
@@ -52,6 +59,12 @@ import {
   keepBoxesOf,
   keptAway,
   keptSummary,
+  discardable,
+  discarding,
+  lastDiscarded,
+  undiscard,
+  undiscarding,
+  UNDO_TIME,
   offering,
   restore,
   SAVE_AFTER,
@@ -171,6 +184,9 @@ function composerOf(draft: string, on: ComposerEvents): Drawn['composer'] {
     },
     close() {
       composer.closed = 'close';
+    },
+    leave() {
+      on.close(true);
     },
     dismiss() {
       composer.closed = 'dismiss';
@@ -540,7 +556,7 @@ describe('opening a box', () => {
     expect(canWrite(VIEW)).toBe('Sign in to comment');
     said.pull = pull();
     said.run = { layers: [1, 2] };
-    expect(canWrite(VIEW)).toBe('Comment in a layer');
+    expect(canWrite(VIEW)).toBe('Show a single layer to comment');
   });
 });
 
@@ -617,6 +633,55 @@ describe('drafts', () => {
     expect(drawn[1]!.composer.text).toBe('New');
   });
 
+  test('“Undo” brings a discarded draft back, in its box where it was, and saves it again', () => {
+    vi.useFakeTimers();
+    try {
+      const { drawn } = fakeDiff();
+      takeDrafts({
+        id: VIEW,
+        drafts: [row(onLines(4, 6), 'Old', { restored: true, savedAt: 1 })],
+      });
+      act(boxIn(drawn[0]!), 'discard');
+      expect(lastDiscarded()).toMatchObject({ view: VIEW, place: onLines(4, 6), text: 'Old' });
+      expect(undiscarding.enabled?.(NO_TARGET)).toBe(true);
+      undiscard();
+      // The box is open again on its lines, focused, with the text, and nothing more to undo.
+      expect(drawn).toHaveLength(2);
+      expect(drawn[1]).toMatchObject({
+        at: { file: 'f0', side: 'new', from: 4, to: 6 },
+        options: { focus: true },
+      });
+      expect(drawn[1]!.composer.text).toBe('Old');
+      expect(lastDiscarded()).toBeUndefined();
+      expect(undiscarding.enabled?.(NO_TARGET)).toBe('Nothing to undo');
+      // Main's drafts from before it heard of either leave the box be, and then it's saved again.
+      takeDrafts({ id: VIEW, drafts: [] });
+      expect(drawn[1]!.composer.closed).toBeUndefined();
+      vi.advanceTimersByTime(SAVE_AFTER);
+      expect(asked('comments.draft').at(-1)).toMatchObject({ place: onLines(4, 6), text: 'Old' });
+
+      // The offer runs out by itself, and a box with no text has nothing to discard.
+      act(boxIn(drawn[1]!), 'discard');
+      expect(lastDiscarded()?.text).toBe('Old');
+      vi.advanceTimersByTime(UNDO_TIME);
+      expect(lastDiscarded()).toBeUndefined();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test('a box with no text has nothing to discard, and one being sent is held', async () => {
+    const { drawn, box } = await opened();
+    const target = { kind: 'box', box: box.id } as const;
+    expect(discardable(box.state)).toBe(true);
+    drawn[0]!.on.change(' ');
+    expect(discardable(box.state)).toBe('Nothing to discard');
+    expect(discarding.enabled?.(target)).toBe('Nothing to discard');
+    void discarding.run(target);
+    expect(drawn[0]!.composer.closed).toBeUndefined();
+    expect(discardable({ ...box.state, text: 'Text', busy: true })).toBe('Sending…');
+  });
+
   test('after the window loads again, each draft’s box comes back, unfocused, saying so', () => {
     const { drawn } = fakeDiff();
     takeDrafts({ id: VIEW, drafts: [row(onLines(null, 5), 'Kept', { savedAt: 1 })] });
@@ -637,14 +702,14 @@ describe('drafts', () => {
     expect(drawn).toHaveLength(1);
   });
 
-  test('what a box’s notes offer is a command on the box, there only while it offers it', () => {
+  test('“Discard draft” is a command on any box, and what its notes offer only while they do', () => {
     const { drawn } = fakeDiff();
     takeDrafts({
       id: VIEW,
       drafts: [row(onLines(null, 5), 'Old', { restored: true, savedAt: 1 })],
     });
     const target = { kind: 'box', box: boxIn(drawn[0]!).id } as const;
-    const discard = offering('discard');
+    const discard = discarding;
     const sendAnyway = offering('sendAnyway');
     expect(discard.listed?.(target)).toBe(true);
     expect(discard.enabled?.(target)).toBe(true);
@@ -653,7 +718,7 @@ describe('drafts', () => {
     void discard.run(target);
     expect(drawn[0]!.composer.closed).toBe('dismiss');
     expect(asked('comments.discard')).toEqual([{ id: VIEW, place: onLines(null, 5) }]);
-    // The box is gone, and so is what it offered.
+    // The box is gone, and so is what there was to discard.
     expect(discard.listed?.(target)).toBe(false);
   });
 
@@ -702,7 +767,7 @@ describe('a box on a code block', () => {
     const box = boxIn(drawn[0]!);
     expect(box.state.place).toEqual(onLines(null, 5));
     // The block shows r1; the comment goes on the lines at r2, and its head says so.
-    expect(box.state.where).toBe('On line 5, new side, at r2');
+    expect(box.state.where).toEqual({ head: 'Line 5 · r2' });
     drawn[0]!.on.change('Mine');
     shut(drawn[0]!, true);
     expect(asked('comments.draft')).toEqual([
@@ -715,13 +780,13 @@ describe('a box on a code block', () => {
     await onBlock(writing, { from: 4, to: 4 }, { kind: 'file', path: PATH, why: 'changed' });
     expect(boxIn(drawn[0]!).state).toMatchObject({
       place: { kind: 'thread', commit: HEAD, path: PATH, lines: null },
-      where: 'On the file, since these lines changed after r1',
+      where: { head: 'File', why: 'These lines changed since r1.' },
     });
     // The pull request deletes the file: GitHub still takes a comment on it, by its old path.
     await onBlock(writing, { from: 6, to: 6 }, { kind: 'gone', path: 'src/old.ts' });
     expect(boxIn(drawn[1]!).state).toMatchObject({
       place: { kind: 'thread', path: 'src/old.ts', lines: null },
-      where: 'On the file, which this pull request deletes',
+      where: { head: 'File', why: 'This pull request deletes this file.' },
     });
     expect(asked('comments.commentable')).toContainEqual({
       id: VIEW,
@@ -738,7 +803,7 @@ describe('a box on a code block', () => {
     );
     expect(boxIn(drawn[2]!).state).toMatchObject({
       place: { kind: 'conversation' },
-      where: 'On the pull request, since it doesn’t change this file',
+      where: { head: 'Pull request', why: 'This pull request doesn’t change this file.' },
     });
   });
 
@@ -826,8 +891,8 @@ describe('a box on a code block', () => {
     });
     await Promise.resolve();
     expect(block.drawn.map((each) => boxIn(each).state.where)).toEqual([
-      'On the file, since these lines changed after r1',
-      'On the pull request, since it doesn’t change this file',
+      { head: 'File', why: 'These lines changed since r1.' },
+      { head: 'Pull request', why: 'This pull request doesn’t change this file.' },
     ]);
   });
 
@@ -1242,9 +1307,10 @@ describe('a box on a code block', () => {
       { file: 'x0', side: 'new', line: 6 },
       { file: 'x0', side: 'old', line: 6 },
     ]);
-    expect(boxIn(drawn[1]!).state.where).toBe(
-      'On the file, since Lo maps only new-side lines from r1 to r2',
-    );
+    expect(boxIn(drawn[1]!).state.where).toEqual({
+      head: 'File',
+      why: 'Removed lines can’t be followed to r2.',
+    });
   });
 
   test('a draft on the pull request with no block stays kept, shut and unsent', async () => {

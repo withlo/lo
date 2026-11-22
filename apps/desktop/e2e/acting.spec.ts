@@ -167,8 +167,8 @@ test('`r` replies, `i` edits the reply, `dd` deletes it, and `x` unresolves and 
   await test.step('`r` opens a reply box after the card, and `⌥⏎` posts the reply', async () => {
     await page.keyboard.press('r');
     await expect(box).toHaveCount(1);
-    await expect(box).toContainText('Reply to rozed-bot’s thread');
-    await expect(box.getByRole('button', { name: /Reply now/ })).toBeVisible();
+    await expect(box.locator('.lo-diffcomposer__head')).toContainText('Reply');
+    await expect(box.getByRole('button', { name: /Send now/ })).toBeVisible();
     // The card's own row that offers a reply gives way to the box.
     await expect(thread.getByRole('button', { name: 'Reply…' })).toHaveCount(0);
     await page.keyboard.type('Three tries at most.');
@@ -181,9 +181,9 @@ test('`r` replies, `i` edits the reply, `dd` deletes it, and `x` unresolves and 
   await test.step('`i` opens the reply’s text in a box, and `⌘⏎` saves the edit', async () => {
     await page.keyboard.press('i');
     await expect(box).toHaveCount(1);
-    await expect(box).toContainText('Edit your comment');
+    await expect(box.locator('.lo-diffcomposer__head')).toContainText('Edit');
     await expect(box.locator('.cm-content')).toHaveText('Three tries at most.');
-    await expect(box.getByRole('button', { name: /Save the edit/ })).toBeVisible();
+    await expect(box.getByRole('button', { name: /^Save/ })).toBeVisible();
     await page.keyboard.type(' Then it gives up.');
     await page.keyboard.press(`${cmd}+Enter`);
     await expect(box).toHaveCount(0, { timeout: 20_000 });
@@ -253,14 +253,15 @@ test.describe('in the timeline', () => {
       });
 
     await test.step('`c` puts focus in the box at the end, and `⌘⏎` posts the comment', async () => {
-      await expect(box).toContainText('On the pull request');
-      await expect(box).toContainText('as rozed-bot');
+      await expect(box).toContainText('Pull request');
+      await expect(box.getByRole('button', { name: /^Send/ })).toBeVisible();
       await page.keyboard.press('c');
       await expect(editor).toBeFocused();
       await page.keyboard.type('Posted from the timeline’s box.');
       await page.keyboard.press(`${cmd}+Enter`);
       await expect(comment).toContainText('rozed-bot (you) commented', { timeout: 20_000 });
-      await expect(editor).toHaveText('');
+      // Empty again, it says what it's for.
+      await expect(editor).toHaveText('Comment on #94');
       // Focus goes back to the list as the sent box goes.
       await expect(timeline).toBeFocused();
     });
@@ -269,7 +270,7 @@ test.describe('in the timeline', () => {
       await comment.click();
       await page.keyboard.press('i');
       const edit = comment.locator('[data-lo-timeline="edit"]');
-      await expect(edit).toContainText('Edit your comment');
+      await expect(edit).toContainText('Edit');
       await expect(edit.locator('.cm-content')).toHaveText('Posted from the timeline’s box.');
       await expect(edit.locator('.cm-content')).toBeFocused();
       await page.keyboard.type(' Then edited.');

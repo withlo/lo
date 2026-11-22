@@ -24,6 +24,7 @@ import type { FileDiff } from '@lo/diff';
 import {
   type HeaderTarget,
   KEY_EVENT,
+  type KeySource,
   type LineTarget,
   SCOPE_ATTRIBUTE,
   setScopeSource,
@@ -53,13 +54,16 @@ import { type FileTokens, highlighting, lineStarts, tokensChanged } from './high
 import {
   addCodeEditor,
   clearVim,
+  endSelection,
   handlingKey,
   installVim,
   onVimMode,
   passToVim,
+  selectedLines,
   setVimKeys,
   vimCount,
   vimMode,
+  vimOn,
   vimPending,
 } from './keys.ts';
 import { marking } from './marks.ts';
@@ -560,6 +564,7 @@ class Excerpt implements ExcerptView {
       on,
       frame,
       nonce: this.#nonce,
+      hint: options.hint,
       escape: (closed) => {
         const keep = closed.text.trim() !== '';
         this.#closeBox(closed, 'escape');
@@ -572,7 +577,7 @@ class Excerpt implements ExcerptView {
     this.#rooms.delete(line);
     this.#boxes.set(line, box);
     // The lines `v` selected are the box's now.
-    if (focus && vimMode(this.#view) === 'visual') passToVim(this.#view, ['<Esc>']);
+    if (focus) endSelection(this.#view);
     this.#drawBlocks();
     if (focus) box.focus();
     return box.composer;
@@ -873,13 +878,14 @@ class Excerpt implements ExcerptView {
 
   // Keys -------------------------------------------------------------------------------------
 
-  keyState(): { mode: Mode; pending: boolean; count: number | undefined; target: Target } {
+  keyState(): ReturnType<KeySource['keyState']> {
     const view = this.#view;
     return {
       mode: vimMode(view),
       pending: vimPending(view),
       count: vimCount(view),
       target: this.#target(),
+      plain: !vimOn(),
     };
   }
 
@@ -904,16 +910,18 @@ class Excerpt implements ExcerptView {
   #target(): LineTarget | HeaderTarget {
     const view = this.#view;
     const { doc, selection } = view.state;
-    const { head, anchor } = selection.main;
-    const line = doc.lineAt(head);
-    const target = this.#targetAt(line.number, head - line.from);
+    const { head } = selection.main;
+    const lines = selectedLines(view);
+    const line = doc.line(lines.head);
+    const column = Math.max(0, Math.min(head - line.from, line.length));
+    const target = this.#targetAt(line.number, column);
     if (vimMode(view) !== 'visual') {
       const count = vimCount(view);
       if (count === undefined || count < 2 || target.kind !== 'line') return target;
       const last = Math.min(doc.lines, line.number + count - 1);
       return { ...target, across: this.#spansIn(line.number, last) };
     }
-    const anchorLine = doc.lineAt(anchor).number;
+    const anchorLine = lines.anchor;
     const from = this.#spot(anchorLine);
     const to = this.#spot(line.number);
     const across = this.#spansIn(anchorLine, line.number);

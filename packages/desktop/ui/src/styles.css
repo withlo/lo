@@ -458,6 +458,43 @@
   font-weight: 500;
 }
 
+/* What a comment box's head and foot give up as the box narrows, each narrower than the last: the
+   key chips, then the labels of the controls that keep an icon, then the hints. A foot with every
+   control and Vim's mode needs just over 400px with those labels, so they go under 410px. Its
+   buttons keep their words at any width, and the foot wraps whatever doesn't fit, so nothing runs
+   past the box. The head wraps under its last width. The head and the foot are the containers
+   (`@container`). What's hidden may set a display of its own (`inline-flex`), which this has to
+   outrank. */
+@utility box-chip {
+  @container (width < 480px) {
+    display: none !important;
+  }
+}
+@utility box-label {
+  @container (width < 410px) {
+    display: none !important;
+  }
+}
+@utility box-hint {
+  @container (width < 400px) {
+    display: none !important;
+  }
+}
+@utility box-row {
+  @container (width < 320px) {
+    flex-wrap: wrap;
+    flex-shrink: 1;
+    justify-content: flex-end;
+  }
+}
+@utility box-keys {
+  @container (width < 320px) {
+    & kbd {
+      display: none;
+    }
+  }
+}
+
 /* Settings: the list of sections beside the sections. */
 @utility settings-page {
   display: grid;

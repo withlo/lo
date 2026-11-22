@@ -169,6 +169,7 @@ function drawBlock(): { writing: WritingBlock; texts: string[] } {
         preview() {},
         hold() {},
         close() {},
+        leave() {},
         dismiss() {},
         keep: () => ({ text, editor: undefined }),
       } satisfies Composer;
@@ -231,17 +232,13 @@ test('while Lo is still checking the overview, the box says so, not that the dra
   overview.has.set(KEY, 'unknown');
   takeDrafts({ id: VIEW, drafts: [draft()] });
   const { box } = await drawBox();
-  expect(box.textContent).toContain(
-    'Lo is still checking the overview. Your comment on the pull request opens under its code block if the overview still has it, or here if not.',
-  );
+  expect(box.textContent).toContain('Checking overview…');
   expect(editors.drawn).toEqual([]);
   // Checked, the overview has the block: the draft opens under it, as the box says.
   const block = drawBlock();
   await overviewChanged();
   expect(block.texts).toEqual(['On the pull request']);
-  expect(box.textContent).toContain(
-    'Your comment on the pull request is open under its code block in the overview.',
-  );
+  expect(box.textContent).toContain('Draft open in the overview');
   expect(editors.drawn).toEqual([]);
 });
 

@@ -16,6 +16,7 @@ import {
   browsed,
   dataFolder,
   DIFF_FIRST,
+  DIFF_FIRST_VIM,
   expect,
   KEYCHAIN,
   settingsPath,
@@ -312,20 +313,18 @@ test('answers its keys: files, changes, sides, layout, whitespace and folds, Esc
   await focusDiff(page);
   const clipboard = () => app.evaluate(({ clipboard: board }) => board.readText());
 
-  await test.step('Vim’s mode, in the status bar while the diff has focus, and a key held', async () => {
+  await test.step('a key held shows in the status bar, and no mode does, with Vim keys off', async () => {
     const status = page.locator('footer[aria-label="Status"]');
-    await expect(status).toContainText('NORMAL');
+    await expect(status.locator('.mode-chip')).toHaveCount(0);
     const held = status.locator('[title="Keys typed so far"]');
     await press(page, 'g');
     await expect(held).toHaveText('g');
     await press(page, 'Escape');
     await expect(held).toHaveCount(0);
-    await press(page, 'Shift+V');
-    await expect(status).toContainText('V-LINE');
+    // Lines selected show no mode either.
+    await press(page, 'Shift+ArrowDown');
+    await expect(status.locator('.mode-chip')).toHaveCount(0);
     await press(page, 'Escape');
-    await expect(status).toContainText('NORMAL');
-    await page.locator('[role="tree"][data-lo-scope="tree"]').focus();
-    await expect(status).not.toContainText('NORMAL');
     await focusDiff(page);
   });
 
@@ -450,6 +449,31 @@ test('answers its keys: files, changes, sides, layout, whitespace and folds, Esc
         );
     });
   }
+});
+
+test.describe('with Vim keys on', () => {
+  test.use({ settings: DIFF_FIRST_VIM });
+
+  test('Vim’s mode shows in the status bar while the diff has focus, and its cursor hides no header', async ({
+    page,
+  }) => {
+    await drawn(page);
+    await focusDiff(page);
+    const status = page.locator('footer[aria-label="Status"]');
+    await expect(status).toContainText('NORMAL');
+    await press(page, 'Shift+V');
+    await expect(status).toContainText('V-LINE');
+    await press(page, 'Escape');
+    await expect(status).toContainText('NORMAL');
+    // Vim's block cursor on a file's header, where the diff starts, draws none of the path under it.
+    await expect.poll(async () => (await cursor(page))?.header).toBe(true);
+    const after = page.locator('.lo-diffview .cm-editor', {
+      has: page.locator('.cm-content[aria-label="After"]'),
+    });
+    await expect(after.locator('.cm-fat-cursor')).toHaveCSS('color', 'rgba(0, 0, 0, 0)');
+    await page.locator('[role="tree"][data-lo-scope="tree"]').focus();
+    await expect(status).not.toContainText('NORMAL');
+  });
 });
 
 test('gm and a moved label’s click go to the other end of the moved code, and ⌃o comes back', async ({
@@ -587,9 +611,15 @@ interface Jump {
   go(page: Page): Promise<void>;
   /**
    * The event the jump lands in, heard after whatever handles it, in the editor or the window.
-   * The finder gives focus back to the diff, then shows the file, in the same task.
+   * The finder gives focus back to the diff, then shows the file, in the same task. A key of Lo's
+   * own never reaches the editor: it's heard as `lo-key`, which Lo sends as the key's command is
+   * about to run, in the key's task.
    */
-  heard: { type: 'keydown' | 'click' | 'focusin'; key?: string; on: 'editor' | 'window' };
+  heard: {
+    type: 'keydown' | 'click' | 'focusin' | 'lo-key';
+    key?: string;
+    on: 'editor' | 'window';
+  };
   to: { path: string; header: boolean };
 }
 
@@ -650,7 +680,7 @@ const JUMPS: Jump[] = [
         .toEqual(['assets/mark.png', 'data/numbers.txt']);
     },
     go: (page) => press(page, ']', 'f'),
-    heard: { type: 'keydown', key: 'f', on: 'editor' },
+    heard: { type: 'lo-key', on: 'window' },
     to: { path: 'src/text/wrap.ts', header: true },
   },
 ];

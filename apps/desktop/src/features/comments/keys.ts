@@ -13,14 +13,19 @@
 // the comment to your review (in the pull request's own box, which joins no review, it posts it; in
 // an edit's box it saves it; in the review summary's it submits the review) and `⌥⏎` posts it now,
 // or replies now, `⌘⇧V` shows the preview or the editor, `⌘⇧A` asks for files to attach, and `Esc`
-// leaves insert mode, then closes the box, keeping the draft. `Esc` closes it at once from the
-// box's preview or its frame. The editor runs them itself, whatever box it's in, so they're
+// closes the box, keeping the draft. With Vim keys on, `Esc` leaves insert mode first, and closes
+// the box at once only from its preview or its frame. The editor runs them itself, whatever box
+// it's in, so they're
 // declared as its own (`editor`): listed, checked for clashes, and never run or offered by the
 // registry, nor changed by the keymap file. What the buttons in a box's notes do is also on its
 // frame's right-click menu, and in the palette while focus is in the box, each only where the box
 // offers it, without a key of its own. Where the drafts are that the diff, drawn again, had nowhere
 // to open, the palette and the app menu's Review menu say, as a click on the status bar's note for
 // them does.
+//
+// Vim keys are a setting, `editor.vim`, off as Lo starts: "Vim keys" switches it, from the palette
+// or the app menu's View menu. Off, code and boxes have a plain caret, a box takes typing as soon
+// as it has focus, and every key here works as it does with them on, but Vim's own.
 //
 // In the threads panel, the `threads` scope: `j` and `k` move between its threads, `⏎` shows the
 // one the keyboard is on in the diff, and `f` steps through what it lists: the unresolved threads,
@@ -156,14 +161,21 @@ export default defineCommands(
       when: onThread,
       menu: { on: 'thread', order: 50 },
     },
-    /** On a draft restored as Lo started: drops it, and its box, as the note's "Discard" does. */
+    /** Drops the box's draft, and the box, as its "Discard draft" does. */
     discard: {
-      label: 'Discard the draft',
+      label: 'Discard draft',
       group: 'Act',
       keys: [],
       targets: ['box'],
       when: box,
       menu: { on: 'box', order: 0 },
+    },
+    /** Brings back the draft "Discard draft" last took, as the "Undo" on its toast does. */
+    undiscard: {
+      label: 'Undo discard',
+      group: 'Act',
+      keys: [],
+      bar: { menu: 'Review', order: 30 },
     },
     /** After Lo couldn't tell whether a comment posted: sends it again, as "Send it anyway" does. */
     sendAnyway: {
@@ -176,36 +188,27 @@ export default defineCommands(
     },
     /**
      * After GitHub took no comment on the box's lines: moves its text to a box on the file, as
-     * "Comment on the file" does.
+     * "Comment on file" does.
      */
     moveToFile: {
-      label: 'Move the comment to the file',
+      label: 'Move comment to file',
       group: 'Act',
       keys: [],
       targets: ['box'],
       when: box,
       menu: { on: 'box', order: 20 },
     },
-    /** After someone pushed since: shows the newer push, as "Load the newer push" does. */
-    loadNewer: {
-      label: 'Load the newer push',
+    /**
+     * After someone pushed since, or after a comment that would join your pending review, which is
+     * on the latest push: shows that push, as the note's "Show latest" does.
+     */
+    showLatest: {
+      label: 'Show latest',
       group: 'View',
       keys: [],
       targets: ['box'],
       when: box,
       menu: { on: 'box', order: 30 },
-    },
-    /**
-     * After a comment that would join your pending review, which is on the latest push: shows that
-     * push, as "Show the latest" does.
-     */
-    showLatest: {
-      label: 'Show the latest push',
-      group: 'View',
-      keys: [],
-      targets: ['box'],
-      when: box,
-      menu: { on: 'box', order: 40 },
     },
     /**
      * In the box's editor: adds the comment to your review. In the pull request's own box, which
@@ -224,7 +227,7 @@ export default defineCommands(
      * pull request's own box it posts the comment, and in an edit's box saves it, as `⌘⏎` does.
      */
     postNow: {
-      label: 'Comment or reply now',
+      label: 'Send now',
       group: 'Comment box',
       keys: ['alt+enter'],
       editor: true,
@@ -232,7 +235,7 @@ export default defineCommands(
     },
     /** In the box's editor: shows the preview in the editor's place, or the editor again. */
     preview: {
-      label: 'Write or preview',
+      label: 'Preview',
       group: 'Comment box',
       keys: ['cmd+shift+v'],
       editor: true,
@@ -240,31 +243,41 @@ export default defineCommands(
     },
     /** In the box's editor: asks for files to attach, where the box takes them. */
     attach: {
-      label: 'Attach files',
+      label: 'Attach files…',
       group: 'Comment box',
       keys: ['cmd+shift+a'],
       editor: true,
       when: box,
     },
-    /** In insert mode: Vim's `Esc`, which leaves it. */
+    /** With Vim keys on, in insert mode: Vim's `Esc`, which leaves it. */
     leaveInsert: {
-      label: 'Leave insert mode',
+      label: 'Leave INSERT mode',
       group: 'Comment box',
       keys: ['esc'],
       vim: 'own',
       when: { scope: 'box', mode: 'insert' },
     },
     /**
-     * In normal mode, with nothing typed towards a command: closes the box, keeping the draft, as
-     * `Esc` again after leaving insert mode does. In the box's preview, or on its frame, `Esc`
-     * closes it at once, whatever mode the box was in.
+     * Closes the box, keeping the draft, as its close button does. With Vim keys on, that's in
+     * normal mode with nothing typed towards a command, so `Esc` again after leaving insert mode;
+     * in the box's preview, or on its frame, `Esc` closes it at once, whatever mode the box was in.
      */
     close: {
-      label: 'Close the box and keep the draft',
+      label: 'Close comment box',
       group: 'Comment box',
       keys: ['esc'],
       editor: true,
       when: { scope: 'box', mode: 'normal' },
+    },
+    /**
+     * Vim's keys in code views and comment boxes, on or off, saved as the `editor.vim` setting.
+     * Off, as Lo starts, both have a plain caret, and Lo's own keys work as they do with them on.
+     */
+    vim: {
+      label: 'Vim keys',
+      group: 'View',
+      keys: [],
+      bar: { menu: 'View', order: 60 },
     },
     /**
      * Says where each draft is that the diff, drawn again, had nowhere to open, and when it opens,

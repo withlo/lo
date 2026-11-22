@@ -18,6 +18,7 @@ import {
   bringToTimeline,
   catchUpDrafts,
   drawnInTimeline,
+  hintOf,
   knowPull,
   leftTimeline,
   timelineBox,
@@ -38,10 +39,13 @@ import { ON_PULL } from './writing.ts';
 function TimelineComposer({
   box,
   label,
+  hint,
   leave,
 }: {
   box: Box;
   label: string;
+  /** What the box says while it's empty. */
+  hint?: string | undefined;
   leave: () => void;
 }): ReactNode {
   const host = useRef<HTMLDivElement>(null);
@@ -57,7 +61,7 @@ function TimelineComposer({
     before?.dismiss();
     const made = createComposer(
       parent,
-      { draft: box.state.text, nonce, label },
+      { draft: box.state.text, nonce, label, ...(hint === undefined ? {} : { hint }) },
       timelineEvents(box, back),
       timelineFrame(box),
     );
@@ -74,7 +78,7 @@ function TimelineComposer({
       leftTimeline(box, made);
       if (box.left === back) box.left = undefined;
     };
-  }, [box, nonce, label]);
+  }, [box, nonce, label, hint]);
   return <div ref={host} />;
 }
 
@@ -126,9 +130,8 @@ export interface PullBoxProps {
  * was written on, or, while Lo is still checking whether the overview has that block, in no box yet.
  */
 const AWAY: Readonly<Record<'block' | 'waits', string>> = {
-  block: 'Your comment on the pull request is open under its code block in the overview.',
-  waits:
-    'Lo is still checking the overview. Your comment on the pull request opens under its code block if the overview still has it, or here if not.',
+  block: 'Draft open in the overview',
+  waits: 'Checking overview…',
 };
 
 /**
@@ -151,10 +154,8 @@ export function PullBox({ tab, leave, keys }: PullBoxProps): ReactNode {
   }, [tab, view]);
   useEffect(
     () =>
-      setPullBoxFocus(view, () => {
-        inner.current?.scrollIntoView({ block: 'nearest' });
-        box?.composer?.focus();
-      }),
+      // The box brings itself on screen as it takes focus.
+      setPullBoxFocus(view, () => box?.composer?.focus()),
     [view, box],
   );
   useHeldHeight(outer, inner);
@@ -162,12 +163,17 @@ export function PullBox({ tab, leave, keys }: PullBoxProps): ReactNode {
     <div ref={outer} data-lo-timeline="box">
       <div ref={inner}>
         {box ? (
-          <TimelineComposer box={box} label="Comment on the pull request" leave={leave} />
+          <TimelineComposer
+            box={box}
+            label={`Comment on #${tab.number}`}
+            hint={hintOf(box.state.place, tab.number)}
+            leave={leave}
+          />
         ) : (
           <div className="flex flex-wrap items-center gap-x-8 gap-y-4 py-4 text-fg-muted text-small">
             <span>{AWAY[away ?? 'block']}</span>
             <Button variant="ghost" size="sm" onClick={() => bringToTimeline(view)}>
-              Write it here
+              {`Comment on #${tab.number}`}
               {keys && <Key keys={keys} decorative />}
             </Button>
           </div>
@@ -189,7 +195,7 @@ export interface PullEditProps {
 export function PullEdit({ tab, comment, leave }: PullEditProps): ReactNode {
   const box = useTabState(timelineBoxes, tab.id, (boxes) => boxes.edits.get(comment));
   if (!box) return null;
-  return <TimelineComposer box={box} label="Edit your comment" leave={leave} />;
+  return <TimelineComposer box={box} label="Edit comment" leave={leave} />;
 }
 
 /** The comments on view `view`'s pull request whose edit boxes are open, by their node IDs. */
