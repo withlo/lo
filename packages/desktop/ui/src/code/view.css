@@ -435,18 +435,28 @@
  * (`is-spanned`): it reaches over the other side, where the room kept for it is, by as far as the
  * view measured, and is drawn over the gutters between, which sit over the code.
  */
-.lo-diffview.is-spanned > .cm-editor + .cm-editor .lo-diffcomposer {
+/*
+ * A box reaches over the other side only while the other side has none, so two boxes never cover
+ * each other: with one on each side, each keeps its own side.
+ */
+.lo-diffview.is-spanned:not(:has(> .cm-editor:has(+ .cm-editor) .lo-diffcomposer))
+  > .cm-editor
+  + .cm-editor
+  .lo-diffcomposer {
   margin-inline-start: calc(-1 * var(--lo-reach-new));
 }
-.lo-diffview.is-spanned > .cm-editor:has(+ .cm-editor) .lo-diffcomposer {
+.lo-diffview.is-spanned:not(:has(> .cm-editor + .cm-editor .lo-diffcomposer))
+  > .cm-editor:has(+ .cm-editor)
+  .lo-diffcomposer {
   margin-inline-end: calc(-1 * var(--lo-reach-old));
 }
 .lo-diffview.is-spanned .lo-diffcomposer {
   /* Over its editor's gutters, at 200. */
   z-index: 201;
 }
-/* Each editor draws over the one before it: the old side, with a box in it, comes above. */
-.lo-diffview.is-spanned > .cm-editor:has(+ .cm-editor):has(.lo-diffcomposer) {
+/* Each editor draws over the one before it: the old side, reaching over the new, comes above. */
+.lo-diffview.is-spanned:not(:has(> .cm-editor + .cm-editor .lo-diffcomposer))
+  > .cm-editor:has(+ .cm-editor):has(.lo-diffcomposer) {
   z-index: 1;
 }
 

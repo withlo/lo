@@ -239,6 +239,15 @@ function Sent({ box }: { box: Box }): ReactNode {
   const login = acting?.kind === 'account' ? acting.login : undefined;
   return (
     <SentPost
+      // A new thread's comment draws under the head row its thread will have: nothing moves as the
+      // thread takes the card's place.
+      state={
+        state.place.kind === 'thread'
+          ? box.lastHow === 'review'
+            ? 'Pending'
+            : 'Unresolved'
+          : undefined
+      }
       author={login}
       image={login === undefined ? undefined : avatarImage({ login, type: 'User' }, AVATAR)}
       label={sentLabel(state.sending, state.place.kind === 'edit')}

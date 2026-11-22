@@ -168,7 +168,8 @@ describe('ThreadList', () => {
     expect(after).toBe(before);
     expect(document.activeElement).toBe(before);
     expect(held).toBe(before);
-    expect(after.getAttribute('tabindex')).toBe('0');
+    // It keeps focus, but Tab no longer stops on it, as there's nothing in it to be on.
+    expect(after.getAttribute('tabindex')).toBe('-1');
     expect(after.getAttribute('data-lo-scope')).toBe('threads');
     expect(after.getAttribute('aria-activedescendant')).toBeNull();
     expect(after.textContent).toBe('No unresolved threads.');
@@ -180,6 +181,7 @@ describe('ThreadList', () => {
     rerender(host, list(GROUPS));
     expect(host.querySelector('[aria-label="Threads"]')).toBe(before);
     expect(before.getAttribute('role')).toBe('listbox');
+    expect(before.getAttribute('tabindex')).toBe('0');
     expect(document.activeElement).toBe(before);
   });
 

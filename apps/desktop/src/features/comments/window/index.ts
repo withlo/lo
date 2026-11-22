@@ -79,7 +79,7 @@ import { frameOf } from './Frame.tsx';
 import { KeptStatus } from './KeptStatus.tsx';
 import { main, tabs } from './main.ts';
 import { inPanel, moveRow, onThread, rowsListed, showTarget, stepFilter } from './panel.ts';
-import { Said } from './Said.tsx';
+import { Said, tell } from './Said.tsx';
 import { ThreadsPanel, UnresolvedCount, unresolvedOf } from './ThreadsPanel.tsx';
 import { renderThreads } from './render.ts';
 import { keepOnly } from './store.ts';
@@ -337,6 +337,10 @@ export default {
         return renderThreads(tab, toggle);
       },
       settled,
+      // Only from the tab on screen, whose diff marked the line.
+      arrived(view) {
+        if (activeTab()?.id === view) tell('New comment');
+      },
     });
     setBlockThreads({
       threadsOn(block) {

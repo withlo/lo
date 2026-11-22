@@ -145,7 +145,24 @@ function Chevron({ up }: { up: boolean }) {
   );
 }
 
+/**
+ * An open card's head row: its state, its count and its controls. A sent comment's card draws the
+ * same row as the thread it starts will have (`SentPost`'s `state`), so its text stays where it is
+ * as the thread takes its place.
+ */
+const HEAD_ROW =
+  'flex min-h-32 items-center gap-8 border-b border-border-subtle py-4 ps-12 pe-6 text-fg-muted text-small';
+
+/** Where an open card's head row holds its tags and its count: they wrap in the room left them. */
+const HEAD_WORDS = 'flex min-w-0 flex-1 flex-wrap items-center gap-x-8 gap-y-4';
+
 export interface SentPostProps {
+  /**
+   * The state of the thread it starts, for a new thread's comment: "Unresolved", or "Pending" for
+   * one added to a review. Its card then has the head row that thread's will, so nothing moves as
+   * the thread takes the card's place. A reply's or an edit's has none.
+   */
+  state?: 'Unresolved' | 'Pending' | undefined;
   /** Who it's from: the account that wrote it, where that's known. */
   author?: string | undefined;
   image?: string | undefined;
@@ -157,11 +174,12 @@ export interface SentPostProps {
 
 /**
  * A comment the reader has sent that GitHub hasn't answered for yet, drawn as it will be on its
- * card, with "Sending…" where its time will be. The comment box draws it in its own place from the
+ * card, with "Sending…" where its time will be, under the head row of the thread it starts, if it
+ * starts one. The comment box draws it in its own place from the
  * moment it's sent, so the text never leaves the screen; the card takes its place when it arrives.
  */
-export function SentPost({ author, image, label = 'Sending…', body }: SentPostProps) {
-  return (
+export function SentPost({ state, author, image, label = 'Sending…', body }: SentPostProps) {
+  const post = (
     // Whoever sends it says so to a screen reader: drawn with its words, this would say nothing.
     <div data-sent="" className="flex gap-8 px-12 py-8">
       {author !== undefined && <Avatar login={author} image={image} size="sm" />}
@@ -181,6 +199,18 @@ export function SentPost({ author, image, label = 'Sending…', body }: SentPost
         <div className="lo-selectable mt-2 text-fg read-comment">{body}</div>
       </div>
     </div>
+  );
+  if (state === undefined) return post;
+  return (
+    <>
+      <div className={HEAD_ROW}>
+        <span className={HEAD_WORDS}>
+          <Tag tone="warning">{state}</Tag>
+          <span className="whitespace-nowrap">1 comment</span>
+        </span>
+      </div>
+      {post}
+    </>
   );
 }
 
@@ -359,9 +389,9 @@ export function Thread({
       data-key-scope=""
       className={`${card({ view: 'open', ground })} ${className}`}
     >
-      <div className="flex min-h-32 items-center gap-8 border-b border-border-subtle py-4 ps-12 pe-6 text-fg-muted text-small">
+      <div className={HEAD_ROW}>
         {/* The tags and the count wrap in the room the buttons leave, which they never give up. */}
-        <span className="flex min-w-0 flex-1 flex-wrap items-center gap-x-8 gap-y-4">
+        <span className={HEAD_WORDS}>
           <Tag tone={tone}>{word}</Tag>
           {outdated && <Tag>Out of date</Tag>}
           {tags.map((tag) => (

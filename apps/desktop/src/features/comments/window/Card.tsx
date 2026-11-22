@@ -96,9 +96,12 @@ export function Card({ tab, id, open, focused = false, onToggle }: CardProps): R
     view,
     (keys) => asked !== undefined && keys.has(noteKey(asked)),
   );
+  // A write that failed before GitHub had it says so in the note's place: one note on a card.
+  const thrown = useTabState(threw, view, (all) => all.get(id));
   const row = threads?.threads.find((each) => each.id === id);
   // Its first comment's opening, as plain words, which it shows while it's collapsed.
   const opening = useExcerpt(row?.comments[0]?.body, !open);
+  // Every hook comes before this: a card's row comes and goes while the card is drawn.
   if (!row) return null;
   // A suggested change shows the lines it replaces from the first frame, as the comment's box did.
   const replaced = replacedIn(view, row);
@@ -113,8 +116,6 @@ export function Card({ tab, id, open, focused = false, onToggle }: CardProps): R
   );
   const thread = { kind: 'thread' as const, thread: id };
   const note = actNote(asked, row, isClosed);
-  // A write that failed before GitHub had it says so in the note's place: one note on a card.
-  const thrown = useTabState(threw, view, (all) => all.get(id));
   return (
     <>
       <ThreadCard

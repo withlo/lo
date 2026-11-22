@@ -181,6 +181,11 @@ where the action's target is.
   it must keep whole until nothing else is left to give up, such as an author's name (`data-fit`).
   Key chips go first; a control that gives up its words is the small control's square, with its
   words as its tooltip.
+- **A segment can be its icon alone.** Where a `SegmentedControl` has to narrow, as a comment box's
+  Write and Preview do, each segment's label holds its icon and its words, the words marked as a row
+  that gives up marks them (`data-gives`). Give the segment its `name`, which a screen reader hears
+  whichever it shows, and its `tip`: its words as its tooltip while it's its icon alone, and `null`
+  while its words show.
 - **A command with nothing to say refuses with an empty reason.** A command only some controls
   offer, such as one of a box's notes, gives `''` from `enabled` where none offers it: a key bound
   to it then does nothing, and no toast says so.
@@ -285,6 +290,9 @@ Lo waits in three ways. Use the first that fits, and never two for one wait.
 - Pass `busy={false}` to a button that can be busy, not nothing, and its `working` too, so it holds
   room for both and doesn't change width. A busy button is `aria-busy`, takes no press and isn't
   greyed. Without a `working`, it shows its label beside the ring, so it keeps its name.
+- `working` is a node, for a button that can be its icon alone: give its words the same mark its
+  label's have (`data-gives` in a row that gives up, see `useGiveUp`), so as its icon the ring takes
+  the icon's place and no words come back with it, as Delete… on a narrow comment's head does.
 - It's as wide as the wider of its label and its `working` beside the ring, so keep `working` short:
   "Checking…", not "Checking what merges with it". Where the words change as the work goes on, as
   trusting a repo's do ("Checking…", "Waiting…", "Trusting…"), keep each within the label's width,
@@ -342,7 +350,9 @@ that floats.
 - **`Problem`** is something that went wrong, in one shape: what failed, why, the one thing to do,
   and the raw text behind Details with Copy. `layout="view"` takes a failed view's place;
   `layout="inline"` sits by the control whose action failed. It's said once: no toast repeats it. A
-  screen reader hears what failed and why as an alert, and not the buttons.
+  screen reader hears what failed and why as an alert, and not the buttons. Anything else that says
+  what failed, such as a comment box's note, puts the raw text behind the same Details and Copy with
+  `useDetails(details)`, which gives the button and the text it opens to draw where they go.
 - **`CopyButton`** copies and says so itself: it reads "Copied" for two seconds, and no toast says
   it again. When copying throws or rejects, it reads "Couldn’t copy" instead. A live region beside
   it says the same to a screen reader.

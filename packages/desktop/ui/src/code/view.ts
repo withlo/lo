@@ -1017,6 +1017,7 @@ class View implements DiffView {
       for (const threads of byPlace.values()) for (const thread of threads) drawn.add(thread.id);
     }
     const files = new Set<number>();
+    let come = false;
     for (const each of this.#arrived) {
       if (this.#waiting.has(each)) continue;
       this.#arrived.delete(each);
@@ -1024,13 +1025,15 @@ class View implements DiffView {
     }
     for (const each of this.#waiting) {
       const { file, key } = splitKey(each);
-      const come = (this.#wanted[file]?.get(key) ?? []).some((thread) => !drawn.has(thread.id));
-      if (come === this.#arrived.has(each)) continue;
-      if (come) this.#arrived.add(each);
+      const arrived = (this.#wanted[file]?.get(key) ?? []).some((thread) => !drawn.has(thread.id));
+      if (arrived === this.#arrived.has(each)) continue;
+      if (arrived) this.#arrived.add(each);
       else this.#arrived.delete(each);
+      come ||= arrived;
       files.add(file);
     }
     for (const file of files) this.#refresh(file);
+    if (come) this.#on.arrived?.();
   }
 
   /** The lines of file `file`, by `side:line`, where someone else's new comment waits. */

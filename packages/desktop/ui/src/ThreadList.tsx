@@ -195,7 +195,9 @@ export function ThreadList({
       // the same element either way, so a list that has focus when the filter empties keeps it.
       role={rows.length === 0 ? 'group' : 'listbox'}
       aria-label="Threads"
-      tabIndex={0}
+      // With no rows it's no stop for Tab, which would land on nothing: it still takes focus as
+      // the panel opens, so the panel's keys, as the filter's, work from it.
+      tabIndex={rows.length === 0 ? -1 : 0}
       aria-activedescendant={rows.some((row) => row.key === focused) ? rowId(focused) : undefined}
       // With no rows it draws no ring: there's nothing in it for focus to be on. It's as tall as
       // its pane at least, so what it says in their place can sit in the middle of it.

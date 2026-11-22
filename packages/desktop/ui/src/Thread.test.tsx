@@ -50,6 +50,9 @@ function buttons(host: HTMLElement, label: string): HTMLButtonElement[] {
   return [...host.querySelectorAll('button')].filter((each) => each.textContent.startsWith(label));
 }
 
+// A thread's head row, the one row drawn with a border under it.
+const headRow = (host: HTMLElement) => host.querySelector('.border-b');
+
 describe('Thread', () => {
   it('shows an unresolved thread open: its state, its comments and the slots for their text', () => {
     const host = render(<Thread {...PROPS} />);
@@ -154,6 +157,18 @@ describe('Thread', () => {
     expect(sent?.textContent).toContain('Sending…');
     expect(sent?.textContent).toContain('On its way');
     expect(render(<SentPost label="Saving…" body="x" />).textContent).toContain('Saving…');
+  });
+
+  it('draws a new thread’s sent comment under the head row its thread will have', () => {
+    const sent = render(<SentPost state="Pending" author="tess-okafor" body={<p>On its way</p>} />);
+    const thread = render(
+      <Thread {...PROPS} comments={[{ ...MINE, pending: true, body: <p>On its way</p> }]} />,
+    );
+    // The same row, by the same classes, with the same words.
+    expect(headRow(sent)?.className).toBe(headRow(thread)?.className);
+    expect(headRow(sent)?.textContent).toBe('Pending1 comment');
+    expect(headRow(thread)?.textContent).toContain('Pending1 comment');
+    expect(sent.querySelector('[data-sent]')?.previousElementSibling).toBe(headRow(sent));
   });
 
   it('draws a thread in your pending review by its Pending tag alone', () => {

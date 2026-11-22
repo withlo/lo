@@ -1176,7 +1176,13 @@ describe('threads', () => {
   });
 
   test('a line on screen waits for threads that come or go there until it’s off screen', () => {
-    const shown = open();
+    let told = 0;
+    const shown = open({
+      ...events(),
+      arrived: () => {
+        told += 1;
+      },
+    });
     const screen = onScreen(['line 4']);
     const { render, asked } = plain();
     const below = thread('below', at('a', 'new', 22));
@@ -1188,6 +1194,8 @@ describe('threads', () => {
         (each) => each.closest('.cm-line')?.textContent?.replace('New comment', '') ?? '',
       );
     expect(marked()).toEqual(['line 4']);
+    // And the caller is told, for a screen reader, which sees no mark.
+    expect(told).toBe(1);
     screen.lines.clear();
     scroller().dispatchEvent(new Event('scroll'));
     expect(drawnThreads()).toEqual(['here', 'below']);
@@ -1200,6 +1208,7 @@ describe('threads', () => {
     expect(drawnThreads()).toEqual(['here', 'below']);
     // A thread going is no new comment.
     expect(marked()).toEqual([]);
+    expect(told).toBe(1);
     screen.lines.clear();
     scroller().dispatchEvent(new Event('scroll'));
     expect(drawnThreads()).toEqual(['below']);

@@ -17,7 +17,7 @@ import {
   ThreadList,
 } from '@lo/ui';
 import { controlOf, keyLabels, runControl, setScopeSource } from '@lo/ui/commands';
-import { useCallback, useEffect, useMemo, useRef, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 
 import { registry, useKeys } from '../../../window/commands/registry.ts';
 import { threadsChanged } from '../../diff/window/shared.ts';
@@ -92,6 +92,43 @@ function CommandButton({ id }: { id: string }): ReactNode {
 }
 
 /**
+ * Why view `view`'s threads couldn't be read, with a way to read them again. Asked, it waits with
+ * `Loading` until main says the new read is on, which draws the panel anew; a read again that
+ * couldn't be asked for says so here again, with why behind Details.
+ */
+export function Failed({ view, reason }: { view: string; reason: string | undefined }): ReactNode {
+  const [again, setAgain] = useState<'asking' | { details: string } | undefined>(undefined);
+  if (again === 'asking') {
+    return (
+      <div className="py-24">
+        <Loading status="Reading threads…" />
+      </div>
+    );
+  }
+  return (
+    <div className="px-6 py-8">
+      <Problem
+        title="Can’t show the threads"
+        reason={reason}
+        details={again?.details}
+        action={{
+          label: 'Try again',
+          onClick: () => {
+            setAgain('asking');
+            // Asked, main says the read is on again, which draws the panel anew.
+            main()
+              .reread({ id: view })
+              .catch((error: unknown) =>
+                setAgain({ details: error instanceof Error ? error.message : String(error) }),
+              );
+          },
+        }}
+      />
+    </div>
+  );
+}
+
+/**
  * What view `view`'s panel shows when it lists nothing: the wait for the first read, an empty
  * state's heading with its line and button, or why the read failed, with a way to read again.
  */
@@ -104,25 +141,7 @@ function Empty({ view, empty }: { view: string; empty: PanelEmpty }): ReactNode 
         </div>
       );
     case 'failed':
-      return (
-        <div className="px-6 py-8">
-          <Problem
-            title="Can’t show the threads"
-            reason={empty.reason}
-            action={{
-              label: 'Try again',
-              // The panel waits on the read as on the first, with `Loading`, which replaces this.
-              onClick: () => {
-                main()
-                  .reread({ id: view })
-                  .catch((error: unknown) =>
-                    console.error("Lo couldn't read the threads again:", error),
-                  );
-              },
-            }}
-          />
-        </div>
-      );
+      return <Failed view={view} reason={empty.reason} />;
     case 'none':
       // An empty state's shape: what's absent as a heading, its line and its button, in the middle
       // of the panel's body.
