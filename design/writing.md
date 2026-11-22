@@ -13,12 +13,15 @@ This file covers every string a person reads: the window, the menus and the syst
 ## Rules
 
 1. **The thing is the subject, not Lo.** “Couldn’t send the comment”, not “Lo couldn’t send your
-   comment”. Name Lo only to tell it apart from GitHub or another app: “Open in Lo”. Say “you” only
-   where a line is unclear without it. Never “we” or “I”.
+   comment”. Lo never does anything in a string. Name it only as a thing: the app a link opens in,
+   or a version of it. “Open in Lo”, “Lo 0.2.0 is available”. Only a version’s name starts a string
+   with “Lo”. Say “you” only where a line is unclear without it: “Offline”, not “You’re offline”.
+   Never “we” or “I”.
 2. **One fact, one action.** A title says what happened. A reason follows only if it changes what
    the reader does. The button is the next step. Nothing restates the title.
-3. **The reader’s words.** Every term comes from [Terms](#terms). No refs, job names, status codes,
-   milliseconds or names from the code. GitHub’s and Git’s own text sits behind Details.
+3. **The reader’s words.** Where [Terms](#terms) names a thing, use its word. No refs, job names,
+   status codes, milliseconds or names from the code. GitHub’s and Git’s own text sits behind
+   Details.
 4. **Format carries structure.**
    - Steps are a numbered list.
    - Code, commands, paths, branches and commit IDs are code (`code-text`), with Copy when they’re
@@ -36,8 +39,9 @@ This file covers every string a person reads: the window, the menus and the syst
 
 ## Terms
 
-One term per thing. A word in a Never column is banned on screen in that meaning. For something of
-GitHub’s that isn’t listed, use GitHub’s own name for it.
+One term per thing. A Never column bans a word for its own row’s meaning, and nowhere else: “Send”
+is wrong for a review and right for a comment. For something of GitHub’s that isn’t listed, use
+GitHub’s own name for it.
 
 ### GitHub’s things
 
@@ -75,15 +79,15 @@ GitHub’s that isn’t listed, use GitHub’s own name for it.
 | layers 2–4         | Several layers shown as one diff, named by their span.                                                                    | run, range                                        |
 | local copy         | Lo’s copy of a repo on this computer.                                                                                     | clone, checkout, working copy                     |
 | cache              | Everything Lo stores to open pull requests fast: local copies and saved data.                                             | saved answers, store                              |
-| language server    | The program behind definitions, references and types. One of them goes by its own name: rust-analyzer.                    | LSP, “server” alone                               |
+| language server    | The program behind definitions, references and types. Name a server as its makers write it: Pyright, gopls.               | LSP, “server” alone                               |
 | code intelligence  | What language servers give: definitions, references, types.                                                               | code answers, smart features                      |
 | code index         | Lo’s own index of names, used when no language server runs.                                                               | syntax index, symbol index, fallback              |
 | trust              | Letting language servers run on a repo or a pull request: “Trust repo…”, “Stop trusting”.                                 | allow, approve, enable                            |
 | update             | A newer version of Lo: “Lo 0.2.0 is available”. Its buttons: “Update”, then “Restart to update”. Its notes: “What’s new”. | release, “is out”, upgrade, Install, changelog    |
-| welcome            | What a new reader sees first, reopened from Help › Welcome to Lo.                                                         | onboarding, setup, tour                           |
+| welcome            | The steps a new reader sees first. Its one command, in Help and the palette: “Welcome to Lo”.                             | onboarding, setup, tour, “Show welcome”           |
 | Settings           | Capital S. A place in it is a path: Settings › Storage. The file is `settings.json`.                                      | preferences, options, config, “the settings file” |
 | keyboard shortcuts | The list of Lo’s keys. One of them is a key.                                                                              | key help, keybindings, hotkeys                    |
-| Vim keys           | The setting for Vim’s modal editing.                                                                                      | Vim mode, Vim-style keys                          |
+| Vim keys           | The setting for Vim’s modal editing. Its modes are written as Vim writes them: NORMAL, INSERT, V-LINE.                    | Vim mode, Vim-style keys                          |
 | command            | A row in the command palette.                                                                                             | action                                            |
 
 ### The window
@@ -100,31 +104,36 @@ item. Nor does “on screen”: write “this revision”, not “the revision o
 
 ### Verbs
 
-| Write                     | For                                                                                                                           | Never                                      |
-| ------------------------- | ----------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------ |
-| Open                      | Bring a pull request, a file or a link into Lo. “Open on GitHub” goes to the browser.                                         | Load, Launch, View                         |
-| Show, Hide                | Reveal or put away what’s already there: “Show r5”, “Hide whitespace changes”.                                                | Load, Display, See, Toggle                 |
-| Go to                     | Move to a place in the code or the window: “Go to file…”, “Go to definition”.                                                 | Jump to, Navigate to                       |
-| Next, Previous            | Step through one kind of thing: “Next change”. Back and Forward are for history alone.                                        | Prev                                       |
-| Send                      | A comment or a reply: “Sending…”.                                                                                             | Post, Publish                              |
-| Save                      | An edit to a comment.                                                                                                         | Update, Apply                              |
-| Submit                    | A review: “Submit review…”.                                                                                                   | Send, Finish                               |
-| Merge                     | Merging, by any method.                                                                                                       | Ship, Land                                 |
-| Approve and ship          | The one command that approves, then merges, queues or turns on auto-merge. Its result says which: “Approved and merged #264”. | “Ship” alone                               |
-| Remove                    | Take a thing out of a list. It still exists: “Remove from merge queue”.                                                       | Take out, Drop                             |
-| Delete                    | Destroy something for good: “Delete comment…”.                                                                                | Remove, Erase                              |
-| Discard                   | Throw away text not yet sent: “Discard draft”.                                                                                | Delete, Drop                               |
-| Clear                     | Empty a store or a field: “Clear cache”.                                                                                      | Purge, Wipe                                |
-| Reset                     | Put a setting back to its default.                                                                                            | Restore, Revert                            |
-| Dismiss                   | Put away a banner or a toast.                                                                                                 | Hide, Close                                |
-| Copy                      | To the clipboard: “Copy link”. The button reads “Copied” for 2 s.                                                             | Yank                                       |
-| Install                   | Put something on this computer: the `lo` command, the overview skill, a language server.                                      | Set up, Add                                |
-| Sign in, Sign out         | “Sign in with GitHub…” is the one command, for any account. “Sign in again” after a sign-out. The noun is “sign-in”.          | Log in, Add an account, Connect, Authorize |
-| Try again                 | Repeat what failed. “Try now” when a retry is already counting down: “Retrying in 20 s”.                                      | Retry, Reload, “tries again by itself”     |
-| Check again               | Look again for something missing, such as Git.                                                                                | Recheck, Look again                        |
-| Cancel, Close, Done, Back | A dialog’s other button. See [Confirmation](#confirmation).                                                                   | OK, Got it, Not now                        |
+| Write                     | For                                                                                                                                                    | Never                                                |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------- |
+| Open                      | Bring a pull request, a file or a link into Lo: “Open pull request…”. “Open on GitHub” goes to the browser.                                            | Load, Launch, View, Review                           |
+| Show, Hide                | Bring something into view, or put it out of view until it’s shown again: “Show r5”, “Hide whitespace changes”.                                         | Load, Display, See, Toggle                           |
+| Go to                     | Move to a place in the code or the window: “Go to file…”, “Go to definition”.                                                                          | Jump to, Navigate to                                 |
+| Next, Previous            | Step through one kind of thing: “Next change”. Back and Forward are for history alone.                                                                 | Prev                                                 |
+| Send                      | A comment or a reply: “Sending…”.                                                                                                                      | Post, Publish                                        |
+| Save                      | An edit to a comment.                                                                                                                                  | Update, Apply                                        |
+| Submit                    | A review: “Submit review…”.                                                                                                                            | Send, Finish                                         |
+| Merge                     | Merging, by any method.                                                                                                                                | Ship, Land                                           |
+| Approve and ship          | The one command that approves, then merges, queues or turns on auto-merge. Its result says which: “Approved and merged #264”.                          | “Ship” alone                                         |
+| Remove                    | Take a thing out of a list. It still exists: “Remove from merge queue”.                                                                                | Take out, Drop                                       |
+| Delete                    | Destroy something for good: “Delete comment…”.                                                                                                         | Remove, Erase                                        |
+| Discard                   | Throw away text not yet sent: “Discard draft”.                                                                                                         | Delete, Drop                                         |
+| Clear                     | Empty a store or a field: “Clear cache”.                                                                                                               | Purge, Wipe                                          |
+| Reset                     | Put a setting back to its default.                                                                                                                     | Restore, Revert                                      |
+| Dismiss                   | Put away a banner or a toast for good.                                                                                                                 | Hide, Close                                          |
+| Copy                      | To the clipboard: “Copy link”. The button reads “Copied” for 2 s.                                                                                      | Yank                                                 |
+| Install                   | Put something on this computer: the `lo` command, the overview skill, a language server.                                                               | Set up, Add                                          |
+| Sign in, Sign out         | “Sign in with GitHub…” is the one command, for any account. “Sign in again” after a sign-out. The noun is “sign-in”.                                   | Log in, Add an account, Connect, Authorize           |
+| Try again                 | Repeat what failed. A retry that’s counting down reads “Retrying in 20 s”, with the button “Try now”. That countdown is the one place “retry” appears. | “Retry” on a button, Reload, “tries again by itself” |
+| Check again               | Look again for something missing or not known: Git, a merge’s result. It only looks, and repeats nothing.                                              | Recheck, Look again                                  |
+| Paste                     | Open the pull request link on the clipboard: “Paste link”.                                                                                             | “Open the link on the clipboard”                     |
+| Turn on, Turn off         | Something of GitHub’s that’s on or off: “Turn on auto-merge”.                                                                                          | Enable, Disable, Toggle                              |
+| Continue, Skip            | A welcome step’s buttons. See [Welcome step](#welcome-step).                                                                                           | Next, Not now, Later, Get started                    |
+| Cancel, Close, Done, Back | A dialog’s other button. See [Confirmation](#confirmation).                                                                                            | OK, Got it, Not now                                  |
 
-A switch is “on” or “off”: “Auto-merge is on”. Never “enabled”, “disabled” or “active”.
+A state is “on” or “off”: “Auto-merge is on”. Never “enabled”, “disabled” or “active”.
+
+For an action that isn’t listed, use the plainest verb for it: Reply, Undo, Rename.
 
 ### The system’s things
 
@@ -132,6 +141,7 @@ A switch is “on” or “off”: “Auto-merge is on”. Never “enabled”, 
 - **Linux:** keyring, “Show in file manager”.
 - **GitHub CLI** by its name. `gh` only as a command to type.
 - **Git** as a name. `git` only as a command to type.
+- **The macOS app menu** keeps the system’s wording: “About Lo”, “Settings…”, “Quit Lo”.
 
 ## Shapes
 
@@ -143,52 +153,58 @@ Something failed, or can’t load.
 
 | Part    | Limit                                                                                        | Example                                    |
 | ------- | -------------------------------------------------------------------------------------------- | ------------------------------------------ |
-| Title   | Six words, in one of the three forms below.                                                  | Can’t open rozed-dev/e2e#80                |
+| Title   | Six words, in one of the three forms below.                                                  | Can’t open #80                             |
 | Reason  | One line, and only if it changes what the reader does: the cause, then any retry.            | GitHub returned an error. Retrying in 1 s. |
 | Button  | One: the next step.                                                                          | Try now                                    |
 | Details | GitHub’s or Git’s own text, unedited, with Copy. Status codes and file paths live only here. | `500 Server Error`                         |
 
 The title’s three forms:
 
-- **“Couldn’t”, a verb, the thing:** an action was tried and failed. “Couldn’t send the comment”
-- **“Can’t”, a verb, the thing:** it stays blocked until something changes. “Can’t open #80”
+- **“Couldn’t”, a verb, the thing:** an action the reader started has failed. “Couldn’t send the
+  comment”
+- **“Can’t”, a verb, the thing:** a view or a feature is blocked. It reads this way for as long as
+  it’s blocked, even while a retry counts down. “Can’t open #80”, “Can’t find Git”
 - **The thing, “not confirmed”:** the result isn’t known. “Merge not confirmed”
 
 One wording per cause:
 
-| Cause             | Reason                                    | Button               |
-| ----------------- | ----------------------------------------- | -------------------- |
-| No connection     | You’re offline.                           | Try again            |
-| GitHub failed     | GitHub returned an error.                 | Try again            |
-| No answer in time | GitHub didn’t respond.                    | Try again            |
-| Rate limit        | GitHub’s rate limit resets at 14:05.      | None                 |
-| Signed out        | ravi-k is signed out.                     | Sign in again        |
-| Missing or hidden | It doesn’t exist, or ravi-k can’t see it. | Sign in with GitHub… |
-| Unknown           | No reason line.                           | Try again            |
+| Cause                  | Reason                                    | Button               |
+| ---------------------- | ----------------------------------------- | -------------------- |
+| No connection          | Offline.                                  | Try again            |
+| GitHub failed          | GitHub returned an error.                 | Try again            |
+| No answer in time      | GitHub didn’t respond.                    | Try again            |
+| Sent, result not known | GitHub didn’t respond.                    | Check again          |
+| Rate limit             | GitHub’s rate limit resets at 14:05.      | None                 |
+| Signed out             | ravi-k is signed out.                     | Sign in again        |
+| Missing or hidden      | It doesn’t exist, or ravi-k can’t see it. | Sign in with GitHub… |
+| Unknown                | No reason line.                           | Try again            |
+
+“Try again” repeats the action. Where repeating could do it twice, as with a merge that was sent and
+never answered, the button is “Check again”, which only looks.
 
 - **Where it shows:** a failed view takes the view. A failed action shows on its control. A failed
-  background job shows on its status bar item. Never in a tooltip alone.
-- **Never:** “Sorry”, “Oops”, “Something went wrong”, “Error”, “failed”, “Please”, the command’s
-  name as the title, the title said again as the reason.
+  background job shows on its status bar item. Never in a tooltip.
+- **Never:** “Sorry”, “Oops”, “Something went wrong”, “Please”, “Error” or “Failed” as a title, the
+  command’s name as the title, the title said again as the reason.
 
 `tab/window/banners.ts` and `packages/core/github/src/choice.ts`:
 
 |         | Before                                                                                                                                                             | After                                      |
 | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------ |
-| Title   | Lo couldn't read this pull request.                                                                                                                                | Can’t open rozed-dev/e2e#80                |
+| Title   | Lo couldn't read this pull request.                                                                                                                                | Can’t open #80                             |
 | Reason  | No account Lo is signed in to could check rozed-dev/e2e, so it didn't open without signing in. rozed-bot: GitHub answered 500: Server Error Lo tries again in 1 s. | GitHub returned an error. Retrying in 1 s. |
-| Button  | None                                                                                                                                                               | Try now                                    |
+| Button  | Try again                                                                                                                                                          | Try now                                    |
 | Details | None                                                                                                                                                               | `500 Server Error`                         |
 
 ### Empty state
 
 A view or a list with nothing in it.
 
-| Part    | Limit                                                                        | Example                                 |
-| ------- | ---------------------------------------------------------------------------- | --------------------------------------- |
-| Heading | Six words: what’s absent.                                                    | No pull requests yet                    |
-| Line    | One, optional: what will be listed, or why there’s nothing.                  | Pull requests you open are listed here. |
-| Buttons | Two at most, each a real command with its key. The first one fills the view. | Review pull request… `⌘L`               |
+| Part    | Limit                                                                           | Example                                 |
+| ------- | ------------------------------------------------------------------------------- | --------------------------------------- |
+| Heading | Six words: what’s absent.                                                       | No pull requests yet                    |
+| Line    | One, optional: what will be listed, or why there’s nothing.                     | Pull requests you open are listed here. |
+| Buttons | Two at most, each a real command with its key. The first is the primary button. | Open pull request… `⌘L`                 |
 
 - **Offer the action here.** Never say where else it lives: “from the status bar”, “in the command
   palette”.
@@ -198,11 +214,11 @@ A view or a list with nothing in it.
 
 `open/window/Recent.tsx`:
 
-|         | Before                                                                                                      | After                                   |
-| ------- | ----------------------------------------------------------------------------------------------------------- | --------------------------------------- |
-| Heading | No pull requests yet                                                                                        | No pull requests yet                    |
-| Line    | Paste a link to a pull request. Every pull request you open, from any account, shows up here, newest first. | Pull requests you open are listed here. |
-| Buttons | Review a pull request · Paste a link                                                                        | Review pull request… `⌘L` · Paste link  |
+|         | Before                                                                                                      | After                                     |
+| ------- | ----------------------------------------------------------------------------------------------------------- | ----------------------------------------- |
+| Heading | No pull requests yet                                                                                        | No pull requests yet                      |
+| Line    | Paste a link to a pull request. Every pull request you open, from any account, shows up here, newest first. | Pull requests you open are listed here.   |
+| Buttons | Review a pull request · Paste a link                                                                        | Open pull request… `⌘L` · Paste link `⌘V` |
 
 ### Progress
 
@@ -234,7 +250,7 @@ carries a risk.
 | ------- | ---------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------- |
 | Title   | Six words: the verb, the object, a question mark.                                                                      | Delete comment?                                           |
 | Body    | Two lines: what happens that the title doesn’t say. Several things in order are a numbered list of five steps at most. | 1. Approve #264. 2. Add it to the merge queue for `main`. |
-| Primary | The title’s verb and object.                                                                                           | Delete comment                                            |
+| Primary | The title’s verb and object. A name in the title becomes its kind: “Trust repo”.                                       | Delete comment                                            |
 | Other   | Cancel.                                                                                                                | Cancel                                                    |
 
 - **A dialog with fields** takes its command’s name and no question mark: “Merge #264”, “Submit
@@ -300,19 +316,21 @@ Names a control and gives its key.
 One label per command: the same in the palette, the menus, the keyboard shortcuts, its button and
 its tooltip.
 
-| Part   | Limit                                                                    | Example     |
-| ------ | ------------------------------------------------------------------------ | ----------- |
-| Verb   | First, from [Verbs](#verbs).                                             | Copy        |
-| Object | No article. “This” and “your” only if the label is unclear without them. | Copy path   |
-| `…`    | Only when the command asks for more before it acts.                      | Go to file… |
+| Part   | Limit                                                                                                                 | Example     |
+| ------ | --------------------------------------------------------------------------------------------------------------------- | ----------- |
+| Verb   | First. Where [Verbs](#verbs) lists the action, its word.                                                              | Copy        |
+| Object | No article. “This” and “your” only if the label is unclear without them.                                              | Copy path   |
+| `…`    | Only when the command asks for more before it acts: a name, a choice, a confirmation. Not when it only opens a place. | Go to file… |
 
 - **Four words at most.**
-- **A place is its name:** “Settings…”, “Merge panel”. Not “Open Settings”.
-- **A switch is what it turns on,** with a check: “Type hints”, “Left panel”, “Hide whitespace
-  changes”. Not “Show or hide”, not “on or off”.
+- **A place is its name,** with no `…`: “Settings”, “Merge panel”, “Welcome to Lo”. Not “Open
+  Settings”.
+- **A switch is a setting of Lo’s** that stays as it’s set. Its label is what it turns on, with a
+  check: “Type hints”, “Left panel”, “Hide whitespace changes”. Not “Show or hide”, not “on or off”.
 - **A choice is one command per option,** with one checked: “Side by side”, “Inline”.
-- **A command that flips** takes the name of what it does now: “Resolve thread”, then “Unresolve
-  thread”.
+- **A command that changes something on GitHub is never a switch.** It takes the name of what it
+  does now: “Resolve thread”, then “Unresolve thread”. “Turn on auto-merge”, then “Turn off
+  auto-merge”.
 - **Stepping names the thing, not the place:** “Next thread”. Not “Next thread in the panel”.
 - **A menu on the thing itself** may drop the object: “Reply”, “Resolve”.
 - **A description,** where a command has one, is one line that adds what the label can’t.
@@ -345,6 +363,35 @@ One row in Settings: a label, a description and a control.
 | Label       | Check for updates by itself                                                 | Check for updates automatically    |
 | Description | 30 s after Lo starts, then every 6 hours. Off, Lo checks only when you ask. | Checks at startup, then every 6 h. |
 
+### Welcome step
+
+One screen of the welcome, with one job: sign in, choose keys, set up, open a pull request.
+
+| Part    | Limit                                                                                              | Example                                           |
+| ------- | -------------------------------------------------------------------------------------------------- | ------------------------------------------------- |
+| Heading | Six words, no full stop: the step’s job. The first step’s says what Lo is for.                     | Review pull requests from the keyboard            |
+| Line    | One: what the reader gets, or where to change it later.                                            | Each of these is also in Settings › Integrations. |
+| Row     | A label of six words, one line and one button. Once it’s done, its state takes the button’s place. | Overview skill · “Install”, then “Installed”      |
+| Buttons | “Back”, “Continue” and “Skip”, in those words on every step.                                       | Continue                                          |
+
+- **Continue** goes to the next step with what’s set. **Skip** leaves the welcome from any step.
+  **Back** goes to the step before.
+- **The last step** has “Done” in place of Continue, and no Skip.
+- **A step’s own action** is its command, by its label: “Sign in with GitHub…”.
+- **A choice’s cards** are named like options: “Standard”, “Vim keys”.
+- **A step that’s done says so in place:** “Signed in as ravi-k”, “Installed”.
+- **Progress** has no words on screen. To a screen reader it’s “Step 2 of 4”.
+- **Never:** “Welcome!”, “Let’s get started”, “You’re all set”, “Next”, “Not now”, “Later”,
+  “optional”, “if you like”, a list of features, what Lo will do later.
+
+`welcome/window/Cover.tsx` and `welcome/window/Steps.tsx`:
+
+|         | Before                                                                                                                        | After                                                                                          |
+| ------- | ----------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| Heading | Review pull requests from the keyboard.                                                                                       | Review pull requests from the keyboard                                                         |
+| Line    | Lo reads whole stacks, shows the overviews your coding agent writes, and has a key for every action.                          | Whole stacks, overviews from your coding agent, and a key for every action.                    |
+| Row     | Send PR links to Lo · Lets a link router such as Finicky hand GitHub PR links to Lo. Your browser stays the default. · Set up | Send pull request links to Lo · Pull request links clicked in other apps open in Lo. · Set up… |
+
 ### Result
 
 What an action did.
@@ -358,14 +405,15 @@ What an action did.
 
 `queue/window/acting.ts`:
 
-| Before                                                                          | After                                |
-| ------------------------------------------------------------------------------- | ------------------------------------ |
-| Moved #264 up to 2nd in the merge queue for main, behind what GitHub is testing | Moved #264 to 2nd in the merge queue |
+| Before                                                                          | After             |
+| ------------------------------------------------------------------------------- | ----------------- |
+| Moved #264 up to 2nd in the merge queue for main, behind what GitHub is testing | Moved #264 to 2nd |
 
 ## Punctuation and formats
 
 - **Sentence case** everywhere. Capitals only for names: Lo, GitHub, Settings, Keychain. Panel
-  labels are uppercase by styling (`text-label`), not in the text.
+  labels are uppercase by styling (`text-label`), not in the text. The one exception is Vim’s modes,
+  written as Vim writes them: NORMAL, INSERT, V-LINE.
 - **Lo** has a capital L. Lowercase `lo` only in code: the command, `lo://` links.
 - **Apostrophes and quotes are curly:** ’ “ ”. Straight ones only inside code.
 - **Quote only what the reader typed:** No commands match “queue”
@@ -376,8 +424,12 @@ What an action did.
 - **No full stop** on a title, heading, label, button, menu row, tooltip, toast or refusal reason.
 - **A full stop on every body line:** a reason, an empty state’s line, a description, a dialog’s
   body, a step.
-- **One clause per line.** No semicolon, no brackets, and no dash or colon joining two clauses. A
-  line that needs one holds two facts: cut one.
+- **Articles:** a label has no “the” or “a” before its object. That’s a command on its button, its
+  menu row and its tooltip, a dialog’s title, a toast and a setting’s label: “Clear cache”, “Delete
+  comment?”, “Copied path”. A sentence keeps its articles. That’s an error’s title, a reason, a
+  description and a body line: “Couldn’t clear the cache”.
+- **One fact per sentence.** No semicolon, no brackets, and no dash or colon joining two clauses. A
+  sentence that needs one holds two facts: split it or cut one.
 - **Contractions always:** can’t, couldn’t, isn’t, it’s, you’re. Never “cannot” or “is not”.
 - **No exclamation marks, emoji or jokes.** No “please”, “sorry”, “successfully” or “simply”.
 - **Symbols:** `→` between two things compared, `·` between facts on one line, `›` between the steps
@@ -442,7 +494,7 @@ More pairs, by the rule each one shows.
 - Before: Lo can't find git. Install or update the Xcode Command Line Tools: run
   `xcode-select --install` in Terminal. Or install git with Homebrew: `brew install git`.
 - After:
-  - Title: Git not found
+  - Title: Can’t find Git
   - Code, with Copy: `xcode-select --install`
   - Button: Check again
 
@@ -473,27 +525,29 @@ More pairs, by the rule each one shows.
 
 The short ones:
 
-| File                            | Before                                                                 | After                                 |
-| ------------------------------- | ---------------------------------------------------------------------- | ------------------------------------- |
-| `merge/window/MergeConfirm.tsx` | Lo deletes no branches; the repo’s own setting applies.                | Cut. It says what won’t happen.       |
-| `merge/window/MergeConfirm.tsx` | Checking #264 with GitHub before it’s sent. Cancel stops it.           | Checking…                             |
-| `keys/window/index.ts`          | A toast titled “Back”: There's nowhere to go back to.                  | No message. Back is dimmed.           |
-| `comments/window/writing.ts`    | Offline. Lo keeps this as a draft until you send it.                   | You’re offline                        |
-| `comments/window/writing.ts`    | Suggestions work on the new side only, since GitHub applies them there | New side only                         |
-| `updates/window/Offer.tsx`      | Lo 0.2.0 is out                                                        | Lo 0.2.0 is available                 |
-| `updates/window/Offer.tsx`      | Install                                                                | Update                                |
-| `settings/window/Cache.tsx`     | Clear the cache                                                        | Clear cache                           |
-| `settings/keys.ts`              | Open Settings                                                          | Settings…                             |
-| `comments/keys.ts`              | Resolve or unresolve the thread                                        | Resolve thread, then Unresolve thread |
-| `merge/keys.ts`                 | Turn auto-merge on or off                                              | Auto-merge, checked when on           |
-| `comments/keys.ts`              | Load the newer push                                                    | Show r5                               |
-| `merge/keys.ts`                 | Next unresolved conversation                                           | Next unresolved thread                |
-| `code/keys.ts`                  | Trust this PR…                                                         | Trust pull request…                   |
+| File                            | Before                                                                 | After                                        |
+| ------------------------------- | ---------------------------------------------------------------------- | -------------------------------------------- |
+| `merge/window/MergeConfirm.tsx` | Lo deletes no branches; the repo’s own setting applies.                | Cut. It says what won’t happen.              |
+| `merge/window/MergeConfirm.tsx` | Checking #264 with GitHub before it’s sent. Cancel stops it.           | Checking…                                    |
+| `keys/window/index.ts`          | A toast titled “Back”: There's nowhere to go back to.                  | No message. Back is dimmed.                  |
+| `comments/window/writing.ts`    | Offline. Lo keeps this as a draft until you send it.                   | Offline                                      |
+| `comments/window/writing.ts`    | Suggestions work on the new side only, since GitHub applies them there | New side only                                |
+| `updates/window/Offer.tsx`      | Lo 0.2.0 is out                                                        | Lo 0.2.0 is available                        |
+| `updates/window/Offer.tsx`      | Install                                                                | Update                                       |
+| `settings/window/Cache.tsx`     | Clear the cache                                                        | Clear cache                                  |
+| `settings/keys.ts`              | Open Settings                                                          | Settings                                     |
+| `comments/keys.ts`              | Resolve or unresolve the thread                                        | Resolve thread, then Unresolve thread        |
+| `merge/keys.ts`                 | Turn auto-merge on or off                                              | Turn on auto-merge, then Turn off auto-merge |
+| `comments/keys.ts`              | Load the newer push                                                    | Show r5                                      |
+| `merge/keys.ts`                 | Next unresolved conversation                                           | Next unresolved thread                       |
+| `code/keys.ts`                  | Trust this PR…                                                         | Trust pull request…                          |
+| `open/keys.ts`                  | Review a pull request                                                  | Open pull request…                           |
+| `open/keys.ts`                  | Open the link on the clipboard                                         | Paste link                                   |
 
 ## Before a string ships
 
-1. Lo isn’t its subject.
-2. Every term is in a Write column, and none is in a Never column.
+1. Lo does nothing in it. It starts with “Lo” only to name a version.
+2. Where Terms names the thing, it uses that row’s Write word and none of that row’s Never words.
 3. It fits its shape’s limits.
 4. Nothing is said twice, hedged or reassured.
 5. It has no straight quote, no three dots, no semicolon and no bracket.
