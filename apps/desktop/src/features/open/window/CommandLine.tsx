@@ -1,53 +1,68 @@
-// Settings' Command line section: the `lo` command, where it is, and installing it, then the rows
-// other features put in the section after it.
+// Settings' row for the `lo` command, in Integrations: what it does, where it's installed, if it
+// is, installing it, and how the last install went.
 
 import { Button, Setting } from '@lo/ui';
 import { useEffect } from 'react';
 import { useStore } from 'zustand';
 
-import { Slot } from '../../../window/slots.tsx';
-import { defineSection } from '../../settings/window/shared.ts';
+import { defineRow } from '../../settings/window/shared.ts';
 import { checkCommand, commandStore, installCommand } from './command.ts';
-import { commandLine } from './shared.ts';
+import { InstallResult } from './InstallResult.tsx';
 
-/** The `lo` command's row: where it's installed, if it is, and a button to install it. */
+/** A path, or a folder's, as code. */
+function Code({ text }: { text: string }) {
+  return <span className="break-all code-small">{text}</span>;
+}
+
 function CommandRow() {
-  const { state, installing, said } = useStore(commandStore);
+  const { state, installing, done } = useStore(commandStore);
   useEffect(() => {
     void checkCommand();
   }, []);
   const [first] = state?.installed ?? [];
   const current = state?.installed.some((each) => each.current) ?? false;
-  const where =
-    first === undefined
-      ? 'Review a pull request from a terminal with lo <link>.'
-      : current
-        ? `Installed at ${first.path}. Review a pull request from a terminal with lo <link>.`
-        : `Installed at ${first.path} by another copy of Lo. Install it again to open this one.`;
+  // Where it's installed goes under the row's line, as a path does, with how the last install went.
+  const where = first !== undefined && (
+    <p role="status" className="text-fg-muted text-small">
+      Installed at <Code text={first.path} />.{current ? '' : ' It opens another copy of Lo.'}
+    </p>
+  );
   return (
     <Setting
       label={
         <>
-          The <span className="code-text">lo</span> command
+          <span className="code-text">lo</span> command
         </>
       }
-      description={<span role="status">{said ?? where}</span>}
+      description={
+        <>
+          Opens a pull request from a terminal with{' '}
+          <span className="code-small">lo &lt;link&gt;</span>.
+        </>
+      }
+      below={
+        where || done !== null ? (
+          <div className="flex flex-col gap-4">
+            {where}
+            {done !== null && <InstallResult done={done} />}
+          </div>
+        ) : undefined
+      }
     >
-      <Button disabled={installing} onClick={() => void installCommand()}>
+      {/* Not the command's button: an install from here says how it went here, not in a note. */}
+      <Button busy={installing} working="Installing…" onClick={() => void installCommand('row')}>
         {first === undefined ? 'Install' : 'Install again'}
       </Button>
     </Setting>
   );
 }
 
-export default defineSection({
+export default defineRow({
   id: 'open.command',
-  order: 70,
-  title: 'Command line',
-  render: () => (
-    <>
-      <CommandRow />
-      <Slot slot={commandLine} props={{}} />
-    </>
-  ),
+  group: 'integrations',
+  order: 10,
+  label: 'lo command',
+  description: 'Opens a pull request from a terminal with lo <link>.',
+  words: () => ['terminal', 'command line', 'install', 'PATH'],
+  render: CommandRow,
 });

@@ -69,7 +69,7 @@ function Held({ entries }: { entries: readonly ToolchainEntry[] }) {
   );
 }
 
-/** The "Remove" button of the row for `id`. */
+/** The "Delete" button of the row for `id`. */
 function remove(host: HTMLElement, id: string): HTMLButtonElement | null {
   return host.querySelector<HTMLButtonElement>(`[role="listitem"][data-id="${id}"] button`);
 }
@@ -79,10 +79,10 @@ describe('ToolchainList', () => {
     const host = render(<ToolchainList entries={ENTRIES} />);
     const rows = [...host.querySelectorAll('[role="listitem"]')];
     expect(rows.map((row) => row.textContent)).toEqual([
-      'Go 1.27.4229.1 MB · For GoRemove',
-      'Rust 1.100.0Not downloaded · 150.7 MB · No language server uses it yet',
-      'Temurin JDK 25.0.5+8293.5 MB · For Java and KotlinRemove',
-      '.NET SDK 10.0.404643.5 MB · For C#Remove',
+      'Go 1.27.4229.1 MB · For GoDeleteDeleting…',
+      'Rust 1.100.0Not downloaded · 150.7 MB · Not used yet',
+      'Temurin JDK 25.0.5+8293.5 MB · For Java and KotlinDeleteDeleting…',
+      '.NET SDK 10.0.404643.5 MB · For C#DeleteDeleting…',
       'SwiftFrom Xcode · For Swift',
     ]);
     expect(host.querySelector('[role="list"]')?.getAttribute('aria-label')).toBe('Toolchains');
@@ -112,7 +112,7 @@ describe('ToolchainList', () => {
   it('removes the toolchain whose button was pressed, naming it to a screen reader', () => {
     const onRemove = vi.fn<(id: string) => void>();
     const host = render(<ToolchainList entries={ENTRIES} onRemove={onRemove} />);
-    expect(remove(host, 'temurin')?.getAttribute('aria-label')).toBe('Remove Temurin JDK');
+    expect(remove(host, 'temurin')?.getAttribute('aria-label')).toBe('Delete Temurin JDK');
     click(remove(host, 'temurin')!);
     expect(onRemove).toHaveBeenCalledWith('temurin');
   });
@@ -123,9 +123,9 @@ describe('ToolchainList', () => {
     const host = render(<ToolchainList entries={removing} onRemove={onRemove} />);
     const button = remove(host, 'go')!;
     expect(button.getAttribute('aria-disabled')).toBe('true');
-    expect(button.getAttribute('aria-label')).toBe('Removing Go');
-    expect(button.textContent).toBe('Removing');
-    expect(button.querySelector('.spinner')).not.toBeNull();
+    expect(button.getAttribute('aria-busy')).toBe('true');
+    expect(button.getAttribute('aria-label')).toBe('Delete Go');
+    expect(button.textContent).toContain('Deleting…');
     focus(button);
     click(button);
     expect(onRemove).not.toHaveBeenCalled();
@@ -156,9 +156,9 @@ describe('ToolchainList', () => {
     expect(host.textContent).toContain('Not downloaded · 65.1 MB');
   });
 
-  it('says when Lo downloads none for this system', () => {
+  it('says when none is downloaded for this computer', () => {
     const host = render(<ToolchainList entries={[]} />);
-    expect(host.textContent).toBe('Lo downloads no toolchains for this system.');
+    expect(host.textContent).toBe('No toolchains for this computer');
     expect(host.querySelector('[role="group"]')?.getAttribute('aria-label')).toBe('Toolchains');
   });
 

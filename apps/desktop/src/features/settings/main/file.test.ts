@@ -102,21 +102,19 @@ describe('readSettings', () => {
     const read = await readSettings(path);
     expect(read.kind === 'ok' && read.values).toEqual({});
     write(`{${padding(1)}}`);
-    expect(problemOf(await readSettings(path))).toBe(
-      "The settings file is over 1 MiB, so Lo didn't read it.",
-    );
+    expect(problemOf(await readSettings(path))).toBe('`settings.json` is over 1 MB.');
   });
 
   it('leaves a huge file unread without holding it', async () => {
     write('');
     truncateSync(path, 64 * 1024 * 1024);
     const before = process.memoryUsage().arrayBuffers;
-    expect(problemOf(await readSettings(path))).toContain('over 1 MiB');
+    expect(problemOf(await readSettings(path))).toContain('over 1 MB');
     expect(process.memoryUsage().arrayBuffers - before).toBeLessThan(16 * 1024 * 1024);
   });
 
   it('reports a folder, a pipe and a file that isn’t text, without waiting on any', async () => {
-    const notPlain = "The settings file isn't a plain file, so Lo didn't read it.";
+    const notPlain = '`settings.json` isn’t a file.';
     mkdirSync(path, { recursive: true });
     expect(problemOf(await readSettings(path))).toBe(notPlain);
     rmSync(path, { recursive: true });
@@ -125,28 +123,31 @@ describe('readSettings', () => {
     expect(problemOf(await readSettings(path))).toBe(notPlain);
     rmSync(path);
     write(Uint8Array.from([0x7b, 0x22, 0xff, 0x22, 0x7d]));
-    expect(problemOf(await readSettings(path))).toBe(
-      "The settings file isn't UTF-8 text, so Lo didn't read it.",
-    );
+    expect(problemOf(await readSettings(path))).toBe('`settings.json` isn’t UTF-8 text.');
   });
 
   // Root reads whatever it likes.
   it.skipIf(process.getuid?.() === 0)('reports a file it isn’t allowed to read', async () => {
     write('{}');
     chmodSync(path, 0o000);
-    expect(problemOf(await readSettings(path))).toBe("Lo isn't allowed to read the settings file.");
+    expect(await readSettings(path)).toEqual({
+      kind: 'problem',
+      problem: '`settings.json` isn’t readable.',
+      reason: '`settings.json` isn’t readable.',
+      cause: 'settings.json isn’t readable.',
+    });
   });
 
   it('reports a link to nothing, and a link that leads in a circle', async () => {
     mkdirSync(join(folder, 'config'), { recursive: true });
     symlinkSync(join(folder, 'elsewhere'), path);
     expect(problemOf(await readSettings(path))).toBe(
-      "The settings file is a link to a file that isn't there.",
+      '`settings.json` is a link to a file that isn’t there.',
     );
     rmSync(path);
     symlinkSync(path, path);
     expect(problemOf(await readSettings(path))).toBe(
-      'The settings file is a link that leads back to itself.',
+      '`settings.json` is a link that leads back to itself.',
     );
   });
 });

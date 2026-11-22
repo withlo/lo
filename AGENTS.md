@@ -339,20 +339,25 @@ the window find them with `import.meta.glob`.
   a `service.ts` or a feature's `uses` goes unprovided, or while features use each other's services,
   and only the feature a service is named for may provide it.
 - `settings.ts` declares the settings the feature has, each with
-  `defineSetting(key, schema, default, accepts)` from `settings/contract.ts`: a flat key
-  (`diff.layout`), what its value may be as a Zod schema, the value without one, and what it accepts
-  in words. The settings feature reads `settings.json` from the config folder as JSON with comments
-  and trailing commas (`jsonc-parser`), watches it, reports a value a schema refuses and uses the
-  default, and keeps every key no feature declared. To change a setting, only after main has checked
-  the value again, it edits that key's value in the file's text, keeping every comment and space
-  around it, and writes the file whole, atomically. Main reaches the values through the settings
-  feature's `service.ts` (`use(settings).watch(setting, listener)`, which also declares the
-  setting), the window through its `window/shared.ts` (`useSetting`, `changeSetting`), where a
-  feature puts its section of Settings in the `settings.sections` slot with `defineSection`. A
-  setting declared with `{ window: 'read' }`, such as which repositories are trusted, the window
-  shows but can't change: `settings.set` refuses it as `unwritable`, and only main writes it, with
-  `use(settings).update(setting, change)`. `docs/settings.md` lists every setting; a test fails when
-  one is missing.
+  `defineSetting(key, schema, default, accepts, { group, label, description, options? })` from
+  `settings/contract.ts`: a flat key (`diff.layout`), what its value may be as a Zod schema, the
+  value without one, what it accepts in words, and its row: the group of Settings it's in (or
+  `'file'` for one only in the file), its label, its one line of at most 90 characters, and the
+  words for each option of a choice. The settings feature reads `settings.json` from the config
+  folder as JSON with comments and trailing commas (`jsonc-parser`), watches it, reports a value a
+  schema refuses and uses the default, and keeps every key no feature declared. To change a setting,
+  only after main has checked the value again, it edits that key's value in the file's text, keeping
+  every comment and space around it, and writes the file whole, atomically. Main reaches the values
+  through the settings feature's `service.ts` (`use(settings).watch(setting, listener)`, which also
+  declares the setting), the window through its `window/shared.ts` (`useSetting`, `changeSetting`,
+  `watchSetting`), where a feature puts its rows of Settings in the `settings.rows` slot:
+  `settingRow(setting, { order })` draws a setting's row from the setting itself, and `defineRow`
+  makes any other, such as a list, with the same one line. A change main refuses comes back as
+  `settingsFile` or `unsaved`, with main's reason and its details, and the row says it as a
+  `Problem`. A setting declared with `{ window: 'read' }`, such as which repositories are trusted,
+  the window shows but can't change: `settings.set` refuses it as `unwritable`, and only main writes
+  it, with `use(settings).update(setting, change)`. `docs/settings.md` lists every setting; a test
+  fails when one is missing.
 - `migrations/001-<name>.sql`, `002-<name>.sql` and on create and change the feature's tables. At
   startup, before any handler can be asked anything, each feature's new migrations run in order,
   each in a transaction, and are recorded with their SHA-256.

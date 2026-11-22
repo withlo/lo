@@ -20,9 +20,70 @@ export const settingKey = z
 /** Any value JSON can hold: all that the file, and so every setting, can. */
 export const settingValue = z.json();
 
+/** Settings' groups, in the order its list shows them. */
+export const settingsGroups = [
+  'accounts',
+  'appearance',
+  'keyboard',
+  'pullRequests',
+  'code',
+  'storage',
+  'integrations',
+  'about',
+] as const;
+export type SettingsGroup = (typeof settingsGroups)[number];
+
+/** Each group's name, as Settings' list and its heading write it. */
+export const groupNames: Readonly<Record<SettingsGroup, string>> = {
+  accounts: 'Accounts',
+  appearance: 'Appearance',
+  keyboard: 'Keyboard',
+  pullRequests: 'Pull requests',
+  code: 'Code intelligence',
+  storage: 'Storage',
+  integrations: 'Integrations',
+  about: 'About',
+};
+
+/** The most a setting's description may run to: one line of Settings. */
+export const DESCRIPTION_MAX = 90;
+
+/**
+ * Checks a row's words, a setting's or any other row's: a label, and one line of
+ * {@link DESCRIPTION_MAX} characters at most that ends with a full stop. `what` names the row in
+ * the error: "The setting theme".
+ */
+export function checkRowWords(what: string, label: string, description: string): void {
+  if (label.trim() === '') throw new Error(`${what} has no label.`);
+  if (description.length > DESCRIPTION_MAX || !description.endsWith('.')) {
+    throw new Error(
+      `The description of ${what.charAt(0).toLowerCase()}${what.slice(1)} is one line of ${DESCRIPTION_MAX} characters at most, ending with a full stop.`,
+    );
+  }
+}
+
 /** A setting a feature has: its key, what its value may be, and the value when the file has none. */
 export interface Setting<T> {
   readonly key: string;
+  /**
+   * The group of Settings its row is in, or `file` for one only the settings file holds, as
+   * `app.gpu` is: a window that draws nothing couldn't reach it.
+   */
+  readonly group: SettingsGroup | 'file';
+  /** What its row calls it: the thing set, in four words at most. A switch reads true when on. */
+  readonly label: string;
+  /**
+   * What a sentence calls it, as in "Couldn’t change the theme", when its label, lower-cased after
+   * "the", doesn't read as the thing: "Vim keys", "where pull requests open".
+   */
+  readonly named?: string;
+  /** One line under the label, with a full stop: what it changes that the label doesn't say. */
+  readonly description: string;
+  /**
+   * The words each of its values goes by, in the order its row offers them, for a setting that's a
+   * choice of a few: `{ split: 'Side by side', inline: 'Inline' }`.
+   */
+  readonly options?: Readonly<Record<string, string>>;
   /** What the value may be. A value the file holds that this refuses is reported and ignored. */
   readonly schema: z.ZodType<T>;
   /** The value when the file has none, or has one the schema refuses. */
@@ -43,22 +104,33 @@ export interface Setting<T> {
   problems?(value: T): readonly string[];
 }
 
-/** What else a setting says of itself, as {@link Setting} has it. `window` is `write` unless said. */
-export interface SettingOptions<T> {
+/**
+ * What a setting says of itself besides its value, as {@link Setting} has it: where Settings shows
+ * it and how its row reads, which every setting has. `window` is `write` unless said.
+ */
+export interface SettingAbout<T> {
+  readonly group: SettingsGroup | 'file';
+  readonly label: string;
+  readonly named?: string;
+  readonly description: string;
+  readonly options?: [T] extends [string] ? Readonly<Record<T, string>> : never;
   readonly window?: 'read' | 'write';
   readonly problems?: (value: T) => readonly string[];
 }
 
 /**
- * Defines a setting. `schema` must accept `fallback`, and both must be JSON, since that is what
- * the file holds; a setting that doesn't fails as it's defined.
+ * Defines a setting, with its row in Settings: Settings draws the row from what this says, and
+ * finds it by the same words. `schema` must accept `fallback`, and both must be JSON, since that is
+ * what the file holds. The description is one line, of {@link DESCRIPTION_MAX} characters at most,
+ * and ends with a full stop; each of `options` is a value the schema accepts, `fallback` among them.
+ * A setting that breaks any of this fails as it's defined.
  */
 export function defineSetting<T>(
   key: string,
   schema: z.ZodType<T>,
   fallback: T,
   accepts: string,
-  options: SettingOptions<T> = {},
+  about: SettingAbout<T>,
 ): Setting<T> {
   if (!settingKey.safeParse(key).success) {
     throw new Error(`A setting is named in words joined by dots, as diff.layout is, not "${key}".`);
@@ -69,8 +141,21 @@ export function defineSetting<T>(
   if (!settingValue.safeParse(fallback).success) {
     throw new Error(`The default of the setting ${key} isn't JSON, which the settings file holds.`);
   }
-  const setting: Setting<T> = { key, schema, fallback, accepts, window: options.window ?? 'write' };
-  return options.problems ? { ...setting, problems: options.problems } : setting;
+  const { group, label, named, description, options, window = 'write', problems } = about;
+  checkRowWords(`The setting ${key}`, label, description);
+  if (options !== undefined) {
+    const values: readonly unknown[] = Object.keys(options);
+    if (!values.includes(fallback) || values.some((value) => !schema.safeParse(value).success)) {
+      throw new Error(`The options of the setting ${key} are values its schema accepts.`);
+    }
+  }
+  const setting: Setting<T> = { key, schema, fallback, accepts, group, label, description, window };
+  return {
+    ...setting,
+    ...(named === undefined ? {} : { named }),
+    ...(options === undefined ? {} : { options }),
+    ...(problems === undefined ? {} : { problems }),
+  };
 }
 
 /** Something wrong in the settings file, in words for the person who wrote it. */
@@ -119,9 +204,10 @@ export const contract = defineContract('settings', {
     read: { input: z.undefined(), reply: reply<SettingsState>() },
     /**
      * Changes a setting. Main refuses a key no feature declared, and a value its schema refuses
-     * (`invalid`), a setting the window may only read, and a change the file can't take
-     * (`unwritable`): the file has a problem that writing over would lose, or can't be written.
-     * Other settings, and what Lo doesn't know of, stay in the file as they are.
+     * (`invalid`), a setting the window may only read (`unwritable`), a change what the file holds
+     * keeps it from making, which editing the file fixes (`settingsFile`), and a change it couldn't
+     * write (`unsaved`): each with what's wrong in its message. Other settings, and what Lo
+     * doesn't know of, stay in the file as they are.
      */
     set: {
       input: z.strictObject({ key: settingKey, value: settingValue }),
@@ -141,6 +227,11 @@ export const contract = defineContract('settings', {
      * requests opened lately or marks.
      */
     clearCache: { input: z.undefined(), reply: reply<CacheCleared>() },
+    /**
+     * Shows the cache's folder in Finder, or in the system's file manager. Refused while the cache
+     * isn't open (`noCache`): before Git is found, and without it.
+     */
+    showCache: { input: z.undefined(), reply: reply<void>() },
   },
   topics: {
     /** The settings, each time they change. */

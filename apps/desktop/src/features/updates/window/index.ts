@@ -1,5 +1,5 @@
 // The updates feature's window side: the toast that says a newer Lo is out, downloading or ready,
-// Settings' Updates section, and the commands from the command palette and the app menu: the five
+// Settings' About rows, and the commands from the command palette and the app menu: the five
 // that ask main to act, and those of the toast's other buttons. Each applies only to where updates
 // stand: the app menu greys the rest, and the palette says why when one is chosen anyway. A check
 // says what it found in a note; main refuses a command that doesn't apply now, and a note says why.
@@ -50,7 +50,7 @@ const now = () => updatesStore.getState();
 
 export default {
   commands: handlers(keys, {
-    check: { run: check, enabled: () => canCheck(now().checking) },
+    check: { run: () => check(), enabled: () => canCheck(now().checking) },
     install: { run: install, enabled: () => canInstall(now().state) },
     restart: { run: restart, enabled: () => canRestart(now().state) },
     move: { run: move, enabled: () => canMove(now().state, now().how) },
@@ -67,7 +67,7 @@ export default {
   }),
   views: [
     defineView(toasts, { id: 'updates.offer', order: 0, render: () => createElement(Offer) }),
-    Settings,
+    ...Settings,
   ],
   start() {
     const updates = main();

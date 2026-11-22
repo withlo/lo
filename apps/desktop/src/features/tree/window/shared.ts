@@ -5,9 +5,11 @@
 // threads each file has on screen, which another feature counts.
 
 import { useViewedMarks, viewedCountIn, type ShownMarks } from '../../revisions/window/shared.ts';
+import { settingNow, useSetting } from '../../settings/window/shared.ts';
 import type { LocalState } from '../../tab/contract.ts';
 import { useChangedFiles, useLocalCopy, useTabState, type Files } from '../../tab/window/shared.ts';
 import type { Changed, TreePath, TreeState } from '../contract.ts';
+import { mode as modeSetting } from '../settings.ts';
 import { countsChanged, countWith, type FileCounter } from './counts.ts';
 import { foldersOf, panelOrder, type Mode } from './model.ts';
 import { keyOf, pathOfKey } from './paths.ts';
@@ -44,27 +46,30 @@ function orderOf(tab: string, state: TreeState | undefined, mode: Mode): readonl
  * bytes in hex.
  */
 export function fileOrder(tab: string): readonly string[] {
-  return orderOf(tab, states.get(tab), choices.get(tab).mode);
+  return orderOf(tab, states.get(tab), settingNow(modeSetting));
 }
 
 /** {@link fileOrder}, re-rendering when it changes. */
 export function useFileOrder(tab: string): readonly string[] {
   const state = useTabState(states, tab);
-  const mode = useTabState(choices, tab, (chosen) => chosen.mode);
+  const mode = useSetting(modeSetting);
   return orderOf(tab, state, mode);
 }
 
 /** How the panel orders the changed files: the tree's order, or review order. */
 export type OrderMode = Mode;
 
-/** The order `tab`'s panel lists its changed files in now, re-rendering when the reader changes it. */
-export function useOrderMode(tab: string): OrderMode {
-  return useTabState(choices, tab, (chosen) => chosen.mode);
+/**
+ * The order the panel lists changed files in now, every pull request's, re-rendering when the
+ * reader changes it.
+ */
+export function useOrderMode(): OrderMode {
+  return useSetting(modeSetting);
 }
 
 /** {@link useOrderMode}, read once. */
-export function orderModeOf(tab: string): OrderMode {
-  return choices.get(tab).mode;
+export function orderModeOf(): OrderMode {
+  return settingNow(modeSetting);
 }
 
 /**

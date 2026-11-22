@@ -56,8 +56,14 @@ export default defineCommands(
       overVim: true,
       when: { except: ['menu', 'dialog', 'palette', 'box', 'tree', 'stack'], mode: 'normal' },
     },
-    /** Switches between the tree and the changed files in review order. */
-    mode: { label: 'Tree or review order', group: 'Files', keys: ['t'], when: tree },
+    /** Switches between the tree and the changed files in review order, for every pull request. */
+    mode: {
+      label: 'Tree or review order',
+      group: 'Files',
+      keys: ['t'],
+      when: tree,
+      control: 'Tree and Review order over the files',
+    },
     /** Shows only the changed files, still as a tree, or every file again. */
     changedOnly: { label: 'Changed files only', group: 'Files', keys: ['f'], when: tree },
     down: {

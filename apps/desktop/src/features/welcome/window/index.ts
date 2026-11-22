@@ -10,7 +10,7 @@ import keys from '../keys.ts';
 import { enter, loadState, show } from './actions.ts';
 import { Cover } from './Cover.tsx';
 import { Rules } from './Rules.tsx';
-import { CommandStep, LinksStep } from './Setup.tsx';
+import { CommandStep, LinksRow, LinksStep, WelcomeRow } from './Setup.tsx';
 import { setup } from './shared.ts';
 import { showGit, welcomeStore } from './store.ts';
 
@@ -31,6 +31,8 @@ export default {
       render: () => createElement(CommandStep),
     }),
     defineView(setup, { id: 'welcome.links', order: 20, render: () => createElement(LinksStep) }),
+    LinksRow,
+    WelcomeRow,
   ],
   start() {
     void loadState();

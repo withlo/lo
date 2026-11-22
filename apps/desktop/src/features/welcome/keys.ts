@@ -10,6 +10,7 @@ export default defineCommands(
     /** Opens the welcome over the tab on screen, at its first step, each step as it stands now. */
     show: {
       label: 'Welcome to Lo',
+      control: 'Show on the Welcome to Lo row of Settings › About',
       group: 'Tabs and window',
       keys: [],
       bar: { menu: 'Help', order: 10 },
