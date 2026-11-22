@@ -208,7 +208,7 @@ describe('what e refuses before anything is sent', () => {
 
     said.pull = pull();
     showView(comparing(null, OLDER));
-    expect(await refused('src/a.ts')).toBe('This revision is out of date');
+    expect(await refused('src/a.ts')).toBe('Compare up to the latest revision first');
 
     said.pull = pull({ newer: NEWER });
     expect(toggleViewed(TAB, file('src/b.ts'))).toEqual({ kind: 'clearing' });
@@ -230,8 +230,8 @@ describe('what e refuses before anything is sent', () => {
 
   it('a run of a stack’s layers on screen as one diff, which has no marks to set or clear', async () => {
     said.run = { layers: [83, 84], start: OLDER, from: 84 };
-    expect(await refused('src/a.ts')).toBe('Layers shown together have no viewed marks');
-    expect(await refused('src/b.ts')).toBe('Layers shown together have no viewed marks');
+    expect(await refused('src/a.ts')).toBe('Show a single layer first');
+    expect(await refused('src/b.ts')).toBe('Show a single layer first');
   });
 
   it('a tab that acts as nobody, a file GitHub doesn’t list, and a path too long', async () => {

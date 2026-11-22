@@ -352,10 +352,7 @@ export class RevisionsTab {
       throw new IpcError('missing', 'The pull request’s tab closed.');
     }
     if (login === undefined) {
-      throw new IpcError(
-        'refused',
-        'Sign in to mark files viewed: this pull request opened without an account.',
-      );
+      throw new IpcError('refused', 'Sign in to mark files viewed');
     }
     // A head taken from what Lo saved, until GitHub says which is its newest, may be one a push has
     // since passed.

@@ -242,7 +242,7 @@ function writable(
   | { kind: 'refused'; why: string }
   | { kind: 'can'; model: Model; path: string; marking: boolean; at: string } {
   // A run shows its layers' changes combined, and a mark says which layer's version was seen.
-  if (runOf(tab)) return refused('Layers shown together have no viewed marks');
+  if (runOf(tab)) return refused('Show a single layer first');
   const pull = pullOf(tab);
   if (pull?.acting?.kind !== 'account') return refused('Sign in to mark files viewed');
   const own = textOf(file.path);
@@ -264,9 +264,8 @@ function writable(
   const at = headOf(tab, pull);
   if (at === undefined) return refused('Opening pull request…');
   // GitHub marks a file viewed as of the newest push, so only a diff up to it can.
-  if (marking && (pull.newer !== null || at !== pull.shown)) {
-    return refused('This revision is out of date');
-  }
+  if (marking && pull.newer !== null) return refused('This revision is out of date');
+  if (marking && at !== pull.shown) return refused('Compare up to the latest revision first');
   return { kind: 'can', model, path, marking, at };
 }
 
