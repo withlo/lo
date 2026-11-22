@@ -74,7 +74,7 @@ function Usage({
   if (usage.status === 'checking') {
     return gaveUp ? (
       <Problem
-        title="Can’t open the cache folder"
+        title="Can’t use the cache folder"
         action={{ label: 'Check again', onClick: again }}
       />
     ) : (

@@ -102,14 +102,14 @@ describe('readSettings', () => {
     const read = await readSettings(path);
     expect(read.kind === 'ok' && read.values).toEqual({});
     write(`{${padding(1)}}`);
-    expect(problemOf(await readSettings(path))).toBe('`settings.json` is over 1 MiB.');
+    expect(problemOf(await readSettings(path))).toBe('`settings.json` is over 1 MB.');
   });
 
   it('leaves a huge file unread without holding it', async () => {
     write('');
     truncateSync(path, 64 * 1024 * 1024);
     const before = process.memoryUsage().arrayBuffers;
-    expect(problemOf(await readSettings(path))).toContain('over 1 MiB');
+    expect(problemOf(await readSettings(path))).toContain('over 1 MB');
     expect(process.memoryUsage().arrayBuffers - before).toBeLessThan(16 * 1024 * 1024);
   });
 
@@ -132,9 +132,9 @@ describe('readSettings', () => {
     chmodSync(path, 0o000);
     expect(await readSettings(path)).toEqual({
       kind: 'problem',
-      problem: 'Permissions don’t allow reading `settings.json`.',
-      reason: 'Permissions don’t allow reading `settings.json`.',
-      cause: 'Permissions don’t allow reading settings.json.',
+      problem: '`settings.json` isn’t readable.',
+      reason: '`settings.json` isn’t readable.',
+      cause: 'settings.json isn’t readable.',
     });
   });
 

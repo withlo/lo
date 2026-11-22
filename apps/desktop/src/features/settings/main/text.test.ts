@@ -138,7 +138,7 @@ describe('parseSettings', () => {
 
   it('says so when the text is JSON but not one object', () => {
     for (const text of ['null', '[]', '[{"theme":"dark"}]', '"dark"', '3', 'true', '// x\n[]']) {
-      expect(problemOf(parseSettings(text))).toBe('`settings.json` isn’t one JSON object.');
+      expect(problemOf(parseSettings(text))).toBe('`settings.json` isn’t a JSON object.');
     }
   });
 

@@ -140,7 +140,7 @@ function read(text: string): Tree {
   if (root === undefined) return { ok: true, root, values: {}, repeated: [] };
   if (root.type !== 'object') {
     return wrong(
-      '`settings.json` isn’t one JSON object.',
+      '`settings.json` isn’t a JSON object.',
       'The settings file should hold one JSON object, such as { "theme": "dark" }.',
     );
   }

@@ -60,7 +60,7 @@ export async function readSettings(path: string): Promise<Read> {
   try {
     const info = await handle.stat();
     if (!info.isFile()) return problem('`settings.json` isn’t a file.');
-    const tooBig = problem(`\`settings.json\` is over ${SETTINGS_SIZE_LIMIT / 1024 ** 2} MiB.`);
+    const tooBig = problem(`\`settings.json\` is over ${SETTINGS_SIZE_LIMIT / 1024 ** 2} MB.`);
     if (info.size > SETTINGS_SIZE_LIMIT) return tooBig;
     // One byte past the limit, in case the file grew since `stat`.
     const buffer = Buffer.alloc(SETTINGS_SIZE_LIMIT + 1);
@@ -103,7 +103,7 @@ async function failure(error: unknown, path: string): Promise<Read> {
   }
   if (code === 'ENOTDIR') return { kind: 'missing' };
   if (code === 'EACCES' || code === 'EPERM') {
-    return problem('Permissions don’t allow reading `settings.json`.');
+    return problem('`settings.json` isn’t readable.');
   }
   if (code === 'ELOOP') return problem('`settings.json` is a link that leads back to itself.');
   return problem('`settings.json` couldn’t be read.', code);

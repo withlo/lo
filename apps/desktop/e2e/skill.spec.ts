@@ -184,7 +184,7 @@ test.describe('in Settings, from a terminal', () => {
     await openSettings(page);
     const terminal = page.locator('[data-settings-row="overview.installCommand"]');
     await expect(terminal).toContainText(
-      `On another computerInstalls the overview skill from a terminal.${command}`,
+      `On another computerThe overview skill installs from a terminal.${command}`,
     );
     // Writing the clipboard only where it's the test's own: not on a Mac someone works on.
     test.skip(mac, "The Mac's clipboard is its user's.");

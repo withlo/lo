@@ -469,7 +469,7 @@ describe('Settings’ row for the command that installs the skill', () => {
     await settle();
     expect(commandRow()?.querySelector('.code-small')?.textContent).toBe(command);
     expect(commandRow()?.querySelector('.text-fg-muted')?.textContent).toBe(
-      'Installs the overview skill from a terminal.',
+      'The overview skill installs from a terminal.',
     );
     const copy = button(commandRow() ?? null, 'Copy');
     expect([...copy.querySelectorAll('kbd')].map((each) => each.textContent)).toEqual(['y', 'c']);

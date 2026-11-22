@@ -217,7 +217,7 @@ describe('reading', () => {
     settings.declare(theme);
     const state = await settings.state();
     expect(state.values).toEqual({ theme: 'system' });
-    expect(state.problems[0]?.message).toContain('one JSON object');
+    expect(state.problems[0]?.message).toContain('isn’t a JSON object');
   });
 
   it('reads a setting declared after the file was read', async () => {

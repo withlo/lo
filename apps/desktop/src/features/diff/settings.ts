@@ -31,7 +31,7 @@ export const whitespace = defineSetting(
   {
     group: 'pullRequests',
     label: 'Whitespace changes',
-    named: 'how whitespace changes show',
+    named: 'the whitespace setting',
     description: 'Lines that differ only in spacing or indentation.',
     options: { show: 'Show', hide: 'Hide' },
   },

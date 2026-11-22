@@ -375,9 +375,9 @@ export function createSettings(options: SettingsOptions): Settings {
         if (Buffer.byteLength(text) > SETTINGS_SIZE_LIMIT) {
           throw new Unwritten(
             `Lo didn't change ${key}: the settings file would be too big.`,
-            `The settings file would be over ${SETTINGS_SIZE_LIMIT / 1024 ** 2} MiB.`,
+            `The settings file would be over ${SETTINGS_SIZE_LIMIT / 1024 ** 2} MB.`,
             true,
-            { reason: `\`settings.json\` would be over ${SETTINGS_SIZE_LIMIT / 1024 ** 2} MiB.` },
+            { reason: `\`settings.json\` would be over ${SETTINGS_SIZE_LIMIT / 1024 ** 2} MB.` },
           );
         }
         try {

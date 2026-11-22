@@ -133,7 +133,7 @@ export default [
     group: 'about',
     order: 10,
     label: 'Lo',
-    description: 'The version in use, and any update on offer.',
+    description: 'The version in use, and any update available.',
     words: () => [
       'version',
       'updates',

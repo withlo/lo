@@ -29,7 +29,7 @@ function Item({ view }: { view: Shown }) {
         size="sm"
         aria-label={`Show kept drafts of ${name}`}
       >
-        Show
+        Show kept drafts
       </SettingsCommand>
     </SettingsListItem>
   );

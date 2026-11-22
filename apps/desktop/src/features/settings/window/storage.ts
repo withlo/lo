@@ -30,7 +30,7 @@ export function measureCache(): void {
 export function cacheShowable(): true | string {
   const { usage } = cacheStore.getState();
   if (usage === undefined || usage.status === 'ready') return true;
-  return usage.status === 'checking' ? 'The cache isn’t ready' : 'There’s no cache folder';
+  return usage.status === 'checking' ? 'The cache isn’t ready' : 'No cache folder yet';
 }
 
 /** Shows the cache's folder in Finder, and says why in a toast when it can't. */
@@ -41,7 +41,7 @@ export async function showCache(): Promise<void> {
     console.error("Lo couldn't show the cache folder:", error);
     refuse(
       error instanceof IpcError && error.code === 'noCache'
-        ? 'There’s no cache folder'
+        ? 'No cache folder yet'
         : 'Couldn’t show the cache folder',
     );
   }

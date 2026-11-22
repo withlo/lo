@@ -153,7 +153,7 @@ export const InstallCommandRow = defineRow({
   order: 30,
   label: 'On another computer',
   // The command itself is under the row's line.
-  description: 'Installs the overview skill from a terminal.',
+  description: 'The overview skill installs from a terminal.',
   words: () => ['overview skill', 'terminal', 'install', 'copy', INSTALL_COMMAND],
   render: InstallCommand,
 });

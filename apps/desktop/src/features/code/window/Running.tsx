@@ -77,7 +77,7 @@ function Servers({ label, description }: { label: string; description: string })
       {running === '' ? (
         <SettingsEmpty
           heading="No language servers running"
-          line="The language servers of open pull requests are listed here."
+          line="Language servers for open pull requests are listed here."
         />
       ) : (
         <div role="list" aria-label="Language servers">
