@@ -1,8 +1,10 @@
 // The account picker: which account opens a pull request when several can see its repository. The
-// accounts that can't, being signed out or waiting for a keyring, show why.
+// accounts that can't, being signed out or their sign-in unreadable, show why. Its body stays put
+// from asking to remembering the choice: only the foot changes, and a choice that couldn't be
+// remembered says so above it, with the pull request still a press away.
 
-import { Button, Choices, Dialog, DialogSpacer, Key, Switch, type ChoiceItem } from '@lo/ui';
-import { useEffect, useId, useRef, useState, type KeyboardEvent } from 'react';
+import { Choices, Dialog, Switch, type ChoiceItem, type DialogState } from '@lo/ui';
+import { useEffect, useId, useState, type KeyboardEvent } from 'react';
 import { useStore } from 'zustand';
 
 import { IpcError } from '../../../ipc/contract.ts';
@@ -16,22 +18,24 @@ type Pick = Extract<OpenDialog, { kind: 'pick' }>;
 
 /** Why `account` can't open anything now, or nothing when it can. */
 export function unusable(account: AccountSummary | undefined): string | undefined {
-  if (account === undefined) return "Lo isn't signed in to it any more.";
-  if (account.needsKeyring) {
-    return "Lo can't read its token without a keyring, such as GNOME Keyring or KWallet.";
-  }
-  if (account.signedOut !== null) return 'Signed out. Sign in again to use it here.';
+  if (account === undefined) return 'Signed out';
+  if (account.needsKeyring) return 'Sign-in can’t be read';
+  if (account.signedOut !== null) return 'Signed out';
   return undefined;
 }
 
-/** How `account` signed in, for its line. */
-export function how(account: AccountSummary | undefined): string {
-  if (account === undefined) return '';
-  const source = account.source === 'gh' ? 'Imported from gh' : 'Signed in with GitHub';
-  return account.name === null ? source : `${account.name} · ${source.toLowerCase()}`;
+/**
+ * What's said of `account` under its login: its name, and where it came from when that isn't the
+ * usual way, signing in with GitHub.
+ */
+export function how(account: AccountSummary | undefined): string | undefined {
+  if (account === undefined) return undefined;
+  const fromCli = account.source === 'gh';
+  if (account.name === null) return fromCli ? 'From GitHub CLI' : undefined;
+  return fromCli ? `${account.name} · from GitHub CLI` : account.name;
 }
 
-/** The repository, and the pull request if there is one, as the picker names them. */
+/** The pull request, or the repository when there's none, as the picker's title names it. */
 function opening(question: AccountQuestion): string {
   const repo = `${question.owner}/${question.name}`;
   return question.number === undefined ? repo : `${repo}#${question.number}`;
@@ -70,7 +74,6 @@ export function PickerView({
   const [remember, setRemember] = useState(true);
   const [error, setError] = useState<string>();
   const [busy, setBusy] = useState(false);
-  const primary = useRef<HTMLButtonElement>(null);
   const rememberLabel = useId();
 
   // Each question starts on its first account that can open it.
@@ -84,6 +87,7 @@ export function PickerView({
   const usable =
     chosen !== undefined && items.some((item) => item.value === chosen && !item.disabled);
 
+  /** Opens with the account chosen, remembering it first when the switch says to. */
   const confirm = () => {
     if (dialog === undefined || chosen === undefined || !usable || busy) return;
     const { owner, name } = dialog.question;
@@ -92,7 +96,8 @@ export function PickerView({
       dialog.answer(chosen);
       if (accountsStore.getState().dialog === dialog) closeDialog();
     };
-    if (!remember) {
+    // The choice couldn't be remembered: the pull request still opens with it.
+    if (!remember || error !== undefined) {
       answer();
       return;
     }
@@ -101,11 +106,7 @@ export function PickerView({
       .choose({ owner, name, login: chosen, remember: dialog.question.remember })
       .then(answer, (thrown: unknown) => {
         setBusy(false);
-        setError(
-          thrown instanceof IpcError
-            ? thrown.message
-            : `Lo couldn't remember ${chosen} for ${owner}.`,
-        );
+        setError(thrown instanceof IpcError ? thrown.message : String(thrown));
       });
   };
 
@@ -126,64 +127,58 @@ export function PickerView({
       : question.remember === 'owner'
         ? `every ${question.owner} repo`
         : `${question.owner}/${question.name}`;
+  const label = chosen === undefined ? 'Open' : `Open as ${chosen}`;
+  const state: DialogState = busy ? 'working' : error === undefined ? 'ask' : 'failed';
   return (
     <Dialog
       open={dialog !== undefined}
       onOpenChange={(open) => {
         if (!open) closeDialog();
       }}
-      title={`Which account for ${question?.owner ?? ''}?`}
-      description={
-        question === undefined
+      title={question === undefined ? '' : `Open ${opening(question)}`}
+      description={question === undefined ? undefined : `${visible} of your accounts can see it.`}
+      state={state}
+      action={{
+        label,
+        working: 'Opening…',
+        // After a choice that couldn't be remembered, the way on is to open with it all the same.
+        again: label,
+        keys: labels('enter'),
+        disabled: usable ? undefined : 'Choose an account',
+        onRun: confirm,
+      }}
+      problem={
+        error === undefined || chosen === undefined || question === undefined
           ? undefined
-          : `Opening ${opening(question)}. ${visible === 1 ? 'One' : visible} of your accounts can see it.`
+          : { title: `Couldn’t remember ${chosen} for ${question.owner}`, details: error }
       }
+      leaveKeys={labels('esc')}
       onKeyDown={onKeyDown}
       container={container}
       testId="account-picker"
-      foot={
-        <>
-          <span className="flex items-center gap-6">
-            <Key keys={['j']} quiet decorative />
-            <Key keys={['k']} quiet decorative />
-            Choose
-          </span>
-          <DialogSpacer />
-          <Button onClick={closeDialog}>
-            Cancel
-            <Key keys={labels('esc')} decorative />
-          </Button>
-          <Button ref={primary} variant="primary" disabled={!usable || busy} onClick={confirm}>
-            {chosen === undefined ? 'Open' : `Open as ${chosen}`}
-            <Key keys={labels('enter')} decorative className="text-on-accent" />
-          </Button>
-        </>
-      }
     >
-      <Choices label="Account" items={items} value={chosen} onChange={setChosen} />
+      <Choices
+        label="Account"
+        items={items}
+        value={chosen}
+        onChange={(next) => {
+          setChosen(next);
+          setError(undefined);
+        }}
+      />
       <div className="flex items-center gap-12 border-t border-border-subtle pt-12">
-        <div className="flex min-w-0 flex-1 flex-col">
-          <span id={rememberLabel} className="text-ui-strong">
-            Remember for {where}
-          </span>
-          <span className="text-fg-muted text-small">
-            {remember
-              ? 'Lo opens its PRs as this account from now on.'
-              : 'Lo asks again next time.'}
-          </span>
-        </div>
+        <span id={rememberLabel} className="min-w-0 flex-1 text-ui-strong">
+          Remember for {where}
+        </span>
         <Switch
           checked={remember}
-          onCheckedChange={setRemember}
-          aria-describedby={rememberLabel}
-          aria-label={`Remember for ${where}`}
+          onCheckedChange={(on) => {
+            setRemember(on);
+            setError(undefined);
+          }}
+          aria-labelledby={rememberLabel}
         />
       </div>
-      {error !== undefined && (
-        <p role="alert" className="m-0 text-danger text-small">
-          {error}
-        </p>
-      )}
     </Dialog>
   );
 }

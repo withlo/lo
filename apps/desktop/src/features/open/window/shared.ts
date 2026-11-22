@@ -5,13 +5,14 @@
 import { createElement, type ReactNode } from 'react';
 import { useStore } from 'zustand';
 
-import type { CommandState, Installed, Opened } from '../contract.ts';
+import type { CommandState, Installed } from '../contract.ts';
 import { followLink as follow } from './actions.ts';
-import { openBox as openTheBox, openText } from './box.ts';
+import { openBox as openTheBox, openText, type OpenedHere } from './box.ts';
 import { checkCommand, commandStore, installCommand as install } from './command.ts';
 import { InstallResult as Result } from './InstallResult.tsx';
 
-export type { CommandState, Installed, Opened } from '../contract.ts';
+export type { CommandState, Installed } from '../contract.ts';
+export type { OpenedHere as Opened } from './box.ts';
 
 /** Opens the open box, with `text` in it, or else the pull request link on the clipboard, if any. */
 export function openBox(text?: string): void {
@@ -21,9 +22,9 @@ export function openBox(text?: string): void {
 /**
  * Opens `text` as the box does: a pull request in its tab, read only without signing in when it's
  * public and no account can see it; any other web link in the browser. Resolves with what it did,
- * or nothing when main couldn't be asked.
+ * a refusal with its reason in words, or nothing when main couldn't be asked.
  */
-export function openLink(text: string): Promise<Opened | undefined> {
+export function openLink(text: string): Promise<OpenedHere | undefined> {
   return openText(text);
 }
 

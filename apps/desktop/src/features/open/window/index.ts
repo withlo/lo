@@ -1,7 +1,6 @@
 import { handlers } from '@lo/ui/commands';
 import { createElement } from 'react';
 
-import { notify } from '../../../window/commands/notices.tsx';
 import type { WindowFeature } from '../../../window/features.ts';
 import { defineView } from '../../../window/slots.tsx';
 import { dialogs, header, kinds } from '../../tab/window/shared.ts';
@@ -12,6 +11,7 @@ import {
   focusFilter,
   openRow,
   pasteLink,
+  said,
   stepChosen,
 } from './actions.ts';
 import { openBox } from './box.ts';
@@ -51,6 +51,8 @@ export default {
   ],
   start() {
     // A link another app handed Lo that it couldn't open says why.
-    main().subscribe('refused', ({ message }) => notify('Open a link', message));
+    main().subscribe('refused', ({ why }) =>
+      said('Couldn’t open the link', { kind: 'refused', why }),
+    );
   },
 } satisfies WindowFeature;

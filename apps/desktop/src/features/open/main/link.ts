@@ -16,12 +16,21 @@ import {
   type PullSummary,
   type RepoAccount,
 } from '@lo/github';
-import { displayPullLink, parsePullLink, type PullLink } from '@lo/review';
+import { parsePullLink, type PullLink } from '@lo/review';
 
 import type { GithubAccess } from '../../accounts/service.ts';
 import type { PullState } from '../../tab/contract.ts';
 import type { TabService } from '../../tab/service.ts';
-import { TEXT_LIMIT, type Opened, type Preview } from '../contract.ts';
+import {
+  TEXT_LIMIT,
+  type Blocked,
+  type Cause,
+  type GithubPage,
+  type NotPull,
+  type Opened,
+  type Preview,
+  type Refusal,
+} from '../contract.ts';
 
 /** What reading a link needs of GitHub. */
 export type LinkGithub = Pick<GithubAccess, 'anonymous' | 'accounts' | 'client' | 'accountForRepo'>;
@@ -30,15 +39,16 @@ export type LinkGithub = Pick<GithubAccess, 'anonymous' | 'accounts' | 'client' 
 export type ReadLink =
   | { kind: 'empty' }
   | { kind: 'pull'; pull: PullLink }
-  /** A web link Lo doesn't show, with what it is, in words, and whether it's over `https`. */
-  | { kind: 'web'; url: string; title: string; message: string; secure: boolean }
-  | { kind: 'invalid'; message: string };
+  /**
+   * A web link Lo doesn't show: whether it's GitHub's, and which of its pages where the link says,
+   * and whether it's over `https`.
+   */
+  | { kind: 'web'; url: string; github: boolean; page: GithubPage | null; secure: boolean }
+  | { kind: 'invalid'; why: NotPull };
 
 /** A pull request's page, or one under it, on GitHub: its files, a commit, its checks. */
 const UNDER_A_PULL =
   /^(?:(?:https?|lo):\/\/)?((?:www\.)?github\.com)\/([^/?#]+)\/([^/?#]+)\/pull\/([0-9]+)(?:[/?#].*)?$/i;
-
-const EXAMPLE = 'https://github.com/owner/repo/pull/123';
 
 /**
  * Reads `text` as a link: a pull request on github.com, by its page or one under it, over
@@ -48,24 +58,12 @@ const EXAMPLE = 'https://github.com/owner/repo/pull/123';
 export function readLink(text: string): ReadLink {
   const trimmed = text.trim();
   if (trimmed === '') return { kind: 'empty' };
-  if (trimmed.length > TEXT_LIMIT) {
-    return { kind: 'invalid', message: 'That’s too long to be a link to a pull request.' };
-  }
+  if (trimmed.length > TEXT_LIMIT) return { kind: 'invalid', why: 'long' };
   const pull = readPull(trimmed);
   if (pull) return { kind: 'pull', pull };
-  if (/^lo:/i.test(trimmed)) {
-    return {
-      kind: 'invalid',
-      message: `Lo opens lo:// links to pull requests only, such as lo://github.com/owner/repo/pull/123.`,
-    };
-  }
+  if (/^lo:/i.test(trimmed)) return { kind: 'invalid', why: 'loLink' };
   const url = webUrl(trimmed);
-  if (!url) {
-    return {
-      kind: 'invalid',
-      message: `A pull request link looks like \`${EXAMPLE}\`.`,
-    };
-  }
+  if (!url) return { kind: 'invalid', why: 'link' };
   return { kind: 'web', url: url.href, ...describeWeb(url), secure: url.protocol === 'https:' };
 }
 
@@ -97,37 +95,25 @@ function webUrl(text: string): URL | undefined {
   return url;
 }
 
-/** What a web link that isn't a pull request is, in words, and that it goes to the browser. */
-function describeWeb(url: URL): { title: string; message: string } {
-  const host = url.hostname.toLowerCase();
-  if (host !== 'github.com' && host !== 'www.github.com') {
-    return {
-      title: 'That isn’t a link to GitHub',
-      message: 'Lo opens pull requests on github.com. This one goes to your browser.',
-    };
-  }
-  const [, , kind] = url.pathname.split('/').filter(Boolean);
-  const what: Readonly<Record<string, string>> = {
-    issues: 'an issue',
-    commit: 'a commit',
-    pulls: 'the list of pull requests',
-    tree: 'a folder',
-    blob: 'a file',
-    discussions: 'a discussion',
-    actions: 'a workflow',
-  };
-  const named = kind === undefined ? undefined : what[kind];
-  return {
-    title:
-      named === undefined ? 'That isn’t a pull request' : `That’s ${named}, not a pull request`,
-    message:
-      'Lo opens pull requests, and their files, commits and checks pages. This one goes to your browser.',
-  };
-}
+/** The pages of a repository on GitHub that a link names, by the part of its path that does. */
+const PAGES: Readonly<Record<string, GithubPage>> = {
+  issues: 'issue',
+  commit: 'commit',
+  pulls: 'pulls',
+  tree: 'folder',
+  blob: 'file',
+  discussions: 'discussion',
+  actions: 'workflow',
+};
 
-/** Why a link over plain `http` goes nowhere from the window. */
-const INSECURE =
-  'It’s http, not https, so Lo won’t hand it to your browser. Copy it, and open it yourself if you trust it.';
+/** What a web link that isn't a pull request is: one of GitHub's pages, which where it says, or not. */
+function describeWeb(url: URL): { github: boolean; page: GithubPage | null } {
+  const host = url.hostname.toLowerCase();
+  if (host !== 'github.com' && host !== 'www.github.com') return { github: false, page: null };
+  const [, , kind] = url.pathname.split('/').filter(Boolean);
+  const page = kind === undefined || !Object.hasOwn(PAGES, kind) ? undefined : PAGES[kind];
+  return { github: true, page: page ?? null };
+}
 
 /** A pull request's link as Lo writes one. */
 export function pullLink({ owner, repo, number }: PullLink): string {
@@ -187,7 +173,7 @@ export interface LinkOptions {
    * Hands a web link to the browser, or says why it didn't: as when Lo handed the same link to it
    * moments ago and it came back.
    */
-  readonly browse: (url: string) => Promise<string | undefined>;
+  readonly browse: (url: string) => Promise<Refusal | undefined>;
   /**
    * Whether only `https` links go to the browser, as for links from the window, which main can't
    * tell from links a page made up: the browser gets nothing over plain `http` from there.
@@ -209,19 +195,19 @@ export async function link(
   const read = readLink(text);
   switch (read.kind) {
     case 'empty':
-      return { kind: 'refused', message: 'There’s no link to open.' };
+      return { kind: 'refused', why: 'empty' };
     case 'invalid':
-      return { kind: 'refused', message: read.message };
+      return { kind: 'refused', why: read.why };
     case 'web': {
-      if (options.httpsOnly && !read.secure) return { kind: 'refused', message: INSECURE };
+      if (options.httpsOnly && !read.secure) return { kind: 'refused', why: 'insecure' };
       const refused = await options.browse(read.url);
-      return refused === undefined ? { kind: 'browser' } : { kind: 'refused', message: refused };
+      return refused === undefined ? { kind: 'browser' } : { kind: 'refused', why: refused };
     }
     case 'pull':
       break;
     default:
       read satisfies never;
-      return { kind: 'refused', message: 'Lo couldn’t read the link.' };
+      return { kind: 'refused', why: 'link' };
   }
   const { owner, repo, number } = read.pull;
   const pull = new PullRef(owner, repo, number);
@@ -281,81 +267,51 @@ export async function look(text: string, github: LinkGithub): Promise<Preview> {
     case 'empty':
       return { kind: 'empty' };
     case 'invalid':
-      return { kind: 'invalid', message: read.message };
+      return { kind: 'invalid', why: read.why };
     case 'web':
-      return read.secure
-        ? { kind: 'web', url: read.url, title: read.title, message: read.message, browse: true }
-        : {
-            kind: 'web',
-            url: read.url,
-            title: 'That link isn’t secure',
-            message: INSECURE,
-            browse: false,
-          };
+      return {
+        kind: 'web',
+        url: read.url,
+        github: read.github,
+        page: read.page,
+        secure: read.secure,
+      };
     case 'pull':
       return lookAtPull(read.pull, github);
     default:
       read satisfies never;
-      return { kind: 'invalid', message: 'Lo couldn’t read the link.' };
+      return { kind: 'invalid', why: 'link' };
   }
 }
 
 async function lookAtPull(named: PullLink, github: LinkGithub): Promise<Preview> {
   const { owner, repo, number } = named;
   const pull = new PullRef(owner, repo, number);
-  const name = displayPullLink(named);
-  const blocked = (
-    title: string,
-    message: string,
-    more: { links?: { label: string; url: string }[]; signIn?: boolean; openAnyway?: boolean },
-  ): Preview => ({
+  const blocked = (why: Blocked, details?: string): Preview => ({
     kind: 'blocked',
     owner,
     repo,
     number,
-    title,
-    message,
-    links: more.links ?? [],
-    signIn: more.signIn ?? false,
-    openAnyway: more.openAnyway ?? false,
+    why,
+    details: details ?? null,
   });
   let choice: Choice;
   try {
     choice = await choose(pull, github);
   } catch (error) {
-    return blocked(
-      `Lo couldn’t ask GitHub about ${name}`,
-      `${capitalized(describe(error))}. Open it, and Lo tries again by itself.`,
-      { openAnyway: true },
-    );
+    return blocked({ kind: 'unchecked', cause: causeOf(error, owner) }, describe(error));
   }
   switch (choice.kind) {
     case 'open': {
       const { acting } = choice;
       if (acting.kind === 'account') {
         const read = await readSummary(await github.client(acting.login), pull);
-        if (read.kind === 'missing') {
-          return blocked(
-            `GitHub has no pull request ${name}`,
-            `${acting.login} can see ${owner}/${repo}, which has no pull request #${number}.`,
-            {},
-          );
-        }
+        if (read.kind === 'missing') return blocked({ kind: 'missing' });
         return { kind: 'pull', owner, repo, number, as: acting, ...read.shown };
       }
       const read = await readSummary(github.anonymous, pull);
       if (read.kind === 'missing') {
-        return choice.found === undefined
-          ? blocked(
-              `GitHub has no public pull request ${name}`,
-              'If it’s private, sign in with an account that can see it.',
-              { signIn: true },
-            )
-          : blocked(
-              `None of your accounts can see ${owner}/${repo}`,
-              'It’s private, or it doesn’t exist. Sign in with an account that has access.',
-              { signIn: true },
-            );
+        return blocked({ kind: 'hidden', signedIn: choice.found !== undefined });
       }
       return { kind: 'pull', owner, repo, number, as: acting, ...read.shown };
     }
@@ -386,28 +342,58 @@ async function lookAtPull(named: PullLink, github: LinkGithub): Promise<Preview>
       const problems = found.problems.filter(
         ({ login }) => chosen === undefined || sameLogin(login, chosen),
       );
-      const restricted = problems.find(({ error }) => error.detail.kind === 'oauthAppRestricted');
-      if (restricted) {
-        const { detail } = restricted.error;
-        const org = (detail.kind === 'oauthAppRestricted' ? detail.org : undefined) ?? owner;
-        return blocked(
-          `${org} hasn’t approved Lo`,
-          `${org} restricts third-party apps, so GitHub hides its repositories from Lo. An owner has to approve Lo first: ask for it on GitHub, and GitHub emails ${org}’s owners.`,
-          { links: refusal.links, signIn: true },
-        );
-      }
-      const signedOut = problems.some(({ error }) => error.isUnauthorized());
+      // The cause that stops it: an organization's, where one stops it, since its link fixes it.
+      const first =
+        problems.find(({ error }) => error.helpLink() !== undefined) ??
+        problems.find(({ error }) => !error.isUnauthorized()) ??
+        problems[0];
+      const cause =
+        first === undefined
+          ? ({ kind: 'unknown' } as const)
+          : causeOf(first.error, owner, first.login);
       return blocked(
-        chosen === undefined
-          ? `Lo can’t open ${name} with your accounts`
-          : `${chosen} can’t check ${owner}/${repo} just now`,
+        { kind: 'refused', cause, links: refusal.links, openAnyway: refusal.waitable },
         refusal.message,
-        { links: refusal.links, signIn: signedOut, openAnyway: refusal.waitable },
       );
     }
     default:
       choice satisfies never;
-      return blocked(`Lo can’t open ${name}`, 'Lo couldn’t tell how to open it.', {});
+      return blocked({ kind: 'unknown' });
+  }
+}
+
+/**
+ * Why GitHub didn't answer, or refused, as the window words it: from the error, for a repository of
+ * `owner`, asked as `login` when an account was.
+ */
+export function causeOf(error: unknown, owner: string, login?: string): Cause {
+  if (!(error instanceof GithubError)) return { kind: 'unknown' };
+  const { detail } = error;
+  switch (detail.kind) {
+    case 'network':
+      return { kind: 'offline' };
+    case 'rateLimited':
+      return { kind: 'rateLimit', resets: detail.reset === undefined ? null : detail.reset * 1000 };
+    case 'unauthorized': {
+      const who = detail.missing ?? login;
+      return who === undefined ? { kind: 'unknown' } : { kind: 'signedOut', login: who };
+    }
+    case 'ssoRequired':
+      return { kind: 'sso', org: owner };
+    case 'oauthAppRestricted':
+      return { kind: 'unapproved', org: detail.org ?? owner };
+    case 'api':
+    case 'graphql':
+    case 'inconsistent':
+    case 'decode':
+      return { kind: 'github' };
+    case 'notFound':
+    case 'refusedUrl':
+    case 'tokenUnavailable':
+      return { kind: 'unknown' };
+    default:
+      detail satisfies never;
+      return { kind: 'unknown' };
   }
 }
 
@@ -443,10 +429,6 @@ function describe(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-function capitalized(text: string): string {
-  return text.slice(0, 1).toUpperCase() + text.slice(1);
-}
-
 /** How long a link handed to the browser counts as coming back, if Lo is given it again. */
 export const COMES_BACK_WITHIN = 10_000;
 
@@ -477,17 +459,13 @@ export class Browser {
    * Hands `url` to the browser, and answers nothing; or doesn't, and answers why. `fromOutside`
    * says another app gave Lo the link.
    */
-  async hand(url: string, { fromOutside }: { fromOutside: boolean }): Promise<string | undefined> {
+  async hand(url: string, { fromOutside }: { fromOutside: boolean }): Promise<Refusal | undefined> {
     const now = this.#now();
     for (const [sent, at] of this.#sent) {
       if (now - at > COMES_BACK_WITHIN) this.#sent.delete(sent);
     }
-    if (this.#isDefault()) {
-      return 'Lo is your default browser, so it can’t hand this link on. Choose another default browser in the system’s settings.';
-    }
-    if (fromOutside && this.#sent.has(url)) {
-      return 'Lo handed this link to your browser, and it came straight back. If a link router sends links to Lo, check that it sends Lo only pull requests.';
-    }
+    if (this.#isDefault()) return 'defaultBrowser';
+    if (fromOutside && this.#sent.has(url)) return 'cameBack';
     this.#sent.set(url, now);
     await this.#open(url);
     return undefined;

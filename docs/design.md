@@ -177,20 +177,20 @@ builds from the version, never from the feed. How a copy takes a newer version i
 it runs, as it starts and again for each offer:
 
 - **Lo installs it,** on a Mac, from an Applications folder it can write. Nothing downloads until
-  you press "Install". The release's zip has its SHA-512 checked against `latest-mac.yml`, then goes
+  you press "Update". The release's zip has its SHA-512 checked against `latest-mac.yml`, then goes
   to Squirrel.Mac, which installs it only if it's signed by the running Lo's team and bundle ID. It
-  installs when Lo quits, or when you press "Restart now", which quits Lo as any quit does, so each
-  feature stops first.
+  installs when Lo quits, or when you press "Restart to update", which quits Lo as any quit does, so
+  each feature stops first.
 - **Homebrew updates it,** where Lo is in an Applications folder and Homebrew keeps a `lo` cask
   (`/opt/homebrew/Caskroom/lo` or `/usr/local/Caskroom/lo` exists). Lo never replaces such a copy,
   which would leave Homebrew's record of it wrong. The toast gives
-  `brew upgrade --cask withlo/tap/lo`, with a "Copy" button, and "What's new" and "Later".
+  `brew upgrade --cask withlo/tap/lo`, with a "Copy" button, and "What's new" and "Hide".
 - **Lo moves first,** on a Mac, from the disk image, a translocated download or any folder but an
-  Applications one. "Move to Applications" moves it there and starts it from there, asking before it
-  replaces a Lo that's already there.
+  Applications one. "Move Lo to Applications" moves it there and starts it from there, asking before
+  it replaces a Lo that's already there.
 - **Lo tells you and links the release page,** on Linux, and on a Mac where Lo can't write its own
-  folder. "Download" opens the page, and you install the new package or app yourself: Lo never runs
-  a package manager.
+  folder. "Download update" opens the page, and you install the new package or app yourself: Lo
+  never runs a package manager.
 
 ### Build order
 

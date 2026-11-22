@@ -67,8 +67,8 @@ async function accountIn(page: Page): Promise<void> {
     .toContain('rozed-bot');
 }
 
-const box = (page: Page) => page.getByRole('dialog', { name: 'Review a pull request' });
-const input = (page: Page) => box(page).getByRole('combobox', { name: 'Review a pull request' });
+const box = (page: Page) => page.getByRole('dialog', { name: 'Open pull request' });
+const input = (page: Page) => box(page).getByRole('combobox', { name: 'Open pull request' });
 const heading = (page: Page) => page.getByRole('heading', { level: 1 });
 const header = (page: Page) => page.locator('header').first();
 const toast = (page: Page, text: string) => page.getByRole('status').filter({ hasText: text });
@@ -87,20 +87,21 @@ test('says what a link it doesn’t open is, and sends a web link to the browser
 
   await test.step('says what a link it doesn’t open is, and sends a web link to the browser', async () => {
     await type(page, 'https://github.com/rozed-dev/e2e/issues/12');
-    await expect(box(page)).toContainText('That’s an issue, not a pull request');
-    await expect(box(page)).toContainText('Open in the browser');
+    await expect(box(page)).toContainText('This link is to an issue');
+    await expect(box(page)).toContainText('Open on GitHub');
     await page.keyboard.press('Enter');
     await expect(box(page)).toBeHidden();
     await expect.poll(browsed).toEqual(['https://github.com/rozed-dev/e2e/issues/12']);
 
     await type(page, 'rozed-dev/e2e#80');
-    await expect(box(page)).toContainText('That isn’t a link Lo opens');
+    await expect(box(page)).toContainText('Not a pull request link');
     await page.keyboard.press('Enter');
     await expect(box(page)).toBeVisible();
 
     await input(page).fill('https://github.com/rozed-dev/gone/pull/1');
-    await expect(box(page)).toContainText('None of your accounts can see rozed-dev/gone');
-    await expect(box(page).getByRole('button', { name: 'Add an account' })).toBeVisible();
+    await expect(box(page)).toContainText('Can’t open rozed-dev/gone#1');
+    await expect(box(page)).toContainText('It doesn’t exist, or none of your accounts can see it.');
+    await expect(box(page).getByRole('button', { name: 'Sign in with GitHub…' })).toBeVisible();
     await page.keyboard.press('Escape');
     await expect(box(page)).toBeHidden();
     expect(browsed()).toHaveLength(1);
@@ -135,7 +136,7 @@ test.describe('without an account', () => {
   test('opens a public pull request read only, unpolled and not in Recent', async ({ page }) => {
     await expect(page.getByText('No pull requests yet')).toBeVisible();
     await type(page, E2E);
-    await expect(box(page).getByRole('option')).toContainText('read only, without signing in');
+    await expect(box(page).getByRole('option')).toContainText('Read only');
     await page.keyboard.press('Enter');
 
     await expect(heading(page)).toHaveText(TITLE);
@@ -184,7 +185,9 @@ test('opens lo:// links and a second launch’s links as a typed link, and says 
     await expect(heading(page)).toHaveText(TITLE);
 
     await openUrl(app, 'lo://github.com/rozed-dev/e2e/issues/12');
-    await expect(toast(page, 'lo:// links to pull requests only')).toBeVisible();
+    await expect(toast(page, 'Not a pull request link')).toContainText(
+      'A pull request link looks like lo://github.com/owner/repo/pull/123.',
+    );
     expect(browsed()).toEqual([]);
 
     // A second launch's switches are never taken, nor anything but links.
@@ -213,7 +216,7 @@ test('opens lo:// links and a second launch’s links as a typed link, and says 
       const labels = await app.evaluate(({ Menu }) =>
         (Menu.getApplicationMenu()?.items[0]?.submenu?.items ?? []).map((item) => item.label),
       );
-      expect(labels).toContain('Install command-line tool');
+      expect(labels).toContain('Install lo command');
     }
     const reply = await page.evaluate(() => window.lo.invoke('open.installCommand'));
     const lo = join(test.info().outputPath('bin'), 'lo');
@@ -324,7 +327,7 @@ test('fills the box from the clipboard, and never takes anything else on it', as
   );
   await page.keyboard.press(cmd('L'));
   await expect(input(page)).toHaveValue(E2E);
-  await expect(box(page)).toContainText('from clipboard');
+  await expect(box(page)).toContainText('From clipboard');
   await expect(box(page).getByRole('option')).toContainText('as rozed-bot');
   await page.keyboard.press('Escape');
 

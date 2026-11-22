@@ -197,7 +197,11 @@ function main(given: Readonly<Record<string, (input: unknown) => unknown>> = {})
     {
       'welcome.state': () => ({ finished: false }),
       'welcome.finish': () => undefined,
-      'accounts.ghAccounts': () => ({ kind: 'missing', message: 'Lo found no gh.' }),
+      'accounts.ghAccounts': () => ({
+        kind: 'missing',
+        message: 'Lo found no gh.',
+        passedOver: false,
+      }),
       'open.command': () => ({ installed: [] }),
       'app.info': () => ({ git: { status: 'found', version: '2.54.0' }, nonce: '' }),
     },
@@ -759,17 +763,17 @@ describe('the set-up step', () => {
     const row = () => onScreen().querySelector('ul > li');
     click(button('Install', onScreen()));
     await settle();
-    expect(row()?.textContent).toContain('Add /opt/lo/bin to your PATH.');
+    expect(row()?.textContent).toContain('Add /opt/lo/bin to PATH.');
     const code = [...(row()?.querySelectorAll('.code-small') ?? [])].map(
       (each) => each.textContent,
     );
     expect(code).toContain('/opt/lo/bin');
-    answer = { kind: 'failed', message: 'EACCES: permission denied' };
+    answer = { kind: 'failed', why: 'unwritable', details: '/opt/lo/bin/lo\nEACCES' };
     click(button('Install', row() ?? document));
     await settle();
-    expect(row()?.querySelector('[role="alert"]')?.textContent).toBe(
-      'Couldn’t install the lo command',
-    );
+    const alert = row()?.querySelector('[role="alert"]');
+    expect(alert?.querySelector('p')?.textContent).toBe('Couldn’t install the lo command');
+    expect(alert?.textContent).toContain('The lo file can’t be written.');
     expect(button('Try again', row() ?? document)).toBeDefined();
     expect(notices()).toEqual([]);
   });
@@ -823,7 +827,7 @@ describe('opening a pull request', () => {
 
   it('says why a link didn’t open, keeps it, and stays', async () => {
     await first({
-      'open.open': () => ({ kind: 'refused', message: 'That isn’t a link Lo opens.' }),
+      'open.open': () => ({ kind: 'refused', why: 'link' }),
     });
     await goTo('open');
     const field = type('owner/repo#1');
@@ -831,7 +835,7 @@ describe('opening a pull request', () => {
     await settle();
     const alert = onScreen().querySelector('[role="alert"]');
     expect(alert?.querySelector('p')?.textContent).toBe('Couldn’t open the link');
-    expect(alert?.textContent).toContain('That isn’t a link Lo opens.');
+    expect(alert?.textContent).toContain('A pull request link looks like');
     expect(field.getAttribute('aria-invalid')).toBe('true');
     expect(field.value).toBe('owner/repo#1');
     expect(stepOnScreen()).toBe('open');

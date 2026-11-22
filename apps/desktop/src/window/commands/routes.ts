@@ -4,7 +4,6 @@
 // route check fails on a listing that's out of date and on any new command with no route.
 
 export const WITHOUT_ROUTE: readonly string[] = [
-  'accounts.copyCode',
   'app.quit',
   'app.fullScreen',
   'code.nextAnswer',
@@ -43,10 +42,6 @@ export const WITHOUT_ROUTE: readonly string[] = [
   'merge.override',
   'merge.close',
   'merge.leaveCommit',
-  'open.filter',
-  'open.openRecent',
-  'open.nextRecent',
-  'open.previousRecent',
   'overview.nextBlock',
   'overview.previousBlock',
   'overview.closeBeside',

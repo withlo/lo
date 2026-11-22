@@ -23,6 +23,7 @@ const defaults: Record<string, (input: unknown) => unknown> = {
   'updates.restart': () => undefined,
   'updates.later': () => undefined,
   'updates.move': () => undefined,
+  'tab.openExternal': () => undefined,
   'app.info': () => ({ version: '0.1.0' }),
 };
 let answers = { ...defaults };
@@ -76,20 +77,36 @@ describe('Check for updates', () => {
   it('asks main to check, and says so in a note when nothing newer is out', async () => {
     await run('updates.check');
     expect(requests()).toEqual([['updates.check', undefined]]);
-    expect(notice()).toEqual({ title: 'Lo 0.1.0 is the newest version.', body: '', done: true });
+    expect(notice()).toEqual({ title: 'No update available', body: '', done: true });
   });
 
   it('says why when Lo couldn’t check, with the reason', async () => {
     answers['updates.check'] = (): CheckAnswer => ({
       status: 'failed',
-      reason:
-        'Lo couldn’t reach GitHub (ERR_INTERNET_DISCONNECTED). Check your connection, then try again.',
+      why: 'offline',
+      details: 'ERR_INTERNET_DISCONNECTED',
     });
     await run('updates.check');
-    expect(notice()).toEqual({
-      title: 'Lo couldn’t check for updates',
-      body: 'Lo couldn’t reach GitHub (ERR_INTERNET_DISCONNECTED). Check your connection, then try again.',
+    expect(notice()).toMatchObject({ title: 'Couldn’t check for updates', body: 'Offline.' });
+    expect(notice()?.action?.label).toBe('Try again');
+  });
+
+  it('offers Lo’s releases on GitHub where this copy can’t check, as a build from source', async () => {
+    answers['updates.check'] = (): CheckAnswer => ({ status: 'failed', why: 'source' });
+    await run('updates.check');
+    expect(notice()).toMatchObject({
+      title: 'Can’t check for updates',
+      body: 'This copy of Lo is built from source.',
     });
+    expect(notice()?.action?.label).toBe('Open on GitHub');
+    bridge.calls.length = 0;
+    await act(async () => {
+      notice()?.action?.onClick();
+      await Promise.resolve();
+    });
+    expect(bridge.calls).toEqual([
+      ['tab.openExternal', { url: 'https://github.com/withlo/lo/releases' }],
+    ]);
   });
 
   it('says why when main refused, or couldn’t be asked', async () => {
@@ -97,15 +114,13 @@ describe('Check for updates', () => {
       throw new IpcError('unavailable', 'Lo hasn’t started checking for updates yet.');
     };
     await run('updates.check');
-    expect(notice()).toEqual({
-      title: 'Lo couldn’t check for updates',
-      body: 'Lo hasn’t started checking for updates yet.',
-    });
+    expect(notice()).toMatchObject({ title: 'Couldn’t check for updates', body: '' });
+    expect(notice()?.action?.label).toBe('Try again');
     answers['updates.check'] = () => {
       throw new Error('boom');
     };
     await run('updates.check');
-    expect(notice()?.body).toBe('Lo couldn’t ask for it. Try again.');
+    expect(notice()).toMatchObject({ title: 'Couldn’t check for updates', body: '' });
   });
 
   it('leaves a newer Lo, one downloading and one ready to their toasts, with no note', async () => {
@@ -136,7 +151,7 @@ describe('Check for updates', () => {
       await Promise.resolve();
     });
     expect(updatesStore.getState().checking).toBe(false);
-    expect(notice()?.title).toBe('Lo 0.1.0 is the newest version.');
+    expect(notice()?.title).toBe('No update available');
     // Once it's over, the next is asked for as usual.
     answers['updates.check'] = defaults['updates.check'] ?? (() => undefined);
     await run('updates.check');
@@ -154,20 +169,27 @@ describe('the other commands', () => {
   };
 
   it.each([
-    ['updates.install', 'Lo couldn’t install the update'],
-    ['updates.restart', 'Lo couldn’t restart to update'],
-    ['updates.move', 'Lo couldn’t move to Applications'],
-    ['updates.later', 'Lo couldn’t hide the update'],
-  ])('%s asks main for it alone, and says why when main refuses', async (id, title) => {
+    ['updates.install', 'Couldn’t update Lo'],
+    ['updates.restart', 'Couldn’t restart Lo'],
+    ['updates.move', 'Couldn’t move Lo to Applications'],
+    ['updates.later', 'Couldn’t hide the update'],
+  ])('%s asks main for it alone, and says why when main refuses or it fails', async (id, title) => {
     act(() => showState(WHEN[id] ?? OFFER));
     await run(id);
     expect(requests()).toEqual([[id, undefined]]);
     expect(notice()).toBeUndefined();
+    // Refused as not applying now: the reason alone.
     answers[id] = () => {
-      throw new IpcError('unavailable', 'There’s no update to install.');
+      throw new IpcError('unavailable', 'No update available');
     };
     await run(id);
-    expect(notice()).toEqual({ title, body: 'There’s no update to install.' });
+    expect(notice()).toEqual({ title: 'No update available', body: '' });
+    // Failed: what failed.
+    answers[id] = () => {
+      throw new IpcError('failed', 'Failed to copy Lo.app');
+    };
+    await run(id);
+    expect(notice()).toEqual({ title, body: '' });
   });
 
   it('never ask for more than they say: no command installs or restarts but its own', async () => {
@@ -176,9 +198,6 @@ describe('the other commands', () => {
     // Hiding applies to an offer, not to an update that's ready: it's refused before main hears.
     await run('updates.later');
     expect(requests().map(([channel]) => channel)).toEqual(['updates.check']);
-    expect(notice()).toEqual({
-      title: 'Lo 0.2.0 is ready. It installs when you quit, or now.',
-      body: '',
-    });
+    expect(notice()).toEqual({ title: 'Lo 0.2.0 is ready', body: '' });
   });
 });

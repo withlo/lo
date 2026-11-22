@@ -30,7 +30,7 @@ function main(state: CommandState, done?: Installed): void {
 
 /** The row, as Settings draws it. */
 async function render(): Promise<HTMLElement> {
-  commandStore.setState({ state: undefined, installing: false, said: undefined, done: null });
+  commandStore.setState({ state: undefined, installing: false, done: null });
   const host = document.createElement('div');
   document.body.append(host);
   const root = createRoot(host);
@@ -73,7 +73,7 @@ it('shows how an install the row asked for went on the row, and nowhere else', a
   await act(async () => {
     await installCommand('row');
   });
-  expect(host.textContent).toContain('Add /opt/bin to your PATH.');
+  expect(host.textContent).toContain('Add /opt/bin to PATH.');
   expect(notice()).toBeUndefined();
   main({ installed: [] }, { kind: 'taken', path: '/opt/bin/lo' });
   await act(async () => {
@@ -82,6 +82,12 @@ it('shows how an install the row asked for went on the row, and nowhere else', a
   expect(host.textContent).toContain('Couldn’t install the lo command');
   expect(host.textContent).toContain('Another lo file is already there.');
   expect(notice()).toBeUndefined();
+  main({ installed: [] }, { kind: 'failed', why: 'unwritable', details: '/opt/bin/lo\nEACCES' });
+  await act(async () => {
+    await installCommand('row');
+  });
+  expect(host.textContent).toContain('The lo file can’t be written.');
+  expect(host.querySelector('button[aria-expanded]')?.textContent).toContain('Details');
 });
 
 it('says how an install a command asked for went in a note, and not on the row too', async () => {
@@ -90,6 +96,18 @@ it('says how an install a command asked for went in a note, and not on the row t
   await act(async () => {
     await installCommand();
   });
-  expect(notice()?.body).toContain('/opt/bin/lo');
+  expect(notice()).toMatchObject({
+    title: 'Couldn’t install the `lo` command',
+    body: 'Another `lo` file is already there.',
+  });
   expect(host.textContent).not.toContain('Couldn’t install the lo command');
+  main({ installed: [] }, { kind: 'installed', path: '/opt/bin/lo', onPath: false });
+  await act(async () => {
+    await installCommand();
+  });
+  expect(notice()).toEqual({
+    title: 'Installed `lo` command',
+    body: 'Add `/opt/bin` to `PATH`.',
+    done: true,
+  });
 });

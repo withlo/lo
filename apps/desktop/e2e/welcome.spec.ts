@@ -340,7 +340,7 @@ test.describe('with GitHub CLI', () => {
     await importing.focus();
     await page.keyboard.press('Enter');
     const dialog = page.getByTestId('import-gh');
-    await expect(dialog).toContainText('is signed in to 2 accounts');
+    await expect(dialog).toContainText('GitHub CLI 2.103.3 · 2 accounts');
     await expect(page.getByTestId('sign-in')).toHaveCount(0);
     await dialog.getByRole('button', { name: /^Import 2 accounts/ }).click();
     await expect(dialog).toContainText('Imported 1 account');

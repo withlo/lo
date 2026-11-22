@@ -34,7 +34,8 @@ export function barItems(registry: Registry, target: Target, blocked = false): B
     return [
       {
         id: command.id,
-        label: command.label,
+        // A menu can't set code apart, so a name that's code in a label goes in plainly.
+        label: command.label.replaceAll('`', ''),
         menu: command.bar.menu,
         order: command.bar.order,
         ...(key ? { key } : {}),

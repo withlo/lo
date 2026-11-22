@@ -100,7 +100,7 @@ Each command's id is what [the keymap file](#the-keymap-file) binds keys to.
 
 | Action                                    | Keys                              | Where                                                               | Command                       |
 | ----------------------------------------- | --------------------------------- | ------------------------------------------------------------------- | ----------------------------- |
-| Copy the sign-in code                     | `y y`                             | In `dialog`                                                         | `accounts.copyCode`           |
+| Copy sign-in code                         | `y y`                             | In `dialog`                                                         | `accounts.copyCode`           |
 | Whole file at the cursor                  | `g f`                             | In `diff`; in code views, only in normal mode                       | `diff.wholeFile`              |
 | Copy the lines                            | `y y`                             | In `diff` and `file`; in code views, only in normal and visual mode | `diff.copyLines`              |
 | Copy the line's link                      | `y l`                             | In `diff` and `file`; in code views, only in normal mode            | `diff.copyLink`               |
@@ -141,20 +141,20 @@ Each command's id is what [the keymap file](#the-keymap-file) binds keys to.
 
 ## Find
 
-| Action                         | Keys                    | Where                               | Command                |
-| ------------------------------ | ----------------------- | ----------------------------------- | ---------------------- |
-| Search                         | `/`                     | Vim's own key, in code views        | `diff.search`          |
-| Next match                     | `n`                     | Vim's own key, in code views        | `diff.nextMatch`       |
-| Previous match                 | `N`                     | Vim's own key, in code views        | `diff.previousMatch`   |
-| Command palette                | `⌘⇧P`                   | Anywhere                            | `keys.palette`         |
-| Review a pull request          | `⌘L`, `⌘O` (macOS only) | Anywhere but `dialog` and `palette` | `open.box`             |
-| Open the link on the clipboard | `⌘V`                    | In `recent`                         | `open.paste`           |
-| Filter recent pull requests    | `/`                     | In `recent`                         | `open.filter`          |
-| Clear filter                   | `⌘⌫`                    | In `recent`                         | `open.clearFilter`     |
-| Open the pull request          | `⏎`                     | In `recent`                         | `open.openRecent`      |
-| Search settings                | `/`, `⌘F`               | In `settings` and `noMatch`         | `settings.search`      |
-| Clear search                   | `⌘⌫`                    | In `noMatch`                        | `settings.clearSearch` |
-| Go to a file                   | `⌘P`                    | Anywhere but `dialog` and `palette` | `tree.find`            |
+| Action                | Keys                    | Where                               | Command                |
+| --------------------- | ----------------------- | ----------------------------------- | ---------------------- |
+| Search                | `/`                     | Vim's own key, in code views        | `diff.search`          |
+| Next match            | `n`                     | Vim's own key, in code views        | `diff.nextMatch`       |
+| Previous match        | `N`                     | Vim's own key, in code views        | `diff.previousMatch`   |
+| Command palette       | `⌘⇧P`                   | Anywhere                            | `keys.palette`         |
+| Open pull request…    | `⌘L`, `⌘O` (macOS only) | Anywhere but `dialog` and `palette` | `open.box`             |
+| Paste link            | `⌘V`                    | In `recent`                         | `open.paste`           |
+| Filter pull requests… | `/`                     | In `recent`                         | `open.filter`          |
+| Clear filter          | `⌘⌫`                    | In `recent`                         | `open.clearFilter`     |
+| Open pull request     | `⏎`                     | In `recent`                         | `open.openRecent`      |
+| Search settings       | `/`, `⌘F`               | In `settings` and `noMatch`         | `settings.search`      |
+| Clear search          | `⌘⌫`                    | In `noMatch`                        | `settings.clearSearch` |
+| Go to a file          | `⌘P`                    | Anywhere but `dialog` and `palette` | `tree.find`            |
 
 ## View
 
@@ -302,48 +302,48 @@ mode. In the box's preview, or on its frame, `Esc` closes it at once, from any m
 
 ## Tabs and window
 
-| Action                            | Keys                                                     | Where                                                                                  | Command                 |
-| --------------------------------- | -------------------------------------------------------- | -------------------------------------------------------------------------------------- | ----------------------- |
-| Sign in with GitHub…              | None: in the app menu on macOS and the palette           | Anywhere                                                                               | `accounts.addAccount`   |
-| Sign out…                         | None: in the app menu on macOS and the palette           | Anywhere                                                                               | `accounts.signOut`      |
-| Zoom in                           | `⌘=`, `⌘⇧=`                                              | Anywhere                                                                               | `app.zoomIn`            |
-| Zoom out                          | `⌘-`                                                     | Anywhere                                                                               | `app.zoomOut`           |
-| Reset zoom                        | `⌘0`                                                     | Anywhere                                                                               | `app.actualSize`        |
-| Show licenses                     | None: in the app menu on macOS, its menu and the palette | Anywhere                                                                               | `app.licenses`          |
-| Every key                         | `?`                                                      | Anywhere                                                                               | `keys.help`             |
-| Show the right-click menu         | `Menu`, `⇧F10`                                           | Anywhere but `menu`, `dialog` and `palette`                                            | `keys.menu`             |
-| Back to the middle view           | `Esc`                                                    | Anywhere but `menu`, `dialog`, `palette` and `box`; in code views, only in normal mode | `keys.escape`           |
-| Open the keymap file              | `g ,`                                                    | Anywhere but `menu`, `dialog`, `palette` and `box`; in code views, only in normal mode | `keys.openKeymap`       |
-| Install command-line tool         | None: in the app menu on macOS and the palette           | Anywhere                                                                               | `open.installCommand`   |
-| Install overview skill            | None: in the app menu on macOS and the palette           | Anywhere                                                                               | `overview.installSkill` |
-| Settings                          | `⌘,`                                                     | Anywhere but `dialog` and `palette`                                                    | `settings.open`         |
-| Open settings.json                | `g .`                                                    | Anywhere but `menu`, `dialog`, `palette` and `box`; in code views, only in normal mode | `settings.openFile`     |
-| Show cache folder                 | `g c`                                                    | In `settings`                                                                          | `settings.showCache`    |
-| Tab 1                             | `⌘1`                                                     | Anywhere but `dialog` and `palette`                                                    | `tab.show1`             |
-| Tab 2                             | `⌘2`                                                     | Anywhere but `dialog` and `palette`                                                    | `tab.show2`             |
-| Tab 3                             | `⌘3`                                                     | Anywhere but `dialog` and `palette`                                                    | `tab.show3`             |
-| Tab 4                             | `⌘4`                                                     | Anywhere but `dialog` and `palette`                                                    | `tab.show4`             |
-| Tab 5                             | `⌘5`                                                     | Anywhere but `dialog` and `palette`                                                    | `tab.show5`             |
-| Tab 6                             | `⌘6`                                                     | Anywhere but `dialog` and `palette`                                                    | `tab.show6`             |
-| Tab 7                             | `⌘7`                                                     | Anywhere but `dialog` and `palette`                                                    | `tab.show7`             |
-| Tab 8                             | `⌘8`                                                     | Anywhere but `dialog` and `palette`                                                    | `tab.show8`             |
-| Last tab                          | `⌘9`                                                     | Anywhere but `dialog` and `palette`                                                    | `tab.showLast`          |
-| Next tab                          | `⌘⇧]`, `⌃⇥`                                              | Anywhere but `dialog` and `palette`                                                    | `tab.next`              |
-| Previous tab                      | `⌘⇧[`, `⌃⇧⇥`                                             | Anywhere but `dialog` and `palette`                                                    | `tab.previous`          |
-| Move tab left                     | `⌃⇧PgUp`                                                 | Anywhere but `dialog` and `palette`                                                    | `tab.moveLeft`          |
-| Move tab right                    | `⌃⇧PgDn`                                                 | Anywhere but `dialog` and `palette`                                                    | `tab.moveRight`         |
-| Tabs that don’t fit               | `⌘⇧A`                                                    | Anywhere but `dialog`, `palette` and `box`                                             | `tab.more`              |
-| Close tab                         | `⌘W`                                                     | Anywhere but `dialog` and `palette`                                                    | `tab.close`             |
-| Check for updates                 | None: in the app menu on macOS and the palette           | Anywhere                                                                               | `updates.check`         |
-| Install the update                | None: in the app menu on macOS and the palette           | Anywhere                                                                               | `updates.install`       |
-| Restart to update                 | None: in the app menu on macOS and the palette           | Anywhere                                                                               | `updates.restart`       |
-| Move Lo to Applications           | None: in the app menu on macOS and the palette           | Anywhere                                                                               | `updates.move`          |
-| Hide the update until Lo restarts | None: in the app menu on macOS and the palette           | Anywhere                                                                               | `updates.later`         |
-| Open what’s new in the update     | None: in the app menu on macOS and the palette           | Anywhere                                                                               | `updates.whatsNew`      |
-| Download the update from its page | None: in the app menu on macOS and the palette           | Anywhere                                                                               | `updates.download`      |
-| Copy the Homebrew update command  | None: in the app menu on macOS and the palette           | Anywhere                                                                               | `updates.copy`          |
-| Go to the update                  | None: in the app menu on macOS and the palette           | Anywhere                                                                               | `updates.focus`         |
-| Welcome to Lo                     | None: in the app menu on macOS and the palette           | Anywhere                                                                               | `welcome.show`          |
+| Action                    | Keys                                                     | Where                                                                                  | Command                 |
+| ------------------------- | -------------------------------------------------------- | -------------------------------------------------------------------------------------- | ----------------------- |
+| Sign in with GitHub…      | None: in the app menu on macOS and the palette           | Anywhere                                                                               | `accounts.addAccount`   |
+| Sign out…                 | None: in the app menu on macOS and the palette           | Anywhere                                                                               | `accounts.signOut`      |
+| Zoom in                   | `⌘=`, `⌘⇧=`                                              | Anywhere                                                                               | `app.zoomIn`            |
+| Zoom out                  | `⌘-`                                                     | Anywhere                                                                               | `app.zoomOut`           |
+| Reset zoom                | `⌘0`                                                     | Anywhere                                                                               | `app.actualSize`        |
+| Show licenses             | None: in the app menu on macOS, its menu and the palette | Anywhere                                                                               | `app.licenses`          |
+| Every key                 | `?`                                                      | Anywhere                                                                               | `keys.help`             |
+| Show the right-click menu | `Menu`, `⇧F10`                                           | Anywhere but `menu`, `dialog` and `palette`                                            | `keys.menu`             |
+| Back to the middle view   | `Esc`                                                    | Anywhere but `menu`, `dialog`, `palette` and `box`; in code views, only in normal mode | `keys.escape`           |
+| Open the keymap file      | `g ,`                                                    | Anywhere but `menu`, `dialog`, `palette` and `box`; in code views, only in normal mode | `keys.openKeymap`       |
+| Install `lo` command      | None: in the app menu on macOS and the palette           | Anywhere                                                                               | `open.installCommand`   |
+| Install overview skill    | None: in the app menu on macOS and the palette           | Anywhere                                                                               | `overview.installSkill` |
+| Settings                  | `⌘,`                                                     | Anywhere but `dialog` and `palette`                                                    | `settings.open`         |
+| Open settings.json        | `g .`                                                    | Anywhere but `menu`, `dialog`, `palette` and `box`; in code views, only in normal mode | `settings.openFile`     |
+| Show cache folder         | `g c`                                                    | In `settings`                                                                          | `settings.showCache`    |
+| Tab 1                     | `⌘1`                                                     | Anywhere but `dialog` and `palette`                                                    | `tab.show1`             |
+| Tab 2                     | `⌘2`                                                     | Anywhere but `dialog` and `palette`                                                    | `tab.show2`             |
+| Tab 3                     | `⌘3`                                                     | Anywhere but `dialog` and `palette`                                                    | `tab.show3`             |
+| Tab 4                     | `⌘4`                                                     | Anywhere but `dialog` and `palette`                                                    | `tab.show4`             |
+| Tab 5                     | `⌘5`                                                     | Anywhere but `dialog` and `palette`                                                    | `tab.show5`             |
+| Tab 6                     | `⌘6`                                                     | Anywhere but `dialog` and `palette`                                                    | `tab.show6`             |
+| Tab 7                     | `⌘7`                                                     | Anywhere but `dialog` and `palette`                                                    | `tab.show7`             |
+| Tab 8                     | `⌘8`                                                     | Anywhere but `dialog` and `palette`                                                    | `tab.show8`             |
+| Last tab                  | `⌘9`                                                     | Anywhere but `dialog` and `palette`                                                    | `tab.showLast`          |
+| Next tab                  | `⌘⇧]`, `⌃⇥`                                              | Anywhere but `dialog` and `palette`                                                    | `tab.next`              |
+| Previous tab              | `⌘⇧[`, `⌃⇧⇥`                                             | Anywhere but `dialog` and `palette`                                                    | `tab.previous`          |
+| Move tab left             | `⌃⇧PgUp`                                                 | Anywhere but `dialog` and `palette`                                                    | `tab.moveLeft`          |
+| Move tab right            | `⌃⇧PgDn`                                                 | Anywhere but `dialog` and `palette`                                                    | `tab.moveRight`         |
+| Tabs that don’t fit       | `⌘⇧A`                                                    | Anywhere but `dialog`, `palette` and `box`                                             | `tab.more`              |
+| Close tab                 | `⌘W`                                                     | Anywhere but `dialog` and `palette`                                                    | `tab.close`             |
+| Check for updates         | None: in the app menu on macOS and the palette           | Anywhere                                                                               | `updates.check`         |
+| Update Lo                 | None: in the app menu on macOS and the palette           | Anywhere                                                                               | `updates.install`       |
+| Restart to update         | None: in the app menu on macOS and the palette           | Anywhere                                                                               | `updates.restart`       |
+| Move Lo to Applications   | None: in the app menu on macOS and the palette           | Anywhere                                                                               | `updates.move`          |
+| Hide update               | None: in the app menu on macOS and the palette           | Anywhere                                                                               | `updates.later`         |
+| What’s new                | None: in the app menu on macOS and the palette           | Anywhere                                                                               | `updates.whatsNew`      |
+| Download update           | None: in the app menu on macOS and the palette           | Anywhere                                                                               | `updates.download`      |
+| Copy Homebrew command     | None: in the app menu on macOS and the palette           | Anywhere                                                                               | `updates.copy`          |
+| Go to update              | None: in the app menu on macOS and the palette           | Anywhere                                                                               | `updates.focus`         |
+| Welcome to Lo             | None: in the app menu on macOS and the palette           | Anywhere                                                                               | `welcome.show`          |
 
 ## Where keys apply
 
@@ -434,7 +434,7 @@ These keys are on one system only:
 | Quit Lo                 | `Ctrl+Q`                                       | Linux | Anywhere                            | `app.quit`       |
 | Full screen             | `F11`                                          | Linux | Anywhere                            | `app.fullScreen` |
 | About Lo                | None: in its menu and the palette              | Linux | Anywhere                            | `app.about`      |
-| Review a pull request   | `⌘O`                                           | macOS | Anywhere but `dialog` and `palette` | `open.box`       |
+| Open pull request…      | `⌘O`                                           | macOS | Anywhere but `dialog` and `palette` | `open.box`       |
 | Move Lo to Applications | None: in the app menu on macOS and the palette | macOS | Anywhere                            | `updates.move`   |
 
 On Linux, in a comment box in insert mode, and in a field inside a code view such as Vim's search,

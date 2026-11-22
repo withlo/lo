@@ -142,24 +142,24 @@ whenever you ask: "Check for updates" in the command palette (and, on a Mac, the
 now" in Settings, or "Get a newer Lo" on the overview. It asks GitHub alone, and no id of your copy
 goes with the request. To stop the checks Lo makes by itself, turn off "Check for updates by itself"
 in Settings, or `updates.check` in [`settings.json`](docs/settings.md). A build from source doesn't
-check.
+check: asked to, it says so, with "Open on GitHub" for Lo's releases.
 
-A newer version shows as a toast, "Lo 0.2.0 is out", above the status bar. It waits until you act on
-it and never takes focus. What it offers depends on how Lo was installed:
+A newer version shows as a toast, "Lo 0.2.0 is available", above the status bar. It waits until you
+act on it and never takes focus. What it offers depends on how Lo was installed:
 
 - **A Mac, with Lo from Homebrew:** Lo doesn't update itself, since Homebrew keeps a record of the
   version it installed. The toast gives the command, `brew upgrade --cask withlo/tap/lo`, with
   "Copy".
-- **A Mac, with Lo in Applications** (or `~/Applications`) from a DMG: "Install" downloads the new
+- **A Mac, with Lo in Applications** (or `~/Applications`) from a DMG: "Update" downloads the new
   version, checks it against the checksum in the release, and has macOS install it only if the same
-  team signed it. Lo then offers "Restart now", or installs it when you quit. "What's new" opens the
-  release's page, and "Later" hides the toast until Lo starts again or you check for updates
-  yourself.
-- **A Mac, with Lo anywhere else,** such as the disk image or your Downloads folder: "Move to
+  team signed it. Lo then offers "Restart to update", or installs it when you quit. "What's new"
+  opens the release's page, and "Hide" hides the toast until Lo starts again or you check for
+  updates yourself.
+- **A Mac, with Lo anywhere else,** such as the disk image or your Downloads folder: "Move Lo to
   Applications" moves Lo there, asking before it replaces a Lo that's already there. It updates
   itself from there.
-- **Linux,** and a Mac where Lo can't write its own folder: "Download" opens the release's page, and
-  you install the new package as you did the old one.
+- **Linux,** and a Mac where Lo can't write its own folder: "Download update" opens the release's
+  page, and you install the new package as you did the old one.
 
 ## Build from source
 

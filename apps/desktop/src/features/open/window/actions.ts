@@ -2,10 +2,11 @@
 // clipboard, and go to the filter.
 
 import { IpcError } from '../../../ipc/contract.ts';
-import { notify } from '../../../window/commands/notices.tsx';
+import { notify, refuse } from '../../../window/commands/notices.tsx';
 import type { Opened, RecentPull } from '../contract.ts';
 import { main } from './main.ts';
 import { chosenRow, filterRecent, recentStore, rowKey, rowLink, stepRow } from './rows.ts';
+import { isNotPull, notPullLine, refusalReason } from './words.ts';
 
 /** Asks main for the pull requests opened lately, for the list. */
 export async function loadRecent(): Promise<void> {
@@ -29,30 +30,36 @@ export function stepChosen(step: 1 | -1): void {
   if (next) recentStore.setState({ chosen: rowKey(next) });
 }
 
-/** Says what opening a link did, when it opened nothing. */
-function said(title: string, done: Opened): void {
-  if (done.kind === 'refused') notify(title, done.message);
+/**
+ * Says why opening a link did nothing, when it did: that it isn't a pull request link, for text
+ * that isn't one; else what failed, `title`, and why; or, with no link at all, the reason alone.
+ */
+export function said(title: string, done: Opened): void {
+  if (done.kind !== 'refused') return;
+  if (done.why === 'empty') refuse('No link to open');
+  else if (isNotPull(done.why)) notify('Not a pull request link', notPullLine(done.why) ?? '');
+  else notify(title, refusalReason(done.why) ?? '');
+}
+
+/** What main said went wrong, as it came, when it said. */
+function details(error: unknown): string {
+  return error instanceof IpcError ? error.message : '';
 }
 
 /** Opens `row`, or the one chosen: with its account while it can see the repository. */
 export async function openRow(row?: RecentPull): Promise<void> {
   const opening = row ?? chosenRow(shownRows(), recentStore.getState().chosen);
   if (!opening) {
-    notify('Open the pull request', 'There’s no pull request to open.');
+    refuse('No pull request highlighted');
     return;
   }
   recentStore.setState({ chosen: rowKey(opening) });
+  const title = `Couldn’t open #${opening.number}`;
   try {
-    said(
-      'Open the pull request',
-      await main().open({ text: rowLink(opening), login: opening.login }),
-    );
+    said(title, await main().open({ text: rowLink(opening), login: opening.login }));
   } catch (error) {
     console.error("Lo couldn't open the pull request:", error);
-    notify(
-      'Open the pull request',
-      error instanceof IpcError ? error.message : "Lo couldn't open it.",
-    );
+    notify(title, details(error));
   }
 }
 
@@ -62,10 +69,10 @@ export async function openRow(row?: RecentPull): Promise<void> {
  */
 export async function followLink(url: string): Promise<void> {
   try {
-    said('Open the link', await main().open({ text: url }));
+    said('Couldn’t open the link', await main().open({ text: url }));
   } catch (error) {
     console.error("Lo couldn't open the link:", error);
-    notify('Open the link', error instanceof IpcError ? error.message : "Lo couldn't open it.");
+    notify('Couldn’t open the link', details(error));
   }
 }
 
@@ -74,13 +81,13 @@ export async function pasteLink(): Promise<void> {
   try {
     const link = await main().clipboard();
     if (link === null) {
-      notify('Open the link on the clipboard', 'The clipboard holds no link to a pull request.');
+      refuse('No pull request link on the clipboard');
       return;
     }
-    said('Open the link on the clipboard', await main().open({ text: link }));
+    said('Couldn’t open the link', await main().open({ text: link }));
   } catch (error) {
     console.error("Lo couldn't open the link on the clipboard:", error);
-    notify('Open the link on the clipboard', "Lo couldn't open the link on the clipboard.");
+    notify('Couldn’t open the link', details(error));
   }
 }
 
@@ -105,7 +112,7 @@ export function canClearFilter(): true | string {
 /** Goes to the filter, with what it holds selected; or says there's nothing to filter yet. */
 export function focusFilter(): void {
   if (!filterField) {
-    notify('Filter recent pull requests', 'There are no pull requests to filter yet.');
+    refuse('No pull requests to filter');
     return;
   }
   filterField.focus();

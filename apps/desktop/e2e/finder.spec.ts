@@ -187,7 +187,7 @@ test('closing a palette or key help gives focus back to where it was, in a pull 
   await shown(page);
   const overlays = [
     [`${held}+Shift+p`, 'Command palette'],
-    [`${held}+l`, 'Review a pull request'],
+    [`${held}+l`, 'Open pull request'],
     [`${held}+p`, 'Go to a file'],
     ['?', 'Every key'],
   ] as const;

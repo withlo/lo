@@ -1,6 +1,6 @@
 // Updates in the app, from source, against a feed of releases on this machine: a newer Lo is
-// offered in a toast that waits and never takes focus, whose Download opens the release's page and
-// whose Later hides it until a check asked for brings it back; a check asked for with nothing newer
+// offered in a toast that waits and never takes focus, whose Download update opens the release's page and
+// whose Hide hides it until a check asked for brings it back; a check asked for with nothing newer
 // says so; with `updates.check` off, Lo makes no check by itself; and Settings › About checks on
 // "Check now" and turns checking by itself off and on.
 
@@ -140,21 +140,21 @@ async function ask(page: Page, command: string): Promise<void> {
   await expect(palette).toBeHidden();
 }
 
-test('offers a newer Lo in a toast that floats and waits and never takes focus; the keyboard reaches its buttons; Later hides it until a check asked for brings it back', async ({
+test('offers a newer Lo in a toast that floats and waits and never takes focus; the keyboard reaches its buttons; Hide hides it until a check asked for brings it back', async ({
   app,
   page,
   feed,
 }) => {
-  const toast = said(page, 'Lo 0.9.0 is out');
-  const download = toast.getByRole('button', { name: 'Download' });
-  const later = toast.getByRole('button', { name: 'Later' });
+  const toast = said(page, 'Lo 0.9.0 is available');
+  const download = toast.getByRole('button', { name: 'Download update' });
+  const later = toast.getByRole('button', { name: 'Hide' });
   const middle = page.locator('main[data-lo-middle]');
 
   await test.step('the toast comes after start, with the first line of the notes', async () => {
     await sizeWindow(app, 1280, 800);
     await expect(toast).toContainText('Faster diffs', { timeout: 20_000 });
     // Run from source, Lo can't install itself: it offers the release's page.
-    await expect(toast.getByRole('button')).toHaveText(['Download', 'Later']);
+    await expect(toast.getByRole('button')).toHaveText(['Download update', 'Hide']);
     await expect(toast.locator(':focus')).toHaveCount(0);
   });
 
@@ -174,8 +174,8 @@ test('offers a newer Lo in a toast that floats and waits and never takes focus; 
     expect(height - (card.y + card.height)).toBeGreaterThanOrEqual(room + 12 - 1);
   });
 
-  await test.step('“Go to the update” focuses its first button, Tab and ⇧Tab move between them, and Esc leaves', async () => {
-    await ask(page, 'Go to the update');
+  await test.step('“Go to update” focuses its first button, Tab and ⇧Tab move between them, and Esc leaves', async () => {
+    await ask(page, 'Go to update');
     await expect(download).toBeFocused();
     await page.keyboard.press('Tab');
     await expect(later).toBeFocused();
@@ -192,10 +192,10 @@ test('offers a newer Lo in a toast that floats and waits and never takes focus; 
     await expect(middle.locator(':focus')).toHaveCount(1);
   });
 
-  await test.step('⏎ held through “Go to the update” presses nothing, and a press of its own on Download opens the release’s page', async () => {
-    // The first ⏎ chooses the command, which puts focus on Download, and the rest of it repeats for
+  await test.step('⏎ held through “Go to update” presses nothing, and a press of its own on Download update opens the release’s page', async () => {
+    // The first ⏎ chooses the command, which puts focus on Download update, and the rest of it repeats for
     // longer than the moment after focus comes, in which a press is ignored anyway.
-    await askHolding(page, 'Go to the update', 1_500);
+    await askHolding(page, 'Go to update', 1_500);
     await expect(download).toBeFocused();
     expect(browsed()).toEqual([]);
     await expect(toast).toBeVisible();
@@ -203,13 +203,13 @@ test('offers a newer Lo in a toast that floats and waits and never takes focus; 
     await expect.poll(browsed).toEqual(['https://github.com/withlo/lo/releases/tag/v0.9.0']);
     await expect(toast).toBeVisible();
     // And so does the command, which is what the button is.
-    await ask(page, 'Open what’s new in the update');
+    await ask(page, 'What’s new');
     await expect.poll(browsed).toHaveLength(2);
-    await ask(page, 'Download the update from its page');
+    await ask(page, 'Download update');
     await expect.poll(browsed).toHaveLength(3);
   });
 
-  await test.step('Later hides it, and a check asked for offers it again', async () => {
+  await test.step('Hide hides it, and a check asked for offers it again', async () => {
     await later.click();
     await expect(toast).toHaveCount(0);
     await ask(page, 'Check for updates');
@@ -221,7 +221,7 @@ test('offers a newer Lo in a toast that floats and waits and never takes focus; 
     // The newest release is the one this Lo is, which a build run from source calls 0.0.0.
     feed.offer('0.0.0');
     await ask(page, 'Check for updates');
-    await expect(said(page, 'is the newest version')).toHaveText('Lo 0.0.0 is the newest version.');
+    await expect(said(page, 'No update available')).toHaveText('No update available');
     await expect(toast).toHaveCount(0);
     // The room it took is the middle's again.
     await expect
@@ -270,65 +270,62 @@ test.describe('the app menu', () => {
     // Of the update commands the menu lists three, and the others are in its Update submenu.
     const { top } = await menuOfLo(app);
     expect(top).toEqual(
-      expect.arrayContaining(['Check for updates', 'Install the update', 'Restart to update']),
+      expect.arrayContaining(['Check for updates', 'Update Lo', 'Restart to update']),
     );
     expect(top).toContain('Update');
     for (const label of [
       'Move Lo to Applications',
-      'Hide the update until Lo restarts',
-      'Open what’s new in the update',
-      'Download the update from its page',
-      'Copy the Homebrew update command',
-      'Go to the update',
+      'Hide update',
+      'What’s new',
+      'Download update',
+      'Copy Homebrew command',
+      'Go to update',
     ]) {
       expect(top, label).not.toContain(label);
     }
     for (const label of [
-      'Install the update',
+      'Update Lo',
       'Restart to update',
       // A source build can't be moved, which Lo can tell with nothing on offer.
       'Move Lo to Applications',
-      'Hide the update until Lo restarts',
-      'Open what’s new in the update',
-      'Download the update from its page',
-      'Copy the Homebrew update command',
-      'Go to the update',
-      // So nothing in the submenu applies, and it's greyed.
-      'Update',
+      'Hide update',
+      'Download update',
+      'Copy Homebrew command',
+      'Go to update',
     ]) {
       expect(idle[label], label).toBe(false);
     }
+    // What's new applies with nothing on offer too: it opens Lo's releases.
+    expect(idle['What’s new']).toBe(true);
+    expect(idle.Update).toBe(true);
 
-    // A source build offers the release's page: Download applies, and Install and Restart don't.
-    await expect(said(page, 'Lo 0.9.0 is out')).toBeVisible({ timeout: 20_000 });
-    await expect
-      .poll(async () => (await enabled(app))['Download the update from its page'])
-      .toBe(true);
+    // A source build offers the release's page: Download update applies, and Update Lo and Restart
+    // don't.
+    await expect(said(page, 'Lo 0.9.0 is available')).toBeVisible({ timeout: 20_000 });
+    await expect.poll(async () => (await enabled(app))['Download update']).toBe(true);
     const offered = await enabled(app);
     expect(offered).toMatchObject({
       'Check for updates': true,
-      'Install the update': false,
+      'Update Lo': false,
       'Restart to update': false,
       'Move Lo to Applications': false,
       Update: true,
-      'Hide the update until Lo restarts': true,
-      'Open what’s new in the update': true,
-      'Copy the Homebrew update command': false,
-      'Go to the update': true,
+      'Hide update': true,
+      'What’s new': true,
+      'Copy Homebrew command': false,
+      'Go to update': true,
     });
 
-    // Later takes the offer back, and the items go grey again.
+    // Hide takes the offer back, and the items go grey again.
     // A press in the moment after a toast comes is ignored, so it's pressed until it takes.
-    const toast = said(page, 'Lo 0.9.0 is out');
+    const toast = said(page, 'Lo 0.9.0 is available');
     await expect(async () => {
-      await toast.getByRole('button', { name: 'Later' }).click();
+      await toast.getByRole('button', { name: 'Hide' }).click();
       await expect(toast).toHaveCount(0, { timeout: 1_000 });
     }).toPass();
-    await expect
-      .poll(async () => (await enabled(app))['Hide the update until Lo restarts'])
-      .toBe(false);
-    expect((await enabled(app))['Download the update from its page']).toBe(false);
-    expect((await enabled(app)).Update).toBe(false);
+    await expect.poll(async () => (await enabled(app))['Hide update']).toBe(false);
+    expect((await enabled(app))['Download update']).toBe(false);
+    expect((await enabled(app))['What’s new']).toBe(true);
     void feed;
   });
 });
@@ -342,7 +339,7 @@ test.describe('with checking by itself off', () => {
     expect(feed.asked).toEqual([]);
     await expect(page.getByRole('status').filter({ hasText: /\w/ })).toHaveCount(0);
     await ask(page, 'Check for updates');
-    await expect(said(page, 'Lo 0.9.0 is out')).toBeVisible();
+    await expect(said(page, 'Lo 0.9.0 is available')).toBeVisible();
     expect(feed.asked.length).toBeGreaterThan(0);
   });
 });
@@ -358,7 +355,7 @@ test('Settings checks on "Check now", and turns checking by itself off and on', 
   // The e2e build is run from source, so it has no commit to show.
   await expect(updates).toContainText('Built from source');
   // Lo's own first check has come and gone by the time the toast shows; ask again from Settings.
-  await expect(said(page, 'Lo 0.9.0 is out')).toBeVisible({ timeout: 20_000 });
+  await expect(said(page, 'Lo 0.9.0 is available')).toBeVisible({ timeout: 20_000 });
   const before = feed.asked.length;
   feed.offer('0.0.0');
   await updates.getByRole('button', { name: 'Check now' }).click();
