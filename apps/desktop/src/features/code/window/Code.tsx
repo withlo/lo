@@ -4,6 +4,7 @@
 
 import {
   HintButton,
+  HintRow,
   Palette,
   PaletteHint,
   PeekFoot,
@@ -200,12 +201,15 @@ export function ReferencesPanel({ tab }: { tab: PullTab }): ReactNode {
           data-lo-scope="references"
         />
       </div>
-      {/* One line always: each hint is a button that runs its command. */}
-      <div className="flex min-w-0 flex-none items-center gap-2 overflow-hidden border-t border-border-subtle px-8 py-4 whitespace-nowrap text-fg-muted text-small">
-        <HintButton command="code.nextReference">Next</HintButton>
-        <HintButton command="code.previousReference">Previous</HintButton>
-        <HintButton command="code.goReference">Go to reference</HintButton>
-        <HintButton command="code.closeReferences">Close</HintButton>
+      {/* One line always: each hint is a button that runs its command, and a foot too narrow for
+          its key chips gives them up, each hint giving its key in its tooltip. */}
+      <div className="flex-none border-t border-border-subtle">
+        <HintRow className="min-w-0 items-center gap-2 px-8 py-4 text-fg-muted text-small">
+          <HintButton command="code.nextReference">Next</HintButton>
+          <HintButton command="code.previousReference">Previous</HintButton>
+          <HintButton command="code.goReference">Go to reference</HintButton>
+          <HintButton command="code.closeReferences">Close</HintButton>
+        </HintRow>
       </div>
     </div>
   );
