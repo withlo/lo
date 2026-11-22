@@ -230,6 +230,17 @@ export class ThreadReads {
     this.#sendThreads(followed);
   }
 
+  /**
+   * Reads view `id`'s threads and pending review again now, as from the start, after a read that
+   * failed: a read that's working, or done, is left as it is.
+   */
+  reread(id: string): void {
+    const followed = this.#views.get(id);
+    if (!followed || followed.threads.status !== 'failed') return;
+    this.#drop(id);
+    this.follow(id);
+  }
+
   /** What's held of view `id`'s threads and pending review now. */
   current(id: string): { threads: ThreadsView | undefined; review: ReviewView | undefined } {
     const followed = this.#views.get(id);

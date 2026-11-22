@@ -332,7 +332,7 @@ describe('attaching', () => {
     expect(box.text()).toBe('');
     expect(asked.upload).toHaveLength(1);
     expect(running(box)).toBe(false);
-    expect(whyNoAttach('v2')).toBe('Sign in to gh to attach files');
+    expect(whyNoAttach('v2')).toBe('Sign in to GitHub CLI to attach files');
     const other = boxWith('', 'v2');
     attachFiles(other, [png()]);
     expect(other.text()).toBe('');

@@ -1182,15 +1182,24 @@ describe('threads', () => {
     const below = thread('below', at('a', 'new', 22));
     shown.setThreads([thread('here', at('a', 'new', 4)), below], render);
     expect(drawnThreads()).toEqual(['below']);
+    // Its line says a new comment has come, until it does.
+    const marked = () =>
+      [...scroller().querySelectorAll('.lo-arrived')].map(
+        (each) => each.closest('.cm-line')?.textContent?.replace('New comment', '') ?? '',
+      );
+    expect(marked()).toEqual(['line 4']);
     screen.lines.clear();
     scroller().dispatchEvent(new Event('scroll'));
     expect(drawnThreads()).toEqual(['here', 'below']);
+    expect(marked()).toEqual([]);
     // What a thread there says changes at once.
     screen.lines.add('line 4');
     shown.setThreads([thread('here', at('a', 'new', 4), true, 2), below], render);
     expect(asked.at(-1)).toBe('update here');
     shown.setThreads([below], render);
     expect(drawnThreads()).toEqual(['here', 'below']);
+    // A thread going is no new comment.
+    expect(marked()).toEqual([]);
     screen.lines.clear();
     scroller().dispatchEvent(new Event('scroll'));
     expect(drawnThreads()).toEqual(['below']);

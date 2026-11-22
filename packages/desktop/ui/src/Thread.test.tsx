@@ -39,6 +39,12 @@ const MINE: ThreadComment = {
 
 const PROPS: ThreadProps = { comments: [MIRA, RAVI], resolved: false, open: true };
 
+/** How many steps the row `element` is in has given up. */
+function given(element: Element): number {
+  const row = element.closest('[data-gave-up]');
+  return (row?.getAttribute('data-gave-up') ?? '').split(' ').filter(Boolean).length;
+}
+
 /** The buttons whose label starts with `label`. */
 function buttons(host: HTMLElement, label: string): HTMLButtonElement[] {
   return [...host.querySelectorAll('button')].filter((each) => each.textContent.startsWith(label));
@@ -258,6 +264,36 @@ describe('Thread', () => {
     click(collapse!);
     expect(onToggle).toHaveBeenCalledOnce();
     expect(host.querySelector('[role="group"]')?.hasAttribute('data-focused')).toBe(true);
+  });
+
+  it('gives up what a narrow comment head draws, in order, until the name is whole', () => {
+    // The name takes 120 px. Each step given up gives it more room: none, the key chips, the
+    // "Author" tag, then the controls' words, which is enough.
+    const room = [40, 60, 90, 130, 160];
+    Object.defineProperty(HTMLElement.prototype, 'clientWidth', {
+      configurable: true,
+      get(this: HTMLElement) {
+        return this.hasAttribute('data-fit') ? room[given(this)] : 0;
+      },
+    });
+    Object.defineProperty(HTMLElement.prototype, 'scrollWidth', {
+      configurable: true,
+      get(this: HTMLElement) {
+        return this.hasAttribute('data-fit') ? 120 : 0;
+      },
+    });
+    try {
+      const host = render(<Thread {...PROPS} comments={[{ ...MINE, byAuthor: true }]} />);
+      const head = host.querySelector('[data-fit]')?.parentElement?.parentElement;
+      expect(head?.getAttribute('data-gave-up')).toBe('keys tag labels');
+      // Each control is its icon then, with its words as its tooltip, and keeps its name.
+      const [edit] = buttons(host, 'Edit');
+      expect(edit?.getAttribute('aria-label')).toBe('Edit comment from just now');
+      expect(edit?.querySelector('[data-takes="labels"] svg')).not.toBeNull();
+    } finally {
+      delete (HTMLElement.prototype as { clientWidth?: number }).clientWidth;
+      delete (HTMLElement.prototype as { scrollWidth?: number }).scrollWidth;
+    }
   });
 
   it('draws nothing for a thread with no comments', () => {

@@ -122,7 +122,7 @@ describe('Markdown', () => {
       table: 'table th.text-right',
       rule: 'hr',
       details: 'details.lo-fold > summary',
-      suggestion: 'div > p + pre > code',
+      suggestion: 'div > p + pre > code > ins',
       footnotes: 'section[aria-label="Footnotes"] li',
     };
     expect(missing(page, expected)).toEqual([]);
@@ -149,7 +149,7 @@ describe('Markdown', () => {
     expect(words).toContain('a picture');
     expect(words).toContain('@octocat');
     expect(page.querySelector('pre')?.textContent).toBe('const a = 1;\nconst b = 2;');
-    expect(page.querySelector('p + pre')?.textContent).toBe('return 1;');
+    expect(page.querySelector('p + pre ins > span:last-child')?.textContent).toBe('return 1;');
     // A task's mark says whether it's done, in words.
     expect(
       [...page.querySelectorAll('li [role="img"]')].map((mark) => mark.getAttribute('aria-label')),
@@ -170,12 +170,37 @@ describe('Markdown', () => {
       />,
     );
     expect(page.querySelector('p')?.textContent).toBe('Suggested change');
-    const [removed, added] = [...page.querySelectorAll('pre')];
-    expect(removed?.querySelector('del')?.textContent).toBe('return 1;');
-    expect(removed?.className).toContain('bg-diff-del-bg');
-    expect(added?.querySelector('ins')?.textContent).toBe('return 2;\nreturn 3;');
-    expect(added?.className).toContain('bg-diff-add-bg');
+    // One block, a row on the code's line each, the pair with the code view's room over and under.
+    expect(page.querySelectorAll('pre')).toHaveLength(1);
+    expect(page.querySelector('pre')?.className).toContain('py-8');
+    expect(page.querySelector('pre > code')?.className).toContain('suggestion-lines');
+    expect(lines(page.querySelector('del'))).toEqual([['−', 'return 1;']]);
+    expect(lines(page.querySelector('ins'))).toEqual([
+      ['+', 'return 2;'],
+      ['+', 'return 3;'],
+    ]);
+    const [sign, line] = [...page.querySelector('del')!.children];
+    expect(line?.className).toContain('bg-diff-del-bg');
+    expect(page.querySelector('ins > span:last-child')?.className).toContain('bg-diff-add-bg');
+    // The signs are the diff's, which a screen reader doesn't hear: `del` and `ins` say it.
+    expect(sign?.getAttribute('aria-hidden')).toBe('true');
+    expect(sign?.className).toContain('text-diff-del-fg');
     expect(disallowed(page.firstElementChild!, allowed)).toEqual([]);
+  });
+
+  it('draws the lines a suggested change replaces from where the comment is, for a tree without them', () => {
+    const suggestion = tree([{ kind: 'suggestion', text: 'return 2;' }]);
+    const page = render(<Markdown tree={suggestion} replaced="return 1;" />);
+    expect(lines(page.querySelector('del'))).toEqual([['−', 'return 1;']]);
+    expect(lines(page.querySelector('ins'))).toEqual([['+', 'return 2;']]);
+    // GitHub's own drawing says what it replaces, and that's what shows.
+    const drawnByGithub = tree([{ kind: 'suggestion', text: 'return 2;', removed: 'return 0;' }]);
+    const github = render(<Markdown tree={drawnByGithub} replaced="return 1;" />);
+    expect(lines(github.querySelector('del'))).toEqual([['−', 'return 0;']]);
+    // With nothing to say what it replaces, it's the lines it suggests alone.
+    const alone = render(<Markdown tree={suggestion} />);
+    expect(alone.querySelector('del')).toBeNull();
+    expect(lines(alone.querySelector('ins'))).toEqual([['+', 'return 2;']]);
   });
 
   it('keeps the newlines of text that stands in for what Lo doesn’t show as line breaks', () => {
@@ -222,6 +247,14 @@ describe('Markdown', () => {
 });
 
 /** `blocks` drawn as markup, under a rendering with `rendering`'s settings. */
+/** A suggested change's lines, in `group`, its `del` or `ins`, each as its sign and its text. */
+function lines(group: Element | null | undefined): string[][] {
+  const cells = [...(group?.children ?? [])].map((each) => each.textContent);
+  const out: string[][] = [];
+  for (let at = 0; at < cells.length; at += 2) out.push([cells[at]!, cells[at + 1]!]);
+  return out;
+}
+
 function drawn(blocks: Block[], rendering: Partial<Rendering>): string {
   return renderToStaticMarkup(
     <MarkdownProvider

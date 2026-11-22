@@ -32,6 +32,7 @@ import {
   type BoxState,
   discardable,
   pullIn,
+  replacedOf,
   send,
   sendingNow,
   takenDown,
@@ -105,8 +106,14 @@ function footOf(
   const disabled = reason !== undefined || waiting;
   const { kind } = state.place;
   const canDiscard = discardable(state);
-  const alone = (label: string, how: 'review' | 'now', working: string): CommentBoxAction => ({
+  const alone = (
+    label: string,
+    how: 'review' | 'now',
+    working: string,
+    icon: CommentBoxAction['icon'],
+  ): CommentBoxAction => ({
     label,
+    icon,
     keys: boxKeys('addToReview'),
     primary: true,
     disabled,
@@ -117,6 +124,7 @@ function footOf(
   });
   const button = (how: 'review' | 'now'): CommentBoxAction => ({
     label: how === 'review' ? 'Add to review' : 'Send now',
+    icon: how === 'review' ? 'review' : 'send',
     keys: boxKeys(how === 'review' ? 'addToReview' : 'postNow'),
     primary: state.primary === how,
     disabled,
@@ -127,11 +135,11 @@ function footOf(
   });
   const actions =
     kind === 'conversation'
-      ? [alone('Send', 'now', 'Sending…')]
+      ? [alone('Send', 'now', 'Sending…', 'send')]
       : kind === 'edit'
-        ? [alone('Save', 'review', 'Saving…')]
+        ? [alone('Save', 'review', 'Saving…', 'save')]
         : pending
-          ? [alone('Add to review', 'review', 'Sending…')]
+          ? [alone('Add to review', 'review', 'Sending…', 'review')]
           : [button('now'), button('review')];
   return {
     mode: modes[state.mode],
@@ -215,7 +223,7 @@ function Preview({ box }: { box: Box }): ReactNode {
   const { previewing, text } = useBox(box);
   const pull = pullIn(box.view);
   if (!previewing || !pull) return null;
-  return <Rendering view={box.view} text={text} pull={pull} />;
+  return <Rendering view={box.view} text={text} pull={pull} replaced={replacedOf(box)} />;
 }
 
 /**
@@ -236,7 +244,13 @@ function Sent({ box }: { box: Box }): ReactNode {
       label={sentLabel(state.sending, state.place.kind === 'edit')}
       body={
         pull ? (
-          <Rendering view={box.view} text={state.text} pull={pull} flush />
+          <Rendering
+            view={box.view}
+            text={state.text}
+            pull={pull}
+            replaced={replacedOf(box)}
+            flush
+          />
         ) : (
           <p className="whitespace-pre-wrap">{state.text}</p>
         )

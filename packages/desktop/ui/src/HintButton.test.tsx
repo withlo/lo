@@ -2,15 +2,16 @@
 
 import { act, type ReactNode } from 'react';
 import { createRoot } from 'react-dom/client';
-import { afterEach, expect, onTestFinished, test } from 'vitest';
+import { afterEach, expect, onTestFinished, test, vi } from 'vitest';
 
 import { testCommands, type Ran } from '../test/commands.ts';
 import { holdRegistry } from './commands/control.ts';
 import { Registry } from './commands/registry.ts';
 import type { LineTarget } from './commands/targets.ts';
 import { HintButton } from './HintButton.tsx';
+import { HintRow } from './HintRow.tsx';
 import { MoreButton } from './MoreButton.tsx';
-import { TooltipGroup } from './Tooltip.tsx';
+import { TOOLTIP_DELAY, TooltipGroup } from './Tooltip.tsx';
 
 const LINE: LineTarget = { kind: 'line', at: { file: 'a.ts', side: 'new', line: 3 } };
 
@@ -66,6 +67,63 @@ test('a hint whose command can’t run is dimmed, says why, and runs nothing', (
   act(() => button.click());
   expect(ran).toEqual([]);
   expect(draw(<HintButton command="diff.nothing" />).querySelector('button')).toBeNull();
+});
+
+/** The row the HintRow test measures. */
+function measured(element: HTMLElement): boolean {
+  return element.hasAttribute('data-lo-hints');
+}
+
+test('a row of hints too narrow for their key chips gives them up, and gives each key in its hint’s tooltip', async () => {
+  const { registry } = held();
+  // The row is 200 px wide, and its hint takes 260 with its chip, 180 without.
+  const room = { row: 200, chips: 260 };
+  Object.defineProperty(HTMLElement.prototype, 'clientWidth', {
+    configurable: true,
+    get(this: HTMLElement) {
+      return measured(this) ? room.row : 0;
+    },
+  });
+  Object.defineProperty(HTMLElement.prototype, 'scrollWidth', {
+    configurable: true,
+    get(this: HTMLElement) {
+      if (!measured(this)) return 0;
+      return this.hasAttribute('data-gave-up') ? 180 : room.chips;
+    },
+  });
+  vi.useFakeTimers();
+  onTestFinished(() => {
+    vi.useRealTimers();
+    delete (HTMLElement.prototype as { clientWidth?: number }).clientWidth;
+    delete (HTMLElement.prototype as { scrollWidth?: number }).scrollWidth;
+  });
+  const host = draw(
+    <HintRow data-lo-hints="">
+      <HintButton command="diff.comment" target={LINE} />
+    </HintRow>,
+  );
+  const row = host.querySelector<HTMLElement>('[data-lo-hints]')!;
+  const button = row.querySelector('button')!;
+  expect(row.getAttribute('data-gave-up')).toBe('keys');
+  // The chip is still there for the stylesheet to hide, and the key is still the button's.
+  expect(button.querySelector('kbd')?.textContent).toBe('c');
+  expect(button.getAttribute('aria-keyshortcuts')).toBe('c');
+  // The pointer resting on it brings its name and its key.
+  act(() => {
+    button.dispatchEvent(new MouseEvent('mouseover', { bubbles: true, relatedTarget: host }));
+    button.dispatchEvent(new MouseEvent('mouseenter', { relatedTarget: host }));
+    button.dispatchEvent(new MouseEvent('mousemove', { bubbles: true }));
+    vi.advanceTimersByTime(TOOLTIP_DELAY);
+  });
+  expect(host.querySelector('.tooltip')?.textContent).toBe('Commentc');
+  // Where its chip fits, as once the keymap gives it a shorter key, the chip is back.
+  room.chips = 190;
+  // The row hears the change as its mutations are told, after the change.
+  await act(() => {
+    registry.setKeymap('bind C diff.comment');
+    return Promise.resolve();
+  });
+  expect(row.hasAttribute('data-gave-up')).toBe(false);
 });
 
 test('the more button opens its surface’s right-click menu under itself', () => {

@@ -15,7 +15,16 @@ import { refuse } from '../../../window/commands/notices.tsx';
 import { writingDiff } from '../../diff/window/shared.ts';
 import { tabState, type PullTab } from '../../tab/window/shared.ts';
 import type { ActRefusal, ActRow, ActsView, ThreadRow } from '../contract.ts';
-import { canWrite, claimBriefly, IN_DIFF, knowPull, loginOf, offline, openAt } from './boxes.ts';
+import {
+  canWrite,
+  claimBriefly,
+  IN_DIFF,
+  knowPull,
+  loginOf,
+  noDiff,
+  offline,
+  openAt,
+} from './boxes.ts';
 import { main } from './main.ts';
 import { threadOf } from './placing.ts';
 import { tell } from './Said.tsx';
@@ -25,9 +34,6 @@ import { actText, noReply, type Doing } from './writing.ts';
 
 /** Why a change to a thread can't go while GitHub can't be reached. */
 export const OFFLINE_ACT = 'Offline';
-
-/** Why a key on a thread does nothing while the diff it's in is still being drawn. */
-export const OPENING = 'Opening pull request…';
 
 /** Why a thread can't be acted on in the diff on screen. */
 const NOT_HERE = 'This thread isn’t in this diff';
@@ -308,6 +314,9 @@ const NOT_DONE: Readonly<Record<ActRow['change'], string>> = {
   delete: 'Couldn’t delete the comment',
 };
 
+/** What a card says when an edit of one of its comments couldn't start. */
+export const COULDNT_EDIT = 'Couldn’t edit the comment';
+
 /** What a note is titled while nobody knows whether a change went. */
 const NOT_CONFIRMED: Readonly<Record<ActRow['change'], string>> = {
   resolve: 'Resolve not confirmed',
@@ -344,7 +353,7 @@ export function threadFor(view: string, target: ThreadKeyTarget): ThreadRow | st
   if (target.kind === 'thread' || target.thread !== undefined) id = target.thread;
   else {
     const diff = writingDiff(view, true) ?? writingDiff(view);
-    if (!diff) return OPENING;
+    if (!diff) return noDiff(view);
     const under = diff.threadsDrawn(
       target.kind === 'header'
         ? { file: target.file }
@@ -407,9 +416,51 @@ function refused(view: string, refusal: ActRefusal, doing: Doing): void {
   refuse(actText(refusal, doing, loginOf(view)));
 }
 
-/** What went wrong with a write that threw, as its refusal says it. */
-function failed(error: unknown): void {
-  refuse(error instanceof Error ? error.message : String(error));
+/**
+ * A change asked of a thread, or of a comment on the pull request itself, that failed in Lo before
+ * GitHub had it, as its card says it until it's asked again: what wasn't done, what came back, and
+ * the one thing to do.
+ */
+export interface Threw {
+  /** What wasn't done: "Couldn’t resolve the thread". */
+  readonly title: string;
+  /** What came back, as it came, behind Details. */
+  readonly details: string;
+  /** "Try again", which asks again; or "Check again", which only looks, where it may have gone. */
+  readonly again: 'try' | 'check';
+  /** What its button does. */
+  readonly run: () => void;
+}
+
+/** Each view's changes whose write failed in Lo, by thread, or by comment on the pull request. */
+export const threw = tabState<ReadonlyMap<string, Threw>>(() => new Map());
+
+/**
+ * Says on the card of view `view`'s thread or comment `key` that the change asked of it failed,
+ * with `error`, what came back: its title, and `again`, the button that runs `run`. Said once, on
+ * the card, which a screen reader hears as an alert.
+ */
+export function failed(
+  view: string,
+  key: string,
+  title: string,
+  error: unknown,
+  run: () => void,
+  again: Threw['again'] = 'try',
+): void {
+  console.error(`Lo couldn't change ${key}:`, error);
+  const details = error instanceof Error ? error.message : String(error);
+  threw.update(view, (was) => new Map(was).set(key, { title, details, again, run }));
+}
+
+/** Takes away what the card of view `view`'s thread or comment `key` says of a write that failed. */
+export function unfailed(view: string, key: string): void {
+  if (!threw.get(view).has(key)) return;
+  threw.update(view, (was) => {
+    const now = new Map(was);
+    now.delete(key);
+    return now;
+  });
 }
 
 /**
@@ -444,6 +495,7 @@ export async function resolveThread(tab: PullTab, row: ThreadRow): Promise<void>
     refuse(OFFLINE_ACT);
     return;
   }
+  unfailed(view, row.id);
   const release = writingDiff(view)?.claimThread(row.id) ?? (() => {});
   try {
     const outcome = await main().resolve({ id: view, thread: row.id, resolved });
@@ -455,7 +507,11 @@ export async function resolveThread(tab: PullTab, row: ThreadRow): Promise<void>
   } catch (error) {
     release();
     endAct(view, row.id);
-    failed(error);
+    failed(view, row.id, NOT_DONE[doing], error, () => {
+      const now = threadFor(view, { kind: 'thread', thread: row.id });
+      if (typeof now === 'string') refuse(now);
+      else if (resolvedNow(view, now) !== resolved) void resolveThread(tab, now);
+    });
   }
 }
 
@@ -517,6 +573,7 @@ export async function edit(tab: PullTab, target: ThreadKeyTarget, comment?: stri
     return;
   }
   const place = { kind: 'edit' as const, thread: row.id, comment: chosen.id };
+  unfailed(view, row.id);
   try {
     const outcome = await main().editing({ id: view, place, base: chosen.body });
     if (outcome.kind === 'refused') {
@@ -524,7 +581,7 @@ export async function edit(tab: PullTab, target: ThreadKeyTarget, comment?: stri
       return;
     }
   } catch (error) {
-    failed(error);
+    failed(view, row.id, COULDNT_EDIT, error, () => void edit(tab, target, chosen.id));
     return;
   }
   knowPull(tab);
@@ -617,6 +674,7 @@ export async function confirmDelete(): Promise<void> {
     refuse(OFFLINE_ACT);
     return;
   }
+  unfailed(tab.id, thread ?? comment);
   const release =
     thread === null ? () => {} : (writingDiff(tab.id)?.claimThread(thread) ?? (() => {}));
   try {
@@ -636,7 +694,11 @@ export async function confirmDelete(): Promise<void> {
   } catch (error) {
     release();
     endAct(tab.id, thread ?? comment);
-    failed(error);
+    // Asked again, it asks first again.
+    failed(tab.id, thread ?? comment, NOT_DONE.delete, error, () => {
+      if (thread !== null) remove(tab, { kind: 'thread', thread }, comment);
+      else setAsking({ ...asked, tab });
+    });
   }
 }
 
@@ -645,9 +707,13 @@ export async function confirmDelete(): Promise<void> {
  * sent again, and the card's control is at work meanwhile.
  */
 export function checkAgain(tab: PullTab, row: ActRow): void {
+  const key = actKey(row);
+  unfailed(tab.id, key);
   main()
-    .checkAct({ id: tab.id, node: actKey(row) })
-    .catch(failed);
+    .checkAct({ id: tab.id, node: key })
+    .catch((error: unknown) =>
+      failed(tab.id, key, NOT_CONFIRMED[row.change], error, () => checkAgain(tab, row), 'check'),
+    );
 }
 
 /** Asks for the change `row` names again, as its note's "Try again" does. */

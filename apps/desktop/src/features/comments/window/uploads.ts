@@ -160,10 +160,11 @@ class Attaching {
     tone: BoxNote['tone'] = 'warning',
     title?: string,
     attach = false,
+    details?: string,
   ): void {
     this.said = [
       ...this.said.filter((each) => each.key !== key),
-      { key, tone, title, text, attach },
+      { key, tone, title, text, attach, details },
     ];
     this.changed();
   }
@@ -373,7 +374,7 @@ export function offNote(off: UploadsOff, login = 'This account'): BoxNote {
   const text =
     off.kind === 'cantWrite'
       ? `${login} can’t attach files in ${off.repo}`
-      : 'Sign in to gh to attach files';
+      : 'Sign in to GitHub CLI to attach files';
   return { key: 'uploads-off', tone: 'info', text };
 }
 
@@ -623,13 +624,16 @@ async function refuseUnread(attaching: Attaching, file: File): Promise<void> {
 async function attachOne(attaching: Attaching, file: File, attachment: Attachment): Promise<void> {
   const { box } = attaching;
   const { name } = attachment;
-  const failed = (text: string, title?: string) => {
+  // What came back, where there's any, goes behind Details.
+  const failed = (text: string, title?: string, details?: string) => {
     attaching.remove(attachment);
     attaching.say(
       `upload-failed-${attachment.key}`,
       text,
       title === undefined ? 'warning' : 'danger',
       title,
+      false,
+      details,
     );
   };
   let prepared: Prepared;
@@ -637,8 +641,8 @@ async function attachOne(attaching: Attaching, file: File, attachment: Attachmen
     const bytes = new Uint8Array(await file.arrayBuffer());
     if (attachment.cancelled) return;
     prepared = await commentsJobs().prepare({ name, bytes });
-  } catch {
-    if (!attachment.cancelled) failed('It can’t be read.', couldntAttach(name));
+  } catch (error) {
+    if (!attachment.cancelled) failed('It can’t be read.', couldntAttach(name), describe(error));
     return;
   }
   if (attachment.cancelled) return;
@@ -712,8 +716,8 @@ async function attachOne(attaching: Attaching, file: File, attachment: Attachmen
       attaching.remove(attachment);
       return;
     case 'failed':
-      // Why isn't known in the reader's words: the title alone, and the foot's "Attach files…".
-      failed('', couldntAttach(name));
+      // Why isn't known in the reader's words: the title, with GitHub's own behind Details.
+      failed('', couldntAttach(name), outcome.message);
       return;
     default:
       outcome satisfies never;

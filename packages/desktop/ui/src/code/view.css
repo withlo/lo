@@ -430,6 +430,44 @@
   display: none !important;
 }
 
+/*
+ * Side by side, where a side is too narrow for a comment box, the box takes both sides
+ * (`is-spanned`): it reaches over the other side, where the room kept for it is, by as far as the
+ * view measured, and is drawn over the gutters between, which sit over the code.
+ */
+.lo-diffview.is-spanned > .cm-editor + .cm-editor .lo-diffcomposer {
+  margin-inline-start: calc(-1 * var(--lo-reach-new));
+}
+.lo-diffview.is-spanned > .cm-editor:has(+ .cm-editor) .lo-diffcomposer {
+  margin-inline-end: calc(-1 * var(--lo-reach-old));
+}
+.lo-diffview.is-spanned .lo-diffcomposer {
+  /* Over its editor's gutters, at 200. */
+  z-index: 201;
+}
+/* Each editor draws over the one before it: the old side, with a box in it, comes above. */
+.lo-diffview.is-spanned > .cm-editor:has(+ .cm-editor):has(.lo-diffcomposer) {
+  z-index: 1;
+}
+
+/*
+ * Someone else's new comment, waiting on a line on screen until the reader's next input: the line
+ * says so at its end, over the code, taking no room in the line. A click on it lets it in, as a
+ * click anywhere does.
+ */
+.lo-arrived {
+  position: absolute;
+  inset-inline-end: var(--lo-sp-8);
+  padding-inline: var(--lo-sp-6);
+  border-radius: var(--lo-r-pill);
+  background: var(--lo-info-bg);
+  box-shadow: inset 0 0 0 1px var(--lo-info-border);
+  color: var(--lo-info);
+  font: var(--lo-text-micro);
+  cursor: pointer;
+  user-select: none;
+}
+
 /* The inline layout's two columns of line numbers, old then new. */
 .lo-inlinenumbers .cm-gutterElement {
   min-width: 4ch;

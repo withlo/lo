@@ -100,6 +100,11 @@ export interface Rendering<X extends Extension = Plain> {
    * show the image as a link to it. Without this, every image is a link.
    */
   readonly image?: ((node: Image) => string | undefined) | undefined;
+  /**
+   * The lines a suggested change in it replaces, where the tree doesn't say, as Markdown alone
+   * doesn't: those the comment is on, as the diff shows them.
+   */
+  readonly replaced?: string | undefined;
 }
 
 /** The scheme main serves images on, the only one an image here loads from. */
@@ -375,21 +380,15 @@ export function drawBlock<X extends Extension>(node: Block<X>, r: Rendering<X>):
       return <hr className="h-px max-w-read-measure border-0 bg-border" />;
     case 'details':
       return r.extension.details ? r.extension.details(plain) : <Fold node={plain} />;
-    case 'suggestion':
+    case 'suggestion': {
       // As the diff draws a change: the lines it replaces, where known, over the lines it suggests.
       return (
         <div className="max-w-read-measure overflow-hidden rounded-md border border-border">
           <p className="bg-bg-chrome px-12 py-6 text-fg-muted text-small">Suggested change</p>
-          {plain.removed === undefined ? (
-            <Fence text={plain.text} bare />
-          ) : (
-            <>
-              <Fence text={plain.removed} bare tone="removed" />
-              {plain.text !== '' && <Fence text={plain.text} bare tone="added" />}
-            </>
-          )}
+          <Suggested removed={plain.removed ?? r.replaced} added={plain.text} />
         </div>
       );
+    }
     case 'footnotes':
       return footnotes(plain, r);
     default:
@@ -560,37 +559,53 @@ function footnotes<X extends Extension>(node: Footnotes<X>, r: Rendering<X>): Re
 }
 
 /** Code as written, never highlighted: Lo can't know it's the language it says. */
-/** A fence's ground: a code block's, or a suggested change's removed or added lines, as the diff's. */
-const FENCE_GROUND = {
-  plain: 'bg-bg',
-  removed: 'bg-diff-del-bg',
-  added: 'bg-diff-add-bg',
-} as const;
-
-function Fence({
-  text,
-  bare = false,
-  tone = 'plain',
-}: {
-  text: string;
-  bare?: boolean;
-  /** Lines a suggested change removes or adds, drawn as the diff draws them, and named so. */
-  tone?: keyof typeof FENCE_GROUND;
-}) {
-  const code = (
-    <code className="rounded-none bg-transparent p-0 shadow-none code-text">{text}</code>
-  );
+function Fence({ text, bare = false }: { text: string; bare?: boolean }) {
   return (
     <pre
-      className={`overflow-x-auto px-12 py-8 ${bare ? FENCE_GROUND[tone] : 'max-w-read-measure rounded-md bg-hover'}`}
+      className={`overflow-x-auto px-12 py-8 ${bare ? 'bg-bg' : 'max-w-read-measure rounded-md bg-hover'}`}
     >
-      {tone === 'removed' ? (
-        <del className="no-underline">{code}</del>
-      ) : tone === 'added' ? (
-        <ins className="no-underline">{code}</ins>
-      ) : (
-        code
-      )}
+      <code className="rounded-none bg-transparent p-0 shadow-none code-text">{text}</code>
+    </pre>
+  );
+}
+
+/** How a suggested change's removed and added lines are drawn: the diff's tint and sign. */
+const SUGGESTED = {
+  removed: { sign: '−', row: 'bg-diff-del-bg', mark: 'text-diff-del-fg' },
+  added: { sign: '+', row: 'bg-diff-add-bg', mark: 'text-diff-add-fg' },
+} as const;
+
+/** `text`'s lines as a suggested change draws them, as `tone`: each its sign, then the line. */
+function suggestedRows(tone: keyof typeof SUGGESTED, text: string): ReactNode {
+  const { sign, row, mark } = SUGGESTED[tone];
+  return text.split('\n').map((line, at) => (
+    <Fragment key={at}>
+      {/* The sign is the diff's, which `del` and `ins` say to a screen reader. */}
+      <span aria-hidden="true" className={`ps-12 pe-8 select-none ${row} ${mark}`}>
+        {sign}
+      </span>
+      <span className={`pe-12 ${row}`}>{line}</span>
+    </Fragment>
+  ));
+}
+
+/**
+ * A suggested change's lines as the diff draws a change, as code is set, a row on the code's line
+ * each: the lines it replaces, where known, in a `del`, over the lines it suggests, in an `ins`,
+ * each line with the diff's sign in a gutter of its own and its tint across the row, and the code
+ * view's room over and under the pair.
+ */
+function Suggested({ removed, added }: { removed: string | undefined; added: string }) {
+  return (
+    <pre className="overflow-x-auto bg-bg py-8">
+      <code className="grid w-max min-w-full suggestion-lines rounded-none bg-transparent p-0 shadow-none code-text">
+        {removed !== undefined && (
+          <del className="contents no-underline">{suggestedRows('removed', removed)}</del>
+        )}
+        {added !== '' && (
+          <ins className="contents no-underline">{suggestedRows('added', added)}</ins>
+        )}
+      </code>
     </pre>
   );
 }

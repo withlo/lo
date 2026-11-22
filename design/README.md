@@ -165,11 +165,25 @@ where the action's target is.
   (the app menu). The route check (`checkRoutes`) fails on a command with none. The commands still
   waiting for one are listed in `apps/desktop/src/window/commands/routes.ts`: take a command off the
   list in the change that gives it a route, and never add to it.
-- **Hints are buttons.** A row of key hints, such as a panel's foot, is made of `HintButton`: a
-  command's label and its key, which runs the command when clicked.
+- **Hints are buttons.** A row of key hints, such as a panel's foot, is a `HintRow` of
+  `HintButton`s: a command's label and its key, which runs the command when clicked.
   `<HintButton command="comments.showThread" target={target}>Show</HintButton>`. Give it the target
   the key would act on, and words of its own only where the command's label is too long for the row.
   A click leaves focus where it was, so the keys beside it go on working. No hint is only text.
+  `HintRow` keeps the row on one line: where the hints don't fit with their key chips, it measures
+  and drops the chips, and each hint gives its key in its tooltip. Never guess a width for that: a
+  key is wider on Linux ("Enter") than on macOS (`⏎`).
+- **A row too narrow for what it draws gives it up, in an order of its own.** A row that has to stay
+  one line, such as a comment's head on its card or a comment box's head and foot, measures what
+  fits with `useGiveUp(row, steps)`, as `HintRow` does, and never takes a width to give a step up
+  at: names and keys are wider on one system, or for one person, than another. It marks what goes at
+  each step (`data-gives`), what comes in its place, as an icon for words (`data-takes`), and what
+  it must keep whole until nothing else is left to give up, such as an author's name (`data-fit`).
+  Key chips go first; a control that gives up its words is the small control's square, with its
+  words as its tooltip.
+- **A command with nothing to say refuses with an empty reason.** A command only some controls
+  offer, such as one of a box's notes, gives `''` from `enabled` where none offers it: a key bound
+  to it then does nothing, and no toast says so.
 - **Anything with a right-click menu has a `⋯` button.** `MoreButton` goes inside the element whose
   right-click opens the menu, at the end of its row (before a chevron that opens or closes the row,
   as on a thread's card), and opens that same menu under itself (`openMenuUnder`), so the two can
@@ -314,7 +328,9 @@ that floats.
   its key. A command that does one of two things is named by which it would do there, from its
   handler's `named`: "Unresolve" on a resolved thread, "Expand" on one drawn collapsed (a
   `ThreadTarget`'s `collapsed`).
-- **`Palette`** is the box that finds things by typing, from the top of the window.
+- **`Palette`** is the box that finds things by typing, from the top of the window. A command that
+  does one of two things is named there by which it would do, from its handler's `labelled`:
+  "Unresolve thread" on a resolved thread.
 - **`Tooltip`** names a control and its key: see [Controls](#controls).
 - **`ToastStack`** shows results at the bottom right, above the status bar: three at most, four
   seconds each, paused under the pointer or focus. A toast is one line, clamped to three, and one
@@ -470,13 +486,15 @@ copy its foot.
   has another. An empty box under the pull request says what it's for in a quiet hint (`hint`):
   "Comment on #264"; one whose head says it, as a reply's does, has none.
 - **Foot.** "Attach files…" as an icon button at the left, then "Discard draft"; the actions at the
-  right, the main one last, each with its key. The foot never runs past the box: as the box narrows
-  it gives up its key chips (under 480px), then the labels of the controls that keep an icon (under
-  410px, the width a foot with every control and Vim's mode needs), then its hint, and the actions
-  keep their words (`box-chip`, `box-label`, `box-hint` in `styles.css`, on the foot's own
-  `@container`). Whatever still doesn't fit wraps: the actions go to a row of their own, at its end,
-  as in a box beside the code in a small window. It's the one place a foot wraps. The head wraps
-  under 320px (`box-row`). In a box taller than its pane, the foot stays at the pane's foot.
+  right, each with its key, always in one order, "Send now", then "Add to review", however the box
+  was opened. Only the fill moves, to the main one.
+- **Narrow.** Side by side, a box is never narrower than 256px: where its side of the diff is, it
+  takes both sides, over the room kept for it on the other. The head and the foot are one line each
+  at any width, and give up what they must (`useGiveUp`): the foot its key chips, then the words of
+  "Discard draft", then its hint, then the actions' words for their icons, the filled one's last;
+  the head who it's from, then the switch's key chip, then the words of Write and Preview for their
+  icons, before what the comment is on is cut short. In a box taller than its pane, the foot stays
+  at the pane's foot.
 - **Actions.** "Add to review" and "Send now" under a line or a thread, "Send" under the pull
   request, "Save" in an edit. While a review is pending GitHub adds every comment to it, so the box
   has "Add to review" alone. A dimmed action says why in its tooltip.

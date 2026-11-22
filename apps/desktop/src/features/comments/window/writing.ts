@@ -229,6 +229,8 @@ export interface BoxNote {
   readonly offers?: readonly Offer[] | undefined;
   /** It offers "Attach files…", as the box's foot does: a file's, which didn't attach. */
   readonly attach?: boolean | undefined;
+  /** What came back, as it came, behind Details: GitHub's own words, a read's error. */
+  readonly details?: string | undefined;
 }
 
 /** A refusal's note: under a title, it says a send failed, in the tone a `Problem` has. */

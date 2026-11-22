@@ -235,6 +235,21 @@ test('follows the poller’s reads of the pull request, and says when the first 
   expect(second.threads.at(-1)).toMatchObject({ status: 'failed', problem: 'GitHub refused it' });
   expect(second.reviews.at(-1)).toEqual({ id: 't1', review: { kind: 'unknown' } });
   expect(second.logged).toEqual([`${PULL.toString()}: GitHub refused it`]);
+
+  // Asked again, after the read failed, it reads again from the start; a read that worked isn't.
+  failing.held.threads = list('T2');
+  failing.asked.length = 0;
+  second.reading.reread('t1');
+  expect(second.threads.at(-1)?.status).toBe('loading');
+  await settled();
+  expect(second.threads.at(-1)).toMatchObject({ status: 'ready', problem: null });
+  expect(second.threads.at(-1)?.threads.map((row) => row.id)).toEqual(['T2']);
+  expect(failing.asked).toEqual([`threads ${PULL.key}`, `review ${PULL.key}`]);
+  second.reading.reread('t1');
+  await settled();
+  expect(failing.asked).toHaveLength(2);
+  second.reading.stop();
+  expect(failing.listeners.size).toBe(0);
 });
 
 test('a view acting as nobody, or showing a run of layers, reads none', async () => {

@@ -4,9 +4,9 @@
 // and, under it, how a change asked of it stands while GitHub's answer was lost. A comment's text
 // is drawn as GitHub renders it, through `Post`.
 
-import { Button, Callout, Thread, type ThreadComment } from '@lo/ui';
+import { Button, Callout, Problem, Thread, type ThreadComment } from '@lo/ui';
 import { keyLabels } from '@lo/ui/commands';
-import type { MouseEvent, ReactNode } from 'react';
+import { useRef, type MouseEvent, type ReactNode } from 'react';
 
 import { registry } from '../../../window/commands/registry.ts';
 import { avatarImage } from '../../../window/images.ts';
@@ -25,11 +25,14 @@ import {
   remove,
   reply,
   resolveThread,
+  threw,
+  type Threw,
   tryAgain,
   underWay,
+  unfailed,
   unshown,
 } from './acts.ts';
-import { editing, replying } from './boxes.ts';
+import { editing, replacedIn, replying } from './boxes.ts';
 import { useExcerpt } from './excerpts.ts';
 import { landed } from './landed.ts';
 import { Post, type PostPull } from './Post.tsx';
@@ -97,11 +100,21 @@ export function Card({ tab, id, open, focused = false, onToggle }: CardProps): R
   // Its first comment's opening, as plain words, which it shows while it's collapsed.
   const opening = useExcerpt(row?.comments[0]?.body, !open);
   if (!row) return null;
+  // A suggested change shows the lines it replaces from the first frame, as the comment's box did.
+  const replaced = replacedIn(view, row);
   const body = (comment: ThreadCommentRow) => (
-    <Post view={view} post={{ kind: 'post', id: comment.id }} markdown={comment.body} pull={pull} />
+    <Post
+      view={view}
+      post={{ kind: 'post', id: comment.id }}
+      markdown={comment.body}
+      pull={pull}
+      replaced={replaced}
+    />
   );
   const thread = { kind: 'thread' as const, thread: id };
   const note = actNote(asked, row, isClosed);
+  // A write that failed before GitHub had it says so in the note's place: one note on a card.
+  const thrown = useTabState(threw, view, (all) => all.get(id));
   return (
     <>
       <ThreadCard
@@ -130,16 +143,59 @@ export function Card({ tab, id, open, focused = false, onToggle }: CardProps): R
           onDelete: (comment) => remove(tab, thread, comment),
         }}
       />
-      {note && asked && (
+      {thrown ? (
         <div data-act-note="" className="mt-8 max-w-read-measure">
-          <ActCallout
-            note={note}
-            onAgain={() => (note.again === 'check' ? checkAgain(tab, asked) : tryAgain(tab, asked))}
-            onClose={() => closeAct(view, asked)}
-          />
+          <ThrewProblem view={view} id={id} thrown={thrown} />
         </div>
+      ) : (
+        note &&
+        asked && (
+          <div data-act-note="" className="mt-8 max-w-read-measure">
+            <ActCallout
+              note={note}
+              onAgain={() =>
+                note.again === 'check' ? checkAgain(tab, asked) : tryAgain(tab, asked)
+              }
+              onClose={() => closeAct(view, asked)}
+            />
+          </div>
+        )
       )}
     </>
+  );
+}
+
+/**
+ * What the card of view `view`'s thread or comment `id` says of a change whose write failed before
+ * GitHub had it: what wasn't done, what came back behind Details, and "Try again", or "Check again"
+ * where it may have gone.
+ */
+export function ThrewProblem({
+  view,
+  id,
+  thrown,
+}: {
+  view: string;
+  id: string;
+  thrown: Threw;
+}): ReactNode {
+  const at = useRef<HTMLDivElement | null>(null);
+  return (
+    <div ref={at}>
+      <Problem
+        title={thrown.title}
+        details={thrown.details}
+        action={{
+          label: thrown.again === 'check' ? 'Check again' : 'Try again',
+          // Focus goes to the card first: the button goes with the problem.
+          onClick: () => {
+            if (at.current) focusCard(at.current);
+            unfailed(view, id);
+            thrown.run();
+          },
+        }}
+      />
+    </div>
   );
 }
 

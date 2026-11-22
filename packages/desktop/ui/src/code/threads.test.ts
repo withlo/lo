@@ -173,6 +173,16 @@ describe('sizes', () => {
     expect(one.dom.classList.contains('is-landing')).toBe(false);
   });
 
+  test('a thread that lands, drawn before it has anything in it, takes no space until it does', () => {
+    const { made, take } = threads();
+    const one = take(thread('one'));
+    made.lands = () => true;
+    expect(made.resized([measure(one, 0)])).toEqual([]);
+    expect(one.dom.style.height).toBe('0px');
+    expect(one.dom.classList.contains('is-landing')).toBe(true);
+    expect(made.resized([measure(one, 80)])).toEqual([{ host: one, fresh: true, reflowed: false }]);
+  });
+
   test('a host out of the page takes its content’s height, and is measured afresh once back', () => {
     const { made, take } = threads();
     const one = take(thread('one'));

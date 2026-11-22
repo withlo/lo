@@ -252,7 +252,7 @@ test.describe('where GitHub answers the upload Not Found', () => {
     await openBox(page);
     const box = boxes(page);
     await drop(page, [{ name: 'lo-attachment.png', bytes: PNG }]);
-    await expect(box).toContainText('Sign in to gh to attach files', { timeout: 20_000 });
+    await expect(box).toContainText('Sign in to GitHub CLI to attach files', { timeout: 20_000 });
     await expect(box.locator('.cm-content')).toHaveText('Repro: ');
     await expect(box.getByRole('button', { name: /Attach/ })).toHaveAttribute(
       'aria-disabled',

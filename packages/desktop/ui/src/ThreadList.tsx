@@ -171,7 +171,8 @@ function Row({
  * where, its replies, its state and the opening of what was said. It's one focusable element:
  * the thread the keyboard is on is its active descendant. Move and filter with the keys the panel
  * gives, and say which filter is on with {@link ThreadFilter}. With no thread to list it stays, with
- * `empty` in it, so focus isn't lost when the filter changes to one that lists none.
+ * `empty` in it, so focus isn't lost when the filter changes to one that lists none. `empty` fills
+ * the list, which is as tall as its pane at least.
  */
 export function ThreadList({
   groups,
@@ -196,11 +197,13 @@ export function ThreadList({
       aria-label="Threads"
       tabIndex={0}
       aria-activedescendant={rows.some((row) => row.key === focused) ? rowId(focused) : undefined}
-      className={`group/list flex flex-col gap-2 px-6 pb-12 ${className}`}
+      // With no rows it draws no ring: there's nothing in it for focus to be on. It's as tall as
+      // its pane at least, so what it says in their place can sit in the middle of it.
+      className={`group/list flex min-h-full flex-col gap-2 px-6 pb-12 ${rows.length === 0 ? 'shadow-none' : ''} ${className}`}
       {...rest}
     >
       {rows.length === 0 && empty !== undefined && (
-        <div className="px-6 py-8 text-fg-muted text-small">{empty}</div>
+        <div className="flex flex-1 flex-col text-fg-muted text-small">{empty}</div>
       )}
       {groups
         .filter((group) => group.rows.length > 0)

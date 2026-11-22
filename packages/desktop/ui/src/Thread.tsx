@@ -1,8 +1,9 @@
 import { cva } from 'class-variance-authority';
-import type { ReactNode } from 'react';
+import { useRef, type ReactNode } from 'react';
 
 import { Avatar } from './Avatar.tsx';
 import { Button } from './Button.tsx';
+import { useGiveUp } from './giveUp.ts';
 import { Key, keyAria } from './Key.tsx';
 import { MoreButton } from './MoreButton.tsx';
 import { Spinner } from './Spinner.tsx';
@@ -200,15 +201,38 @@ function DeleteIcon() {
 }
 
 /**
- * A comment's own control, Edit or Delete…: its label, and in a narrow card its icon alone, with
- * the label as its tooltip, so the comment's head stays one line.
+ * A comment's own control, Edit or Delete…: its label, or, where its head has given up labels
+ * (`give-up`), its icon alone, with the label as its tooltip.
  */
 function Face({ icon, children }: { icon: ReactNode; children: string }) {
   return (
     <>
-      <span className="thread-icons">{icon}</span>
-      <span className="thread-words">{children}</span>
+      <span data-takes="labels" className="inline-flex">
+        {icon}
+      </span>
+      <span data-gives="labels">{children}</span>
     </>
+  );
+}
+
+/**
+ * What a comment's head gives up, in order, as its card narrows, so it stays one line with its
+ * name whole for as long as it can: the key chips, the "Author" tag, Edit's and Delete…'s words
+ * for their icons, and the time. Only then is the name cut short.
+ */
+const HEAD_STEPS = ['keys', 'tag', 'labels', 'time'];
+
+/** A comment's head: who wrote it and when, and the controls you have on your own. */
+function Head({ children }: { children: ReactNode }) {
+  const head = useRef<HTMLDivElement | null>(null);
+  useGiveUp(head, HEAD_STEPS);
+  return (
+    <div
+      ref={head}
+      className="give-up flex min-h-24 items-center gap-8 whitespace-nowrap text-fg-muted text-small"
+    >
+      {children}
+    </div>
   );
 }
 
@@ -389,24 +413,31 @@ export function Thread({
           className={`flex gap-8 px-12 py-8 ${index === 0 ? '' : 'border-t border-border-subtle'}`}
         >
           <Avatar login={comment.author} image={comment.image} size="sm" />
-          {/* The container its head narrows in: one line, whatever the card's width. */}
-          <div className="@container min-w-0 flex-1">
-            <div className="flex min-h-24 items-center gap-8 text-fg-muted text-small">
-              <span className="flex min-w-0 flex-1 items-center gap-8 whitespace-nowrap">
-                <span className="min-w-0 truncate font-semibold text-fg">
+          <div className="min-w-0 flex-1">
+            <Head>
+              <span className="flex min-w-0 flex-1 items-center gap-8">
+                <span data-fit className="min-w-0 truncate font-semibold text-fg">
                   {comment.author}
                   {comment.mine && <span className="font-normal text-fg-muted"> (you)</span>}
                 </span>
-                <span className="lo-num flex-none">{comment.when}</span>
-                {comment.byAuthor && <Tag>Author</Tag>}
+                <span data-gives="time" className="lo-num flex-none">
+                  {comment.when}
+                </span>
+                {comment.byAuthor && (
+                  <span data-gives="tag" className="inline-flex flex-none">
+                    <Tag>Author</Tag>
+                  </span>
+                )}
                 {comment.pending && !pendingAll && <Tag tone="warning">Pending</Tag>}
               </span>
               {comment.mine && (
-                <span className="flex flex-none items-center gap-2">
+                <span className="flex flex-none items-center gap-4">
                   <Button
                     variant="ghost"
                     size="sm"
-                    aria-label="Edit"
+                    data-squares="labels"
+                    // Named for its comment, as every comment's is the same button.
+                    aria-label={`Edit comment from ${comment.when}`}
                     hint="Edit"
                     hintKeys={comment.id === newestMine ? keys.edit : undefined}
                     onClick={() => onEdit?.(comment.id)}
@@ -419,9 +450,10 @@ export function Thread({
                   <Button
                     variant="ghost"
                     size="sm"
-                    aria-label="Delete…"
+                    data-squares="labels"
+                    aria-label={`Delete comment from ${comment.when}…`}
                     busy={comment.id === deleting}
-                    working="Deleting…"
+                    working={<span data-gives="labels">Deleting…</span>}
                     align="end"
                     // One change to a thread at a time: while a resolve is at work, it says so.
                     disabled={resolving}
@@ -436,7 +468,7 @@ export function Thread({
                   </Button>
                 </span>
               )}
-            </div>
+            </Head>
             <div className="lo-selectable mt-2 text-fg read-comment">{comment.body}</div>
           </div>
         </div>

@@ -388,6 +388,11 @@ onStacks(
     // #A, the layer below, has none of its own, and #B's row, off screen now, still counts its one,
     // as read with the layers.
     await expect(panel(page)).toContainText('No unresolved threads');
+    // With nothing listed, there's nothing for Next and Previous to go to.
+    const foot = page.locator('[data-lo-threads-foot]');
+    for (const name of ['Next', 'Previous']) {
+      await expect(foot.getByRole('button', { name })).toHaveAttribute('aria-disabled', 'true');
+    }
     await expect(stack.locator('[aria-current="true"]')).toHaveAttribute(
       'data-key',
       String(STACK.a),
@@ -509,8 +514,9 @@ test('the threads panel lists the threads and shows one in the diff', async ({ p
     await page.keyboard.press('f');
     await expect(filter(page, 'All 11')).toHaveAttribute('aria-selected', 'true');
     await expect.poll(async () => (await rows(page)).length).toBe(11);
-    // On the resolved thread, the foot offers to unresolve it, on one line that nothing runs past,
-    // each hint with its key.
+    // On the resolved thread, the foot offers to unresolve it, on one line that nothing runs past:
+    // each hint with its key where they all fit, as on macOS, and without where they don't, as on
+    // Linux, whose "Enter" is wider than "⏎".
     const foot = panel(page).locator('[data-lo-threads-foot]');
     // Up the list to the resolved one, on line 5.
     for (let row = 0; row < 11; row += 1) {
@@ -521,7 +527,10 @@ test('the threads panel lists the threads and shows one in the diff', async ({ p
     await expect(foot.getByRole('button', { name: /^Unresolve/ })).toBeVisible();
     await expect(foot.getByRole('button', { name: /^Show/ })).toBeVisible();
     await expect(foot.locator('kbd')).toHaveCount(4);
-    for (const chip of await foot.locator('kbd').all()) await expect(chip).toBeVisible();
+    const chips = await foot
+      .locator('kbd')
+      .evaluateAll((each) => each.filter((chip) => chip.checkVisibility()).length);
+    expect([0, 4]).toContain(chips);
     expect(
       await foot.evaluate((element) => {
         const buttons = [...element.querySelectorAll('button')].map((each) =>

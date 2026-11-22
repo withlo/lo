@@ -10,8 +10,16 @@ import { changeRefusal } from '@lo/review';
 import { refuse } from '../../../window/commands/notices.tsx';
 import type { PullTab } from '../../tab/window/shared.ts';
 import type { EditPlaceRow } from '../contract.ts';
-import { OFFLINE_ACT, setAsking } from './acts.ts';
-import { bringToTimeline, canWrite, knowPull, loginOf, offline, openInTimeline } from './boxes.ts';
+import { COULDNT_EDIT, failed, OFFLINE_ACT, setAsking, unfailed } from './acts.ts';
+import {
+  bringToTimeline,
+  canWrite,
+  inputsSoFar,
+  knowPull,
+  loginOf,
+  offline,
+  openInTimeline,
+} from './boxes.ts';
 import { main } from './main.ts';
 import { actText } from './writing.ts';
 
@@ -85,6 +93,7 @@ function may(tab: PullTab, comment: PullComment, change: 'edit' | 'delete'): boo
  */
 export async function editOnPull(tab: PullTab, comment: PullComment): Promise<void> {
   if (!may(tab, comment, 'edit')) return;
+  unfailed(tab.id, comment.id);
   const place: EditPlaceRow = { kind: 'edit', thread: null, comment: comment.id };
   try {
     const outcome = await main().editing({ id: tab.id, place, base: comment.body });
@@ -93,7 +102,7 @@ export async function editOnPull(tab: PullTab, comment: PullComment): Promise<vo
       return;
     }
   } catch (error) {
-    refuse(error instanceof Error ? error.message : String(error));
+    failed(tab.id, comment.id, COULDNT_EDIT, error, () => void editOnPull(tab, comment));
     return;
   }
   knowPull(tab);
@@ -124,17 +133,26 @@ export function removeOnPull(tab: PullTab, comment: PullComment): void {
 /** What puts focus in each view's box at the end of its timeline, while the timeline draws it. */
 const focusers = new Map<string, () => void>();
 
+/**
+ * The views whose box was asked for focus before their timeline drew it, by how much the reader had
+ * done then: it takes focus as it comes, if they've done nothing since.
+ */
+const awaited = new Map<string, number>();
+
 /** Says what puts focus in view `view`'s box at its timeline's end, until the returned function. */
 export function setPullBoxFocus(view: string, focus: () => void): () => void {
   focusers.set(view, focus);
+  const asked = awaited.get(view);
+  awaited.delete(view);
+  if (asked !== undefined && asked === inputsSoFar()) queueMicrotask(focus);
   return () => {
     if (focusers.get(view) === focus) focusers.delete(view);
   };
 }
 
 /**
- * `c` in tab `tab`'s timeline: focus in the box at its end, brought on screen. Says why not, when
- * it can't take a comment.
+ * `c` in tab `tab`'s timeline: focus in the box at its end, brought on screen, or as the timeline
+ * draws it. Says why not, when it can't take a comment.
  */
 export function focusPullBox(tab: PullTab): void {
   const can = canWrite(tab.id);
@@ -146,5 +164,5 @@ export function focusPullBox(tab: PullTab): void {
   if (bringToTimeline(tab.id)) return;
   const focus = focusers.get(tab.id);
   if (focus) focus();
-  else refuse('Opening pull request…');
+  else awaited.set(tab.id, inputsSoFar());
 }

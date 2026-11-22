@@ -68,9 +68,10 @@ export interface ButtonProps
   busy?: boolean | undefined;
   /**
    * What it says while busy, the verb of its label: "Merging…" for "Merge #264". Without one, it
-   * says its label beside the ring.
+   * says its label beside the ring. A button that can be its icon alone gives it as its label is
+   * given, so that as its icon, the ring takes the icon's place.
    */
-  working?: string | undefined;
+  working?: ReactNode;
   /**
    * The widest thing it says while busy, for a button whose `working` changes as its work goes on,
    * or whose label does: "Trusting…" for one that says "Waiting…" first. It holds that room, with

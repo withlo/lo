@@ -30,18 +30,25 @@ import {
 import type { Composer, ComposerEvents, KeptBox, Mode, Send } from '@lo/ui/code';
 import {
   type BoxTarget,
+  controlOf,
   type Handler,
   type HeaderTarget,
   KEY_EVENT,
-  keyLabels,
   type LineTarget,
+  runControl,
   type Target,
 } from '@lo/ui/commands';
 
 import { announce, notice, refuse, withdraw } from '../../../window/commands/notices.tsx';
 import { registry } from '../../../window/commands/registry.ts';
 import { client } from '../../../window/ipc.ts';
-import { diffStateOf, showDiff, writingDiff, type WritingDiff } from '../../diff/window/shared.ts';
+import {
+  diffStateOf,
+  onDiffDrawn,
+  showDiff,
+  writingDiff,
+  type WritingDiff,
+} from '../../diff/window/shared.ts';
 import {
   blockInOverview,
   blockKey,
@@ -719,7 +726,7 @@ let inputs = 0;
 let counting = false;
 
 /** How many keys, clicks, wheel turns and app menu commands the reader has made, from now on. */
-function inputsSoFar(): number {
+export function inputsSoFar(): number {
   if (!counting) {
     counting = true;
     const count = () => {
@@ -1152,8 +1159,62 @@ function previousOf(file: { path: string | null; old: string | null }): string |
 /** Why GitHub takes no comment on a file in the revision on screen. */
 const UNCHANGED_FILE = 'This revision doesn’t change this file';
 
-/** Why a key does nothing while the diff it's in is still being drawn. */
-const OPENING = 'Opening pull request…';
+/**
+ * The lines a suggested change in a comment on thread `row` of view `view` replaces, as its diff
+ * shows them: the lines the thread is on, where they're the newer side's in the revision on
+ * screen. Nothing elsewhere, as for an outdated thread, whose card has GitHub's own.
+ */
+export function replacedIn(view: string, row: ThreadRow): string | undefined {
+  const { line, startLine, startSide, side, currentOn } = row;
+  if (row.subject !== 'LINE' || row.outdated || line === null || side !== 'RIGHT') return undefined;
+  if (startLine !== null && startSide !== null && startSide !== 'RIGHT') return undefined;
+  const diff = writingDiff(view);
+  const at = shownAt(view, row.id);
+  if (!diff || !at || currentOn?.toLowerCase() !== diff.drawn().at.toLowerCase()) return undefined;
+  return linesOf(diff, at.file, startLine ?? line, line);
+}
+
+/**
+ * The lines a suggested change in box `box`'s text replaces: those it's on, as its diff shows them,
+ * for a box on the newer side's lines in the revision on screen, or in a thread that is.
+ */
+export function replacedOf(box: Box): string | undefined {
+  const { view } = box;
+  const { place } = box.state;
+  if (place.kind === 'reply' || (place.kind === 'edit' && place.thread !== null)) {
+    const row = held.get(view).threads?.threads.find((each) => each.id === place.thread);
+    return row && replacedIn(view, row);
+  }
+  if (place.kind !== 'thread' || place.lines === null) return undefined;
+  const { start, end } = place.lines;
+  if (end.side !== 'RIGHT' || (start !== null && start.side !== 'RIGHT')) return undefined;
+  const diff = writingDiff(view);
+  if (!diff) return undefined;
+  const drawn = diff.drawn();
+  if (place.commit.toLowerCase() !== drawn.at.toLowerCase()) return undefined;
+  const file = drawn.files.find((each) => githubPath(each) === place.path);
+  return file && linesOf(diff, file.id, start?.number ?? end.number, end.number);
+}
+
+/** File `file`'s newer lines `from` to `to` in `diff`, as one text: nothing where it has none. */
+function linesOf(diff: WritingDiff, file: string, from: number, to: number): string | undefined {
+  const lines = diff.lines({ file, side: 'new', from: Math.min(from, to), to: Math.max(from, to) });
+  return lines.length === 0 ? undefined : lines.join('\n');
+}
+
+/** Why a key does nothing while the pull request it's in is still opening. */
+export const OPENING = 'Opening pull request…';
+
+/**
+ * Why a key that acts in view `view`'s diff does nothing while the diff isn't drawn: the pull
+ * request is still opening, or else `then`, what to do, as the diff isn't on screen.
+ */
+export function noDiff(view: string, then = 'Go to the diff first'): string {
+  return (pullOf(view)?.shown ?? undefined) === undefined ? OPENING : then;
+}
+
+/** The command that comments on a line's file once the line took no comment. */
+const ON_FILE_INSTEAD = 'comments.onFileInstead';
 
 /** A line a comment was refused on, whose file `⏎` comments on while the note says so, `said`. */
 let offered: { view: string; file: string; how: Send; said: string } | undefined;
@@ -1199,12 +1260,16 @@ export async function comment(
     // Where main couldn't read the file's patch, it takes a comment on the file only.
     const said = takes ? NOT_IN_DIFF : NO_LINES;
     offered = { view, file: file.id, how, said };
-    const [enter] = registry().keysOf('comments.onFileInstead');
-    refuse(said, {
-      label: 'Comment on file',
-      keys: enter && keyLabels(enter, registry().system),
-      onClick: () => void takeOffer(tab),
-    });
+    // Its button is the command's control, as `⏎` runs it.
+    const instead = controlOf(ON_FILE_INSTEAD, target);
+    refuse(
+      said,
+      instead && {
+        label: instead.label,
+        keys: instead.keys,
+        onClick: () => void runControl(ON_FILE_INSTEAD, target),
+      },
+    );
     return;
   }
   if (suggest && !takesSuggestion(on)) {
@@ -1260,7 +1325,19 @@ export async function commentOnFile(tab: PullTab, key: string): Promise<void> {
   showDiff(view);
   const diff = writingDiff(view);
   if (!diff) {
-    refuse(OPENING);
+    // The diff comes on screen, and takes the comment once it's drawn, if the reader has done
+    // nothing since.
+    const opening = noDiff(view, '');
+    if (opening !== '') {
+      refuse(opening);
+      return;
+    }
+    const asked = inputsSoFar();
+    const stop = onDiffDrawn((drawn) => {
+      if (drawn !== view) return;
+      stop();
+      if (inputsSoFar() === asked) void commentOnFile(tab, key);
+    });
     return;
   }
   const file = diff.drawn().files.find((each) => each.key === key);
@@ -2159,7 +2236,7 @@ export async function commentOnBlock(tab: PullTab, target: Target, how: Send): P
   const { block } = writing;
   const head = pullOf(view)?.shown ?? undefined;
   if (head === undefined) {
-    refuse('Reading pull request…');
+    refuse(OPENING);
     return;
   }
   knowPull(tab);

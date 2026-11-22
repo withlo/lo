@@ -690,6 +690,23 @@ export class HintWidget extends WidgetType {
   }
 }
 
+/**
+ * Someone else's new comment on a line on screen, which waits there so nothing moves under the
+ * reader: the line says so at its end, over the code, taking no room. A click on it is a click on
+ * the line, which lets what waits in, as any input of the reader's does.
+ */
+export class ArrivedWidget extends WidgetType {
+  override eq(): boolean {
+    return true;
+  }
+
+  toDOM(): HTMLElement {
+    const marker = element('span', 'lo-arrived', 'New comment');
+    marker.setAttribute('aria-hidden', 'true');
+    return marker;
+  }
+}
+
 /** A file's threads as the file tree counts them: a comment mark and their number. */
 function threadCount(total: number, unresolved: number): HTMLElement {
   const said = threadWords(total, unresolved);

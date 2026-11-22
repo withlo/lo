@@ -39,7 +39,6 @@ import { DiscardedToast } from './Discarded.tsx';
 import {
   atWork,
   edit,
-  OPENING,
   keepActsOf,
   remove,
   reply,
@@ -65,6 +64,7 @@ import {
   keptAway,
   landBoxes,
   knowPull,
+  noDiff,
   restore,
   reopenAll,
   restoreBlock,
@@ -78,7 +78,7 @@ import { DeleteDialog } from './DeleteDialog.tsx';
 import { frameOf } from './Frame.tsx';
 import { KeptStatus } from './KeptStatus.tsx';
 import { main, tabs } from './main.ts';
-import { inPanel, moveRow, onThread, showTarget, stepFilter } from './panel.ts';
+import { inPanel, moveRow, onThread, rowsListed, showTarget, stepFilter } from './panel.ts';
 import { Said } from './Said.tsx';
 import { ThreadsPanel, UnresolvedCount, unresolvedOf } from './ThreadsPanel.tsx';
 import { renderThreads } from './render.ts';
@@ -109,7 +109,7 @@ function inDiff(): PullTab | string {
   const tab = writable();
   if (typeof tab === 'string') return tab;
   if (writingDiff(tab.id, true)) return tab;
-  return writingDiff(tab.id) ? 'Go to the diff to comment' : OPENING;
+  return noDiff(tab.id, 'Go to the diff to comment');
 }
 
 function enabled(check: () => PullTab | string) {
@@ -241,8 +241,8 @@ export default {
         return tab && keptAway.get(tab.id).length > 0 ? true : 'No kept drafts';
       },
     },
-    nextThread: { run: () => moveRow(1), enabled: inPanel },
-    previousThread: { run: () => moveRow(-1), enabled: inPanel },
+    nextThread: { run: () => moveRow(1), enabled: rowsListed },
+    previousThread: { run: () => moveRow(-1), enabled: rowsListed },
     showThread: { run: showTarget, enabled: onThread },
     filterThreads: { run: stepFilter, enabled: inPanel },
     resolveInPanel: {

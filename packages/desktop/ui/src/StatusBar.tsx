@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import type { ButtonHTMLAttributes, ReactNode, Ref } from 'react';
 
 /**
  * The strip at the bottom of a pull request's tab: background work on the left, a dot and a word
@@ -28,19 +28,23 @@ const DOTS = {
 /**
  * One process in the status bar: a dot for how it is, its name, and its progress while it has some.
  * With `onClick`, it's a button, for something it does, such as a banner's action folded into the
- * status bar.
+ * status bar; and so it is as a `Popover`'s `trigger`, which gives it its click, its ref and the
+ * rest of a button's props.
  */
 export function StatusItem({
   dot,
   children,
   title,
   onClick,
+  ref,
+  ...props
 }: {
   dot?: keyof typeof DOTS | undefined;
   children: ReactNode;
   title?: string | undefined;
-  onClick?: (() => void) | undefined;
-}) {
+  onClick?: ButtonHTMLAttributes<HTMLButtonElement>['onClick'] | undefined;
+  ref?: Ref<HTMLButtonElement> | undefined;
+} & Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'children' | 'title' | 'onClick'>) {
   const content = (
     <>
       {dot !== undefined && <span className={`size-8 flex-none rounded-full ${DOTS[dot]}`} />}
@@ -58,6 +62,8 @@ export function StatusItem({
   return (
     <button
       type="button"
+      {...props}
+      ref={ref}
       className={`${item} hover:bg-hover hover:text-fg focus-visible:shadow-ring`}
       title={title}
       onClick={onClick}

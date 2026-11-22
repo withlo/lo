@@ -14,6 +14,7 @@ export {
   type ContextMenuProps,
 } from './ContextMenu.tsx';
 export { HintButton, type HintButtonProps } from './HintButton.tsx';
+export { HintRow, type HintRowProps } from './HintRow.tsx';
 export { Key, keyAria, type KeyAria, type KeyProps } from './Key.tsx';
 export {
   Toast,

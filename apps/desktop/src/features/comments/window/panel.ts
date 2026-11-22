@@ -163,6 +163,14 @@ export function inPanel(): true | string {
   return typeof tab === 'string' ? tab : true;
 }
 
+/** Whether the panel of the view on screen lists a thread for its keys to move to, or why not. */
+export function rowsListed(): true | string {
+  const tab = pullOnScreen();
+  if (typeof tab === 'string') return tab;
+  const keys = rowKeys(groupsIn(tab.id, filterStore.getState().filter));
+  return keys.length > 0 ? true : 'No threads listed';
+}
+
 /** `j` (1) and `k` (-1): the keyboard moves a thread on, stopping at the ends. */
 export function moveRow(step: 1 | -1): void {
   const tab = pullOnScreen();
