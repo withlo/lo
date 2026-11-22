@@ -196,7 +196,7 @@ describe('readLink', () => {
   it('says a bad link is not one, and what a good one looks like', () => {
     expect(readLink('rozed-dev/e2e#80')).toEqual({
       kind: 'invalid',
-      message: 'Lo opens links to pull requests, such as https://github.com/owner/repo/pull/123.',
+      message: 'A pull request link looks like `https://github.com/owner/repo/pull/123`.',
     });
     expect(readLink('lo://github.com/rozed-dev/e2e/issues/12')).toMatchObject({
       kind: 'invalid',

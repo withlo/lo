@@ -1,9 +1,10 @@
-import { useId, useSyncExternalStore, type MouseEvent, type ReactNode } from 'react';
+import { useId, type MouseEvent, type ReactNode } from 'react';
 
 import { Button } from './Button.tsx';
-import { controlOf, heldRegistry, runControl } from './commands/control.ts';
+import { runControl } from './commands/control.ts';
 import type { Target } from './commands/targets.ts';
 import { Key, keyAria } from './Key.tsx';
+import { useControl } from './useControl.ts';
 
 export interface HintButtonProps {
   /** The command it runs, by its id: `comments.reply`. */
@@ -14,15 +15,6 @@ export interface HintButtonProps {
   children?: ReactNode;
 }
 
-/** How many times the keys have changed, which draws each hint again. */
-let changes = 0;
-
-const subscribe = (listener: () => void): (() => void) =>
-  heldRegistry()?.subscribe(() => {
-    changes += 1;
-    listener();
-  }) ?? (() => undefined);
-
 /**
  * A hint that's a button: a command's label and its key, which runs the command when clicked.
  * Every row of key hints is made of these, so no hint is only text and every key shown can be
@@ -32,14 +24,8 @@ const subscribe = (listener: () => void): (() => void) =>
  * command that isn't there.
  */
 export function HintButton({ command, target, children }: HintButtonProps) {
-  // Drawn again when the keymap changes.
-  useSyncExternalStore(
-    subscribe,
-    () => changes,
-    () => 0,
-  );
   const why = useId();
-  const control = controlOf(command, target);
+  const control = useControl(command, target);
   if (!control) return null;
   const off = control.off !== undefined;
   return (

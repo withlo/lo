@@ -91,6 +91,17 @@ export function setFilterField(field: HTMLInputElement | null): void {
   filterField = field;
 }
 
+/** Empties the filter, and goes to it, so what's typed next filters again. */
+export function clearFilter(): void {
+  recentStore.setState({ query: '' });
+  filterField?.focus();
+}
+
+/** Whether the filter holds anything to clear, or why not. */
+export function canClearFilter(): true | string {
+  return recentStore.getState().query === '' ? 'The filter is empty' : true;
+}
+
 /** Goes to the filter, with what it holds selected; or says there's nothing to filter yet. */
 export function focusFilter(): void {
   if (!filterField) {
