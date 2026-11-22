@@ -507,9 +507,17 @@
    each step it has given up, in its own order, in `data-gave-up`). Once a step is given up, what's
    marked `data-gives` with it goes, what's marked `data-takes` with it comes, as an icon comes for
    words, and a control marked `data-squares` with it is the small control's square. The key chips
-   go at `keys`. */
+   go at `keys`. A row whose items go one at a time, in an order it works out as it draws, as the
+   queue's hints go, marks each with its turn, `drop1` first. */
 @utility give-up {
   &[data-gave-up~='keys'] :is(kbd, .key-focus),
+  &[data-gave-up~='drop1'] [data-gives='drop1'],
+  &[data-gave-up~='drop2'] [data-gives='drop2'],
+  &[data-gave-up~='drop3'] [data-gives='drop3'],
+  &[data-gave-up~='drop4'] [data-gives='drop4'],
+  &[data-gave-up~='drop5'] [data-gives='drop5'],
+  &[data-gave-up~='drop6'] [data-gives='drop6'],
+  &[data-gave-up~='drop7'] [data-gives='drop7'],
   &[data-gave-up~='tag'] [data-gives='tag'],
   &[data-gave-up~='time'] [data-gives='time'],
   &[data-gave-up~='hint'] [data-gives='hint'],
@@ -833,14 +841,6 @@
 /* What gives way first when a row runs out of room: a rename's old name, before the new one. */
 @utility shrink-first {
   flex-shrink: 100;
-}
-
-/* A row of hints that measures itself and has given up its key chips, to fit beside what it
-   shares a bar with. */
-@utility hints-bare {
-  & kbd {
-    display: none;
-  }
 }
 
 /* A change's letter, A, M, D, R or T, in the code font at the tags' weight. */

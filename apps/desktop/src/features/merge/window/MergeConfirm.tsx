@@ -550,7 +550,7 @@ function troubleOf(plan: MergePlan, refusal: Refusal, title: string, why: string
 }
 
 /** What a chain whose merge isn't confirmed does while Lo is open, as it reads the merge. */
-const CHAIN_CHECKS = 'Lo keeps checking, and moves the layers above once it has merged.';
+const CHAIN_CHECKS = 'Still checking. The layers above move once it merges.';
 
 /** "Check again" for the merge named `key`, busy while it looks: it only looks. */
 function checkAgain(key: string, run: () => void): Primary {

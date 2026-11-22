@@ -950,8 +950,7 @@ it('lets a chain’s merge whose answer was lost be left while Lo reads how it w
   await until(() => problem() !== undefined);
   expect(problem()).toEqual({
     title: 'Merge not confirmed',
-    reason:
-      'GitHub didn’t respond. Lo keeps checking, and moves the layers above once it has merged.',
+    reason: 'GitHub didn’t respond. Still checking. The layers above move once it merges.',
   });
   // The step says where it stands, and only the main button waits.
   expect(rows()[0]).toContain('Not confirmed');

@@ -11,6 +11,7 @@ import {
   Branch,
   Button,
   HintButton,
+  HintRow,
   Key,
   keyAria,
   Loading,
@@ -26,15 +27,7 @@ import {
   type WaitingEntry as TableWaiting,
 } from '@lo/ui';
 import { controlOf, keyLabels, runControl, setScopeSource, type Target } from '@lo/ui/commands';
-import {
-  useEffect,
-  useLayoutEffect,
-  useRef,
-  useState,
-  useSyncExternalStore,
-  type ReactNode,
-  type RefObject,
-} from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { useStore } from 'zustand';
 
 import { useMenuTarget } from '../../../window/commands/menus.tsx';
@@ -460,10 +453,16 @@ interface Hint {
 }
 
 /**
+ * What the status bar's hints give up after their key chips, a hint at a time: the one whose turn
+ * is `drop1` first. One turn for each hint.
+ */
+const DROPS = ['drop1', 'drop2', 'drop3', 'drop4', 'drop5', 'drop6', 'drop7'];
+
+/**
  * The status bar's hints: a button for each of the queue's keys, named as the row the keyboard is
  * on has it, each dimmed with why it can't run on it. The row measures itself, as the table does:
- * where it doesn't fit beside the bar's facts, it gives up its key chips, then hints from the
- * right, dimmed ones first. The facts on the left never shrink.
+ * where it doesn't fit beside the bar's facts, it gives up its key chips, each hint giving its key
+ * in its tooltip, then hints from the right, dimmed ones first. The facts on the left never shrink.
  */
 function Hints({ tab, read }: { tab: QueueTab; read: QueueRead | undefined }) {
   // Drawn again as what's at work, and the row the keyboard is on, change what each can do.
@@ -484,69 +483,37 @@ function Hints({ tab, read }: { tab: QueueTab; read: QueueRead | undefined }) {
     },
     { command: 'queue.openOnGithub', label: 'Open on GitHub', onRow: true },
   ];
-  const off = hints.map(
-    (hint) => controlOf(hint.command, hint.onRow ? on : undefined)?.off !== undefined,
+  const turns = dropTurns(
+    hints.map((hint) => controlOf(hint.command, hint.onRow ? on : undefined)?.off !== undefined),
   );
-  const box = useRef<HTMLSpanElement>(null);
-  const step = useFit(box, hints.length + 1, `${on.kind === 'row' ? on.row : ''} ${off.join()}`);
-  const gone = givenUp(off, step - 1);
   return (
-    <span ref={box} className={`flex min-w-0 items-center gap-2 ${step > 0 ? 'hints-bare' : ''}`}>
-      {hints.map((hint, index) =>
-        gone.has(index) ? null : (
-          <HintButton
-            key={hint.command}
-            command={hint.command}
-            target={hint.onRow ? on : undefined}
-          >
+    // As wide as the bar has room for, so it measures again as the bar widens.
+    <HintRow className="min-w-0 flex-auto items-center justify-end gap-2" more={DROPS}>
+      {hints.map((hint, index) => (
+        <span key={hint.command} data-gives={`drop${turns[index]}`} className="flex flex-none">
+          <HintButton command={hint.command} target={hint.onRow ? on : undefined}>
             {hint.label}
           </HintButton>
-        ),
-      )}
-    </span>
+        </span>
+      ))}
+    </HintRow>
   );
 }
 
-/** The hints given up to drop `count` of them, by their place: from the right, dimmed ones first. */
-export function givenUp(off: readonly boolean[], count: number): ReadonlySet<number> {
+/**
+ * Each hint's turn to be given up, from 1, by its place, where `off` says which are dimmed: from
+ * the right, dimmed ones first.
+ */
+export function dropTurns(off: readonly boolean[]): number[] {
   const order = [
     ...off.flatMap((dimmed, index) => (dimmed ? [index] : [])).toReversed(),
     ...off.flatMap((dimmed, index) => (dimmed ? [] : [index])).toReversed(),
   ];
-  return new Set(order.slice(0, Math.max(0, count)));
-}
-
-/**
- * How far the row `box` has had to give up to fit, from 0, for all of it, to `most`: one step at a
- * time, before it's painted, while what it holds is wider than it. It starts again from all of it
- * as the bar it's in changes width, or as what it says, `shown`, changes.
- */
-function useFit(box: RefObject<HTMLElement | null>, most: number, shown: string): number {
-  const [step, setStep] = useState(0);
-  const [said, setSaid] = useState(shown);
-  if (said !== shown) {
-    setSaid(shown);
-    setStep(0);
-  }
-  useLayoutEffect(() => {
-    const element = box.current;
-    if (element && step < most && element.scrollWidth > element.clientWidth + 0.5) {
-      setStep(step + 1);
-    }
+  const turns = Array.from({ length: off.length }, () => 0);
+  order.forEach((index, turn) => {
+    turns[index] = turn + 1;
   });
-  useEffect(() => {
-    const bar = box.current?.closest('footer');
-    if (!bar || typeof ResizeObserver === 'undefined') return undefined;
-    let width = bar.clientWidth;
-    const watch = new ResizeObserver(() => {
-      if (bar.clientWidth === width) return;
-      width = bar.clientWidth;
-      setStep(0);
-    });
-    watch.observe(bar);
-    return () => watch.disconnect();
-  }, [box]);
-  return step;
+  return turns;
 }
 
 /** A merge queue's tab, as its kind draws it. */

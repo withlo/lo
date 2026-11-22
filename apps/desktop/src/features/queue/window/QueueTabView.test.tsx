@@ -18,7 +18,7 @@ import type * as TabShared from '../../tab/window/shared.ts';
 import type { Acted, Entry, QueueRead, QueueState } from '../contract.ts';
 import { acting } from './acting.ts';
 import feature from './index.ts';
-import { givenUp, QueueTabView } from './QueueTabView.tsx';
+import { dropTurns, QueueTabView } from './QueueTabView.tsx';
 import { focusedRows, forgetQueue, showQueue } from './store.ts';
 
 // The tab on screen, as the tab feature names it: the queue's, unless a test says.
@@ -458,12 +458,51 @@ function hints(host: HTMLElement): [string, string | null][] {
     ]);
 }
 
+/** The status bar's row of hints, which the measuring test gives a width. */
+function measured(element: HTMLElement): boolean {
+  return element.classList.contains('give-up') && element.closest('footer') !== null;
+}
+
+/** How many steps a row has given up. */
+function given(element: HTMLElement): number {
+  return element.getAttribute('data-gave-up')?.split(' ').length ?? 0;
+}
+
 describe('the status bar’s hints', () => {
   it('give up hints from the right where they don’t fit, the dimmed ones first', () => {
-    const off = [false, false, true, false, true, false];
-    expect([...givenUp(off, 0)]).toEqual([]);
-    expect([...givenUp(off, 3)]).toEqual([4, 2, 5]);
-    expect([...givenUp(off, 9)]).toEqual([4, 2, 5, 3, 1, 0]);
+    // #4 goes first, then #2, then the rest from the right.
+    expect(dropTurns([false, false, true, false, true, false])).toEqual([6, 5, 2, 4, 1, 3]);
+    expect(dropTurns([false, false, false])).toEqual([3, 2, 1]);
+  });
+
+  it('measures as one row: key chips first, then the dimmed hints from the right', () => {
+    // The row is 300 px wide; its hints take 420 with their chips, and each step given up saves 50.
+    Object.defineProperty(HTMLElement.prototype, 'clientWidth', {
+      configurable: true,
+      get(this: HTMLElement) {
+        return measured(this) ? 300 : 0;
+      },
+    });
+    Object.defineProperty(HTMLElement.prototype, 'scrollWidth', {
+      configurable: true,
+      get(this: HTMLElement) {
+        return measured(this) ? 420 - 50 * given(this) : 0;
+      },
+    });
+    onTestFinished(() => {
+      delete (HTMLElement.prototype as { clientWidth?: number }).clientWidth;
+      delete (HTMLElement.prototype as { scrollWidth?: number }).scrollWidth;
+    });
+    act(() => showQueue(stateOf(QUEUE)));
+    act(() => focusedRows.set(TAB.id, 'waiting-153'));
+    const host = render();
+    const row = host.querySelector<HTMLElement>('footer .give-up')!;
+    expect(row.getAttribute('data-gave-up')).toBe('keys drop1 drop2');
+    // Move to front and Remove, dimmed on a pull request waiting to join, go first.
+    const going = (turn: string) => row.querySelector(`[data-gives="${turn}"]`)?.textContent;
+    expect(going('drop1')).toContain('Move to front…');
+    expect(going('drop2')).toContain('Remove…');
+    expect(going('drop3')).toContain('Open on GitHub');
   });
 
   it('names the keys for the row the keyboard is on, each dimmed with why it can’t run', () => {
