@@ -156,6 +156,7 @@ afterEach(() => {
     rules: false,
     linked: false,
     played: [],
+    choosing: undefined,
   });
   setScreen(undefined);
 });
@@ -580,7 +581,7 @@ describe('the first step', () => {
     expect(onScreen().textContent).not.toContain('Check again');
   });
 
-  it('says so in the notice’s place when it couldn’t look for Git, with main’s words', async () => {
+  it('says under the notice when it couldn’t look for Git, with main’s words', async () => {
     let fails = true;
     await first({
       'app.info': () => ({ git: missing }),
@@ -592,10 +593,14 @@ describe('the first step', () => {
     await settle();
     const alert = onScreen().querySelector('[role="alert"]');
     expect(alert?.textContent).toBe('Couldn’t check for Git');
-    expect(onScreen().textContent).not.toContain("Lo can't find git.");
-    // Its one button looks again, and a look that works brings the notice back.
+    // How to get Git stays, and so does the button that looks again.
+    expect(onScreen().textContent).toContain("Lo can't find git.");
+    const code = [...onScreen().querySelectorAll('.code-small')].map((each) => each.textContent);
+    expect(code).toContain('xcode-select --install');
+    const buttons = [...onScreen().querySelectorAll('button')].map((each) => each.textContent);
+    expect(buttons.some((each) => each.startsWith('Try again'))).toBe(false);
     fails = false;
-    click(button('Try again', onScreen()));
+    click(button('Check again'));
     await settle();
     expect(onScreen().querySelector('[role="alert"]')).toBeNull();
     expect(onScreen().textContent).toContain("Lo can't find git.");
@@ -631,6 +636,36 @@ describe('the keys step', () => {
     const cards = [...onScreen().querySelectorAll('[role="radio"]')];
     expect(cards.map((card) => card.textContent.slice(0, 8))).toEqual(['Standard', 'Vim keys']);
     expect(cards.map((card) => card.getAttribute('aria-checked'))).toEqual(['true', 'false']);
+  });
+
+  it('keeps the last card pressed while the setting is being written, and writes each in turn', async () => {
+    const written: unknown[] = [];
+    const landing: (() => void)[] = [];
+    await first({
+      'settings.set': (input) =>
+        new Promise<void>((resolve) => {
+          written.push(Reflect.get(Object(input), 'value'));
+          landing.push(resolve);
+        }),
+    });
+    await goTo('keys');
+    const checked = () =>
+      [...onScreen().querySelectorAll('[role="radio"]')].map((card) =>
+        card.getAttribute('aria-checked'),
+      );
+    const [standard, vim] = onScreen().querySelectorAll('[role="radio"]');
+    click(vim ?? document.body);
+    expect(checked()).toEqual(['false', 'true']);
+    // Standard, while Vim keys are on their way to the file.
+    click(standard ?? document.body);
+    expect(checked()).toEqual(['true', 'false']);
+    await settle();
+    expect(written).toEqual([true, false]);
+    for (const land of landing) land();
+    await settle();
+    await settle();
+    expect(welcomeStore.getState().choosing).toBeUndefined();
+    expect(checked()).toEqual(['true', 'false']);
   });
 
   it('moves through a practice diff with j and k, and by a click', async () => {

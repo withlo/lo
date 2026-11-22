@@ -1,6 +1,8 @@
 import { cva } from 'class-variance-authority';
 import type { ReactNode } from 'react';
 
+import { Collapse } from './Collapse.tsx';
+
 export type SetupListProps = {
   /** The `SetupItem`s. */
   children?: ReactNode;
@@ -72,7 +74,7 @@ export interface SetupItemProps {
   figure?: ReactNode;
   /**
    * What its button's last press left to say, under its line: a step still to take, such as a
-   * folder to add to `PATH`, or a `Problem` where it failed.
+   * folder to add to `PATH`, or a `Problem` where it failed. It opens and closes as `Collapse` does.
    */
   below?: ReactNode;
   /** Its one button, at the end of the row, while it isn't done. */
@@ -101,7 +103,10 @@ export function SetupItem({
       <span className="text-ui-strong">{title}</span>
       <span className="col-start-2 text-fg-muted text-small">{description}</span>
       {end !== undefined && <span className="col-start-3 row-span-2 row-start-1">{end}</span>}
-      {below !== undefined && <div className="col-span-2 col-start-2 pt-6">{below}</div>}
+      {/* It comes and goes as the press that left it does, moving the rows under it once. */}
+      <Collapse open={below !== undefined && below !== null} className="col-span-2 col-start-2">
+        {below !== undefined && below !== null && <div className="pt-6">{below}</div>}
+      </Collapse>
       {figure !== undefined && <div className="col-span-2 col-start-2 pt-8">{figure}</div>}
     </li>
   );

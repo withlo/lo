@@ -26,12 +26,14 @@ import {
   type ReactNode,
 } from 'react';
 import { createPortal } from 'react-dom';
+import { useStore } from 'zustand';
 
 import { registry } from '../../../window/commands/registry.ts';
 import { chooseVim } from './actions.ts';
 import { StepHeading } from './Heading.tsx';
 import { useNonce } from './nonce.ts';
 import { setPracticeEscape } from './practice.ts';
+import { welcomeStore } from './store.ts';
 
 type Editing = 'standard' | 'vim';
 
@@ -357,14 +359,17 @@ function Practice() {
 
 export function KeysStep(): ReactNode {
   const vim = useSyncExternalStore(onVim, vimOn, vimOn);
+  // The last card pressed, while the setting is being written.
+  const choosing = useStore(welcomeStore, (state) => state.choosing);
+  const chosen = choosing ?? vim;
   return (
     <>
       <StepHeading title="Choose your keys" line="Single keys and the mouse work with both." />
       <Choices
         label="Keys"
         items={EDITING}
-        value={vim ? 'vim' : 'standard'}
-        onChange={(value) => chooseVim(value === 'vim')}
+        value={chosen ? 'vim' : 'standard'}
+        onChange={(value) => void chooseVim(value === 'vim')}
       />
       <Practice />
     </>

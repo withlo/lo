@@ -2,11 +2,10 @@
 // looking for Git again, opening a pull request, and what `⏎` does with the control that has focus.
 
 import { vimOn } from '@lo/ui/code';
-import { NO_TARGET } from '@lo/ui/commands';
 
-import { registry } from '../../../window/commands/registry.ts';
 import { client } from '../../../window/ipc.ts';
 import { contract as accounts } from '../../accounts/contract.ts';
+import { chooseVimKeys } from '../../comments/window/shared.ts';
 import { openLink } from '../../open/window/shared.ts';
 import { contract as tabs } from '../../tab/contract.ts';
 import { activeTab } from '../../tab/window/shared.ts';
@@ -165,15 +164,25 @@ export async function checkGit(): Promise<void> {
   }));
 }
 
+/** How many choices of keys are being written. */
+let writing = 0;
+
 /**
  * Chooses the keys code and comment boxes are edited with: Vim's, or the standard ones. It's the
- * `editor.vim` setting, switched as "Vim keys" in the command palette switches it. A press while
- * the last is on its way asks for the same again, which changes nothing, so a write that never
- * lands leaves the cards working.
+ * `editor.vim` setting, as "Vim keys" in the command palette switches it. Each press writes its own
+ * choice, so the last one stays, and the cards show it until every write has ended, landed or not.
  */
-export function chooseVim(on: boolean): void {
-  if (vimOn() === on) return;
-  registry().run('comments.vim', NO_TARGET);
+export async function chooseVim(on: boolean): Promise<void> {
+  if (writing === 0 && vimOn() === on) return;
+  writing += 1;
+  welcomeStore.setState({ choosing: on });
+  try {
+    await chooseVimKeys(on);
+  } finally {
+    writing -= 1;
+    // The setting has every choice there is, or said why it couldn't take one: the cards follow it.
+    if (writing === 0) welcomeStore.setState({ choosing: undefined });
+  }
 }
 
 /** Notes that the mark played `move` since the welcome opened: a step that shows again rests. */

@@ -49,6 +49,12 @@ export interface WelcomeState {
   readonly linked: boolean;
   /** The mark's moves played since the welcome opened, which draw the mark at rest after. */
   readonly played: readonly MarkMove[];
+  /**
+   * The keys last chosen on the keys step, Vim's (`true`) or the standard ones, which its cards
+   * show while the setting is being written; `undefined` once every choice has been written or
+   * couldn't be.
+   */
+  readonly choosing: boolean | undefined;
 }
 
 /** The mark's moves the welcome plays: Unmeld on its first step, Kiss on its last. */
@@ -69,6 +75,7 @@ export const welcomeStore = createStore<WelcomeState>()(() => ({
   rules: false,
   linked: false,
   played: [],
+  choosing: undefined,
 }));
 
 /** Takes what Lo found of Git. */

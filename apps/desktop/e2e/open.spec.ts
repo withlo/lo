@@ -277,8 +277,24 @@ test('lists the pull requests opened lately, filters them and opens one by its k
   await expect(filter).toHaveValue('');
   await expect(filter).toBeFocused();
   await expect(list.getByRole('option')).toHaveCount(1);
+  // The field keeps ⌘⌫, Ctrl+Backspace on Linux, for its own editing, back from the caret, and
+  // says nothing on an empty field: Clear filter's key is the list's.
+  await filter.fill('nothing like it');
+  await page.keyboard.press('ArrowLeft');
+  await page.keyboard.press('ArrowLeft');
+  await page.keyboard.press(cmd('Backspace'));
+  await expect(filter).not.toHaveValue('');
+  await expect(filter).toHaveValue(/it$/);
+  await filter.fill('');
+  await page.keyboard.press(cmd('Backspace'));
   await filter.fill('e2e 80');
   await expect(list.getByRole('option')).toHaveCount(1);
+  await page.keyboard.press('Escape');
+  await expect(list).toBeFocused();
+  await page.keyboard.press(cmd('Backspace'));
+  await expect(filter).toHaveValue('');
+  await expect(filter).toBeFocused();
+  await expect(toast(page, 'The filter is empty')).toHaveCount(0);
   await page.keyboard.press('Escape');
   await expect(list).toBeFocused();
   await page.keyboard.press('j');

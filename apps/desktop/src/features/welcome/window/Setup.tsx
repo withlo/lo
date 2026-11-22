@@ -77,6 +77,8 @@ export function CommandStep() {
     void findCommand();
   }, []);
   const installed = command?.installed.some((each) => each.current) ?? false;
+  // Nothing to say under the row: no install asked for from it, or one that's on PATH.
+  const quiet = done === null || (done?.kind === 'installed' && done.onPath);
   return (
     <SetupItem
       icon={<TerminalIcon />}
@@ -88,7 +90,7 @@ export function CommandStep() {
         </>
       }
       done={installed ? 'Installed' : undefined}
-      below={done === null ? undefined : <Result done={done} />}
+      below={quiet ? undefined : <Result done={done} />}
     >
       <Button
         size="sm"

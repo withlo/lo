@@ -1186,8 +1186,9 @@ pull request.
      accounts feature's dialog) or importing from GitHub CLI when Lo finds one. A notice with "Check
      again" is here when Lo can't find a Git it can run: `welcome.checkGit` asks main to look again
      (`git.check()`), and what Lo finds reaches the window on `app.git`.
-  2. Standard keys or Vim keys, which is the `editor.vim` setting, and a diff drawn for the step
-     where `j`, `k` and `c` work. `c` opens the comment box every comment is written in
+  2. Standard keys or Vim keys, which is the `editor.vim` setting, written with the comments
+     feature's `chooseVimKeys`, so the last card pressed is the one that stays. A diff drawn for the
+     step is where `j`, `k` and `c` work. `c` opens the comment box every comment is written in
      (`createComposer`), with the keys chosen. Nothing typed there is sent.
   3. The rows in its `welcome.setup` slot: installing the `lo` command, which the open feature does,
      and sending pull request links to Lo, with the rules for Finicky, Velja and Choosy in

@@ -1,7 +1,17 @@
 // The welcome's first step: what Lo is for, under the mark as it unmelds, and getting an account,
 // by signing in with GitHub or importing from GitHub CLI. A missing Git is said here too.
 
-import { Button, Callout, Key, LogoMotion, Mark, Problem, SetupDone, Ticks } from '@lo/ui';
+import {
+  Button,
+  Callout,
+  Collapse,
+  Key,
+  LogoMotion,
+  Mark,
+  Problem,
+  SetupDone,
+  Ticks,
+} from '@lo/ui';
 import type { ReactNode } from 'react';
 import { useStore } from 'zustand';
 
@@ -36,46 +46,43 @@ function look(): void {
 /**
  * What Lo needs of Git and how to get it, when it can't find one it can run: what's wrong on the
  * line with "Check again", and how to get one under it, in room the step already holds, so the mark
- * and the foot stay where they are. A look that failed takes its place, with main's words behind
- * Details.
+ * and the foot stay where they are. A look that failed says so under it, with main's words behind
+ * Details, and "Check again" looks once more.
  */
 function GitNotice() {
   const { git, checking, checkFailed, checks } = useStore(welcomeStore);
   if (!gitProblem(git)) return null;
   return (
-    <>
-      {checkFailed === undefined ? (
-        <Callout tone="warning">
-          <div className="flex flex-col gap-2">
-            <div className="flex items-start gap-12">
-              <p className="m-0 min-w-0 flex-1 font-semibold text-fg">
-                <Ticks text={git.message} />
-              </p>
-              {/* On the first line, and no taller than it, so the box is as deep under its words
-                  as over them. */}
-              <div className="flex h-1lh flex-none items-center">
-                <Button size="sm" busy={checking} working="Checking…" onClick={look}>
-                  Check again
-                </Button>
-              </div>
-            </div>
-            <p className="m-0 text-fg-muted">
-              <Ticks text={git.install} />
+    <div className="flex flex-col gap-8">
+      <Callout tone="warning">
+        <div className="flex flex-col gap-2">
+          <div className="flex items-start gap-12">
+            <p className="m-0 min-w-0 flex-1 font-semibold text-fg">
+              <Ticks text={git.message} />
             </p>
+            {/* On the first line, and no taller than it, so the box is as deep under its words
+                as over them. */}
+            <div className="flex h-1lh flex-none items-center">
+              <Button size="sm" busy={checking} working="Checking…" onClick={look}>
+                Check again
+              </Button>
+            </div>
           </div>
-        </Callout>
-      ) : (
-        <Problem
-          title="Couldn’t check for Git"
-          details={checkFailed}
-          action={{ label: 'Try again', busy: checking, working: 'Checking…', onClick: look }}
-        />
-      )}
+          <p className="m-0 text-fg-muted">
+            <Ticks text={git.install} />
+          </p>
+        </div>
+      </Callout>
+      <Collapse open={checkFailed !== undefined}>
+        {checkFailed !== undefined && (
+          <Problem title="Couldn’t check for Git" details={checkFailed} />
+        )}
+      </Collapse>
       {/* A look that found nothing new says what the notice says again, to a screen reader. */}
       <span key={checks} role="status" className="sr-only">
         {checks > 0 && !checking && checkFailed === undefined ? git.message : ''}
       </span>
-    </>
+    </div>
   );
 }
 

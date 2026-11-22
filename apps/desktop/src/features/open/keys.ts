@@ -34,8 +34,9 @@ export default defineCommands(
       when: { scope: 'recent' },
     },
     /**
-     * In Recent, empties the filter, so every pull request shows again: the button where the filter
-     * matches nothing. `⌘⌫` is what empties a line of text, as it does in the filter itself.
+     * In Recent's list, empties the filter, so every pull request shows again: the button where the
+     * filter matches nothing. `⌘⌫` is what empties a line of text on macOS. The filter field is
+     * outside the list's scope, so it keeps the key for its own editing, as Ctrl+Backspace on Linux.
      */
     clearFilter: {
       label: 'Clear filter',
