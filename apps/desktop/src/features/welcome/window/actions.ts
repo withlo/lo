@@ -22,6 +22,11 @@ export function setScreen(element: HTMLElement | undefined): void {
   screen = element;
 }
 
+/** The reader did something in the welcome, so an account signing in no longer closes it. */
+export function touch(): void {
+  if (!welcomeStore.getState().touched) welcomeStore.setState({ touched: true });
+}
+
 /**
  * `⏎` in the welcome: the control with focus does what it says, a button or a card by being
  * pressed and the link field, once it holds something, by opening its link. With focus anywhere
@@ -29,6 +34,7 @@ export function setScreen(element: HTMLElement | undefined): void {
  * `data-welcome-default`. A field outside a form, the practice's comment box, keeps `⏎` to itself.
  */
 export function enter(): void {
+  touch();
   const focused = document.activeElement;
   if (screen?.contains(focused ?? null)) {
     if (focused instanceof HTMLButtonElement) {
@@ -65,7 +71,7 @@ export async function loadState(): Promise<void> {
  */
 export function openFirst(): void {
   if (welcomeStore.getState().open) return;
-  welcomeStore.setState({ open: true, over: undefined, step: 'account' });
+  welcomeStore.setState({ open: true, over: undefined, touched: false, step: 'account' });
 }
 
 /**
@@ -77,6 +83,7 @@ export function show(): void {
   welcomeStore.setState({
     open: true,
     over: tab === undefined || tab.kind === 'recent' ? undefined : tab.id,
+    touched: true,
     step: 'account',
   });
 }
@@ -86,7 +93,13 @@ export function show(): void {
  * that the reader finished it, so it doesn't open by itself again.
  */
 export function leave(): void {
-  welcomeStore.setState({ open: false, over: undefined, step: 'account', finished: true });
+  welcomeStore.setState({
+    open: false,
+    over: undefined,
+    touched: false,
+    step: 'account',
+    finished: true,
+  });
   main()
     .finish()
     .catch((error: unknown) => {

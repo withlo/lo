@@ -4,14 +4,14 @@
 // form like Settings, so `Tab` walks its controls.
 
 import { Button, Key } from '@lo/ui';
-import { useEffect, useLayoutEffect, useRef, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { useStore } from 'zustand';
 
 import { focusMiddle, setMiddle, useKeys } from '../../../window/commands/registry.ts';
 import { useAccounts } from '../../accounts/window/shared.ts';
 import { activeTab, useTabs, type Tab } from '../../tab/window/shared.ts';
 import { AccountStep } from './Account.tsx';
-import { back, leave, loadGh, next, openFirst, setScreen } from './actions.ts';
+import { back, leave, loadGh, next, openFirst, setScreen, touch } from './actions.ts';
 import { KeysStep } from './Keys.tsx';
 import { keyOf } from './labels.ts';
 import { OpenStep } from './Open.tsx';
@@ -70,19 +70,25 @@ const BALL = 'size-8 rounded-pill move-tint';
 /** Where the walk is: a ball for each step, filled up to the one on screen. */
 function Progress({ step }: { step: Step }) {
   const at = STEPS.indexOf(step);
+  const said = `Step ${at + 1} of ${STEPS.length}`;
+  // Said aloud once the reader moves: the step the welcome opens on isn't news.
+  const start = useRef(step);
+  const [moved, setMoved] = useState(false);
+  if (!moved && step !== start.current) setMoved(true);
   return (
-    <div className="flex items-center gap-8">
-      {STEPS.map((each, index) => (
-        <span
-          key={each}
-          className={`${BALL} ${index <= at ? 'bg-fg' : 'text-border-strong hollow'}`}
-          aria-hidden="true"
-        />
-      ))}
+    <>
+      <div role="img" aria-label={said} className="flex items-center gap-8">
+        {STEPS.map((each, index) => (
+          <span
+            key={each}
+            className={`${BALL} ${index <= at ? 'bg-fg' : 'text-border-strong hollow'}`}
+          />
+        ))}
+      </div>
       <span role="status" className="sr-only">
-        Step {at + 1} of {STEPS.length}
+        {moved ? said : ''}
       </span>
-    </div>
+    </>
   );
 }
 
@@ -184,6 +190,9 @@ function Welcome(): ReactNode {
       tabIndex={-1}
       data-lo-scope="welcome"
       data-lo-tab="browser"
+      onKeyDownCapture={touch}
+      onPointerDownCapture={touch}
+      onClickCapture={touch}
       className="absolute inset-0 flex overflow-auto bg-bg px-24 py-32 focus-visible:shadow-none"
     >
       <div className="m-auto flex w-palette-w max-w-full flex-col gap-32">
@@ -245,7 +254,8 @@ function Welcome(): ReactNode {
  * hasn't finished it and has no account signed in: none, or only ones GitHub refused. Until Lo
  * knows both, the Recent tab is covered by plain ground, so its list never shows for a moment under
  * a welcome that's about to open. Other tabs are drawn as they are unless the reader asked for the
- * welcome there.
+ * welcome there. Signing in from the welcome doesn't close it, but an account that signs in before
+ * the reader has touched it does.
  */
 export function Cover({ tab }: { tab: Tab }): ReactNode {
   const accounts = useAccounts();
@@ -253,6 +263,7 @@ export function Cover({ tab }: { tab: Tab }): ReactNode {
   const open = useStore(welcomeStore, (state) => state.open);
   const over = useStore(welcomeStore, (state) => state.over);
   const finished = useStore(welcomeStore, (state) => state.finished);
+  const touched = useStore(welcomeStore, (state) => state.touched);
   const known = accounts !== undefined && finished !== undefined;
   const signedIn = accounts?.some((account) => account.signedOut === null) ?? false;
   const recent = tab.kind === 'recent';
@@ -260,10 +271,15 @@ export function Cover({ tab }: { tab: Tab }): ReactNode {
   // The tab the reader asked for it over has closed: it's no longer open anywhere.
   const gone = open && over !== undefined && !tabs.some((each) => each.id === over);
 
+  // An account signed in before the reader touched the welcome, as one added from another window
+  // or as Lo starts: it opened for want of one, so it goes. Signing in from it keeps it.
+  const idle = open && over === undefined && signedIn && !touched;
+
   useLayoutEffect(() => {
     if (first) openFirst();
     else if (gone) welcomeStore.setState({ open: false, over: undefined });
-  }, [first, gone]);
+    else if (idle) welcomeStore.setState({ open: false });
+  }, [first, gone, idle]);
 
   if (open && !gone && (over === undefined ? recent : tab.id === over)) return <Welcome />;
   // Not known yet, or about to open: the ground alone.

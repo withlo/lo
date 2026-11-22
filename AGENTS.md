@@ -1178,7 +1178,9 @@ pull request.
   never opens by itself again. `welcome.show` ("Welcome to Lo", in Help, the palette and Settings ›
   About) opens it again over the tab on screen. Until Lo knows the accounts and whether it was
   finished, the Recent tab is covered by plain ground, so its list never shows under a welcome
-  that's about to open. Signing in doesn't close it: the first step says who signed in.
+  that's about to open. Signing in from it doesn't close it: the first step says who signed in. An
+  account that signs in before the reader has touched the welcome, as one added from another window,
+  does.
 - **The steps.**
   1. The mark, which plays Unmeld once, what Lo is for, and an account: signing in (through the
      accounts feature's dialog) or importing from GitHub CLI when Lo finds one. A notice with "Check

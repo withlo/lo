@@ -115,6 +115,7 @@ afterEach(() => {
     shown: false,
     open: false,
     over: undefined,
+    touched: false,
     step: 'account',
     finished: undefined,
     git: undefined,
@@ -317,6 +318,12 @@ describe('when it opens', () => {
 
   it('stays through signing in, and says who signed in where the button was', async () => {
     await first();
+    // The reader pressed ⏎ on the button, which is how the account came.
+    act(() => {
+      button('Sign in with GitHub').dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }),
+      );
+    });
     act(() => showAccounts([account('rozed-bot')]));
     await settle();
     expect(stepOnScreen()).toBe('account');
@@ -324,6 +331,16 @@ describe('when it opens', () => {
     expect(onScreen().textContent).not.toContain('Sign in with GitHub');
     // With nothing left to do here, Continue is the step's main button.
     expect(button('Continue').hasAttribute('data-welcome-default')).toBe(true);
+  });
+
+  it('goes when an account signs in before the reader has touched it', async () => {
+    const { bridge, shown } = await first();
+    act(() => showAccounts([account('rozed-bot')]));
+    await settle();
+    expect(screen()).toBeNull();
+    expect(shown.under.hasAttribute('inert')).toBe(false);
+    // It wasn't finished: nothing was kept.
+    expect(bridge.calls).not.toContainEqual(['welcome.finish', undefined]);
   });
 
   it('opens again over the tab on screen when asked, and goes with that tab', async () => {

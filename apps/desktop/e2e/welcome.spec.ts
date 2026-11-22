@@ -89,7 +89,17 @@ function script(path: string, lines: readonly string[]): string {
   return path;
 }
 
-/** Runs "Welcome to Lo" from the Help menu. */
+/** Runs "Welcome to Lo" from the command palette. */
+async function showFromPalette(page: Page): Promise<void> {
+  await page.keyboard.press(`${cmd}+Shift+P`);
+  const palette = page.getByRole('dialog', { name: 'Command palette' });
+  await expect(palette).toBeVisible();
+  await page.keyboard.type('Welcome to Lo');
+  await expect(palette.getByRole('option').first()).toContainText('Welcome to Lo');
+  await page.keyboard.press('Enter');
+}
+
+/** Runs "Welcome to Lo" from the Help menu, which the app menu has on macOS. */
 async function showFromMenu(app: ElectronApplication): Promise<void> {
   await app.evaluate(({ BrowserWindow, Menu }) => {
     const window = BrowserWindow.getAllWindows()[0];
@@ -202,12 +212,7 @@ test('a first launch shows the welcome over Recent, and its four steps are walke
   });
 
   await test.step('“Welcome to Lo” in the command palette opens it again, and Skip leaves it', async () => {
-    await page.keyboard.press(`${cmd}+Shift+P`);
-    const palette = page.getByRole('dialog', { name: 'Command palette' });
-    await expect(palette).toBeVisible();
-    await page.keyboard.type('Welcome to Lo');
-    await expect(palette.getByRole('option').first()).toContainText('Welcome to Lo');
-    await page.keyboard.press('Enter');
+    await showFromPalette(page);
     await expect(heading(page)).toHaveText('Review pull requests from the keyboard');
     await expect(signIn(page)).toBeFocused();
     await welcome(page).getByRole('button', { name: 'Skip' }).click();
@@ -246,7 +251,7 @@ test.describe('signing in', () => {
   });
 });
 
-test('opens a public pull request without signing in, and opens again over it from the Help menu', async ({
+test('opens a public pull request without signing in, and opens again over it when asked', async ({
   app,
   page,
 }) => {
@@ -274,8 +279,10 @@ test('opens a public pull request without signing in, and opens again over it fr
   await expect(header).toContainText('Read only');
   await expect(welcome(page)).toHaveCount(0);
 
-  // Help › Welcome to Lo opens it over the pull request, and Skip gives the pull request back.
-  await showFromMenu(app);
+  // "Welcome to Lo" opens it over the pull request, from the Help menu where the system has one,
+  // and Skip gives the pull request back.
+  if (mac) await showFromMenu(app);
+  else await showFromPalette(page);
   await expect(heading(page)).toHaveText('Review pull requests from the keyboard');
   await welcome(page).getByRole('button', { name: 'Skip' }).click();
   await expect(welcome(page)).toHaveCount(0);

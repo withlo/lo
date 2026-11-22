@@ -21,6 +21,11 @@ export interface WelcomeState {
    * Settings. Without one it's over the Recent tab, whichever tab that is now.
    */
   readonly over: string | undefined;
+  /**
+   * Whether the reader has done anything in the welcome since it opened: pressed a key or a button
+   * in it, or asked for it.
+   */
+  readonly touched: boolean;
   /** The step on screen. */
   readonly step: Step;
   /** Whether the reader has finished the welcome before, once main has said. */
@@ -43,6 +48,7 @@ export const welcomeStore = createStore<WelcomeState>()(() => ({
   shown: false,
   open: false,
   over: undefined,
+  touched: false,
   step: 'account',
   finished: undefined,
   git: undefined,
